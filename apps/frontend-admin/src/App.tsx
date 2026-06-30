@@ -110,7 +110,8 @@ export function App(): React.JSX.Element {
   const [wizCsvFile, setWizCsvFile] = useState<File | null>(null);
   const [wizCsvHeaders, setWizCsvHeaders] = useState<string[]>([]);
   const [wizCsvRows, setWizCsvRows] = useState<Record<string, string>[]>([]);
-  const [wizPdfFile, setWizPdfFile] = useState<File | null>(null);
+  const [wizCsvHasHeaders, setWizCsvHasHeaders] = useState(true);
+  const [wizPdfFiles, setWizPdfFiles] = useState<File[]>([]);
   const [wizMapping, setWizMapping] = useState({
     codice_fiscale: '',
     full_name: '',
@@ -706,17 +707,33 @@ export function App(): React.JSX.Element {
         return result.map(col => col.replace(/^"(.*)"$/, '$1'));
       };
 
-      const headers = parseCsvLine(lines[0]);
-      setWizCsvHeaders(headers);
+      let headers: string[] = [];
+      let parsedRows: Record<string, string>[] = [];
 
-      const parsedRows = lines.slice(1).map(line => {
-        const cols = parseCsvLine(line);
-        const obj: Record<string, string> = {};
-        headers.forEach((h, idx) => {
-          obj[h] = cols[idx] || '';
+      if (wizCsvHasHeaders) {
+        headers = parseCsvLine(lines[0]);
+        parsedRows = lines.slice(1).map(line => {
+          const cols = parseCsvLine(line);
+          const obj: Record<string, string> = {};
+          headers.forEach((h, idx) => {
+            obj[h] = cols[idx] || '';
+          });
+          return obj;
         });
-        return obj;
-      });
+      } else {
+        const firstLineCols = parseCsvLine(lines[0]);
+        headers = firstLineCols.map((_, idx) => `Colonna ${idx + 1}`);
+        parsedRows = lines.map(line => {
+          const cols = parseCsvLine(line);
+          const obj: Record<string, string> = {};
+          headers.forEach((h, idx) => {
+            obj[h] = cols[idx] || '';
+          });
+          return obj;
+        });
+      }
+
+      setWizCsvHeaders(headers);
       setWizCsvRows(parsedRows);
 
       // Guess mapping
@@ -840,6 +857,7 @@ export function App(): React.JSX.Element {
         channelConfig = {
           subject: wizSubject,
           body: wizBody,
+          allegatoKey: wizMapping.allegato1,
         };
         if (wizChannel === 'EMAIL') {
           channelConfig.from = settSmtpFrom;
@@ -913,6 +931,22 @@ export function App(): React.JSX.Element {
         throw new Error('Errore durante il caricamento dei destinatari.');
       }
 
+      // Caricamento allegati PDF personalizzati
+      if (wizPdfFiles && wizPdfFiles.length > 0) {
+        const attachFormData = new FormData();
+        wizPdfFiles.forEach(file => {
+          attachFormData.append('files', file);
+        });
+        const attachRes = await fetch(`${API_BASE}/campaigns/${campaignObj.id}/attachments`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: attachFormData,
+        });
+        if (!attachRes.ok) {
+          throw new Error('Errore durante il caricamento dei file PDF degli allegati.');
+        }
+      }
+
       const launchRes = await fetch(`${API_BASE}/campaigns/${campaignObj.id}/launch`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
@@ -930,7 +964,8 @@ export function App(): React.JSX.Element {
       setWizCsvFile(null);
       setWizCsvHeaders([]);
       setWizCsvRows([]);
-      setWizPdfFile(null);
+      setWizPdfFiles([]);
+      setWizCsvHasHeaders(true);
       setWizMapping({
         codice_fiscale: '',
         full_name: '',
@@ -1860,6 +1895,24 @@ export function App(): React.JSX.Element {
                       style={{ maxWidth: '350px' }}
                       onChange={handleWizCsvChange}
                     />
+                    <div className="form-check d-flex justify-content-center gap-2 mt-3">
+                      <input
+                        type="checkbox"
+                        className="form-check-input"
+                        id="wiz_csv_headers"
+                        checked={wizCsvHasHeaders}
+                        onChange={e => {
+                          setWizCsvHasHeaders(e.target.checked);
+                          // Reset file to force re-parse
+                          setWizCsvFile(null);
+                          setWizCsvHeaders([]);
+                          setWizCsvRows([]);
+                        }}
+                      />
+                      <label className="form-check-label small text-muted" htmlFor="wiz_csv_headers">
+                        Il file CSV contiene una riga di intestazione (Header)
+                      </label>
+                    </div>
                     {wizCsvFile && (
                       <div className="badge bg-success mt-3 p-2">
                         <i className="fas fa-check-circle me-1"></i> {wizCsvFile.name} ({wizCsvRows.length} righe rilevate)
@@ -1868,17 +1921,18 @@ export function App(): React.JSX.Element {
                   </div>
 
                   <div className="mb-4">
-                    <label className="form-label small fw-semibold text-muted">Allegato PDF Istituzionale (Opzionale)</label>
+                    <label className="form-label small fw-semibold text-muted">Allegati PDF Individuali (Opzionali, es. Avvisi TARI del desktop)</label>
                     <input
                       type="file"
                       accept=".pdf"
+                      multiple
                       className="form-control form-control-sm"
-                      onChange={e => setWizPdfFile(e.target.files?.[0] || null)}
+                      onChange={e => setWizPdfFiles(Array.from(e.target.files || []))}
                     />
-                    <div className="form-text small text-muted">Se caricato, questo documento PDF statico verrà allegato alla comunicazione.</div>
-                    {wizPdfFile && (
-                      <div className="badge bg-primary mt-2">
-                        <i className="fas fa-file-pdf me-1"></i> {wizPdfFile.name}
+                    <div className="form-text small text-muted">Puoi selezionare e caricare più file PDF contemporaneamente. Ciascun destinatario scaricherà l'allegato con il nome corrispondente a quanto indicato nel CSV.</div>
+                    {wizPdfFiles.length > 0 && (
+                      <div className="badge bg-primary mt-2 p-2">
+                        <i className="fas fa-file-pdf me-1"></i> {wizPdfFiles.length} allegati PDF pronti per il caricamento
                       </div>
                     )}
                   </div>
@@ -2169,9 +2223,9 @@ export function App(): React.JSX.Element {
                         <i className="fas fa-exclamation-triangle me-1"></i> {wizValidationErrors.length} righe verranno escluse perché non hanno superato i controlli formali.
                       </div>
                     )}
-                    {wizPdfFile && (
+                    {wizPdfFiles.length > 0 && (
                       <div className="mb-2 text-primary">
-                        <i className="fas fa-paperclip me-1"></i> Allegato PDF fisso: {wizPdfFile.name}
+                        <i className="fas fa-paperclip me-1"></i> Allegati PDF caricati: <strong>{wizPdfFiles.length} file</strong>
                       </div>
                     )}
                     {wizMapping.codice_fiscale && (

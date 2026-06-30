@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
@@ -6,6 +6,8 @@ import { Recipient } from '../entities/recipient.entity';
 
 @Injectable()
 export class CitizenService {
+  private readonly logger = new Logger(CitizenService.name);
+
   constructor(
     @InjectRepository(Recipient)
     private readonly recipientRepo: Repository<Recipient>,
@@ -52,6 +54,31 @@ export class CitizenService {
 
   async generateAttachmentPdf(id: string, codiceFiscale: string): Promise<Buffer> {
     const recipient = await this.findOneForCitizen(id, codiceFiscale);
+
+    // Verifichiamo se esiste un allegato PDF personalizzato caricato sul disco
+    let customFilename: string | undefined = undefined;
+    const allegatoKey = recipient.campaign.channelConfig?.['allegatoKey'] as string;
+    if (allegatoKey && recipient.extraData?.[allegatoKey]) {
+      customFilename = String(recipient.extraData[allegatoKey]);
+    } else {
+      // Cerca nei valori dell'extraData una stringa che termini con '.pdf'
+      for (const val of Object.values(recipient.extraData)) {
+        if (typeof val === 'string' && val.toLowerCase().endsWith('.pdf')) {
+          customFilename = val;
+          break;
+        }
+      }
+    }
+
+    if (customFilename) {
+      const fs = require('fs');
+      const { join } = require('path');
+      const filePath = join(__dirname, '..', '..', 'uploads', 'attachments', recipient.campaignId, customFilename);
+      if (fs.existsSync(filePath)) {
+        this.logger.log(`Serving custom uploaded PDF attachment: ${filePath}`);
+        return fs.readFileSync(filePath);
+      }
+    }
 
     const pdfDoc = await PDFDocument.create();
     const page = pdfDoc.addPage();

@@ -8,11 +8,13 @@ import {
   Post,
   Req,
   UploadedFile,
+  UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
-import { extname } from 'path';
+import { extname, join } from 'path';
+import * as fs from 'fs';
 import type { Request } from 'express';
 import type { JwtOperatorPayload } from '@comunicapa/shared-types';
 import type { Campaign } from '../entities/campaign.entity';
@@ -67,6 +69,35 @@ export class CampaignsController {
       throw new BadRequestException('File CSV richiesto (Content-Type: text/csv)');
     }
     return this.campaignsService.uploadCsv(id, file.path);
+  }
+
+  @Post(':id/attachments')
+  @UseInterceptors(
+    FilesInterceptor('files', 1000, {
+      storage: diskStorage({
+        destination: (req, _file, cb) => {
+          const dir = join(__dirname, '..', '..', 'uploads', 'attachments', req.params['id'] as string);
+          fs.mkdirSync(dir, { recursive: true });
+          cb(null, dir);
+        },
+        filename: (_req, file, cb) => {
+          cb(null, file.originalname);
+        },
+      }),
+      fileFilter: (_req, file, cb) => {
+        const ok = file.mimetype === 'application/pdf' || file.originalname.endsWith('.pdf');
+        cb(null, ok);
+      },
+    }),
+  )
+  uploadAttachments(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFiles() files: Express.Multer.File[],
+  ) {
+    return {
+      uploaded: files?.length || 0,
+      campaignId: id,
+    };
   }
 
   @Post(':id/launch')
