@@ -7,6 +7,8 @@ import { NOTIFICATION_QUEUE } from './notification-job.types';
 import { NotificationProcessor } from './notification.processor';
 import { NotificationAttempt } from '../entities/notification-attempt.entity';
 import { Campaign } from '../entities/campaign.entity';
+import { Recipient } from '../entities/recipient.entity';
+import { ChannelModule } from '../channels/channel.module';
 
 @Module({
   imports: [
@@ -24,7 +26,8 @@ import { Campaign } from '../entities/campaign.entity';
       },
     }),
     BullModule.registerQueue({ name: NOTIFICATION_QUEUE }),
-    TypeOrmModule.forFeature([NotificationAttempt, Campaign]),
+    TypeOrmModule.forFeature([NotificationAttempt, Campaign, Recipient]),
+    ChannelModule,
   ],
   providers: [NotificationProcessor],
   exports: [BullModule],

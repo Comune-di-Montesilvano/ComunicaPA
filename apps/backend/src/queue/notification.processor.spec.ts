@@ -1,82 +1,128 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { getQueueToken } from '@nestjs/bullmq';
 import type { Job } from 'bullmq';
 import { NotificationProcessor } from './notification.processor';
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity';
-import { Campaign } from '../entities/campaign.entity';
+import { Campaign, CampaignStatus } from '../entities/campaign.entity';
+import { Recipient } from '../entities/recipient.entity';
+import { CHANNEL_STRATEGIES } from '../channels/channel.interface';
+import { NOTIFICATION_QUEUE } from './notification-job.types';
 import type { NotificationJobData } from '@comunicapa/shared-types';
+
+const mockAttemptRepo = {
+  update: jest.fn(),
+};
+
+const mockCampaignRepo = {
+  findOne: jest.fn(),
+  increment: jest.fn(),
+  createQueryBuilder: jest.fn(),
+};
+
+const mockRecipientRepo = {
+  findOne: jest.fn(),
+};
+
+const mockStrategy = {
+  send: jest.fn(),
+};
+
+const mockStrategies = new Map([['EMAIL', mockStrategy]]);
 
 describe('NotificationProcessor', () => {
   let processor: NotificationProcessor;
-  const mockAttemptRepo = {
-    update: jest.fn().mockResolvedValue(undefined),
+
+  const mockJob = (data: NotificationJobData) =>
+    ({ id: '1', data } as unknown as Job<NotificationJobData>);
+
+  const baseData: NotificationJobData = {
+    campaignId: 'camp-1',
+    recipientId: 'rec-1',
+    attemptId: 'att-1',
+    channel: 'EMAIL',
   };
-  const mockCampaignRepo = {
-    increment: jest.fn().mockResolvedValue(undefined),
+
+  const mockCampaign = {
+    id: 'camp-1',
+    status: CampaignStatus.QUEUED,
+    name: 'TARI',
+    channelType: 'EMAIL',
+    channelConfig: {},
+    sentCount: 0,
+    failedCount: 0,
+    totalRecipients: 1,
+  };
+
+  const mockRecipient = {
+    id: 'rec-1',
+    email: 'mario@example.com',
+    pec: null,
+    fullName: 'Mario',
+    codiceFiscale: 'RSSMRA85M01H501Z',
+  };
+
+  const mockQb = {
+    update: jest.fn().mockReturnThis(),
+    set: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    execute: jest.fn().mockResolvedValue({ affected: 1 }),
   };
 
   beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
+    jest.clearAllMocks();
+
+    mockCampaignRepo.findOne.mockResolvedValue(mockCampaign);
+    mockRecipientRepo.findOne.mockResolvedValue(mockRecipient);
+    mockCampaignRepo.increment.mockResolvedValue(undefined);
+    mockCampaignRepo.createQueryBuilder.mockReturnValue(mockQb);
+    mockStrategy.send.mockResolvedValue({ messageId: 'msg-001', responsePayload: {} });
+
+    const module = await Test.createTestingModule({
       providers: [
         NotificationProcessor,
         { provide: getRepositoryToken(NotificationAttempt), useValue: mockAttemptRepo },
         { provide: getRepositoryToken(Campaign), useValue: mockCampaignRepo },
+        { provide: getRepositoryToken(Recipient), useValue: mockRecipientRepo },
+        { provide: CHANNEL_STRATEGIES, useValue: mockStrategies },
+        { provide: getQueueToken(NOTIFICATION_QUEUE), useValue: {} },
       ],
     }).compile();
-    processor = module.get<NotificationProcessor>(NotificationProcessor);
-    jest.clearAllMocks();
-    mockAttemptRepo.update.mockResolvedValue(undefined);
-    mockCampaignRepo.increment.mockResolvedValue(undefined);
+
+    processor = module.get(NotificationProcessor);
   });
 
   it('is defined', () => {
     expect(processor).toBeDefined();
   });
 
-  it('marks attempt PROCESSING then SUCCESS and increments sentCount', async () => {
-    const jobData: NotificationJobData = {
-      campaignId: 'c1',
-      recipientId: 'r1',
-      attemptId: 'a1',
-      channel: 'EMAIL',
-    };
-    const job = { id: '1', data: jobData } as Job<NotificationJobData>;
+  it('process() aggiorna attempt PROCESSING → SUCCESS e chiama strategy', async () => {
+    await processor.process(mockJob(baseData));
 
-    await processor.process(job);
-
-    expect(mockAttemptRepo.update).toHaveBeenNthCalledWith(1, 'a1', {
-      status: AttemptStatus.PROCESSING,
-    });
-    expect(mockAttemptRepo.update).toHaveBeenNthCalledWith(
-      2,
-      'a1',
-      expect.objectContaining({ status: AttemptStatus.SUCCESS }),
-    );
-    expect(mockCampaignRepo.increment).toHaveBeenCalledWith({ id: 'c1' }, 'sentCount', 1);
+    expect(mockAttemptRepo.update).toHaveBeenCalledWith('att-1', { status: AttemptStatus.PROCESSING });
+    expect(mockStrategy.send).toHaveBeenCalledWith(mockRecipient, mockCampaign);
+    expect(mockAttemptRepo.update).toHaveBeenCalledWith('att-1', expect.objectContaining({
+      status: AttemptStatus.SUCCESS,
+      responsePayload: expect.any(Object),
+    }));
+    expect(mockCampaignRepo.increment).toHaveBeenCalledWith({ id: 'camp-1' }, 'sentCount', 1);
   });
 
-  it('marks attempt FAILED on error, increments failedCount, re-throws', async () => {
-    const jobData: NotificationJobData = {
-      campaignId: 'c1',
-      recipientId: 'r1',
-      attemptId: 'a1',
-      channel: 'PEC',
-    };
-    const job = { id: '2', data: jobData } as Job<NotificationJobData>;
-    const networkError = new Error('network timeout');
+  it('process() aggiorna attempt PROCESSING → FAILED e rilancia se strategy lancia', async () => {
+    mockStrategy.send.mockRejectedValueOnce(new Error('SMTP timeout'));
 
-    // Prima call (PROCESSING) ok, seconda call (SUCCESS) lancia → va nel catch
-    mockAttemptRepo.update
-      .mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(networkError);
+    await expect(processor.process(mockJob(baseData))).rejects.toThrow('SMTP timeout');
 
-    await expect(processor.process(job)).rejects.toThrow('network timeout');
+    expect(mockAttemptRepo.update).toHaveBeenCalledWith('att-1', expect.objectContaining({
+      status: AttemptStatus.FAILED,
+      errorMessage: 'SMTP timeout',
+    }));
+    expect(mockCampaignRepo.increment).toHaveBeenCalledWith({ id: 'camp-1' }, 'failedCount', 1);
+  });
 
-    // Terza call nel catch: FAILED
-    expect(mockAttemptRepo.update).toHaveBeenCalledWith(
-      'a1',
-      expect.objectContaining({ status: AttemptStatus.FAILED }),
-    );
-    expect(mockCampaignRepo.increment).toHaveBeenCalledWith({ id: 'c1' }, 'failedCount', 1);
+  it('process() lancia Error se nessuna strategy per channel', async () => {
+    const data: NotificationJobData = { ...baseData, channel: 'POSTAL' };
+
+    await expect(processor.process(mockJob(data))).rejects.toThrow('Nessuna strategy per channel POSTAL');
   });
 });
