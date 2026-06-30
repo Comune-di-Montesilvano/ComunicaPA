@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
@@ -31,11 +31,24 @@ export class PdfService {
     const stampedId = `${fileId}_stamped_${Date.now()}`;
     const outputPath = join(this.storagePath, `${stampedId}.pdf`);
 
-    const pdfBytes = await readFile(inputPath);
+    let pdfBytes: Buffer;
+    try {
+      pdfBytes = await readFile(inputPath);
+    } catch {
+      throw new NotFoundException(`PDF not found: ${fileId}`);
+    }
+
     const stamped = await this.stampPdfBytes(new Uint8Array(pdfBytes), stamp);
 
     await mkdir(this.storagePath, { recursive: true });
-    await writeFile(outputPath, stamped);
+
+    try {
+      await writeFile(outputPath, stamped);
+    } catch (err) {
+      this.logger.error(`Failed to write stamped PDF ${stampedId}`, err instanceof Error ? err.message : String(err));
+      throw new InternalServerErrorException(`Failed to write stamped PDF`);
+    }
+
     this.logger.log(`Stamped PDF: ${stampedId}`);
     return stampedId;
   }
