@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Post, Request } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import type { LoginDto } from './dto/login.dto';
+import { LoginDto } from './dto/login.dto';
 import type { AuthResponseDto } from './dto/auth-response.dto';
 import type { JwtOperatorPayload } from '@comunicapa/shared-types';
 import { Public } from './decorators/public.decorator';

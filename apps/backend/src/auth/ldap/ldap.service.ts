@@ -24,18 +24,44 @@ export class LdapService {
     const adminGroup = this.config.get('ldap.adminGroup', { infer: true });
     const requiredGroup = this.config.get('ldap.requiredGroup', { infer: true });
 
+    if (!host) {
+      throw new UnauthorizedException('Servizio LDAP non configurato');
+    }
+
     const userDn = dnTemplate.replace('%s', username);
 
+    return this.connectAndAuthenticate({
+      host,
+      baseDn,
+      userDn,
+      username,
+      password,
+      tlsSkipVerify,
+      adminGroup,
+      requiredGroup,
+    });
+  }
+
+  private async connectAndAuthenticate(opts: {
+    host: string;
+    baseDn: string;
+    userDn: string;
+    username: string;
+    password: string;
+    tlsSkipVerify: boolean;
+    adminGroup: string;
+    requiredGroup: string;
+  }): Promise<LdapUser> {
     const client = ldapjs.createClient({
-      url: host,
-      tlsOptions: { rejectUnauthorized: !tlsSkipVerify },
+      url: opts.host,
+      tlsOptions: { rejectUnauthorized: !opts.tlsSkipVerify },
       timeout: 5000,
       connectTimeout: 5000,
     });
 
     try {
-      await this.bind(client, userDn, password);
-      const entry = await this.searchUser(client, baseDn, username);
+      await this.bind(client, opts.userDn, opts.password);
+      const entry = await this.searchUser(client, opts.baseDn, opts.username);
 
       if (!entry) {
         throw new UnauthorizedException('Utente non trovato in Active Directory');
@@ -44,22 +70,22 @@ export class LdapService {
       const memberOf = this.extractMemberOf(entry);
       const groupCns = memberOf.map((dn) => this.extractCn(dn));
 
-      this.logger.debug(`User ${username} memberOf: ${groupCns.join(', ')}`);
+      this.logger.debug(`User ${opts.username} memberOf: ${groupCns.join(', ')}`);
 
-      if (!groupCns.includes(requiredGroup) && !groupCns.includes(adminGroup)) {
+      if (!groupCns.includes(opts.requiredGroup) && !groupCns.includes(opts.adminGroup)) {
         throw new UnauthorizedException('Accesso non autorizzato: gruppo AD richiesto non trovato');
       }
 
-      const role: OperatorRole = groupCns.includes(adminGroup) ? 'admin' : 'user';
+      const role: OperatorRole = groupCns.includes(opts.adminGroup) ? 'admin' : 'user';
 
       return {
-        username,
-        displayName: String(entry['displayName'] ?? username),
+        username: opts.username,
+        displayName: String(entry['displayName'] ?? opts.username),
         role,
       };
     } catch (error) {
       if (error instanceof UnauthorizedException) throw error;
-      this.logger.error(`LDAP error for user ${username}: ${String(error)}`);
+      this.logger.error(`LDAP error for user ${opts.username}: ${String(error)}`);
       throw new UnauthorizedException('Credenziali non valide');
     } finally {
       client.unbind(() => {
