@@ -35,3 +35,10 @@ export interface CitizenTokenClaims {
   iat?: number;
   exp?: number;
 }
+
+export interface NotificationJobData {
+  campaignId: string;
+  recipientId: string;
+  attemptId: string;
+  channel: NotificationChannel;
+}
