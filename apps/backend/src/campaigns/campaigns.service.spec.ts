@@ -148,17 +148,10 @@ describe('CampaignsService', () => {
   });
 
   it('uploadCsv uses increment for totalRecipients instead of update (no overwrite)', async () => {
-    // Verify increment is called instead of update for totalRecipients
-    mockCampaignRepo.findOneBy.mockResolvedValueOnce(mockCampaign);
-
-    // We cannot easily run the CSV parser in unit tests, so we verify the method
-    // at the repository level using a non-existent campaign first
     mockCampaignRepo.findOneBy.mockResolvedValueOnce(null);
-    const fakeFilePath = '/tmp/nonexistent.csv';
     await expect(
-      service.uploadCsv('no-campaign', fakeFilePath),
+      service.uploadCsv('no-campaign', '/tmp/nonexistent.csv'),
     ).rejects.toThrow(NotFoundException);
-    // increment should NOT have been called (campaign not found)
     expect(mockCampaignRepo.increment).not.toHaveBeenCalled();
   });
 });
