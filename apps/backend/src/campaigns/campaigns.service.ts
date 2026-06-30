@@ -70,39 +70,42 @@ export class CampaignsService {
       parse({ columns: true, skip_empty_lines: true, trim: true }),
     );
 
-    for await (const row of parser as AsyncIterable<Record<string, string>>) {
-      const cf = String(row['codice_fiscale'] ?? '').toUpperCase().trim();
-      if (!cf) continue;
+    try {
+      for await (const row of parser as AsyncIterable<Record<string, string>>) {
+        const cf = String(row['codice_fiscale'] ?? '').toUpperCase().trim();
+        if (!cf) continue;
 
-      const extraData: Record<string, unknown> = { ...row };
-      delete extraData['codice_fiscale'];
-      delete extraData['email'];
-      delete extraData['pec'];
-      delete extraData['full_name'];
+        const extraData: Record<string, unknown> = { ...row };
+        delete extraData['codice_fiscale'];
+        delete extraData['email'];
+        delete extraData['pec'];
+        delete extraData['full_name'];
 
-      batch.push({
-        campaignId,
-        codiceFiscale: cf,
-        email: row['email']?.trim() || null,
-        pec: row['pec']?.trim() || null,
-        fullName: row['full_name']?.trim() || null,
-        extraData,
-        status: RecipientStatus.PENDING,
-      });
+        batch.push({
+          campaignId,
+          codiceFiscale: cf,
+          email: row['email']?.trim() || null,
+          pec: row['pec']?.trim() || null,
+          fullName: row['full_name']?.trim() || null,
+          extraData,
+          status: RecipientStatus.PENDING,
+        });
 
-      if (batch.length >= BATCH_SIZE) {
-        await this.recipientRepo.save(batch.splice(0));
-        imported += BATCH_SIZE;
+        if (batch.length >= BATCH_SIZE) {
+          await this.recipientRepo.save(batch.splice(0));
+          imported += BATCH_SIZE;
+        }
       }
-    }
 
-    if (batch.length > 0) {
-      await this.recipientRepo.save(batch);
-      imported += batch.length;
-    }
+      if (batch.length > 0) {
+        await this.recipientRepo.save(batch);
+        imported += batch.length;
+      }
 
-    await this.campaignRepo.update(campaignId, { totalRecipients: imported });
-    await unlink(filePath).catch(() => undefined);
+      await this.campaignRepo.update(campaignId, { totalRecipients: imported });
+    } finally {
+      await unlink(filePath).catch(() => undefined);
+    }
 
     return { imported, campaignId };
   }

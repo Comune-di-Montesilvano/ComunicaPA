@@ -16,10 +16,12 @@ import { extname } from 'path';
 import type { Request } from 'express';
 import type { JwtOperatorPayload } from '@comunicapa/shared-types';
 import type { Campaign } from '../entities/campaign.entity';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { CampaignsService } from './campaigns.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 
 @Controller('campaigns')
+@Roles('operator', 'admin')
 export class CampaignsController {
   constructor(private readonly campaignsService: CampaignsService) {}
 
