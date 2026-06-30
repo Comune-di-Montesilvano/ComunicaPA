@@ -1,58 +1,68 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import nodemailer from 'nodemailer';
 import type { NotificationChannel, ChannelSendResult } from '@comunicapa/shared-types';
-import type { AppConfiguration } from '../../config/configuration';
 import type { IChannelStrategy } from '../channel.interface';
 import type { Recipient } from '../../entities/recipient.entity';
 import type { Campaign } from '../../entities/campaign.entity';
-
-function interpolate(template: string, vars: Record<string, string>): string {
-  return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => vars[key] ?? `{{${key}}}`);
-}
+import * as nodemailer from 'nodemailer';
+import type { AppConfiguration } from '../../config/configuration';
+import { processTemplate, wrapInHtmlLayout } from '../template.helper';
 
 @Injectable()
 export class PecStrategy implements IChannelStrategy {
+  private readonly logger = new Logger(PecStrategy.name);
   readonly channel: NotificationChannel = 'PEC';
 
-  private readonly transporter: ReturnType<typeof nodemailer.createTransport>;
-
-  constructor(private readonly config: ConfigService<AppConfiguration, true>) {
-    this.transporter = nodemailer.createTransport({
-      host: config.get('pec.host', { infer: true }),
-      port: config.get('pec.port', { infer: true }),
-      secure: config.get('pec.secure', { infer: true }),
-      auth: {
-        user: config.get('pec.user', { infer: true }),
-        pass: config.get('pec.password', { infer: true }),
-      },
-    });
-  }
+  constructor(private readonly config: ConfigService<AppConfiguration, true>) {}
 
   async send(recipient: Recipient, campaign: Campaign): Promise<ChannelSendResult> {
     if (!recipient.pec) {
-      throw new BadRequestException('Recipient non ha indirizzo PEC');
+      throw new Error('Recipient PEC address is missing');
     }
 
-    const vars: Record<string, string> = {
-      fullName: recipient.fullName ?? '',
-      codiceFiscale: recipient.codiceFiscale,
-    };
+    const host = this.config.get('pec.host', { infer: true });
+    const port = this.config.get('pec.port', { infer: true });
+    const secure = this.config.get('pec.secure', { infer: true });
+    const user = this.config.get('pec.user', { infer: true });
+    const password = this.config.get('pec.password', { infer: true });
+    const defaultFrom = this.config.get('pec.from', { infer: true });
+    const citizenPortalUrl = this.config.get('origins.citizen', { infer: true });
+    const brandName = this.config.get('brand.name', { infer: true }) || 'Comune di Montesilvano';
 
-    const cfg = campaign.channelConfig as Record<string, string>;
-    const subject = interpolate(cfg['subject'] ?? campaign.name, vars);
-    const body = interpolate(cfg['body'] ?? '', vars);
+    const subjectTemplate = (campaign.channelConfig?.['subject'] as string) || 'Notifica PEC ComunicaPA';
+    const bodyTemplate = (campaign.channelConfig?.['body'] as string) || 'Hai ricevuto una nuova notifica PEC.';
 
-    const info = await this.transporter.sendMail({
-      from: this.config.get('pec.from', { infer: true }),
-      to: recipient.pec,
-      subject,
-      text: body,
+    // Process templates
+    const subject = processTemplate(subjectTemplate, recipient, citizenPortalUrl);
+    const bodyText = processTemplate(bodyTemplate, recipient, citizenPortalUrl);
+    const bodyHtml = wrapInHtmlLayout(bodyText, brandName);
+
+    const transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: user ? { user, pass: password } : undefined,
+      tls: {
+        rejectUnauthorized: false,
+      },
     });
 
+    const info = (await transporter.sendMail({
+      from: (campaign.channelConfig?.['from'] as string) || defaultFrom,
+      to: recipient.pec,
+      subject,
+      text: bodyText,
+      html: bodyHtml,
+    })) as any;
+
+    this.logger.log(`PEC successfully sent to ${recipient.pec}: messageId=${info.messageId}`);
+
     return {
-      messageId: String(info.messageId ?? ''),
-      responsePayload: { accepted: info.accepted },
+      messageId: info.messageId,
+      responsePayload: {
+        envelope: info.envelope,
+        accepted: info.accepted,
+      },
     };
   }
 }

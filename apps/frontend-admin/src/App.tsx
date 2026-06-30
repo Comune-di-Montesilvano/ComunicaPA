@@ -84,6 +84,8 @@ export function App(): React.JSX.Element {
   // New campaign state (in Invio Massivo)
   const [newCampaignName, setNewCampaignName] = useState('');
   const [newCampaignDesc, setNewCampaignDesc] = useState('');
+  const [newCampaignSubject, setNewCampaignSubject] = useState('');
+  const [newCampaignBody, setNewCampaignBody] = useState('');
   const [newCampaignChannel, setNewCampaignChannel] = useState<'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL'>('EMAIL');
   const [selectedAppIoServiceId, setSelectedAppIoServiceId] = useState('');
 
@@ -331,6 +333,7 @@ export function App(): React.JSX.Element {
     setLoadingCampaigns(true);
     try {
       let customConfig: Record<string, any> | undefined = undefined;
+      
       if (newCampaignChannel === 'APP_IO') {
         const svc = ioServices.find(s => s.id_service === selectedAppIoServiceId);
         customConfig = {
@@ -339,11 +342,28 @@ export function App(): React.JSX.Element {
           apiKey: svc ? svc.api_key_primaria : '',
           baseUrl: settIoUrl,
         };
+      } else if (newCampaignChannel === 'EMAIL' || newCampaignChannel === 'PEC') {
+        customConfig = {
+          subject: newCampaignSubject,
+          body: newCampaignBody,
+        };
+        // Bundle default App IO service configuration for co-delivery if available
+        const defaultSvc = ioServices.find(s => s.is_default) || ioServices[0];
+        if (defaultSvc) {
+          customConfig.appIo = {
+            serviceId: defaultSvc.id_service,
+            serviceName: defaultSvc.nome,
+            apiKey: defaultSvc.api_key_primaria,
+            baseUrl: settIoUrl,
+          };
+        }
       }
 
       await handleCreateCampaign(newCampaignName, newCampaignDesc, newCampaignChannel, customConfig);
       setNewCampaignName('');
       setNewCampaignDesc('');
+      setNewCampaignSubject('');
+      setNewCampaignBody('');
       fetchCampaigns();
       alert('Campagna creata correttamente in stato bozza!');
     } catch (err: any) {
@@ -374,6 +394,21 @@ export function App(): React.JSX.Element {
           apiKey: svc ? svc.api_key_primaria : '',
           baseUrl: settIoUrl,
         };
+      } else if (singleChannel === 'EMAIL' || singleChannel === 'PEC') {
+        customConfig = {
+          subject: singleSubject,
+          body: singleBody,
+        };
+        // Bundle default App IO service configuration for co-delivery if available
+        const defaultSvc = ioServices.find(s => s.is_default) || ioServices[0];
+        if (defaultSvc) {
+          customConfig.appIo = {
+            serviceId: defaultSvc.id_service,
+            serviceName: defaultSvc.nome,
+            apiKey: defaultSvc.api_key_primaria,
+            baseUrl: settIoUrl,
+          };
+        }
       }
 
       const nameVal = `Invio Singolo - ${singleCf.toUpperCase()} - ${new Date().toLocaleTimeString('it-IT')}`;
@@ -575,6 +610,44 @@ export function App(): React.JSX.Element {
       setPecTestStatus('error');
       setPecTestMsg('Errore di rete.');
     }
+  };
+
+  const handleExportDownloadReport = () => {
+    if (!campaign || !campaign.recipients || campaign.recipients.length === 0) {
+      alert('Nessun destinatario da esportare');
+      return;
+    }
+
+    const headers = ['Codice Fiscale', 'Nominativo', 'Email', 'PEC', 'Stato Invio', 'Download Effettuati', 'Data Ultimo Download'];
+    const rows = campaign.recipients.map(r => {
+      const downloadCount = r.extraData?.['download_count'] ?? 0;
+      const downloadedAt = r.extraData?.['downloaded_at'] 
+        ? new Date(r.extraData['downloaded_at']).toLocaleString('it-IT')
+        : '';
+      return [
+        r.codiceFiscale,
+        r.fullName || '',
+        r.email || '',
+        r.pec || '',
+        r.status,
+        downloadCount,
+        downloadedAt
+      ];
+    });
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(val => `"${String(val).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `report_download_campagna_${campaign.id.slice(0, 8)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleCampaignClick = (id: string) => {
@@ -1302,6 +1375,43 @@ export function App(): React.JSX.Element {
                           <option value="POSTAL">POSTAL</option>
                         </select>
                       </div>
+
+                      {(newCampaignChannel === 'EMAIL' || newCampaignChannel === 'PEC') && (
+                        <>
+                          <div className="mb-3 border-top pt-3">
+                            <label className="form-label small fw-bold text-dark" htmlFor="cm_subject">Oggetto E-mail/PEC</label>
+                            <input
+                              type="text"
+                              id="cm_subject"
+                              className="form-control form-control-sm"
+                              placeholder="Es: Avviso Scadenza TARI 2026 - %nominativo%"
+                              value={newCampaignSubject}
+                              onChange={(e) => setNewCampaignSubject(e.target.value)}
+                              required
+                            />
+                          </div>
+                          <div className="mb-3">
+                            <label className="form-label small fw-bold text-dark" htmlFor="cm_body">Corpo E-mail/PEC</label>
+                            <textarea
+                              id="cm_body"
+                              className="form-control form-control-sm"
+                              rows={6}
+                              placeholder="Gentile %nominativo%, le notifichiamo la scadenza Tari. Scarichi l'avviso completo qui: %allegato1%..."
+                              value={newCampaignBody}
+                              onChange={(e) => setNewCampaignBody(e.target.value)}
+                              required
+                            ></textarea>
+                            <div className="border rounded bg-light p-2 mt-2" style={{ fontSize: '0.78rem' }}>
+                              <strong className="text-dark d-block mb-1"><i className="fas fa-info-circle text-primary me-1"></i>Placeholder supportati:</strong>
+                              <ul className="ps-3 mb-0 text-muted">
+                                <li><code>%allegato1%</code>: Link di download avviso</li>
+                                <li><code>%nominativo%</code> / <code>%codice_fiscale%</code>: Anagrafica destinatario</li>
+                                <li><code>%NOME_COLONNA%</code>: Variabile dinamica da CSV (es: <code>%importo%</code>, <code>%scadenza%</code>)</li>
+                              </ul>
+                            </div>
+                          </div>
+                        </>
+                      )}
 
                       {newCampaignChannel === 'APP_IO' && (
                         <div className="mb-4">
@@ -2263,9 +2373,16 @@ export function App(): React.JSX.Element {
                         <h3 className="h6 mb-0 fw-bold text-dark">
                           <i className="fas fa-users me-2"></i>Destinatari Caricati ({campaign.totalRecipients})
                         </h3>
-                        <button className="btn btn-outline-secondary btn-sm border-0" onClick={() => fetchCampaignDetail(campaign.id)} title="Aggiorna esiti">
-                          <i className="fas fa-sync-alt"></i>
-                        </button>
+                        <div className="d-flex align-items-center">
+                          {campaign.recipients && campaign.recipients.length > 0 && (
+                            <button className="btn btn-sm btn-outline-primary me-2 py-1" onClick={handleExportDownloadReport} title="Esporta Report CSV">
+                              <i className="fas fa-file-excel me-1"></i> Esporta Report Download
+                            </button>
+                          )}
+                          <button className="btn btn-outline-secondary btn-sm border-0" onClick={() => fetchCampaignDetail(campaign.id)} title="Aggiorna esiti">
+                            <i className="fas fa-sync-alt"></i>
+                          </button>
+                        </div>
                       </div>
                       <div className="card-body p-0">
                         {!campaign.recipients || campaign.recipients.length === 0 ? (

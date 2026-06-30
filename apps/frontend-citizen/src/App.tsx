@@ -51,6 +51,17 @@ export function App(): React.JSX.Element {
     }
   }, [token]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const notifId = params.get('notificationId');
+    if (notifId && notifications.length > 0) {
+      const found = notifications.find(n => n.id === notifId);
+      if (found) {
+        setSelectedNotif(found);
+      }
+    }
+  }, [notifications]);
+
   const fetchNotifications = async () => {
     setLoadingNotifications(true);
     setErrorNotifications(null);

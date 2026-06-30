@@ -51,6 +51,14 @@ export interface AppConfiguration {
     apiKey: string;
     baseUrl: string;
   };
+  origins: {
+    admin: string;
+    citizen: string;
+  };
+  brand: {
+    name: string;
+    logo: string;
+  };
 }
 
 export default (): AppConfiguration => ({
@@ -105,5 +113,13 @@ export default (): AppConfiguration => ({
   send: {
     apiKey: process.env['SEND_API_KEY'] ?? '',
     baseUrl: process.env['SEND_BASE_URL'] ?? 'https://api.notifichedigitali.it',
+  },
+  origins: {
+    admin: process.env['ADMIN_ORIGIN'] ?? 'http://localhost:3000',
+    citizen: process.env['CITIZEN_ORIGIN'] ?? 'http://localhost:3001',
+  },
+  brand: {
+    name: process.env['BRAND_NAME'] ?? 'Comune di Montesilvano',
+    logo: process.env['BRAND_LOGO'] ?? 'brand-logo.png',
   },
 });
