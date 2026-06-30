@@ -67,7 +67,7 @@ export function App(): React.JSX.Element {
   const [token, setToken] = useState<string | null>(localStorage.getItem('comunicapa_token'));
   const [username, setUsername] = useState<string | null>(localStorage.getItem('comunicapa_username'));
   const [role, setRole] = useState<string | null>(localStorage.getItem('comunicapa_role'));
-  const [view, setView] = useState<'dashboard' | 'invio-singolo' | 'invio-massivo' | 'statistiche' | 'impostazioni' | 'campaign-detail'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'invio-singolo' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'impostazioni' | 'campaign-detail'>('dashboard');
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
 
   // Login form state
@@ -100,6 +100,30 @@ export function App(): React.JSX.Element {
   const [singleAppIoServiceId, setSingleAppIoServiceId] = useState('');
   const [singleSending, setSingleSending] = useState(false);
   const [singleSuccess, setSingleSuccess] = useState<string | null>(null);
+
+  // Wizard States
+  const [wizStep, setWizStep] = useState(1);
+  const [wizName, setWizName] = useState('');
+  const [wizDesc, setWizDesc] = useState('');
+  const [wizChannel, setWizChannel] = useState<'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL'>('EMAIL');
+  const [wizAppIoServiceId, setWizAppIoServiceId] = useState('');
+  const [wizCsvFile, setWizCsvFile] = useState<File | null>(null);
+  const [wizCsvHeaders, setWizCsvHeaders] = useState<string[]>([]);
+  const [wizCsvRows, setWizCsvRows] = useState<Record<string, string>[]>([]);
+  const [wizPdfFile, setWizPdfFile] = useState<File | null>(null);
+  const [wizMapping, setWizMapping] = useState({
+    codice_fiscale: '',
+    full_name: '',
+    email: '',
+    pec: '',
+    allegato1: '',
+  });
+  const [wizValidationErrors, setWizValidationErrors] = useState<Array<{ row: number; field: string; val: string; err: string }>>([]);
+  const [wizValidRows, setWizValidRows] = useState<Record<string, string>[]>([]);
+  const [wizSubject, setWizSubject] = useState('');
+  const [wizBody, setWizBody] = useState('');
+  const [wizPreviewIndex, setWizPreviewIndex] = useState(0);
+  const [wizSending, setWizSending] = useState(false);
 
   // Settings State (loaded from localStorage or defaults)
   const [settEntityName, setSettEntityName] = useState(localStorage.getItem('sett_entity_name') || 'Comune di Montesilvano');
@@ -650,6 +674,283 @@ export function App(): React.JSX.Element {
     document.body.removeChild(link);
   };
 
+  const handleWizCsvChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setWizCsvFile(file);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      if (!text) return;
+
+      const lines = text.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
+      if (lines.length === 0) return;
+
+      const parseCsvLine = (line: string) => {
+        const result: string[] = [];
+        let current = '';
+        let inQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i];
+          if (char === '"') {
+            inQuotes = !inQuotes;
+          } else if ((char === ',' || char === ';') && !inQuotes) {
+            result.push(current.trim());
+            current = '';
+          } else {
+            current += char;
+          }
+        }
+        result.push(current.trim());
+        return result.map(col => col.replace(/^"(.*)"$/, '$1'));
+      };
+
+      const headers = parseCsvLine(lines[0]);
+      setWizCsvHeaders(headers);
+
+      const parsedRows = lines.slice(1).map(line => {
+        const cols = parseCsvLine(line);
+        const obj: Record<string, string> = {};
+        headers.forEach((h, idx) => {
+          obj[h] = cols[idx] || '';
+        });
+        return obj;
+      });
+      setWizCsvRows(parsedRows);
+
+      // Guess mapping
+      const newMapping = {
+        codice_fiscale: '',
+        full_name: '',
+        email: '',
+        pec: '',
+        allegato1: '',
+      };
+      headers.forEach(h => {
+        const hLower = h.toLowerCase().replace(/[\s_-]/g, '');
+        if (hLower === 'cf' || hLower === 'codicefiscale') newMapping.codice_fiscale = h;
+        else if (hLower === 'nome' || hLower === 'nominativo' || hLower === 'fullname' || hLower === 'nomecompleto') newMapping.full_name = h;
+        else if (hLower === 'email' || hLower === 'mail') newMapping.email = h;
+        else if (hLower === 'pec') newMapping.pec = h;
+        else if (hLower === 'allegato1' || hLower === 'documento' || hLower === 'avviso') newMapping.allegato1 = h;
+      });
+      setWizMapping(newMapping);
+    };
+    reader.readAsText(file);
+  };
+
+  const handleWizMappingChange = (field: string, value: string) => {
+    setWizMapping(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleWizValidation = () => {
+    const errors: Array<{ row: number; field: string; val: string; err: string }> = [];
+    const valid: Record<string, string>[] = [];
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const cfRegex = /^[A-Z0-9]{16}$/i;
+
+    const cfField = wizMapping.codice_fiscale;
+    const emailField = wizMapping.email;
+    const pecField = wizMapping.pec;
+
+    const isEmailMandatory = wizChannel === 'EMAIL';
+    const isPecMandatory = wizChannel === 'PEC';
+    const isCfMandatory = wizChannel === 'APP_IO' || wizChannel === 'SEND';
+
+    wizCsvRows.forEach((row, idx) => {
+      let isRowValid = true;
+      const rowNum = idx + 1;
+
+      // Validate email
+      if (isEmailMandatory && !emailField) {
+        errors.push({ row: rowNum, field: 'Mappatura', val: '', err: 'La colonna Email deve essere mappata per il canale EMAIL' });
+        isRowValid = false;
+      } else if (emailField && row[emailField]) {
+        if (!emailRegex.test(row[emailField])) {
+          errors.push({ row: rowNum, field: 'Email', val: row[emailField], err: 'Formato e-mail non valido' });
+          isRowValid = false;
+        }
+      } else if (isEmailMandatory && !row[emailField]) {
+        errors.push({ row: rowNum, field: 'Email', val: '', err: 'Indirizzo e-mail mancante' });
+        isRowValid = false;
+      }
+
+      // Validate PEC
+      if (isPecMandatory && !pecField) {
+        errors.push({ row: rowNum, field: 'Mappatura', val: '', err: 'La colonna PEC deve essere mappata per il canale PEC' });
+        isRowValid = false;
+      } else if (pecField && row[pecField]) {
+        if (!emailRegex.test(row[pecField])) {
+          errors.push({ row: rowNum, field: 'PEC', val: row[pecField], err: 'Formato PEC non valido' });
+          isRowValid = false;
+        }
+      } else if (isPecMandatory && !row[pecField]) {
+        errors.push({ row: rowNum, field: 'PEC', val: '', err: 'Indirizzo PEC mancante' });
+        isRowValid = false;
+      }
+
+      // Validate Codice Fiscale
+      if (isCfMandatory && !cfField) {
+        errors.push({ row: rowNum, field: 'Mappatura', val: '', err: 'La colonna Codice Fiscale deve essere mappata per questo canale' });
+        isRowValid = false;
+      } else if (cfField && row[cfField]) {
+        if (!cfRegex.test(row[cfField])) {
+          errors.push({ row: rowNum, field: 'Codice Fiscale', val: row[cfField], err: 'Codice Fiscale non valido (16 caratteri)' });
+          isRowValid = false;
+        }
+      } else if (isCfMandatory && !row[cfField]) {
+        errors.push({ row: rowNum, field: 'Codice Fiscale', val: '', err: 'Codice Fiscale mancante' });
+        isRowValid = false;
+      }
+
+      if (isRowValid) {
+        valid.push(row);
+      }
+    });
+
+    setWizValidationErrors(errors);
+    setWizValidRows(valid);
+    setWizPreviewIndex(0);
+
+    if (errors.length === 0) {
+      setWizStep(4);
+    }
+  };
+
+  const handleWizLaunch = async () => {
+    if (wizValidRows.length === 0) {
+      alert('Non ci sono destinatari validi da inviare.');
+      return;
+    }
+    setWizSending(true);
+
+    try {
+      let channelConfig: Record<string, any> = {};
+      if (wizChannel === 'APP_IO') {
+        const svc = ioServices.find(s => s.id_service === wizAppIoServiceId) || ioServices[0];
+        channelConfig = {
+          serviceId: svc ? svc.id_service : '',
+          serviceName: svc ? svc.nome : '',
+          apiKey: svc ? svc.api_key_primaria : '',
+          baseUrl: settIoUrl,
+        };
+      } else if (wizChannel === 'EMAIL' || wizChannel === 'PEC') {
+        channelConfig = {
+          subject: wizSubject,
+          body: wizBody,
+        };
+        if (wizChannel === 'EMAIL') {
+          channelConfig.from = settSmtpFrom;
+          channelConfig.smtpServer = settSmtpHost;
+        } else {
+          channelConfig.from = settPecFrom;
+          channelConfig.pecServer = settPecHost;
+        }
+
+        if (wizMapping.codice_fiscale) {
+          const defaultSvc = ioServices.find(s => s.is_default) || ioServices[0];
+          if (defaultSvc) {
+            channelConfig.appIo = {
+              serviceId: defaultSvc.id_service,
+              serviceName: defaultSvc.nome,
+              apiKey: defaultSvc.api_key_primaria,
+              baseUrl: settIoUrl,
+            };
+          }
+        }
+      } else if (wizChannel === 'SEND') {
+        channelConfig = { apiKey: settSendApiKey, baseUrl: settSendUrl };
+      }
+
+      const res = await fetch(`${API_BASE}/campaigns`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: wizName,
+          description: wizDesc || wizSubject || wizName,
+          channelType: wizChannel,
+          channelConfig,
+        }),
+      });
+
+      if (!res.ok) throw new Error('Errore durante la creazione della campagna');
+      const campaignObj = await res.json();
+
+      const extraHeaders = wizCsvHeaders.filter(h => 
+        h !== wizMapping.codice_fiscale && 
+        h !== wizMapping.full_name && 
+        h !== wizMapping.email && 
+        h !== wizMapping.pec
+      );
+
+      const headerLine = ['codice_fiscale', 'full_name', 'email', 'pec', ...extraHeaders].join(',');
+      const rowLines = wizValidRows.map(row => {
+        const cf = row[wizMapping.codice_fiscale] || '';
+        const fn = row[wizMapping.full_name] || '';
+        const email = row[wizMapping.email] || '';
+        const pec = row[wizMapping.pec] || '';
+        const extra = extraHeaders.map(h => row[h] || '');
+        return [cf, fn, email, pec, ...extra].map(val => `"${String(val).replace(/"/g, '""')}"`).join(',');
+      });
+
+      const csvContent = [headerLine, ...rowLines].join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv' });
+      const formData = new FormData();
+      formData.append('file', blob, 'normalized_recipients.csv');
+
+      const uploadRes = await fetch(`${API_BASE}/campaigns/${campaignObj.id}/recipients/upload`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData,
+      });
+
+      if (!uploadRes.ok) {
+        throw new Error('Errore durante il caricamento dei destinatari.');
+      }
+
+      const launchRes = await fetch(`${API_BASE}/campaigns/${campaignObj.id}/launch`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      if (!launchRes.ok) {
+        throw new Error('Errore durante il lancio della campagna.');
+      }
+
+      setWizStep(1);
+      setWizName('');
+      setWizDesc('');
+      setWizSubject('');
+      setWizBody('');
+      setWizCsvFile(null);
+      setWizCsvHeaders([]);
+      setWizCsvRows([]);
+      setWizPdfFile(null);
+      setWizMapping({
+        codice_fiscale: '',
+        full_name: '',
+        email: '',
+        pec: '',
+        allegato1: '',
+      });
+      setWizValidationErrors([]);
+      setWizValidRows([]);
+
+      fetchCampaigns();
+      setView('dashboard');
+      alert('Campagna creata e avviata con successo! I messaggi sono in coda.');
+    } catch (err: any) {
+      alert(err.message || 'Errore durante l\'invio della campagna.');
+    } finally {
+      setWizSending(false);
+    }
+  };
+
   const handleCampaignClick = (id: string) => {
     setSelectedCampaignId(id);
     setView('campaign-detail');
@@ -936,7 +1237,7 @@ export function App(): React.JSX.Element {
             <span>Invio Singolo</span>
           </a>
           <a
-            className={`bo-nav-item ${view === 'invio-massivo' || view === 'campaign-detail' ? 'is-active' : ''}`}
+            className={`bo-nav-item ${view === 'invio-massivo' || view === 'campaign-detail' || view === 'invio-massivo-wizard' ? 'is-active' : ''}`}
             href="#"
             onClick={(e) => { e.preventDefault(); setView('invio-massivo'); }}
           >
@@ -977,6 +1278,7 @@ export function App(): React.JSX.Element {
           {view === 'dashboard' && 'Dashboard'}
           {view === 'invio-singolo' && 'Nuova Notifica Singola'}
           {view === 'invio-massivo' && 'Campagne di Invio Massivo'}
+          {view === 'invio-massivo-wizard' && 'Wizard Nuova Campagna Massiva'}
           {view === 'statistiche' && 'Statistiche e Andamento'}
           {view === 'impostazioni' && 'Impostazioni di Sistema'}
           {view === 'campaign-detail' && `Dettaglio Campagna / ${campaign?.name || '...'}`}
@@ -1273,7 +1575,12 @@ export function App(): React.JSX.Element {
                 <div className="card shadow-sm h-100">
                   <div className="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
                     <h3 className="h6 mb-0 fw-bold text-dark"><i className="fas fa-list me-2 text-primary"></i>Campagne Massive</h3>
-                    <button className="btn btn-outline-secondary btn-sm border-0" onClick={fetchCampaigns}><i className="fas fa-sync-alt"></i></button>
+                    <div className="d-flex align-items-center gap-2">
+                      <button className="btn btn-sm btn-primary" onClick={() => { setWizStep(1); setView('invio-massivo-wizard'); }}>
+                        <i className="fas fa-magic me-1"></i> Crea con Wizard
+                      </button>
+                      <button className="btn btn-outline-secondary btn-sm border-0" onClick={fetchCampaigns}><i className="fas fa-sync-alt"></i></button>
+                    </div>
                   </div>
                   <div className="card-body p-0">
                     {dashboardError && (
@@ -1443,6 +1750,466 @@ export function App(): React.JSX.Element {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* VIEW: WIZARD INVIO MASSIVO */}
+          {view === 'invio-massivo-wizard' && (
+            <div className="card shadow-sm bg-white p-4">
+              {/* Step Navigation Indicators */}
+              <div className="d-flex justify-content-between align-items-center mb-4 border-bottom pb-3">
+                <div className="d-flex align-items-center gap-2">
+                  <h3 className="h5 mb-0 fw-bold text-dark"><i className="fas fa-magic me-2 text-primary"></i>Procedura Guidata Campagna</h3>
+                </div>
+                <button className="btn btn-outline-secondary btn-sm" onClick={() => setView('invio-massivo')}>
+                  <i className="fas fa-times me-1"></i> Annulla
+                </button>
+              </div>
+
+              {/* Steps Progress Header */}
+              <div className="d-flex justify-content-between mb-4 text-center" style={{ fontSize: '0.82rem' }}>
+                <div className={`col pb-2 border-bottom ${wizStep >= 1 ? 'border-primary fw-bold text-primary' : 'text-muted'}`}>1. Dettagli & Canale</div>
+                <div className={`col pb-2 border-bottom ${wizStep >= 2 ? 'border-primary fw-bold text-primary' : 'text-muted'}`}>2. Caricamento File</div>
+                <div className={`col pb-2 border-bottom ${wizStep >= 3 ? 'border-primary fw-bold text-primary' : 'text-muted'}`}>3. Mappatura & Validazione</div>
+                <div className={`col pb-2 border-bottom ${wizStep >= 4 ? 'border-primary fw-bold text-primary' : 'text-muted'}`}>4. Template & Anteprima</div>
+                <div className={`col pb-2 border-bottom ${wizStep >= 5 ? 'border-primary fw-bold text-primary' : 'text-muted'}`}>5. Riepilogo & Invio</div>
+              </div>
+
+              {/* STEP 1: DETTAGLI & CANALE */}
+              {wizStep === 1 && (
+                <div style={{ maxWidth: '600px', margin: '0 auto' }}>
+                  <h4 className="h6 fw-bold text-dark mb-3">Passo 1: Dettagli della Campagna & Canale Principale</h4>
+                  <div className="mb-3">
+                    <label className="form-label small fw-bold">Nome della Campagna *</label>
+                    <input
+                      type="text"
+                      className="form-control form-control-sm"
+                      placeholder="Es: Avviso TARI 2026 Montesilvano"
+                      value={wizName}
+                      onChange={e => setWizName(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="mb-3">
+                    <label className="form-label small fw-semibold text-muted">Descrizione / Note Interne</label>
+                    <textarea
+                      className="form-control form-control-sm"
+                      rows={3}
+                      placeholder="Es: Invio massivo TARI acconto per i cittadini residenti..."
+                      value={wizDesc}
+                      onChange={e => setWizDesc(e.target.value)}
+                    ></textarea>
+                  </div>
+                  <div className="mb-3">
+                    <label className="form-label small fw-bold">Canale di Invio Principale *</label>
+                    <select
+                      className="form-select form-select-sm"
+                      value={wizChannel}
+                      onChange={(e: any) => setWizChannel(e.target.value)}
+                    >
+                      <option value="EMAIL">EMAIL</option>
+                      <option value="PEC">PEC (Posta Elettronica Certificata)</option>
+                      <option value="APP_IO">APP IO (PagoPA)</option>
+                      <option value="SEND">SEND</option>
+                      <option value="POSTAL">POSTAL</option>
+                    </select>
+                  </div>
+
+                  {wizChannel === 'APP_IO' && (
+                    <div className="mb-4">
+                      <label className="form-label small fw-bold text-dark">Servizio App IO Associato *</label>
+                      <select
+                        className="form-select form-select-sm"
+                        value={wizAppIoServiceId}
+                        onChange={e => setWizAppIoServiceId(e.target.value)}
+                        required
+                      >
+                        <option value="">-- Seleziona Servizio App IO --</option>
+                        {ioServices.map(s => (
+                          <option key={s.id} value={s.id_service}>
+                            {s.nome} {s.is_default ? '(Predefinito)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="mt-4 pt-3 border-top d-flex justify-content-end">
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => setWizStep(2)}
+                      disabled={!wizName || (wizChannel === 'APP_IO' && !wizAppIoServiceId)}
+                    >
+                      Avanti <i className="fas fa-arrow-right ms-1"></i>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 2: CARICAMENTO FILE */}
+              {wizStep === 2 && (
+                <div style={{ maxWidth: '600px', margin: '0 auto' }}>
+                  <h4 className="h6 fw-bold text-dark mb-3">Passo 2: Caricamento File Destinatari (CSV)</h4>
+                  <div className="p-4 border rounded bg-light text-center mb-4">
+                    <i className="fas fa-file-csv fa-3x text-muted mb-3"></i>
+                    <p className="small text-muted mb-3">Seleziona il file CSV contenente l'elenco dei destinatari della TARI.</p>
+                    <input
+                      type="file"
+                      accept=".csv"
+                      className="form-control form-control-sm mx-auto"
+                      style={{ maxWidth: '350px' }}
+                      onChange={handleWizCsvChange}
+                    />
+                    {wizCsvFile && (
+                      <div className="badge bg-success mt-3 p-2">
+                        <i className="fas fa-check-circle me-1"></i> {wizCsvFile.name} ({wizCsvRows.length} righe rilevate)
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mb-4">
+                    <label className="form-label small fw-semibold text-muted">Allegato PDF Istituzionale (Opzionale)</label>
+                    <input
+                      type="file"
+                      accept=".pdf"
+                      className="form-control form-control-sm"
+                      onChange={e => setWizPdfFile(e.target.files?.[0] || null)}
+                    />
+                    <div className="form-text small text-muted">Se caricato, questo documento PDF statico verrà allegato alla comunicazione.</div>
+                    {wizPdfFile && (
+                      <div className="badge bg-primary mt-2">
+                        <i className="fas fa-file-pdf me-1"></i> {wizPdfFile.name}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-4 pt-3 border-top d-flex justify-content-between">
+                    <button className="btn btn-outline-secondary" onClick={() => setWizStep(1)}>
+                      <i className="fas fa-arrow-left me-1"></i> Indietro
+                    </button>
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => setWizStep(3)}
+                      disabled={!wizCsvFile}
+                    >
+                      Avanti <i className="fas fa-arrow-right ms-1"></i>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 3: MAPPATURA & VALIDAZIONE */}
+              {wizStep === 3 && (
+                <div style={{ maxWidth: '700px', margin: '0 auto' }}>
+                  <h4 className="h6 fw-bold text-dark mb-3">Passo 3: Associazione Colonne CSV & Validazione Formale</h4>
+                  
+                  <div className="row g-3 mb-4">
+                    <div className="col-md-6">
+                      <label className="form-label small fw-bold">Codice Fiscale { (wizChannel === 'APP_IO' || wizChannel === 'SEND') ? '*' : '(Consigliato)' }</label>
+                      <select
+                        className="form-select form-select-sm"
+                        value={wizMapping.codice_fiscale}
+                        onChange={e => handleWizMappingChange('codice_fiscale', e.target.value)}
+                        required={wizChannel === 'APP_IO' || wizChannel === 'SEND'}
+                      >
+                        <option value="">-- Seleziona Colonna CF --</option>
+                        {wizCsvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                      </select>
+                    </div>
+
+                    <div className="col-md-6">
+                      <label className="form-label small fw-semibold text-muted">Nominativo Completo</label>
+                      <select
+                        className="form-select form-select-sm"
+                        value={wizMapping.full_name}
+                        onChange={e => handleWizMappingChange('full_name', e.target.value)}
+                      >
+                        <option value="">-- Seleziona Colonna Nome --</option>
+                        {wizCsvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                      </select>
+                    </div>
+
+                    <div className="col-md-6">
+                      <label className="form-label small fw-bold">Indirizzo E-mail { wizChannel === 'EMAIL' ? '*' : '(Opzionale)' }</label>
+                      <select
+                        className="form-select form-select-sm"
+                        value={wizMapping.email}
+                        onChange={e => handleWizMappingChange('email', e.target.value)}
+                        required={wizChannel === 'EMAIL'}
+                      >
+                        <option value="">-- Seleziona Colonna Email --</option>
+                        {wizCsvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                      </select>
+                    </div>
+
+                    <div className="col-md-6">
+                      <label className="form-label small fw-bold">Indirizzo PEC { wizChannel === 'PEC' ? '*' : '(Opzionale)' }</label>
+                      <select
+                        className="form-select form-select-sm"
+                        value={wizMapping.pec}
+                        onChange={e => handleWizMappingChange('pec', e.target.value)}
+                        required={wizChannel === 'PEC'}
+                      >
+                        <option value="">-- Seleziona Colonna PEC --</option>
+                        {wizCsvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                      </select>
+                    </div>
+
+                    <div className="col-md-6">
+                      <label className="form-label small fw-semibold text-muted">Campo Speciale Allegato (es: Tassa, Ruolo)</label>
+                      <select
+                        className="form-select form-select-sm"
+                        value={wizMapping.allegato1}
+                        onChange={e => handleWizMappingChange('allegato1', e.target.value)}
+                      >
+                        <option value="">-- Seleziona Colonna Speciale --</option>
+                        {wizCsvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Validation Panel */}
+                  <div className="p-3 border rounded bg-light mb-4">
+                    <h5 className="small fw-bold mb-2"><i className="fas fa-check-double text-success me-1"></i>Validazione Formale dei Campi</h5>
+                    <p className="small text-muted mb-3">Verrà verificata la sintassi di E-mail, PEC e Codice Fiscale per escludere record malformati.</p>
+                    <button className="btn btn-sm btn-outline-success" onClick={handleWizValidation}>
+                      <i className="fas fa-shield-alt me-1"></i> Esegui Controllo e Valida
+                    </button>
+
+                    {wizValidationErrors.length > 0 && (
+                      <div className="mt-3">
+                        <div className="alert alert-warning py-2 small mb-3">
+                          <i className="fas fa-exclamation-triangle me-1"></i> Trovati <strong>{wizValidationErrors.length}</strong> errori di validazione formale! I record con errori verranno esclusi dall'invio.
+                        </div>
+                        <div className="table-responsive" style={{ maxHeight: '200px' }}>
+                          <table className="table table-striped table-sm align-middle mb-0" style={{ fontSize: '0.78rem' }}>
+                            <thead className="table-dark">
+                              <tr>
+                                <th>Riga</th>
+                                <th>Campo</th>
+                                <th>Valore Rilevato</th>
+                                <th>Errore Riscontrato</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {wizValidationErrors.map((err, idx) => (
+                                <tr key={idx} className="table-danger-light">
+                                  <td className="fw-bold">{err.row}</td>
+                                  <td className="fw-bold">{err.field}</td>
+                                  <td className="text-danger fw-mono">{err.val || 'VUOTO'}</td>
+                                  <td>{err.err}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {wizValidRows.length > 0 && wizValidationErrors.length === 0 && (
+                      <div className="alert alert-success py-2 small mt-3 mb-0">
+                        <i className="fas fa-check-circle me-1"></i> Tutti i {wizValidRows.length} record sono formalmente corretti e pronti per il passo successivo!
+                      </div>
+                    )}
+
+                    {wizValidRows.length > 0 && wizValidationErrors.length > 0 && (
+                      <div className="alert alert-info py-2 small mt-3 mb-0">
+                        <i className="fas fa-info-circle me-1"></i> Record validi pronti: <strong>{wizValidRows.length}</strong> su {wizCsvRows.length}.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-4 pt-3 border-top d-flex justify-content-between">
+                    <button className="btn btn-outline-secondary" onClick={() => setWizStep(2)}>
+                      <i className="fas fa-arrow-left me-1"></i> Indietro
+                    </button>
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => setWizStep(4)}
+                      disabled={wizValidRows.length === 0}
+                    >
+                      Procedi a Template <i className="fas fa-arrow-right ms-1"></i>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 4: TEMPLATE & ANTEPRIMA */}
+              {wizStep === 4 && (
+                <div className="row g-4">
+                  <div className="col-lg-6 border-end">
+                    <h4 className="h6 fw-bold text-dark mb-3">Passo 4: Scrittura Template & Jolly Fields</h4>
+                    
+                    <div className="p-3 border rounded bg-light mb-3">
+                      <strong className="small text-dark d-block mb-2"><i className="fas fa-keyboard me-1 text-primary"></i>Clicca per inserire il parametro:</strong>
+                      <div className="d-flex flex-wrap gap-1">
+                        <button className="btn btn-xs btn-outline-secondary" style={{ fontSize: '0.74rem' }} onClick={() => setWizBody(b => b + ' %allegato1%')}>Link Allegato</button>
+                        <button className="btn btn-xs btn-outline-secondary" style={{ fontSize: '0.74rem' }} onClick={() => setWizBody(b => b + ' %nominativo%')}>Nominativo</button>
+                        <button className="btn btn-xs btn-outline-secondary" style={{ fontSize: '0.74rem' }} onClick={() => setWizBody(b => b + ' %codice_fiscale%')}>Codice Fiscale</button>
+                        {wizCsvHeaders.filter(h => h !== wizMapping.codice_fiscale && h !== wizMapping.full_name && h !== wizMapping.email && h !== wizMapping.pec).map(h => (
+                          <button
+                            key={h}
+                            className="btn btn-xs btn-outline-primary"
+                            style={{ fontSize: '0.74rem' }}
+                            onClick={() => setWizBody(b => b + ` %${h}%`)}
+                          >
+                            Colonna: {h}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="mb-3">
+                      <label className="form-label small fw-bold">Oggetto della Comunicazione (Template)</label>
+                      <input
+                        type="text"
+                        className="form-control form-control-sm"
+                        placeholder="Es: Avviso Scadenza TARI 2026 - %nominativo%"
+                        value={wizSubject}
+                        onChange={e => setWizSubject(e.target.value)}
+                        required
+                      />
+                    </div>
+                    
+                    <div className="mb-3">
+                      <label className="form-label small fw-bold">Corpo del Messaggio (Template)</label>
+                      <textarea
+                        className="form-control form-control-sm"
+                        rows={10}
+                        placeholder="Gentile %nominativo%, le notifichiamo la tassa TARI per un importo di %importo% EUR..."
+                        value={wizBody}
+                        onChange={e => setWizBody(e.target.value)}
+                        required
+                      ></textarea>
+                    </div>
+
+                    <div className="mt-4 pt-3 border-top d-flex justify-content-between">
+                      <button className="btn btn-outline-secondary" onClick={() => setWizStep(3)}>
+                        <i className="fas fa-arrow-left me-1"></i> Indietro
+                      </button>
+                      <button
+                        className="btn btn-primary"
+                        onClick={() => setWizStep(5)}
+                        disabled={!wizSubject || !wizBody}
+                      >
+                        Riepilogo <i className="fas fa-arrow-right ms-1"></i>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Right Column: Live Preview with Paging */}
+                  <div className="col-lg-6">
+                    <h4 className="h6 fw-bold text-dark mb-2">Anteprima Live Destinatari ({wizValidRows.length} totali)</h4>
+                    <p className="small text-muted mb-3">Sfoglia i record validi del CSV per vedere come verranno risolti i parametri Jolly.</p>
+                    
+                    <div className="d-flex align-items-center justify-content-between p-2 border rounded bg-light mb-3">
+                      <button
+                        className="btn btn-sm btn-outline-secondary"
+                        disabled={wizPreviewIndex === 0}
+                        onClick={() => setWizPreviewIndex(i => Math.max(0, i - 1))}
+                      >
+                        <i className="fas fa-chevron-left"></i> Prec.
+                      </button>
+                      <span className="small fw-bold">Record {wizPreviewIndex + 1} di {wizValidRows.length}</span>
+                      <button
+                        className="btn btn-sm btn-outline-secondary"
+                        disabled={wizPreviewIndex >= wizValidRows.length - 1}
+                        onClick={() => setWizPreviewIndex(i => Math.min(wizValidRows.length - 1, i + 1))}
+                      >
+                        Succ. <i className="fas fa-chevron-right"></i>
+                      </button>
+                    </div>
+
+                    {wizValidRows[wizPreviewIndex] && (
+                      <div className="border rounded p-3" style={{ background: '#f8fafc' }}>
+                        <div className="mb-2 text-muted" style={{ fontSize: '0.8rem' }}>
+                          <strong>A:</strong> {wizValidRows[wizPreviewIndex][wizMapping.email || ''] || wizValidRows[wizPreviewIndex][wizMapping.pec || ''] || 'N/A'}<br />
+                          <strong>Oggetto:</strong> {wizSubject.replace(/%([^%()]+)%/gi, (match, key) => {
+                            const k = key.toLowerCase().trim();
+                            if (k === 'nominativo' || k === 'full_name') return wizValidRows[wizPreviewIndex][wizMapping.full_name] || '';
+                            if (k === 'codice_fiscale' || k === 'cf') return wizValidRows[wizPreviewIndex][wizMapping.codice_fiscale] || '';
+                            return wizValidRows[wizPreviewIndex][key] || match;
+                          })}
+                        </div>
+                        <div className="bg-white border rounded overflow-hidden">
+                          <div style={{ backgroundColor: '#0066cc', padding: '16px', color: 'white', fontWeight: 'bold' }}>
+                            {settEntityName}
+                          </div>
+                          <div style={{ padding: '20px', fontSize: '0.9rem', color: '#333', lineHeight: '1.5', minHeight: '150px', whiteSpace: 'pre-wrap' }}>
+                            {wizBody.replace(/%allegato1%/g, 'http://localhost:3001/?notificationId=TEST-UUID-SIMULAZIONE')
+                              .replace(/%parametro\d+\(mappato"([^"]+)"\)%/gi, (match, key) => wizValidRows[wizPreviewIndex][key] || '')
+                              .replace(/%([^%()]+)%/gi, (match, key) => {
+                                const k = key.toLowerCase().trim();
+                                if (k === 'nominativo' || k === 'full_name') return wizValidRows[wizPreviewIndex][wizMapping.full_name] || '';
+                                if (k === 'codice_fiscale' || k === 'cf') return wizValidRows[wizPreviewIndex][wizMapping.codice_fiscale] || '';
+                                return wizValidRows[wizPreviewIndex][key] || match;
+                              })}
+                          </div>
+                          <div style={{ backgroundColor: '#f8f9fa', padding: '12px', fontSize: '0.72rem', color: '#666', textAlign: 'center', borderTop: '1px solid #edf2f7' }}>
+                            Messaggio istituzionale inviato automaticamente per conto di {settEntityName}.
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 5: RIEPILOGO & SPEDIZIONE */}
+              {wizStep === 5 && (
+                <div style={{ maxWidth: '600px', margin: '0 auto' }}>
+                  <h4 className="h6 fw-bold text-dark mb-3"><i className="fas fa-check-circle text-success me-2"></i>Passo 5: Riepilogo & Messa in Coda</h4>
+                  
+                  <div className="border rounded bg-light p-4 mb-4" style={{ fontSize: '0.9rem' }}>
+                    <div className="mb-2"><strong>Nome Campagna:</strong> {wizName}</div>
+                    <div className="mb-2"><strong>Canale di Trasmissione:</strong> {wizChannel}</div>
+                    <div className="mb-2"><strong>File Destinatari:</strong> {wizCsvFile?.name} (<strong>{wizValidRows.length}</strong> record pronti per l'invio)</div>
+                    {wizValidationErrors.length > 0 && (
+                      <div className="mb-2 text-warning">
+                        <i className="fas fa-exclamation-triangle me-1"></i> {wizValidationErrors.length} righe verranno escluse perché non hanno superato i controlli formali.
+                      </div>
+                    )}
+                    {wizPdfFile && (
+                      <div className="mb-2 text-primary">
+                        <i className="fas fa-paperclip me-1"></i> Allegato PDF fisso: {wizPdfFile.name}
+                      </div>
+                    )}
+                    {wizMapping.codice_fiscale && (
+                      <div className="mb-2 text-success">
+                        <i className="fas fa-mobile-alt me-1"></i> Co-delivery App IO configurata (invio parallelo per utenti abilitati)
+                      </div>
+                    )}
+                    <div className="mt-3 pt-3 border-top">
+                      <strong>Anteprima Oggetto (Record 1):</strong>
+                      <div className="p-2 border bg-white rounded mt-1 small text-muted">
+                        {wizSubject.replace(/%([^%()]+)%/gi, (match, key) => {
+                          const k = key.toLowerCase().trim();
+                          if (k === 'nominativo' || k === 'full_name') return wizValidRows[0]?.[wizMapping.full_name] || '';
+                          if (k === 'codice_fiscale' || k === 'cf') return wizValidRows[0]?.[wizMapping.codice_fiscale] || '';
+                          return wizValidRows[0]?.[key] || match;
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 pt-3 border-top d-flex justify-content-between">
+                    <button className="btn btn-outline-secondary" onClick={() => setWizStep(4)}>
+                      <i className="fas fa-arrow-left me-1"></i> Indietro
+                    </button>
+                    <button
+                      className="btn btn-success"
+                      onClick={handleWizLaunch}
+                      disabled={wizSending}
+                    >
+                      {wizSending ? (
+                        <><i className="fas fa-spinner fa-spin me-1"></i>Spedizione in corso...</>
+                      ) : (
+                        <><i className="fas fa-paper-plane me-1"></i>Conferma ed Avvia Campagna</>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
