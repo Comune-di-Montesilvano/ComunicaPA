@@ -21,7 +21,7 @@ import { CampaignsService } from './campaigns.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 
 @Controller('campaigns')
-@Roles('operator', 'admin')
+@Roles('user', 'admin')
 export class CampaignsController {
   constructor(private readonly campaignsService: CampaignsService) {}
 

@@ -1,0 +1,131 @@
+/* =================================================================
+   frontoffice.css — GovPay Interaction Layer Frontoffice
+   Residual layer: components not covered by tokens.css + fo-components.css.
+   ================================================================= */
+
+/* ------------------------------------------------------------------ */
+/* LEGACY TOKENS (used by #carrello-bar and sticky bar components)     */
+/* ------------------------------------------------------------------ */
+:root {
+  --fo-primary:     #0066CC;
+  --fo-primary-a8:  rgba(0,102,204,.08);
+  --fo-primary-a16: rgba(0,102,204,.16);
+  --fo-navy:        #003366;
+  --fo-gold-500:    #C9A13B;
+  --fo-fg-3:        #64748B;
+  --fo-border-1:    #E2E8F0;
+  --fo-sp-1: 4px;
+  --fo-sp-2: 8px;
+  --fo-sp-3: 12px;
+  --fo-sp-4: 16px;
+  --fo-sp-5: 24px;
+  --fo-r-sm:   4px;
+  --fo-r-md:   8px;
+  --fo-r-pill: 999px;
+  --fo-dur-fast: 120ms;
+  --fo-font-sans: 'Titillium Web', 'Segoe UI', system-ui, sans-serif;
+  --fo-font-mono: 'JetBrains Mono', Menlo, Consolas, monospace;
+}
+
+/* ------------------------------------------------------------------ */
+/* STEPS SIDEBAR BAR (bar is a .steps sibling, not .step child)        */
+/* ------------------------------------------------------------------ */
+.steps > .bar {
+  width: 24px;
+  height: 2px;
+  background: var(--border-1, #E2E8F0);
+  flex-shrink: 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* EXTERNAL SERVICE TILE VARIANT                                        */
+/* ------------------------------------------------------------------ */
+.svc-tile--external .icon-wrap {
+  background: var(--bg-2, #F1F5F9);
+  color: var(--fg-2, #475569);
+}
+.svc-tile--external {
+  border-style: dashed;
+}
+
+/* ------------------------------------------------------------------ */
+/* TABLE HELPERS (pendenze)                                             */
+/* ------------------------------------------------------------------ */
+.col-sel { width: 44px; }
+.fo-row-payable:hover { background: rgba(0,51,102,.03); }
+.pendenza-checkbox { width: 18px; height: 18px; cursor: pointer; accent-color: var(--bi-primary, #0066CC); }
+.pendenza-checkbox:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ------------------------------------------------------------------ */
+/* STICKY CART BAR (pendenze multi-select)                             */
+/* ------------------------------------------------------------------ */
+#carrello-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 150;
+  background: var(--fo-navy);
+  color: #fff;
+  padding: 14px var(--fo-sp-5);
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--fo-sp-3);
+  box-shadow: 0 -4px 24px rgba(0,0,0,.25);
+}
+#carrello-bar.visible { display: flex; }
+.fo-bar-info {
+  display: flex;
+  align-items: center;
+  gap: var(--fo-sp-2);
+  font-size: .95rem;
+  flex-wrap: wrap;
+}
+.fo-bar-info strong { font-size: 1.05rem; }
+.fo-bar-actions { display: flex; align-items: center; gap: var(--fo-sp-3); flex-wrap: wrap; }
+.fo-bar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 22px;
+  border-radius: var(--fo-r-pill);
+  font-size: .88rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1.5px solid rgba(255,255,255,.5);
+  background: transparent;
+  color: #fff;
+  text-decoration: none;
+  transition: background var(--fo-dur-fast), border-color var(--fo-dur-fast);
+  line-height: 1;
+  font-family: var(--fo-font-sans);
+}
+.fo-bar-btn:hover { background: rgba(255,255,255,.1); border-color: #fff; color: #fff; }
+.fo-bar-btn.primary { background: var(--fo-gold-500); border-color: var(--fo-gold-500); color: #1a1200; }
+.fo-bar-btn.primary:hover { background: #b38b2a; border-color: #b38b2a; color: #1a1200; }
+.fo-bar-btn:disabled, .fo-bar-btn[disabled] { opacity: .5; cursor: not-allowed; pointer-events: none; }
+
+/* ------------------------------------------------------------------ */
+/* SR-ONLY (accessibility)                                              */
+/* ------------------------------------------------------------------ */
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+/* ------------------------------------------------------------------ */
+/* RESPONSIVE                                                           */
+/* ------------------------------------------------------------------ */
+@media (max-width: 760px) {
+  #carrello-bar { padding: 12px var(--fo-sp-4); }
+  .fo-bar-btn { padding: 8px 14px; font-size: .82rem; }
+}

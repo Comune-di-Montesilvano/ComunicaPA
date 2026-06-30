@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import type { JwtOperatorPayload } from '@comunicapa/shared-types';
+import type { JwtOperatorPayload, CitizenTokenClaims } from '@comunicapa/shared-types';
 import { LdapService } from './ldap/ldap.service';
 import type { LoginDto } from './dto/login.dto';
 import type { AuthResponseDto } from './dto/auth-response.dto';
@@ -32,6 +32,25 @@ export class AuthService {
       expires_in: AuthService.EXPIRES_IN_SECONDS,
       username: ldapUser.username,
       role: ldapUser.role,
+    };
+  }
+
+  async generateCitizenToken(dto: {
+    codiceFiscale: string;
+    name?: string;
+    email?: string;
+  }): Promise<{ access_token: string }> {
+    const payload: Omit<CitizenTokenClaims, 'iat' | 'exp'> = {
+      sub: dto.codiceFiscale,
+      codiceFiscale: dto.codiceFiscale.toUpperCase().trim(),
+      name: dto.name || 'Cittadino Simulato',
+      email: dto.email || 'cittadino@example.com',
+    };
+
+    const token = this.jwtService.sign(payload);
+
+    return {
+      access_token: token,
     };
   }
 }

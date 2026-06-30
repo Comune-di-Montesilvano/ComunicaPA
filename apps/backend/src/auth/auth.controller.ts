@@ -16,6 +16,15 @@ export class AuthController {
     return this.authService.loginWithLdap(dto);
   }
 
+  @Public()
+  @Post('citizen/login')
+  @HttpCode(HttpStatus.OK)
+  citizenLogin(
+    @Body() dto: { codiceFiscale: string; name?: string; email?: string },
+  ): Promise<{ access_token: string }> {
+    return this.authService.generateCitizenToken(dto);
+  }
+
   @Get('me')
   me(@Request() req: { user: JwtOperatorPayload }): JwtOperatorPayload {
     return req.user;

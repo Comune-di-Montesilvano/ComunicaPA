@@ -20,6 +20,8 @@ async function bootstrap(): Promise<void> {
     origin: [
       'http://localhost:3000',
       'http://localhost:3001',
+      'http://127.0.0.1:3000',
+      'http://127.0.0.1:3001',
       process.env['ADMIN_ORIGIN'] ?? '',
       process.env['CITIZEN_ORIGIN'] ?? '',
     ].filter(Boolean),
