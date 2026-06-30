@@ -5,6 +5,7 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "incremental": true,
+    "tsBuildInfoFile": "./dist/tsconfig.build.tsbuildinfo",
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true
   },

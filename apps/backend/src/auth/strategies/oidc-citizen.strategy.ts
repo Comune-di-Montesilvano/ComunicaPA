@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
@@ -8,8 +8,6 @@ import type { AppConfiguration } from '../../config/configuration';
 
 @Injectable()
 export class OidcCitizenStrategy extends PassportStrategy(Strategy, 'oidc-citizen') {
-  private readonly logger = new Logger(OidcCitizenStrategy.name);
-
   constructor(config: ConfigService<AppConfiguration, true>) {
     const jwksUri = config.get('oidc.jwksUri', { infer: true });
     const issuer = config.get('oidc.issuer', { infer: true });
