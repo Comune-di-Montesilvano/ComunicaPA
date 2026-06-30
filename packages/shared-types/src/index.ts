@@ -15,3 +15,23 @@ export interface IChannel {
   enabled: boolean;
   config: Record<string, string>;
 }
+
+export type OperatorRole = 'admin' | 'user';
+
+export interface JwtOperatorPayload {
+  sub: string;
+  username: string;
+  role: OperatorRole;
+  type: 'operator';
+  iat?: number;
+  exp?: number;
+}
+
+export interface CitizenTokenClaims {
+  sub: string;
+  codiceFiscale: string;
+  email?: string;
+  name?: string;
+  iat?: number;
+  exp?: number;
+}
