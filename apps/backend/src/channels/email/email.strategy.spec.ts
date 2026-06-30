@@ -80,4 +80,25 @@ describe('EmailStrategy', () => {
       'Recipient non ha indirizzo email',
     );
   });
+
+  it('should propagate nodemailer error', async () => {
+    const smtpError = new Error('SMTP connection refused');
+    mockSendMail.mockRejectedValueOnce(smtpError);
+    const recipient = {
+      id: 'r3',
+      email: 'ok@example.com',
+      pec: null,
+      fullName: 'Test User',
+      codiceFiscale: 'TSTXXX00X00X123X',
+    };
+    const campaign = {
+      id: 'c1',
+      name: 'Test Campaign',
+      channelConfig: { subject: 'Test', body: 'Body' },
+    };
+
+    await expect(strategy.send(recipient as never, campaign as never)).rejects.toThrow(
+      'SMTP connection refused',
+    );
+  });
 });

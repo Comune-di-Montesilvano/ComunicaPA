@@ -25,7 +25,7 @@ describe('PecStrategy', () => {
   let strategy: PecStrategy;
 
   beforeEach(async () => {
-    mockSendMail.mockClear();
+    jest.clearAllMocks();
     mockSendMail.mockResolvedValue({ messageId: 'pec-001', accepted: ['luca@pec.it'] });
 
     const module = await Test.createTestingModule({
@@ -57,6 +57,27 @@ describe('PecStrategy', () => {
 
     await expect(strategy.send(recipient as never, campaign as never)).rejects.toThrow(
       'Recipient non ha indirizzo PEC',
+    );
+  });
+
+  it('should propagate nodemailer error', async () => {
+    const pecError = new Error('PEC connection refused');
+    mockSendMail.mockRejectedValueOnce(pecError);
+    const recipient = {
+      id: 'r2',
+      pec: 'ok@pec.it',
+      email: null,
+      fullName: 'Test User',
+      codiceFiscale: 'TSTXXX00X00X123X',
+    };
+    const campaign = {
+      id: 'c2',
+      name: 'Test Campaign',
+      channelConfig: { subject: 'Test', body: 'Body' },
+    };
+
+    await expect(strategy.send(recipient as never, campaign as never)).rejects.toThrow(
+      'PEC connection refused',
     );
   });
 });
