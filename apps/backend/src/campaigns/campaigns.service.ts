@@ -53,8 +53,12 @@ export class CampaignsService {
     filePath: string,
   ): Promise<{ imported: number; campaignId: string }> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
-    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+    if (!campaign) {
+      await unlink(filePath).catch(() => undefined);
+      throw new NotFoundException(`Campaign ${campaignId} not found`);
+    }
     if (campaign.status !== CampaignStatus.DRAFT) {
+      await unlink(filePath).catch(() => undefined);
       throw new BadRequestException('Campaign must be in draft status to upload recipients');
     }
 

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -60,6 +61,9 @@ export class CampaignsController {
     @Param('id', ParseUUIDPipe) id: string,
     @UploadedFile() file: Express.Multer.File,
   ): Promise<{ imported: number; campaignId: string }> {
+    if (!file) {
+      throw new BadRequestException('File CSV richiesto (Content-Type: text/csv)');
+    }
     return this.campaignsService.uploadCsv(id, file.path);
   }
 
