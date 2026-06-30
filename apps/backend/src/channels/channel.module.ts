@@ -1,0 +1,40 @@
+import { Module } from '@nestjs/common';
+import type { NotificationChannel } from '@comunicapa/shared-types';
+import { PdfModule } from '../pdf/pdf.module';
+import type { IChannelStrategy } from './channel.interface';
+import { CHANNEL_STRATEGIES } from './channel.interface';
+import { EmailStrategy } from './email/email.strategy';
+import { PecStrategy } from './pec/pec.strategy';
+import { AppIoStrategy } from './app-io/app-io.strategy';
+import { SendStrategy } from './send/send.strategy';
+import { PostalStrategy } from './postal/postal.strategy';
+
+@Module({
+  imports: [PdfModule],
+  providers: [
+    EmailStrategy,
+    PecStrategy,
+    AppIoStrategy,
+    SendStrategy,
+    PostalStrategy,
+    {
+      provide: CHANNEL_STRATEGIES,
+      useFactory: (
+        email: EmailStrategy,
+        pec: PecStrategy,
+        appIo: AppIoStrategy,
+        send: SendStrategy,
+        postal: PostalStrategy,
+      ): Map<NotificationChannel, IChannelStrategy> => {
+        const map = new Map<NotificationChannel, IChannelStrategy>();
+        for (const s of [email, pec, appIo, send, postal]) {
+          map.set(s.channel, s);
+        }
+        return map;
+      },
+      inject: [EmailStrategy, PecStrategy, AppIoStrategy, SendStrategy, PostalStrategy],
+    },
+  ],
+  exports: [CHANNEL_STRATEGIES],
+})
+export class ChannelModule {}

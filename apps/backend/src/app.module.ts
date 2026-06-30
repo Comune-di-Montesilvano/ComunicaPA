@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module';
 import { QueueModule } from './queue/queue.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { PdfModule } from './pdf/pdf.module';
+import { ChannelModule } from './channels/channel.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import configuration from './config/configuration';
@@ -23,6 +24,7 @@ import configuration from './config/configuration';
     QueueModule,
     CampaignsModule,
     PdfModule,
+    ChannelModule,
   ],
   controllers: [AppController],
   providers: [

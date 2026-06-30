@@ -42,3 +42,8 @@ export interface NotificationJobData {
   attemptId: string;
   channel: NotificationChannel;
 }
+
+export interface ChannelSendResult {
+  messageId?: string;
+  responsePayload?: Record<string, unknown>;
+}

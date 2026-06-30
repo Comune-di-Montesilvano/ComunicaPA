@@ -73,6 +73,22 @@ services:
       ADMIN_ORIGIN: http://localhost:${ADMIN_PORT:-3000}
       CITIZEN_ORIGIN: http://localhost:${CITIZEN_PORT:-3001}
       PDF_STORAGE_PATH: /data/attachments
+      SMTP_HOST: ${SMTP_HOST:-localhost}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-noreply@comunicapa.local}
+      PEC_HOST: ${PEC_HOST:-localhost}
+      PEC_PORT: ${PEC_PORT:-587}
+      PEC_SECURE: ${PEC_SECURE:-false}
+      PEC_USER: ${PEC_USER:-}
+      PEC_PASSWORD: ${PEC_PASSWORD:-}
+      PEC_FROM: ${PEC_FROM:-noreply@pec.comunicapa.local}
+      APP_IO_API_KEY: ${APP_IO_API_KEY:-}
+      APP_IO_BASE_URL: ${APP_IO_BASE_URL:-https://api.io.italia.it}
+      SEND_API_KEY: ${SEND_API_KEY:-}
+      SEND_BASE_URL: ${SEND_BASE_URL:-https://api.notifichedigitali.it}
     volumes:
       - ./apps/backend/src:/app/apps/backend/src:delegated
       - ./packages/shared-types/src:/app/packages/shared-types/src:delegated

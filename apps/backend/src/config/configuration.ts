@@ -27,6 +27,30 @@ export interface AppConfiguration {
     audience: string;
     jwksUri: string;
   };
+  smtp: {
+    host: string;
+    port: number;
+    secure: boolean;
+    user: string;
+    password: string;
+    from: string;
+  };
+  pec: {
+    host: string;
+    port: number;
+    secure: boolean;
+    user: string;
+    password: string;
+    from: string;
+  };
+  appIo: {
+    apiKey: string;
+    baseUrl: string;
+  };
+  send: {
+    apiKey: string;
+    baseUrl: string;
+  };
 }
 
 export default (): AppConfiguration => ({
@@ -57,5 +81,29 @@ export default (): AppConfiguration => ({
     issuer: process.env['OIDC_ISSUER'] ?? '',
     audience: process.env['OIDC_AUDIENCE'] ?? 'comunicapa',
     jwksUri: process.env['OIDC_JWKS_URI'] ?? '',
+  },
+  smtp: {
+    host: process.env['SMTP_HOST'] ?? 'localhost',
+    port: parseInt(process.env['SMTP_PORT'] ?? '587', 10),
+    secure: process.env['SMTP_SECURE'] === 'true',
+    user: process.env['SMTP_USER'] ?? '',
+    password: process.env['SMTP_PASSWORD'] ?? '',
+    from: process.env['SMTP_FROM'] ?? 'noreply@comunicapa.local',
+  },
+  pec: {
+    host: process.env['PEC_HOST'] ?? 'localhost',
+    port: parseInt(process.env['PEC_PORT'] ?? '587', 10),
+    secure: process.env['PEC_SECURE'] === 'true',
+    user: process.env['PEC_USER'] ?? '',
+    password: process.env['PEC_PASSWORD'] ?? '',
+    from: process.env['PEC_FROM'] ?? 'noreply@pec.comunicapa.local',
+  },
+  appIo: {
+    apiKey: process.env['APP_IO_API_KEY'] ?? '',
+    baseUrl: process.env['APP_IO_BASE_URL'] ?? 'https://api.io.italia.it',
+  },
+  send: {
+    apiKey: process.env['SEND_API_KEY'] ?? '',
+    baseUrl: process.env['SEND_BASE_URL'] ?? 'https://api.notifichedigitali.it',
   },
 });
