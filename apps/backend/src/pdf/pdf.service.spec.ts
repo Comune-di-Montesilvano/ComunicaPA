@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { PdfService } from './pdf.service';
 import { PDFDocument } from 'pdf-lib';
 
@@ -44,5 +45,35 @@ describe('PdfService', () => {
     const reloaded = await PDFDocument.load(stamped);
 
     expect(reloaded.getPageCount()).toBe(2);
+  });
+
+  describe('stampWithProtocol — path traversal guard', () => {
+    it('throws BadRequestException for fileId with ..', async () => {
+      await expect(
+        service.stampWithProtocol('../etc/passwd', 'STAMP'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws BadRequestException for fileId with forward slash', async () => {
+      await expect(
+        service.stampWithProtocol('some/path', 'STAMP'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws BadRequestException for fileId with backslash', async () => {
+      await expect(
+        service.stampWithProtocol('some\\path', 'STAMP'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('does not throw BadRequestException for a clean fileId', async () => {
+      // A clean fileId will proceed past the guard and fail on file-not-found
+      await expect(
+        service.stampWithProtocol('clean-file-id', 'STAMP'),
+      ).rejects.toThrow(); // NotFoundException from readFile, not BadRequestException
+      await expect(
+        service.stampWithProtocol('clean-file-id', 'STAMP'),
+      ).rejects.not.toThrow(BadRequestException);
+    });
   });
 });

@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, InternalServerErrorException, BadRequestException } from '@nestjs/common';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
@@ -27,6 +27,9 @@ export class PdfService {
   }
 
   async stampWithProtocol(fileId: string, stamp: string): Promise<string> {
+    if (/[/\\]|\.\./.test(fileId)) {
+      throw new BadRequestException(`fileId non valido: ${fileId}`);
+    }
     const inputPath = join(this.storagePath, `${fileId}.pdf`);
     const stampedId = `${fileId}_stamped_${Date.now()}`;
     const outputPath = join(this.storagePath, `${stampedId}.pdf`);

@@ -105,7 +105,7 @@ export class CampaignsService {
         imported += batch.length;
       }
 
-      await this.campaignRepo.update(campaignId, { totalRecipients: imported });
+      await this.campaignRepo.increment({ id: campaignId }, 'totalRecipients', imported);
     } finally {
       await unlink(filePath).catch(() => undefined);
     }
@@ -114,11 +114,21 @@ export class CampaignsService {
   }
 
   async launch(campaignId: string): Promise<{ launched: number; campaignId: string }> {
-    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
-    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
-    if (campaign.status !== CampaignStatus.DRAFT) {
+    const launchResult = await this.campaignRepo
+      .createQueryBuilder()
+      .update()
+      .set({ status: CampaignStatus.QUEUED })
+      .where('id = :id AND status = :draft', { id: campaignId, draft: CampaignStatus.DRAFT })
+      .execute();
+
+    if (launchResult.affected === 0) {
+      const exists = await this.campaignRepo.existsBy({ id: campaignId });
+      if (!exists) throw new NotFoundException(`Campaign ${campaignId} not found`);
       throw new BadRequestException('Only draft campaigns can be launched');
     }
+
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
     const recipients = await this.recipientRepo.find({
       where: { campaignId, status: RecipientStatus.PENDING },
@@ -171,7 +181,6 @@ export class CampaignsService {
       { campaignId, status: RecipientStatus.PENDING },
       { status: RecipientStatus.QUEUED },
     );
-    await this.campaignRepo.update(campaignId, { status: CampaignStatus.QUEUED });
 
     return { launched: recipients.length, campaignId };
   }
