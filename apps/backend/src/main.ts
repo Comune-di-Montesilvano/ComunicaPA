@@ -1,8 +1,11 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { mkdirSync } from 'fs';
 import { AppModule } from './app.module';
 
 async function bootstrap(): Promise<void> {
+  mkdirSync('/tmp/comunicapa-uploads', { recursive: true });
+
   const app = await NestFactory.create(AppModule);
 
   app.useGlobalPipes(

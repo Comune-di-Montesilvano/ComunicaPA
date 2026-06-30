@@ -6,6 +6,7 @@ import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
 import { AuthModule } from './auth/auth.module';
 import { QueueModule } from './queue/queue.module';
+import { CampaignsModule } from './campaigns/campaigns.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import configuration from './config/configuration';
@@ -19,6 +20,7 @@ import configuration from './config/configuration';
     DatabaseModule,
     AuthModule,
     QueueModule,
+    CampaignsModule,
   ],
   controllers: [AppController],
   providers: [
