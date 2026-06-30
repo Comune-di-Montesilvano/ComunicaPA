@@ -1804,22 +1804,7 @@ export function App(): React.JSX.Element {
                     )}
                   </div>
 
-                  <div className="mb-4">
-                    <label className="form-label small fw-semibold text-muted">Allegati PDF Individuali (Opzionali, es. Avvisi TARI del desktop)</label>
-                    <input
-                      type="file"
-                      accept=".pdf"
-                      multiple
-                      className="form-control form-control-sm"
-                      onChange={e => setWizPdfFiles(Array.from(e.target.files || []))}
-                    />
-                    <div className="form-text small text-muted">Puoi selezionare e caricare più file PDF contemporaneamente. Ciascun destinatario scaricherà l'allegato con il nome corrispondente a quanto indicato nel CSV.</div>
-                    {wizPdfFiles.length > 0 && (
-                      <div className="badge bg-primary mt-2 p-2">
-                        <i className="fas fa-file-pdf me-1"></i> {wizPdfFiles.length} allegati PDF pronti per il caricamento
-                      </div>
-                    )}
-                  </div>
+
 
                   <div className="mt-4 pt-3 border-top d-flex justify-content-between">
                     <button className="btn btn-outline-secondary" onClick={() => setWizStep(1)}>
@@ -2127,6 +2112,33 @@ export function App(): React.JSX.Element {
                           return wizValidRows[0]?.[key] || match;
                         })}
                       </div>
+                    </div>
+                  </div>
+
+                  <div className="card shadow-sm border-warning mb-4">
+                    <div className="card-header bg-warning-subtle py-2">
+                      <h5 className="card-title small fw-bold mb-0 text-warning-emphasis">
+                        <i className="fas fa-paperclip me-1"></i> Carica gli Allegati PDF per questa Spedizione
+                      </h5>
+                    </div>
+                    <div className="card-body p-3">
+                      <p className="small text-muted mb-2">
+                        Seleziona o trascina qui i file PDF degli avvisi individuali (es. estratti dal desktop).
+                        Il nome del file PDF deve corrispondere a quello indicato nella colonna mappata del CSV.
+                      </p>
+                      <input
+                        type="file"
+                        accept=".pdf"
+                        multiple
+                        className="form-control form-control-sm"
+                        onChange={e => setWizPdfFiles(Array.from(e.target.files || []))}
+                      />
+                      <div className="form-text small text-muted">Puoi selezionare e caricare più file PDF contemporaneamente.</div>
+                      {wizPdfFiles.length > 0 && (
+                        <div className="badge bg-primary mt-2 p-2 w-100 text-start">
+                          <i className="fas fa-file-pdf me-1"></i> {wizPdfFiles.length} allegati PDF pronti per il caricamento
+                        </div>
+                      )}
                     </div>
                   </div>
 
