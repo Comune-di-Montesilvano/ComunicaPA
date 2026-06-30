@@ -6,7 +6,7 @@ import type { Job } from 'bullmq';
 import type { NotificationJobData, NotificationChannel } from '@comunicapa/shared-types';
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity';
 import { Campaign, CampaignStatus } from '../entities/campaign.entity';
-import { Recipient } from '../entities/recipient.entity';
+import { Recipient, RecipientStatus } from '../entities/recipient.entity';
 import { CHANNEL_STRATEGIES, IChannelStrategy } from '../channels/channel.interface';
 import { NOTIFICATION_QUEUE } from './notification-job.types';
 
@@ -53,12 +53,16 @@ export class NotificationProcessor extends WorkerHost {
 
     // QUEUED → RUNNING (atomic, solo il primo worker che elabora vince)
     if (campaign.status === CampaignStatus.QUEUED) {
-      await this.campaignRepo
+      const runningResult = await this.campaignRepo
         .createQueryBuilder()
         .update()
         .set({ status: CampaignStatus.RUNNING })
         .where('id = :id AND status = :queued', { id: campaignId, queued: CampaignStatus.QUEUED })
         .execute();
+      if (runningResult.affected === 0) {
+        // Un altro worker ha già avviato la campagna — ok, prosegui
+        this.logger.debug(`Campaign ${campaignId} già in RUNNING da altro worker`);
+      }
     }
 
     await this.attemptRepo.update(attemptId, { status: AttemptStatus.PROCESSING });
@@ -74,6 +78,7 @@ export class NotificationProcessor extends WorkerHost {
         responsePayload: (result.responsePayload ?? null) as unknown as {},
       });
       await this.campaignRepo.increment({ id: campaignId }, 'sentCount', 1);
+      await this.recipientRepo.update(recipientId, { status: RecipientStatus.SENT });
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       await this.attemptRepo.update(attemptId, {
@@ -81,6 +86,7 @@ export class NotificationProcessor extends WorkerHost {
         errorMessage: msg,
       });
       await this.campaignRepo.increment({ id: campaignId }, 'failedCount', 1);
+      await this.recipientRepo.update(recipientId, { status: RecipientStatus.FAILED });
       throw error;
     } finally {
       await this.checkAndCompleteCampaign(campaignId);
@@ -99,12 +105,13 @@ export class NotificationProcessor extends WorkerHost {
     const finalStatus =
       campaign.sentCount === 0 ? CampaignStatus.FAILED : CampaignStatus.COMPLETED;
 
-    // Atomic: WHERE status = 'running' — solo un worker completa la campagna
+    // Atomic: WHERE status = 'running' + contatori completi — solo un worker completa la campagna
     await this.campaignRepo
       .createQueryBuilder()
       .update()
       .set({ status: finalStatus, completedAt: new Date() })
       .where('id = :id AND status = :running', { id: campaignId, running: CampaignStatus.RUNNING })
+      .andWhere('sent_count + failed_count >= total_recipients')
       .execute();
 
     this.logger.log(`Campaign ${campaignId} → ${finalStatus}`);

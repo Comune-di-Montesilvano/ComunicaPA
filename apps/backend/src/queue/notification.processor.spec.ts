@@ -5,7 +5,7 @@ import type { Job } from 'bullmq';
 import { NotificationProcessor } from './notification.processor';
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity';
 import { Campaign, CampaignStatus } from '../entities/campaign.entity';
-import { Recipient } from '../entities/recipient.entity';
+import { Recipient, RecipientStatus } from '../entities/recipient.entity';
 import { CHANNEL_STRATEGIES } from '../channels/channel.interface';
 import { NOTIFICATION_QUEUE } from './notification-job.types';
 import type { NotificationJobData } from '@comunicapa/shared-types';
@@ -22,6 +22,7 @@ const mockCampaignRepo = {
 
 const mockRecipientRepo = {
   findOne: jest.fn(),
+  update: jest.fn(),
 };
 
 const mockStrategy = {
@@ -66,6 +67,7 @@ describe('NotificationProcessor', () => {
     update: jest.fn().mockReturnThis(),
     set: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
     execute: jest.fn().mockResolvedValue({ affected: 1 }),
   };
 
@@ -74,6 +76,7 @@ describe('NotificationProcessor', () => {
 
     mockCampaignRepo.findOne.mockResolvedValue(mockCampaign);
     mockRecipientRepo.findOne.mockResolvedValue(mockRecipient);
+    mockRecipientRepo.update.mockResolvedValue(undefined);
     mockCampaignRepo.increment.mockResolvedValue(undefined);
     mockCampaignRepo.createQueryBuilder.mockReturnValue(mockQb);
     mockStrategy.send.mockResolvedValue({ messageId: 'msg-001', responsePayload: {} });
@@ -106,6 +109,7 @@ describe('NotificationProcessor', () => {
       responsePayload: expect.any(Object),
     }));
     expect(mockCampaignRepo.increment).toHaveBeenCalledWith({ id: 'camp-1' }, 'sentCount', 1);
+    expect(mockRecipientRepo.update).toHaveBeenCalledWith('rec-1', { status: RecipientStatus.SENT });
   });
 
   it('process() aggiorna attempt PROCESSING → FAILED e rilancia se strategy lancia', async () => {
@@ -118,11 +122,45 @@ describe('NotificationProcessor', () => {
       errorMessage: 'SMTP timeout',
     }));
     expect(mockCampaignRepo.increment).toHaveBeenCalledWith({ id: 'camp-1' }, 'failedCount', 1);
+    expect(mockRecipientRepo.update).toHaveBeenCalledWith('rec-1', { status: RecipientStatus.FAILED });
   });
 
   it('process() lancia Error se nessuna strategy per channel', async () => {
     const data: NotificationJobData = { ...baseData, channel: 'POSTAL' };
 
     await expect(processor.process(mockJob(data))).rejects.toThrow('Nessuna strategy per channel POSTAL');
+  });
+
+  describe('checkAndCompleteCampaign', () => {
+    it('should set campaign COMPLETED when all recipients processed', async () => {
+      mockCampaignRepo.findOne.mockResolvedValueOnce({
+        id: 'camp-1',
+        status: CampaignStatus.RUNNING,
+        sentCount: 2,
+        failedCount: 0,
+        totalRecipients: 2,
+      });
+      mockQb.execute.mockResolvedValueOnce({ affected: 1 });
+
+      await (processor as any).checkAndCompleteCampaign('camp-1');
+
+      expect(mockCampaignRepo.createQueryBuilder).toHaveBeenCalled();
+      expect(mockQb.andWhere).toHaveBeenCalledWith('sent_count + failed_count >= total_recipients');
+      expect(mockQb.execute).toHaveBeenCalled();
+    });
+
+    it('should not complete campaign when recipients still pending', async () => {
+      mockCampaignRepo.findOne.mockResolvedValueOnce({
+        id: 'camp-1',
+        status: CampaignStatus.RUNNING,
+        sentCount: 1,
+        failedCount: 0,
+        totalRecipients: 2,
+      });
+
+      await (processor as any).checkAndCompleteCampaign('camp-1');
+
+      expect(mockCampaignRepo.createQueryBuilder).not.toHaveBeenCalled();
+    });
   });
 });
