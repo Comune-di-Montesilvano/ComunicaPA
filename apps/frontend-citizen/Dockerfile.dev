@@ -1,0 +1,17 @@
+FROM node:22-alpine
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+COPY package.json pnpm-workspace.yaml .npmrc pnpm.yaml ./
+COPY packages/shared-types/package.json ./packages/shared-types/
+COPY apps/frontend-citizen/package.json ./apps/frontend-citizen/
+
+# Install senza script + rebuild esbuild (necessario per il binary nativo di Vite)
+RUN pnpm install --ignore-scripts && pnpm rebuild esbuild
+
+COPY . .
+
+EXPOSE 3001
+# Usa il binario direttamente — bypassa il deps-check di pnpm v11 al runtime
+WORKDIR /app/apps/frontend-citizen
+CMD ["node_modules/.bin/vite"]

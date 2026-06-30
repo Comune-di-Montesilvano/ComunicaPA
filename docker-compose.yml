@@ -1,0 +1,114 @@
+name: comunicapa
+
+services:
+
+  # ── Infrastruttura ────────────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: comunicapa-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - comunicapa-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: comunicapa-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - comunicapa-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Applicazioni ──────────────────────────────────────────────────────────
+
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile.dev
+    container_name: comunicapa-backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    environment:
+      NODE_ENV: development
+      PORT: "8080"
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - ./apps/backend/src:/app/apps/backend/src:delegated
+      - ./packages/shared-types/src:/app/packages/shared-types/src:delegated
+      - backend_node_modules:/app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - comunicapa-net
+
+  frontend-admin:
+    build:
+      context: .
+      dockerfile: apps/frontend-admin/Dockerfile.dev
+    container_name: comunicapa-frontend-admin
+    restart: unless-stopped
+    ports:
+      - "${ADMIN_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./apps/frontend-admin/src:/app/apps/frontend-admin/src:delegated
+      - ./packages/shared-types/src:/app/packages/shared-types/src:delegated
+      - admin_node_modules:/app/node_modules
+    networks:
+      - comunicapa-net
+
+  frontend-citizen:
+    build:
+      context: .
+      dockerfile: apps/frontend-citizen/Dockerfile.dev
+    container_name: comunicapa-frontend-citizen
+    restart: unless-stopped
+    ports:
+      - "${CITIZEN_PORT:-3001}:3001"
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./apps/frontend-citizen/src:/app/apps/frontend-citizen/src:delegated
+      - ./packages/shared-types/src:/app/packages/shared-types/src:delegated
+      - citizen_node_modules:/app/node_modules
+    networks:
+      - comunicapa-net
+
+volumes:
+  postgres_data:
+  redis_data:
+  backend_node_modules:
+  admin_node_modules:
+  citizen_node_modules:
+
+networks:
+  comunicapa-net:
+    driver: bridge
