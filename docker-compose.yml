@@ -72,10 +72,12 @@ services:
       OIDC_JWKS_URI: ${OIDC_JWKS_URI:-}
       ADMIN_ORIGIN: http://localhost:${ADMIN_PORT:-3000}
       CITIZEN_ORIGIN: http://localhost:${CITIZEN_PORT:-3001}
+      PDF_STORAGE_PATH: /data/attachments
     volumes:
       - ./apps/backend/src:/app/apps/backend/src:delegated
       - ./packages/shared-types/src:/app/packages/shared-types/src:delegated
       - backend_node_modules:/app/node_modules
+      - pdf_storage:/data/attachments
     depends_on:
       postgres:
         condition: service_healthy
@@ -124,6 +126,7 @@ volumes:
   backend_node_modules:
   admin_node_modules:
   citizen_node_modules:
+  pdf_storage:
 
 networks:
   comunicapa-net:
