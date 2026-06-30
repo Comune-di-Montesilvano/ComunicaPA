@@ -115,6 +115,7 @@ export function App(): React.JSX.Element {
   const [wizMapping, setWizMapping] = useState({
     codice_fiscale: '',
     full_name: '',
+    full_name_2: '',
     email: '',
     pec: '',
     allegato1: '',
@@ -125,6 +126,13 @@ export function App(): React.JSX.Element {
   const [wizBody, setWizBody] = useState('');
   const [wizPreviewIndex, setWizPreviewIndex] = useState(0);
   const [wizSending, setWizSending] = useState(false);
+
+  const getWizRowFullName = (row: Record<string, string>) => {
+    if (!row) return '';
+    const fn1 = row[wizMapping.full_name] || '';
+    const fn2 = wizMapping.full_name_2 ? (row[wizMapping.full_name_2] || '') : '';
+    return [fn1, fn2].filter(Boolean).join(' ');
+  };
 
   // Settings State (loaded from localStorage or defaults)
   const [settEntityName, setSettEntityName] = useState(localStorage.getItem('sett_entity_name') || 'Comune di Montesilvano');
@@ -740,6 +748,7 @@ export function App(): React.JSX.Element {
       const newMapping = {
         codice_fiscale: '',
         full_name: '',
+        full_name_2: '',
         email: '',
         pec: '',
         allegato1: '',
@@ -747,10 +756,16 @@ export function App(): React.JSX.Element {
       headers.forEach(h => {
         const hLower = h.toLowerCase().replace(/[\s_-]/g, '');
         if (hLower === 'cf' || hLower === 'codicefiscale') newMapping.codice_fiscale = h;
-        else if (hLower === 'nome' || hLower === 'nominativo' || hLower === 'fullname' || hLower === 'nomecompleto') newMapping.full_name = h;
+        else if (hLower === 'cognome' || hLower === 'nominativo' || hLower === 'fullname' || hLower === 'nomecompleto' || hLower === 'nome') {
+          if (!newMapping.full_name) {
+            newMapping.full_name = h;
+          } else {
+            newMapping.full_name_2 = h;
+          }
+        }
         else if (hLower === 'email' || hLower === 'mail') newMapping.email = h;
         else if (hLower === 'pec') newMapping.pec = h;
-        else if (hLower === 'allegato1' || hLower === 'documento' || hLower === 'avviso') newMapping.allegato1 = h;
+        else if (hLower === 'allegato1' || hLower === 'documento' || hLower === 'avviso' || hLower === 'pdf') newMapping.allegato1 = h;
       });
       setWizMapping(newMapping);
     };
@@ -767,6 +782,7 @@ export function App(): React.JSX.Element {
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const cfRegex = /^[A-Z0-9]{16}$/i;
+    const pivaRegex = /^\d{11}$/;
 
     const cfField = wizMapping.codice_fiscale;
     const emailField = wizMapping.email;
@@ -785,7 +801,8 @@ export function App(): React.JSX.Element {
         errors.push({ row: rowNum, field: 'Mappatura', val: '', err: 'La colonna Email deve essere mappata per il canale EMAIL' });
         isRowValid = false;
       } else if (emailField && row[emailField]) {
-        if (!emailRegex.test(row[emailField])) {
+        const valClean = row[emailField].trim();
+        if (valClean && !emailRegex.test(valClean)) {
           errors.push({ row: rowNum, field: 'Email', val: row[emailField], err: 'Formato e-mail non valido' });
           isRowValid = false;
         }
@@ -799,7 +816,8 @@ export function App(): React.JSX.Element {
         errors.push({ row: rowNum, field: 'Mappatura', val: '', err: 'La colonna PEC deve essere mappata per il canale PEC' });
         isRowValid = false;
       } else if (pecField && row[pecField]) {
-        if (!emailRegex.test(row[pecField])) {
+        const valClean = row[pecField].trim();
+        if (valClean && !emailRegex.test(valClean)) {
           errors.push({ row: rowNum, field: 'PEC', val: row[pecField], err: 'Formato PEC non valido' });
           isRowValid = false;
         }
@@ -808,17 +826,20 @@ export function App(): React.JSX.Element {
         isRowValid = false;
       }
 
-      // Validate Codice Fiscale
+      // Validate Codice Fiscale / Partita IVA
       if (isCfMandatory && !cfField) {
-        errors.push({ row: rowNum, field: 'Mappatura', val: '', err: 'La colonna Codice Fiscale deve essere mappata per questo canale' });
+        errors.push({ row: rowNum, field: 'Mappatura', val: '', err: 'La colonna Codice Fiscale / P.IVA deve essere mappata' });
         isRowValid = false;
       } else if (cfField && row[cfField]) {
-        if (!cfRegex.test(row[cfField])) {
-          errors.push({ row: rowNum, field: 'Codice Fiscale', val: row[cfField], err: 'Codice Fiscale non valido (16 caratteri)' });
+        const valClean = row[cfField].trim().replace(/\s/g, '');
+        const isCf = cfRegex.test(valClean);
+        const isPiva = pivaRegex.test(valClean);
+        if (!isCf && !isPiva) {
+          errors.push({ row: rowNum, field: 'Codice Fiscale / P.IVA', val: row[cfField], err: 'Codice Fiscale (16 caratteri) o P.IVA (11 cifre) non valida' });
           isRowValid = false;
         }
       } else if (isCfMandatory && !row[cfField]) {
-        errors.push({ row: rowNum, field: 'Codice Fiscale', val: '', err: 'Codice Fiscale mancante' });
+        errors.push({ row: rowNum, field: 'Codice Fiscale', val: '', err: 'Codice Fiscale o P.IVA mancante' });
         isRowValid = false;
       }
 
@@ -834,6 +855,36 @@ export function App(): React.JSX.Element {
     if (errors.length === 0) {
       setWizStep(4);
     }
+  };
+
+  const downloadErrorsCsv = () => {
+    if (wizValidationErrors.length === 0) return;
+    const errorRows = wizCsvRows.filter((_, idx) => {
+      return wizValidationErrors.some(err => err.row === idx + 1);
+    });
+    const headers = [...wizCsvHeaders, 'Motivo Errore'];
+    const lines = [headers.map(h => `"${String(h).replace(/"/g, '""')}"`).join(',')];
+    errorRows.forEach((row) => {
+      const realIndex = wizCsvRows.indexOf(row);
+      const rowNum = realIndex + 1;
+      const rowErrors = wizValidationErrors
+        .filter(err => err.row === rowNum)
+        .map(err => `${err.field}: ${err.err}`)
+        .join('; ');
+      const lineValues = wizCsvHeaders.map(h => row[h] || '');
+      lineValues.push(rowErrors);
+      const line = lineValues.map(val => `"${String(val).replace(/"/g, '""')}"`).join(',');
+      lines.push(line);
+    });
+    const csvContent = lines.join('\n');
+    const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `errori_validazione_${wizCsvFile?.name || 'campagna'}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleWizLaunch = async () => {
@@ -902,6 +953,7 @@ export function App(): React.JSX.Element {
       const extraHeaders = wizCsvHeaders.filter(h => 
         h !== wizMapping.codice_fiscale && 
         h !== wizMapping.full_name && 
+        h !== wizMapping.full_name_2 && 
         h !== wizMapping.email && 
         h !== wizMapping.pec
       );
@@ -909,7 +961,11 @@ export function App(): React.JSX.Element {
       const headerLine = ['codice_fiscale', 'full_name', 'email', 'pec', ...extraHeaders].join(',');
       const rowLines = wizValidRows.map(row => {
         const cf = row[wizMapping.codice_fiscale] || '';
-        const fn = row[wizMapping.full_name] || '';
+        
+        const fn1 = row[wizMapping.full_name] || '';
+        const fn2 = wizMapping.full_name_2 ? (row[wizMapping.full_name_2] || '') : '';
+        const fn = [fn1, fn2].filter(Boolean).join(' ');
+
         const email = row[wizMapping.email] || '';
         const pec = row[wizMapping.pec] || '';
         const extra = extraHeaders.map(h => row[h] || '');
@@ -969,6 +1025,7 @@ export function App(): React.JSX.Element {
       setWizMapping({
         codice_fiscale: '',
         full_name: '',
+        full_name_2: '',
         email: '',
         pec: '',
         allegato1: '',
@@ -1841,13 +1898,26 @@ export function App(): React.JSX.Element {
                     </div>
 
                     <div className="col-md-6">
-                      <label className="form-label small fw-semibold text-muted">Nominativo Completo</label>
+                      <label className="form-label small fw-bold">Nominativo (Cognome o Completo) *</label>
                       <select
                         className="form-select form-select-sm"
                         value={wizMapping.full_name}
                         onChange={e => handleWizMappingChange('full_name', e.target.value)}
+                        required
                       >
-                        <option value="">-- Seleziona Colonna Nome --</option>
+                        <option value="">-- Seleziona Colonna Cognome/Completo --</option>
+                        {wizCsvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                      </select>
+                    </div>
+
+                    <div className="col-md-6">
+                      <label className="form-label small fw-semibold text-muted">Nominativo (Nome - Opzionale)</label>
+                      <select
+                        className="form-select form-select-sm"
+                        value={wizMapping.full_name_2}
+                        onChange={e => handleWizMappingChange('full_name_2', e.target.value)}
+                      >
+                        <option value="">-- Seleziona Colonna Nome (Opzionale) --</option>
                         {wizCsvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
                       </select>
                     </div>
@@ -1901,8 +1971,18 @@ export function App(): React.JSX.Element {
 
                     {wizValidationErrors.length > 0 && (
                       <div className="mt-3">
-                        <div className="alert alert-warning py-2 small mb-3">
-                          <i className="fas fa-exclamation-triangle me-1"></i> Trovati <strong>{wizValidationErrors.length}</strong> errori di validazione formale! I record con errori verranno esclusi dall'invio.
+                        <div className="alert alert-warning py-2 small mb-3 d-flex justify-content-between align-items-center">
+                          <div>
+                            <i className="fas fa-exclamation-triangle me-1"></i> Trovati <strong>{wizValidationErrors.length}</strong> errori di validazione formale! I record con errori verranno esclusi dall'invio.
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-danger fw-bold ms-3"
+                            style={{ fontSize: '0.8rem' }}
+                            onClick={downloadErrorsCsv}
+                          >
+                            <i className="fas fa-download me-1"></i> Scarica Righe Errate (CSV)
+                          </button>
                         </div>
                         <div className="table-responsive" style={{ maxHeight: '200px' }}>
                           <table className="table table-striped table-sm align-middle mb-0" style={{ fontSize: '0.78rem' }}>
@@ -2049,7 +2129,7 @@ export function App(): React.JSX.Element {
                           <strong>A:</strong> {wizValidRows[wizPreviewIndex][wizMapping.email || ''] || wizValidRows[wizPreviewIndex][wizMapping.pec || ''] || 'N/A'}<br />
                           <strong>Oggetto:</strong> {wizSubject.replace(/%([^%()]+)%/gi, (match, key) => {
                             const k = key.toLowerCase().trim();
-                            if (k === 'nominativo' || k === 'full_name') return wizValidRows[wizPreviewIndex][wizMapping.full_name] || '';
+                            if (k === 'nominativo' || k === 'full_name') return getWizRowFullName(wizValidRows[wizPreviewIndex]);
                             if (k === 'codice_fiscale' || k === 'cf') return wizValidRows[wizPreviewIndex][wizMapping.codice_fiscale] || '';
                             return wizValidRows[wizPreviewIndex][key] || match;
                           })}
@@ -2063,7 +2143,7 @@ export function App(): React.JSX.Element {
                               .replace(/%parametro\d+\(mappato"([^"]+)"\)%/gi, (match, key) => wizValidRows[wizPreviewIndex][key] || '')
                               .replace(/%([^%()]+)%/gi, (match, key) => {
                                 const k = key.toLowerCase().trim();
-                                if (k === 'nominativo' || k === 'full_name') return wizValidRows[wizPreviewIndex][wizMapping.full_name] || '';
+                                if (k === 'nominativo' || k === 'full_name') return getWizRowFullName(wizValidRows[wizPreviewIndex]);
                                 if (k === 'codice_fiscale' || k === 'cf') return wizValidRows[wizPreviewIndex][wizMapping.codice_fiscale] || '';
                                 return wizValidRows[wizPreviewIndex][key] || match;
                               })}
@@ -2107,7 +2187,7 @@ export function App(): React.JSX.Element {
                       <div className="p-2 border bg-white rounded mt-1 small text-muted">
                         {wizSubject.replace(/%([^%()]+)%/gi, (match, key) => {
                           const k = key.toLowerCase().trim();
-                          if (k === 'nominativo' || k === 'full_name') return wizValidRows[0]?.[wizMapping.full_name] || '';
+                          if (k === 'nominativo' || k === 'full_name') return getWizRowFullName(wizValidRows[0]);
                           if (k === 'codice_fiscale' || k === 'cf') return wizValidRows[0]?.[wizMapping.codice_fiscale] || '';
                           return wizValidRows[0]?.[key] || match;
                         })}
