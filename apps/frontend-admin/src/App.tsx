@@ -1603,16 +1603,16 @@ export function App(): React.JSX.Element {
             </div>
           )}
 
-          {/* VIEW: INVIO MASSIVO */}
+              {/* VIEW: INVIO MASSIVO */}
           {view === 'invio-massivo' && (
             <div className="row g-4">
-              <div className="col-lg-8">
+              <div className="col-12">
                 <div className="card shadow-sm h-100">
                   <div className="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
                     <h3 className="h6 mb-0 fw-bold text-dark"><i className="fas fa-list me-2 text-primary"></i>Campagne Massive</h3>
                     <div className="d-flex align-items-center gap-2">
                       <button className="btn btn-sm btn-primary" onClick={() => { setWizStep(1); setView('invio-massivo-wizard'); }}>
-                        <i className="fas fa-magic me-1"></i> Crea con Wizard
+                        <i className="fas fa-magic me-1"></i> Crea Nuova Campagna (Wizard)
                       </button>
                       <button className="btn btn-outline-secondary btn-sm border-0" onClick={fetchCampaigns}><i className="fas fa-sync-alt"></i></button>
                     </div>
@@ -1666,122 +1666,6 @@ export function App(): React.JSX.Element {
                         </table>
                       </div>
                     )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Creator Form */}
-              <div className="col-lg-4">
-                <div className="card shadow-sm h-100">
-                  <div className="card-header bg-white py-3 border-bottom">
-                    <h3 className="h6 mb-0 fw-bold text-dark"><i className="fas fa-plus-circle me-2 text-primary"></i>Nuova Campagna Massiva</h3>
-                  </div>
-                  <div className="card-body">
-                    <form onSubmit={handleNewCampaignSubmit}>
-                      <div className="mb-3">
-                        <label className="form-label small fw-bold text-dark" htmlFor="cm_name">Nome della Campagna</label>
-                        <input
-                          type="text"
-                          id="cm_name"
-                          className="form-control form-control-sm"
-                          placeholder="Es: TARI 2026 Montesilvano"
-                          value={newCampaignName}
-                          onChange={(e) => setNewCampaignName(e.target.value)}
-                          required
-                        />
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label small fw-bold text-dark" htmlFor="cm_desc">Contenuto dell'Avviso</label>
-                        <textarea
-                          id="cm_desc"
-                          className="form-control form-control-sm"
-                          rows={4}
-                          placeholder="Digita il testo istituzionale del messaggio..."
-                          value={newCampaignDesc}
-                          onChange={(e) => setNewCampaignDesc(e.target.value)}
-                          required
-                        ></textarea>
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label small fw-bold text-dark" htmlFor="cm_channel">Canale di Invio</label>
-                        <select
-                          id="cm_channel"
-                          className="form-select form-select-sm"
-                          value={newCampaignChannel}
-                          onChange={(e: any) => setNewCampaignChannel(e.target.value)}
-                        >
-                          <option value="EMAIL">EMAIL</option>
-                          <option value="PEC">PEC</option>
-                          <option value="APP_IO">APP IO (PagoPA)</option>
-                          <option value="SEND">SEND</option>
-                          <option value="POSTAL">POSTAL</option>
-                        </select>
-                      </div>
-
-                      {(newCampaignChannel === 'EMAIL' || newCampaignChannel === 'PEC') && (
-                        <>
-                          <div className="mb-3 border-top pt-3">
-                            <label className="form-label small fw-bold text-dark" htmlFor="cm_subject">Oggetto E-mail/PEC</label>
-                            <input
-                              type="text"
-                              id="cm_subject"
-                              className="form-control form-control-sm"
-                              placeholder="Es: Avviso Scadenza TARI 2026 - %nominativo%"
-                              value={newCampaignSubject}
-                              onChange={(e) => setNewCampaignSubject(e.target.value)}
-                              required
-                            />
-                          </div>
-                          <div className="mb-3">
-                            <label className="form-label small fw-bold text-dark" htmlFor="cm_body">Corpo E-mail/PEC</label>
-                            <textarea
-                              id="cm_body"
-                              className="form-control form-control-sm"
-                              rows={6}
-                              placeholder="Gentile %nominativo%, le notifichiamo la scadenza Tari. Scarichi l'avviso completo qui: %allegato1%..."
-                              value={newCampaignBody}
-                              onChange={(e) => setNewCampaignBody(e.target.value)}
-                              required
-                            ></textarea>
-                            <div className="border rounded bg-light p-2 mt-2" style={{ fontSize: '0.78rem' }}>
-                              <strong className="text-dark d-block mb-1"><i className="fas fa-info-circle text-primary me-1"></i>Placeholder supportati:</strong>
-                              <ul className="ps-3 mb-0 text-muted">
-                                <li><code>%allegato1%</code>: Link di download avviso</li>
-                                <li><code>%nominativo%</code> / <code>%codice_fiscale%</code>: Anagrafica destinatario</li>
-                                <li><code>%NOME_COLONNA%</code>: Variabile dinamica da CSV (es: <code>%importo%</code>, <code>%scadenza%</code>)</li>
-                              </ul>
-                            </div>
-                          </div>
-                        </>
-                      )}
-
-                      {newCampaignChannel === 'APP_IO' && (
-                        <div className="mb-4">
-                          <label className="form-label small fw-bold text-dark" htmlFor="cm_io_svc">Servizio App IO Associato</label>
-                          <select
-                            id="cm_io_svc"
-                            className="form-select form-select-sm"
-                            value={selectedAppIoServiceId}
-                            onChange={(e) => setSelectedAppIoServiceId(e.target.value)}
-                            required
-                          >
-                            {ioServices.map(s => (
-                              <option key={s.id} value={s.id_service}>
-                                {s.nome} {s.is_default ? '(Predefinito)' : ''}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-
-                      <button
-                        type="submit"
-                        className="btn btn-primary w-100 py-2 fw-bold"
-                        style={{ backgroundColor: 'var(--bi-primary)', border: 'none' }}
-                      >
-                        <i className="fas fa-plus me-2"></i> Crea Campagna
-                      </button>
-                    </form>
                   </div>
                 </div>
               </div>
