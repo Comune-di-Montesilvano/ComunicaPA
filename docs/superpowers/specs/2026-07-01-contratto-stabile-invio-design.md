@@ -5,6 +5,8 @@
 
 **Vincolo**: l'invio del batch TARI attende il completamento di questo contratto (deciso dall'utente).
 
+**Vincolo aggiuntivo**: il wizard guidato è l'unico punto di modifica di una campagna in stato `DRAFT`. Nessun editor/form alternativo (già rimosso in `e001d98`, vedi nota punto 3).
+
 ## Stato attuale (audit)
 
 | Area | Stato pre-design |
@@ -45,6 +47,15 @@
 - Regola: se `campaign.status !== 'DRAFT'`, il `PATCH` su `channelConfig` (subject/body/appIo config) risponde `409 Conflict`
 - `CANCELLED` è terminale e irreversibile: nessuna transizione di uscita. Per modificare un template già lanciato, l'operatore annulla la campagna corrente e ne crea una nuova (dati CSV/mapping riutilizzabili dal wizard, ma nuova entità campagna)
 - Nessuna tabella di versioning separata: il "congelamento" è lo stato stesso della campagna
+- Unico punto di scrittura di `channelConfig`: step del wizard guidato. Nessun form/editor alternativo di modifica campagna (coerente con `e001d98`, che ha già rimosso il vecchio quick creator) — nessuna API di editing esposta fuori dal flusso wizard
+
+## 3bis. Editor template — WYSIWYG responsive
+
+- Nello step del wizard dedicato al template (subject/body), sostituire la textarea semplice con editor rich-text WYSIWYG (libreria leggera, es. Tiptap)
+- L'editor salva HTML (compatibile col motore esistente `template.helper.ts` → `wrapInHtmlLayout` + placeholder `%allegato1%`, `%nominativo%`, ecc.)
+- Toolbar minima: grassetto/corsivo, liste, link, inserimento placeholder da menu a discesa (niente digitazione manuale di `%variabile%`)
+- Preview live a fianco dell'editor, con toggle desktop/mobile (viewport ridotto) per verificare la resa responsive prima del lancio
+- L'HTML generato passa dallo stesso `wrapInHtmlLayout` già usato in produzione — nessun nuovo motore di rendering, solo nuovo input UI
 
 ## 4. Statistiche download
 
