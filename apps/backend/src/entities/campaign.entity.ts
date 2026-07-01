@@ -41,6 +41,9 @@ export class Campaign {
   @Column({ type: 'jsonb', name: 'channel_config', default: {} })
   channelConfig!: Record<string, unknown>;
 
+  @Column({ type: 'int', name: 'retention_days', nullable: true })
+  retentionDays!: number | null;
+
   @Column({ name: 'created_by', length: 255 })
   createdBy!: string;
 

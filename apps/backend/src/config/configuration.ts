@@ -54,10 +54,17 @@ export interface AppConfiguration {
   origins: {
     admin: string;
     citizen: string;
+    publicApi: string;
   };
   brand: {
     name: string;
     logo: string;
+  };
+  retention: {
+    maxDays: number;
+  };
+  downloadLink: {
+    secret: string;
   };
 }
 
@@ -117,9 +124,16 @@ export default (): AppConfiguration => ({
   origins: {
     admin: process.env['ADMIN_ORIGIN'] ?? 'http://localhost:3000',
     citizen: process.env['CITIZEN_ORIGIN'] ?? 'http://localhost:3001',
+    publicApi: process.env['PUBLIC_BACKEND_URL'] ?? 'http://localhost:8080',
   },
   brand: {
     name: process.env['BRAND_NAME'] ?? 'Comune di Montesilvano',
     logo: process.env['BRAND_LOGO'] ?? 'brand-logo.png',
+  },
+  retention: {
+    maxDays: parseInt(process.env['RETENTION_MAX_DAYS'] ?? '90', 10),
+  },
+  downloadLink: {
+    secret: process.env['DOWNLOAD_LINK_SECRET'] ?? 'change-me-in-production',
   },
 });
