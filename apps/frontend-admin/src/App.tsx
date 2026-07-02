@@ -231,6 +231,11 @@ export function App(): React.JSX.Element {
   const [settSendUrl, setSettSendUrl] = useState('https://api.notifichedigitali.it');
   const [settRetentionDays, setSettRetentionDays] = useState('90');
 
+  const [settPublicUrl, setSettPublicUrl] = useState('');
+  const [settOidcIssuer, setSettOidcIssuer] = useState('');
+  const [settOidcAudience, setSettOidcAudience] = useState('');
+  const [settOidcJwksUri, setSettOidcJwksUri] = useState('');
+
   const [settProtoProvider, setSettProtoProvider] = useState(localStorage.getItem('sett_proto_provider') || 'Maggioli');
   const [settProtoUrl, setSettProtoUrl] = useState(localStorage.getItem('sett_proto_url') || 'https://protocollo.comune.montesilvano.pe.it/api');
   const [settProtoUser, setSettProtoUser] = useState(localStorage.getItem('sett_proto_user') || 'api_user');
@@ -240,7 +245,7 @@ export function App(): React.JSX.Element {
   const [settPostalKey, setSettPostalKey] = useState(localStorage.getItem('sett_postal_key') || '');
   const [settPostalUrl, setSettPostalUrl] = useState(localStorage.getItem('sett_postal_url') || 'https://gateway.postel.it/postalization');
 
-  const [activeSettingsTab, setActiveSettingsTab] = useState<'personalizzazione' | 'smtp' | 'pec' | 'app-io' | 'send' | 'protocollo' | 'postalizzazione'>('personalizzazione');
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'personalizzazione' | 'smtp' | 'pec' | 'app-io' | 'send' | 'protocollo' | 'postalizzazione' | 'oidc'>('personalizzazione');
   const [settingsSavedMessage, setSettingsSavedMessage] = useState<string | null>(null);
 
   // Campaign detail state
@@ -320,6 +325,10 @@ export function App(): React.JSX.Element {
         setSettSendApiKey(String(s['send.apiKey'] ?? ''));
         setSettSendUrl(String(s['send.baseUrl'] ?? ''));
         setSettRetentionDays(String(s['retention.maxDays'] ?? '90'));
+        setSettPublicUrl(String(s['system.publicUrl'] ?? ''));
+        setSettOidcIssuer(String(s['oidc.issuer'] ?? ''));
+        setSettOidcAudience(String(s['oidc.audience'] ?? ''));
+        setSettOidcJwksUri(String(s['oidc.jwksUri'] ?? ''));
       })
       .catch(() => { /* backend non raggiungibile: la pagina resta editabile */ });
   }, [token]);
@@ -673,6 +682,10 @@ export function App(): React.JSX.Element {
             'send.apiKey': settSendApiKey,
             'send.baseUrl': settSendUrl,
             'retention.maxDays': Number(settRetentionDays) || 90,
+            'system.publicUrl': settPublicUrl,
+            'oidc.issuer': settOidcIssuer,
+            'oidc.audience': settOidcAudience,
+            'oidc.jwksUri': settOidcJwksUri,
           },
         }),
       });
@@ -2534,6 +2547,15 @@ export function App(): React.JSX.Element {
                     >
                       <i className="fas fa-mail-bulk me-2"></i>Postalizzazione
                     </button>
+
+                    <span className="imp-section-title">Sicurezza</span>
+                    <button
+                      type="button"
+                      className={`nav-link border-0 text-start bg-transparent ${activeSettingsTab === 'oidc' ? 'active' : ''}`}
+                      onClick={() => setActiveSettingsTab('oidc')}
+                    >
+                      <i className="fas fa-id-badge me-2"></i>SPID / CIE (OIDC)
+                    </button>
                   </nav>
                 </div>
 
@@ -2548,6 +2570,7 @@ export function App(): React.JSX.Element {
                         {activeSettingsTab === 'send' && 'Integrazione SEND (Digital Delivery)'}
                         {activeSettingsTab === 'protocollo' && 'Connettore Protocollo Informatico'}
                         {activeSettingsTab === 'postalizzazione' && 'Postalizzazione Cartacea Istituzionale'}
+                        {activeSettingsTab === 'oidc' && 'SPID / CIE (OIDC) - Autenticazione Cittadini'}
                       </h3>
                     </div>
                     <div className="card-body p-4">
@@ -2592,6 +2615,17 @@ export function App(): React.JSX.Element {
                               <label className="form-label">Conservazione allegati (giorni)</label>
                               <input type="number" min={1} className="form-control" value={settRetentionDays}
                                 onChange={(e) => setSettRetentionDays(e.target.value)} />
+                            </div>
+                            <div className="mb-3">
+                              <label className="form-label small fw-bold text-dark" htmlFor="sett_public_url">URL pubblico API</label>
+                              <input
+                                type="text"
+                                id="sett_public_url"
+                                className="form-control form-control-sm"
+                                value={settPublicUrl}
+                                onChange={(e) => setSettPublicUrl(e.target.value)}
+                              />
+                              <div className="form-text small text-muted">Usato nei link di download dentro email e PEC, es. https://comunicapa.ente.it/api</div>
                             </div>
                           </div>
                         )}
@@ -3075,6 +3109,45 @@ export function App(): React.JSX.Element {
                                 value={settPostalKey}
                                 onChange={(e) => setSettPostalKey(e.target.value)}
                                 required
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* TAB: OIDC (SPID/CIE) */}
+                        {activeSettingsTab === 'oidc' && (
+                          <div className="row g-3">
+                            <div className="col-12">
+                              <div className="form-text small text-muted mb-2">Autenticazione cittadini sul portale pubblico. Lasciare vuoto per disabilitare la verifica issuer/audience.</div>
+                            </div>
+                            <div className="col-md-6">
+                              <label className="form-label small fw-bold text-dark" htmlFor="oidc_issuer">Issuer</label>
+                              <input
+                                type="text"
+                                id="oidc_issuer"
+                                className="form-control form-control-sm"
+                                value={settOidcIssuer}
+                                onChange={(e) => setSettOidcIssuer(e.target.value)}
+                              />
+                            </div>
+                            <div className="col-md-6">
+                              <label className="form-label small fw-bold text-dark" htmlFor="oidc_audience">Audience</label>
+                              <input
+                                type="text"
+                                id="oidc_audience"
+                                className="form-control form-control-sm"
+                                value={settOidcAudience}
+                                onChange={(e) => setSettOidcAudience(e.target.value)}
+                              />
+                            </div>
+                            <div className="col-12">
+                              <label className="form-label small fw-bold text-dark" htmlFor="oidc_jwks_uri">JWKS URI</label>
+                              <input
+                                type="text"
+                                id="oidc_jwks_uri"
+                                className="form-control form-control-sm"
+                                value={settOidcJwksUri}
+                                onChange={(e) => setSettOidcJwksUri(e.target.value)}
                               />
                             </div>
                           </div>
