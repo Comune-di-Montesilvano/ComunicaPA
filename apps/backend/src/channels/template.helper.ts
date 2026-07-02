@@ -1,4 +1,5 @@
 import type { Recipient } from '../entities/recipient.entity';
+import { signDownloadLink } from './download-link.util';
 
 /**
  * Replaces fixed placeholders (%allegato1%), standard fields (%nominativo%, %nome%, %cf%, etc.),
@@ -8,9 +9,12 @@ import type { Recipient } from '../entities/recipient.entity';
 export function processTemplate(
   bodyTemplate: string,
   recipient: Recipient,
-  citizenPortalUrl: string,
+  publicApiUrl: string,
+  downloadLinkSecret: string,
+  expiresAtUnix: number,
 ): string {
-  const downloadUrl = `${citizenPortalUrl}/?notificationId=${recipient.id}`;
+  const sig = signDownloadLink(recipient.id, expiresAtUnix, downloadLinkSecret);
+  const downloadUrl = `${publicApiUrl}/public/download/${recipient.id}?exp=${expiresAtUnix}&sig=${sig}`;
   let content = bodyTemplate;
 
   // 1. Replace %allegato1%

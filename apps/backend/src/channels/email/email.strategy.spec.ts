@@ -18,6 +18,9 @@ const mockConfig = {
       'smtp.user': 'user',
       'smtp.password': 'pass',
       'smtp.from': 'noreply@test.it',
+      'origins.publicApi': 'http://api.test',
+      'downloadLink.secret': 'test-secret',
+      'retention.maxDays': 90,
     };
     return cfg[key];
   },

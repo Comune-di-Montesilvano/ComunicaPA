@@ -10,6 +10,9 @@ import { Recipient, RecipientStatus } from '../entities/recipient.entity';
 import { NOTIFICATION_QUEUE } from './notification-job.types';
 import { CHANNEL_STRATEGIES, IChannelStrategy } from '../channels/channel.interface';
 import { processTemplate } from '../channels/template.helper';
+import { ConfigService } from '@nestjs/config';
+import type { AppConfiguration } from '../config/configuration';
+import { getEffectiveRetentionDays } from '../campaigns/retention.util';
 
 @Processor(NOTIFICATION_QUEUE)
 export class NotificationProcessor extends WorkerHost {
@@ -24,6 +27,7 @@ export class NotificationProcessor extends WorkerHost {
     private readonly recipientRepo: Repository<Recipient>,
     @Inject(CHANNEL_STRATEGIES)
     private readonly strategies: Map<NotificationChannel, IChannelStrategy>,
+    private readonly config: ConfigService<AppConfiguration, true>,
   ) {
     super();
   }
@@ -76,16 +80,24 @@ export class NotificationProcessor extends WorkerHost {
         if (hasAppIo) {
           try {
             this.logger.log(`Performing simultaneous App IO delivery for CF: ${recipient.codiceFiscale}`);
-            const citizenPortalUrl = appIoConfig.citizenPortalUrl || 'http://localhost:3001';
+            const publicApiUrl = this.config.get('origins.publicApi', { infer: true });
+            const downloadLinkSecret = this.config.get('downloadLink.secret', { infer: true });
+            const retentionMaxDays = this.config.get('retention.maxDays', { infer: true });
+            const retentionDays = getEffectiveRetentionDays(campaign, retentionMaxDays);
+            const expiresAtUnix = Math.floor(Date.now() / 1000) + retentionDays * 86400;
             const processedSubject = processTemplate(
               (campaign.channelConfig?.['subject'] as string) || campaign.name,
               recipient,
-              citizenPortalUrl,
+              publicApiUrl,
+              downloadLinkSecret,
+              expiresAtUnix,
             );
             const processedMarkdown = processTemplate(
               (campaign.channelConfig?.['body'] as string) || '',
               recipient,
-              citizenPortalUrl,
+              publicApiUrl,
+              downloadLinkSecret,
+              expiresAtUnix,
             );
 
             const appIoRes = await fetch(`${appIoConfig.baseUrl}/api/v1/messages`, {

@@ -7,6 +7,7 @@ import type { Campaign } from '../../entities/campaign.entity';
 import * as nodemailer from 'nodemailer';
 import type { AppConfiguration } from '../../config/configuration';
 import { processTemplate, wrapInHtmlLayout } from '../template.helper';
+import { getEffectiveRetentionDays } from '../../campaigns/retention.util';
 
 @Injectable()
 export class PecStrategy implements IChannelStrategy {
@@ -26,15 +27,19 @@ export class PecStrategy implements IChannelStrategy {
     const user = this.config.get('pec.user', { infer: true });
     const password = this.config.get('pec.password', { infer: true });
     const defaultFrom = this.config.get('pec.from', { infer: true });
-    const citizenPortalUrl = this.config.get('origins.citizen', { infer: true });
     const brandName = this.config.get('brand.name', { infer: true }) || 'Comune di Montesilvano';
+    const publicApiUrl = this.config.get('origins.publicApi', { infer: true });
+    const downloadLinkSecret = this.config.get('downloadLink.secret', { infer: true });
+    const retentionMaxDays = this.config.get('retention.maxDays', { infer: true });
+    const retentionDays = getEffectiveRetentionDays(campaign, retentionMaxDays);
+    const expiresAtUnix = Math.floor(Date.now() / 1000) + retentionDays * 86400;
 
     const subjectTemplate = (campaign.channelConfig?.['subject'] as string) || 'Notifica PEC ComunicaPA';
     const bodyTemplate = (campaign.channelConfig?.['body'] as string) || 'Hai ricevuto una nuova notifica PEC.';
 
     // Process templates
-    const subject = processTemplate(subjectTemplate, recipient, citizenPortalUrl);
-    const bodyText = processTemplate(bodyTemplate, recipient, citizenPortalUrl);
+    const subject = processTemplate(subjectTemplate, recipient, publicApiUrl, downloadLinkSecret, expiresAtUnix);
+    const bodyText = processTemplate(bodyTemplate, recipient, publicApiUrl, downloadLinkSecret, expiresAtUnix);
     const bodyHtml = wrapInHtmlLayout(bodyText, brandName);
 
     const transporter = nodemailer.createTransport({

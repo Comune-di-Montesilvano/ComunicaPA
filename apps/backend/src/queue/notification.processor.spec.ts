@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { getQueueToken } from '@nestjs/bullmq';
+import { ConfigService } from '@nestjs/config';
 import type { Job } from 'bullmq';
 import { NotificationProcessor } from './notification.processor';
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity';
@@ -30,6 +31,17 @@ const mockStrategy = {
 };
 
 const mockStrategies = new Map([['EMAIL', mockStrategy]]);
+
+const mockConfig = {
+  get: (key: string) => {
+    const cfg: Record<string, unknown> = {
+      'origins.publicApi': 'http://api.test',
+      'downloadLink.secret': 'test-secret',
+      'retention.maxDays': 90,
+    };
+    return cfg[key];
+  },
+};
 
 describe('NotificationProcessor', () => {
   let processor: NotificationProcessor;
@@ -89,6 +101,7 @@ describe('NotificationProcessor', () => {
         { provide: getRepositoryToken(Recipient), useValue: mockRecipientRepo },
         { provide: CHANNEL_STRATEGIES, useValue: mockStrategies },
         { provide: getQueueToken(NOTIFICATION_QUEUE), useValue: {} },
+        { provide: ConfigService, useValue: mockConfig },
       ],
     }).compile();
 

@@ -16,6 +16,9 @@ const mockConfig = {
       'pec.user': 'u',
       'pec.password': 'p',
       'pec.from': 'noreply@pec.test.it',
+      'origins.publicApi': 'http://api.test',
+      'downloadLink.secret': 'test-secret',
+      'retention.maxDays': 90,
     };
     return cfg[key];
   },
