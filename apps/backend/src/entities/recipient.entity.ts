@@ -47,6 +47,21 @@ export class Recipient {
   })
   status!: RecipientStatus;
 
+  @Column({ type: 'int', name: 'download_count', default: 0 })
+  downloadCount!: number;
+
+  @Column({ type: 'timestamptz', name: 'first_downloaded_at', nullable: true })
+  firstDownloadedAt!: Date | null;
+
+  @Column({ type: 'timestamptz', name: 'last_downloaded_at', nullable: true })
+  lastDownloadedAt!: Date | null;
+
+  @Column({ type: 'timestamptz', name: 'attachment_expires_at', nullable: true })
+  attachmentExpiresAt!: Date | null;
+
+  @Column({ type: 'timestamptz', name: 'attachment_deleted_at', nullable: true })
+  attachmentDeletedAt!: Date | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt!: Date;
 
