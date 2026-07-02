@@ -17,23 +17,27 @@ export class LdapService {
   constructor(private readonly config: ConfigService<AppConfiguration, true>) {}
 
   async authenticate(username: string, password: string): Promise<LdapUser> {
-    // Credenziali di test/sviluppo sempre abilitate come fallback
-    if (username === 'admin' && password === 'admin') {
-      return {
-        username: 'admin',
-        displayName: 'Amministratore Simulato',
-        role: 'admin',
-      };
-    }
-    if (username === 'operator' && password === 'operator') {
-      return {
-        username: 'operator',
-        displayName: 'Operatore Simulato',
-        role: 'user',
-      };
-    }
-
     const host = this.config.get('ldap.host', { infer: true });
+
+    // Credenziali simulate SOLO in sviluppo locale (LDAP_HOST=mock):
+    // con un host reale non esiste alcun bypass
+    if (host === 'mock') {
+      if (username === 'admin' && password === 'admin') {
+        return {
+          username: 'admin',
+          displayName: 'Amministratore Simulato',
+          role: 'admin',
+        };
+      }
+      if (username === 'operator' && password === 'operator') {
+        return {
+          username: 'operator',
+          displayName: 'Operatore Simulato',
+          role: 'user',
+        };
+      }
+      throw new UnauthorizedException('Credenziali non valide');
+    }
     const baseDn = this.config.get('ldap.baseDn', { infer: true });
     const dnTemplate = this.config.get('ldap.userDnTemplate', { infer: true });
     const tlsSkipVerify = this.config.get('ldap.tlsSkipVerify', { infer: true });

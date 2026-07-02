@@ -11,6 +11,31 @@ const mockClient = {
   unbind: jest.fn(),
 };
 
+async function buildService(host: string): Promise<LdapService> {
+  const module = await Test.createTestingModule({
+    providers: [
+      LdapService,
+      {
+        provide: ConfigService,
+        useValue: {
+          get: (key: string) => {
+            const cfg: Record<string, unknown> = {
+              'ldap.host': host,
+              'ldap.baseDn': 'DC=test,DC=local',
+              'ldap.userDnTemplate': '%s@test.local',
+              'ldap.tlsSkipVerify': true,
+              'ldap.adminGroup': 'COMUNICAPA_ADMINS',
+              'ldap.requiredGroup': 'COMUNICAPA_USERS',
+            };
+            return cfg[key];
+          },
+        },
+      },
+    ],
+  }).compile();
+  return module.get<LdapService>(LdapService);
+}
+
 describe('LdapService', () => {
   let service: LdapService;
 
@@ -19,29 +44,7 @@ describe('LdapService', () => {
     (ldapjs.createClient as jest.Mock).mockReturnValue(mockClient);
     mockClient.unbind.mockImplementation((cb: () => void) => cb());
 
-    const module = await Test.createTestingModule({
-      providers: [
-        LdapService,
-        {
-          provide: ConfigService,
-          useValue: {
-            get: (key: string) => {
-              const cfg: Record<string, unknown> = {
-                'ldap.host': 'ldap://localhost:389',
-                'ldap.baseDn': 'DC=test,DC=local',
-                'ldap.userDnTemplate': '%s@test.local',
-                'ldap.tlsSkipVerify': true,
-                'ldap.adminGroup': 'COMUNICAPA_ADMINS',
-                'ldap.requiredGroup': 'COMUNICAPA_USERS',
-              };
-              return cfg[key];
-            },
-          },
-        },
-      ],
-    }).compile();
-
-    service = module.get<LdapService>(LdapService);
+    service = await buildService('ldap://localhost:389');
   });
 
   it('should resolve with role=admin when user is in admin group', async () => {
@@ -98,5 +101,41 @@ describe('LdapService', () => {
     await expect(service.authenticate('mario.rossi', 'wrongpass')).rejects.toThrow(
       'Credenziali non valide',
     );
+  });
+
+  it('should NOT accept mock credentials when host is a real LDAP server', async () => {
+    mockClient.bind.mockImplementation(
+      (_dn: string, _pw: string, cb: (err: Error) => void) =>
+        cb(new Error('Invalid credentials')),
+    );
+
+    await expect(service.authenticate('admin', 'admin')).rejects.toThrow(
+      'Credenziali non valide',
+    );
+    expect(mockClient.bind).toHaveBeenCalled();
+  });
+
+  describe('mock mode (LDAP_HOST=mock)', () => {
+    beforeEach(async () => {
+      service = await buildService('mock');
+    });
+
+    it('accepts admin/admin with role=admin', async () => {
+      const result = await service.authenticate('admin', 'admin');
+      expect(result.role).toBe('admin');
+      expect(ldapjs.createClient).not.toHaveBeenCalled();
+    });
+
+    it('accepts operator/operator with role=user', async () => {
+      const result = await service.authenticate('operator', 'operator');
+      expect(result.role).toBe('user');
+    });
+
+    it('rejects any other credentials without contacting LDAP', async () => {
+      await expect(service.authenticate('admin', 'wrong')).rejects.toThrow(
+        'Credenziali non valide',
+      );
+      expect(ldapjs.createClient).not.toHaveBeenCalled();
+    });
   });
 });
