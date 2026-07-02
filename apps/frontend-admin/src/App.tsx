@@ -104,6 +104,19 @@ export function App(): React.JSX.Element {
       .then((r) => r.json())
       .then((d: { version?: string }) => setAppVersion(d.version ?? 'dev'))
       .catch(() => setAppVersion('dev'));
+
+    fetch(`${API_BASE}/branding`)
+      .then((r) => r.json())
+      .then((b: { name?: string; faviconUrl?: string | null }) => {
+        if (b.name) document.title = `${b.name} — ComunicaPA Admin`;
+        if (b.faviconUrl) {
+          const link = document.querySelector<HTMLLinkElement>("link[rel~='icon']") ?? document.createElement('link');
+          link.rel = 'icon';
+          link.href = `${API_BASE}${b.faviconUrl}`;
+          document.head.appendChild(link);
+        }
+      })
+      .catch(() => { /* branding default */ });
   }, []);
 
   // Login form state
@@ -170,21 +183,23 @@ export function App(): React.JSX.Element {
     return [fn1, fn2].filter(Boolean).join(' ');
   };
 
-  // Settings State (loaded from localStorage or defaults)
-  const [settEntityName, setSettEntityName] = useState(localStorage.getItem('sett_entity_name') || 'Comune di Montesilvano');
-  const [settSubtitle, setSettSubtitle] = useState(localStorage.getItem('sett_subtitle') || 'ComunicaPA Hub');
-  
-  const [settSmtpHost, setSettSmtpHost] = useState(localStorage.getItem('sett_smtp_host') || 'smtp.comune.montesilvano.pe.it');
-  const [settSmtpPort, setSettSmtpPort] = useState(localStorage.getItem('sett_smtp_port') || '587');
-  const [settSmtpUser, setSettSmtpUser] = useState(localStorage.getItem('sett_smtp_user') || 'noreply@comune.montesilvano.pe.it');
-  const [settSmtpPass, setSettSmtpPass] = useState(localStorage.getItem('sett_smtp_pass') || '••••••••');
-  const [settSmtpFrom, setSettSmtpFrom] = useState(localStorage.getItem('sett_smtp_from') || 'noreply@comune.montesilvano.pe.it');
+  // Settings State (loaded from backend GET /settings; see useEffect below)
+  const [settEntityName, setSettEntityName] = useState('Comune di Montesilvano');
+  const [settSubtitle, setSettSubtitle] = useState('ComunicaPA Hub');
 
-  const [settPecHost, setSettPecHost] = useState(localStorage.getItem('sett_pec_host') || 'smtps.pec.comune.montesilvano.pe.it');
-  const [settPecPort, setSettPecPort] = useState(localStorage.getItem('sett_pec_port') || '465');
-  const [settPecUser, setSettPecUser] = useState(localStorage.getItem('sett_pec_user') || 'protocollo@pec.comune.montesilvano.pe.it');
-  const [settPecPass, setSettPecPass] = useState(localStorage.getItem('sett_pec_pass') || '••••••••');
-  const [settPecFrom, setSettPecFrom] = useState(localStorage.getItem('sett_pec_from') || 'protocollo@pec.comune.montesilvano.pe.it');
+  const [settSmtpHost, setSettSmtpHost] = useState('smtp.comune.montesilvano.pe.it');
+  const [settSmtpPort, setSettSmtpPort] = useState('587');
+  const [settSmtpSecure, setSettSmtpSecure] = useState(false);
+  const [settSmtpUser, setSettSmtpUser] = useState('noreply@comune.montesilvano.pe.it');
+  const [settSmtpPass, setSettSmtpPass] = useState('••••••••');
+  const [settSmtpFrom, setSettSmtpFrom] = useState('noreply@comune.montesilvano.pe.it');
+
+  const [settPecHost, setSettPecHost] = useState('smtps.pec.comune.montesilvano.pe.it');
+  const [settPecPort, setSettPecPort] = useState('465');
+  const [settPecSecure, setSettPecSecure] = useState(false);
+  const [settPecUser, setSettPecUser] = useState('protocollo@pec.comune.montesilvano.pe.it');
+  const [settPecPass, setSettPecPass] = useState('••••••••');
+  const [settPecFrom, setSettPecFrom] = useState('protocollo@pec.comune.montesilvano.pe.it');
 
   // Email / PEC test
   const [smtpTestTo, setSmtpTestTo] = useState('');
@@ -195,7 +210,8 @@ export function App(): React.JSX.Element {
   const [pecTestMsg, setPecTestMsg] = useState('');
 
   // App IO Settings
-  const [settIoUrl, setSettIoUrl] = useState(localStorage.getItem('sett_io_url') || 'https://api.io.italia.it');
+  const [settIoApiKey, setSettIoApiKey] = useState('');
+  const [settIoUrl, setSettIoUrl] = useState('https://api.io.italia.it');
   const [ioServices, setIoServices] = useState<IoService[]>(() => {
     const saved = localStorage.getItem('sett_io_services');
     return saved ? JSON.parse(saved) : DEFAULT_IO_SERVICES;
@@ -211,8 +227,9 @@ export function App(): React.JSX.Element {
   const [newSvcIsDefault, setNewSvcIsDefault] = useState(false);
   const [showNewSvcForm, setShowNewSvcForm] = useState(false);
 
-  const [settSendApiKey, setSettSendApiKey] = useState(localStorage.getItem('sett_send_api_key') || 'send_sec_key_montesilvano_dev_456');
-  const [settSendUrl, setSettSendUrl] = useState(localStorage.getItem('sett_send_url') || 'https://api.notifichedigitali.it');
+  const [settSendApiKey, setSettSendApiKey] = useState('send_sec_key_montesilvano_dev_456');
+  const [settSendUrl, setSettSendUrl] = useState('https://api.notifichedigitali.it');
+  const [settRetentionDays, setSettRetentionDays] = useState('90');
 
   const [settProtoProvider, setSettProtoProvider] = useState(localStorage.getItem('sett_proto_provider') || 'Maggioli');
   const [settProtoUrl, setSettProtoUrl] = useState(localStorage.getItem('sett_proto_url') || 'https://protocollo.comune.montesilvano.pe.it/api');
@@ -275,6 +292,36 @@ export function App(): React.JSX.Element {
     if (token) {
       fetchCampaigns();
     }
+  }, [token]);
+
+  // Carica le impostazioni persistite dal backend al login
+  useEffect(() => {
+    if (!token) return;
+    fetch(`${API_BASE}/settings`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((d: { settings: Record<string, string | number | boolean> }) => {
+        const s = d.settings;
+        setSettEntityName(String(s['brand.name'] ?? ''));
+        setSettSubtitle(String(s['brand.subtitle'] ?? ''));
+        setSettSmtpHost(String(s['smtp.host'] ?? ''));
+        setSettSmtpPort(String(s['smtp.port'] ?? '587'));
+        setSettSmtpSecure(Boolean(s['smtp.secure']));
+        setSettSmtpUser(String(s['smtp.user'] ?? ''));
+        setSettSmtpPass(String(s['smtp.password'] ?? ''));
+        setSettSmtpFrom(String(s['smtp.from'] ?? ''));
+        setSettPecHost(String(s['pec.host'] ?? ''));
+        setSettPecPort(String(s['pec.port'] ?? '587'));
+        setSettPecSecure(Boolean(s['pec.secure']));
+        setSettPecUser(String(s['pec.user'] ?? ''));
+        setSettPecPass(String(s['pec.password'] ?? ''));
+        setSettPecFrom(String(s['pec.from'] ?? ''));
+        setSettIoApiKey(String(s['appIo.apiKey'] ?? ''));
+        setSettIoUrl(String(s['appIo.baseUrl'] ?? ''));
+        setSettSendApiKey(String(s['send.apiKey'] ?? ''));
+        setSettSendUrl(String(s['send.baseUrl'] ?? ''));
+        setSettRetentionDays(String(s['retention.maxDays'] ?? '90'));
+      })
+      .catch(() => { /* backend non raggiungibile: la pagina resta editabile */ });
   }, [token]);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -589,24 +636,10 @@ export function App(): React.JSX.Element {
   };
 
   // Settings Save handler
-  const handleSaveSettings = (e: React.FormEvent) => {
+  const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    localStorage.setItem('sett_entity_name', settEntityName);
-    localStorage.setItem('sett_subtitle', settSubtitle);
-    localStorage.setItem('sett_smtp_host', settSmtpHost);
-    localStorage.setItem('sett_smtp_port', settSmtpPort);
-    localStorage.setItem('sett_smtp_user', settSmtpUser);
-    localStorage.setItem('sett_smtp_pass', settSmtpPass);
-    localStorage.setItem('sett_smtp_from', settSmtpFrom);
-    localStorage.setItem('sett_pec_host', settPecHost);
-    localStorage.setItem('sett_pec_port', settPecPort);
-    localStorage.setItem('sett_pec_user', settPecUser);
-    localStorage.setItem('sett_pec_pass', settPecPass);
-    localStorage.setItem('sett_pec_from', settPecFrom);
-    localStorage.setItem('sett_io_url', settIoUrl);
+    // Canali non ancora migrati al backend: restano su localStorage
     localStorage.setItem('sett_io_services', JSON.stringify(ioServices));
-    localStorage.setItem('sett_send_api_key', settSendApiKey);
-    localStorage.setItem('sett_send_url', settSendUrl);
     localStorage.setItem('sett_proto_provider', settProtoProvider);
     localStorage.setItem('sett_proto_url', settProtoUrl);
     localStorage.setItem('sett_proto_user', settProtoUser);
@@ -615,7 +648,55 @@ export function App(): React.JSX.Element {
     localStorage.setItem('sett_postal_key', settPostalKey);
     localStorage.setItem('sett_postal_url', settPostalUrl);
 
-    setSettingsSavedMessage('Impostazioni salvate con successo!');
+    try {
+      const res = await fetch(`${API_BASE}/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          settings: {
+            'brand.name': settEntityName,
+            'brand.subtitle': settSubtitle,
+            'smtp.host': settSmtpHost,
+            'smtp.port': Number(settSmtpPort) || 587,
+            'smtp.secure': settSmtpSecure,
+            'smtp.user': settSmtpUser,
+            'smtp.password': settSmtpPass,
+            'smtp.from': settSmtpFrom,
+            'pec.host': settPecHost,
+            'pec.port': Number(settPecPort) || 587,
+            'pec.secure': settPecSecure,
+            'pec.user': settPecUser,
+            'pec.password': settPecPass,
+            'pec.from': settPecFrom,
+            'appIo.apiKey': settIoApiKey,
+            'appIo.baseUrl': settIoUrl,
+            'send.apiKey': settSendApiKey,
+            'send.baseUrl': settSendUrl,
+            'retention.maxDays': Number(settRetentionDays) || 90,
+          },
+        }),
+      });
+      if (!res.ok) {
+        const err = (await res.json()) as { message?: string };
+        setSettingsSavedMessage(`Errore salvataggio: ${err.message ?? res.status}`);
+      } else {
+        setSettingsSavedMessage('Impostazioni salvate con successo!');
+      }
+    } catch {
+      setSettingsSavedMessage('Errore di rete durante il salvataggio.');
+    }
+    setTimeout(() => setSettingsSavedMessage(null), 3000);
+  };
+
+  const handleUploadBranding = async (kind: 'logo' | 'favicon', file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(`${API_BASE}/settings/branding/${kind}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+    setSettingsSavedMessage(res.ok ? `${kind === 'logo' ? 'Logo' : 'Favicon'} caricato.` : 'Errore upload.');
     setTimeout(() => setSettingsSavedMessage(null), 3000);
   };
 
@@ -2497,6 +2578,21 @@ export function App(): React.JSX.Element {
                                 onChange={(e) => setSettSubtitle(e.target.value)}
                               />
                             </div>
+                            <div className="mb-3">
+                              <label className="form-label">Logo ente (PNG/JPG/SVG, max 2 MB)</label>
+                              <input type="file" className="form-control" accept="image/png,image/jpeg,image/svg+xml"
+                                onChange={(e) => e.target.files?.[0] && handleUploadBranding('logo', e.target.files[0])} />
+                            </div>
+                            <div className="mb-3">
+                              <label className="form-label">Favicon (ICO/PNG/SVG, max 2 MB)</label>
+                              <input type="file" className="form-control" accept="image/x-icon,image/png,image/svg+xml"
+                                onChange={(e) => e.target.files?.[0] && handleUploadBranding('favicon', e.target.files[0])} />
+                            </div>
+                            <div className="mb-3">
+                              <label className="form-label">Conservazione allegati (giorni)</label>
+                              <input type="number" min={1} className="form-control" value={settRetentionDays}
+                                onChange={(e) => setSettRetentionDays(e.target.value)} />
+                            </div>
                           </div>
                         )}
 
@@ -2544,6 +2640,13 @@ export function App(): React.JSX.Element {
                                 value={settSmtpPass}
                                 onChange={(e) => setSettSmtpPass(e.target.value)}
                               />
+                            </div>
+                            <div className="col-12">
+                              <div className="form-check mb-3">
+                                <input className="form-check-input" type="checkbox" id="smtpSecure" checked={settSmtpSecure}
+                                  onChange={(e) => setSettSmtpSecure(e.target.checked)} />
+                                <label className="form-check-label" htmlFor="smtpSecure">Connessione sicura (TLS implicito, porta 465)</label>
+                              </div>
                             </div>
                             <div className="col-12">
                               <label className="form-label small fw-bold text-dark" htmlFor="smtp_from">Mittente E-mail Predefinito (From)</label>
@@ -2632,6 +2735,13 @@ export function App(): React.JSX.Element {
                               />
                             </div>
                             <div className="col-12">
+                              <div className="form-check mb-3">
+                                <input className="form-check-input" type="checkbox" id="pecSecure" checked={settPecSecure}
+                                  onChange={(e) => setSettPecSecure(e.target.checked)} />
+                                <label className="form-check-label" htmlFor="pecSecure">Connessione sicura (TLS implicito, porta 465)</label>
+                              </div>
+                            </div>
+                            <div className="col-12">
                               <label className="form-label small fw-bold text-dark" htmlFor="pec_from">Indirizzo PEC Mittente (From)</label>
                               <input
                                 type="email"
@@ -2676,6 +2786,16 @@ export function App(): React.JSX.Element {
                         {/* TAB: APP IO (Multiple services creation & management) */}
                         {activeSettingsTab === 'app-io' && (
                           <div>
+                            <div className="mb-4">
+                              <label className="form-label small fw-bold text-dark" htmlFor="io_api_key">Chiave API Globale App IO</label>
+                              <input
+                                type="password"
+                                id="io_api_key"
+                                className="form-control form-control-sm"
+                                value={settIoApiKey}
+                                onChange={(e) => setSettIoApiKey(e.target.value)}
+                              />
+                            </div>
                             <div className="mb-4">
                               <label className="form-label small fw-bold text-dark" htmlFor="io_url">Endpoint API Globale App IO</label>
                               <input

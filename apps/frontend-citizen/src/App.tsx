@@ -28,7 +28,8 @@ export function App(): React.JSX.Element {
   const [token, setToken] = useState<string | null>(localStorage.getItem('comunicapa_citizen_token'));
   const [cf, setCf] = useState<string | null>(localStorage.getItem('comunicapa_citizen_cf'));
   const [name, setName] = useState<string | null>(localStorage.getItem('comunicapa_citizen_name'));
-  
+  const [entityName, setEntityName] = useState('Comune di Montesilvano');
+
   // Lobby state
   const [selectedCf, setSelectedCf] = useState('MRKDDD80A01H501A');
   const [customCf, setCustomCf] = useState('');
@@ -56,6 +57,24 @@ export function App(): React.JSX.Element {
       fetchNotifications();
     }
   }, [token]);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/branding`)
+      .then((r) => r.json())
+      .then((b: { name?: string; faviconUrl?: string | null }) => {
+        if (b.name) {
+          setEntityName(b.name);
+          document.title = `${b.name} — ComunicaPA`;
+        }
+        if (b.faviconUrl) {
+          const link = document.querySelector<HTMLLinkElement>("link[rel~='icon']") ?? document.createElement('link');
+          link.rel = 'icon';
+          link.href = `${API_BASE}${b.faviconUrl}`;
+          document.head.appendChild(link);
+        }
+      })
+      .catch(() => { /* branding default */ });
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -203,7 +222,7 @@ export function App(): React.JSX.Element {
             <div className="card-body p-4 bg-white">
               <div className="text-center mb-4">
                 <h1 className="h3 fw-bold text-navy" style={{ color: 'var(--bi-navy)' }}>Accedi all'area riservata</h1>
-                <p className="text-muted small">Consulta lo storico delle notifiche e degli avvisi inviati dal Comune di Montesilvano.</p>
+                <p className="text-muted small">Consulta lo storico delle notifiche e degli avvisi inviati dal {entityName}.</p>
               </div>
 
               {loginError && (
@@ -322,7 +341,7 @@ export function App(): React.JSX.Element {
         <div className="container">
           <div className="left">
             <span className="gov-dot"></span>
-            <span>Comune di Montesilvano</span>
+            <span>{entityName}</span>
           </div>
           <div className="right">
             <span>Accesso certificato tramite <strong>SPID/CIE</strong></span>
@@ -337,7 +356,7 @@ export function App(): React.JSX.Element {
             <i className="fas fa-building stemma text-navy mb-0" style={{ fontSize: '2.4rem', color: 'var(--bi-navy)' }}></i>
             <div>
               <div className="eyebrow">Sportello Digitale</div>
-              <div className="title">Comune di Montesilvano</div>
+              <div className="title">{entityName}</div>
               <div className="sub">ComunicaPA — Notifiche & Comunicazioni Istituzionali</div>
             </div>
           </a>
@@ -450,7 +469,7 @@ export function App(): React.JSX.Element {
                   <div className="card-body">
                     <div className="mb-4">
                       <span className="small text-muted">Mittente:</span>
-                      <h4 className="h6 text-navy fw-bold" style={{ color: 'var(--bi-navy)' }}>Comune di Montesilvano</h4>
+                      <h4 className="h6 text-navy fw-bold" style={{ color: 'var(--bi-navy)' }}>{entityName}</h4>
                       <div className="small text-muted">Generato il: {new Date(selectedNotif.createdAt).toLocaleString('it-IT')}</div>
                     </div>
 
@@ -550,7 +569,7 @@ export function App(): React.JSX.Element {
       <footer className="it-footer bg-light py-4 border-top mt-auto" style={{ fontSize: '0.86rem' }}>
         <div className="container d-flex flex-column flex-md-row align-items-center justify-content-between gap-3 text-muted">
           <div>
-            <strong>Comune di Montesilvano</strong> · Piazza Diaz 1 · Montesilvano (PE)
+            <strong>{entityName}</strong> · Piazza Diaz 1 · Montesilvano (PE)
           </div>
           <div className="d-flex gap-3">
             <a href="#" className="text-muted text-decoration-none">Privacy Policy</a>
