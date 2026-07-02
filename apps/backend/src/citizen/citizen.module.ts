@@ -6,11 +6,13 @@ import { NotificationAttempt } from '../entities/notification-attempt.entity';
 import { CitizenController } from './citizen.controller';
 import { CitizenService } from './citizen.service';
 import { AuthModule } from '../auth/auth.module';
+import { AttachmentModule } from '../attachments/attachment.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Recipient, Campaign, NotificationAttempt]),
     AuthModule,
+    AttachmentModule,
   ],
   controllers: [CitizenController],
   providers: [CitizenService],
