@@ -6,6 +6,7 @@ import { join } from 'path';
 import { unlink } from 'fs/promises';
 import { Recipient } from '../entities/recipient.entity';
 import { resolveCustomAttachmentFilename } from '../attachments/attachment.service';
+import { getUploadsDir } from '../attachments/attachment-paths';
 
 const BATCH_SIZE = 200;
 
@@ -49,7 +50,7 @@ export class RetentionCleanupService {
         const customFilename = resolveCustomAttachmentFilename(recipient);
 
         if (customFilename) {
-          const filePath = join(__dirname, '..', '..', 'uploads', 'attachments', recipient.campaignId, customFilename);
+          const filePath = join(getUploadsDir(recipient.campaignId), customFilename);
           try {
             await unlink(filePath);
           } catch (err) {

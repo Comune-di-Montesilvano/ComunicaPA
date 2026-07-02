@@ -66,6 +66,9 @@ export interface AppConfiguration {
   downloadLink: {
     secret: string;
   };
+  attachments: {
+    path: string;
+  };
 }
 
 export default (): AppConfiguration => ({
@@ -135,5 +138,8 @@ export default (): AppConfiguration => ({
   },
   downloadLink: {
     secret: process.env['DOWNLOAD_LINK_SECRET'] ?? 'change-me-in-production',
+  },
+  attachments: {
+    path: process.env['ATTACHMENTS_PATH'] ?? '/data/attachments',
   },
 });

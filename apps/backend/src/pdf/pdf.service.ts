@@ -2,11 +2,14 @@ import { Injectable, Logger, NotFoundException, InternalServerErrorException, Ba
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
+import { getAttachmentsRoot } from '../attachments/attachment-paths';
 
 @Injectable()
 export class PdfService {
   private readonly logger = new Logger(PdfService.name);
-  private readonly storagePath = process.env['PDF_STORAGE_PATH'] ?? '/data/attachments';
+  private get storagePath(): string {
+    return getAttachmentsRoot();
+  }
 
   async stampPdfBytes(pdfBytes: Uint8Array, stamp: string): Promise<Uint8Array> {
     const pdfDoc = await PDFDocument.load(pdfBytes);

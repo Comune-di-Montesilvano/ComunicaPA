@@ -3,6 +3,7 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import * as fs from 'fs';
 import { join } from 'path';
 import type { Recipient } from '../entities/recipient.entity';
+import { getUploadsDir } from './attachment-paths';
 
 /**
  * Risolve il nome del file dell'allegato PDF personalizzato per un destinatario.
@@ -41,7 +42,7 @@ export class AttachmentService {
     const customFilename = resolveCustomAttachmentFilename(recipient);
 
     if (customFilename) {
-      const filePath = join(__dirname, '..', '..', 'uploads', 'attachments', recipient.campaignId, customFilename);
+      const filePath = join(getUploadsDir(recipient.campaignId), customFilename);
       if (fs.existsSync(filePath)) {
         this.logger.log(`Serving custom uploaded PDF attachment: ${filePath}`);
         return fs.readFileSync(filePath);

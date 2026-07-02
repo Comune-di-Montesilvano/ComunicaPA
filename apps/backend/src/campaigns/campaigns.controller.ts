@@ -14,7 +14,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
-import { extname, join } from 'path';
+import { extname } from 'path';
 import * as fs from 'fs';
 import type { Request } from 'express';
 import type { JwtOperatorPayload } from '@comunicapa/shared-types';
@@ -22,6 +22,7 @@ import type { Campaign } from '../entities/campaign.entity';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CampaignsService } from './campaigns.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
+import { getUploadsDir } from '../attachments/attachment-paths';
 
 @Controller('campaigns')
 @Roles('user', 'admin')
@@ -77,7 +78,7 @@ export class CampaignsController {
     FilesInterceptor('files', 1000, {
       storage: diskStorage({
         destination: (req, _file, cb) => {
-          const dir = join(__dirname, '..', '..', 'uploads', 'attachments', req.params['id'] as string);
+          const dir = getUploadsDir(req.params['id'] as string);
           fs.mkdirSync(dir, { recursive: true });
           cb(null, dir);
         },
