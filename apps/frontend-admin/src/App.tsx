@@ -239,6 +239,10 @@ export function App(): React.JSX.Element {
   const [settOidcIssuer, setSettOidcIssuer] = useState('');
   const [settOidcAudience, setSettOidcAudience] = useState('');
   const [settOidcJwksUri, setSettOidcJwksUri] = useState('');
+  const [settOidcClientId, setSettOidcClientId] = useState('');
+  const [settOidcClientSecret, setSettOidcClientSecret] = useState('');
+  const [settOidcLogoutUrl, setSettOidcLogoutUrl] = useState('');
+  const [settCitizenPublicUrl, setSettCitizenPublicUrl] = useState('');
 
   const [settProtoProvider, setSettProtoProvider] = useState(localStorage.getItem('sett_proto_provider') || 'Maggioli');
   const [settProtoUrl, setSettProtoUrl] = useState(localStorage.getItem('sett_proto_url') || 'https://protocollo.comune.montesilvano.pe.it/api');
@@ -335,6 +339,10 @@ export function App(): React.JSX.Element {
         setSettOidcIssuer(String(s['oidc.issuer'] ?? ''));
         setSettOidcAudience(String(s['oidc.audience'] ?? ''));
         setSettOidcJwksUri(String(s['oidc.jwksUri'] ?? ''));
+        setSettOidcClientId(String(s['oidc.clientId'] ?? ''));
+        setSettOidcClientSecret(String(s['oidc.clientSecret'] ?? ''));
+        setSettOidcLogoutUrl(String(s['oidc.logoutUrl'] ?? ''));
+        setSettCitizenPublicUrl(String(s['system.citizenPublicUrl'] ?? ''));
       })
       .catch(() => { /* backend non raggiungibile: la pagina resta editabile */ });
   }, [token]);
@@ -694,6 +702,10 @@ export function App(): React.JSX.Element {
             'oidc.issuer': settOidcIssuer,
             'oidc.audience': settOidcAudience,
             'oidc.jwksUri': settOidcJwksUri,
+            'oidc.clientId': settOidcClientId,
+            'oidc.clientSecret': settOidcClientSecret,
+            'oidc.logoutUrl': settOidcLogoutUrl,
+            'system.citizenPublicUrl': settCitizenPublicUrl,
           },
         }),
       });
@@ -3152,14 +3164,16 @@ export function App(): React.JSX.Element {
                               <div className="form-text small text-muted mb-2">Autenticazione cittadini sul portale pubblico. Lasciare vuoto per disabilitare la verifica issuer/audience.</div>
                             </div>
                             <div className="col-md-6">
-                              <label className="form-label small fw-bold text-dark" htmlFor="oidc_issuer">Issuer</label>
+                              <label className="form-label small fw-bold text-dark" htmlFor="oidc_issuer">OIDC Issuer (Base URL)</label>
                               <input
                                 type="text"
                                 id="oidc_issuer"
                                 className="form-control form-control-sm"
+                                placeholder="https://id.provider.it"
                                 value={settOidcIssuer}
                                 onChange={(e) => setSettOidcIssuer(e.target.value)}
                               />
+                              <div className="form-text small text-muted">URL base del provider OIDC: deve coincidere con il claim <code>iss</code> dei token rilasciati.</div>
                             </div>
                             <div className="col-md-6">
                               <label className="form-label small fw-bold text-dark" htmlFor="oidc_audience">Audience</label>
@@ -3167,19 +3181,104 @@ export function App(): React.JSX.Element {
                                 type="text"
                                 id="oidc_audience"
                                 className="form-control form-control-sm"
+                                placeholder="es. lo stesso Client ID"
                                 value={settOidcAudience}
                                 onChange={(e) => setSettOidcAudience(e.target.value)}
                               />
+                              <div className="form-text small text-muted">Valore atteso nel claim <code>aud</code> del token (di norma il Client ID assegnato dal provider).</div>
                             </div>
-                            <div className="col-12">
+                            <div className="col-md-6">
+                              <label className="form-label small fw-bold text-dark" htmlFor="oidc_client_id">Client ID</label>
+                              <input
+                                type="text"
+                                id="oidc_client_id"
+                                className="form-control form-control-sm"
+                                value={settOidcClientId}
+                                onChange={(e) => setSettOidcClientId(e.target.value)}
+                              />
+                              <div className="form-text small text-muted">Identificativo del client registrato presso il provider SPID/CIE.</div>
+                            </div>
+                            <div className="col-md-6">
+                              <label className="form-label small fw-bold text-dark" htmlFor="oidc_client_secret">Client Secret</label>
+                              <input
+                                type="password"
+                                id="oidc_client_secret"
+                                className="form-control form-control-sm"
+                                value={settOidcClientSecret}
+                                onChange={(e) => setSettOidcClientSecret(e.target.value)}
+                              />
+                              <div className="form-text small text-muted">Cifrato nel database; il valore salvato viene mostrato mascherato.</div>
+                            </div>
+                            <div className="col-md-6">
                               <label className="form-label small fw-bold text-dark" htmlFor="oidc_jwks_uri">JWKS URI</label>
                               <input
                                 type="text"
                                 id="oidc_jwks_uri"
                                 className="form-control form-control-sm"
+                                placeholder="https://id.provider.it/.well-known/jwks.json"
                                 value={settOidcJwksUri}
                                 onChange={(e) => setSettOidcJwksUri(e.target.value)}
                               />
+                              <div className="form-text small text-muted">Endpoint delle chiavi pubbliche per la verifica delle firme dei token.</div>
+                            </div>
+                            <div className="col-md-6">
+                              <label className="form-label small fw-bold text-dark" htmlFor="oidc_logout_url">OIDC Logout URL</label>
+                              <input
+                                type="text"
+                                id="oidc_logout_url"
+                                className="form-control form-control-sm"
+                                placeholder="https://id.provider.it/logout"
+                                value={settOidcLogoutUrl}
+                                onChange={(e) => setSettOidcLogoutUrl(e.target.value)}
+                              />
+                              <div className="form-text small text-muted">End session endpoint del provider, usato per terminare la sessione SPID/CIE al logout.</div>
+                            </div>
+                            <div className="col-md-6">
+                              <label className="form-label small fw-bold text-dark" htmlFor="oidc_citizen_url">URL pubblico portale cittadini</label>
+                              <input
+                                type="text"
+                                id="oidc_citizen_url"
+                                className="form-control form-control-sm"
+                                placeholder="https://comunicapa.ente.it"
+                                value={settCitizenPublicUrl}
+                                onChange={(e) => setSettCitizenPublicUrl(e.target.value)}
+                              />
+                              <div className="form-text small text-muted">Origine pubblica del portale cittadini: determina la Redirect URI qui sotto.</div>
+                            </div>
+                            <div className="col-12">
+                              <div className="border border-primary rounded p-3 mt-2" style={{background:'#f4f8fd'}}>
+                                <h6 className="small fw-bold text-dark mb-2"><i className="fas fa-info-circle me-1 text-primary"></i>Parametri da configurare nel proxy OIDC</h6>
+                                <p className="small text-muted mb-2">Usa questi dati per registrare il client nella WebUI del proxy (es. pa-sso-proxy):</p>
+                                <label className="form-label small fw-semibold text-muted mb-1">Redirect URI</label>
+                                <div className="input-group input-group-sm mb-2">
+                                  <input
+                                    type="text"
+                                    className="form-control font-monospace"
+                                    readOnly
+                                    value={settCitizenPublicUrl
+                                      ? `${settCitizenPublicUrl.replace(/\/+$/, '')}/oidc/callback`
+                                      : ''}
+                                    placeholder="Compila prima «URL pubblico portale cittadini»"
+                                  />
+                                  <button
+                                    type="button"
+                                    className="btn btn-outline-primary"
+                                    title="Copia negli appunti"
+                                    disabled={!settCitizenPublicUrl}
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(`${settCitizenPublicUrl.replace(/\/+$/, '')}/oidc/callback`);
+                                      setSettingsSavedMessage('Redirect URI copiata negli appunti.');
+                                      setTimeout(() => setSettingsSavedMessage(null), 3000);
+                                    }}
+                                  >
+                                    <i className="fas fa-copy"></i>
+                                  </button>
+                                </div>
+                                <div className="small">
+                                  <span className="me-4"><strong>Allowed Scopes:</strong> <code>openid profile email</code></span>
+                                  <span><strong>Response Type:</strong> <code>code</code> (Auth Code Flow + PKCE)</span>
+                                </div>
+                              </div>
                             </div>
                           </div>
                         )}

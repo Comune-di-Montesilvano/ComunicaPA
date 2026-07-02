@@ -39,9 +39,13 @@ export const SETTING_DEFS = {
     type: 'string',
     default: 'http://localhost:8080',
   },
+  'system.citizenPublicUrl': { env: 'PUBLIC_CITIZEN_URL', type: 'string', default: '' },
   'oidc.issuer': { env: 'OIDC_ISSUER', type: 'string', default: '' },
   'oidc.audience': { env: 'OIDC_AUDIENCE', type: 'string', default: 'comunicapa' },
   'oidc.jwksUri': { env: 'OIDC_JWKS_URI', type: 'string', default: '' },
+  'oidc.clientId': { env: 'OIDC_CLIENT_ID', type: 'string', default: '' },
+  'oidc.clientSecret': { env: 'OIDC_CLIENT_SECRET', type: 'string', secret: true, default: '' },
+  'oidc.logoutUrl': { env: 'OIDC_LOGOUT_URL', type: 'string', default: '' },
 } as const satisfies Record<string, SettingDef>;
 
 export type SettingKey = keyof typeof SETTING_DEFS;
