@@ -12,6 +12,7 @@ import { Recipient, RecipientStatus } from '../entities/recipient.entity';
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity';
 import { NOTIFICATION_QUEUE, NOTIFICATION_JOB_SEND } from '../queue/notification-job.types';
 import type { CreateCampaignDto } from './dto/create-campaign.dto';
+import type { CampaignStatsDto, RecipientStatsPageDto } from './dto/campaign-stats.dto';
 
 @Injectable()
 export class CampaignsService {
@@ -183,5 +184,48 @@ export class CampaignsService {
     );
 
     return { launched: recipients.length, campaignId };
+  }
+
+  async getStats(campaignId: string): Promise<CampaignStatsDto> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+
+    const recipients = await this.recipientRepo.find({
+      where: { campaignId },
+      select: ['downloadCount', 'lastDownloadedAt'],
+    });
+
+    const totalDownloaded = recipients.filter((r) => r.downloadCount > 0).length;
+    const lastDownloadAt = recipients.reduce<Date | null>((latest, r) => {
+      if (!r.lastDownloadedAt) return latest;
+      if (!latest || r.lastDownloadedAt > latest) return r.lastDownloadedAt;
+      return latest;
+    }, null);
+
+    return {
+      campaignId,
+      totalRecipients: campaign.totalRecipients,
+      totalSent: campaign.sentCount,
+      totalDownloaded,
+      downloadPercentage: campaign.totalRecipients > 0
+        ? Math.round((totalDownloaded / campaign.totalRecipients) * 100)
+        : 0,
+      lastDownloadAt,
+    };
+  }
+
+  async getRecipientStats(campaignId: string, page: number, pageSize: number): Promise<RecipientStatsPageDto> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+
+    const [items, total] = await this.recipientRepo.findAndCount({
+      where: { campaignId },
+      select: ['id', 'fullName', 'codiceFiscale', 'downloadCount', 'firstDownloadedAt', 'lastDownloadedAt', 'attachmentDeletedAt'],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      order: { createdAt: 'ASC' },
+    });
+
+    return { campaignId, page, pageSize, total, items };
   }
 }

@@ -50,6 +50,7 @@ describe('CampaignsService', () => {
     find: jest.fn().mockResolvedValue([]),
     save: jest.fn().mockResolvedValue(undefined),
     update: jest.fn().mockResolvedValue(undefined),
+    findAndCount: jest.fn().mockResolvedValue([[], 0]),
   };
   const mockAttemptRepo = {
     createQueryBuilder: jest.fn().mockReturnValue({
@@ -153,5 +154,45 @@ describe('CampaignsService', () => {
       service.uploadCsv('no-campaign', '/tmp/nonexistent.csv'),
     ).rejects.toThrow(NotFoundException);
     expect(mockCampaignRepo.increment).not.toHaveBeenCalled();
+  });
+
+  it('getStats calcola aggregati corretti', async () => {
+    mockRecipientRepo.find.mockResolvedValueOnce([
+      { downloadCount: 2, lastDownloadedAt: new Date('2026-06-26') },
+      { downloadCount: 0, lastDownloadedAt: null },
+    ]);
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, totalRecipients: 2, sentCount: 2 });
+
+    const stats = await service.getStats('uuid-1');
+
+    expect(stats).toEqual({
+      campaignId: 'uuid-1',
+      totalRecipients: 2,
+      totalSent: 2,
+      totalDownloaded: 1,
+      downloadPercentage: 50,
+      lastDownloadAt: new Date('2026-06-26'),
+    });
+  });
+
+  it('getStats lancia NotFoundException se la campagna non esiste', async () => {
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce(null);
+    await expect(service.getStats('no-exist')).rejects.toThrow(NotFoundException);
+  });
+
+  it('getRecipientStats pagina i risultati', async () => {
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce(mockCampaign);
+    mockRecipientRepo.findAndCount = jest.fn().mockResolvedValue([
+      [{ id: 'r1', fullName: 'Mario Rossi', codiceFiscale: 'CF1', downloadCount: 1, firstDownloadedAt: new Date(), lastDownloadedAt: new Date(), attachmentDeletedAt: null }],
+      1,
+    ]);
+
+    const page = await service.getRecipientStats('uuid-1', 1, 20);
+
+    expect(page.total).toBe(1);
+    expect(page.items).toHaveLength(1);
+    expect(mockRecipientRepo.findAndCount).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { campaignId: 'uuid-1' }, skip: 0, take: 20 }),
+    );
   });
 });

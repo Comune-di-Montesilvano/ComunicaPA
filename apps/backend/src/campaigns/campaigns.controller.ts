@@ -6,6 +6,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Req,
   UploadedFile,
   UploadedFiles,
@@ -105,5 +106,19 @@ export class CampaignsController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<{ launched: number; campaignId: string }> {
     return this.campaignsService.launch(id);
+  }
+
+  @Get(':id/stats')
+  getStats(@Param('id', ParseUUIDPipe) id: string) {
+    return this.campaignsService.getStats(id);
+  }
+
+  @Get(':id/stats/recipients')
+  getRecipientStats(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    return this.campaignsService.getRecipientStats(id, parseInt(page ?? '1', 10), parseInt(pageSize ?? '50', 10));
   }
 }
