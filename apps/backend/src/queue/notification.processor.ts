@@ -38,132 +38,114 @@ export class NotificationProcessor extends WorkerHost {
 
     await this.attemptRepo.update(attemptId, { status: AttemptStatus.PROCESSING });
 
+    const recipient = await this.recipientRepo.findOne({ where: { id: recipientId } });
+    if (!recipient) {
+      throw new Error(`Recipient ${recipientId} not found`);
+    }
+
+    const campaign = await this.campaignRepo.findOne({ where: { id: campaignId } });
+    if (!campaign) {
+      throw new Error(`Campaign ${campaignId} not found`);
+    }
+
+    const strategy = this.strategies.get(channel);
+    if (!strategy) {
+      throw new Error(`Strategy for channel ${channel} not found`);
+    }
+
+    // 1. Invio canale primario — l'esito NON condiziona più l'invio App IO
+    let primaryResult: { messageId?: string; responsePayload?: Record<string, unknown> } | undefined;
+    let primaryError: Error | undefined;
     try {
-      // 1. Reperisce destinatario
-      const recipient = await this.recipientRepo.findOne({
-        where: { id: recipientId },
-      });
-      if (!recipient) {
-        throw new Error(`Recipient ${recipientId} not found`);
-      }
+      primaryResult = await strategy.send(recipient, campaign);
+    } catch (err: any) {
+      primaryError = err instanceof Error ? err : new Error(String(err));
+    }
 
-      // 2. Reperisce campagna
-      const campaign = await this.campaignRepo.findOne({
-        where: { id: campaignId },
-      });
-      if (!campaign) {
-        throw new Error(`Campaign ${campaignId} not found`);
-      }
+    const responsePayload: Record<string, any> = {
+      ...(primaryResult?.responsePayload || {}),
+      messageId: primaryResult?.messageId,
+    };
 
-      // 3. Esegue invio tramite strategy
-      const strategy = this.strategies.get(channel);
-      if (!strategy) {
-        throw new Error(`Strategy for channel ${channel} not found`);
-      }
+    // 2. Invio App IO indipendente: parte se configurato, a prescindere dall'esito del canale primario
+    const appIoConfig = campaign.channelConfig?.['appIo'] as any;
+    if ((channel === 'EMAIL' || channel === 'PEC') && appIoConfig?.apiKey) {
+      const hasAppIo = await this.checkAppIoProfile(appIoConfig.baseUrl, appIoConfig.apiKey, recipient.codiceFiscale);
 
-      const result = await strategy.send(recipient, campaign);
+      if (hasAppIo) {
+        try {
+          this.logger.log(`Invio App IO indipendente per CF: ${recipient.codiceFiscale}`);
+          const publicApiUrl = this.config.get('origins.publicApi', { infer: true });
+          const downloadLinkSecret = this.config.get('downloadLink.secret', { infer: true });
+          const retentionMaxDays = this.config.get('retention.maxDays', { infer: true });
+          const retentionDays = getEffectiveRetentionDays(campaign, retentionMaxDays);
+          const expiresAtUnix = Math.floor(Date.now() / 1000) + retentionDays * 86400;
 
-      const responsePayload: Record<string, any> = {
-        ...(result.responsePayload || {}),
-        messageId: result.messageId,
-      };
+          const processedSubject = processTemplate(
+            (campaign.channelConfig?.['subject'] as string) || campaign.name,
+            recipient,
+            publicApiUrl,
+            downloadLinkSecret,
+            expiresAtUnix,
+          );
+          const processedMarkdown = processTemplate(
+            (campaign.channelConfig?.['body'] as string) || '',
+            recipient,
+            publicApiUrl,
+            downloadLinkSecret,
+            expiresAtUnix,
+          );
 
-      // 4. Co-delivery su App IO
-      const appIoConfig = campaign.channelConfig?.['appIo'] as any;
-      if ((channel === 'EMAIL' || channel === 'PEC') && appIoConfig?.apiKey) {
-        const hasAppIo = await this.checkAppIoProfile(
-          appIoConfig.baseUrl,
-          appIoConfig.apiKey,
-          recipient.codiceFiscale,
-        );
+          const appIoRes = await fetch(`${appIoConfig.baseUrl}/api/v1/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Ocp-Apim-Subscription-Key': appIoConfig.apiKey },
+            body: JSON.stringify({
+              fiscal_code: recipient.codiceFiscale,
+              content: { subject: processedSubject, markdown: processedMarkdown },
+            }),
+          });
 
-        if (hasAppIo) {
-          try {
-            this.logger.log(`Performing simultaneous App IO delivery for CF: ${recipient.codiceFiscale}`);
-            const publicApiUrl = this.config.get('origins.publicApi', { infer: true });
-            const downloadLinkSecret = this.config.get('downloadLink.secret', { infer: true });
-            const retentionMaxDays = this.config.get('retention.maxDays', { infer: true });
-            const retentionDays = getEffectiveRetentionDays(campaign, retentionMaxDays);
-            const expiresAtUnix = Math.floor(Date.now() / 1000) + retentionDays * 86400;
-            const processedSubject = processTemplate(
-              (campaign.channelConfig?.['subject'] as string) || campaign.name,
-              recipient,
-              publicApiUrl,
-              downloadLinkSecret,
-              expiresAtUnix,
-            );
-            const processedMarkdown = processTemplate(
-              (campaign.channelConfig?.['body'] as string) || '',
-              recipient,
-              publicApiUrl,
-              downloadLinkSecret,
-              expiresAtUnix,
-            );
-
-            const appIoRes = await fetch(`${appIoConfig.baseUrl}/api/v1/messages`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Ocp-Apim-Subscription-Key': appIoConfig.apiKey,
-              },
-              body: JSON.stringify({
-                fiscal_code: recipient.codiceFiscale,
-                content: {
-                  subject: processedSubject,
-                  markdown: processedMarkdown,
-                },
-              }),
-            });
-
-            if (appIoRes.ok) {
-              const appIoData = (await appIoRes.json()) as { id: string };
-              responsePayload.appIo = {
-                success: true,
-                messageId: appIoData.id,
-              };
-              this.logger.log(`Simultaneous App IO delivery success: messageId=${appIoData.id}`);
-            } else {
-              responsePayload.appIo = {
-                success: false,
-                error: `App IO status: ${appIoRes.status}`,
-              };
-              this.logger.warn(`Simultaneous App IO delivery failed with status ${appIoRes.status}`);
-            }
-          } catch (appIoErr: any) {
-            responsePayload.appIo = {
-              success: false,
-              error: appIoErr.message,
-            };
-            this.logger.error(`Simultaneous App IO delivery error: ${appIoErr.message}`);
+          if (appIoRes.ok) {
+            const appIoData = (await appIoRes.json()) as { id: string };
+            responsePayload.appIo = { success: true, messageId: appIoData.id };
+            this.logger.log(`App IO delivery success: messageId=${appIoData.id}`);
+          } else {
+            responsePayload.appIo = { success: false, error: `App IO status: ${appIoRes.status}` };
+            this.logger.warn(`App IO delivery failed with status ${appIoRes.status}`);
           }
+        } catch (appIoErr: any) {
+          responsePayload.appIo = { success: false, error: appIoErr.message };
+          this.logger.error(`App IO delivery error: ${appIoErr.message}`);
         }
       }
+    }
 
-      // 5. Salva tentativo con successo
-      await this.attemptRepo.update(attemptId, {
-        status: AttemptStatus.SUCCESS,
-        sentAt: new Date(),
-        responsePayload,
-      });
-
-      // 6. Salva destinatario con successo
-      await this.recipientRepo.update(recipientId, {
-        status: RecipientStatus.SENT,
-      });
-
-      await this.campaignRepo.increment({ id: campaignId }, 'sentCount', 1);
-    } catch (error: any) {
-      const msg = error.message || String(error);
+    // 3. Esito canale primario determina lo stato del tentativo/destinatario
+    if (primaryError) {
       await this.attemptRepo.update(attemptId, {
         status: AttemptStatus.FAILED,
-        errorMessage: msg,
+        errorMessage: primaryError.message,
+        responsePayload,
       });
-      await this.recipientRepo.update(recipientId, {
-        status: RecipientStatus.FAILED,
-      });
+      await this.recipientRepo.update(recipientId, { status: RecipientStatus.FAILED });
       await this.campaignRepo.increment({ id: campaignId }, 'failedCount', 1);
-      throw error;
+      throw primaryError;
     }
+
+    const retentionMaxDaysForExpiry = this.config.get('retention.maxDays', { infer: true });
+    const retentionDaysForExpiry = getEffectiveRetentionDays(campaign, retentionMaxDaysForExpiry);
+    const attachmentExpiresAt = new Date(Date.now() + retentionDaysForExpiry * 86400 * 1000);
+
+    await this.attemptRepo.update(attemptId, {
+      status: AttemptStatus.SUCCESS,
+      sentAt: new Date(),
+      responsePayload,
+    });
+    await this.recipientRepo.update(recipientId, {
+      status: RecipientStatus.SENT,
+      attachmentExpiresAt,
+    });
+    await this.campaignRepo.increment({ id: campaignId }, 'sentCount', 1);
   }
 
   private async checkAppIoProfile(

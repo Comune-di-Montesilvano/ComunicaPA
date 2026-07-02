@@ -122,7 +122,10 @@ describe('NotificationProcessor', () => {
       responsePayload: expect.any(Object),
     }));
     expect(mockCampaignRepo.increment).toHaveBeenCalledWith({ id: 'camp-1' }, 'sentCount', 1);
-    expect(mockRecipientRepo.update).toHaveBeenCalledWith('rec-1', { status: RecipientStatus.SENT });
+    expect(mockRecipientRepo.update).toHaveBeenCalledWith('rec-1', expect.objectContaining({
+      status: RecipientStatus.SENT,
+      attachmentExpiresAt: expect.any(Date),
+    }));
   });
 
   it('process() aggiorna attempt PROCESSING → FAILED e rilancia se strategy lancia', async () => {
@@ -142,6 +145,62 @@ describe('NotificationProcessor', () => {
     const data: NotificationJobData = { ...baseData, channel: 'POSTAL' };
 
     await expect(processor.process(mockJob(data))).rejects.toThrow('Nessuna strategy per channel POSTAL');
+  });
+
+  describe('App IO indipendente dal canale primario', () => {
+    const mockCampaignWithAppIo = {
+      id: 'camp-1',
+      status: CampaignStatus.QUEUED,
+      name: 'TARI',
+      channelType: 'EMAIL',
+      channelConfig: { appIo: { apiKey: 'key', baseUrl: 'http://io.test' } },
+      retentionDays: null,
+      sentCount: 0,
+      failedCount: 0,
+      totalRecipients: 1,
+    };
+
+    let originalFetch: any;
+
+    beforeEach(() => {
+      originalFetch = (global as any).fetch;
+      mockCampaignRepo.findOne.mockResolvedValue(mockCampaignWithAppIo);
+    });
+
+    afterEach(() => {
+      (global as any).fetch = originalFetch;
+    });
+
+    it("tenta comunque App IO quando il canale primario (EMAIL) fallisce, poi rilancia l'errore primario", async () => {
+      mockStrategy.send.mockRejectedValueOnce(new Error('SMTP down'));
+      (global as any).fetch = jest.fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ sender_allowed: true }) }) // checkAppIoProfile
+        .mockResolvedValueOnce({ ok: false, status: 500 }); // send message
+
+      await expect(processor.process(mockJob(baseData))).rejects.toThrow('SMTP down');
+
+      expect((global as any).fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/v1/messages'),
+        expect.any(Object),
+      );
+      expect(mockRecipientRepo.update).toHaveBeenCalledWith('rec-1', expect.objectContaining({ status: RecipientStatus.FAILED }));
+      expect(mockAttemptRepo.update).toHaveBeenCalledWith('att-1', expect.objectContaining({ status: AttemptStatus.FAILED }));
+    });
+
+    it('percorso di successo: imposta attachmentExpiresAt e sentCount, non lancia errori', async () => {
+      mockStrategy.send.mockResolvedValueOnce({ messageId: 'msg-1', responsePayload: {} });
+      (global as any).fetch = jest.fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ sender_allowed: true }) }) // checkAppIoProfile
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'appio-1' }) }); // send message
+
+      await processor.process(mockJob(baseData));
+
+      expect(mockRecipientRepo.update).toHaveBeenCalledWith(
+        'rec-1',
+        expect.objectContaining({ status: RecipientStatus.SENT, attachmentExpiresAt: expect.any(Date) }),
+      );
+      expect(mockCampaignRepo.increment).toHaveBeenCalledWith({ id: 'camp-1' }, 'sentCount', 1);
+    });
   });
 
   describe('checkAndCompleteCampaign', () => {
