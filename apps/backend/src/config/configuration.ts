@@ -22,21 +22,8 @@ export interface AppConfiguration {
     requiredGroup: string;
     adminGroup: string;
   };
-  oidc: {
-    issuer: string;
-    audience: string;
-    jwksUri: string;
-  };
-  origins: {
-    admin: string;
-    citizen: string;
-    publicApi: string;
-  };
   downloadLink: {
     secret: string;
-  };
-  attachments: {
-    path: string;
   };
 }
 
@@ -64,20 +51,7 @@ export default (): AppConfiguration => ({
     requiredGroup: process.env['LDAP_REQUIRED_GROUP'] ?? 'COMUNICAPA_USERS',
     adminGroup: process.env['LDAP_ADMIN_GROUP'] ?? 'COMUNICAPA_ADMINS',
   },
-  oidc: {
-    issuer: process.env['OIDC_ISSUER'] ?? '',
-    audience: process.env['OIDC_AUDIENCE'] ?? 'comunicapa',
-    jwksUri: process.env['OIDC_JWKS_URI'] ?? '',
-  },
-  origins: {
-    admin: process.env['ADMIN_ORIGIN'] ?? 'http://localhost:3000',
-    citizen: process.env['CITIZEN_ORIGIN'] ?? 'http://localhost:3001',
-    publicApi: process.env['PUBLIC_BACKEND_URL'] ?? 'http://localhost:8080',
-  },
   downloadLink: {
     secret: process.env['DOWNLOAD_LINK_SECRET'] ?? 'change-me-in-production',
-  },
-  attachments: {
-    path: process.env['ATTACHMENTS_PATH'] ?? '/data/attachments',
   },
 });

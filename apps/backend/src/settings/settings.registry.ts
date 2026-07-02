@@ -34,6 +34,14 @@ export const SETTING_DEFS = {
   'appIo.baseUrl': { env: 'APP_IO_BASE_URL', type: 'string', default: 'https://api.io.italia.it' },
   'send.apiKey': { env: 'SEND_API_KEY', type: 'string', secret: true, default: '' },
   'send.baseUrl': { env: 'SEND_BASE_URL', type: 'string', default: 'https://api.notifichedigitali.it' },
+  'system.publicUrl': {
+    env: 'PUBLIC_BACKEND_URL',
+    type: 'string',
+    default: 'http://localhost:8080',
+  },
+  'oidc.issuer': { env: 'OIDC_ISSUER', type: 'string', default: '' },
+  'oidc.audience': { env: 'OIDC_AUDIENCE', type: 'string', default: 'comunicapa' },
+  'oidc.jwksUri': { env: 'OIDC_JWKS_URI', type: 'string', default: '' },
 } as const satisfies Record<string, SettingDef>;
 
 export type SettingKey = keyof typeof SETTING_DEFS;

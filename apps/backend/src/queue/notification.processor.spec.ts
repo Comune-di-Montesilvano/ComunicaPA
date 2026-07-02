@@ -36,7 +36,6 @@ const mockStrategies = new Map([['EMAIL', mockStrategy]]);
 const mockConfig = {
   get: (key: string) => {
     const cfg: Record<string, unknown> = {
-      'origins.publicApi': 'http://api.test',
       'downloadLink.secret': 'test-secret',
     };
     return cfg[key];
@@ -45,6 +44,7 @@ const mockConfig = {
 
 const settingsValues: Record<string, unknown> = {
   'retention.maxDays': 90,
+  'system.publicUrl': 'http://api.test',
 };
 const mockSettings = { get: jest.fn(async (key: string) => settingsValues[key]) };
 

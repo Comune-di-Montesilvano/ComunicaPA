@@ -32,7 +32,7 @@ export class EmailStrategy implements IChannelStrategy {
     const password = await this.settings.get<string>('smtp.password');
     const defaultFrom = await this.settings.get<string>('smtp.from');
     const brandName = (await this.settings.get<string>('brand.name')) || 'Comune di Montesilvano';
-    const publicApiUrl = this.config.get('origins.publicApi', { infer: true });
+    const publicApiUrl = await this.settings.get<string>('system.publicUrl');
     const downloadLinkSecret = this.config.get('downloadLink.secret', { infer: true });
     const retentionMaxDays = await this.settings.get<number>('retention.maxDays');
     const retentionDays = getEffectiveRetentionDays(campaign, retentionMaxDays);

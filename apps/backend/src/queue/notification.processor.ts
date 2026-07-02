@@ -80,7 +80,7 @@ export class NotificationProcessor extends WorkerHost {
       if (hasAppIo) {
         try {
           this.logger.log(`Invio App IO indipendente per CF: ${recipient.codiceFiscale}`);
-          const publicApiUrl = this.config.get('origins.publicApi', { infer: true });
+          const publicApiUrl = await this.settings.get<string>('system.publicUrl');
           const downloadLinkSecret = this.config.get('downloadLink.secret', { infer: true });
           const retentionMaxDays = await this.settings.get<number>('retention.maxDays');
           const retentionDays = getEffectiveRetentionDays(campaign, retentionMaxDays);
