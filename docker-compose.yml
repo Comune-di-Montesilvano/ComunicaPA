@@ -50,10 +50,6 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET obbligatorio - genera con openssl rand -hex 32}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
       DOWNLOAD_LINK_SECRET: ${DOWNLOAD_LINK_SECRET:?DOWNLOAD_LINK_SECRET obbligatorio - genera con openssl rand -hex 32}
-      PUBLIC_BACKEND_URL: ${PUBLIC_BACKEND_URL:-http://localhost:8080}
-      ADMIN_ORIGIN: ${ADMIN_ORIGIN:-http://localhost:3000}
-      CITIZEN_ORIGIN: ${CITIZEN_ORIGIN:-http://localhost:3001}
-      ATTACHMENTS_PATH: ${ATTACHMENTS_PATH:-/data/attachments}
       LDAP_HOST: ${LDAP_HOST:-}
       LDAP_TLS_SKIP_VERIFY: ${LDAP_TLS_SKIP_VERIFY:-true}
       LDAP_STARTTLS: ${LDAP_STARTTLS:-false}
@@ -63,11 +59,8 @@ services:
       LDAP_BIND_PASSWORD: ${LDAP_BIND_PASSWORD:-}
       LDAP_REQUIRED_GROUP: ${LDAP_REQUIRED_GROUP:-COMUNICAPA_USERS}
       LDAP_ADMIN_GROUP: ${LDAP_ADMIN_GROUP:-COMUNICAPA_ADMINS}
-      OIDC_ISSUER: ${OIDC_ISSUER:-}
-      OIDC_AUDIENCE: ${OIDC_AUDIENCE:-comunicapa}
-      OIDC_JWKS_URI: ${OIDC_JWKS_URI:-}
     volumes:
-      - attachments_data:${ATTACHMENTS_PATH:-/data/attachments}
+      - attachments_data:/data/attachments
     depends_on:
       postgres:
         condition: service_healthy
@@ -81,8 +74,8 @@ services:
     restart: unless-stopped
     ports:
       - "${ADMIN_PORT:-3000}:8080"
-    environment:
-      API_BASE: ${PUBLIC_BACKEND_URL:-http://localhost:8080}
+    depends_on:
+      - backend
     networks:
       - comunicapa-net
 
@@ -91,8 +84,8 @@ services:
     restart: unless-stopped
     ports:
       - "${CITIZEN_PORT:-3001}:8080"
-    environment:
-      API_BASE: ${PUBLIC_BACKEND_URL:-http://localhost:8080}
+    depends_on:
+      - backend
     networks:
       - comunicapa-net
 

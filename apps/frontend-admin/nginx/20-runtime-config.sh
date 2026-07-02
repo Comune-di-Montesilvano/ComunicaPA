@@ -2,7 +2,9 @@
 # apps/frontend-admin/nginx/20-runtime-config.sh
 # Genera la config runtime del frontend dalla variabile API_BASE.
 set -eu
-: "${API_BASE:=http://localhost:8080}"
+# Default: /api — il nginx del container proxya verso il backend sulla rete
+# Docker (stesso dominio, niente CORS). Override solo per topologie particolari.
+: "${API_BASE:=/api}"
 case "$API_BASE" in
   *[!A-Za-z0-9_.:/-]*)
     echo "API_BASE contiene caratteri non ammessi: $API_BASE" >&2
