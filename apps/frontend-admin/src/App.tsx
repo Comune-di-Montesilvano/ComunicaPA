@@ -254,7 +254,7 @@ export function App(): React.JSX.Element {
   const [settPostalUrl, setSettPostalUrl] = useState(localStorage.getItem('sett_postal_url') || 'https://gateway.postel.it/postalization');
 
   const [activeSettingsTab, setActiveSettingsTab] = useState<'personalizzazione' | 'smtp' | 'pec' | 'app-io' | 'send' | 'protocollo' | 'postalizzazione' | 'oidc'>('personalizzazione');
-  const [settingsSavedMessage, setSettingsSavedMessage] = useState<string | null>(null);
+  const [settingsSavedMessage, setSettingsSavedMessage] = useState<{ text: string; error: boolean } | null>(null);
 
   // Campaign detail state
   const [campaign, setCampaign] = useState<Campaign | null>(null);
@@ -711,12 +711,12 @@ export function App(): React.JSX.Element {
       });
       if (!res.ok) {
         const err = (await res.json()) as { message?: string };
-        setSettingsSavedMessage(`Errore salvataggio: ${err.message ?? res.status}`);
+        setSettingsSavedMessage({ text: `Errore salvataggio: ${err.message ?? res.status}`, error: true });
       } else {
-        setSettingsSavedMessage('Impostazioni salvate con successo!');
+        setSettingsSavedMessage({ text: 'Impostazioni salvate con successo!', error: false });
       }
     } catch {
-      setSettingsSavedMessage('Errore di rete durante il salvataggio.');
+      setSettingsSavedMessage({ text: 'Errore di rete durante il salvataggio.', error: true });
     }
     setTimeout(() => setSettingsSavedMessage(null), 3000);
   };
@@ -736,7 +736,9 @@ export function App(): React.JSX.Element {
       if (kind === 'logo') setSettLogoValue(filename);
       else setSettFaviconValue(filename);
     }
-    setSettingsSavedMessage(res.ok ? `${kind === 'logo' ? 'Logo' : 'Favicon'} caricato.` : 'Errore upload.');
+    setSettingsSavedMessage(res.ok
+      ? { text: `${kind === 'logo' ? 'Logo' : 'Favicon'} caricato.`, error: false }
+      : { text: 'Errore upload.', error: true });
     setTimeout(() => setSettingsSavedMessage(null), 3000);
   };
 
@@ -2513,9 +2515,9 @@ export function App(): React.JSX.Element {
           {view === 'impostazioni' && (
             <div>
               {settingsSavedMessage && (
-                <div className="alert alert-success d-flex align-items-center gap-2 mb-3" style={{ position: 'fixed', top: '70px', right: '20px', zIndex: 2000, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-                  <i className="fas fa-check-circle"></i>
-                  <strong>{settingsSavedMessage}</strong>
+                <div className={`alert ${settingsSavedMessage.error ? 'alert-danger' : 'alert-success'} d-flex align-items-center gap-2 mb-3`} style={{ position: 'fixed', top: '70px', right: '20px', zIndex: 2000, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+                  <i className={`fas ${settingsSavedMessage.error ? 'fa-triangle-exclamation' : 'fa-check-circle'}`}></i>
+                  <strong>{settingsSavedMessage.text}</strong>
                 </div>
               )}
 
@@ -3267,7 +3269,7 @@ export function App(): React.JSX.Element {
                                     disabled={!settCitizenPublicUrl}
                                     onClick={() => {
                                       navigator.clipboard.writeText(`${settCitizenPublicUrl.replace(/\/+$/, '')}/oidc/callback`);
-                                      setSettingsSavedMessage('Redirect URI copiata negli appunti.');
+                                      setSettingsSavedMessage({ text: 'Redirect URI copiata negli appunti.', error: false });
                                       setTimeout(() => setSettingsSavedMessage(null), 3000);
                                     }}
                                   >
