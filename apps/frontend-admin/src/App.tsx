@@ -3,6 +3,27 @@ import { TemplateEditor } from './components/TemplateEditor';
 
 const API_BASE = 'http://localhost:8080';
 
+// Tiptap's editor.getHTML() always returns a non-empty shell (e.g. '<p></p>')
+// even when the user has deleted all content, so a plain truthiness check on
+// the HTML string is not enough to detect an "empty" body.
+function isWizBodyEmpty(html: string): boolean {
+  const text = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' ').trim();
+  return text.length === 0;
+}
+
+// Escapes HTML-special characters in untrusted values (e.g. CSV cell content)
+// before they are interpolated into a string that will be rendered via
+// dangerouslySetInnerHTML. Must NOT be applied to the operator's own
+// rich-text template markup, only to the substituted values.
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 interface Campaign {
   id: string;
   name: string;
@@ -2079,7 +2100,7 @@ export function App(): React.JSX.Element {
                       <button
                         className="btn btn-primary"
                         onClick={() => setWizStep(5)}
-                        disabled={!wizSubject || !wizBody}
+                        disabled={!wizSubject || isWizBodyEmpty(wizBody)}
                       >
                         Riepilogo <i className="fas fa-arrow-right ms-1"></i>
                       </button>
@@ -2129,12 +2150,12 @@ export function App(): React.JSX.Element {
                             dangerouslySetInnerHTML={{
                               __html: wizBody
                                 .replace(/%allegato1%/g, 'http://localhost:3001/?notificationId=TEST-UUID-SIMULAZIONE')
-                                .replace(/%parametro\d+\(mappato"([^"]+)"\)%/gi, (match, key) => wizValidRows[wizPreviewIndex][key] || '')
+                                .replace(/%parametro\d+\(mappato"([^"]+)"\)%/gi, (match, key) => escapeHtml(wizValidRows[wizPreviewIndex][key] || ''))
                                 .replace(/%([^%()]+)%/gi, (match, key) => {
                                   const k = key.toLowerCase().trim();
-                                  if (k === 'nominativo' || k === 'full_name') return getWizRowFullName(wizValidRows[wizPreviewIndex]);
-                                  if (k === 'codice_fiscale' || k === 'cf') return wizValidRows[wizPreviewIndex][wizMapping.codice_fiscale] || '';
-                                  return wizValidRows[wizPreviewIndex][key] || match;
+                                  if (k === 'nominativo' || k === 'full_name') return escapeHtml(getWizRowFullName(wizValidRows[wizPreviewIndex]));
+                                  if (k === 'codice_fiscale' || k === 'cf') return escapeHtml(wizValidRows[wizPreviewIndex][wizMapping.codice_fiscale] || '');
+                                  return wizValidRows[wizPreviewIndex][key] ? escapeHtml(wizValidRows[wizPreviewIndex][key]) : match;
                                 }),
                             }}
                           />
