@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { TemplateEditor } from './components/TemplateEditor';
 
 const API_BASE = 'http://localhost:8080';
 
@@ -2043,25 +2044,6 @@ export function App(): React.JSX.Element {
                   <div className="col-lg-6 border-end">
                     <h4 className="h6 fw-bold text-dark mb-3">Passo 4: Scrittura Template & Jolly Fields</h4>
                     
-                    <div className="p-3 border rounded bg-light mb-3">
-                      <strong className="small text-dark d-block mb-2"><i className="fas fa-keyboard me-1 text-primary"></i>Clicca per inserire il parametro:</strong>
-                      <div className="d-flex flex-wrap gap-1">
-                        <button className="btn btn-xs btn-outline-secondary" style={{ fontSize: '0.74rem' }} onClick={() => setWizBody(b => b + ' %allegato1%')}>Link Allegato</button>
-                        <button className="btn btn-xs btn-outline-secondary" style={{ fontSize: '0.74rem' }} onClick={() => setWizBody(b => b + ' %nominativo%')}>Nominativo</button>
-                        <button className="btn btn-xs btn-outline-secondary" style={{ fontSize: '0.74rem' }} onClick={() => setWizBody(b => b + ' %codice_fiscale%')}>Codice Fiscale</button>
-                        {wizCsvHeaders.filter(h => h !== wizMapping.codice_fiscale && h !== wizMapping.full_name && h !== wizMapping.email && h !== wizMapping.pec).map(h => (
-                          <button
-                            key={h}
-                            className="btn btn-xs btn-outline-primary"
-                            style={{ fontSize: '0.74rem' }}
-                            onClick={() => setWizBody(b => b + ` %${h}%`)}
-                          >
-                            Colonna: {h}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
                     <div className="mb-3">
                       <label className="form-label small fw-bold">Oggetto della Comunicazione (Template)</label>
                       <input
@@ -2073,17 +2055,21 @@ export function App(): React.JSX.Element {
                         required
                       />
                     </div>
-                    
+
                     <div className="mb-3">
                       <label className="form-label small fw-bold">Corpo del Messaggio (Template)</label>
-                      <textarea
-                        className="form-control form-control-sm"
-                        rows={10}
-                        placeholder="Gentile %nominativo%, le notifichiamo la tassa TARI per un importo di %importo% EUR..."
+                      <TemplateEditor
                         value={wizBody}
-                        onChange={e => setWizBody(e.target.value)}
-                        required
-                      ></textarea>
+                        onChange={setWizBody}
+                        placeholders={[
+                          { label: 'Link Allegato', token: '%allegato1%' },
+                          { label: 'Nominativo', token: '%nominativo%' },
+                          { label: 'Codice Fiscale', token: '%codice_fiscale%' },
+                          ...wizCsvHeaders
+                            .filter(h => h !== wizMapping.codice_fiscale && h !== wizMapping.full_name && h !== wizMapping.email && h !== wizMapping.pec)
+                            .map(h => ({ label: `Colonna: ${h}`, token: `%${h}%` })),
+                        ]}
+                      />
                     </div>
 
                     <div className="mt-4 pt-3 border-top d-flex justify-content-between">
@@ -2138,16 +2124,20 @@ export function App(): React.JSX.Element {
                           <div style={{ backgroundColor: '#0066cc', padding: '16px', color: 'white', fontWeight: 'bold' }}>
                             {settEntityName}
                           </div>
-                          <div style={{ padding: '20px', fontSize: '0.9rem', color: '#333', lineHeight: '1.5', minHeight: '150px', whiteSpace: 'pre-wrap' }}>
-                            {wizBody.replace(/%allegato1%/g, 'http://localhost:3001/?notificationId=TEST-UUID-SIMULAZIONE')
-                              .replace(/%parametro\d+\(mappato"([^"]+)"\)%/gi, (match, key) => wizValidRows[wizPreviewIndex][key] || '')
-                              .replace(/%([^%()]+)%/gi, (match, key) => {
-                                const k = key.toLowerCase().trim();
-                                if (k === 'nominativo' || k === 'full_name') return getWizRowFullName(wizValidRows[wizPreviewIndex]);
-                                if (k === 'codice_fiscale' || k === 'cf') return wizValidRows[wizPreviewIndex][wizMapping.codice_fiscale] || '';
-                                return wizValidRows[wizPreviewIndex][key] || match;
-                              })}
-                          </div>
+                          <div
+                            style={{ padding: '20px', fontSize: '0.9rem', color: '#333', lineHeight: '1.5', minHeight: '150px' }}
+                            dangerouslySetInnerHTML={{
+                              __html: wizBody
+                                .replace(/%allegato1%/g, 'http://localhost:3001/?notificationId=TEST-UUID-SIMULAZIONE')
+                                .replace(/%parametro\d+\(mappato"([^"]+)"\)%/gi, (match, key) => wizValidRows[wizPreviewIndex][key] || '')
+                                .replace(/%([^%()]+)%/gi, (match, key) => {
+                                  const k = key.toLowerCase().trim();
+                                  if (k === 'nominativo' || k === 'full_name') return getWizRowFullName(wizValidRows[wizPreviewIndex]);
+                                  if (k === 'codice_fiscale' || k === 'cf') return wizValidRows[wizPreviewIndex][wizMapping.codice_fiscale] || '';
+                                  return wizValidRows[wizPreviewIndex][key] || match;
+                                }),
+                            }}
+                          />
                           <div style={{ backgroundColor: '#f8f9fa', padding: '12px', fontSize: '0.72rem', color: '#666', textAlign: 'center', borderTop: '1px solid #edf2f7' }}>
                             Messaggio istituzionale inviato automaticamente per conto di {settEntityName}.
                           </div>
