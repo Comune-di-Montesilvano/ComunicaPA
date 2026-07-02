@@ -69,7 +69,8 @@ export function App(): React.JSX.Element {
         if (b.faviconUrl) {
           const link = document.querySelector<HTMLLinkElement>("link[rel~='icon']") ?? document.createElement('link');
           link.rel = 'icon';
-          link.href = `${API_BASE}${b.faviconUrl}`;
+          // faviconUrl può essere un path relativo al backend o un URL esterno assoluto
+          link.href = /^https?:\/\//i.test(b.faviconUrl) ? b.faviconUrl : `${API_BASE}${b.faviconUrl}`;
           document.head.appendChild(link);
         }
       })

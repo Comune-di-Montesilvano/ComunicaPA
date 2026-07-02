@@ -112,7 +112,8 @@ export function App(): React.JSX.Element {
         if (b.faviconUrl) {
           const link = document.querySelector<HTMLLinkElement>("link[rel~='icon']") ?? document.createElement('link');
           link.rel = 'icon';
-          link.href = `${API_BASE}${b.faviconUrl}`;
+          // faviconUrl può essere un path relativo al backend o un URL esterno assoluto
+          link.href = /^https?:\/\//i.test(b.faviconUrl) ? b.faviconUrl : `${API_BASE}${b.faviconUrl}`;
           document.head.appendChild(link);
         }
       })
@@ -186,6 +187,9 @@ export function App(): React.JSX.Element {
   // Settings State (loaded from backend GET /settings; see useEffect below)
   const [settEntityName, setSettEntityName] = useState('Comune di Montesilvano');
   const [settSubtitle, setSettSubtitle] = useState('ComunicaPA Hub');
+  // brand.logo / brand.favicon: filename locale (da upload) oppure URL esterno https://
+  const [settLogoValue, setSettLogoValue] = useState('');
+  const [settFaviconValue, setSettFaviconValue] = useState('');
 
   const [settSmtpHost, setSettSmtpHost] = useState('smtp.comune.montesilvano.pe.it');
   const [settSmtpPort, setSettSmtpPort] = useState('587');
@@ -308,6 +312,8 @@ export function App(): React.JSX.Element {
         const s = d.settings;
         setSettEntityName(String(s['brand.name'] ?? ''));
         setSettSubtitle(String(s['brand.subtitle'] ?? ''));
+        setSettLogoValue(String(s['brand.logo'] ?? ''));
+        setSettFaviconValue(String(s['brand.favicon'] ?? ''));
         setSettSmtpHost(String(s['smtp.host'] ?? ''));
         setSettSmtpPort(String(s['smtp.port'] ?? '587'));
         setSettSmtpSecure(Boolean(s['smtp.secure']));
@@ -665,6 +671,8 @@ export function App(): React.JSX.Element {
           settings: {
             'brand.name': settEntityName,
             'brand.subtitle': settSubtitle,
+            'brand.logo': settLogoValue,
+            'brand.favicon': settFaviconValue,
             'smtp.host': settSmtpHost,
             'smtp.port': Number(settSmtpPort) || 587,
             'smtp.secure': settSmtpSecure,
@@ -709,6 +717,13 @@ export function App(): React.JSX.Element {
       headers: { Authorization: `Bearer ${token}` },
       body: form,
     });
+    if (res.ok) {
+      // Allinea il campo URL/filename al file appena caricato, così un
+      // successivo "Salva impostazioni" non sovrascrive l'upload
+      const { filename } = (await res.json()) as { filename: string };
+      if (kind === 'logo') setSettLogoValue(filename);
+      else setSettFaviconValue(filename);
+    }
     setSettingsSavedMessage(res.ok ? `${kind === 'logo' ? 'Logo' : 'Favicon'} caricato.` : 'Errore upload.');
     setTimeout(() => setSettingsSavedMessage(null), 3000);
   };
@@ -2605,11 +2620,27 @@ export function App(): React.JSX.Element {
                               <label className="form-label">Logo ente (PNG/JPG/SVG, max 2 MB)</label>
                               <input type="file" className="form-control" accept="image/png,image/jpeg,image/svg+xml"
                                 onChange={(e) => e.target.files?.[0] && handleUploadBranding('logo', e.target.files[0])} />
+                              <input
+                                type="text"
+                                className="form-control form-control-sm mt-2"
+                                placeholder="…oppure URL esterno, es. https://cdn.ente.it/logo.png"
+                                value={settLogoValue}
+                                onChange={(e) => setSettLogoValue(e.target.value)}
+                              />
+                              <div className="form-text small text-muted">In alternativa all'upload puoi indicare un URL https:// (salva con "Salva impostazioni").</div>
                             </div>
                             <div className="mb-3">
                               <label className="form-label">Favicon (ICO/PNG/SVG, max 2 MB)</label>
                               <input type="file" className="form-control" accept="image/x-icon,image/png,image/svg+xml"
                                 onChange={(e) => e.target.files?.[0] && handleUploadBranding('favicon', e.target.files[0])} />
+                              <input
+                                type="text"
+                                className="form-control form-control-sm mt-2"
+                                placeholder="…oppure URL esterno, es. https://cdn.ente.it/favicon.ico"
+                                value={settFaviconValue}
+                                onChange={(e) => setSettFaviconValue(e.target.value)}
+                              />
+                              <div className="form-text small text-muted">In alternativa all'upload puoi indicare un URL https:// (salva con "Salva impostazioni").</div>
                             </div>
                             <div className="mb-3">
                               <label className="form-label">Conservazione allegati (giorni)</label>

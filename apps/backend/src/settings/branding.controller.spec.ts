@@ -30,6 +30,22 @@ describe('BrandingController', () => {
     expect(res.logoUrl).toBe('/branding/logo');
   });
 
+  it('GET /branding con logo/favicon come URL esterno → URL passato diretto', async () => {
+    values.set('brand.logo', 'https://cdn.ente.it/logo.png');
+    values.set('brand.favicon', 'HTTP://cdn.ente.it/favicon.ico');
+    const res = await controller.getBranding();
+    expect(res.logoUrl).toBe('https://cdn.ente.it/logo.png');
+    expect(res.faviconUrl).toBe('HTTP://cdn.ente.it/favicon.ico');
+    values.set('brand.logo', '');
+    values.set('brand.favicon', '');
+  });
+
+  it('GET /branding/logo con setting URL esterno → 404 (nessun file locale)', async () => {
+    values.set('brand.logo', 'https://cdn.ente.it/logo.png');
+    await expect(controller.getLogo({ sendFile: jest.fn() } as never)).rejects.toThrow(NotFoundException);
+    values.set('brand.logo', '');
+  });
+
   it('GET /branding/logo senza file configurato → 404', async () => {
     values.set('brand.logo', '');
     await expect(controller.getLogo({ sendFile: jest.fn() } as never)).rejects.toThrow(NotFoundException);

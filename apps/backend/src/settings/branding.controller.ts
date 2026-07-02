@@ -43,11 +43,14 @@ export class BrandingController {
       this.appSettings.get<string>('brand.logo'),
       this.appSettings.get<string>('brand.favicon'),
     ]);
+    // Il setting può contenere un filename locale (upload) oppure un URL esterno
+    const resolve = (value: string, localPath: string): string | null =>
+      value ? (/^https?:\/\//i.test(value) ? value : localPath) : null;
     return {
       name,
       subtitle,
-      logoUrl: logo ? '/branding/logo' : null,
-      faviconUrl: favicon ? '/branding/favicon' : null,
+      logoUrl: resolve(logo, '/branding/logo'),
+      faviconUrl: resolve(favicon, '/branding/favicon'),
     };
   }
 
