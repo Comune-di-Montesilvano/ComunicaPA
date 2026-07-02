@@ -119,6 +119,16 @@ export class CampaignsController {
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
   ) {
-    return this.campaignsService.getRecipientStats(id, parseInt(page ?? '1', 10), parseInt(pageSize ?? '50', 10));
+    const parsedPage = parseInt(page ?? '1', 10);
+    const parsedPageSize = parseInt(pageSize ?? '50', 10);
+
+    if (!Number.isInteger(parsedPage) || parsedPage < 1) {
+      throw new BadRequestException('Il parametro page deve essere un numero intero maggiore o uguale a 1');
+    }
+    if (!Number.isInteger(parsedPageSize) || parsedPageSize < 1) {
+      throw new BadRequestException('Il parametro pageSize deve essere un numero intero maggiore o uguale a 1');
+    }
+
+    return this.campaignsService.getRecipientStats(id, parsedPage, parsedPageSize);
   }
 }
