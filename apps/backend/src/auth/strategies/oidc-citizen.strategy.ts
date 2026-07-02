@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
@@ -47,6 +47,14 @@ export class OidcCitizenStrategy extends PassportStrategy(Strategy, 'oidc-citize
             if (jwksUri) {
               getJwksProvider(jwksUri)(req, rawJwt, done);
             } else {
+              // Fallback dev: senza JWKS i token cittadino sono verificati in
+              // HS256 col JWT_SECRET interno — in produzione va segnalato
+              if (process.env['NODE_ENV'] === 'production') {
+                Logger.warn(
+                  'oidc.jwksUri non configurato: verifica token cittadino in fallback HS256 (configurarlo dalla UI admin)',
+                  'OidcCitizenStrategy',
+                );
+              }
               done(null, jwtSecret);
             }
           })
