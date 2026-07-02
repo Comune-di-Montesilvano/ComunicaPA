@@ -10,11 +10,9 @@ import {
   Put,
   Req,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { Roles } from '../auth/decorators/roles.decorator';
 import type { Request } from 'express';
 import * as nodemailer from 'nodemailer';
-import type { AppConfiguration } from '../config/configuration';
 import { AppSettingsService } from './app-settings.service';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 
@@ -32,17 +30,14 @@ class TestConnectionDto {
 export class SettingsController {
   private readonly logger = new Logger(SettingsController.name);
 
-  constructor(
-    private readonly configService: ConfigService<AppConfiguration, true>,
-    private readonly appSettings: AppSettingsService,
-  ) {}
+  constructor(private readonly appSettings: AppSettingsService) {}
 
   @Post('test-email')
   @HttpCode(HttpStatus.OK)
   async testEmail(@Body() body: TestConnectionDto) {
     let password = body.pass;
     if (password === '••••••••' || !password) {
-      password = this.configService.get('smtp.password', { infer: true }) || '';
+      password = (await this.appSettings.get<string>('smtp.password')) || '';
     }
 
     try {
@@ -79,7 +74,7 @@ export class SettingsController {
   async testPec(@Body() body: TestConnectionDto) {
     let password = body.pass;
     if (password === '••••••••' || !password) {
-      password = this.configService.get('pec.password', { infer: true }) || '';
+      password = (await this.appSettings.get<string>('pec.password')) || '';
     }
 
     try {

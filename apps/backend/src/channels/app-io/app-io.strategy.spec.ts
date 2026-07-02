@@ -1,13 +1,15 @@
 import { Test } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
 import { AppIoStrategy } from './app-io.strategy';
+import { AppSettingsService } from '../../settings/app-settings.service';
 
 const mockFetch = jest.fn();
 global.fetch = mockFetch as unknown as typeof fetch;
 
-const mockConfig = {
-  get: (key: string) => ({ 'appIo.apiKey': 'test-key', 'appIo.baseUrl': 'https://api.io.test' }[key]),
+const settingsValues: Record<string, unknown> = {
+  'appIo.apiKey': 'test-key',
+  'appIo.baseUrl': 'https://api.io.test',
 };
+const mockSettings = { get: jest.fn(async (key: string) => settingsValues[key]) };
 
 describe('AppIoStrategy', () => {
   let strategy: AppIoStrategy;
@@ -20,7 +22,10 @@ describe('AppIoStrategy', () => {
     });
 
     const module = await Test.createTestingModule({
-      providers: [AppIoStrategy, { provide: ConfigService, useValue: mockConfig }],
+      providers: [
+        AppIoStrategy,
+        { provide: AppSettingsService, useValue: mockSettings },
+      ],
     }).compile();
 
     strategy = module.get(AppIoStrategy);

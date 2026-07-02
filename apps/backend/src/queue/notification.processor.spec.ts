@@ -4,6 +4,7 @@ import { getQueueToken } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import type { Job } from 'bullmq';
 import { NotificationProcessor } from './notification.processor';
+import { AppSettingsService } from '../settings/app-settings.service';
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity';
 import { Campaign, CampaignStatus } from '../entities/campaign.entity';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity';
@@ -37,11 +38,15 @@ const mockConfig = {
     const cfg: Record<string, unknown> = {
       'origins.publicApi': 'http://api.test',
       'downloadLink.secret': 'test-secret',
-      'retention.maxDays': 90,
     };
     return cfg[key];
   },
 };
+
+const settingsValues: Record<string, unknown> = {
+  'retention.maxDays': 90,
+};
+const mockSettings = { get: jest.fn(async (key: string) => settingsValues[key]) };
 
 describe('NotificationProcessor', () => {
   let processor: NotificationProcessor;
@@ -102,6 +107,7 @@ describe('NotificationProcessor', () => {
         { provide: CHANNEL_STRATEGIES, useValue: mockStrategies },
         { provide: getQueueToken(NOTIFICATION_QUEUE), useValue: {} },
         { provide: ConfigService, useValue: mockConfig },
+        { provide: AppSettingsService, useValue: mockSettings },
       ],
     }).compile();
 

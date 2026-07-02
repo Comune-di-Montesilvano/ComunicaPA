@@ -1,10 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import type { NotificationChannel, ChannelSendResult } from '@comunicapa/shared-types';
-import type { AppConfiguration } from '../../config/configuration';
 import type { IChannelStrategy } from '../channel.interface';
 import type { Recipient } from '../../entities/recipient.entity';
 import type { Campaign } from '../../entities/campaign.entity';
+import { AppSettingsService } from '../../settings/app-settings.service';
 
 function interpolate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => vars[key] ?? `{{${key}}}`);
@@ -14,11 +13,11 @@ function interpolate(template: string, vars: Record<string, string>): string {
 export class AppIoStrategy implements IChannelStrategy {
   readonly channel: NotificationChannel = 'APP_IO';
 
-  constructor(private readonly config: ConfigService<AppConfiguration, true>) {}
+  constructor(private readonly settings: AppSettingsService) {}
 
   async send(recipient: Recipient, campaign: Campaign): Promise<ChannelSendResult> {
-    const apiKey = this.config.get('appIo.apiKey', { infer: true });
-    const baseUrl = this.config.get('appIo.baseUrl', { infer: true });
+    const apiKey = await this.settings.get<string>('appIo.apiKey');
+    const baseUrl = await this.settings.get<string>('appIo.baseUrl');
 
     const vars: Record<string, string> = {
       fullName: recipient.fullName ?? '',

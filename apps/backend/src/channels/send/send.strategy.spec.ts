@@ -1,13 +1,15 @@
 import { Test } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
 import { SendStrategy } from './send.strategy';
+import { AppSettingsService } from '../../settings/app-settings.service';
 
 const mockFetch = jest.fn();
 global.fetch = mockFetch as unknown as typeof fetch;
 
-const mockConfig = {
-  get: (key: string) => ({ 'send.apiKey': 'send-key', 'send.baseUrl': 'https://send.test' }[key]),
+const settingsValues: Record<string, unknown> = {
+  'send.apiKey': 'send-key',
+  'send.baseUrl': 'https://send.test',
 };
+const mockSettings = { get: jest.fn(async (key: string) => settingsValues[key]) };
 
 describe('SendStrategy', () => {
   let strategy: SendStrategy;
@@ -20,7 +22,10 @@ describe('SendStrategy', () => {
     });
 
     const module = await Test.createTestingModule({
-      providers: [SendStrategy, { provide: ConfigService, useValue: mockConfig }],
+      providers: [
+        SendStrategy,
+        { provide: AppSettingsService, useValue: mockSettings },
+      ],
     }).compile();
 
     strategy = module.get(SendStrategy);

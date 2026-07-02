@@ -5,10 +5,10 @@ describe('SettingsController — GET/PUT', () => {
   const settingsMock = {
     getAllMasked: jest.fn(async () => ({ 'smtp.host': 'h', 'smtp.password': MASKED_VALUE })),
     setMany: jest.fn(async () => undefined),
+    get: jest.fn(async () => ''),
   };
-  const configMock = { get: jest.fn(() => '') };
 
-  const controller = new SettingsController(configMock as never, settingsMock as never);
+  const controller = new SettingsController(settingsMock as never);
 
   it('GET restituisce i settings mascherati', async () => {
     const res = await controller.getAll();

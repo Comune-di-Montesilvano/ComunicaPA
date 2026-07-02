@@ -8,29 +8,33 @@ import * as nodemailer from 'nodemailer';
 import type { AppConfiguration } from '../../config/configuration';
 import { processTemplate, wrapInHtmlLayout } from '../template.helper';
 import { getEffectiveRetentionDays } from '../../campaigns/retention.util';
+import { AppSettingsService } from '../../settings/app-settings.service';
 
 @Injectable()
 export class EmailStrategy implements IChannelStrategy {
   private readonly logger = new Logger(EmailStrategy.name);
   readonly channel: NotificationChannel = 'EMAIL';
 
-  constructor(private readonly config: ConfigService<AppConfiguration, true>) {}
+  constructor(
+    private readonly config: ConfigService<AppConfiguration, true>,
+    private readonly settings: AppSettingsService,
+  ) {}
 
   async send(recipient: Recipient, campaign: Campaign): Promise<ChannelSendResult> {
     if (!recipient.email) {
       throw new Error('Recipient email address is missing');
     }
 
-    const host = this.config.get('smtp.host', { infer: true });
-    const port = this.config.get('smtp.port', { infer: true });
-    const secure = this.config.get('smtp.secure', { infer: true });
-    const user = this.config.get('smtp.user', { infer: true });
-    const password = this.config.get('smtp.password', { infer: true });
-    const defaultFrom = this.config.get('smtp.from', { infer: true });
-    const brandName = this.config.get('brand.name', { infer: true }) || 'Comune di Montesilvano';
+    const host = await this.settings.get<string>('smtp.host');
+    const port = await this.settings.get<number>('smtp.port');
+    const secure = await this.settings.get<boolean>('smtp.secure');
+    const user = await this.settings.get<string>('smtp.user');
+    const password = await this.settings.get<string>('smtp.password');
+    const defaultFrom = await this.settings.get<string>('smtp.from');
+    const brandName = (await this.settings.get<string>('brand.name')) || 'Comune di Montesilvano';
     const publicApiUrl = this.config.get('origins.publicApi', { infer: true });
     const downloadLinkSecret = this.config.get('downloadLink.secret', { infer: true });
-    const retentionMaxDays = this.config.get('retention.maxDays', { infer: true });
+    const retentionMaxDays = await this.settings.get<number>('retention.maxDays');
     const retentionDays = getEffectiveRetentionDays(campaign, retentionMaxDays);
     const expiresAtUnix = Math.floor(Date.now() / 1000) + retentionDays * 86400;
 

@@ -13,6 +13,7 @@ import { processTemplate } from '../channels/template.helper';
 import { ConfigService } from '@nestjs/config';
 import type { AppConfiguration } from '../config/configuration';
 import { getEffectiveRetentionDays } from '../campaigns/retention.util';
+import { AppSettingsService } from '../settings/app-settings.service';
 
 @Processor(NOTIFICATION_QUEUE)
 export class NotificationProcessor extends WorkerHost {
@@ -28,6 +29,7 @@ export class NotificationProcessor extends WorkerHost {
     @Inject(CHANNEL_STRATEGIES)
     private readonly strategies: Map<NotificationChannel, IChannelStrategy>,
     private readonly config: ConfigService<AppConfiguration, true>,
+    private readonly settings: AppSettingsService,
   ) {
     super();
   }
@@ -80,7 +82,7 @@ export class NotificationProcessor extends WorkerHost {
           this.logger.log(`Invio App IO indipendente per CF: ${recipient.codiceFiscale}`);
           const publicApiUrl = this.config.get('origins.publicApi', { infer: true });
           const downloadLinkSecret = this.config.get('downloadLink.secret', { infer: true });
-          const retentionMaxDays = this.config.get('retention.maxDays', { infer: true });
+          const retentionMaxDays = await this.settings.get<number>('retention.maxDays');
           const retentionDays = getEffectiveRetentionDays(campaign, retentionMaxDays);
           const expiresAtUnix = Math.floor(Date.now() / 1000) + retentionDays * 86400;
 
@@ -138,7 +140,7 @@ export class NotificationProcessor extends WorkerHost {
         status: RecipientStatus.FAILED,
       };
       if (appIoLinkDelivered) {
-        const retentionMaxDaysOnFail = this.config.get('retention.maxDays', { infer: true });
+        const retentionMaxDaysOnFail = await this.settings.get<number>('retention.maxDays');
         const retentionDaysOnFail = getEffectiveRetentionDays(campaign, retentionMaxDaysOnFail);
         failedUpdate.attachmentExpiresAt = new Date(Date.now() + retentionDaysOnFail * 86400 * 1000);
       }
@@ -147,7 +149,7 @@ export class NotificationProcessor extends WorkerHost {
       throw primaryError;
     }
 
-    const retentionMaxDaysForExpiry = this.config.get('retention.maxDays', { infer: true });
+    const retentionMaxDaysForExpiry = await this.settings.get<number>('retention.maxDays');
     const retentionDaysForExpiry = getEffectiveRetentionDays(campaign, retentionMaxDaysForExpiry);
     const attachmentExpiresAt = new Date(Date.now() + retentionDaysForExpiry * 86400 * 1000);
 

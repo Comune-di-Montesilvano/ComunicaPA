@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { PecStrategy } from './pec.strategy';
+import { AppSettingsService } from '../../settings/app-settings.service';
 
 const mockSendMail = jest.fn();
 jest.mock('nodemailer', () => ({
@@ -10,19 +11,24 @@ jest.mock('nodemailer', () => ({
 const mockConfig = {
   get: (key: string) => {
     const cfg: Record<string, unknown> = {
-      'pec.host': 'pec.test',
-      'pec.port': 587,
-      'pec.secure': false,
-      'pec.user': 'u',
-      'pec.password': 'p',
-      'pec.from': 'noreply@pec.test.it',
       'origins.publicApi': 'http://api.test',
       'downloadLink.secret': 'test-secret',
-      'retention.maxDays': 90,
     };
     return cfg[key];
   },
 };
+
+const settingsValues: Record<string, unknown> = {
+  'pec.host': 'pec.test',
+  'pec.port': 587,
+  'pec.secure': false,
+  'pec.user': 'u',
+  'pec.password': 'p',
+  'pec.from': 'noreply@pec.test.it',
+  'brand.name': 'Comune Test',
+  'retention.maxDays': 90,
+};
+const mockSettings = { get: jest.fn(async (key: string) => settingsValues[key]) };
 
 describe('PecStrategy', () => {
   let strategy: PecStrategy;
@@ -32,7 +38,11 @@ describe('PecStrategy', () => {
     mockSendMail.mockResolvedValue({ messageId: 'pec-001', accepted: ['luca@pec.it'] });
 
     const module = await Test.createTestingModule({
-      providers: [PecStrategy, { provide: ConfigService, useValue: mockConfig }],
+      providers: [
+        PecStrategy,
+        { provide: ConfigService, useValue: mockConfig },
+        { provide: AppSettingsService, useValue: mockSettings },
+      ],
     }).compile();
 
     strategy = module.get(PecStrategy);

@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { EmailStrategy } from './email.strategy';
+import { AppSettingsService } from '../../settings/app-settings.service';
 
 const mockSendMail = jest.fn();
 const mockCreateTransport = jest.fn<{ sendMail: jest.Mock }, [unknown?]>(() => ({ sendMail: mockSendMail }));
@@ -12,19 +13,24 @@ jest.mock('nodemailer', () => ({
 const mockConfig = {
   get: (key: string) => {
     const cfg: Record<string, unknown> = {
-      'smtp.host': 'smtp.test',
-      'smtp.port': 587,
-      'smtp.secure': false,
-      'smtp.user': 'user',
-      'smtp.password': 'pass',
-      'smtp.from': 'noreply@test.it',
       'origins.publicApi': 'http://api.test',
       'downloadLink.secret': 'test-secret',
-      'retention.maxDays': 90,
     };
     return cfg[key];
   },
 };
+
+const settingsValues: Record<string, unknown> = {
+  'smtp.host': 'smtp.test',
+  'smtp.port': 587,
+  'smtp.secure': false,
+  'smtp.user': 'user',
+  'smtp.password': 'pass',
+  'smtp.from': 'noreply@test.it',
+  'brand.name': 'Comune Test',
+  'retention.maxDays': 90,
+};
+const mockSettings = { get: jest.fn(async (key: string) => settingsValues[key]) };
 
 describe('EmailStrategy', () => {
   let strategy: EmailStrategy;
@@ -38,6 +44,7 @@ describe('EmailStrategy', () => {
       providers: [
         EmailStrategy,
         { provide: ConfigService, useValue: mockConfig },
+        { provide: AppSettingsService, useValue: mockSettings },
       ],
     }).compile();
 
