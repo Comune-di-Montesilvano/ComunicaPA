@@ -19,7 +19,7 @@ packages/shared-types/ @comunicapa/shared-types — interfacce TypeScript condiv
 
 **Flusso dati:** CSV upload → stream processing (no in-memory) → BullMQ queue (Redis) → worker asincroni → Strategy Pattern per canale (PEC/Email/AppIO/SEND/Postal).
 
-**Auth:** LDAP/Active Directory per operatori PA; OIDC (SPID/CIE) delegato ai cittadini.
+**Auth:** LDAP/Active Directory per operatori PA; OIDC (SPID/CIE) delegato ai cittadini. Dev locale senza AD: `LDAP_HOST=mock` in `.env` abilita admin/admin (ruolo admin) e operator/operator (ruolo user) — mai in produzione.
 
 ## Dev Environment
 
@@ -58,7 +58,7 @@ docker compose down -v
 docker compose -f docker-compose.yml config --quiet
 ```
 
-Hot-reload attivo: modifiche ai file in `apps/*/src/` e `packages/shared-types/src/` si riflettono immediatamente nei container senza rebuild (volumi bind montati).
+Hot-reload: i frontend Vite ricaricano da soli; il watch di NestJS spesso NON vede le modifiche sui bind mount Windows — dopo modifiche a `apps/backend/src/` fare `docker compose restart backend` e verificare che `dist/` sia più recente di `src/` (`docker compose exec backend ls -la dist/... src/...`).
 
 **Rebuild obbligatorio** solo se si modifica `package.json`, `Dockerfile.dev`, o file fuori da `src/`.
 
@@ -73,6 +73,10 @@ docker compose exec backend node_modules/.bin/jest <pattern> --maxWorkers=2
 
 # Type-check backend
 docker compose exec backend node_modules/.bin/tsc --noEmit
+
+# Type-check frontend (NON usare `tsc -b`: fallisce nel container dev per
+# errori @types/node preesistenti che non riproducono nel build prod)
+docker compose exec frontend-admin node_modules/.bin/tsc -p tsconfig.app.json --noEmit
 ```
 
 **Baseline nota:** 7 test falliscono da prima (email.strategy, pec.strategy, notification.processor — template vecchi, `checkAndCompleteCampaign` inesistente). Non sono regressioni: il criterio per una modifica è "failure set identico".
@@ -80,6 +84,18 @@ docker compose exec backend node_modules/.bin/tsc --noEmit
 ## Configurazione runtime (settings in DB)
 
 `.env` contiene SOLO bootstrap (porte, postgres, secret, LDAP). Tutto il resto (branding, SMTP, PEC, App IO, SEND, OIDC, retention, URL pubblico) vive nella tabella `app_settings` — si configura dalla UI admin (menu Impostazioni). `AppSettingsService.get()` risolve cache→DB→env→default; i secret sono cifrati AES-256-GCM con chiave derivata da `JWT_SECRET` (cambiarlo = reinserire i secret da UI). Chiavi e fallback env: `apps/backend/src/settings/settings.registry.ts`.
+
+## Migration DB
+
+Dev: `synchronize` allinea lo schema automaticamente. Prod: le migration in `apps/backend/src/database/migrations/` girano da sole all'avvio (`migrationsRun` in `database.module.ts` — vanno anche registrate lì nell'array `migrations`). Dopo aver modificato un'entity, generare la migration con un DB temporaneo:
+
+```bash
+docker compose exec postgres psql -U comunicapa -d comunicapa_db -c "CREATE DATABASE migration_gen;"
+PGPASS=$(docker compose exec postgres printenv POSTGRES_PASSWORD | tr -d '\r')
+docker compose exec -e DATABASE_URL="postgresql://comunicapa:${PGPASS}@postgres:5432/migration_gen" backend node_modules/.bin/typeorm-ts-node-commonjs migration:run -d src/database/data-source.ts
+docker compose exec -e DATABASE_URL="postgresql://comunicapa:${PGPASS}@postgres:5432/migration_gen" backend node_modules/.bin/typeorm-ts-node-commonjs migration:generate src/database/migrations/NomeMigration -d src/database/data-source.ts
+docker compose exec postgres psql -U comunicapa -d comunicapa_db -c "DROP DATABASE migration_gen;"
+```
 
 ## Topologia API — gotcha
 
@@ -116,3 +132,5 @@ Il pacchetto `@comunicapa/shared-types` si importa con `workspace:*` — non pub
 Solo le variabili sistemistiche/di bootstrap passano da `.env` (vedi sezione "Configurazione runtime" sopra per tutto il resto). Il `docker-compose.yml` non ha valori hardcoded, solo `${VAR:-default}` — `DATABASE_URL` e `REDIS_URL` le costruisce il compose dagli hostname interni (`postgres`, `redis`). Vedere `.env.example` per la lista completa con documentazione inline.
 
 Obbligatorie in produzione (`:?` nel compose): `JWT_SECRET`, `DOWNLOAD_LINK_SECRET`.
+
+`POSTGRES_PASSWORD` SOLO caratteri alfanumerici: il compose la incastra in `DATABASE_URL` senza escaping — `$ @ # ^` rompono il parsing dell'URL e il backend prova a connettersi a un host sbagliato (es. `0.0.0.48`).
