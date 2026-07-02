@@ -25,6 +25,12 @@ packages/shared-types/ @comunicapa/shared-types — interfacce TypeScript condiv
 
 Tutti i comandi si eseguono con Docker Compose. Copiare `.env.example` in `.env` prima del primo avvio.
 
+**Compose è splittato in due file:**
+- `docker-compose.yml` — **produzione**: immagini da ghcr.io, solo volumi named, nessun bind mount. Usato da solo per il deploy reale (Portainer / podman rootless).
+- `docker-compose.override.yml` — **sviluppo**: build da `Dockerfile.dev`, bind mount per hot-reload, porte DB esposte, frontend in ascolto su 3000/3001.
+
+Lo sviluppo locale attiva l'override tramite `COMPOSE_FILE=docker-compose.yml;docker-compose.override.yml` in `.env` (già impostato da `.env.example`). Con questa variabile attiva, `docker compose` carica automaticamente entrambi i file: non serve passare `-f` esplicitamente.
+
 ```bash
 # Primo avvio
 cp .env.example .env
@@ -47,6 +53,9 @@ docker compose down
 
 # Spegni e rimuovi volumi (reset DB)
 docker compose down -v
+
+# Verifica config produzione (senza override, richiede secret in .env)
+docker compose -f docker-compose.yml config --quiet
 ```
 
 Hot-reload attivo: modifiche ai file in `apps/*/src/` e `packages/shared-types/src/` si riflettono immediatamente nei container senza rebuild (volumi bind montati).

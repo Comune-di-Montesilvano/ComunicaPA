@@ -1,0 +1,59 @@
+# SVILUPPO: attivato da COMPOSE_FILE=docker-compose.yml;docker-compose.override.yml
+# in .env. Bind mount per hot-reload, build da Dockerfile.dev, porte DB esposte.
+
+services:
+
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  backend:
+    image: comunicapa/backend:dev
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile.dev
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./apps/backend/src:/app/apps/backend/src:delegated
+      - ./packages/shared-types/src:/app/packages/shared-types/src:delegated
+      - backend_node_modules:/app/node_modules
+
+  frontend-admin:
+    image: comunicapa/frontend-admin:dev
+    build:
+      context: .
+      dockerfile: apps/frontend-admin/Dockerfile.dev
+    ports: !override
+      - "${ADMIN_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./apps/frontend-admin/src:/app/apps/frontend-admin/src:delegated
+      - ./apps/frontend-admin/public:/app/apps/frontend-admin/public:delegated
+      - ./packages/shared-types/src:/app/packages/shared-types/src:delegated
+      - admin_node_modules:/app/node_modules
+
+  frontend-citizen:
+    image: comunicapa/frontend-citizen:dev
+    build:
+      context: .
+      dockerfile: apps/frontend-citizen/Dockerfile.dev
+    ports: !override
+      - "${CITIZEN_PORT:-3001}:3001"
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./apps/frontend-citizen/src:/app/apps/frontend-citizen/src:delegated
+      - ./apps/frontend-citizen/public:/app/apps/frontend-citizen/public:delegated
+      - ./packages/shared-types/src:/app/packages/shared-types/src:delegated
+      - citizen_node_modules:/app/node_modules
+
+volumes:
+  backend_node_modules:
+  admin_node_modules:
+  citizen_node_modules:

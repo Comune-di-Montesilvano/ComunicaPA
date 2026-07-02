@@ -1,19 +1,18 @@
 name: comunicapa
 
-services:
+# PRODUZIONE (podman rootless / Portainer): immagini da registry, solo volumi
+# named, nessun bind mount. Per lo sviluppo vedi docker-compose.override.yml
+# (attivato da COMPOSE_FILE in .env).
 
-  # ── Infrastruttura ────────────────────────────────────────────────────────
+services:
 
   postgres:
     image: postgres:17-alpine
-    container_name: comunicapa-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -26,10 +25,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: comunicapa-redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
     volumes:
       - redis_data:/data
     networks:
@@ -40,29 +36,29 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── Applicazioni ──────────────────────────────────────────────────────────
-
   backend:
-    build:
-      context: .
-      dockerfile: apps/backend/Dockerfile.dev
-    container_name: comunicapa-backend
+    image: ghcr.io/mirkochipdotcom/comunicapa-backend:${IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     environment:
-      NODE_ENV: development
+      NODE_ENV: production
       PORT: "8080"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      JWT_SECRET: ${JWT_SECRET:-change-me-in-development}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET obbligatorio - genera con openssl rand -hex 32}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+      DOWNLOAD_LINK_SECRET: ${DOWNLOAD_LINK_SECRET:?DOWNLOAD_LINK_SECRET obbligatorio - genera con openssl rand -hex 32}
+      PUBLIC_BACKEND_URL: ${PUBLIC_BACKEND_URL:-http://localhost:8080}
+      ADMIN_ORIGIN: ${ADMIN_ORIGIN:-http://localhost:3000}
+      CITIZEN_ORIGIN: ${CITIZEN_ORIGIN:-http://localhost:3001}
+      ATTACHMENTS_PATH: ${ATTACHMENTS_PATH:-/data/attachments}
       LDAP_HOST: ${LDAP_HOST:-}
-      LDAP_BASE_DN: ${LDAP_BASE_DN:-}
-      LDAP_USER_DN_TEMPLATE: ${LDAP_USER_DN_TEMPLATE:-%s}
       LDAP_TLS_SKIP_VERIFY: ${LDAP_TLS_SKIP_VERIFY:-true}
       LDAP_STARTTLS: ${LDAP_STARTTLS:-false}
+      LDAP_BASE_DN: ${LDAP_BASE_DN:-}
+      LDAP_USER_DN_TEMPLATE: ${LDAP_USER_DN_TEMPLATE:-%s}
       LDAP_BIND_DN: ${LDAP_BIND_DN:-}
       LDAP_BIND_PASSWORD: ${LDAP_BIND_PASSWORD:-}
       LDAP_REQUIRED_GROUP: ${LDAP_REQUIRED_GROUP:-COMUNICAPA_USERS}
@@ -70,30 +66,8 @@ services:
       OIDC_ISSUER: ${OIDC_ISSUER:-}
       OIDC_AUDIENCE: ${OIDC_AUDIENCE:-comunicapa}
       OIDC_JWKS_URI: ${OIDC_JWKS_URI:-}
-      ADMIN_ORIGIN: http://localhost:${ADMIN_PORT:-3000}
-      CITIZEN_ORIGIN: http://localhost:${CITIZEN_PORT:-3001}
-      PDF_STORAGE_PATH: /data/attachments
-      SMTP_HOST: ${SMTP_HOST:-localhost}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_SECURE: ${SMTP_SECURE:-false}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      SMTP_FROM: ${SMTP_FROM:-noreply@comunicapa.local}
-      PEC_HOST: ${PEC_HOST:-localhost}
-      PEC_PORT: ${PEC_PORT:-587}
-      PEC_SECURE: ${PEC_SECURE:-false}
-      PEC_USER: ${PEC_USER:-}
-      PEC_PASSWORD: ${PEC_PASSWORD:-}
-      PEC_FROM: ${PEC_FROM:-noreply@pec.comunicapa.local}
-      APP_IO_API_KEY: ${APP_IO_API_KEY:-}
-      APP_IO_BASE_URL: ${APP_IO_BASE_URL:-https://api.io.italia.it}
-      SEND_API_KEY: ${SEND_API_KEY:-}
-      SEND_BASE_URL: ${SEND_BASE_URL:-https://api.notifichedigitali.it}
     volumes:
-      - ./apps/backend/src:/app/apps/backend/src:delegated
-      - ./packages/shared-types/src:/app/packages/shared-types/src:delegated
-      - backend_node_modules:/app/node_modules
-      - pdf_storage:/data/attachments
+      - attachments_data:${ATTACHMENTS_PATH:-/data/attachments}
     depends_on:
       postgres:
         condition: service_healthy
@@ -103,46 +77,29 @@ services:
       - comunicapa-net
 
   frontend-admin:
-    build:
-      context: .
-      dockerfile: apps/frontend-admin/Dockerfile.dev
-    container_name: comunicapa-frontend-admin
+    image: ghcr.io/mirkochipdotcom/comunicapa-frontend-admin:${IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
-      - "${ADMIN_PORT:-3000}:3000"
+      - "${ADMIN_PORT:-3000}:8080"
     environment:
-      NODE_ENV: development
-    volumes:
-      - ./apps/frontend-admin/src:/app/apps/frontend-admin/src:delegated
-      - ./packages/shared-types/src:/app/packages/shared-types/src:delegated
-      - admin_node_modules:/app/node_modules
+      API_BASE: ${PUBLIC_BACKEND_URL:-http://localhost:8080}
     networks:
       - comunicapa-net
 
   frontend-citizen:
-    build:
-      context: .
-      dockerfile: apps/frontend-citizen/Dockerfile.dev
-    container_name: comunicapa-frontend-citizen
+    image: ghcr.io/mirkochipdotcom/comunicapa-frontend-citizen:${IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
-      - "${CITIZEN_PORT:-3001}:3001"
+      - "${CITIZEN_PORT:-3001}:8080"
     environment:
-      NODE_ENV: development
-    volumes:
-      - ./apps/frontend-citizen/src:/app/apps/frontend-citizen/src:delegated
-      - ./packages/shared-types/src:/app/packages/shared-types/src:delegated
-      - citizen_node_modules:/app/node_modules
+      API_BASE: ${PUBLIC_BACKEND_URL:-http://localhost:8080}
     networks:
       - comunicapa-net
 
 volumes:
   postgres_data:
   redis_data:
-  backend_node_modules:
-  admin_node_modules:
-  citizen_node_modules:
-  pdf_storage:
+  attachments_data:
 
 networks:
   comunicapa-net:
