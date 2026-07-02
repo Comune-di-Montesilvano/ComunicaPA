@@ -30,6 +30,7 @@
     "@nestjs/schedule": "^4.0.0",
     "bullmq": "^5.0.0",
     "csv-parse": "^5.0.0",
+    "multer": "^2.0.1",
     "nodemailer": "^6.0.0",
     "pdf-lib": "^1.17.0",
     "reflect-metadata": "^0.2.0",
