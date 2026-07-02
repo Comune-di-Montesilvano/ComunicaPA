@@ -45,6 +45,12 @@ describe('BrandingController', () => {
     expect(ALLOWED_LOGO_TYPES).toContain('image/svg+xml');
   });
 
+  it('GET /branding/logo con path traversal nel setting → 404', async () => {
+    values.set('brand.logo', '../../../etc/passwd');
+    await expect(controller.getLogo({ sendFile: jest.fn() } as never)).rejects.toThrow(NotFoundException);
+    values.set('brand.logo', '');
+  });
+
   it('upload senza estensione nel filename → fallback estensione dal mimetype', async () => {
     // Directory temporanea per non scrivere nello storage reale
     const tempRoot = mkdtempSync(join(tmpdir(), 'branding-test-'));

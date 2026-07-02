@@ -11,7 +11,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import { existsSync, mkdirSync, readdirSync, unlinkSync, writeFileSync } from 'fs';
-import { extname, join } from 'path';
+import { basename, extname, join } from 'path';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { getBrandingDir } from '../attachments/attachment-paths';
@@ -79,8 +79,11 @@ export class BrandingController {
 
   private async serveFile(settingKey: 'brand.logo' | 'brand.favicon', res: Response): Promise<void> {
     const filename = await this.appSettings.get<string>(settingKey);
-    const filePath = filename ? join(getBrandingDir(), filename) : '';
-    if (!filename || !existsSync(filePath)) {
+    // basename() neutralizza path traversal: il setting è scrivibile via PUT /settings
+    // ma qui deve risolvere solo file dentro la directory di branding
+    const safeName = filename ? basename(filename) : '';
+    const filePath = safeName ? join(getBrandingDir(), safeName) : '';
+    if (!safeName || safeName !== filename || !existsSync(filePath)) {
       throw new NotFoundException('File di branding non configurato');
     }
     res.sendFile(filePath);

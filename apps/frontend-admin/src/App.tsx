@@ -227,7 +227,7 @@ export function App(): React.JSX.Element {
   const [newSvcIsDefault, setNewSvcIsDefault] = useState(false);
   const [showNewSvcForm, setShowNewSvcForm] = useState(false);
 
-  const [settSendApiKey, setSettSendApiKey] = useState('send_sec_key_montesilvano_dev_456');
+  const [settSendApiKey, setSettSendApiKey] = useState('');
   const [settSendUrl, setSettSendUrl] = useState('https://api.notifichedigitali.it');
   const [settRetentionDays, setSettRetentionDays] = useState('90');
 
@@ -237,7 +237,7 @@ export function App(): React.JSX.Element {
   const [settProtoPass, setSettProtoPass] = useState(localStorage.getItem('sett_proto_pass') || '••••••••');
 
   const [settPostalProvider, setSettPostalProvider] = useState(localStorage.getItem('sett_postal_provider') || 'Postel');
-  const [settPostalKey, setSettPostalKey] = useState(localStorage.getItem('sett_postal_key') || 'postel_auth_token_789');
+  const [settPostalKey, setSettPostalKey] = useState(localStorage.getItem('sett_postal_key') || '');
   const [settPostalUrl, setSettPostalUrl] = useState(localStorage.getItem('sett_postal_url') || 'https://gateway.postel.it/postalization');
 
   const [activeSettingsTab, setActiveSettingsTab] = useState<'personalizzazione' | 'smtp' | 'pec' | 'app-io' | 'send' | 'protocollo' | 'postalizzazione'>('personalizzazione');
