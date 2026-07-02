@@ -95,7 +95,18 @@ export class CampaignsController {
     @Param('id', ParseUUIDPipe) id: string,
     @UploadedFiles() files: Express.Multer.File[],
   ) {
-    await this.campaignsService.assertDraftForAttachments(id);
+    // FilesInterceptor + diskStorage scrivono i file su disco PRIMA che questo handler venga
+    // eseguito. Se la campagna non è in DRAFT il file (potenzialmente sovrascritto) è già a
+    // terra: eliminiamo gli upload appena scritti prima di rilanciare, così una richiesta
+    // rifiutata non lascia file orfani/mutati (garanzia di immutabilità post-launch).
+    try {
+      await this.campaignsService.assertDraftForAttachments(id);
+    } catch (err) {
+      await Promise.all(
+        (files ?? []).map((file) => fs.promises.unlink(file.path).catch(() => undefined)),
+      );
+      throw err;
+    }
     return {
       uploaded: files?.length || 0,
       campaignId: id,

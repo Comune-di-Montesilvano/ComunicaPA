@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import * as fs from 'fs';
 import { CampaignsController } from './campaigns.controller';
 import { CampaignsService } from './campaigns.service';
 
@@ -6,6 +7,7 @@ describe('CampaignsController', () => {
   let controller: CampaignsController;
   const mockService = {
     getRecipientStats: jest.fn().mockResolvedValue({ campaignId: 'uuid-1', page: 1, pageSize: 50, total: 0, items: [] }),
+    assertDraftForAttachments: jest.fn(),
   };
 
   beforeEach(() => {
@@ -42,6 +44,51 @@ describe('CampaignsController', () => {
     it('accetta valori validi e li inoltra al servizio', async () => {
       await controller.getRecipientStats('uuid-1', '2', '25');
       expect(mockService.getRecipientStats).toHaveBeenCalledWith('uuid-1', 2, 25);
+    });
+  });
+
+  describe('uploadAttachments', () => {
+    const files = [
+      { path: '/tmp/uploads/a.pdf' },
+      { path: '/tmp/uploads/b.pdf' },
+    ] as unknown as Express.Multer.File[];
+
+    it('I1: elimina i file appena caricati se la campagna non è in DRAFT, poi rilancia', async () => {
+      const unlinkSpy = jest.spyOn(fs.promises, 'unlink').mockResolvedValue(undefined);
+      mockService.assertDraftForAttachments.mockRejectedValueOnce(
+        new BadRequestException('La campagna non è in stato DRAFT'),
+      );
+
+      await expect(controller.uploadAttachments('uuid-1', files)).rejects.toThrow(BadRequestException);
+
+      expect(unlinkSpy).toHaveBeenCalledTimes(2);
+      expect(unlinkSpy).toHaveBeenCalledWith('/tmp/uploads/a.pdf');
+      expect(unlinkSpy).toHaveBeenCalledWith('/tmp/uploads/b.pdf');
+      unlinkSpy.mockRestore();
+    });
+
+    it('I1: un file già assente non maschera il 400 originale', async () => {
+      const unlinkSpy = jest
+        .spyOn(fs.promises, 'unlink')
+        .mockRejectedValue(new Error('ENOENT'));
+      mockService.assertDraftForAttachments.mockRejectedValueOnce(
+        new BadRequestException('La campagna non è in stato DRAFT'),
+      );
+
+      await expect(controller.uploadAttachments('uuid-1', files)).rejects.toThrow(BadRequestException);
+      expect(unlinkSpy).toHaveBeenCalledTimes(2);
+      unlinkSpy.mockRestore();
+    });
+
+    it('accetta gli allegati e NON elimina i file quando la campagna è in DRAFT', async () => {
+      const unlinkSpy = jest.spyOn(fs.promises, 'unlink').mockResolvedValue(undefined);
+      mockService.assertDraftForAttachments.mockResolvedValueOnce(undefined);
+
+      const res = await controller.uploadAttachments('uuid-1', files);
+
+      expect(res).toEqual({ uploaded: 2, campaignId: 'uuid-1' });
+      expect(unlinkSpy).not.toHaveBeenCalled();
+      unlinkSpy.mockRestore();
     });
   });
 });
