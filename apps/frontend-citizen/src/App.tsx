@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from 'react';
 
-const API_BASE = 'http://localhost:8080';
+declare global {
+  interface Window {
+    __COMUNICAPA_CONFIG__?: { apiBase?: string };
+  }
+}
+
+const API_BASE = window.__COMUNICAPA_CONFIG__?.apiBase ?? 'http://localhost:8080';
 
 interface Notification {
   id: string;

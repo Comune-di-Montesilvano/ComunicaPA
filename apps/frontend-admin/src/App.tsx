@@ -1,7 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { TemplateEditor } from './components/TemplateEditor';
 
-const API_BASE = 'http://localhost:8080';
+declare global {
+  interface Window {
+    __COMUNICAPA_CONFIG__?: { apiBase?: string };
+  }
+}
+
+const API_BASE = window.__COMUNICAPA_CONFIG__?.apiBase ?? 'http://localhost:8080';
 
 // Tiptap's editor.getHTML() always returns a non-empty shell (e.g. '<p></p>')
 // even when the user has deleted all content, so a plain truthiness check on
@@ -91,6 +97,14 @@ export function App(): React.JSX.Element {
   const [role, setRole] = useState<string | null>(localStorage.getItem('comunicapa_role'));
   const [view, setView] = useState<'dashboard' | 'invio-singolo' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'impostazioni' | 'campaign-detail'>('dashboard');
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
+  const [appVersion, setAppVersion] = useState<string>('');
+
+  useEffect(() => {
+    fetch(`${API_BASE}/version`)
+      .then((r) => r.json())
+      .then((d: { version?: string }) => setAppVersion(d.version ?? 'dev'))
+      .catch(() => setAppVersion('dev'));
+  }, []);
 
   // Login form state
   const [loginUsername, setLoginUsername] = useState('');
@@ -1383,6 +1397,11 @@ export function App(): React.JSX.Element {
         <div className="bo-sidebar-meta mt-auto">
           <span className="bo-sidebar-status-dot active"></span>
           <span>Online (Dev Mode)</span>
+          {appVersion && (
+            <span className="bo-sidebar-version" title="Versione applicazione">
+              <i className="fas fa-tag me-1"></i>{appVersion}
+            </span>
+          )}
         </div>
       </aside>
 
