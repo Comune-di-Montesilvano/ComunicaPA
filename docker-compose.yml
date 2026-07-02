@@ -37,7 +37,7 @@ services:
       retries: 5
 
   backend:
-    image: ghcr.io/mirkochipdotcom/comunicapa-backend:${IMAGE_TAG:-latest}
+    image: ghcr.io/comune-di-montesilvano/comunicapa-backend:${IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
       - "${BACKEND_PORT:-8080}:8080"
@@ -77,7 +77,7 @@ services:
       - comunicapa-net
 
   frontend-admin:
-    image: ghcr.io/mirkochipdotcom/comunicapa-frontend-admin:${IMAGE_TAG:-latest}
+    image: ghcr.io/comune-di-montesilvano/comunicapa-frontend-admin:${IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
       - "${ADMIN_PORT:-3000}:8080"
@@ -87,7 +87,7 @@ services:
       - comunicapa-net
 
   frontend-citizen:
-    image: ghcr.io/mirkochipdotcom/comunicapa-frontend-citizen:${IMAGE_TAG:-latest}
+    image: ghcr.io/comune-di-montesilvano/comunicapa-frontend-citizen:${IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
       - "${CITIZEN_PORT:-3001}:8080"
