@@ -67,9 +67,12 @@ export class NotificationProcessor extends WorkerHost {
       messageId: primaryResult?.messageId,
     };
 
-    // 2. Invio App IO indipendente: parte se configurato, a prescindere dall'esito del canale primario
+    // 2. Invio App IO indipendente: parte se configurato, a prescindere dall'esito del canale primario.
+    //    Eseguito SOLO al primo tentativo (job.attemptsMade === 0): se il canale primario fallisce e
+    //    BullMQ ripete l'intero job, non vogliamo re-inviare la push App IO ad ogni retry (duplicati).
+    let appIoLinkDelivered = false;
     const appIoConfig = campaign.channelConfig?.['appIo'] as any;
-    if ((channel === 'EMAIL' || channel === 'PEC') && appIoConfig?.apiKey) {
+    if (job.attemptsMade === 0 && (channel === 'EMAIL' || channel === 'PEC') && appIoConfig?.apiKey) {
       const hasAppIo = await this.checkAppIoProfile(appIoConfig.baseUrl, appIoConfig.apiKey, recipient.codiceFiscale);
 
       if (hasAppIo) {
@@ -108,6 +111,7 @@ export class NotificationProcessor extends WorkerHost {
           if (appIoRes.ok) {
             const appIoData = (await appIoRes.json()) as { id: string };
             responsePayload.appIo = { success: true, messageId: appIoData.id };
+            appIoLinkDelivered = true;
             this.logger.log(`App IO delivery success: messageId=${appIoData.id}`);
           } else {
             responsePayload.appIo = { success: false, error: `App IO status: ${appIoRes.status}` };
@@ -127,7 +131,18 @@ export class NotificationProcessor extends WorkerHost {
         errorMessage: primaryError.message,
         responsePayload,
       });
-      await this.recipientRepo.update(recipientId, { status: RecipientStatus.FAILED });
+      // Anche se il canale primario fallisce, se App IO ha consegnato un link firmato valido
+      // il cittadino può scaricare l'allegato: la sua vita deve essere limitata dalla retention,
+      // quindi impostiamo comunque attachmentExpiresAt (altrimenti il cron non lo cancellerà mai).
+      const failedUpdate: { status: RecipientStatus; attachmentExpiresAt?: Date } = {
+        status: RecipientStatus.FAILED,
+      };
+      if (appIoLinkDelivered) {
+        const retentionMaxDaysOnFail = this.config.get('retention.maxDays', { infer: true });
+        const retentionDaysOnFail = getEffectiveRetentionDays(campaign, retentionMaxDaysOnFail);
+        failedUpdate.attachmentExpiresAt = new Date(Date.now() + retentionDaysOnFail * 86400 * 1000);
+      }
+      await this.recipientRepo.update(recipientId, failedUpdate);
       await this.campaignRepo.increment({ id: campaignId }, 'failedCount', 1);
       throw primaryError;
     }

@@ -46,8 +46,8 @@ const mockConfig = {
 describe('NotificationProcessor', () => {
   let processor: NotificationProcessor;
 
-  const mockJob = (data: NotificationJobData) =>
-    ({ id: '1', data } as unknown as Job<NotificationJobData>);
+  const mockJob = (data: NotificationJobData, attemptsMade = 0) =>
+    ({ id: '1', data, attemptsMade } as unknown as Job<NotificationJobData>);
 
   const baseData: NotificationJobData = {
     campaignId: 'camp-1',
@@ -185,6 +185,40 @@ describe('NotificationProcessor', () => {
       );
       expect(mockRecipientRepo.update).toHaveBeenCalledWith('rec-1', expect.objectContaining({ status: RecipientStatus.FAILED }));
       expect(mockAttemptRepo.update).toHaveBeenCalledWith('att-1', expect.objectContaining({ status: AttemptStatus.FAILED }));
+    });
+
+    it('C1: NON ri-tenta App IO ai retry (job.attemptsMade > 0), evitando push duplicate', async () => {
+      // Retry del job (primo canale continua a fallire): App IO NON deve essere re-inviato.
+      mockStrategy.send.mockRejectedValueOnce(new Error('SMTP down'));
+      (global as any).fetch = jest.fn();
+
+      await expect(processor.process(mockJob(baseData, 1))).rejects.toThrow('SMTP down');
+
+      // Nessuna chiamata App IO (né profilo né invio messaggio) al retry.
+      expect((global as any).fetch).not.toHaveBeenCalled();
+      expect(mockRecipientRepo.update).toHaveBeenCalledWith(
+        'rec-1',
+        expect.objectContaining({ status: RecipientStatus.FAILED }),
+      );
+    });
+
+    it('I2: imposta attachmentExpiresAt quando App IO consegna il link anche se il canale primario fallisce', async () => {
+      mockStrategy.send.mockRejectedValueOnce(new Error('SMTP down'));
+      (global as any).fetch = jest.fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ sender_allowed: true }) }) // checkAppIoProfile
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'appio-1' }) }); // send message (successo)
+
+      await expect(processor.process(mockJob(baseData))).rejects.toThrow('SMTP down');
+
+      // Recipient FAILED ma con attachmentExpiresAt impostato → la retention lo cancellerà.
+      expect(mockRecipientRepo.update).toHaveBeenCalledWith(
+        'rec-1',
+        expect.objectContaining({
+          status: RecipientStatus.FAILED,
+          attachmentExpiresAt: expect.any(Date),
+        }),
+      );
+      expect(mockCampaignRepo.increment).toHaveBeenCalledWith({ id: 'camp-1' }, 'failedCount', 1);
     });
 
     it('percorso di successo: imposta attachmentExpiresAt e sentCount, non lancia errori', async () => {
