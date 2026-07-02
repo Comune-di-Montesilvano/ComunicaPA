@@ -31,7 +31,7 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/comunicapa-${{ matrix.app }}
+          images: ghcr.io/comune-di-montesilvano/comunicapa-${{ matrix.app }}
           tags: |
             type=ref,event=tag
             type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
@@ -46,5 +46,5 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             APP_VERSION=${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/comunicapa-${{ matrix.app }}:buildcache
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/comunicapa-${{ matrix.app }}:buildcache,mode=max
+          cache-from: type=registry,ref=ghcr.io/comune-di-montesilvano/comunicapa-${{ matrix.app }}:buildcache
+          cache-to: type=registry,ref=ghcr.io/comune-di-montesilvano/comunicapa-${{ matrix.app }}:buildcache,mode=max
