@@ -11,4 +11,10 @@ export class AppController {
   getHealth(): string {
     return this.appService.getHealth();
   }
+
+  @Public()
+  @Get('version')
+  getVersion(): { version: string } {
+    return { version: process.env['APP_VERSION'] ?? 'dev' };
+  }
 }
