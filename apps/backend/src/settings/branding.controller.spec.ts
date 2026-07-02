@@ -1,4 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { mkdtempSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { BrandingController, ALLOWED_LOGO_TYPES } from './branding.controller';
 
 describe('BrandingController', () => {
@@ -40,5 +43,24 @@ describe('BrandingController', () => {
   it('espone i mimetype ammessi per il logo', () => {
     expect(ALLOWED_LOGO_TYPES).toContain('image/png');
     expect(ALLOWED_LOGO_TYPES).toContain('image/svg+xml');
+  });
+
+  it('upload senza estensione nel filename → fallback estensione dal mimetype', async () => {
+    // Directory temporanea per non scrivere nello storage reale
+    const tempRoot = mkdtempSync(join(tmpdir(), 'branding-test-'));
+    const originalEnv = process.env['ATTACHMENTS_PATH'];
+    process.env['ATTACHMENTS_PATH'] = tempRoot;
+    try {
+      const file = { mimetype: 'image/svg+xml', originalname: 'x', buffer: Buffer.from('<svg/>') };
+      const res = await controller.uploadLogo(file as never);
+      expect(res.filename).toBe('logo.svg');
+    } finally {
+      if (originalEnv === undefined) {
+        delete process.env['ATTACHMENTS_PATH'];
+      } else {
+        process.env['ATTACHMENTS_PATH'] = originalEnv;
+      }
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 });

@@ -21,6 +21,15 @@ export const ALLOWED_LOGO_TYPES = ['image/png', 'image/jpeg', 'image/svg+xml'];
 export const ALLOWED_FAVICON_TYPES = ['image/png', 'image/svg+xml', 'image/x-icon', 'image/vnd.microsoft.icon'];
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB
 
+// Estensione di fallback derivata dal mimetype validato (per originalname senza estensione)
+const MIME_EXTENSIONS: Record<string, string> = {
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+  'image/svg+xml': '.svg',
+  'image/x-icon': '.ico',
+  'image/vnd.microsoft.icon': '.ico',
+};
+
 @Controller()
 export class BrandingController {
   constructor(private readonly appSettings: AppSettingsService) {}
@@ -56,14 +65,14 @@ export class BrandingController {
 
   @Post('settings/branding/logo')
   @Roles('admin')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_FILE_SIZE } }))
   async uploadLogo(@UploadedFile() file: Express.Multer.File) {
     return this.saveBrandingFile(file, ALLOWED_LOGO_TYPES, 'logo', 'brand.logo');
   }
 
   @Post('settings/branding/favicon')
   @Roles('admin')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_FILE_SIZE } }))
   async uploadFavicon(@UploadedFile() file: Express.Multer.File) {
     return this.saveBrandingFile(file, ALLOWED_FAVICON_TYPES, 'favicon', 'brand.favicon');
   }
@@ -103,7 +112,7 @@ export class BrandingController {
       }
     }
 
-    const filename = `${baseName}${extname(file.originalname).toLowerCase() || '.png'}`;
+    const filename = `${baseName}${extname(file.originalname).toLowerCase() || (MIME_EXTENSIONS[file.mimetype] ?? '.png')}`;
     writeFileSync(join(dir, filename), file.buffer);
     await this.appSettings.setMany({ [settingKey]: filename }, 'branding-upload');
     return { filename };
