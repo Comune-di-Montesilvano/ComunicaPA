@@ -2,15 +2,21 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Logger,
   Post,
+  Put,
+  Req,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Roles } from '../auth/decorators/roles.decorator';
+import type { Request } from 'express';
 import * as nodemailer from 'nodemailer';
 import type { AppConfiguration } from '../config/configuration';
+import { AppSettingsService } from './app-settings.service';
+import { UpdateSettingsDto } from './dto/update-settings.dto';
 
 class TestConnectionDto {
   host!: string;
@@ -26,7 +32,10 @@ class TestConnectionDto {
 export class SettingsController {
   private readonly logger = new Logger(SettingsController.name);
 
-  constructor(private readonly configService: ConfigService<AppConfiguration, true>) {}
+  constructor(
+    private readonly configService: ConfigService<AppConfiguration, true>,
+    private readonly appSettings: AppSettingsService,
+  ) {}
 
   @Post('test-email')
   @HttpCode(HttpStatus.OK)
@@ -100,5 +109,17 @@ export class SettingsController {
       this.logger.error(`PEC Test failed: ${error.message}`, error.stack);
       throw new BadRequestException(`Errore connessione PEC: ${error.message}`);
     }
+  }
+
+  @Get()
+  async getAll() {
+    return { settings: await this.appSettings.getAllMasked() };
+  }
+
+  @Put()
+  async update(@Body() body: UpdateSettingsDto, @Req() req: Request) {
+    const user = (req as { user?: { username?: string } }).user?.username ?? 'sconosciuto';
+    await this.appSettings.setMany(body.settings, user);
+    return { settings: await this.appSettings.getAllMasked() };
   }
 }
