@@ -4,24 +4,41 @@ import * as fs from 'fs';
 import { join } from 'path';
 import type { Recipient } from '../entities/recipient.entity';
 
+/**
+ * Risolve il nome del file dell'allegato PDF personalizzato per un destinatario.
+ *
+ * Priorità:
+ * 1. `recipient.campaign.channelConfig.allegatoKey` indica la chiave in `extraData`
+ *    che contiene il nome file da usare.
+ * 2. Fallback: scansiona tutti i valori di `extraData` e usa il primo che termina
+ *    con `.pdf` (case-insensitive).
+ *
+ * Usata sia da `AttachmentService` (per servire il download) sia da
+ * `RetentionCleanupService` (per individuare i file da eliminare alla scadenza),
+ * in modo che entrambi concordino su quali destinatari hanno un allegato personalizzato.
+ */
+export function resolveCustomAttachmentFilename(recipient: Recipient): string | undefined {
+  const allegatoKey = recipient.campaign?.channelConfig?.['allegatoKey'] as string | undefined;
+  if (allegatoKey && recipient.extraData?.[allegatoKey]) {
+    return String(recipient.extraData[allegatoKey]);
+  }
+
+  for (const val of Object.values(recipient.extraData ?? {})) {
+    if (typeof val === 'string' && val.toLowerCase().endsWith('.pdf')) {
+      return val;
+    }
+  }
+
+  return undefined;
+}
+
 @Injectable()
 export class AttachmentService {
   private readonly logger = new Logger(AttachmentService.name);
 
   async generatePdfBuffer(recipient: Recipient): Promise<Buffer> {
     // Verifichiamo se esiste un allegato PDF personalizzato caricato sul disco
-    let customFilename: string | undefined = undefined;
-    const allegatoKey = recipient.campaign.channelConfig?.['allegatoKey'] as string;
-    if (allegatoKey && recipient.extraData?.[allegatoKey]) {
-      customFilename = String(recipient.extraData[allegatoKey]);
-    } else {
-      for (const val of Object.values(recipient.extraData)) {
-        if (typeof val === 'string' && val.toLowerCase().endsWith('.pdf')) {
-          customFilename = val;
-          break;
-        }
-      }
-    }
+    const customFilename = resolveCustomAttachmentFilename(recipient);
 
     if (customFilename) {
       const filePath = join(__dirname, '..', '..', 'uploads', 'attachments', recipient.campaignId, customFilename);
