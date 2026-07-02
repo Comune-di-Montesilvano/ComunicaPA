@@ -27,41 +27,10 @@ export interface AppConfiguration {
     audience: string;
     jwksUri: string;
   };
-  smtp: {
-    host: string;
-    port: number;
-    secure: boolean;
-    user: string;
-    password: string;
-    from: string;
-  };
-  pec: {
-    host: string;
-    port: number;
-    secure: boolean;
-    user: string;
-    password: string;
-    from: string;
-  };
-  appIo: {
-    apiKey: string;
-    baseUrl: string;
-  };
-  send: {
-    apiKey: string;
-    baseUrl: string;
-  };
   origins: {
     admin: string;
     citizen: string;
     publicApi: string;
-  };
-  brand: {
-    name: string;
-    logo: string;
-  };
-  retention: {
-    maxDays: number;
   };
   downloadLink: {
     secret: string;
@@ -100,41 +69,10 @@ export default (): AppConfiguration => ({
     audience: process.env['OIDC_AUDIENCE'] ?? 'comunicapa',
     jwksUri: process.env['OIDC_JWKS_URI'] ?? '',
   },
-  smtp: {
-    host: process.env['SMTP_HOST'] ?? 'localhost',
-    port: parseInt(process.env['SMTP_PORT'] ?? '587', 10),
-    secure: process.env['SMTP_SECURE'] === 'true',
-    user: process.env['SMTP_USER'] ?? '',
-    password: process.env['SMTP_PASSWORD'] ?? '',
-    from: process.env['SMTP_FROM'] ?? 'noreply@comunicapa.local',
-  },
-  pec: {
-    host: process.env['PEC_HOST'] ?? 'localhost',
-    port: parseInt(process.env['PEC_PORT'] ?? '587', 10),
-    secure: process.env['PEC_SECURE'] === 'true',
-    user: process.env['PEC_USER'] ?? '',
-    password: process.env['PEC_PASSWORD'] ?? '',
-    from: process.env['PEC_FROM'] ?? 'noreply@pec.comunicapa.local',
-  },
-  appIo: {
-    apiKey: process.env['APP_IO_API_KEY'] ?? '',
-    baseUrl: process.env['APP_IO_BASE_URL'] ?? 'https://api.io.italia.it',
-  },
-  send: {
-    apiKey: process.env['SEND_API_KEY'] ?? '',
-    baseUrl: process.env['SEND_BASE_URL'] ?? 'https://api.notifichedigitali.it',
-  },
   origins: {
     admin: process.env['ADMIN_ORIGIN'] ?? 'http://localhost:3000',
     citizen: process.env['CITIZEN_ORIGIN'] ?? 'http://localhost:3001',
     publicApi: process.env['PUBLIC_BACKEND_URL'] ?? 'http://localhost:8080',
-  },
-  brand: {
-    name: process.env['BRAND_NAME'] ?? 'Comune di Montesilvano',
-    logo: process.env['BRAND_LOGO'] ?? 'brand-logo.png',
-  },
-  retention: {
-    maxDays: parseInt(process.env['RETENTION_MAX_DAYS'] ?? '90', 10),
   },
   downloadLink: {
     secret: process.env['DOWNLOAD_LINK_SECRET'] ?? 'change-me-in-production',
