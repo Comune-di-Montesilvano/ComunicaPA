@@ -228,4 +228,14 @@ export class CampaignsService {
 
     return { campaignId, page, pageSize, total, items };
   }
+
+  async assertDraftForAttachments(campaignId: string): Promise<void> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+    if (campaign.status !== CampaignStatus.DRAFT) {
+      throw new BadRequestException(
+        'La campagna non è più in bozza: gli allegati non possono essere modificati dopo il lancio. Annulla e crea una nuova campagna per cambiarli.',
+      );
+    }
+  }
 }

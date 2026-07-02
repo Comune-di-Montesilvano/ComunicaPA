@@ -195,4 +195,19 @@ describe('CampaignsService', () => {
       expect.objectContaining({ where: { campaignId: 'uuid-1' }, skip: 0, take: 20 }),
     );
   });
+
+  it('assertDraftForAttachments passa per campagna DRAFT', async () => {
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, status: CampaignStatus.DRAFT });
+    await expect(service.assertDraftForAttachments('uuid-1')).resolves.toBeUndefined();
+  });
+
+  it('assertDraftForAttachments lancia BadRequestException per campagna QUEUED', async () => {
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, status: CampaignStatus.QUEUED });
+    await expect(service.assertDraftForAttachments('uuid-1')).rejects.toThrow(BadRequestException);
+  });
+
+  it('assertDraftForAttachments lancia NotFoundException se la campagna non esiste', async () => {
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce(null);
+    await expect(service.assertDraftForAttachments('no-exist')).rejects.toThrow(NotFoundException);
+  });
 });

@@ -91,10 +91,11 @@ export class CampaignsController {
       },
     }),
   )
-  uploadAttachments(
+  async uploadAttachments(
     @Param('id', ParseUUIDPipe) id: string,
     @UploadedFiles() files: Express.Multer.File[],
   ) {
+    await this.campaignsService.assertDraftForAttachments(id);
     return {
       uploaded: files?.length || 0,
       campaignId: id,
