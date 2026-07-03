@@ -280,7 +280,10 @@ export function App(): React.JSX.Element {
   const [settPostalKey, setSettPostalKey] = useState(localStorage.getItem('sett_postal_key') || '');
   const [settPostalUrl, setSettPostalUrl] = useState(localStorage.getItem('sett_postal_url') || 'https://gateway.postel.it/postalization');
 
-  const [activeSettingsTab, setActiveSettingsTab] = useState<'personalizzazione' | 'smtp' | 'pec' | 'app-io' | 'send' | 'protocollo' | 'postalizzazione' | 'oidc'>('personalizzazione');
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'personalizzazione' | 'smtp' | 'pec' | 'app-io' | 'send' | 'protocollo' | 'postalizzazione' | 'oidc' | 'motori'>('personalizzazione');
+  const [engines, setEngines] = useState<any[]>([]);
+  const [loadingEngines, setLoadingEngines] = useState(false);
+  const [enginesError, setEnginesError] = useState<string | null>(null);
   // Sidebar mobile (≤991px): il CSS la nasconde con translateX finché body non ha .bo-sidebar-open
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -745,6 +748,44 @@ export function App(): React.JSX.Element {
     setTimeout(() => setSettingsSavedMessage(null), 3000);
   };
 
+  const fetchEngines = async () => {
+    if (!token) return;
+    setLoadingEngines(true);
+    setEnginesError(null);
+    try {
+      const res = await fetch(`${API_BASE}/engines`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setEngines(data.engines || []);
+    } catch (err: any) {
+      setEnginesError(`Errore nel caricamento dei motori: ${err.message}`);
+    } finally {
+      setLoadingEngines(false);
+    }
+  };
+
+  const handleEngineAction = async (channel: string, action: 'pause' | 'resume') => {
+    if (!token) return;
+    setLoadingEngines(true);
+    setEnginesError(null);
+    try {
+      const res = await fetch(`${API_BASE}/engines/${channel.toLowerCase()}/${action}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || `Errore ${action}`);
+      }
+      await fetchEngines();
+    } catch (err: any) {
+      setEnginesError(`Errore: ${err.message}`);
+      setLoadingEngines(false);
+    }
+  };
+
   const handleUploadBranding = async (kind: 'logo' | 'favicon', file: File) => {
     const form = new FormData();
     form.append('file', file);
@@ -766,67 +807,433 @@ export function App(): React.JSX.Element {
     setTimeout(() => setSettingsSavedMessage(null), 3000);
   };
 
-  const handleTestSmtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSmtpTestStatus('loading');
-    setSmtpTestMsg('');
+  const fetchMailConfigs = async () => {
+    if (!token) return;
     try {
-      const res = await fetch(`${API_BASE}/settings/test-email`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          host: settSmtpHost,
-          port: Number(settSmtpPort),
-          user: settSmtpUser,
-          pass: settSmtpPass,
-          from: settSmtpFrom,
-          to: smtpTestTo,
-        }),
+      const res = await fetch(`${API_BASE}/mail-configs`, {
+        headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await res.json();
       if (res.ok) {
-        setSmtpTestStatus('ok');
-        setSmtpTestMsg('Email di test inviata con successo.');
-      } else {
-        setSmtpTestStatus('error');
-        setSmtpTestMsg(data.message || "Errore durante l'invio.");
+        const data = await res.json();
+        setMailConfigs(data.configs || []);
       }
-    } catch {
-      setSmtpTestStatus('error');
-      setSmtpTestMsg('Errore di rete.');
+    } catch (err) {
+      console.error("Errore caricamento mail-configs:", err);
     }
   };
 
-  const handleTestPec = async (e: React.FormEvent) => {
+  const handleSaveMailConfig = async (e: React.FormEvent) => {
     e.preventDefault();
-    setPecTestStatus('loading');
-    setPecTestMsg('');
+    if (!editingMailConfig || !token) return;
+    setMailConfigBusyId(editingMailConfig.id || 'new');
+    setMailConfigMsg(null);
+
+    const payload = {
+      type: editingMailConfig.type,
+      name: editingMailConfig.name,
+      host: editingMailConfig.host,
+      port: Number(editingMailConfig.port),
+      secure: editingMailConfig.secure,
+      authEnabled: editingMailConfig.authEnabled,
+      username: editingMailConfig.username,
+      password: editingMailConfig.password,
+      fromAddress: editingMailConfig.fromAddress,
+      batchSize: Number(editingMailConfig.batchSize),
+      batchIntervalSeconds: Number(editingMailConfig.batchIntervalSeconds),
+    };
+
     try {
-      const res = await fetch(`${API_BASE}/settings/test-pec`, {
-        method: 'POST',
+      const isEdit = !!editingMailConfig.id;
+      const url = isEdit ? `${API_BASE}/mail-configs/${editingMailConfig.id}` : `${API_BASE}/mail-configs`;
+      const method = isEdit ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          host: settPecHost,
-          port: Number(settPecPort),
-          user: settPecUser,
-          pass: settPecPass,
-          from: settPecFrom,
-          to: pecTestTo,
-        }),
+        body: JSON.stringify(payload),
       });
+
       const data = await res.json();
-      if (res.ok) {
-        setPecTestStatus('ok');
-        setPecTestMsg('PEC di test inviata con successo.');
-      } else {
-        setPecTestStatus('error');
-        setPecTestMsg(data.message || "Errore durante l'invio.");
+      if (!res.ok) {
+        throw new Error(data.message || 'Errore durante il salvataggio');
       }
-    } catch {
-      setPecTestStatus('error');
-      setPecTestMsg('Errore di rete.');
+
+      setMailConfigMsg({ text: 'Configurazione salvata con successo!', error: false });
+      setEditingMailConfig(null);
+      fetchMailConfigs();
+    } catch (err: any) {
+      setMailConfigMsg({ text: err.message || 'Errore di rete', error: true });
+    } finally {
+      setMailConfigBusyId(null);
     }
   };
+
+  const handleDeleteMailConfig = async (id: string, name: string) => {
+    if (!token) return;
+    if (!confirm(`Sei sicuro di voler eliminare la configurazione "${name}"?`)) return;
+
+    setMailConfigBusyId(id);
+    setMailConfigMsg(null);
+    try {
+      const res = await fetch(`${API_BASE}/mail-configs/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || 'Errore durante l\'eliminazione');
+      }
+
+      setMailConfigMsg({ text: 'Configurazione eliminata.', error: false });
+      fetchMailConfigs();
+    } catch (err: any) {
+      setMailConfigMsg({ text: err.message || 'Errore di rete', error: true });
+    } finally {
+      setMailConfigBusyId(null);
+    }
+  };
+
+  const handleToggleMailConfigActive = async (id: string, currentActive: boolean) => {
+    if (!token) return;
+    setMailConfigBusyId(id);
+    setMailConfigMsg(null);
+    try {
+      const res = await fetch(`${API_BASE}/mail-configs/${id}/active`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ active: !currentActive }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || 'Errore attivazione');
+      }
+
+      setMailConfigMsg({ text: !currentActive ? 'Configurazione attivata.' : 'Configurazione disattivata.', error: false });
+      fetchMailConfigs();
+    } catch (err: any) {
+      setMailConfigMsg({ text: err.message || 'Errore di rete', error: true });
+    } finally {
+      setMailConfigBusyId(null);
+    }
+  };
+
+  const handleTestMailConfig = async (e: React.FormEvent, id: string) => {
+    e.preventDefault();
+    if (!token || !mailConfigTestTo) return;
+    setMailConfigBusyId(id);
+    setMailConfigMsg(null);
+    try {
+      const res = await fetch(`${API_BASE}/mail-configs/${id}/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ to: mailConfigTestTo }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || 'Errore invio email test');
+      }
+
+      setMailConfigMsg({ text: 'Messaggio di test inviato con successo!', error: false });
+      fetchMailConfigs();
+    } catch (err: any) {
+      setMailConfigMsg({ text: err.message || 'Errore di rete', error: true });
+    } finally {
+      setMailConfigBusyId(null);
+    }
+  };
+
+  const renderMailConfigTab = (type: 'EMAIL' | 'PEC') => {
+    const list = mailConfigs.filter((c) => c.type === type);
+    const label = type === 'EMAIL' ? 'SMTP' : 'PEC';
+
+    return (
+      <div className="d-flex flex-column gap-4">
+        {mailConfigMsg && (
+          <div className={`alert ${mailConfigMsg.error ? 'alert-danger' : 'alert-success'} d-flex align-items-center gap-2 mb-0`}>
+            <i className={`fas ${mailConfigMsg.error ? 'fa-triangle-exclamation' : 'fa-check-circle'}`}></i>
+            <div>{mailConfigMsg.text}</div>
+          </div>
+        )}
+
+        {!editingMailConfig && (
+          <div>
+            <div className="d-flex justify-content-between align-items-center mb-3">
+              <h5 className="mb-0 text-dark fw-bold small text-uppercase tracking-wider">
+                Server {label} Configurati ({list.length})
+              </h5>
+              <button
+                type="button"
+                className="btn btn-sm btn-primary px-3 d-flex align-items-center gap-1"
+                onClick={() => setEditingMailConfig({ ...EMPTY_MAIL_CONFIG, type })}
+              >
+                <i className="fas fa-plus"></i> Nuovo Server {label}
+              </button>
+            </div>
+
+            {list.length === 0 ? (
+              <div className="text-center py-4 border rounded bg-white text-muted">
+                <i className="fas fa-server fa-2x mb-2 text-secondary"></i>
+                <p className="mb-0">Nessun server {label} configurato.</p>
+              </div>
+            ) : (
+              <div className="table-responsive border rounded bg-white shadow-sm">
+                <table className="table table-hover align-middle mb-0">
+                  <thead className="table-light">
+                    <tr>
+                      <th className="px-3 py-2 small fw-bold">Nome</th>
+                      <th className="px-3 py-2 small fw-bold">Server</th>
+                      <th className="px-3 py-2 small fw-bold">Mittente</th>
+                      <th className="px-3 py-2 small fw-bold">Throttling</th>
+                      <th className="px-3 py-2 small fw-bold text-center">Stato</th>
+                      <th className="px-3 py-2 small fw-bold text-end">Azioni</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {list.map((c) => (
+                      <tr key={c.id}>
+                        <td className="px-3 py-3 fw-bold text-dark">{c.name}</td>
+                        <td className="px-3 py-3 text-secondary small">
+                          {c.host}:{c.port} {c.secure && <span className="badge bg-info ms-1">SSL</span>}
+                        </td>
+                        <td className="px-3 py-3 text-secondary small">{c.fromAddress}</td>
+                        <td className="px-3 py-3 text-secondary small">
+                          {c.batchSize} invii / {c.batchIntervalSeconds}s
+                        </td>
+                        <td className="px-3 py-3 text-center">
+                          <button
+                            type="button"
+                            className={`btn btn-sm border-0 bg-transparent ${c.active ? 'text-success' : 'text-secondary'}`}
+                            onClick={() => handleToggleMailConfigActive(c.id, c.active)}
+                            disabled={mailConfigBusyId === c.id}
+                            title={c.active ? 'Clicca per disattivare' : 'Clicca per attivare'}
+                          >
+                            <i className={`fas fa-toggle-${c.active ? 'on' : 'off'} fa-lg`}></i>
+                            <span className="ms-1 small">{c.active ? 'Attivo' : 'Inattivo'}</span>
+                          </button>
+                        </td>
+                        <td className="px-3 py-3 text-end">
+                          <div className="d-flex justify-content-end align-items-center gap-2">
+                            <form
+                              onSubmit={(e) => handleTestMailConfig(e, c.id)}
+                              className="d-flex align-items-center gap-1"
+                            >
+                              <input
+                                type="email"
+                                className="form-control form-control-sm"
+                                placeholder="Test email..."
+                                required
+                                value={mailConfigTestTo}
+                                onChange={(e) => setMailConfigTestTo(e.target.value)}
+                                style={{ width: 140 }}
+                              />
+                              <button
+                                type="submit"
+                                className="btn btn-sm btn-outline-secondary px-2"
+                                disabled={mailConfigBusyId === c.id || !mailConfigTestTo}
+                                title="Invia messaggio di test"
+                              >
+                                <i className="fas fa-paper-plane"></i>
+                              </button>
+                            </form>
+
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-primary px-2"
+                              onClick={() => setEditingMailConfig(c)}
+                              title="Modifica"
+                            >
+                              <i className="fas fa-edit"></i>
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-danger px-2"
+                              onClick={() => handleDeleteMailConfig(c.id, c.name)}
+                              disabled={mailConfigBusyId === c.id}
+                              title="Elimina"
+                            >
+                              <i className="fas fa-trash"></i>
+                            </button>
+                          </div>
+                          {c.testedAt && (
+                            <div className="text-muted small mt-1" style={{ fontSize: '0.7rem' }}>
+                              Testato il {new Date(c.testedAt).toLocaleDateString()} alle {new Date(c.testedAt).toLocaleTimeString()}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {editingMailConfig && (
+          <form onSubmit={handleSaveMailConfig} className="border rounded bg-white p-4 shadow-sm">
+            <h5 className="text-dark fw-bold mb-4">
+              {editingMailConfig.id ? `Modifica Server ${label}` : `Nuovo Server ${label}`}
+            </h5>
+
+            <div className="row g-3">
+              <div className="col-md-6">
+                <label className="form-label small fw-bold">Nome Configurazione</label>
+                <input
+                  type="text"
+                  className="form-control form-control-sm"
+                  required
+                  placeholder="Es. SMTP Istituzionale"
+                  value={editingMailConfig.name || ''}
+                  onChange={(e) => setEditingMailConfig({ ...editingMailConfig, name: e.target.value })}
+                />
+              </div>
+
+              <div className="col-md-6">
+                <label className="form-label small fw-bold">Mittente (From Address)</label>
+                <input
+                  type="email"
+                  className="form-control form-control-sm"
+                  required
+                  placeholder="noreply@ente.it"
+                  value={editingMailConfig.fromAddress || ''}
+                  onChange={(e) => setEditingMailConfig({ ...editingMailConfig, fromAddress: e.target.value })}
+                />
+              </div>
+
+              <div className="col-md-8">
+                <label className="form-label small fw-bold">Host Server</label>
+                <input
+                  type="text"
+                  className="form-control form-control-sm"
+                  required
+                  placeholder="smtp.ente.it"
+                  value={editingMailConfig.host || ''}
+                  onChange={(e) => setEditingMailConfig({ ...editingMailConfig, host: e.target.value })}
+                />
+              </div>
+
+              <div className="col-md-4">
+                <label className="form-label small fw-bold">Porta</label>
+                <input
+                  type="number"
+                  className="form-control form-control-sm"
+                  required
+                  value={editingMailConfig.port || 587}
+                  onChange={(e) => setEditingMailConfig({ ...editingMailConfig, port: Number(e.target.value) })}
+                />
+              </div>
+
+              <div className="col-md-6">
+                <label className="form-label small fw-semibold text-muted">Username Autenticazione</label>
+                <input
+                  type="text"
+                  className="form-control form-control-sm"
+                  placeholder="Username (se richiesto)"
+                  value={editingMailConfig.username || ''}
+                  onChange={(e) => setEditingMailConfig({ ...editingMailConfig, username: e.target.value })}
+                />
+              </div>
+
+              <div className="col-md-6">
+                <label className="form-label small fw-semibold text-muted">Password Autenticazione</label>
+                <input
+                  type="password"
+                  className="form-control form-control-sm"
+                  placeholder={editingMailConfig.id ? '••••••••' : 'Password (se richiesta)'}
+                  value={editingMailConfig.password || ''}
+                  onChange={(e) => setEditingMailConfig({ ...editingMailConfig, password: e.target.value })}
+                />
+              </div>
+
+              <div className="col-md-6">
+                <div className="form-check mt-2">
+                  <input
+                    type="checkbox"
+                    className="form-check-input"
+                    id="chkSecure"
+                    checked={editingMailConfig.secure || false}
+                    onChange={(e) => setEditingMailConfig({ ...editingMailConfig, secure: e.target.checked })}
+                  />
+                  <label className="form-check-label small" htmlFor="chkSecure">
+                    Connessione sicura (SSL/TLS implicito)
+                  </label>
+                </div>
+              </div>
+
+              <div className="col-md-6">
+                <div className="form-check mt-2">
+                  <input
+                    type="checkbox"
+                    className="form-check-input"
+                    id="chkAuth"
+                    checked={editingMailConfig.authEnabled ?? true}
+                    onChange={(e) => setEditingMailConfig({ ...editingMailConfig, authEnabled: e.target.checked })}
+                  />
+                  <label className="form-check-label small" htmlFor="chkAuth">
+                    Abilita Autenticazione
+                  </label>
+                </div>
+              </div>
+
+              <div className="col-12 border-top pt-3 mt-4">
+                <h6 className="text-secondary fw-semibold small text-uppercase mb-3">Limiti di Invio (Throttling)</h6>
+                <div className="row g-3">
+                  <div className="col-md-6">
+                    <label className="form-label small">Dimensione Batch (Max Messaggi)</label>
+                    <input
+                      type="number"
+                      className="form-control form-control-sm"
+                      required
+                      min={1}
+                      value={editingMailConfig.batchSize || 100}
+                      onChange={(e) => setEditingMailConfig({ ...editingMailConfig, batchSize: Number(e.target.value) })}
+                    />
+                  </div>
+                  <div className="col-md-6">
+                    <label className="form-label small">Finestra Temporale (Secondi)</label>
+                    <input
+                      type="number"
+                      className="form-control form-control-sm"
+                      required
+                      min={1}
+                      value={editingMailConfig.batchIntervalSeconds || 60}
+                      onChange={(e) => setEditingMailConfig({ ...editingMailConfig, batchIntervalSeconds: Number(e.target.value) })}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="col-12 d-flex justify-content-end gap-2 mt-4">
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary px-3"
+                  onClick={() => setEditingMailConfig(null)}
+                  disabled={mailConfigBusyId !== null}
+                >
+                  Annulla
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-sm btn-primary px-4"
+                  disabled={mailConfigBusyId !== null}
+                >
+                  {mailConfigBusyId !== null ? (
+                    <><i className="fas fa-spinner fa-spin me-1"></i>Salvataggio...</>
+                  ) : (
+                    'Salva'
+                  )}
+                </button>
+              </div>
+            </div>
+          </form>
+        )}
+      </div>
+    );
+  };
+
 
   const handleExportDownloadReport = () => {
     if (!campaign || !campaign.recipients || campaign.recipients.length === 0) {
@@ -2782,6 +3189,18 @@ export function App(): React.JSX.Element {
                     >
                       <i className="fas fa-id-badge me-2"></i>SPID / CIE (OIDC)
                     </button>
+
+                    <span className="imp-section-title">Sistema</span>
+                    <button
+                      type="button"
+                      className={`nav-link border-0 text-start bg-transparent ${activeSettingsTab === 'motori' ? 'active' : ''}`}
+                      onClick={() => {
+                        setActiveSettingsTab('motori');
+                        fetchEngines();
+                      }}
+                    >
+                      <i className="fas fa-cogs me-2"></i>Motori di Invio
+                    </button>
                   </nav>
                 </div>
 
@@ -2797,6 +3216,7 @@ export function App(): React.JSX.Element {
                         {activeSettingsTab === 'protocollo' && 'Connettore Protocollo Informatico'}
                         {activeSettingsTab === 'postalizzazione' && 'Postalizzazione Cartacea Istituzionale'}
                         {activeSettingsTab === 'oidc' && 'SPID / CIE (OIDC) - Autenticazione Cittadini'}
+                        {activeSettingsTab === 'motori' && 'Motori di Invio — Stato Code BullMQ'}
                       </h3>
                     </div>
                     <div className="card-body p-4">
@@ -3290,6 +3710,134 @@ export function App(): React.JSX.Element {
                         </div>
 
                       </form>
+
+                      {/* TAB: MOTORI — outside form to avoid submit conflicts */}
+                      {activeSettingsTab === 'motori' && (
+                        <div>
+                          <div className="d-flex justify-content-between align-items-center mb-4">
+                            <p className="text-muted small mb-0">Stato in tempo reale delle code BullMQ. Puoi mettere in pausa o riprendere ogni motore individualmente.</p>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-2"
+                              onClick={fetchEngines}
+                              disabled={loadingEngines}
+                            >
+                              <i className={`fas fa-sync-alt ${loadingEngines ? 'fa-spin' : ''}`}></i>
+                              Aggiorna
+                            </button>
+                          </div>
+
+                          {enginesError && (
+                            <div className="alert alert-danger d-flex align-items-center gap-2">
+                              <i className="fas fa-triangle-exclamation"></i>
+                              {enginesError}
+                            </div>
+                          )}
+
+                          {loadingEngines && engines.length === 0 ? (
+                            <div className="text-center py-5 text-muted">
+                              <i className="fas fa-spinner fa-spin fa-2x mb-3"></i>
+                              <div>Caricamento stato motori...</div>
+                            </div>
+                          ) : (
+                            <div className="d-flex flex-column gap-3">
+                              {engines.map((eng) => {
+                                const channelLabel: Record<string, string> = {
+                                  EMAIL: 'Mail (SMTP)',
+                                  PEC: 'PEC',
+                                  APP_IO: 'App IO',
+                                  SEND: 'SEND',
+                                  POSTAL: 'Postale',
+                                };
+                                const channelIcon: Record<string, string> = {
+                                  EMAIL: 'fa-envelope',
+                                  PEC: 'fa-envelope-open-text',
+                                  APP_IO: 'fa-mobile-alt',
+                                  SEND: 'fa-paper-plane',
+                                  POSTAL: 'fa-mail-bulk',
+                                };
+                                const total = (eng.counts?.waiting ?? 0) + (eng.counts?.active ?? 0) + (eng.counts?.delayed ?? 0);
+                                const failed = eng.counts?.failed ?? 0;
+                                const completed = eng.counts?.completed ?? 0;
+
+                                return (
+                                  <div key={eng.channel} className={`card border shadow-sm ${eng.paused ? 'border-warning' : failed > 0 ? 'border-danger' : 'border-light'}`}>
+                                    <div className="card-body p-3">
+                                      <div className="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                                        <div className="d-flex align-items-center gap-3">
+                                          <div className={`rounded-circle d-flex align-items-center justify-content-center text-white ${eng.paused ? 'bg-warning' : 'bg-primary'}`} style={{ width: 40, height: 40 }}>
+                                            <i className={`fas ${channelIcon[eng.channel] ?? 'fa-cog'}`}></i>
+                                          </div>
+                                          <div>
+                                            <div className="fw-bold text-dark">{channelLabel[eng.channel] ?? eng.channel}</div>
+                                            <div className="text-muted small">{eng.queueName}</div>
+                                          </div>
+                                        </div>
+
+                                        <div className="d-flex align-items-center gap-3">
+                                          <div className="d-flex gap-3 text-center">
+                                            <div>
+                                              <div className="fw-bold text-primary">{eng.counts?.waiting ?? 0}</div>
+                                              <div className="text-muted" style={{ fontSize: '0.7rem' }}>In Attesa</div>
+                                            </div>
+                                            <div>
+                                              <div className="fw-bold text-info">{eng.counts?.active ?? 0}</div>
+                                              <div className="text-muted" style={{ fontSize: '0.7rem' }}>Attivi</div>
+                                            </div>
+                                            <div>
+                                              <div className="fw-bold text-secondary">{eng.counts?.delayed ?? 0}</div>
+                                              <div className="text-muted" style={{ fontSize: '0.7rem' }}>In Ritardo</div>
+                                            </div>
+                                            <div>
+                                              <div className="fw-bold text-success">{completed}</div>
+                                              <div className="text-muted" style={{ fontSize: '0.7rem' }}>Completati</div>
+                                            </div>
+                                            <div>
+                                              <div className={`fw-bold ${failed > 0 ? 'text-danger' : 'text-muted'}`}>{failed}</div>
+                                              <div className="text-muted" style={{ fontSize: '0.7rem' }}>Falliti</div>
+                                            </div>
+                                          </div>
+
+                                          <div>
+                                            {eng.paused ? (
+                                              <div className="d-flex flex-column align-items-center gap-1">
+                                                <span className="badge bg-warning text-dark mb-1"><i className="fas fa-pause me-1"></i>In Pausa</span>
+                                                <button
+                                                  type="button"
+                                                  className="btn btn-sm btn-success d-flex align-items-center gap-1"
+                                                  onClick={() => handleEngineAction(eng.channel, 'resume')}
+                                                  disabled={loadingEngines}
+                                                >
+                                                  <i className="fas fa-play"></i> Riprendi
+                                                </button>
+                                              </div>
+                                            ) : (
+                                              <div className="d-flex flex-column align-items-center gap-1">
+                                                <span className={`badge ${total > 0 ? 'bg-primary' : 'bg-secondary'} mb-1`}>
+                                                  {total > 0 ? <><i className="fas fa-circle-notch fa-spin me-1"></i>Attivo ({total})</> : <><i className="fas fa-check me-1"></i>Idle</>}
+                                                </span>
+                                                <button
+                                                  type="button"
+                                                  className="btn btn-sm btn-outline-warning d-flex align-items-center gap-1"
+                                                  onClick={() => handleEngineAction(eng.channel, 'pause')}
+                                                  disabled={loadingEngines}
+                                                >
+                                                  <i className="fas fa-pause"></i> Pausa
+                                                </button>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                     </div>
                   </div>
                 </div>
