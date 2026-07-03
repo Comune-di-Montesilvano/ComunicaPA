@@ -13,6 +13,16 @@ const mockConfig = {
   },
 };
 
+const redisMock = {
+  get: jest.fn(),
+  set: jest.fn(),
+};
+
+jest.mock('ioredis', () => ({
+  __esModule: true,
+  default: jest.fn().mockImplementation(() => redisMock),
+}));
+
 describe('OidcCitizenStrategy', () => {
   let strategy: OidcCitizenStrategy;
   let settingsValues: Record<string, unknown>;
@@ -110,5 +120,26 @@ describe('OidcCitizenStrategy', () => {
       email: 'user@example.com',
       name: 'Mario Rossi',
     });
+  });
+
+  it('validate() legge i claims da Redis se presenti', async () => {
+    settingsValues = { 'oidc.issuer': '', 'oidc.audience': '' };
+    strategy = await buildStrategy();
+
+    redisMock.get.mockResolvedValueOnce(
+      JSON.stringify({
+        codiceFiscale: 'MOCKEDCF12345678',
+        name: 'John Doe cached',
+        provider: 'eIDAS',
+      }),
+    );
+
+    const claims = await strategy.validate({
+      sub: 'user-cached',
+    });
+
+    expect(redisMock.get).toHaveBeenCalledWith('oidc:claims:user-cached');
+    expect(claims.codiceFiscale).toBe('MOCKEDCF12345678');
+    expect(claims.name).toBe('John Doe cached');
   });
 });

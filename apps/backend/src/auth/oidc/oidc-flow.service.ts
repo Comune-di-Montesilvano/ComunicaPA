@@ -69,8 +69,13 @@ export class OidcFlowService implements OnModuleDestroy {
     return url.toString();
   }
 
-  /** Consuma lo state e scambia il code al token endpoint del proxy. */
-  async exchangeCode(code: string, state: string): Promise<{ access_token: string }> {
+  async exchangeCode(
+    code: string,
+    state: string,
+  ): Promise<{
+    access_token: string;
+    claims?: { cf: string; name: string; provider: string };
+  }> {
     if (!code || !state) {
       throw new UnauthorizedException('code e state richiesti');
     }
@@ -119,30 +124,134 @@ export class OidcFlowService implements OnModuleDestroy {
       throw new BadGatewayException('Scambio del codice OIDC fallito');
     }
 
-    const payload = (await res.json()) as { id_token?: string; access_token?: string };
+    const tokenPayload = (await res.json()) as { id_token?: string; access_token?: string };
     if (process.env.LOG_LEVEL?.toLowerCase() === 'debug') {
-      this.logger.debug(`OIDC Token exchange response keys: ${Object.keys(payload).join(', ')}`);
+      this.logger.debug(`OIDC Token exchange response keys: ${Object.keys(tokenPayload).join(', ')}`);
     }
-    const token = payload.id_token ?? payload.access_token;
+    const token = tokenPayload.id_token ?? tokenPayload.access_token;
     if (!token) {
       throw new BadGatewayException('Il provider OIDC non ha restituito un token');
     }
-    if (process.env.LOG_LEVEL?.toLowerCase() === 'debug') {
-      try {
-        const parts = token.split('.');
-        if (parts.length >= 2) {
-          const decodedPayload = JSON.parse(
-            Buffer.from(parts[1], 'base64').toString('utf8'),
-          );
+
+    let decodedPayload: Record<string, unknown> = {};
+    try {
+      const parts = token.split('.');
+      if (parts.length >= 2) {
+        decodedPayload = JSON.parse(
+          Buffer.from(parts[1], 'base64').toString('utf8'),
+        );
+        if (process.env.LOG_LEVEL?.toLowerCase() === 'debug') {
           this.logger.debug(`OIDC Token Decoded Payload: ${JSON.stringify(decodedPayload)}`);
-        } else {
+        }
+      } else {
+        if (process.env.LOG_LEVEL?.toLowerCase() === 'debug') {
           this.logger.debug(`OIDC Token is not a JWT (opaque?): ${token.slice(0, 20)}...`);
         }
+      }
+    } catch (err) {
+      this.logger.warn(`Impossibile decodificare il token OIDC per loggabilità: ${String(err)}`);
+    }
+
+    // Recupero claims da UserInfo endpoint (essenziale se non inclusi nell'id_token)
+    let userinfo: Record<string, unknown> = {};
+    if (tokenPayload.access_token) {
+      const userinfoUrl = `${issuer}/OIDC/userinfo`;
+      try {
+        const uiRes = await fetch(userinfoUrl, {
+          headers: {
+            'Authorization': `Bearer ${tokenPayload.access_token}`,
+          },
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (uiRes.ok) {
+          userinfo = await uiRes.json().catch(() => ({}));
+          if (process.env.LOG_LEVEL?.toLowerCase() === 'debug') {
+            this.logger.debug(`OIDC UserInfo response: ${JSON.stringify(userinfo)}`);
+          }
+        } else {
+          this.logger.warn(`OIDC UserInfo endpoint returned status ${uiRes.status}`);
+        }
       } catch (err) {
-        this.logger.warn(`Impossibile decodificare il token OIDC per loggabilità: ${String(err)}`);
+        this.logger.warn(`Impossibile recuperare info da UserInfo endpoint: ${String(err)}`);
       }
     }
-    return { access_token: token };
+
+    const mergedClaims = { ...decodedPayload, ...userinfo };
+
+    const rawFiscal = String(
+      mergedClaims['fiscal_number'] ??
+        mergedClaims['https://attributes.eid.gov.it/fiscal_number'] ??
+        mergedClaims['https://attributes.spid.gov.it/fiscalNumber'] ??
+        mergedClaims['codice_fiscale'] ??
+        mergedClaims['cf'] ??
+        mergedClaims['codiceFiscale'] ??
+        mergedClaims['fiscalNumber'] ??
+        mergedClaims['fiscalCode'] ??
+        '',
+    ).toUpperCase();
+    const codiceFiscale = rawFiscal.replace(/^TIN[A-Z]{2}-/, '');
+
+    const givenName = String(
+      mergedClaims['given_name'] ??
+        mergedClaims['first_name'] ??
+        mergedClaims['givenName'] ??
+        '',
+    );
+    const familyName = String(
+      mergedClaims['family_name'] ??
+        mergedClaims['last_name'] ??
+        mergedClaims['sn'] ??
+        mergedClaims['surname'] ??
+        mergedClaims['familyName'] ??
+        '',
+    );
+    const name =
+      (mergedClaims['name'] ? String(mergedClaims['name']) : '') ||
+      [givenName, familyName].filter(Boolean).join(' ');
+
+    // Rileva provider (SPID, CIE, eIDAS, IT-Wallet, ecc.)
+    const amr = mergedClaims['amr'];
+    let provider = 'Identità Digitale';
+    if (mergedClaims['provider_name']) {
+      provider = String(mergedClaims['provider_name']);
+    } else if (amr) {
+      const amrVal = Array.isArray(amr) ? amr[0] : amr;
+      if (typeof amrVal === 'string') {
+        const amrLower = amrVal.toLowerCase();
+        if (amrLower.includes('cie') || amrLower.includes('interno.gov.it')) {
+          provider = 'CIE';
+        } else if (amrLower.includes('spid')) {
+          provider = 'SPID';
+        } else if (amrLower.includes('eidas')) {
+          provider = 'eIDAS';
+        } else if (amrLower.includes('wallet') || amrLower.includes('itwallet')) {
+          provider = 'IT-Wallet';
+        } else {
+          provider = amrVal.toUpperCase();
+        }
+      }
+    }
+
+    const sub = String(decodedPayload.sub ?? '');
+    if (sub) {
+      await this.redis.set(
+        `oidc:claims:${sub}`,
+        JSON.stringify({ codiceFiscale, name, provider }),
+        'EX',
+        3600 * 8, // 8 ore
+      ).catch((err) => {
+        this.logger.warn(`Errore nel salvataggio dei claims su Redis: ${String(err)}`);
+      });
+    }
+
+    return {
+      access_token: token,
+      claims: {
+        cf: codiceFiscale,
+        name,
+        provider,
+      },
+    };
   }
 
   private async requireConfig(): Promise<{

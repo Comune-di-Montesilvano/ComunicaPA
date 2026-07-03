@@ -93,7 +93,14 @@ describe('OidcFlowService', () => {
     } as never);
 
     const result = await service.exchangeCode('code-1', 'state-1');
-    expect(result).toEqual({ access_token: 'jwt.id.token' });
+    expect(result).toEqual({
+      access_token: 'jwt.id.token',
+      claims: {
+        cf: '',
+        name: '',
+        provider: 'Identità Digitale',
+      },
+    });
     expect(redisMock.getdel).toHaveBeenCalledWith('oidc:state:state-1');
 
     const tokenCall = fetchMock.mock.calls[1];

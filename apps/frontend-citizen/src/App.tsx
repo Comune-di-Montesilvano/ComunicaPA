@@ -215,18 +215,21 @@ export function App(): React.JSX.Element {
           const err = (await r.json().catch(() => ({}))) as { message?: string };
           throw new Error(err.message ?? 'Scambio del codice OIDC fallito');
         }
-        return r.json() as Promise<{ access_token: string }>;
+        return r.json() as Promise<{
+          access_token: string;
+          claims?: { cf: string; name: string; provider: string };
+        }>;
       })
       .then((d) => {
-        const claims = decodeJwtClaims(d.access_token);
+        const claims = d.claims || decodeJwtClaims(d.access_token);
         localStorage.setItem('comunicapa_citizen_token', d.access_token);
         localStorage.setItem('comunicapa_citizen_cf', claims.cf);
         localStorage.setItem('comunicapa_citizen_name', claims.name);
-        localStorage.setItem('comunicapa_citizen_provider', claims.provider || 'SPID / CIE');
+        localStorage.setItem('comunicapa_citizen_provider', claims.provider || 'Identità Digitale');
         setToken(d.access_token);
         setCf(claims.cf);
         setName(claims.name);
-        setProvider(claims.provider || 'SPID / CIE');
+        setProvider(claims.provider || 'Identità Digitale');
       })
       .catch((e: Error) => setLoginError(e.message))
       .finally(() => setOidcExchanging(false));

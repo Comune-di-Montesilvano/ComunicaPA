@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { passportJwtSecret } from 'jwks-rsa';
+import Redis from 'ioredis';
 import type { CitizenTokenClaims } from '@comunicapa/shared-types';
 import type { AppConfiguration } from '../../config/configuration';
 import { AppSettingsService } from '../../settings/app-settings.service';
@@ -28,6 +29,7 @@ function getJwksProvider(jwksUri: string): ReturnType<typeof passportJwtSecret> 
 @Injectable()
 export class OidcCitizenStrategy extends PassportStrategy(Strategy, 'oidc-citizen') {
   private readonly settings: AppSettingsService;
+  private readonly redis: Redis;
 
   constructor(config: ConfigService<AppConfiguration, true>, settings: AppSettingsService) {
     const jwtSecret = config.get('jwt.secret', { infer: true });
@@ -62,6 +64,10 @@ export class OidcCitizenStrategy extends PassportStrategy(Strategy, 'oidc-citize
       },
     });
 
+    this.redis = new Redis(config.get('redis.url', { infer: true }), {
+      lazyConnect: true,
+      maxRetriesPerRequest: 2,
+    });
     this.settings = settings;
   }
 
@@ -83,11 +89,28 @@ export class OidcCitizenStrategy extends PassportStrategy(Strategy, 'oidc-citize
       }
     }
 
+    const sub = String(payload['sub'] ?? '');
+    let cachedClaims: { codiceFiscale?: string; name?: string } | null = null;
+    if (sub) {
+      try {
+        const cached = await this.redis.get(`oidc:claims:${sub}`);
+        if (cached) {
+          cachedClaims = JSON.parse(cached);
+          if (process.env.LOG_LEVEL?.toLowerCase() === 'debug') {
+            Logger.debug(`OidcCitizenStrategy.validate found cached claims in Redis: ${cached}`, OidcCitizenStrategy.name);
+          }
+        }
+      } catch (err) {
+        Logger.warn(`Errore durante il recupero dei claims OIDC da Redis: ${String(err)}`, OidcCitizenStrategy.name);
+      }
+    }
+
     // pa-sso-proxy (SATOSA/SPID): fiscal_number in formato "TINIT-<CF>";
     // eIDAS usa anche il claim URI https://attributes.eid.gov.it/fiscal_number
     // SPID usa anche il claim URI https://attributes.spid.gov.it/fiscalNumber
     const rawFiscal = String(
-      payload['fiscal_number'] ??
+      cachedClaims?.codiceFiscale ??
+        payload['fiscal_number'] ??
         payload['https://attributes.eid.gov.it/fiscal_number'] ??
         payload['https://attributes.spid.gov.it/fiscalNumber'] ??
         payload['codice_fiscale'] ??
@@ -116,8 +139,9 @@ export class OidcCitizenStrategy extends PassportStrategy(Strategy, 'oidc-citize
         '',
     );
     const name =
-      (payload['name'] ? String(payload['name']) : '') ||
-      [givenName, familyName].filter(Boolean).join(' ');
+      cachedClaims?.name ??
+      ((payload['name'] ? String(payload['name']) : '') ||
+        [givenName, familyName].filter(Boolean).join(' '));
 
     return {
       sub: String(payload['sub'] ?? ''),

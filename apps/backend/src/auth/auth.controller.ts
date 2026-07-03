@@ -44,7 +44,7 @@ export class AuthController {
   @Public()
   @Post('citizen/oidc/callback')
   @HttpCode(HttpStatus.OK)
-  oidcCallback(@Body() dto: { code: string; state: string }): Promise<{ access_token: string }> {
+  oidcCallback(@Body() dto: { code: string; state: string }): Promise<{ access_token: string; claims?: { cf: string; name: string; provider: string } }> {
     return this.oidcFlow.exchangeCode(dto.code, dto.state);
   }
 
