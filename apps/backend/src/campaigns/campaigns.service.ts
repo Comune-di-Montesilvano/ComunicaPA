@@ -43,6 +43,22 @@ export class CampaignsService {
     return campaign;
   }
 
+  async getDuplicateSource(id: string): Promise<{
+    name: string;
+    description: string | null;
+    channelType: Campaign['channelType'];
+    channelConfig: Record<string, unknown>;
+  }> {
+    const campaign = await this.campaignRepo.findOneBy({ id });
+    if (!campaign) throw new NotFoundException(`Campaign ${id} not found`);
+    return {
+      name: campaign.name,
+      description: campaign.description,
+      channelType: campaign.channelType,
+      channelConfig: campaign.channelConfig,
+    };
+  }
+
   create(dto: CreateCampaignDto, createdBy: string): Promise<Campaign> {
     const campaign = this.campaignRepo.create({
       name: dto.name,

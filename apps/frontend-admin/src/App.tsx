@@ -1495,6 +1495,42 @@ export function App(): React.JSX.Element {
     document.body.removeChild(link);
   };
 
+  const prefillWizardFrom = (source: {
+    name: string;
+    description: string | null;
+    channelType: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL';
+    channelConfig: Record<string, any>;
+  }, opts: { isDuplicate: boolean }) => {
+    setWizName(opts.isDuplicate ? `${source.name} (Copia)` : source.name);
+    setWizDesc(source.description || '');
+    setWizChannel(source.channelType);
+    setWizSubject(source.channelConfig?.subject || '');
+    setWizBody(source.channelConfig?.body || '');
+    setWizMailConfigId(source.channelConfig?.mailConfigId || '');
+    setWizAppIoServiceId(source.channelConfig?.serviceId || source.channelConfig?.ioServiceId || '');
+    setWizAppIoMode(source.channelConfig?.appIo ? 'parallel' : 'none');
+    setWizBlockedChannels(source.channelConfig?.blockedChannels || []);
+    // Il CSV NON viene precaricato: l'utente ricarica un file al passo 2.
+    setWizCsvFile(null);
+    setWizCsvHeaders([]);
+    setWizCsvRows([]);
+    setWizValidRows([]);
+    setWizStep(1);
+    setView('invio-massivo-wizard');
+  };
+
+  const handleDuplicateCampaign = async (campaignId: string) => {
+    const res = await fetch(`${API_BASE}/campaigns/${campaignId}/duplicate-source`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      alert('Impossibile leggere i dati della campagna da duplicare.');
+      return;
+    }
+    const source = await res.json();
+    prefillWizardFrom(source, { isDuplicate: true });
+  };
+
   const handleWizLaunch = async () => {
     if (wizValidRows.length === 0) {
       alert('Non ci sono destinatari validi da inviare.');
@@ -2370,7 +2406,7 @@ export function App(): React.JSX.Element {
                                   {c.status === 'draft' && (
                                     <button
                                       type="button"
-                                      className="btn btn-sm btn-outline-primary d-flex align-items-center gap-1"
+                                      className="btn btn-sm btn-outline-primary d-flex align-items-center gap-1 mb-1"
                                       title="Riprendi wizard campagna"
                                       onClick={() => {
                                         setWizName(c.name);
@@ -2381,6 +2417,14 @@ export function App(): React.JSX.Element {
                                       <i className="fas fa-edit"></i> Riprendi
                                     </button>
                                   )}
+                                  <button
+                                    type="button"
+                                    className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1"
+                                    title="Duplica campagna in un nuovo wizard"
+                                    onClick={() => handleDuplicateCampaign(c.id)}
+                                  >
+                                    <i className="fas fa-copy"></i> Duplica
+                                  </button>
                                 </td>
                               </tr>
                             ))}

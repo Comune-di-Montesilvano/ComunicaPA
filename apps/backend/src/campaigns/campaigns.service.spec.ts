@@ -288,3 +288,48 @@ describe('CampaignsService', () => {
   });
 });
 
+describe('CampaignsService.getDuplicateSource', () => {
+  const campaignRepoMock = { findOneBy: jest.fn() };
+
+  const buildModule = () =>
+    Test.createTestingModule({
+      providers: [
+        CampaignsService,
+        { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
+        { provide: getRepositoryToken(Recipient), useValue: {} },
+        { provide: getRepositoryToken(NotificationAttempt), useValue: {} },
+        { provide: NotificationQueuesService, useValue: {} },
+      ],
+    }).compile();
+
+  it('lancia NotFoundException se la campagna non esiste', async () => {
+    campaignRepoMock.findOneBy.mockResolvedValue(null);
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    await expect(service.getDuplicateSource('missing-id')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('ritorna nome/canale/config della campagna sorgente, senza destinatari', async () => {
+    campaignRepoMock.findOneBy.mockResolvedValue({
+      id: 'c1',
+      name: 'Avviso TARI 2026',
+      description: 'Descrizione originale',
+      channelType: 'EMAIL',
+      channelConfig: { subject: 'Oggetto %nominativo%', body: '<p>Corpo</p>', mailConfigId: 'mc1' },
+      status: CampaignStatus.COMPLETED,
+    });
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    const result = await service.getDuplicateSource('c1');
+
+    expect(result).toEqual({
+      name: 'Avviso TARI 2026',
+      description: 'Descrizione originale',
+      channelType: 'EMAIL',
+      channelConfig: { subject: 'Oggetto %nominativo%', body: '<p>Corpo</p>', mailConfigId: 'mc1' },
+    });
+  });
+});
+

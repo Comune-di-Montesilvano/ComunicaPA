@@ -126,6 +126,11 @@ export class CampaignsController {
     return this.campaignsService.launch(id);
   }
 
+  @Get(':id/duplicate-source')
+  getDuplicateSource(@Param('id', ParseUUIDPipe) id: string) {
+    return this.campaignsService.getDuplicateSource(id);
+  }
+
   @Get(':id/stats')
   getStats(@Param('id', ParseUUIDPipe) id: string) {
     return this.campaignsService.getStats(id);
