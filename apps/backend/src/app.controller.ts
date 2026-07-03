@@ -14,7 +14,10 @@ export class AppController {
 
   @Public()
   @Get('version')
-  getVersion(): { version: string } {
-    return { version: process.env['APP_VERSION'] ?? 'dev' };
+  getVersion(): { version: string; isLdapMock: boolean } {
+    return {
+      version: process.env['APP_VERSION'] ?? 'dev',
+      isLdapMock: process.env['LDAP_HOST'] === 'mock',
+    };
   }
 }

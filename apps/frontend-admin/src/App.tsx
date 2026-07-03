@@ -98,17 +98,34 @@ export function App(): React.JSX.Element {
   const [view, setView] = useState<'dashboard' | 'invio-singolo' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'impostazioni' | 'campaign-detail'>('dashboard');
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState<string>('');
+  const [isLdapMock, setIsLdapMock] = useState<boolean>(false);
+  const [brandLogoUrl, setBrandLogoUrl] = useState<string | null>(null);
+  const [brandName, setBrandName] = useState<string>('ComunicaPA');
+  const [brandSubtitle, setBrandSubtitle] = useState<string>('Amministrazione & Gestione Invii');
 
   useEffect(() => {
     fetch(`${API_BASE}/version`)
       .then((r) => r.json())
-      .then((d: { version?: string }) => setAppVersion(d.version ?? 'dev'))
+      .then((d: { version?: string; isLdapMock?: boolean }) => {
+        setAppVersion(d.version ?? 'dev');
+        setIsLdapMock(d.isLdapMock ?? false);
+      })
       .catch(() => setAppVersion('dev'));
 
     fetch(`${API_BASE}/branding`)
       .then((r) => r.json())
-      .then((b: { name?: string; faviconUrl?: string | null }) => {
-        if (b.name) document.title = `${b.name} — ComunicaPA Admin`;
+      .then((b: { name?: string; subtitle?: string; logoUrl?: string | null; faviconUrl?: string | null }) => {
+        if (b.name) {
+          document.title = `${b.name} — ComunicaPA Admin`;
+          setBrandName(b.name);
+        }
+        if (b.subtitle) {
+          setBrandSubtitle(b.subtitle);
+        }
+        // logo/favicon possono essere path relativi al backend o URL esterni assoluti
+        if (b.logoUrl) {
+          setBrandLogoUrl(/^https?:\/\//i.test(b.logoUrl) ? b.logoUrl : `${API_BASE}${b.logoUrl}`);
+        }
         if (b.faviconUrl) {
           const link = document.querySelector<HTMLLinkElement>("link[rel~='icon']") ?? document.createElement('link');
           link.rel = 'icon';
@@ -1399,71 +1416,82 @@ export function App(): React.JSX.Element {
   // Render Guest Login View
   if (!token) {
     return (
-      <div className="container d-flex align-items-center justify-content-center" style={{ minHeight: '100vh' }}>
-        <div className="card shadow" style={{ width: '100%', maxWidth: '420px', borderRadius: '10px', overflow: 'hidden' }}>
-          <div className="card-header text-center py-4" style={{ background: 'var(--ms-purple-600)', color: '#fff', borderBottom: 'none' }}>
-            <div className="mb-2" style={{ fontSize: '2rem' }}>
-              <i className="fas fa-building text-warning"></i>
+      <div className="login-page-wrapper">
+        <div className="login-glow-1"></div>
+        <div className="login-glow-2"></div>
+        <div className="login-card">
+          <div className="login-header">
+            <div className="login-logo-container">
+              {brandLogoUrl ? (
+                <img src={brandLogoUrl} alt={brandName} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              ) : (
+                <i className="fas fa-building"></i>
+              )}
             </div>
-            <h1 className="h4 mb-1 text-white fw-bold">ComunicaPA</h1>
-            <p className="small mb-0 text-white-50">Amministrazione & Gestione Invii</p>
+            <h1 className="login-title">{brandName}</h1>
+            <p className="login-subtitle">{brandSubtitle || 'Amministrazione & Gestione Invii'}</p>
           </div>
-          <div className="card-body p-4" style={{ backgroundColor: '#fff' }}>
+          <div className="login-body">
             <form onSubmit={handleLogin}>
               {loginError && (
-                <div className="alert alert-danger p-2" role="alert" style={{ fontSize: '0.86rem' }}>
-                  <i className="fas fa-exclamation-triangle me-1"></i> {loginError}
+                <div className="login-error-alert" role="alert">
+                  <i className="fas fa-exclamation-triangle"></i> {loginError}
                 </div>
               )}
-              <div className="mb-3">
-                <label className="form-label small fw-semibold text-muted" htmlFor="username">Utente (sAMAccountName)</label>
-                <div className="input-group">
-                  <span className="input-group-text bg-light border-end-0 text-muted"><i className="fas fa-user"></i></span>
+              <div className="login-form-group">
+                <label className="login-label" htmlFor="username">Utente (sAMAccountName)</label>
+                <div className="login-input-wrapper">
                   <input
                     type="text"
                     id="username"
-                    className="form-control bg-light border-start-0"
+                    className="login-input"
                     placeholder="Es: admin, operator"
                     value={loginUsername}
                     onChange={(e) => setLoginUsername(e.target.value)}
                     required
                   />
+                  <span className="login-input-icon"><i className="fas fa-user"></i></span>
                 </div>
               </div>
-              <div className="mb-4">
-                <label className="form-label small fw-semibold text-muted" htmlFor="password">Password AD/LDAP</label>
-                <div className="input-group">
-                  <span className="input-group-text bg-light border-end-0 text-muted"><i className="fas fa-lock"></i></span>
+              <div className="login-form-group">
+                <label className="login-label" htmlFor="password">Password AD/LDAP</label>
+                <div className="login-input-wrapper">
                   <input
                     type="password"
                     id="password"
-                    className="form-control bg-light border-start-0"
+                    className="login-input"
                     placeholder="••••••••"
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
                     required
                   />
+                  <span className="login-input-icon"><i className="fas fa-lock"></i></span>
                 </div>
               </div>
               <button
                 type="submit"
-                className="btn btn-primary w-100 py-2 fw-semibold"
-                style={{ backgroundColor: 'var(--bi-primary)', border: 'none' }}
+                className="login-button"
                 disabled={loginLoading}
               >
                 {loginLoading ? (
                   <>
-                    <i className="fas fa-spinner fa-spin me-2"></i>Accesso in corso...
+                    <i className="fas fa-spinner fa-spin"></i> Accesso in corso...
                   </>
                 ) : (
-                  'Accedi con Active Directory'
+                  <>
+                    Accedi con Active Directory
+                  </>
                 )}
               </button>
             </form>
           </div>
-          <div className="card-footer bg-light text-center py-3 border-top-0">
-            <span className="small text-muted">Sviluppo locale: usa <code>admin/admin</code> o <code>operator/operator</code></span>
-          </div>
+          {isLdapMock && (
+            <div className="login-footer">
+              <div className="login-footer-text">
+                Sviluppo locale: usa <code className="login-footer-code">admin/admin</code> o <code className="login-footer-code">operator/operator</code>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -1476,7 +1504,11 @@ export function App(): React.JSX.Element {
       <aside className="bo-sidebar">
         <div className="bo-sidebar-brand" style={{ cursor: 'pointer' }} onClick={() => setView('dashboard')}>
           <span className="bo-sidebar-brand-mark">
-            <i className="fas fa-building bo-brand-logo-fallback text-warning"></i>
+            {brandLogoUrl ? (
+              <img src={brandLogoUrl} alt={settEntityName} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+            ) : (
+              <i className="fas fa-building bo-brand-logo-fallback text-warning"></i>
+            )}
           </span>
           <span className="bo-sidebar-brand-copy">
             <span className="bo-sidebar-brand-title">{settEntityName}</span>
