@@ -104,7 +104,7 @@ describe('OidcFlowService', () => {
     expect(body.get('client_secret')).toBeNull();
   });
 
-  it('exchangeCode: include client_secret quando configurato', async () => {
+  it('exchangeCode: client_secret_basic quando il secret è configurato', async () => {
     values.set('oidc.clientSecret', 's3gr3t0');
     redisMock.getdel.mockResolvedValueOnce('verifier-123');
     mockDiscoveryOk();
@@ -114,8 +114,12 @@ describe('OidcFlowService', () => {
     } as never);
 
     await service.exchangeCode('code-1', 'state-1');
-    const body = fetchMock.mock.calls[1][1].body as URLSearchParams;
-    expect(body.get('client_secret')).toBe('s3gr3t0');
+    const [, options] = fetchMock.mock.calls[1];
+    const body = options.body as URLSearchParams;
+    // Secret nell'header Basic (unico metodo che tutti i provider devono supportare), mai nel body
+    expect(body.get('client_secret')).toBeNull();
+    const expected = Buffer.from('client-abc:s3gr3t0').toString('base64');
+    expect(options.headers['Authorization']).toBe(`Basic ${expected}`);
   });
 
   it('exchangeCode: 401 con state sconosciuto/scaduto', async () => {

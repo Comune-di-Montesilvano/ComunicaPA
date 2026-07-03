@@ -90,15 +90,21 @@ export class OidcFlowService implements OnModuleDestroy {
       client_id: clientId,
       code_verifier: verifier,
     });
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    };
     if (clientSecret) {
-      body.set('client_secret', clientSecret);
+      // client_secret_basic (RFC 6749 §2.3.1): il metodo che ogni provider deve
+      // supportare — alcuni (es. pa-sso-proxy) rifiutano il secret nel body
+      const credentials = `${encodeURIComponent(clientId)}:${encodeURIComponent(clientSecret)}`;
+      headers['Authorization'] = `Basic ${Buffer.from(credentials).toString('base64')}`;
     }
 
     let res: Response;
     try {
       res = await fetch(endpoints.tokenEndpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers,
         body,
         signal: AbortSignal.timeout(10_000),
       });
