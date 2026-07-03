@@ -233,6 +233,11 @@ export function App(): React.JSX.Element {
   const [newSvcIsDefault, setNewSvcIsDefault] = useState(false);
   const [showNewSvcForm, setShowNewSvcForm] = useState(false);
 
+  // App IO Test Service
+  const [ioTestCf, setIoTestCf] = useState('');
+  const [ioTestBusyId, setIoTestBusyId] = useState<string | null>(null);
+  const [ioTestMsg, setIoTestMsg] = useState<{ id: string; text: string; error: boolean } | null>(null);
+
   const [settSendApiKey, setSettSendApiKey] = useState('');
   const [settSendUrl, setSettSendUrl] = useState('https://api.notifichedigitali.it');
   const [settRetentionDays, setSettRetentionDays] = useState('90');
@@ -639,6 +644,29 @@ export function App(): React.JSX.Element {
       return;
     }
     await fetchIoServices();
+  };
+
+  const handleTestIoService = async (id: string) => {
+    if (!ioTestCf) {
+      alert('Inserisci un codice fiscale di test.');
+      return;
+    }
+    setIoTestBusyId(id);
+    setIoTestMsg(null);
+    try {
+      const res = await fetch(`${API_BASE}/io-services/${id}/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ codiceFiscale: ioTestCf.toUpperCase().trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Test fallito');
+      setIoTestMsg({ id, text: data.message, error: false });
+    } catch (err: any) {
+      setIoTestMsg({ id, text: err.message, error: true });
+    } finally {
+      setIoTestBusyId(null);
+    }
   };
 
   // Settings Save handler
@@ -3448,36 +3476,60 @@ export function App(): React.JSX.Element {
                                     </thead>
                                     <tbody>
                                       {ioServices.map(s => (
-                                        <tr key={s.id}>
-                                          <td>
-                                            <strong>{s.nome}</strong>
-                                            {s.isDefault && <span className="badge bg-success ms-2">Predefinito</span>}
-                                          </td>
-                                          <td className="font-monospace small">{s.idService}</td>
-                                          <td>{s.codiceCatalogo || <span className="text-muted">—</span>}</td>
-                                          <td className="text-end">
-                                            <div className="btn-group">
-                                              {!s.isDefault && (
+                                        <React.Fragment key={s.id}>
+                                          <tr>
+                                            <td>
+                                              <strong>{s.nome}</strong>
+                                              {s.isDefault && <span className="badge bg-success ms-2">Predefinito</span>}
+                                            </td>
+                                            <td className="font-monospace small">{s.idService}</td>
+                                            <td>{s.codiceCatalogo || <span className="text-muted">—</span>}</td>
+                                            <td className="text-end">
+                                              <div className="btn-group">
+                                                {!s.isDefault && (
+                                                  <button
+                                                    type="button"
+                                                    className="btn btn-sm btn-outline-info border-0"
+                                                    onClick={() => handleSetDefaultIoService(s.id)}
+                                                    title="Imposta come predefinito"
+                                                  >
+                                                    <i className="fas fa-star"></i>
+                                                  </button>
+                                                )}
                                                 <button
                                                   type="button"
-                                                  className="btn btn-sm btn-outline-info border-0"
-                                                  onClick={() => handleSetDefaultIoService(s.id)}
-                                                  title="Imposta come predefinito"
+                                                  className="btn btn-sm btn-outline-danger border-0"
+                                                  onClick={() => handleDeleteIoService(s.id)}
+                                                  title="Elimina"
                                                 >
-                                                  <i className="fas fa-star"></i>
+                                                  <i className="fas fa-trash"></i>
                                                 </button>
-                                              )}
-                                              <button
-                                                type="button"
-                                                className="btn btn-sm btn-outline-danger border-0"
-                                                onClick={() => handleDeleteIoService(s.id)}
-                                                title="Elimina"
-                                              >
-                                                <i className="fas fa-trash"></i>
-                                              </button>
-                                            </div>
-                                          </td>
-                                        </tr>
+                                              </div>
+                                            </td>
+                                          </tr>
+                                          <tr>
+                                            <td colSpan={4} className="pt-0">
+                                              <form onSubmit={(e) => { e.preventDefault(); handleTestIoService(s.id); }} className="d-flex align-items-center gap-2 pb-2">
+                                                <span className="text-muted small fw-semibold">Test invio:</span>
+                                                <input
+                                                  type="text"
+                                                  className="form-control form-control-sm"
+                                                  placeholder="RSSMRA80A01H501X"
+                                                  required
+                                                  value={ioTestCf}
+                                                  onChange={(e) => setIoTestCf(e.target.value)}
+                                                  style={{ maxWidth: 200 }}
+                                                />
+                                                <button type="submit" className="btn btn-sm btn-outline-secondary" disabled={ioTestBusyId === s.id}>
+                                                  <i className="fas fa-paper-plane"></i> Invia Test
+                                                </button>
+                                                {ioTestMsg?.id === s.id && (
+                                                  <span className={`small ${ioTestMsg.error ? 'text-danger' : 'text-success'}`}>{ioTestMsg.text}</span>
+                                                )}
+                                              </form>
+                                            </td>
+                                          </tr>
+                                        </React.Fragment>
                                       ))}
                                     </tbody>
                                   </table>
