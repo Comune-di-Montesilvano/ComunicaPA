@@ -949,6 +949,7 @@ export function App(): React.JSX.Element {
   const renderMailConfigTab = (type: 'EMAIL' | 'PEC') => {
     const list = mailConfigs.filter((c) => c.type === type);
     const label = type === 'EMAIL' ? 'SMTP' : 'PEC';
+    const editing = editingMailConfig && editingMailConfig.type === type ? editingMailConfig : null;
 
     return (
       <div className="d-flex flex-column gap-4">
@@ -959,7 +960,7 @@ export function App(): React.JSX.Element {
           </div>
         )}
 
-        {!editingMailConfig && (
+        {!editing && (
           <div>
             <div className="d-flex justify-content-between align-items-center mb-3">
               <h5 className="mb-0 text-dark fw-bold small text-uppercase tracking-wider">
@@ -1083,10 +1084,10 @@ export function App(): React.JSX.Element {
 
 
 
-        {editingMailConfig && (
+        {editing && (
           <form onSubmit={handleSaveMailConfig} className="border rounded bg-white p-4 shadow-sm">
             <h5 className="text-dark fw-bold mb-4">
-              {editingMailConfig.id ? `Modifica Server ${label}` : `Nuovo Server ${label}`}
+              {editing.id ? `Modifica Server ${label}` : `Nuovo Server ${label}`}
             </h5>
 
             <div className="row g-3">
@@ -1097,8 +1098,8 @@ export function App(): React.JSX.Element {
                   className="form-control form-control-sm"
                   required
                   placeholder="Es. SMTP Istituzionale"
-                  value={editingMailConfig.name || ''}
-                  onChange={(e) => setEditingMailConfig({ ...editingMailConfig, name: e.target.value })}
+                  value={editing.name || ''}
+                  onChange={(e) => setEditingMailConfig({ ...editing, name: e.target.value })}
                 />
               </div>
 
@@ -1109,8 +1110,8 @@ export function App(): React.JSX.Element {
                   className="form-control form-control-sm"
                   required
                   placeholder="noreply@ente.it"
-                  value={editingMailConfig.fromAddress || ''}
-                  onChange={(e) => setEditingMailConfig({ ...editingMailConfig, fromAddress: e.target.value })}
+                  value={editing.fromAddress || ''}
+                  onChange={(e) => setEditingMailConfig({ ...editing, fromAddress: e.target.value })}
                 />
               </div>
 
@@ -1121,8 +1122,8 @@ export function App(): React.JSX.Element {
                   className="form-control form-control-sm"
                   required
                   placeholder="smtp.ente.it"
-                  value={editingMailConfig.host || ''}
-                  onChange={(e) => setEditingMailConfig({ ...editingMailConfig, host: e.target.value })}
+                  value={editing.host || ''}
+                  onChange={(e) => setEditingMailConfig({ ...editing, host: e.target.value })}
                 />
               </div>
 
@@ -1132,8 +1133,8 @@ export function App(): React.JSX.Element {
                   type="number"
                   className="form-control form-control-sm"
                   required
-                  value={editingMailConfig.port || 587}
-                  onChange={(e) => setEditingMailConfig({ ...editingMailConfig, port: Number(e.target.value) })}
+                  value={editing.port || 587}
+                  onChange={(e) => setEditingMailConfig({ ...editing, port: Number(e.target.value) })}
                 />
               </div>
 
@@ -1143,8 +1144,8 @@ export function App(): React.JSX.Element {
                   type="text"
                   className="form-control form-control-sm"
                   placeholder="Username (se richiesto)"
-                  value={editingMailConfig.username || ''}
-                  onChange={(e) => setEditingMailConfig({ ...editingMailConfig, username: e.target.value })}
+                  value={editing.username || ''}
+                  onChange={(e) => setEditingMailConfig({ ...editing, username: e.target.value })}
                 />
               </div>
 
@@ -1153,9 +1154,9 @@ export function App(): React.JSX.Element {
                 <input
                   type="password"
                   className="form-control form-control-sm"
-                  placeholder={editingMailConfig.id ? '••••••••' : 'Password (se richiesta)'}
-                  value={editingMailConfig.password || ''}
-                  onChange={(e) => setEditingMailConfig({ ...editingMailConfig, password: e.target.value })}
+                  placeholder={editing.id ? '••••••••' : 'Password (se richiesta)'}
+                  value={editing.password || ''}
+                  onChange={(e) => setEditingMailConfig({ ...editing, password: e.target.value })}
                 />
               </div>
 
@@ -1165,8 +1166,8 @@ export function App(): React.JSX.Element {
                     type="checkbox"
                     className="form-check-input"
                     id="chkSecure"
-                    checked={editingMailConfig.secure || false}
-                    onChange={(e) => setEditingMailConfig({ ...editingMailConfig, secure: e.target.checked })}
+                    checked={editing.secure || false}
+                    onChange={(e) => setEditingMailConfig({ ...editing, secure: e.target.checked })}
                   />
                   <label className="form-check-label small" htmlFor="chkSecure">
                     Connessione sicura (SSL/TLS implicito)
@@ -1180,8 +1181,8 @@ export function App(): React.JSX.Element {
                     type="checkbox"
                     className="form-check-input"
                     id="chkAuth"
-                    checked={editingMailConfig.authEnabled ?? true}
-                    onChange={(e) => setEditingMailConfig({ ...editingMailConfig, authEnabled: e.target.checked })}
+                    checked={editing.authEnabled ?? true}
+                    onChange={(e) => setEditingMailConfig({ ...editing, authEnabled: e.target.checked })}
                   />
                   <label className="form-check-label small" htmlFor="chkAuth">
                     Abilita Autenticazione
@@ -1199,8 +1200,8 @@ export function App(): React.JSX.Element {
                       className="form-control form-control-sm"
                       required
                       min={1}
-                      value={editingMailConfig.batchSize || 100}
-                      onChange={(e) => setEditingMailConfig({ ...editingMailConfig, batchSize: Number(e.target.value) })}
+                      value={editing.batchSize || 100}
+                      onChange={(e) => setEditingMailConfig({ ...editing, batchSize: Number(e.target.value) })}
                     />
                   </div>
                   <div className="col-md-6">
@@ -1210,8 +1211,8 @@ export function App(): React.JSX.Element {
                       className="form-control form-control-sm"
                       required
                       min={1}
-                      value={editingMailConfig.batchIntervalSeconds || 60}
-                      onChange={(e) => setEditingMailConfig({ ...editingMailConfig, batchIntervalSeconds: Number(e.target.value) })}
+                      value={editing.batchIntervalSeconds || 60}
+                      onChange={(e) => setEditingMailConfig({ ...editing, batchIntervalSeconds: Number(e.target.value) })}
                     />
                   </div>
                 </div>
@@ -3226,14 +3227,14 @@ export function App(): React.JSX.Element {
                     <button
                       type="button"
                       className={`nav-link border-0 text-start bg-transparent ${activeSettingsTab === 'smtp' ? 'active' : ''}`}
-                      onClick={() => setActiveSettingsTab('smtp')}
+                      onClick={() => { setEditingMailConfig(null); setActiveSettingsTab('smtp'); }}
                     >
                       <i className="fas fa-envelope me-2"></i>Mail Server (SMTP)
                     </button>
                     <button
                       type="button"
                       className={`nav-link border-0 text-start bg-transparent ${activeSettingsTab === 'pec' ? 'active' : ''}`}
-                      onClick={() => setActiveSettingsTab('pec')}
+                      onClick={() => { setEditingMailConfig(null); setActiveSettingsTab('pec'); }}
                     >
                       <i className="fas fa-envelope-open-text me-2"></i>PEC Server
                     </button>
