@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { PecStrategy } from './pec.strategy';
 import { AppSettingsService } from '../../settings/app-settings.service';
+import { MailConfigsService } from '../../mail-configs/mail-configs.service';
 
 const mockSendMail = jest.fn();
 jest.mock('nodemailer', () => ({
@@ -42,6 +43,17 @@ describe('PecStrategy', () => {
         PecStrategy,
         { provide: ConfigService, useValue: mockConfig },
         { provide: AppSettingsService, useValue: mockSettings },
+        {
+          provide: MailConfigsService,
+          useValue: {
+            resolveForSend: jest.fn().mockResolvedValue({
+              host: 'localhost', port: 587, secure: false,
+              authEnabled: false, username: '', password: '',
+              fromAddress: 'noreply@test.local', batchSize: 100,
+              batchIntervalSeconds: 60, configId: null,
+            }),
+          },
+        },
       ],
     }).compile();
 

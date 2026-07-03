@@ -9,6 +9,7 @@ import type { AppConfiguration } from '../../config/configuration';
 import { processTemplate, wrapInHtmlLayout } from '../template.helper';
 import { getEffectiveRetentionDays } from '../../campaigns/retention.util';
 import { AppSettingsService } from '../../settings/app-settings.service';
+import { MailConfigsService } from '../../mail-configs/mail-configs.service';
 
 @Injectable()
 export class EmailStrategy implements IChannelStrategy {
@@ -18,6 +19,7 @@ export class EmailStrategy implements IChannelStrategy {
   constructor(
     private readonly config: ConfigService<AppConfiguration, true>,
     private readonly settings: AppSettingsService,
+    private readonly mailConfigs: MailConfigsService,
   ) {}
 
   async send(recipient: Recipient, campaign: Campaign): Promise<ChannelSendResult> {
@@ -25,12 +27,8 @@ export class EmailStrategy implements IChannelStrategy {
       throw new Error('Recipient email address is missing');
     }
 
-    const host = await this.settings.get<string>('smtp.host');
-    const port = await this.settings.get<number>('smtp.port');
-    const secure = await this.settings.get<boolean>('smtp.secure');
-    const user = await this.settings.get<string>('smtp.user');
-    const password = await this.settings.get<string>('smtp.password');
-    const defaultFrom = await this.settings.get<string>('smtp.from');
+    const mailConfigId = campaign.channelConfig?.['mailConfigId'] as string | undefined;
+    const smtp = await this.mailConfigs.resolveForSend('EMAIL', mailConfigId);
     const brandName = (await this.settings.get<string>('brand.name')) || 'Comune di Montesilvano';
     const publicApiUrl = await this.settings.get<string>('system.publicUrl');
     const downloadLinkSecret = this.config.get('downloadLink.secret', { infer: true });
@@ -47,17 +45,19 @@ export class EmailStrategy implements IChannelStrategy {
     const bodyHtml = wrapInHtmlLayout(bodyText, brandName);
 
     const transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure,
-      auth: user ? { user, pass: password } : undefined,
+      host: smtp.host,
+      port: smtp.port,
+      secure: smtp.secure,
+      auth: smtp.authEnabled && smtp.username
+        ? { user: smtp.username, pass: smtp.password }
+        : undefined,
       tls: {
         rejectUnauthorized: false,
       },
     });
 
     const info = (await transporter.sendMail({
-      from: (campaign.channelConfig?.['from'] as string) || defaultFrom,
+      from: (campaign.channelConfig?.['from'] as string) || smtp.fromAddress,
       to: recipient.email,
       subject,
       text: bodyText,

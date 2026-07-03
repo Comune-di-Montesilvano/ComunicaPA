@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { EmailStrategy } from './email.strategy';
 import { AppSettingsService } from '../../settings/app-settings.service';
+import { MailConfigsService } from '../../mail-configs/mail-configs.service';
 
 const mockSendMail = jest.fn();
 const mockCreateTransport = jest.fn<{ sendMail: jest.Mock }, [unknown?]>(() => ({ sendMail: mockSendMail }));
@@ -45,6 +46,17 @@ describe('EmailStrategy', () => {
         EmailStrategy,
         { provide: ConfigService, useValue: mockConfig },
         { provide: AppSettingsService, useValue: mockSettings },
+        {
+          provide: MailConfigsService,
+          useValue: {
+            resolveForSend: jest.fn().mockResolvedValue({
+              host: 'localhost', port: 587, secure: false,
+              authEnabled: false, username: '', password: '',
+              fromAddress: 'noreply@test.local', batchSize: 100,
+              batchIntervalSeconds: 60, configId: null,
+            }),
+          },
+        },
       ],
     }).compile();
 
