@@ -20,7 +20,7 @@ services:
       NODE_ENV: development
       # In dev il browser chiama il backend diretto, senza proxy /api
       PUBLIC_BACKEND_URL: ${PUBLIC_BACKEND_URL:-http://localhost:8080}
-      PUBLIC_CITIZEN_URL: ${PUBLIC_CITIZEN_URL:-http://localhost:3001}
+      CITIZEN_ORIGIN: ${CITIZEN_ORIGIN:-http://localhost:3001}
     volumes:
       - ./apps/backend/src:/app/apps/backend/src:delegated
       - ./packages/shared-types/src:/app/packages/shared-types/src:delegated

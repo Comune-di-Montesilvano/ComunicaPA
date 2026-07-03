@@ -42,7 +42,7 @@ export class AppSettingsService {
       // L'URL API pubblico deriva dall'origine cittadini: /api è una costante
       // della topologia (il nginx del frontend proxya /api → backend).
       // PUBLIC_BACKEND_URL resta come override esplicito (usato in dev).
-      const citizenOrigin = process.env['PUBLIC_CITIZEN_URL'];
+      const citizenOrigin = process.env['CITIZEN_ORIGIN'];
       if (key === 'system.publicUrl' && !process.env['PUBLIC_BACKEND_URL'] && citizenOrigin) {
         bootstrapValue = `${citizenOrigin.replace(/\/+$/, '')}/api`;
       }

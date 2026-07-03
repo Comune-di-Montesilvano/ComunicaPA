@@ -52,7 +52,7 @@ services:
       DOWNLOAD_LINK_SECRET: ${DOWNLOAD_LINK_SECRET:?DOWNLOAD_LINK_SECRET obbligatorio - genera con openssl rand -hex 32}
       # Origine pubblica del portale cittadini (bootstrap): il backend ne deriva
       # i link email/PEC (<origine>/api/...) e la Redirect URI OIDC
-      PUBLIC_CITIZEN_URL: ${CITIZEN_ORIGIN:-}
+      CITIZEN_ORIGIN: ${CITIZEN_ORIGIN:-}
       LDAP_HOST: ${LDAP_HOST:-}
       LDAP_TLS_SKIP_VERIFY: ${LDAP_TLS_SKIP_VERIFY:-true}
       LDAP_STARTTLS: ${LDAP_STARTTLS:-false}

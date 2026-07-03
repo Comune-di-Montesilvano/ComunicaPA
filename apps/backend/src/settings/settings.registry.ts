@@ -43,7 +43,7 @@ export const SETTING_DEFS = {
     default: 'http://localhost:8080',
   },
   'system.citizenPublicUrl': {
-    env: 'PUBLIC_CITIZEN_URL',
+    env: 'CITIZEN_ORIGIN',
     type: 'string',
     bootstrapOnly: true,
     default: '',

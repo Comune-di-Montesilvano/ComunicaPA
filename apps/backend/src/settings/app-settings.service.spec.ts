@@ -28,7 +28,7 @@ describe('AppSettingsService', () => {
     delete process.env['RETENTION_MAX_DAYS'];
     delete process.env['SMTP_PASSWORD'];
     delete process.env['PUBLIC_BACKEND_URL'];
-    delete process.env['PUBLIC_CITIZEN_URL'];
+    delete process.env['CITIZEN_ORIGIN'];
     service = new AppSettingsService(repoMock as never, configMock as never);
   });
 
@@ -113,14 +113,14 @@ describe('AppSettingsService', () => {
     }
   });
 
-  it('bootstrapOnly: system.publicUrl derivato da PUBLIC_CITIZEN_URL + /api', async () => {
-    process.env['PUBLIC_CITIZEN_URL'] = 'https://comunicapa.ente.it/';
+  it('bootstrapOnly: system.publicUrl derivato da CITIZEN_ORIGIN + /api', async () => {
+    process.env['CITIZEN_ORIGIN'] = 'https://comunicapa.ente.it/';
     await expect(service.get('system.publicUrl')).resolves.toBe('https://comunicapa.ente.it/api');
     await expect(service.get('system.citizenPublicUrl')).resolves.toBe('https://comunicapa.ente.it/');
   });
 
   it('bootstrapOnly: PUBLIC_BACKEND_URL esplicito vince sulla derivazione', async () => {
-    process.env['PUBLIC_CITIZEN_URL'] = 'https://comunicapa.ente.it';
+    process.env['CITIZEN_ORIGIN'] = 'https://comunicapa.ente.it';
     process.env['PUBLIC_BACKEND_URL'] = 'http://localhost:8080';
     await expect(service.get('system.publicUrl')).resolves.toBe('http://localhost:8080');
   });
