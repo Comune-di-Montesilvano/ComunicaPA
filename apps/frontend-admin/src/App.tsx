@@ -253,6 +253,13 @@ export function App(): React.JSX.Element {
   const [settPostalUrl, setSettPostalUrl] = useState(localStorage.getItem('sett_postal_url') || 'https://gateway.postel.it/postalization');
 
   const [activeSettingsTab, setActiveSettingsTab] = useState<'personalizzazione' | 'smtp' | 'pec' | 'app-io' | 'send' | 'protocollo' | 'postalizzazione' | 'oidc'>('personalizzazione');
+  // Sidebar mobile (≤991px): il CSS la nasconde con translateX finché body non ha .bo-sidebar-open
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    document.body.classList.toggle('bo-sidebar-open', sidebarOpen);
+    return () => document.body.classList.remove('bo-sidebar-open');
+  }, [sidebarOpen]);
   const [settingsSavedMessage, setSettingsSavedMessage] = useState<{ text: string; error: boolean } | null>(null);
 
   // Campaign detail state
@@ -310,7 +317,14 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     if (!token) return;
     fetch(`${API_BASE}/settings`, { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((r) => {
+        if (r.status === 401) {
+          // Token scaduto/invalido: torna al login invece di mostrare campi vuoti
+          handleLogout();
+          return Promise.reject(new Error('401'));
+        }
+        return r.ok ? r.json() : Promise.reject(new Error(String(r.status)));
+      })
       .then((d: { settings: Record<string, string | number | boolean> }) => {
         const s = d.settings;
         setSettEntityName(String(s['brand.name'] ?? ''));
@@ -394,6 +408,11 @@ export function App(): React.JSX.Element {
       const res = await fetch(`${API_BASE}/campaigns`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
+      if (res.status === 401) {
+        // Token scaduto/invalido: torna al login invece di fallire in silenzio
+        handleLogout();
+        return;
+      }
       if (!res.ok) throw new Error('Impossibile caricare le campagne.');
       const data = await res.json();
       setCampaigns(data);
@@ -1465,7 +1484,7 @@ export function App(): React.JSX.Element {
           </span>
         </div>
 
-        <nav className="bo-nav">
+        <nav className="bo-nav" onClick={() => setSidebarOpen(false)}>
           <div className="bo-nav-section-title">Operativo</div>
           <a
             className={`bo-nav-item ${view === 'dashboard' ? 'is-active' : ''}`}
@@ -1524,8 +1543,25 @@ export function App(): React.JSX.Element {
         </div>
       </aside>
 
+      {/* Backdrop mobile: chiude la sidebar toccando fuori */}
+      <button
+        type="button"
+        className="bo-sidebar-backdrop"
+        aria-label="Chiudi menu"
+        onClick={() => setSidebarOpen(false)}
+      ></button>
+
       {/* Topbar */}
       <header className="bo-topbar">
+        <button
+          type="button"
+          className="bo-topbar-hamburger"
+          aria-label={sidebarOpen ? 'Chiudi menu' : 'Apri menu'}
+          aria-expanded={sidebarOpen}
+          onClick={() => setSidebarOpen((o) => !o)}
+        >
+          <i className="fas fa-bars"></i>
+        </button>
         <h2 className="h5 mb-0 text-dark fw-bold" style={{ display: 'inline-block' }}>
           {view === 'dashboard' && 'Dashboard'}
           {view === 'invio-singolo' && 'Nuova Notifica Singola'}
