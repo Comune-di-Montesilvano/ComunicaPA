@@ -5,6 +5,9 @@ import type { Recipient } from '../../entities/recipient.entity';
 import type { Campaign } from '../../entities/campaign.entity';
 import { AppSettingsService } from '../../settings/app-settings.service';
 
+/** Endpoint ufficiale App IO (PagoPA). Non configurabile: cambia solo con una nuova release. */
+export const APP_IO_BASE_URL = 'https://api.io.pagopa.it';
+
 function interpolate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => vars[key] ?? `{{${key}}}`);
 }
@@ -17,7 +20,6 @@ export class AppIoStrategy implements IChannelStrategy {
 
   async send(recipient: Recipient, campaign: Campaign): Promise<ChannelSendResult> {
     const apiKey = await this.settings.get<string>('appIo.apiKey');
-    const baseUrl = await this.settings.get<string>('appIo.baseUrl');
 
     const vars: Record<string, string> = {
       fullName: recipient.fullName ?? '',
@@ -27,7 +29,7 @@ export class AppIoStrategy implements IChannelStrategy {
     const subject = interpolate(cfg['subject'] ?? campaign.name, vars);
     const markdown = interpolate(cfg['body'] ?? '', vars);
 
-    const response = await fetch(`${baseUrl}/api/v1/messages`, {
+    const response = await fetch(`${APP_IO_BASE_URL}/api/v1/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

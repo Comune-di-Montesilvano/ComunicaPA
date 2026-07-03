@@ -244,7 +244,6 @@ export function App(): React.JSX.Element {
 
   // App IO Settings
   const [settIoApiKey, setSettIoApiKey] = useState('');
-  const [settIoUrl, setSettIoUrl] = useState('https://api.io.italia.it');
   const [ioServices, setIoServices] = useState<IoService[]>(() => {
     const saved = localStorage.getItem('sett_io_services');
     return saved ? JSON.parse(saved) : DEFAULT_IO_SERVICES;
@@ -368,7 +367,6 @@ export function App(): React.JSX.Element {
         setSettFaviconValue(String(s['brand.favicon'] ?? ''));
         // SMTP and PEC are loaded dynamically via fetchMailConfigs()
         setSettIoApiKey(String(s['appIo.apiKey'] ?? ''));
-        setSettIoUrl(String(s['appIo.baseUrl'] ?? ''));
         setSettSendApiKey(String(s['send.apiKey'] ?? ''));
         setSettSendUrl(String(s['send.baseUrl'] ?? ''));
         setSettRetentionDays(String(s['retention.maxDays'] ?? '90'));
@@ -481,7 +479,6 @@ export function App(): React.JSX.Element {
           channelConfig = {
             serviceId: selectedAppIoServiceId,
             apiKey: svc ? svc.api_key_primaria : '',
-            baseUrl: settIoUrl,
           };
         } else if (channelVal === 'SEND') {
           channelConfig = { apiKey: settSendApiKey, baseUrl: settSendUrl };
@@ -522,7 +519,6 @@ export function App(): React.JSX.Element {
           serviceId: selectedAppIoServiceId,
           serviceName: svc ? svc.nome : '',
           apiKey: svc ? svc.api_key_primaria : '',
-          baseUrl: settIoUrl,
         };
       } else if (newCampaignChannel === 'EMAIL' || newCampaignChannel === 'PEC') {
         customConfig = {
@@ -536,7 +532,6 @@ export function App(): React.JSX.Element {
             serviceId: defaultSvc.id_service,
             serviceName: defaultSvc.nome,
             apiKey: defaultSvc.api_key_primaria,
-            baseUrl: settIoUrl,
           };
         }
       }
@@ -574,7 +569,6 @@ export function App(): React.JSX.Element {
           serviceId: singleAppIoServiceId,
           serviceName: svc ? svc.nome : '',
           apiKey: svc ? svc.api_key_primaria : '',
-          baseUrl: settIoUrl,
         };
       } else if (singleChannel === 'EMAIL' || singleChannel === 'PEC') {
         customConfig = {
@@ -588,7 +582,6 @@ export function App(): React.JSX.Element {
             serviceId: defaultSvc.id_service,
             serviceName: defaultSvc.nome,
             apiKey: defaultSvc.api_key_primaria,
-            baseUrl: settIoUrl,
           };
         }
       }
@@ -726,7 +719,6 @@ export function App(): React.JSX.Element {
             'brand.favicon': settFaviconValue,
             // SMTP and PEC are saved via their own endpoints
             'appIo.apiKey': settIoApiKey,
-            'appIo.baseUrl': settIoUrl,
             'send.apiKey': settSendApiKey,
             'send.baseUrl': settSendUrl,
             'retention.maxDays': Number(settRetentionDays) || 90,
@@ -1531,7 +1523,6 @@ export function App(): React.JSX.Element {
           serviceId: svc ? svc.id_service : '',
           serviceName: svc ? svc.nome : '',
           apiKey: svc ? svc.api_key_primaria : '',
-          baseUrl: settIoUrl,
         };
       } else if (wizChannel === 'EMAIL' || wizChannel === 'PEC') {
         const activeCfg = mailConfigs.find(c => c.id === wizMailConfigId);
@@ -1551,7 +1542,6 @@ export function App(): React.JSX.Element {
               serviceId: defaultSvc.id_service,
               serviceName: defaultSvc.nome,
               apiKey: defaultSvc.api_key_primaria,
-              baseUrl: settIoUrl,
             };
           }
         }
@@ -3402,18 +3392,6 @@ export function App(): React.JSX.Element {
                                 onChange={(e) => setSettIoApiKey(e.target.value)}
                               />
                             </div>
-                            <div className="mb-4">
-                              <label className="form-label small fw-bold text-dark" htmlFor="io_url">Endpoint API Globale App IO</label>
-                              <input
-                                type="text"
-                                id="io_url"
-                                className="form-control form-control-sm"
-                                value={settIoUrl}
-                                onChange={(e) => setSettIoUrl(e.target.value)}
-                                required
-                              />
-                            </div>
-
                             <div className="border rounded bg-light p-3 mb-4">
                               <div className="d-flex justify-content-between align-items-center mb-3">
                                 <h4 className="h6 mb-0 fw-bold text-dark"><i className="fas fa-list me-1 text-primary"></i>Servizi App IO Configurati</h4>

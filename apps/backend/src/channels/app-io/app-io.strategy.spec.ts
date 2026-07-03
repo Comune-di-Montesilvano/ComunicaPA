@@ -7,7 +7,6 @@ global.fetch = mockFetch as unknown as typeof fetch;
 
 const settingsValues: Record<string, unknown> = {
   'appIo.apiKey': 'test-key',
-  'appIo.baseUrl': 'https://api.io.test',
 };
 const mockSettings = { get: jest.fn(async (key: string) => settingsValues[key]) };
 
@@ -42,7 +41,7 @@ describe('AppIoStrategy', () => {
     const result = await strategy.send(recipient as never, campaign as never);
 
     expect(mockFetch).toHaveBeenCalledWith(
-      'https://api.io.test/api/v1/messages',
+      'https://api.io.pagopa.it/api/v1/messages',
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({ 'Ocp-Apim-Subscription-Key': 'test-key' }),
@@ -53,6 +52,18 @@ describe('AppIoStrategy', () => {
       }),
     );
     expect(result.messageId).toBe('io-msg-001');
+  });
+
+  it('chiama sempre https://api.io.pagopa.it, mai un URL configurabile', async () => {
+    const recipient = { fullName: 'Mario Rossi', codiceFiscale: 'RSSMRA80A01H501X', email: null, pec: null };
+    const campaign = { name: 'Test', channelConfig: { subject: 'Oggetto', body: 'Corpo' } };
+
+    await strategy.send(recipient as never, campaign as never);
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://api.io.pagopa.it/api/v1/messages',
+      expect.objectContaining({ method: 'POST' }),
+    );
   });
 
   it('send() lancia Error se API risponde con ok: false', async () => {
