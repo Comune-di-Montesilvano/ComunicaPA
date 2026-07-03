@@ -333,3 +333,75 @@ describe('CampaignsService.getDuplicateSource', () => {
   });
 });
 
+describe('CampaignsService.getFailures / retryRecipient', () => {
+  const campaignRepoMock = { findOneBy: jest.fn() };
+  const recipientRepoMock = { findOne: jest.fn(), update: jest.fn() };
+  const attemptRepoMock = {
+    find: jest.fn(),
+    findOne: jest.fn(),
+    createQueryBuilder: jest.fn(),
+  };
+  const queuesMock = { addBulk: jest.fn() };
+
+  const buildModule = () =>
+    Test.createTestingModule({
+      providers: [
+        CampaignsService,
+        { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
+        { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
+        { provide: getRepositoryToken(NotificationAttempt), useValue: attemptRepoMock },
+        { provide: NotificationQueuesService, useValue: queuesMock },
+      ],
+    }).compile();
+
+  it('getFailures ritorna i destinatari con ultimo tentativo fallito', async () => {
+    recipientRepoMock.findOne = undefined as any; // non usato in questo metodo
+    attemptRepoMock.find.mockResolvedValue([
+      {
+        recipientId: 'r1',
+        errorMessage: 'SMTP timeout',
+        attemptNumber: 2,
+        createdAt: new Date('2026-07-01T10:00:00Z'),
+        recipient: { codiceFiscale: 'RSSMRA80A01H501X', fullName: 'Mario Rossi' },
+      },
+    ]);
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    const result = await service.getFailures('c1');
+
+    expect(attemptRepoMock.find).toHaveBeenCalledWith(expect.objectContaining({
+      where: { recipient: { campaignId: 'c1' }, status: 'failed' },
+    }));
+    expect(result).toEqual([{
+      recipientId: 'r1',
+      codiceFiscale: 'RSSMRA80A01H501X',
+      fullName: 'Mario Rossi',
+      errorMessage: 'SMTP timeout',
+      attemptNumber: 2,
+      lastAttemptAt: '2026-07-01T10:00:00.000Z',
+    }]);
+  });
+
+  it('retryRecipient crea un nuovo attempt e riaccoda il job', async () => {
+    campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'EMAIL' });
+    attemptRepoMock.findOne = jest.fn().mockResolvedValue({ attemptNumber: 1 });
+    const insertExec = jest.fn().mockResolvedValue({ raw: [{ id: 'attempt-2' }] });
+    attemptRepoMock.createQueryBuilder.mockReturnValue({
+      insert: () => ({ into: () => ({ values: () => ({ returning: () => ({ execute: insertExec }) }) }) }),
+    });
+    recipientRepoMock.update.mockResolvedValue({ affected: 1 });
+
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    const result = await service.retryRecipient('c1', 'r1');
+
+    expect(recipientRepoMock.update).toHaveBeenCalledWith({ id: 'r1' }, { status: 'queued' });
+    expect(queuesMock.addBulk).toHaveBeenCalledWith('EMAIL', [
+      { name: 'send', data: { campaignId: 'c1', recipientId: 'r1', attemptId: 'attempt-2', channel: 'EMAIL' } },
+    ]);
+    expect(result).toEqual({ requeued: true, attemptId: 'attempt-2' });
+  });
+});
+

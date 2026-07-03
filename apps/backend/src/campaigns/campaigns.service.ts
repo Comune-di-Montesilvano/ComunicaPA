@@ -234,6 +234,57 @@ export class CampaignsService {
     };
   }
 
+  async getFailures(campaignId: string): Promise<Array<{
+    recipientId: string;
+    codiceFiscale: string;
+    fullName: string | null;
+    errorMessage: string | null;
+    attemptNumber: number;
+    lastAttemptAt: string;
+  }>> {
+    const attempts = await this.attemptRepo.find({
+      where: { recipient: { campaignId }, status: AttemptStatus.FAILED },
+      relations: ['recipient'],
+      order: { createdAt: 'DESC' },
+    });
+    return attempts.map((a) => ({
+      recipientId: a.recipientId,
+      codiceFiscale: a.recipient.codiceFiscale,
+      fullName: a.recipient.fullName,
+      errorMessage: a.errorMessage,
+      attemptNumber: a.attemptNumber,
+      lastAttemptAt: a.createdAt.toISOString(),
+    }));
+  }
+
+  async retryRecipient(campaignId: string, recipientId: string): Promise<{ requeued: true; attemptId: string }> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+
+    const lastAttempt = await this.attemptRepo.findOne({
+      where: { recipientId },
+      order: { attemptNumber: 'DESC' },
+    });
+    const nextAttemptNumber = (lastAttempt?.attemptNumber ?? 0) + 1;
+
+    const result = await this.attemptRepo
+      .createQueryBuilder()
+      .insert()
+      .into(NotificationAttempt)
+      .values({ recipientId, channelType: campaign.channelType, status: AttemptStatus.QUEUED, attemptNumber: nextAttemptNumber })
+      .returning('id')
+      .execute();
+    const attemptId = (result.raw as Array<{ id: string }>)[0].id;
+
+    await this.recipientRepo.update({ id: recipientId }, { status: RecipientStatus.QUEUED });
+
+    await this.notificationQueues.addBulk(campaign.channelType, [
+      { name: NOTIFICATION_JOB_SEND, data: { campaignId, recipientId, attemptId, channel: campaign.channelType } },
+    ]);
+
+    return { requeued: true, attemptId };
+  }
+
   async getRecipientStats(campaignId: string, page: number, pageSize: number): Promise<RecipientStatsPageDto> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);

@@ -279,6 +279,8 @@ export function App(): React.JSX.Element {
   const [loadingCampaignDetail, setLoadingCampaignDetail] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
+  const [campaignFailures, setCampaignFailures] = useState<Array<{ recipientId: string; codiceFiscale: string; fullName: string | null; errorMessage: string | null; attemptNumber: number; lastAttemptAt: string }>>([]);
+  const [retryBusyId, setRetryBusyId] = useState<string | null>(null);
 
   // CSV Mapper state
   const [csvFile, setCsvFile] = useState<File | null>(null);
@@ -438,6 +440,24 @@ export function App(): React.JSX.Element {
       setDetailError(err.message);
     } finally {
       setLoadingCampaignDetail(false);
+    }
+  };
+
+  const fetchCampaignFailures = async (campaignId: string) => {
+    const res = await fetch(`${API_BASE}/campaigns/${campaignId}/failures`, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.ok) setCampaignFailures(await res.json());
+  };
+
+  const handleRetryRecipient = async (campaignId: string, recipientId: string) => {
+    setRetryBusyId(recipientId);
+    try {
+      await fetch(`${API_BASE}/campaigns/${campaignId}/recipients/${recipientId}/retry`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      await fetchCampaignFailures(campaignId);
+    } finally {
+      setRetryBusyId(null);
     }
   };
 
@@ -1705,7 +1725,9 @@ export function App(): React.JSX.Element {
     setCsvRows([]);
     setUploadSuccess(false);
     setCsvError(null);
+    setCampaignFailures([]);
     fetchCampaignDetail(id);
+    fetchCampaignFailures(id);
   };
 
   const handleLaunchCampaign = async () => {
@@ -4086,6 +4108,39 @@ export function App(): React.JSX.Element {
                             <div className="d-flex justify-content-between small text-muted">
                               <span><i className="fas fa-check text-success"></i> Successo: {campaign.sentCount}</span>
                               <span><i className="fas fa-times text-danger"></i> Errori: {campaign.failedCount}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {campaignFailures.length > 0 && (
+                          <div className="mt-4 border-top pt-3">
+                            <h4 className="small fw-bold mb-2 text-danger">
+                              <i className="fas fa-triangle-exclamation me-1"></i>
+                              Destinatari con invio fallito ({campaignFailures.length})
+                            </h4>
+                            <div className="table-responsive" style={{ maxHeight: 300, overflowY: 'auto' }}>
+                              <table className="table table-sm">
+                                <thead><tr><th>CF</th><th>Nome</th><th>Tentativi</th><th>Motivo</th><th></th></tr></thead>
+                                <tbody>
+                                  {campaignFailures.map(f => (
+                                    <tr key={f.recipientId}>
+                                      <td className="font-monospace small">{f.codiceFiscale}</td>
+                                      <td className="small">{f.fullName || '—'}</td>
+                                      <td className="small">{f.attemptNumber}</td>
+                                      <td className="small text-danger">{f.errorMessage || '—'}</td>
+                                      <td>
+                                        <button
+                                          className="btn btn-sm btn-outline-primary"
+                                          disabled={retryBusyId === f.recipientId}
+                                          onClick={() => handleRetryRecipient(campaign.id, f.recipientId)}
+                                        >
+                                          <i className="fas fa-rotate-right me-1"></i>Rimetti in coda
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
                             </div>
                           </div>
                         )}

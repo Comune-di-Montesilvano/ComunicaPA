@@ -136,6 +136,19 @@ export class CampaignsController {
     return this.campaignsService.getStats(id);
   }
 
+  @Get(':id/failures')
+  getFailures(@Param('id', ParseUUIDPipe) id: string) {
+    return this.campaignsService.getFailures(id);
+  }
+
+  @Post(':id/recipients/:recipientId/retry')
+  retryRecipient(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('recipientId', ParseUUIDPipe) recipientId: string,
+  ) {
+    return this.campaignsService.retryRecipient(id, recipientId);
+  }
+
   @Get(':id/stats/recipients')
   getRecipientStats(
     @Param('id', ParseUUIDPipe) id: string,
