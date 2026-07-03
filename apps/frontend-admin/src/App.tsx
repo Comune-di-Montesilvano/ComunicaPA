@@ -3323,11 +3323,9 @@ export function App(): React.JSX.Element {
                           </div>
                         )}
 
-                        {/* TAB: SMTP */}
-                        {activeSettingsTab === 'smtp' && renderMailConfigTab('EMAIL')}
+                        {/* TAB: SMTP — rendered outside the form (see below) */}
 
-                        {/* TAB: PEC */}
-                        {activeSettingsTab === 'pec' && renderMailConfigTab('PEC')}
+                        {/* TAB: PEC — rendered outside the form (see below) */}
 
                         {/* TAB: APP IO (Multiple services creation & management) */}
                         {activeSettingsTab === 'app-io' && (
@@ -3752,6 +3750,12 @@ export function App(): React.JSX.Element {
                         </div>
 
                       </form>
+
+                      {/* TAB: SMTP — outside form to avoid nested form conflicts */}
+                      {activeSettingsTab === 'smtp' && renderMailConfigTab('EMAIL')}
+
+                      {/* TAB: PEC — outside form to avoid nested form conflicts */}
+                      {activeSettingsTab === 'pec' && renderMailConfigTab('PEC')}
 
                       {/* TAB: MOTORI — outside form to avoid submit conflicts */}
                       {activeSettingsTab === 'motori' && (
