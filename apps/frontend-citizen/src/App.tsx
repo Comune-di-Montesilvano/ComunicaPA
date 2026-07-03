@@ -95,7 +95,7 @@ interface Notification {
   status: 'pending' | 'queued' | 'sent' | 'failed' | 'skipped';
   createdAt: string;
   extraData?: Record<string, any>;
-  campaign: {
+  campaign?: {
     name: string;
     description: string | null;
     channelType: string;
@@ -759,10 +759,10 @@ export function App(): React.JSX.Element {
                                 {isDownloaded ? 'SCARICATO ✓' : 'RICEVUTO'}
                               </span>
                             </div>
-                            <h4 className="h6 mb-1 text-dark fw-bold">{n.campaign.name}</h4>
-                            <p className="small text-muted mb-2 text-truncate">{n.campaign.description}</p>
+                            <h4 className="h6 mb-1 text-dark fw-bold">{n.campaign?.name || '—'}</h4>
+                            <p className="small text-muted mb-2 text-truncate">{n.campaign?.description || ''}</p>
                             <div className="d-flex justify-content-between align-items-center mt-2" style={{ fontSize: '0.8rem' }}>
-                              <span>Canale: <strong>{n.campaign.channelType}</strong></span>
+                              <span>Canale: <strong>{n.campaign?.channelType || '—'}</strong></span>
                               {n.email && <span><i className="far fa-envelope"></i> {n.email}</span>}
                               {n.pec && <span><i className="fas fa-envelope-open-text text-primary"></i> {n.pec}</span>}
                             </div>
@@ -793,9 +793,9 @@ export function App(): React.JSX.Element {
                     </div>
 
                     <div className="mb-4 border-bottom pb-3">
-                      <h5 className="h5 fw-bold text-dark mb-2">{selectedNotif.campaign.name}</h5>
+                      <h5 className="h5 fw-bold text-dark mb-2">{selectedNotif.campaign?.name || '—'}</h5>
                       <div className="p-3 bg-light rounded" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5, fontSize: '0.95rem' }}>
-                        {selectedNotif.campaign.description}
+                        {selectedNotif.campaign?.description || ''}
                       </div>
                     </div>
 
@@ -803,7 +803,7 @@ export function App(): React.JSX.Element {
                     <div className="row g-3 mb-4">
                       <div className="col-sm-6">
                         <span className="small text-muted block">Canale di Invio</span>
-                        <div className="fw-bold">{selectedNotif.campaign.channelType}</div>
+                        <div className="fw-bold">{selectedNotif.campaign?.channelType || '—'}</div>
                       </div>
                       <div className="col-sm-6">
                         <span className="small text-muted block">Stato Spedizione</span>
