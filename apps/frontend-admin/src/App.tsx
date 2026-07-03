@@ -60,12 +60,13 @@ interface Recipient {
 interface IoService {
   id: string;
   nome: string;
-  id_service: string;
+  idService: string;
   descrizione: string;
-  api_key_primaria: string;
-  api_key_secondaria: string;
-  codice_catalogo: string;
-  is_default: boolean;
+  apiKeyPrimaria: string; // valore mascherato (••••••••) quando impostato, mai in chiaro
+  apiKeySecondaria: string;
+  codiceCatalogo: string;
+  isDefault: boolean;
+  testedAt: string | null;
 }
 
 type MailConfigItem = {
@@ -90,29 +91,6 @@ const EMPTY_MAIL_CONFIG: Omit<MailConfigItem, 'id' | 'testedAt' | 'active'> = {
   authEnabled: true, username: '', password: '', fromAddress: '',
   batchSize: 100, batchIntervalSeconds: 60,
 };
-
-const DEFAULT_IO_SERVICES: IoService[] = [
-  {
-    id: '1',
-    nome: 'Servizio TARI',
-    id_service: '01ARZ3NDEKTSN4FFFSUQFW0C5',
-    descrizione: 'Notifiche e scadenze relative alla tassa sui rifiuti (TARI)',
-    api_key_primaria: 'io_api_tari_primary_112233',
-    api_key_secondaria: 'io_api_tari_secondary_445566',
-    codice_catalogo: '081223901',
-    is_default: true,
-  },
-  {
-    id: '2',
-    nome: 'Multe e Violazioni CDS',
-    id_service: '02BRX9NDEKTSN4FFFSUQFW0D8',
-    descrizione: 'Notifica verbali CdS e sanzioni amministrative del Comune',
-    api_key_primaria: 'io_api_cds_primary_998877',
-    api_key_secondaria: '',
-    codice_catalogo: '081223902',
-    is_default: false,
-  },
-];
 
 export function App(): React.JSX.Element {
   const [token, setToken] = useState<string | null>(localStorage.getItem('comunicapa_token'));
@@ -242,12 +220,8 @@ export function App(): React.JSX.Element {
   const [mailConfigBusyId, setMailConfigBusyId] = useState<string | null>(null);
   const [mailConfigMsg, setMailConfigMsg] = useState<{ text: string; error: boolean } | null>(null);
 
-  // App IO Settings
-  const [settIoApiKey, setSettIoApiKey] = useState('');
-  const [ioServices, setIoServices] = useState<IoService[]>(() => {
-    const saved = localStorage.getItem('sett_io_services');
-    return saved ? JSON.parse(saved) : DEFAULT_IO_SERVICES;
-  });
+  // App IO Settings — persistiti lato server (IoServiceConfig), non più in localStorage
+  const [ioServices, setIoServices] = useState<IoService[]>([]);
 
   // App IO New Service form
   const [newSvcNome, setNewSvcNome] = useState('');
@@ -317,13 +291,13 @@ export function App(): React.JSX.Element {
 
   // Pre-select default App IO service id for forms
   useEffect(() => {
-    const def = ioServices.find(s => s.is_default);
+    const def = ioServices.find(s => s.isDefault);
     if (def) {
-      setSelectedAppIoServiceId(def.id_service);
-      setSingleAppIoServiceId(def.id_service);
+      setSelectedAppIoServiceId(def.id);
+      setSingleAppIoServiceId(def.id);
     } else if (ioServices.length > 0) {
-      setSelectedAppIoServiceId(ioServices[0].id_service);
-      setSingleAppIoServiceId(ioServices[0].id_service);
+      setSelectedAppIoServiceId(ioServices[0].id);
+      setSingleAppIoServiceId(ioServices[0].id);
     }
   }, [ioServices]);
 
@@ -344,6 +318,7 @@ export function App(): React.JSX.Element {
     if (token) {
       fetchCampaigns();
       fetchMailConfigs();
+      fetchIoServices();
     }
   }, [token]);
 
@@ -365,8 +340,7 @@ export function App(): React.JSX.Element {
         setSettSubtitle(String(s['brand.subtitle'] ?? ''));
         setSettLogoValue(String(s['brand.logo'] ?? ''));
         setSettFaviconValue(String(s['brand.favicon'] ?? ''));
-        // SMTP and PEC are loaded dynamically via fetchMailConfigs()
-        setSettIoApiKey(String(s['appIo.apiKey'] ?? ''));
+        // SMTP and PEC are loaded dynamically via fetchMailConfigs(); App IO via fetchIoServices()
         setSettSendApiKey(String(s['send.apiKey'] ?? ''));
         setSettSendUrl(String(s['send.baseUrl'] ?? ''));
         setSettRetentionDays(String(s['retention.maxDays'] ?? '90'));
@@ -474,12 +448,7 @@ export function App(): React.JSX.Element {
           const activePec = mailConfigs.find(c => c.type === 'PEC' && c.active);
           channelConfig = { from: activePec?.fromAddress || '', mailConfigId: activePec?.id };
         } else if (channelVal === 'APP_IO') {
-          // Find API key associated with the selected service
-          const svc = ioServices.find(s => s.id_service === selectedAppIoServiceId);
-          channelConfig = {
-            serviceId: selectedAppIoServiceId,
-            apiKey: svc ? svc.api_key_primaria : '',
-          };
+          channelConfig = { ioServiceId: selectedAppIoServiceId };
         } else if (channelVal === 'SEND') {
           channelConfig = { apiKey: settSendApiKey, baseUrl: settSendUrl };
         }
@@ -514,25 +483,16 @@ export function App(): React.JSX.Element {
       let customConfig: Record<string, any> | undefined = undefined;
       
       if (newCampaignChannel === 'APP_IO') {
-        const svc = ioServices.find(s => s.id_service === selectedAppIoServiceId);
-        customConfig = {
-          serviceId: selectedAppIoServiceId,
-          serviceName: svc ? svc.nome : '',
-          apiKey: svc ? svc.api_key_primaria : '',
-        };
+        customConfig = { ioServiceId: selectedAppIoServiceId };
       } else if (newCampaignChannel === 'EMAIL' || newCampaignChannel === 'PEC') {
         customConfig = {
           subject: newCampaignSubject,
           body: newCampaignBody,
         };
         // Bundle default App IO service configuration for co-delivery if available
-        const defaultSvc = ioServices.find(s => s.is_default) || ioServices[0];
+        const defaultSvc = ioServices.find(s => s.isDefault) || ioServices[0];
         if (defaultSvc) {
-          customConfig.appIo = {
-            serviceId: defaultSvc.id_service,
-            serviceName: defaultSvc.nome,
-            apiKey: defaultSvc.api_key_primaria,
-          };
+          customConfig.appIo = { ioServiceId: defaultSvc.id };
         }
       }
 
@@ -564,25 +524,16 @@ export function App(): React.JSX.Element {
       // Create campaign config
       let customConfig: Record<string, any> | undefined = undefined;
       if (singleChannel === 'APP_IO') {
-        const svc = ioServices.find(s => s.id_service === singleAppIoServiceId);
-        customConfig = {
-          serviceId: singleAppIoServiceId,
-          serviceName: svc ? svc.nome : '',
-          apiKey: svc ? svc.api_key_primaria : '',
-        };
+        customConfig = { ioServiceId: singleAppIoServiceId };
       } else if (singleChannel === 'EMAIL' || singleChannel === 'PEC') {
         customConfig = {
           subject: singleSubject,
           body: singleBody,
         };
         // Bundle default App IO service configuration for co-delivery if available
-        const defaultSvc = ioServices.find(s => s.is_default) || ioServices[0];
+        const defaultSvc = ioServices.find(s => s.isDefault) || ioServices[0];
         if (defaultSvc) {
-          customConfig.appIo = {
-            serviceId: defaultSvc.id_service,
-            serviceName: defaultSvc.nome,
-            apiKey: defaultSvc.api_key_primaria,
-          };
+          customConfig.appIo = { ioServiceId: defaultSvc.id };
         }
       }
 
@@ -630,33 +581,27 @@ export function App(): React.JSX.Element {
     }
   };
 
-  // App IO Service Management handlers
-  const handleAddIoService = (e: React.FormEvent) => {
+  // App IO Service Management handlers — persistiti lato server (IoServiceConfig)
+  const handleAddIoService = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSvcNome || !newSvcIdService || !newSvcApiKeyPrimaria) {
       alert('I campi contrassegnati con asterisco sono obbligatori.');
       return;
     }
-
-    const newSvc: IoService = {
-      id: Date.now().toString(),
-      nome: newSvcNome,
-      id_service: newSvcIdService.toUpperCase().trim(),
-      descrizione: newSvcDesc,
-      api_key_primaria: newSvcApiKeyPrimaria,
-      api_key_secondaria: newSvcApiKeySecondaria,
-      codice_catalogo: newSvcCodiceCatalogo,
-      is_default: newSvcIsDefault || ioServices.length === 0,
-    };
-
-    let updatedList = [...ioServices];
-    if (newSvc.is_default) {
-      updatedList = updatedList.map(s => ({ ...s, is_default: false }));
-    }
-    updatedList.push(newSvc);
-    
-    setIoServices(updatedList);
-    localStorage.setItem('sett_io_services', JSON.stringify(updatedList));
+    await fetch(`${API_BASE}/io-services`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        nome: newSvcNome,
+        idService: newSvcIdService.toUpperCase().trim(),
+        descrizione: newSvcDesc,
+        apiKeyPrimaria: newSvcApiKeyPrimaria,
+        apiKeySecondaria: newSvcApiKeySecondaria,
+        codiceCatalogo: newSvcCodiceCatalogo,
+        isDefault: newSvcIsDefault || ioServices.length === 0,
+      }),
+    });
+    await fetchIoServices();
 
     // Reset Form
     setNewSvcNome('');
@@ -670,35 +615,37 @@ export function App(): React.JSX.Element {
     alert('Servizio creato con successo!');
   };
 
-  const handleSetDefaultIoService = (id: string) => {
-    const updatedList = ioServices.map(s => ({
-      ...s,
-      is_default: s.id === id,
-    }));
-    setIoServices(updatedList);
-    localStorage.setItem('sett_io_services', JSON.stringify(updatedList));
+  const handleSetDefaultIoService = async (id: string) => {
+    await fetch(`${API_BASE}/io-services/${id}/default`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    await fetchIoServices();
   };
 
-  const handleDeleteIoService = (id: string) => {
+  const handleDeleteIoService = async (id: string) => {
     const svcToDelete = ioServices.find(s => s.id === id);
     if (!svcToDelete) return;
-    if (svcToDelete.is_default && ioServices.length > 1) {
-      alert('Non puoi eliminare il servizio predefinito. Imposta prima un altro servizio come predefinito.');
-      return;
-    }
     if (!confirm(`Sei sicuro di voler eliminare il servizio "${svcToDelete.nome}"?`)) {
       return;
     }
-    const updatedList = ioServices.filter(s => s.id !== id);
-    setIoServices(updatedList);
-    localStorage.setItem('sett_io_services', JSON.stringify(updatedList));
+    const res = await fetch(`${API_BASE}/io-services/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok && res.status !== 204) {
+      const body = await res.json().catch(() => null);
+      alert(body?.message || 'Impossibile eliminare il servizio.');
+      return;
+    }
+    await fetchIoServices();
   };
 
   // Settings Save handler
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     // Canali non ancora migrati al backend: restano su localStorage
-    localStorage.setItem('sett_io_services', JSON.stringify(ioServices));
+    // (App IO ora persistito lato server via /io-services, niente più localStorage)
     localStorage.setItem('sett_proto_provider', settProtoProvider);
     localStorage.setItem('sett_proto_url', settProtoUrl);
     localStorage.setItem('sett_proto_user', settProtoUser);
@@ -717,8 +664,7 @@ export function App(): React.JSX.Element {
             'brand.subtitle': settSubtitle,
             'brand.logo': settLogoValue,
             'brand.favicon': settFaviconValue,
-            // SMTP and PEC are saved via their own endpoints
-            'appIo.apiKey': settIoApiKey,
+            // SMTP and PEC are saved via their own endpoints; App IO via /io-services
             'send.apiKey': settSendApiKey,
             'send.baseUrl': settSendUrl,
             'retention.maxDays': Number(settRetentionDays) || 90,
@@ -823,6 +769,19 @@ export function App(): React.JSX.Element {
       }
     } catch (err) {
       console.error("Errore caricamento mail-configs:", err);
+    }
+  };
+
+  const fetchIoServices = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/io-services`, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) {
+        const data = await res.json();
+        setIoServices(data.configs || []);
+      }
+    } catch (err) {
+      console.error("Errore caricamento io-services:", err);
     }
   };
 
@@ -1518,12 +1477,8 @@ export function App(): React.JSX.Element {
     try {
       let channelConfig: Record<string, any> = {};
       if (wizChannel === 'APP_IO') {
-        const svc = ioServices.find(s => s.id_service === wizAppIoServiceId) || ioServices[0];
-        channelConfig = {
-          serviceId: svc ? svc.id_service : '',
-          serviceName: svc ? svc.nome : '',
-          apiKey: svc ? svc.api_key_primaria : '',
-        };
+        const svc = ioServices.find(s => s.id === wizAppIoServiceId) || ioServices[0];
+        channelConfig = { ioServiceId: svc ? svc.id : '' };
       } else if (wizChannel === 'EMAIL' || wizChannel === 'PEC') {
         const activeCfg = mailConfigs.find(c => c.id === wizMailConfigId);
         channelConfig = {
@@ -1535,13 +1490,11 @@ export function App(): React.JSX.Element {
         };
 
         if (wizAppIoMode !== 'none') {
-          const defaultSvc = ioServices.find(s => s.id_service === wizAppIoServiceId) || ioServices.find(s => s.is_default) || ioServices[0];
+          const defaultSvc = ioServices.find(s => s.id === wizAppIoServiceId) || ioServices.find(s => s.isDefault) || ioServices[0];
           if (defaultSvc) {
             channelConfig.appIo = {
               mode: wizAppIoMode,
-              serviceId: defaultSvc.id_service,
-              serviceName: defaultSvc.nome,
-              apiKey: defaultSvc.api_key_primaria,
+              ioServiceId: defaultSvc.id,
             };
           }
         }
@@ -2274,8 +2227,8 @@ export function App(): React.JSX.Element {
                           required
                         >
                           {ioServices.map(s => (
-                            <option key={s.id} value={s.id_service}>
-                              {s.nome} {s.is_default ? '(Predefinito)' : ''}
+                            <option key={s.id} value={s.id}>
+                              {s.nome} {s.isDefault ? '(Predefinito)' : ''}
                             </option>
                           ))}
                         </select>
@@ -2553,8 +2506,8 @@ export function App(): React.JSX.Element {
                             >
                               <option value="">-- Seleziona Servizio App IO --</option>
                               {ioServices.map(s => (
-                                <option key={s.id} value={s.id_service}>
-                                  {s.nome} {s.is_default ? '(Predefinito)' : ''}
+                                <option key={s.id} value={s.id}>
+                                  {s.nome} {s.isDefault ? '(Predefinito)' : ''}
                                 </option>
                               ))}
                             </select>
@@ -2575,8 +2528,8 @@ export function App(): React.JSX.Element {
                       >
                         <option value="">-- Seleziona Servizio App IO --</option>
                         {ioServices.map(s => (
-                          <option key={s.id} value={s.id_service}>
-                            {s.nome} {s.is_default ? '(Predefinito)' : ''}
+                          <option key={s.id} value={s.id}>
+                            {s.nome} {s.isDefault ? '(Predefinito)' : ''}
                           </option>
                         ))}
                       </select>
@@ -3382,16 +3335,6 @@ export function App(): React.JSX.Element {
                         {/* TAB: APP IO (Multiple services creation & management) */}
                         {activeSettingsTab === 'app-io' && (
                           <div>
-                            <div className="mb-4">
-                              <label className="form-label small fw-bold text-dark" htmlFor="io_api_key">Chiave API Globale App IO</label>
-                              <input
-                                type="password"
-                                id="io_api_key"
-                                className="form-control form-control-sm"
-                                value={settIoApiKey}
-                                onChange={(e) => setSettIoApiKey(e.target.value)}
-                              />
-                            </div>
                             <div className="border rounded bg-light p-3 mb-4">
                               <div className="d-flex justify-content-between align-items-center mb-3">
                                 <h4 className="h6 mb-0 fw-bold text-dark"><i className="fas fa-list me-1 text-primary"></i>Servizi App IO Configurati</h4>
@@ -3508,13 +3451,13 @@ export function App(): React.JSX.Element {
                                         <tr key={s.id}>
                                           <td>
                                             <strong>{s.nome}</strong>
-                                            {s.is_default && <span className="badge bg-success ms-2">Predefinito</span>}
+                                            {s.isDefault && <span className="badge bg-success ms-2">Predefinito</span>}
                                           </td>
-                                          <td className="font-monospace small">{s.id_service}</td>
-                                          <td>{s.codice_catalogo || <span className="text-muted">—</span>}</td>
+                                          <td className="font-monospace small">{s.idService}</td>
+                                          <td>{s.codiceCatalogo || <span className="text-muted">—</span>}</td>
                                           <td className="text-end">
                                             <div className="btn-group">
-                                              {!s.is_default && (
+                                              {!s.isDefault && (
                                                 <button
                                                   type="button"
                                                   className="btn btn-sm btn-outline-info border-0"

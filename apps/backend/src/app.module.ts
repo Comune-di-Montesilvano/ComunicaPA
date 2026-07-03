@@ -15,6 +15,7 @@ import { PublicDownloadModule } from './public-download/public-download.module';
 import { SettingsModule } from './settings/settings.module';
 import { MailConfigsModule } from './mail-configs/mail-configs.module';
 import { EnginesModule } from './engines/engines.module';
+import { IoServicesModule } from './io-services/io-services.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import configuration from './config/configuration';
@@ -37,6 +38,7 @@ import configuration from './config/configuration';
     SettingsModule,
     MailConfigsModule,
     EnginesModule,
+    IoServicesModule,
   ],
   controllers: [AppController],
   providers: [

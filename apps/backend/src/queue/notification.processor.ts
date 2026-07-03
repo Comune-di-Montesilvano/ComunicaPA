@@ -17,6 +17,8 @@ import type { AppConfiguration } from '../config/configuration';
 import { getEffectiveRetentionDays } from '../campaigns/retention.util';
 import { AppSettingsService } from '../settings/app-settings.service';
 import { MailConfigsService } from '../mail-configs/mail-configs.service';
+import { IoServicesService } from '../io-services/io-services.service';
+import { APP_IO_BASE_URL } from '../channels/app-io/app-io.strategy';
 
 @Injectable()
 export class NotificationProcessor extends WorkerHost {
@@ -36,6 +38,7 @@ export class NotificationProcessor extends WorkerHost {
     @Inject(THROTTLE_REDIS)
     private readonly redis: Redis,
     private readonly mailConfigs: MailConfigsService,
+    private readonly ioServices: IoServicesService,
   ) {
     super();
   }
@@ -86,12 +89,17 @@ export class NotificationProcessor extends WorkerHost {
     }
 
     const appIoConfig = campaign.channelConfig?.['appIo'] as
-      | { mode?: 'parallel' | 'exclusive'; apiKey?: string; baseUrl?: string }
+      | { mode?: 'parallel' | 'exclusive'; ioServiceId?: string }
       | undefined;
+    const isMailChannel = channel === 'EMAIL' || channel === 'PEC';
+    // Risolve la api key del servizio App IO scelto (o quello predefinito) solo se serve:
+    // niente più api key in chiaro dentro channelConfig (cifrata lato server per servizio).
+    const appIoResolved = appIoConfig && isMailChannel
+      ? await this.ioServices.resolveApiKey(appIoConfig.ioServiceId)
+      : null;
     // Retrocompat: config appIo presente senza mode = parallel
     const appIoMode: 'none' | 'parallel' | 'exclusive' =
-      appIoConfig?.apiKey ? (appIoConfig.mode ?? 'parallel') : 'none';
-    const isMailChannel = channel === 'EMAIL' || channel === 'PEC';
+      appIoResolved ? (appIoConfig!.mode ?? 'parallel') : 'none';
 
     const responsePayload: Record<string, any> = {};
     let appIoLinkDelivered = false;
@@ -102,10 +110,10 @@ export class NotificationProcessor extends WorkerHost {
     // Modalità ESCLUSIVA: se il destinatario ha App IO, si invia SOLO lì.
     if (appIoMode === 'exclusive' && isMailChannel && job.attemptsMade === 0) {
       const hasAppIo = await this.checkAppIoProfile(
-        appIoConfig!.baseUrl!, appIoConfig!.apiKey!, recipient.codiceFiscale,
+        APP_IO_BASE_URL, appIoResolved!.apiKey, recipient.codiceFiscale,
       );
       if (hasAppIo) {
-        const appIoResult = await this.sendAppIoMessage(campaign, recipient, appIoConfig as { apiKey: string; baseUrl: string });
+        const appIoResult = await this.sendAppIoMessage(campaign, recipient, { apiKey: appIoResolved!.apiKey, baseUrl: APP_IO_BASE_URL });
         responsePayload.appIo = appIoResult;
         if (appIoResult.success) {
           skipPrimary = true;
@@ -131,11 +139,11 @@ export class NotificationProcessor extends WorkerHost {
       // 2. Co-delivery PARALLELA (comportamento attuale, solo primo tentativo)
       if (appIoMode === 'parallel' && isMailChannel && job.attemptsMade === 0) {
         const hasAppIo = await this.checkAppIoProfile(
-          appIoConfig!.baseUrl!, appIoConfig!.apiKey!, recipient.codiceFiscale,
+          APP_IO_BASE_URL, appIoResolved!.apiKey, recipient.codiceFiscale,
         );
         if (hasAppIo) {
           this.logger.log(`Invio App IO parallelo per CF: ${recipient.codiceFiscale}`);
-          const appIoResult = await this.sendAppIoMessage(campaign, recipient, appIoConfig as { apiKey: string; baseUrl: string });
+          const appIoResult = await this.sendAppIoMessage(campaign, recipient, { apiKey: appIoResolved!.apiKey, baseUrl: APP_IO_BASE_URL });
           responsePayload.appIo = appIoResult;
           if (appIoResult.success) appIoLinkDelivered = true;
         }

@@ -3,7 +3,7 @@ import type { NotificationChannel, ChannelSendResult } from '@comunicapa/shared-
 import type { IChannelStrategy } from '../channel.interface';
 import type { Recipient } from '../../entities/recipient.entity';
 import type { Campaign } from '../../entities/campaign.entity';
-import { AppSettingsService } from '../../settings/app-settings.service';
+import { IoServicesService } from '../../io-services/io-services.service';
 
 /** Endpoint ufficiale App IO (PagoPA). Non configurabile: cambia solo con una nuova release. */
 export const APP_IO_BASE_URL = 'https://api.io.pagopa.it';
@@ -16,16 +16,19 @@ function interpolate(template: string, vars: Record<string, string>): string {
 export class AppIoStrategy implements IChannelStrategy {
   readonly channel: NotificationChannel = 'APP_IO';
 
-  constructor(private readonly settings: AppSettingsService) {}
+  constructor(private readonly ioServices: IoServicesService) {}
 
   async send(recipient: Recipient, campaign: Campaign): Promise<ChannelSendResult> {
-    const apiKey = await this.settings.get<string>('appIo.apiKey');
+    const cfg = campaign.channelConfig as Record<string, string>;
+    const resolved = await this.ioServices.resolveApiKey(cfg['ioServiceId']);
+    if (!resolved) {
+      throw new Error('Nessun servizio App IO configurato (né specifico né predefinito)');
+    }
 
     const vars: Record<string, string> = {
       fullName: recipient.fullName ?? '',
       codiceFiscale: recipient.codiceFiscale,
     };
-    const cfg = campaign.channelConfig as Record<string, string>;
     const subject = interpolate(cfg['subject'] ?? campaign.name, vars);
     const markdown = interpolate(cfg['body'] ?? '', vars);
 
@@ -33,7 +36,7 @@ export class AppIoStrategy implements IChannelStrategy {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Ocp-Apim-Subscription-Key': apiKey,
+        'Ocp-Apim-Subscription-Key': resolved.apiKey,
       },
       body: JSON.stringify({
         fiscal_code: recipient.codiceFiscale,

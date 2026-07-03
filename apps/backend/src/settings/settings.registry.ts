@@ -32,7 +32,6 @@ export const SETTING_DEFS = {
   'pec.user': { env: 'PEC_USER', type: 'string', default: '' },
   'pec.password': { env: 'PEC_PASSWORD', type: 'string', secret: true, default: '' },
   'pec.from': { env: 'PEC_FROM', type: 'string', default: 'noreply@pec.comunicapa.local' },
-  'appIo.apiKey': { env: 'APP_IO_API_KEY', type: 'string', secret: true, default: '' },
   'send.apiKey': { env: 'SEND_API_KEY', type: 'string', secret: true, default: '' },
   'send.baseUrl': { env: 'SEND_BASE_URL', type: 'string', default: 'https://api.notifichedigitali.it' },
   'system.publicUrl': {

@@ -11,6 +11,7 @@ import { Recipient, RecipientStatus } from '../entities/recipient.entity';
 import { CHANNEL_STRATEGIES } from '../channels/channel.interface';
 import { THROTTLE_REDIS } from './notification-job.types';
 import { MailConfigsService } from '../mail-configs/mail-configs.service';
+import { IoServicesService } from '../io-services/io-services.service';
 import type { NotificationJobData } from '@comunicapa/shared-types';
 
 const mockRedis = {
@@ -62,6 +63,10 @@ const settingsValues: Record<string, unknown> = {
   'system.publicUrl': 'http://api.test',
 };
 const mockSettings = { get: jest.fn(async (key: string) => settingsValues[key]) };
+
+const mockIoServices = {
+  resolveApiKey: jest.fn(async () => ({ apiKey: 'key', idService: 'SVC1' })),
+};
 
 describe('NotificationProcessor', () => {
   let processor: NotificationProcessor;
@@ -125,6 +130,7 @@ describe('NotificationProcessor', () => {
         { provide: AppSettingsService, useValue: mockSettings },
         { provide: THROTTLE_REDIS, useValue: mockRedis },
         { provide: MailConfigsService, useValue: mockMailConfigs },
+        { provide: IoServicesService, useValue: mockIoServices },
       ],
     }).compile();
 
@@ -188,7 +194,7 @@ describe('NotificationProcessor', () => {
       status: CampaignStatus.QUEUED,
       name: 'TARI',
       channelType: 'EMAIL',
-      channelConfig: { appIo: { apiKey: 'key', baseUrl: 'http://io.test' } },
+      channelConfig: { appIo: { ioServiceId: 'svc-1' } },
       retentionDays: null,
       sentCount: 0,
       failedCount: 0,
@@ -274,7 +280,7 @@ describe('NotificationProcessor', () => {
     it('exclusive: se il CF ha App IO invia solo App IO e non chiama la strategy', async () => {
       mockCampaignRepo.findOne.mockResolvedValueOnce({
         ...mockCampaignWithAppIo,
-        channelConfig: { appIo: { mode: 'exclusive', apiKey: 'key', baseUrl: 'http://io.test' } }
+        channelConfig: { appIo: { mode: 'exclusive', ioServiceId: 'svc-1' } }
       });
       (global as any).fetch = jest.fn()
         .mockResolvedValueOnce({ ok: true, json: async () => ({ sender_allowed: true }) }) // checkAppIoProfile
@@ -295,7 +301,7 @@ describe('NotificationProcessor', () => {
     it('exclusive: se il CF NON ha App IO usa il canale primario', async () => {
       mockCampaignRepo.findOne.mockResolvedValueOnce({
         ...mockCampaignWithAppIo,
-        channelConfig: { appIo: { mode: 'exclusive', apiKey: 'key', baseUrl: 'http://io.test' } }
+        channelConfig: { appIo: { mode: 'exclusive', ioServiceId: 'svc-1' } }
       });
       (global as any).fetch = jest.fn()
         .mockResolvedValueOnce({ ok: true, json: async () => ({ sender_allowed: false }) }); // checkAppIoProfile
