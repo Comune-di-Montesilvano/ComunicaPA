@@ -190,6 +190,14 @@ button { font-family: inherit; }
 .status-cancel{ background: var(--bg-2);          color: var(--fg-3); }
 .status-cancel .dot { background: var(--fg-3); }
 
+/* Varianti di stato per le notifiche cittadino (non riusare .status-pay/paid/due: semantica pagamento) */
+.status-notif-received { background: var(--ms-success-bg); color: var(--ms-success); }
+.status-notif-received .dot { background: var(--ms-success); }
+.status-notif-pending   { background: var(--ms-info-bg);    color: var(--ms-info); }
+.status-notif-pending .dot { background: var(--ms-info); }
+.status-notif-failed    { background: var(--ms-danger-bg);  color: var(--ms-danger); }
+.status-notif-failed .dot { background: var(--ms-danger); }
+
 /* ============================================================================
    HERO
    ============================================================================ */
@@ -1158,4 +1166,32 @@ footer.site-footer .f-legal { display: flex; gap: var(--sp-4); flex-wrap: wrap; 
   font-size: 14px; font-weight: 500; color: var(--fg-1, #1e293b); text-align: left;
 }
 .fo-user-dropdown button:hover { background: var(--bg-2, #f1f5f9); }
+
+/* ============================================================================
+   NOTIFICHE CITTADINO — lista
+   ============================================================================ */
+.notif-list { display: flex; flex-direction: column; }
+.notif-list-item {
+  display: block; width: 100%; text-align: left; background: #fff; border: none;
+  border-bottom: 1px solid var(--border-1); padding: var(--sp-4) var(--sp-5);
+  cursor: pointer; font-family: inherit; transition: background var(--dur-fast) var(--ease-out);
+}
+.notif-list-item:last-child { border-bottom: none; }
+.notif-list-item:hover { background: var(--bi-primary-a4); }
+.notif-list-item.selected {
+  background: var(--bi-primary-a8);
+  border-left: 3px solid var(--bi-primary);
+  padding-left: calc(var(--sp-5) - 3px);
+}
+.notif-list-item-top { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-2); }
+.notif-date { font-size: 13px; color: var(--fg-3); }
+.notif-list-item-title { font-size: 16px; font-weight: 700; color: var(--fg-1); margin: 0 0 4px; }
+.notif-list-item-desc {
+  font-size: 13px; color: var(--fg-3); margin: 0 0 var(--sp-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.notif-list-item-meta { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--fg-2); flex-wrap: wrap; gap: var(--sp-2); }
+
+.notif-empty { text-align: center; padding: var(--sp-8) var(--sp-5); color: var(--fg-3); }
+.notif-empty i { font-size: 40px; opacity: .3; margin-bottom: var(--sp-3); display: block; }
 .fo-user-dropdown button.danger { color: #b02a37; }

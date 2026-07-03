@@ -102,6 +102,12 @@ interface Notification {
   };
 }
 
+function statusBadge(status: Notification['status']): { cls: string; label: string } {
+  if (status === 'sent') return { cls: 'status-notif-received', label: 'Ricevuta' };
+  if (status === 'failed' || status === 'skipped') return { cls: 'status-notif-failed', label: 'Non recapitata' };
+  return { cls: 'status-notif-pending', label: 'In corso' };
+}
+
 export function App(): React.JSX.Element {
   const [token, setToken] = useState<string | null>(localStorage.getItem('comunicapa_citizen_token'));
   const [cf, setCf] = useState<string | null>(localStorage.getItem('comunicapa_citizen_cf'));
@@ -726,45 +732,50 @@ export function App(): React.JSX.Element {
                 </div>
                 <div className="card-body p-0">
                   {errorNotifications && (
-                    <div className="alert alert-danger m-3"><i className="fas fa-exclamation-triangle"></i> {errorNotifications}</div>
+                    <div className="alert alert-danger" style={{ margin: 'var(--sp-4)' }}>
+                      <i className="fas fa-exclamation-triangle alert-icon" aria-hidden="true"></i>
+                      <span>{errorNotifications}</span>
+                    </div>
                   )}
 
                   {loadingNotifications && notifications.length === 0 ? (
-                    <div className="text-center py-5">
-                      <i className="fas fa-spinner fa-spin fa-2x text-primary mb-2"></i>
+                    <div className="notif-empty">
+                      <i className="fas fa-spinner fa-spin" aria-hidden="true"></i>
                       <div>Caricamento comunicazioni...</div>
                     </div>
                   ) : notifications.length === 0 ? (
-                    <div className="text-center py-5 text-muted">
-                      <i className="far fa-folder-open fa-3x mb-3 text-muted" style={{ opacity: 0.3 }}></i>
-                      <p className="mb-0">Non ci sono comunicazioni per questo codice fiscale.</p>
+                    <div className="notif-empty">
+                      <i className="far fa-folder-open" aria-hidden="true"></i>
+                      <p style={{ margin: 0 }}>Non ci sono comunicazioni per questo codice fiscale.</p>
                     </div>
                   ) : (
-                    <div className="list-group list-group-flush">
+                    <div className="notif-list">
                       {notifications.map((n) => {
                         const isDownloaded = !!n.extraData?.['download_count'];
+                        const badge = statusBadge(n.status);
                         return (
                           <button
                             key={n.id}
-                            className={`list-group-item list-group-item-action p-3 text-start border-bottom ${
-                              selectedNotif?.id === n.id ? 'bg-light fw-bold border-start border-primary border-3' : ''
-                            }`}
+                            className={`notif-list-item ${selectedNotif?.id === n.id ? 'selected' : ''}`}
                             onClick={() => setSelectedNotif(n)}
                           >
-                            <div className="d-flex justify-content-between align-items-start mb-2">
-                              <span className="small text-muted">
-                                <i className="far fa-calendar-alt me-1"></i> {new Date(n.createdAt).toLocaleDateString('it-IT')}
+                            <div className="notif-list-item-top">
+                              <span className="notif-date">
+                                <i className="far fa-calendar-alt" aria-hidden="true"></i> {new Date(n.createdAt).toLocaleDateString('it-IT')}
                               </span>
-                              <span className={`badge ${isDownloaded ? 'bg-success' : 'bg-primary'}`}>
-                                {isDownloaded ? 'SCARICATO ✓' : 'RICEVUTO'}
+                              <span className={`status ${badge.cls}`}>
+                                <span className="dot"></span>{badge.label}
                               </span>
                             </div>
-                            <h4 className="h6 mb-1 text-dark fw-bold">{n.campaign?.name || '—'}</h4>
-                            <p className="small text-muted mb-2 text-truncate">{n.campaign?.description || ''}</p>
-                            <div className="d-flex justify-content-between align-items-center mt-2" style={{ fontSize: '0.8rem' }}>
+                            <h4 className="notif-list-item-title">{n.campaign?.name || '—'}</h4>
+                            <p className="notif-list-item-desc">{n.campaign?.description || ''}</p>
+                            <div className="notif-list-item-meta">
                               <span>Canale: <strong>{n.campaign?.channelType || '—'}</strong></span>
-                              {n.email && <span><i className="far fa-envelope"></i> {n.email}</span>}
-                              {n.pec && <span><i className="fas fa-envelope-open-text text-primary"></i> {n.pec}</span>}
+                              {isDownloaded && (
+                                <span className="status status-notif-received">
+                                  <span className="dot"></span>Scaricato
+                                </span>
+                              )}
                             </div>
                           </button>
                         );
