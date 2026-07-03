@@ -10,6 +10,7 @@ describe('EnginesController', () => {
     getJobCounts: jest.fn().mockResolvedValue({ waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 }),
     pause: jest.fn(),
     resume: jest.fn(),
+    getJobsDetail: jest.fn().mockResolvedValue([{ jobId: 'j1' }]),
   };
 
   beforeEach(async () => {
@@ -53,5 +54,15 @@ describe('EnginesController', () => {
     const res = await controller.resume('pec');
     expect(res).toEqual({ success: true, channel: 'PEC', paused: false });
     expect(mockQueuesService.resume).toHaveBeenCalledWith('PEC');
+  });
+
+  it('jobs() ritorna i job del canale richiesto', async () => {
+    const result = await controller.jobs('email', 'failed', '10');
+    expect(mockQueuesService.getJobsDetail).toHaveBeenCalledWith('EMAIL', 'failed', 10);
+    expect(result).toEqual({ channel: 'EMAIL', status: 'failed', jobs: [{ jobId: 'j1' }] });
+  });
+
+  it('jobs() rifiuta un canale sconosciuto', async () => {
+    await expect(controller.jobs('fax', 'failed', '10')).rejects.toBeInstanceOf(BadRequestException);
   });
 });

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param, HttpStatus, HttpCode, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Param, Query, HttpStatus, HttpCode, BadRequestException } from '@nestjs/common';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { NotificationQueuesService } from '../queue/notification-queues.service';
 import { ALL_CHANNELS } from '../queue/notification-job.types';
@@ -50,5 +50,29 @@ export class EnginesController {
     }
     await this.queues.resume(uc);
     return { success: true, channel: uc, paused: false };
+  }
+
+  @Get(':channel/jobs')
+  @Roles('admin', 'user')
+  async jobs(
+    @Param('channel') channel: string,
+    @Query('status') status = 'failed',
+    @Query('limit') limit = '50',
+  ) {
+    const uc = channel.toUpperCase() as NotificationChannel;
+    if (!ALL_CHANNELS.includes(uc)) {
+      throw new BadRequestException(`Canale ${channel} non supportato`);
+    }
+    const allowedStatuses = ['failed', 'completed', 'active', 'waiting', 'delayed'] as const;
+    if (!allowedStatuses.includes(status as (typeof allowedStatuses)[number])) {
+      throw new BadRequestException(`Status ${status} non supportato`);
+    }
+    const parsedLimit = parseInt(limit, 10);
+    const jobs = await this.queues.getJobsDetail(
+      uc,
+      status as (typeof allowedStatuses)[number],
+      Number.isInteger(parsedLimit) && parsedLimit > 0 ? parsedLimit : 50,
+    );
+    return { channel: uc, status, jobs };
   }
 }

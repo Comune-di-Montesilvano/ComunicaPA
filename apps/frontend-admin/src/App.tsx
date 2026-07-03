@@ -285,6 +285,8 @@ export function App(): React.JSX.Element {
   const [engines, setEngines] = useState<any[]>([]);
   const [loadingEngines, setLoadingEngines] = useState(false);
   const [enginesError, setEnginesError] = useState<string | null>(null);
+  const [engineJobsChannel, setEngineJobsChannel] = useState<string | null>(null);
+  const [engineJobs, setEngineJobs] = useState<Array<{ jobId: string; campaignId: string; recipientId: string; failedReason?: string; attemptsMade: number }>>([]);
   // Sidebar mobile (≤991px): il CSS la nasconde con translateX finché body non ha .bo-sidebar-open
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -785,6 +787,15 @@ export function App(): React.JSX.Element {
       setEnginesError(`Errore: ${err.message}`);
       setLoadingEngines(false);
     }
+  };
+
+  const handleViewEngineJobs = async (channel: string) => {
+    setEngineJobsChannel(channel);
+    const res = await fetch(`${API_BASE}/engines/${channel.toLowerCase()}/jobs?status=failed&limit=50`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    setEngineJobs(data.jobs || []);
   };
 
   const handleUploadBranding = async (kind: 'logo' | 'favicon', file: File) => {
@@ -3925,6 +3936,35 @@ export function App(): React.JSX.Element {
                                             )}
                                           </div>
                                         </div>
+                                      </div>
+
+                                      <div className="mt-2">
+                                        <button
+                                          type="button"
+                                          className="btn btn-sm btn-outline-secondary"
+                                          onClick={() => handleViewEngineJobs(eng.channel)}
+                                        >
+                                          <i className="fas fa-list me-1"></i>Vedi job falliti
+                                        </button>
+                                        {engineJobsChannel === eng.channel && (
+                                          <div className="table-responsive">
+                                            <table className="table table-sm mt-2">
+                                              <thead><tr><th>Job</th><th>Campagna</th><th>Destinatario</th><th>Tentativi</th><th>Motivo</th></tr></thead>
+                                              <tbody>
+                                                {engineJobs.map(j => (
+                                                  <tr key={j.jobId}>
+                                                    <td className="font-monospace small">{j.jobId}</td>
+                                                    <td className="font-monospace small">{j.campaignId}</td>
+                                                    <td className="font-monospace small">{j.recipientId}</td>
+                                                    <td>{j.attemptsMade}</td>
+                                                    <td className="small text-danger">{j.failedReason || '—'}</td>
+                                                  </tr>
+                                                ))}
+                                                {engineJobs.length === 0 && <tr><td colSpan={5} className="text-center text-muted">Nessun job fallito</td></tr>}
+                                              </tbody>
+                                            </table>
+                                          </div>
+                                        )}
                                       </div>
                                     </div>
                                   </div>

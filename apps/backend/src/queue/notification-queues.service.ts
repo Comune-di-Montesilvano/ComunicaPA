@@ -49,4 +49,31 @@ export class NotificationQueuesService {
   resume(channel: NotificationChannel): Promise<void> {
     return this.getQueue(channel).resume();
   }
+
+  async getJobsDetail(
+    channel: NotificationChannel,
+    status: 'failed' | 'completed' | 'active' | 'waiting' | 'delayed',
+    limit = 50,
+  ): Promise<Array<{
+    jobId: string;
+    campaignId: string;
+    recipientId: string;
+    attemptId: string;
+    failedReason?: string;
+    attemptsMade: number;
+    timestamp: number;
+    finishedOn?: number;
+  }>> {
+    const jobs = await this.getQueue(channel).getJobs([status], 0, limit - 1);
+    return jobs.map((job) => ({
+      jobId: String(job.id),
+      campaignId: job.data.campaignId,
+      recipientId: job.data.recipientId,
+      attemptId: job.data.attemptId,
+      failedReason: job.failedReason,
+      attemptsMade: job.attemptsMade,
+      timestamp: job.timestamp,
+      finishedOn: job.finishedOn,
+    }));
+  }
 }
