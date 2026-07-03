@@ -1091,25 +1091,20 @@ export function App(): React.JSX.Element {
           baseUrl: settIoUrl,
         };
       } else if (wizChannel === 'EMAIL' || wizChannel === 'PEC') {
+        const activeCfg = mailConfigs.find(c => c.id === wizMailConfigId);
         channelConfig = {
           subject: wizSubject,
           body: wizBody,
           allegatoKey: wizMapping.allegato1,
+          mailConfigId: wizMailConfigId,
+          from: activeCfg?.fromAddress || '',
         };
-        if (wizChannel === 'EMAIL') {
-          const activeSmtp = mailConfigs.find(c => c.type === 'EMAIL' && c.active);
-          channelConfig.from = activeSmtp?.fromAddress || '';
-          channelConfig.mailConfigId = activeSmtp?.id || '';
-        } else {
-          const activePec = mailConfigs.find(c => c.type === 'PEC' && c.active);
-          channelConfig.from = activePec?.fromAddress || '';
-          channelConfig.mailConfigId = activePec?.id || '';
-        }
 
-        if (wizMapping.codice_fiscale) {
-          const defaultSvc = ioServices.find(s => s.is_default) || ioServices[0];
+        if (wizAppIoMode !== 'none') {
+          const defaultSvc = ioServices.find(s => s.id_service === wizAppIoServiceId) || ioServices.find(s => s.is_default) || ioServices[0];
           if (defaultSvc) {
             channelConfig.appIo = {
+              mode: wizAppIoMode,
               serviceId: defaultSvc.id_service,
               serviceName: defaultSvc.nome,
               apiKey: defaultSvc.api_key_primaria,
@@ -1119,6 +1114,10 @@ export function App(): React.JSX.Element {
         }
       } else if (wizChannel === 'SEND') {
         channelConfig = { apiKey: settSendApiKey, baseUrl: settSendUrl };
+      }
+
+      if (wizBlockedChannels.length > 0) {
+        channelConfig.blockedChannels = wizBlockedChannels;
       }
 
       const res = await fetch(`${API_BASE}/campaigns`, {
@@ -1176,6 +1175,7 @@ export function App(): React.JSX.Element {
       }
 
       // Caricamento allegati PDF personalizzati
+      let discardCount = 0;
       if (wizPdfFiles && wizPdfFiles.length > 0) {
         const attachFormData = new FormData();
         wizPdfFiles.forEach(file => {
@@ -1187,8 +1187,10 @@ export function App(): React.JSX.Element {
           body: attachFormData,
         });
         if (!attachRes.ok) {
-          throw new Error('Errore durante il caricamento dei file PDF degli allegati.');
+          throw new Error('Errore durante il caricamento dei file PDF/ZIP degli allegati.');
         }
+        const attachData = await attachRes.json() as { uploaded: number; discarded?: number };
+        discardCount = attachData.discarded || 0;
       }
 
       const launchRes = await fetch(`${API_BASE}/campaigns/${campaignObj.id}/launch`, {
@@ -1220,10 +1222,17 @@ export function App(): React.JSX.Element {
       });
       setWizValidationErrors([]);
       setWizValidRows([]);
+      setWizMailConfigId('');
+      setWizAppIoMode('parallel');
+      setWizBlockedChannels([]);
 
       fetchCampaigns();
       setView('dashboard');
-      alert('Campagna creata e avviata con successo! I messaggi sono in coda.');
+      
+      const successMsg = discardCount > 0
+        ? `Campagna creata e avviata con successo! I messaggi sono in coda.\nNota: ${discardCount} file non referenziati da alcun cittadino sono stati scartati.`
+        : 'Campagna creata e avviata con successo! I messaggi sono in coda.';
+      alert(successMsg);
     } catch (err: any) {
       alert(err.message || 'Errore durante l\'invio della campagna.');
     } finally {
