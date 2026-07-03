@@ -68,6 +68,29 @@ interface IoService {
   is_default: boolean;
 }
 
+type MailConfigItem = {
+  id: string;
+  type: 'EMAIL' | 'PEC';
+  name: string;
+  host: string;
+  port: number;
+  secure: boolean;
+  authEnabled: boolean;
+  username: string;
+  password: string;
+  fromAddress: string;
+  batchSize: number;
+  batchIntervalSeconds: number;
+  testedAt: string | null;
+  active: boolean;
+};
+
+const EMPTY_MAIL_CONFIG: Omit<MailConfigItem, 'id' | 'testedAt' | 'active'> = {
+  type: 'EMAIL', name: '', host: '', port: 587, secure: false,
+  authEnabled: true, username: '', password: '', fromAddress: '',
+  batchSize: 100, batchIntervalSeconds: 60,
+};
+
 const DEFAULT_IO_SERVICES: IoService[] = [
   {
     id: '1',
@@ -208,27 +231,12 @@ export function App(): React.JSX.Element {
   const [settLogoValue, setSettLogoValue] = useState('');
   const [settFaviconValue, setSettFaviconValue] = useState('');
 
-  const [settSmtpHost, setSettSmtpHost] = useState('smtp.comune.montesilvano.pe.it');
-  const [settSmtpPort, setSettSmtpPort] = useState('587');
-  const [settSmtpSecure, setSettSmtpSecure] = useState(false);
-  const [settSmtpUser, setSettSmtpUser] = useState('noreply@comune.montesilvano.pe.it');
-  const [settSmtpPass, setSettSmtpPass] = useState('••••••••');
-  const [settSmtpFrom, setSettSmtpFrom] = useState('noreply@comune.montesilvano.pe.it');
-
-  const [settPecHost, setSettPecHost] = useState('smtps.pec.comune.montesilvano.pe.it');
-  const [settPecPort, setSettPecPort] = useState('465');
-  const [settPecSecure, setSettPecSecure] = useState(false);
-  const [settPecUser, setSettPecUser] = useState('protocollo@pec.comune.montesilvano.pe.it');
-  const [settPecPass, setSettPecPass] = useState('••••••••');
-  const [settPecFrom, setSettPecFrom] = useState('protocollo@pec.comune.montesilvano.pe.it');
-
-  // Email / PEC test
-  const [smtpTestTo, setSmtpTestTo] = useState('');
-  const [smtpTestStatus, setSmtpTestStatus] = useState<'idle'|'loading'|'ok'|'error'>('idle');
-  const [smtpTestMsg, setSmtpTestMsg] = useState('');
-  const [pecTestTo, setPecTestTo] = useState('');
-  const [pecTestStatus, setPecTestStatus] = useState<'idle'|'loading'|'ok'|'error'>('idle');
-  const [pecTestMsg, setPecTestMsg] = useState('');
+  // Configurazioni mail/PEC multiple (tabella mail_server_configs)
+  const [mailConfigs, setMailConfigs] = useState<MailConfigItem[]>([]);
+  const [editingMailConfig, setEditingMailConfig] = useState<(Partial<MailConfigItem> & { type: 'EMAIL' | 'PEC' }) | null>(null);
+  const [mailConfigTestTo, setMailConfigTestTo] = useState('');
+  const [mailConfigBusyId, setMailConfigBusyId] = useState<string | null>(null);
+  const [mailConfigMsg, setMailConfigMsg] = useState<{ text: string; error: boolean } | null>(null);
 
   // App IO Settings
   const [settIoApiKey, setSettIoApiKey] = useState('');
@@ -327,6 +335,7 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     if (token) {
       fetchCampaigns();
+      fetchMailConfigs();
     }
   }, [token]);
 
@@ -348,18 +357,7 @@ export function App(): React.JSX.Element {
         setSettSubtitle(String(s['brand.subtitle'] ?? ''));
         setSettLogoValue(String(s['brand.logo'] ?? ''));
         setSettFaviconValue(String(s['brand.favicon'] ?? ''));
-        setSettSmtpHost(String(s['smtp.host'] ?? ''));
-        setSettSmtpPort(String(s['smtp.port'] ?? '587'));
-        setSettSmtpSecure(Boolean(s['smtp.secure']));
-        setSettSmtpUser(String(s['smtp.user'] ?? ''));
-        setSettSmtpPass(String(s['smtp.password'] ?? ''));
-        setSettSmtpFrom(String(s['smtp.from'] ?? ''));
-        setSettPecHost(String(s['pec.host'] ?? ''));
-        setSettPecPort(String(s['pec.port'] ?? '587'));
-        setSettPecSecure(Boolean(s['pec.secure']));
-        setSettPecUser(String(s['pec.user'] ?? ''));
-        setSettPecPass(String(s['pec.password'] ?? ''));
-        setSettPecFrom(String(s['pec.from'] ?? ''));
+        // SMTP and PEC are loaded dynamically via fetchMailConfigs()
         setSettIoApiKey(String(s['appIo.apiKey'] ?? ''));
         setSettIoUrl(String(s['appIo.baseUrl'] ?? ''));
         setSettSendApiKey(String(s['send.apiKey'] ?? ''));
@@ -463,9 +461,11 @@ export function App(): React.JSX.Element {
       
       if (!configOverrides) {
         if (channelVal === 'EMAIL') {
-          channelConfig = { from: settSmtpFrom, smtpServer: settSmtpHost };
+          const activeSmtp = mailConfigs.find(c => c.type === 'EMAIL' && c.active);
+          channelConfig = { from: activeSmtp?.fromAddress || '', mailConfigId: activeSmtp?.id };
         } else if (channelVal === 'PEC') {
-          channelConfig = { from: settPecFrom, pecServer: settPecHost };
+          const activePec = mailConfigs.find(c => c.type === 'PEC' && c.active);
+          channelConfig = { from: activePec?.fromAddress || '', mailConfigId: activePec?.id };
         } else if (channelVal === 'APP_IO') {
           // Find API key associated with the selected service
           const svc = ioServices.find(s => s.id_service === selectedAppIoServiceId);
@@ -715,18 +715,7 @@ export function App(): React.JSX.Element {
             'brand.subtitle': settSubtitle,
             'brand.logo': settLogoValue,
             'brand.favicon': settFaviconValue,
-            'smtp.host': settSmtpHost,
-            'smtp.port': Number(settSmtpPort) || 587,
-            'smtp.secure': settSmtpSecure,
-            'smtp.user': settSmtpUser,
-            'smtp.password': settSmtpPass,
-            'smtp.from': settSmtpFrom,
-            'pec.host': settPecHost,
-            'pec.port': Number(settPecPort) || 587,
-            'pec.secure': settPecSecure,
-            'pec.user': settPecUser,
-            'pec.password': settPecPass,
-            'pec.from': settPecFrom,
+            // SMTP and PEC are saved via their own endpoints
             'appIo.apiKey': settIoApiKey,
             'appIo.baseUrl': settIoUrl,
             'send.apiKey': settSendApiKey,
@@ -1102,11 +1091,13 @@ export function App(): React.JSX.Element {
           allegatoKey: wizMapping.allegato1,
         };
         if (wizChannel === 'EMAIL') {
-          channelConfig.from = settSmtpFrom;
-          channelConfig.smtpServer = settSmtpHost;
+          const activeSmtp = mailConfigs.find(c => c.type === 'EMAIL' && c.active);
+          channelConfig.from = activeSmtp?.fromAddress || '';
+          channelConfig.mailConfigId = activeSmtp?.id || '';
         } else {
-          channelConfig.from = settPecFrom;
-          channelConfig.pecServer = settPecHost;
+          const activePec = mailConfigs.find(c => c.type === 'PEC' && c.active);
+          channelConfig.from = activePec?.fromAddress || '';
+          channelConfig.mailConfigId = activePec?.id || '';
         }
 
         if (wizMapping.codice_fiscale) {
@@ -2729,191 +2720,10 @@ export function App(): React.JSX.Element {
                         )}
 
                         {/* TAB: SMTP */}
-                        {activeSettingsTab === 'smtp' && (
-                          <div className="row g-3">
-                            <div className="col-md-8">
-                              <label className="form-label small fw-bold text-dark" htmlFor="smtp_host">SMTP Server Host</label>
-                              <input
-                                type="text"
-                                id="smtp_host"
-                                className="form-control form-control-sm"
-                                value={settSmtpHost}
-                                onChange={(e) => setSettSmtpHost(e.target.value)}
-                                required
-                              />
-                            </div>
-                            <div className="col-md-4">
-                              <label className="form-label small fw-bold text-dark" htmlFor="smtp_port">Porta</label>
-                              <input
-                                type="text"
-                                id="smtp_port"
-                                className="form-control form-control-sm"
-                                value={settSmtpPort}
-                                onChange={(e) => setSettSmtpPort(e.target.value)}
-                                required
-                              />
-                            </div>
-                            <div className="col-md-6">
-                              <label className="form-label small fw-semibold text-muted" htmlFor="smtp_user">Nome Utente SMTP</label>
-                              <input
-                                type="text"
-                                id="smtp_user"
-                                className="form-control form-control-sm"
-                                value={settSmtpUser}
-                                onChange={(e) => setSettSmtpUser(e.target.value)}
-                              />
-                            </div>
-                            <div className="col-md-6">
-                              <label className="form-label small fw-semibold text-muted" htmlFor="smtp_pass">Password SMTP</label>
-                              <input
-                                type="password"
-                                id="smtp_pass"
-                                className="form-control form-control-sm"
-                                value={settSmtpPass}
-                                onChange={(e) => setSettSmtpPass(e.target.value)}
-                              />
-                            </div>
-                            <div className="col-12">
-                              <div className="form-check mb-3">
-                                <input className="form-check-input" type="checkbox" id="smtpSecure" checked={settSmtpSecure}
-                                  onChange={(e) => setSettSmtpSecure(e.target.checked)} />
-                                <label className="form-check-label" htmlFor="smtpSecure">Connessione sicura (TLS implicito, porta 465)</label>
-                              </div>
-                            </div>
-                            <div className="col-12">
-                              <label className="form-label small fw-bold text-dark" htmlFor="smtp_from">Mittente E-mail Predefinito (From)</label>
-                              <input
-                                type="email"
-                                id="smtp_from"
-                                className="form-control form-control-sm"
-                                value={settSmtpFrom}
-                                onChange={(e) => setSettSmtpFrom(e.target.value)}
-                                required
-                              />
-                            </div>
-                            {/* Test SMTP */}
-                            <div className="col-12 mt-3">
-                              <div className="border rounded p-3" style={{background:'#f8f9fb'}}>
-                                <h6 className="small fw-bold text-dark mb-2"><i className="fas fa-paper-plane me-1 text-primary"></i>Invia E-mail di Test</h6>
-                                <form onSubmit={handleTestSmtp} className="d-flex gap-2 align-items-start flex-wrap">
-                                  <input
-                                    type="email"
-                                    className="form-control form-control-sm"
-                                    style={{maxWidth:280}}
-                                    placeholder="destinatario@esempio.it"
-                                    value={smtpTestTo}
-                                    onChange={e => setSmtpTestTo(e.target.value)}
-                                    required
-                                  />
-                                  <button
-                                    type="submit"
-                                    className="btn btn-sm btn-outline-primary"
-                                    disabled={smtpTestStatus === 'loading'}
-                                  >
-                                    {smtpTestStatus === 'loading'
-                                      ? <><i className="fas fa-spinner fa-spin me-1"></i>Invio...</>  
-                                      : <><i className="fas fa-vial me-1"></i>Testa connessione</>}
-                                  </button>
-                                  {smtpTestStatus === 'ok' && <span className="badge bg-success align-self-center"><i className="fas fa-check me-1"></i>{smtpTestMsg}</span>}
-                                  {smtpTestStatus === 'error' && <span className="badge bg-danger align-self-center"><i className="fas fa-times me-1"></i>{smtpTestMsg}</span>}
-                                </form>
-                              </div>
-                            </div>
-                          </div>
-                        )}
+                        {activeSettingsTab === 'smtp' && renderMailConfigTab('EMAIL')}
+
                         {/* TAB: PEC */}
-                        {activeSettingsTab === 'pec' && (
-                          <div className="row g-3">
-                            <div className="col-md-8">
-                              <label className="form-label small fw-bold text-dark" htmlFor="pec_host">PEC Server Host</label>
-                              <input
-                                type="text"
-                                id="pec_host"
-                                className="form-control form-control-sm"
-                                value={settPecHost}
-                                onChange={(e) => setSettPecHost(e.target.value)}
-                                required
-                              />
-                            </div>
-                            <div className="col-md-4">
-                              <label className="form-label small fw-bold text-dark" htmlFor="pec_port">Porta</label>
-                              <input
-                                type="text"
-                                id="pec_port"
-                                className="form-control form-control-sm"
-                                value={settPecPort}
-                                onChange={(e) => setSettPecPort(e.target.value)}
-                                required
-                              />
-                            </div>
-                            <div className="col-md-6">
-                              <label className="form-label small fw-semibold text-muted" htmlFor="pec_user">Nome Utente PEC</label>
-                              <input
-                                type="text"
-                                id="pec_user"
-                                className="form-control form-control-sm"
-                                value={settPecUser}
-                                onChange={(e) => setSettPecUser(e.target.value)}
-                              />
-                            </div>
-                            <div className="col-md-6">
-                              <label className="form-label small fw-semibold text-muted" htmlFor="pec_pass">Password PEC</label>
-                              <input
-                                type="password"
-                                id="pec_pass"
-                                className="form-control form-control-sm"
-                                value={settPecPass}
-                                onChange={(e) => setSettPecPass(e.target.value)}
-                              />
-                            </div>
-                            <div className="col-12">
-                              <div className="form-check mb-3">
-                                <input className="form-check-input" type="checkbox" id="pecSecure" checked={settPecSecure}
-                                  onChange={(e) => setSettPecSecure(e.target.checked)} />
-                                <label className="form-check-label" htmlFor="pecSecure">Connessione sicura (TLS implicito, porta 465)</label>
-                              </div>
-                            </div>
-                            <div className="col-12">
-                              <label className="form-label small fw-bold text-dark" htmlFor="pec_from">Indirizzo PEC Mittente (From)</label>
-                              <input
-                                type="email"
-                                id="pec_from"
-                                className="form-control form-control-sm"
-                                value={settPecFrom}
-                                onChange={(e) => setSettPecFrom(e.target.value)}
-                                required
-                              />
-                            </div>
-                            {/* Test PEC */}
-                            <div className="col-12 mt-3">
-                              <div className="border rounded p-3" style={{background:'#f8f9fb'}}>
-                                <h6 className="small fw-bold text-dark mb-2"><i className="fas fa-envelope-open-text me-1 text-success"></i>Invia PEC di Test</h6>
-                                <form onSubmit={handleTestPec} className="d-flex gap-2 align-items-start flex-wrap">
-                                  <input
-                                    type="email"
-                                    className="form-control form-control-sm"
-                                    style={{maxWidth:280}}
-                                    placeholder="destinatario@pec.esempio.it"
-                                    value={pecTestTo}
-                                    onChange={e => setPecTestTo(e.target.value)}
-                                    required
-                                  />
-                                  <button
-                                    type="submit"
-                                    className="btn btn-sm btn-outline-success"
-                                    disabled={pecTestStatus === 'loading'}
-                                  >
-                                    {pecTestStatus === 'loading'
-                                      ? <><i className="fas fa-spinner fa-spin me-1"></i>Invio...</>
-                                      : <><i className="fas fa-vial me-1"></i>Testa connessione</>}
-                                  </button>
-                                  {pecTestStatus === 'ok' && <span className="badge bg-success align-self-center"><i className="fas fa-check me-1"></i>{pecTestMsg}</span>}
-                                  {pecTestStatus === 'error' && <span className="badge bg-danger align-self-center"><i className="fas fa-times me-1"></i>{pecTestMsg}</span>}
-                                </form>
-                              </div>
-                            </div>
-                          </div>
-                        )}
+                        {activeSettingsTab === 'pec' && renderMailConfigTab('PEC')}
 
                         {/* TAB: APP IO (Multiple services creation & management) */}
                         {activeSettingsTab === 'app-io' && (
