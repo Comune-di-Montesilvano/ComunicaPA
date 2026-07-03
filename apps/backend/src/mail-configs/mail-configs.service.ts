@@ -161,6 +161,9 @@ export class MailConfigsService {
         ? { user: entity.username, pass: this.decryptPassword(entity) }
         : undefined,
       tls: { rejectUnauthorized: false },
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 10_000,
     });
 
     try {
