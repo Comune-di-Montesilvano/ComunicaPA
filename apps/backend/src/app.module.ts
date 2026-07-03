@@ -13,6 +13,7 @@ import { ChannelModule } from './channels/channel.module';
 import { CitizenModule } from './citizen/citizen.module';
 import { PublicDownloadModule } from './public-download/public-download.module';
 import { SettingsModule } from './settings/settings.module';
+import { MailConfigsModule } from './mail-configs/mail-configs.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import configuration from './config/configuration';
@@ -33,6 +34,7 @@ import configuration from './config/configuration';
     CitizenModule,
     PublicDownloadModule,
     SettingsModule,
+    MailConfigsModule,
   ],
   controllers: [AppController],
   providers: [
