@@ -2,17 +2,21 @@ import { Inject, Logger, Injectable } from '@nestjs/common';
 import { WorkerHost } from '@nestjs/bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { DelayedError } from 'bullmq';
 import type { Job } from 'bullmq';
 import type { NotificationJobData, NotificationChannel } from '@comunicapa/shared-types';
+import Redis from 'ioredis';
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity';
 import { Campaign } from '../entities/campaign.entity';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity';
+import { THROTTLE_REDIS } from './notification-job.types';
 import { CHANNEL_STRATEGIES, IChannelStrategy } from '../channels/channel.interface';
 import { processTemplate } from '../channels/template.helper';
 import { ConfigService } from '@nestjs/config';
 import type { AppConfiguration } from '../config/configuration';
 import { getEffectiveRetentionDays } from '../campaigns/retention.util';
 import { AppSettingsService } from '../settings/app-settings.service';
+import { MailConfigsService } from '../mail-configs/mail-configs.service';
 
 @Injectable()
 export class NotificationProcessor extends WorkerHost {
@@ -29,15 +33,16 @@ export class NotificationProcessor extends WorkerHost {
     private readonly strategies: Map<NotificationChannel, IChannelStrategy>,
     private readonly config: ConfigService<AppConfiguration, true>,
     private readonly settings: AppSettingsService,
+    @Inject(THROTTLE_REDIS)
+    private readonly redis: Redis,
+    private readonly mailConfigs: MailConfigsService,
   ) {
     super();
   }
 
-  async process(job: Job<NotificationJobData>): Promise<void> {
+  async process(job: Job<NotificationJobData>, token?: string): Promise<void> {
     const { campaignId, attemptId, recipientId, channel } = job.data;
     this.logger.log(`Job ${job.id}: campaign=${campaignId} recipient=${recipientId} channel=${channel}`);
-
-    await this.attemptRepo.update(attemptId, { status: AttemptStatus.PROCESSING });
 
     const recipient = await this.recipientRepo.findOne({ where: { id: recipientId } });
     if (!recipient) {
@@ -49,9 +54,35 @@ export class NotificationProcessor extends WorkerHost {
       throw new Error(`Campaign ${campaignId} not found`);
     }
 
+    // Throttling per configurazione mittente (solo canali mail)
+    if (channel === 'EMAIL' || channel === 'PEC') {
+      const mailConfigId = campaign.channelConfig?.['mailConfigId'] as string | undefined;
+      const resolved = await this.mailConfigs.resolveForSend(channel, mailConfigId);
+      const windowMs = resolved.batchIntervalSeconds * 1000;
+      const windowStart = Math.floor(Date.now() / windowMs) * windowMs;
+      const throttleKey = `comunicapa:throttle:${channel}:${resolved.configId ?? 'legacy'}:${windowStart}`;
+
+      const count = await this.redis.incr(throttleKey);
+      if (count === 1) {
+        await this.redis.pexpire(throttleKey, windowMs * 2);
+      }
+      if (count > resolved.batchSize) {
+        // Batch pieno: rimanda il job all'inizio della finestra successiva.
+        // Decrementa: questo job non consuma quota in questa finestra.
+        await this.redis.decr(throttleKey);
+        this.logger.log(
+          `Throttle ${channel} (${resolved.configId ?? 'legacy'}): batch ${resolved.batchSize} pieno, job ${job.id} rimandato`,
+        );
+        await job.moveToDelayed(windowStart + windowMs, token);
+        throw new DelayedError();
+      }
+    }
+
+    await this.attemptRepo.update(attemptId, { status: AttemptStatus.PROCESSING });
+
     const strategy = this.strategies.get(channel);
     if (!strategy) {
-      throw new Error(`Strategy for channel ${channel} not found`);
+      throw new Error(`Nessuna strategy per channel ${channel}`);
     }
 
     // 1. Invio canale primario — l'esito NON condiziona più l'invio App IO

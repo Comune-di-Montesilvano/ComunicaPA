@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
+import { DelayedError } from 'bullmq';
 import type { Job } from 'bullmq';
 import { NotificationProcessor } from './notification.processor';
 import { AppSettingsService } from '../settings/app-settings.service';
@@ -8,7 +9,23 @@ import { NotificationAttempt, AttemptStatus } from '../entities/notification-att
 import { Campaign, CampaignStatus } from '../entities/campaign.entity';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity';
 import { CHANNEL_STRATEGIES } from '../channels/channel.interface';
+import { THROTTLE_REDIS } from './notification-job.types';
+import { MailConfigsService } from '../mail-configs/mail-configs.service';
 import type { NotificationJobData } from '@comunicapa/shared-types';
+
+const mockRedis = {
+  incr: jest.fn().mockResolvedValue(1),
+  decr: jest.fn().mockResolvedValue(0),
+  pexpire: jest.fn().mockResolvedValue(1),
+};
+
+const mockMailConfigs = {
+  resolveForSend: jest.fn().mockResolvedValue({
+    host: 'h', port: 587, secure: false, authEnabled: false, username: '',
+    password: '', fromAddress: 'n@t.it', batchSize: 100,
+    batchIntervalSeconds: 60, configId: null,
+  }),
+};
 
 const mockAttemptRepo = {
   update: jest.fn(),
@@ -88,6 +105,7 @@ describe('NotificationProcessor', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockRedis.incr.mockResolvedValue(1);
 
     mockCampaignRepo.findOne.mockResolvedValue(mockCampaign);
     mockRecipientRepo.findOne.mockResolvedValue(mockRecipient);
@@ -105,6 +123,8 @@ describe('NotificationProcessor', () => {
         { provide: CHANNEL_STRATEGIES, useValue: mockStrategies },
         { provide: ConfigService, useValue: mockConfig },
         { provide: AppSettingsService, useValue: mockSettings },
+        { provide: THROTTLE_REDIS, useValue: mockRedis },
+        { provide: MailConfigsService, useValue: mockMailConfigs },
       ],
     }).compile();
 
@@ -148,6 +168,18 @@ describe('NotificationProcessor', () => {
     const data: NotificationJobData = { ...baseData, channel: 'POSTAL' };
 
     await expect(processor.process(mockJob(data))).rejects.toThrow('Nessuna strategy per channel POSTAL');
+  });
+
+  it('rimanda il job con DelayedError quando il batch è pieno', async () => {
+    mockRedis.incr.mockResolvedValue(101);
+    const job = {
+      id: '1', attemptsMade: 0, token: 'tok',
+      data: { campaignId: 'camp-1', recipientId: 'rec-1', attemptId: 'att-1', channel: 'EMAIL' },
+      moveToDelayed: jest.fn().mockResolvedValue(undefined),
+    } as any;
+    await expect(processor.process(job, 'tok')).rejects.toThrow(DelayedError);
+    expect(job.moveToDelayed).toHaveBeenCalled();
+    expect(mockRedis.decr).toHaveBeenCalled();
   });
 
   describe('App IO indipendente dal canale primario', () => {

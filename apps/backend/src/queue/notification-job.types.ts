@@ -12,3 +12,6 @@ export const CHANNEL_QUEUES: Record<NotificationChannel, string> = {
 };
 
 export const ALL_CHANNELS = Object.keys(CHANNEL_QUEUES) as NotificationChannel[];
+
+export const THROTTLE_REDIS = 'THROTTLE_REDIS';
+

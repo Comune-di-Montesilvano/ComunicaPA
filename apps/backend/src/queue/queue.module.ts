@@ -2,8 +2,9 @@ import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import Redis from 'ioredis';
 import type { AppConfiguration } from '../config/configuration';
-import { CHANNEL_QUEUES } from './notification-job.types';
+import { CHANNEL_QUEUES, THROTTLE_REDIS } from './notification-job.types';
 import {
   EmailNotificationProcessor,
   PecNotificationProcessor,
@@ -45,7 +46,13 @@ import { ChannelModule } from '../channels/channel.module';
     SendNotificationProcessor,
     PostalNotificationProcessor,
     NotificationQueuesService,
+    {
+      provide: THROTTLE_REDIS,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<AppConfiguration, true>) =>
+        new Redis(config.get('redis.url', { infer: true }), { maxRetriesPerRequest: null }),
+    },
   ],
-  exports: [BullModule, NotificationQueuesService],
+  exports: [BullModule, NotificationQueuesService, THROTTLE_REDIS],
 })
 export class QueueModule {}
