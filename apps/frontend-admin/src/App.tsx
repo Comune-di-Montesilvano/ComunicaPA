@@ -216,6 +216,9 @@ export function App(): React.JSX.Element {
   const [wizBody, setWizBody] = useState('');
   const [wizPreviewIndex, setWizPreviewIndex] = useState(0);
   const [wizSending, setWizSending] = useState(false);
+  const [wizMailConfigId, setWizMailConfigId] = useState('');
+  const [wizAppIoMode, setWizAppIoMode] = useState<'none' | 'parallel' | 'exclusive'>('parallel');
+  const [wizBlockedChannels, setWizBlockedChannels] = useState<string[]>([]);
 
   const getWizRowFullName = (row: Record<string, string>) => {
     if (!row) return '';
@@ -2003,7 +2006,13 @@ export function App(): React.JSX.Element {
                     <select
                       className="form-select form-select-sm"
                       value={wizChannel}
-                      onChange={(e: any) => setWizChannel(e.target.value)}
+                      onChange={(e: any) => {
+                        const newChan = e.target.value as any;
+                        setWizChannel(newChan);
+                        const activeCfg = mailConfigs.find(c => c.type === newChan && c.active);
+                        setWizMailConfigId(activeCfg?.id || '');
+                        setWizBlockedChannels(prev => prev.filter(x => x !== newChan));
+                      }}
                     >
                       <option value="EMAIL">EMAIL</option>
                       <option value="PEC">PEC (Posta Elettronica Certificata)</option>
@@ -2012,6 +2021,70 @@ export function App(): React.JSX.Element {
                       <option value="POSTAL">POSTAL</option>
                     </select>
                   </div>
+
+                  {(wizChannel === 'EMAIL' || wizChannel === 'PEC') && (
+                    <div className="mb-3">
+                      <label className="form-label small fw-bold">Server di Invio / Mittente *</label>
+                      <select
+                        className="form-select form-select-sm"
+                        value={wizMailConfigId}
+                        onChange={e => setWizMailConfigId(e.target.value)}
+                        required
+                      >
+                        <option value="">-- Seleziona Configurazione Mittente --</option>
+                        {mailConfigs
+                          .filter(c => c.type === wizChannel && c.active)
+                          .map(c => (
+                            <option key={c.id} value={c.id}>
+                              {c.name} ({c.fromAddress})
+                            </option>
+                          ))}
+                      </select>
+                      {mailConfigs.filter(c => c.type === wizChannel && c.active).length === 0 && (
+                        <div className="form-text text-danger small">
+                          Attenzione: non ci sono configurazioni attive per il canale {wizChannel}. Creane una nelle impostazioni.
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {(wizChannel === 'EMAIL' || wizChannel === 'PEC') && (
+                    <div className="card mb-3 border-light shadow-sm" style={{ background: '#f8f9fc' }}>
+                      <div className="card-body p-3">
+                        <h6 className="small fw-bold text-dark mb-3"><i className="fas fa-mobile-screen me-2 text-primary"></i>Co-consegna su App IO</h6>
+                        <div className="mb-3">
+                          <label className="form-label small">Modalità Co-consegna</label>
+                          <select
+                            className="form-select form-select-sm"
+                            value={wizAppIoMode}
+                            onChange={e => setWizAppIoMode(e.target.value as any)}
+                          >
+                            <option value="none">Disabilitata (Invia solo via {wizChannel})</option>
+                            <option value="parallel">Parallela (Invia sia via {wizChannel} che via App IO)</option>
+                            <option value="exclusive">Esclusiva (Invia su App IO se il cittadino è registrato, altrimenti ripiega su {wizChannel})</option>
+                          </select>
+                        </div>
+                        {wizAppIoMode !== 'none' && (
+                          <div className="mb-0">
+                            <label className="form-label small fw-bold">Servizio App IO *</label>
+                            <select
+                              className="form-select form-select-sm"
+                              value={wizAppIoServiceId}
+                              onChange={e => setWizAppIoServiceId(e.target.value)}
+                              required
+                            >
+                              <option value="">-- Seleziona Servizio App IO --</option>
+                              {ioServices.map(s => (
+                                <option key={s.id} value={s.id_service}>
+                                  {s.nome} {s.is_default ? '(Predefinito)' : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   {wizChannel === 'APP_IO' && (
                     <div className="mb-4">
@@ -2032,11 +2105,50 @@ export function App(): React.JSX.Element {
                     </div>
                   )}
 
+                  <div className="card mb-3 border-light shadow-sm">
+                    <div className="card-body p-3">
+                      <h6 className="small fw-bold text-dark mb-2"><i className="fas fa-ban me-2 text-danger"></i>Canali di Spedizione Bloccati</h6>
+                      <p className="small text-muted mb-3">Seleziona i canali alternativi o primari che non devono ricevere l'invio (utile ad esempio per bloccare l'invio postale cartaceo).</p>
+                      <div className="d-flex gap-3 flex-wrap">
+                        {['EMAIL', 'PEC', 'APP_IO', 'SEND', 'POSTAL'].map(c => {
+                          const isPrimary = wizChannel === c;
+                          const isBlocked = wizBlockedChannels.includes(c);
+                          return (
+                            <div key={c} className="form-check">
+                              <input
+                                type="checkbox"
+                                className="form-check-input"
+                                id={`chk_block_${c}`}
+                                checked={isBlocked}
+                                disabled={isPrimary}
+                                onChange={e => {
+                                  if (e.target.checked) {
+                                    setWizBlockedChannels([...wizBlockedChannels, c]);
+                                  } else {
+                                    setWizBlockedChannels(wizBlockedChannels.filter(x => x !== c));
+                                  }
+                                }}
+                              />
+                              <label className={`form-check-label small ${isPrimary ? 'text-muted' : ''}`} htmlFor={`chk_block_${c}`}>
+                                {c} {isPrimary && '(Primario)'}
+                              </label>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="mt-4 pt-3 border-top d-flex justify-content-end">
                     <button
                       className="btn btn-primary"
                       onClick={() => setWizStep(2)}
-                      disabled={!wizName || (wizChannel === 'APP_IO' && !wizAppIoServiceId)}
+                      disabled={
+                        !wizName ||
+                        ((wizChannel === 'EMAIL' || wizChannel === 'PEC') && !wizMailConfigId) ||
+                        ((wizChannel === 'EMAIL' || wizChannel === 'PEC') && wizAppIoMode !== 'none' && !wizAppIoServiceId) ||
+                        (wizChannel === 'APP_IO' && !wizAppIoServiceId)
+                      }
                     >
                       Avanti <i className="fas fa-arrow-right ms-1"></i>
                     </button>
