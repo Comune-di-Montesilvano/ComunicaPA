@@ -1,5 +1,5 @@
-import { Inject, Logger } from '@nestjs/common';
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Inject, Logger, Injectable } from '@nestjs/common';
+import { WorkerHost } from '@nestjs/bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type { Job } from 'bullmq';
@@ -7,7 +7,6 @@ import type { NotificationJobData, NotificationChannel } from '@comunicapa/share
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity';
 import { Campaign } from '../entities/campaign.entity';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity';
-import { NOTIFICATION_QUEUE } from './notification-job.types';
 import { CHANNEL_STRATEGIES, IChannelStrategy } from '../channels/channel.interface';
 import { processTemplate } from '../channels/template.helper';
 import { ConfigService } from '@nestjs/config';
@@ -15,9 +14,9 @@ import type { AppConfiguration } from '../config/configuration';
 import { getEffectiveRetentionDays } from '../campaigns/retention.util';
 import { AppSettingsService } from '../settings/app-settings.service';
 
-@Processor(NOTIFICATION_QUEUE)
+@Injectable()
 export class NotificationProcessor extends WorkerHost {
-  private readonly logger = new Logger(NotificationProcessor.name);
+  protected readonly logger = new Logger(NotificationProcessor.name);
 
   constructor(
     @InjectRepository(NotificationAttempt)

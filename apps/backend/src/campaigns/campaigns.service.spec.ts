@@ -1,12 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
-import { getQueueToken } from '@nestjs/bullmq';
 import { CampaignsService } from './campaigns.service';
 import { Campaign, CampaignStatus } from '../entities/campaign.entity';
 import { Recipient } from '../entities/recipient.entity';
 import { NotificationAttempt } from '../entities/notification-attempt.entity';
-import { NOTIFICATION_QUEUE } from '../queue/notification-job.types';
+import { NotificationQueuesService } from '../queue/notification-queues.service';
 
 const mockCampaign: Partial<Campaign> = {
   id: 'uuid-1',
@@ -70,7 +69,7 @@ describe('CampaignsService', () => {
         { provide: getRepositoryToken(Campaign), useValue: mockCampaignRepo },
         { provide: getRepositoryToken(Recipient), useValue: mockRecipientRepo },
         { provide: getRepositoryToken(NotificationAttempt), useValue: mockAttemptRepo },
-        { provide: getQueueToken(NOTIFICATION_QUEUE), useValue: mockQueue },
+        { provide: NotificationQueuesService, useValue: mockQueue },
       ],
     }).compile();
     service = module.get<CampaignsService>(CampaignsService);

@@ -1,16 +1,14 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { InjectQueue } from '@nestjs/bullmq';
-import type { Queue } from 'bullmq';
 import { createReadStream } from 'fs';
 import { unlink } from 'fs/promises';
 import { parse } from 'csv-parse';
-import type { NotificationJobData } from '@comunicapa/shared-types';
 import { Campaign, CampaignStatus } from '../entities/campaign.entity';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity';
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity';
-import { NOTIFICATION_QUEUE, NOTIFICATION_JOB_SEND } from '../queue/notification-job.types';
+import { NOTIFICATION_JOB_SEND } from '../queue/notification-job.types';
+import { NotificationQueuesService } from '../queue/notification-queues.service';
 import type { CreateCampaignDto } from './dto/create-campaign.dto';
 import type { CampaignStatsDto, RecipientStatsPageDto } from './dto/campaign-stats.dto';
 
@@ -23,8 +21,7 @@ export class CampaignsService {
     private readonly recipientRepo: Repository<Recipient>,
     @InjectRepository(NotificationAttempt)
     private readonly attemptRepo: Repository<NotificationAttempt>,
-    @InjectQueue(NOTIFICATION_QUEUE)
-    private readonly notificationsQueue: Queue<NotificationJobData>,
+    private readonly notificationQueues: NotificationQueuesService,
   ) {}
 
   findAll(): Promise<Campaign[]> {
@@ -165,7 +162,8 @@ export class CampaignsService {
     const JOB_CHUNK = 1000;
     for (let i = 0; i < recipients.length; i += JOB_CHUNK) {
       const chunk = recipients.slice(i, i + JOB_CHUNK);
-      await this.notificationsQueue.addBulk(
+      await this.notificationQueues.addBulk(
+        campaign.channelType,
         chunk.map((r, idx) => ({
           name: NOTIFICATION_JOB_SEND,
           data: {

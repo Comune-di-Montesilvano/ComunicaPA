@@ -1,6 +1,5 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { getQueueToken } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import type { Job } from 'bullmq';
 import { NotificationProcessor } from './notification.processor';
@@ -9,7 +8,6 @@ import { NotificationAttempt, AttemptStatus } from '../entities/notification-att
 import { Campaign, CampaignStatus } from '../entities/campaign.entity';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity';
 import { CHANNEL_STRATEGIES } from '../channels/channel.interface';
-import { NOTIFICATION_QUEUE } from './notification-job.types';
 import type { NotificationJobData } from '@comunicapa/shared-types';
 
 const mockAttemptRepo = {
@@ -105,7 +103,6 @@ describe('NotificationProcessor', () => {
         { provide: getRepositoryToken(Campaign), useValue: mockCampaignRepo },
         { provide: getRepositoryToken(Recipient), useValue: mockRecipientRepo },
         { provide: CHANNEL_STRATEGIES, useValue: mockStrategies },
-        { provide: getQueueToken(NOTIFICATION_QUEUE), useValue: {} },
         { provide: ConfigService, useValue: mockConfig },
         { provide: AppSettingsService, useValue: mockSettings },
       ],

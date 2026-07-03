@@ -3,8 +3,15 @@ import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import type { AppConfiguration } from '../config/configuration';
-import { NOTIFICATION_QUEUE } from './notification-job.types';
-import { NotificationProcessor } from './notification.processor';
+import { CHANNEL_QUEUES } from './notification-job.types';
+import {
+  EmailNotificationProcessor,
+  PecNotificationProcessor,
+  AppIoNotificationProcessor,
+  SendNotificationProcessor,
+  PostalNotificationProcessor,
+} from './channel-processors';
+import { NotificationQueuesService } from './notification-queues.service';
 import { NotificationAttempt } from '../entities/notification-attempt.entity';
 import { Campaign } from '../entities/campaign.entity';
 import { Recipient } from '../entities/recipient.entity';
@@ -25,11 +32,20 @@ import { ChannelModule } from '../channels/channel.module';
         };
       },
     }),
-    BullModule.registerQueue({ name: NOTIFICATION_QUEUE }),
+    BullModule.registerQueue(
+      ...Object.values(CHANNEL_QUEUES).map((name) => ({ name })),
+    ),
     TypeOrmModule.forFeature([NotificationAttempt, Campaign, Recipient]),
     ChannelModule,
   ],
-  providers: [NotificationProcessor],
-  exports: [BullModule],
+  providers: [
+    EmailNotificationProcessor,
+    PecNotificationProcessor,
+    AppIoNotificationProcessor,
+    SendNotificationProcessor,
+    PostalNotificationProcessor,
+    NotificationQueuesService,
+  ],
+  exports: [BullModule, NotificationQueuesService],
 })
 export class QueueModule {}
