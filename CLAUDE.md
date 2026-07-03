@@ -19,7 +19,7 @@ packages/shared-types/ @comunicapa/shared-types — interfacce TypeScript condiv
 
 **Flusso dati:** CSV upload → stream processing (no in-memory) → BullMQ queue (Redis) → worker asincroni → Strategy Pattern per canale (PEC/Email/AppIO/SEND/Postal).
 
-**Auth:** LDAP/Active Directory per operatori PA; OIDC (SPID/CIE) delegato ai cittadini. Dev locale senza AD: `LDAP_HOST=mock` in `.env` abilita admin/admin (ruolo admin) e operator/operator (ruolo user) — mai in produzione.
+**Auth:** LDAP/Active Directory per operatori PA; cittadini via OIDC (SPID/CIE, Authorization Code + PKCE: la SPA chiama `/auth/citizen/oidc/start`, callback SPA su `/oidc/callback`, exchange nel backend con state su Redis). Dev locale senza AD: `LDAP_HOST=mock` in `.env` abilita admin/admin, operator/operator e il simulatore cittadino — mai in produzione.
 
 ## Dev Environment
 

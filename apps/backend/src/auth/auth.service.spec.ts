@@ -1,4 +1,6 @@
 import { Test } from '@nestjs/testing';
+import { ForbiddenException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { AuthService } from './auth.service';
 import { LdapService } from './ldap/ldap.service';
@@ -8,8 +10,10 @@ describe('AuthService', () => {
   let service: AuthService;
   let ldapService: jest.Mocked<LdapService>;
   let jwtService: jest.Mocked<JwtService>;
+  let ldapHost = 'ldap://ad.example.it:389';
 
   beforeEach(async () => {
+    ldapHost = 'ldap://ad.example.it:389';
     const module = await Test.createTestingModule({
       providers: [
         AuthService,
@@ -23,6 +27,12 @@ describe('AuthService', () => {
           provide: JwtService,
           useValue: {
             sign: jest.fn().mockReturnValue('mock.jwt.token'),
+          },
+        },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn((key: string) => (key === 'ldap.host' ? ldapHost : undefined)),
           },
         },
       ],
@@ -63,6 +73,21 @@ describe('AuthService', () => {
 
     await expect(service.loginWithLdap({ username: 'x', password: 'y' })).rejects.toThrow(
       'Credenziali non valide',
+    );
+  });
+
+  it('citizen mock token: 403 con LDAP host reale', async () => {
+    await expect(
+      service.generateCitizenToken({ codiceFiscale: 'RSSMRA80A01H501X' }),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('citizen mock token: emesso con LDAP_HOST=mock', async () => {
+    ldapHost = 'mock';
+    const result = await service.generateCitizenToken({ codiceFiscale: 'rssmra80a01h501x' });
+    expect(result.access_token).toBe('mock.jwt.token');
+    expect(jwtService.sign).toHaveBeenCalledWith(
+      expect.objectContaining({ codiceFiscale: 'RSSMRA80A01H501X' }),
     );
   });
 });

@@ -7,6 +7,7 @@ import { AuthController } from './auth.controller';
 import { LdapService } from './ldap/ldap.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { OidcCitizenStrategy } from './strategies/oidc-citizen.strategy';
+import { OidcFlowService } from './oidc/oidc-flow.service';
 import type { AppConfiguration } from '../config/configuration';
 
 @Module({
@@ -21,7 +22,7 @@ import type { AppConfiguration } from '../config/configuration';
       }),
     }),
   ],
-  providers: [AuthService, LdapService, JwtStrategy, OidcCitizenStrategy],
+  providers: [AuthService, LdapService, JwtStrategy, OidcCitizenStrategy, OidcFlowService],
   controllers: [AuthController],
   exports: [AuthService, JwtModule],
 })

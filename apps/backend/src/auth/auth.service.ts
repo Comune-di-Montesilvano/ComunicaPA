@@ -1,9 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import type { JwtOperatorPayload, CitizenTokenClaims } from '@comunicapa/shared-types';
 import { LdapService } from './ldap/ldap.service';
 import type { LoginDto } from './dto/login.dto';
 import type { AuthResponseDto } from './dto/auth-response.dto';
+import type { AppConfiguration } from '../config/configuration';
 
 @Injectable()
 export class AuthService {
@@ -12,6 +14,7 @@ export class AuthService {
   constructor(
     private readonly ldapService: LdapService,
     private readonly jwtService: JwtService,
+    private readonly config: ConfigService<AppConfiguration, true>,
   ) {}
 
   async loginWithLdap(dto: LoginDto): Promise<AuthResponseDto> {
@@ -40,6 +43,10 @@ export class AuthService {
     name?: string;
     email?: string;
   }): Promise<{ access_token: string }> {
+    // Simulatore consentito solo in sviluppo locale, come le credenziali operatore mock
+    if (this.config.get('ldap.host', { infer: true }) !== 'mock') {
+      throw new ForbiddenException('Login simulato disabilitato: usare SPID/CIE');
+    }
     const payload: Omit<CitizenTokenClaims, 'iat' | 'exp'> = {
       sub: dto.codiceFiscale,
       codiceFiscale: dto.codiceFiscale.toUpperCase().trim(),
