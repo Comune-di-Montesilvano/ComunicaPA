@@ -47,7 +47,7 @@ export const SETTING_DEFS = {
     default: '',
   },
   'oidc.issuer': { env: 'OIDC_ISSUER', type: 'string', default: '' },
-  'oidc.audience': { env: 'OIDC_AUDIENCE', type: 'string', default: 'comunicapa' },
+  'oidc.audience': { env: 'OIDC_AUDIENCE', type: 'string', default: '' },
   'oidc.jwksUri': { env: 'OIDC_JWKS_URI', type: 'string', default: '' },
   'oidc.clientId': { env: 'OIDC_CLIENT_ID', type: 'string', default: '' },
   'oidc.clientSecret': { env: 'OIDC_CLIENT_SECRET', type: 'string', secret: true, default: '' },

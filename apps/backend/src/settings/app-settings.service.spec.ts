@@ -47,6 +47,13 @@ describe('AppSettingsService', () => {
     await expect(service.get('smtp.host')).resolves.toBe('localhost');
   });
 
+  it('oidc.audience di default è vuoto (check disattivato finché non configurato esplicitamente)', async () => {
+    // Regressione: un default non-vuoto qui fa rifiutare a OidcCitizenStrategy
+    // qualsiasi token privo del claim `aud` (es. il simulatore cittadino mock),
+    // e qualsiasi id_token reale il cui `aud` non coincida col placeholder.
+    await expect(service.get('oidc.audience')).resolves.toBe('');
+  });
+
   it('usa la cache: seconda lettura senza query', async () => {
     rows.set('smtp.host', { key: 'smtp.host', value: 'mail.example.it', encrypted: false } as AppSetting);
     await service.get('smtp.host');
