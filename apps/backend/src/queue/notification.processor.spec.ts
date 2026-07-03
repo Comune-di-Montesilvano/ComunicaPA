@@ -270,6 +270,57 @@ describe('NotificationProcessor', () => {
       );
       expect(mockCampaignRepo.increment).toHaveBeenCalledWith({ id: 'camp-1' }, 'sentCount', 1);
     });
+
+    it('exclusive: se il CF ha App IO invia solo App IO e non chiama la strategy', async () => {
+      mockCampaignRepo.findOne.mockResolvedValueOnce({
+        ...mockCampaignWithAppIo,
+        channelConfig: { appIo: { mode: 'exclusive', apiKey: 'key', baseUrl: 'http://io.test' } }
+      });
+      (global as any).fetch = jest.fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ sender_allowed: true }) }) // checkAppIoProfile
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'io-1' }) }); // send message
+
+      await processor.process(mockJob(baseData));
+
+      expect(mockStrategy.send).not.toHaveBeenCalled();
+      expect(mockAttemptRepo.update).toHaveBeenCalledWith('att-1', expect.objectContaining({
+        status: AttemptStatus.SUCCESS,
+        responsePayload: expect.objectContaining({
+          deliveredVia: 'APP_IO',
+          appIo: { success: true, messageId: 'io-1' }
+        })
+      }));
+    });
+
+    it('exclusive: se il CF NON ha App IO usa il canale primario', async () => {
+      mockCampaignRepo.findOne.mockResolvedValueOnce({
+        ...mockCampaignWithAppIo,
+        channelConfig: { appIo: { mode: 'exclusive', apiKey: 'key', baseUrl: 'http://io.test' } }
+      });
+      (global as any).fetch = jest.fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ sender_allowed: false }) }); // checkAppIoProfile
+
+      mockStrategy.send.mockResolvedValueOnce({ messageId: 'msg-001', responsePayload: {} });
+
+      await processor.process(mockJob(baseData));
+
+      expect(mockStrategy.send).toHaveBeenCalled();
+    });
+
+    it('appIo assente: nessuna chiamata a fetch App IO', async () => {
+      mockCampaignRepo.findOne.mockResolvedValueOnce({
+        ...mockCampaignWithAppIo,
+        channelConfig: {}
+      });
+      (global as any).fetch = jest.fn();
+
+      mockStrategy.send.mockResolvedValueOnce({ messageId: 'msg-001', responsePayload: {} });
+
+      await processor.process(mockJob(baseData));
+
+      expect((global as any).fetch).not.toHaveBeenCalled();
+      expect(mockStrategy.send).toHaveBeenCalled();
+    });
   });
 
   describe('checkAndCompleteCampaign', () => {

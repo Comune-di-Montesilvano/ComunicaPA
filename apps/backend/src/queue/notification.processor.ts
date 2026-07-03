@@ -85,73 +85,59 @@ export class NotificationProcessor extends WorkerHost {
       throw new Error(`Nessuna strategy per channel ${channel}`);
     }
 
-    // 1. Invio canale primario — l'esito NON condiziona più l'invio App IO
+    const appIoConfig = campaign.channelConfig?.['appIo'] as
+      | { mode?: 'parallel' | 'exclusive'; apiKey?: string; baseUrl?: string }
+      | undefined;
+    // Retrocompat: config appIo presente senza mode = parallel
+    const appIoMode: 'none' | 'parallel' | 'exclusive' =
+      appIoConfig?.apiKey ? (appIoConfig.mode ?? 'parallel') : 'none';
+    const isMailChannel = channel === 'EMAIL' || channel === 'PEC';
+
+    const responsePayload: Record<string, any> = {};
+    let appIoLinkDelivered = false;
     let primaryResult: { messageId?: string; responsePayload?: Record<string, unknown> } | undefined;
     let primaryError: Error | undefined;
-    try {
-      primaryResult = await strategy.send(recipient, campaign);
-    } catch (err: any) {
-      primaryError = err instanceof Error ? err : new Error(String(err));
+    let skipPrimary = false;
+
+    // Modalità ESCLUSIVA: se il destinatario ha App IO, si invia SOLO lì.
+    if (appIoMode === 'exclusive' && isMailChannel && job.attemptsMade === 0) {
+      const hasAppIo = await this.checkAppIoProfile(
+        appIoConfig!.baseUrl!, appIoConfig!.apiKey!, recipient.codiceFiscale,
+      );
+      if (hasAppIo) {
+        const appIoResult = await this.sendAppIoMessage(campaign, recipient, appIoConfig as { apiKey: string; baseUrl: string });
+        responsePayload.appIo = appIoResult;
+        if (appIoResult.success) {
+          skipPrimary = true;
+          appIoLinkDelivered = true;
+          responsePayload.messageId = appIoResult.messageId;
+          responsePayload.deliveredVia = 'APP_IO';
+          this.logger.log(`Consegna esclusiva App IO per CF ${recipient.codiceFiscale}: canale ${channel} saltato`);
+        }
+        // App IO fallita ⇒ si prosegue col canale primario (fallback)
+      }
     }
 
-    const responsePayload: Record<string, any> = {
-      ...(primaryResult?.responsePayload || {}),
-      messageId: primaryResult?.messageId,
-    };
+    // 1. Invio canale primario (saltato solo in esclusiva riuscita)
+    if (!skipPrimary) {
+      try {
+        primaryResult = await strategy.send(recipient, campaign);
+      } catch (err: any) {
+        primaryError = err instanceof Error ? err : new Error(String(err));
+      }
+      Object.assign(responsePayload, primaryResult?.responsePayload || {});
+      responsePayload.messageId = primaryResult?.messageId;
 
-    // 2. Invio App IO indipendente: parte se configurato, a prescindere dall'esito del canale primario.
-    //    Eseguito SOLO al primo tentativo (job.attemptsMade === 0): se il canale primario fallisce e
-    //    BullMQ ripete l'intero job, non vogliamo re-inviare la push App IO ad ogni retry (duplicati).
-    let appIoLinkDelivered = false;
-    const appIoConfig = campaign.channelConfig?.['appIo'] as any;
-    if (job.attemptsMade === 0 && (channel === 'EMAIL' || channel === 'PEC') && appIoConfig?.apiKey) {
-      const hasAppIo = await this.checkAppIoProfile(appIoConfig.baseUrl, appIoConfig.apiKey, recipient.codiceFiscale);
-
-      if (hasAppIo) {
-        try {
-          this.logger.log(`Invio App IO indipendente per CF: ${recipient.codiceFiscale}`);
-          const publicApiUrl = await this.settings.get<string>('system.publicUrl');
-          const downloadLinkSecret = this.config.get('downloadLink.secret', { infer: true });
-          const retentionMaxDays = await this.settings.get<number>('retention.maxDays');
-          const retentionDays = getEffectiveRetentionDays(campaign, retentionMaxDays);
-          const expiresAtUnix = Math.floor(Date.now() / 1000) + retentionDays * 86400;
-
-          const processedSubject = processTemplate(
-            (campaign.channelConfig?.['subject'] as string) || campaign.name,
-            recipient,
-            publicApiUrl,
-            downloadLinkSecret,
-            expiresAtUnix,
-          );
-          const processedMarkdown = processTemplate(
-            (campaign.channelConfig?.['body'] as string) || '',
-            recipient,
-            publicApiUrl,
-            downloadLinkSecret,
-            expiresAtUnix,
-          );
-
-          const appIoRes = await fetch(`${appIoConfig.baseUrl}/api/v1/messages`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Ocp-Apim-Subscription-Key': appIoConfig.apiKey },
-            body: JSON.stringify({
-              fiscal_code: recipient.codiceFiscale,
-              content: { subject: processedSubject, markdown: processedMarkdown },
-            }),
-          });
-
-          if (appIoRes.ok) {
-            const appIoData = (await appIoRes.json()) as { id: string };
-            responsePayload.appIo = { success: true, messageId: appIoData.id };
-            appIoLinkDelivered = true;
-            this.logger.log(`App IO delivery success: messageId=${appIoData.id}`);
-          } else {
-            responsePayload.appIo = { success: false, error: `App IO status: ${appIoRes.status}` };
-            this.logger.warn(`App IO delivery failed with status ${appIoRes.status}`);
-          }
-        } catch (appIoErr: any) {
-          responsePayload.appIo = { success: false, error: appIoErr.message };
-          this.logger.error(`App IO delivery error: ${appIoErr.message}`);
+      // 2. Co-delivery PARALLELA (comportamento attuale, solo primo tentativo)
+      if (appIoMode === 'parallel' && isMailChannel && job.attemptsMade === 0) {
+        const hasAppIo = await this.checkAppIoProfile(
+          appIoConfig!.baseUrl!, appIoConfig!.apiKey!, recipient.codiceFiscale,
+        );
+        if (hasAppIo) {
+          this.logger.log(`Invio App IO parallelo per CF: ${recipient.codiceFiscale}`);
+          const appIoResult = await this.sendAppIoMessage(campaign, recipient, appIoConfig as { apiKey: string; baseUrl: string });
+          responsePayload.appIo = appIoResult;
+          if (appIoResult.success) appIoLinkDelivered = true;
         }
       }
     }
@@ -216,4 +202,51 @@ export class NotificationProcessor extends WorkerHost {
       return false;
     }
   }
+
+  private async sendAppIoMessage(
+    campaign: Campaign,
+    recipient: Recipient,
+    appIoConfig: { apiKey: string; baseUrl: string },
+  ): Promise<{ success: boolean; messageId?: string; error?: string }> {
+    try {
+      const publicApiUrl = await this.settings.get<string>('system.publicUrl');
+      const downloadLinkSecret = this.config.get('downloadLink.secret', { infer: true });
+      const retentionMaxDays = await this.settings.get<number>('retention.maxDays');
+      const retentionDays = getEffectiveRetentionDays(campaign, retentionMaxDays);
+      const expiresAtUnix = Math.floor(Date.now() / 1000) + retentionDays * 86400;
+
+      const processedSubject = processTemplate(
+        (campaign.channelConfig?.['subject'] as string) || campaign.name,
+        recipient,
+        publicApiUrl,
+        downloadLinkSecret,
+        expiresAtUnix,
+      );
+      const processedMarkdown = processTemplate(
+        (campaign.channelConfig?.['body'] as string) || '',
+        recipient,
+        publicApiUrl,
+        downloadLinkSecret,
+        expiresAtUnix,
+      );
+
+      const appIoRes = await fetch(`${appIoConfig.baseUrl}/api/v1/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Ocp-Apim-Subscription-Key': appIoConfig.apiKey },
+        body: JSON.stringify({
+          fiscal_code: recipient.codiceFiscale,
+          content: { subject: processedSubject, markdown: processedMarkdown },
+        }),
+      });
+
+      if (!appIoRes.ok) {
+        return { success: false, error: `App IO status: ${appIoRes.status}` };
+      }
+      const appIoData = (await appIoRes.json()) as { id: string };
+      return { success: true, messageId: appIoData.id };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
 }
+
