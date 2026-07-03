@@ -1507,8 +1507,13 @@ export function App(): React.JSX.Element {
     setWizSubject(source.channelConfig?.subject || '');
     setWizBody(source.channelConfig?.body || '');
     setWizMailConfigId(source.channelConfig?.mailConfigId || '');
-    setWizAppIoServiceId(source.channelConfig?.serviceId || source.channelConfig?.ioServiceId || '');
-    setWizAppIoMode(source.channelConfig?.appIo ? 'parallel' : 'none');
+    setWizAppIoServiceId(
+      source.channelConfig?.appIo?.ioServiceId ||
+      source.channelConfig?.serviceId ||
+      source.channelConfig?.ioServiceId ||
+      ''
+    );
+    setWizAppIoMode(source.channelConfig?.appIo?.mode || (source.channelConfig?.appIo ? 'parallel' : 'none'));
     setWizBlockedChannels(source.channelConfig?.blockedChannels || []);
     // Il CSV NON viene precaricato: l'utente ricarica un file al passo 2.
     setWizCsvFile(null);
