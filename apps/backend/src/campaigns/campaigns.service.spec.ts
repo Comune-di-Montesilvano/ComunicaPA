@@ -335,13 +335,17 @@ describe('CampaignsService.getDuplicateSource', () => {
 
 describe('CampaignsService.getFailures / retryRecipient', () => {
   const campaignRepoMock = { findOneBy: jest.fn() };
-  const recipientRepoMock = { findOne: jest.fn(), update: jest.fn() };
+  const recipientRepoMock = { findOne: jest.fn(), update: jest.fn(), find: jest.fn() };
   const attemptRepoMock = {
     find: jest.fn(),
     findOne: jest.fn(),
     createQueryBuilder: jest.fn(),
   };
   const queuesMock = { addBulk: jest.fn() };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
 
   const buildModule = () =>
     Test.createTestingModule({
@@ -354,24 +358,22 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
       ],
     }).compile();
 
-  it('getFailures ritorna i destinatari con ultimo tentativo fallito', async () => {
-    recipientRepoMock.findOne = undefined as any; // non usato in questo metodo
-    attemptRepoMock.find.mockResolvedValue([
-      {
-        recipientId: 'r1',
-        errorMessage: 'SMTP timeout',
-        attemptNumber: 2,
-        createdAt: new Date('2026-07-01T10:00:00Z'),
-        recipient: { codiceFiscale: 'RSSMRA80A01H501X', fullName: 'Mario Rossi' },
-      },
+  it('getFailures ritorna solo i destinatari il cui stato attuale è FAILED, con ultimo tentativo', async () => {
+    recipientRepoMock.find = jest.fn().mockResolvedValue([
+      { id: 'r1', codiceFiscale: 'RSSMRA80A01H501X', fullName: 'Mario Rossi', createdAt: new Date('2026-06-30T00:00:00Z') },
     ]);
+    attemptRepoMock.findOne = jest.fn().mockResolvedValue({
+      errorMessage: 'SMTP timeout',
+      attemptNumber: 2,
+      createdAt: new Date('2026-07-01T10:00:00Z'),
+    });
     const moduleRef = await buildModule();
     const service = moduleRef.get(CampaignsService);
 
     const result = await service.getFailures('c1');
 
-    expect(attemptRepoMock.find).toHaveBeenCalledWith(expect.objectContaining({
-      where: { recipient: { campaignId: 'c1' }, status: 'failed' },
+    expect(recipientRepoMock.find).toHaveBeenCalledWith(expect.objectContaining({
+      where: { campaignId: 'c1', status: 'failed' },
     }));
     expect(result).toEqual([{
       recipientId: 'r1',
@@ -383,8 +385,25 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
     }]);
   });
 
+  it('getFailures non ritorna un destinatario FAILED poi ritentato con successo (SENT)', async () => {
+    // Il destinatario r1 è stato ritentato con successo: il suo stato attuale è SENT,
+    // quindi la query su Recipient con status FAILED non lo include più anche se
+    // esiste ancora una NotificationAttempt storica con status FAILED per lui.
+    recipientRepoMock.find = jest.fn().mockResolvedValue([]);
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    const result = await service.getFailures('c1');
+
+    expect(recipientRepoMock.find).toHaveBeenCalledWith(expect.objectContaining({
+      where: { campaignId: 'c1', status: 'failed' },
+    }));
+    expect(result).toEqual([]);
+  });
+
   it('retryRecipient crea un nuovo attempt e riaccoda il job', async () => {
     campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'EMAIL' });
+    recipientRepoMock.findOne = jest.fn().mockResolvedValue({ id: 'r1', campaignId: 'c1' });
     attemptRepoMock.findOne = jest.fn().mockResolvedValue({ attemptNumber: 1 });
     const insertExec = jest.fn().mockResolvedValue({ raw: [{ id: 'attempt-2' }] });
     attemptRepoMock.createQueryBuilder.mockReturnValue({
@@ -402,6 +421,28 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
       { name: 'send', data: { campaignId: 'c1', recipientId: 'r1', attemptId: 'attempt-2', channel: 'EMAIL' } },
     ]);
     expect(result).toEqual({ requeued: true, attemptId: 'attempt-2' });
+  });
+
+  it('retryRecipient lancia NotFoundException se il recipientId non esiste', async () => {
+    campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'EMAIL' });
+    recipientRepoMock.findOne = jest.fn().mockResolvedValue(null);
+
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    await expect(service.retryRecipient('c1', 'no-exist')).rejects.toThrow(NotFoundException);
+    expect(queuesMock.addBulk).not.toHaveBeenCalled();
+  });
+
+  it('retryRecipient lancia NotFoundException se il recipient appartiene a un\'altra campagna', async () => {
+    campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'EMAIL' });
+    recipientRepoMock.findOne = jest.fn().mockResolvedValue({ id: 'r1', campaignId: 'c2-altra-campagna' });
+
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    await expect(service.retryRecipient('c1', 'r1')).rejects.toThrow(NotFoundException);
+    expect(queuesMock.addBulk).not.toHaveBeenCalled();
   });
 });
 

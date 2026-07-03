@@ -242,24 +242,39 @@ export class CampaignsService {
     attemptNumber: number;
     lastAttemptAt: string;
   }>> {
-    const attempts = await this.attemptRepo.find({
-      where: { recipient: { campaignId }, status: AttemptStatus.FAILED },
-      relations: ['recipient'],
+    // Solo i destinatari il cui stato ATTUALE è FAILED (non righe di tentativi
+    // storici: un destinatario ritentato con successo non deve più comparire qui).
+    const failedRecipients = await this.recipientRepo.find({
+      where: { campaignId, status: RecipientStatus.FAILED },
       order: { createdAt: 'DESC' },
     });
-    return attempts.map((a) => ({
-      recipientId: a.recipientId,
-      codiceFiscale: a.recipient.codiceFiscale,
-      fullName: a.recipient.fullName,
-      errorMessage: a.errorMessage,
-      attemptNumber: a.attemptNumber,
-      lastAttemptAt: a.createdAt.toISOString(),
-    }));
+
+    return Promise.all(
+      failedRecipients.map(async (r) => {
+        const lastAttempt = await this.attemptRepo.findOne({
+          where: { recipientId: r.id },
+          order: { attemptNumber: 'DESC' },
+        });
+        return {
+          recipientId: r.id,
+          codiceFiscale: r.codiceFiscale,
+          fullName: r.fullName,
+          errorMessage: lastAttempt?.errorMessage ?? null,
+          attemptNumber: lastAttempt?.attemptNumber ?? 0,
+          lastAttemptAt: (lastAttempt?.createdAt ?? r.createdAt).toISOString(),
+        };
+      }),
+    );
   }
 
   async retryRecipient(campaignId: string, recipientId: string): Promise<{ requeued: true; attemptId: string }> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+
+    const recipient = await this.recipientRepo.findOne({ where: { id: recipientId } });
+    if (!recipient || recipient.campaignId !== campaignId) {
+      throw new NotFoundException(`Recipient ${recipientId} non trovato in questa campagna`);
+    }
 
     const lastAttempt = await this.attemptRepo.findOne({
       where: { recipientId },
