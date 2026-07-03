@@ -863,11 +863,7 @@ export function App(): React.JSX.Element {
     document.body.removeChild(link);
   };
 
-  const handleWizCsvChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setWizCsvFile(file);
-
+  const parseCsvFile = (file: File, hasHeaders: boolean) => {
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
@@ -898,7 +894,7 @@ export function App(): React.JSX.Element {
       let headers: string[] = [];
       let parsedRows: Record<string, string>[] = [];
 
-      if (wizCsvHasHeaders) {
+      if (hasHeaders) {
         headers = parseCsvLine(lines[0]);
         parsedRows = lines.slice(1).map(line => {
           const cols = parseCsvLine(line);
@@ -950,6 +946,13 @@ export function App(): React.JSX.Element {
       setWizMapping(newMapping);
     };
     reader.readAsText(file);
+  };
+
+  const handleWizCsvChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setWizCsvFile(file);
+    parseCsvFile(file, wizCsvHasHeaders);
   };
 
   const handleWizMappingChange = (field: string, value: string) => {
@@ -2048,13 +2051,36 @@ export function App(): React.JSX.Element {
                   <div className="p-4 border rounded bg-light text-center mb-4">
                     <i className="fas fa-file-csv fa-3x text-muted mb-3"></i>
                     <p className="small text-muted mb-3">Seleziona il file CSV contenente l'elenco dei destinatari della TARI.</p>
-                    <input
-                      type="file"
-                      accept=".csv"
-                      className="form-control form-control-sm mx-auto"
-                      style={{ maxWidth: '350px' }}
-                      onChange={handleWizCsvChange}
-                    />
+                    {wizCsvFile ? (
+                      <div className="d-flex flex-column align-items-center mt-3">
+                        <div className="badge bg-success p-2 mb-2">
+                          <i className="fas fa-check-circle me-1"></i> {wizCsvFile.name} ({wizCsvRows.length} righe rilevate)
+                        </div>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-danger px-2"
+                          onClick={() => {
+                            setWizCsvFile(null);
+                            setWizCsvHeaders([]);
+                            setWizCsvRows([]);
+                            setWizMapping({ codice_fiscale: '', full_name: '', full_name_2: '', email: '', pec: '', allegato1: '' });
+                            const input = document.getElementById('wiz_csv_input') as HTMLInputElement;
+                            if (input) input.value = '';
+                          }}
+                        >
+                          <i className="fas fa-trash me-1"></i> Rimuovi file
+                        </button>
+                      </div>
+                    ) : (
+                      <input
+                        type="file"
+                        id="wiz_csv_input"
+                        accept=".csv"
+                        className="form-control form-control-sm mx-auto"
+                        style={{ maxWidth: '350px' }}
+                        onChange={handleWizCsvChange}
+                      />
+                    )}
                     <div className="form-check d-flex justify-content-center gap-2 mt-3">
                       <input
                         type="checkbox"
@@ -2062,22 +2088,17 @@ export function App(): React.JSX.Element {
                         id="wiz_csv_headers"
                         checked={wizCsvHasHeaders}
                         onChange={e => {
-                          setWizCsvHasHeaders(e.target.checked);
-                          // Reset file to force re-parse
-                          setWizCsvFile(null);
-                          setWizCsvHeaders([]);
-                          setWizCsvRows([]);
+                          const checked = e.target.checked;
+                          setWizCsvHasHeaders(checked);
+                          if (wizCsvFile) {
+                            parseCsvFile(wizCsvFile, checked);
+                          }
                         }}
                       />
                       <label className="form-check-label small text-muted" htmlFor="wiz_csv_headers">
                         Il file CSV contiene una riga di intestazione (Header)
                       </label>
                     </div>
-                    {wizCsvFile && (
-                      <div className="badge bg-success mt-3 p-2">
-                        <i className="fas fa-check-circle me-1"></i> {wizCsvFile.name} ({wizCsvRows.length} righe rilevate)
-                      </div>
-                    )}
                   </div>
 
 
