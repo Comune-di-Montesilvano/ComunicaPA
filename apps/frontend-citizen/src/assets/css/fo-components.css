@@ -1088,3 +1088,38 @@ footer.site-footer .f-legal { display: flex; gap: var(--sp-4); flex-wrap: wrap; 
   footer.site-footer .f-help { font-size: 12px; }
   footer.site-footer .f-help .dot-sep { display: none; }
 }
+
+/* ============================================================================
+   LOGIN CARD (hero sidebar) — targa d'ufficio: filo oro dello stemma in alto
+   ============================================================================ */
+.login-card {
+  background: #fff; border-radius: var(--r-md, 10px); overflow: hidden;
+  border-top: 3px solid var(--ms-gold-500);
+  box-shadow: 0 18px 45px rgba(3, 12, 30, .35);
+}
+.login-card-head { padding: 20px 24px 16px; border-bottom: 1px solid var(--border-1, #e2e8f0); }
+.login-card-head .eyebrow {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+  font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--ms-gold-700);
+}
+.login-card-head h2 { margin: 0; font-size: 20px; font-weight: 700; line-height: 1.25; color: var(--bi-navy); }
+.login-card-head p { margin: 6px 0 0; font-size: 13px; line-height: 1.5; color: #64748b; }
+.login-card-body { padding: 20px 24px; }
+.login-btn {
+  width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 14px 16px; background: #0066cc; color: #fff;
+  font-weight: 700; font-size: 15px; border: none; border-radius: 6px; cursor: pointer;
+  transition: background .15s ease, transform .15s ease;
+}
+.login-btn:hover { background: #0059b3; transform: translateY(-1px); }
+.login-btn:focus-visible { outline: 3px solid var(--ms-gold-500); outline-offset: 2px; }
+.login-btn:disabled { opacity: .65; cursor: wait; transform: none; }
+.login-card-foot {
+  padding: 12px 24px; background: #f8fafc; border-top: 1px solid #e2e8f0;
+  font-size: 12px; line-height: 1.5; color: #64748b;
+}
+@media (prefers-reduced-motion: reduce) {
+  .login-btn { transition: none; }
+  .login-btn:hover { transform: none; }
+}

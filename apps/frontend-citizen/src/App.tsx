@@ -329,13 +329,56 @@ export function App(): React.JSX.Element {
           </div>
         </header>
 
-        <main className="container my-5 flex-grow-1 d-flex align-items-center justify-content-center">
-          <div className="card shadow-sm border-0" style={{ maxWidth: '560px', width: '100%', borderRadius: '12px', overflow: 'hidden' }}>
-            <div className="card-body p-4 p-md-5 bg-white">
-              <div className="text-center mb-4">
-                <h1 className="h4 fw-bold" style={{ color: 'var(--bi-navy)' }}>Accedi all'area riservata</h1>
-                <p className="text-muted small mb-0">Consulta le comunicazioni e le notifiche inviate dal {entityName}.</p>
+        <section className="hero flex-grow-1">
+          <div className="container">
+            <div className="hero-inner has-sidebar">
+              <div className="hero-main">
+                <div className="hero-eyebrow">
+                  <span className="pill">Sportello digitale</span>
+                  <span>Le comunicazioni dell'ente, in un solo posto</span>
+                </div>
+
+                <h1>Le tue comunicazioni ufficiali,<br />sempre a portata di mano.</h1>
+
+                <p className="lead">
+                  Avvisi TARI, accertamenti, sanzioni e ogni altra comunicazione del {entityName}:
+                  qui trovi lo storico completo di ciò che l'ente ti ha inviato e puoi scaricare
+                  gli atti in ogni momento.
+                </p>
+
+                <div className="hero-actions">
+                  <div className="hero-cta" style={{ cursor: 'default' }}>
+                    <div className="icon-wrap">
+                      <i className="far fa-bell" aria-hidden="true"></i>
+                    </div>
+                    <div>
+                      <div className="title">Notifiche e avvisi</div>
+                      <div className="desc">Tutte le comunicazioni inviate al tuo codice fiscale, su qualunque canale.</div>
+                    </div>
+                  </div>
+                  <div className="hero-cta" style={{ cursor: 'default' }}>
+                    <div className="icon-wrap">
+                      <i className="far fa-file-pdf" aria-hidden="true"></i>
+                    </div>
+                    <div>
+                      <div className="title">Atti e allegati</div>
+                      <div className="desc">Scarica i documenti ufficiali in PDF, anche dopo la scadenza dell'avviso.</div>
+                    </div>
+                  </div>
+                </div>
               </div>
+
+              <div className="hero-sidebar">
+                <div className="login-card">
+                  <div className="login-card-head">
+                    <div className="eyebrow">
+                      <i className="fas fa-shield-halved" aria-hidden="true"></i>
+                      Area riservata
+                    </div>
+                    <h2>Entra con la tua identità digitale</h2>
+                    <p>Riservato ai destinatari delle comunicazioni del {entityName}.</p>
+                  </div>
+                  <div className="login-card-body">
 
               {loginError && (
                 <div className="alert alert-danger p-2 text-center small" role="alert">
@@ -353,27 +396,13 @@ export function App(): React.JSX.Element {
               )}
 
               {!oidcExchanging && authMode === 'oidc' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <button
-                    className="btn fw-bold"
-                    style={{ width: '100%', padding: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', color: '#fff', backgroundColor: '#0066cc', border: 'none', borderRadius: '4px', fontSize: '1rem', cursor: 'pointer' }}
-                    onClick={handleOidcLogin}
-                  >
-                    <span style={{ fontSize: '1.2rem', fontStyle: 'italic', letterSpacing: '-1px', fontWeight: 900 }}>spid</span>
-                    Entra con SPID
+                <>
+                  {/* La scelta SPID/CIE avviene sul proxy OIDC: qui un solo bottone */}
+                  <button className="login-btn" onClick={handleOidcLogin}>
+                    <i className="fas fa-user-shield" aria-hidden="true"></i>
+                    Accedi con identità digitale
                   </button>
-                  <button
-                    className="btn fw-bold"
-                    style={{ width: '100%', padding: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', color: '#fff', backgroundColor: '#1d232a', border: 'none', borderRadius: '4px', fontSize: '1rem', cursor: 'pointer' }}
-                    onClick={handleOidcLogin}
-                  >
-                    <i className="fas fa-id-badge text-warning" style={{ fontSize: '1.1rem' }} aria-hidden="true"></i>
-                    Entra con CIE
-                  </button>
-                  <p className="small text-muted text-center mt-3 mb-0" style={{ textAlign: 'center' }}>
-                    Verrai reindirizzato al sistema di identità digitale per autenticarti in sicurezza.
-                  </p>
-                </div>
+                </>
               )}
 
               {!oidcExchanging && authMode === 'mock' && (<>
@@ -468,9 +497,33 @@ export function App(): React.JSX.Element {
                 </div>
               </div>
               </>)}
+                  </div>
+                  <div className="login-card-foot">
+                    Il servizio è gratuito. Verrai reindirizzato al sistema di accesso
+                    dell'ente per completare l'autenticazione in sicurezza.
+                  </div>
+                </div>
+              </div>
+
+              <div className="hero-trust-row">
+                <div className="hero-trust">
+                  <div>
+                    <i className="fas fa-shield-halved" style={{ color: 'var(--ms-gold-300)' }} aria-hidden="true"></i>
+                    Accesso sicuro con identità digitale SPID / CIE
+                  </div>
+                  <div>
+                    <i className="fas fa-stamp" style={{ color: 'var(--ms-gold-300)' }} aria-hidden="true"></i>
+                    Documenti ufficiali dell'ente
+                  </div>
+                  <div>
+                    <i className="fas fa-euro-sign" style={{ color: 'var(--ms-gold-300)' }} aria-hidden="true"></i>
+                    Servizio gratuito
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-        </main>
+        </section>
 
         <Footer entityName={entityName} logoUrl={brandLogoUrl} version={appVersion} />
       </div>
