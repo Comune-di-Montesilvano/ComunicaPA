@@ -446,3 +446,37 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
   });
 });
 
+describe('CampaignsService.updateDraft', () => {
+  const campaignRepoMock = { findOneBy: jest.fn(), save: jest.fn((x) => x) };
+
+  const buildModule = () =>
+    Test.createTestingModule({
+      providers: [
+        CampaignsService,
+        { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
+        { provide: getRepositoryToken(Recipient), useValue: {} },
+        { provide: getRepositoryToken(NotificationAttempt), useValue: {} },
+        { provide: NotificationQueuesService, useValue: {} },
+      ],
+    }).compile();
+
+  it('aggiorna una campagna in stato draft', async () => {
+    campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', status: CampaignStatus.DRAFT, name: 'Vecchio nome', channelConfig: {} });
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    const result = await service.updateDraft('c1', { name: 'Nuovo nome', channelConfig: { subject: 'X' } });
+
+    expect(result.name).toBe('Nuovo nome');
+    expect(result.channelConfig).toEqual({ subject: 'X' });
+  });
+
+  it('rifiuta l aggiornamento se la campagna non e in draft', async () => {
+    campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', status: CampaignStatus.RUNNING });
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    await expect(service.updateDraft('c1', { name: 'X' })).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+

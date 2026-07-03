@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   Req,
@@ -22,6 +23,7 @@ import type { Campaign } from '../entities/campaign.entity';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CampaignsService } from './campaigns.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
+import { UpdateCampaignDto } from './dto/update-campaign.dto';
 import { getUploadsDir } from '../attachments/attachment-paths';
 
 @Controller('campaigns')
@@ -45,6 +47,11 @@ export class CampaignsController {
     @Req() req: Request & { user: JwtOperatorPayload },
   ): Promise<Campaign> {
     return this.campaignsService.create(dto, req.user.username);
+  }
+
+  @Patch(':id')
+  updateDraft(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateCampaignDto) {
+    return this.campaignsService.updateDraft(id, dto);
   }
 
   @Post(':id/recipients/upload')

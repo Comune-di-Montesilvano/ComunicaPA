@@ -225,6 +225,8 @@ export function App(): React.JSX.Element {
   const [wizMailConfigId, setWizMailConfigId] = useState('');
   const [wizAppIoMode, setWizAppIoMode] = useState<'none' | 'parallel' | 'exclusive'>('parallel');
   const [wizBlockedChannels, setWizBlockedChannels] = useState<string[]>([]);
+  const [wizCampaignId, setWizCampaignId] = useState<string | null>(null);
+  const [wizDraftSaving, setWizDraftSaving] = useState(false);
 
   const getWizRowFullName = (row: Record<string, string>) => {
     if (!row) return '';
@@ -1583,6 +1585,73 @@ export function App(): React.JSX.Element {
     prefillWizardFrom(source, { isDuplicate: true });
   };
 
+  const handleResumeDraft = async (campaignId: string) => {
+    const res = await fetch(`${API_BASE}/campaigns/${campaignId}/duplicate-source`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      alert('Impossibile leggere i dati della bozza.');
+      return;
+    }
+    const source = await res.json();
+    prefillWizardFrom(source, { isDuplicate: false });
+    setWizCampaignId(campaignId);
+  };
+
+  const buildWizChannelConfigDraft = (): Record<string, any> => {
+    const cfg: Record<string, any> = { subject: wizSubject, body: wizBody, mailConfigId: wizMailConfigId };
+    if (wizChannel === 'APP_IO') {
+      cfg.ioServiceId = wizAppIoServiceId;
+    }
+    if (wizAppIoMode !== 'none' && wizAppIoServiceId) {
+      cfg.appIo = { mode: wizAppIoMode, ioServiceId: wizAppIoServiceId };
+    }
+    if (wizBlockedChannels.length > 0) cfg.blockedChannels = wizBlockedChannels;
+    return cfg;
+  };
+
+  const handleSaveWizardDraft = async () => {
+    if (!wizName) {
+      alert('Inserisci almeno il nome della campagna prima di salvare la bozza.');
+      return;
+    }
+    setWizDraftSaving(true);
+    try {
+      if (!wizCampaignId) {
+        const res = await fetch(`${API_BASE}/campaigns`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            name: wizName,
+            description: wizDesc,
+            channelType: wizChannel,
+            channelConfig: buildWizChannelConfigDraft(),
+          }),
+        });
+        if (!res.ok) throw new Error('Errore durante il salvataggio della bozza');
+        const created = await res.json();
+        setWizCampaignId(created.id);
+      } else {
+        const res = await fetch(`${API_BASE}/campaigns/${wizCampaignId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            name: wizName,
+            description: wizDesc,
+            channelConfig: buildWizChannelConfigDraft(),
+          }),
+        });
+        if (!res.ok) throw new Error('Errore durante il salvataggio della bozza');
+      }
+      fetchCampaigns();
+      alert('Bozza salvata.');
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setWizDraftSaving(false);
+    }
+  };
+
   const handleWizLaunch = async () => {
     if (wizValidRows.length === 0) {
       alert('Non ci sono destinatari validi da inviare.');
@@ -1622,22 +1691,32 @@ export function App(): React.JSX.Element {
         channelConfig.blockedChannels = wizBlockedChannels;
       }
 
-      const res = await fetch(`${API_BASE}/campaigns`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          name: wizName,
-          description: wizDesc || wizSubject || wizName,
-          channelType: wizChannel,
-          channelConfig,
-        }),
-      });
-
-      if (!res.ok) throw new Error('Errore durante la creazione della campagna');
-      const campaignObj = await res.json();
+      let campaignObj: { id: string };
+      if (wizCampaignId) {
+        const patchRes = await fetch(`${API_BASE}/campaigns/${wizCampaignId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ name: wizName, description: wizDesc || wizSubject || wizName, channelConfig }),
+        });
+        if (!patchRes.ok) throw new Error('Errore durante l\'aggiornamento della bozza');
+        campaignObj = { id: wizCampaignId };
+      } else {
+        const res = await fetch(`${API_BASE}/campaigns`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            name: wizName,
+            description: wizDesc || wizSubject || wizName,
+            channelType: wizChannel,
+            channelConfig,
+          }),
+        });
+        if (!res.ok) throw new Error('Errore durante la creazione della campagna');
+        campaignObj = await res.json();
+      }
 
       const extraHeaders = wizCsvHeaders.filter(h => 
         h !== wizMapping.codice_fiscale && 
@@ -1705,6 +1784,7 @@ export function App(): React.JSX.Element {
       }
 
       setWizStep(1);
+      setWizCampaignId(null);
       setWizName('');
       setWizDesc('');
       setWizSubject('');
@@ -2471,11 +2551,7 @@ export function App(): React.JSX.Element {
                                       type="button"
                                       className="btn btn-sm btn-outline-primary d-flex align-items-center gap-1 mb-1"
                                       title="Riprendi wizard campagna"
-                                      onClick={() => {
-                                        setWizName(c.name);
-                                        setWizStep(1);
-                                        setView('invio-massivo-wizard');
-                                      }}
+                                      onClick={() => handleResumeDraft(c.id)}
                                     >
                                       <i className="fas fa-edit"></i> Riprendi
                                     </button>
@@ -2509,9 +2585,14 @@ export function App(): React.JSX.Element {
                 <div className="d-flex align-items-center gap-2">
                   <h3 className="h5 mb-0 fw-bold text-dark"><i className="fas fa-magic me-2 text-primary"></i>Procedura Guidata Campagna</h3>
                 </div>
-                <button className="btn btn-outline-secondary btn-sm" onClick={() => setView('invio-massivo')}>
-                  <i className="fas fa-times me-1"></i> Annulla
-                </button>
+                <div className="d-flex gap-2">
+                  <button className="btn btn-outline-primary btn-sm" onClick={handleSaveWizardDraft} disabled={wizDraftSaving}>
+                    <i className="fas fa-floppy-disk me-1"></i>{wizDraftSaving ? 'Salvataggio...' : 'Salva bozza'}
+                  </button>
+                  <button className="btn btn-outline-secondary btn-sm" onClick={() => { setWizCampaignId(null); setView('invio-massivo'); }}>
+                    <i className="fas fa-times me-1"></i> Annulla
+                  </button>
+                </div>
               </div>
 
               {/* Steps Progress Header — clickable when already visited */}

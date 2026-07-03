@@ -15,6 +15,7 @@ import { NotificationAttempt, AttemptStatus } from '../entities/notification-att
 import { NOTIFICATION_JOB_SEND } from '../queue/notification-job.types';
 import { NotificationQueuesService } from '../queue/notification-queues.service';
 import type { CreateCampaignDto } from './dto/create-campaign.dto';
+import type { UpdateCampaignDto } from './dto/update-campaign.dto';
 import type { CampaignStatsDto, RecipientStatsPageDto } from './dto/campaign-stats.dto';
 
 
@@ -41,6 +42,18 @@ export class CampaignsService {
     });
     if (!campaign) throw new NotFoundException(`Campaign ${id} not found`);
     return campaign;
+  }
+
+  async updateDraft(id: string, dto: UpdateCampaignDto): Promise<Campaign> {
+    const campaign = await this.campaignRepo.findOneBy({ id });
+    if (!campaign) throw new NotFoundException(`Campaign ${id} not found`);
+    if (campaign.status !== CampaignStatus.DRAFT) {
+      throw new BadRequestException('Solo le campagne in bozza possono essere modificate');
+    }
+    if (dto.name !== undefined) campaign.name = dto.name;
+    if (dto.description !== undefined) campaign.description = dto.description;
+    if (dto.channelConfig !== undefined) campaign.channelConfig = dto.channelConfig;
+    return this.campaignRepo.save(campaign);
   }
 
   async getDuplicateSource(id: string): Promise<{
