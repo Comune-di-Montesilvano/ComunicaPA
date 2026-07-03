@@ -49,6 +49,41 @@ describe('OidcCitizenStrategy', () => {
     ).rejects.toThrow(UnauthorizedException);
   });
 
+  it('validate() con oidc.audience vuoto non verifica aud e accetta token senza claim aud (regressione mock SPID)', async () => {
+    settingsValues = { 'oidc.issuer': '', 'oidc.audience': '' };
+    strategy = await buildStrategy();
+
+    const claims = await strategy.validate({
+      sub: 'user-mock-spid',
+      fiscal_number: 'RSSMRA85M01H501Z',
+    });
+
+    expect(claims.sub).toBe('user-mock-spid');
+    expect(claims.codiceFiscale).toBe('RSSMRA85M01H501Z');
+  });
+
+  it('validate() con oidc.audience vuoto accetta anche un claim aud che non corrisponderebbe a nulla', async () => {
+    settingsValues = { 'oidc.issuer': '', 'oidc.audience': '' };
+    strategy = await buildStrategy();
+
+    const claims = await strategy.validate({
+      sub: 'user-mock-spid-2',
+      aud: 'qualcosa-che-non-combacia',
+      fiscal_number: 'RSSMRA85M01H501Z',
+    });
+
+    expect(claims.sub).toBe('user-mock-spid-2');
+  });
+
+  it('validate() lancia UnauthorizedException se oidc.audience è impostato e non corrisponde', async () => {
+    settingsValues = { 'oidc.issuer': '', 'oidc.audience': 'comunicapa' };
+    strategy = await buildStrategy();
+
+    await expect(
+      strategy.validate({ sub: 'user-1', aud: 'altra-app' }),
+    ).rejects.toThrow(UnauthorizedException);
+  });
+
   it('validate() accetta audience array contenente il valore atteso', async () => {
     settingsValues = { 'oidc.issuer': '', 'oidc.audience': 'comunicapa' };
     strategy = await buildStrategy();
