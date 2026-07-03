@@ -11,7 +11,7 @@ import { Template } from '../entities/template.entity';
 import { InitialSchema1783023440824 } from './migrations/1783023440824-InitialSchema';
 import { AddMailServerConfigs1783071728873 } from './migrations/1783071728873-AddMailServerConfigs';
 import { AddIoServiceConfigs1783092759564 } from './migrations/1783092759564-AddIoServiceConfigs';
-import { AddTemplates1783108693688 } from './migrations/1783108693688-AddTemplates';
+import { AddTemplates1783109448492 } from './migrations/1783109448492-AddTemplates';
 import type { AppConfiguration } from '../config/configuration';
 
 @Module({
@@ -25,7 +25,7 @@ import type { AppConfiguration } from '../config/configuration';
         entities: [Campaign, Recipient, NotificationAttempt, AppSetting, MailServerConfig, IoServiceConfig, Template],
         // Dev: schema allineato da synchronize. Prod: migrations eseguite all'avvio.
         synchronize: config.get('nodeEnv', { infer: true }) === 'development',
-        migrations: [InitialSchema1783023440824, AddMailServerConfigs1783071728873, AddIoServiceConfigs1783092759564, AddTemplates1783108693688],
+        migrations: [InitialSchema1783023440824, AddMailServerConfigs1783071728873, AddIoServiceConfigs1783092759564, AddTemplates1783109448492],
         migrationsRun: config.get('nodeEnv', { infer: true }) !== 'development',
         logging: config.get('nodeEnv', { infer: true }) === 'development',
       }),

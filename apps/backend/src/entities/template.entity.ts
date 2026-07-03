@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
@@ -35,6 +36,7 @@ export class Template {
   pairedTemplateId!: string | null;
 
   @ManyToOne('Template', { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'paired_template_id' })
   pairedTemplate!: Template | null;
 
   @CreateDateColumn({ name: 'created_at' })
