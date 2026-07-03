@@ -288,6 +288,9 @@ export class CampaignsService {
     if (!recipient || recipient.campaignId !== campaignId) {
       throw new NotFoundException(`Recipient ${recipientId} non trovato in questa campagna`);
     }
+    if (recipient.status !== RecipientStatus.FAILED) {
+      throw new BadRequestException('Solo i destinatari in stato FAILED possono essere rimessi in coda');
+    }
 
     const lastAttempt = await this.attemptRepo.findOne({
       where: { recipientId },
@@ -305,6 +308,7 @@ export class CampaignsService {
     const attemptId = (result.raw as Array<{ id: string }>)[0].id;
 
     await this.recipientRepo.update({ id: recipientId }, { status: RecipientStatus.QUEUED });
+    await this.campaignRepo.decrement({ id: campaignId }, 'failedCount', 1);
 
     await this.notificationQueues.addBulk(campaign.channelType, [
       { name: NOTIFICATION_JOB_SEND, data: { campaignId, recipientId, attemptId, channel: campaign.channelType } },

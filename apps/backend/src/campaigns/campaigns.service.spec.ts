@@ -3,7 +3,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { CampaignsService } from './campaigns.service';
 import { Campaign, CampaignStatus } from '../entities/campaign.entity';
-import { Recipient } from '../entities/recipient.entity';
+import { Recipient, RecipientStatus } from '../entities/recipient.entity';
 import { NotificationAttempt } from '../entities/notification-attempt.entity';
 import { NotificationQueuesService } from '../queue/notification-queues.service';
 import * as fs from 'fs';
@@ -334,7 +334,7 @@ describe('CampaignsService.getDuplicateSource', () => {
 });
 
 describe('CampaignsService.getFailures / retryRecipient', () => {
-  const campaignRepoMock = { findOneBy: jest.fn() };
+  const campaignRepoMock = { findOneBy: jest.fn(), decrement: jest.fn() };
   const recipientRepoMock = { findOne: jest.fn(), update: jest.fn(), find: jest.fn() };
   const attemptRepoMock = {
     find: jest.fn(),
@@ -401,9 +401,9 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
     expect(result).toEqual([]);
   });
 
-  it('retryRecipient crea un nuovo attempt e riaccoda il job', async () => {
+  it('retryRecipient crea un nuovo attempt, riaccoda il job e decrementa failedCount', async () => {
     campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'EMAIL' });
-    recipientRepoMock.findOne = jest.fn().mockResolvedValue({ id: 'r1', campaignId: 'c1' });
+    recipientRepoMock.findOne = jest.fn().mockResolvedValue({ id: 'r1', campaignId: 'c1', status: RecipientStatus.FAILED });
     attemptRepoMock.findOne = jest.fn().mockResolvedValue({ attemptNumber: 1 });
     const insertExec = jest.fn().mockResolvedValue({ raw: [{ id: 'attempt-2' }] });
     attemptRepoMock.createQueryBuilder.mockReturnValue({
@@ -417,6 +417,7 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
     const result = await service.retryRecipient('c1', 'r1');
 
     expect(recipientRepoMock.update).toHaveBeenCalledWith({ id: 'r1' }, { status: 'queued' });
+    expect(campaignRepoMock.decrement).toHaveBeenCalledWith({ id: 'c1' }, 'failedCount', 1);
     expect(queuesMock.addBulk).toHaveBeenCalledWith('EMAIL', [
       { name: 'send', data: { campaignId: 'c1', recipientId: 'r1', attemptId: 'attempt-2', channel: 'EMAIL' } },
     ]);
@@ -432,17 +433,31 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
 
     await expect(service.retryRecipient('c1', 'no-exist')).rejects.toThrow(NotFoundException);
     expect(queuesMock.addBulk).not.toHaveBeenCalled();
+    expect(campaignRepoMock.decrement).not.toHaveBeenCalled();
   });
 
   it('retryRecipient lancia NotFoundException se il recipient appartiene a un\'altra campagna', async () => {
     campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'EMAIL' });
-    recipientRepoMock.findOne = jest.fn().mockResolvedValue({ id: 'r1', campaignId: 'c2-altra-campagna' });
+    recipientRepoMock.findOne = jest.fn().mockResolvedValue({ id: 'r1', campaignId: 'c2-altra-campagna', status: RecipientStatus.FAILED });
 
     const moduleRef = await buildModule();
     const service = moduleRef.get(CampaignsService);
 
     await expect(service.retryRecipient('c1', 'r1')).rejects.toThrow(NotFoundException);
     expect(queuesMock.addBulk).not.toHaveBeenCalled();
+    expect(campaignRepoMock.decrement).not.toHaveBeenCalled();
+  });
+
+  it('retryRecipient lancia BadRequestException se il recipient non è in stato FAILED', async () => {
+    campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'EMAIL' });
+    recipientRepoMock.findOne = jest.fn().mockResolvedValue({ id: 'r1', campaignId: 'c1', status: RecipientStatus.SENT });
+
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    await expect(service.retryRecipient('c1', 'r1')).rejects.toThrow(BadRequestException);
+    expect(queuesMock.addBulk).not.toHaveBeenCalled();
+    expect(campaignRepoMock.decrement).not.toHaveBeenCalled();
   });
 });
 
