@@ -80,18 +80,30 @@ export class OidcCitizenStrategy extends PassportStrategy(Strategy, 'oidc-citize
       }
     }
 
-    const codiceFiscale = String(
+    // pa-sso-proxy (SATOSA/SPID): fiscal_number in formato "TINIT-<CF>";
+    // eIDAS usa anche il claim URI https://attributes.eid.gov.it/fiscal_number
+    const rawFiscal = String(
       payload['fiscal_number'] ??
+        payload['https://attributes.eid.gov.it/fiscal_number'] ??
         payload['codice_fiscale'] ??
         payload['cf'] ??
         '',
     ).toUpperCase();
+    // "TIN" + codice paese (TINIT- per l'Italia)
+    const codiceFiscale = rawFiscal.replace(/^TIN[A-Z]{2}-/, '');
+
+    // Nome completo: claim name, oppure given_name + family_name (SPID)
+    const givenName = payload['given_name'] ? String(payload['given_name']) : '';
+    const familyName = payload['family_name'] ? String(payload['family_name']) : '';
+    const name =
+      (payload['name'] ? String(payload['name']) : '') ||
+      [givenName, familyName].filter(Boolean).join(' ');
 
     return {
       sub: String(payload['sub'] ?? ''),
       codiceFiscale,
       email: payload['email'] ? String(payload['email']) : undefined,
-      name: payload['name'] ? String(payload['name']) : undefined,
+      name: name || undefined,
     };
   }
 }

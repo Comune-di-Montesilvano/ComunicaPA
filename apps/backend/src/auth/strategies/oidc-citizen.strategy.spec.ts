@@ -53,6 +53,34 @@ describe('OidcCitizenStrategy', () => {
     expect(claims.codiceFiscale).toBe('RSSMRA85M01H501Z');
   });
 
+  it('validate() strippa il prefisso TINIT- e compone il nome da given/family (pa-sso-proxy)', async () => {
+    settingsValues = { 'oidc.issuer': '', 'oidc.audience': '' };
+    strategy = await buildStrategy();
+
+    const claims = await strategy.validate({
+      sub: 'user-3',
+      fiscal_number: 'TINIT-RSSMRA85M01H501Z',
+      given_name: 'Mario',
+      family_name: 'Rossi',
+      email: 'mario@example.com',
+    });
+
+    expect(claims.codiceFiscale).toBe('RSSMRA85M01H501Z');
+    expect(claims.name).toBe('Mario Rossi');
+  });
+
+  it('validate() legge il claim URI eIDAS quando fiscal_number manca', async () => {
+    settingsValues = { 'oidc.issuer': '', 'oidc.audience': '' };
+    strategy = await buildStrategy();
+
+    const claims = await strategy.validate({
+      sub: 'user-4',
+      'https://attributes.eid.gov.it/fiscal_number': 'TINIT-VRDLGI70A01H501Q',
+    });
+
+    expect(claims.codiceFiscale).toBe('VRDLGI70A01H501Q');
+  });
+
   it('validate() con issuer e audience non impostati mappa i claim normalmente', async () => {
     settingsValues = { 'oidc.issuer': '', 'oidc.audience': '' };
     strategy = await buildStrategy();
