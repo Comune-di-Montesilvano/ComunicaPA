@@ -4,3 +4,9 @@ dist/
 *.local
 .DS_Store
 Thumbs.db
+
+# Artefatti locali di tooling (sessioni Claude/Serena/Playwright, store pnpm da container)
+.playwright-mcp/
+.serena/
+.pnpm-store/
+*.tsbuildinfo
