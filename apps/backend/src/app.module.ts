@@ -16,6 +16,7 @@ import { SettingsModule } from './settings/settings.module';
 import { MailConfigsModule } from './mail-configs/mail-configs.module';
 import { EnginesModule } from './engines/engines.module';
 import { IoServicesModule } from './io-services/io-services.module';
+import { NotificationsSearchModule } from './notifications-search/notifications-search.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import configuration from './config/configuration';
@@ -39,6 +40,7 @@ import configuration from './config/configuration';
     MailConfigsModule,
     EnginesModule,
     IoServicesModule,
+    NotificationsSearchModule,
   ],
   controllers: [AppController],
   providers: [

@@ -96,13 +96,40 @@ export function App(): React.JSX.Element {
   const [token, setToken] = useState<string | null>(localStorage.getItem('comunicapa_token'));
   const [username, setUsername] = useState<string | null>(localStorage.getItem('comunicapa_username'));
   const [role, setRole] = useState<string | null>(localStorage.getItem('comunicapa_role'));
-  const [view, setView] = useState<'dashboard' | 'invio-singolo' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'impostazioni' | 'campaign-detail'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'invio-singolo' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'notifiche-ricerca' | 'impostazioni' | 'campaign-detail'>('dashboard');
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState<string>('');
   const [isLdapMock, setIsLdapMock] = useState<boolean>(false);
   const [brandLogoUrl, setBrandLogoUrl] = useState<string | null>(null);
   const [brandName, setBrandName] = useState<string>('ComunicaPA');
   const [brandSubtitle, setBrandSubtitle] = useState<string>('Amministrazione & Gestione Invii');
+
+  const [searchCf, setSearchCf] = useState('');
+  const [searchCampaignId, setSearchCampaignId] = useState('');
+  const [searchChannel, setSearchChannel] = useState('');
+  const [searchStatus, setSearchStatus] = useState('');
+  const [searchResults, setSearchResults] = useState<Array<{ recipientId: string; campaignId: string; campaignName: string; codiceFiscale: string; fullName: string | null; channelType: string; status: string; createdAt: string }>>([]);
+  const [searchTotal, setSearchTotal] = useState(0);
+  const [searchLoading, setSearchLoading] = useState(false);
+
+  const runNotificationSearch = async () => {
+    setSearchLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (searchCf) params.set('codiceFiscale', searchCf);
+      if (searchCampaignId) params.set('campaignId', searchCampaignId);
+      if (searchChannel) params.set('channelType', searchChannel);
+      if (searchStatus) params.set('status', searchStatus);
+      const res = await fetch(`${API_BASE}/notifications-search?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      setSearchResults(data.rows || []);
+      setSearchTotal(data.total || 0);
+    } finally {
+      setSearchLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetch(`${API_BASE}/version`)
@@ -2034,6 +2061,14 @@ export function App(): React.JSX.Element {
             <i className="fas fa-chart-pie"></i>
             <span>Statistiche</span>
           </a>
+          <a
+            className={`bo-nav-item ${view === 'notifiche-ricerca' ? 'is-active' : ''}`}
+            href="#"
+            onClick={(e) => { e.preventDefault(); setView('notifiche-ricerca'); }}
+          >
+            <i className="fas fa-magnifying-glass"></i>
+            <span>Ricerca Notifiche</span>
+          </a>
 
           <div className="bo-nav-section-title">Sistema</div>
           {role === 'admin' && (
@@ -2084,6 +2119,7 @@ export function App(): React.JSX.Element {
           {view === 'invio-massivo' && 'Campagne di Invio Massivo'}
           {view === 'invio-massivo-wizard' && 'Wizard Nuova Campagna Massiva'}
           {view === 'statistiche' && 'Statistiche e Andamento'}
+          {view === 'notifiche-ricerca' && 'Ricerca Notifiche'}
           {view === 'impostazioni' && 'Impostazioni di Sistema'}
           {view === 'campaign-detail' && `Dettaglio Campagna / ${campaign?.name || '...'}`}
         </h2>
@@ -3256,6 +3292,67 @@ export function App(): React.JSX.Element {
                       </div>
                     </div>
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {view === 'notifiche-ricerca' && (
+            <div>
+              <h3 className="h5 fw-bold text-dark mb-3"><i className="fas fa-magnifying-glass me-2"></i>Ricerca Notifiche</h3>
+              <div className="card shadow-sm p-3 mb-3">
+                <div className="row g-2">
+                  <div className="col-md-3">
+                    <input className="form-control form-control-sm" placeholder="Codice Fiscale" value={searchCf} onChange={e => setSearchCf(e.target.value)} />
+                  </div>
+                  <div className="col-md-2">
+                    <input className="form-control form-control-sm" placeholder="ID Campagna" value={searchCampaignId} onChange={e => setSearchCampaignId(e.target.value)} />
+                  </div>
+                  <div className="col-md-2">
+                    <select className="form-select form-select-sm" value={searchChannel} onChange={e => setSearchChannel(e.target.value)}>
+                      <option value="">Tutti i canali</option>
+                      <option value="EMAIL">EMAIL</option>
+                      <option value="PEC">PEC</option>
+                      <option value="APP_IO">APP IO</option>
+                      <option value="SEND">SEND</option>
+                      <option value="POSTAL">POSTAL</option>
+                    </select>
+                  </div>
+                  <div className="col-md-3">
+                    <select className="form-select form-select-sm" value={searchStatus} onChange={e => setSearchStatus(e.target.value)}>
+                      <option value="">Tutti gli stati</option>
+                      <option value="pending">In attesa</option>
+                      <option value="queued">In coda</option>
+                      <option value="sent">Inviato</option>
+                      <option value="failed">Fallito</option>
+                      <option value="skipped">Saltato</option>
+                    </select>
+                  </div>
+                  <div className="col-md-2">
+                    <button className="btn btn-primary btn-sm w-100" onClick={runNotificationSearch} disabled={searchLoading}>
+                      <i className="fas fa-search me-1"></i>Cerca
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="card shadow-sm">
+                <div className="table-responsive">
+                  <table className="table table-sm mb-0">
+                    <thead><tr><th>CF</th><th>Nome</th><th>Campagna</th><th>Canale</th><th>Stato</th><th>Data</th></tr></thead>
+                    <tbody>
+                      {searchResults.map(r => (
+                        <tr key={r.recipientId}>
+                          <td className="font-monospace small">{r.codiceFiscale}</td>
+                          <td className="small">{r.fullName || '—'}</td>
+                          <td className="small">{r.campaignName}</td>
+                          <td className="small">{r.channelType}</td>
+                          <td><span className="badge bg-light text-dark border">{r.status}</span></td>
+                          <td className="small text-muted">{new Date(r.createdAt).toLocaleString('it-IT')}</td>
+                        </tr>
+                      ))}
+                      {searchResults.length === 0 && <tr><td colSpan={6} className="text-center text-muted py-3">Nessun risultato — {searchTotal} totali</td></tr>}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
