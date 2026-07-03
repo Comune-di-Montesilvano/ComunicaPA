@@ -9,12 +9,23 @@ declare global {
 
 const API_BASE = window.__COMUNICAPA_CONFIG__?.apiBase ?? 'http://localhost:8080';
 
-/** Estrae CF e nome dai claims del token (id_token del provider o token mock). */
-function decodeJwtClaims(token: string): { cf: string; name: string } {
+function decodeJwtClaims(token: string): { cf: string; name: string; provider?: string } {
   try {
-    const payload = JSON.parse(
-      atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')),
-    ) as Record<string, unknown>;
+    const parts = token.split('.');
+    if (parts.length < 2) return { cf: '', name: '' };
+    const base64Url = parts[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const pad = (4 - (base64.length % 4)) % 4;
+    const padded = base64 + '='.repeat(pad);
+    
+    // Decodifica UTF-8 sicura per atob
+    const binStr = atob(padded);
+    const bytes = new Uint8Array(binStr.length);
+    for (let i = 0; i < binStr.length; i++) {
+      bytes[i] = binStr.charCodeAt(i);
+    }
+    const jsonStr = new TextDecoder().decode(bytes);
+    const payload = JSON.parse(jsonStr) as Record<string, unknown>;
     
     const rawCf = String(
       payload['fiscal_number'] ??
@@ -44,9 +55,34 @@ function decodeJwtClaims(token: string): { cf: string; name: string } {
         '',
     );
     const name = String(payload['name'] ?? '') || [given, family].filter(Boolean).join(' ');
-    return { cf, name };
-  } catch {
-    return { cf: '', name: '' };
+    
+    // Rileva provider (SPID, CIE, eIDAS, IT-Wallet, ecc.)
+    const amr = payload['amr'];
+    let provider = 'Identità Digitale';
+    if (payload['provider_name']) {
+      provider = String(payload['provider_name']);
+    } else if (amr) {
+      const amrVal = Array.isArray(amr) ? amr[0] : amr;
+      if (typeof amrVal === 'string') {
+        const amrLower = amrVal.toLowerCase();
+        if (amrLower.includes('cie') || amrLower.includes('interno.gov.it')) {
+          provider = 'CIE';
+        } else if (amrLower.includes('spid')) {
+          provider = 'SPID';
+        } else if (amrLower.includes('eidas')) {
+          provider = 'eIDAS';
+        } else if (amrLower.includes('wallet') || amrLower.includes('itwallet')) {
+          provider = 'IT-Wallet';
+        } else {
+          provider = amrVal.toUpperCase();
+        }
+      }
+    }
+    
+    return { cf, name, provider };
+  } catch (e) {
+    console.error('decodeJwtClaims error:', e);
+    return { cf: '', name: '', provider: 'Identità Digitale' };
   }
 }
 
@@ -70,6 +106,7 @@ export function App(): React.JSX.Element {
   const [token, setToken] = useState<string | null>(localStorage.getItem('comunicapa_citizen_token'));
   const [cf, setCf] = useState<string | null>(localStorage.getItem('comunicapa_citizen_cf'));
   const [name, setName] = useState<string | null>(localStorage.getItem('comunicapa_citizen_name'));
+  const [provider, setProvider] = useState<string>(localStorage.getItem('comunicapa_citizen_provider') || 'Identità Digitale');
   const [entityName, setEntityName] = useState('Comune di Montesilvano');
   const [brandLogoUrl, setBrandLogoUrl] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState<string | null>(null);
@@ -185,9 +222,11 @@ export function App(): React.JSX.Element {
         localStorage.setItem('comunicapa_citizen_token', d.access_token);
         localStorage.setItem('comunicapa_citizen_cf', claims.cf);
         localStorage.setItem('comunicapa_citizen_name', claims.name);
+        localStorage.setItem('comunicapa_citizen_provider', claims.provider || 'SPID / CIE');
         setToken(d.access_token);
         setCf(claims.cf);
         setName(claims.name);
+        setProvider(claims.provider || 'SPID / CIE');
       })
       .catch((e: Error) => setLoginError(e.message))
       .finally(() => setOidcExchanging(false));
@@ -264,10 +303,12 @@ export function App(): React.JSX.Element {
       localStorage.setItem('comunicapa_citizen_token', data.access_token);
       localStorage.setItem('comunicapa_citizen_cf', targetCf.toUpperCase());
       localStorage.setItem('comunicapa_citizen_name', targetName);
-
+      localStorage.setItem('comunicapa_citizen_provider', provider.toUpperCase());
+      
       setToken(data.access_token);
       setCf(targetCf.toUpperCase());
       setName(targetName);
+      setProvider(provider.toUpperCase());
       setSelectedNotif(null);
     } catch (err: any) {
       setLoginError(err.message || 'Errore durante la simulazione SPID/CIE');
@@ -281,9 +322,11 @@ export function App(): React.JSX.Element {
     localStorage.removeItem('comunicapa_citizen_token');
     localStorage.removeItem('comunicapa_citizen_cf');
     localStorage.removeItem('comunicapa_citizen_name');
+    localStorage.removeItem('comunicapa_citizen_provider');
     setToken(null);
     setCf(null);
     setName(null);
+    setProvider('Identità Digitale');
     setSelectedNotif(null);
     // Termina anche la sessione SPID/CIE sul proxy, se configurato
     if (authMode === 'oidc' && oidcLogoutUrl) {
@@ -357,7 +400,7 @@ export function App(): React.JSX.Element {
               <span><span className="gov-dot"></span>Sito ufficiale della Pubblica Amministrazione</span>
             </div>
             <div className="right">
-              <span>Accesso con identità digitale <strong>SPID / CIE</strong></span>
+              <span>Accesso con <strong>Identità Digitale</strong></span>
             </div>
           </div>
         </div>
@@ -560,7 +603,7 @@ export function App(): React.JSX.Element {
                 <div className="hero-trust">
                   <div>
                     <i className="fas fa-shield-halved" style={{ color: 'var(--ms-gold-300)' }} aria-hidden="true"></i>
-                    Accesso sicuro con identità digitale SPID / CIE
+                    Accesso sicuro con Identità Digitale
                   </div>
                   <div>
                     <i className="fas fa-stamp" style={{ color: 'var(--ms-gold-300)' }} aria-hidden="true"></i>
@@ -593,7 +636,7 @@ export function App(): React.JSX.Element {
             <span>{entityName}</span>
           </div>
           <div className="right">
-            <span>Accesso certificato tramite <strong>SPID/CIE</strong></span>
+            <span>Accesso certificato tramite <strong>Identità Digitale</strong></span>
           </div>
         </div>
       </div>
@@ -815,7 +858,7 @@ export function App(): React.JSX.Element {
                   {name?.slice(0, 2).toUpperCase()}
                 </span>
                 <h4 className="h5 fw-bold text-dark mt-3 mb-1">{name}</h4>
-                <span className="badge bg-success">Identità Certificata via SPID</span>
+                <span className="badge bg-success">Identità Certificata via {provider}</span>
               </div>
 
               <div className="list-group list-group-flush border-top border-bottom mb-4">
@@ -826,7 +869,7 @@ export function App(): React.JSX.Element {
                 <div className="list-group-item d-flex justify-content-between align-items-center py-3">
                   <span className="text-muted">Metodo di accesso</span>
                   <span className="fw-bold text-primary">
-                    {authMode === 'mock' ? 'Simulatore (sviluppo)' : 'SPID / CIE (OIDC)'}
+                    {authMode === 'mock' ? 'Simulatore (sviluppo)' : `${provider} (OIDC)`}
                   </span>
                 </div>
               </div>
