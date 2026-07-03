@@ -36,13 +36,19 @@ export class EmailStrategy implements IChannelStrategy {
     const retentionDays = getEffectiveRetentionDays(campaign, retentionMaxDays);
     const expiresAtUnix = Math.floor(Date.now() / 1000) + retentionDays * 86400;
 
+    const brandLogo = await this.settings.get<string>('brand.logo');
+    const logoUrl = brandLogo
+      ? (/^https?:\/\//i.test(brandLogo) ? brandLogo : `${publicApiUrl}/branding/logo`)
+      : null;
+    const portalUrl = (await this.settings.get<string>('system.citizenPublicUrl')) || null;
+
     const subjectTemplate = (campaign.channelConfig?.['subject'] as string) || 'Notifica ComunicaPA';
     const bodyTemplate = (campaign.channelConfig?.['body'] as string) || 'Hai ricevuto una nuova notifica.';
 
     // Process templates
     const subject = processTemplate(subjectTemplate, recipient, publicApiUrl, downloadLinkSecret, expiresAtUnix);
     const bodyText = processTemplate(bodyTemplate, recipient, publicApiUrl, downloadLinkSecret, expiresAtUnix);
-    const bodyHtml = wrapInHtmlLayout(bodyText, brandName);
+    const bodyHtml = wrapInHtmlLayout(bodyText, brandName, { logoUrl, portalUrl });
 
     const transporter = nodemailer.createTransport({
       host: smtp.host,

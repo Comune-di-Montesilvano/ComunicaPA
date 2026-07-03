@@ -1,4 +1,4 @@
-import { processTemplate } from './template.helper';
+import { processTemplate, wrapInHtmlLayout } from './template.helper';
 import type { Recipient } from '../entities/recipient.entity';
 
 const baseRecipient = {
@@ -31,3 +31,28 @@ describe('processTemplate — link firmato', () => {
     expect(result).toBe('Gentile Mario Rossi');
   });
 });
+
+describe('wrapInHtmlLayout con logo e portale', () => {
+  it('inserisce il logo quando logoUrl è valorizzato', () => {
+    const html = wrapInHtmlLayout('ciao', 'Comune Test', { logoUrl: 'https://ente.it/api/branding/logo' });
+    expect(html).toContain('<img src="https://ente.it/api/branding/logo"');
+    expect(html).toContain('alt="Comune Test"');
+  });
+
+  it('non inserisce img senza logoUrl', () => {
+    const html = wrapInHtmlLayout('ciao', 'Comune Test');
+    expect(html).not.toContain('<img');
+  });
+
+  it('inserisce il link al portale nel footer quando portalUrl è valorizzato', () => {
+    const html = wrapInHtmlLayout('ciao', 'Comune Test', { portalUrl: 'https://portale.ente.it' });
+    expect(html).toContain('href="https://portale.ente.it"');
+    expect(html).toContain('Portale del Cittadino');
+  });
+
+  it('senza portalUrl il footer resta quello standard', () => {
+    const html = wrapInHtmlLayout('ciao', 'Comune Test');
+    expect(html).not.toContain('Portale del Cittadino');
+  });
+});
+
