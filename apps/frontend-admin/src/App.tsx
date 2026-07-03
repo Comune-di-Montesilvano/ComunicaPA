@@ -211,6 +211,7 @@ export function App(): React.JSX.Element {
     allegato1: '',
   });
   const [wizValidationErrors, setWizValidationErrors] = useState<Array<{ row: number; field: string; val: string; err: string }>>([]);
+  const [wizValidationWarnings, setWizValidationWarnings] = useState<Array<{ row: number; field: string; val: string; warn: string }>>([]);
   const [wizValidRows, setWizValidRows] = useState<Record<string, string>[]>([]);
   const [wizSubject, setWizSubject] = useState('');
   const [wizBody, setWizBody] = useState('');
@@ -1371,6 +1372,7 @@ export function App(): React.JSX.Element {
 
   const handleWizValidation = () => {
     const errors: Array<{ row: number; field: string; val: string; err: string }> = [];
+    const warnings: Array<{ row: number; field: string; val: string; warn: string }> = [];
     const valid: Record<string, string>[] = [];
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -1428,8 +1430,14 @@ export function App(): React.JSX.Element {
         const isCf = cfRegex.test(valClean);
         const isPiva = pivaRegex.test(valClean);
         if (!isCf && !isPiva) {
-          errors.push({ row: rowNum, field: 'Codice Fiscale / P.IVA', val: row[cfField], err: 'Codice Fiscale (16 caratteri) o P.IVA (11 cifre) non valida' });
-          isRowValid = false;
+          if (isCfMandatory) {
+            // Only block when CF/P.IVA is strictly required (App IO, SEND)
+            errors.push({ row: rowNum, field: 'Codice Fiscale / P.IVA', val: row[cfField], err: 'Codice Fiscale (16 caratteri) o P.IVA (11 cifre) non valida' });
+            isRowValid = false;
+          } else {
+            // Warn only — include the row anyway
+            warnings.push({ row: rowNum, field: 'Codice Fiscale / P.IVA', val: row[cfField], warn: 'Formato non standard (atteso CF a 16 caratteri o P.IVA a 11 cifre) — il record verrà incluso' });
+          }
         }
       } else if (isCfMandatory && !row[cfField]) {
         errors.push({ row: rowNum, field: 'Codice Fiscale', val: '', err: 'Codice Fiscale o P.IVA mancante' });
@@ -1442,6 +1450,7 @@ export function App(): React.JSX.Element {
     });
 
     setWizValidationErrors(errors);
+    setWizValidationWarnings(warnings);
     setWizValidRows(valid);
     setWizPreviewIndex(0);
 
@@ -1628,6 +1637,7 @@ export function App(): React.JSX.Element {
         allegato1: '',
       });
       setWizValidationErrors([]);
+      setWizValidationWarnings([]);
       setWizValidRows([]);
       setWizMailConfigId('');
       setWizAppIoMode('parallel');
@@ -2777,9 +2787,41 @@ export function App(): React.JSX.Element {
                       </div>
                     )}
 
-                    {wizValidRows.length > 0 && wizValidationErrors.length === 0 && (
+                    {wizValidRows.length > 0 && wizValidationErrors.length === 0 && wizValidationWarnings.length === 0 && (
                       <div className="alert alert-success py-2 small mt-3 mb-0">
                         <i className="fas fa-check-circle me-1"></i> Tutti i {wizValidRows.length} record sono formalmente corretti e pronti per il passo successivo!
+                      </div>
+                    )}
+
+                    {wizValidationWarnings.length > 0 && (
+                      <div className="mt-3">
+                        <div className="alert alert-warning py-2 small mb-3 d-flex justify-content-between align-items-center">
+                          <div>
+                            <i className="fas fa-exclamation-circle me-1"></i> <strong>{wizValidationWarnings.length}</strong> record con formato CF/P.IVA non standard: verranno inclusi nell'invio ma potrebbero non essere abbinati correttamente.
+                          </div>
+                        </div>
+                        <div className="table-responsive" style={{ maxHeight: '180px' }}>
+                          <table className="table table-striped table-sm align-middle mb-0" style={{ fontSize: '0.78rem' }}>
+                            <thead className="table-warning">
+                              <tr>
+                                <th>Riga</th>
+                                <th>Campo</th>
+                                <th>Valore Rilevato</th>
+                                <th>Avviso</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {wizValidationWarnings.map((w, idx) => (
+                                <tr key={idx}>
+                                  <td className="fw-bold">{w.row}</td>
+                                  <td className="fw-bold">{w.field}</td>
+                                  <td className="text-warning fw-mono">{w.val || 'VUOTO'}</td>
+                                  <td>{w.warn}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
                     )}
 
