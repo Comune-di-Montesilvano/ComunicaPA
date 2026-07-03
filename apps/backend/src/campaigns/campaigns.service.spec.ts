@@ -276,14 +276,14 @@ describe('CampaignsService', () => {
       expect(fs.existsSync(join(tmpDir, 'ok1.pdf'))).toBe(true);
     });
 
-    it('se nessun destinatario referenzia allegati NON scarta nulla (safety)', async () => {
+    it('se nessun destinatario referenzia allegati scarta tutto', async () => {
       fs.writeFileSync(join(tmpDir, 'x.pdf'), '%PDF');
       mockCampaignRepo.findOneBy.mockResolvedValue({ id: 'c1', channelConfig: {} });
       mockRecipientRepo.find.mockResolvedValue([{ extraData: { nota: 'senza pdf' } }]);
 
       const result = await service.finalizeAttachments('c1', []);
-      expect(result.discarded).toBe(0);
-      expect(fs.existsSync(join(tmpDir, 'x.pdf'))).toBe(true);
+      expect(result.discarded).toBe(1);
+      expect(fs.existsSync(join(tmpDir, 'x.pdf'))).toBe(false);
     });
   });
 });

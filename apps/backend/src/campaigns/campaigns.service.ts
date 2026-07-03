@@ -286,15 +286,13 @@ export class CampaignsService {
       if (filename) referenced.add(filename);
     }
 
-    // 3. Scarto dei non referenziati (solo se c'è almeno un riferimento)
+    // 3. Scarto dei non referenziati
     let discarded = 0;
     const present = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
-    if (referenced.size > 0) {
-      for (const f of present) {
-        if (!referenced.has(f)) {
-          fs.unlinkSync(join(dir, f));
-          discarded++;
-        }
+    for (const f of present) {
+      if (!referenced.has(f)) {
+        fs.unlinkSync(join(dir, f));
+        discarded++;
       }
     }
 
