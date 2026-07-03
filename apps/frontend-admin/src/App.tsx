@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import MDEditor from '@uiw/react-md-editor';
 import { TemplateEditor } from './components/TemplateEditor';
 
 declare global {
@@ -28,6 +29,16 @@ function escapeHtml(value: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+interface TemplateItem {
+  id: string;
+  type: 'MAIL' | 'APP_IO';
+  name: string;
+  subject: string;
+  bodyHtml: string;
+  bodyMarkdown: string;
+  pairedTemplateId: string | null;
 }
 
 interface Campaign {
@@ -96,8 +107,10 @@ export function App(): React.JSX.Element {
   const [token, setToken] = useState<string | null>(localStorage.getItem('comunicapa_token'));
   const [username, setUsername] = useState<string | null>(localStorage.getItem('comunicapa_username'));
   const [role, setRole] = useState<string | null>(localStorage.getItem('comunicapa_role'));
-  const [view, setView] = useState<'dashboard' | 'invio-singolo' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'notifiche-ricerca' | 'impostazioni' | 'campaign-detail'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'invio-singolo' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'notifiche-ricerca' | 'template-dashboard' | 'impostazioni' | 'campaign-detail'>('dashboard');
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<TemplateItem[]>([]);
+  const [editingTemplate, setEditingTemplate] = useState<Partial<TemplateItem> & { type: 'MAIL' | 'APP_IO' } | null>(null);
   const [appVersion, setAppVersion] = useState<string>('');
   const [isLdapMock, setIsLdapMock] = useState<boolean>(false);
   const [brandLogoUrl, setBrandLogoUrl] = useState<string | null>(null);
@@ -357,6 +370,8 @@ export function App(): React.JSX.Element {
       fetchIoServices();
     }
   }, [token]);
+
+  useEffect(() => { if (token) fetchTemplates(); }, [token]);
 
   // Carica le impostazioni persistite dal backend al login
   useEffect(() => {
@@ -847,6 +862,37 @@ export function App(): React.JSX.Element {
     } catch (err) {
       console.error("Errore caricamento mail-configs:", err);
     }
+  };
+
+  const fetchTemplates = async () => {
+    const res = await fetch(`${API_BASE}/templates`, { headers: { Authorization: `Bearer ${token}` } });
+    const data = await res.json();
+    setTemplates(data.templates || []);
+  };
+
+  const handleSaveTemplate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTemplate) return;
+    const method = editingTemplate.id ? 'PUT' : 'POST';
+    const url = editingTemplate.id ? `${API_BASE}/templates/${editingTemplate.id}` : `${API_BASE}/templates`;
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(editingTemplate),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      alert(body?.message || 'Errore durante il salvataggio del template');
+      return;
+    }
+    setEditingTemplate(null);
+    fetchTemplates();
+  };
+
+  const handleDeleteTemplate = async (id: string) => {
+    if (!confirm('Eliminare questo template?')) return;
+    await fetch(`${API_BASE}/templates/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+    fetchTemplates();
   };
 
   const fetchIoServices = async () => {
@@ -2149,6 +2195,14 @@ export function App(): React.JSX.Element {
             <i className="fas fa-magnifying-glass"></i>
             <span>Ricerca Notifiche</span>
           </a>
+          <a
+            className={`bo-nav-item ${view === 'template-dashboard' ? 'is-active' : ''}`}
+            href="#"
+            onClick={(e) => { e.preventDefault(); setView('template-dashboard'); }}
+          >
+            <i className="fas fa-file-lines"></i>
+            <span>Template</span>
+          </a>
 
           <div className="bo-nav-section-title">Sistema</div>
           {role === 'admin' && (
@@ -2200,6 +2254,7 @@ export function App(): React.JSX.Element {
           {view === 'invio-massivo-wizard' && 'Wizard Nuova Campagna Massiva'}
           {view === 'statistiche' && 'Statistiche e Andamento'}
           {view === 'notifiche-ricerca' && 'Ricerca Notifiche'}
+          {view === 'template-dashboard' && 'Template'}
           {view === 'impostazioni' && 'Impostazioni di Sistema'}
           {view === 'campaign-detail' && `Dettaglio Campagna / ${campaign?.name || '...'}`}
         </h2>
@@ -3436,6 +3491,97 @@ export function App(): React.JSX.Element {
                   </table>
                 </div>
               </div>
+            </div>
+          )}
+
+          {view === 'template-dashboard' && (
+            <div>
+              <div className="d-flex justify-content-between align-items-center mb-3">
+                <h3 className="h5 fw-bold text-dark"><i className="fas fa-file-lines me-2"></i>Template</h3>
+                {!editingTemplate && (
+                  <div className="btn-group">
+                    <button className="btn btn-sm btn-primary" onClick={() => setEditingTemplate({ type: 'MAIL', name: '', subject: '', bodyHtml: '', bodyMarkdown: '', pairedTemplateId: null })}>
+                      <i className="fas fa-plus me-1"></i>Nuovo Template Mail/PEC
+                    </button>
+                    <button className="btn btn-sm btn-outline-primary" onClick={() => setEditingTemplate({ type: 'APP_IO', name: '', subject: '', bodyHtml: '', bodyMarkdown: '', pairedTemplateId: null })}>
+                      <i className="fas fa-plus me-1"></i>Nuovo Template App IO
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {!editingTemplate ? (
+                <div className="card shadow-sm">
+                  <table className="table table-sm mb-0">
+                    <thead><tr><th>Nome</th><th>Tipo</th><th>Oggetto</th><th>Gemello</th><th className="text-end">Azioni</th></tr></thead>
+                    <tbody>
+                      {templates.map(t => (
+                        <tr key={t.id}>
+                          <td>{t.name}</td>
+                          <td><span className="badge bg-light text-dark border">{t.type}</span></td>
+                          <td className="small text-muted">{t.subject}</td>
+                          <td className="small">{t.pairedTemplateId ? templates.find(x => x.id === t.pairedTemplateId)?.name || '—' : '—'}</td>
+                          <td className="text-end">
+                            <button className="btn btn-sm btn-outline-primary me-1" onClick={() => setEditingTemplate(t)}><i className="fas fa-edit"></i></button>
+                            <button className="btn btn-sm btn-outline-danger" onClick={() => handleDeleteTemplate(t.id)}><i className="fas fa-trash"></i></button>
+                          </td>
+                        </tr>
+                      ))}
+                      {templates.length === 0 && <tr><td colSpan={5} className="text-center text-muted py-3">Nessun template creato</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <form onSubmit={handleSaveTemplate} className="card shadow-sm p-4">
+                  <h5 className="fw-bold mb-3">{editingTemplate.id ? 'Modifica' : 'Nuovo'} Template ({editingTemplate.type === 'MAIL' ? 'Mail/PEC' : 'App IO'})</h5>
+                  <div className="mb-3">
+                    <label className="form-label small fw-bold">Nome</label>
+                    <input className="form-control form-control-sm" required value={editingTemplate.name || ''} onChange={e => setEditingTemplate({ ...editingTemplate, name: e.target.value })} />
+                  </div>
+                  <div className="mb-3">
+                    <label className="form-label small fw-bold">Oggetto</label>
+                    <input className="form-control form-control-sm" required value={editingTemplate.subject || ''} onChange={e => setEditingTemplate({ ...editingTemplate, subject: e.target.value })} />
+                  </div>
+                  {editingTemplate.type === 'MAIL' ? (
+                    <div className="mb-3">
+                      <label className="form-label small fw-bold">Corpo (HTML)</label>
+                      <TemplateEditor
+                        value={editingTemplate.bodyHtml || ''}
+                        onChange={(v) => setEditingTemplate({ ...editingTemplate, bodyHtml: v })}
+                        placeholders={[
+                          { label: 'Nominativo', token: '%nominativo%' },
+                          { label: 'Codice Fiscale', token: '%codice_fiscale%' },
+                        ]}
+                      />
+                    </div>
+                  ) : (
+                    <div className="mb-3" data-color-mode="light">
+                      <label className="form-label small fw-bold">Corpo (Markdown App IO)</label>
+                      <MDEditor
+                        value={editingTemplate.bodyMarkdown || ''}
+                        onChange={(v) => setEditingTemplate({ ...editingTemplate, bodyMarkdown: v || '' })}
+                        height={300}
+                      />
+                      <div className="form-text small text-muted">
+                        Sintassi supportata: grassetto, corsivo, elenchi, link. Vedi la guida ufficiale App IO al markdown.
+                      </div>
+                    </div>
+                  )}
+                  <div className="mb-3">
+                    <label className="form-label small fw-bold">Template gemello (invio combinato)</label>
+                    <select className="form-select form-select-sm" value={editingTemplate.pairedTemplateId || ''} onChange={e => setEditingTemplate({ ...editingTemplate, pairedTemplateId: e.target.value || null })}>
+                      <option value="">Nessuno</option>
+                      {templates.filter(t => t.type !== editingTemplate.type).map(t => (
+                        <option key={t.id} value={t.id}>{t.name} ({t.type})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="d-flex justify-content-end gap-2">
+                    <button type="button" className="btn btn-outline-secondary" onClick={() => setEditingTemplate(null)}>Annulla</button>
+                    <button type="submit" className="btn btn-primary">Salva Template</button>
+                  </div>
+                </form>
+              )}
             </div>
           )}
 
