@@ -1596,6 +1596,7 @@ export function App(): React.JSX.Element {
     channelType: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL';
     channelConfig: Record<string, any>;
   }, opts: { isDuplicate: boolean }) => {
+    setWizCampaignId(null);
     setWizName(opts.isDuplicate ? `${source.name} (Copia)` : source.name);
     setWizDesc(source.description || '');
     setWizChannel(source.channelType);
@@ -2551,7 +2552,7 @@ export function App(): React.JSX.Element {
                   <div className="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
                     <h3 className="h6 mb-0 fw-bold text-dark"><i className="fas fa-list me-2 text-primary"></i>Campagne Massive</h3>
                     <div className="d-flex align-items-center gap-2">
-                      <button className="btn btn-sm btn-primary" onClick={() => { setWizStep(1); setView('invio-massivo-wizard'); }}>
+                      <button className="btn btn-sm btn-primary" onClick={() => { setWizCampaignId(null); setWizStep(1); setView('invio-massivo-wizard'); }}>
                         <i className="fas fa-magic me-1"></i> Crea Nuova Campagna (Wizard)
                       </button>
                       <button className="btn btn-outline-secondary btn-sm border-0" onClick={fetchCampaigns}><i className="fas fa-sync-alt"></i></button>
