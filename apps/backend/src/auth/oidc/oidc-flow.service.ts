@@ -120,9 +120,27 @@ export class OidcFlowService implements OnModuleDestroy {
     }
 
     const payload = (await res.json()) as { id_token?: string; access_token?: string };
+    if (process.env.LOG_LEVEL?.toLowerCase() === 'debug') {
+      this.logger.debug(`OIDC Token exchange response keys: ${Object.keys(payload).join(', ')}`);
+    }
     const token = payload.id_token ?? payload.access_token;
     if (!token) {
       throw new BadGatewayException('Il provider OIDC non ha restituito un token');
+    }
+    if (process.env.LOG_LEVEL?.toLowerCase() === 'debug') {
+      try {
+        const parts = token.split('.');
+        if (parts.length >= 2) {
+          const decodedPayload = JSON.parse(
+            Buffer.from(parts[1], 'base64').toString('utf8'),
+          );
+          this.logger.debug(`OIDC Token Decoded Payload: ${JSON.stringify(decodedPayload)}`);
+        } else {
+          this.logger.debug(`OIDC Token is not a JWT (opaque?): ${token.slice(0, 20)}...`);
+        }
+      } catch (err) {
+        this.logger.warn(`Impossibile decodificare il token OIDC per loggabilità: ${String(err)}`);
+      }
     }
     return { access_token: token };
   }

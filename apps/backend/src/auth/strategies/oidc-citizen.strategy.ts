@@ -66,6 +66,9 @@ export class OidcCitizenStrategy extends PassportStrategy(Strategy, 'oidc-citize
   }
 
   async validate(payload: Record<string, unknown>): Promise<CitizenTokenClaims> {
+    if (process.env.LOG_LEVEL?.toLowerCase() === 'debug') {
+      Logger.debug(`OidcCitizenStrategy.validate payload: ${JSON.stringify(payload)}`, OidcCitizenStrategy.name);
+    }
     const issuer = await this.settings.get<string>('oidc.issuer');
     if (issuer && payload['iss'] !== issuer) {
       throw new UnauthorizedException('Issuer OIDC non valido');
