@@ -4,6 +4,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { passportJwtSecret } from 'jwks-rsa';
 import Redis from 'ioredis';
+import { extractClaimString } from '../oidc/oidc-flow.service';
 import type { CitizenTokenClaims } from '@comunicapa/shared-types';
 import type { AppConfiguration } from '../../config/configuration';
 import { AppSettingsService } from '../../settings/app-settings.service';
@@ -108,7 +109,7 @@ export class OidcCitizenStrategy extends PassportStrategy(Strategy, 'oidc-citize
     // pa-sso-proxy (SATOSA/SPID): fiscal_number in formato "TINIT-<CF>";
     // eIDAS usa anche il claim URI https://attributes.eid.gov.it/fiscal_number
     // SPID usa anche il claim URI https://attributes.spid.gov.it/fiscalNumber
-    const rawFiscal = String(
+    const rawFiscal = extractClaimString(
       cachedClaims?.codiceFiscale ??
         payload['fiscal_number'] ??
         payload['https://attributes.eid.gov.it/fiscal_number'] ??
@@ -124,13 +125,13 @@ export class OidcCitizenStrategy extends PassportStrategy(Strategy, 'oidc-citize
     const codiceFiscale = rawFiscal.replace(/^TIN[A-Z]{2}-/, '');
 
     // Nome completo: claim name, oppure given_name + family_name (SPID)
-    const givenName = String(
+    const givenName = extractClaimString(
       payload['given_name'] ??
         payload['first_name'] ??
         payload['givenName'] ??
         '',
     );
-    const familyName = String(
+    const familyName = extractClaimString(
       payload['family_name'] ??
         payload['last_name'] ??
         payload['sn'] ??
@@ -140,7 +141,7 @@ export class OidcCitizenStrategy extends PassportStrategy(Strategy, 'oidc-citize
     );
     const name =
       cachedClaims?.name ??
-      ((payload['name'] ? String(payload['name']) : '') ||
+      (extractClaimString(payload['name'] ?? '') ||
         [givenName, familyName].filter(Boolean).join(' '));
 
     return {

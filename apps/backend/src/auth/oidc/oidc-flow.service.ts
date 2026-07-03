@@ -20,6 +20,13 @@ interface OidcEndpoints {
 const STATE_TTL_SECONDS = 300;
 const DISCOVERY_CACHE_MS = 10 * 60 * 1000;
 
+export function extractClaimString(val: unknown): string {
+  if (Array.isArray(val)) {
+    return val.length > 0 ? String(val[0]) : '';
+  }
+  return val !== null && val !== undefined ? String(val) : '';
+}
+
 /**
  * Flusso Authorization Code + PKCE verso il proxy OIDC (SPID/CIE).
  * Lo scambio del code avviene qui nel backend: il client_secret non
@@ -178,7 +185,7 @@ export class OidcFlowService implements OnModuleDestroy {
 
     const mergedClaims = { ...decodedPayload, ...userinfo };
 
-    const rawFiscal = String(
+    const rawFiscal = extractClaimString(
       mergedClaims['fiscal_number'] ??
         mergedClaims['https://attributes.eid.gov.it/fiscal_number'] ??
         mergedClaims['https://attributes.spid.gov.it/fiscalNumber'] ??
@@ -191,13 +198,13 @@ export class OidcFlowService implements OnModuleDestroy {
     ).toUpperCase();
     const codiceFiscale = rawFiscal.replace(/^TIN[A-Z]{2}-/, '');
 
-    const givenName = String(
+    const givenName = extractClaimString(
       mergedClaims['given_name'] ??
         mergedClaims['first_name'] ??
         mergedClaims['givenName'] ??
         '',
     );
-    const familyName = String(
+    const familyName = extractClaimString(
       mergedClaims['family_name'] ??
         mergedClaims['last_name'] ??
         mergedClaims['sn'] ??
@@ -206,14 +213,14 @@ export class OidcFlowService implements OnModuleDestroy {
         '',
     );
     const name =
-      (mergedClaims['name'] ? String(mergedClaims['name']) : '') ||
+      extractClaimString(mergedClaims['name'] ?? '') ||
       [givenName, familyName].filter(Boolean).join(' ');
 
     // Rileva provider (SPID, CIE, eIDAS, IT-Wallet, ecc.)
     const amr = mergedClaims['amr'];
     let provider = 'Identità Digitale';
     if (mergedClaims['provider_name']) {
-      provider = String(mergedClaims['provider_name']);
+      provider = extractClaimString(mergedClaims['provider_name']);
     } else if (amr) {
       const amrVal = Array.isArray(amr) ? amr[0] : amr;
       if (typeof amrVal === 'string') {
