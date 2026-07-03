@@ -829,8 +829,14 @@ export function App(): React.JSX.Element {
     setMailConfigBusyId(editingMailConfig.id || 'new');
     setMailConfigMsg(null);
 
+    const isEdit = !!editingMailConfig.id;
+
+    // UpdateMailConfigDto (backend) vieta esplicitamente la proprietà "type"
+    // (non modificabile dopo la creazione) e il ValidationPipe globale ha
+    // forbidNonWhitelisted:true: includerla in una PUT causa 400 Bad Request
+    // "property type should not exist". Va inviata solo in creazione (POST).
     const payload = {
-      type: editingMailConfig.type,
+      ...(isEdit ? {} : { type: editingMailConfig.type }),
       name: editingMailConfig.name,
       host: editingMailConfig.host,
       port: Number(editingMailConfig.port),
@@ -844,7 +850,6 @@ export function App(): React.JSX.Element {
     };
 
     try {
-      const isEdit = !!editingMailConfig.id;
       const url = isEdit ? `${API_BASE}/mail-configs/${editingMailConfig.id}` : `${API_BASE}/mail-configs`;
       const method = isEdit ? 'PUT' : 'POST';
 
