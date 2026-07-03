@@ -980,73 +980,63 @@ export function App(): React.JSX.Element {
                 <p className="mb-0">Nessun server {label} configurato.</p>
               </div>
             ) : (
-              <div className="table-responsive border rounded bg-white shadow-sm">
-                <table className="table table-hover align-middle mb-0">
-                  <thead className="table-light">
-                    <tr>
-                      <th className="px-3 py-2 small fw-bold">Nome</th>
-                      <th className="px-3 py-2 small fw-bold">Server</th>
-                      <th className="px-3 py-2 small fw-bold">Mittente</th>
-                      <th className="px-3 py-2 small fw-bold">Throttling</th>
-                      <th className="px-3 py-2 small fw-bold text-center">Stato</th>
-                      <th className="px-3 py-2 small fw-bold text-end">Azioni</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {list.map((c) => (
-                      <tr key={c.id}>
-                        <td className="px-3 py-3 fw-bold text-dark">{c.name}</td>
-                        <td className="px-3 py-3 text-secondary small">
-                          {c.host}:{c.port} {c.secure && <span className="badge bg-info ms-1">SSL</span>}
-                        </td>
-                        <td className="px-3 py-3 text-secondary small">{c.fromAddress}</td>
-                        <td className="px-3 py-3 text-secondary small">
-                          {c.batchSize} invii / {c.batchIntervalSeconds}s
-                        </td>
-                        <td className="px-3 py-3 text-center">
+              <div className="d-flex flex-column gap-3">
+                {list.map((c) => (
+                  <div key={c.id} className={`card border shadow-sm ${c.active ? 'border-success' : 'border-light'}`}>
+                    <div className="card-body p-3">
+                      <div className="d-flex justify-content-between align-items-start flex-wrap gap-3">
+                        {/* Left: Info */}
+                        <div className="d-flex align-items-start gap-3 flex-grow-1" style={{ minWidth: 0 }}>
+                          <div className={`rounded-circle d-flex align-items-center justify-content-center text-white flex-shrink-0 ${c.active ? 'bg-success' : 'bg-secondary'}`} style={{ width: 40, height: 40 }}>
+                            <i className={`fas ${type === 'EMAIL' ? 'fa-envelope' : 'fa-envelope-open-text'}`}></i>
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <div className="fw-bold text-dark d-flex align-items-center gap-2">
+                              {c.name}
+                              {c.secure && <span className="badge bg-info" style={{ fontSize: '0.65rem' }}>SSL/TLS</span>}
+                              <span className={`badge ${c.active ? 'bg-success' : 'bg-secondary'}`} style={{ fontSize: '0.65rem' }}>
+                                {c.active ? 'Attivo' : 'Inattivo'}
+                              </span>
+                            </div>
+                            <div className="text-muted small mt-1">
+                              <i className="fas fa-server me-1"></i>
+                              <code>{c.host}:{c.port}</code>
+                              <span className="mx-2">&middot;</span>
+                              <i className="fas fa-at me-1"></i>
+                              {c.fromAddress}
+                            </div>
+                            <div className="text-muted small mt-1">
+                              <i className="fas fa-tachometer-alt me-1"></i>
+                              {c.batchSize} invii / {c.batchIntervalSeconds}s
+                              {c.testedAt && (
+                                <span className="ms-3 text-success">
+                                  <i className="fas fa-check-circle me-1"></i>
+                                  Testato il {new Date(c.testedAt).toLocaleDateString('it-IT')}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Right: Actions */}
+                        <div className="d-flex flex-column gap-2 flex-shrink-0">
                           <button
                             type="button"
-                            className={`btn btn-sm border-0 bg-transparent ${c.active ? 'text-success' : 'text-secondary'}`}
+                            className={`btn btn-sm ${c.active ? 'btn-outline-success' : 'btn-outline-secondary'} d-flex align-items-center gap-1`}
                             onClick={() => handleToggleMailConfigActive(c.id, c.active)}
                             disabled={mailConfigBusyId === c.id}
-                            title={c.active ? 'Clicca per disattivare' : 'Clicca per attivare'}
                           >
-                            <i className={`fas fa-toggle-${c.active ? 'on' : 'off'} fa-lg`}></i>
-                            <span className="ms-1 small">{c.active ? 'Attivo' : 'Inattivo'}</span>
+                            <i className={`fas fa-toggle-${c.active ? 'on' : 'off'}`}></i>
+                            {c.active ? 'Disattiva' : 'Attiva'}
                           </button>
-                        </td>
-                        <td className="px-3 py-3 text-end">
-                          <div className="d-flex justify-content-end align-items-center gap-2">
-                            <form
-                              onSubmit={(e) => handleTestMailConfig(e, c.id)}
-                              className="d-flex align-items-center gap-1"
-                            >
-                              <input
-                                type="email"
-                                className="form-control form-control-sm"
-                                placeholder="Test email..."
-                                required
-                                value={mailConfigTestTo}
-                                onChange={(e) => setMailConfigTestTo(e.target.value)}
-                                style={{ width: 140 }}
-                              />
-                              <button
-                                type="submit"
-                                className="btn btn-sm btn-outline-secondary px-2"
-                                disabled={mailConfigBusyId === c.id || !mailConfigTestTo}
-                                title="Invia messaggio di test"
-                              >
-                                <i className="fas fa-paper-plane"></i>
-                              </button>
-                            </form>
-
+                          <div className="d-flex gap-1">
                             <button
                               type="button"
                               className="btn btn-sm btn-outline-primary px-2"
                               onClick={() => setEditingMailConfig(c)}
                               title="Modifica"
                             >
-                              <i className="fas fa-edit"></i>
+                              <i className="fas fa-edit me-1"></i>Modifica
                             </button>
                             <button
                               type="button"
@@ -1058,20 +1048,40 @@ export function App(): React.JSX.Element {
                               <i className="fas fa-trash"></i>
                             </button>
                           </div>
-                          {c.testedAt && (
-                            <div className="text-muted small mt-1" style={{ fontSize: '0.7rem' }}>
-                              Testato il {new Date(c.testedAt).toLocaleDateString()} alle {new Date(c.testedAt).toLocaleTimeString()}
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                        </div>
+                      </div>
+
+                      {/* Test row */}
+                      <div className="mt-3 pt-2 border-top">
+                        <form onSubmit={(e) => handleTestMailConfig(e, c.id)} className="d-flex align-items-center gap-2">
+                          <span className="text-muted small fw-semibold">Test invio:</span>
+                          <input
+                            type="email"
+                            className="form-control form-control-sm"
+                            placeholder="destinatario@test.it"
+                            required
+                            value={mailConfigTestTo}
+                            onChange={(e) => setMailConfigTestTo(e.target.value)}
+                            style={{ maxWidth: 220 }}
+                          />
+                          <button
+                            type="submit"
+                            className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1"
+                            disabled={mailConfigBusyId === c.id || !mailConfigTestTo}
+                          >
+                            <i className="fas fa-paper-plane"></i> Invia Test
+                          </button>
+                        </form>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
         )}
+
+
 
         {editingMailConfig && (
           <form onSubmit={handleSaveMailConfig} className="border rounded bg-white p-4 shadow-sm">
@@ -2368,6 +2378,22 @@ export function App(): React.JSX.Element {
                                   </span>
                                 </td>
                                 <td className="text-muted">{new Date(c.createdAt).toLocaleDateString('it-IT')}</td>
+                                <td className="text-end" onClick={(e) => e.stopPropagation()}>
+                                  {c.status === 'draft' && (
+                                    <button
+                                      type="button"
+                                      className="btn btn-sm btn-outline-primary d-flex align-items-center gap-1"
+                                      title="Riprendi wizard campagna"
+                                      onClick={() => {
+                                        setWizName(c.name);
+                                        setWizStep(1);
+                                        setView('invio-massivo-wizard');
+                                      }}
+                                    >
+                                      <i className="fas fa-edit"></i> Riprendi
+                                    </button>
+                                  )}
+                                </td>
                               </tr>
                             ))}
                           </tbody>
@@ -2393,13 +2419,32 @@ export function App(): React.JSX.Element {
                 </button>
               </div>
 
-              {/* Steps Progress Header */}
+              {/* Steps Progress Header — clickable when already visited */}
               <div className="d-flex justify-content-between mb-4 text-center" style={{ fontSize: '0.82rem' }}>
-                <div className={`col pb-2 border-bottom ${wizStep >= 1 ? 'border-primary fw-bold text-primary' : 'text-muted'}`}>1. Dettagli & Canale</div>
-                <div className={`col pb-2 border-bottom ${wizStep >= 2 ? 'border-primary fw-bold text-primary' : 'text-muted'}`}>2. Caricamento File</div>
-                <div className={`col pb-2 border-bottom ${wizStep >= 3 ? 'border-primary fw-bold text-primary' : 'text-muted'}`}>3. Mappatura & Validazione</div>
-                <div className={`col pb-2 border-bottom ${wizStep >= 4 ? 'border-primary fw-bold text-primary' : 'text-muted'}`}>4. Template & Anteprima</div>
-                <div className={`col pb-2 border-bottom ${wizStep >= 5 ? 'border-primary fw-bold text-primary' : 'text-muted'}`}>5. Riepilogo & Invio</div>
+                {[
+                  { n: 1, label: '1. Dettagli & Canale' },
+                  { n: 2, label: '2. Caricamento File' },
+                  { n: 3, label: '3. Mappatura & Validazione' },
+                  { n: 4, label: '4. Template & Anteprima' },
+                  { n: 5, label: '5. Riepilogo & Invio' },
+                ].map(({ n, label }) => (
+                  <div
+                    key={n}
+                    className={`col pb-2 border-bottom-2 ${
+                      wizStep === n
+                        ? 'border-primary fw-bold text-primary border-bottom'
+                        : wizStep > n
+                        ? 'border-success text-success fw-semibold border-bottom'
+                        : 'text-muted'
+                    }`}
+                    style={{ cursor: wizStep > n ? 'pointer' : 'default', userSelect: 'none', transition: 'color 0.15s' }}
+                    onClick={() => { if (wizStep > n) setWizStep(n); }}
+                    title={wizStep > n ? `Torna al passo ${n}` : undefined}
+                  >
+                    {wizStep > n && <i className="fas fa-check me-1" style={{ fontSize: '0.7rem' }}></i>}
+                    {label}
+                  </div>
+                ))}
               </div>
 
               {/* STEP 1: DETTAGLI & CANALE */}
