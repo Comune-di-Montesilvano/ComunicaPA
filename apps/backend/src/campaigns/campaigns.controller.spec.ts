@@ -8,6 +8,7 @@ describe('CampaignsController', () => {
   const mockService = {
     getRecipientStats: jest.fn().mockResolvedValue({ campaignId: 'uuid-1', page: 1, pageSize: 50, total: 0, items: [] }),
     assertDraftForAttachments: jest.fn(),
+    finalizeAttachments: jest.fn().mockResolvedValue({ uploaded: 2, discarded: 0 }),
   };
 
   beforeEach(() => {
@@ -86,7 +87,7 @@ describe('CampaignsController', () => {
 
       const res = await controller.uploadAttachments('uuid-1', files);
 
-      expect(res).toEqual({ uploaded: 2, campaignId: 'uuid-1' });
+      expect(res).toEqual({ uploaded: 2, discarded: 0, campaignId: 'uuid-1' });
       expect(unlinkSpy).not.toHaveBeenCalled();
       unlinkSpy.mockRestore();
     });

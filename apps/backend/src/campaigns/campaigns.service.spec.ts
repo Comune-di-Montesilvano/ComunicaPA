@@ -6,6 +6,16 @@ import { Campaign, CampaignStatus } from '../entities/campaign.entity';
 import { Recipient } from '../entities/recipient.entity';
 import { NotificationAttempt } from '../entities/notification-attempt.entity';
 import { NotificationQueuesService } from '../queue/notification-queues.service';
+import * as fs from 'fs';
+import { join } from 'path';
+import * as os from 'os';
+import AdmZip from 'adm-zip';
+
+const tmpDirRef = { dir: '' };
+jest.mock('../attachments/attachment-paths', () => ({
+  getUploadsDir: jest.fn(() => tmpDirRef.dir),
+}));
+
 
 const mockCampaign: Partial<Campaign> = {
   id: 'uuid-1',
@@ -209,4 +219,72 @@ describe('CampaignsService', () => {
     mockCampaignRepo.findOneBy.mockResolvedValueOnce(null);
     await expect(service.assertDraftForAttachments('no-exist')).rejects.toThrow(NotFoundException);
   });
+
+  describe('finalizeAttachments', () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+      tmpDir = fs.mkdtempSync(join(os.tmpdir(), 'comunicapa-att-'));
+      tmpDirRef.dir = tmpDir;
+    });
+
+    afterEach(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('estrae i PDF da uno zip e rimuove lo zip', async () => {
+      const zip = new AdmZip();
+      zip.addFile('avviso_A.pdf', Buffer.from('%PDF-1.4 A'));
+      zip.addFile('cartella/avviso_B.pdf', Buffer.from('%PDF-1.4 B'));
+      zip.addFile('leggimi.txt', Buffer.from('ignorami'));
+      const zipPath = join(tmpDir, 'lotto.zip');
+      zip.writeZip(zipPath);
+
+      mockCampaignRepo.findOneBy.mockResolvedValue({ id: 'c1', channelConfig: { allegatoKey: 'allegato' } });
+      mockRecipientRepo.find.mockResolvedValue([
+        { extraData: { allegato: 'avviso_A.pdf' } },
+        { extraData: { allegato: 'avviso_B.pdf' } },
+      ]);
+
+      const result = await service.finalizeAttachments('c1', [
+        { path: zipPath, originalname: 'lotto.zip' } as any,
+      ]);
+
+      expect(fs.existsSync(join(tmpDir, 'avviso_A.pdf'))).toBe(true);
+      expect(fs.existsSync(join(tmpDir, 'avviso_B.pdf'))).toBe(true);
+      expect(fs.existsSync(zipPath)).toBe(false);
+      expect(fs.existsSync(join(tmpDir, 'leggimi.txt'))).toBe(false);
+      expect(result.uploaded).toBe(2);
+      expect(result.discarded).toBe(0);
+    });
+
+    it('scarta i PDF non referenziati da alcun destinatario', async () => {
+      for (const name of ['ok1.pdf', 'ok2.pdf', 'orfano1.pdf', 'orfano2.pdf']) {
+        fs.writeFileSync(join(tmpDir, name), '%PDF');
+      }
+      mockCampaignRepo.findOneBy.mockResolvedValue({ id: 'c1', channelConfig: { allegatoKey: 'allegato' } });
+      mockRecipientRepo.find.mockResolvedValue([
+        { extraData: { allegato: 'ok1.pdf' } },
+        { extraData: { allegato: 'ok2.pdf' } },
+      ]);
+
+      const result = await service.finalizeAttachments('c1', []);
+
+      expect(result.uploaded).toBe(2);
+      expect(result.discarded).toBe(2);
+      expect(fs.existsSync(join(tmpDir, 'orfano1.pdf'))).toBe(false);
+      expect(fs.existsSync(join(tmpDir, 'ok1.pdf'))).toBe(true);
+    });
+
+    it('se nessun destinatario referenzia allegati NON scarta nulla (safety)', async () => {
+      fs.writeFileSync(join(tmpDir, 'x.pdf'), '%PDF');
+      mockCampaignRepo.findOneBy.mockResolvedValue({ id: 'c1', channelConfig: {} });
+      mockRecipientRepo.find.mockResolvedValue([{ extraData: { nota: 'senza pdf' } }]);
+
+      const result = await service.finalizeAttachments('c1', []);
+      expect(result.discarded).toBe(0);
+      expect(fs.existsSync(join(tmpDir, 'x.pdf'))).toBe(true);
+    });
+  });
 });
+

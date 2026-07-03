@@ -4,6 +4,11 @@ import { Repository } from 'typeorm';
 import { createReadStream } from 'fs';
 import { unlink } from 'fs/promises';
 import { parse } from 'csv-parse';
+import * as fs from 'fs';
+import { basename, join } from 'path';
+import AdmZip from 'adm-zip';
+import { getUploadsDir } from '../attachments/attachment-paths';
+import { resolveCustomAttachmentFilename } from '../attachments/attachment.service';
 import { Campaign, CampaignStatus } from '../entities/campaign.entity';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity';
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity';
@@ -11,6 +16,7 @@ import { NOTIFICATION_JOB_SEND } from '../queue/notification-job.types';
 import { NotificationQueuesService } from '../queue/notification-queues.service';
 import type { CreateCampaignDto } from './dto/create-campaign.dto';
 import type { CampaignStatsDto, RecipientStatsPageDto } from './dto/campaign-stats.dto';
+
 
 @Injectable()
 export class CampaignsService {
@@ -236,4 +242,64 @@ export class CampaignsService {
       );
     }
   }
+
+  /**
+   * Post-processing degli allegati caricati:
+   * 1. estrae i PDF dagli eventuali .zip (appiattendo i path) e rimuove gli zip;
+   * 2. elimina i PDF non referenziati da alcun destinatario (extraData/allegatoKey).
+   * Safety: se NESSUN destinatario referenzia un allegato, non scarta nulla
+   * (evita di svuotare la cartella in flussi senza mappatura allegato).
+   */
+  async finalizeAttachments(
+    campaignId: string,
+    files: Express.Multer.File[],
+  ): Promise<{ uploaded: number; discarded: number }> {
+    const dir = getUploadsDir(campaignId);
+    fs.mkdirSync(dir, { recursive: true });
+
+    // 1. Estrazione ZIP
+    for (const file of files) {
+      if (!file.originalname.toLowerCase().endsWith('.zip')) continue;
+      const zip = new AdmZip(file.path);
+      for (const entry of zip.getEntries()) {
+        if (entry.isDirectory) continue;
+        const name = basename(entry.entryName); // neutralizza path traversal
+        if (!name.toLowerCase().endsWith('.pdf')) continue;
+        fs.writeFileSync(join(dir, name), entry.getData());
+      }
+      fs.unlinkSync(file.path);
+    }
+
+    // 2. Set dei filename referenziati dai destinatari
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+    const recipients = await this.recipientRepo.find({
+      where: { campaignId },
+      select: ['extraData'],
+    });
+    const referenced = new Set<string>();
+    for (const r of recipients) {
+      const filename = resolveCustomAttachmentFilename({
+        campaign,
+        extraData: r.extraData,
+      } as unknown as Recipient);
+      if (filename) referenced.add(filename);
+    }
+
+    // 3. Scarto dei non referenziati (solo se c'è almeno un riferimento)
+    let discarded = 0;
+    const present = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+    if (referenced.size > 0) {
+      for (const f of present) {
+        if (!referenced.has(f)) {
+          fs.unlinkSync(join(dir, f));
+          discarded++;
+        }
+      }
+    }
+
+    const uploaded = fs.existsSync(dir) ? fs.readdirSync(dir).length : 0;
+    return { uploaded, discarded };
+  }
 }
+

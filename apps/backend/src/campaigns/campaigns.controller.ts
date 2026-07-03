@@ -87,7 +87,10 @@ export class CampaignsController {
         },
       }),
       fileFilter: (_req, file, cb) => {
-        const ok = file.mimetype === 'application/pdf' || file.originalname.endsWith('.pdf');
+        const name = file.originalname.toLowerCase();
+        const ok =
+          file.mimetype === 'application/pdf' || name.endsWith('.pdf') ||
+          file.mimetype === 'application/zip' || file.mimetype === 'application/x-zip-compressed' || name.endsWith('.zip');
         cb(null, ok);
       },
     }),
@@ -108,8 +111,10 @@ export class CampaignsController {
       );
       throw err;
     }
+    const result = await this.campaignsService.finalizeAttachments(id, files ?? []);
     return {
-      uploaded: files?.length || 0,
+      uploaded: result.uploaded,
+      discarded: result.discarded,
       campaignId: id,
     };
   }
