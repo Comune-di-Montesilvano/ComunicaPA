@@ -35,6 +35,21 @@ export class AppSettingsService {
     }
 
     const def = SETTING_DEFS[key] as SettingDef;
+
+    // Bootstrap: solo env/default, il DB viene ignorato (anche righe legacy)
+    if (def.bootstrapOnly) {
+      let bootstrapValue = this.envOrDefault(def);
+      // L'URL API pubblico deriva dall'origine cittadini: /api è una costante
+      // della topologia (il nginx del frontend proxya /api → backend).
+      // PUBLIC_BACKEND_URL resta come override esplicito (usato in dev).
+      const citizenOrigin = process.env['PUBLIC_CITIZEN_URL'];
+      if (key === 'system.publicUrl' && !process.env['PUBLIC_BACKEND_URL'] && citizenOrigin) {
+        bootstrapValue = `${citizenOrigin.replace(/\/+$/, '')}/api`;
+      }
+      this.cache.set(key, bootstrapValue);
+      return bootstrapValue as T;
+    }
+
     const row = await this.repo.findOneBy({ key });
 
     if (row) {
@@ -78,6 +93,9 @@ export class AppSettingsService {
         );
       }
       const def = SETTING_DEFS[key] as SettingDef;
+      if (def.bootstrapOnly) {
+        continue; // configurabile solo da .env: ignora silenziosamente (client vecchi la inviano ancora)
+      }
       if (def.secret && value === MASKED_VALUE) {
         continue; // valore mascherato dalla UI: non toccare quello salvato
       }

@@ -27,6 +27,8 @@ describe('AppSettingsService', () => {
     delete process.env['SMTP_HOST'];
     delete process.env['RETENTION_MAX_DAYS'];
     delete process.env['SMTP_PASSWORD'];
+    delete process.env['PUBLIC_BACKEND_URL'];
+    delete process.env['PUBLIC_CITIZEN_URL'];
     service = new AppSettingsService(repoMock as never, configMock as never);
   });
 
@@ -94,6 +96,39 @@ describe('AppSettingsService', () => {
 
   it('setMany rifiuta tipi errati con 400', async () => {
     await expect(service.setMany({ 'retention.maxDays': 'trenta' }, 'u')).rejects.toThrow(BadRequestException);
+  });
+
+  it('bootstrapOnly: ignora il DB (anche righe legacy) e risolve da env', async () => {
+    rows.set('system.publicUrl', {
+      key: 'system.publicUrl',
+      value: '',
+      encrypted: false,
+    } as AppSetting);
+    process.env['PUBLIC_BACKEND_URL'] = 'https://api.ente.it';
+    try {
+      await expect(service.get('system.publicUrl')).resolves.toBe('https://api.ente.it');
+      expect(repoMock.findOneBy).not.toHaveBeenCalled();
+    } finally {
+      delete process.env['PUBLIC_BACKEND_URL'];
+    }
+  });
+
+  it('bootstrapOnly: system.publicUrl derivato da PUBLIC_CITIZEN_URL + /api', async () => {
+    process.env['PUBLIC_CITIZEN_URL'] = 'https://comunicapa.ente.it/';
+    await expect(service.get('system.publicUrl')).resolves.toBe('https://comunicapa.ente.it/api');
+    await expect(service.get('system.citizenPublicUrl')).resolves.toBe('https://comunicapa.ente.it/');
+  });
+
+  it('bootstrapOnly: PUBLIC_BACKEND_URL esplicito vince sulla derivazione', async () => {
+    process.env['PUBLIC_CITIZEN_URL'] = 'https://comunicapa.ente.it';
+    process.env['PUBLIC_BACKEND_URL'] = 'http://localhost:8080';
+    await expect(service.get('system.publicUrl')).resolves.toBe('http://localhost:8080');
+  });
+
+  it('bootstrapOnly: setMany la ignora senza errori (client vecchi)', async () => {
+    await service.setMany({ 'system.publicUrl': 'https://ignorato.it' }, 'u');
+    expect(rows.has('system.publicUrl')).toBe(false);
+    await expect(service.get('system.publicUrl')).resolves.toBe('http://localhost:8080');
   });
 
   it('getAllMasked maschera i secret valorizzati e lascia vuoti quelli assenti', async () => {

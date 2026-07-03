@@ -235,7 +235,6 @@ export function App(): React.JSX.Element {
   const [settSendUrl, setSettSendUrl] = useState('https://api.notifichedigitali.it');
   const [settRetentionDays, setSettRetentionDays] = useState('90');
 
-  const [settPublicUrl, setSettPublicUrl] = useState('');
   const [settOidcIssuer, setSettOidcIssuer] = useState('');
   const [settOidcAudience, setSettOidcAudience] = useState('');
   const [settOidcJwksUri, setSettOidcJwksUri] = useState('');
@@ -335,7 +334,6 @@ export function App(): React.JSX.Element {
         setSettSendApiKey(String(s['send.apiKey'] ?? ''));
         setSettSendUrl(String(s['send.baseUrl'] ?? ''));
         setSettRetentionDays(String(s['retention.maxDays'] ?? '90'));
-        setSettPublicUrl(String(s['system.publicUrl'] ?? ''));
         setSettOidcIssuer(String(s['oidc.issuer'] ?? ''));
         setSettOidcAudience(String(s['oidc.audience'] ?? ''));
         setSettOidcJwksUri(String(s['oidc.jwksUri'] ?? ''));
@@ -698,14 +696,12 @@ export function App(): React.JSX.Element {
             'send.apiKey': settSendApiKey,
             'send.baseUrl': settSendUrl,
             'retention.maxDays': Number(settRetentionDays) || 90,
-            'system.publicUrl': settPublicUrl,
             'oidc.issuer': settOidcIssuer,
             'oidc.audience': settOidcAudience,
             'oidc.jwksUri': settOidcJwksUri,
             'oidc.clientId': settOidcClientId,
             'oidc.clientSecret': settOidcClientSecret,
             'oidc.logoutUrl': settOidcLogoutUrl,
-            'system.citizenPublicUrl': settCitizenPublicUrl,
           },
         }),
       });
@@ -2661,17 +2657,6 @@ export function App(): React.JSX.Element {
                               <input type="number" min={1} className="form-control" value={settRetentionDays}
                                 onChange={(e) => setSettRetentionDays(e.target.value)} />
                             </div>
-                            <div className="mb-3">
-                              <label className="form-label small fw-bold text-dark" htmlFor="sett_public_url">URL pubblico API</label>
-                              <input
-                                type="text"
-                                id="sett_public_url"
-                                className="form-control form-control-sm"
-                                value={settPublicUrl}
-                                onChange={(e) => setSettPublicUrl(e.target.value)}
-                              />
-                              <div className="form-text small text-muted">Usato nei link di download dentro email e PEC, es. https://comunicapa.ente.it/api</div>
-                            </div>
                           </div>
                         )}
 
@@ -3235,18 +3220,6 @@ export function App(): React.JSX.Element {
                               />
                               <div className="form-text small text-muted">End session endpoint del provider, usato per terminare la sessione SPID/CIE al logout.</div>
                             </div>
-                            <div className="col-md-6">
-                              <label className="form-label small fw-bold text-dark" htmlFor="oidc_citizen_url">URL pubblico portale cittadini</label>
-                              <input
-                                type="text"
-                                id="oidc_citizen_url"
-                                className="form-control form-control-sm"
-                                placeholder="https://comunicapa.ente.it"
-                                value={settCitizenPublicUrl}
-                                onChange={(e) => setSettCitizenPublicUrl(e.target.value)}
-                              />
-                              <div className="form-text small text-muted">Origine pubblica del portale cittadini: determina la Redirect URI qui sotto.</div>
-                            </div>
                             <div className="col-12">
                               <div className="border border-primary rounded p-3 mt-2" style={{background:'#f4f8fd'}}>
                                 <h6 className="small fw-bold text-dark mb-2"><i className="fas fa-info-circle me-1 text-primary"></i>Parametri da configurare nel proxy OIDC</h6>
@@ -3260,7 +3233,7 @@ export function App(): React.JSX.Element {
                                     value={settCitizenPublicUrl
                                       ? `${settCitizenPublicUrl.replace(/\/+$/, '')}/oidc/callback`
                                       : ''}
-                                    placeholder="Compila prima «URL pubblico portale cittadini»"
+                                    placeholder="Imposta CITIZEN_ORIGIN nel .env del server e riavvia il backend"
                                   />
                                   <button
                                     type="button"
@@ -3280,6 +3253,7 @@ export function App(): React.JSX.Element {
                                   <span className="me-4"><strong>Allowed Scopes:</strong> <code>openid profile email</code></span>
                                   <span><strong>Response Type:</strong> <code>code</code> (Auth Code Flow + PKCE)</span>
                                 </div>
+                                <div className="form-text small text-muted mt-2">La Redirect URI deriva da <code>CITIZEN_ORIGIN</code> nel <code>.env</code> del server (bootstrap, non modificabile da qui).</div>
                               </div>
                             </div>
                           </div>

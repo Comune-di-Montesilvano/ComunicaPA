@@ -7,6 +7,8 @@ export interface SettingDef {
   type: SettingType;
   /** true = cifrato in DB e mascherato nelle risposte admin. */
   secret?: boolean;
+  /** true = solo bootstrap: risolto da env/default, mai letto/scritto in DB né modificabile da UI. */
+  bootstrapOnly?: boolean;
   default: SettingValue;
 }
 
@@ -37,9 +39,15 @@ export const SETTING_DEFS = {
   'system.publicUrl': {
     env: 'PUBLIC_BACKEND_URL',
     type: 'string',
+    bootstrapOnly: true,
     default: 'http://localhost:8080',
   },
-  'system.citizenPublicUrl': { env: 'PUBLIC_CITIZEN_URL', type: 'string', default: '' },
+  'system.citizenPublicUrl': {
+    env: 'PUBLIC_CITIZEN_URL',
+    type: 'string',
+    bootstrapOnly: true,
+    default: '',
+  },
   'oidc.issuer': { env: 'OIDC_ISSUER', type: 'string', default: '' },
   'oidc.audience': { env: 'OIDC_AUDIENCE', type: 'string', default: 'comunicapa' },
   'oidc.jwksUri': { env: 'OIDC_JWKS_URI', type: 'string', default: '' },
