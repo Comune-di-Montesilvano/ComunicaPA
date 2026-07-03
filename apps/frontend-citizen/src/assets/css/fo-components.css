@@ -1055,3 +1055,36 @@ body.density-compact .table td { padding: 12px 16px; }
   flex-shrink: 0;
 }
 @keyframes fo-spin { to { transform: rotate(360deg); } }
+
+/* ============================================================================
+   FOOTER (da GovPay-Interaction-Layer)
+   ============================================================================ */
+footer.site-footer { background: #0E1F36; color: #cbd5e1; font-size: 14px; }
+footer.site-footer .f-top {
+  padding: var(--sp-6) 0; display: flex; justify-content: space-between;
+  gap: var(--sp-5); align-items: flex-start; flex-wrap: wrap;
+}
+footer.site-footer a { color: #cbd5e1; text-decoration: none; }
+footer.site-footer a:hover { color: #fff; text-decoration: underline; }
+footer.site-footer .f-ident { display:flex; gap: var(--sp-4); align-items: flex-start; max-width: 560px; }
+footer.site-footer .f-ident .stemma { width: 44px; height: auto; flex-shrink: 0; filter: drop-shadow(0 2px 6px rgba(0,0,0,.3)); }
+footer.site-footer .f-ident .title { color: #fff; font-size: 15px; font-weight: 700; }
+footer.site-footer .f-ident .sub { color: #94a3b8; font-size: 13px; margin-top: 4px; line-height: 1.6; }
+footer.site-footer .f-help {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px var(--sp-3);
+  font-size: 13px; color: #cbd5e1;
+}
+footer.site-footer .f-help-lbl {
+  display: block; flex-basis: 100%; color: #fff; font-size: 12px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .08em; margin-bottom: 4px;
+}
+footer.site-footer .f-help .dot-sep { color: #475569; }
+footer.site-footer .f-bottom { border-top: 1px solid rgba(255,255,255,.1); }
+footer.site-footer .f-bottom .container { padding-top: var(--sp-3); padding-bottom: var(--sp-3); display:flex; justify-content: space-between; gap: var(--sp-4); align-items:center; font-size: 12px; color: #94a3b8; flex-wrap: wrap; }
+footer.site-footer .f-legal { display: flex; gap: var(--sp-4); flex-wrap: wrap; }
+
+@media (max-width: 760px) {
+  footer.site-footer .f-top { flex-direction: column; gap: var(--sp-5); padding: var(--sp-5) 0; }
+  footer.site-footer .f-help { font-size: 12px; }
+  footer.site-footer .f-help .dot-sep { display: none; }
+}

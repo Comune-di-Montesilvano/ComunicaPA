@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Footer } from './components/Footer';
 
 declare global {
   interface Window {
@@ -7,6 +8,22 @@ declare global {
 }
 
 const API_BASE = window.__COMUNICAPA_CONFIG__?.apiBase ?? 'http://localhost:8080';
+
+/** Estrae CF e nome dai claims del token (id_token del provider o token mock). */
+function decodeJwtClaims(token: string): { cf: string; name: string } {
+  try {
+    const payload = JSON.parse(
+      atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')),
+    ) as Record<string, unknown>;
+    const cf = String(
+      payload['fiscal_number'] ?? payload['codice_fiscale'] ?? payload['cf'] ?? payload['codiceFiscale'] ?? '',
+    ).toUpperCase();
+    const name = String(payload['name'] ?? '');
+    return { cf, name };
+  } catch {
+    return { cf: '', name: '' };
+  }
+}
 
 interface Notification {
   id: string;
@@ -29,6 +46,15 @@ export function App(): React.JSX.Element {
   const [cf, setCf] = useState<string | null>(localStorage.getItem('comunicapa_citizen_cf'));
   const [name, setName] = useState<string | null>(localStorage.getItem('comunicapa_citizen_name'));
   const [entityName, setEntityName] = useState('Comune di Montesilvano');
+  const [brandLogoUrl, setBrandLogoUrl] = useState<string | null>(null);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
+
+  // Modalità auth decisa dal backend: 'oidc' (SPID/CIE reale) o 'mock' (simulatore dev)
+  const [authMode, setAuthMode] = useState<'oidc' | 'mock' | null>(null);
+  const [oidcLogoutUrl, setOidcLogoutUrl] = useState<string | null>(null);
+  const [oidcExchanging, setOidcExchanging] = useState(
+    window.location.pathname === '/oidc/callback',
+  );
 
   // Lobby state
   const [selectedCf, setSelectedCf] = useState('MRKDDD80A01H501A');
@@ -61,20 +87,76 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     fetch(`${API_BASE}/branding`)
       .then((r) => r.json())
-      .then((b: { name?: string; faviconUrl?: string | null }) => {
+      .then((b: { name?: string; logoUrl?: string | null; faviconUrl?: string | null }) => {
         if (b.name) {
           setEntityName(b.name);
           document.title = `${b.name} — ComunicaPA`;
         }
+        // logo/favicon possono essere path relativi al backend o URL esterni assoluti
+        if (b.logoUrl) {
+          setBrandLogoUrl(/^https?:\/\//i.test(b.logoUrl) ? b.logoUrl : `${API_BASE}${b.logoUrl}`);
+        }
         if (b.faviconUrl) {
           const link = document.querySelector<HTMLLinkElement>("link[rel~='icon']") ?? document.createElement('link');
           link.rel = 'icon';
-          // faviconUrl può essere un path relativo al backend o un URL esterno assoluto
           link.href = /^https?:\/\//i.test(b.faviconUrl) ? b.faviconUrl : `${API_BASE}${b.faviconUrl}`;
           document.head.appendChild(link);
         }
       })
       .catch(() => { /* branding default */ });
+
+    fetch(`${API_BASE}/auth/citizen/config`)
+      .then((r) => r.json())
+      .then((c: { mode?: 'oidc' | 'mock'; logoutUrl?: string | null }) => {
+        setAuthMode(c.mode === 'mock' ? 'mock' : 'oidc');
+        setOidcLogoutUrl(c.logoutUrl ?? null);
+      })
+      .catch(() => setAuthMode('oidc'));
+
+    fetch(`${API_BASE}/version`)
+      .then((r) => r.json())
+      .then((v: { version?: string }) => setAppVersion(v.version ?? null))
+      .catch(() => { /* versione non disponibile */ });
+  }, []);
+
+  // Callback OIDC: il proxy riporta il browser su /oidc/callback?code&state
+  useEffect(() => {
+    if (window.location.pathname !== '/oidc/callback') return;
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    const state = params.get('state');
+    const oidcError = params.get('error');
+    window.history.replaceState({}, '', '/');
+
+    if (oidcError || !code || !state) {
+      setLoginError(oidcError ? `Accesso negato dal provider: ${oidcError}` : 'Risposta OIDC incompleta');
+      setOidcExchanging(false);
+      return;
+    }
+
+    fetch(`${API_BASE}/auth/citizen/oidc/callback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, state }),
+    })
+      .then(async (r) => {
+        if (!r.ok) {
+          const err = (await r.json().catch(() => ({}))) as { message?: string };
+          throw new Error(err.message ?? 'Scambio del codice OIDC fallito');
+        }
+        return r.json() as Promise<{ access_token: string }>;
+      })
+      .then((d) => {
+        const claims = decodeJwtClaims(d.access_token);
+        localStorage.setItem('comunicapa_citizen_token', d.access_token);
+        localStorage.setItem('comunicapa_citizen_cf', claims.cf);
+        localStorage.setItem('comunicapa_citizen_name', claims.name);
+        setToken(d.access_token);
+        setCf(claims.cf);
+        setName(claims.name);
+      })
+      .catch((e: Error) => setLoginError(e.message))
+      .finally(() => setOidcExchanging(false));
   }, []);
 
   useEffect(() => {
@@ -168,6 +250,15 @@ export function App(): React.JSX.Element {
     setCf(null);
     setName(null);
     setSelectedNotif(null);
+    // Termina anche la sessione SPID/CIE sul proxy, se configurato
+    if (authMode === 'oidc' && oidcLogoutUrl) {
+      window.location.href = oidcLogoutUrl;
+    }
+  };
+
+  const handleOidcLogin = () => {
+    setLoginError(null);
+    window.location.href = `${API_BASE}/auth/citizen/oidc/start`;
   };
 
   const handleDownloadAttachment = async (notifId: string) => {
@@ -207,23 +298,43 @@ export function App(): React.JSX.Element {
   // 1. Render SPID/CIE login lobby
   if (!token) {
     return (
-      <div style={{ background: '#f0f4f8', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-        {/* SPID Identity Header */}
-        <header style={{ backgroundColor: '#003366', color: '#fff', padding: '10px 0', borderBottom: '4px solid #C9A13B' }}>
-          <div className="container d-flex align-items-center justify-content-between">
-            <span className="fw-bold" style={{ letterSpacing: '0.05em', fontSize: '0.9rem' }}>
-              <span className="gov-dot"></span>MINISTERO DELL'INTERNO
-            </span>
-            <span className="small opacity-75">Accesso unico Pubblica Amministrazione</span>
+      <div style={{ background: 'var(--bg-1, #f0f4f8)', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+        {/* Slim bar istituzionale */}
+        <div className="slim-header">
+          <div className="container">
+            <div className="left">
+              <span><span className="gov-dot"></span>Sito ufficiale della Pubblica Amministrazione</span>
+            </div>
+            <div className="right">
+              <span>Accesso con identità digitale <strong>SPID / CIE</strong></span>
+            </div>
+          </div>
+        </div>
+
+        {/* Header istituzionale */}
+        <header className="inst-header">
+          <div className="container">
+            <a className="inst-brand" href="/" onClick={(e) => e.preventDefault()}>
+              {brandLogoUrl ? (
+                <img src={brandLogoUrl} alt={entityName} className="stemma" style={{ width: 48, height: 'auto', flexShrink: 0 }} />
+              ) : (
+                <i className="fas fa-landmark stemma" style={{ fontSize: '2.4rem', color: 'var(--bi-navy)' }} aria-hidden="true"></i>
+              )}
+              <div>
+                <div className="eyebrow">Ente</div>
+                <div className="title">{entityName}</div>
+                <div className="sub">ComunicaPA — Notifiche e comunicazioni istituzionali</div>
+              </div>
+            </a>
           </div>
         </header>
 
         <main className="container my-5 flex-grow-1 d-flex align-items-center justify-content-center">
-          <div className="card shadow-sm border-0" style={{ maxWidth: '600px', width: '100%', borderRadius: '12px', overflow: 'hidden' }}>
-            <div className="card-body p-4 bg-white">
+          <div className="card shadow-sm border-0" style={{ maxWidth: '560px', width: '100%', borderRadius: '12px', overflow: 'hidden' }}>
+            <div className="card-body p-4 p-md-5 bg-white">
               <div className="text-center mb-4">
-                <h1 className="h3 fw-bold text-navy" style={{ color: 'var(--bi-navy)' }}>Accedi all'area riservata</h1>
-                <p className="text-muted small">Consulta lo storico delle notifiche e degli avvisi inviati dal {entityName}.</p>
+                <h1 className="h4 fw-bold" style={{ color: 'var(--bi-navy)' }}>Accedi all'area riservata</h1>
+                <p className="text-muted small mb-0">Consulta le comunicazioni e le notifiche inviate dal {entityName}.</p>
               </div>
 
               {loginError && (
@@ -232,7 +343,41 @@ export function App(): React.JSX.Element {
                 </div>
               )}
 
-              {/* Citizen test selector */}
+              {(oidcExchanging || authMode === null) && (
+                <div className="text-center py-4">
+                  <i className="fas fa-spinner fa-spin fa-2x text-primary mb-2"></i>
+                  <div className="small text-muted">
+                    {oidcExchanging ? 'Completamento accesso in corso…' : 'Caricamento…'}
+                  </div>
+                </div>
+              )}
+
+              {!oidcExchanging && authMode === 'oidc' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <button
+                    className="btn fw-bold"
+                    style={{ width: '100%', padding: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', color: '#fff', backgroundColor: '#0066cc', border: 'none', borderRadius: '4px', fontSize: '1rem', cursor: 'pointer' }}
+                    onClick={handleOidcLogin}
+                  >
+                    <span style={{ fontSize: '1.2rem', fontStyle: 'italic', letterSpacing: '-1px', fontWeight: 900 }}>spid</span>
+                    Entra con SPID
+                  </button>
+                  <button
+                    className="btn fw-bold"
+                    style={{ width: '100%', padding: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', color: '#fff', backgroundColor: '#1d232a', border: 'none', borderRadius: '4px', fontSize: '1rem', cursor: 'pointer' }}
+                    onClick={handleOidcLogin}
+                  >
+                    <i className="fas fa-id-badge text-warning" style={{ fontSize: '1.1rem' }} aria-hidden="true"></i>
+                    Entra con CIE
+                  </button>
+                  <p className="small text-muted text-center mt-3 mb-0" style={{ textAlign: 'center' }}>
+                    Verrai reindirizzato al sistema di identità digitale per autenticarti in sicurezza.
+                  </p>
+                </div>
+              )}
+
+              {!oidcExchanging && authMode === 'mock' && (<>
+              {/* Simulatore dev (solo LDAP_HOST=mock) */}
               <div className="p-3 bg-light rounded border mb-4">
                 <h2 className="h6 fw-bold mb-3"><i className="fas fa-id-card text-primary me-2"></i>Seleziona un Profilo di Test</h2>
                 
@@ -294,9 +439,9 @@ export function App(): React.JSX.Element {
                 )}
               </div>
 
-              {/* Identity Providers Buttons */}
+              {/* Identity Providers Buttons (simulati) */}
               <div className="border-top pt-4">
-                <h3 className="h6 text-muted fw-bold mb-3 text-center">SELEZIONA LA TUA IDENTITÀ DIGITALE</h3>
+                <h3 className="h6 text-muted fw-bold mb-3 text-center">SIMULA L'IDENTITÀ DIGITALE (SVILUPPO)</h3>
                 <div className="row g-2 justify-content-center">
                   <div className="col-sm-6">
                     <button
@@ -322,13 +467,12 @@ export function App(): React.JSX.Element {
                   </div>
                 </div>
               </div>
+              </>)}
             </div>
           </div>
         </main>
 
-        <footer className="text-center py-4 small text-muted">
-          ComunicaPA Hub Cittadino · Ministero per l'Innovazione Tecnologica e la Transizione Digitale
-        </footer>
+        <Footer entityName={entityName} logoUrl={brandLogoUrl} version={appVersion} />
       </div>
     );
   }
@@ -552,8 +696,10 @@ export function App(): React.JSX.Element {
                   <strong className="fw-mono">{cf}</strong>
                 </div>
                 <div className="list-group-item d-flex justify-content-between align-items-center py-3">
-                  <span className="text-muted">Simulatore di Login</span>
-                  <span className="fw-bold text-primary">Federazione OIDC Attiva</span>
+                  <span className="text-muted">Metodo di accesso</span>
+                  <span className="fw-bold text-primary">
+                    {authMode === 'mock' ? 'Simulatore (sviluppo)' : 'SPID / CIE (OIDC)'}
+                  </span>
                 </div>
               </div>
 
@@ -566,18 +712,7 @@ export function App(): React.JSX.Element {
 
       </main>
 
-      {/* Footer */}
-      <footer className="it-footer bg-light py-4 border-top mt-auto" style={{ fontSize: '0.86rem' }}>
-        <div className="container d-flex flex-column flex-md-row align-items-center justify-content-between gap-3 text-muted">
-          <div>
-            <strong>{entityName}</strong> · Piazza Diaz 1 · Montesilvano (PE)
-          </div>
-          <div className="d-flex gap-3">
-            <a href="#" className="text-muted text-decoration-none">Privacy Policy</a>
-            <a href="#" className="text-muted text-decoration-none">Accessibilità</a>
-          </div>
-        </div>
-      </footer>
+      <Footer entityName={entityName} logoUrl={brandLogoUrl} version={appVersion} />
     </div>
   );
 }
