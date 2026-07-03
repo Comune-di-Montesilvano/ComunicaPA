@@ -15,15 +15,34 @@ function decodeJwtClaims(token: string): { cf: string; name: string } {
     const payload = JSON.parse(
       atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')),
     ) as Record<string, unknown>;
-    // pa-sso-proxy: fiscal_number in formato "TINIT-<CF>" (o claim URI eIDAS)
+    
     const rawCf = String(
       payload['fiscal_number'] ??
         payload['https://attributes.eid.gov.it/fiscal_number'] ??
-        payload['codice_fiscale'] ?? payload['cf'] ?? payload['codiceFiscale'] ?? '',
+        payload['https://attributes.spid.gov.it/fiscalNumber'] ??
+        payload['codice_fiscale'] ??
+        payload['cf'] ??
+        payload['codiceFiscale'] ??
+        payload['fiscalNumber'] ??
+        payload['fiscalCode'] ??
+        '',
     ).toUpperCase();
     const cf = rawCf.replace(/^TIN[A-Z]{2}-/, '');
-    const given = String(payload['given_name'] ?? '');
-    const family = String(payload['family_name'] ?? '');
+    
+    const given = String(
+      payload['given_name'] ??
+        payload['first_name'] ??
+        payload['givenName'] ??
+        '',
+    );
+    const family = String(
+      payload['family_name'] ??
+        payload['last_name'] ??
+        payload['sn'] ??
+        payload['surname'] ??
+        payload['familyName'] ??
+        '',
+    );
     const name = String(payload['name'] ?? '') || [given, family].filter(Boolean).join(' ');
     return { cf, name };
   } catch {
@@ -258,6 +277,7 @@ export function App(): React.JSX.Element {
   };
 
   const handleLogout = () => {
+    const currentToken = token;
     localStorage.removeItem('comunicapa_citizen_token');
     localStorage.removeItem('comunicapa_citizen_cf');
     localStorage.removeItem('comunicapa_citizen_name');
@@ -267,7 +287,23 @@ export function App(): React.JSX.Element {
     setSelectedNotif(null);
     // Termina anche la sessione SPID/CIE sul proxy, se configurato
     if (authMode === 'oidc' && oidcLogoutUrl) {
-      window.location.href = oidcLogoutUrl;
+      const returnUrl = window.location.origin;
+      let targetUrl = oidcLogoutUrl;
+      try {
+        const logoutUrlObj = new URL(oidcLogoutUrl);
+        logoutUrlObj.searchParams.set('post_logout_redirect_uri', returnUrl);
+        if (currentToken) {
+          logoutUrlObj.searchParams.set('id_token_hint', currentToken);
+        }
+        targetUrl = logoutUrlObj.toString();
+      } catch (e) {
+        const separator = oidcLogoutUrl.includes('?') ? '&' : '?';
+        targetUrl = `${oidcLogoutUrl}${separator}post_logout_redirect_uri=${encodeURIComponent(returnUrl)}`;
+        if (currentToken) {
+          targetUrl += `&id_token_hint=${encodeURIComponent(currentToken)}`;
+        }
+      }
+      window.location.href = targetUrl;
     }
   };
 

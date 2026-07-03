@@ -21,6 +21,8 @@ packages/shared-types/ @comunicapa/shared-types — interfacce TypeScript condiv
 
 **Auth:** LDAP/Active Directory per operatori PA; cittadini via OIDC (SPID/CIE, Authorization Code + PKCE: la SPA chiama `/auth/citizen/oidc/start`, callback SPA su `/oidc/callback`, exchange nel backend con state su Redis). Dev locale senza AD: `LDAP_HOST=mock` in `.env` abilita admin/admin, operator/operator e il simulatore cittadino — mai in produzione.
 
+**Proxy OIDC (pa-sso-proxy):** issuer = root del proxy (senza `/OIDC`), discovery in `/.well-known/openid-configuration`, endpoint sotto `/OIDC/` (`authorization`, `token`, `jwks`, `end_session`). Supporta SOLO `client_secret_basic` (secret nel body → 401 con pagina HTML). Claims id_token: `fiscal_number` = `TINIT-<CF>` (prefisso `TIN`+paese da strippare), `given_name`/`family_name` (spesso senza `name`), claim URI eIDAS `https://attributes.eid.gov.it/fiscal_number`.
+
 ## Dev Environment
 
 Tutti i comandi si eseguono con Docker Compose. Copiare `.env.example` in `.env` prima del primo avvio.
@@ -60,7 +62,14 @@ docker compose -f docker-compose.yml config --quiet
 
 Hot-reload: i frontend Vite ricaricano da soli; il watch di NestJS spesso NON vede le modifiche sui bind mount Windows — dopo modifiche a `apps/backend/src/` fare `docker compose restart backend` e verificare che `dist/` sia più recente di `src/` (`docker compose exec backend ls -la dist/... src/...`).
 
-**Rebuild obbligatorio** solo se si modifica `package.json`, `Dockerfile.dev`, o file fuori da `src/`.
+**Rebuild obbligatorio** se si modifica `package.json`, `Dockerfile.dev`, o file fuori da `src/`. ATTENZIONE per le nuove dipendenze: il rebuild da solo NON basta — il volume named dei node_modules maschera quelli freschi dell'immagine (`Cannot find module` all'avvio):
+
+```bash
+# Dopo aver aggiunto una dipendenza a apps/backend/package.json:
+docker run --rm -v "${PWD}:/w" -w /w node:22-alpine sh -c "corepack enable && corepack prepare pnpm@latest --activate && pnpm install --lockfile-only --ignore-scripts"   # aggiorna pnpm-lock.yaml (niente Node sull'host)
+docker compose build backend
+docker compose rm -sf backend && docker volume rm comunicapa_backend_node_modules && docker compose up -d backend
+```
 
 ## Test
 
@@ -77,6 +86,9 @@ docker compose exec backend node_modules/.bin/tsc --noEmit
 # Type-check frontend (NON usare `tsc -b`: fallisce nel container dev per
 # errori @types/node preesistenti che non riproducono nel build prod)
 docker compose exec frontend-admin node_modules/.bin/tsc -p tsconfig.app.json --noEmit
+
+# Token operatore admin per testare le API senza login LDAP (solo dev)
+docker compose exec backend node -e "const jwt=require('/app/node_modules/.pnpm/node_modules/jsonwebtoken');console.log(jwt.sign({sub:'debug',username:'debug',role:'admin',type:'operator'},process.env.JWT_SECRET,{expiresIn:'10m'}))"
 ```
 
 **Baseline nota:** 7 test falliscono da prima (email.strategy, pec.strategy, notification.processor — template vecchi, `checkAndCompleteCampaign` inesistente). Non sono regressioni: il criterio per una modifica è "failure set identico".
@@ -126,6 +138,10 @@ CMD ["node_modules/.bin/nest", "start", "--watch"]
 `tsconfig.base.json` alla root impone strict mode completo. Ogni app estende questa base. Il backend aggiunge `experimentalDecorators` e `emitDecoratorMetadata` (richiesti dai decorator NestJS).
 
 Il pacchetto `@comunicapa/shared-types` si importa con `workspace:*` — non pubblicato su npm, risolto internamente da pnpm.
+
+## CSS frontend — gotcha
+
+`frontend-citizen` NON carica Bootstrap: le utility (`d-grid`, `w-100`, `text-center`...) sono no-op. Usare i css custom (`tokens.css`, `fo-components.css`, design system `--ms-*`/`--bi-*`) o stili espliciti. L'admin ha le sue utility custom in `app.css`/`backoffice-shell.css`.
 
 ## Variabili d'ambiente
 

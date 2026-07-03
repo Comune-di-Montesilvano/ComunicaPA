@@ -81,6 +81,18 @@ describe('OidcCitizenStrategy', () => {
     expect(claims.codiceFiscale).toBe('VRDLGI70A01H501Q');
   });
 
+  it('validate() legge il claim URI SPID quando fiscal_number manca', async () => {
+    settingsValues = { 'oidc.issuer': '', 'oidc.audience': '' };
+    strategy = await buildStrategy();
+
+    const claims = await strategy.validate({
+      sub: 'user-5',
+      'https://attributes.spid.gov.it/fiscalNumber': 'TINIT-RSSMRA85M01H501Z',
+    });
+
+    expect(claims.codiceFiscale).toBe('RSSMRA85M01H501Z');
+  });
+
   it('validate() con issuer e audience non impostati mappa i claim normalmente', async () => {
     settingsValues = { 'oidc.issuer': '', 'oidc.audience': '' };
     strategy = await buildStrategy();
