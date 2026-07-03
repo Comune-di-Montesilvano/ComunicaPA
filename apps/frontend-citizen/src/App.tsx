@@ -15,10 +15,16 @@ function decodeJwtClaims(token: string): { cf: string; name: string } {
     const payload = JSON.parse(
       atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')),
     ) as Record<string, unknown>;
-    const cf = String(
-      payload['fiscal_number'] ?? payload['codice_fiscale'] ?? payload['cf'] ?? payload['codiceFiscale'] ?? '',
+    // pa-sso-proxy: fiscal_number in formato "TINIT-<CF>" (o claim URI eIDAS)
+    const rawCf = String(
+      payload['fiscal_number'] ??
+        payload['https://attributes.eid.gov.it/fiscal_number'] ??
+        payload['codice_fiscale'] ?? payload['cf'] ?? payload['codiceFiscale'] ?? '',
     ).toUpperCase();
-    const name = String(payload['name'] ?? '');
+    const cf = rawCf.replace(/^TIN[A-Z]{2}-/, '');
+    const given = String(payload['given_name'] ?? '');
+    const family = String(payload['family_name'] ?? '');
+    const name = String(payload['name'] ?? '') || [given, family].filter(Boolean).join(' ');
     return { cf, name };
   } catch {
     return { cf: '', name: '' };
@@ -70,6 +76,15 @@ export function App(): React.JSX.Element {
   const [selectedNotif, setSelectedNotif] = useState<Notification | null>(null);
 
   const [activeTab, setActiveTab] = useState<'notifications' | 'profile'>('notifications');
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+
+  // Chiudi il menu utente cliccando fuori
+  useEffect(() => {
+    if (!userMenuOpen) return;
+    const close = () => setUserMenuOpen(false);
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [userMenuOpen]);
 
   // Simulated test citizens
   const testCitizens = [
@@ -551,13 +566,45 @@ export function App(): React.JSX.Element {
       <header className="inst-header">
         <div className="container">
           <a className="inst-brand" href="#" onClick={(e) => { e.preventDefault(); setSelectedNotif(null); }}>
-            <i className="fas fa-building stemma text-navy mb-0" style={{ fontSize: '2.4rem', color: 'var(--bi-navy)' }}></i>
+            {brandLogoUrl ? (
+              <img src={brandLogoUrl} alt={entityName} className="stemma" />
+            ) : (
+              <i className="fas fa-building stemma text-navy mb-0" style={{ fontSize: '2.4rem', color: 'var(--bi-navy)' }}></i>
+            )}
             <div>
               <div className="eyebrow">Sportello Digitale</div>
               <div className="title">{entityName}</div>
               <div className="sub">ComunicaPA — Notifiche & Comunicazioni Istituzionali</div>
             </div>
           </a>
+
+          {/* Badge utente (stile GovPay) */}
+          <div className="inst-actions">
+            <div className="fo-user-menu">
+              <button
+                type="button"
+                className="fo-user-btn"
+                aria-haspopup="true"
+                aria-expanded={userMenuOpen}
+                onClick={(e) => { e.stopPropagation(); setUserMenuOpen((o) => !o); }}
+              >
+                <span className="avatar">{(name || cf || '?').slice(0, 2).toUpperCase()}</span>
+                <span className="d-none d-md-inline">{name || cf}</span>
+                <i className="fas fa-chevron-down chev" aria-hidden="true"></i>
+              </button>
+              {userMenuOpen && (
+                <div className="fo-user-dropdown">
+                  <div className="cf-row">Codice fiscale<br /><code>{cf}</code></div>
+                  <button type="button" onClick={() => { setActiveTab('profile'); setUserMenuOpen(false); }}>
+                    <i className="far fa-user" aria-hidden="true"></i> Il mio profilo
+                  </button>
+                  <button type="button" className="danger" onClick={handleLogout}>
+                    <i className="fas fa-sign-out-alt" aria-hidden="true"></i> Esci
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </header>
 
@@ -577,14 +624,6 @@ export function App(): React.JSX.Element {
             <i className="far fa-user"></i> Il mio Profilo
           </button>
           <div className="spacer"></div>
-          <div className="d-flex align-items-center gap-3">
-            <span className="small text-muted d-none d-md-inline">
-              CF: <strong>{cf}</strong>
-            </span>
-            <button className="btn btn-outline-danger btn-sm border-0" onClick={handleLogout}>
-              <i className="fas fa-sign-out-alt"></i> Esci
-            </button>
-          </div>
         </div>
       </nav>
 
