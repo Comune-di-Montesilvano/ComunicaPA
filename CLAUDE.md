@@ -71,6 +71,8 @@ docker compose build backend
 docker compose rm -sf backend && docker volume rm comunicapa_backend_node_modules && docker compose up -d backend
 ```
 
+Il nome del volume `node_modules` non sempre coincide col nome del servizio (es. `frontend-admin` → volume `comunicapa_admin_node_modules`, non `comunicapa_frontend-admin_node_modules`): verificare con `docker volume ls | grep node_modules` prima di eseguire `docker volume rm`.
+
 ## Test
 
 ```bash
@@ -86,6 +88,7 @@ docker compose exec backend node_modules/.bin/tsc --noEmit
 # Type-check frontend (NON usare `tsc -b`: fallisce nel container dev per
 # errori @types/node preesistenti che non riproducono nel build prod)
 docker compose exec frontend-admin node_modules/.bin/tsc -p tsconfig.app.json --noEmit
+docker compose exec frontend-citizen node_modules/.bin/tsc -p tsconfig.app.json --noEmit
 
 # Token operatore admin per testare le API senza login LDAP (solo dev)
 docker compose exec backend node -e "const jwt=require('/app/node_modules/.pnpm/node_modules/jsonwebtoken');console.log(jwt.sign({sub:'debug',username:'debug',role:'admin',type:'operator'},process.env.JWT_SECRET,{expiresIn:'10m'}))"
@@ -142,6 +145,8 @@ Il pacchetto `@comunicapa/shared-types` si importa con `workspace:*` — non pub
 ## CSS frontend — gotcha
 
 `frontend-citizen` NON carica Bootstrap: le utility (`d-grid`, `w-100`, `text-center`...) sono no-op. Usare i css custom (`tokens.css`, `fo-components.css`, design system `--ms-*`/`--bi-*`) o stili espliciti. L'admin ha le sue utility custom in `app.css`/`backoffice-shell.css`.
+
+`frontend-citizen` carica in ordine `tokens.css` → `fo-components.css` → `app.css` (vedi `main.tsx`): una classe con lo stesso nome definita in più file vince per ordine di caricamento a parità di specificity, non per "ultima modificata". Prima di aggiungere una classe già vista altrove, cercarla in tutti e tre i file (`grep -rn "nomeclasse" apps/frontend-citizen/src/assets/css/`).
 
 ## Variabili d'ambiente
 

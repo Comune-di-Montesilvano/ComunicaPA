@@ -11,6 +11,15 @@ services:
     ports:
       - "6379:6379"
 
+  mailpit:
+    image: axllent/mailpit
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    networks:
+      - comunicapa-net
+
   backend:
     image: comunicapa/backend:dev
     build:
