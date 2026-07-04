@@ -979,36 +979,32 @@ export function App(): React.JSX.Element {
         )}
 
         {activeTab === 'profile' && (
-          <div className="card shadow-sm bg-white mx-auto" style={{ maxWidth: '600px', borderRadius: '8px', border: '1px solid var(--border-1)' }}>
-            <div className="card-header bg-white py-3 border-bottom">
-              <h3 className="h6 mb-0 fw-bold text-dark"><i className="far fa-user me-2 text-primary"></i>Profilo Cittadino Certificato</h3>
-            </div>
-            <div className="card-body">
-              <div className="text-center mb-4">
-                <span className="user-initials-avatar" style={{ width: '64px', height: '64px', fontSize: '1.6rem', background: 'var(--bi-primary-a8)', color: 'var(--bi-primary)' }}>
-                  {name?.slice(0, 2).toUpperCase()}
-                </span>
-                <h4 className="h5 fw-bold text-dark mt-3 mb-1">{name}</h4>
-                <span className="badge bg-success">Identità Certificata via {provider}</span>
-              </div>
+          <div className="card card-pad" style={{ maxWidth: 600, margin: '0 auto' }}>
+            <h3 className="ms-h3" style={{ marginBottom: 'var(--sp-5)' }}>
+              <i className="far fa-user" style={{ color: 'var(--bi-primary)', marginRight: 8 }} aria-hidden="true"></i>
+              Profilo Cittadino Certificato
+            </h3>
 
-              <div className="list-group list-group-flush border-top border-bottom mb-4">
-                <div className="list-group-item d-flex justify-content-between align-items-center py-3">
-                  <span className="text-muted">Codice Fiscale</span>
-                  <strong className="fw-mono">{cf}</strong>
-                </div>
-                <div className="list-group-item d-flex justify-content-between align-items-center py-3">
-                  <span className="text-muted">Metodo di accesso</span>
-                  <span className="fw-bold text-primary">
-                    {authMode === 'mock' ? 'Simulatore (sviluppo)' : `${provider} (OIDC)`}
-                  </span>
-                </div>
-              </div>
-
-              <p className="small text-muted text-center mb-0">
-                Questa è un'area ad alto livello di sicurezza. Le sessioni scadono automaticamente dopo 8 ore.
-              </p>
+            <div style={{ textAlign: 'center', marginBottom: 'var(--sp-5)' }}>
+              <span className="user-initials-avatar">{name?.slice(0, 2).toUpperCase()}</span>
+              <h4 className="ms-h3" style={{ marginTop: 'var(--sp-3)', marginBottom: 'var(--sp-2)' }}>{name}</h4>
+              <span className="status status-notif-received">
+                <span className="dot"></span>Identità Certificata via {provider}
+              </span>
             </div>
+
+            <div className="avviso-row">
+              <span className="k">Codice Fiscale</span>
+              <span className="v ms-mono">{cf}</span>
+            </div>
+            <div className="avviso-row">
+              <span className="k">Metodo di accesso</span>
+              <span className="v">{authMode === 'mock' ? 'Simulatore (sviluppo)' : `${provider} (OIDC)`}</span>
+            </div>
+
+            <p className="ms-small" style={{ textAlign: 'center', marginTop: 'var(--sp-5)' }}>
+              Questa è un'area ad alto livello di sicurezza. Le sessioni scadono automaticamente dopo 8 ore.
+            </p>
           </div>
         )}
 

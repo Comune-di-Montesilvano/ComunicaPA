@@ -1221,3 +1221,17 @@ footer.site-footer .f-legal { display: flex; gap: var(--sp-4); flex-wrap: wrap; 
 @media (max-width: 920px) { .filters-grid { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 480px) { .filters-grid { grid-template-columns: 1fr; } }
 .filters-grid .field { margin-bottom: 0; }
+
+/* ============================================================================
+   NOTIFICHE CITTADINO — profilo
+   ============================================================================ */
+/* Scoped a `.card-pad` (contenitore della vista profilo): app.css definisce già
+   `.user-initials-avatar` per l'avatar piccolo dell'header (36px, grigio) e,
+   caricando dopo fo-components.css, vincerebbe sulla regola non scoped
+   sottostante. Lo scoping aggiunge specificità senza toccare l'header. */
+.card-pad .user-initials-avatar {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 64px; height: 64px; border-radius: 50%;
+  background: var(--bi-primary-a8); color: var(--bi-primary);
+  font-weight: 700; font-size: 24px; font-family: var(--font-sans);
+}
