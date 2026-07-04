@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
   ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
@@ -22,7 +23,7 @@ export class Recipient {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ name: 'campaign_id' })
+  @Column({ type: 'uuid', name: 'campaign_id' })
   campaignId!: string;
 
   @Column({ name: 'codice_fiscale', length: 16 })
@@ -66,6 +67,7 @@ export class Recipient {
   createdAt!: Date;
 
   @ManyToOne('Campaign', 'recipients', { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'campaign_id' })
   campaign!: Campaign;
 
   @OneToMany('NotificationAttempt', 'recipient')
