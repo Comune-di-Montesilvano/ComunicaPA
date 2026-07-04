@@ -759,10 +759,10 @@ export function App(): React.JSX.Element {
       <main className="container py-4 flex-grow-1" style={{ backgroundColor: 'var(--bg-1)' }}>
         
         {activeTab === 'notifications' && (
-          <div className="row g-4">
-            
+          <div className={`notif-layout ${selectedNotif ? 'has-detail' : ''}`}>
+
             {/* List of notifications (Left column) */}
-            <div className={selectedNotif ? 'col-lg-6' : 'col-12'}>
+            <div className="notif-list-col">
               <div className="card shadow-sm h-100 bg-white" style={{ borderRadius: '8px', border: '1px solid var(--border-1)' }}>
                 <div className="card-pad" style={{ borderBottom: '1px solid var(--border-1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--sp-3)' }}>
                   <h3 className="ms-h3" style={{ margin: 0 }}>
@@ -905,71 +905,71 @@ export function App(): React.JSX.Element {
 
             {/* Notification Detail (Right column, appears only if selected) */}
             {selectedNotif && (
-              <div className="col-lg-6">
-                <div className="card shadow-sm h-100 bg-white" style={{ borderRadius: '8px', border: '1px solid var(--border-1)' }}>
-                  <div className="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
-                    <h3 className="h6 mb-0 fw-bold text-dark"><i className="far fa-envelope-open me-2 text-primary"></i>Dettaglio Avviso</h3>
-                    <button className="btn btn-outline-secondary btn-sm border-0" onClick={() => setSelectedNotif(null)} title="Chiudi dettaglio">
-                      <i className="fas fa-times"></i>
-                    </button>
-                  </div>
-                  <div className="card-body">
-                    <div className="mb-4">
-                      <span className="small text-muted">Mittente:</span>
-                      <h4 className="h6 text-navy fw-bold" style={{ color: 'var(--bi-navy)' }}>{entityName}</h4>
-                      <div className="small text-muted">Generato il: {new Date(selectedNotif.createdAt).toLocaleString('it-IT')}</div>
+              <div className="notif-detail-col">
+                <div className="avviso-card">
+                  <div className="avviso-header">
+                    <div>
+                      <span className="from">Mittente</span>
+                      <strong>{entityName}</strong>
                     </div>
-
-                    <div className="mb-4 border-bottom pb-3">
-                      <h5 className="h5 fw-bold text-dark mb-2">{selectedNotif.campaign?.name || '—'}</h5>
-                      <div className="p-3 bg-light rounded" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5, fontSize: '0.95rem' }}>
-                        {selectedNotif.campaign?.description || ''}
-                      </div>
-                    </div>
-
-                    {/* Meta information */}
-                    <div className="row g-3 mb-4">
-                      <div className="col-sm-6">
-                        <span className="small text-muted block">Canale di Invio</span>
-                        <div className="fw-bold">{selectedNotif.campaign?.channelType || '—'}</div>
-                      </div>
-                      <div className="col-sm-6">
-                        <span className="small text-muted block">Stato Spedizione</span>
-                        <div>
-                          <span className={`badge ${
-                            selectedNotif.status === 'sent' ? 'bg-success' : 'bg-danger'
-                          }`}>
-                            {selectedNotif.status.toUpperCase()}
-                          </span>
-                        </div>
-                      </div>
-                      {selectedNotif.extraData?.['download_count'] && (
-                        <div className="col-sm-12">
-                          <div className="alert alert-success p-2 small mb-0 d-flex align-items-center gap-2">
-                            <i className="fas fa-check-circle"></i>
-                            <span>
-                              Documento scaricato <strong>{selectedNotif.extraData['download_count']}</strong> volte. Ultimo download: <strong>{new Date(selectedNotif.extraData['downloaded_at']).toLocaleString('it-IT')}</strong>
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* PDF Attachment Download button */}
-                    <div className="border-top pt-4">
+                    <div className="notif-detail-actions">
                       <button
-                        className="btn btn-primary w-100 py-3 fw-semibold d-flex align-items-center justify-content-center gap-2"
-                        onClick={() => handleDownloadAttachment(selectedNotif.id)}
-                        style={{ backgroundColor: 'var(--bi-primary)', border: 'none' }}
+                        type="button"
+                        className="btn btn-ghost btn-sm notif-back-btn"
+                        onClick={() => setSelectedNotif(null)}
                       >
-                        <i className="fas fa-file-pdf" style={{ fontSize: '1.2rem' }}></i>
-                        Scarica Documento PDF Firmato / Protocollo
+                        <i className="fas fa-arrow-left" aria-hidden="true"></i> Torna alle comunicazioni
                       </button>
-                      <p className="text-muted small text-center mt-2 mb-0">
-                        Il download genera un documento PDF provvisto di segnatura di protocollo digitale.
-                      </p>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm notif-close-btn"
+                        onClick={() => setSelectedNotif(null)}
+                        title="Chiudi dettaglio"
+                      >
+                        <i className="fas fa-times" aria-hidden="true"></i>
+                      </button>
                     </div>
+                  </div>
+                  <div className="avviso-body">
+                    <h3 className="ms-h3" style={{ marginBottom: 'var(--sp-3)' }}>{selectedNotif.campaign?.name || '—'}</h3>
+                    <p style={{ whiteSpace: 'pre-wrap', color: 'var(--fg-2)', marginBottom: 'var(--sp-4)' }}>
+                      {selectedNotif.campaign?.description || ''}
+                    </p>
 
+                    <div className="avviso-row">
+                      <span className="k">Canale di invio</span>
+                      <span className="v">{selectedNotif.campaign?.channelType || '—'}</span>
+                    </div>
+                    <div className="avviso-row">
+                      <span className="k">Stato spedizione</span>
+                      <span className="v">
+                        <span className={`status ${statusBadge(selectedNotif.status).cls}`}>
+                          <span className="dot"></span>{statusBadge(selectedNotif.status).label}
+                        </span>
+                      </span>
+                    </div>
+                    <div className="avviso-row">
+                      <span className="k">Data generazione</span>
+                      <span className="v">{new Date(selectedNotif.createdAt).toLocaleString('it-IT')}</span>
+                    </div>
+                    {!!selectedNotif.extraData?.['download_count'] && (
+                      <div className="avviso-row">
+                        <span className="k">Download</span>
+                        <span className="v">
+                          {selectedNotif.extraData['download_count']} volte — ultimo il{' '}
+                          {new Date(selectedNotif.extraData['downloaded_at']).toLocaleString('it-IT')}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="avviso-actions">
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={() => handleDownloadAttachment(selectedNotif.id)}
+                    >
+                      <i className="fas fa-file-pdf" aria-hidden="true"></i> Scarica documento PDF firmato
+                    </button>
                   </div>
                 </div>
               </div>

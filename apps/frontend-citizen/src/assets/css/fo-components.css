@@ -1008,6 +1008,24 @@ body.density-compact .table td { padding: 12px 16px; }
   .cart-item .amt { font-size: 18px; }
 }
 
+/* ============================================================================
+   NOTIFICHE CITTADINO — layout lista/dettaglio responsive
+   ============================================================================ */
+.notif-layout { display: grid; grid-template-columns: 1fr; gap: var(--sp-5); }
+.notif-layout.has-detail { grid-template-columns: 1fr 1fr; }
+@media (max-width: 920px) {
+  .notif-layout.has-detail { grid-template-columns: 1fr; }
+  .notif-layout.has-detail .notif-list-col { display: none; }
+}
+
+.notif-detail-actions { display: flex; gap: var(--sp-2); align-items: center; }
+.notif-back-btn { display: none; }
+.notif-close-btn { display: inline-flex; }
+@media (max-width: 920px) {
+  .notif-back-btn { display: inline-flex; }
+  .notif-close-btn { display: none; }
+}
+
 /* — Steps wizard: cleaner wrap */
 @media (max-width: 600px) {
   .steps .bar { display: none; }
