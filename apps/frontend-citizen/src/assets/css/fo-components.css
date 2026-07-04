@@ -1195,3 +1195,11 @@ footer.site-footer .f-legal { display: flex; gap: var(--sp-4); flex-wrap: wrap; 
 .notif-empty { text-align: center; padding: var(--sp-8) var(--sp-5); color: var(--fg-3); }
 .notif-empty i { font-size: 40px; opacity: .3; margin-bottom: var(--sp-3); display: block; }
 .fo-user-dropdown button.danger { color: #b02a37; }
+
+/* ============================================================================
+   NOTIFICHE CITTADINO — pannello filtri
+   ============================================================================ */
+.filters-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr auto; gap: var(--sp-4); align-items: end; }
+@media (max-width: 920px) { .filters-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 480px) { .filters-grid { grid-template-columns: 1fr; } }
+.filters-grid .field { margin-bottom: 0; }

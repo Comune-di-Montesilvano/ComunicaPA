@@ -137,6 +137,46 @@ export function App(): React.JSX.Element {
   const [errorNotifications, setErrorNotifications] = useState<string | null>(null);
   const [selectedNotif, setSelectedNotif] = useState<Notification | null>(null);
 
+  // Filtri pannello ricerca (client-side, nessuna nuova chiamata di rete)
+  const [searchText, setSearchText] = useState('');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'sent' | 'pending' | 'failed'>('all');
+  const [filterChannel, setFilterChannel] = useState('all');
+  const [filterDateFrom, setFilterDateFrom] = useState('');
+  const [filterDateTo, setFilterDateTo] = useState('');
+
+  const resetFilters = () => {
+    setSearchText('');
+    setFilterStatus('all');
+    setFilterChannel('all');
+    setFilterDateFrom('');
+    setFilterDateTo('');
+  };
+
+  const hasActiveFilters = !!(searchText || filterStatus !== 'all' || filterChannel !== 'all' || filterDateFrom || filterDateTo);
+
+  const availableChannels = Array.from(
+    new Set(notifications.map((n) => n.campaign?.channelType).filter((c): c is string => !!c)),
+  );
+
+  const filteredNotifications = notifications.filter((n) => {
+    if (searchText) {
+      const haystack = `${n.campaign?.name || ''} ${n.campaign?.description || ''}`.toLowerCase();
+      if (!haystack.includes(searchText.toLowerCase())) return false;
+    }
+    if (filterStatus !== 'all') {
+      const bucket = n.status === 'sent' ? 'sent' : (n.status === 'failed' || n.status === 'skipped') ? 'failed' : 'pending';
+      if (bucket !== filterStatus) return false;
+    }
+    if (filterChannel !== 'all' && n.campaign?.channelType !== filterChannel) return false;
+    if (filterDateFrom && new Date(n.createdAt) < new Date(filterDateFrom)) return false;
+    if (filterDateTo) {
+      const to = new Date(filterDateTo);
+      to.setHours(23, 59, 59, 999);
+      if (new Date(n.createdAt) > to) return false;
+    }
+    return true;
+  });
+
   const [activeTab, setActiveTab] = useState<'notifications' | 'profile'>('notifications');
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
@@ -724,11 +764,82 @@ export function App(): React.JSX.Element {
             {/* List of notifications (Left column) */}
             <div className={selectedNotif ? 'col-lg-6' : 'col-12'}>
               <div className="card shadow-sm h-100 bg-white" style={{ borderRadius: '8px', border: '1px solid var(--border-1)' }}>
-                <div className="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
-                  <h3 className="h6 mb-0 fw-bold text-dark"><i className="far fa-envelope me-2 text-primary"></i>Comunicazioni Ricevute</h3>
-                  <button className="btn btn-outline-secondary btn-sm border-0" onClick={fetchNotifications} title="Aggiorna elenco">
-                    <i className="fas fa-sync-alt"></i>
+                <div className="card-pad" style={{ borderBottom: '1px solid var(--border-1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--sp-3)' }}>
+                  <h3 className="ms-h3" style={{ margin: 0 }}>
+                    <i className="far fa-envelope" style={{ color: 'var(--bi-primary)', marginRight: 8 }} aria-hidden="true"></i>
+                    Comunicazioni Ricevute
+                  </h3>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={fetchNotifications} title="Aggiorna elenco">
+                    <i className="fas fa-sync-alt" aria-hidden="true"></i>
                   </button>
+                </div>
+                <div className="card-pad" style={{ borderBottom: '1px solid var(--border-1)' }}>
+                  <div className="filters-grid">
+                    <div className="field">
+                      <label htmlFor="search-text">Cerca</label>
+                      <input
+                        id="search-text"
+                        type="text"
+                        className="input"
+                        placeholder="Nome o descrizione comunicazione"
+                        value={searchText}
+                        onChange={(e) => setSearchText(e.target.value)}
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="search-status">Stato</label>
+                      <select
+                        id="search-status"
+                        className="select"
+                        value={filterStatus}
+                        onChange={(e) => setFilterStatus(e.target.value as 'all' | 'sent' | 'pending' | 'failed')}
+                      >
+                        <option value="all">Tutti</option>
+                        <option value="sent">Ricevute</option>
+                        <option value="pending">In corso</option>
+                        <option value="failed">Non recapitate</option>
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label htmlFor="search-channel">Canale</label>
+                      <select
+                        id="search-channel"
+                        className="select"
+                        value={filterChannel}
+                        onChange={(e) => setFilterChannel(e.target.value)}
+                      >
+                        <option value="all">Tutti</option>
+                        {availableChannels.map((c) => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label htmlFor="search-date-from">Dal</label>
+                      <input
+                        id="search-date-from"
+                        type="date"
+                        className="input"
+                        value={filterDateFrom}
+                        onChange={(e) => setFilterDateFrom(e.target.value)}
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="search-date-to">Al</label>
+                      <input
+                        id="search-date-to"
+                        type="date"
+                        className="input"
+                        value={filterDateTo}
+                        onChange={(e) => setFilterDateTo(e.target.value)}
+                      />
+                    </div>
+                    {hasActiveFilters && (
+                      <button type="button" className="btn btn-outline btn-sm" onClick={resetFilters}>
+                        <i className="fas fa-times" aria-hidden="true"></i> Azzera
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="card-body p-0">
                   {errorNotifications && (
@@ -748,9 +859,15 @@ export function App(): React.JSX.Element {
                       <i className="far fa-folder-open" aria-hidden="true"></i>
                       <p style={{ margin: 0 }}>Non ci sono comunicazioni per questo codice fiscale.</p>
                     </div>
+                  ) : filteredNotifications.length === 0 ? (
+                    <div className="notif-empty">
+                      <i className="fas fa-filter-circle-xmark" aria-hidden="true"></i>
+                      <p style={{ margin: '0 0 var(--sp-3)' }}>Nessuna comunicazione corrisponde ai filtri.</p>
+                      <button type="button" className="btn btn-outline btn-sm" onClick={resetFilters}>Azzera filtri</button>
+                    </div>
                   ) : (
                     <div className="notif-list">
-                      {notifications.map((n) => {
+                      {filteredNotifications.map((n) => {
                         const isDownloaded = !!n.extraData?.['download_count'];
                         const badge = statusBadge(n.status);
                         return (
