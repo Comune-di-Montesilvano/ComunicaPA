@@ -48,7 +48,27 @@ export class OidcCitizenStrategy extends PassportStrategy(Strategy, 'oidc-citize
           .get<string>('oidc.jwksUri')
           .then((jwksUri) => {
             if (jwksUri) {
-              getJwksProvider(jwksUri)(req, rawJwt, done);
+              getJwksProvider(jwksUri)(req, rawJwt, (err, secret) => {
+                if (err || !secret) {
+                  // jwks-rsa inghiotte SigningKeyNotFoundError e mismatch di
+                  // algoritmo richiamando il callback con (null, null): senza
+                  // questo log il fallimento è silenzioso e jsonwebtoken
+                  // rigetta poi il token con un 401 generico privo di dettagli
+                  let header = 'non decodificabile';
+                  try {
+                    const headerPart = String(rawJwt).split('.')[0];
+                    header = Buffer.from(headerPart, 'base64').toString('utf8');
+                  } catch {
+                    // ignora, resta 'non decodificabile'
+                  }
+                  Logger.error(
+                    `Verifica JWKS fallita (header token: ${header}): ${err?.message ?? 'nessuna chiave/secret restituita da jwks-rsa (kid non trovato o algoritmo non supportato)'}`,
+                    err?.stack,
+                    'OidcCitizenStrategy',
+                  );
+                }
+                done(err, secret);
+              });
             } else {
               // Fallback dev: senza JWKS i token cittadino sono verificati in
               // HS256 col JWT_SECRET interno — in produzione va segnalato
