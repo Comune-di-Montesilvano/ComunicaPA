@@ -763,7 +763,7 @@ export function App(): React.JSX.Element {
 
             {/* List of notifications (Left column) */}
             <div className="notif-list-col">
-              <div className="card shadow-sm h-100 bg-white" style={{ borderRadius: '8px', border: '1px solid var(--border-1)' }}>
+              <div className="card" style={{ height: '100%' }}>
                 <div className="card-pad" style={{ borderBottom: '1px solid var(--border-1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--sp-3)' }}>
                   <h3 className="ms-h3" style={{ margin: 0 }}>
                     <i className="far fa-envelope" style={{ color: 'var(--bi-primary)', marginRight: 8 }} aria-hidden="true"></i>
