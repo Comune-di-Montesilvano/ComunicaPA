@@ -2,9 +2,17 @@ import { Controller, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Req,
 import type { Response } from 'express';
 import type { CitizenTokenClaims } from '@comunicapa/shared-types';
 import { OidcAuthGuard } from '../auth/guards/oidc-auth.guard';
+import { Public } from '../auth/decorators/public.decorator';
 import { CitizenService } from './citizen.service';
 
+// @Public() esclude questo controller dal JwtAuthGuard globale (pensato per
+// gli operatori, verifica JWT HS256/JWT_SECRET): i token cittadino OIDC reali
+// sono RS256 firmati dal provider esterno e falliscono quella verifica prima
+// ancora di raggiungere l'OidcAuthGuard sotto, con un 401 muto e nessun log.
+// In dev (LDAP_HOST=mock) il bug non si vedeva perché il token cittadino
+// simulato è firmato con lo stesso JWT_SECRET/HS256 dell'operatore.
 @Controller('citizen')
+@Public()
 @UseGuards(OidcAuthGuard)
 export class CitizenController {
   constructor(private readonly citizenService: CitizenService) {}
