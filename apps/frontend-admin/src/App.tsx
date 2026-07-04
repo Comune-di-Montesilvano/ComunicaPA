@@ -121,11 +121,15 @@ export function App(): React.JSX.Element {
   const [searchCampaignId, setSearchCampaignId] = useState('');
   const [searchChannel, setSearchChannel] = useState('');
   const [searchStatus, setSearchStatus] = useState('');
+  const [searchDateFrom, setSearchDateFrom] = useState('');
+  const [searchDateTo, setSearchDateTo] = useState('');
+  const [searchPage, setSearchPage] = useState(1);
+  const SEARCH_PAGE_SIZE = 50;
   const [searchResults, setSearchResults] = useState<Array<{ recipientId: string; campaignId: string; campaignName: string; codiceFiscale: string; fullName: string | null; channelType: string; status: string; createdAt: string }>>([]);
   const [searchTotal, setSearchTotal] = useState(0);
   const [searchLoading, setSearchLoading] = useState(false);
 
-  const runNotificationSearch = async () => {
+  const runNotificationSearch = async (page = searchPage) => {
     setSearchLoading(true);
     try {
       const params = new URLSearchParams();
@@ -133,16 +137,28 @@ export function App(): React.JSX.Element {
       if (searchCampaignId) params.set('campaignId', searchCampaignId);
       if (searchChannel) params.set('channelType', searchChannel);
       if (searchStatus) params.set('status', searchStatus);
+      if (searchDateFrom) params.set('dateFrom', searchDateFrom);
+      if (searchDateTo) params.set('dateTo', searchDateTo);
+      params.set('page', String(page));
+      params.set('pageSize', String(SEARCH_PAGE_SIZE));
       const res = await fetch(`${API_BASE}/notifications-search?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
       setSearchResults(data.rows || []);
       setSearchTotal(data.total || 0);
+      setSearchPage(page);
     } finally {
       setSearchLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (view === 'notifiche-ricerca' && token) {
+      runNotificationSearch(1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, token]);
 
   useEffect(() => {
     fetch(`${API_BASE}/version`)
@@ -3466,7 +3482,13 @@ export function App(): React.JSX.Element {
                     </select>
                   </div>
                   <div className="col-md-2">
-                    <button className="btn btn-primary btn-sm w-100" onClick={runNotificationSearch} disabled={searchLoading}>
+                    <input type="date" className="form-control form-control-sm" value={searchDateFrom} onChange={e => setSearchDateFrom(e.target.value)} title="Data da" />
+                  </div>
+                  <div className="col-md-2">
+                    <input type="date" className="form-control form-control-sm" value={searchDateTo} onChange={e => setSearchDateTo(e.target.value)} title="Data a" />
+                  </div>
+                  <div className="col-md-2">
+                    <button className="btn btn-primary btn-sm w-100" onClick={() => runNotificationSearch(1)} disabled={searchLoading}>
                       <i className="fas fa-search me-1"></i>Cerca
                     </button>
                   </div>
@@ -3487,10 +3509,25 @@ export function App(): React.JSX.Element {
                           <td className="small text-muted">{new Date(r.createdAt).toLocaleString('it-IT')}</td>
                         </tr>
                       ))}
-                      {searchResults.length === 0 && <tr><td colSpan={6} className="text-center text-muted py-3">Nessun risultato — {searchTotal} totali</td></tr>}
+                      {searchResults.length === 0 && <tr><td colSpan={6} className="text-center text-muted py-3">{searchLoading ? 'Caricamento…' : 'Nessun risultato'}</td></tr>}
                     </tbody>
                   </table>
                 </div>
+                {searchTotal > 0 && (
+                  <div className="d-flex justify-content-between align-items-center p-2 border-top small text-muted">
+                    <span>
+                      {(searchPage - 1) * SEARCH_PAGE_SIZE + 1}–{Math.min(searchPage * SEARCH_PAGE_SIZE, searchTotal)} di {searchTotal}
+                    </span>
+                    <div className="btn-group">
+                      <button className="btn btn-outline-secondary btn-sm" onClick={() => runNotificationSearch(searchPage - 1)} disabled={searchLoading || searchPage <= 1}>
+                        <i className="fas fa-chevron-left"></i> Precedente
+                      </button>
+                      <button className="btn btn-outline-secondary btn-sm" onClick={() => runNotificationSearch(searchPage + 1)} disabled={searchLoading || searchPage * SEARCH_PAGE_SIZE >= searchTotal}>
+                        Successiva <i className="fas fa-chevron-right"></i>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

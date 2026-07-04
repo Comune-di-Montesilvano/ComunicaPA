@@ -8,6 +8,8 @@ export interface SearchFilters {
   campaignId?: string;
   channelType?: string;
   status?: string;
+  dateFrom?: string;
+  dateTo?: string;
   page: number;
   pageSize: number;
 }
@@ -46,6 +48,12 @@ export class NotificationsSearchService {
     }
     if (filters.channelType) {
       qb.andWhere('campaign.channelType = :channelType', { channelType: filters.channelType });
+    }
+    if (filters.dateFrom) {
+      qb.andWhere('recipient.createdAt >= :dateFrom', { dateFrom: filters.dateFrom });
+    }
+    if (filters.dateTo) {
+      qb.andWhere('recipient.createdAt < (:dateTo::date + interval \'1 day\')', { dateTo: filters.dateTo });
     }
 
     qb.orderBy('recipient.createdAt', 'DESC')

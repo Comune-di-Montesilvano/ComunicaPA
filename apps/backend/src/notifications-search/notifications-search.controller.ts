@@ -13,16 +13,20 @@ export class NotificationsSearchController {
     @Query('campaignId') campaignId?: string,
     @Query('channelType') channelType?: string,
     @Query('status') status?: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
     @Query('page') page = '1',
-    @Query('pageSize') pageSize = '20',
+    @Query('pageSize') pageSize = '50',
   ) {
     return this.svc.search({
       codiceFiscale,
       campaignId,
       channelType,
       status,
+      dateFrom,
+      dateTo,
       page: Math.max(1, parseInt(page, 10) || 1),
-      pageSize: Math.min(200, Math.max(1, parseInt(pageSize, 10) || 20)),
+      pageSize: Math.min(200, Math.max(1, parseInt(pageSize, 10) || 50)),
     });
   }
 }
