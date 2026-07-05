@@ -1703,9 +1703,9 @@ export function App(): React.JSX.Element {
     setWizDraftSaving(true);
     try {
       if (!wizCampaignId) {
-        const res = await fetch(`${API_BASE}/campaigns`, {
+        const res = await apiFetch('/campaigns', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             name: wizName,
             description: wizDesc,
@@ -1717,9 +1717,9 @@ export function App(): React.JSX.Element {
         const created = await res.json();
         setWizCampaignId(created.id);
       } else {
-        const res = await fetch(`${API_BASE}/campaigns/${wizCampaignId}`, {
+        const res = await apiFetch(`/campaigns/${wizCampaignId}`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             name: wizName,
             description: wizDesc,
@@ -1731,6 +1731,7 @@ export function App(): React.JSX.Element {
       fetchCampaigns();
       alert('Bozza salvata.');
     } catch (err: any) {
+      if (err instanceof ApiAuthError) return;
       alert(err.message);
     } finally {
       setWizDraftSaving(false);
