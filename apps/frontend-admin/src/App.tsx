@@ -464,6 +464,24 @@ export function App(): React.JSX.Element {
     setView('dashboard');
   };
 
+  class ApiAuthError extends Error {
+    constructor() {
+      super('Sessione scaduta. Effettua nuovamente il login.');
+      this.name = 'ApiAuthError';
+    }
+  }
+
+  const apiFetch = async (path: string, init: RequestInit = {}): Promise<Response> => {
+    const headers = new Headers(init.headers);
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+    if (res.status === 401) {
+      handleLogout();
+      throw new ApiAuthError();
+    }
+    return res;
+  };
+
   const fetchCampaigns = async () => {
     setLoadingCampaigns(true);
     setDashboardError(null);
