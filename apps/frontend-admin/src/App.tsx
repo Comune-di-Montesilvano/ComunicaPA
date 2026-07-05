@@ -785,9 +785,9 @@ export function App(): React.JSX.Element {
     localStorage.setItem('sett_postal_url', settPostalUrl);
 
     try {
-      const res = await fetch(`${API_BASE}/settings`, {
+      const res = await apiFetch('/settings', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           settings: {
             'brand.name': settEntityName,
@@ -813,7 +813,8 @@ export function App(): React.JSX.Element {
       } else {
         setSettingsSavedMessage({ text: 'Impostazioni salvate con successo!', error: false });
       }
-    } catch {
+    } catch (err) {
+      if (err instanceof ApiAuthError) return;
       setSettingsSavedMessage({ text: 'Errore di rete durante il salvataggio.', error: true });
     }
     setTimeout(() => setSettingsSavedMessage(null), 3000);
