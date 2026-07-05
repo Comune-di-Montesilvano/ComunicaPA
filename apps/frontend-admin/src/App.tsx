@@ -508,13 +508,12 @@ export function App(): React.JSX.Element {
     setLoadingCampaignDetail(true);
     setDetailError(null);
     try {
-      const res = await fetch(`${API_BASE}/campaigns/${id}`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
+      const res = await apiFetch(`/campaigns/${id}`);
       if (!res.ok) throw new Error('Impossibile caricare il dettaglio della campagna.');
       const data = await res.json();
       setCampaign(data);
     } catch (err: any) {
+      if (err instanceof ApiAuthError) return;
       setDetailError(err.message);
     } finally {
       setLoadingCampaignDetail(false);
@@ -522,8 +521,13 @@ export function App(): React.JSX.Element {
   };
 
   const fetchCampaignFailures = async (campaignId: string) => {
-    const res = await fetch(`${API_BASE}/campaigns/${campaignId}/failures`, { headers: { Authorization: `Bearer ${token}` } });
-    if (res.ok) setCampaignFailures(await res.json());
+    try {
+      const res = await apiFetch(`/campaigns/${campaignId}/failures`);
+      if (res.ok) setCampaignFailures(await res.json());
+    } catch (err) {
+      if (err instanceof ApiAuthError) return;
+      throw err;
+    }
   };
 
   const handleRetryRecipient = async (campaignId: string, recipientId: string) => {
