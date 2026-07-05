@@ -264,6 +264,15 @@ export function App(): React.JSX.Element {
     return [fn1, fn2].filter(Boolean).join(' ');
   };
 
+  // Con CSV senza header le colonne sono "Colonna N": senza un'anteprima del
+  // valore reale l'operatore non ha modo di sapere quale colonna scegliere.
+  const wizColumnOptionLabel = (h: string): string => {
+    const sample = wizCsvRows[0]?.[h];
+    if (!sample) return h;
+    const truncated = sample.length > 30 ? `${sample.slice(0, 30)}…` : sample;
+    return `${h} — ${truncated}`;
+  };
+
   // Settings State (loaded from backend GET /settings; see useEffect below)
   const [settEntityName, setSettEntityName] = useState('Comune di Montesilvano');
   const [settSubtitle, setSettSubtitle] = useState('ComunicaPA Hub');
@@ -2998,7 +3007,7 @@ export function App(): React.JSX.Element {
                         required={wizChannel === 'APP_IO' || wizChannel === 'SEND'}
                       >
                         <option value="">-- Seleziona Colonna CF --</option>
-                        {wizCsvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                        {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
                       </select>
                     </div>
 
@@ -3011,7 +3020,7 @@ export function App(): React.JSX.Element {
                         required
                       >
                         <option value="">-- Seleziona Colonna Cognome/Completo --</option>
-                        {wizCsvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                        {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
                       </select>
                     </div>
 
@@ -3023,7 +3032,7 @@ export function App(): React.JSX.Element {
                         onChange={e => handleWizMappingChange('full_name_2', e.target.value)}
                       >
                         <option value="">-- Seleziona Colonna Nome (Opzionale) --</option>
-                        {wizCsvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                        {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
                       </select>
                     </div>
 
@@ -3036,7 +3045,7 @@ export function App(): React.JSX.Element {
                         required={wizChannel === 'EMAIL'}
                       >
                         <option value="">-- Seleziona Colonna Email --</option>
-                        {wizCsvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                        {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
                       </select>
                     </div>
 
@@ -3049,7 +3058,7 @@ export function App(): React.JSX.Element {
                         required={wizChannel === 'PEC'}
                       >
                         <option value="">-- Seleziona Colonna PEC --</option>
-                        {wizCsvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                        {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
                       </select>
                     </div>
 
@@ -3061,7 +3070,7 @@ export function App(): React.JSX.Element {
                         onChange={e => handleWizMappingChange('allegato1', e.target.value)}
                       >
                         <option value="">-- Seleziona Colonna Speciale --</option>
-                        {wizCsvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                        {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
                       </select>
                     </div>
                   </div>
