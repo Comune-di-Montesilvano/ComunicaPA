@@ -695,31 +695,40 @@ export function App(): React.JSX.Element {
       alert('I campi contrassegnati con asterisco sono obbligatori.');
       return;
     }
-    await fetch(`${API_BASE}/io-services`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        nome: newSvcNome,
-        idService: newSvcIdService.toUpperCase().trim(),
-        descrizione: newSvcDesc,
-        apiKeyPrimaria: newSvcApiKeyPrimaria,
-        apiKeySecondaria: newSvcApiKeySecondaria,
-        codiceCatalogo: newSvcCodiceCatalogo,
-        isDefault: newSvcIsDefault || ioServices.length === 0,
-      }),
-    });
-    await fetchIoServices();
+    try {
+      const res = await apiFetch('/io-services', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nome: newSvcNome,
+          idService: newSvcIdService.toUpperCase().trim(),
+          descrizione: newSvcDesc,
+          apiKeyPrimaria: newSvcApiKeyPrimaria,
+          apiKeySecondaria: newSvcApiKeySecondaria,
+          codiceCatalogo: newSvcCodiceCatalogo,
+          isDefault: newSvcIsDefault || ioServices.length === 0,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || 'Errore durante la creazione del servizio App IO.');
+      }
+      await fetchIoServices();
 
-    // Reset Form
-    setNewSvcNome('');
-    setNewSvcIdService('');
-    setNewSvcDesc('');
-    setNewSvcApiKeyPrimaria('');
-    setNewSvcApiKeySecondaria('');
-    setNewSvcCodiceCatalogo('');
-    setNewSvcIsDefault(false);
-    setShowNewSvcForm(false);
-    alert('Servizio creato con successo!');
+      // Reset Form
+      setNewSvcNome('');
+      setNewSvcIdService('');
+      setNewSvcDesc('');
+      setNewSvcApiKeyPrimaria('');
+      setNewSvcApiKeySecondaria('');
+      setNewSvcCodiceCatalogo('');
+      setNewSvcIsDefault(false);
+      setShowNewSvcForm(false);
+      alert('Servizio creato con successo!');
+    } catch (err: any) {
+      if (err instanceof ApiAuthError) return;
+      alert(err.message || 'Errore durante la creazione del servizio App IO.');
+    }
   };
 
   const handleSetDefaultIoService = async (id: string) => {
@@ -937,12 +946,13 @@ export function App(): React.JSX.Element {
   const fetchIoServices = async () => {
     if (!token) return;
     try {
-      const res = await fetch(`${API_BASE}/io-services`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await apiFetch('/io-services');
       if (res.ok) {
         const data = await res.json();
         setIoServices(data.configs || []);
       }
     } catch (err) {
+      if (err instanceof ApiAuthError) return;
       console.error("Errore caricamento io-services:", err);
     }
   };
