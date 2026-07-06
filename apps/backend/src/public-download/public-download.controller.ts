@@ -6,6 +6,7 @@ import type { Response } from 'express';
 import type { AppConfiguration } from '../config/configuration';
 import { Public } from '../auth/decorators/public.decorator';
 import { Recipient } from '../entities/recipient.entity';
+import { DownloadEvent } from '../entities/download-event.entity';
 import { AttachmentService } from '../attachments/attachment.service';
 import { verifyDownloadLink } from '../channels/download-link.util';
 
@@ -15,6 +16,8 @@ export class PublicDownloadController {
   constructor(
     @InjectRepository(Recipient)
     private readonly recipientRepo: Repository<Recipient>,
+    @InjectRepository(DownloadEvent)
+    private readonly downloadEventRepo: Repository<DownloadEvent>,
     private readonly attachmentService: AttachmentService,
     private readonly config: ConfigService<AppConfiguration, true>,
   ) {}
@@ -25,6 +28,7 @@ export class PublicDownloadController {
     @Param('index') indexParam: string,
     @Query('exp') exp: string,
     @Query('sig') sig: string,
+    @Query('ch') channel: string | undefined,
     @Res() res: Response,
   ): Promise<void> {
     const index = parseInt(indexParam, 10);
@@ -35,7 +39,7 @@ export class PublicDownloadController {
       !Number.isFinite(index) ||
       index < 0 ||
       !Number.isFinite(expiresAtUnix) ||
-      !verifyDownloadLink(recipientId, index, expiresAtUnix, sig, secret)
+      !verifyDownloadLink(recipientId, index, expiresAtUnix, sig, secret, channel ?? '')
     ) {
       throw new ForbiddenException('Link non valido');
     }
@@ -57,6 +61,11 @@ export class PublicDownloadController {
       downloadCount: recipient.downloadCount + 1,
       firstDownloadedAt: recipient.firstDownloadedAt ?? new Date(),
       lastDownloadedAt: new Date(),
+    });
+    await this.downloadEventRepo.insert({
+      recipientId,
+      channel: channel || 'UNKNOWN',
+      attachmentIndex: index,
     });
 
     res.setHeader('Content-Type', 'application/pdf');

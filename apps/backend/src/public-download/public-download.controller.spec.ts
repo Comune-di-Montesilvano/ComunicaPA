@@ -5,6 +5,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { PublicDownloadController } from './public-download.controller';
 import { AttachmentService } from '../attachments/attachment.service';
 import { Recipient } from '../entities/recipient.entity';
+import { DownloadEvent } from '../entities/download-event.entity';
 import { signDownloadLink } from '../channels/download-link.util';
 
 describe('PublicDownloadController', () => {
@@ -30,6 +31,9 @@ describe('PublicDownloadController', () => {
   const mockAttachmentService = {
     generatePdfBuffer: jest.fn().mockResolvedValue(Buffer.from('%PDF-fake')),
   };
+  const mockDownloadEventRepo = {
+    insert: jest.fn().mockResolvedValue(undefined),
+  };
   const mockConfig = { get: () => secret };
 
   beforeEach(async () => {
@@ -39,6 +43,7 @@ describe('PublicDownloadController', () => {
       controllers: [PublicDownloadController],
       providers: [
         { provide: getRepositoryToken(Recipient), useValue: mockRepo },
+        { provide: getRepositoryToken(DownloadEvent), useValue: mockDownloadEventRepo },
         { provide: AttachmentService, useValue: mockAttachmentService },
         { provide: ConfigService, useValue: mockConfig },
       ],
@@ -49,7 +54,7 @@ describe('PublicDownloadController', () => {
   it('rifiuta con 403 se la firma non è valida', async () => {
     const res: any = { setHeader: jest.fn(), end: jest.fn() };
     await expect(
-      controller.download(recipientId, '0', String(futureExp), 'firma-non-valida', res),
+      controller.download(recipientId, '0', String(futureExp), 'firma-non-valida', undefined, res),
     ).rejects.toThrow(ForbiddenException);
   });
 
@@ -57,7 +62,15 @@ describe('PublicDownloadController', () => {
     const sig = signDownloadLink(recipientId, 0, futureExp, secret);
     const res: any = { setHeader: jest.fn(), end: jest.fn() };
     await expect(
-      controller.download(recipientId, '1', String(futureExp), sig, res),
+      controller.download(recipientId, '1', String(futureExp), sig, undefined, res),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('rifiuta con 403 se il canale non corrisponde alla firma', async () => {
+    const sig = signDownloadLink(recipientId, 0, futureExp, secret, 'EMAIL');
+    const res: any = { setHeader: jest.fn(), end: jest.fn() };
+    await expect(
+      controller.download(recipientId, '0', String(futureExp), sig, 'APP_IO', res),
     ).rejects.toThrow(ForbiddenException);
   });
 
@@ -65,25 +78,30 @@ describe('PublicDownloadController', () => {
     const pastExp = Math.floor(Date.now() / 1000) - 10;
     const sig = signDownloadLink(recipientId, 0, pastExp, secret);
     const res: any = { setHeader: jest.fn(), end: jest.fn() };
-    await expect(controller.download(recipientId, '0', String(pastExp), sig, res)).rejects.toThrow(GoneException);
+    await expect(controller.download(recipientId, '0', String(pastExp), sig, undefined, res)).rejects.toThrow(GoneException);
   });
 
   it('rifiuta con 410 se l\'allegato è già stato eliminato per retention', async () => {
     mockRepo.findOne.mockResolvedValueOnce({ ...mockRecipient, attachmentDeletedAt: new Date() });
     const sig = signDownloadLink(recipientId, 0, futureExp, secret);
     const res: any = { setHeader: jest.fn(), end: jest.fn() };
-    await expect(controller.download(recipientId, '0', String(futureExp), sig, res)).rejects.toThrow(GoneException);
+    await expect(controller.download(recipientId, '0', String(futureExp), sig, undefined, res)).rejects.toThrow(GoneException);
   });
 
-  it('serve il PDF dell\'indice richiesto e incrementa downloadCount con firma valida', async () => {
-    const sig = signDownloadLink(recipientId, 1, futureExp, secret);
+  it('serve il PDF, incrementa downloadCount e registra un DownloadEvent col canale corretto', async () => {
+    const sig = signDownloadLink(recipientId, 1, futureExp, secret, 'EMAIL');
     const res: any = { setHeader: jest.fn(), end: jest.fn() };
-    await controller.download(recipientId, '1', String(futureExp), sig, res);
+    await controller.download(recipientId, '1', String(futureExp), sig, 'EMAIL', res);
     expect(mockAttachmentService.generatePdfBuffer).toHaveBeenCalledWith(mockRecipient, 1);
     expect(res.end).toHaveBeenCalledWith(Buffer.from('%PDF-fake'));
     expect(mockRepo.update).toHaveBeenCalledWith(
       recipientId,
       expect.objectContaining({ downloadCount: 1 }),
     );
+    expect(mockDownloadEventRepo.insert).toHaveBeenCalledWith({
+      recipientId,
+      channel: 'EMAIL',
+      attachmentIndex: 1,
+    });
   });
 });

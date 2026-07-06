@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Recipient } from '../entities/recipient.entity';
+import { DownloadEvent } from '../entities/download-event.entity';
 import { AttachmentService } from '../attachments/attachment.service';
 
 @Injectable()
@@ -9,6 +10,8 @@ export class CitizenService {
   constructor(
     @InjectRepository(Recipient)
     private readonly recipientRepo: Repository<Recipient>,
+    @InjectRepository(DownloadEvent)
+    private readonly downloadEventRepo: Repository<DownloadEvent>,
     private readonly attachmentService: AttachmentService,
   ) {}
 
@@ -48,6 +51,7 @@ export class CitizenService {
     recipient.extraData['downloaded_at'] = new Date().toISOString();
 
     await this.recipientRepo.save(recipient);
+    await this.downloadEventRepo.insert({ recipientId: id, channel: 'CITIZEN_PORTAL', attachmentIndex: 0 });
     return recipient;
   }
 
