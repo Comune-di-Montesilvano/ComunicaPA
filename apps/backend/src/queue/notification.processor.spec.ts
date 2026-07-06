@@ -255,7 +255,7 @@ describe('NotificationProcessor', () => {
       mockStrategy.send.mockRejectedValueOnce(new Error('SMTP down'));
       (global as any).fetch = jest.fn()
         .mockResolvedValueOnce({ ok: true, json: async () => ({ sender_allowed: true }) }) // checkAppIoProfile
-        .mockResolvedValueOnce({ ok: false, status: 500 }); // send message
+        .mockResolvedValueOnce({ ok: false, status: 500, text: async () => '' }); // send message
 
       await expect(processor.process(mockJob(baseData))).rejects.toThrow('SMTP down');
 

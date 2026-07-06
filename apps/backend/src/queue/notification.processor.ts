@@ -240,10 +240,14 @@ export class NotificationProcessor extends WorkerHost {
       });
       if (!res.ok) {
         // 404 = cittadino non ha mai attivato App IO (esito atteso, non un
-        // errore); altri status possono indicare un problema reale (api key
-        // non valida, servizio App IO giù, ecc.) — logghiamo comunque per
-        // rendere distinguibili i due casi quando la co-consegna non parte.
-        this.logger.debug(`Profilo App IO non disponibile per CF ${fiscalCode}: HTTP ${res.status}`);
+        // errore); altri status possono indicare un problema reale (CF
+        // malformato, api key non valida, servizio App IO giù, ecc.) —
+        // logghiamo comunque, col body di PagoPA quando c'è, per rendere
+        // distinguibili i due casi quando la co-consegna non parte.
+        const detail = res.status === 404 ? '' : await res.text().catch(() => '');
+        this.logger.debug(
+          `Profilo App IO non disponibile per CF ${fiscalCode}: HTTP ${res.status}${detail ? ` — ${detail}` : ''}`,
+        );
         return false;
       }
       const data = (await res.json()) as { sender_allowed: boolean };
@@ -298,7 +302,8 @@ export class NotificationProcessor extends WorkerHost {
       });
 
       if (!appIoRes.ok) {
-        return { success: false, error: `App IO status: ${appIoRes.status}` };
+        const detail = await appIoRes.text().catch(() => '');
+        return { success: false, error: `App IO status: ${appIoRes.status}${detail ? ` — ${detail}` : ''}` };
       }
       const appIoData = (await appIoRes.json()) as { id: string };
       return { success: true, messageId: appIoData.id };

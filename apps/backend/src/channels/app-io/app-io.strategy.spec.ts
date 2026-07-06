@@ -80,6 +80,20 @@ describe('AppIoStrategy', () => {
     expect(result.messageId).toBe('io-msg-001');
   });
 
+  it('include il body di errore di PagoPA quando la verifica profilo fallisce con status diverso da 404 (es. CF malformato)', async () => {
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url.includes('/profiles/')) {
+        return { ok: false, status: 400, text: async () => '{"title":"Invalid fiscal code"}' };
+      }
+      return { ok: true, json: async () => ({ id: 'ok' }) };
+    });
+
+    const recipient = { codiceFiscale: 'CF-NON-VALIDO', fullName: null, email: null, pec: null };
+    const campaign = { name: 'T', channelConfig: {} };
+
+    await expect(strategy.send(recipient as never, campaign as never)).rejects.toThrow('Invalid fiscal code');
+  });
+
   it('lancia errore se il cittadino non è iscritto ad App IO (404)', async () => {
     mockFetch.mockImplementation(async (url: string) => {
       if (url.includes('/profiles/')) {
@@ -121,12 +135,36 @@ describe('AppIoStrategy', () => {
           json: async () => ({ sender_allowed: true }),
         };
       }
-      return { ok: false, status: 429 };
+      return { ok: false, status: 429, text: async () => '' };
     });
 
     const recipient = { codiceFiscale: 'CF', fullName: null, email: null, pec: null };
     const campaign = { name: 'T', channelConfig: {} };
 
     await expect(strategy.send(recipient as never, campaign as never)).rejects.toThrow('App IO API error: HTTP 429');
+  });
+
+  it('send() include il body di errore di PagoPA nel messaggio (es. validazione lunghezza markdown)', async () => {
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url.includes('/profiles/')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ sender_allowed: true }),
+        };
+      }
+      return {
+        ok: false,
+        status: 400,
+        text: async () => '{"title":"Bad Request","detail":"markdown must be at least 80 characters"}',
+      };
+    });
+
+    const recipient = { codiceFiscale: 'CF', fullName: null, email: null, pec: null };
+    const campaign = { name: 'T', channelConfig: {} };
+
+    await expect(strategy.send(recipient as never, campaign as never)).rejects.toThrow(
+      'markdown must be at least 80 characters',
+    );
   });
 });

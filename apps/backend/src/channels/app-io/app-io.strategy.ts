@@ -37,7 +37,8 @@ export class AppIoStrategy implements IChannelStrategy {
       if (profileRes.status === 404) {
         throw new Error('Cittadino non iscritto ad App IO');
       }
-      throw new Error(`Errore verifica profilo App IO: HTTP ${profileRes.status}`);
+      const detail = await profileRes.text().catch(() => '');
+      throw new Error(`Errore verifica profilo App IO: HTTP ${profileRes.status}${detail ? ` — ${detail}` : ''}`);
     }
 
     const profileData = (await profileRes.json()) as { sender_allowed: boolean };
@@ -66,7 +67,8 @@ export class AppIoStrategy implements IChannelStrategy {
     });
 
     if (!response.ok) {
-      throw new Error(`App IO API error: HTTP ${response.status}`);
+      const detail = await response.text().catch(() => '');
+      throw new Error(`App IO API error: HTTP ${response.status}${detail ? ` — ${detail}` : ''}`);
     }
 
     const data = (await response.json()) as { id: string };
