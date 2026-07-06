@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import { join } from 'path';
 import * as os from 'os';
 import AdmZip from 'adm-zip';
+import { getUploadsDir } from '../attachments/attachment-paths';
 
 const tmpDirRef = { dir: '' };
 jest.mock('../attachments/attachment-paths', () => ({
@@ -56,6 +57,7 @@ describe('CampaignsService', () => {
     update: jest.fn().mockResolvedValue(undefined),
     increment: jest.fn().mockResolvedValue(undefined),
     createQueryBuilder: jest.fn().mockReturnValue(mockCampaignQb),
+    delete: jest.fn().mockResolvedValue(undefined),
   };
   const mockRecipientRepo = {
     find: jest.fn().mockResolvedValue([]),
@@ -103,6 +105,7 @@ describe('CampaignsService', () => {
     mockCampaignRepo.save.mockResolvedValue(mockCampaign);
     mockCampaignRepo.update.mockResolvedValue(undefined);
     mockCampaignRepo.increment.mockResolvedValue(undefined);
+    mockCampaignRepo.delete.mockResolvedValue(undefined);
     mockCampaignQb.execute.mockResolvedValue({ affected: 1 });
     mockCampaignRepo.createQueryBuilder.mockReturnValue(mockCampaignQb);
     mockRecipientRepo.find.mockResolvedValue([]);
@@ -439,6 +442,31 @@ describe('CampaignsService', () => {
         appIoDespitePrimaryFail: 1,
         neither: 1,
       });
+    });
+  });
+
+  describe('remove', () => {
+    it('lancia NotFoundException se la campagna non esiste', async () => {
+      mockCampaignRepo.existsBy.mockResolvedValueOnce(false);
+
+      await expect(service.remove('no-exist')).rejects.toThrow(NotFoundException);
+      expect(mockCampaignRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('rimuove la cartella allegati su disco e cancella la campagna (cascade DB su recipients/attempts)', async () => {
+      mockCampaignRepo.existsBy.mockResolvedValueOnce(true);
+      mockCampaignRepo.delete = jest.fn().mockResolvedValue(undefined);
+      tmpDirRef.dir = '/tmp/comunicapa-uploads/c-del';
+      const rmSpy = jest.spyOn(fs.promises, 'rm').mockResolvedValue(undefined);
+
+      const result = await service.remove('c-del');
+
+      expect(getUploadsDir).toHaveBeenCalledWith('c-del');
+      expect(rmSpy).toHaveBeenCalledWith('/tmp/comunicapa-uploads/c-del', { recursive: true, force: true });
+      expect(mockCampaignRepo.delete).toHaveBeenCalledWith('c-del');
+      expect(result).toEqual({ deleted: true });
+
+      rmSpy.mockRestore();
     });
   });
 });

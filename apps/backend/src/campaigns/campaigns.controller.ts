@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -184,5 +185,11 @@ export class CampaignsController {
     }
 
     return this.campaignsService.getRecipientStats(id, parsedPage, parsedPageSize);
+  }
+
+  @Delete(':id')
+  @Roles('admin')
+  remove(@Param('id', ParseUUIDPipe) id: string): Promise<{ deleted: true }> {
+    return this.campaignsService.remove(id);
   }
 }

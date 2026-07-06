@@ -9,6 +9,7 @@ describe('CampaignsController', () => {
     getRecipientStats: jest.fn().mockResolvedValue({ campaignId: 'uuid-1', page: 1, pageSize: 50, total: 0, items: [] }),
     assertDraftForAttachments: jest.fn(),
     finalizeAttachments: jest.fn().mockResolvedValue({ uploaded: 2, discarded: 0 }),
+    remove: jest.fn().mockResolvedValue({ deleted: true }),
   };
 
   beforeEach(() => {
@@ -90,6 +91,14 @@ describe('CampaignsController', () => {
       expect(res).toEqual({ uploaded: 2, discarded: 0, campaignId: 'uuid-1' });
       expect(unlinkSpy).not.toHaveBeenCalled();
       unlinkSpy.mockRestore();
+    });
+  });
+
+  describe('remove', () => {
+    it('delega a campaignsService.remove', async () => {
+      const result = await controller.remove('uuid-1');
+      expect(mockService.remove).toHaveBeenCalledWith('uuid-1');
+      expect(result).toEqual({ deleted: true });
     });
   });
 });

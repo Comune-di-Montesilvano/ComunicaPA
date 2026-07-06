@@ -560,5 +560,15 @@ export class CampaignsService {
     const uploaded = fs.existsSync(dir) ? fs.readdirSync(dir).length : 0;
     return { uploaded, discarded };
   }
+
+  async remove(campaignId: string): Promise<{ deleted: true }> {
+    const exists = await this.campaignRepo.existsBy({ id: campaignId });
+    if (!exists) throw new NotFoundException(`Campaign ${campaignId} not found`);
+
+    await fs.promises.rm(getUploadsDir(campaignId), { recursive: true, force: true });
+    await this.campaignRepo.delete(campaignId);
+
+    return { deleted: true };
+  }
 }
 
