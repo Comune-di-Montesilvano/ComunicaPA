@@ -343,13 +343,12 @@ export function App(): React.JSX.Element {
   };
 
   const renderAppIoCoDeliveryBadge = (r: Recipient) => {
-    const hasAppIoCoDelivery = campaign?.channelConfig?.secondaryChannels?.some((sc: any) => sc?.channel === 'APP_IO');
-    if (!hasAppIoCoDelivery || !r.attempts) return null;
+    if (!r.attempts) return null;
 
     const firstAttempt = r.attempts.find(a => a.attemptNumber === 1 || a.responsePayload?.appIo);
-    if (!firstAttempt) return null;
-
-    const appIo = firstAttempt.responsePayload?.appIo;
+    
+    // 1. Check for parallel co-delivery result
+    const appIo = firstAttempt?.responsePayload?.appIo;
     if (appIo) {
       if (appIo.success) {
         return (
@@ -366,7 +365,8 @@ export function App(): React.JSX.Element {
       }
     }
 
-    if (firstAttempt.responsePayload?.deliveredVia === 'APP_IO') {
+    // 2. Check for exclusive co-delivery result
+    if (firstAttempt?.responsePayload?.deliveredVia === 'APP_IO') {
       if (firstAttempt.status === 'success') {
         return (
           <span className="badge bg-primary d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem', alignSelf: 'start', backgroundColor: '#0059b3' }}>
@@ -382,11 +382,20 @@ export function App(): React.JSX.Element {
       }
     }
 
-    return (
-      <span className="badge bg-light text-muted border d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem', alignSelf: 'start' }}>
-        <i className="fas fa-mobile-alt"></i> App IO: Non attivo
-      </span>
-    );
+    // 3. Check if App IO co-delivery was configured
+    const hasAppIoCoDelivery = 
+      campaign?.channelConfig?.secondaryChannels?.some((sc: any) => sc?.channel === 'APP_IO') ||
+      !!campaign?.channelConfig?.appIo;
+
+    if (hasAppIoCoDelivery) {
+      return (
+        <span className="badge bg-light text-muted border d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem', alignSelf: 'start' }}>
+          <i className="fas fa-mobile-alt"></i> App IO: Non attivo
+        </span>
+      );
+    }
+
+    return null;
   };
 
   // Con CSV senza header le colonne sono "Colonna N": senza un'anteprima del
