@@ -1928,6 +1928,21 @@ export function App(): React.JSX.Element {
     setWizCampaignId(campaignId);
   };
 
+  const handleDeleteCampaign = async (id: string, name: string) => {
+    if (!confirm(`Eliminare definitivamente la campagna "${name}"? Verranno cancellati destinatari, tentativi di invio e allegati. Azione irreversibile.`)) {
+      return;
+    }
+    const res = await apiFetch(`/campaigns/${id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      alert('Impossibile eliminare la campagna.');
+      return;
+    }
+    fetchCampaigns();
+    if (selectedCampaignId === id) {
+      setView('invio-massivo');
+    }
+  };
+
   const buildWizChannelConfigDraft = (): Record<string, any> => {
     const cfg: Record<string, any> = { subject: wizSubject, body: wizBody, mailConfigId: wizMailConfigId };
     if (wizAttachments.length > 0) cfg.attachments = wizAttachments;
@@ -2950,6 +2965,16 @@ export function App(): React.JSX.Element {
                                   >
                                     <i className="fas fa-copy"></i> Duplica
                                   </button>
+                                  {role === 'admin' && (
+                                    <button
+                                      type="button"
+                                      className="btn btn-sm btn-outline-danger d-flex align-items-center gap-1 mt-1"
+                                      title="Elimina campagna definitivamente"
+                                      onClick={() => handleDeleteCampaign(c.id, c.name)}
+                                    >
+                                      <i className="fas fa-trash"></i> Elimina
+                                    </button>
+                                  )}
                                 </td>
                               </tr>
                             ))}
@@ -5139,6 +5164,14 @@ export function App(): React.JSX.Element {
                             <div className="alert alert-warning small p-2 mt-2 mb-0">
                               <i className="fas fa-info-circle"></i> Carica un file CSV di destinatari per poter lanciare la campagna.
                             </div>
+                          )}
+                          {role === 'admin' && (
+                            <button
+                              className="btn btn-outline-danger w-100 py-2 fw-semibold mt-2"
+                              onClick={() => handleDeleteCampaign(campaign.id, campaign.name)}
+                            >
+                              <i className="fas fa-trash me-2"></i>Elimina Campagna
+                            </button>
                           )}
                         </div>
                       </div>
