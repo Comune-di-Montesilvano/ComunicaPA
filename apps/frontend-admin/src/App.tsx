@@ -148,6 +148,13 @@ export function App(): React.JSX.Element {
   const [searchResults, setSearchResults] = useState<Array<{ recipientId: string; campaignId: string; campaignName: string; codiceFiscale: string; fullName: string | null; channelType: string; status: string; createdAt: string }>>([]);
   const [searchTotal, setSearchTotal] = useState(0);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [notifDetail, setNotifDetail] = useState<{
+    recipient: { id: string; codiceFiscale: string; fullName: string | null; email: string | null; pec: string | null; status: string };
+    campaign: { id: string; name: string; channelType: string };
+    attempts: Array<{ attemptNumber: number; status: string; channelType: string; errorMessage: string | null; sentAt: string | null; createdAt: string; appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null } }>;
+    preview: { subject: string; bodyHtml?: string; bodyMarkdown?: string };
+  } | null>(null);
+  const [notifDetailLoading, setNotifDetailLoading] = useState(false);
 
   const [verificaCf, setVerificaCf] = useState('');
   const [verificaLoading, setVerificaLoading] = useState(false);
@@ -174,6 +181,23 @@ export function App(): React.JSX.Element {
       setSearchPage(page);
     } finally {
       setSearchLoading(false);
+    }
+  };
+
+  const openNotificationDetail = async (recipientId: string) => {
+    setNotifDetail(null);
+    setNotifDetailLoading(true);
+    try {
+      const res = await fetch(`${ADMIN_API_BASE}/notifications-search/${recipientId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        alert('Impossibile caricare il dettaglio della notifica.');
+        return;
+      }
+      setNotifDetail(await res.json());
+    } finally {
+      setNotifDetailLoading(false);
     }
   };
 
@@ -3945,7 +3969,7 @@ export function App(): React.JSX.Element {
                     <thead><tr><th>CF</th><th>Nome</th><th>Campagna</th><th>Canale</th><th>Stato</th><th>Data</th></tr></thead>
                     <tbody>
                       {searchResults.map(r => (
-                        <tr key={r.recipientId}>
+                        <tr key={r.recipientId} style={{ cursor: 'pointer' }} onClick={() => openNotificationDetail(r.recipientId)}>
                           <td className="font-monospace small">{r.codiceFiscale}</td>
                           <td className="small">{r.fullName || '—'}</td>
                           <td className="small">{r.campaignName}</td>
@@ -3973,6 +3997,64 @@ export function App(): React.JSX.Element {
                     </div>
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {(notifDetailLoading || notifDetail) && (
+            <div className="modal fade show d-block" style={{ background: 'rgba(0,0,0,0.5)' }} tabIndex={-1}>
+              <div className="modal-dialog modal-lg modal-dialog-scrollable">
+                <div className="modal-content">
+                  <div className="modal-header">
+                    <h5 className="modal-title">Dettaglio Notifica</h5>
+                    <button type="button" className="btn-close" onClick={() => setNotifDetail(null)}></button>
+                  </div>
+                  <div className="modal-body">
+                    {notifDetailLoading ? (
+                      <div className="text-center text-muted py-4"><i className="fas fa-spinner fa-spin me-1"></i>Caricamento...</div>
+                    ) : notifDetail && (
+                      <>
+                        <div className="mb-3">
+                          <div><strong>Destinatario:</strong> {notifDetail.recipient.fullName || notifDetail.recipient.codiceFiscale} ({notifDetail.recipient.codiceFiscale})</div>
+                          <div><strong>Campagna:</strong> {notifDetail.campaign.name} <span className="badge bg-light text-dark border ms-1">{notifDetail.campaign.channelType}</span></div>
+                        </div>
+
+                        <h6 className="fw-bold small">Storico Tentativi</h6>
+                        <table className="table table-sm mb-4">
+                          <thead><tr><th>#</th><th>Stato</th><th>Canale</th><th>Data</th><th>Errore</th><th>App IO</th></tr></thead>
+                          <tbody>
+                            {notifDetail.attempts.map((a) => (
+                              <tr key={a.attemptNumber}>
+                                <td>{a.attemptNumber}</td>
+                                <td><span className="badge bg-light text-dark border">{a.status}</span></td>
+                                <td className="small">{a.channelType}</td>
+                                <td className="small text-muted">{new Date(a.createdAt).toLocaleString('it-IT')}</td>
+                                <td className="small text-danger">{a.errorMessage || '—'}</td>
+                                <td className="small">
+                                  {a.appIo.attempted
+                                    ? (a.appIo.success ? <span className="text-success">Consegnato</span> : <span className="text-danger">{a.appIo.error || 'Non consegnato'}</span>)
+                                    : <span className="text-muted">Non tentato</span>}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+
+                        <h6 className="fw-bold small">Anteprima Messaggio Inviato</h6>
+                        <div className="mb-2 small text-muted"><strong>Oggetto:</strong> {notifDetail.preview.subject}</div>
+                        {notifDetail.preview.bodyHtml ? (
+                          <div className="bg-white border rounded overflow-hidden" style={{ padding: '4px' }} dangerouslySetInnerHTML={{ __html: notifDetail.preview.bodyHtml }} />
+                        ) : notifDetail.preview.bodyMarkdown ? (
+                          <div className="bg-white border rounded p-3" data-color-mode="light">
+                            <MDEditor.Markdown source={notifDetail.preview.bodyMarkdown} />
+                          </div>
+                        ) : (
+                          <div className="text-muted small">Nessuna anteprima disponibile.</div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           )}
