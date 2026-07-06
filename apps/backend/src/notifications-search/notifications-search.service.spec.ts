@@ -1,7 +1,10 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { NotFoundException } from '@nestjs/common';
 import { NotificationsSearchService } from './notifications-search.service';
 import { Recipient } from '../entities/recipient.entity';
+import { NotificationAttempt } from '../entities/notification-attempt.entity';
+import { CampaignsService } from '../campaigns/campaigns.service';
 
 describe('NotificationsSearchService.search', () => {
   const qbMock = {
@@ -27,6 +30,8 @@ describe('NotificationsSearchService.search', () => {
       providers: [
         NotificationsSearchService,
         { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
+        { provide: getRepositoryToken(NotificationAttempt), useValue: { find: jest.fn() } },
+        { provide: CampaignsService, useValue: { renderMessageForRecipient: jest.fn() } },
       ],
     }).compile();
     service = moduleRef.get(NotificationsSearchService);
@@ -66,6 +71,84 @@ describe('NotificationsSearchService.search', () => {
         createdAt: '2026-07-01T00:00:00.000Z',
       }],
       total: 1,
+    });
+  });
+});
+
+describe('NotificationsSearchService.getDetail', () => {
+  const recipientRepoMock = {
+    createQueryBuilder: jest.fn(),
+    findOne: jest.fn(),
+  };
+  const attemptRepoMock = { find: jest.fn() };
+  const campaignsServiceMock = { renderMessageForRecipient: jest.fn() };
+
+  let service: NotificationsSearchService;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        NotificationsSearchService,
+        { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
+        { provide: getRepositoryToken(NotificationAttempt), useValue: attemptRepoMock },
+        { provide: CampaignsService, useValue: campaignsServiceMock },
+      ],
+    }).compile();
+    service = moduleRef.get(NotificationsSearchService);
+  });
+
+  it('lancia NotFoundException se il destinatario non esiste', async () => {
+    recipientRepoMock.findOne.mockResolvedValueOnce(null);
+
+    await expect(service.getDetail('no-exist')).rejects.toThrow(NotFoundException);
+  });
+
+  it('ritorna destinatario, campagna, tentativi ed esito App IO separato', async () => {
+    recipientRepoMock.findOne.mockResolvedValueOnce({
+      id: 'r1',
+      codiceFiscale: 'RSSMRA80A01H501X',
+      fullName: 'Mario Rossi',
+      email: 'mario@test.it',
+      pec: null,
+      status: 'sent',
+      campaign: { id: 'c1', name: 'Avviso TARI', channelType: 'EMAIL' },
+    });
+    attemptRepoMock.find.mockResolvedValueOnce([
+      {
+        attemptNumber: 1,
+        status: 'success',
+        channelType: 'EMAIL',
+        errorMessage: null,
+        sentAt: new Date('2026-07-01T10:00:00Z'),
+        createdAt: new Date('2026-07-01T09:59:00Z'),
+        responsePayload: { appIo: { success: true } },
+      },
+    ]);
+    campaignsServiceMock.renderMessageForRecipient.mockResolvedValueOnce({ subject: 'Ciao Mario', bodyHtml: '<p>Corpo</p>' });
+
+    const result = await service.getDetail('r1');
+
+    expect(result).toEqual({
+      recipient: {
+        id: 'r1',
+        codiceFiscale: 'RSSMRA80A01H501X',
+        fullName: 'Mario Rossi',
+        email: 'mario@test.it',
+        pec: null,
+        status: 'sent',
+      },
+      campaign: { id: 'c1', name: 'Avviso TARI', channelType: 'EMAIL' },
+      attempts: [{
+        attemptNumber: 1,
+        status: 'success',
+        channelType: 'EMAIL',
+        errorMessage: null,
+        sentAt: '2026-07-01T10:00:00.000Z',
+        createdAt: '2026-07-01T09:59:00.000Z',
+        appIo: { attempted: true, success: true, error: null },
+      }],
+      preview: { subject: 'Ciao Mario', bodyHtml: '<p>Corpo</p>' },
     });
   });
 });

@@ -91,13 +91,6 @@ export class CampaignsService {
    * quell'id in DB). Usata dal wizard per l'anteprima live.
    */
   async previewMessage(dto: PreviewMessageDto): Promise<PreviewMessageResult> {
-    const brandName = (await this.settings.get<string>('brand.name')) || 'Comune di Montesilvano';
-    const publicApiUrl = await this.settings.get<string>('system.publicUrl');
-    const downloadLinkSecret = this.config.get('downloadLink.secret', { infer: true });
-    const retentionMaxDays = await this.settings.get<number>('retention.maxDays');
-    const retentionDays = getEffectiveRetentionDays({ retentionDays: null }, retentionMaxDays);
-    const expiresAtUnix = Math.floor(Date.now() / 1000) + retentionDays * 86400;
-
     const previewRecipient = {
       id: randomUUID(),
       codiceFiscale: dto.recipient.codiceFiscale,
@@ -108,12 +101,47 @@ export class CampaignsService {
     } as unknown as Recipient;
 
     const attachmentLabels = (dto.attachments ?? []).map((a) => a.label);
-    const format: 'html' | 'markdown' = dto.format ?? (dto.channelType === 'APP_IO' ? 'markdown' : 'html');
+    return this.renderMessage(dto.channelType, dto.subject, dto.body, attachmentLabels, previewRecipient, dto.format);
+  }
 
-    const subject = processTemplate(dto.subject, previewRecipient, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, format);
-    const body = processTemplate(dto.body, previewRecipient, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, format);
+  /**
+   * Rende oggetto+corpo di un destinatario REALE (già persistito), per la
+   * maschera di dettaglio notifica nella ricerca — mostra esattamente ciò
+   * che è stato realmente inviato, con lo stesso motore di `previewMessage`
+   * (nessuna duplicazione di logica).
+   */
+  async renderMessageForRecipient(recipientId: string): Promise<PreviewMessageResult> {
+    const recipient = await this.recipientRepo.findOne({ where: { id: recipientId }, relations: ['campaign'] });
+    if (!recipient) throw new NotFoundException(`Recipient ${recipientId} not found`);
 
-    if (format === 'markdown') {
+    const campaign = recipient.campaign;
+    const subjectTemplate = (campaign.channelConfig?.['subject'] as string) || campaign.name;
+    const bodyTemplate = (campaign.channelConfig?.['body'] as string) || '';
+    const attachmentLabels = resolveAttachmentsConfig(campaign.channelConfig).map((a) => a.label);
+
+    return this.renderMessage(campaign.channelType, subjectTemplate, bodyTemplate, attachmentLabels, recipient);
+  }
+
+  private async renderMessage(
+    channelType: string,
+    subjectTemplate: string,
+    bodyTemplate: string,
+    attachmentLabels: string[],
+    recipientLike: Recipient,
+    format?: 'html' | 'markdown',
+  ): Promise<PreviewMessageResult> {
+    const brandName = (await this.settings.get<string>('brand.name')) || 'Comune di Montesilvano';
+    const publicApiUrl = await this.settings.get<string>('system.publicUrl');
+    const downloadLinkSecret = this.config.get('downloadLink.secret', { infer: true });
+    const retentionMaxDays = await this.settings.get<number>('retention.maxDays');
+    const retentionDays = getEffectiveRetentionDays({ retentionDays: null }, retentionMaxDays);
+    const expiresAtUnix = Math.floor(Date.now() / 1000) + retentionDays * 86400;
+    const resolvedFormat: 'html' | 'markdown' = format ?? (channelType === 'APP_IO' ? 'markdown' : 'html');
+
+    const subject = processTemplate(subjectTemplate, recipientLike, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, resolvedFormat);
+    const body = processTemplate(bodyTemplate, recipientLike, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, resolvedFormat);
+
+    if (resolvedFormat === 'markdown') {
       return { subject, bodyMarkdown: body };
     }
 

@@ -15,5 +15,6 @@ import { RetentionCleanupService } from './retention-cleanup.service';
   ],
   providers: [CampaignsService, RetentionCleanupService],
   controllers: [CampaignsController],
+  exports: [CampaignsService],
 })
 export class CampaignsModule {}

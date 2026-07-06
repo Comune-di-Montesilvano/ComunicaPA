@@ -1,7 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Recipient } from '../entities/recipient.entity';
+import { NotificationAttempt } from '../entities/notification-attempt.entity';
+import { CampaignsService } from '../campaigns/campaigns.service';
+import type { NotificationDetailDto } from './dto/notification-detail.dto';
 
 export interface SearchFilters {
   codiceFiscale?: string;
@@ -30,6 +33,9 @@ export class NotificationsSearchService {
   constructor(
     @InjectRepository(Recipient)
     private readonly recipientRepo: Repository<Recipient>,
+    @InjectRepository(NotificationAttempt)
+    private readonly attemptRepo: Repository<NotificationAttempt>,
+    private readonly campaignsService: CampaignsService,
   ) {}
 
   async search(filters: SearchFilters): Promise<{ rows: SearchRowDto[]; total: number }> {
@@ -74,6 +80,52 @@ export class NotificationsSearchService {
         createdAt: r.createdAt.toISOString(),
       })),
       total,
+    };
+  }
+
+  async getDetail(recipientId: string): Promise<NotificationDetailDto> {
+    const recipient = await this.recipientRepo.findOne({
+      where: { id: recipientId },
+      relations: ['campaign'],
+    });
+    if (!recipient) throw new NotFoundException(`Recipient ${recipientId} not found`);
+
+    const attempts = await this.attemptRepo.find({
+      where: { recipientId },
+      order: { attemptNumber: 'ASC' },
+    });
+
+    const preview = await this.campaignsService.renderMessageForRecipient(recipientId);
+
+    return {
+      recipient: {
+        id: recipient.id,
+        codiceFiscale: recipient.codiceFiscale,
+        fullName: recipient.fullName,
+        email: recipient.email,
+        pec: recipient.pec,
+        status: recipient.status,
+      },
+      campaign: {
+        id: recipient.campaign.id,
+        name: recipient.campaign.name,
+        channelType: recipient.campaign.channelType,
+      },
+      attempts: attempts.map((a) => {
+        const appIoPayload = a.responsePayload?.['appIo'] as { success?: boolean; error?: string } | undefined;
+        return {
+          attemptNumber: a.attemptNumber,
+          status: a.status,
+          channelType: a.channelType,
+          errorMessage: a.errorMessage,
+          sentAt: a.sentAt ? a.sentAt.toISOString() : null,
+          createdAt: a.createdAt.toISOString(),
+          appIo: appIoPayload
+            ? { attempted: true as const, success: !!appIoPayload.success, error: appIoPayload.error ?? null }
+            : { attempted: false as const },
+        };
+      }),
+      preview,
     };
   }
 }

@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { NotificationsSearchService } from './notifications-search.service';
 
@@ -28,5 +28,10 @@ export class NotificationsSearchController {
       page: Math.max(1, parseInt(page, 10) || 1),
       pageSize: Math.min(200, Math.max(1, parseInt(pageSize, 10) || 50)),
     });
+  }
+
+  @Get(':recipientId')
+  getDetail(@Param('recipientId', ParseUUIDPipe) recipientId: string) {
+    return this.svc.getDetail(recipientId);
   }
 }
