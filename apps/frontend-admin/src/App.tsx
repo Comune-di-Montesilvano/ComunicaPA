@@ -3509,6 +3509,11 @@ export function App(): React.JSX.Element {
                             dangerouslySetInnerHTML={{ __html: wizPreviewResult.bodyHtml }}
                           />
                         ) : wizPreviewResult?.bodyMarkdown ? (
+                          // Copre wizChannel === 'APP_IO' diretto (senza co-consegna, tab mai mostrate).
+                          // Nota: renderizza col motore %placeholder%/processTemplate del backend, non
+                          // rappresentativo del canale App IO diretto reale, che invia via AppIoStrategy
+                          // con sintassi {{mustache}} diversa — gap noto, vedi Global Constraints del
+                          // piano "Fix Anteprima Email/PEC".
                           <div className="bg-white border rounded p-3" data-color-mode="light">
                             <MDEditor.Markdown source={wizPreviewResult.bodyMarkdown} />
                           </div>
