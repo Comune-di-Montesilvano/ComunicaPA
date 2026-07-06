@@ -1991,7 +1991,8 @@ export function App(): React.JSX.Element {
       });
 
       if (!launchRes.ok) {
-        throw new Error('Errore durante il lancio della campagna.');
+        const errBody = await launchRes.json().catch(() => null);
+        throw new Error(errBody?.message || 'Errore durante il lancio della campagna.');
       }
 
       setWizStep(1);
