@@ -148,7 +148,7 @@ export class MailConfigsService {
     }
   }
 
-  async test(id: string, to: string): Promise<{ success: true; message: string }> {
+  async test(id: string, to: string): Promise<{ success: boolean; message: string }> {
     const entity = await this.repo.findOneBy({ id });
     if (!entity) throw new NotFoundException(`Configurazione ${id} non trovata`);
     if (!to) throw new BadRequestException('Destinatario di test richiesto (campo "to")');
@@ -175,7 +175,7 @@ export class MailConfigsService {
       });
     } catch (error: any) {
       this.logger.error(`Test ${entity.type} "${entity.name}" fallito: ${error.message}`);
-      throw new BadRequestException(`Errore connessione: ${error.message}`);
+      return { success: false, message: `Errore connessione: ${error.message}` };
     }
 
     entity.testedAt = new Date();

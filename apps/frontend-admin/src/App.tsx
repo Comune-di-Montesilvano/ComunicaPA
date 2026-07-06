@@ -815,14 +815,20 @@ export function App(): React.JSX.Element {
       });
       let errMsg = 'Test fallito';
       let successMsg = 'Messaggio di test inviato con successo.';
+      let isError = false;
       try {
         const data = await res.json();
-        errMsg = data.message || errMsg;
-        successMsg = data.message || successMsg;
+        if (data.success === false) {
+          errMsg = data.message || errMsg;
+          isError = true;
+        } else {
+          successMsg = data.message || successMsg;
+        }
       } catch {
         errMsg = `Errore di rete/server (HTTP ${res.status})`;
+        isError = true;
       }
-      if (!res.ok) throw new Error(errMsg);
+      if (!res.ok || isError) throw new Error(isError ? errMsg : errMsg);
       setIoTestMsg({ id, text: successMsg, error: false });
     } catch (err: any) {
       setIoTestMsg({ id, text: err.message, error: true });
@@ -1123,14 +1129,19 @@ export function App(): React.JSX.Element {
       });
 
       let errMsg = 'Errore invio email test';
+      let isError = false;
       try {
         const data = await res.json();
-        errMsg = data.message || errMsg;
+        if (data.success === false) {
+          errMsg = data.message || errMsg;
+          isError = true;
+        }
       } catch {
         errMsg = `Errore di rete/server (HTTP ${res.status})`;
+        isError = true;
       }
 
-      if (!res.ok) {
+      if (!res.ok || isError) {
         throw new Error(errMsg);
       }
 

@@ -97,7 +97,7 @@ export class IoServicesService {
     return this.toMasked(saved);
   }
 
-  async test(id: string, codiceFiscale: string): Promise<{ success: true; message: string }> {
+  async test(id: string, codiceFiscale: string): Promise<{ success: boolean; message: string }> {
     const entity = await this.repo.findOneBy({ id });
     if (!entity) throw new NotFoundException(`Servizio App IO ${id} non trovato`);
     if (!codiceFiscale) throw new BadRequestException('Codice fiscale di test richiesto');
@@ -113,14 +113,14 @@ export class IoServicesService {
 
     if (!profileResponse.ok) {
       if (profileResponse.status === 404) {
-        throw new BadRequestException('Cittadino non iscritto ad App IO');
+        return { success: false, message: 'Cittadino non iscritto ad App IO' };
       }
-      throw new BadRequestException(`Errore verifica profilo App IO: HTTP ${profileResponse.status}`);
+      return { success: false, message: `Errore verifica profilo App IO: HTTP ${profileResponse.status}` };
     }
 
     const profileData = (await profileResponse.json()) as { sender_allowed: boolean };
     if (!profileData.sender_allowed) {
-      throw new BadRequestException('Messaggi da questo servizio disabilitati dal cittadino su App IO');
+      return { success: false, message: 'Messaggi da questo servizio disabilitati dal cittadino su App IO' };
     }
 
     // 2. Invio messaggio di test
@@ -134,7 +134,7 @@ export class IoServicesService {
     });
 
     if (!response.ok) {
-      throw new BadRequestException(`Errore App IO: HTTP ${response.status}`);
+      return { success: false, message: `Errore App IO: HTTP ${response.status}` };
     }
 
     entity.testedAt = new Date();
