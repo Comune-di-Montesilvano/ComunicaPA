@@ -153,6 +153,7 @@ export function App(): React.JSX.Element {
     campaign: { id: string; name: string; channelType: string };
     attempts: Array<{ attemptNumber: number; status: string; channelType: string; errorMessage: string | null; sentAt: string | null; createdAt: string; appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null } }>;
     preview: { subject: string; bodyHtml?: string; bodyMarkdown?: string };
+    downloads: Array<{ channel: string; attachmentIndex: number; downloadedAt: string }>;
   } | null>(null);
   const [notifDetailLoading, setNotifDetailLoading] = useState(false);
 
@@ -476,6 +477,7 @@ export function App(): React.JSX.Element {
   const [launching, setLaunching] = useState(false);
   const [campaignFailures, setCampaignFailures] = useState<Array<{ recipientId: string; codiceFiscale: string; fullName: string | null; errorMessage: string | null; attemptNumber: number; lastAttemptAt: string }>>([]);
   const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number } | null>(null);
+  const [downloadByChannel, setDownloadByChannel] = useState<Record<string, number> | null>(null);
   const [retryBusyId, setRetryBusyId] = useState<string | null>(null);
 
   // CSV Mapper state
@@ -2293,9 +2295,11 @@ export function App(): React.JSX.Element {
     setCsvError(null);
     setCampaignFailures([]);
     setChannelBreakdown(null);
+    setDownloadByChannel(null);
     fetchCampaignDetail(id);
     fetchCampaignFailures(id);
     fetchChannelBreakdown(id);
+    fetchDownloadChannelStats(id);
   };
 
   const fetchChannelBreakdown = async (id: string) => {
@@ -2306,6 +2310,17 @@ export function App(): React.JSX.Element {
       setChannelBreakdown(data.breakdown);
     } catch {
       // Non bloccante: la pagina dettaglio resta usabile senza il breakdown.
+    }
+  };
+
+  const fetchDownloadChannelStats = async (id: string) => {
+    try {
+      const res = await apiFetch(`/campaigns/${id}/download-channel-stats`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setDownloadByChannel(data.byChannel && Object.keys(data.byChannel).length > 0 ? data.byChannel : null);
+    } catch {
+      // Non bloccante.
     }
   };
 
@@ -4220,6 +4235,24 @@ export function App(): React.JSX.Element {
                           </tbody>
                         </table>
 
+                        {notifDetail.downloads.length > 0 && (
+                          <>
+                            <h6 className="fw-bold small">Download</h6>
+                            <table className="table table-sm mb-4">
+                              <thead><tr><th>Canale</th><th>Allegato</th><th>Data</th></tr></thead>
+                              <tbody>
+                                {notifDetail.downloads.map((d, idx) => (
+                                  <tr key={idx}>
+                                    <td className="small">{d.channel}</td>
+                                    <td className="small">#{d.attachmentIndex + 1}</td>
+                                    <td className="small text-muted">{new Date(d.downloadedAt).toLocaleString('it-IT')}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </>
+                        )}
+
                         <h6 className="fw-bold small">Anteprima Messaggio Inviato</h6>
                         <div className="mb-2 small text-muted"><strong>Oggetto:</strong> {notifDetail.preview.subject}</div>
                         {notifDetail.preview.bodyHtml ? (
@@ -5371,6 +5404,22 @@ export function App(): React.JSX.Element {
                                 <span><i className="fas fa-times text-danger me-1"></i>Nessuno dei due (fallito)</span>
                                 <span className="fw-bold">{channelBreakdown.neither}</span>
                               </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {downloadByChannel && (
+                          <div className="mt-4 border-top pt-3">
+                            <h4 className="small fw-bold mb-2">
+                              <i className="fas fa-download me-1 text-primary"></i>Download per Canale
+                            </h4>
+                            <div className="small">
+                              {Object.entries(downloadByChannel).map(([channel, count]) => (
+                                <div key={channel} className="d-flex justify-content-between mb-1">
+                                  <span>{channel}</span>
+                                  <span className="fw-bold">{count}</span>
+                                </div>
+                              ))}
                             </div>
                           </div>
                         )}
