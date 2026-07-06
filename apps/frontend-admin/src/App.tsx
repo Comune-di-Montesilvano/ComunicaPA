@@ -3508,6 +3508,10 @@ export function App(): React.JSX.Element {
                             style={{ padding: '4px' }}
                             dangerouslySetInnerHTML={{ __html: wizPreviewResult.bodyHtml }}
                           />
+                        ) : wizPreviewResult?.bodyMarkdown ? (
+                          <div className="bg-white border rounded p-3" data-color-mode="light">
+                            <MDEditor.Markdown source={wizPreviewResult.bodyMarkdown} />
+                          </div>
                         ) : (
                           <div className="text-center text-muted small py-4">Nessuna anteprima disponibile per questo canale.</div>
                         )}
