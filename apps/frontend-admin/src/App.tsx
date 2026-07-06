@@ -19,6 +19,25 @@ function isWizBodyEmpty(html: string): boolean {
   return text.length === 0;
 }
 
+// Testo puro (senza tag HTML) del corpo, per validare il vincolo App IO su
+// PagoPA: il campo content.markdown deve avere lunghezza >= 80 e < 10001
+// caratteri, altrimenti l'invio fallisce con HTTP 400 ("Invalid message
+// structure"). Il conteggio sui tag HTML grezzi darebbe un falso positivo
+// (es. "<p>ttr</p>" sembra >= 10 caratteri ma il testo visibile è "ttr").
+function wizPlainTextLength(html: string): number {
+  return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' ').trim().length;
+}
+
+const APP_IO_MARKDOWN_MIN = 80;
+const APP_IO_MARKDOWN_MAX = 10000;
+
+// Codice Fiscale (16 alfanumerici) o Partita IVA (11 cifre) — stesso vincolo
+// già applicato riga per riga nella validazione CSV del wizard massivo.
+function isValidCfOrPiva(value: string): boolean {
+  const v = value.trim();
+  return /^[A-Z0-9]{16}$/i.test(v) || /^\d{11}$/.test(v);
+}
+
 // Escapes HTML-special characters in untrusted values (e.g. CSV cell content)
 // before they are interpolated into a string that will be rendered via
 // dangerouslySetInnerHTML. Must NOT be applied to the operator's own
@@ -331,6 +350,18 @@ export function App(): React.JSX.Element {
       controller.abort();
     };
   }, [wizStep, wizPreviewIndex, wizSubject, wizBody, wizChannel, wizAttachments, wizValidRows, wizMapping, token, wizPreviewChannelTab, wizAppIoDifferentiate, wizAppIoSubjectOverride, wizAppIoBodyOverride]);
+
+  // App IO impone al campo content.markdown una lunghezza >= 80 e < 10001
+  // caratteri (altrimenti PagoPA rifiuta con HTTP 400 "Invalid message
+  // structure"). Vale sia per il canale App IO diretto sia per il testo
+  // (eventualmente differenziato) usato in co-consegna con EMAIL/PEC.
+  const wizAppIoInvolved = wizChannel === 'APP_IO' || wizAppIoMode !== 'none';
+  const wizAppIoBodyText = wizChannel === 'APP_IO'
+    ? wizBody
+    : (wizAppIoDifferentiate ? wizAppIoBodyOverride : wizBody);
+  const wizAppIoBodyLen = wizAppIoInvolved ? wizPlainTextLength(wizAppIoBodyText) : 0;
+  const wizAppIoBodyLenInvalid = wizAppIoInvolved
+    && (wizAppIoBodyLen < APP_IO_MARKDOWN_MIN || wizAppIoBodyLen > APP_IO_MARKDOWN_MAX);
 
   // Settings State (loaded from backend GET /settings; see useEffect below)
   const [settEntityName, setSettEntityName] = useState('Comune di Montesilvano');
@@ -692,6 +723,17 @@ export function App(): React.JSX.Element {
     if (!singleCf) {
       alert('Il Codice Fiscale è obbligatorio.');
       return;
+    }
+    if (!isValidCfOrPiva(singleCf)) {
+      alert('Codice Fiscale (16 caratteri) o Partita IVA (11 cifre) non valido.');
+      return;
+    }
+    if (singleChannel === 'APP_IO') {
+      const len = wizPlainTextLength(singleBody);
+      if (len < APP_IO_MARKDOWN_MIN || len > APP_IO_MARKDOWN_MAX) {
+        alert(`Il contenuto per App IO deve essere lungo tra ${APP_IO_MARKDOWN_MIN} e ${APP_IO_MARKDOWN_MAX} caratteri (attuale: ${len}). PagoPA rifiuta messaggi più corti o più lunghi.`);
+        return;
+      }
     }
     setSingleSending(true);
     setSingleSuccess(null);
@@ -3481,6 +3523,14 @@ export function App(): React.JSX.Element {
                       />
                     </div>
 
+                    {wizAppIoBodyLenInvalid && (
+                      <div className="alert alert-warning py-2 small mb-0">
+                        <i className="fas fa-exclamation-triangle me-1"></i>
+                        Il testo per App IO deve essere lungo tra {APP_IO_MARKDOWN_MIN} e {APP_IO_MARKDOWN_MAX} caratteri
+                        (attuale: {wizAppIoBodyLen}). PagoPA rifiuta messaggi più corti o più lunghi.
+                      </div>
+                    )}
+
                     <div className="mt-4 pt-3 border-top d-flex justify-content-between">
                       <button className="btn btn-outline-secondary" onClick={() => setWizStep(3)}>
                         <i className="fas fa-arrow-left me-1"></i> Indietro
@@ -3488,7 +3538,7 @@ export function App(): React.JSX.Element {
                       <button
                         className="btn btn-primary"
                         onClick={() => setWizStep(5)}
-                        disabled={!wizSubject || isWizBodyEmpty(wizBody)}
+                        disabled={!wizSubject || isWizBodyEmpty(wizBody) || wizAppIoBodyLenInvalid}
                       >
                         Riepilogo <i className="fas fa-arrow-right ms-1"></i>
                       </button>
