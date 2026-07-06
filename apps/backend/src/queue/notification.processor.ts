@@ -238,10 +238,21 @@ export class NotificationProcessor extends WorkerHost {
           'Ocp-Apim-Subscription-Key': apiKey,
         },
       });
-      if (!res.ok) return false;
+      if (!res.ok) {
+        // 404 = cittadino non ha mai attivato App IO (esito atteso, non un
+        // errore); altri status possono indicare un problema reale (api key
+        // non valida, servizio App IO giù, ecc.) — logghiamo comunque per
+        // rendere distinguibili i due casi quando la co-consegna non parte.
+        this.logger.debug(`Profilo App IO non disponibile per CF ${fiscalCode}: HTTP ${res.status}`);
+        return false;
+      }
       const data = (await res.json()) as { sender_allowed: boolean };
+      if (!data?.sender_allowed) {
+        this.logger.debug(`Cittadino CF ${fiscalCode} ha disabilitato i messaggi da questo servizio App IO`);
+      }
       return !!data?.sender_allowed;
-    } catch {
+    } catch (err: any) {
+      this.logger.warn(`Verifica profilo App IO fallita per CF ${fiscalCode}: ${err?.message ?? err}`);
       return false;
     }
   }
