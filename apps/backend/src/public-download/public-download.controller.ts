@@ -19,17 +19,24 @@ export class PublicDownloadController {
     private readonly config: ConfigService<AppConfiguration, true>,
   ) {}
 
-  @Get(':recipientId')
+  @Get(':recipientId/:index')
   async download(
     @Param('recipientId') recipientId: string,
+    @Param('index') indexParam: string,
     @Query('exp') exp: string,
     @Query('sig') sig: string,
     @Res() res: Response,
   ): Promise<void> {
+    const index = parseInt(indexParam, 10);
     const expiresAtUnix = parseInt(exp, 10);
     const secret = this.config.get('downloadLink.secret', { infer: true });
 
-    if (!Number.isFinite(expiresAtUnix) || !verifyDownloadLink(recipientId, expiresAtUnix, sig, secret)) {
+    if (
+      !Number.isFinite(index) ||
+      index < 0 ||
+      !Number.isFinite(expiresAtUnix) ||
+      !verifyDownloadLink(recipientId, index, expiresAtUnix, sig, secret)
+    ) {
       throw new ForbiddenException('Link non valido');
     }
     if (Math.floor(Date.now() / 1000) > expiresAtUnix) {
@@ -44,7 +51,7 @@ export class PublicDownloadController {
       throw new GoneException('Allegato non più disponibile');
     }
 
-    const pdfBuffer = await this.attachmentService.generatePdfBuffer(recipient);
+    const pdfBuffer = await this.attachmentService.generatePdfBuffer(recipient, index);
 
     await this.recipientRepo.update(recipientId, {
       downloadCount: recipient.downloadCount + 1,
@@ -53,7 +60,7 @@ export class PublicDownloadController {
     });
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="avviso_${recipientId.slice(0, 8)}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="avviso_${recipientId.slice(0, 8)}_${index + 1}.pdf"`);
     res.end(pdfBuffer);
   }
 }

@@ -49,28 +49,37 @@ describe('PublicDownloadController', () => {
   it('rifiuta con 403 se la firma non è valida', async () => {
     const res: any = { setHeader: jest.fn(), end: jest.fn() };
     await expect(
-      controller.download(recipientId, String(futureExp), 'firma-non-valida', res),
+      controller.download(recipientId, '0', String(futureExp), 'firma-non-valida', res),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('rifiuta con 403 se l\'indice non corrisponde alla firma (firma dell\'indice 0 usata per l\'indice 1)', async () => {
+    const sig = signDownloadLink(recipientId, 0, futureExp, secret);
+    const res: any = { setHeader: jest.fn(), end: jest.fn() };
+    await expect(
+      controller.download(recipientId, '1', String(futureExp), sig, res),
     ).rejects.toThrow(ForbiddenException);
   });
 
   it('rifiuta con 410 se il link è scaduto', async () => {
     const pastExp = Math.floor(Date.now() / 1000) - 10;
-    const sig = signDownloadLink(recipientId, pastExp, secret);
+    const sig = signDownloadLink(recipientId, 0, pastExp, secret);
     const res: any = { setHeader: jest.fn(), end: jest.fn() };
-    await expect(controller.download(recipientId, String(pastExp), sig, res)).rejects.toThrow(GoneException);
+    await expect(controller.download(recipientId, '0', String(pastExp), sig, res)).rejects.toThrow(GoneException);
   });
 
   it('rifiuta con 410 se l\'allegato è già stato eliminato per retention', async () => {
     mockRepo.findOne.mockResolvedValueOnce({ ...mockRecipient, attachmentDeletedAt: new Date() });
-    const sig = signDownloadLink(recipientId, futureExp, secret);
+    const sig = signDownloadLink(recipientId, 0, futureExp, secret);
     const res: any = { setHeader: jest.fn(), end: jest.fn() };
-    await expect(controller.download(recipientId, String(futureExp), sig, res)).rejects.toThrow(GoneException);
+    await expect(controller.download(recipientId, '0', String(futureExp), sig, res)).rejects.toThrow(GoneException);
   });
 
-  it('serve il PDF e incrementa downloadCount con firma valida', async () => {
-    const sig = signDownloadLink(recipientId, futureExp, secret);
+  it('serve il PDF dell\'indice richiesto e incrementa downloadCount con firma valida', async () => {
+    const sig = signDownloadLink(recipientId, 1, futureExp, secret);
     const res: any = { setHeader: jest.fn(), end: jest.fn() };
-    await controller.download(recipientId, String(futureExp), sig, res);
+    await controller.download(recipientId, '1', String(futureExp), sig, res);
+    expect(mockAttachmentService.generatePdfBuffer).toHaveBeenCalledWith(mockRecipient, 1);
     expect(res.end).toHaveBeenCalledWith(Buffer.from('%PDF-fake'));
     expect(mockRepo.update).toHaveBeenCalledWith(
       recipientId,
