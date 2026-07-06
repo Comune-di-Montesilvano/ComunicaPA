@@ -3922,269 +3922,7 @@ export function App(): React.JSX.Element {
 
                         {/* TAB: PEC — rendered outside the form (see below) */}
 
-                        {/* TAB: APP IO (Multiple services creation & management) */}
-                        {activeSettingsTab === 'app-io' && (
-                          <div>
-                            <div className="border rounded bg-light p-3 mb-4">
-                              <div className="d-flex justify-content-between align-items-center mb-3">
-                                <h4 className="h6 mb-0 fw-bold text-dark"><i className="fas fa-list me-1 text-primary"></i>Servizi App IO Configurati</h4>
-                                <button
-                                  type="button"
-                                  className="btn btn-sm btn-primary"
-                                  onClick={() => setShowNewSvcForm(!showNewSvcForm)}
-                                >
-                                  <i className={`fas ${showNewSvcForm ? 'fa-minus' : 'fa-plus'} me-1`}></i> Nuovo Servizio
-                                </button>
-                              </div>
-
-                              {showNewSvcForm && (
-                                <div className="card card-body border-0 shadow-sm p-3 mb-4 bg-white">
-                                  <h5 className="small fw-bold text-dark border-bottom pb-2 mb-3">Crea Nuovo Servizio App IO</h5>
-                                  <div className="row g-3">
-                                    <div className="col-md-6">
-                                      <label className="form-label small fw-bold text-dark">Nome Servizio *</label>
-                                      <input
-                                        type="text"
-                                        className="form-control form-control-sm"
-                                        placeholder="Es. Servizio TARI"
-                                        value={newSvcNome}
-                                        onChange={(e) => setNewSvcNome(e.target.value)}
-                                        required
-                                      />
-                                    </div>
-                                    <div className="col-md-6">
-                                      <label className="form-label small fw-bold text-dark">ID Servizio App IO (IO) *</label>
-                                      <input
-                                        type="text"
-                                        className="form-control form-control-sm"
-                                        placeholder="Es. 01ARZ3NDEKTSN4FFFSUQFW0C5"
-                                        value={newSvcIdService}
-                                        onChange={(e) => setNewSvcIdService(e.target.value)}
-                                        required
-                                      />
-                                    </div>
-                                    <div className="col-12">
-                                      <label className="form-label small text-muted">Descrizione Servizio</label>
-                                      <textarea
-                                        className="form-control form-control-sm"
-                                        rows={2}
-                                        placeholder="Descrizione del servizio visualizzata nell'App IO..."
-                                        value={newSvcDesc}
-                                        onChange={(e) => setNewSvcDesc(e.target.value)}
-                                      ></textarea>
-                                    </div>
-                                    <div className="col-md-6">
-                                      <label className="form-label small fw-bold text-dark">API Key Primaria *</label>
-                                      <input
-                                        type="password"
-                                        className="form-control form-control-sm"
-                                        placeholder="API Key principale"
-                                        value={newSvcApiKeyPrimaria}
-                                        onChange={(e) => setNewSvcApiKeyPrimaria(e.target.value)}
-                                        required
-                                      />
-                                    </div>
-                                    <div className="col-md-6">
-                                      <label className="form-label small text-muted">API Key Secondaria</label>
-                                      <input
-                                        type="password"
-                                        className="form-control form-control-sm"
-                                        placeholder="API Key backup"
-                                        value={newSvcApiKeySecondaria}
-                                        onChange={(e) => setNewSvcApiKeySecondaria(e.target.value)}
-                                      />
-                                    </div>
-                                    <div className="col-md-6">
-                                      <label className="form-label small text-muted">Codice Catalogo</label>
-                                      <input
-                                        type="text"
-                                        className="form-control form-control-sm"
-                                        placeholder="Es. 000000000000000"
-                                        value={newSvcCodiceCatalogo}
-                                        onChange={(e) => setNewSvcCodiceCatalogo(e.target.value)}
-                                      />
-                                    </div>
-                                    <div className="col-md-6 d-flex align-items-center">
-                                      <div className="form-check mt-3">
-                                        <input
-                                          type="checkbox"
-                                          id="svc_default"
-                                          className="form-check-input"
-                                          checked={newSvcIsDefault}
-                                          onChange={(e) => setNewSvcIsDefault(e.target.checked)}
-                                        />
-                                        <label htmlFor="svc_default" className="form-check-label small" style={{ cursor: 'pointer' }}>Imposta come servizio predefinito</label>
-                                      </div>
-                                    </div>
-                                    <div className="col-12 text-end border-top pt-2">
-                                      <button type="button" className="btn btn-sm btn-success px-3" onClick={handleAddIoService}>Crea Servizio</button>
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
-
-                              {editingIoService && (
-                                <div className="card card-body border-0 shadow-sm p-3 mb-4 bg-white">
-                                  <h5 className="small fw-bold text-dark border-bottom pb-2 mb-3">Modifica Servizio App IO: {editingIoService.nome}</h5>
-                                  <form onSubmit={handleUpdateIoService}>
-                                    <div className="row g-3">
-                                      <div className="col-md-6">
-                                        <label className="form-label small fw-bold text-dark">Nome Servizio *</label>
-                                        <input
-                                          type="text"
-                                          className="form-control form-control-sm"
-                                          placeholder="Es. Servizio TARI"
-                                          value={editingIoService.nome}
-                                          onChange={(e) => setEditingIoService({ ...editingIoService, nome: e.target.value })}
-                                          required
-                                        />
-                                      </div>
-                                      <div className="col-md-6">
-                                        <label className="form-label small fw-bold text-dark">ID Servizio App IO (IO) *</label>
-                                        <input
-                                          type="text"
-                                          className="form-control form-control-sm"
-                                          placeholder="Es. 01ARZ3NDEKTSN4FFFSUQFW0C5"
-                                          value={editingIoService.idService}
-                                          onChange={(e) => setEditingIoService({ ...editingIoService, idService: e.target.value })}
-                                          required
-                                        />
-                                      </div>
-                                      <div className="col-12">
-                                        <label className="form-label small text-muted">Descrizione Servizio</label>
-                                        <textarea
-                                          className="form-control form-control-sm"
-                                          rows={2}
-                                          placeholder="Descrizione del servizio visualizzata nell'App IO..."
-                                          value={editingIoService.descrizione || ''}
-                                          onChange={(e) => setEditingIoService({ ...editingIoService, descrizione: e.target.value })}
-                                        ></textarea>
-                                      </div>
-                                      <div className="col-md-6">
-                                        <label className="form-label small fw-bold text-dark">API Key Primaria *</label>
-                                        <input
-                                          type="password"
-                                          className="form-control form-control-sm"
-                                          placeholder="API Key principale (lascia mascherata per non modificarla)"
-                                          value={editingIoService.apiKeyPrimaria}
-                                          onChange={(e) => setEditingIoService({ ...editingIoService, apiKeyPrimaria: e.target.value })}
-                                          required
-                                        />
-                                      </div>
-                                      <div className="col-md-6">
-                                        <label className="form-label small text-muted">API Key Secondaria</label>
-                                        <input
-                                          type="password"
-                                          className="form-control form-control-sm"
-                                          placeholder="API Key backup"
-                                          value={editingIoService.apiKeySecondaria || ''}
-                                          onChange={(e) => setEditingIoService({ ...editingIoService, apiKeySecondaria: e.target.value })}
-                                        />
-                                      </div>
-                                      <div className="col-md-6">
-                                        <label className="form-label small text-muted">Codice Catalogo</label>
-                                        <input
-                                          type="text"
-                                          className="form-control form-control-sm"
-                                          placeholder="Es. 000000000000000"
-                                          value={editingIoService.codiceCatalogo || ''}
-                                          onChange={(e) => setEditingIoService({ ...editingIoService, codiceCatalogo: e.target.value })}
-                                        />
-                                      </div>
-                                      <div className="col-12 text-end border-top pt-2 d-flex justify-content-end gap-2">
-                                        <button type="button" className="btn btn-sm btn-outline-secondary px-3" onClick={() => setEditingIoService(null)}>Annulla</button>
-                                        <button type="submit" className="btn btn-sm btn-success px-3">Salva Modifiche</button>
-                                      </div>
-                                    </div>
-                                  </form>
-                                </div>
-                              )}
-
-                              {ioServices.length === 0 ? (
-                                <div className="text-center py-4 text-muted bg-white border rounded">Nessun servizio App IO configurato.</div>
-                              ) : (
-                                <div className="table-responsive bg-white border rounded">
-                                  <table className="table table-striped table-sm align-middle mb-0" style={{ fontSize: '0.8rem' }}>
-                                    <thead>
-                                      <tr>
-                                        <th>Nome</th>
-                                        <th>ID Servizio (IO)</th>
-                                        <th>Catalogo</th>
-                                        <th className="text-end">Azioni</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {ioServices.map(s => (
-                                        <React.Fragment key={s.id}>
-                                          <tr>
-                                            <td>
-                                              <strong>{s.nome}</strong>
-                                              {s.isDefault && <span className="badge bg-success ms-2">Predefinito</span>}
-                                            </td>
-                                            <td className="font-monospace small">{s.idService}</td>
-                                            <td>{s.codiceCatalogo || <span className="text-muted">—</span>}</td>
-                                            <td className="text-end">
-                                              <div className="btn-group">
-                                                {!s.isDefault && (
-                                                  <button
-                                                    type="button"
-                                                    className="btn btn-sm btn-outline-info border-0"
-                                                    onClick={() => handleSetDefaultIoService(s.id)}
-                                                    title="Imposta come predefinito"
-                                                  >
-                                                    <i className="fas fa-star"></i>
-                                                  </button>
-                                                )}
-                                                <button
-                                                  type="button"
-                                                  className="btn btn-sm btn-outline-secondary border-0"
-                                                  onClick={() => { setEditingIoService(s); setShowNewSvcForm(false); }}
-                                                  title="Modifica"
-                                                >
-                                                  <i className="fas fa-edit"></i>
-                                                </button>
-                                                <button
-                                                  type="button"
-                                                  className="btn btn-sm btn-outline-danger border-0"
-                                                  onClick={() => handleDeleteIoService(s.id)}
-                                                  title="Elimina"
-                                                >
-                                                  <i className="fas fa-trash"></i>
-                                                </button>
-                                              </div>
-                                            </td>
-                                          </tr>
-                                          <tr>
-                                            <td colSpan={4} className="pt-0">
-                                              <form onSubmit={(e) => { e.preventDefault(); handleTestIoService(s.id); }} className="d-flex align-items-center gap-2 pb-2">
-                                                <span className="text-muted small fw-semibold">Test invio:</span>
-                                                <input
-                                                  type="text"
-                                                  className="form-control form-control-sm"
-                                                  placeholder="RSSMRA80A01H501X"
-                                                  required
-                                                  value={ioTestCf}
-                                                  onChange={(e) => setIoTestCf(e.target.value)}
-                                                  style={{ maxWidth: 200 }}
-                                                />
-                                                <button type="submit" className="btn btn-sm btn-outline-secondary" disabled={ioTestBusyId === s.id}>
-                                                  <i className="fas fa-paper-plane"></i> Invia Test
-                                                </button>
-                                                {ioTestMsg?.id === s.id && (
-                                                  <span className={`small ${ioTestMsg.error ? 'text-danger' : 'text-success'}`}>{ioTestMsg.text}</span>
-                                                )}
-                                              </form>
-                                            </td>
-                                          </tr>
-                                        </React.Fragment>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
+                        {/* TAB: APP IO — rendered outside the form (see below) */}
 
                         {/* TAB: SEND */}
                         {activeSettingsTab === 'send' && (
@@ -4438,6 +4176,270 @@ export function App(): React.JSX.Element {
 
                       {/* TAB: PEC — outside form to avoid nested form conflicts */}
                       {activeSettingsTab === 'pec' && renderMailConfigTab('PEC')}
+
+                      {/* TAB: APP IO (Multiple services creation & management) — outside form to avoid nested form conflicts */}
+                      {activeSettingsTab === 'app-io' && (
+                        <div>
+                          <div className="border rounded bg-light p-3 mb-4">
+                            <div className="d-flex justify-content-between align-items-center mb-3">
+                              <h4 className="h6 mb-0 fw-bold text-dark"><i className="fas fa-list me-1 text-primary"></i>Servizi App IO Configurati</h4>
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-primary"
+                                onClick={() => setShowNewSvcForm(!showNewSvcForm)}
+                              >
+                                <i className={`fas ${showNewSvcForm ? 'fa-minus' : 'fa-plus'} me-1`}></i> Nuovo Servizio
+                              </button>
+                            </div>
+
+                            {showNewSvcForm && (
+                              <div className="card card-body border-0 shadow-sm p-3 mb-4 bg-white">
+                                <h5 className="small fw-bold text-dark border-bottom pb-2 mb-3">Crea Nuovo Servizio App IO</h5>
+                                <div className="row g-3">
+                                  <div className="col-md-6">
+                                    <label className="form-label small fw-bold text-dark">Nome Servizio *</label>
+                                    <input
+                                      type="text"
+                                      className="form-control form-control-sm"
+                                      placeholder="Es. Servizio TARI"
+                                      value={newSvcNome}
+                                      onChange={(e) => setNewSvcNome(e.target.value)}
+                                      required
+                                    />
+                                  </div>
+                                  <div className="col-md-6">
+                                    <label className="form-label small fw-bold text-dark">ID Servizio App IO (IO) *</label>
+                                    <input
+                                      type="text"
+                                      className="form-control form-control-sm"
+                                      placeholder="Es. 01ARZ3NDEKTSN4FFFSUQFW0C5"
+                                      value={newSvcIdService}
+                                      onChange={(e) => setNewSvcIdService(e.target.value)}
+                                      required
+                                    />
+                                  </div>
+                                  <div className="col-12">
+                                    <label className="form-label small text-muted">Descrizione Servizio</label>
+                                    <textarea
+                                      className="form-control form-control-sm"
+                                      rows={2}
+                                      placeholder="Descrizione del servizio visualizzata nell'App IO..."
+                                      value={newSvcDesc}
+                                      onChange={(e) => setNewSvcDesc(e.target.value)}
+                                    ></textarea>
+                                  </div>
+                                  <div className="col-md-6">
+                                    <label className="form-label small fw-bold text-dark">API Key Primaria *</label>
+                                    <input
+                                      type="password"
+                                      className="form-control form-control-sm"
+                                      placeholder="API Key principale"
+                                      value={newSvcApiKeyPrimaria}
+                                      onChange={(e) => setNewSvcApiKeyPrimaria(e.target.value)}
+                                      required
+                                    />
+                                  </div>
+                                  <div className="col-md-6">
+                                    <label className="form-label small text-muted">API Key Secondaria</label>
+                                    <input
+                                      type="password"
+                                      className="form-control form-control-sm"
+                                      placeholder="API Key backup"
+                                      value={newSvcApiKeySecondaria}
+                                      onChange={(e) => setNewSvcApiKeySecondaria(e.target.value)}
+                                    />
+                                  </div>
+                                  <div className="col-md-6">
+                                    <label className="form-label small text-muted">Codice Catalogo</label>
+                                    <input
+                                      type="text"
+                                      className="form-control form-control-sm"
+                                      placeholder="Es. 000000000000000"
+                                      value={newSvcCodiceCatalogo}
+                                      onChange={(e) => setNewSvcCodiceCatalogo(e.target.value)}
+                                    />
+                                  </div>
+                                  <div className="col-md-6 d-flex align-items-center">
+                                    <div className="form-check mt-3">
+                                      <input
+                                        type="checkbox"
+                                        id="svc_default"
+                                        className="form-check-input"
+                                        checked={newSvcIsDefault}
+                                        onChange={(e) => setNewSvcIsDefault(e.target.checked)}
+                                      />
+                                      <label htmlFor="svc_default" className="form-check-label small" style={{ cursor: 'pointer' }}>Imposta come servizio predefinito</label>
+                                    </div>
+                                  </div>
+                                  <div className="col-12 text-end border-top pt-2">
+                                    <button type="button" className="btn btn-sm btn-success px-3" onClick={handleAddIoService}>Crea Servizio</button>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {editingIoService && (
+                              <div className="card card-body border-0 shadow-sm p-3 mb-4 bg-white">
+                                <h5 className="small fw-bold text-dark border-bottom pb-2 mb-3">Modifica Servizio App IO: {editingIoService.nome}</h5>
+                                <form onSubmit={handleUpdateIoService}>
+                                  <div className="row g-3">
+                                    <div className="col-md-6">
+                                      <label className="form-label small fw-bold text-dark">Nome Servizio *</label>
+                                      <input
+                                        type="text"
+                                        className="form-control form-control-sm"
+                                        placeholder="Es. Servizio TARI"
+                                        value={editingIoService.nome}
+                                        onChange={(e) => setEditingIoService({ ...editingIoService, nome: e.target.value })}
+                                        required
+                                      />
+                                    </div>
+                                    <div className="col-md-6">
+                                      <label className="form-label small fw-bold text-dark">ID Servizio App IO (IO) *</label>
+                                      <input
+                                        type="text"
+                                        className="form-control form-control-sm"
+                                        placeholder="Es. 01ARZ3NDEKTSN4FFFSUQFW0C5"
+                                        value={editingIoService.idService}
+                                        onChange={(e) => setEditingIoService({ ...editingIoService, idService: e.target.value })}
+                                        required
+                                      />
+                                    </div>
+                                    <div className="col-12">
+                                      <label className="form-label small text-muted">Descrizione Servizio</label>
+                                      <textarea
+                                        className="form-control form-control-sm"
+                                        rows={2}
+                                        placeholder="Descrizione del servizio visualizzata nell'App IO..."
+                                        value={editingIoService.descrizione || ''}
+                                        onChange={(e) => setEditingIoService({ ...editingIoService, descrizione: e.target.value })}
+                                      ></textarea>
+                                    </div>
+                                    <div className="col-md-6">
+                                      <label className="form-label small fw-bold text-dark">API Key Primaria *</label>
+                                      <input
+                                        type="password"
+                                        className="form-control form-control-sm"
+                                        placeholder="API Key principale (lascia mascherata per non modificarla)"
+                                        value={editingIoService.apiKeyPrimaria}
+                                        onChange={(e) => setEditingIoService({ ...editingIoService, apiKeyPrimaria: e.target.value })}
+                                        required
+                                      />
+                                    </div>
+                                    <div className="col-md-6">
+                                      <label className="form-label small text-muted">API Key Secondaria</label>
+                                      <input
+                                        type="password"
+                                        className="form-control form-control-sm"
+                                        placeholder="API Key backup"
+                                        value={editingIoService.apiKeySecondaria || ''}
+                                        onChange={(e) => setEditingIoService({ ...editingIoService, apiKeySecondaria: e.target.value })}
+                                      />
+                                    </div>
+                                    <div className="col-md-6">
+                                      <label className="form-label small text-muted">Codice Catalogo</label>
+                                      <input
+                                        type="text"
+                                        className="form-control form-control-sm"
+                                        placeholder="Es. 000000000000000"
+                                        value={editingIoService.codiceCatalogo || ''}
+                                        onChange={(e) => setEditingIoService({ ...editingIoService, codiceCatalogo: e.target.value })}
+                                      />
+                                    </div>
+                                    <div className="col-12 text-end border-top pt-2 d-flex justify-content-end gap-2">
+                                      <button type="button" className="btn btn-sm btn-outline-secondary px-3" onClick={() => setEditingIoService(null)}>Annulla</button>
+                                      <button type="submit" className="btn btn-sm btn-success px-3">Salva Modifiche</button>
+                                    </div>
+                                  </div>
+                                </form>
+                              </div>
+                            )}
+
+                            {ioServices.length === 0 ? (
+                              <div className="text-center py-4 text-muted bg-white border rounded">Nessun servizio App IO configurato.</div>
+                            ) : (
+                              <div className="table-responsive bg-white border rounded">
+                                <table className="table table-striped table-sm align-middle mb-0" style={{ fontSize: '0.8rem' }}>
+                                  <thead>
+                                    <tr>
+                                      <th>Nome</th>
+                                      <th>ID Servizio (IO)</th>
+                                      <th>Catalogo</th>
+                                      <th className="text-end">Azioni</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {ioServices.map(s => (
+                                      <React.Fragment key={s.id}>
+                                        <tr>
+                                          <td>
+                                            <strong>{s.nome}</strong>
+                                            {s.isDefault && <span className="badge bg-success ms-2">Predefinito</span>}
+                                          </td>
+                                          <td className="font-monospace small">{s.idService}</td>
+                                          <td>{s.codiceCatalogo || <span className="text-muted">—</span>}</td>
+                                          <td className="text-end">
+                                            <div className="btn-group">
+                                              {!s.isDefault && (
+                                                <button
+                                                  type="button"
+                                                  className="btn btn-sm btn-outline-info border-0"
+                                                  onClick={() => handleSetDefaultIoService(s.id)}
+                                                  title="Imposta come predefinito"
+                                                >
+                                                  <i className="fas fa-star"></i>
+                                                </button>
+                                              )}
+                                              <button
+                                                type="button"
+                                                className="btn btn-sm btn-outline-secondary border-0"
+                                                onClick={() => { setEditingIoService(s); setShowNewSvcForm(false); }}
+                                                title="Modifica"
+                                              >
+                                                <i className="fas fa-edit"></i>
+                                              </button>
+                                              <button
+                                                type="button"
+                                                className="btn btn-sm btn-outline-danger border-0"
+                                                onClick={() => handleDeleteIoService(s.id)}
+                                                title="Elimina"
+                                              >
+                                                <i className="fas fa-trash"></i>
+                                              </button>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                        <tr>
+                                          <td colSpan={4} className="pt-0">
+                                            <form onSubmit={(e) => { e.preventDefault(); handleTestIoService(s.id); }} className="d-flex align-items-center gap-2 pb-2">
+                                              <span className="text-muted small fw-semibold">Test invio:</span>
+                                              <input
+                                                type="text"
+                                                className="form-control form-control-sm"
+                                                placeholder="RSSMRA80A01H501X"
+                                                required
+                                                value={ioTestCf}
+                                                onChange={(e) => setIoTestCf(e.target.value)}
+                                                style={{ maxWidth: 200 }}
+                                              />
+                                              <button type="submit" className="btn btn-sm btn-outline-secondary" disabled={ioTestBusyId === s.id}>
+                                                <i className="fas fa-paper-plane"></i> Invia Test
+                                              </button>
+                                              {ioTestMsg?.id === s.id && (
+                                                <span className={`small ${ioTestMsg.error ? 'text-danger' : 'text-success'}`}>{ioTestMsg.text}</span>
+                                              )}
+                                            </form>
+                                          </td>
+                                        </tr>
+                                      </React.Fragment>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
 
                       {/* TAB: MOTORI — outside form to avoid submit conflicts */}
                       {activeSettingsTab === 'motori' && (
