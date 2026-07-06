@@ -42,4 +42,13 @@ describe('CitizenService.markAsDownloaded', () => {
       attachmentIndex: 0,
     });
   });
+
+  it('risolve comunque con il recipient se la registrazione del DownloadEvent fallisce', async () => {
+    mockDownloadEventRepo.insert.mockRejectedValueOnce(new Error('duplicate key value violates unique constraint'));
+
+    await expect(service.markAsDownloaded('r-1', 'RSSMRA80A01H501X')).resolves.toEqual(
+      expect.objectContaining({ id: 'r-1' }),
+    );
+    expect(mockRecipientRepo.save).toHaveBeenCalled();
+  });
 });

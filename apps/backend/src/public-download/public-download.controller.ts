@@ -1,4 +1,4 @@
-import { Controller, ForbiddenException, Get, GoneException, Param, Query, Res } from '@nestjs/common';
+import { Controller, ForbiddenException, Get, GoneException, Logger, Param, Query, Res } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -13,6 +13,8 @@ import { verifyDownloadLink } from '../channels/download-link.util';
 @Controller('public/download')
 @Public()
 export class PublicDownloadController {
+  private readonly logger = new Logger(PublicDownloadController.name);
+
   constructor(
     @InjectRepository(Recipient)
     private readonly recipientRepo: Repository<Recipient>,
@@ -62,11 +64,15 @@ export class PublicDownloadController {
       firstDownloadedAt: recipient.firstDownloadedAt ?? new Date(),
       lastDownloadedAt: new Date(),
     });
-    await this.downloadEventRepo.insert({
-      recipientId,
-      channel: channel || 'UNKNOWN',
-      attachmentIndex: index,
-    });
+    try {
+      await this.downloadEventRepo.insert({
+        recipientId,
+        channel: channel || 'UNKNOWN',
+        attachmentIndex: index,
+      });
+    } catch (err: any) {
+      this.logger.warn(`Impossibile registrare DownloadEvent per recipient ${recipientId}: ${err?.message ?? err}`);
+    }
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="avviso_${recipientId.slice(0, 8)}_${index + 1}.pdf"`);

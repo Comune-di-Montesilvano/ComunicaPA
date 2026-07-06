@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Recipient } from '../entities/recipient.entity';
@@ -7,6 +7,8 @@ import { AttachmentService } from '../attachments/attachment.service';
 
 @Injectable()
 export class CitizenService {
+  private readonly logger = new Logger(CitizenService.name);
+
   constructor(
     @InjectRepository(Recipient)
     private readonly recipientRepo: Repository<Recipient>,
@@ -51,7 +53,11 @@ export class CitizenService {
     recipient.extraData['downloaded_at'] = new Date().toISOString();
 
     await this.recipientRepo.save(recipient);
-    await this.downloadEventRepo.insert({ recipientId: id, channel: 'CITIZEN_PORTAL', attachmentIndex: 0 });
+    try {
+      await this.downloadEventRepo.insert({ recipientId: id, channel: 'CITIZEN_PORTAL', attachmentIndex: 0 });
+    } catch (err: any) {
+      this.logger.warn(`Impossibile registrare DownloadEvent per recipient ${id}: ${err?.message ?? err}`);
+    }
     return recipient;
   }
 

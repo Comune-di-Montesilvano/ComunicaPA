@@ -104,4 +104,14 @@ describe('PublicDownloadController', () => {
       attachmentIndex: 1,
     });
   });
+
+  it('serve comunque il PDF se la registrazione del DownloadEvent fallisce', async () => {
+    mockDownloadEventRepo.insert.mockRejectedValueOnce(new Error('duplicate key value violates unique constraint'));
+    const sig = signDownloadLink(recipientId, 1, futureExp, secret, 'EMAIL');
+    const res: any = { setHeader: jest.fn(), end: jest.fn() };
+    await expect(
+      controller.download(recipientId, '1', String(futureExp), sig, 'EMAIL', res),
+    ).resolves.toBeUndefined();
+    expect(res.end).toHaveBeenCalledWith(Buffer.from('%PDF-fake'));
+  });
 });
