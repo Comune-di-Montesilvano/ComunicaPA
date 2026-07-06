@@ -1,11 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { CampaignsService } from './campaigns.service';
 import { Campaign, CampaignStatus } from '../entities/campaign.entity';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity';
 import { NotificationAttempt } from '../entities/notification-attempt.entity';
 import { NotificationQueuesService } from '../queue/notification-queues.service';
+import { AppSettingsService } from '../settings/app-settings.service';
 import * as fs from 'fs';
 import { join } from 'path';
 import * as os from 'os';
@@ -71,6 +73,12 @@ describe('CampaignsService', () => {
     }),
   };
   const mockQueue = { addBulk: jest.fn().mockResolvedValue(undefined) };
+  const mockSettings = {
+    get: jest.fn(async () => null),
+  };
+  const mockConfig = {
+    get: jest.fn(() => 'test-secret'),
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -80,6 +88,8 @@ describe('CampaignsService', () => {
         { provide: getRepositoryToken(Recipient), useValue: mockRecipientRepo },
         { provide: getRepositoryToken(NotificationAttempt), useValue: mockAttemptRepo },
         { provide: NotificationQueuesService, useValue: mockQueue },
+        { provide: AppSettingsService, useValue: mockSettings },
+        { provide: ConfigService, useValue: mockConfig },
       ],
     }).compile();
     service = module.get<CampaignsService>(CampaignsService);
@@ -313,6 +323,12 @@ describe('CampaignsService', () => {
 
 describe('CampaignsService.getDuplicateSource', () => {
   const campaignRepoMock = { findOneBy: jest.fn() };
+  const mockSettings = {
+    get: jest.fn(async () => null),
+  };
+  const mockConfig = {
+    get: jest.fn(() => 'test-secret'),
+  };
 
   const buildModule = () =>
     Test.createTestingModule({
@@ -322,6 +338,8 @@ describe('CampaignsService.getDuplicateSource', () => {
         { provide: getRepositoryToken(Recipient), useValue: {} },
         { provide: getRepositoryToken(NotificationAttempt), useValue: {} },
         { provide: NotificationQueuesService, useValue: {} },
+        { provide: AppSettingsService, useValue: mockSettings },
+        { provide: ConfigService, useValue: mockConfig },
       ],
     }).compile();
 
@@ -365,6 +383,12 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
     createQueryBuilder: jest.fn(),
   };
   const queuesMock = { addBulk: jest.fn() };
+  const mockSettings = {
+    get: jest.fn(async () => null),
+  };
+  const mockConfig = {
+    get: jest.fn(() => 'test-secret'),
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -378,6 +402,8 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
         { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
         { provide: getRepositoryToken(NotificationAttempt), useValue: attemptRepoMock },
         { provide: NotificationQueuesService, useValue: queuesMock },
+        { provide: AppSettingsService, useValue: mockSettings },
+        { provide: ConfigService, useValue: mockConfig },
       ],
     }).compile();
 
@@ -495,6 +521,8 @@ describe('CampaignsService.updateDraft', () => {
         { provide: getRepositoryToken(Recipient), useValue: {} },
         { provide: getRepositoryToken(NotificationAttempt), useValue: {} },
         { provide: NotificationQueuesService, useValue: {} },
+        { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
+        { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
       ],
     }).compile();
 
@@ -515,6 +543,77 @@ describe('CampaignsService.updateDraft', () => {
     const service = moduleRef.get(CampaignsService);
 
     await expect(service.updateDraft('c1', { name: 'X' })).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('CampaignsService.previewMessage', () => {
+  const mockSettings = {
+    get: jest.fn(async (key: string) => {
+      const values: Record<string, unknown> = {
+        'brand.name': 'Comune di Montesilvano',
+        'brand.logo': null,
+        'system.publicUrl': 'http://localhost:8080',
+        'system.citizenPublicUrl': 'http://localhost:3001',
+        'retention.maxDays': 30,
+      };
+      return values[key];
+    }),
+  };
+  const mockConfig = {
+    get: jest.fn(() => 'test-secret'),
+  };
+  const campaignRepoMock = { findOneBy: jest.fn() };
+  const recipientRepoMock = { find: jest.fn().mockResolvedValue([]) };
+  const attemptRepoMock = { createQueryBuilder: jest.fn() };
+  const queuesMock = { addBulk: jest.fn() };
+
+  const buildModule = () =>
+    Test.createTestingModule({
+      providers: [
+        CampaignsService,
+        { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
+        { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
+        { provide: getRepositoryToken(NotificationAttempt), useValue: attemptRepoMock },
+        { provide: NotificationQueuesService, useValue: queuesMock },
+        { provide: AppSettingsService, useValue: mockSettings },
+        { provide: ConfigService, useValue: mockConfig },
+      ],
+    }).compile();
+
+  it('renders subject and full HTML body with brand name and no fake links', async () => {
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    const result = await service.previewMessage({
+      channelType: 'EMAIL',
+      subject: 'Avviso per %nominativo%',
+      body: 'Gentile %nominativo%, scarica %allegato1%',
+      attachments: [{ key: 'file', label: 'Avviso TARI' }],
+      recipient: { codiceFiscale: 'RSSMRA80A01H501U', fullName: 'Mario Rossi' },
+    });
+
+    expect(result.subject).toBe('Avviso per Mario Rossi');
+    expect(result.bodyHtml).toContain('Comune di Montesilvano');
+    expect(result.bodyHtml).toContain('/public/download/');
+    expect(result.bodyHtml).toContain('Questa è una comunicazione ufficiale');
+    expect(result.bodyMarkdown).toBeUndefined();
+  });
+
+  it('renders markdown body when format is markdown, without HTML wrapper', async () => {
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    const result = await service.previewMessage({
+      channelType: 'APP_IO',
+      subject: 'Avviso',
+      body: 'Elenco: %elenco_allegati%',
+      attachments: [{ key: 'file', label: 'Avviso TARI' }],
+      recipient: { codiceFiscale: 'RSSMRA80A01H501U' },
+      format: 'markdown',
+    });
+
+    expect(result.bodyMarkdown).toContain('- **Avviso TARI**');
+    expect(result.bodyHtml).toBeUndefined();
   });
 });
 

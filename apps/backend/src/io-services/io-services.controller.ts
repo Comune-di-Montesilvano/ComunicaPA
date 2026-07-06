@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Put } from '@nestjs/common';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { IoServicesService } from './io-services.service';
-import { CreateIoServiceDto, UpdateIoServiceDto } from './dto/io-service.dto';
+import { CreateIoServiceDto, UpdateIoServiceDto, TestIoServiceDto } from './dto/io-service.dto';
 
 @Controller('io-services')
 export class IoServicesController {
@@ -41,7 +41,7 @@ export class IoServicesController {
   @Post(':id/test')
   @Roles('admin')
   @HttpCode(HttpStatus.OK)
-  test(@Param('id', ParseUUIDPipe) id: string, @Body() body: { codiceFiscale: string }) {
-    return this.svc.test(id, body?.codiceFiscale ?? '');
+  test(@Param('id', ParseUUIDPipe) id: string, @Body() body: TestIoServiceDto) {
+    return this.svc.test(id, body.codiceFiscale);
   }
 }

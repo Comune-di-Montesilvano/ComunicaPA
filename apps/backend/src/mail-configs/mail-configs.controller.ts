@@ -15,7 +15,7 @@ import {
 } from '@nestjs/common';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { MailConfigsService } from './mail-configs.service';
-import { CreateMailConfigDto, UpdateMailConfigDto } from './dto/mail-config.dto';
+import { CreateMailConfigDto, UpdateMailConfigDto, TestMailConfigDto, SetActiveMailConfigDto } from './dto/mail-config.dto';
 import type { MailServerType } from '../entities/mail-server-config.entity';
 
 @Controller('mail-configs')
@@ -54,16 +54,13 @@ export class MailConfigsController {
   @Post(':id/test')
   @Roles('admin')
   @HttpCode(HttpStatus.OK)
-  test(@Param('id', ParseUUIDPipe) id: string, @Body() body: { to: string }) {
-    return this.svc.test(id, body?.to ?? '');
+  test(@Param('id', ParseUUIDPipe) id: string, @Body() body: TestMailConfigDto) {
+    return this.svc.test(id, body.to);
   }
 
   @Patch(':id/active')
   @Roles('admin')
-  setActive(@Param('id', ParseUUIDPipe) id: string, @Body() body: { active: boolean }) {
-    if (typeof body?.active !== 'boolean') {
-      throw new BadRequestException('Campo "active" booleano richiesto');
-    }
+  setActive(@Param('id', ParseUUIDPipe) id: string, @Body() body: SetActiveMailConfigDto) {
     return this.svc.setActive(id, body.active);
   }
 }

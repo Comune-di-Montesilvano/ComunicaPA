@@ -54,3 +54,8 @@ export interface IoServiceMaskedDto {
   isDefault: boolean;
   testedAt: string | null;
 }
+
+export class TestIoServiceDto {
+  @IsString() @MinLength(1)
+  codiceFiscale!: string;
+}

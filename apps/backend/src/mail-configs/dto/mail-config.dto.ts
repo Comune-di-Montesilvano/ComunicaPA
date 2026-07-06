@@ -107,3 +107,13 @@ export interface MailConfigMaskedDto {
   testedAt: string | null;
   active: boolean;
 }
+
+export class TestMailConfigDto {
+  @IsEmail()
+  to!: string;
+}
+
+export class SetActiveMailConfigDto {
+  @IsBoolean()
+  active!: boolean;
+}

@@ -5,6 +5,7 @@ import { AuthService } from './auth.service';
 import { OidcFlowService } from './oidc/oidc-flow.service';
 import { AppSettingsService } from '../settings/app-settings.service';
 import { LoginDto } from './dto/login.dto';
+import { OidcCallbackDto, CitizenLoginDto } from './dto/oidc.dto';
 import type { AuthResponseDto } from './dto/auth-response.dto';
 import type { JwtOperatorPayload } from '@comunicapa/shared-types';
 import type { AppConfiguration } from '../config/configuration';
@@ -44,7 +45,7 @@ export class AuthController {
   @Public()
   @Post('citizen/oidc/callback')
   @HttpCode(HttpStatus.OK)
-  oidcCallback(@Body() dto: { code: string; state: string }): Promise<{ access_token: string; claims?: { cf: string; name: string; provider: string } }> {
+  oidcCallback(@Body() dto: OidcCallbackDto): Promise<{ access_token: string; claims?: { cf: string; name: string; provider: string } }> {
     return this.oidcFlow.exchangeCode(dto.code, dto.state);
   }
 
@@ -53,7 +54,7 @@ export class AuthController {
   @Post('citizen/login')
   @HttpCode(HttpStatus.OK)
   citizenLogin(
-    @Body() dto: { codiceFiscale: string; name?: string; email?: string },
+    @Body() dto: CitizenLoginDto,
   ): Promise<{ access_token: string }> {
     return this.authService.generateCitizenToken(dto);
   }
