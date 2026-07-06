@@ -362,7 +362,15 @@ describe('CampaignsService', () => {
         return Promise.resolve([{ id: 'r1' }, { id: 'r2' }, { id: 'r3' }]);
       });
 
-      await expect(service.launch('c-att')).rejects.toThrow('Impossibile avviare');
+      // NON deve lanciare un'eccezione HTTP (400): il reverse proxy di produzione
+      // intercetta le risposte non-2xx e ne sostituisce il body con una pagina HTML
+      // propria, rendendo illeggibile il messaggio di errore dal frontend (stesso
+      // problema già risolto altrove — vedi io-services.service.ts `test()`).
+      // Deve invece rispondere 200 con blocked:true e il messaggio nel body.
+      const result = await service.launch('c-att');
+      expect(result.blocked).toBe(true);
+      expect(result.message).toContain('Impossibile avviare');
+      expect(result.launched).toBe(0);
       expect(mockCampaignRepo.update).toHaveBeenCalledWith({ id: 'c-att' }, { status: CampaignStatus.DRAFT });
       expect(mockQueue.addBulk).not.toHaveBeenCalled();
     });

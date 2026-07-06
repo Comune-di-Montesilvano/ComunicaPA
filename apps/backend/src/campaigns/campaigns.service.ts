@@ -198,7 +198,9 @@ export class CampaignsService {
     return { imported, campaignId };
   }
 
-  async launch(campaignId: string): Promise<{ launched: number; campaignId: string }> {
+  async launch(
+    campaignId: string,
+  ): Promise<{ launched: number; campaignId: string; blocked?: boolean; message?: string }> {
     const launchResult = await this.campaignRepo
       .createQueryBuilder()
       .update()
@@ -223,9 +225,16 @@ export class CampaignsService {
         .map((m) => `${m.expectedFilename} (CF ${m.codiceFiscale})`)
         .join(', ');
       const more = missingAttachments.length > 5 ? ', …' : '';
-      throw new BadRequestException(
-        `Impossibile avviare: ${missingAttachments.length} allegato/i mancante/i rispetto alla mappatura configurata — es. ${sample}${more}. Carica i file mancanti prima di rilanciare.`,
-      );
+      // Risposta 200 (non BadRequestException): il reverse proxy di produzione
+      // intercetta le risposte non-2xx e ne sostituisce il body con una pagina
+      // HTML propria, rendendo illeggibile il messaggio lato frontend — stesso
+      // problema già risolto altrove (vedi io-services.service.ts `test()`).
+      return {
+        launched: 0,
+        campaignId,
+        blocked: true,
+        message: `Impossibile avviare: ${missingAttachments.length} allegato/i mancante/i rispetto alla mappatura configurata — es. ${sample}${more}. Carica i file mancanti prima di rilanciare.`,
+      };
     }
 
     const recipients = await this.recipientRepo.find({

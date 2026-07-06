@@ -2021,6 +2021,15 @@ export function App(): React.JSX.Element {
         throw new Error(errBody?.message || 'Errore durante il lancio della campagna.');
       }
 
+      // launch() risponde 200 anche quando blocca il lancio (allegati mancanti):
+      // il reverse proxy di produzione intercetta le risposte non-2xx e ne
+      // sostituisce il body con una pagina HTML propria, rendendo illeggibile
+      // il messaggio di errore — vedi campaigns.service.ts::launch().
+      const launchData = await launchRes.json().catch(() => null);
+      if (launchData?.blocked) {
+        throw new Error(launchData.message || 'Impossibile avviare la campagna.');
+      }
+
       setWizStep(1);
       setWizCampaignId(null);
       setWizName('');
