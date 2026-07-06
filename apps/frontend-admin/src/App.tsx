@@ -245,6 +245,12 @@ export function App(): React.JSX.Element {
     pec: '',
   });
   const [wizAttachments, setWizAttachments] = useState<Array<{ key: string; label: string }>>([]);
+  // Mappatura colonna→campo e colonne allegato salvate su una campagna sorgente
+  // (duplica/riprendi bozza), da riapplicare al prossimo CSV caricato SOLO se le
+  // stesse colonne sono presenti nell'intestazione (stesso formato CSV riusato,
+  // caso d'uso tipico). Se il CSV è diverso, restano inapplicate senza errori.
+  const [wizPendingMapping, setWizPendingMapping] = useState<typeof wizMapping | null>(null);
+  const [wizPendingAttachments, setWizPendingAttachments] = useState<Array<{ key: string; label: string }> | null>(null);
   const [wizValidationErrors, setWizValidationErrors] = useState<Array<{ row: number; field: string; val: string; err: string }>>([]);
   const [wizValidationWarnings, setWizValidationWarnings] = useState<Array<{ row: number; field: string; val: string; warn: string }>>([]);
   const [wizValidRows, setWizValidRows] = useState<Record<string, string>[]>([]);
@@ -1624,8 +1630,33 @@ export function App(): React.JSX.Element {
         else if (hLower === 'email' || hLower === 'mail') newMapping.email = h;
         else if (hLower === 'pec') newMapping.pec = h;
       });
+
+      // Se stiamo duplicando/riprendendo una campagna e il CSV ricaricato ha le
+      // stesse colonne, riapplica la mappatura salvata invece dell'euristica
+      // generica (che potrebbe indovinare male o non indovinare affatto colonne
+      // con nomi non standard). Se anche una sola colonna referenziata non è
+      // presente nel nuovo CSV, non forziamo nulla: resta l'euristica/vuoto.
+      if (wizPendingMapping) {
+        const pendingCols = [
+          wizPendingMapping.codice_fiscale,
+          wizPendingMapping.full_name,
+          wizPendingMapping.full_name_2,
+          wizPendingMapping.email,
+          wizPendingMapping.pec,
+        ].filter(Boolean);
+        if (pendingCols.every(col => headers.includes(col))) {
+          Object.assign(newMapping, wizPendingMapping);
+        }
+        setWizPendingMapping(null);
+      }
       setWizMapping(newMapping);
-      setWizAttachments([]);
+
+      if (wizPendingAttachments && wizPendingAttachments.every(a => headers.includes(a.key))) {
+        setWizAttachments(wizPendingAttachments);
+      } else {
+        setWizAttachments([]);
+      }
+      setWizPendingAttachments(null);
     };
     reader.readAsText(file);
   };
@@ -1792,11 +1823,16 @@ export function App(): React.JSX.Element {
     setWizAppIoSubjectOverride(secondaryAppIo?.subjectOverride || '');
     setWizAppIoBodyOverride(secondaryAppIo?.bodyOverride || '');
     setWizBlockedChannels(source.channelConfig?.blockedChannels || []);
-    // Il CSV NON viene precaricato: l'utente ricarica un file al passo 2.
+    // Il CSV NON viene precaricato: l'utente ricarica un file al passo 2. La
+    // mappatura colonna→campo e le colonne allegato vengono però conservate
+    // "in sospeso": se il CSV ricaricato ha le stesse colonne (caso d'uso
+    // tipico: stesso formato riusato), parseCsvFile le riapplica automaticamente.
     setWizCsvFile(null);
     setWizCsvHeaders([]);
     setWizCsvRows([]);
     setWizValidRows([]);
+    setWizPendingMapping(source.channelConfig?.csvMapping || null);
+    setWizPendingAttachments(source.channelConfig?.attachments || null);
     setWizStep(1);
     setView('invio-massivo-wizard');
   };
@@ -1829,6 +1865,7 @@ export function App(): React.JSX.Element {
   const buildWizChannelConfigDraft = (): Record<string, any> => {
     const cfg: Record<string, any> = { subject: wizSubject, body: wizBody, mailConfigId: wizMailConfigId };
     if (wizAttachments.length > 0) cfg.attachments = wizAttachments;
+    if (wizMapping.codice_fiscale) cfg.csvMapping = wizMapping;
     if (wizChannel === 'APP_IO') {
       cfg.ioServiceId = wizAppIoServiceId;
     }
@@ -1926,6 +1963,9 @@ export function App(): React.JSX.Element {
 
       if (wizBlockedChannels.length > 0) {
         channelConfig.blockedChannels = wizBlockedChannels;
+      }
+      if (wizMapping.codice_fiscale) {
+        channelConfig.csvMapping = wizMapping;
       }
 
       let campaignObj: { id: string };
