@@ -24,6 +24,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { CampaignsService } from './campaigns.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { UpdateCampaignDto } from './dto/update-campaign.dto';
+import { PreviewMessageDto } from './dto/preview-message.dto';
 import { getUploadsDir } from '../attachments/attachment-paths';
 
 @Controller('campaigns')
@@ -52,6 +53,11 @@ export class CampaignsController {
   @Patch(':id')
   updateDraft(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateCampaignDto) {
     return this.campaignsService.updateDraft(id, dto);
+  }
+
+  @Post('preview')
+  previewMessage(@Body() dto: PreviewMessageDto) {
+    return this.campaignsService.previewMessage(dto);
   }
 
   @Post(':id/recipients/upload')

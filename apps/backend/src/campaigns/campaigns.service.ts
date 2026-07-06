@@ -7,6 +7,12 @@ import { parse } from 'csv-parse';
 import * as fs from 'fs';
 import { basename, join } from 'path';
 import AdmZip from 'adm-zip';
+import { randomUUID } from 'crypto';
+import { ConfigService } from '@nestjs/config';
+import type { AppConfiguration } from '../config/configuration';
+import { AppSettingsService } from '../settings/app-settings.service';
+import { processTemplate, wrapInHtmlLayout } from '../channels/template.helper';
+import { getEffectiveRetentionDays } from './retention.util';
 import { getUploadsDir } from '../attachments/attachment-paths';
 import { resolveAttachmentsConfig, resolveCustomAttachmentFilename } from '../attachments/attachment.service';
 import { Campaign, CampaignStatus } from '../entities/campaign.entity';
@@ -17,6 +23,7 @@ import { NotificationQueuesService } from '../queue/notification-queues.service'
 import type { CreateCampaignDto } from './dto/create-campaign.dto';
 import type { UpdateCampaignDto } from './dto/update-campaign.dto';
 import type { CampaignStatsDto, RecipientStatsPageDto } from './dto/campaign-stats.dto';
+import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto';
 
 
 @Injectable()
@@ -29,6 +36,8 @@ export class CampaignsService {
     @InjectRepository(NotificationAttempt)
     private readonly attemptRepo: Repository<NotificationAttempt>,
     private readonly notificationQueues: NotificationQueuesService,
+    private readonly settings: AppSettingsService,
+    private readonly config: ConfigService<AppConfiguration, true>,
   ) {}
 
   findAll(): Promise<Campaign[]> {
@@ -70,6 +79,49 @@ export class CampaignsService {
       channelType: campaign.channelType,
       channelConfig: campaign.channelConfig,
     };
+  }
+
+  /**
+   * Rende oggetto+corpo di un messaggio usando lo stesso motore di template
+   * (processTemplate/wrapInHtmlLayout) usato realmente in invio, per un
+   * destinatario transitorio (mai persistito: id casuale, usato solo per
+   * firmare il link di download nello stesso formato di produzione — il
+   * link non risolve realmente perché nessun allegato è associato a
+   * quell'id in DB). Usata dal wizard per l'anteprima live.
+   */
+  async previewMessage(dto: PreviewMessageDto): Promise<PreviewMessageResult> {
+    const brandName = (await this.settings.get<string>('brand.name')) || 'Comune di Montesilvano';
+    const publicApiUrl = await this.settings.get<string>('system.publicUrl');
+    const downloadLinkSecret = this.config.get('downloadLink.secret', { infer: true });
+    const retentionMaxDays = await this.settings.get<number>('retention.maxDays');
+    const retentionDays = getEffectiveRetentionDays({ retentionDays: null }, retentionMaxDays);
+    const expiresAtUnix = Math.floor(Date.now() / 1000) + retentionDays * 86400;
+
+    const previewRecipient = {
+      id: randomUUID(),
+      codiceFiscale: dto.recipient.codiceFiscale,
+      fullName: dto.recipient.fullName ?? null,
+      email: dto.recipient.email ?? null,
+      pec: dto.recipient.pec ?? null,
+      extraData: dto.recipient.extraData ?? {},
+    } as unknown as Recipient;
+
+    const attachmentLabels = (dto.attachments ?? []).map((a) => a.label);
+    const format: 'html' | 'markdown' = dto.format ?? (dto.channelType === 'APP_IO' ? 'markdown' : 'html');
+
+    const subject = processTemplate(dto.subject, previewRecipient, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, format);
+    const body = processTemplate(dto.body, previewRecipient, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, format);
+
+    if (format === 'markdown') {
+      return { subject, bodyMarkdown: body };
+    }
+
+    const brandLogo = await this.settings.get<string>('brand.logo');
+    const logoUrl = brandLogo ? (/^https?:\/\//i.test(brandLogo) ? brandLogo : `${publicApiUrl}/branding/logo`) : null;
+    const portalUrl = (await this.settings.get<string>('system.citizenPublicUrl')) || null;
+    const bodyHtml = wrapInHtmlLayout(body, brandName, { logoUrl, portalUrl });
+
+    return { subject, bodyHtml };
   }
 
   create(dto: CreateCampaignDto, createdBy: string): Promise<Campaign> {
