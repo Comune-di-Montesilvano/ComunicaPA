@@ -485,7 +485,7 @@ export function App(): React.JSX.Element {
   const apiFetch = async (path: string, init: RequestInit = {}): Promise<Response> => {
     const headers = new Headers(init.headers);
     if (token) headers.set('Authorization', `Bearer ${token}`);
-    const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+    const res = await fetch(`${ADMIN_API_BASE}${path}`, { ...init, headers });
     if (res.status === 401) {
       handleLogout();
       throw new ApiAuthError();
