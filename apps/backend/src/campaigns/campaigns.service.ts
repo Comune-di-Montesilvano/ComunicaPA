@@ -51,7 +51,7 @@ export class CampaignsService {
   async findOne(id: string): Promise<Campaign> {
     const campaign = await this.campaignRepo.findOne({
       where: { id },
-      relations: ['recipients'],
+      relations: ['recipients', 'recipients.attempts'],
     });
     if (!campaign) throw new NotFoundException(`Campaign ${id} not found`);
     return campaign;

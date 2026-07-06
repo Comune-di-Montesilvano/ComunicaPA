@@ -86,6 +86,14 @@ interface Recipient {
   status: 'pending' | 'queued' | 'sent' | 'failed' | 'skipped';
   createdAt: string;
   extraData?: Record<string, any>;
+  attempts?: Array<{
+    id: string;
+    channelType: string;
+    status: string;
+    responsePayload?: any;
+    errorMessage?: string | null;
+    attemptNumber: number;
+  }>;
 }
 
 interface IoService {
@@ -332,6 +340,53 @@ export function App(): React.JSX.Element {
     const fn1 = row[wizMapping.full_name] || '';
     const fn2 = wizMapping.full_name_2 ? (row[wizMapping.full_name_2] || '') : '';
     return [fn1, fn2].filter(Boolean).join(' ');
+  };
+
+  const renderAppIoCoDeliveryBadge = (r: Recipient) => {
+    const hasAppIoCoDelivery = campaign?.channelConfig?.secondaryChannels?.some((sc: any) => sc?.channel === 'APP_IO');
+    if (!hasAppIoCoDelivery || !r.attempts) return null;
+
+    const firstAttempt = r.attempts.find(a => a.attemptNumber === 1 || a.responsePayload?.appIo);
+    if (!firstAttempt) return null;
+
+    const appIo = firstAttempt.responsePayload?.appIo;
+    if (appIo) {
+      if (appIo.success) {
+        return (
+          <span className="badge bg-primary d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem', alignSelf: 'start', backgroundColor: '#0059b3' }}>
+            <i className="fas fa-mobile-alt"></i> App IO: Inviato
+          </span>
+        );
+      } else {
+        return (
+          <span className="badge bg-danger d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem', alignSelf: 'start' }} title={appIo.error || 'Errore'}>
+            <i className="fas fa-mobile-alt"></i> App IO: Fallito
+          </span>
+        );
+      }
+    }
+
+    if (firstAttempt.responsePayload?.deliveredVia === 'APP_IO') {
+      if (firstAttempt.status === 'success') {
+        return (
+          <span className="badge bg-primary d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem', alignSelf: 'start', backgroundColor: '#0059b3' }}>
+            <i className="fas fa-mobile-alt"></i> App IO: Inviato (Esclusivo)
+          </span>
+        );
+      } else {
+        return (
+          <span className="badge bg-danger d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem', alignSelf: 'start' }} title={firstAttempt.errorMessage || 'Errore'}>
+            <i className="fas fa-mobile-alt"></i> App IO: Fallito (Esclusivo)
+          </span>
+        );
+      }
+    }
+
+    return (
+      <span className="badge bg-light text-muted border d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem', alignSelf: 'start' }}>
+        <i className="fas fa-mobile-alt"></i> App IO: Non attivo
+      </span>
+    );
   };
 
   // Con CSV senza header le colonne sono "Colonna N": senza un'anteprima del
@@ -5633,9 +5688,10 @@ export function App(): React.JSX.Element {
                                     <td className="fw-mono fw-bold">{r.codiceFiscale}</td>
                                     <td>{r.fullName || <span className="text-muted">N/D</span>}</td>
                                     <td>
-                                      <div className="small">
+                                      <div className="small d-flex flex-column gap-1">
                                         {r.email && <div><i className="far fa-envelope me-1"></i> {r.email}</div>}
                                         {r.pec && <div className="text-primary"><i className="fas fa-envelope-open-text me-1"></i> {r.pec}</div>}
+                                        {renderAppIoCoDeliveryBadge(r)}
                                       </div>
                                     </td>
                                     <td>
