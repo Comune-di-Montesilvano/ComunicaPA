@@ -20,6 +20,7 @@ import { AppSettingsService } from '../settings/app-settings.service';
 import { MailConfigsService } from '../mail-configs/mail-configs.service';
 import { IoServicesService } from '../io-services/io-services.service';
 import { APP_IO_BASE_URL } from '../channels/app-io/app-io.strategy';
+import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util';
 
 @Injectable()
 export class NotificationProcessor extends WorkerHost {
@@ -89,9 +90,7 @@ export class NotificationProcessor extends WorkerHost {
       throw new Error(`Nessuna strategy per channel ${channel}`);
     }
 
-    const appIoConfig = campaign.channelConfig?.['appIo'] as
-      | { mode?: 'parallel' | 'exclusive'; ioServiceId?: string }
-      | undefined;
+    const appIoConfig = resolveSecondaryAppIoConfig(campaign.channelConfig);
     const isMailChannel = channel === 'EMAIL' || channel === 'PEC';
     // Risolve la api key del servizio App IO scelto (o quello predefinito) solo se serve:
     // niente più api key in chiaro dentro channelConfig (cifrata lato server per servizio).
@@ -114,7 +113,12 @@ export class NotificationProcessor extends WorkerHost {
         APP_IO_BASE_URL, appIoResolved!.apiKey, recipient.codiceFiscale,
       );
       if (hasAppIo) {
-        const appIoResult = await this.sendAppIoMessage(campaign, recipient, { apiKey: appIoResolved!.apiKey, baseUrl: APP_IO_BASE_URL });
+        const appIoResult = await this.sendAppIoMessage(campaign, recipient, {
+          apiKey: appIoResolved!.apiKey,
+          baseUrl: APP_IO_BASE_URL,
+          subjectOverride: (appIoConfig as { subjectOverride?: string } | undefined)?.subjectOverride,
+          bodyOverride: (appIoConfig as { bodyOverride?: string } | undefined)?.bodyOverride,
+        });
         responsePayload.appIo = appIoResult;
         if (appIoResult.success) {
           skipPrimary = true;
@@ -144,7 +148,12 @@ export class NotificationProcessor extends WorkerHost {
         );
         if (hasAppIo) {
           this.logger.log(`Invio App IO parallelo per CF: ${recipient.codiceFiscale}`);
-          const appIoResult = await this.sendAppIoMessage(campaign, recipient, { apiKey: appIoResolved!.apiKey, baseUrl: APP_IO_BASE_URL });
+          const appIoResult = await this.sendAppIoMessage(campaign, recipient, {
+          apiKey: appIoResolved!.apiKey,
+          baseUrl: APP_IO_BASE_URL,
+          subjectOverride: (appIoConfig as { subjectOverride?: string } | undefined)?.subjectOverride,
+          bodyOverride: (appIoConfig as { bodyOverride?: string } | undefined)?.bodyOverride,
+        });
           responsePayload.appIo = appIoResult;
           if (appIoResult.success) appIoLinkDelivered = true;
         }
@@ -213,7 +222,7 @@ export class NotificationProcessor extends WorkerHost {
   private async sendAppIoMessage(
     campaign: Campaign,
     recipient: Recipient,
-    appIoConfig: { apiKey: string; baseUrl: string },
+    appIoConfig: { apiKey: string; baseUrl: string; subjectOverride?: string; bodyOverride?: string },
   ): Promise<{ success: boolean; messageId?: string; error?: string }> {
     try {
       const publicApiUrl = await this.settings.get<string>('system.publicUrl');
@@ -224,7 +233,7 @@ export class NotificationProcessor extends WorkerHost {
 
       const attachmentLabels = resolveAttachmentsConfig(campaign.channelConfig).map((a) => a.label);
       const processedSubject = processTemplate(
-        (campaign.channelConfig?.['subject'] as string) || campaign.name,
+        appIoConfig.subjectOverride || (campaign.channelConfig?.['subject'] as string) || campaign.name,
         recipient,
         publicApiUrl,
         downloadLinkSecret,
@@ -232,7 +241,7 @@ export class NotificationProcessor extends WorkerHost {
         attachmentLabels,
       );
       const processedMarkdown = processTemplate(
-        (campaign.channelConfig?.['body'] as string) || '',
+        appIoConfig.bodyOverride || (campaign.channelConfig?.['body'] as string) || '',
         recipient,
         publicApiUrl,
         downloadLinkSecret,

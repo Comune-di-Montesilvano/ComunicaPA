@@ -327,5 +327,30 @@ describe('NotificationProcessor', () => {
       expect((global as any).fetch).not.toHaveBeenCalled();
       expect(mockStrategy.send).toHaveBeenCalled();
     });
+
+    it('usa subjectOverride/bodyOverride di secondaryChannels quando presenti (invece di subject/body principali)', async () => {
+      mockCampaignRepo.findOne.mockResolvedValueOnce({
+        ...mockCampaignWithAppIo,
+        channelConfig: {
+          subject: 'Oggetto principale',
+          body: 'Corpo principale',
+          secondaryChannels: [
+            { channel: 'APP_IO', mode: 'parallel', ioServiceId: 'svc-1', subjectOverride: 'Oggetto IO', bodyOverride: 'Corpo IO differenziato' },
+          ],
+        },
+      });
+      let capturedBody: any;
+      (global as any).fetch = jest.fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ sender_allowed: true }) }) // checkAppIoProfile
+        .mockImplementationOnce((_url: string, init: any) => {
+          capturedBody = JSON.parse(init.body);
+          return Promise.resolve({ ok: true, json: async () => ({ id: 'io-1' }) });
+        });
+
+      await processor.process(mockJob(baseData));
+
+      expect(capturedBody.content.subject).toBe('Oggetto IO');
+      expect(capturedBody.content.markdown).toBe('Corpo IO differenziato');
+    });
   });
 });
