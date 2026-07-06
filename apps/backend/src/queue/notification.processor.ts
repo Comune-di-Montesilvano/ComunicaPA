@@ -196,13 +196,11 @@ export class NotificationProcessor extends WorkerHost {
     fiscalCode: string,
   ): Promise<boolean> {
     try {
-      const res = await fetch(`${baseUrl}/api/v1/profiles`, {
-        method: 'POST',
+      const res = await fetch(`${baseUrl}/api/v1/profiles/${fiscalCode}`, {
+        method: 'GET',
         headers: {
-          'Content-Type': 'application/json',
           'Ocp-Apim-Subscription-Key': apiKey,
         },
-        body: JSON.stringify({ fiscal_code: fiscalCode }),
       });
       if (!res.ok) return false;
       const data = (await res.json()) as { sender_allowed: boolean };

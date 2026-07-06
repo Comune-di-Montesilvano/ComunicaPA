@@ -104,6 +104,26 @@ export class IoServicesService {
 
     const apiKey = decryptValue(entity.apiKeyPrimariaEnc, this.cryptoKey);
     const { APP_IO_BASE_URL } = await import('../channels/app-io/app-io.strategy');
+
+    // 1. Verifica profilo cittadino
+    const profileResponse = await fetch(`${APP_IO_BASE_URL}/api/v1/profiles/${codiceFiscale}`, {
+      method: 'GET',
+      headers: { 'Ocp-Apim-Subscription-Key': apiKey },
+    });
+
+    if (!profileResponse.ok) {
+      if (profileResponse.status === 404) {
+        throw new BadRequestException('Cittadino non iscritto ad App IO');
+      }
+      throw new BadRequestException(`Errore verifica profilo App IO: HTTP ${profileResponse.status}`);
+    }
+
+    const profileData = (await profileResponse.json()) as { sender_allowed: boolean };
+    if (!profileData.sender_allowed) {
+      throw new BadRequestException('Messaggi da questo servizio disabilitati dal cittadino su App IO');
+    }
+
+    // 2. Invio messaggio di test
     const response = await fetch(`${APP_IO_BASE_URL}/api/v1/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Ocp-Apim-Subscription-Key': apiKey },

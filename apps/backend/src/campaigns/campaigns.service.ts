@@ -411,7 +411,7 @@ export class CampaignsService {
     // 1. Estrazione ZIP
     for (const file of files) {
       if (!file.originalname.toLowerCase().endsWith('.zip')) continue;
-      const zip = new AdmZip(file.path);
+      const zip = new AdmZip(fs.readFileSync(file.path));
       for (const entry of zip.getEntries()) {
         if (entry.isDirectory) continue;
         const name = basename(entry.entryName); // neutralizza path traversal

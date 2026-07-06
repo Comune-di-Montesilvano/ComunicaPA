@@ -813,9 +813,17 @@ export function App(): React.JSX.Element {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ codiceFiscale: ioTestCf.toUpperCase().trim() }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Test fallito');
-      setIoTestMsg({ id, text: data.message, error: false });
+      let errMsg = 'Test fallito';
+      let successMsg = 'Messaggio di test inviato con successo.';
+      try {
+        const data = await res.json();
+        errMsg = data.message || errMsg;
+        successMsg = data.message || successMsg;
+      } catch {
+        errMsg = `Errore di rete/server (HTTP ${res.status})`;
+      }
+      if (!res.ok) throw new Error(errMsg);
+      setIoTestMsg({ id, text: successMsg, error: false });
     } catch (err: any) {
       setIoTestMsg({ id, text: err.message, error: true });
     } finally {
@@ -1114,9 +1122,16 @@ export function App(): React.JSX.Element {
         body: JSON.stringify({ to: mailConfigTestTo }),
       });
 
-      const data = await res.json();
+      let errMsg = 'Errore invio email test';
+      try {
+        const data = await res.json();
+        errMsg = data.message || errMsg;
+      } catch {
+        errMsg = `Errore di rete/server (HTTP ${res.status})`;
+      }
+
       if (!res.ok) {
-        throw new Error(data.message || 'Errore invio email test');
+        throw new Error(errMsg);
       }
 
       setMailConfigMsg({ text: 'Messaggio di test inviato con successo!', error: false });

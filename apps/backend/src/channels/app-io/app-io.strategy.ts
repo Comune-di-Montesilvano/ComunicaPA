@@ -25,6 +25,27 @@ export class AppIoStrategy implements IChannelStrategy {
       throw new Error('Nessun servizio App IO configurato (né specifico né predefinito)');
     }
 
+    // 1. Verifica il profilo del cittadino su App IO
+    const profileRes = await fetch(`${APP_IO_BASE_URL}/api/v1/profiles/${recipient.codiceFiscale}`, {
+      method: 'GET',
+      headers: {
+        'Ocp-Apim-Subscription-Key': resolved.apiKey,
+      },
+    });
+
+    if (!profileRes.ok) {
+      if (profileRes.status === 404) {
+        throw new Error('Cittadino non iscritto ad App IO');
+      }
+      throw new Error(`Errore verifica profilo App IO: HTTP ${profileRes.status}`);
+    }
+
+    const profileData = (await profileRes.json()) as { sender_allowed: boolean };
+    if (!profileData.sender_allowed) {
+      throw new Error('Messaggi da questo servizio disabilitati dal cittadino su App IO');
+    }
+
+    // 2. Invio effettivo del messaggio
     const vars: Record<string, string> = {
       fullName: recipient.fullName ?? '',
       codiceFiscale: recipient.codiceFiscale,
@@ -45,7 +66,7 @@ export class AppIoStrategy implements IChannelStrategy {
     });
 
     if (!response.ok) {
-      throw new Error(`App IO API error: ${response.status}`);
+      throw new Error(`App IO API error: HTTP ${response.status}`);
     }
 
     const data = (await response.json()) as { id: string };
