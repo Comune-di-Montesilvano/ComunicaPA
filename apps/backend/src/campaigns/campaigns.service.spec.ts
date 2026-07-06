@@ -64,6 +64,7 @@ describe('CampaignsService', () => {
     findAndCount: jest.fn().mockResolvedValue([[], 0]),
   };
   const mockAttemptRepo = {
+    find: jest.fn(),
     createQueryBuilder: jest.fn().mockReturnValue({
       insert: jest.fn().mockReturnThis(),
       into: jest.fn().mockReturnThis(),
@@ -105,6 +106,7 @@ describe('CampaignsService', () => {
     mockCampaignQb.execute.mockResolvedValue({ affected: 1 });
     mockCampaignRepo.createQueryBuilder.mockReturnValue(mockCampaignQb);
     mockRecipientRepo.find.mockResolvedValue([]);
+    mockAttemptRepo.find.mockReset();
   });
 
   it('findAll returns array', async () => {
@@ -394,6 +396,49 @@ describe('CampaignsService', () => {
 
       const result = await service.launch('c-att-ok');
       expect(result.launched).toBe(1);
+    });
+  });
+
+  describe('getChannelBreakdown', () => {
+    it('ritorna null se la campagna non ha co-consegna App IO configurata', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelConfig: {} });
+
+      const result = await service.getChannelBreakdown('uuid-1');
+
+      expect(result).toBeNull();
+      expect(mockRecipientRepo.find).not.toHaveBeenCalled();
+    });
+
+    it('classifica correttamente le 5 categorie di consegna', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({
+        ...mockCampaign,
+        channelConfig: { appIo: { mode: 'parallel', ioServiceId: 'svc-1' } },
+      });
+      mockRecipientRepo.find.mockResolvedValueOnce([
+        { id: 'r-primary-only', status: RecipientStatus.SENT },
+        { id: 'r-both', status: RecipientStatus.SENT },
+        { id: 'r-appio-only', status: RecipientStatus.SENT },
+        { id: 'r-appio-despite-fail', status: RecipientStatus.FAILED },
+        { id: 'r-neither', status: RecipientStatus.FAILED },
+        { id: 'r-pending', status: RecipientStatus.PENDING },
+      ]);
+      mockAttemptRepo.find.mockResolvedValueOnce([
+        { recipientId: 'r-primary-only', responsePayload: {} },
+        { recipientId: 'r-both', responsePayload: { appIo: { success: true } } },
+        { recipientId: 'r-appio-only', responsePayload: { appIo: { success: true }, deliveredVia: 'APP_IO' } },
+        { recipientId: 'r-appio-despite-fail', responsePayload: { appIo: { success: true } } },
+        { recipientId: 'r-neither', responsePayload: { appIo: { success: false, error: 'timeout' } } },
+      ]);
+
+      const result = await service.getChannelBreakdown('uuid-1');
+
+      expect(result).toEqual({
+        primaryOnly: 1,
+        both: 1,
+        appIoOnly: 1,
+        appIoDespitePrimaryFail: 1,
+        neither: 1,
+      });
     });
   });
 });

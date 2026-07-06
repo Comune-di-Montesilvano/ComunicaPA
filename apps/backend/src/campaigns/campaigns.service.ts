@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { createReadStream } from 'fs';
 import { unlink } from 'fs/promises';
 import { parse } from 'csv-parse';
@@ -20,9 +20,10 @@ import { Recipient, RecipientStatus } from '../entities/recipient.entity';
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity';
 import { NOTIFICATION_JOB_SEND } from '../queue/notification-job.types';
 import { NotificationQueuesService } from '../queue/notification-queues.service';
+import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util';
 import type { CreateCampaignDto } from './dto/create-campaign.dto';
 import type { UpdateCampaignDto } from './dto/update-campaign.dto';
-import type { CampaignStatsDto, RecipientStatsPageDto } from './dto/campaign-stats.dto';
+import type { CampaignStatsDto, RecipientStatsPageDto, ChannelBreakdownDto } from './dto/campaign-stats.dto';
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto';
 
 
@@ -319,6 +320,53 @@ export class CampaignsService {
         : 0,
       lastDownloadAt,
     };
+  }
+
+  /**
+   * Breakdown per canale/co-consegna App IO. Ritorna null se la campagna non
+   * ha co-consegna configurata (nessuna sezione da mostrare). Il segnale App IO
+   * esiste solo sul PRIMO tentativo (job.attemptsMade === 0 in
+   * notification.processor.ts — la co-consegna non viene mai ritentata), quindi
+   * si legge solo attemptNumber=1; lo stato primario invece è quello ATTUALE
+   * del destinatario (aggiornato anche dai retry).
+   */
+  async getChannelBreakdown(campaignId: string): Promise<ChannelBreakdownDto | null> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+
+    if (!resolveSecondaryAppIoConfig(campaign.channelConfig)) return null;
+
+    const recipients = await this.recipientRepo.find({
+      where: { campaignId },
+      select: ['id', 'status'],
+    });
+
+    const breakdown: ChannelBreakdownDto = { primaryOnly: 0, both: 0, appIoOnly: 0, appIoDespitePrimaryFail: 0, neither: 0 };
+    const toClassify = recipients.filter(
+      (r) => r.status === RecipientStatus.SENT || r.status === RecipientStatus.FAILED,
+    );
+    if (toClassify.length === 0) return breakdown;
+
+    const firstAttempts = await this.attemptRepo.find({
+      where: { recipientId: In(toClassify.map((r) => r.id)), attemptNumber: 1 },
+      select: ['recipientId', 'responsePayload'],
+    });
+    const payloadByRecipient = new Map(firstAttempts.map((a) => [a.recipientId, a.responsePayload]));
+
+    for (const r of toClassify) {
+      const payload = payloadByRecipient.get(r.id);
+      const appIo = payload?.['appIo'] as { success?: boolean } | undefined;
+      const deliveredViaAppIo = payload?.['deliveredVia'] === 'APP_IO';
+      const appIoSucceeded = !!appIo?.success;
+      const primarySucceeded = r.status === RecipientStatus.SENT && !deliveredViaAppIo;
+
+      if (primarySucceeded && appIoSucceeded) breakdown.both++;
+      else if (primarySucceeded) breakdown.primaryOnly++;
+      else if (deliveredViaAppIo && appIoSucceeded) breakdown.appIoOnly++;
+      else if (r.status === RecipientStatus.FAILED && appIoSucceeded) breakdown.appIoDespitePrimaryFail++;
+      else breakdown.neither++;
+    }
+    return breakdown;
   }
 
   async getFailures(campaignId: string): Promise<Array<{

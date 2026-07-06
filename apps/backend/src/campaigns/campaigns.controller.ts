@@ -149,6 +149,11 @@ export class CampaignsController {
     return this.campaignsService.getStats(id);
   }
 
+  @Get(':id/channel-stats')
+  getChannelBreakdown(@Param('id', ParseUUIDPipe) id: string) {
+    return this.campaignsService.getChannelBreakdown(id).then((breakdown) => ({ campaignId: id, breakdown }));
+  }
+
   @Get(':id/failures')
   getFailures(@Param('id', ParseUUIDPipe) id: string) {
     return this.campaignsService.getFailures(id);

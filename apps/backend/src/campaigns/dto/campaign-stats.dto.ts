@@ -24,3 +24,11 @@ export interface RecipientStatsPageDto {
   total: number;
   items: RecipientStatDto[];
 }
+
+export interface ChannelBreakdownDto {
+  primaryOnly: number;
+  both: number;
+  appIoOnly: number;
+  appIoDespitePrimaryFail: number;
+  neither: number;
+}
