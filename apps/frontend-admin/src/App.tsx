@@ -413,19 +413,7 @@ export function App(): React.JSX.Element {
         );
       }
 
-      if (badge || hasAppIoCoDelivery) {
-        const debugStr = `Atts: ${r.attempts.length} | first: ${firstAttempt ? 'yes' : 'no'} | attNo: ${firstAttempt?.attemptNumber ?? firstAttempt?.attempt_number} | keys: ${firstAttempt ? Object.keys(firstAttempt).join(',') : 'none'} | payloadKeys: ${payload ? Object.keys(payload).join(',') : 'none'}`;
-        return (
-          <div className="d-flex flex-column gap-1">
-            {badge}
-            <div className="text-muted fw-mono" style={{ fontSize: '0.55rem', opacity: 0.8, whiteSpace: 'pre-wrap' }}>
-              {debugStr}
-            </div>
-          </div>
-        );
-      }
-
-      return null;
+      return badge;
     } catch (err: any) {
       return (
         <span className="badge bg-warning text-dark d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem' }}>
