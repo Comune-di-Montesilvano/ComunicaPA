@@ -115,7 +115,46 @@ export function processTemplate(
     return fullMatch;
   });
 
+  if (format === 'markdown') {
+    content = htmlToMarkdown(content);
+  }
+
   return content;
+}
+
+function htmlToMarkdown(html: string): string {
+  let markdown = html;
+
+  // Replace <br> tags
+  markdown = markdown.replace(/<br\s*\/?>/gi, '\n');
+
+  // Replace inline tags
+  // Bold
+  markdown = markdown.replace(/<strong[^>]*>(.*?)<\/strong>/gi, '**$1**');
+  markdown = markdown.replace(/<b[^>]*>(.*?)<\/b>/gi, '**$1**');
+
+  // Italic
+  markdown = markdown.replace(/<em[^>]*>(.*?)<\/em>/gi, '*$1*');
+  markdown = markdown.replace(/<i[^>]*>(.*?)<\/i>/gi, '*$1*');
+
+  // Links: <a href="url">text</a> -> [text](url)
+  markdown = markdown.replace(/<a\s+[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gi, '[$2]($1)');
+
+  // List items: <li>item</li> -> - item\n
+  markdown = markdown.replace(/<li[^>]*>(.*?)<\/li>/gi, '- $1\n');
+  // Strip <ul> and </ul>
+  markdown = markdown.replace(/<ul[^>]*>/gi, '').replace(/<\/ul>/gi, '\n');
+
+  // Paragraphs: replace <p>...</p> with paragraph text + double newline
+  markdown = markdown.replace(/<p[^>]*>(.*?)<\/p>/gi, '$1\n\n');
+
+  // Clean up any other remaining HTML tags
+  markdown = markdown.replace(/<[^>]*>/g, '');
+
+  // Clean up multiple consecutive newlines (max 2)
+  markdown = markdown.replace(/\n{3,}/g, '\n\n');
+
+  return markdown.trim();
 }
 
 export interface HtmlLayoutOptions {

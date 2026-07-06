@@ -85,3 +85,23 @@ describe('wrapInHtmlLayout con logo e portale', () => {
     expect(html).not.toContain('Portale del Cittadino');
   });
 });
+
+describe('processTemplate — html to markdown conversion', () => {
+  it('formato markdown: converte i tag HTML del WYSIWYG editor in markdown pulito', () => {
+    const htmlBody = '<p>Gentile <strong>%nominativo%</strong>,</p><p>ecco il link:</p><p><a href="http://link">clicca qui</a></p><ul><li>item 1</li><li>item 2</li></ul>';
+    const result = processTemplate(htmlBody, baseRecipient, 'http://api.test', 'secret', 1893456000, [], 'markdown');
+    expect(result).toBe('Gentile **Mario Rossi**,\n\necco il link:\n\n[clicca qui](http://link)\n\n- item 1\n- item 2');
+  });
+
+  it('formato markdown: preserva markdown pre-esistente se non ci sono tag HTML', () => {
+    const markdownBody = 'Gentile **%nominativo%**,\n\n- item 1\n- item 2';
+    const result = processTemplate(markdownBody, baseRecipient, 'http://api.test', 'secret', 1893456000, [], 'markdown');
+    expect(result).toBe('Gentile **Mario Rossi**,\n\n- item 1\n- item 2');
+  });
+
+  it('formato markdown: rimuove eventuali altri tag HTML non supportati', () => {
+    const htmlBody = '<p>Gentile %nominativo%</p><div>test</div><span>altro</span>';
+    const result = processTemplate(htmlBody, baseRecipient, 'http://api.test', 'secret', 1893456000, [], 'markdown');
+    expect(result).toBe('Gentile Mario Rossi\n\ntestaltro');
+  });
+});
