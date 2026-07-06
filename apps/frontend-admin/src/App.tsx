@@ -442,6 +442,7 @@ export function App(): React.JSX.Element {
   const [detailError, setDetailError] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
   const [campaignFailures, setCampaignFailures] = useState<Array<{ recipientId: string; codiceFiscale: string; fullName: string | null; errorMessage: string | null; attemptNumber: number; lastAttemptAt: string }>>([]);
+  const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number } | null>(null);
   const [retryBusyId, setRetryBusyId] = useState<string | null>(null);
 
   // CSV Mapper state
@@ -2188,8 +2189,21 @@ export function App(): React.JSX.Element {
     setUploadSuccess(false);
     setCsvError(null);
     setCampaignFailures([]);
+    setChannelBreakdown(null);
     fetchCampaignDetail(id);
     fetchCampaignFailures(id);
+    fetchChannelBreakdown(id);
+  };
+
+  const fetchChannelBreakdown = async (id: string) => {
+    try {
+      const res = await apiFetch(`/campaigns/${id}/channel-stats`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setChannelBreakdown(data.breakdown);
+    } catch {
+      // Non bloccante: la pagina dettaglio resta usabile senza il breakdown.
+    }
   };
 
   const handleLaunchCampaign = async () => {
@@ -5040,6 +5054,36 @@ export function App(): React.JSX.Element {
                             <div className="d-flex justify-content-between small text-muted">
                               <span><i className="fas fa-check text-success"></i> Successo: {campaign.sentCount}</span>
                               <span><i className="fas fa-times text-danger"></i> Errori: {campaign.failedCount}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {channelBreakdown && (
+                          <div className="mt-4 border-top pt-3">
+                            <h4 className="small fw-bold mb-2">
+                              <i className="fas fa-mobile-screen me-1 text-primary"></i>Dettaglio Consegna Multicanale
+                            </h4>
+                            <div className="small">
+                              <div className="d-flex justify-content-between mb-1">
+                                <span><i className="fas fa-envelope text-muted me-1"></i>Solo canale primario</span>
+                                <span className="fw-bold">{channelBreakdown.primaryOnly}</span>
+                              </div>
+                              <div className="d-flex justify-content-between mb-1">
+                                <span><i className="fas fa-check-double text-success me-1"></i>Anche App IO (parallela)</span>
+                                <span className="fw-bold">{channelBreakdown.both}</span>
+                              </div>
+                              <div className="d-flex justify-content-between mb-1">
+                                <span><i className="fas fa-mobile-screen text-success me-1"></i>Solo App IO (esclusiva)</span>
+                                <span className="fw-bold">{channelBreakdown.appIoOnly}</span>
+                              </div>
+                              <div className="d-flex justify-content-between mb-1">
+                                <span><i className="fas fa-triangle-exclamation text-warning me-1"></i>App IO riuscito, primario fallito</span>
+                                <span className="fw-bold">{channelBreakdown.appIoDespitePrimaryFail}</span>
+                              </div>
+                              <div className="d-flex justify-content-between">
+                                <span><i className="fas fa-times text-danger me-1"></i>Nessuno dei due (fallito)</span>
+                                <span className="fw-bold">{channelBreakdown.neither}</span>
+                              </div>
                             </div>
                           </div>
                         )}
