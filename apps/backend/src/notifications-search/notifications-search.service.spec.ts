@@ -4,6 +4,7 @@ import { NotFoundException } from '@nestjs/common';
 import { NotificationsSearchService } from './notifications-search.service';
 import { Recipient } from '../entities/recipient.entity';
 import { NotificationAttempt } from '../entities/notification-attempt.entity';
+import { DownloadEvent } from '../entities/download-event.entity';
 import { CampaignsService } from '../campaigns/campaigns.service';
 
 describe('NotificationsSearchService.search', () => {
@@ -31,6 +32,7 @@ describe('NotificationsSearchService.search', () => {
         NotificationsSearchService,
         { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
         { provide: getRepositoryToken(NotificationAttempt), useValue: { find: jest.fn() } },
+        { provide: getRepositoryToken(DownloadEvent), useValue: { find: jest.fn() } },
         { provide: CampaignsService, useValue: { renderMessageForRecipient: jest.fn() } },
       ],
     }).compile();
@@ -81,6 +83,7 @@ describe('NotificationsSearchService.getDetail', () => {
     findOne: jest.fn(),
   };
   const attemptRepoMock = { find: jest.fn() };
+  const downloadEventRepoMock = { find: jest.fn() };
   const campaignsServiceMock = { renderMessageForRecipient: jest.fn() };
 
   let service: NotificationsSearchService;
@@ -92,6 +95,7 @@ describe('NotificationsSearchService.getDetail', () => {
         NotificationsSearchService,
         { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
         { provide: getRepositoryToken(NotificationAttempt), useValue: attemptRepoMock },
+        { provide: getRepositoryToken(DownloadEvent), useValue: downloadEventRepoMock },
         { provide: CampaignsService, useValue: campaignsServiceMock },
       ],
     }).compile();
@@ -126,6 +130,9 @@ describe('NotificationsSearchService.getDetail', () => {
       },
     ]);
     campaignsServiceMock.renderMessageForRecipient.mockResolvedValueOnce({ subject: 'Ciao Mario', bodyHtml: '<p>Corpo</p>' });
+    downloadEventRepoMock.find.mockResolvedValueOnce([
+      { channel: 'EMAIL', attachmentIndex: 0, downloadedAt: new Date('2026-07-02T08:00:00Z') },
+    ]);
 
     const result = await service.getDetail('r1');
 
@@ -148,6 +155,7 @@ describe('NotificationsSearchService.getDetail', () => {
         createdAt: '2026-07-01T09:59:00.000Z',
         appIo: { attempted: true, success: true, error: null },
       }],
+      downloads: [{ channel: 'EMAIL', attachmentIndex: 0, downloadedAt: '2026-07-02T08:00:00.000Z' }],
       preview: { subject: 'Ciao Mario', bodyHtml: '<p>Corpo</p>' },
     });
   });

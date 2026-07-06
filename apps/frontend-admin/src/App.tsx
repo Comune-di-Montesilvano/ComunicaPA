@@ -317,6 +317,15 @@ export function App(): React.JSX.Element {
   const [wizCampaignId, setWizCampaignId] = useState<string | null>(null);
   const [wizDraftSaving, setWizDraftSaving] = useState(false);
 
+  const [wizPaymentEnabled, setWizPaymentEnabled] = useState(false);
+  const [wizPaymentAmountCol, setWizPaymentAmountCol] = useState('');
+  const [wizPaymentAmountType, setWizPaymentAmountType] = useState<'cents' | 'euro'>('euro');
+  const [wizPaymentNoticeCol, setWizPaymentNoticeCol] = useState('');
+  const [wizPaymentDueDateCol, setWizPaymentDueDateCol] = useState('');
+  const [wizPaymentPayeeType, setWizPaymentPayeeType] = useState<'static' | 'column'>('static');
+  const [wizPaymentPayeeStatic, setWizPaymentPayeeStatic] = useState('');
+  const [wizPaymentPayeeCol, setWizPaymentPayeeCol] = useState('');
+
   const getWizRowFullName = (row: Record<string, string>) => {
     if (!row) return '';
     const fn1 = row[wizMapping.full_name] || '';
@@ -1881,6 +1890,47 @@ export function App(): React.JSX.Element {
     document.body.removeChild(link);
   };
 
+  const resetWizard = () => {
+    setWizCampaignId(null);
+    setWizStep(1);
+    setWizName('');
+    setWizDesc('');
+    setWizSubject('');
+    setWizBody('');
+    setWizCsvFile(null);
+    setWizCsvHeaders([]);
+    setWizCsvRows([]);
+    setWizPdfFiles([]);
+    setWizCsvHasHeaders(true);
+    setWizMapping({
+      codice_fiscale: '',
+      full_name: '',
+      full_name_2: '',
+      email: '',
+      pec: '',
+    });
+    setWizAttachments([]);
+    setWizValidationErrors([]);
+    setWizValidationWarnings([]);
+    setWizValidRows([]);
+    setWizMailConfigId('');
+    setWizAppIoMode('parallel');
+    setWizAppIoDifferentiate(false);
+    setWizAppIoSubjectOverride('');
+    setWizAppIoBodyOverride('');
+    setWizBlockedChannels([]);
+
+    // Clear payment states
+    setWizPaymentEnabled(false);
+    setWizPaymentAmountCol('');
+    setWizPaymentAmountType('euro');
+    setWizPaymentNoticeCol('');
+    setWizPaymentDueDateCol('');
+    setWizPaymentPayeeType('static');
+    setWizPaymentPayeeStatic('');
+    setWizPaymentPayeeCol('');
+  };
+
   const prefillWizardFrom = (source: {
     name: string;
     description: string | null;
@@ -1894,6 +1944,16 @@ export function App(): React.JSX.Element {
     setWizSubject(source.channelConfig?.subject || '');
     setWizBody(source.channelConfig?.body || '');
     setWizMailConfigId(source.channelConfig?.mailConfigId || '');
+
+    const paymentConfig = source.channelConfig?.paymentConfig;
+    setWizPaymentEnabled(!!paymentConfig?.enabled);
+    setWizPaymentAmountCol(paymentConfig?.amountColumn || '');
+    setWizPaymentAmountType(paymentConfig?.amountType || 'euro');
+    setWizPaymentNoticeCol(paymentConfig?.noticeNumberColumn || '');
+    setWizPaymentDueDateCol(paymentConfig?.dueDateColumn || '');
+    setWizPaymentPayeeType(paymentConfig?.payeeFiscalCodeType || 'static');
+    setWizPaymentPayeeStatic(paymentConfig?.payeeFiscalCodeStatic || '');
+    setWizPaymentPayeeCol(paymentConfig?.payeeFiscalCodeColumn || '');
     const secondaryAppIo = (source.channelConfig?.secondaryChannels || []).find(
       (sc: any) => sc?.channel === 'APP_IO'
     );
@@ -1983,6 +2043,19 @@ export function App(): React.JSX.Element {
       }];
     }
     if (wizBlockedChannels.length > 0) cfg.blockedChannels = wizBlockedChannels;
+
+    if (wizPaymentEnabled) {
+      cfg.paymentConfig = {
+        enabled: true,
+        amountColumn: wizPaymentAmountCol,
+        amountType: wizPaymentAmountType,
+        noticeNumberColumn: wizPaymentNoticeCol,
+        dueDateColumn: wizPaymentDueDateCol || null,
+        payeeFiscalCodeType: wizPaymentPayeeType,
+        payeeFiscalCodeStatic: wizPaymentPayeeType === 'static' ? wizPaymentPayeeStatic : null,
+        payeeFiscalCodeColumn: wizPaymentPayeeType === 'column' ? wizPaymentPayeeCol : null,
+      };
+    }
     return cfg;
   };
 
@@ -2040,7 +2113,12 @@ export function App(): React.JSX.Element {
       let channelConfig: Record<string, any> = {};
       if (wizChannel === 'APP_IO') {
         const svc = ioServices.find(s => s.id === wizAppIoServiceId) || ioServices[0];
-        channelConfig = { ioServiceId: svc ? svc.id : '' };
+        channelConfig = {
+          ioServiceId: svc ? svc.id : '',
+          subject: wizSubject,
+          body: wizBody,
+          attachments: wizAttachments,
+        };
       } else if (wizChannel === 'EMAIL' || wizChannel === 'PEC') {
         const activeCfg = mailConfigs.find(c => c.id === wizMailConfigId);
         channelConfig = {
@@ -2064,6 +2142,19 @@ export function App(): React.JSX.Element {
         }
       } else if (wizChannel === 'SEND') {
         channelConfig = { apiKey: settSendApiKey, baseUrl: settSendUrl };
+      }
+
+      if (wizPaymentEnabled) {
+        channelConfig.paymentConfig = {
+          enabled: true,
+          amountColumn: wizPaymentAmountCol,
+          amountType: wizPaymentAmountType,
+          noticeNumberColumn: wizPaymentNoticeCol,
+          dueDateColumn: wizPaymentDueDateCol || null,
+          payeeFiscalCodeType: wizPaymentPayeeType,
+          payeeFiscalCodeStatic: wizPaymentPayeeType === 'static' ? wizPaymentPayeeStatic : null,
+          payeeFiscalCodeColumn: wizPaymentPayeeType === 'column' ? wizPaymentPayeeCol : null,
+        };
       }
 
       if (wizBlockedChannels.length > 0) {
@@ -2175,34 +2266,7 @@ export function App(): React.JSX.Element {
         throw new Error(launchData.message || 'Impossibile avviare la campagna.');
       }
 
-      setWizStep(1);
-      setWizCampaignId(null);
-      setWizName('');
-      setWizDesc('');
-      setWizSubject('');
-      setWizBody('');
-      setWizCsvFile(null);
-      setWizCsvHeaders([]);
-      setWizCsvRows([]);
-      setWizPdfFiles([]);
-      setWizCsvHasHeaders(true);
-      setWizMapping({
-        codice_fiscale: '',
-        full_name: '',
-        full_name_2: '',
-        email: '',
-        pec: '',
-      });
-      setWizAttachments([]);
-      setWizValidationErrors([]);
-      setWizValidationWarnings([]);
-      setWizValidRows([]);
-      setWizMailConfigId('');
-      setWizAppIoMode('parallel');
-      setWizAppIoDifferentiate(false);
-      setWizAppIoSubjectOverride('');
-      setWizAppIoBodyOverride('');
-      setWizBlockedChannels([]);
+      resetWizard();
 
       fetchCampaigns();
       setView('dashboard');
@@ -2921,7 +2985,7 @@ export function App(): React.JSX.Element {
                   <div className="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
                     <h3 className="h6 mb-0 fw-bold text-dark"><i className="fas fa-list me-2 text-primary"></i>Campagne Massive</h3>
                     <div className="d-flex align-items-center gap-2">
-                      <button className="btn btn-sm btn-primary" onClick={() => { setWizCampaignId(null); setWizStep(1); setView('invio-massivo-wizard'); }}>
+                      <button className="btn btn-sm btn-primary" onClick={() => { resetWizard(); setView('invio-massivo-wizard'); }}>
                         <i className="fas fa-magic me-1"></i> Crea Nuova Campagna (Wizard)
                       </button>
                       <button className="btn btn-outline-secondary btn-sm border-0" onClick={fetchCampaigns}><i className="fas fa-sync-alt"></i></button>
@@ -3473,6 +3537,122 @@ export function App(): React.JSX.Element {
                       </div>
                     </div>
                   </div>
+
+                  {(wizChannel === 'APP_IO' || (wizAppIoMode && wizAppIoMode !== 'none')) && (
+                    <div className="card border-light shadow-sm mb-4" style={{ background: '#f8f9fc' }}>
+                      <div className="card-body p-3">
+                        <h6 className="small fw-bold text-dark mb-3">
+                          <i className="fas fa-credit-card me-2 text-primary"></i>Integrazione Pagamenti pagoPA (Opzionale)
+                        </h6>
+                        <div className="form-check mb-3">
+                          <input
+                            type="checkbox"
+                            className="form-check-input"
+                            id="wiz-payment-enabled"
+                            checked={wizPaymentEnabled}
+                            onChange={e => setWizPaymentEnabled(e.target.checked)}
+                          />
+                          <label className="form-check-label small fw-bold" htmlFor="wiz-payment-enabled" style={{ cursor: 'pointer' }}>
+                            Abilita avviso di pagamento pagoPA nel messaggio
+                          </label>
+                        </div>
+
+                        {wizPaymentEnabled && (
+                          <div className="row g-2">
+                            <div className="col-md-6">
+                              <label className="form-label small fw-bold">Colonna Importo *</label>
+                              <select
+                                className="form-select form-select-sm"
+                                value={wizPaymentAmountCol}
+                                onChange={e => setWizPaymentAmountCol(e.target.value)}
+                                required
+                              >
+                                <option value="">-- Seleziona Colonna Importo --</option>
+                                {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
+                              </select>
+                            </div>
+                            <div className="col-md-6">
+                              <label className="form-label small fw-bold">Formato Importo *</label>
+                              <select
+                                className="form-select form-select-sm"
+                                value={wizPaymentAmountType}
+                                onChange={e => setWizPaymentAmountType(e.target.value as any)}
+                                required
+                              >
+                                <option value="euro">Euro (es: 120.50)</option>
+                                <option value="cents">Centesimi di Euro (es: 12050)</option>
+                              </select>
+                            </div>
+                            <div className="col-md-6">
+                              <label className="form-label small fw-bold">Colonna Codice Avviso / IUV *</label>
+                              <select
+                                className="form-select form-select-sm"
+                                value={wizPaymentNoticeCol}
+                                onChange={e => setWizPaymentNoticeCol(e.target.value)}
+                                required
+                              >
+                                <option value="">-- Seleziona Colonna IUV --</option>
+                                {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
+                              </select>
+                            </div>
+                            <div className="col-md-6">
+                              <label className="form-label small">Colonna Data Scadenza (Opzionale)</label>
+                              <select
+                                className="form-select form-select-sm"
+                                value={wizPaymentDueDateCol}
+                                onChange={e => setWizPaymentDueDateCol(e.target.value)}
+                              >
+                                <option value="">-- Nessuna Scadenza --</option>
+                                {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
+                              </select>
+                            </div>
+
+                            <div className="col-md-6">
+                              <label className="form-label small">Ente Creditore *</label>
+                              <select
+                                className="form-select form-select-sm"
+                                value={wizPaymentPayeeType}
+                                onChange={e => setWizPaymentPayeeType(e.target.value as any)}
+                                required
+                              >
+                                <option value="static">Codice Fiscale Fisso</option>
+                                <option value="column">Colonna Dinamica dal CSV</option>
+                              </select>
+                            </div>
+
+                            <div className="col-md-6">
+                              {wizPaymentPayeeType === 'static' ? (
+                                <>
+                                  <label className="form-label small fw-bold">Codice Fiscale Ente Creditore *</label>
+                                  <input
+                                    type="text"
+                                    className="form-control form-control-sm"
+                                    placeholder="Codice Fiscale Ente (es: 00223344556)"
+                                    value={wizPaymentPayeeStatic}
+                                    onChange={e => setWizPaymentPayeeStatic(e.target.value)}
+                                    required
+                                  />
+                                </>
+                              ) : (
+                                <>
+                                  <label className="form-label small fw-bold">Colonna Codice Fiscale Ente *</label>
+                                  <select
+                                    className="form-select form-select-sm"
+                                    value={wizPaymentPayeeCol}
+                                    onChange={e => setWizPaymentPayeeCol(e.target.value)}
+                                    required
+                                  >
+                                    <option value="">-- Seleziona Colonna CF Ente --</option>
+                                    {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
+                                  </select>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Validation Panel */}
                   <div className="p-3 border rounded bg-light mb-4">

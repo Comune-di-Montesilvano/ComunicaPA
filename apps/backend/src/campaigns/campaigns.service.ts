@@ -18,6 +18,7 @@ import { resolveAttachmentsConfig, resolveCustomAttachmentFilename } from '../at
 import { Campaign, CampaignStatus } from '../entities/campaign.entity';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity';
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity';
+import { DownloadEvent } from '../entities/download-event.entity';
 import { NOTIFICATION_JOB_SEND } from '../queue/notification-job.types';
 import { NotificationQueuesService } from '../queue/notification-queues.service';
 import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util';
@@ -36,6 +37,8 @@ export class CampaignsService {
     private readonly recipientRepo: Repository<Recipient>,
     @InjectRepository(NotificationAttempt)
     private readonly attemptRepo: Repository<NotificationAttempt>,
+    @InjectRepository(DownloadEvent)
+    private readonly downloadEventRepo: Repository<DownloadEvent>,
     private readonly notificationQueues: NotificationQueuesService,
     private readonly settings: AppSettingsService,
     private readonly config: ConfigService<AppConfiguration, true>,
@@ -395,6 +398,23 @@ export class CampaignsService {
       else breakdown.neither++;
     }
     return breakdown;
+  }
+
+  async getDownloadChannelStats(campaignId: string): Promise<Record<string, number>> {
+    const rows = await this.downloadEventRepo
+      .createQueryBuilder('de')
+      .innerJoin('de.recipient', 'r')
+      .select('de.channel', 'channel')
+      .addSelect('COUNT(*)', 'count')
+      .where('r.campaignId = :campaignId', { campaignId })
+      .groupBy('de.channel')
+      .getRawMany<{ channel: string; count: string }>();
+
+    const byChannel: Record<string, number> = {};
+    for (const row of rows) {
+      byChannel[row.channel] = parseInt(row.count, 10);
+    }
+    return byChannel;
   }
 
   async getFailures(campaignId: string): Promise<Array<{

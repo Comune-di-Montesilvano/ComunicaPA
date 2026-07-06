@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Recipient } from '../entities/recipient.entity';
 import { NotificationAttempt } from '../entities/notification-attempt.entity';
+import { DownloadEvent } from '../entities/download-event.entity';
 import { CampaignsService } from '../campaigns/campaigns.service';
 import type { NotificationDetailDto } from './dto/notification-detail.dto';
 
@@ -35,6 +36,8 @@ export class NotificationsSearchService {
     private readonly recipientRepo: Repository<Recipient>,
     @InjectRepository(NotificationAttempt)
     private readonly attemptRepo: Repository<NotificationAttempt>,
+    @InjectRepository(DownloadEvent)
+    private readonly downloadEventRepo: Repository<DownloadEvent>,
     private readonly campaignsService: CampaignsService,
   ) {}
 
@@ -95,6 +98,11 @@ export class NotificationsSearchService {
       order: { attemptNumber: 'ASC' },
     });
 
+    const downloads = await this.downloadEventRepo.find({
+      where: { recipientId },
+      order: { downloadedAt: 'ASC' },
+    });
+
     const preview = await this.campaignsService.renderMessageForRecipient(recipientId);
 
     return {
@@ -125,6 +133,11 @@ export class NotificationsSearchService {
             : { attempted: false as const },
         };
       }),
+      downloads: downloads.map((d) => ({
+        channel: d.channel,
+        attachmentIndex: d.attachmentIndex,
+        downloadedAt: d.downloadedAt.toISOString(),
+      })),
       preview,
     };
   }

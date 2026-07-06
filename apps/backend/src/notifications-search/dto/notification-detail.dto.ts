@@ -25,5 +25,6 @@ export interface NotificationDetailDto {
     channelType: string;
   };
   attempts: AttemptDetailDto[];
+  downloads: Array<{ channel: string; attachmentIndex: number; downloadedAt: string }>;
   preview: PreviewMessageResult;
 }

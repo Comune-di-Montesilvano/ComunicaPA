@@ -155,6 +155,12 @@ export class CampaignsController {
     return this.campaignsService.getChannelBreakdown(id).then((breakdown) => ({ campaignId: id, breakdown }));
   }
 
+  @Get(':id/download-channel-stats')
+  async getDownloadChannelStats(@Param('id', ParseUUIDPipe) id: string) {
+    const byChannel = await this.campaignsService.getDownloadChannelStats(id);
+    return { campaignId: id, byChannel };
+  }
+
   @Get(':id/failures')
   getFailures(@Param('id', ParseUUIDPipe) id: string) {
     return this.campaignsService.getFailures(id);

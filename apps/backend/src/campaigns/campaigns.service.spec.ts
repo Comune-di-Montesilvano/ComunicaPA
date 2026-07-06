@@ -6,6 +6,7 @@ import { CampaignsService } from './campaigns.service';
 import { Campaign, CampaignStatus } from '../entities/campaign.entity';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity';
 import { NotificationAttempt } from '../entities/notification-attempt.entity';
+import { DownloadEvent } from '../entities/download-event.entity';
 import { NotificationQueuesService } from '../queue/notification-queues.service';
 import { AppSettingsService } from '../settings/app-settings.service';
 import * as fs from 'fs';
@@ -75,6 +76,7 @@ describe('CampaignsService', () => {
       execute: jest.fn().mockResolvedValue({ raw: [] }),
     }),
   };
+  const mockDownloadEventRepo = { createQueryBuilder: jest.fn() };
   const mockQueue = { addBulk: jest.fn().mockResolvedValue(undefined) };
   const mockSettings = {
     get: jest.fn(async () => null),
@@ -90,6 +92,7 @@ describe('CampaignsService', () => {
         { provide: getRepositoryToken(Campaign), useValue: mockCampaignRepo },
         { provide: getRepositoryToken(Recipient), useValue: mockRecipientRepo },
         { provide: getRepositoryToken(NotificationAttempt), useValue: mockAttemptRepo },
+        { provide: getRepositoryToken(DownloadEvent), useValue: mockDownloadEventRepo },
         { provide: NotificationQueuesService, useValue: mockQueue },
         { provide: AppSettingsService, useValue: mockSettings },
         { provide: ConfigService, useValue: mockConfig },
@@ -445,6 +448,28 @@ describe('CampaignsService', () => {
     });
   });
 
+  describe('getDownloadChannelStats', () => {
+    it('raggruppa i DownloadEvent per canale', async () => {
+      const qbMock = {
+        innerJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        groupBy: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([
+          { channel: 'EMAIL', count: '3' },
+          { channel: 'CITIZEN_PORTAL', count: '1' },
+        ]),
+      };
+      mockDownloadEventRepo.createQueryBuilder = jest.fn().mockReturnValue(qbMock);
+
+      const result = await service.getDownloadChannelStats('uuid-1');
+
+      expect(result).toEqual({ EMAIL: 3, CITIZEN_PORTAL: 1 });
+      expect(qbMock.where).toHaveBeenCalledWith('r.campaignId = :campaignId', { campaignId: 'uuid-1' });
+    });
+  });
+
   describe('remove', () => {
     it('lancia NotFoundException se la campagna non esiste', async () => {
       mockCampaignRepo.existsBy.mockResolvedValueOnce(false);
@@ -487,6 +512,7 @@ describe('CampaignsService.getDuplicateSource', () => {
         { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
         { provide: getRepositoryToken(Recipient), useValue: {} },
         { provide: getRepositoryToken(NotificationAttempt), useValue: {} },
+        { provide: getRepositoryToken(DownloadEvent), useValue: {} },
         { provide: NotificationQueuesService, useValue: {} },
         { provide: AppSettingsService, useValue: mockSettings },
         { provide: ConfigService, useValue: mockConfig },
@@ -551,6 +577,7 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
         { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
         { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
         { provide: getRepositoryToken(NotificationAttempt), useValue: attemptRepoMock },
+        { provide: getRepositoryToken(DownloadEvent), useValue: {} },
         { provide: NotificationQueuesService, useValue: queuesMock },
         { provide: AppSettingsService, useValue: mockSettings },
         { provide: ConfigService, useValue: mockConfig },
@@ -670,6 +697,7 @@ describe('CampaignsService.updateDraft', () => {
         { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
         { provide: getRepositoryToken(Recipient), useValue: {} },
         { provide: getRepositoryToken(NotificationAttempt), useValue: {} },
+        { provide: getRepositoryToken(DownloadEvent), useValue: {} },
         { provide: NotificationQueuesService, useValue: {} },
         { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
         { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
@@ -724,6 +752,7 @@ describe('CampaignsService.previewMessage', () => {
         { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
         { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
         { provide: getRepositoryToken(NotificationAttempt), useValue: attemptRepoMock },
+        { provide: getRepositoryToken(DownloadEvent), useValue: {} },
         { provide: NotificationQueuesService, useValue: queuesMock },
         { provide: AppSettingsService, useValue: mockSettings },
         { provide: ConfigService, useValue: mockConfig },
