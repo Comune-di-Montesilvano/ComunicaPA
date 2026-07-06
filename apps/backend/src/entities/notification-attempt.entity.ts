@@ -20,7 +20,7 @@ export class NotificationAttempt {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ name: 'recipient_id' })
+  @Column({ type: 'uuid', name: 'recipient_id' })
   recipientId!: string;
 
   @Column({ name: 'channel_type', length: 20 })

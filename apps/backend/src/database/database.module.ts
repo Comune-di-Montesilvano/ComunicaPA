@@ -15,6 +15,7 @@ import { AddIoServiceConfigs1783092759564 } from './migrations/1783092759564-Add
 import { AddTemplates1783109448492 } from './migrations/1783109448492-AddTemplates';
 import { FixRecipientCampaignJoin1783148719725 } from './migrations/1783148719725-FixRecipientCampaignJoin';
 import { AddDownloadEvents1783200000000 } from './migrations/1783200000000-AddDownloadEvents';
+import { FixRecipientAttemptJoin1783358259000 } from './migrations/1783358259000-FixRecipientAttemptJoin';
 import type { AppConfiguration } from '../config/configuration';
 
 @Module({
@@ -28,7 +29,7 @@ import type { AppConfiguration } from '../config/configuration';
         entities: [Campaign, Recipient, NotificationAttempt, AppSetting, MailServerConfig, IoServiceConfig, Template, DownloadEvent],
         // Dev: schema allineato da synchronize. Prod: migrations eseguite all'avvio.
         synchronize: config.get('nodeEnv', { infer: true }) === 'development',
-        migrations: [InitialSchema1783023440824, AddMailServerConfigs1783071728873, AddIoServiceConfigs1783092759564, AddTemplates1783109448492, FixRecipientCampaignJoin1783148719725, AddDownloadEvents1783200000000],
+        migrations: [InitialSchema1783023440824, AddMailServerConfigs1783071728873, AddIoServiceConfigs1783092759564, AddTemplates1783109448492, FixRecipientCampaignJoin1783148719725, AddDownloadEvents1783200000000, FixRecipientAttemptJoin1783358259000],
         migrationsRun: config.get('nodeEnv', { infer: true }) !== 'development',
         logging: config.get('nodeEnv', { infer: true }) === 'development',
       }),
