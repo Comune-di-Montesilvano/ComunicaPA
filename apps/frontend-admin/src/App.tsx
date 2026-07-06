@@ -253,6 +253,7 @@ export function App(): React.JSX.Element {
   const [wizPreviewIndex, setWizPreviewIndex] = useState(0);
   const [wizPreviewResult, setWizPreviewResult] = useState<{ subject: string; bodyHtml?: string; bodyMarkdown?: string } | null>(null);
   const [wizPreviewLoading, setWizPreviewLoading] = useState(false);
+  const [wizPreviewChannelTab, setWizPreviewChannelTab] = useState<'MAIN' | 'APP_IO'>('MAIN');
   const [wizSending, setWizSending] = useState(false);
   const [wizMailConfigId, setWizMailConfigId] = useState('');
   const [wizAppIoMode, setWizAppIoMode] = useState<'none' | 'parallel' | 'exclusive'>('parallel');
@@ -294,9 +295,13 @@ export function App(): React.JSX.Element {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         signal: controller.signal,
         body: JSON.stringify({
-          channelType: wizChannel,
-          subject: wizSubject,
-          body: wizBody,
+          channelType: wizPreviewChannelTab === 'APP_IO' ? 'APP_IO' : wizChannel,
+          subject: wizPreviewChannelTab === 'APP_IO'
+            ? (wizAppIoDifferentiate ? wizAppIoSubjectOverride : wizSubject)
+            : wizSubject,
+          body: wizPreviewChannelTab === 'APP_IO'
+            ? (wizAppIoDifferentiate ? wizAppIoBodyOverride : wizBody)
+            : wizBody,
           attachments: wizAttachments,
           recipient: {
             codiceFiscale: row[wizMapping.codice_fiscale] || '',
@@ -319,7 +324,7 @@ export function App(): React.JSX.Element {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [wizStep, wizPreviewIndex, wizSubject, wizBody, wizChannel, wizAttachments, wizValidRows, wizMapping, token]);
+  }, [wizStep, wizPreviewIndex, wizSubject, wizBody, wizChannel, wizAttachments, wizValidRows, wizMapping, token, wizPreviewChannelTab, wizAppIoDifferentiate, wizAppIoSubjectOverride, wizAppIoBodyOverride]);
 
   // Settings State (loaded from backend GET /settings; see useEffect below)
   const [settEntityName, setSettEntityName] = useState('Comune di Montesilvano');
@@ -3446,6 +3451,25 @@ export function App(): React.JSX.Element {
                     <h4 className="h6 fw-bold text-dark mb-2">Anteprima Live Destinatari ({wizValidRows.length} totali)</h4>
                     <p className="small text-muted mb-3">Sfoglia i record validi del CSV per vedere come verranno risolti i parametri Jolly. Anteprima renderizzata con lo stesso motore usato per l'invio reale (logo, footer e link inclusi).</p>
 
+                    {(wizChannel === 'EMAIL' || wizChannel === 'PEC') && wizAppIoMode !== 'none' && (
+                      <div className="btn-group btn-group-sm mb-3" role="group">
+                        <button
+                          type="button"
+                          className={`btn ${wizPreviewChannelTab === 'MAIN' ? 'btn-primary' : 'btn-outline-secondary'}`}
+                          onClick={() => setWizPreviewChannelTab('MAIN')}
+                        >
+                          <i className="fas fa-envelope me-1"></i> {wizChannel}
+                        </button>
+                        <button
+                          type="button"
+                          className={`btn ${wizPreviewChannelTab === 'APP_IO' ? 'btn-primary' : 'btn-outline-secondary'}`}
+                          onClick={() => setWizPreviewChannelTab('APP_IO')}
+                        >
+                          <i className="fas fa-mobile-screen me-1"></i> App IO
+                        </button>
+                      </div>
+                    )}
+
                     <div className="d-flex align-items-center justify-content-between p-2 border rounded bg-light mb-3">
                       <button
                         className="btn btn-sm btn-outline-secondary"
@@ -3474,16 +3498,16 @@ export function App(): React.JSX.Element {
                           <div className="text-center text-muted small py-4">
                             <i className="fas fa-spinner fa-spin me-1"></i> Rendering anteprima...
                           </div>
+                        ) : wizPreviewChannelTab === 'APP_IO' ? (
+                          <div className="bg-white border rounded p-3" data-color-mode="light">
+                            <MDEditor.Markdown source={wizPreviewResult?.bodyMarkdown ?? ''} />
+                          </div>
                         ) : wizPreviewResult?.bodyHtml ? (
                           <div
                             className="bg-white border rounded overflow-hidden"
                             style={{ padding: '4px' }}
                             dangerouslySetInnerHTML={{ __html: wizPreviewResult.bodyHtml }}
                           />
-                        ) : wizPreviewResult?.bodyMarkdown ? (
-                          <pre className="bg-white border rounded p-3 mb-0" style={{ whiteSpace: 'pre-wrap', fontSize: '0.85rem' }}>
-                            {wizPreviewResult.bodyMarkdown}
-                          </pre>
                         ) : (
                           <div className="text-center text-muted small py-4">Nessuna anteprima disponibile per questo canale.</div>
                         )}
