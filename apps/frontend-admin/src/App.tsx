@@ -251,6 +251,8 @@ export function App(): React.JSX.Element {
   const [wizSubject, setWizSubject] = useState('');
   const [wizBody, setWizBody] = useState('');
   const [wizPreviewIndex, setWizPreviewIndex] = useState(0);
+  const [wizPreviewResult, setWizPreviewResult] = useState<{ subject: string; bodyHtml?: string; bodyMarkdown?: string } | null>(null);
+  const [wizPreviewLoading, setWizPreviewLoading] = useState(false);
   const [wizSending, setWizSending] = useState(false);
   const [wizMailConfigId, setWizMailConfigId] = useState('');
   const [wizAppIoMode, setWizAppIoMode] = useState<'none' | 'parallel' | 'exclusive'>('parallel');
@@ -273,6 +275,48 @@ export function App(): React.JSX.Element {
     const truncated = sample.length > 30 ? `${sample.slice(0, 30)}…` : sample;
     return `${h} — ${truncated}`;
   };
+
+  // Anteprima Step 4: chiama l'endpoint reale di rendering (stesso motore
+  // usato per l'invio) invece di ricostruire il template a mano nel JSX.
+  useEffect(() => {
+    if (wizStep !== 4 || !wizValidRows[wizPreviewIndex]) {
+      return;
+    }
+    const row = wizValidRows[wizPreviewIndex];
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      setWizPreviewLoading(true);
+      fetch(`${ADMIN_API_BASE}/campaigns/preview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        signal: controller.signal,
+        body: JSON.stringify({
+          channelType: wizChannel,
+          subject: wizSubject,
+          body: wizBody,
+          attachments: wizAttachments,
+          recipient: {
+            codiceFiscale: row[wizMapping.codice_fiscale] || '',
+            fullName: getWizRowFullName(row),
+            email: row[wizMapping.email] || undefined,
+            pec: row[wizMapping.pec] || undefined,
+            extraData: row,
+          },
+        }),
+      })
+        .then((res) => (res.ok ? res.json() : Promise.reject(new Error('preview failed'))))
+        .then((data) => setWizPreviewResult(data))
+        .catch((err) => {
+          if (err.name !== 'AbortError') setWizPreviewResult(null);
+        })
+        .finally(() => setWizPreviewLoading(false));
+    }, 300);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [wizStep, wizPreviewIndex, wizSubject, wizBody, wizChannel, wizAttachments, wizValidRows, wizMapping, token]);
 
   // Settings State (loaded from backend GET /settings; see useEffect below)
   const [settEntityName, setSettEntityName] = useState('Comune di Montesilvano');
@@ -3333,8 +3377,8 @@ export function App(): React.JSX.Element {
                   {/* Right Column: Live Preview with Paging */}
                   <div className="col-lg-6">
                     <h4 className="h6 fw-bold text-dark mb-2">Anteprima Live Destinatari ({wizValidRows.length} totali)</h4>
-                    <p className="small text-muted mb-3">Sfoglia i record validi del CSV per vedere come verranno risolti i parametri Jolly.</p>
-                    
+                    <p className="small text-muted mb-3">Sfoglia i record validi del CSV per vedere come verranno risolti i parametri Jolly. Anteprima renderizzata con lo stesso motore usato per l'invio reale (logo, footer e link inclusi).</p>
+
                     <div className="d-flex align-items-center justify-content-between p-2 border rounded bg-light mb-3">
                       <button
                         className="btn btn-sm btn-outline-secondary"
@@ -3357,49 +3401,25 @@ export function App(): React.JSX.Element {
                       <div className="border rounded p-3" style={{ background: '#f8fafc' }}>
                         <div className="mb-2 text-muted" style={{ fontSize: '0.8rem' }}>
                           <strong>A:</strong> {wizValidRows[wizPreviewIndex][wizMapping.email || ''] || wizValidRows[wizPreviewIndex][wizMapping.pec || ''] || 'N/A'}<br />
-                          <strong>Oggetto:</strong> {wizSubject.replace(/%([^%()]+)%/gi, (match, key) => {
-                            const k = key.toLowerCase().trim();
-                            if (k === 'nominativo' || k === 'full_name') return getWizRowFullName(wizValidRows[wizPreviewIndex]);
-                            if (k === 'codice_fiscale' || k === 'cf') return wizValidRows[wizPreviewIndex][wizMapping.codice_fiscale] || '';
-                            return wizValidRows[wizPreviewIndex][key] || match;
-                          })}
+                          <strong>Oggetto:</strong> {wizPreviewLoading ? '...' : (wizPreviewResult?.subject ?? '')}
                         </div>
-                        <div className="bg-white border rounded overflow-hidden">
-                          <div style={{ backgroundColor: '#0066cc', padding: '16px', color: 'white', fontWeight: 'bold' }}>
-                            {settEntityName}
+                        {wizPreviewLoading && !wizPreviewResult ? (
+                          <div className="text-center text-muted small py-4">
+                            <i className="fas fa-spinner fa-spin me-1"></i> Rendering anteprima...
                           </div>
+                        ) : wizPreviewResult?.bodyHtml ? (
                           <div
-                            style={{ padding: '20px', fontSize: '0.9rem', color: '#333', lineHeight: '1.5', minHeight: '150px' }}
-                            dangerouslySetInnerHTML={{
-                              __html: (() => {
-                                let preview = wizBody;
-                                wizAttachments.forEach((a, idx) => {
-                                  const placeholder = new RegExp(`%allegato${idx + 1}%`, 'g');
-                                  preview = preview.replace(placeholder, `http://localhost:3001/?notificationId=TEST-UUID-SIMULAZIONE-${idx}`);
-                                });
-                                if (preview.includes('%elenco_allegati%')) {
-                                  const block = wizAttachments.length === 0
-                                    ? ''
-                                    : `<table style="width:100%; border-collapse: collapse;">${wizAttachments
-                                        .map((a, idx) => `<tr><td style="padding:6px 12px; border-bottom:1px solid #edf2f7;">${escapeHtml(a.label || `Allegato ${idx + 1}`)}</td><td style="padding:6px 12px; border-bottom:1px solid #edf2f7;"><a href="#">Scarica</a></td></tr>`)
-                                        .join('')}</table>`;
-                                  preview = preview.replace(/%elenco_allegati%/g, block);
-                                }
-                                return preview
-                                  .replace(/%parametro\d+\(mappato"([^"]+)"\)%/gi, (match, key) => escapeHtml(wizValidRows[wizPreviewIndex][key] || ''))
-                                  .replace(/%([^%()]+)%/gi, (match, key) => {
-                                    const k = key.toLowerCase().trim();
-                                    if (k === 'nominativo' || k === 'full_name') return escapeHtml(getWizRowFullName(wizValidRows[wizPreviewIndex]));
-                                    if (k === 'codice_fiscale' || k === 'cf') return escapeHtml(wizValidRows[wizPreviewIndex][wizMapping.codice_fiscale] || '');
-                                    return wizValidRows[wizPreviewIndex][key] ? escapeHtml(wizValidRows[wizPreviewIndex][key]) : match;
-                                  });
-                              })(),
-                            }}
+                            className="bg-white border rounded overflow-hidden"
+                            style={{ padding: '4px' }}
+                            dangerouslySetInnerHTML={{ __html: wizPreviewResult.bodyHtml }}
                           />
-                          <div style={{ backgroundColor: '#f8f9fa', padding: '12px', fontSize: '0.72rem', color: '#666', textAlign: 'center', borderTop: '1px solid #edf2f7' }}>
-                            Messaggio istituzionale inviato automaticamente per conto di {settEntityName}.
-                          </div>
-                        </div>
+                        ) : wizPreviewResult?.bodyMarkdown ? (
+                          <pre className="bg-white border rounded p-3 mb-0" style={{ whiteSpace: 'pre-wrap', fontSize: '0.85rem' }}>
+                            {wizPreviewResult.bodyMarkdown}
+                          </pre>
+                        ) : (
+                          <div className="text-center text-muted small py-4">Nessuna anteprima disponibile per questo canale.</div>
+                        )}
                       </div>
                     )}
                   </div>
