@@ -215,6 +215,19 @@ export class CampaignsService {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
+    const missingAttachments = await this.findMissingAttachments(campaign);
+    if (missingAttachments.length > 0) {
+      await this.campaignRepo.update({ id: campaignId }, { status: CampaignStatus.DRAFT });
+      const sample = missingAttachments
+        .slice(0, 5)
+        .map((m) => `${m.expectedFilename} (CF ${m.codiceFiscale})`)
+        .join(', ');
+      const more = missingAttachments.length > 5 ? ', …' : '';
+      throw new BadRequestException(
+        `Impossibile avviare: ${missingAttachments.length} allegato/i mancante/i rispetto alla mappatura configurata — es. ${sample}${more}. Carica i file mancanti prima di rilanciare.`,
+      );
+    }
+
     const recipients = await this.recipientRepo.find({
       where: { campaignId, status: RecipientStatus.PENDING },
       select: ['id'],
@@ -392,6 +405,42 @@ export class CampaignsService {
         'La campagna non è più in bozza: gli allegati non possono essere modificati dopo il lancio. Annulla e crea una nuova campagna per cambiarli.',
       );
     }
+  }
+
+  /**
+   * Calcola gli allegati mancanti: per ogni destinatario PENDING e ogni slot
+   * configurato, verifica che il file referenziato in extraData esista
+   * davvero nella cartella uploads della campagna. Usato per bloccare il
+   * lancio (vedi `launch()`): se un file è mancante per anche un solo
+   * destinatario, l'intera campagna non deve partire.
+   */
+  private async findMissingAttachments(
+    campaign: Campaign,
+  ): Promise<Array<{ recipientId: string; codiceFiscale: string; slotIndex: number; expectedFilename: string }>> {
+    const attachmentsConfig = resolveAttachmentsConfig(campaign.channelConfig);
+    if (attachmentsConfig.length === 0) return [];
+
+    const dir = getUploadsDir(campaign.id);
+    const present = new Set(fs.existsSync(dir) ? fs.readdirSync(dir) : []);
+
+    const recipients = await this.recipientRepo.find({
+      where: { campaignId: campaign.id, status: RecipientStatus.PENDING },
+      select: ['id', 'codiceFiscale', 'extraData'],
+    });
+
+    const missing: Array<{ recipientId: string; codiceFiscale: string; slotIndex: number; expectedFilename: string }> = [];
+    for (const r of recipients) {
+      for (let index = 0; index < attachmentsConfig.length; index++) {
+        const filename = resolveCustomAttachmentFilename(
+          { campaign, extraData: r.extraData } as unknown as Recipient,
+          index,
+        );
+        if (filename && !present.has(filename)) {
+          missing.push({ recipientId: r.id, codiceFiscale: r.codiceFiscale, slotIndex: index, expectedFilename: filename });
+        }
+      }
+    }
+    return missing;
   }
 
   /**

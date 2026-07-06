@@ -319,6 +319,75 @@ describe('CampaignsService', () => {
       expect(fs.existsSync(join(tmpDir, 'x.pdf'))).toBe(false);
     });
   });
+
+  describe('launch — validazione allegati bloccante', () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+      tmpDir = fs.mkdtempSync(join(os.tmpdir(), 'comunicapa-launch-'));
+      tmpDirRef.dir = tmpDir;
+      mockCampaignQb.execute.mockResolvedValue({ affected: 1 });
+      mockCampaignRepo.createQueryBuilder.mockReturnValue(mockCampaignQb);
+      mockAttemptRepo.createQueryBuilder.mockReturnValue({
+        insert: jest.fn().mockReturnThis(),
+        into: jest.fn().mockReturnThis(),
+        values: jest.fn().mockReturnThis(),
+        returning: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ raw: [{ id: 'att-1' }, { id: 'att-2' }, { id: 'att-3' }] }),
+      });
+    });
+
+    afterEach(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('blocca il lancio e riporta la campagna a DRAFT se manca un allegato mappato', async () => {
+      const campaignWithAttachments = {
+        ...mockCampaign,
+        id: 'c-att',
+        channelConfig: { attachments: [{ key: 'file', label: 'Avviso TARI' }] },
+      };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaignWithAttachments);
+      // Only create xxx.pdf, not xyz.pdf that r3 needs
+      fs.writeFileSync(join(tmpDir, 'xxx.pdf'), '%PDF');
+
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: string[] }) => {
+        if (select.includes('extraData')) {
+          return Promise.resolve([
+            { id: 'r1', codiceFiscale: 'AAA1', extraData: { file: 'xxx.pdf' } },
+            { id: 'r2', codiceFiscale: 'BBB2', extraData: { file: 'xxx.pdf' } },
+            { id: 'r3', codiceFiscale: 'CCC3', extraData: { file: 'xyz.pdf' } },
+          ]);
+        }
+        return Promise.resolve([{ id: 'r1' }, { id: 'r2' }, { id: 'r3' }]);
+      });
+
+      await expect(service.launch('c-att')).rejects.toThrow('Impossibile avviare');
+      expect(mockCampaignRepo.update).toHaveBeenCalledWith({ id: 'c-att' }, { status: CampaignStatus.DRAFT });
+      expect(mockQueue.addBulk).not.toHaveBeenCalled();
+    });
+
+    it('lancia normalmente se tutti gli allegati mappati sono presenti', async () => {
+      const campaignWithAttachments = {
+        ...mockCampaign,
+        id: 'c-att-ok',
+        channelConfig: { attachments: [{ key: 'file', label: 'Avviso TARI' }] },
+      };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaignWithAttachments);
+      // Create all needed files
+      fs.writeFileSync(join(tmpDir, 'xxx.pdf'), '%PDF');
+
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: string[] }) => {
+        if (select.includes('extraData')) {
+          return Promise.resolve([{ id: 'r1', codiceFiscale: 'AAA1', extraData: { file: 'xxx.pdf' } }]);
+        }
+        return Promise.resolve([{ id: 'r1' }]);
+      });
+
+      const result = await service.launch('c-att-ok');
+      expect(result.launched).toBe(1);
+    });
+  });
 });
 
 describe('CampaignsService.getDuplicateSource', () => {
