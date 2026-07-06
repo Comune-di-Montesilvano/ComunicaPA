@@ -6,27 +6,48 @@ import type { Recipient } from '../entities/recipient.entity';
 import { getUploadsDir } from './attachment-paths';
 
 /**
- * Risolve il nome del file dell'allegato PDF personalizzato per un destinatario.
+ * Risolve la lista di allegati configurati per una campagna. `attachments`
+ * (nuovo formato) ha priorità; se assente si ricostruisce un singolo
+ * allegato dal vecchio `allegatoKey` per retrocompatibilità con campagne
+ * create prima del supporto multi-allegato.
+ */
+export function resolveAttachmentsConfig(
+  channelConfig: Record<string, unknown> | undefined,
+): Array<{ key: string; label: string }> {
+  const configured = channelConfig?.['attachments'] as Array<{ key: string; label: string }> | undefined;
+  if (configured && configured.length > 0) return configured;
+
+  const legacyKey = channelConfig?.['allegatoKey'] as string | undefined;
+  if (legacyKey) return [{ key: legacyKey, label: 'Allegato 1' }];
+
+  return [];
+}
+
+/**
+ * Risolve il nome del file dell'allegato PDF personalizzato per un destinatario,
+ * per l'allegato all'indice `index` (0-based) fra quelli configurati sulla campagna.
  *
- * Priorità:
- * 1. `recipient.campaign.channelConfig.allegatoKey` indica la chiave in `extraData`
- *    che contiene il nome file da usare.
- * 2. Fallback: scansiona tutti i valori di `extraData` e usa il primo che termina
- *    con `.pdf` (case-insensitive).
+ * Fallback legacy: se non c'è ALCUNA configurazione allegati (né `attachments`
+ * né `allegatoKey`) e `index` è 0, scansiona `extraData` e usa il primo valore
+ * che termina con `.pdf` (comportamento pre-esistente per campagne molto vecchie).
  *
  * Usata sia da `AttachmentService` (per servire il download) sia da
  * `RetentionCleanupService` (per individuare i file da eliminare alla scadenza),
  * in modo che entrambi concordino su quali destinatari hanno un allegato personalizzato.
  */
-export function resolveCustomAttachmentFilename(recipient: Recipient): string | undefined {
-  const allegatoKey = recipient.campaign?.channelConfig?.['allegatoKey'] as string | undefined;
-  if (allegatoKey && recipient.extraData?.[allegatoKey]) {
-    return String(recipient.extraData[allegatoKey]);
+export function resolveCustomAttachmentFilename(recipient: Recipient, index = 0): string | undefined {
+  const attachments = resolveAttachmentsConfig(recipient.campaign?.channelConfig);
+  const entry = attachments[index];
+
+  if (entry && recipient.extraData?.[entry.key]) {
+    return String(recipient.extraData[entry.key]);
   }
 
-  for (const val of Object.values(recipient.extraData ?? {})) {
-    if (typeof val === 'string' && val.toLowerCase().endsWith('.pdf')) {
-      return val;
+  if (index === 0 && attachments.length === 0) {
+    for (const val of Object.values(recipient.extraData ?? {})) {
+      if (typeof val === 'string' && val.toLowerCase().endsWith('.pdf')) {
+        return val;
+      }
     }
   }
 
@@ -37,9 +58,8 @@ export function resolveCustomAttachmentFilename(recipient: Recipient): string | 
 export class AttachmentService {
   private readonly logger = new Logger(AttachmentService.name);
 
-  async generatePdfBuffer(recipient: Recipient): Promise<Buffer> {
-    // Verifichiamo se esiste un allegato PDF personalizzato caricato sul disco
-    const customFilename = resolveCustomAttachmentFilename(recipient);
+  async generatePdfBuffer(recipient: Recipient, index = 0): Promise<Buffer> {
+    const customFilename = resolveCustomAttachmentFilename(recipient, index);
 
     if (customFilename) {
       const filePath = join(getUploadsDir(recipient.campaignId), customFilename);
