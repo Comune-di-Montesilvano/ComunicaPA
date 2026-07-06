@@ -100,4 +100,29 @@ describe('RetentionCleanupService', () => {
     expect(fs.unlink).toHaveBeenCalledWith(expect.stringContaining('PREAVVISO.PDF'));
     expect(mockRepo.update).toHaveBeenCalledWith('r-fallback', expect.objectContaining({ attachmentDeletedAt: expect.any(Date) }));
   });
+
+  it('elimina TUTTI gli allegati configurati per un destinatario con più attachments', async () => {
+    const recipientMultiAttach = {
+      id: 'r-multi',
+      campaignId: 'c-multi',
+      extraData: { tassa: 'TASSA.pdf', ruolo: 'RUOLO.pdf' },
+      campaign: {
+        channelConfig: {
+          attachments: [
+            { key: 'tassa', label: 'Tassa' },
+            { key: 'ruolo', label: 'Ruolo' },
+          ],
+        },
+      },
+    };
+    mockQb.getMany.mockReset();
+    mockQb.getMany.mockResolvedValueOnce([recipientMultiAttach]).mockResolvedValueOnce([]);
+
+    await service.runCleanup();
+
+    expect(fs.unlink).toHaveBeenCalledWith(expect.stringContaining('TASSA.pdf'));
+    expect(fs.unlink).toHaveBeenCalledWith(expect.stringContaining('RUOLO.pdf'));
+    expect(fs.unlink).toHaveBeenCalledTimes(2);
+    expect(mockRepo.update).toHaveBeenCalledWith('r-multi', expect.objectContaining({ attachmentDeletedAt: expect.any(Date) }));
+  });
 });

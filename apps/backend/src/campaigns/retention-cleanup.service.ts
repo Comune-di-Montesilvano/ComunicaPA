@@ -5,7 +5,7 @@ import { Cron } from '@nestjs/schedule';
 import { join } from 'path';
 import { unlink } from 'fs/promises';
 import { Recipient } from '../entities/recipient.entity';
-import { resolveCustomAttachmentFilename } from '../attachments/attachment.service';
+import { resolveAttachmentsConfig, resolveCustomAttachmentFilename } from '../attachments/attachment.service';
 import { getUploadsDir } from '../attachments/attachment-paths';
 
 const BATCH_SIZE = 200;
@@ -47,14 +47,18 @@ export class RetentionCleanupService {
       }
 
       for (const recipient of batch) {
-        const customFilename = resolveCustomAttachmentFilename(recipient);
+        const attachmentsConfig = resolveAttachmentsConfig(recipient.campaign.channelConfig);
+        const totalSlots = Math.max(attachmentsConfig.length, 1); // almeno un tentativo per il fallback legacy
 
-        if (customFilename) {
-          const filePath = join(getUploadsDir(recipient.campaignId), customFilename);
-          try {
-            await unlink(filePath);
-          } catch (err) {
-            this.logger.warn(`File già assente o non eliminabile: ${filePath}`);
+        for (let index = 0; index < totalSlots; index++) {
+          const customFilename = resolveCustomAttachmentFilename(recipient, index);
+          if (customFilename) {
+            const filePath = join(getUploadsDir(recipient.campaignId), customFilename);
+            try {
+              await unlink(filePath);
+            } catch (err) {
+              this.logger.warn(`File già assente o non eliminabile: ${filePath}`);
+            }
           }
         }
 
