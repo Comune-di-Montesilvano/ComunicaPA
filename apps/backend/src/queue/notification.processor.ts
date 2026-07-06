@@ -97,6 +97,11 @@ export class NotificationProcessor extends WorkerHost {
     const appIoResolved = appIoConfig && isMailChannel
       ? await this.ioServices.resolveApiKey(appIoConfig.ioServiceId)
       : null;
+    if (appIoConfig && isMailChannel && !appIoResolved) {
+      this.logger.warn(
+        `Co-delivery App IO configurata per la campagna ${campaignId} (ioServiceId="${appIoConfig.ioServiceId ?? ''}") ma resolveApiKey non ha trovato un servizio valido con api key primaria impostata: App IO NON verrà tentato per il destinatario ${recipientId}. Verifica che il servizio esista e abbia un'api key configurata in Impostazioni → App IO.`,
+      );
+    }
     // Retrocompat: config appIo presente senza mode = parallel
     const appIoMode: 'none' | 'parallel' | 'exclusive' =
       appIoResolved ? (appIoConfig!.mode ?? 'parallel') : 'none';

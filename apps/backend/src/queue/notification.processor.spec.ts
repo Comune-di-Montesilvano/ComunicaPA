@@ -352,6 +352,22 @@ describe('NotificationProcessor', () => {
       expect(mockStrategy.send).toHaveBeenCalled();
     });
 
+    it('appIo configurata ma resolveApiKey restituisce null: logga un warning esplicito (oggi fallisce in silenzio)', async () => {
+      mockCampaignRepo.findOne.mockResolvedValueOnce({
+        ...mockCampaignWithAppIo,
+        channelConfig: { appIo: { mode: 'parallel', ioServiceId: 'svc-eliminato' } },
+      });
+      (mockIoServices.resolveApiKey as jest.Mock).mockResolvedValueOnce(null);
+      (global as any).fetch = jest.fn();
+      mockStrategy.send.mockResolvedValueOnce({ messageId: 'msg-001', responsePayload: {} });
+      const warnSpy = jest.spyOn((processor as any).logger, 'warn');
+
+      await processor.process(mockJob(baseData));
+
+      expect((global as any).fetch).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('svc-eliminato'));
+    });
+
     it('appIo assente: nessuna chiamata a fetch App IO', async () => {
       mockCampaignRepo.findOne.mockResolvedValueOnce({
         ...mockCampaignWithAppIo,
