@@ -10,25 +10,55 @@ const baseRecipient = {
   extraData: {},
 } as Recipient;
 
-describe('processTemplate — link firmato', () => {
+describe('processTemplate — link firmato con indice allegato', () => {
   const secret = 'test-secret';
   const exp = 1893456000;
 
-  it('genera un link con recipientId, exp e sig invece di notificationId in chiaro', () => {
-    const result = processTemplate('Scarica qui: %allegato1%', baseRecipient, 'http://api.test', secret, exp);
-    expect(result).toContain(`http://api.test/public/download/${baseRecipient.id}?exp=${exp}&sig=`);
-    expect(result).not.toContain('notificationId=');
+  it('sostituisce %allegato1% con un link all\'indice 0 quando c\'è un allegato configurato', () => {
+    const result = processTemplate('Scarica qui: %allegato1%', baseRecipient, 'http://api.test', secret, exp, ['Tassa']);
+    expect(result).toContain(`http://api.test/public/download/${baseRecipient.id}/0?exp=${exp}&sig=`);
   });
 
-  it('la firma nel link è verificabile con verifyDownloadLink', () => {
-    const result = processTemplate('%allegato1%', baseRecipient, 'http://api.test', secret, exp);
-    const sig = result.match(/sig=([a-f0-9]+)/)?.[1];
-    expect(sig).toBeDefined();
+  it('sostituisce %allegato1% e %allegato2% con link a indici distinti', () => {
+    const result = processTemplate('%allegato1% e %allegato2%', baseRecipient, 'http://api.test', secret, exp, ['Tassa', 'Ruolo']);
+    expect(result).toContain(`/public/download/${baseRecipient.id}/0?exp=${exp}&sig=`);
+    expect(result).toContain(`/public/download/${baseRecipient.id}/1?exp=${exp}&sig=`);
+  });
+
+  it('senza attachmentLabels, %allegato1% NON viene sostituito (nessun allegato configurato)', () => {
+    const result = processTemplate('Link: %allegato1%', baseRecipient, 'http://api.test', secret, exp);
+    expect(result).toBe('Link: %allegato1%');
   });
 
   it('continua a sostituire %nominativo% come prima', () => {
     const result = processTemplate('Gentile %nominativo%', baseRecipient, 'http://api.test', secret, exp);
     expect(result).toBe('Gentile Mario Rossi');
+  });
+});
+
+describe('processTemplate — macro %elenco_allegati%', () => {
+  const secret = 'test-secret';
+  const exp = 1893456000;
+
+  it('formato html: genera una tabella con etichetta e link per ogni allegato', () => {
+    const result = processTemplate('%elenco_allegati%', baseRecipient, 'http://api.test', secret, exp, ['Tassa', 'Ruolo'], 'html');
+    expect(result).toContain('<table');
+    expect(result).toContain('Tassa');
+    expect(result).toContain('Ruolo');
+    expect(result).toContain(`/public/download/${baseRecipient.id}/0?exp=${exp}&sig=`);
+    expect(result).toContain(`/public/download/${baseRecipient.id}/1?exp=${exp}&sig=`);
+  });
+
+  it('formato markdown: genera un elenco puntato senza tag HTML', () => {
+    const result = processTemplate('%elenco_allegati%', baseRecipient, 'http://api.test', secret, exp, ['Tassa'], 'markdown');
+    expect(result).toBe(`- **Tassa**: [Scarica](http://api.test/public/download/${baseRecipient.id}/0?exp=${exp}&sig=${result.match(/sig=([a-f0-9]+)/)?.[1]})`);
+    expect(result).not.toContain('<table');
+    expect(result).not.toContain('<td');
+  });
+
+  it('nessun allegato configurato: la macro si espande in stringa vuota', () => {
+    const result = processTemplate('Prima %elenco_allegati% Dopo', baseRecipient, 'http://api.test', secret, exp, []);
+    expect(result).toBe('Prima  Dopo');
   });
 });
 
@@ -55,4 +85,3 @@ describe('wrapInHtmlLayout con logo e portale', () => {
     expect(html).not.toContain('Portale del Cittadino');
   });
 });
-

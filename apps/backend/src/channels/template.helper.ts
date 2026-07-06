@@ -2,9 +2,14 @@ import type { Recipient } from '../entities/recipient.entity';
 import { signDownloadLink } from './download-link.util';
 
 /**
- * Replaces fixed placeholders (%allegato1%), standard fields (%nominativo%, %nome%, %cf%, etc.),
- * and dynamic CSV variables (both direct %chiave% and %parametro1(mappato"chiave")%)
- * with the corresponding recipient values.
+ * Replaces fixed placeholders (%allegato1%, %allegato2%, ...), the standard
+ * "elenco allegati" macro (%elenco_allegati%), standard fields (%nominativo%,
+ * %nome%, %cf%, etc.), and dynamic CSV variables (both direct %chiave% and
+ * %parametro1(mappato"chiave")%) with the corresponding recipient values.
+ *
+ * `attachmentLabels` è l'elenco delle etichette configurate sulla campagna
+ * (in ordine: indice 0 → %allegato1%, indice 1 → %allegato2%, ...). Ogni
+ * etichetta produce un link di download firmato per quell'indice specifico.
  */
 export function processTemplate(
   bodyTemplate: string,
@@ -12,15 +17,40 @@ export function processTemplate(
   publicApiUrl: string,
   downloadLinkSecret: string,
   expiresAtUnix: number,
+  attachmentLabels: string[] = [],
+  format: 'html' | 'markdown' = 'html',
 ): string {
-  const sig = signDownloadLink(recipient.id, expiresAtUnix, downloadLinkSecret);
-  const downloadUrl = `${publicApiUrl}/public/download/${recipient.id}?exp=${expiresAtUnix}&sig=${sig}`;
   let content = bodyTemplate;
 
-  // 1. Replace %allegato1%
-  content = content.replace(/%allegato1%/g, downloadUrl);
+  const buildDownloadUrl = (index: number): string => {
+    const sig = signDownloadLink(recipient.id, index, expiresAtUnix, downloadLinkSecret);
+    return `${publicApiUrl}/public/download/${recipient.id}/${index}?exp=${expiresAtUnix}&sig=${sig}`;
+  };
 
-  // 2. Helper to get recipient value case-insensitively
+  // 1. Placeholder individuali %allegato1%, %allegato2%, ... (uno per etichetta configurata)
+  attachmentLabels.forEach((_, index) => {
+    const placeholder = new RegExp(`%allegato${index + 1}%`, 'g');
+    content = content.replace(placeholder, buildDownloadUrl(index));
+  });
+
+  // 2. Macro %elenco_allegati%: blocco con etichetta+link per ogni allegato
+  if (content.includes('%elenco_allegati%')) {
+    const block = attachmentLabels.length === 0
+      ? ''
+      : format === 'markdown'
+        ? attachmentLabels
+            .map((label, index) => `- **${label}**: [Scarica](${buildDownloadUrl(index)})`)
+            .join('\n')
+        : `<table style="width:100%; border-collapse: collapse;">${attachmentLabels
+            .map(
+              (label, index) =>
+                `<tr><td style="padding:6px 12px; border-bottom:1px solid #edf2f7;">${label}</td><td style="padding:6px 12px; border-bottom:1px solid #edf2f7;"><a href="${buildDownloadUrl(index)}">Scarica</a></td></tr>`,
+            )
+            .join('')}</table>`;
+    content = content.replace(/%elenco_allegati%/g, block);
+  }
+
+  // 3. Helper to get recipient value case-insensitively
   const getVal = (key: string): string => {
     const k = key.toLowerCase().trim();
     if (k === 'codice_fiscale' || k === 'codicefiscale' || k === 'cf') {
@@ -46,13 +76,17 @@ export function processTemplate(
     return '';
   };
 
-  // 3. Replace %parametro\d+(mappato"key")%
+  // 4. Replace %parametro\d+(mappato"key")%
   content = content.replace(/%parametro\d+\(mappato"([^"]+)"\)%/gi, (_match, key) => {
     return getVal(key);
   });
 
-  // 4. Replace %key%
-  content = content.replace(/%([^%()]+)%/gi, (_match, key) => {
+  // 5. Replace %key% (esclude %allegatoN% residui non consumati allo step 1:
+  // nessuna etichetta configurata per quell'indice → il placeholder resta letterale)
+  content = content.replace(/%([^%()]+)%/gi, (fullMatch, key) => {
+    if (/^allegato\d+$/i.test(key.trim())) {
+      return fullMatch;
+    }
     return getVal(key);
   });
 
