@@ -304,6 +304,7 @@ export function App(): React.JSX.Element {
   const [ioTestCf, setIoTestCf] = useState('');
   const [ioTestBusyId, setIoTestBusyId] = useState<string | null>(null);
   const [ioTestMsg, setIoTestMsg] = useState<{ id: string; text: string; error: boolean } | null>(null);
+  const [editingIoService, setEditingIoService] = useState<IoService | null>(null);
 
   const [settSendApiKey, setSettSendApiKey] = useState('');
   const [settSendUrl, setSettSendUrl] = useState('https://api.notifichedigitali.it');
@@ -737,6 +738,39 @@ export function App(): React.JSX.Element {
     } catch (err: any) {
       if (err instanceof ApiAuthError) return;
       alert(err.message || 'Errore durante la creazione del servizio App IO.');
+    }
+  };
+
+  const handleUpdateIoService = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingIoService) return;
+    if (!editingIoService.nome || !editingIoService.idService || !editingIoService.apiKeyPrimaria) {
+      alert('I campi contrassegnati con asterisco sono obbligatori.');
+      return;
+    }
+    try {
+      const res = await apiFetch(`/io-services/${editingIoService.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nome: editingIoService.nome,
+          idService: editingIoService.idService.toUpperCase().trim(),
+          descrizione: editingIoService.descrizione,
+          apiKeyPrimaria: editingIoService.apiKeyPrimaria,
+          apiKeySecondaria: editingIoService.apiKeySecondaria,
+          codiceCatalogo: editingIoService.codiceCatalogo,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || 'Errore durante la modifica del servizio App IO.');
+      }
+      await fetchIoServices();
+      setEditingIoService(null);
+      alert('Servizio modificato con successo!');
+    } catch (err: any) {
+      if (err instanceof ApiAuthError) return;
+      alert(err.message || 'Errore durante la modifica del servizio App IO.');
     }
   };
 
@@ -3989,6 +4023,83 @@ export function App(): React.JSX.Element {
                                 </div>
                               )}
 
+                              {editingIoService && (
+                                <div className="card card-body border-0 shadow-sm p-3 mb-4 bg-white">
+                                  <h5 className="small fw-bold text-dark border-bottom pb-2 mb-3">Modifica Servizio App IO: {editingIoService.nome}</h5>
+                                  <form onSubmit={handleUpdateIoService}>
+                                    <div className="row g-3">
+                                      <div className="col-md-6">
+                                        <label className="form-label small fw-bold text-dark">Nome Servizio *</label>
+                                        <input
+                                          type="text"
+                                          className="form-control form-control-sm"
+                                          placeholder="Es. Servizio TARI"
+                                          value={editingIoService.nome}
+                                          onChange={(e) => setEditingIoService({ ...editingIoService, nome: e.target.value })}
+                                          required
+                                        />
+                                      </div>
+                                      <div className="col-md-6">
+                                        <label className="form-label small fw-bold text-dark">ID Servizio App IO (IO) *</label>
+                                        <input
+                                          type="text"
+                                          className="form-control form-control-sm"
+                                          placeholder="Es. 01ARZ3NDEKTSN4FFFSUQFW0C5"
+                                          value={editingIoService.idService}
+                                          onChange={(e) => setEditingIoService({ ...editingIoService, idService: e.target.value })}
+                                          required
+                                        />
+                                      </div>
+                                      <div className="col-12">
+                                        <label className="form-label small text-muted">Descrizione Servizio</label>
+                                        <textarea
+                                          className="form-control form-control-sm"
+                                          rows={2}
+                                          placeholder="Descrizione del servizio visualizzata nell'App IO..."
+                                          value={editingIoService.descrizione || ''}
+                                          onChange={(e) => setEditingIoService({ ...editingIoService, descrizione: e.target.value })}
+                                        ></textarea>
+                                      </div>
+                                      <div className="col-md-6">
+                                        <label className="form-label small fw-bold text-dark">API Key Primaria *</label>
+                                        <input
+                                          type="password"
+                                          className="form-control form-control-sm"
+                                          placeholder="API Key principale (lascia mascherata per non modificarla)"
+                                          value={editingIoService.apiKeyPrimaria}
+                                          onChange={(e) => setEditingIoService({ ...editingIoService, apiKeyPrimaria: e.target.value })}
+                                          required
+                                        />
+                                      </div>
+                                      <div className="col-md-6">
+                                        <label className="form-label small text-muted">API Key Secondaria</label>
+                                        <input
+                                          type="password"
+                                          className="form-control form-control-sm"
+                                          placeholder="API Key backup"
+                                          value={editingIoService.apiKeySecondaria || ''}
+                                          onChange={(e) => setEditingIoService({ ...editingIoService, apiKeySecondaria: e.target.value })}
+                                        />
+                                      </div>
+                                      <div className="col-md-6">
+                                        <label className="form-label small text-muted">Codice Catalogo</label>
+                                        <input
+                                          type="text"
+                                          className="form-control form-control-sm"
+                                          placeholder="Es. 000000000000000"
+                                          value={editingIoService.codiceCatalogo || ''}
+                                          onChange={(e) => setEditingIoService({ ...editingIoService, codiceCatalogo: e.target.value })}
+                                        />
+                                      </div>
+                                      <div className="col-12 text-end border-top pt-2 d-flex justify-content-end gap-2">
+                                        <button type="button" className="btn btn-sm btn-outline-secondary px-3" onClick={() => setEditingIoService(null)}>Annulla</button>
+                                        <button type="submit" className="btn btn-sm btn-success px-3">Salva Modifiche</button>
+                                      </div>
+                                    </div>
+                                  </form>
+                                </div>
+                              )}
+
                               {ioServices.length === 0 ? (
                                 <div className="text-center py-4 text-muted bg-white border rounded">Nessun servizio App IO configurato.</div>
                               ) : (
@@ -4024,6 +4135,14 @@ export function App(): React.JSX.Element {
                                                     <i className="fas fa-star"></i>
                                                   </button>
                                                 )}
+                                                <button
+                                                  type="button"
+                                                  className="btn btn-sm btn-outline-secondary border-0"
+                                                  onClick={() => { setEditingIoService(s); setShowNewSvcForm(false); }}
+                                                  title="Modifica"
+                                                >
+                                                  <i className="fas fa-edit"></i>
+                                                </button>
                                                 <button
                                                   type="button"
                                                   className="btn btn-sm btn-outline-danger border-0"
