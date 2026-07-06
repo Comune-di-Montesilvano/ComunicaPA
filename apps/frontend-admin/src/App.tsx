@@ -242,8 +242,8 @@ export function App(): React.JSX.Element {
     full_name_2: '',
     email: '',
     pec: '',
-    allegato1: '',
   });
+  const [wizAttachments, setWizAttachments] = useState<Array<{ key: string; label: string }>>([]);
   const [wizValidationErrors, setWizValidationErrors] = useState<Array<{ row: number; field: string; val: string; err: string }>>([]);
   const [wizValidationWarnings, setWizValidationWarnings] = useState<Array<{ row: number; field: string; val: string; warn: string }>>([]);
   const [wizValidRows, setWizValidRows] = useState<Record<string, string>[]>([]);
@@ -1497,7 +1497,6 @@ export function App(): React.JSX.Element {
         full_name_2: '',
         email: '',
         pec: '',
-        allegato1: '',
       };
       headers.forEach(h => {
         const hLower = h.toLowerCase().replace(/[\s_-]/g, '');
@@ -1511,9 +1510,9 @@ export function App(): React.JSX.Element {
         }
         else if (hLower === 'email' || hLower === 'mail') newMapping.email = h;
         else if (hLower === 'pec') newMapping.pec = h;
-        else if (hLower === 'allegato1' || hLower === 'documento' || hLower === 'avviso' || hLower === 'pdf') newMapping.allegato1 = h;
       });
       setWizMapping(newMapping);
+      setWizAttachments([]);
     };
     reader.readAsText(file);
   };
@@ -1775,7 +1774,7 @@ export function App(): React.JSX.Element {
         channelConfig = {
           subject: wizSubject,
           body: wizBody,
-          allegatoKey: wizMapping.allegato1,
+          allegatoKey: wizAttachments[0]?.key || '',
           mailConfigId: wizMailConfigId,
           from: activeCfg?.fromAddress || '',
         };
@@ -1906,8 +1905,8 @@ export function App(): React.JSX.Element {
         full_name_2: '',
         email: '',
         pec: '',
-        allegato1: '',
       });
+      setWizAttachments([]);
       setWizValidationErrors([]);
       setWizValidationWarnings([]);
       setWizValidRows([]);
@@ -2937,7 +2936,8 @@ export function App(): React.JSX.Element {
                             setWizCsvFile(null);
                             setWizCsvHeaders([]);
                             setWizCsvRows([]);
-                            setWizMapping({ codice_fiscale: '', full_name: '', full_name_2: '', email: '', pec: '', allegato1: '' });
+                            setWizMapping({ codice_fiscale: '', full_name: '', full_name_2: '', email: '', pec: '' });
+                            setWizAttachments([]);
                             const input = document.getElementById('wiz_csv_input') as HTMLInputElement;
                             if (input) input.value = '';
                           }}
@@ -3062,16 +3062,52 @@ export function App(): React.JSX.Element {
                       </select>
                     </div>
 
-                    <div className="col-md-6">
-                      <label className="form-label small fw-semibold text-muted">Campo Speciale Allegato (es: Tassa, Ruolo)</label>
-                      <select
-                        className="form-select form-select-sm"
-                        value={wizMapping.allegato1}
-                        onChange={e => handleWizMappingChange('allegato1', e.target.value)}
-                      >
-                        <option value="">-- Seleziona Colonna Speciale --</option>
-                        {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
-                      </select>
+                    <div className="col-12">
+                      <label className="form-label small fw-semibold text-muted">Colonne Allegato (una o più, con etichetta)</label>
+                      <div className="border rounded p-2" style={{ maxHeight: '220px', overflowY: 'auto' }}>
+                        {wizCsvHeaders.map(h => {
+                          const existingIndex = wizAttachments.findIndex(a => a.key === h);
+                          const isSelected = existingIndex !== -1;
+                          return (
+                            <div key={h} className="d-flex align-items-center gap-2 mb-1">
+                              <div className="form-check mb-0">
+                                <input
+                                  type="checkbox"
+                                  className="form-check-input"
+                                  id={`wiz-attach-${h}`}
+                                  checked={isSelected}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setWizAttachments(prev => [...prev, { key: h, label: '' }]);
+                                    } else {
+                                      setWizAttachments(prev => prev.filter(a => a.key !== h));
+                                    }
+                                  }}
+                                />
+                                <label htmlFor={`wiz-attach-${h}`} className="form-check-label small" style={{ cursor: 'pointer' }}>
+                                  {wizColumnOptionLabel(h)}
+                                </label>
+                              </div>
+                              {isSelected && (
+                                <input
+                                  type="text"
+                                  className="form-control form-control-sm"
+                                  style={{ maxWidth: '220px' }}
+                                  placeholder="Etichetta (es: Tassa, Ruolo)"
+                                  value={wizAttachments[existingIndex].label}
+                                  onChange={(e) => {
+                                    const label = e.target.value;
+                                    setWizAttachments(prev => prev.map(a => (a.key === h ? { ...a, label } : a)));
+                                  }}
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="form-text small text-muted">
+                        Ordine di selezione = %allegato1%, %allegato2%, ... nel template. Etichetta obbligatoria per usare il blocco "Elenco Allegati".
+                      </div>
                     </div>
                   </div>
 
