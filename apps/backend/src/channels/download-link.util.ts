@@ -1,20 +1,21 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 
-function computeSignature(recipientId: string, expiresAtUnix: number, secret: string): string {
-  return createHmac('sha256', secret).update(`${recipientId}:${expiresAtUnix}`).digest('hex');
+function computeSignature(recipientId: string, index: number, expiresAtUnix: number, secret: string): string {
+  return createHmac('sha256', secret).update(`${recipientId}:${index}:${expiresAtUnix}`).digest('hex');
 }
 
-export function signDownloadLink(recipientId: string, expiresAtUnix: number, secret: string): string {
-  return computeSignature(recipientId, expiresAtUnix, secret);
+export function signDownloadLink(recipientId: string, index: number, expiresAtUnix: number, secret: string): string {
+  return computeSignature(recipientId, index, expiresAtUnix, secret);
 }
 
 export function verifyDownloadLink(
   recipientId: string,
+  index: number,
   expiresAtUnix: number,
   signature: string,
   secret: string,
 ): boolean {
-  const expected = computeSignature(recipientId, expiresAtUnix, secret);
+  const expected = computeSignature(recipientId, index, expiresAtUnix, secret);
   const expectedBuf = Buffer.from(expected, 'hex');
   let providedBuf: Buffer;
   try {
