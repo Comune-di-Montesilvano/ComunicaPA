@@ -129,7 +129,10 @@ export class IoServicesService {
       headers: { 'Content-Type': 'application/json', 'Ocp-Apim-Subscription-Key': apiKey },
       body: JSON.stringify({
         fiscal_code: codiceFiscale,
-        content: { subject: `Test ComunicaPA - ${entity.nome}`, markdown: `Messaggio di test dal servizio **${entity.nome}**.` },
+        content: {
+          subject: `Test ComunicaPA - ${entity.nome}`,
+          markdown: `Messaggio di test inviato dal portale ComunicaPA per verificare la corretta integrazione del servizio **${entity.nome}** con App IO. Questo messaggio conferma che la configurazione e le chiavi API sono valide.`,
+        },
       }),
     });
 
