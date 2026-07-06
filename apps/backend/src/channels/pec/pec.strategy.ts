@@ -48,8 +48,8 @@ export class PecStrategy implements IChannelStrategy {
     const attachmentLabels = resolveAttachmentsConfig(campaign.channelConfig).map((a) => a.label);
 
     // Process templates
-    const subject = processTemplate(subjectTemplate, recipient, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels);
-    const bodyText = processTemplate(bodyTemplate, recipient, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels);
+    const subject = processTemplate(subjectTemplate, recipient, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, 'html', 'PEC');
+    const bodyText = processTemplate(bodyTemplate, recipient, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, 'html', 'PEC');
     const bodyHtml = wrapInHtmlLayout(bodyText, brandName, { logoUrl, portalUrl });
 
     const transporter = nodemailer.createTransport({

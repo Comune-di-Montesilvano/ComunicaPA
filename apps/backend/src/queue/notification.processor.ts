@@ -281,6 +281,8 @@ export class NotificationProcessor extends WorkerHost {
         downloadLinkSecret,
         expiresAtUnix,
         attachmentLabels,
+        'html',
+        'APP_IO',
       );
       const processedMarkdown = processTemplate(
         appIoConfig.bodyOverride || (campaign.channelConfig?.['body'] as string) || '',
@@ -290,6 +292,7 @@ export class NotificationProcessor extends WorkerHost {
         expiresAtUnix,
         attachmentLabels,
         'markdown',
+        'APP_IO',
       );
 
       const appIoRes = await fetch(`${appIoConfig.baseUrl}/api/v1/messages`, {

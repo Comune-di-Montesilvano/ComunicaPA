@@ -34,6 +34,16 @@ describe('processTemplate — link firmato con indice allegato', () => {
     const result = processTemplate('Gentile %nominativo%', baseRecipient, 'http://api.test', secret, exp);
     expect(result).toBe('Gentile Mario Rossi');
   });
+
+  it('aggiunge &ch=EMAIL al link quando sourceChannel è passato', () => {
+    const result = processTemplate('Scarica: %allegato1%', baseRecipient, 'http://api.test', secret, exp, ['Tassa'], 'html', 'EMAIL');
+    expect(result).toContain('&ch=EMAIL');
+  });
+
+  it('senza sourceChannel il link non contiene &ch= (retrocompatibile)', () => {
+    const result = processTemplate('Scarica: %allegato1%', baseRecipient, 'http://api.test', secret, exp, ['Tassa']);
+    expect(result).not.toContain('&ch=');
+  });
 });
 
 describe('processTemplate — macro %elenco_allegati%', () => {

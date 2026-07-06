@@ -22,4 +22,14 @@ describe('download-link.util con indice allegato', () => {
   it('rifiuta una firma malformata senza lanciare eccezioni', () => {
     expect(verifyDownloadLink('r-1', 0, exp, 'non-esadecimale-!!!', secret)).toBe(false);
   });
+
+  it('una firma generata con canale EMAIL non è valida per canale APP_IO', () => {
+    const sig = signDownloadLink('r-1', 0, exp, secret, 'EMAIL');
+    expect(verifyDownloadLink('r-1', 0, exp, sig, secret, 'APP_IO')).toBe(false);
+  });
+
+  it('canale di default (nessun canale passato) resta retrocompatibile su entrambi i lati', () => {
+    const sig = signDownloadLink('r-1', 0, exp, secret);
+    expect(verifyDownloadLink('r-1', 0, exp, sig, secret)).toBe(true);
+  });
 });
