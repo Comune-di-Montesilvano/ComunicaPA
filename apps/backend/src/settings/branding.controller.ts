@@ -66,14 +66,14 @@ export class BrandingController {
     await this.serveFile('brand.favicon', res);
   }
 
-  @Post('settings/branding/logo')
+  @Post('admin/settings/branding/logo')
   @Roles('admin')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_FILE_SIZE } }))
   async uploadLogo(@UploadedFile() file: Express.Multer.File) {
     return this.saveBrandingFile(file, ALLOWED_LOGO_TYPES, 'logo', 'brand.logo');
   }
 
-  @Post('settings/branding/favicon')
+  @Post('admin/settings/branding/favicon')
   @Roles('admin')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_FILE_SIZE } }))
   async uploadFavicon(@UploadedFile() file: Express.Multer.File) {

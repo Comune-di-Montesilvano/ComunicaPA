@@ -18,7 +18,7 @@ import { MailConfigsService } from './mail-configs.service';
 import { CreateMailConfigDto, UpdateMailConfigDto, TestMailConfigDto, SetActiveMailConfigDto } from './dto/mail-config.dto';
 import type { MailServerType } from '../entities/mail-server-config.entity';
 
-@Controller('mail-configs')
+@Controller('admin/mail-configs')
 export class MailConfigsController {
   constructor(private readonly svc: MailConfigsService) {}
 

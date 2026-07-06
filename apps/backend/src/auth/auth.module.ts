@@ -4,6 +4,7 @@ import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
+import { CitizenAuthController } from './citizen-auth.controller';
 import { LdapService } from './ldap/ldap.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { OidcCitizenStrategy } from './strategies/oidc-citizen.strategy';
@@ -23,7 +24,7 @@ import type { AppConfiguration } from '../config/configuration';
     }),
   ],
   providers: [AuthService, LdapService, JwtStrategy, OidcCitizenStrategy, OidcFlowService],
-  controllers: [AuthController],
+  controllers: [AuthController, CitizenAuthController],
   exports: [AuthService, JwtModule],
 })
 export class AuthModule {}

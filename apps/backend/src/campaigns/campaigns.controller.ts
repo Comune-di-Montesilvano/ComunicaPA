@@ -27,7 +27,7 @@ import { UpdateCampaignDto } from './dto/update-campaign.dto';
 import { PreviewMessageDto } from './dto/preview-message.dto';
 import { getUploadsDir } from '../attachments/attachment-paths';
 
-@Controller('campaigns')
+@Controller('admin/campaigns')
 @Roles('user', 'admin')
 export class CampaignsController {
   constructor(private readonly campaignsService: CampaignsService) {}

@@ -4,7 +4,7 @@ import { NotificationQueuesService } from '../queue/notification-queues.service'
 import { ALL_CHANNELS } from '../queue/notification-job.types';
 import type { NotificationChannel } from '@comunicapa/shared-types';
 
-@Controller('engines')
+@Controller('admin/engines')
 export class EnginesController {
   constructor(private readonly queues: NotificationQueuesService) {}
 

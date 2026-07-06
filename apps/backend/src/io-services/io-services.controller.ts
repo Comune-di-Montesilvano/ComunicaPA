@@ -3,7 +3,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { IoServicesService } from './io-services.service';
 import { CreateIoServiceDto, UpdateIoServiceDto, TestIoServiceDto } from './dto/io-service.dto';
 
-@Controller('io-services')
+@Controller('admin/io-services')
 export class IoServicesController {
   constructor(private readonly svc: IoServicesService) {}
 

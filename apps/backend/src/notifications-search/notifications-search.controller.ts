@@ -2,7 +2,7 @@ import { Controller, Get, Query } from '@nestjs/common';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { NotificationsSearchService } from './notifications-search.service';
 
-@Controller('notifications-search')
+@Controller('admin/notifications-search')
 @Roles('user', 'admin')
 export class NotificationsSearchController {
   constructor(private readonly svc: NotificationsSearchService) {}

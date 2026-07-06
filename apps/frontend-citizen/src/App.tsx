@@ -225,7 +225,7 @@ export function App(): React.JSX.Element {
       })
       .catch(() => { /* branding default */ });
 
-    fetch(`${API_BASE}/auth/citizen/config`)
+    fetch(`${API_BASE}/citizen/auth/config`)
       .then((r) => r.json())
       .then((c: { mode?: 'oidc' | 'mock'; logoutUrl?: string | null }) => {
         setAuthMode(c.mode === 'mock' ? 'mock' : 'oidc');
@@ -254,7 +254,7 @@ export function App(): React.JSX.Element {
       return;
     }
 
-    fetch(`${API_BASE}/auth/citizen/oidc/callback`, {
+    fetch(`${API_BASE}/citizen/auth/oidc/callback`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code, state }),
@@ -382,7 +382,7 @@ export function App(): React.JSX.Element {
     }
 
     try {
-      const res = await fetch(`${API_BASE}/auth/citizen/login`, {
+      const res = await fetch(`${API_BASE}/citizen/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -414,7 +414,7 @@ export function App(): React.JSX.Element {
 
   const handleOidcLogin = () => {
     setLoginError(null);
-    window.location.href = `${API_BASE}/auth/citizen/oidc/start`;
+    window.location.href = `${API_BASE}/citizen/auth/oidc/start`;
   };
 
   const handleDownloadAttachment = async (notifId: string) => {

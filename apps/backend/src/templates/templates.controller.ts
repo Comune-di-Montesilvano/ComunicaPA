@@ -3,7 +3,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { TemplatesService } from './templates.service';
 import { CreateTemplateDto, UpdateTemplateDto } from './dto/template.dto';
 
-@Controller('templates')
+@Controller('admin/templates')
 @Roles('user', 'admin')
 export class TemplatesController {
   constructor(private readonly svc: TemplatesService) {}

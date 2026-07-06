@@ -9,6 +9,7 @@ declare global {
 }
 
 const API_BASE = window.__COMUNICAPA_CONFIG__?.apiBase ?? 'http://localhost:8080';
+const ADMIN_API_BASE = `${API_BASE}/admin`;
 
 // Tiptap's editor.getHTML() always returns a non-empty shell (e.g. '<p></p>')
 // even when the user has deleted all content, so a plain truthiness check on
@@ -141,7 +142,7 @@ export function App(): React.JSX.Element {
       if (searchDateTo) params.set('dateTo', searchDateTo);
       params.set('page', String(page));
       params.set('pageSize', String(SEARCH_PAGE_SIZE));
-      const res = await fetch(`${API_BASE}/notifications-search?${params.toString()}`, {
+      const res = await fetch(`${ADMIN_API_BASE}/notifications-search?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -402,7 +403,7 @@ export function App(): React.JSX.Element {
   // Carica le impostazioni persistite dal backend al login
   useEffect(() => {
     if (!token) return;
-    fetch(`${API_BASE}/settings`, { headers: { Authorization: `Bearer ${token}` } })
+    fetch(`${ADMIN_API_BASE}/settings`, { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => {
         if (r.status === 401) {
           // Token scaduto/invalido: torna al login invece di mostrare campi vuoti
@@ -437,7 +438,7 @@ export function App(): React.JSX.Element {
     setLoginLoading(true);
     setLoginError(null);
     try {
-      const res = await fetch(`${API_BASE}/auth/login`, {
+      const res = await fetch(`${ADMIN_API_BASE}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: loginUsername, password: loginPassword }),
@@ -496,7 +497,7 @@ export function App(): React.JSX.Element {
     setLoadingCampaigns(true);
     setDashboardError(null);
     try {
-      const res = await fetch(`${API_BASE}/campaigns`, {
+      const res = await fetch(`${ADMIN_API_BASE}/campaigns`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       if (res.status === 401) {
@@ -543,7 +544,7 @@ export function App(): React.JSX.Element {
   const handleRetryRecipient = async (campaignId: string, recipientId: string) => {
     setRetryBusyId(recipientId);
     try {
-      await fetch(`${API_BASE}/campaigns/${campaignId}/recipients/${recipientId}/retry`, {
+      await fetch(`${ADMIN_API_BASE}/campaigns/${campaignId}/recipients/${recipientId}/retry`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -571,7 +572,7 @@ export function App(): React.JSX.Element {
         }
       }
 
-      const res = await fetch(`${API_BASE}/campaigns`, {
+      const res = await fetch(`${ADMIN_API_BASE}/campaigns`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -664,7 +665,7 @@ export function App(): React.JSX.Element {
       const formData = new FormData();
       formData.append('file', blob, 'single_recipient.csv');
 
-      const uploadRes = await fetch(`${API_BASE}/campaigns/${campaignObj.id}/recipients/upload`, {
+      const uploadRes = await fetch(`${ADMIN_API_BASE}/campaigns/${campaignObj.id}/recipients/upload`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData,
@@ -674,7 +675,7 @@ export function App(): React.JSX.Element {
         throw new Error('Impossibile associare il destinatario.');
       }
 
-      const launchRes = await fetch(`${API_BASE}/campaigns/${campaignObj.id}/launch`, {
+      const launchRes = await fetch(`${ADMIN_API_BASE}/campaigns/${campaignObj.id}/launch`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
       });
@@ -775,7 +776,7 @@ export function App(): React.JSX.Element {
   };
 
   const handleSetDefaultIoService = async (id: string) => {
-    await fetch(`${API_BASE}/io-services/${id}/default`, {
+    await fetch(`${ADMIN_API_BASE}/io-services/${id}/default`, {
       method: 'PATCH',
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -788,7 +789,7 @@ export function App(): React.JSX.Element {
     if (!confirm(`Sei sicuro di voler eliminare il servizio "${svcToDelete.nome}"?`)) {
       return;
     }
-    const res = await fetch(`${API_BASE}/io-services/${id}`, {
+    const res = await fetch(`${ADMIN_API_BASE}/io-services/${id}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -808,7 +809,7 @@ export function App(): React.JSX.Element {
     setIoTestBusyId(id);
     setIoTestMsg(null);
     try {
-      const res = await fetch(`${API_BASE}/io-services/${id}/test`, {
+      const res = await fetch(`${ADMIN_API_BASE}/io-services/${id}/test`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ codiceFiscale: ioTestCf.toUpperCase().trim() }),
@@ -891,7 +892,7 @@ export function App(): React.JSX.Element {
     setLoadingEngines(true);
     setEnginesError(null);
     try {
-      const res = await fetch(`${API_BASE}/engines`, {
+      const res = await fetch(`${ADMIN_API_BASE}/engines`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -909,7 +910,7 @@ export function App(): React.JSX.Element {
     setLoadingEngines(true);
     setEnginesError(null);
     try {
-      const res = await fetch(`${API_BASE}/engines/${channel.toLowerCase()}/${action}`, {
+      const res = await fetch(`${ADMIN_API_BASE}/engines/${channel.toLowerCase()}/${action}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -926,7 +927,7 @@ export function App(): React.JSX.Element {
 
   const handleViewEngineJobs = async (channel: string) => {
     setEngineJobsChannel(channel);
-    const res = await fetch(`${API_BASE}/engines/${channel.toLowerCase()}/jobs?status=failed&limit=50`, {
+    const res = await fetch(`${ADMIN_API_BASE}/engines/${channel.toLowerCase()}/jobs?status=failed&limit=50`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json();
@@ -936,7 +937,7 @@ export function App(): React.JSX.Element {
   const handleUploadBranding = async (kind: 'logo' | 'favicon', file: File) => {
     const form = new FormData();
     form.append('file', file);
-    const res = await fetch(`${API_BASE}/settings/branding/${kind}`, {
+    const res = await fetch(`${ADMIN_API_BASE}/settings/branding/${kind}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body: form,
@@ -957,7 +958,7 @@ export function App(): React.JSX.Element {
   const fetchMailConfigs = async () => {
     if (!token) return;
     try {
-      const res = await fetch(`${API_BASE}/mail-configs`, {
+      const res = await fetch(`${ADMIN_API_BASE}/mail-configs`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -970,7 +971,7 @@ export function App(): React.JSX.Element {
   };
 
   const fetchTemplates = async () => {
-    const res = await fetch(`${API_BASE}/templates`, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(`${ADMIN_API_BASE}/templates`, { headers: { Authorization: `Bearer ${token}` } });
     const data = await res.json();
     setTemplates(data.templates || []);
   };
@@ -979,7 +980,7 @@ export function App(): React.JSX.Element {
     e.preventDefault();
     if (!editingTemplate) return;
     const method = editingTemplate.id ? 'PUT' : 'POST';
-    const url = editingTemplate.id ? `${API_BASE}/templates/${editingTemplate.id}` : `${API_BASE}/templates`;
+    const url = editingTemplate.id ? `${ADMIN_API_BASE}/templates/${editingTemplate.id}` : `${ADMIN_API_BASE}/templates`;
     const res = await fetch(url, {
       method,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -996,7 +997,7 @@ export function App(): React.JSX.Element {
 
   const handleDeleteTemplate = async (id: string) => {
     if (!confirm('Eliminare questo template?')) return;
-    await fetch(`${API_BASE}/templates/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+    await fetch(`${ADMIN_API_BASE}/templates/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
     fetchTemplates();
   };
 
@@ -1041,7 +1042,7 @@ export function App(): React.JSX.Element {
     };
 
     try {
-      const url = isEdit ? `${API_BASE}/mail-configs/${editingMailConfig.id}` : `${API_BASE}/mail-configs`;
+      const url = isEdit ? `${ADMIN_API_BASE}/mail-configs/${editingMailConfig.id}` : `${ADMIN_API_BASE}/mail-configs`;
       const method = isEdit ? 'PUT' : 'POST';
 
       const res = await fetch(url, {
@@ -1072,7 +1073,7 @@ export function App(): React.JSX.Element {
     setMailConfigBusyId(id);
     setMailConfigMsg(null);
     try {
-      const res = await fetch(`${API_BASE}/mail-configs/${id}`, {
+      const res = await fetch(`${ADMIN_API_BASE}/mail-configs/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -1096,7 +1097,7 @@ export function App(): React.JSX.Element {
     setMailConfigBusyId(id);
     setMailConfigMsg(null);
     try {
-      const res = await fetch(`${API_BASE}/mail-configs/${id}/active`, {
+      const res = await fetch(`${ADMIN_API_BASE}/mail-configs/${id}/active`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ active: !currentActive }),
@@ -1122,7 +1123,7 @@ export function App(): React.JSX.Element {
     setMailConfigBusyId(id);
     setMailConfigMsg(null);
     try {
-      const res = await fetch(`${API_BASE}/mail-configs/${id}/test`, {
+      const res = await fetch(`${ADMIN_API_BASE}/mail-configs/${id}/test`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ to: mailConfigTestTo }),
@@ -1738,7 +1739,7 @@ export function App(): React.JSX.Element {
   };
 
   const handleDuplicateCampaign = async (campaignId: string) => {
-    const res = await fetch(`${API_BASE}/campaigns/${campaignId}/duplicate-source`, {
+    const res = await fetch(`${ADMIN_API_BASE}/campaigns/${campaignId}/duplicate-source`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) {
@@ -1750,7 +1751,7 @@ export function App(): React.JSX.Element {
   };
 
   const handleResumeDraft = async (campaignId: string) => {
-    const res = await fetch(`${API_BASE}/campaigns/${campaignId}/duplicate-source`, {
+    const res = await fetch(`${ADMIN_API_BASE}/campaigns/${campaignId}/duplicate-source`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) {
@@ -1859,7 +1860,7 @@ export function App(): React.JSX.Element {
 
       let campaignObj: { id: string };
       if (wizCampaignId) {
-        const patchRes = await fetch(`${API_BASE}/campaigns/${wizCampaignId}`, {
+        const patchRes = await fetch(`${ADMIN_API_BASE}/campaigns/${wizCampaignId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ name: wizName, description: wizDesc || wizSubject || wizName, channelConfig }),
@@ -1867,7 +1868,7 @@ export function App(): React.JSX.Element {
         if (!patchRes.ok) throw new Error('Errore durante l\'aggiornamento della bozza');
         campaignObj = { id: wizCampaignId };
       } else {
-        const res = await fetch(`${API_BASE}/campaigns`, {
+        const res = await fetch(`${ADMIN_API_BASE}/campaigns`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1911,7 +1912,7 @@ export function App(): React.JSX.Element {
       const formData = new FormData();
       formData.append('file', blob, 'normalized_recipients.csv');
 
-      const uploadRes = await fetch(`${API_BASE}/campaigns/${campaignObj.id}/recipients/upload`, {
+      const uploadRes = await fetch(`${ADMIN_API_BASE}/campaigns/${campaignObj.id}/recipients/upload`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData,
@@ -1928,7 +1929,7 @@ export function App(): React.JSX.Element {
         wizPdfFiles.forEach(file => {
           attachFormData.append('files', file);
         });
-        const attachRes = await fetch(`${API_BASE}/campaigns/${campaignObj.id}/attachments`, {
+        const attachRes = await fetch(`${ADMIN_API_BASE}/campaigns/${campaignObj.id}/attachments`, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${token}` },
           body: attachFormData,
@@ -1940,7 +1941,7 @@ export function App(): React.JSX.Element {
         discardCount = attachData.discarded || 0;
       }
 
-      const launchRes = await fetch(`${API_BASE}/campaigns/${campaignObj.id}/launch`, {
+      const launchRes = await fetch(`${ADMIN_API_BASE}/campaigns/${campaignObj.id}/launch`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
       });
@@ -2010,7 +2011,7 @@ export function App(): React.JSX.Element {
     }
     setLaunching(true);
     try {
-      const res = await fetch(`${API_BASE}/campaigns/${campaign.id}/launch`, {
+      const res = await fetch(`${ADMIN_API_BASE}/campaigns/${campaign.id}/launch`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
       });
@@ -2147,7 +2148,7 @@ export function App(): React.JSX.Element {
       const formData = new FormData();
       formData.append('file', blob, 'mapped_recipients.csv');
 
-      const res = await fetch(`${API_BASE}/campaigns/${campaign.id}/recipients/upload`, {
+      const res = await fetch(`${ADMIN_API_BASE}/campaigns/${campaign.id}/recipients/upload`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData,

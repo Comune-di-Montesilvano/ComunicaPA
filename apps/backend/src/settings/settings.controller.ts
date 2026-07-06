@@ -25,7 +25,7 @@ class TestConnectionDto {
   to!: string;
 }
 
-@Controller('settings')
+@Controller('admin/settings')
 @Roles('admin')
 export class SettingsController {
   private readonly logger = new Logger(SettingsController.name);
