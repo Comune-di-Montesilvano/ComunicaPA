@@ -12,6 +12,7 @@ import { Recipient, RecipientStatus } from '../entities/recipient.entity';
 import { THROTTLE_REDIS } from './notification-job.types';
 import { CHANNEL_STRATEGIES, IChannelStrategy } from '../channels/channel.interface';
 import { processTemplate } from '../channels/template.helper';
+import { resolveAttachmentsConfig } from '../attachments/attachment.service';
 import { ConfigService } from '@nestjs/config';
 import type { AppConfiguration } from '../config/configuration';
 import { getEffectiveRetentionDays } from '../campaigns/retention.util';
@@ -223,12 +224,14 @@ export class NotificationProcessor extends WorkerHost {
       const retentionDays = getEffectiveRetentionDays(campaign, retentionMaxDays);
       const expiresAtUnix = Math.floor(Date.now() / 1000) + retentionDays * 86400;
 
+      const attachmentLabels = resolveAttachmentsConfig(campaign.channelConfig).map((a) => a.label);
       const processedSubject = processTemplate(
         (campaign.channelConfig?.['subject'] as string) || campaign.name,
         recipient,
         publicApiUrl,
         downloadLinkSecret,
         expiresAtUnix,
+        attachmentLabels,
       );
       const processedMarkdown = processTemplate(
         (campaign.channelConfig?.['body'] as string) || '',
@@ -236,6 +239,8 @@ export class NotificationProcessor extends WorkerHost {
         publicApiUrl,
         downloadLinkSecret,
         expiresAtUnix,
+        attachmentLabels,
+        'markdown',
       );
 
       const appIoRes = await fetch(`${appIoConfig.baseUrl}/api/v1/messages`, {
