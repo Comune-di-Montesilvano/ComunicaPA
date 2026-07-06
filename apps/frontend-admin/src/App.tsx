@@ -1704,6 +1704,7 @@ export function App(): React.JSX.Element {
 
   const buildWizChannelConfigDraft = (): Record<string, any> => {
     const cfg: Record<string, any> = { subject: wizSubject, body: wizBody, mailConfigId: wizMailConfigId };
+    if (wizAttachments.length > 0) cfg.attachments = wizAttachments;
     if (wizChannel === 'APP_IO') {
       cfg.ioServiceId = wizAppIoServiceId;
     }
@@ -1774,7 +1775,7 @@ export function App(): React.JSX.Element {
         channelConfig = {
           subject: wizSubject,
           body: wizBody,
-          allegatoKey: wizAttachments[0]?.key || '',
+          attachments: wizAttachments,
           mailConfigId: wizMailConfigId,
           from: activeCfg?.fromAddress || '',
         };
@@ -3243,11 +3244,12 @@ export function App(): React.JSX.Element {
                         value={wizBody}
                         onChange={setWizBody}
                         placeholders={[
-                          { label: 'Link Allegato', token: '%allegato1%' },
+                          ...(wizAttachments.length > 0 ? [{ label: 'Elenco Allegati', token: '%elenco_allegati%' }] : []),
+                          ...wizAttachments.map((a, idx) => ({ label: `Link: ${a.label || `Allegato ${idx + 1}`}`, token: `%allegato${idx + 1}%` })),
                           { label: 'Nominativo', token: '%nominativo%' },
                           { label: 'Codice Fiscale', token: '%codice_fiscale%' },
                           ...wizCsvHeaders
-                            .filter(h => h !== wizMapping.codice_fiscale && h !== wizMapping.full_name && h !== wizMapping.email && h !== wizMapping.pec)
+                            .filter(h => h !== wizMapping.codice_fiscale && h !== wizMapping.full_name && h !== wizMapping.email && h !== wizMapping.pec && !wizAttachments.some(a => a.key === h))
                             .map(h => ({ label: `Colonna: ${h}`, token: `%${h}%` })),
                         ]}
                       />
@@ -3308,15 +3310,29 @@ export function App(): React.JSX.Element {
                           <div
                             style={{ padding: '20px', fontSize: '0.9rem', color: '#333', lineHeight: '1.5', minHeight: '150px' }}
                             dangerouslySetInnerHTML={{
-                              __html: wizBody
-                                .replace(/%allegato1%/g, 'http://localhost:3001/?notificationId=TEST-UUID-SIMULAZIONE')
-                                .replace(/%parametro\d+\(mappato"([^"]+)"\)%/gi, (match, key) => escapeHtml(wizValidRows[wizPreviewIndex][key] || ''))
-                                .replace(/%([^%()]+)%/gi, (match, key) => {
-                                  const k = key.toLowerCase().trim();
-                                  if (k === 'nominativo' || k === 'full_name') return escapeHtml(getWizRowFullName(wizValidRows[wizPreviewIndex]));
-                                  if (k === 'codice_fiscale' || k === 'cf') return escapeHtml(wizValidRows[wizPreviewIndex][wizMapping.codice_fiscale] || '');
-                                  return wizValidRows[wizPreviewIndex][key] ? escapeHtml(wizValidRows[wizPreviewIndex][key]) : match;
-                                }),
+                              __html: (() => {
+                                let preview = wizBody;
+                                wizAttachments.forEach((a, idx) => {
+                                  const placeholder = new RegExp(`%allegato${idx + 1}%`, 'g');
+                                  preview = preview.replace(placeholder, `http://localhost:3001/?notificationId=TEST-UUID-SIMULAZIONE-${idx}`);
+                                });
+                                if (preview.includes('%elenco_allegati%')) {
+                                  const block = wizAttachments.length === 0
+                                    ? ''
+                                    : `<table style="width:100%; border-collapse: collapse;">${wizAttachments
+                                        .map((a, idx) => `<tr><td style="padding:6px 12px; border-bottom:1px solid #edf2f7;">${escapeHtml(a.label || `Allegato ${idx + 1}`)}</td><td style="padding:6px 12px; border-bottom:1px solid #edf2f7;"><a href="#">Scarica</a></td></tr>`)
+                                        .join('')}</table>`;
+                                  preview = preview.replace(/%elenco_allegati%/g, block);
+                                }
+                                return preview
+                                  .replace(/%parametro\d+\(mappato"([^"]+)"\)%/gi, (match, key) => escapeHtml(wizValidRows[wizPreviewIndex][key] || ''))
+                                  .replace(/%([^%()]+)%/gi, (match, key) => {
+                                    const k = key.toLowerCase().trim();
+                                    if (k === 'nominativo' || k === 'full_name') return escapeHtml(getWizRowFullName(wizValidRows[wizPreviewIndex]));
+                                    if (k === 'codice_fiscale' || k === 'cf') return escapeHtml(wizValidRows[wizPreviewIndex][wizMapping.codice_fiscale] || '');
+                                    return wizValidRows[wizPreviewIndex][key] ? escapeHtml(wizValidRows[wizPreviewIndex][key]) : match;
+                                  });
+                              })(),
                             }}
                           />
                           <div style={{ backgroundColor: '#f8f9fa', padding: '12px', fontSize: '0.72rem', color: '#666', textAlign: 'center', borderTop: '1px solid #edf2f7' }}>
