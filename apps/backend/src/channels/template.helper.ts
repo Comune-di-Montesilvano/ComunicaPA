@@ -90,6 +90,31 @@ export function processTemplate(
     return getVal(key);
   });
 
+  // 6. Replace {{key}} to support double-curly braces syntax in Email/PEC templates
+  content = content.replace(/\{\{([^}]+)\}\}/gi, (fullMatch, key) => {
+    const k = key.toLowerCase().trim();
+    if (k === 'codice_fiscale' || k === 'codicefiscale' || k === 'cf') {
+      return recipient.codiceFiscale;
+    }
+    if (k === 'full_name' || k === 'fullname' || k === 'nome' || k === 'nominativo') {
+      return recipient.fullName || '';
+    }
+    if (k === 'email') {
+      return recipient.email || '';
+    }
+    if (k === 'pec') {
+      return recipient.pec || '';
+    }
+    if (recipient.extraData) {
+      for (const [exKey, exVal] of Object.entries(recipient.extraData)) {
+        if (exKey.toLowerCase() === k) {
+          return String(exVal ?? '');
+        }
+      }
+    }
+    return fullMatch;
+  });
+
   return content;
 }
 

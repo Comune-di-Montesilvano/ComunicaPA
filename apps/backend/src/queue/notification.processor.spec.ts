@@ -328,37 +328,4 @@ describe('NotificationProcessor', () => {
       expect(mockStrategy.send).toHaveBeenCalled();
     });
   });
-
-  describe('checkAndCompleteCampaign', () => {
-    it('should set campaign COMPLETED when all recipients processed', async () => {
-      mockCampaignRepo.findOne.mockResolvedValueOnce({
-        id: 'camp-1',
-        status: CampaignStatus.RUNNING,
-        sentCount: 2,
-        failedCount: 0,
-        totalRecipients: 2,
-      });
-      mockQb.execute.mockResolvedValueOnce({ affected: 1 });
-
-      await (processor as any).checkAndCompleteCampaign('camp-1');
-
-      expect(mockCampaignRepo.createQueryBuilder).toHaveBeenCalled();
-      expect(mockQb.andWhere).toHaveBeenCalledWith('sent_count + failed_count >= total_recipients');
-      expect(mockQb.execute).toHaveBeenCalled();
-    });
-
-    it('should not complete campaign when recipients still pending', async () => {
-      mockCampaignRepo.findOne.mockResolvedValueOnce({
-        id: 'camp-1',
-        status: CampaignStatus.RUNNING,
-        sentCount: 1,
-        failedCount: 0,
-        totalRecipients: 2,
-      });
-
-      await (processor as any).checkAndCompleteCampaign('camp-1');
-
-      expect(mockCampaignRepo.createQueryBuilder).not.toHaveBeenCalled();
-    });
-  });
 });

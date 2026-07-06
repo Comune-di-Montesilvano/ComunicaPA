@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { NotificationChannel, ChannelSendResult } from '@comunicapa/shared-types';
 import type { IChannelStrategy } from '../channel.interface';
@@ -25,7 +25,7 @@ export class EmailStrategy implements IChannelStrategy {
 
   async send(recipient: Recipient, campaign: Campaign): Promise<ChannelSendResult> {
     if (!recipient.email) {
-      throw new Error('Recipient email address is missing');
+      throw new BadRequestException('Recipient non ha indirizzo email');
     }
 
     const mailConfigId = campaign.channelConfig?.['mailConfigId'] as string | undefined;
