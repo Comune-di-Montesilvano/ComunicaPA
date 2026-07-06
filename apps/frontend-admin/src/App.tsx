@@ -343,70 +343,85 @@ export function App(): React.JSX.Element {
   };
 
   const renderAppIoCoDeliveryBadge = (r: Recipient) => {
-    if (!r.attempts) return null;
+    try {
+      if (!r.attempts) return null;
 
-    const firstAttempt = r.attempts.find((a: any) => {
-      const num = a.attemptNumber ?? a.attempt_number;
-      const payload = a.responsePayload ?? a.response_payload;
-      return num === 1 || payload?.appIo;
-    }) as any;
-    
-    if (!firstAttempt) return null;
+      const firstAttempt = r.attempts.find((a: any) => {
+        const num = a.attemptNumber ?? a.attempt_number;
+        const payload = a.responsePayload ?? a.response_payload;
+        return num === 1 || payload?.appIo || payload?.app_io;
+      }) as any;
+      
+      if (!firstAttempt) return null;
 
-    const payload = firstAttempt.responsePayload ?? firstAttempt.response_payload;
-    const appIo = payload?.appIo;
-    const deliveredVia = payload?.deliveredVia ?? payload?.delivered_via;
-    const status = firstAttempt.status;
-    const errorMsg = firstAttempt.errorMessage ?? firstAttempt.error_message;
+      const payload = firstAttempt.responsePayload ?? firstAttempt.response_payload;
+      const appIo = payload?.appIo ?? payload?.app_io;
+      const deliveredVia = payload?.deliveredVia ?? payload?.delivered_via;
+      const status = firstAttempt.status;
+      const errorMsg = firstAttempt.errorMessage ?? firstAttempt.error_message;
 
-    // 1. Check for parallel co-delivery result
-    if (appIo) {
-      if (appIo.success) {
+      // 1. Check for parallel co-delivery result
+      if (appIo) {
+        const success = appIo.success;
+        const error = appIo.error;
+        if (success) {
+          return (
+            <span className="badge bg-primary d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem', alignSelf: 'start', backgroundColor: '#0059b3' }}>
+              <i className="fas fa-mobile-alt"></i> App IO: Inviato
+            </span>
+          );
+        } else {
+          return (
+            <span className="badge bg-danger d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem', alignSelf: 'start' }} title={error || 'Errore'}>
+              <i className="fas fa-mobile-alt"></i> App IO: Fallito
+            </span>
+          );
+        }
+      }
+
+      // 2. Check for exclusive co-delivery result
+      if (deliveredVia === 'APP_IO') {
+        if (status === 'success') {
+          return (
+            <span className="badge bg-primary d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem', alignSelf: 'start', backgroundColor: '#0059b3' }}>
+              <i className="fas fa-mobile-alt"></i> App IO: Inviato (Esclusivo)
+            </span>
+          );
+        } else {
+          return (
+            <span className="badge bg-danger d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem', alignSelf: 'start' }} title={errorMsg || 'Errore'}>
+              <i className="fas fa-mobile-alt"></i> App IO: Fallito (Esclusivo)
+            </span>
+          );
+        }
+      }
+
+      // 3. Check if App IO co-delivery was configured (check both casings for campaign properties)
+      const campaignAny = campaign as any;
+      const channelConfig = campaignAny?.channelConfig ?? campaignAny?.channel_config;
+      const secondaryChannels = channelConfig?.secondaryChannels ?? channelConfig?.secondary_channels;
+      const appIoConfig = channelConfig?.appIo ?? channelConfig?.app_io;
+
+      const hasAppIoCoDelivery = 
+        secondaryChannels?.some((sc: any) => (sc?.channel === 'APP_IO' || sc?.['channel'] === 'APP_IO')) ||
+        !!appIoConfig;
+
+      if (hasAppIoCoDelivery) {
         return (
-          <span className="badge bg-primary d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem', alignSelf: 'start', backgroundColor: '#0059b3' }}>
-            <i className="fas fa-mobile-alt"></i> App IO: Inviato
-          </span>
-        );
-      } else {
-        return (
-          <span className="badge bg-danger d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem', alignSelf: 'start' }} title={appIo.error || 'Errore'}>
-            <i className="fas fa-mobile-alt"></i> App IO: Fallito
+          <span className="badge bg-light text-muted border d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem', alignSelf: 'start' }}>
+            <i className="fas fa-mobile-alt"></i> App IO: Non attivo
           </span>
         );
       }
-    }
 
-    // 2. Check for exclusive co-delivery result
-    if (deliveredVia === 'APP_IO') {
-      if (status === 'success') {
-        return (
-          <span className="badge bg-primary d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem', alignSelf: 'start', backgroundColor: '#0059b3' }}>
-            <i className="fas fa-mobile-alt"></i> App IO: Inviato (Esclusivo)
-          </span>
-        );
-      } else {
-        return (
-          <span className="badge bg-danger d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem', alignSelf: 'start' }} title={errorMsg || 'Errore'}>
-            <i className="fas fa-mobile-alt"></i> App IO: Fallito (Esclusivo)
-          </span>
-        );
-      }
-    }
-
-    // 3. Check if App IO co-delivery was configured
-    const hasAppIoCoDelivery = 
-      campaign?.channelConfig?.secondaryChannels?.some((sc: any) => sc?.channel === 'APP_IO') ||
-      !!campaign?.channelConfig?.appIo;
-
-    if (hasAppIoCoDelivery) {
+      return null;
+    } catch (err: any) {
       return (
-        <span className="badge bg-light text-muted border d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem', alignSelf: 'start' }}>
-          <i className="fas fa-mobile-alt"></i> App IO: Non attivo
+        <span className="badge bg-warning text-dark d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem' }}>
+          <i className="fas fa-exclamation-triangle"></i> Err: {err.message}
         </span>
       );
     }
-
-    return null;
   };
 
   // Con CSV senza header le colonne sono "Colonna N": senza un'anteprima del
