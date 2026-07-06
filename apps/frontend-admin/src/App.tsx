@@ -256,6 +256,9 @@ export function App(): React.JSX.Element {
   const [wizSending, setWizSending] = useState(false);
   const [wizMailConfigId, setWizMailConfigId] = useState('');
   const [wizAppIoMode, setWizAppIoMode] = useState<'none' | 'parallel' | 'exclusive'>('parallel');
+  const [wizAppIoDifferentiate, setWizAppIoDifferentiate] = useState(false);
+  const [wizAppIoSubjectOverride, setWizAppIoSubjectOverride] = useState('');
+  const [wizAppIoBodyOverride, setWizAppIoBodyOverride] = useState('');
   const [wizBlockedChannels, setWizBlockedChannels] = useState<string[]>([]);
   const [wizCampaignId, setWizCampaignId] = useState<string | null>(null);
   const [wizDraftSaving, setWizDraftSaving] = useState(false);
@@ -1765,13 +1768,24 @@ export function App(): React.JSX.Element {
     setWizSubject(source.channelConfig?.subject || '');
     setWizBody(source.channelConfig?.body || '');
     setWizMailConfigId(source.channelConfig?.mailConfigId || '');
+    const secondaryAppIo = (source.channelConfig?.secondaryChannels || []).find(
+      (sc: any) => sc?.channel === 'APP_IO'
+    );
     setWizAppIoServiceId(
+      secondaryAppIo?.ioServiceId ||
       source.channelConfig?.appIo?.ioServiceId ||
       source.channelConfig?.serviceId ||
       source.channelConfig?.ioServiceId ||
       ''
     );
-    setWizAppIoMode(source.channelConfig?.appIo?.mode || (source.channelConfig?.appIo ? 'parallel' : 'none'));
+    setWizAppIoMode(
+      secondaryAppIo?.mode ||
+      source.channelConfig?.appIo?.mode ||
+      (source.channelConfig?.appIo ? 'parallel' : 'none')
+    );
+    setWizAppIoDifferentiate(!!secondaryAppIo?.subjectOverride || !!secondaryAppIo?.bodyOverride);
+    setWizAppIoSubjectOverride(secondaryAppIo?.subjectOverride || '');
+    setWizAppIoBodyOverride(secondaryAppIo?.bodyOverride || '');
     setWizBlockedChannels(source.channelConfig?.blockedChannels || []);
     // Il CSV NON viene precaricato: l'utente ricarica un file al passo 2.
     setWizCsvFile(null);
@@ -1814,7 +1828,12 @@ export function App(): React.JSX.Element {
       cfg.ioServiceId = wizAppIoServiceId;
     }
     if (wizAppIoMode !== 'none' && wizAppIoServiceId) {
-      cfg.appIo = { mode: wizAppIoMode, ioServiceId: wizAppIoServiceId };
+      cfg.secondaryChannels = [{
+        channel: 'APP_IO',
+        mode: wizAppIoMode,
+        ioServiceId: wizAppIoServiceId,
+        ...(wizAppIoDifferentiate ? { subjectOverride: wizAppIoSubjectOverride, bodyOverride: wizAppIoBodyOverride } : {}),
+      }];
     }
     if (wizBlockedChannels.length > 0) cfg.blockedChannels = wizBlockedChannels;
     return cfg;
@@ -1888,10 +1907,12 @@ export function App(): React.JSX.Element {
         if (wizAppIoMode !== 'none') {
           const defaultSvc = ioServices.find(s => s.id === wizAppIoServiceId) || ioServices.find(s => s.isDefault) || ioServices[0];
           if (defaultSvc) {
-            channelConfig.appIo = {
+            channelConfig.secondaryChannels = [{
+              channel: 'APP_IO',
               mode: wizAppIoMode,
               ioServiceId: defaultSvc.id,
-            };
+              ...(wizAppIoDifferentiate ? { subjectOverride: wizAppIoSubjectOverride, bodyOverride: wizAppIoBodyOverride } : {}),
+            }];
           }
         }
       } else if (wizChannel === 'SEND') {
@@ -2019,6 +2040,9 @@ export function App(): React.JSX.Element {
       setWizValidRows([]);
       setWizMailConfigId('');
       setWizAppIoMode('parallel');
+      setWizAppIoDifferentiate(false);
+      setWizAppIoSubjectOverride('');
+      setWizAppIoBodyOverride('');
       setWizBlockedChannels([]);
 
       fetchCampaigns();
@@ -2948,6 +2972,48 @@ export function App(): React.JSX.Element {
                                 </option>
                               ))}
                             </select>
+                          </div>
+                        )}
+                        {wizAppIoMode !== 'none' && (
+                          <div className="mt-3 pt-3 border-top">
+                            <div className="form-check mb-2">
+                              <input
+                                type="checkbox"
+                                className="form-check-input"
+                                id="wiz-appio-differentiate"
+                                checked={wizAppIoDifferentiate}
+                                onChange={e => setWizAppIoDifferentiate(e.target.checked)}
+                              />
+                              <label className="form-check-label small" htmlFor="wiz-appio-differentiate">
+                                Differenzia oggetto e testo per App IO (altrimenti usa lo stesso di {wizChannel})
+                              </label>
+                            </div>
+                            {wizAppIoDifferentiate && (
+                              <>
+                                <div className="mb-2">
+                                  <label className="form-label small fw-bold">Oggetto App IO *</label>
+                                  <input
+                                    type="text"
+                                    className="form-control form-control-sm"
+                                    value={wizAppIoSubjectOverride}
+                                    onChange={e => setWizAppIoSubjectOverride(e.target.value)}
+                                    placeholder="Es: Avviso TARI - %nominativo%"
+                                    required
+                                  />
+                                </div>
+                                <div className="mb-0">
+                                  <label className="form-label small fw-bold">Testo App IO * (markdown)</label>
+                                  <textarea
+                                    className="form-control form-control-sm"
+                                    rows={3}
+                                    value={wizAppIoBodyOverride}
+                                    onChange={e => setWizAppIoBodyOverride(e.target.value)}
+                                    placeholder="Testo dedicato per il messaggio App IO..."
+                                    required
+                                  />
+                                </div>
+                              </>
+                            )}
                           </div>
                         )}
                       </div>
