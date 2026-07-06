@@ -8,11 +8,13 @@ import { AppSetting } from '../entities/app-setting.entity';
 import { MailServerConfig } from '../entities/mail-server-config.entity';
 import { IoServiceConfig } from '../entities/io-service-config.entity';
 import { Template } from '../entities/template.entity';
+import { DownloadEvent } from '../entities/download-event.entity';
 import { InitialSchema1783023440824 } from './migrations/1783023440824-InitialSchema';
 import { AddMailServerConfigs1783071728873 } from './migrations/1783071728873-AddMailServerConfigs';
 import { AddIoServiceConfigs1783092759564 } from './migrations/1783092759564-AddIoServiceConfigs';
 import { AddTemplates1783109448492 } from './migrations/1783109448492-AddTemplates';
 import { FixRecipientCampaignJoin1783148719725 } from './migrations/1783148719725-FixRecipientCampaignJoin';
+import { AddDownloadEvents1783200000000 } from './migrations/1783200000000-AddDownloadEvents';
 import type { AppConfiguration } from '../config/configuration';
 
 @Module({
@@ -23,10 +25,10 @@ import type { AppConfiguration } from '../config/configuration';
       useFactory: (config: ConfigService<AppConfiguration, true>) => ({
         type: 'postgres',
         url: config.get('database.url', { infer: true }),
-        entities: [Campaign, Recipient, NotificationAttempt, AppSetting, MailServerConfig, IoServiceConfig, Template],
+        entities: [Campaign, Recipient, NotificationAttempt, AppSetting, MailServerConfig, IoServiceConfig, Template, DownloadEvent],
         // Dev: schema allineato da synchronize. Prod: migrations eseguite all'avvio.
         synchronize: config.get('nodeEnv', { infer: true }) === 'development',
-        migrations: [InitialSchema1783023440824, AddMailServerConfigs1783071728873, AddIoServiceConfigs1783092759564, AddTemplates1783109448492, FixRecipientCampaignJoin1783148719725],
+        migrations: [InitialSchema1783023440824, AddMailServerConfigs1783071728873, AddIoServiceConfigs1783092759564, AddTemplates1783109448492, FixRecipientCampaignJoin1783148719725, AddDownloadEvents1783200000000],
         migrationsRun: config.get('nodeEnv', { infer: true }) !== 'development',
         logging: config.get('nodeEnv', { infer: true }) === 'development',
       }),
