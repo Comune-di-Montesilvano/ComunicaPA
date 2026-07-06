@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import { basename, join } from 'path';
 import AdmZip from 'adm-zip';
 import { getUploadsDir } from '../attachments/attachment-paths';
-import { resolveCustomAttachmentFilename } from '../attachments/attachment.service';
+import { resolveAttachmentsConfig, resolveCustomAttachmentFilename } from '../attachments/attachment.service';
 import { Campaign, CampaignStatus } from '../entities/campaign.entity';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity';
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity';
@@ -376,13 +376,17 @@ export class CampaignsService {
       where: { campaignId },
       select: ['extraData'],
     });
+    const attachmentsConfig = resolveAttachmentsConfig(campaign.channelConfig);
+    const totalSlots = Math.max(attachmentsConfig.length, 1); // almeno un tentativo per il fallback legacy
     const referenced = new Set<string>();
     for (const r of recipients) {
-      const filename = resolveCustomAttachmentFilename({
-        campaign,
-        extraData: r.extraData,
-      } as unknown as Recipient);
-      if (filename) referenced.add(filename);
+      for (let index = 0; index < totalSlots; index++) {
+        const filename = resolveCustomAttachmentFilename({
+          campaign,
+          extraData: r.extraData,
+        } as unknown as Recipient, index);
+        if (filename) referenced.add(filename);
+      }
     }
 
     // 3. Scarto dei non referenziati

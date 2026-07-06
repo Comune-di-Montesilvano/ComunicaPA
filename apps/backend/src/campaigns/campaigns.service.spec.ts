@@ -276,6 +276,29 @@ describe('CampaignsService', () => {
       expect(fs.existsSync(join(tmpDir, 'ok1.pdf'))).toBe(true);
     });
 
+    it('non scarta gli allegati oltre il primo (multi-allegato per destinatario)', async () => {
+      fs.writeFileSync(join(tmpDir, 'TASSA.pdf'), '%PDF');
+      fs.writeFileSync(join(tmpDir, 'RUOLO.pdf'), '%PDF');
+      mockCampaignRepo.findOneBy.mockResolvedValue({
+        id: 'c1',
+        channelConfig: {
+          attachments: [
+            { key: 'tassa', label: 'Tassa' },
+            { key: 'ruolo', label: 'Ruolo' },
+          ],
+        },
+      });
+      mockRecipientRepo.find.mockResolvedValue([
+        { extraData: { tassa: 'TASSA.pdf', ruolo: 'RUOLO.pdf' } },
+      ]);
+
+      const result = await service.finalizeAttachments('c1', []);
+
+      expect(fs.existsSync(join(tmpDir, 'TASSA.pdf'))).toBe(true);
+      expect(fs.existsSync(join(tmpDir, 'RUOLO.pdf'))).toBe(true);
+      expect(result.discarded).toBe(0);
+    });
+
     it('se nessun destinatario referenzia allegati scarta tutto', async () => {
       fs.writeFileSync(join(tmpDir, 'x.pdf'), '%PDF');
       mockCampaignRepo.findOneBy.mockResolvedValue({ id: 'c1', channelConfig: {} });
