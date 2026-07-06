@@ -54,7 +54,10 @@ function decodeJwtClaims(token: string): { cf: string; name: string; provider?: 
         payload['familyName'] ??
         '',
     );
-    const name = String(payload['name'] ?? '') || [given, family].filter(Boolean).join(' ');
+    const name =
+      (given && family)
+        ? `${given} ${family}`
+        : (String(payload['name'] ?? '') || [given, family].filter(Boolean).join(' '));
     
     // Rileva provider (SPID, CIE, eIDAS, IT-Wallet, ecc.)
     const amr = payload['amr'];

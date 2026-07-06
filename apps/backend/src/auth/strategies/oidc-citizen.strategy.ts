@@ -161,8 +161,10 @@ export class OidcCitizenStrategy extends PassportStrategy(Strategy, 'oidc-citize
     );
     const name =
       cachedClaims?.name ??
-      (extractClaimString(payload['name'] ?? '') ||
-        [givenName, familyName].filter(Boolean).join(' '));
+      ((givenName && familyName)
+        ? `${givenName} ${familyName}`
+        : (extractClaimString(payload['name'] ?? '') ||
+           [givenName, familyName].filter(Boolean).join(' ')));
 
     return {
       sub: String(payload['sub'] ?? ''),

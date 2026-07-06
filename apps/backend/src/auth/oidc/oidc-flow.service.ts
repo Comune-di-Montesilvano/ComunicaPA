@@ -213,8 +213,10 @@ export class OidcFlowService implements OnModuleDestroy {
         '',
     );
     const name =
-      extractClaimString(mergedClaims['name'] ?? '') ||
-      [givenName, familyName].filter(Boolean).join(' ');
+      (givenName && familyName)
+        ? `${givenName} ${familyName}`
+        : (extractClaimString(mergedClaims['name'] ?? '') ||
+           [givenName, familyName].filter(Boolean).join(' '));
 
     // Rileva provider (SPID, CIE, eIDAS, IT-Wallet, ecc.)
     const amr = mergedClaims['amr'];
