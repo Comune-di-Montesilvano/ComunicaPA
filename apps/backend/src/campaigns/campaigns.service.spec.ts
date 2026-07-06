@@ -741,7 +741,7 @@ describe('CampaignsService.previewMessage', () => {
     get: jest.fn(() => 'test-secret'),
   };
   const campaignRepoMock = { findOneBy: jest.fn() };
-  const recipientRepoMock = { find: jest.fn().mockResolvedValue([]) };
+  const recipientRepoMock = { find: jest.fn().mockResolvedValue([]), findOne: jest.fn() };
   const attemptRepoMock = { createQueryBuilder: jest.fn() };
   const queuesMock = { addBulk: jest.fn() };
 
@@ -793,6 +793,33 @@ describe('CampaignsService.previewMessage', () => {
 
     expect(result.bodyMarkdown).toContain('- **Avviso TARI**');
     expect(result.bodyHtml).toBeUndefined();
+  });
+
+  it('renderMessageForRecipient tags the download link with the real campaign channel (&ch=)', async () => {
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    (recipientRepoMock.findOne as jest.Mock).mockResolvedValue({
+      id: 'recipient-1',
+      codiceFiscale: 'RSSMRA80A01H501U',
+      fullName: 'Mario Rossi',
+      email: 'mario@example.com',
+      pec: null,
+      extraData: {},
+      campaign: {
+        channelType: 'EMAIL',
+        channelConfig: {
+          subject: 'Avviso per %nominativo%',
+          body: 'Gentile %nominativo%, scarica %allegato1%',
+          attachments: [{ key: 'file', label: 'Avviso TARI' }],
+        },
+      },
+    });
+
+    const result = await service.renderMessageForRecipient('recipient-1');
+
+    expect(result.bodyHtml).toContain('/public/download/');
+    expect(result.bodyHtml).toContain('&ch=EMAIL');
   });
 });
 
