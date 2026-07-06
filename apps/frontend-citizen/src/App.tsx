@@ -292,6 +292,45 @@ export function App(): React.JSX.Element {
     }
   }, [notifications]);
 
+  const handleLogout = (clientSideOnly = false) => {
+    const currentToken = token;
+    localStorage.removeItem('comunicapa_citizen_token');
+    localStorage.removeItem('comunicapa_citizen_cf');
+    localStorage.removeItem('comunicapa_citizen_name');
+    localStorage.removeItem('comunicapa_citizen_provider');
+    setToken(null);
+    setCf(null);
+    setName(null);
+    setProvider('Identità Digitale');
+    setSelectedNotif(null);
+
+    if (clientSideOnly) {
+      window.location.href = '/';
+      return;
+    }
+
+    // Termina anche la sessione SPID/CIE sul proxy, se configurato
+    if (authMode === 'oidc' && oidcLogoutUrl) {
+      const returnUrl = window.location.origin;
+      let targetUrl = oidcLogoutUrl;
+      try {
+        const logoutUrlObj = new URL(oidcLogoutUrl);
+        logoutUrlObj.searchParams.set('post_logout_redirect_uri', returnUrl);
+        if (currentToken) {
+          logoutUrlObj.searchParams.set('id_token_hint', currentToken);
+        }
+        targetUrl = logoutUrlObj.toString();
+      } catch (e) {
+        const separator = oidcLogoutUrl.includes('?') ? '&' : '?';
+        targetUrl = `${oidcLogoutUrl}${separator}post_logout_redirect_uri=${encodeURIComponent(returnUrl)}`;
+        if (currentToken) {
+          targetUrl += `&id_token_hint=${encodeURIComponent(currentToken)}`;
+        }
+      }
+      window.location.href = targetUrl;
+    }
+  };
+
   const fetchNotifications = async () => {
     setLoadingNotifications(true);
     setErrorNotifications(null);
@@ -299,6 +338,10 @@ export function App(): React.JSX.Element {
       const res = await fetch(`${API_BASE}/citizen/notifications`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
+      if (res.status === 401) {
+        handleLogout(true);
+        return;
+      }
       if (!res.ok) throw new Error('Impossibile caricare le comunicazioni');
       const data = await res.json();
       setNotifications(data);
@@ -366,39 +409,6 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const handleLogout = () => {
-    const currentToken = token;
-    localStorage.removeItem('comunicapa_citizen_token');
-    localStorage.removeItem('comunicapa_citizen_cf');
-    localStorage.removeItem('comunicapa_citizen_name');
-    localStorage.removeItem('comunicapa_citizen_provider');
-    setToken(null);
-    setCf(null);
-    setName(null);
-    setProvider('Identità Digitale');
-    setSelectedNotif(null);
-    // Termina anche la sessione SPID/CIE sul proxy, se configurato
-    if (authMode === 'oidc' && oidcLogoutUrl) {
-      const returnUrl = window.location.origin;
-      let targetUrl = oidcLogoutUrl;
-      try {
-        const logoutUrlObj = new URL(oidcLogoutUrl);
-        logoutUrlObj.searchParams.set('post_logout_redirect_uri', returnUrl);
-        if (currentToken) {
-          logoutUrlObj.searchParams.set('id_token_hint', currentToken);
-        }
-        targetUrl = logoutUrlObj.toString();
-      } catch (e) {
-        const separator = oidcLogoutUrl.includes('?') ? '&' : '?';
-        targetUrl = `${oidcLogoutUrl}${separator}post_logout_redirect_uri=${encodeURIComponent(returnUrl)}`;
-        if (currentToken) {
-          targetUrl += `&id_token_hint=${encodeURIComponent(currentToken)}`;
-        }
-      }
-      window.location.href = targetUrl;
-    }
-  };
-
   const handleOidcLogin = () => {
     setLoginError(null);
     window.location.href = `${API_BASE}/auth/citizen/oidc/start`;
@@ -409,6 +419,10 @@ export function App(): React.JSX.Element {
       const res = await fetch(`${API_BASE}/citizen/notifications/${notifId}/attachment`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
+      if (res.status === 401) {
+        handleLogout(true);
+        return;
+      }
       if (!res.ok) throw new Error('Download fallito.');
 
       const blob = await res.blob();
@@ -428,6 +442,10 @@ export function App(): React.JSX.Element {
         const updatedNotifRes = await fetch(`${API_BASE}/citizen/notifications/${notifId}`, {
           headers: { 'Authorization': `Bearer ${token}` },
         });
+        if (updatedNotifRes.status === 401) {
+          handleLogout(true);
+          return;
+        }
         if (updatedNotifRes.ok) {
           const updatedData = await updatedNotifRes.json();
           setSelectedNotif(updatedData);
@@ -726,7 +744,7 @@ export function App(): React.JSX.Element {
                   <button type="button" onClick={() => { setActiveTab('profile'); setUserMenuOpen(false); }}>
                     <i className="far fa-user" aria-hidden="true"></i> Il mio profilo
                   </button>
-                  <button type="button" className="danger" onClick={handleLogout}>
+                  <button type="button" className="danger" onClick={() => handleLogout()}>
                     <i className="fas fa-sign-out-alt" aria-hidden="true"></i> Esci
                   </button>
                 </div>
