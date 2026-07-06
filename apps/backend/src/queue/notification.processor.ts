@@ -1,13 +1,13 @@
 import { Inject, Logger, Injectable } from '@nestjs/common';
 import { WorkerHost } from '@nestjs/bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { DelayedError } from 'bullmq';
 import type { Job } from 'bullmq';
 import type { NotificationJobData, NotificationChannel } from '@comunicapa/shared-types';
 import Redis from 'ioredis';
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity';
-import { Campaign } from '../entities/campaign.entity';
+import { Campaign, CampaignStatus } from '../entities/campaign.entity';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity';
 import { THROTTLE_REDIS } from './notification-job.types';
 import { CHANNEL_STRATEGIES, IChannelStrategy } from '../channels/channel.interface';
@@ -180,6 +180,7 @@ export class NotificationProcessor extends WorkerHost {
       }
       await this.recipientRepo.update(recipientId, failedUpdate);
       await this.campaignRepo.increment({ id: campaignId }, 'failedCount', 1);
+      await this.checkAndCompleteCampaign(campaignId);
       throw primaryError;
     }
 
@@ -197,6 +198,27 @@ export class NotificationProcessor extends WorkerHost {
       attachmentExpiresAt,
     });
     await this.campaignRepo.increment({ id: campaignId }, 'sentCount', 1);
+    await this.checkAndCompleteCampaign(campaignId);
+  }
+
+  /**
+   * Se non restano destinatari PENDING/QUEUED per la campagna, la marca
+   * COMPLETED. Chiamato dopo ogni esito (successo o fallimento) del canale
+   * primario: è l'unico punto che porta una campagna fuori da QUEUED, che
+   * altrimenti resterebbe tale per sempre anche a invio terminato.
+   */
+  private async checkAndCompleteCampaign(campaignId: string): Promise<void> {
+    const remaining = await this.recipientRepo.count({
+      where: { campaignId, status: In([RecipientStatus.PENDING, RecipientStatus.QUEUED]) },
+    });
+    if (remaining > 0) return;
+
+    await this.campaignRepo
+      .createQueryBuilder()
+      .update()
+      .set({ status: CampaignStatus.COMPLETED, completedAt: new Date() })
+      .where('id = :id AND status = :queued', { id: campaignId, queued: CampaignStatus.QUEUED })
+      .execute();
   }
 
   private async checkAppIoProfile(

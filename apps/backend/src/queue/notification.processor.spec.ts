@@ -41,6 +41,7 @@ const mockCampaignRepo = {
 const mockRecipientRepo = {
   findOne: jest.fn(),
   update: jest.fn(),
+  count: jest.fn(),
 };
 
 const mockStrategy = {
@@ -115,6 +116,7 @@ describe('NotificationProcessor', () => {
     mockCampaignRepo.findOne.mockResolvedValue(mockCampaign);
     mockRecipientRepo.findOne.mockResolvedValue(mockRecipient);
     mockRecipientRepo.update.mockResolvedValue(undefined);
+    mockRecipientRepo.count.mockResolvedValue(1);
     mockCampaignRepo.increment.mockResolvedValue(undefined);
     mockCampaignRepo.createQueryBuilder.mockReturnValue(mockQb);
     mockStrategy.send.mockResolvedValue({ messageId: 'msg-001', responsePayload: {} });
@@ -139,6 +141,43 @@ describe('NotificationProcessor', () => {
 
   it('is defined', () => {
     expect(processor).toBeDefined();
+  });
+
+  describe('completamento campagna', () => {
+    it('marca la campagna COMPLETED quando non restano destinatari PENDING/QUEUED dopo un invio riuscito', async () => {
+      mockRecipientRepo.count.mockResolvedValueOnce(0);
+
+      await processor.process(mockJob(baseData));
+
+      expect(mockRecipientRepo.count).toHaveBeenCalledWith({
+        where: { campaignId: 'camp-1', status: expect.anything() },
+      });
+      expect(mockCampaignRepo.createQueryBuilder).toHaveBeenCalled();
+      expect(mockQb.update).toHaveBeenCalled();
+      expect(mockQb.set).toHaveBeenCalledWith(
+        expect.objectContaining({ status: CampaignStatus.COMPLETED, completedAt: expect.any(Date) }),
+      );
+    });
+
+    it('NON marca la campagna COMPLETED se restano altri destinatari da processare', async () => {
+      mockRecipientRepo.count.mockResolvedValueOnce(2);
+
+      await processor.process(mockJob(baseData));
+
+      expect(mockCampaignRepo.createQueryBuilder).not.toHaveBeenCalled();
+    });
+
+    it('marca comunque la campagna COMPLETED quando l\'ultimo destinatario fallisce (strategy lancia)', async () => {
+      mockStrategy.send.mockRejectedValueOnce(new Error('SMTP timeout'));
+      mockRecipientRepo.count.mockResolvedValueOnce(0);
+
+      await expect(processor.process(mockJob(baseData))).rejects.toThrow('SMTP timeout');
+
+      expect(mockCampaignRepo.createQueryBuilder).toHaveBeenCalled();
+      expect(mockQb.set).toHaveBeenCalledWith(
+        expect.objectContaining({ status: CampaignStatus.COMPLETED, completedAt: expect.any(Date) }),
+      );
+    });
   });
 
   it('process() aggiorna attempt PROCESSING → SUCCESS e chiama strategy', async () => {
