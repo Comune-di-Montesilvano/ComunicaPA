@@ -147,9 +147,62 @@ In "Ricerca Notifiche" (`App.tsx:3828-3908`), ogni riga risultato (`:3878-3885`)
 
 ---
 
+## Sezione 4 — Tag canale sui link di download
+
+### Stato attuale (scoperta durante il design)
+
+Esistono **due meccanismi di tracking download completamente separati e incoerenti**:
+- `PublicDownloadController` (link firmati email/PEC/App IO): incrementa `Recipient.downloadCount`/`firstDownloadedAt`/`lastDownloadedAt` (colonne dedicate).
+- `CitizenService.markAsDownloaded` (portale cittadino, `POST /citizen/notifications/:id/download`): incrementa `recipient.extraData['download_count']`/`['downloaded_at']` — campi ad-hoc, mai letti da nessuna statistica lato admin.
+
+Nessuno dei due registra **quale canale** ha generato il download. Il portale cittadino oggi non contribuisce affatto a nessuna statistica admin.
+
+### Backend
+
+Nuova entity `DownloadEvent` (`apps/backend/src/entities/download-event.entity.ts`): una riga per ogni download effettivo, qualunque canale — fonte di verità per le statistiche per canale, in aggiunta (non in sostituzione) ai contatori esistenti.
+
+```ts
+@Entity('download_events')
+export class DownloadEvent {
+  id: string (uuid, PK)
+  recipientId: string
+  channel: string  // 'EMAIL' | 'PEC' | 'APP_IO' | 'SEND' | 'POSTAL' | 'CITIZEN_PORTAL'
+  attachmentIndex: number
+  downloadedAt: Date (CreateDateColumn)
+  recipient: Recipient (ManyToOne, onDelete CASCADE)
+}
+```
+
+Migration nuova (unica di tutto il lavoro pianificato oggi) che crea la tabella + FK cascade, registrata in `database.module.ts`.
+
+**Firma del link include il canale** (`download-link.util.ts`): `signDownloadLink`/`verifyDownloadLink` prendono un parametro opzionale `channel` incluso nell'HMAC, così il parametro `?ch=` nell'URL non è falsificabile lato client (un cittadino non può cambiarlo per "mentire" sulle statistiche).
+
+`processTemplate()` prende un nuovo parametro opzionale `sourceChannel` (default `''`, retrocompatibile con tutte le chiamate/test esistenti che non lo passano) — lo inoltra alla generazione del link. Chi già chiama `processTemplate` per un invio reale (EmailStrategy, PecStrategy, co-consegna App IO in `notification.processor.ts`) passa il proprio canale reale.
+
+`PublicDownloadController`: verifica il canale nella firma, in aggiunta all'update dei contatori esistenti inserisce una riga `DownloadEvent`.
+
+`CitizenService.markAsDownloaded`: **unificato** — oltre al contatore `extraData` esistente (invariato, per non toccare il frontend cittadino), inserisce una riga `DownloadEvent` con `channel: 'CITIZEN_PORTAL'`.
+
+Nuovo endpoint statistiche: `GET /admin/campaigns/:id/download-channel-stats` → `{campaignId, byChannel: Record<string, number>}` (conteggio download raggruppato per canale, via query su `DownloadEvent` joinata a `Recipient` filtrata per campagna).
+
+Dettaglio notifica (Sezione 3): `NotificationDetailDto` guadagna un campo `downloads: Array<{channel: string; attachmentIndex: number; downloadedAt: string}>`.
+
+### Frontend
+
+- Dettaglio campagna: nuovo blocco "Download per Canale" (stesso stile del blocco breakdown multicanale della Sezione 1) con conteggio per canale.
+- Modal dettaglio notifica (Sezione 3): nuova sezione elenco download (canale + data) per quel destinatario.
+
+### Testing
+
+- `download-link.util.spec.ts`: nuovi test per firma/verifica con canale, oltre ai test esistenti (che restano invariati, verificano il comportamento di default `channel=''`).
+- `template.helper.spec.ts`: nuovo test che verifica la presenza di `&ch=EMAIL` nell'URL quando `sourceChannel` è passato; i test esistenti restano invariati (nessun `sourceChannel` passato → nessun `&ch=` nell'URL).
+- `public-download.controller.spec.ts`: aggiornato per il nuovo parametro `ch` e l'inserimento del `DownloadEvent` (mock del nuovo repository).
+- Nuovo `citizen.service.spec.ts` (non esisteva): verifica che `markAsDownloaded` inserisca un `DownloadEvent` con `channel: 'CITIZEN_PORTAL'` oltre ad aggiornare `extraData` come prima.
+- Unit test su `getDownloadChannelStats()`.
+
 ## Vincoli globali
 
-- Nessuna migration DB nuova prevista **a meno che** la verifica cascade (Sezione 2) riveli che manca `ON DELETE CASCADE` nelle migration reali — in tal caso va aggiunta prima di procedere.
-- Tutte e tre le route nuove seguono il prefisso `admin/` già in uso (`@Controller('admin/campaigns')`, `@Controller('admin/notifications-search')` — verificare il path esatto del controller esistente durante l'implementazione).
-- `@Roles('admin')` per la sola route di cancellazione; le altre due (stats, dettaglio notifica) restano `user`+`admin` come il resto dei rispettivi controller.
+- Cascade DB già verificato presente (`ON DELETE CASCADE` confermato in `1783023440824-InitialSchema.ts`/`1783148719725-FixRecipientCampaignJoin.ts`) — nessuna migration necessaria per la Sezione 2. **Una migration nuova serve invece per la Sezione 4** (tabella `download_events`), l'unica del lavoro pianificato oggi.
+- Tutte le route nuove seguono il prefisso `admin/` già in uso (`@Controller('admin/campaigns')`, `@Controller('admin/notifications-search')`).
+- `@Roles('admin')` per la sola route di cancellazione; tutte le altre restano `user`+`admin` come il resto dei rispettivi controller.
 - Nessuna nuova dipendenza npm (modal costruito con markup Bootstrap esistente).

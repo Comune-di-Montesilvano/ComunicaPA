@@ -97,6 +97,40 @@ export class IoServicesService {
     return this.toMasked(saved);
   }
 
+  async verifyProfile(codiceFiscale: string): Promise<{ success: boolean; active: boolean; message: string }> {
+    if (!codiceFiscale) throw new BadRequestException('Codice fiscale richiesto');
+
+    const resolved = await this.resolveApiKey();
+    if (!resolved) {
+      throw new BadRequestException('Nessun servizio App IO configurato o abilitato come predefinito');
+    }
+
+    const { APP_IO_BASE_URL } = await import('../channels/app-io/app-io.strategy');
+
+    try {
+      const response = await fetch(`${APP_IO_BASE_URL}/api/v1/profiles/${codiceFiscale.toUpperCase().trim()}`, {
+        method: 'GET',
+        headers: { 'Ocp-Apim-Subscription-Key': resolved.apiKey },
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          return { success: true, active: false, message: 'Cittadino non iscritto ad App IO o codice fiscale errato' };
+        }
+        return { success: false, active: false, message: `Errore verifica profilo App IO: HTTP ${response.status}` };
+      }
+
+      const profileData = (await response.json()) as { sender_allowed: boolean };
+      if (!profileData.sender_allowed) {
+        return { success: true, active: true, message: 'Iscritto ad App IO, ma messaggi da questo servizio disabilitati dall\'utente nelle impostazioni dell\'app' };
+      }
+
+      return { success: true, active: true, message: 'Iscritto ad App IO e messaggi abilitati' };
+    } catch (err: any) {
+      return { success: false, active: false, message: `Errore di connessione a PagoPA: ${err.message}` };
+    }
+  }
+
   async test(id: string, codiceFiscale: string): Promise<{ success: boolean; message: string }> {
     const entity = await this.repo.findOneBy({ id });
     if (!entity) throw new NotFoundException(`Servizio App IO ${id} non trovato`);

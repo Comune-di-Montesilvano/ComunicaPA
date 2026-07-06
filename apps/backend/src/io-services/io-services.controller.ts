@@ -44,4 +44,11 @@ export class IoServicesController {
   test(@Param('id', ParseUUIDPipe) id: string, @Body() body: TestIoServiceDto) {
     return this.svc.test(id, body.codiceFiscale);
   }
+
+  @Post('verify-profile')
+  @Roles('user', 'admin')
+  @HttpCode(HttpStatus.OK)
+  verifyProfile(@Body() body: { codiceFiscale: string }) {
+    return this.svc.verifyProfile(body.codiceFiscale);
+  }
 }

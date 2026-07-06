@@ -127,7 +127,7 @@ export function App(): React.JSX.Element {
   const [token, setToken] = useState<string | null>(localStorage.getItem('comunicapa_token'));
   const [username, setUsername] = useState<string | null>(localStorage.getItem('comunicapa_username'));
   const [role, setRole] = useState<string | null>(localStorage.getItem('comunicapa_role'));
-  const [view, setView] = useState<'dashboard' | 'invio-singolo' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'notifiche-ricerca' | 'template-dashboard' | 'impostazioni' | 'campaign-detail'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'invio-singolo' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'notifiche-ricerca' | 'verifica-appio' | 'template-dashboard' | 'impostazioni' | 'campaign-detail'>('dashboard');
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [templates, setTemplates] = useState<TemplateItem[]>([]);
   const [editingTemplate, setEditingTemplate] = useState<Partial<TemplateItem> & { type: 'MAIL' | 'APP_IO' } | null>(null);
@@ -148,6 +148,10 @@ export function App(): React.JSX.Element {
   const [searchResults, setSearchResults] = useState<Array<{ recipientId: string; campaignId: string; campaignName: string; codiceFiscale: string; fullName: string | null; channelType: string; status: string; createdAt: string }>>([]);
   const [searchTotal, setSearchTotal] = useState(0);
   const [searchLoading, setSearchLoading] = useState(false);
+
+  const [verificaCf, setVerificaCf] = useState('');
+  const [verificaLoading, setVerificaLoading] = useState(false);
+  const [verificaResult, setVerificaResult] = useState<{ success: boolean; active: boolean; message: string } | null>(null);
 
   const runNotificationSearch = async (page = searchPage) => {
     setSearchLoading(true);
@@ -580,6 +584,25 @@ export function App(): React.JSX.Element {
       throw new ApiAuthError();
     }
     return res;
+  };
+
+  const runVerificaAppIo = async () => {
+    if (!verificaCf.trim()) return;
+    setVerificaLoading(true);
+    setVerificaResult(null);
+    try {
+      const res = await apiFetch('/io-services/verify-profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codiceFiscale: verificaCf }),
+      });
+      const data = await res.json();
+      setVerificaResult(data);
+    } catch (err: any) {
+      setVerificaResult({ success: false, active: false, message: err.message || 'Errore di connessione' });
+    } finally {
+      setVerificaLoading(false);
+    }
   };
 
   const fetchCampaigns = async () => {
@@ -2482,6 +2505,14 @@ export function App(): React.JSX.Element {
             <span>Ricerca Notifiche</span>
           </a>
           <a
+            className={`bo-nav-item ${view === 'verifica-appio' ? 'is-active' : ''}`}
+            href="#"
+            onClick={(e) => { e.preventDefault(); setView('verifica-appio'); setVerificaCf(''); setVerificaResult(null); }}
+          >
+            <i className="fas fa-user-check"></i>
+            <span>Verifica App IO</span>
+          </a>
+          <a
             className={`bo-nav-item ${view === 'template-dashboard' ? 'is-active' : ''}`}
             href="#"
             onClick={(e) => { e.preventDefault(); setView('template-dashboard'); }}
@@ -3900,6 +3931,83 @@ export function App(): React.JSX.Element {
                       <button className="btn btn-outline-secondary btn-sm" onClick={() => runNotificationSearch(searchPage + 1)} disabled={searchLoading || searchPage * SEARCH_PAGE_SIZE >= searchTotal}>
                         Successiva <i className="fas fa-chevron-right"></i>
                       </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {view === 'verifica-appio' && (
+            <div style={{ maxWidth: '600px', margin: '0 auto' }}>
+              <h3 className="h5 fw-bold text-dark mb-3">
+                <i className="fas fa-user-check me-2"></i>Verifica Stato App IO
+              </h3>
+              <p className="small text-muted mb-4">
+                Inserisci il codice fiscale di un cittadino per verificare in tempo reale se ha installato App IO, se è attivo sul canale ed eventualmente se ha abilitato i messaggi inviati dall'Ente. Utile ad esempio per la ricerca degli irreperibili.
+              </p>
+
+              <div className="card shadow-sm p-4 mb-4">
+                <div className="mb-3">
+                  <label className="form-label small fw-bold">Codice Fiscale</label>
+                  <div className="input-group input-group-sm">
+                    <span className="input-group-text"><i className="fas fa-id-card"></i></span>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Inserisci il codice fiscale (16 caratteri)"
+                      maxLength={16}
+                      value={verificaCf}
+                      onChange={e => setVerificaCf(e.target.value.toUpperCase().trim())}
+                      onKeyDown={e => { if (e.key === 'Enter') runVerificaAppIo(); }}
+                    />
+                    <button
+                      className="btn btn-primary"
+                      type="button"
+                      onClick={runVerificaAppIo}
+                      disabled={verificaLoading || !verificaCf.trim()}
+                    >
+                      {verificaLoading ? (
+                        <>
+                          <i className="fas fa-spinner fa-spin me-1"></i>Verifica...
+                        </>
+                      ) : (
+                        <>
+                          <i className="fas fa-search me-1"></i>Verifica
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {verificaResult && (
+                  <div className={`mt-3 p-3 border rounded ${
+                    !verificaResult.success ? 'border-danger bg-light' : 
+                    !verificaResult.active ? 'border-secondary bg-light' : 
+                    verificaResult.message.includes('disabilitati') ? 'border-warning bg-light' : 
+                    'border-success bg-light'
+                  }`}>
+                    <div className="d-flex align-items-start gap-3">
+                      <div style={{ fontSize: '1.8rem' }}>
+                        {!verificaResult.success ? (
+                          <i className="fas fa-circle-exclamation text-danger"></i>
+                        ) : !verificaResult.active ? (
+                          <i className="fas fa-circle-xmark text-secondary"></i>
+                        ) : verificaResult.message.includes('disabilitati') ? (
+                          <i className="fas fa-circle-exclamation text-warning"></i>
+                        ) : (
+                          <i className="fas fa-circle-check text-success"></i>
+                        )}
+                      </div>
+                      <div>
+                        <h6 className="fw-bold mb-1">
+                          {!verificaResult.success ? 'Errore di sistema' : 
+                           !verificaResult.active ? 'Cittadino non attivo' : 
+                           verificaResult.message.includes('disabilitati') ? 'Attivo con restrizioni' : 
+                           'Cittadino attivo su App IO'}
+                        </h6>
+                        <p className="small text-muted mb-0">{verificaResult.message}</p>
+                      </div>
                     </div>
                   </div>
                 )}

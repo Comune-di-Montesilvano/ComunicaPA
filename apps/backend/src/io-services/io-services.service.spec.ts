@@ -69,4 +69,64 @@ describe('IoServicesService', () => {
     expect(repoMock.find).toHaveBeenCalledWith({ where: { isDefault: true } });
     expect(resolved?.idService).toBe('SVC-DEFAULT');
   });
+
+  describe('verifyProfile', () => {
+    const originalFetch = global.fetch;
+
+    afterEach(() => {
+      global.fetch = originalFetch;
+    });
+
+    it('ritorna active: true e success: true se il profilo esiste ed è abilitato', async () => {
+      const fetchMock = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ sender_allowed: true }),
+      });
+      global.fetch = fetchMock;
+
+      jest.spyOn(service, 'resolveApiKey').mockResolvedValue({ apiKey: 'key', idService: 'svc' });
+
+      const result = await service.verifyProfile('RSSMRA85M01H501Z');
+      expect(result).toEqual({
+        success: true,
+        active: true,
+        message: 'Iscritto ad App IO e messaggi abilitati',
+      });
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/profiles/RSSMRA85M01H501Z'),
+        expect.any(Object),
+      );
+    });
+
+    it('ritorna active: false se il profilo risponde 404', async () => {
+      const fetchMock = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+      });
+      global.fetch = fetchMock;
+
+      jest.spyOn(service, 'resolveApiKey').mockResolvedValue({ apiKey: 'key', idService: 'svc' });
+
+      const result = await service.verifyProfile('RSSMRA85M01H501Z');
+      expect(result).toEqual({
+        success: true,
+        active: false,
+        message: 'Cittadino non iscritto ad App IO o codice fiscale errato',
+      });
+    });
+
+    it('ritorna active: true ma messaggio disabilitato se sender_allowed è false', async () => {
+      const fetchMock = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ sender_allowed: false }),
+      });
+      global.fetch = fetchMock;
+
+      jest.spyOn(service, 'resolveApiKey').mockResolvedValue({ apiKey: 'key', idService: 'svc' });
+
+      const result = await service.verifyProfile('RSSMRA85M01H501Z');
+      expect(result.active).toBe(true);
+      expect(result.message).toContain('disabilitati');
+    });
+  });
 });
