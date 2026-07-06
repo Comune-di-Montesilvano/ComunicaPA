@@ -73,6 +73,21 @@ docker compose rm -sf backend && docker volume rm comunicapa_backend_node_module
 
 Il nome del volume `node_modules` non sempre coincide col nome del servizio (es. `frontend-admin` → volume `comunicapa_admin_node_modules`, non `comunicapa_frontend-admin_node_modules`): verificare con `docker volume ls | grep node_modules` prima di eseguire `docker volume rm`.
 
+**Attenzione worktree/checkout paralleli — `docker-compose.yml` ha `name: comunicapa` fisso in cima al file.** Qualsiasi `docker compose` lanciato da QUALSIASI checkout/worktree di questo repo (anche una cartella diversa dalla principale) punta agli **stessi container condivisi** — non crea uno stack isolato, anche passando porte/env diversi. Un `docker compose up` da un worktree può silenziosamente ricreare in-place i container dev del checkout principale, ricollegandoli al codice del worktree (incidente reale già capitato). Se serve lavorare da un worktree/checkout secondario: **mai `docker compose`**, usare `docker run`/`docker exec` diretti sui container/volumi named già esistenti, es.:
+
+```bash
+# Test/tsc contro il codice del worktree, senza toccare lo stack principale
+MSYS_NO_PATHCONV=1 docker run --rm \
+  -v "$(pwd)/apps/backend/src:/app/apps/backend/src" \
+  -v "$(pwd)/packages/shared-types/src:/app/packages/shared-types/src" \
+  -v comunicapa_backend_node_modules:/app/node_modules \
+  -w /app/apps/backend comunicapa/backend:dev node_modules/.bin/jest --maxWorkers=2
+
+# Migration contro un DB temporaneo, sul container postgres già in esecuzione
+docker exec comunicapa-postgres-1 psql -U comunicapa -d comunicapa_db -c "CREATE DATABASE migration_test;"
+docker exec -e DATABASE_URL="postgresql://comunicapa:<password>@postgres:5432/migration_test" comunicapa-backend-1 node_modules/.bin/typeorm-ts-node-commonjs migration:run -d src/database/data-source.ts
+```
+
 ## Test
 
 ```bash
@@ -94,7 +109,7 @@ docker compose exec frontend-citizen node_modules/.bin/tsc -p tsconfig.app.json 
 docker compose exec backend node -e "const jwt=require('/app/node_modules/.pnpm/node_modules/jsonwebtoken');console.log(jwt.sign({sub:'debug',username:'debug',role:'admin',type:'operator'},process.env.JWT_SECRET,{expiresIn:'10m'}))"
 ```
 
-**Baseline nota:** 7 test falliscono da prima (email.strategy, pec.strategy, notification.processor — template vecchi, `checkAndCompleteCampaign` inesistente). Non sono regressioni: il criterio per una modifica è "failure set identico".
+**Baseline:** suite pulita, nessun fallimento noto. Il criterio per una modifica resta "failure set identico" al prima — se emerge un nuovo fallimento, è una regressione, non baseline nota.
 
 ## Configurazione runtime (settings in DB)
 
@@ -114,7 +129,7 @@ docker compose exec postgres psql -U comunicapa -d comunicapa_db -c "DROP DATABA
 
 ## Topologia API — gotcha
 
-Il backend NON ha prefisso globale `/api`: le route sono `/settings`, `/version`, `/branding`... In produzione il nginx di ogni frontend proxya `/api/` verso `backend:8080` **strippando il prefisso** (same-origin, niente CORS, backend mai esposto dal proxy esterno). In dev il browser chiama direttamente `http://localhost:8080`. `API_BASE` arriva a runtime da `/config.js` (dev: `public/config.js`; prod: generato dall'entrypoint nginx da `API_BASE`, default `/api`).
+Le route operatore sono segmentate sotto `admin/*` (`admin/campaigns`, `admin/settings`, `admin/auth`, `admin/notifications-search`...), quelle cittadino sotto `citizen/*` (`citizen/auth`, `citizen/notifications`...). Restano bare solo `public/download/*` e le route di root (`/version`, `/branding`). In produzione il nginx di ogni frontend proxya `/api/` verso `backend:8080` **strippando il prefisso** (same-origin, niente CORS, backend mai esposto dal proxy esterno). In dev il browser chiama direttamente `http://localhost:8080`. `API_BASE` arriva a runtime da `/config.js` (dev: `public/config.js`; prod: generato dall'entrypoint nginx da `API_BASE`, default `/api`); il frontend admin usa `ADMIN_API_BASE = \`${API_BASE}/admin\`` per tutte le chiamate autenticate operatore.
 
 ## CI/CD
 
