@@ -1,15 +1,31 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, type LogLevel } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { mkdirSync } from 'fs';
 import { AppModule } from './app.module';
 import type { AppConfiguration } from './config/configuration';
 import { assertProductionSecrets } from './config/production-guards';
 
+// docker-compose.yml passa già LOG_LEVEL al container (default 'info'), ma
+// finora nessun codice lo leggeva: il default NestJS esclude 'debug'/
+// 'verbose', quindi i log di dettaglio dei motori di invio (payload/risposte
+// PEC/Email/App IO/SEND/Postal) non comparivano mai. Impostare LOG_LEVEL=debug
+// in .env e riavviare il container li abilita senza rebuild.
+const LOG_LEVELS_BY_NAME: Record<string, LogLevel[]> = {
+  error: ['error'],
+  warn: ['error', 'warn'],
+  info: ['error', 'warn', 'log'],
+  log: ['error', 'warn', 'log'],
+  debug: ['error', 'warn', 'log', 'debug'],
+  verbose: ['error', 'warn', 'log', 'debug', 'verbose'],
+};
+
 async function bootstrap(): Promise<void> {
   mkdirSync('/tmp/comunicapa-uploads', { recursive: true });
 
-  const app = await NestFactory.create(AppModule);
+  const logLevelName = (process.env['LOG_LEVEL'] ?? 'info').toLowerCase();
+  const logger = LOG_LEVELS_BY_NAME[logLevelName] ?? LOG_LEVELS_BY_NAME['info'];
+  const app = await NestFactory.create(AppModule, { logger });
 
   // Guardia di sicurezza: rifiuta l'avvio in ambienti non-development con segreti di default.
   const config = app.get<ConfigService<AppConfiguration, true>>(ConfigService);
