@@ -113,7 +113,7 @@ export class CampaignsService {
    * che è stato realmente inviato, con lo stesso motore di `previewMessage`
    * (nessuna duplicazione di logica).
    */
-  async renderMessageForRecipient(recipientId: string): Promise<PreviewMessageResult> {
+  async renderMessageForRecipient(recipientId: string, linkChannelTag?: string): Promise<PreviewMessageResult> {
     const recipient = await this.recipientRepo.findOne({ where: { id: recipientId }, relations: ['campaign'] });
     if (!recipient) throw new NotFoundException(`Recipient ${recipientId} not found`);
 
@@ -122,7 +122,7 @@ export class CampaignsService {
     const bodyTemplate = (campaign.channelConfig?.['body'] as string) || '';
     const attachmentLabels = resolveAttachmentsConfig(campaign.channelConfig).map((a) => a.label);
 
-    return this.renderMessage(campaign.channelType, subjectTemplate, bodyTemplate, attachmentLabels, recipient);
+    return this.renderMessage(campaign.channelType, subjectTemplate, bodyTemplate, attachmentLabels, recipient, undefined, linkChannelTag);
   }
 
   private async renderMessage(
@@ -132,6 +132,7 @@ export class CampaignsService {
     attachmentLabels: string[],
     recipientLike: Recipient,
     format?: 'html' | 'markdown',
+    linkChannelTag?: string,
   ): Promise<PreviewMessageResult> {
     const brandName = (await this.settings.get<string>('brand.name')) || 'Comune di Montesilvano';
     const publicApiUrl = await this.settings.get<string>('system.publicUrl');
@@ -140,9 +141,10 @@ export class CampaignsService {
     const retentionDays = getEffectiveRetentionDays({ retentionDays: null }, retentionMaxDays);
     const expiresAtUnix = Math.floor(Date.now() / 1000) + retentionDays * 86400;
     const resolvedFormat: 'html' | 'markdown' = format ?? (channelType === 'APP_IO' ? 'markdown' : 'html');
+    const linkTag = linkChannelTag ?? channelType;
 
-    const subject = processTemplate(subjectTemplate, recipientLike, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, resolvedFormat, channelType);
-    const body = processTemplate(bodyTemplate, recipientLike, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, resolvedFormat, channelType);
+    const subject = processTemplate(subjectTemplate, recipientLike, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, resolvedFormat, linkTag);
+    const body = processTemplate(bodyTemplate, recipientLike, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, resolvedFormat, linkTag);
 
     if (resolvedFormat === 'markdown') {
       return { subject, bodyMarkdown: body };

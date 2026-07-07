@@ -102,6 +102,7 @@ interface Notification {
   subject: string;
   bodyHtml?: string;
   bodyMarkdown?: string;
+  attachments: Array<{ index: number; label: string }>;
 }
 
 function statusBadge(status: Notification['status']): { cls: string; label: string } {
@@ -416,9 +417,9 @@ export function App(): React.JSX.Element {
     window.location.href = `${API_BASE}/citizen/auth/oidc/start`;
   };
 
-  const handleDownloadAttachment = async (notifId: string) => {
+  const handleDownloadAttachment = async (notifId: string, attachmentIndex: number) => {
     try {
-      const res = await fetch(`${API_BASE}/citizen/notifications/${notifId}/attachment`, {
+      const res = await fetch(`${API_BASE}/citizen/notifications/${notifId}/attachment/${attachmentIndex}`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       if (res.status === 401) {
@@ -431,7 +432,7 @@ export function App(): React.JSX.Element {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `avviso_comune_${notifId.slice(0, 8)}.pdf`;
+      a.download = `avviso_comune_${notifId.slice(0, 8)}_${attachmentIndex + 1}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -989,13 +990,26 @@ export function App(): React.JSX.Element {
                     )}
                   </div>
                   <div className="avviso-actions">
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      onClick={() => handleDownloadAttachment(selectedNotif.id)}
-                    >
-                      <i className="fas fa-file-pdf" aria-hidden="true"></i> Scarica documento PDF firmato
-                    </button>
+                    {selectedNotif.attachments.length === 0 ? (
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={() => handleDownloadAttachment(selectedNotif.id, 0)}
+                      >
+                        <i className="fas fa-file-pdf" aria-hidden="true"></i> Scarica documento
+                      </button>
+                    ) : (
+                      selectedNotif.attachments.map((att) => (
+                        <button
+                          key={att.index}
+                          type="button"
+                          className="btn btn-primary"
+                          onClick={() => handleDownloadAttachment(selectedNotif.id, att.index)}
+                        >
+                          <i className="fas fa-file-pdf" aria-hidden="true"></i> Scarica allegato {att.index + 1}: {att.label}
+                        </button>
+                      ))
+                    )}
                   </div>
                 </div>
               </div>

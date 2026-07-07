@@ -3,8 +3,13 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Recipient } from '../entities/recipient.entity';
 import { DownloadEvent } from '../entities/download-event.entity';
-import { AttachmentService } from '../attachments/attachment.service';
+import { AttachmentService, resolveAttachmentsConfig } from '../attachments/attachment.service';
 import { CampaignsService } from '../campaigns/campaigns.service';
+
+export interface CitizenAttachmentDto {
+  index: number;
+  label: string;
+}
 
 export interface CitizenNotificationDto {
   id: string;
@@ -19,6 +24,7 @@ export interface CitizenNotificationDto {
   subject: string;
   bodyHtml?: string;
   bodyMarkdown?: string;
+  attachments: CitizenAttachmentDto[];
 }
 
 @Injectable()
@@ -35,7 +41,8 @@ export class CitizenService {
   ) {}
 
   private async toCitizenDto(recipient: Recipient): Promise<CitizenNotificationDto> {
-    const preview = await this.campaignsService.renderMessageForRecipient(recipient.id);
+    const preview = await this.campaignsService.renderMessageForRecipient(recipient.id, 'CITIZEN_PORTAL');
+    const attachments = resolveAttachmentsConfig(recipient.campaign.channelConfig).map((a, index) => ({ index, label: a.label }));
     return {
       id: recipient.id,
       codiceFiscale: recipient.codiceFiscale,
@@ -49,6 +56,7 @@ export class CitizenService {
       subject: preview.subject,
       bodyHtml: preview.bodyHtml,
       bodyMarkdown: preview.bodyMarkdown,
+      attachments,
     };
   }
 
@@ -82,7 +90,7 @@ export class CitizenService {
     return this.toCitizenDto(recipient);
   }
 
-  async markAsDownloaded(id: string, codiceFiscale: string): Promise<Recipient> {
+  async markAsDownloaded(id: string, codiceFiscale: string, attachmentIndex = 0): Promise<Recipient> {
     const recipient = await this.findRecipientEntity(id, codiceFiscale);
 
     if (!recipient.extraData) {
@@ -95,15 +103,15 @@ export class CitizenService {
 
     await this.recipientRepo.save(recipient);
     try {
-      await this.downloadEventRepo.insert({ recipientId: id, channel: 'CITIZEN_PORTAL', attachmentIndex: 0 });
+      await this.downloadEventRepo.insert({ recipientId: id, channel: 'CITIZEN_PORTAL', attachmentIndex });
     } catch (err: any) {
       this.logger.warn(`Impossibile registrare DownloadEvent per recipient ${id}: ${err?.message ?? err}`);
     }
     return recipient;
   }
 
-  async generateAttachmentPdf(id: string, codiceFiscale: string): Promise<Buffer> {
+  async generateAttachmentPdf(id: string, codiceFiscale: string, attachmentIndex = 0): Promise<Buffer> {
     const recipient = await this.findRecipientEntity(id, codiceFiscale);
-    return this.attachmentService.generatePdfBuffer(recipient);
+    return this.attachmentService.generatePdfBuffer(recipient, attachmentIndex);
   }
 }
