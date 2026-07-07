@@ -50,13 +50,18 @@ describe('processTemplate — macro %%elenco_allegati%%', () => {
   const secret = 'test-secret';
   const exp = 1893456000;
 
-  it('formato html: genera una tabella con etichetta e link per ogni allegato', () => {
+  it('formato html: genera un blocco per ogni allegato con etichetta e bottone di download evidente', () => {
     const result = processTemplate('%%elenco_allegati%%', baseRecipient, 'http://api.test', secret, exp, ['Tassa', 'Ruolo'], 'html');
     expect(result).toContain('<table');
     expect(result).toContain('Tassa');
     expect(result).toContain('Ruolo');
     expect(result).toContain(`/public/download/${baseRecipient.id}/0?exp=${exp}&sig=`);
     expect(result).toContain(`/public/download/${baseRecipient.id}/1?exp=${exp}&sig=`);
+    // Il link di download deve essere un bottone prominente (colore brand), non un semplice testo sottolineato
+    expect(result).toContain('background-color:#0066cc');
+    expect(result).toContain('border-radius');
+    // Un blocco/card distinto per ogni allegato (non una singola tabella con righe multiple)
+    expect((result.match(/<table/g) || []).length).toBe(2);
   });
 
   it('formato markdown: genera un elenco puntato senza tag HTML', () => {
