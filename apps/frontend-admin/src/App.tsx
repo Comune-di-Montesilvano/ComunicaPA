@@ -3184,7 +3184,7 @@ export function App(): React.JSX.Element {
                                     className="form-control form-control-sm"
                                     value={wizAppIoSubjectOverride}
                                     onChange={e => setWizAppIoSubjectOverride(e.target.value)}
-                                    placeholder="Es: Avviso TARI - %nominativo%"
+                                    placeholder="Es: Avviso TARI - %%nominativo%%"
                                     required
                                   />
                                 </div>
@@ -3466,7 +3466,7 @@ export function App(): React.JSX.Element {
                         })}
                       </div>
                       <div className="form-text small text-muted">
-                        Ordine di selezione = %allegato1%, %allegato2%, ... nel template. Etichetta obbligatoria per usare il blocco "Elenco Allegati".
+                        Ordine di selezione = %%allegato1%%, %%allegato2%%, ... nel template. Etichetta obbligatoria per usare il blocco "Elenco Allegati".
                       </div>
                     </div>
                   </div>
@@ -3706,7 +3706,7 @@ export function App(): React.JSX.Element {
                       <input
                         type="text"
                         className="form-control form-control-sm"
-                        placeholder="Es: Avviso Scadenza TARI 2026 - %nominativo%"
+                        placeholder="Es: Avviso Scadenza TARI 2026 - %%nominativo%%"
                         value={wizSubject}
                         onChange={e => setWizSubject(e.target.value)}
                         required
@@ -3719,13 +3719,13 @@ export function App(): React.JSX.Element {
                         value={wizBody}
                         onChange={setWizBody}
                         placeholders={[
-                          ...(wizAttachments.length > 0 ? [{ label: 'Elenco Allegati', token: '%elenco_allegati%' }] : []),
-                          ...wizAttachments.map((a, idx) => ({ label: `Link: ${a.label || `Allegato ${idx + 1}`}`, token: `%allegato${idx + 1}%` })),
-                          { label: 'Nominativo', token: '%nominativo%' },
-                          { label: 'Codice Fiscale', token: '%codice_fiscale%' },
+                          ...(wizAttachments.length > 0 ? [{ label: 'Elenco Allegati', token: '%%elenco_allegati%%' }] : []),
+                          ...wizAttachments.map((a, idx) => ({ label: `Link: ${a.label || `Allegato ${idx + 1}`}`, token: `%%allegato${idx + 1}%%` })),
+                          { label: 'Nominativo', token: '%%nominativo%%' },
+                          { label: 'Codice Fiscale', token: '%%codice_fiscale%%' },
                           ...wizCsvHeaders
                             .filter(h => h !== wizMapping.codice_fiscale && h !== wizMapping.full_name && h !== wizMapping.email && h !== wizMapping.pec && !wizAttachments.some(a => a.key === h))
-                            .map(h => ({ label: `Colonna: ${h}`, token: `%${h}%` })),
+                            .map(h => ({ label: `Colonna: ${h}`, token: `%%${h}%%` })),
                         ]}
                       />
                     </div>
@@ -4322,8 +4322,8 @@ export function App(): React.JSX.Element {
                         value={editingTemplate.bodyHtml || ''}
                         onChange={(v) => setEditingTemplate({ ...editingTemplate, bodyHtml: v })}
                         placeholders={[
-                          { label: 'Nominativo', token: '%nominativo%' },
-                          { label: 'Codice Fiscale', token: '%codice_fiscale%' },
+                          { label: 'Nominativo', token: '%%nominativo%%' },
+                          { label: 'Codice Fiscale', token: '%%codice_fiscale%%' },
                         ]}
                       />
                     </div>

@@ -765,8 +765,8 @@ describe('CampaignsService.previewMessage', () => {
 
     const result = await service.previewMessage({
       channelType: 'EMAIL',
-      subject: 'Avviso per %nominativo%',
-      body: 'Gentile %nominativo%, scarica %allegato1%',
+      subject: 'Avviso per %%nominativo%%',
+      body: 'Gentile %%nominativo%%, scarica %%allegato1%%',
       attachments: [{ key: 'file', label: 'Avviso TARI' }],
       recipient: { codiceFiscale: 'RSSMRA80A01H501U', fullName: 'Mario Rossi' },
     });
@@ -785,7 +785,7 @@ describe('CampaignsService.previewMessage', () => {
     const result = await service.previewMessage({
       channelType: 'APP_IO',
       subject: 'Avviso',
-      body: 'Elenco: %elenco_allegati%',
+      body: 'Elenco: %%elenco_allegati%%',
       attachments: [{ key: 'file', label: 'Avviso TARI' }],
       recipient: { codiceFiscale: 'RSSMRA80A01H501U' },
       format: 'markdown',
@@ -809,8 +809,8 @@ describe('CampaignsService.previewMessage', () => {
       campaign: {
         channelType: 'EMAIL',
         channelConfig: {
-          subject: 'Avviso per %nominativo%',
-          body: 'Gentile %nominativo%, scarica %allegato1%',
+          subject: 'Avviso per %%nominativo%%',
+          body: 'Gentile %%nominativo%%, scarica %%allegato1%%',
           attachments: [{ key: 'file', label: 'Avviso TARI' }],
         },
       },

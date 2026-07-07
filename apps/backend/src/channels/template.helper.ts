@@ -2,13 +2,16 @@ import type { Recipient } from '../entities/recipient.entity';
 import { signDownloadLink } from './download-link.util';
 
 /**
- * Replaces fixed placeholders (%allegato1%, %allegato2%, ...), the standard
- * "elenco allegati" macro (%elenco_allegati%), standard fields (%nominativo%,
- * %nome%, %cf%, etc.), and dynamic CSV variables (both direct %chiave% and
- * %parametro1(mappato"chiave")%) with the corresponding recipient values.
+ * Replaces fixed placeholders (%%allegato1%%, %%allegato2%%, ...), the standard
+ * "elenco allegati" macro (%%elenco_allegati%%), standard fields (%%nominativo%%,
+ * %%nome%%, %%cf%%, etc.), and dynamic CSV variables (both direct %%chiave%% and
+ * %%parametro1(mappato"chiave")%%) with the corresponding recipient values.
+ *
+ * Delimitatore doppio (%%...%%, non %...%): un singolo "%" letterale nel testo
+ * (es. "60% del tributo") non deve mai essere scambiato per un placeholder.
  *
  * `attachmentLabels` è l'elenco delle etichette configurate sulla campagna
- * (in ordine: indice 0 → %allegato1%, indice 1 → %allegato2%, ...). Ogni
+ * (in ordine: indice 0 → %%allegato1%%, indice 1 → %%allegato2%%, ...). Ogni
  * etichetta produce un link di download firmato per quell'indice specifico.
  */
 export function processTemplate(
@@ -29,14 +32,14 @@ export function processTemplate(
     return `${publicApiUrl}/public/download/${recipient.id}/${index}?exp=${expiresAtUnix}&sig=${sig}${chParam}`;
   };
 
-  // 1. Placeholder individuali %allegato1%, %allegato2%, ... (uno per etichetta configurata)
+  // 1. Placeholder individuali %%allegato1%%, %%allegato2%%, ... (uno per etichetta configurata)
   attachmentLabels.forEach((_, index) => {
-    const placeholder = new RegExp(`%allegato${index + 1}%`, 'g');
+    const placeholder = new RegExp(`%%allegato${index + 1}%%`, 'g');
     content = content.replace(placeholder, buildDownloadUrl(index));
   });
 
-  // 2. Macro %elenco_allegati%: blocco con etichetta+link per ogni allegato
-  if (content.includes('%elenco_allegati%')) {
+  // 2. Macro %%elenco_allegati%%: blocco con etichetta+link per ogni allegato
+  if (content.includes('%%elenco_allegati%%')) {
     const block = attachmentLabels.length === 0
       ? ''
       : format === 'markdown'
@@ -49,7 +52,7 @@ export function processTemplate(
                 `<tr><td style="padding:6px 12px; border-bottom:1px solid #edf2f7;">${label}</td><td style="padding:6px 12px; border-bottom:1px solid #edf2f7;"><a href="${buildDownloadUrl(index)}">Scarica</a></td></tr>`,
             )
             .join('')}</table>`;
-    content = content.replace(/%elenco_allegati%/g, block);
+    content = content.replace(/%%elenco_allegati%%/g, block);
   }
 
   // 3. Helper to get recipient value case-insensitively
@@ -78,17 +81,16 @@ export function processTemplate(
     return '';
   };
 
-  // 4. Replace %parametro\d+(mappato"key")%
-  content = content.replace(/%parametro\d+\(mappato"([^"]+)"\)%/gi, (_match, key) => {
+  // 4. Replace %%parametro\d+(mappato"key")%%
+  content = content.replace(/%%parametro\d+\(mappato"([^"]+)"\)%%/gi, (_match, key) => {
     return getVal(key);
   });
 
-  // 5. Replace %key% (esclude %allegatoN% residui non consumati allo step 1:
+  // 5. Replace %%key%% (esclude %%allegatoN%% residui non consumati allo step 1:
   // nessuna etichetta configurata per quell'indice → il placeholder resta letterale).
-  // Il charset esclude anche gli spazi: senza questo vincolo, un "%" letterale
-  // in una frase (es. "60% per cento") si accoppia col prossimo "%" trovato nel
-  // documento e tutto il testo in mezzo viene inghiottito come chiave placeholder.
-  content = content.replace(/%([^%\s()]+)%/gi, (fullMatch, key) => {
+  // Delimitatore doppio: un "%" letterale isolato (es. "60% per cento") non forma
+  // mai un placeholder da solo, quindi la chiave può contenere anche spazi.
+  content = content.replace(/%%([^%]+?)%%/gi, (fullMatch, key) => {
     if (/^allegato\d+$/i.test(key.trim())) {
       return fullMatch;
     }
