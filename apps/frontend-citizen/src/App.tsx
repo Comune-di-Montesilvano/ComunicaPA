@@ -98,11 +98,10 @@ interface Notification {
   status: 'pending' | 'queued' | 'sent' | 'failed' | 'skipped';
   createdAt: string;
   extraData?: Record<string, any>;
-  campaign?: {
-    name: string;
-    description: string | null;
-    channelType: string;
-  };
+  channelType: string;
+  subject: string;
+  bodyHtml?: string;
+  bodyMarkdown?: string;
 }
 
 function statusBadge(status: Notification['status']): { cls: string; label: string } {
@@ -158,19 +157,19 @@ export function App(): React.JSX.Element {
   const hasActiveFilters = !!(searchText || filterStatus !== 'all' || filterChannel !== 'all' || filterDateFrom || filterDateTo);
 
   const availableChannels = Array.from(
-    new Set(notifications.map((n) => n.campaign?.channelType).filter((c): c is string => !!c)),
+    new Set(notifications.map((n) => n.channelType).filter((c): c is string => !!c)),
   );
 
   const filteredNotifications = notifications.filter((n) => {
     if (searchText) {
-      const haystack = `${n.campaign?.name || ''} ${n.campaign?.description || ''}`.toLowerCase();
+      const haystack = `${n.subject || ''}`.toLowerCase();
       if (!haystack.includes(searchText.toLowerCase())) return false;
     }
     if (filterStatus !== 'all') {
       const bucket = n.status === 'sent' ? 'sent' : (n.status === 'failed' || n.status === 'skipped') ? 'failed' : 'pending';
       if (bucket !== filterStatus) return false;
     }
-    if (filterChannel !== 'all' && n.campaign?.channelType !== filterChannel) return false;
+    if (filterChannel !== 'all' && n.channelType !== filterChannel) return false;
     if (filterDateFrom && new Date(n.createdAt) < new Date(filterDateFrom)) return false;
     if (filterDateTo) {
       const to = new Date(filterDateTo);
@@ -905,10 +904,9 @@ export function App(): React.JSX.Element {
                                 <span className="dot"></span>{badge.label}
                               </span>
                             </div>
-                            <h4 className="notif-list-item-title">{n.campaign?.name || '—'}</h4>
-                            <p className="notif-list-item-desc">{n.campaign?.description || ''}</p>
+                            <h4 className="notif-list-item-title">{n.subject || '—'}</h4>
                             <div className="notif-list-item-meta">
-                              <span>Canale: <strong>{n.campaign?.channelType || '—'}</strong></span>
+                              <span>Canale: <strong>{n.channelType || '—'}</strong></span>
                               {isDownloaded && (
                                 <span className="status status-notif-received">
                                   <span className="dot"></span>Scaricato
@@ -952,14 +950,21 @@ export function App(): React.JSX.Element {
                     </div>
                   </div>
                   <div className="avviso-body">
-                    <h3 className="ms-h3" style={{ marginBottom: 'var(--sp-3)' }}>{selectedNotif.campaign?.name || '—'}</h3>
-                    <p style={{ whiteSpace: 'pre-wrap', color: 'var(--fg-2)', marginBottom: 'var(--sp-4)' }}>
-                      {selectedNotif.campaign?.description || ''}
-                    </p>
+                    <h3 className="ms-h3" style={{ marginBottom: 'var(--sp-3)' }}>{selectedNotif.subject || '—'}</h3>
+                    {selectedNotif.bodyHtml ? (
+                      <div
+                        style={{ color: 'var(--fg-2)', marginBottom: 'var(--sp-4)' }}
+                        dangerouslySetInnerHTML={{ __html: selectedNotif.bodyHtml }}
+                      />
+                    ) : (
+                      <p style={{ whiteSpace: 'pre-wrap', color: 'var(--fg-2)', marginBottom: 'var(--sp-4)' }}>
+                        {selectedNotif.bodyMarkdown || ''}
+                      </p>
+                    )}
 
                     <div className="avviso-row">
                       <span className="k">Canale di invio</span>
-                      <span className="v">{selectedNotif.campaign?.channelType || '—'}</span>
+                      <span className="v">{selectedNotif.channelType || '—'}</span>
                     </div>
                     <div className="avviso-row">
                       <span className="k">Stato spedizione</span>

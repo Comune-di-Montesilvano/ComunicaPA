@@ -4,6 +4,7 @@ import { CitizenService } from './citizen.service';
 import { Recipient } from '../entities/recipient.entity';
 import { DownloadEvent } from '../entities/download-event.entity';
 import { AttachmentService } from '../attachments/attachment.service';
+import { CampaignsService } from '../campaigns/campaigns.service';
 
 describe('CitizenService.markAsDownloaded', () => {
   const mockRecipient = { id: 'r-1', codiceFiscale: 'RSSMRA80A01H501X', extraData: {} };
@@ -13,6 +14,7 @@ describe('CitizenService.markAsDownloaded', () => {
   };
   const mockDownloadEventRepo = { insert: jest.fn().mockResolvedValue(undefined) };
   const mockAttachmentService = { generatePdfBuffer: jest.fn() };
+  const mockCampaignsService = { renderMessageForRecipient: jest.fn().mockResolvedValue({ subject: 'Oggetto', bodyHtml: '<p>Corpo</p>' }) };
 
   let service: CitizenService;
 
@@ -25,6 +27,7 @@ describe('CitizenService.markAsDownloaded', () => {
         { provide: getRepositoryToken(Recipient), useValue: mockRecipientRepo },
         { provide: getRepositoryToken(DownloadEvent), useValue: mockDownloadEventRepo },
         { provide: AttachmentService, useValue: mockAttachmentService },
+        { provide: CampaignsService, useValue: mockCampaignsService },
       ],
     }).compile();
     service = moduleRef.get(CitizenService);
