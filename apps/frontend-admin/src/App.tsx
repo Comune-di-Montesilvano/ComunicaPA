@@ -262,14 +262,6 @@ export function App(): React.JSX.Element {
   const [loadingCampaigns, setLoadingCampaigns] = useState(false);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
 
-  // New campaign state (in Invio Massivo)
-  const [newCampaignName, setNewCampaignName] = useState('');
-  const [newCampaignDesc, setNewCampaignDesc] = useState('');
-  const [newCampaignSubject, setNewCampaignSubject] = useState('');
-  const [newCampaignBody, setNewCampaignBody] = useState('');
-  const [newCampaignChannel, setNewCampaignChannel] = useState<'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL'>('EMAIL');
-  const [selectedAppIoServiceId, setSelectedAppIoServiceId] = useState('');
-
   // Single send form state (in Invio Singolo)
   const [singleCf, setSingleCf] = useState('');
   const [singleName, setSingleName] = useState('');
@@ -571,28 +563,13 @@ export function App(): React.JSX.Element {
   const [downloadByChannel, setDownloadByChannel] = useState<Record<string, number> | null>(null);
   const [retryBusyId, setRetryBusyId] = useState<string | null>(null);
 
-  // CSV Mapper state
-  const [csvFile, setCsvFile] = useState<File | null>(null);
-  const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
-  const [csvRows, setCsvRows] = useState<string[][]>([]);
-  const [mapping, setMapping] = useState<Record<string, string>>({
-    codice_fiscale: '',
-    full_name: '',
-    email: '',
-    pec: '',
-  });
-  const [csvError, setCsvError] = useState<string | null>(null);
-  const [uploadingCsv, setUploadingCsv] = useState(false);
-  const [uploadSuccess, setUploadSuccess] = useState(false);
 
   // Pre-select default App IO service id for forms
   useEffect(() => {
     const def = ioServices.find(s => s.isDefault);
     if (def) {
-      setSelectedAppIoServiceId(def.id);
       setSingleAppIoServiceId(def.id);
     } else if (ioServices.length > 0) {
-      setSelectedAppIoServiceId(ioServices[0].id);
       setSingleAppIoServiceId(ioServices[0].id);
     }
   }, [ioServices]);
@@ -804,8 +781,6 @@ export function App(): React.JSX.Element {
         } else if (channelVal === 'PEC') {
           const activePec = mailConfigs.find(c => c.type === 'PEC' && c.active);
           channelConfig = { from: activePec?.fromAddress || '', mailConfigId: activePec?.id };
-        } else if (channelVal === 'APP_IO') {
-          channelConfig = { ioServiceId: selectedAppIoServiceId };
         } else if (channelVal === 'SEND') {
           channelConfig = { apiKey: settSendApiKey, baseUrl: settSendUrl };
         }
@@ -830,40 +805,6 @@ export function App(): React.JSX.Element {
       return created as Campaign;
     } catch (err: any) {
       throw new Error(err.message || 'Errore di connessione API.');
-    }
-  };
-
-  const handleNewCampaignSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoadingCampaigns(true);
-    try {
-      let customConfig: Record<string, any> | undefined = undefined;
-      
-      if (newCampaignChannel === 'APP_IO') {
-        customConfig = { ioServiceId: selectedAppIoServiceId };
-      } else if (newCampaignChannel === 'EMAIL' || newCampaignChannel === 'PEC') {
-        customConfig = {
-          subject: newCampaignSubject,
-          body: newCampaignBody,
-        };
-        // Bundle default App IO service configuration for co-delivery if available
-        const defaultSvc = ioServices.find(s => s.isDefault) || ioServices[0];
-        if (defaultSvc) {
-          customConfig.appIo = { ioServiceId: defaultSvc.id };
-        }
-      }
-
-      await handleCreateCampaign(newCampaignName, newCampaignDesc, newCampaignChannel, customConfig);
-      setNewCampaignName('');
-      setNewCampaignDesc('');
-      setNewCampaignSubject('');
-      setNewCampaignBody('');
-      fetchCampaigns();
-      alert('Campagna creata correttamente in stato bozza!');
-    } catch (err: any) {
-      alert(err.message);
-    } finally {
-      setLoadingCampaigns(false);
     }
   };
 
@@ -1900,7 +1841,11 @@ export function App(): React.JSX.Element {
 
     const isEmailMandatory = wizChannel === 'EMAIL';
     const isPecMandatory = wizChannel === 'PEC';
-    const isCfMandatory = wizChannel === 'APP_IO' || wizChannel === 'SEND';
+    // Anche quando App IO è co-consegna secondaria (non canale primario) il CF
+    // deve rispettare il formato stretto: PagoPA rifiuta l'invio con HTTP 400
+    // se il CF non è valido, e senza questo controllo l'errore emerge solo al
+    // momento della spedizione invece che in fase di validazione import.
+    const isCfMandatory = wizChannel === 'APP_IO' || wizChannel === 'SEND' || wizAppIoInvolved;
 
     wizCsvRows.forEach((row, idx) => {
       let isRowValid = true;
@@ -2409,11 +2354,6 @@ export function App(): React.JSX.Element {
     setSelectedCampaignId(id);
     setView('campaign-detail');
     setCampaign(null);
-    setCsvFile(null);
-    setCsvHeaders([]);
-    setCsvRows([]);
-    setUploadSuccess(false);
-    setCsvError(null);
     setCampaignFailures([]);
     setChannelBreakdown(null);
     setDownloadByChannel(null);
@@ -2466,149 +2406,6 @@ export function App(): React.JSX.Element {
       alert(err.message);
     } finally {
       setLaunching(false);
-    }
-  };
-
-  // Helper to parse CSV
-  const handleCsvChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setCsvError(null);
-    setUploadSuccess(false);
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setCsvFile(file);
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string;
-      if (!text) return;
-
-      const lines = text.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
-      if (lines.length === 0) {
-        setCsvError('Il file CSV è vuoto.');
-        return;
-      }
-
-      const parseCsvLine = (line: string) => {
-        const result: string[] = [];
-        let current = '';
-        let inQuotes = false;
-        for (let i = 0; i < line.length; i++) {
-          const char = line[i];
-          if (char === '"') {
-            inQuotes = !inQuotes;
-          } else if ((char === ',' || char === ';') && !inQuotes) {
-            result.push(current.trim());
-            current = '';
-          } else {
-            current += char;
-          }
-        }
-        result.push(current.trim());
-        return result.map(col => col.replace(/^"(.*)"$/, '$1'));
-      };
-
-      const headers = parseCsvLine(lines[0]);
-      setCsvHeaders(headers);
-
-      const rows = lines.slice(1).map(line => parseCsvLine(line));
-      setCsvRows(rows);
-
-      const newMapping = {
-        codice_fiscale: '',
-        full_name: '',
-        email: '',
-        pec: '',
-      };
-      headers.forEach(h => {
-        const hLower = h.toLowerCase().replace(/[\s_-]/g, '');
-        if (hLower.includes('cf') || hLower.includes('codicefiscale') || hLower.includes('fiscale')) {
-          newMapping.codice_fiscale = h;
-        } else if (hLower.includes('nome') || hLower.includes('cognome') || hLower.includes('fullname') || hLower.includes('nominativo')) {
-          newMapping.full_name = h;
-        } else if (hLower.includes('pec')) {
-          newMapping.pec = h;
-        } else if (hLower.includes('mail') || hLower.includes('email')) {
-          newMapping.email = h;
-        }
-      });
-      setMapping(newMapping);
-    };
-    reader.readAsText(file);
-  };
-
-  const handleMappingChange = (field: string, header: string) => {
-    setMapping(prev => ({ ...prev, [field]: header }));
-  };
-
-  const handleUploadMappedCsv = async () => {
-    if (!campaign || !csvFile || !mapping.codice_fiscale) {
-      setCsvError('Devi mappare almeno il campo Codice Fiscale.');
-      return;
-    }
-
-    setUploadingCsv(true);
-    setCsvError(null);
-
-    try {
-      let csvContent = 'codice_fiscale,full_name,email,pec';
-      const extraHeaders = csvHeaders.filter(h => 
-        h !== mapping.codice_fiscale && 
-        h !== mapping.full_name && 
-        h !== mapping.email && 
-        h !== mapping.pec
-      );
-      
-      if (extraHeaders.length > 0) {
-        csvContent += ',' + extraHeaders.join(',');
-      }
-      csvContent += '\n';
-
-      csvRows.forEach(row => {
-        const cfIndex = csvHeaders.indexOf(mapping.codice_fiscale);
-        const nameIndex = csvHeaders.indexOf(mapping.full_name);
-        const emailIndex = csvHeaders.indexOf(mapping.email);
-        const pecIndex = csvHeaders.indexOf(mapping.pec);
-
-        const cf = cfIndex !== -1 ? row[cfIndex] || '' : '';
-        const name = nameIndex !== -1 ? row[nameIndex] || '' : '';
-        const email = emailIndex !== -1 ? row[emailIndex] || '' : '';
-        const pec = pecIndex !== -1 ? row[pecIndex] || '' : '';
-
-        if (!cf.trim()) return;
-
-        let line = `"${cf.replace(/"/g, '""')}","${name.replace(/"/g, '""')}","${email.replace(/"/g, '""')}","${pec.replace(/"/g, '""')}"`;
-        extraHeaders.forEach(eh => {
-          const idx = csvHeaders.indexOf(eh);
-          const val = idx !== -1 ? row[idx] || '' : '';
-          line += `,"${val.replace(/"/g, '""')}"`;
-        });
-        csvContent += line + '\n';
-      });
-
-      const blob = new Blob([csvContent], { type: 'text/csv' });
-      const formData = new FormData();
-      formData.append('file', blob, 'mapped_recipients.csv');
-
-      const res = await fetch(`${ADMIN_API_BASE}/campaigns/${campaign.id}/recipients/upload`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.message || 'Errore durante il caricamento del CSV');
-      }
-
-      setUploadSuccess(true);
-      setCsvFile(null);
-      setCsvHeaders([]);
-      setCsvRows([]);
-      fetchCampaignDetail(campaign.id);
-    } catch (err: any) {
-      setCsvError(err.message);
-    } finally {
-      setUploadingCsv(false);
     }
   };
 
@@ -5638,106 +5435,18 @@ export function App(): React.JSX.Element {
                   <div className="col-lg-8">
                     {campaign.status === 'draft' && (
                       <div className="card shadow-sm mb-4">
-                        <div className="card-header bg-white py-3 border-bottom">
-                          <h3 className="h6 mb-0 fw-bold text-dark"><i className="fas fa-file-csv me-2"></i>Importatore & Mappatore Visuale CSV</h3>
-                        </div>
-                        <div className="card-body">
-                          {uploadSuccess && (
-                            <div className="alert alert-success"><i className="fas fa-check-circle me-1"></i> Destinatari caricati con successo nel database!</div>
-                          )}
-                          {csvError && (
-                            <div className="alert alert-danger"><i className="fas fa-exclamation-triangle"></i> {csvError}</div>
-                          )}
-
-                          <div className="mb-3">
-                            <label className="form-label small fw-semibold text-muted">Seleziona File CSV</label>
-                            <input
-                              type="file"
-                              accept=".csv"
-                              className="form-control"
-                              onChange={handleCsvChange}
-                            />
-                          </div>
-
-                          {csvHeaders.length > 0 && (
-                            <div className="mt-4 border-top pt-3">
-                              <h4 className="h6 fw-bold text-dark mb-3"><i className="fas fa-route text-primary me-2"></i>Associazione Colonne (Mapping)</h4>
-                              
-                              <div className="row g-3 mb-4">
-                                <div className="col-md-6">
-                                  <label className="form-label small fw-bold text-dark">1. Codice Fiscale <span className="text-danger">*</span></label>
-                                  <select
-                                    className="form-select form-select-sm border-primary"
-                                    value={mapping.codice_fiscale}
-                                    onChange={(e) => handleMappingChange('codice_fiscale', e.target.value)}
-                                    required
-                                  >
-                                    <option value="">-- Seleziona Colonna CF --</option>
-                                    {csvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
-                                  </select>
-                                </div>
-                                <div className="col-md-6">
-                                  <label className="form-label small fw-semibold text-muted">2. Nome Completo (Opzionale)</label>
-                                  <select
-                                    className="form-select form-select-sm"
-                                    value={mapping.full_name}
-                                    onChange={(e) => handleMappingChange('full_name', e.target.value)}
-                                  >
-                                    <option value="">-- Nessuna Associazione --</option>
-                                    {csvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
-                                  </select>
-                                </div>
-                                <div className="col-md-6">
-                                  <label className="form-label small fw-semibold text-muted">3. Indirizzo Email (Opzionale)</label>
-                                  <select
-                                    className="form-select form-select-sm"
-                                    value={mapping.email}
-                                    onChange={(e) => handleMappingChange('email', e.target.value)}
-                                  >
-                                    <option value="">-- Nessuna Associazione --</option>
-                                    {csvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
-                                  </select>
-                                </div>
-                                <div className="col-md-6">
-                                  <label className="form-label small fw-semibold text-muted">4. Indirizzo PEC (Opzionale)</label>
-                                  <select
-                                    className="form-select form-select-sm"
-                                    value={mapping.pec}
-                                    onChange={(e) => handleMappingChange('pec', e.target.value)}
-                                  >
-                                    <option value="">-- Nessuna Associazione --</option>
-                                    {csvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
-                                  </select>
-                                </div>
-                              </div>
-
-                              {csvRows.length > 0 && (
-                                <div className="p-3 bg-light rounded border mb-4">
-                                  <h5 className="small fw-bold mb-2">Anteprima Mappatura (Riga 1)</h5>
-                                  <div className="row g-2 text-muted" style={{ fontSize: '0.82rem' }}>
-                                    <div className="col-6"><strong>Codice Fiscale:</strong> {csvRows[0][csvHeaders.indexOf(mapping.codice_fiscale)] || <span className="text-danger">Mancante</span>}</div>
-                                    <div className="col-6"><strong>Nome Completo:</strong> {csvRows[0][csvHeaders.indexOf(mapping.full_name)] || 'N/A'}</div>
-                                    <div className="col-6"><strong>Email:</strong> {csvRows[0][csvHeaders.indexOf(mapping.email)] || 'N/A'}</div>
-                                    <div className="col-6"><strong>PEC:</strong> {csvRows[0][csvHeaders.indexOf(mapping.pec)] || 'N/A'}</div>
-                                  </div>
-                                </div>
-                              )}
-
-                              <button
-                                type="button"
-                                className="btn btn-primary w-100"
-                                onClick={handleUploadMappedCsv}
-                                disabled={uploadingCsv || !mapping.codice_fiscale}
-                                style={{ backgroundColor: 'var(--bi-primary)', border: 'none' }}
-                              >
-                                {uploadingCsv ? (
-                                  <><i className="fas fa-spinner fa-spin me-2"></i>Normalizzazione ed Invio in corso...</>
-                                ) : (
-                                  <><i className="fas fa-file-import me-2"></i>Normalizza, Mappa e Carica Destinatari</>
-                                )}
-                              </button>
-                            </div>
-                          )}
+                        <div className="card-body text-center py-4">
+                          <p className="text-muted small mb-3">
+                            Il caricamento destinatari (con tutte le validazioni su formato CF, email e vincoli App IO)
+                            avviene solo dal wizard guidato.
+                          </p>
+                          <button
+                            type="button"
+                            className="btn btn-primary"
+                            onClick={() => handleResumeDraft(campaign.id)}
+                          >
+                            <i className="fas fa-edit me-1"></i> Riprendi wizard campagna
+                          </button>
                         </div>
                       </div>
                     )}
