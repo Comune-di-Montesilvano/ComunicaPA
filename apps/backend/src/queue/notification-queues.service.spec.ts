@@ -44,3 +44,45 @@ describe('NotificationQueuesService.getJobsDetail', () => {
     ]);
   });
 });
+
+describe('NotificationQueuesService.getJob', () => {
+  it('recupera un job per id dalla coda del canale corretto', async () => {
+    const mockJob = { id: 'attempt-123', remove: jest.fn() };
+    const getJob = jest.fn().mockResolvedValue(mockJob);
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        NotificationQueuesService,
+        { provide: getQueueToken(CHANNEL_QUEUES.EMAIL), useValue: { getJob } },
+        { provide: getQueueToken(CHANNEL_QUEUES.PEC), useValue: {} },
+        { provide: getQueueToken(CHANNEL_QUEUES.APP_IO), useValue: {} },
+        { provide: getQueueToken(CHANNEL_QUEUES.SEND), useValue: {} },
+        { provide: getQueueToken(CHANNEL_QUEUES.POSTAL), useValue: {} },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(NotificationQueuesService);
+    const result = await service.getJob('EMAIL', 'attempt-123');
+
+    expect(getJob).toHaveBeenCalledWith('attempt-123');
+    expect(result).toBe(mockJob);
+  });
+
+  it('ritorna undefined se il job non esiste piu (gia rimosso/completato)', async () => {
+    const getJob = jest.fn().mockResolvedValue(undefined);
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        NotificationQueuesService,
+        { provide: getQueueToken(CHANNEL_QUEUES.EMAIL), useValue: { getJob } },
+        { provide: getQueueToken(CHANNEL_QUEUES.PEC), useValue: {} },
+        { provide: getQueueToken(CHANNEL_QUEUES.APP_IO), useValue: {} },
+        { provide: getQueueToken(CHANNEL_QUEUES.SEND), useValue: {} },
+        { provide: getQueueToken(CHANNEL_QUEUES.POSTAL), useValue: {} },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(NotificationQueuesService);
+    const result = await service.getJob('EMAIL', 'gone-123');
+
+    expect(result).toBeUndefined();
+  });
+});

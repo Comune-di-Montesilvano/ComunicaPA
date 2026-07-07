@@ -30,8 +30,15 @@ export class NotificationQueuesService {
     return queue;
   }
 
-  addBulk(channel: NotificationChannel, jobs: Array<{ name: string; data: NotificationJobData }>) {
+  addBulk(
+    channel: NotificationChannel,
+    jobs: Array<{ name: string; data: NotificationJobData; opts?: { jobId?: string } }>,
+  ) {
     return this.getQueue(channel).addBulk(jobs);
+  }
+
+  getJob(channel: NotificationChannel, jobId: string) {
+    return this.getQueue(channel).getJob(jobId);
   }
 
   getJobCounts(channel: NotificationChannel): Promise<Record<string, number>> {
