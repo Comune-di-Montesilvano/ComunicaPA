@@ -342,6 +342,58 @@ export class CampaignsService {
     return { launched: recipients.length, campaignId };
   }
 
+  async cancel(campaignId: string): Promise<{ cancelled: number; campaignId: string }> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+    if (campaign.status !== CampaignStatus.QUEUED) {
+      throw new BadRequestException('Solo campagne in corso possono essere annullate');
+    }
+
+    const queuedRecipients = await this.recipientRepo.find({
+      where: { campaignId, status: RecipientStatus.QUEUED },
+      select: ['id'],
+    });
+
+    let cancelled = 0;
+    if (queuedRecipients.length > 0) {
+      const recipientIds = queuedRecipients.map((r) => r.id);
+      const liveAttempts = await this.attemptRepo.find({
+        where: { recipientId: In(recipientIds), status: AttemptStatus.QUEUED },
+      });
+
+      const removedAttemptIds: string[] = [];
+      const removedRecipientIds: string[] = [];
+      for (const attempt of liveAttempts) {
+        const job = await this.notificationQueues.getJob(campaign.channelType, attempt.id);
+        if (!job) continue;
+        try {
+          await job.remove();
+          removedAttemptIds.push(attempt.id);
+          removedRecipientIds.push(attempt.recipientId);
+        } catch (err) {
+          this.logger.warn(
+            `Job ${attempt.id} non rimosso (probabilmente in elaborazione): ${err instanceof Error ? err.message : err}`,
+          );
+        }
+      }
+
+      if (removedAttemptIds.length > 0) {
+        await this.attemptRepo.update({ id: In(removedAttemptIds) }, { status: AttemptStatus.CANCELLED });
+        await this.recipientRepo.update({ id: In(removedRecipientIds) }, { status: RecipientStatus.CANCELLED });
+      }
+      cancelled = removedRecipientIds.length;
+    }
+
+    await this.campaignRepo
+      .createQueryBuilder()
+      .update()
+      .set({ status: CampaignStatus.CANCELLED, completedAt: new Date() })
+      .where('id = :id AND status = :queued', { id: campaignId, queued: CampaignStatus.QUEUED })
+      .execute();
+
+    return { cancelled, campaignId };
+  }
+
   async getStats(campaignId: string): Promise<CampaignStatsDto> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);

@@ -2,10 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { In } from 'typeorm';
 import { CampaignsService } from './campaigns.service';
 import { Campaign, CampaignStatus } from '../entities/campaign.entity';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity';
-import { NotificationAttempt } from '../entities/notification-attempt.entity';
+import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity';
 import { DownloadEvent } from '../entities/download-event.entity';
 import { NotificationQueuesService } from '../queue/notification-queues.service';
 import { AppSettingsService } from '../settings/app-settings.service';
@@ -68,6 +69,7 @@ describe('CampaignsService', () => {
   };
   const mockAttemptRepo = {
     find: jest.fn(),
+    update: jest.fn().mockResolvedValue(undefined),
     createQueryBuilder: jest.fn().mockReturnValue({
       insert: jest.fn().mockReturnThis(),
       into: jest.fn().mockReturnThis(),
@@ -77,7 +79,7 @@ describe('CampaignsService', () => {
     }),
   };
   const mockDownloadEventRepo = { createQueryBuilder: jest.fn() };
-  const mockQueue = { addBulk: jest.fn().mockResolvedValue(undefined) };
+  const mockQueue = { addBulk: jest.fn().mockResolvedValue(undefined), getJob: jest.fn() };
   const mockSettings = {
     get: jest.fn(async () => null),
   };
@@ -515,6 +517,71 @@ describe('CampaignsService', () => {
       expect(result).toEqual({ deleted: true });
 
       rmSpy.mockRestore();
+    });
+  });
+
+  describe('cancel', () => {
+    const mockQb = {
+      update: jest.fn().mockReturnThis(),
+      set: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      execute: jest.fn().mockResolvedValue({ affected: 1 }),
+    };
+
+    beforeEach(() => {
+      mockCampaignRepo.createQueryBuilder.mockReturnValue(mockQb);
+      mockQb.execute.mockResolvedValue({ affected: 1 });
+      mockQueue.getJob.mockReset();
+    });
+
+    it('lancia NotFoundException se la campagna non esiste', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce(null);
+      await expect(service.cancel('missing')).rejects.toThrow('Campaign missing not found');
+    });
+
+    it('lancia BadRequestException se la campagna non e QUEUED', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, status: CampaignStatus.DRAFT });
+      await expect(service.cancel('c1')).rejects.toThrow('Solo campagne in corso possono essere annullate');
+    });
+
+    it('rimuove i job in coda, marca CANCELLED recipient/attempt/campagna, salta i job gia attivi', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, id: 'c1', status: CampaignStatus.QUEUED, channelType: 'EMAIL' });
+      mockRecipientRepo.find.mockResolvedValueOnce([{ id: 'r1' }, { id: 'r2' }]);
+      mockAttemptRepo.find = jest.fn().mockResolvedValueOnce([
+        { id: 'att-1', recipientId: 'r1' },
+        { id: 'att-2', recipientId: 'r2' },
+      ]);
+      const removeOk = jest.fn().mockResolvedValue(undefined);
+      const removeFails = jest.fn().mockRejectedValue(new Error('job is active'));
+      mockQueue.getJob
+        .mockResolvedValueOnce({ id: 'att-1', remove: removeOk })
+        .mockResolvedValueOnce({ id: 'att-2', remove: removeFails });
+      mockAttemptRepo.update = jest.fn().mockResolvedValue(undefined);
+      mockRecipientRepo.update = jest.fn().mockResolvedValue(undefined);
+
+      const result = await service.cancel('c1');
+
+      expect(mockQueue.getJob).toHaveBeenNthCalledWith(1, 'EMAIL', 'att-1');
+      expect(mockQueue.getJob).toHaveBeenNthCalledWith(2, 'EMAIL', 'att-2');
+      expect(removeOk).toHaveBeenCalled();
+      expect(removeFails).toHaveBeenCalled();
+      expect(mockAttemptRepo.update).toHaveBeenCalledWith({ id: In(['att-1']) }, { status: AttemptStatus.CANCELLED });
+      expect(mockRecipientRepo.update).toHaveBeenCalledWith({ id: In(['r1']) }, { status: RecipientStatus.CANCELLED });
+      expect(mockQb.set).toHaveBeenCalledWith({ status: CampaignStatus.CANCELLED, completedAt: expect.any(Date) });
+      expect(result).toEqual({ cancelled: 1, campaignId: 'c1' });
+    });
+
+    it('non aggiorna nulla se non ci sono destinatari in coda (nessun job da rimuovere)', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, id: 'c1', status: CampaignStatus.QUEUED, channelType: 'EMAIL' });
+      mockRecipientRepo.find.mockResolvedValueOnce([]);
+      mockAttemptRepo.update = jest.fn().mockResolvedValue(undefined);
+      mockRecipientRepo.update = jest.fn().mockResolvedValue(undefined);
+
+      const result = await service.cancel('c1');
+
+      expect(mockAttemptRepo.update).not.toHaveBeenCalled();
+      expect(mockRecipientRepo.update).not.toHaveBeenCalled();
+      expect(result).toEqual({ cancelled: 0, campaignId: 'c1' });
     });
   });
 });
