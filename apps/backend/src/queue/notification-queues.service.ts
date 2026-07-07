@@ -76,4 +76,9 @@ export class NotificationQueuesService {
       finishedOn: job.finishedOn,
     }));
   }
+
+  async getJobLogs(channel: NotificationChannel, jobId: string): Promise<string[]> {
+    const { logs } = await this.getQueue(channel).getJobLogs(jobId);
+    return logs;
+  }
 }

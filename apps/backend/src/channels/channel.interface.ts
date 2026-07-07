@@ -2,9 +2,12 @@ import type { NotificationChannel, ChannelSendResult } from '@comunicapa/shared-
 import type { Recipient } from '../entities/recipient.entity';
 import type { Campaign } from '../entities/campaign.entity';
 
+/** Riceve una riga di log per volta; il chiamante decide dove persisterla (es. job.log() BullMQ). */
+export type ChannelLogFn = (message: string) => void;
+
 export interface IChannelStrategy {
   readonly channel: NotificationChannel;
-  send(recipient: Recipient, campaign: Campaign): Promise<ChannelSendResult>;
+  send(recipient: Recipient, campaign: Campaign, onLog?: ChannelLogFn): Promise<ChannelSendResult>;
 }
 
 export const CHANNEL_STRATEGIES = Symbol('CHANNEL_STRATEGIES');

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { NotificationChannel, ChannelSendResult } from '@comunicapa/shared-types';
-import type { IChannelStrategy } from '../channel.interface';
+import type { ChannelLogFn, IChannelStrategy } from '../channel.interface';
 import type { Recipient } from '../../entities/recipient.entity';
 import type { Campaign } from '../../entities/campaign.entity';
 import { AppSettingsService } from '../../settings/app-settings.service';
@@ -16,7 +16,12 @@ export class SendStrategy implements IChannelStrategy {
 
   constructor(private readonly settings: AppSettingsService) {}
 
-  async send(recipient: Recipient, campaign: Campaign): Promise<ChannelSendResult> {
+  async send(recipient: Recipient, campaign: Campaign, onLog?: ChannelLogFn): Promise<ChannelSendResult> {
+    const log = (msg: string): void => {
+      this.logger.debug(msg);
+      onLog?.(msg);
+    };
+
     const apiKey = await this.settings.get<string>('send.apiKey');
     const baseUrl = await this.settings.get<string>('send.baseUrl');
 
@@ -28,7 +33,7 @@ export class SendStrategy implements IChannelStrategy {
     const subject = interpolate(cfg['subject'] ?? campaign.name, vars);
     const notificationBody = interpolate(cfg['body'] ?? '', vars);
 
-    this.logger.debug(`Invio notifica SEND a CF ${recipient.codiceFiscale} via ${baseUrl} (subject="${subject}")`);
+    log(`Invio notifica SEND a CF ${recipient.codiceFiscale} via ${baseUrl} (subject="${subject}")`);
     const response = await fetch(`${baseUrl}/delivery/notifications/sent`, {
       method: 'POST',
       headers: {
@@ -41,7 +46,7 @@ export class SendStrategy implements IChannelStrategy {
         notificationBody,
       }),
     });
-    this.logger.debug(`Risposta SEND per CF ${recipient.codiceFiscale}: HTTP ${response.status}`);
+    log(`Risposta SEND per CF ${recipient.codiceFiscale}: HTTP ${response.status}`);
 
     if (!response.ok) {
       throw new Error(`SEND API error: ${response.status}`);

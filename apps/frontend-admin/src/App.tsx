@@ -550,6 +550,8 @@ export function App(): React.JSX.Element {
   const [enginesError, setEnginesError] = useState<string | null>(null);
   const [engineJobsChannel, setEngineJobsChannel] = useState<string | null>(null);
   const [engineJobs, setEngineJobs] = useState<Array<{ jobId: string; campaignId: string; recipientId: string; failedReason?: string; attemptsMade: number }>>([]);
+  const [expandedJobLogs, setExpandedJobLogs] = useState<{ jobId: string; logs: string[] } | null>(null);
+  const [loadingJobLogs, setLoadingJobLogs] = useState(false);
   // Sidebar mobile (≤991px): il CSS la nasconde con translateX finché body non ha .bo-sidebar-open
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -1175,11 +1177,29 @@ export function App(): React.JSX.Element {
 
   const handleViewEngineJobs = async (channel: string) => {
     setEngineJobsChannel(channel);
+    setExpandedJobLogs(null);
     const res = await fetch(`${ADMIN_API_BASE}/engines/${channel.toLowerCase()}/jobs?status=failed&limit=50`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json();
     setEngineJobs(data.jobs || []);
+  };
+
+  const handleViewJobLogs = async (channel: string, jobId: string) => {
+    if (expandedJobLogs?.jobId === jobId) {
+      setExpandedJobLogs(null);
+      return;
+    }
+    setLoadingJobLogs(true);
+    try {
+      const res = await fetch(`${ADMIN_API_BASE}/engines/${channel.toLowerCase()}/jobs/${jobId}/logs`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      setExpandedJobLogs({ jobId, logs: data.logs || [] });
+    } finally {
+      setLoadingJobLogs(false);
+    }
   };
 
   const handleUploadBranding = async (kind: 'logo' | 'favicon', file: File) => {
@@ -5360,18 +5380,43 @@ export function App(): React.JSX.Element {
                                         {engineJobsChannel === eng.channel && (
                                           <div className="table-responsive">
                                             <table className="table table-sm mt-2">
-                                              <thead><tr><th>Job</th><th>Campagna</th><th>Destinatario</th><th>Tentativi</th><th>Motivo</th></tr></thead>
+                                              <thead><tr><th>Job</th><th>Campagna</th><th>Destinatario</th><th>Tentativi</th><th>Motivo</th><th>Log</th></tr></thead>
                                               <tbody>
                                                 {engineJobs.map(j => (
-                                                  <tr key={j.jobId}>
-                                                    <td className="font-monospace small">{j.jobId}</td>
-                                                    <td className="font-monospace small">{j.campaignId}</td>
-                                                    <td className="font-monospace small">{j.recipientId}</td>
-                                                    <td>{j.attemptsMade}</td>
-                                                    <td className="small text-danger">{j.failedReason || '—'}</td>
-                                                  </tr>
+                                                  <React.Fragment key={j.jobId}>
+                                                    <tr>
+                                                      <td className="font-monospace small">{j.jobId}</td>
+                                                      <td className="font-monospace small">{j.campaignId}</td>
+                                                      <td className="font-monospace small">{j.recipientId}</td>
+                                                      <td>{j.attemptsMade}</td>
+                                                      <td className="small text-danger">{j.failedReason || '—'}</td>
+                                                      <td>
+                                                        <button
+                                                          type="button"
+                                                          className="btn btn-sm btn-outline-secondary"
+                                                          onClick={() => handleViewJobLogs(eng.channel, j.jobId)}
+                                                          disabled={loadingJobLogs}
+                                                        >
+                                                          {expandedJobLogs?.jobId === j.jobId ? 'Nascondi' : 'Vedi log'}
+                                                        </button>
+                                                      </td>
+                                                    </tr>
+                                                    {expandedJobLogs?.jobId === j.jobId && (
+                                                      <tr>
+                                                        <td colSpan={6}>
+                                                          {expandedJobLogs.logs.length === 0 ? (
+                                                            <div className="text-muted small">Nessun log registrato per questo job.</div>
+                                                          ) : (
+                                                            <pre className="small bg-light border rounded p-2 mb-0" style={{ whiteSpace: 'pre-wrap', maxHeight: '300px', overflowY: 'auto' }}>
+                                                              {expandedJobLogs.logs.join('\n')}
+                                                            </pre>
+                                                          )}
+                                                        </td>
+                                                      </tr>
+                                                    )}
+                                                  </React.Fragment>
                                                 ))}
-                                                {engineJobs.length === 0 && <tr><td colSpan={5} className="text-center text-muted">Nessun job fallito</td></tr>}
+                                                {engineJobs.length === 0 && <tr><td colSpan={6} className="text-center text-muted">Nessun job fallito</td></tr>}
                                               </tbody>
                                             </table>
                                           </div>

@@ -1,7 +1,7 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { NotificationChannel, ChannelSendResult } from '@comunicapa/shared-types';
-import type { IChannelStrategy } from '../channel.interface';
+import type { ChannelLogFn, IChannelStrategy } from '../channel.interface';
 import type { Recipient } from '../../entities/recipient.entity';
 import type { Campaign } from '../../entities/campaign.entity';
 import * as nodemailer from 'nodemailer';
@@ -23,7 +23,12 @@ export class EmailStrategy implements IChannelStrategy {
     private readonly mailConfigs: MailConfigsService,
   ) {}
 
-  async send(recipient: Recipient, campaign: Campaign): Promise<ChannelSendResult> {
+  async send(recipient: Recipient, campaign: Campaign, onLog?: ChannelLogFn): Promise<ChannelSendResult> {
+    const log = (msg: string): void => {
+      this.logger.debug(msg);
+      onLog?.(msg);
+    };
+
     if (!recipient.email) {
       throw new BadRequestException('Recipient non ha indirizzo email');
     }
@@ -65,7 +70,7 @@ export class EmailStrategy implements IChannelStrategy {
     });
 
     const from = (campaign.channelConfig?.['from'] as string) || smtp.fromAddress;
-    this.logger.debug(`Invio email a ${recipient.email} via ${smtp.host}:${smtp.port} (from=${from}, subject="${subject}")`);
+    log(`Invio email a ${recipient.email} via ${smtp.host}:${smtp.port} (from=${from}, subject="${subject}")`);
 
     const info = (await transporter.sendMail({
       from,
@@ -76,7 +81,7 @@ export class EmailStrategy implements IChannelStrategy {
     })) as any;
 
     this.logger.log(`Email successfully sent to ${recipient.email}: messageId=${info.messageId}`);
-    this.logger.debug(`Risposta SMTP per ${recipient.email}: response=${info.response}, accepted=${JSON.stringify(info.accepted)}, rejected=${JSON.stringify(info.rejected)}`);
+    log(`Risposta SMTP per ${recipient.email}: response=${info.response}, accepted=${JSON.stringify(info.accepted)}, rejected=${JSON.stringify(info.rejected)}`);
 
     return {
       messageId: info.messageId,

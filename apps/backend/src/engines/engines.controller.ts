@@ -75,4 +75,15 @@ export class EnginesController {
     );
     return { channel: uc, status, jobs };
   }
+
+  @Get(':channel/jobs/:jobId/logs')
+  @Roles('admin', 'user')
+  async jobLogs(@Param('channel') channel: string, @Param('jobId') jobId: string) {
+    const uc = channel.toUpperCase() as NotificationChannel;
+    if (!ALL_CHANNELS.includes(uc)) {
+      throw new BadRequestException(`Canale ${channel} non supportato`);
+    }
+    const logs = await this.queues.getJobLogs(uc, jobId);
+    return { channel: uc, jobId, logs };
+  }
 }

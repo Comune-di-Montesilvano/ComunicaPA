@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { NotificationChannel, ChannelSendResult } from '@comunicapa/shared-types';
-import type { IChannelStrategy } from '../channel.interface';
+import type { ChannelLogFn, IChannelStrategy } from '../channel.interface';
 import type { Recipient } from '../../entities/recipient.entity';
 import type { Campaign } from '../../entities/campaign.entity';
 import { IoServicesService } from '../../io-services/io-services.service';
@@ -19,7 +19,12 @@ export class AppIoStrategy implements IChannelStrategy {
 
   constructor(private readonly ioServices: IoServicesService) {}
 
-  async send(recipient: Recipient, campaign: Campaign): Promise<ChannelSendResult> {
+  async send(recipient: Recipient, campaign: Campaign, onLog?: ChannelLogFn): Promise<ChannelSendResult> {
+    const log = (msg: string): void => {
+      this.logger.debug(msg);
+      onLog?.(msg);
+    };
+
     const cfg = campaign.channelConfig as Record<string, string>;
     const resolved = await this.ioServices.resolveApiKey(cfg['ioServiceId']);
     if (!resolved) {
@@ -27,14 +32,14 @@ export class AppIoStrategy implements IChannelStrategy {
     }
 
     // 1. Verifica il profilo del cittadino su App IO
-    this.logger.debug(`Verifica profilo App IO per CF ${recipient.codiceFiscale}`);
+    log(`Verifica profilo App IO per CF ${recipient.codiceFiscale}`);
     const profileRes = await fetch(`${APP_IO_BASE_URL}/api/v1/profiles/${recipient.codiceFiscale}`, {
       method: 'GET',
       headers: {
         'Ocp-Apim-Subscription-Key': resolved.apiKey,
       },
     });
-    this.logger.debug(`Risposta verifica profilo per CF ${recipient.codiceFiscale}: HTTP ${profileRes.status}`);
+    log(`Risposta verifica profilo per CF ${recipient.codiceFiscale}: HTTP ${profileRes.status}`);
 
     if (!profileRes.ok) {
       if (profileRes.status === 404) {
@@ -57,7 +62,7 @@ export class AppIoStrategy implements IChannelStrategy {
     const subject = interpolate(cfg['subject'] ?? campaign.name, vars);
     const markdown = interpolate(cfg['body'] ?? '', vars);
 
-    this.logger.debug(`Invio messaggio App IO a CF ${recipient.codiceFiscale} (subject="${subject}")`);
+    log(`Invio messaggio App IO a CF ${recipient.codiceFiscale} (subject="${subject}", markdown length=${markdown.length})`);
     const response = await fetch(`${APP_IO_BASE_URL}/api/v1/messages`, {
       method: 'POST',
       headers: {
@@ -69,7 +74,7 @@ export class AppIoStrategy implements IChannelStrategy {
         content: { subject, markdown },
       }),
     });
-    this.logger.debug(`Risposta invio messaggio App IO per CF ${recipient.codiceFiscale}: HTTP ${response.status}`);
+    log(`Risposta invio messaggio App IO per CF ${recipient.codiceFiscale}: HTTP ${response.status}`);
 
     if (!response.ok) {
       const detail = await response.text().catch(() => '');

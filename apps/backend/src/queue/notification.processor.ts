@@ -47,7 +47,11 @@ export class NotificationProcessor extends WorkerHost {
 
   async process(job: Job<NotificationJobData>, token?: string): Promise<void> {
     const { campaignId, attemptId, recipientId, channel } = job.data;
+    const jobLog = (msg: string): void => {
+      job.log?.(msg)?.catch((err: unknown) => this.logger.warn(`Impossibile scrivere job.log per job ${job.id}: ${err}`));
+    };
     this.logger.log(`Job ${job.id}: campaign=${campaignId} recipient=${recipientId} channel=${channel}`);
+    jobLog(`Job ${job.id}: campaign=${campaignId} recipient=${recipientId} channel=${channel}`);
 
     const recipient = await this.recipientRepo.findOne({ where: { id: recipientId } });
     if (!recipient) {
@@ -115,7 +119,7 @@ export class NotificationProcessor extends WorkerHost {
     // Modalità ESCLUSIVA: se il destinatario ha App IO, si invia SOLO lì.
     if (appIoMode === 'exclusive' && isMailChannel && job.attemptsMade === 0) {
       const hasAppIo = await this.checkAppIoProfile(
-        APP_IO_BASE_URL, appIoResolved!.apiKey, recipient.codiceFiscale,
+        APP_IO_BASE_URL, appIoResolved!.apiKey, recipient.codiceFiscale, jobLog,
       );
       if (hasAppIo) {
         const appIoResult = await this.sendAppIoMessage(campaign, recipient, {
@@ -123,7 +127,7 @@ export class NotificationProcessor extends WorkerHost {
           baseUrl: APP_IO_BASE_URL,
           subjectOverride: (appIoConfig as { subjectOverride?: string } | undefined)?.subjectOverride,
           bodyOverride: (appIoConfig as { bodyOverride?: string } | undefined)?.bodyOverride,
-        });
+        }, jobLog);
         responsePayload.appIo = appIoResult;
         if (appIoResult.success) {
           skipPrimary = true;
@@ -131,6 +135,7 @@ export class NotificationProcessor extends WorkerHost {
           responsePayload.messageId = appIoResult.messageId;
           responsePayload.deliveredVia = 'APP_IO';
           this.logger.log(`Consegna esclusiva App IO per CF ${recipient.codiceFiscale}: canale ${channel} saltato`);
+          jobLog(`Consegna esclusiva App IO per CF ${recipient.codiceFiscale}: canale ${channel} saltato`);
         }
         // App IO fallita ⇒ si prosegue col canale primario (fallback)
       }
@@ -139,9 +144,10 @@ export class NotificationProcessor extends WorkerHost {
     // 1. Invio canale primario (saltato solo in esclusiva riuscita)
     if (!skipPrimary) {
       try {
-        primaryResult = await strategy.send(recipient, campaign);
+        primaryResult = await strategy.send(recipient, campaign, jobLog);
       } catch (err: any) {
         primaryError = err instanceof Error ? err : new Error(String(err));
+        jobLog(`Errore canale primario ${channel}: ${primaryError.message}`);
       }
       Object.assign(responsePayload, primaryResult?.responsePayload || {});
       responsePayload.messageId = primaryResult?.messageId;
@@ -149,16 +155,17 @@ export class NotificationProcessor extends WorkerHost {
       // 2. Co-delivery PARALLELA (comportamento attuale, solo primo tentativo)
       if (appIoMode === 'parallel' && isMailChannel && job.attemptsMade === 0) {
         const hasAppIo = await this.checkAppIoProfile(
-          APP_IO_BASE_URL, appIoResolved!.apiKey, recipient.codiceFiscale,
+          APP_IO_BASE_URL, appIoResolved!.apiKey, recipient.codiceFiscale, jobLog,
         );
         if (hasAppIo) {
           this.logger.log(`Invio App IO parallelo per CF: ${recipient.codiceFiscale}`);
+          jobLog(`Invio App IO parallelo per CF: ${recipient.codiceFiscale}`);
           const appIoResult = await this.sendAppIoMessage(campaign, recipient, {
           apiKey: appIoResolved!.apiKey,
           baseUrl: APP_IO_BASE_URL,
           subjectOverride: (appIoConfig as { subjectOverride?: string } | undefined)?.subjectOverride,
           bodyOverride: (appIoConfig as { bodyOverride?: string } | undefined)?.bodyOverride,
-        });
+        }, jobLog);
           responsePayload.appIo = appIoResult;
           if (appIoResult.success) appIoLinkDelivered = true;
         }
@@ -230,6 +237,7 @@ export class NotificationProcessor extends WorkerHost {
     baseUrl: string,
     apiKey: string,
     fiscalCode: string,
+    onLog?: (msg: string) => void,
   ): Promise<boolean> {
     try {
       const res = await fetch(`${baseUrl}/api/v1/profiles/${fiscalCode}`, {
@@ -245,18 +253,22 @@ export class NotificationProcessor extends WorkerHost {
         // logghiamo comunque, col body di PagoPA quando c'è, per rendere
         // distinguibili i due casi quando la co-consegna non parte.
         const detail = res.status === 404 ? '' : await res.text().catch(() => '');
-        this.logger.debug(
-          `Profilo App IO non disponibile per CF ${fiscalCode}: HTTP ${res.status}${detail ? ` — ${detail}` : ''}`,
-        );
+        const msg = `Profilo App IO non disponibile per CF ${fiscalCode}: HTTP ${res.status}${detail ? ` — ${detail}` : ''}`;
+        this.logger.debug(msg);
+        onLog?.(msg);
         return false;
       }
       const data = (await res.json()) as { sender_allowed: boolean };
       if (!data?.sender_allowed) {
-        this.logger.debug(`Cittadino CF ${fiscalCode} ha disabilitato i messaggi da questo servizio App IO`);
+        const msg = `Cittadino CF ${fiscalCode} ha disabilitato i messaggi da questo servizio App IO`;
+        this.logger.debug(msg);
+        onLog?.(msg);
       }
       return !!data?.sender_allowed;
     } catch (err: any) {
-      this.logger.warn(`Verifica profilo App IO fallita per CF ${fiscalCode}: ${err?.message ?? err}`);
+      const msg = `Verifica profilo App IO fallita per CF ${fiscalCode}: ${err?.message ?? err}`;
+      this.logger.warn(msg);
+      onLog?.(msg);
       return false;
     }
   }
@@ -265,6 +277,7 @@ export class NotificationProcessor extends WorkerHost {
     campaign: Campaign,
     recipient: Recipient,
     appIoConfig: { apiKey: string; baseUrl: string; subjectOverride?: string; bodyOverride?: string },
+    onLog?: (msg: string) => void,
   ): Promise<{ success: boolean; messageId?: string; error?: string }> {
     try {
       const publicApiUrl = await this.settings.get<string>('system.publicUrl');
@@ -346,6 +359,7 @@ export class NotificationProcessor extends WorkerHost {
         }
       }
 
+      onLog?.(`Invio App IO (co-delivery) a CF ${recipient.codiceFiscale}: markdown length=${processedMarkdown.length}`);
       const appIoRes = await fetch(`${appIoConfig.baseUrl}/api/v1/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Ocp-Apim-Subscription-Key': appIoConfig.apiKey },
@@ -354,14 +368,18 @@ export class NotificationProcessor extends WorkerHost {
           content: contentPayload,
         }),
       });
+      onLog?.(`Risposta App IO (co-delivery) per CF ${recipient.codiceFiscale}: HTTP ${appIoRes.status}`);
 
       if (!appIoRes.ok) {
         const detail = await appIoRes.text().catch(() => '');
-        return { success: false, error: `App IO status: ${appIoRes.status}${detail ? ` — ${detail}` : ''}` };
+        const error = `App IO status: ${appIoRes.status}${detail ? ` — ${detail}` : ''}`;
+        onLog?.(error);
+        return { success: false, error };
       }
       const appIoData = (await appIoRes.json()) as { id: string };
       return { success: true, messageId: appIoData.id };
     } catch (err: any) {
+      onLog?.(`Eccezione invio App IO (co-delivery) per CF ${recipient.codiceFiscale}: ${err.message}`);
       return { success: false, error: err.message };
     }
   }
