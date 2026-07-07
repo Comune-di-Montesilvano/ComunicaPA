@@ -1781,6 +1781,9 @@ export function App(): React.JSX.Element {
           headers.forEach((h, idx) => {
             obj[h] = cols[idx] || '';
           });
+          if (cols.length !== headers.length) {
+            obj.__colMismatch = `Numero di colonne non corrisponde all'intestazione (attese ${headers.length}, trovate ${cols.length}): probabile virgola non quotata in un campo (es. nominativo/ragione sociale) — verificare il file sorgente`;
+          }
           return obj;
         });
       } else {
@@ -1883,6 +1886,14 @@ export function App(): React.JSX.Element {
       let isRowValid = true;
       const rowNum = idx + 1;
 
+      // Riga con numero di colonne diverso dall'intestazione (es. virgola non
+      // quotata nel nominativo che shifta tutti i campi successivi): segnala
+      // subito la causa reale invece di errori fuorvianti sui campi shiftati.
+      if (row.__colMismatch) {
+        errors.push({ row: rowNum, field: 'Struttura riga', val: '', err: row.__colMismatch });
+        isRowValid = false;
+      }
+
       // Validate email
       if (isEmailMandatory && !emailField) {
         errors.push({ row: rowNum, field: 'Mappatura', val: '', err: 'La colonna Email deve essere mappata per il canale EMAIL' });
@@ -1975,7 +1986,8 @@ export function App(): React.JSX.Element {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `errori_validazione_${wizCsvFile?.name || 'campagna'}.csv`);
+    const baseName = (wizCsvFile?.name || 'campagna').replace(/\.csv$/i, '');
+    link.setAttribute('download', `errori_validazione_${baseName}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
