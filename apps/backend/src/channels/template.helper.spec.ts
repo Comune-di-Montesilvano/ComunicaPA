@@ -72,6 +72,32 @@ describe('processTemplate — macro %elenco_allegati%', () => {
   });
 });
 
+describe('processTemplate — carattere % letterale nel testo', () => {
+  const secret = 'test-secret';
+  const exp = 1893456000;
+
+  it('un solo "%" nel testo non viene toccato', () => {
+    const result = processTemplate('Corrisponde al 60% del tributo dovuto.', baseRecipient, 'http://api.test', secret, exp);
+    expect(result).toBe('Corrisponde al 60% del tributo dovuto.');
+  });
+
+  it('due "%" separati da spazi non formano un placeholder e restano letterali', () => {
+    const result = processTemplate(
+      "Corrisponde al 60% per cento del tributo dovuto per l'anno in corso, contro l'80% dell'anno precedente.",
+      baseRecipient,
+      'http://api.test',
+      secret,
+      exp,
+    );
+    expect(result).toBe("Corrisponde al 60% per cento del tributo dovuto per l'anno in corso, contro l'80% dell'anno precedente.");
+  });
+
+  it('un vero placeholder %nominativo% tra due "%" letterali continua a funzionare', () => {
+    const result = processTemplate('60% per %nominativo%, 80% totale', baseRecipient, 'http://api.test', secret, exp);
+    expect(result).toBe('60% per Mario Rossi, 80% totale');
+  });
+});
+
 describe('wrapInHtmlLayout con logo e portale', () => {
   it('inserisce il logo quando logoUrl è valorizzato', () => {
     const html = wrapInHtmlLayout('ciao', 'Comune Test', { logoUrl: 'https://ente.it/api/branding/logo' });

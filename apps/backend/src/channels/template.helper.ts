@@ -84,8 +84,11 @@ export function processTemplate(
   });
 
   // 5. Replace %key% (esclude %allegatoN% residui non consumati allo step 1:
-  // nessuna etichetta configurata per quell'indice → il placeholder resta letterale)
-  content = content.replace(/%([^%()]+)%/gi, (fullMatch, key) => {
+  // nessuna etichetta configurata per quell'indice → il placeholder resta letterale).
+  // Il charset esclude anche gli spazi: senza questo vincolo, un "%" letterale
+  // in una frase (es. "60% per cento") si accoppia col prossimo "%" trovato nel
+  // documento e tutto il testo in mezzo viene inghiottito come chiave placeholder.
+  content = content.replace(/%([^%\s()]+)%/gi, (fullMatch, key) => {
     if (/^allegato\d+$/i.test(key.trim())) {
       return fullMatch;
     }
