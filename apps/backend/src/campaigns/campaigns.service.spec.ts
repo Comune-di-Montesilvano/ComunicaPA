@@ -775,6 +775,20 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
     expect(queuesMock.addBulk).not.toHaveBeenCalled();
     expect(campaignRepoMock.decrement).not.toHaveBeenCalled();
   });
+
+  it('retryRecipient lancia BadRequestException se la campagna è CANCELLED', async () => {
+    campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'EMAIL', status: CampaignStatus.CANCELLED });
+    recipientRepoMock.findOne = jest.fn().mockResolvedValue({ id: 'r1', campaignId: 'c1', status: RecipientStatus.FAILED });
+
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    await expect(service.retryRecipient('c1', 'r1')).rejects.toThrow(
+      'Non è possibile rimettere in coda destinatari di una campagna annullata',
+    );
+    expect(queuesMock.addBulk).not.toHaveBeenCalled();
+    expect(campaignRepoMock.decrement).not.toHaveBeenCalled();
+  });
 });
 
 describe('CampaignsService.updateDraft', () => {

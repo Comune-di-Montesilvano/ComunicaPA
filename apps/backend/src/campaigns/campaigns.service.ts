@@ -522,6 +522,9 @@ export class CampaignsService {
   async retryRecipient(campaignId: string, recipientId: string): Promise<{ requeued: true; attemptId: string }> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+    if (campaign.status === CampaignStatus.CANCELLED) {
+      throw new BadRequestException('Non è possibile rimettere in coda destinatari di una campagna annullata');
+    }
 
     const recipient = await this.recipientRepo.findOne({ where: { id: recipientId } });
     if (!recipient || recipient.campaignId !== campaignId) {
