@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { createReadStream } from 'fs';
@@ -30,6 +30,8 @@ import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-mess
 
 @Injectable()
 export class CampaignsService {
+  private readonly logger = new Logger(CampaignsService.name);
+
   constructor(
     @InjectRepository(Campaign)
     private readonly campaignRepo: Repository<Campaign>,
@@ -173,7 +175,7 @@ export class CampaignsService {
   async uploadCsv(
     campaignId: string,
     filePath: string,
-  ): Promise<{ imported: number; campaignId: string }> {
+  ): Promise<{ imported: number; campaignId: string; blocked?: boolean; message?: string }> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) {
       await unlink(filePath).catch(() => undefined);
@@ -225,6 +227,18 @@ export class CampaignsService {
       }
 
       await this.campaignRepo.increment({ id: campaignId }, 'totalRecipients', imported);
+    } catch (err: any) {
+      // Risposta 200 con blocked=true (non un errore HTTP non-2xx): il reverse
+      // proxy di produzione intercetta le risposte non-2xx e ne sostituisce il
+      // body con una pagina HTML propria, rendendo illeggibile il messaggio
+      // lato frontend — stesso pattern già usato in launch().
+      this.logger.error(`Import CSV fallito per campagna ${campaignId} (${imported} destinatari già importati prima dell'errore): ${err?.message ?? err}`);
+      return {
+        imported,
+        campaignId,
+        blocked: true,
+        message: `Import interrotto dopo ${imported} destinatari: ${err?.message ?? 'errore sconosciuto'}`,
+      };
     } finally {
       await unlink(filePath).catch(() => undefined);
     }

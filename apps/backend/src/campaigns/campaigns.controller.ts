@@ -16,7 +16,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
-import { extname } from 'path';
+import { extname, join } from 'path';
 import * as fs from 'fs';
 import type { Request } from 'express';
 import type { JwtOperatorPayload } from '@comunicapa/shared-types';
@@ -27,6 +27,13 @@ import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { UpdateCampaignDto } from './dto/update-campaign.dto';
 import { PreviewMessageDto } from './dto/preview-message.dto';
 import { getUploadsDir } from '../attachments/attachment-paths';
+import {
+  assembleChunkedUpload,
+  chunkUploadDir,
+  cleanupChunkedUpload,
+  initChunkedUpload,
+  MAX_CHUNK_SIZE_BYTES,
+} from './chunked-upload.util';
 
 @Controller('admin/campaigns')
 @Roles('user', 'admin')
@@ -80,11 +87,67 @@ export class CampaignsController {
   uploadCsv(
     @Param('id', ParseUUIDPipe) id: string,
     @UploadedFile() file: Express.Multer.File,
-  ): Promise<{ imported: number; campaignId: string }> {
+  ): Promise<{ imported: number; campaignId: string; blocked?: boolean; message?: string }> {
     if (!file) {
       throw new BadRequestException('File CSV richiesto (Content-Type: text/csv)');
     }
     return this.campaignsService.uploadCsv(id, file.path);
+  }
+
+  // ── Upload CSV destinatari a chunk ──────────────────────────────────────
+  // Un reverse proxy esterno davanti al backend in produzione ha un limite di
+  // dimensione del body che spezza l'upload in un'unica richiesta per CSV di
+  // migliaia di destinatari. Il browser spezza il file in chunk più piccoli,
+  // caricati uno alla volta e riassemblati qui prima di riusare uploadCsv.
+
+  @Post(':id/recipients/upload/init')
+  initRecipientsChunkedUpload(
+    @Body() body: { filename?: string; totalChunks?: number },
+  ): { uploadId: string } {
+    const filename = body.filename?.trim();
+    const totalChunks = Number(body.totalChunks);
+    if (!filename || !Number.isInteger(totalChunks) || totalChunks < 1) {
+      throw new BadRequestException('filename e totalChunks (intero >= 1) richiesti');
+    }
+    return { uploadId: initChunkedUpload(filename, totalChunks) };
+  }
+
+  @Post(':id/recipients/upload/chunk/:uploadId/:index')
+  @UseInterceptors(
+    FileInterceptor('chunk', {
+      storage: diskStorage({
+        destination: (req, _file, cb) => {
+          const dir = chunkUploadDir(req.params['uploadId'] as string);
+          if (!fs.existsSync(dir)) {
+            cb(new BadRequestException('Sessione di upload non trovata o scaduta'), '');
+            return;
+          }
+          cb(null, dir);
+        },
+        filename: (req, _file, cb) => {
+          cb(null, `${req.params['index']}.part`);
+        },
+      }),
+      limits: { fileSize: MAX_CHUNK_SIZE_BYTES },
+    }),
+  )
+  uploadRecipientsChunk(): { ok: true } {
+    return { ok: true };
+  }
+
+  @Post(':id/recipients/upload/complete/:uploadId')
+  async completeRecipientsChunkedUpload(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('uploadId') uploadId: string,
+  ): Promise<{ imported: number; campaignId: string; blocked?: boolean; message?: string }> {
+    try {
+      const { path } = await assembleChunkedUpload(uploadId);
+      return await this.campaignsService.uploadCsv(id, path);
+    } catch (err: any) {
+      return { imported: 0, campaignId: id, blocked: true, message: err?.message ?? 'Errore durante il riassemblaggio dei chunk' };
+    } finally {
+      cleanupChunkedUpload(uploadId);
+    }
   }
 
   @Post(':id/attachments')
@@ -131,6 +194,71 @@ export class CampaignsController {
       discarded: result.discarded,
       campaignId: id,
     };
+  }
+
+  // ── Upload allegati (ZIP/PDF) a chunk ───────────────────────────────────
+  // Stesso motivo dei chunk per il CSV destinatari: uno ZIP con migliaia di
+  // PDF personalizzati supera facilmente il limite del reverse proxy esterno
+  // in un'unica richiesta.
+
+  @Post(':id/attachments/upload/init')
+  initAttachmentsChunkedUpload(
+    @Body() body: { filename?: string; totalChunks?: number },
+  ): { uploadId: string } {
+    const filename = body.filename?.trim();
+    const totalChunks = Number(body.totalChunks);
+    if (!filename || !Number.isInteger(totalChunks) || totalChunks < 1) {
+      throw new BadRequestException('filename e totalChunks (intero >= 1) richiesti');
+    }
+    return { uploadId: initChunkedUpload(filename, totalChunks) };
+  }
+
+  @Post(':id/attachments/upload/chunk/:uploadId/:index')
+  @UseInterceptors(
+    FileInterceptor('chunk', {
+      storage: diskStorage({
+        destination: (req, _file, cb) => {
+          const dir = chunkUploadDir(req.params['uploadId'] as string);
+          if (!fs.existsSync(dir)) {
+            cb(new BadRequestException('Sessione di upload non trovata o scaduta'), '');
+            return;
+          }
+          cb(null, dir);
+        },
+        filename: (req, _file, cb) => {
+          cb(null, `${req.params['index']}.part`);
+        },
+      }),
+      limits: { fileSize: MAX_CHUNK_SIZE_BYTES },
+    }),
+  )
+  uploadAttachmentsChunk(): { ok: true } {
+    return { ok: true };
+  }
+
+  @Post(':id/attachments/upload/complete/:uploadId')
+  async completeAttachmentsChunkedUpload(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('uploadId') uploadId: string,
+  ): Promise<{ uploaded: number; discarded: number; campaignId: string }> {
+    try {
+      await this.campaignsService.assertDraftForAttachments(id);
+      const { path, filename } = await assembleChunkedUpload(uploadId);
+
+      let result: { uploaded: number; discarded: number };
+      if (filename.toLowerCase().endsWith('.zip')) {
+        const fakeFile = { path, originalname: filename } as Express.Multer.File;
+        result = await this.campaignsService.finalizeAttachments(id, [fakeFile]);
+      } else {
+        const dir = getUploadsDir(id);
+        fs.mkdirSync(dir, { recursive: true });
+        fs.renameSync(path, join(dir, filename));
+        result = await this.campaignsService.finalizeAttachments(id, []);
+      }
+      return { uploaded: result.uploaded, discarded: result.discarded, campaignId: id };
+    } finally {
+      cleanupChunkedUpload(uploadId);
+    }
   }
 
   @Post(':id/launch')

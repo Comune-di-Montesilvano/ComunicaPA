@@ -31,6 +31,83 @@ function wizPlainTextLength(html: string): number {
 const APP_IO_MARKDOWN_MIN = 80;
 const APP_IO_MARKDOWN_MAX = 10000;
 
+// Upload a chunk: un reverse proxy esterno davanti al backend in produzione
+// ha un limite di dimensione del body che spezzava in un'unica richiesta
+// l'upload di CSV/ZIP di migliaia di destinatari/allegati. Spezziamo il file
+// in chunk da 4MB caricati uno alla volta e riassemblati lato server.
+const UPLOAD_CHUNK_SIZE = 4 * 1024 * 1024;
+
+/** Upload di un singolo chunk via XHR (fetch non espone eventi di progresso in upload). */
+function uploadChunkXhr(url: string, token: string, chunk: Blob, onProgress: (loadedBytes: number) => void): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url);
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(e.loaded);
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        onProgress(chunk.size);
+        resolve();
+      } else {
+        reject(new Error(`Upload chunk fallito (HTTP ${xhr.status})`));
+      }
+    };
+    xhr.onerror = () => reject(new Error('Errore di rete durante upload chunk'));
+    const fd = new FormData();
+    fd.append('chunk', chunk, 'chunk.part');
+    xhr.send(fd);
+  });
+}
+
+/**
+ * Carica `file` a chunk verso `<baseUrl>/init`, `/chunk/:uploadId/:index`,
+ * `/complete/:uploadId`. `onProgress` riceve i byte effettivamente caricati
+ * per QUESTO file (il chiamante somma l'offset se sta caricando più file
+ * con una barra di progresso aggregata).
+ */
+async function uploadFileInChunks(
+  baseUrl: string,
+  token: string,
+  file: Blob,
+  filename: string,
+  onProgress: (loadedBytes: number) => void,
+): Promise<any> {
+  const totalChunks = Math.max(1, Math.ceil(file.size / UPLOAD_CHUNK_SIZE));
+
+  const initRes = await fetch(`${baseUrl}/init`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ filename, totalChunks }),
+  });
+  if (!initRes.ok) {
+    const errBody = await initRes.json().catch(() => null);
+    throw new Error(errBody?.message || `Errore inizializzazione upload (HTTP ${initRes.status}).`);
+  }
+  const { uploadId } = await initRes.json() as { uploadId: string };
+
+  let uploadedBefore = 0;
+  for (let i = 0; i < totalChunks; i++) {
+    const start = i * UPLOAD_CHUNK_SIZE;
+    const end = Math.min(start + UPLOAD_CHUNK_SIZE, file.size);
+    const chunk = file.slice(start, end);
+    const base = uploadedBefore;
+    await uploadChunkXhr(`${baseUrl}/chunk/${uploadId}/${i}`, token, chunk, (loadedInChunk) => onProgress(base + loadedInChunk));
+    uploadedBefore += chunk.size;
+  }
+
+  const completeRes = await fetch(`${baseUrl}/complete/${uploadId}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!completeRes.ok) {
+    const errBody = await completeRes.json().catch(() => null);
+    throw new Error(errBody?.message || `Errore completamento upload (HTTP ${completeRes.status}).`);
+  }
+  return completeRes.json();
+}
+
 // Codice Fiscale (16 alfanumerici) o Partita IVA (11 cifre) — stesso vincolo
 // già applicato riga per riga nella validazione CSV del wizard massivo.
 function isValidCfOrPiva(value: string): boolean {
@@ -309,6 +386,7 @@ export function App(): React.JSX.Element {
   const [wizPreviewLoading, setWizPreviewLoading] = useState(false);
   const [wizPreviewChannelTab, setWizPreviewChannelTab] = useState<'MAIN' | 'APP_IO'>('MAIN');
   const [wizSending, setWizSending] = useState(false);
+  const [wizUploadProgress, setWizUploadProgress] = useState<{ label: string; loaded: number; total: number } | null>(null);
   const [wizMailConfigId, setWizMailConfigId] = useState('');
   const [wizAppIoMode, setWizAppIoMode] = useState<'none' | 'parallel' | 'exclusive'>('parallel');
   const [wizAppIoDifferentiate, setWizAppIoDifferentiate] = useState(false);
@@ -2283,36 +2361,40 @@ export function App(): React.JSX.Element {
 
       const csvContent = [headerLine, ...rowLines].join('\n');
       const blob = new Blob([csvContent], { type: 'text/csv' });
-      const formData = new FormData();
-      formData.append('file', blob, 'normalized_recipients.csv');
 
-      const uploadRes = await fetch(`${ADMIN_API_BASE}/campaigns/${campaignObj.id}/recipients/upload`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: formData,
-      });
-
-      if (!uploadRes.ok) {
-        throw new Error('Errore durante il caricamento dei destinatari.');
+      setWizUploadProgress({ label: 'Caricamento destinatari', loaded: 0, total: blob.size });
+      const uploadData = await uploadFileInChunks(
+        `${ADMIN_API_BASE}/campaigns/${campaignObj.id}/recipients/upload`,
+        token!,
+        blob,
+        'normalized_recipients.csv',
+        (loaded) => setWizUploadProgress(p => (p ? { ...p, loaded } : p)),
+      );
+      setWizUploadProgress(null);
+      if (uploadData?.blocked) {
+        throw new Error(uploadData.message || 'Errore durante il caricamento dei destinatari.');
       }
 
-      // Caricamento allegati PDF personalizzati
+      // Caricamento allegati PDF/ZIP personalizzati
       let discardCount = 0;
       if (wizPdfFiles && wizPdfFiles.length > 0) {
-        const attachFormData = new FormData();
-        wizPdfFiles.forEach(file => {
-          attachFormData.append('files', file);
-        });
-        const attachRes = await fetch(`${ADMIN_API_BASE}/campaigns/${campaignObj.id}/attachments`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` },
-          body: attachFormData,
-        });
-        if (!attachRes.ok) {
-          throw new Error('Errore durante il caricamento dei file PDF/ZIP degli allegati.');
+        const totalBytes = wizPdfFiles.reduce((sum, f) => sum + f.size, 0);
+        setWizUploadProgress({ label: 'Caricamento allegati', loaded: 0, total: totalBytes });
+        let cumulativeBefore = 0;
+        let lastAttachData: { uploaded: number; discarded?: number } | null = null;
+        for (const file of wizPdfFiles) {
+          const base = cumulativeBefore;
+          lastAttachData = await uploadFileInChunks(
+            `${ADMIN_API_BASE}/campaigns/${campaignObj.id}/attachments/upload`,
+            token!,
+            file,
+            file.name,
+            (loaded) => setWizUploadProgress(p => (p ? { ...p, loaded: base + loaded } : p)),
+          );
+          cumulativeBefore += file.size;
         }
-        const attachData = await attachRes.json() as { uploaded: number; discarded?: number };
-        discardCount = attachData.discarded || 0;
+        setWizUploadProgress(null);
+        discardCount = lastAttachData?.discarded || 0;
       }
 
       const launchRes = await fetch(`${ADMIN_API_BASE}/campaigns/${campaignObj.id}/launch`, {
@@ -2347,6 +2429,7 @@ export function App(): React.JSX.Element {
       alert(err.message || 'Errore durante l\'invio della campagna.');
     } finally {
       setWizSending(false);
+      setWizUploadProgress(null);
     }
   };
 
@@ -3877,24 +3960,44 @@ export function App(): React.JSX.Element {
                     </div>
                     <div className="card-body p-3">
                       <p className="small text-muted mb-2">
-                        Seleziona o trascina qui i file PDF degli avvisi individuali (es. estratti dal desktop).
+                        Seleziona o trascina qui i file PDF degli avvisi individuali (es. estratti dal desktop) oppure
+                        un unico file ZIP che li contiene tutti (consigliato per molti destinatari).
                         Il nome del file PDF deve corrispondere a quello indicato nella colonna mappata del CSV.
                       </p>
                       <input
                         type="file"
-                        accept=".pdf"
+                        accept=".pdf,.zip"
                         multiple
                         className="form-control form-control-sm"
                         onChange={e => setWizPdfFiles(Array.from(e.target.files || []))}
                       />
-                      <div className="form-text small text-muted">Puoi selezionare e caricare più file PDF contemporaneamente.</div>
+                      <div className="form-text small text-muted">Puoi selezionare e caricare più file PDF o uno ZIP contemporaneamente.</div>
                       {wizPdfFiles.length > 0 && (
                         <div className="badge bg-primary mt-2 p-2 w-100 text-start">
-                          <i className="fas fa-file-pdf me-1"></i> {wizPdfFiles.length} allegati PDF pronti per il caricamento
+                          <i className="fas fa-file-pdf me-1"></i> {wizPdfFiles.length} allegati pronti per il caricamento
                         </div>
                       )}
                     </div>
                   </div>
+
+                  {wizUploadProgress && (
+                    <div className="mb-3">
+                      <div className="d-flex justify-content-between small text-muted mb-1">
+                        <span>{wizUploadProgress.label}...</span>
+                        <span>
+                          {(wizUploadProgress.loaded / (1024 * 1024)).toFixed(1)} / {(wizUploadProgress.total / (1024 * 1024)).toFixed(1)} MB
+                          {' '}({wizUploadProgress.total > 0 ? Math.round((wizUploadProgress.loaded / wizUploadProgress.total) * 100) : 0}%)
+                        </span>
+                      </div>
+                      <div className="progress" style={{ height: '8px' }}>
+                        <div
+                          className="progress-bar"
+                          role="progressbar"
+                          style={{ width: `${wizUploadProgress.total > 0 ? Math.min(100, (wizUploadProgress.loaded / wizUploadProgress.total) * 100) : 0}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   <div className="mt-4 pt-3 border-top d-flex justify-content-between">
                     <button className="btn btn-outline-secondary" onClick={() => setWizStep(4)}>
