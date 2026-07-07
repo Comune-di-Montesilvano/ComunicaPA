@@ -64,11 +64,17 @@ describe('processTemplate — macro %%elenco_allegati%%', () => {
     expect((result.match(/<table/g) || []).length).toBe(2);
   });
 
-  it('formato markdown: genera un elenco puntato senza tag HTML', () => {
+  it('formato markdown: genera un elenco puntato senza tag HTML (nessuna riga vuota residua se e l\'unico contenuto)', () => {
     const result = processTemplate('%%elenco_allegati%%', baseRecipient, 'http://api.test', secret, exp, ['Tassa'], 'markdown');
     expect(result).toBe(`- **Tassa**: [Scarica](http://api.test/public/download/${baseRecipient.id}/0?exp=${exp}&sig=${result.match(/sig=([a-f0-9]+)/)?.[1]})`);
     expect(result).not.toContain('<table');
     expect(result).not.toContain('<td');
+  });
+
+  it('formato markdown: anche senza riga vuota nel template sorgente, resta garantita una separazione dal testo successivo (bug App IO)', () => {
+    const result = processTemplate('%%elenco_allegati%%\nTesto successivo.', baseRecipient, 'http://api.test', secret, exp, ['Tassa'], 'markdown');
+    expect(result).toContain('Scarica](');
+    expect(result).toMatch(/\)\n\n+Testo successivo\.$/);
   });
 
   it('nessun allegato configurato: la macro si espande in stringa vuota', () => {

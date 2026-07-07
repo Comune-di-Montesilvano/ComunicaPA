@@ -45,7 +45,7 @@ export function processTemplate(
       : format === 'markdown'
         ? attachmentLabels
             .map((label, index) => `- **${label}**: [Scarica](${buildDownloadUrl(index)})`)
-            .join('\n')
+            .join('\n') + '\n\n'
         : attachmentLabels
             .map(
               (label, index) =>
