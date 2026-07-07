@@ -268,6 +268,13 @@ export class CampaignsController {
     return this.campaignsService.launch(id);
   }
 
+  @Post(':id/cancel')
+  cancel(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<{ cancelled: number; campaignId: string }> {
+    return this.campaignsService.cancel(id);
+  }
+
   @Get(':id/duplicate-source')
   getDuplicateSource(@Param('id', ParseUUIDPipe) id: string) {
     return this.campaignsService.getDuplicateSource(id);
