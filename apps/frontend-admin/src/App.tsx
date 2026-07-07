@@ -142,7 +142,7 @@ interface Campaign {
   id: string;
   name: string;
   description: string | null;
-  status: 'draft' | 'queued' | 'running' | 'completed' | 'failed';
+  status: 'draft' | 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
   channelType: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL';
   channelConfig: Record<string, any>;
   createdBy: string;
@@ -636,6 +636,7 @@ export function App(): React.JSX.Element {
   const [loadingCampaignDetail, setLoadingCampaignDetail] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [campaignFailures, setCampaignFailures] = useState<Array<{ recipientId: string; codiceFiscale: string; fullName: string | null; errorMessage: string | null; attemptNumber: number; lastAttemptAt: string }>>([]);
   const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number } | null>(null);
   const [downloadByChannel, setDownloadByChannel] = useState<Record<string, number> | null>(null);
@@ -2489,6 +2490,31 @@ export function App(): React.JSX.Element {
       alert(err.message);
     } finally {
       setLaunching(false);
+    }
+  };
+
+  const handleCancelCampaign = async () => {
+    if (!campaign) return;
+    if (!confirm(`Annullare la campagna "${campaign.name}"? I messaggi già inviati NON verranno toccati, ma quelli ancora in coda saranno eliminati e non potranno più essere inviati. L'operazione è irreversibile.`)) {
+      return;
+    }
+    setCancelling(true);
+    try {
+      const res = await fetch(`${ADMIN_API_BASE}/campaigns/${campaign.id}/cancel`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.message || 'Errore durante l\'annullamento della campagna');
+      }
+      const data = await res.json();
+      alert(`Campagna annullata. Destinatari rimossi dalla coda: ${data.cancelled}.`);
+      fetchCampaignDetail(campaign.id);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setCancelling(false);
     }
   };
 
@@ -5514,6 +5540,19 @@ export function App(): React.JSX.Element {
                                 <><i className="fas fa-spinner fa-spin me-2"></i>Lancio in corso...</>
                               ) : (
                                 <><i className="fas fa-rocket me-2"></i>Lancia Campagna</>
+                              )}
+                            </button>
+                          )}
+                          {campaign.status === 'queued' && (
+                            <button
+                              className="btn btn-outline-danger w-100 py-2 fw-semibold"
+                              disabled={cancelling}
+                              onClick={handleCancelCampaign}
+                            >
+                              {cancelling ? (
+                                <><i className="fas fa-spinner fa-spin me-2"></i>Annullamento in corso...</>
+                              ) : (
+                                <><i className="fas fa-ban me-2"></i>Annulla Campagna</>
                               )}
                             </button>
                           )}
