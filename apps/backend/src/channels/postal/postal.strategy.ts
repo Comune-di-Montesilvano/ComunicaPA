@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import type { NotificationChannel, ChannelSendResult } from '@comunicapa/shared-types';
 import type { IChannelStrategy } from '../channel.interface';
 import type { Recipient } from '../../entities/recipient.entity';
@@ -7,6 +7,7 @@ import { PdfService } from '../../pdf/pdf.service';
 
 @Injectable()
 export class PostalStrategy implements IChannelStrategy {
+  private readonly logger = new Logger(PostalStrategy.name);
   readonly channel: NotificationChannel = 'POSTAL';
 
   constructor(private readonly pdfService: PdfService) {}
@@ -22,7 +23,9 @@ export class PostalStrategy implements IChannelStrategy {
     const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const stamp = `TARI/${recipient.codiceFiscale}/${date}`;
 
+    this.logger.debug(`Timbratura PDF per CF ${recipient.codiceFiscale} (template=${pdfTemplateId}, stamp="${stamp}")`);
     const stampedId = await this.pdfService.stampWithProtocol(pdfTemplateId, stamp);
+    this.logger.log(`PDF timbrato per CF ${recipient.codiceFiscale}: stampedId=${stampedId}`);
 
     return {
       messageId: stampedId,

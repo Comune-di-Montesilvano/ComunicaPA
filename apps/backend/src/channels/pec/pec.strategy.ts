@@ -64,8 +64,11 @@ export class PecStrategy implements IChannelStrategy {
       },
     });
 
+    const from = (campaign.channelConfig?.['from'] as string) || smtp.fromAddress;
+    this.logger.debug(`Invio PEC a ${recipient.pec} via ${smtp.host}:${smtp.port} (from=${from}, subject="${subject}")`);
+
     const info = (await transporter.sendMail({
-      from: (campaign.channelConfig?.['from'] as string) || smtp.fromAddress,
+      from,
       to: recipient.pec,
       subject,
       text: bodyText,
@@ -73,6 +76,7 @@ export class PecStrategy implements IChannelStrategy {
     })) as any;
 
     this.logger.log(`PEC successfully sent to ${recipient.pec}: messageId=${info.messageId}`);
+    this.logger.debug(`Risposta SMTP per ${recipient.pec}: response=${info.response}, accepted=${JSON.stringify(info.accepted)}, rejected=${JSON.stringify(info.rejected)}`);
 
     return {
       messageId: info.messageId,

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type { NotificationChannel, ChannelSendResult } from '@comunicapa/shared-types';
 import type { IChannelStrategy } from '../channel.interface';
 import type { Recipient } from '../../entities/recipient.entity';
@@ -14,6 +14,7 @@ function interpolate(template: string, vars: Record<string, string>): string {
 
 @Injectable()
 export class AppIoStrategy implements IChannelStrategy {
+  private readonly logger = new Logger(AppIoStrategy.name);
   readonly channel: NotificationChannel = 'APP_IO';
 
   constructor(private readonly ioServices: IoServicesService) {}
@@ -26,12 +27,14 @@ export class AppIoStrategy implements IChannelStrategy {
     }
 
     // 1. Verifica il profilo del cittadino su App IO
+    this.logger.debug(`Verifica profilo App IO per CF ${recipient.codiceFiscale}`);
     const profileRes = await fetch(`${APP_IO_BASE_URL}/api/v1/profiles/${recipient.codiceFiscale}`, {
       method: 'GET',
       headers: {
         'Ocp-Apim-Subscription-Key': resolved.apiKey,
       },
     });
+    this.logger.debug(`Risposta verifica profilo per CF ${recipient.codiceFiscale}: HTTP ${profileRes.status}`);
 
     if (!profileRes.ok) {
       if (profileRes.status === 404) {
@@ -54,6 +57,7 @@ export class AppIoStrategy implements IChannelStrategy {
     const subject = interpolate(cfg['subject'] ?? campaign.name, vars);
     const markdown = interpolate(cfg['body'] ?? '', vars);
 
+    this.logger.debug(`Invio messaggio App IO a CF ${recipient.codiceFiscale} (subject="${subject}")`);
     const response = await fetch(`${APP_IO_BASE_URL}/api/v1/messages`, {
       method: 'POST',
       headers: {
@@ -65,6 +69,7 @@ export class AppIoStrategy implements IChannelStrategy {
         content: { subject, markdown },
       }),
     });
+    this.logger.debug(`Risposta invio messaggio App IO per CF ${recipient.codiceFiscale}: HTTP ${response.status}`);
 
     if (!response.ok) {
       const detail = await response.text().catch(() => '');
@@ -72,6 +77,7 @@ export class AppIoStrategy implements IChannelStrategy {
     }
 
     const data = (await response.json()) as { id: string };
+    this.logger.log(`Messaggio App IO inviato a CF ${recipient.codiceFiscale}: messageId=${data.id}`);
     return { messageId: data.id, responsePayload: data as unknown as Record<string, unknown> };
   }
 }

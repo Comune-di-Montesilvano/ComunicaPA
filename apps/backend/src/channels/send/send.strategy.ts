@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type { NotificationChannel, ChannelSendResult } from '@comunicapa/shared-types';
 import type { IChannelStrategy } from '../channel.interface';
 import type { Recipient } from '../../entities/recipient.entity';
@@ -11,6 +11,7 @@ function interpolate(template: string, vars: Record<string, string>): string {
 
 @Injectable()
 export class SendStrategy implements IChannelStrategy {
+  private readonly logger = new Logger(SendStrategy.name);
   readonly channel: NotificationChannel = 'SEND';
 
   constructor(private readonly settings: AppSettingsService) {}
@@ -27,6 +28,7 @@ export class SendStrategy implements IChannelStrategy {
     const subject = interpolate(cfg['subject'] ?? campaign.name, vars);
     const notificationBody = interpolate(cfg['body'] ?? '', vars);
 
+    this.logger.debug(`Invio notifica SEND a CF ${recipient.codiceFiscale} via ${baseUrl} (subject="${subject}")`);
     const response = await fetch(`${baseUrl}/delivery/notifications/sent`, {
       method: 'POST',
       headers: {
@@ -39,12 +41,14 @@ export class SendStrategy implements IChannelStrategy {
         notificationBody,
       }),
     });
+    this.logger.debug(`Risposta SEND per CF ${recipient.codiceFiscale}: HTTP ${response.status}`);
 
     if (!response.ok) {
       throw new Error(`SEND API error: ${response.status}`);
     }
 
     const data = (await response.json()) as { notificationRequestId: string };
+    this.logger.log(`Notifica SEND inviata a CF ${recipient.codiceFiscale}: messageId=${data.notificationRequestId}`);
     return {
       messageId: data.notificationRequestId,
       responsePayload: data as unknown as Record<string, unknown>,
