@@ -3070,7 +3070,8 @@ export function App(): React.JSX.Element {
                                 <td className="text-center">
                                   <span className={`badge ${
                                     c.status === 'completed' ? 'bg-success' :
-                                    c.status === 'draft' ? 'bg-secondary' : 'bg-warning text-dark'
+                                    c.status === 'draft' ? 'bg-secondary' :
+                                    c.status === 'cancelled' ? 'bg-dark' : 'bg-warning text-dark'
                                   }`}>
                                     {c.status.toUpperCase()}
                                   </span>
@@ -5415,7 +5416,8 @@ export function App(): React.JSX.Element {
                               campaign.status === 'draft' ? 'bg-secondary' :
                               campaign.status === 'queued' ? 'bg-info text-dark' :
                               campaign.status === 'running' ? 'bg-warning text-dark' :
-                              campaign.status === 'completed' ? 'bg-success' : 'bg-danger'
+                              campaign.status === 'completed' ? 'bg-success' :
+                              campaign.status === 'cancelled' ? 'bg-dark' : 'bg-danger'
                             }`}>
                               {campaign.status.toUpperCase()}
                             </span>
@@ -5428,7 +5430,7 @@ export function App(): React.JSX.Element {
                           </div>
                         </div>
 
-                        {(campaign.status === 'running' || campaign.status === 'completed' || campaign.status === 'queued') && (
+                        {(campaign.status === 'running' || campaign.status === 'completed' || campaign.status === 'queued' || campaign.status === 'cancelled') && (
                           <div className="mt-4 border-top pt-3">
                             <h4 className="small fw-bold mb-2">Stato dell'Invio ({campaign.sentCount + campaign.failedCount} / {campaign.totalRecipients})</h4>
                             <div className="progress mb-2" style={{ height: '10px' }}>
