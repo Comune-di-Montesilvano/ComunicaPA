@@ -16,6 +16,7 @@ export enum RecipientStatus {
   SENT = 'sent',
   FAILED = 'failed',
   SKIPPED = 'skipped',
+  CANCELLED = 'cancelled',
 }
 
 @Entity('recipients')

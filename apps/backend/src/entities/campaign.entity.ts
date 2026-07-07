@@ -15,6 +15,7 @@ export enum CampaignStatus {
   RUNNING = 'running',
   COMPLETED = 'completed',
   FAILED = 'failed',
+  CANCELLED = 'cancelled',
 }
 
 @Entity('campaigns')

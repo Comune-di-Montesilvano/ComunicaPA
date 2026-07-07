@@ -13,6 +13,7 @@ export enum AttemptStatus {
   PROCESSING = 'processing',
   SUCCESS = 'success',
   FAILED = 'failed',
+  CANCELLED = 'cancelled',
 }
 
 @Entity('notification_attempts')
