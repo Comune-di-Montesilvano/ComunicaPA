@@ -170,3 +170,47 @@ Solo le variabili sistemistiche/di bootstrap passano da `.env` (vedi sezione "Co
 Obbligatorie in produzione (`:?` nel compose): `JWT_SECRET`, `DOWNLOAD_LINK_SECRET`.
 
 `POSTGRES_PASSWORD` SOLO caratteri alfanumerici: il compose la incastra in `DATABASE_URL` senza escaping — `$ @ # ^` rompono il parsing dell'URL e il backend prova a connettersi a un host sbagliato (es. `0.0.0.48`).
+
+## Reverse proxy esterno in produzione — gotcha critico
+
+Davanti al backend in produzione c'è un reverse proxy esterno (fuori da questo
+repo, gestito a livello infrastruttura) con **limite body ~1MB** e che
+**sostituisce il body delle risposte non-2xx con una pagina HTML propria**,
+rendendo illeggibile qualsiasi messaggio di errore lato frontend. Pattern
+obbligatorio per endpoint che possono fallire in modo "previsto" (validazione,
+allegati mancanti): rispondere sempre **HTTP 200** con un flag tipo
+`{ blocked: true, message: '...' }`, mai lanciare eccezioni HTTP non-2xx per
+errori che l'utente deve poter leggere (vedi `campaigns.service.ts`
+`launch()`/`uploadCsv()`). Per upload di file grandi (CSV migliaia di righe,
+ZIP allegati) usare l'upload a chunk (`chunked-upload.util.ts` +
+`:id/recipients/upload/{init,chunk,complete}` e equivalente per attachments):
+chunk client-side da 512KB (sotto il limite del proxy), riassemblati lato
+server prima di riusare la logica di import esistente.
+
+## Log debug/verbose — gotcha
+
+Il logger NestJS di default (`NestFactory.create`) esclude i livelli
+`debug`/`verbose`, a prescindere dall'ambiente. `main.ts` legge `LOG_LEVEL`
+da env (default `info`) e lo mappa ai livelli Nest — impostare
+`LOG_LEVEL=debug` in `.env` e riavviare il backend per vedere i log di
+dettaglio dei motori di invio (payload/risposte PEC/Email/App IO/SEND/Postal).
+I job BullMQ salvano inoltre i propri log (`job.log()`), consultabili dalla
+UI admin → Motori → "Vedi log" per singolo job, senza bisogno di accesso SSH.
+
+## Placeholder template notifiche
+
+Delimitatore `%%chiave%%` (doppio `%`, non singolo) — vedi `template.helper.ts`
+`processTemplate()`. Un `%` singolo (percentuale in prosa, es. "60% del
+tributo") non forma mai un placeholder. Nessuna retrocompatibilità col vecchio
+delimitatore singolo: i template esistenti vanno riscritti.
+
+## Creazione campagne — un solo percorso
+
+La creazione/import destinatari passa **solo** dal wizard multi-step
+(`view === 'invio-massivo-wizard'` in `frontend-admin/App.tsx`): è l'unico
+punto con le validazioni corrette (formato CF/email, lunghezza minima body
+App IO). Non aggiungere form di creazione rapida o importer CSV alternativi
+altrove (es. sulla pagina dettaglio campagna) — bypassano quelle validazioni
+e hanno già causato invii falliti in produzione (CF troncato, markdown vuoto
+per App IO). Per riprendere una bozza: bottone "Riprendi wizard"
+(`handleResumeDraft`), non un importer dedicato.
