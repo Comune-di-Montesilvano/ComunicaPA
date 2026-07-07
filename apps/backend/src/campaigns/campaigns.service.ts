@@ -329,6 +329,7 @@ export class CampaignsService {
             attemptId: attemptIds[i + idx],
             channel: campaign.channelType,
           },
+          opts: { jobId: attemptIds[i + idx] },
         })),
       );
     }
@@ -497,7 +498,7 @@ export class CampaignsService {
     await this.campaignRepo.decrement({ id: campaignId }, 'failedCount', 1);
 
     await this.notificationQueues.addBulk(campaign.channelType, [
-      { name: NOTIFICATION_JOB_SEND, data: { campaignId, recipientId, attemptId, channel: campaign.channelType } },
+      { name: NOTIFICATION_JOB_SEND, data: { campaignId, recipientId, attemptId, channel: campaign.channelType }, opts: { jobId: attemptId } },
     ]);
 
     return { requeued: true, attemptId };

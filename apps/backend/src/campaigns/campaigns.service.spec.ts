@@ -175,6 +175,29 @@ describe('CampaignsService', () => {
     expect(mockQb.execute).toHaveBeenCalled();
   });
 
+  it('launch accoda i job BullMQ con jobId = attemptId', async () => {
+    mockCampaignQb.execute.mockResolvedValueOnce({ affected: 1 });
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelConfig: {} });
+    mockRecipientRepo.find.mockResolvedValueOnce([{ id: 'r1' }, { id: 'r2' }]);
+    mockAttemptRepo.createQueryBuilder.mockReturnValue({
+      insert: jest.fn().mockReturnThis(),
+      into: jest.fn().mockReturnThis(),
+      values: jest.fn().mockReturnThis(),
+      returning: jest.fn().mockReturnThis(),
+      execute: jest.fn().mockResolvedValue({ raw: [{ id: 'att-1' }, { id: 'att-2' }] }),
+    });
+
+    await service.launch('c1');
+
+    expect(mockQueue.addBulk).toHaveBeenCalledWith(
+      mockCampaign.channelType,
+      [
+        expect.objectContaining({ opts: { jobId: 'att-1' } }),
+        expect.objectContaining({ opts: { jobId: 'att-2' } }),
+      ],
+    );
+  });
+
   it('uploadCsv uses increment for totalRecipients instead of update (no overwrite)', async () => {
     mockCampaignRepo.findOneBy.mockResolvedValueOnce(null);
     await expect(
@@ -645,7 +668,7 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
     expect(recipientRepoMock.update).toHaveBeenCalledWith({ id: 'r1' }, { status: 'queued' });
     expect(campaignRepoMock.decrement).toHaveBeenCalledWith({ id: 'c1' }, 'failedCount', 1);
     expect(queuesMock.addBulk).toHaveBeenCalledWith('EMAIL', [
-      { name: 'send', data: { campaignId: 'c1', recipientId: 'r1', attemptId: 'attempt-2', channel: 'EMAIL' } },
+      { name: 'send', data: { campaignId: 'c1', recipientId: 'r1', attemptId: 'attempt-2', channel: 'EMAIL' }, opts: { jobId: 'attempt-2' } },
     ]);
     expect(result).toEqual({ requeued: true, attemptId: 'attempt-2' });
   });
