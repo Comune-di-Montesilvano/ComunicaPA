@@ -204,6 +204,36 @@ Delimitatore `%%chiave%%` (doppio `%`, non singolo) — vedi `template.helper.ts
 tributo") non forma mai un placeholder. Nessuna retrocompatibilità col vecchio
 delimitatore singolo: i template esistenti vanno riscritti.
 
+## Job BullMQ e stato campagna/destinatario — pattern jobId = attemptId
+
+`launch()`, `retryRecipient()` e `cancel()` in `campaigns.service.ts` accodano
+ogni job BullMQ con `opts.jobId` impostato esplicitamente = `NotificationAttempt.id`
+(via `NotificationQueuesService.addBulk`). Questo permette lookup diretto
+(`notificationQueues.getJob(channel, attemptId)`) senza scansionare l'intera
+coda del canale — indispensabile per annullare/gestire job di UNA campagna
+quando la coda è condivisa tra più campagne dello stesso canale. Se aggiungi
+un nuovo punto che accoda job (`addBulk`), passa sempre `opts.jobId` con lo
+stesso attemptId, altrimenti quel job diventa invisibile a `cancel()`.
+
+Quando aggiungi un nuovo stato "terminale" a `CampaignStatus`/`RecipientStatus`
+(es. `CANCELLED`), audit obbligatorio: TUTTI i metodi che mutano quel record
+devono guardare contro il nuovo stato, non solo il metodo che lo introduce.
+Bug reale: `retryRecipient()` non controllava `campaign.status`, quindi un
+destinatario `FAILED` (lasciato intatto da `cancel()` apposta) poteva essere
+rimesso in coda su una campagna già `CANCELLED` — inviando davvero un
+messaggio su una campagna "annullata".
+
+## Migration enum Postgres — ALTER TYPE ADD VALUE
+
+`typeorm migration:generate` NON sa generare `ALTER TYPE ... ADD VALUE` per un
+nuovo valore enum Postgres: produce un diff invasivo (rename tipo esistente →
+crea nuovo tipo → `ALTER COLUMN ... USING ... ::testo::nuovo_tipo` → drop/ricrea
+eventuali FK coinvolte). Per aggiungere un valore enum, scrivi la migration a
+mano con `ALTER TYPE "public"."<tabella>_status_enum" ADD VALUE '<valore>'`
+(una query per tipo coinvolto), `down()` no-op documentato (Postgres non ha
+`DROP VALUE`). Verifica eseguendo l'intera catena di migration su un DB
+temporaneo pulito, non fidandoti dell'output grezzo del generatore.
+
 ## Creazione campagne — un solo percorso
 
 La creazione/import destinatari passa **solo** dal wizard multi-step
