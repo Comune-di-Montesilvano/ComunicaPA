@@ -14,8 +14,8 @@ import { randomUUID } from 'crypto';
 
 const CHUNK_ROOT = '/tmp/comunicapa-uploads/chunked';
 
-/** Margine di sicurezza (2x) sulla dimensione chunk usata dal client (4MB). */
-export const MAX_CHUNK_SIZE_BYTES = 8 * 1024 * 1024;
+/** Margine di sicurezza (4x) sulla dimensione chunk usata dal client (512KB). */
+export const MAX_CHUNK_SIZE_BYTES = 2 * 1024 * 1024;
 
 interface ChunkUploadMeta {
   filename: string;
