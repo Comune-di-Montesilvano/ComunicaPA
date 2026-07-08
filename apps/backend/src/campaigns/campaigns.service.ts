@@ -782,17 +782,27 @@ export class CampaignsService {
     return { requeued, failed };
   }
 
-  async getRecipientStats(campaignId: string, page: number, pageSize: number): Promise<RecipientStatsPageDto> {
+  async getRecipientStats(campaignId: string, page: number, pageSize: number, search?: string): Promise<RecipientStatsPageDto> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
-    const [items, total] = await this.recipientRepo.findAndCount({
-      where: { campaignId },
-      select: ['id', 'fullName', 'codiceFiscale', 'downloadCount', 'firstDownloadedAt', 'lastDownloadedAt', 'attachmentDeletedAt'],
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-      order: { createdAt: 'ASC' },
-    });
+    const qb = this.recipientRepo
+      .createQueryBuilder('r')
+      .select([
+        'r.id', 'r.fullName', 'r.codiceFiscale', 'r.email', 'r.pec', 'r.status',
+        'r.downloadCount', 'r.firstDownloadedAt', 'r.lastDownloadedAt', 'r.attachmentDeletedAt',
+      ])
+      .where('r.campaignId = :campaignId', { campaignId });
+
+    if (search && search.trim()) {
+      qb.andWhere('(r.fullName ILIKE :search OR r.codiceFiscale ILIKE :search)', { search: `%${search.trim()}%` });
+    }
+
+    const [items, total] = await qb
+      .orderBy('r.createdAt', 'ASC')
+      .skip((page - 1) * pageSize)
+      .take(pageSize)
+      .getManyAndCount();
 
     return { campaignId, page, pageSize, total, items };
   }

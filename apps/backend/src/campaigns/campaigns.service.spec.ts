@@ -234,19 +234,40 @@ describe('CampaignsService', () => {
     await expect(service.getStats('no-exist')).rejects.toThrow(NotFoundException);
   });
 
-  it('getRecipientStats pagina i risultati', async () => {
-    mockCampaignRepo.findOneBy.mockResolvedValueOnce(mockCampaign);
-    mockRecipientRepo.findAndCount = jest.fn().mockResolvedValue([
-      [{ id: 'r1', fullName: 'Mario Rossi', codiceFiscale: 'CF1', downloadCount: 1, firstDownloadedAt: new Date(), lastDownloadedAt: new Date(), attachmentDeletedAt: null }],
+  it('getRecipientStats pagina i risultati e seleziona i nuovi campi', async () => {
+    const qb: any = {};
+    ['select', 'where', 'andWhere', 'orderBy', 'skip', 'take'].forEach((m) => {
+      qb[m] = jest.fn().mockReturnValue(qb);
+    });
+    qb.getManyAndCount = jest.fn().mockResolvedValue([
+      [{ id: 'r1', fullName: 'Mario Rossi', codiceFiscale: 'AAA1', email: null, pec: null, status: 'sent', downloadCount: 0, firstDownloadedAt: null, lastDownloadedAt: null, attachmentDeletedAt: null }],
       1,
     ]);
+    mockRecipientRepo.createQueryBuilder = jest.fn().mockReturnValue(qb);
 
     const page = await service.getRecipientStats('uuid-1', 1, 20);
 
-    expect(page.total).toBe(1);
-    expect(page.items).toHaveLength(1);
-    expect(mockRecipientRepo.findAndCount).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { campaignId: 'uuid-1' }, skip: 0, take: 20 }),
+    expect(mockRecipientRepo.createQueryBuilder).toHaveBeenCalledWith('r');
+    expect(qb.where).toHaveBeenCalledWith('r.campaignId = :campaignId', { campaignId: 'uuid-1' });
+    expect(qb.andWhere).not.toHaveBeenCalled();
+    expect(qb.skip).toHaveBeenCalledWith(0);
+    expect(qb.take).toHaveBeenCalledWith(20);
+    expect(page).toEqual({ campaignId: 'uuid-1', page: 1, pageSize: 20, total: 1, items: expect.any(Array) });
+  });
+
+  it('getRecipientStats applica il filtro search su fullName o codiceFiscale', async () => {
+    const qb: any = {};
+    ['select', 'where', 'andWhere', 'orderBy', 'skip', 'take'].forEach((m) => {
+      qb[m] = jest.fn().mockReturnValue(qb);
+    });
+    qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
+    mockRecipientRepo.createQueryBuilder = jest.fn().mockReturnValue(qb);
+
+    await service.getRecipientStats('uuid-1', 1, 20, 'rossi');
+
+    expect(qb.andWhere).toHaveBeenCalledWith(
+      '(r.fullName ILIKE :search OR r.codiceFiscale ILIKE :search)',
+      { search: '%rossi%' },
     );
   });
 

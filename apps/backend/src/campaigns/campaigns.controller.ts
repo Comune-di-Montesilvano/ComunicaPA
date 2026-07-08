@@ -375,6 +375,7 @@ export class CampaignsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
+    @Query('search') search?: string,
   ) {
     const parsedPage = parseInt(page ?? '1', 10);
     const parsedPageSize = parseInt(pageSize ?? '50', 10);
@@ -386,7 +387,7 @@ export class CampaignsController {
       throw new BadRequestException('Il parametro pageSize deve essere un numero intero maggiore o uguale a 1');
     }
 
-    return this.campaignsService.getRecipientStats(id, parsedPage, parsedPageSize);
+    return this.campaignsService.getRecipientStats(id, parsedPage, parsedPageSize, search);
   }
 
   @Delete(':id')

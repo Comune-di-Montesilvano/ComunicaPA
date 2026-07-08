@@ -22,33 +22,38 @@ describe('CampaignsController', () => {
 
   describe('getRecipientStats', () => {
     it('usa i valori di default quando page/pageSize non sono forniti', async () => {
-      await controller.getRecipientStats('uuid-1', undefined, undefined);
-      expect(mockService.getRecipientStats).toHaveBeenCalledWith('uuid-1', 1, 50);
+      await controller.getRecipientStats('uuid-1', undefined, undefined, undefined);
+      expect(mockService.getRecipientStats).toHaveBeenCalledWith('uuid-1', 1, 50, undefined);
     });
 
     it('rifiuta un page non numerico con BadRequestException', () => {
-      expect(() => controller.getRecipientStats('uuid-1', 'abc', undefined)).toThrow(BadRequestException);
+      expect(() => controller.getRecipientStats('uuid-1', 'abc', undefined, undefined)).toThrow(BadRequestException);
       expect(mockService.getRecipientStats).not.toHaveBeenCalled();
     });
 
     it('rifiuta un pageSize non numerico con BadRequestException', () => {
-      expect(() => controller.getRecipientStats('uuid-1', undefined, 'xyz')).toThrow(BadRequestException);
+      expect(() => controller.getRecipientStats('uuid-1', undefined, 'xyz', undefined)).toThrow(BadRequestException);
       expect(mockService.getRecipientStats).not.toHaveBeenCalled();
     });
 
     it('rifiuta un page negativo con BadRequestException', () => {
-      expect(() => controller.getRecipientStats('uuid-1', '-1', undefined)).toThrow(BadRequestException);
+      expect(() => controller.getRecipientStats('uuid-1', '-1', undefined, undefined)).toThrow(BadRequestException);
       expect(mockService.getRecipientStats).not.toHaveBeenCalled();
     });
 
     it('rifiuta un pageSize pari a zero con BadRequestException', () => {
-      expect(() => controller.getRecipientStats('uuid-1', undefined, '0')).toThrow(BadRequestException);
+      expect(() => controller.getRecipientStats('uuid-1', undefined, '0', undefined)).toThrow(BadRequestException);
       expect(mockService.getRecipientStats).not.toHaveBeenCalled();
     });
 
     it('accetta valori validi e li inoltra al servizio', async () => {
-      await controller.getRecipientStats('uuid-1', '2', '25');
-      expect(mockService.getRecipientStats).toHaveBeenCalledWith('uuid-1', 2, 25);
+      await controller.getRecipientStats('uuid-1', '2', '25', undefined);
+      expect(mockService.getRecipientStats).toHaveBeenCalledWith('uuid-1', 2, 25, undefined);
+    });
+
+    it('inoltra il parametro search al servizio', async () => {
+      await controller.getRecipientStats('uuid-1', '1', '50', 'rossi');
+      expect(mockService.getRecipientStats).toHaveBeenCalledWith('uuid-1', 1, 50, 'rossi');
     });
   });
 

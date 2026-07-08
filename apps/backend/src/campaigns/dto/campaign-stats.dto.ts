@@ -11,6 +11,9 @@ export interface RecipientStatDto {
   id: string;
   fullName: string | null;
   codiceFiscale: string;
+  email: string | null;
+  pec: string | null;
+  status: string;
   downloadCount: number;
   firstDownloadedAt: Date | null;
   lastDownloadedAt: Date | null;
