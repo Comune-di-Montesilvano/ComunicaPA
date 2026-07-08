@@ -901,12 +901,14 @@ export function App(): React.JSX.Element {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ recipientIds: group.recipientIds }),
       });
-      if (res.ok) {
-        const result = await res.json();
-        alert(`${result.requeued} destinatari rimessi in coda${result.failed.length > 0 ? `, ${result.failed.length} non ritentabili` : ''}`);
-        await fetchFailureGroups(selectedCampaignId);
-        await fetchCampaignDetail(selectedCampaignId);
-      }
+      if (!res.ok) throw new Error('Errore durante la rimessa in coda dei destinatari.');
+      const result = await res.json();
+      alert(`${result.requeued} destinatari rimessi in coda${result.failed.length > 0 ? `, ${result.failed.length} non ritentabili` : ''}`);
+      await fetchFailureGroups(selectedCampaignId);
+      await fetchCampaignDetail(selectedCampaignId);
+    } catch (err: any) {
+      if (err instanceof ApiAuthError) return;
+      alert(err.message);
     } finally {
       setRetryingGroup(null);
     }
