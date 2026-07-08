@@ -2515,7 +2515,6 @@ export function App(): React.JSX.Element {
     fetchChannelBreakdown(id);
     fetchDownloadChannelStats(id);
     fetchDownloadCrossChannelStats(id);
-    fetchRecipientsPage(id, 1, '');
   };
 
   const fetchChannelBreakdown = async (id: string) => {
