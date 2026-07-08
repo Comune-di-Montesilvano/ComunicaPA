@@ -1,6 +1,8 @@
 import { Test } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
 import { AppIoStrategy } from './app-io.strategy';
 import { IoServicesService } from '../../io-services/io-services.service';
+import { AppSettingsService } from '../../settings/app-settings.service';
 
 const mockFetch = jest.fn();
 global.fetch = mockFetch as unknown as typeof fetch;
@@ -33,10 +35,27 @@ describe('AppIoStrategy', () => {
       };
     });
 
+    const mockConfig = {
+      get: jest.fn((key: string) => {
+        if (key === 'downloadLink.secret') return 'secret';
+        return null;
+      }),
+    };
+    const mockSettings = {
+      get: jest.fn(async (key: string) => {
+        if (key === 'system.publicUrl') return 'http://api.test';
+        if (key === 'brand.name') return 'Comune di Montesilvano';
+        if (key === 'retention.maxDays') return 30;
+        return null;
+      }),
+    };
+
     const module = await Test.createTestingModule({
       providers: [
         AppIoStrategy,
         { provide: IoServicesService, useValue: mockIoServices },
+        { provide: ConfigService, useValue: mockConfig },
+        { provide: AppSettingsService, useValue: mockSettings },
       ],
     }).compile();
 

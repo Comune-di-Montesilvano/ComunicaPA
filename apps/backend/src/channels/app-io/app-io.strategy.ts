@@ -1,23 +1,28 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { NotificationChannel, ChannelSendResult } from '@comunicapa/shared-types';
 import type { ChannelLogFn, IChannelStrategy } from '../channel.interface';
 import type { Recipient } from '../../entities/recipient.entity';
 import type { Campaign } from '../../entities/campaign.entity';
 import { IoServicesService } from '../../io-services/io-services.service';
+import { AppSettingsService } from '../../settings/app-settings.service';
+import { processTemplate } from '../template.helper';
+import { resolveAttachmentsConfig } from '../../attachments/attachment.service';
+import { getEffectiveRetentionDays } from '../../campaigns/retention.util';
 
 /** Endpoint ufficiale App IO (PagoPA). Non configurabile: cambia solo con una nuova release. */
 export const APP_IO_BASE_URL = 'https://api.io.pagopa.it';
-
-function interpolate(template: string, vars: Record<string, string>): string {
-  return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => vars[key] ?? `{{${key}}}`);
-}
 
 @Injectable()
 export class AppIoStrategy implements IChannelStrategy {
   private readonly logger = new Logger(AppIoStrategy.name);
   readonly channel: NotificationChannel = 'APP_IO';
 
-  constructor(private readonly ioServices: IoServicesService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly settings: AppSettingsService,
+    private readonly ioServices: IoServicesService,
+  ) {}
 
   async send(recipient: Recipient, campaign: Campaign, onLog?: ChannelLogFn): Promise<ChannelSendResult> {
     const log = (msg: string): void => {
@@ -54,13 +59,19 @@ export class AppIoStrategy implements IChannelStrategy {
       throw new Error('Messaggi da questo servizio disabilitati dal cittadino su App IO');
     }
 
-    // 2. Invio effettivo del messaggio
-    const vars: Record<string, string> = {
-      fullName: recipient.fullName ?? '',
-      codiceFiscale: recipient.codiceFiscale,
-    };
-    const subject = interpolate(cfg['subject'] ?? campaign.name, vars);
-    const markdown = interpolate(cfg['body'] ?? '', vars);
+    // 2. Invio effettivo del messaggio (elaborando i template in formato markdown)
+    const publicApiUrl = (await this.settings.get<string>('system.publicUrl')) || '';
+    const downloadLinkSecret = this.config.get<string>('downloadLink.secret', { infer: true }) || '';
+    const retentionMaxDays = await this.settings.get<number>('retention.maxDays');
+    const retentionDays = getEffectiveRetentionDays(campaign, retentionMaxDays);
+    const expiresAtUnix = Math.floor(Date.now() / 1000) + retentionDays * 86400;
+    const attachmentLabels = resolveAttachmentsConfig(campaign.channelConfig).map((a) => a.label);
+
+    const subjectTemplate = cfg['subject'] || campaign.name;
+    const bodyTemplate = cfg['body'] || '';
+
+    const subject = processTemplate(subjectTemplate, recipient, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, 'markdown', 'APP_IO');
+    const markdown = processTemplate(bodyTemplate, recipient, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, 'markdown', 'APP_IO');
 
     log(`Invio messaggio App IO a CF ${recipient.codiceFiscale} (subject="${subject}", markdown length=${markdown.length})`);
     const response = await fetch(`${APP_IO_BASE_URL}/api/v1/messages`, {
