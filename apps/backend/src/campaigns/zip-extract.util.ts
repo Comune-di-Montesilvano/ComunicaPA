@@ -11,7 +11,7 @@ export function extractZipWithYauzl(filePath: string, destDir: string): Promise<
   const CONCURRENCY_LIMIT = 50;
 
   return new Promise((resolve, reject) => {
-    yauzl.open(filePath, { lazyEntries: true, autoClose: true }, (err, zipfile) => {
+    yauzl.open(filePath, { lazyEntries: true, autoClose: false }, (err, zipfile) => {
       if (err) return reject(err);
 
       let activeCount = 0;
@@ -33,6 +33,7 @@ export function extractZipWithYauzl(filePath: string, destDir: string): Promise<
       zipfile.on('end', () => {
         hasEnded = true;
         if (activeCount === 0 && !errorOccurred) {
+          zipfile.close();
           resolve();
         }
       });
@@ -87,6 +88,7 @@ export function extractZipWithYauzl(filePath: string, destDir: string): Promise<
           writeStream.on('finish', () => {
             activeCount--;
             if (hasEnded && activeCount === 0 && !errorOccurred) {
+              zipfile.close();
               resolve();
             } else {
               readNext();
