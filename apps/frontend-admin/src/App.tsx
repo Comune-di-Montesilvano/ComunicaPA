@@ -1787,42 +1787,26 @@ export function App(): React.JSX.Element {
   };
 
 
-  const handleExportDownloadReport = () => {
-    if (!campaign || !campaign.recipients || campaign.recipients.length === 0) {
-      alert('Nessun destinatario da esportare');
-      return;
+  const handleExportDownloadReport = async () => {
+    if (!campaign) return;
+    try {
+      const res = await apiFetch(`/campaigns/${campaign.id}/export-download-report.csv`);
+      if (!res.ok) {
+        alert('Errore durante il download del report');
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `report_download_campagna_${campaign.id.slice(0, 8)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Errore durante il download del report');
     }
-
-    const headers = ['Codice Fiscale', 'Nominativo', 'Email', 'PEC', 'Stato Invio', 'Download Effettuati', 'Data Ultimo Download'];
-    const rows = campaign.recipients.map(r => {
-      const downloadCount = r.extraData?.['download_count'] ?? 0;
-      const downloadedAt = r.extraData?.['downloaded_at'] 
-        ? new Date(r.extraData['downloaded_at']).toLocaleString('it-IT')
-        : '';
-      return [
-        r.codiceFiscale,
-        r.fullName || '',
-        r.email || '',
-        r.pec || '',
-        r.status,
-        downloadCount,
-        downloadedAt
-      ];
-    });
-
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.map(val => `"${String(val).replace(/"/g, '""')}"`).join(','))
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `report_download_campagna_${campaign.id.slice(0, 8)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
   };
 
   const parseCsvFile = (file: File, hasHeaders: boolean) => {
@@ -5796,7 +5780,7 @@ export function App(): React.JSX.Element {
                             value={recipientsSearch}
                             onChange={(e) => { setRecipientsSearch(e.target.value); setRecipientsPageNum(1); }}
                           />
-                          {campaign.recipients && campaign.recipients.length > 0 && (
+                          {(campaign?.totalRecipients ?? 0) > 0 && (
                             <button className="btn btn-sm btn-outline-primary py-1" onClick={handleExportDownloadReport} title="Esporta Report CSV">
                               <i className="fas fa-file-excel me-1"></i> Esporta Report Download
                             </button>
