@@ -279,6 +279,11 @@ export class CampaignsService {
         .map((m) => `${m.expectedFilename} (CF ${m.codiceFiscale})`)
         .join(', ');
       const more = missingAttachments.length > 5 ? ', …' : '';
+      
+      const dir = getUploadsDir(campaignId);
+      const presentFiles = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+      const presentList = presentFiles.length > 0 ? presentFiles.slice(0, 10).join(', ') + (presentFiles.length > 10 ? '...' : '') : 'nessuno';
+
       // Risposta 200 (non BadRequestException): il reverse proxy di produzione
       // intercetta le risposte non-2xx e ne sostituisce il body con una pagina
       // HTML propria, rendendo illeggibile il messaggio lato frontend — stesso
@@ -287,7 +292,7 @@ export class CampaignsService {
         launched: 0,
         campaignId,
         blocked: true,
-        message: `Impossibile avviare: ${missingAttachments.length} allegato/i mancante/i rispetto alla mappatura configurata — es. ${sample}${more}. Carica i file mancanti prima di rilanciare.`,
+        message: `Impossibile avviare: ${missingAttachments.length} allegato/i mancante/i rispetto alla mappatura configurata — es. ${sample}${more}. Carica i file mancanti prima di rilanciare. (Presenti in cartella: ${presentList})`,
       };
     }
 
