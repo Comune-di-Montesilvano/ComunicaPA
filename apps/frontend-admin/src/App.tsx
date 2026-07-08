@@ -214,6 +214,8 @@ const EMPTY_MAIL_CONFIG: Omit<MailConfigItem, 'id' | 'testedAt' | 'active'> = {
   batchSize: 100, batchIntervalSeconds: 60,
 };
 
+const PIE_COLORS = ['var(--bi-primary)', 'var(--ms-purple-600)', 'var(--ms-gold-500)', 'var(--ms-green-600)', 'var(--ms-blue-600)'];
+
 export function App(): React.JSX.Element {
   const [token, setToken] = useState<string | null>(localStorage.getItem('comunicapa_token'));
   const [username, setUsername] = useState<string | null>(localStorage.getItem('comunicapa_username'));
@@ -296,6 +298,13 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     if (view === 'notifiche-ricerca' && token) {
       runNotificationSearch(1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, token]);
+
+  useEffect(() => {
+    if (view === 'statistiche' && token) {
+      fetchGlobalStats();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, token]);
@@ -648,6 +657,21 @@ export function App(): React.JSX.Element {
   const [downloadByChannel, setDownloadByChannel] = useState<Record<string, number> | null>(null);
   const [downloadCrossChannel, setDownloadCrossChannel] = useState<{ primaryOnly: number; appIoOnly: number; both: number; none: number } | null>(null);
   const [retryBusyId, setRetryBusyId] = useState<string | null>(null);
+  const [statsDateFrom, setStatsDateFrom] = useState(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - 6);
+    return d.toISOString().slice(0, 10);
+  });
+  const [statsDateTo, setStatsDateTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [globalStats, setGlobalStats] = useState<{
+    totals: { totalRecipients: number; totalSent: number; totalFailed: number; totalDownloaded: number; downloadPercentage: number };
+    monthlyTrend: Array<{ month: string; sent: number; downloaded: number }>;
+    channelTotals: Array<{ channel: string; sent: number }>;
+    downloadChannelTotals: Array<{ channel: string; count: number }>;
+    campaignLeaderboard: Array<{ campaignId: string; campaignName: string; totalRecipients: number; downloadPercentage: number }>;
+    neverDownloadedCount: number;
+  } | null>(null);
+  const [globalStatsLoading, setGlobalStatsLoading] = useState(false);
 
 
   // Pre-select default App IO service id for forms
@@ -2496,6 +2520,21 @@ export function App(): React.JSX.Element {
     }
   };
 
+  const fetchGlobalStats = async () => {
+    setGlobalStatsLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (statsDateFrom) params.set('dateFrom', statsDateFrom);
+      if (statsDateTo) params.set('dateTo', statsDateTo);
+      const res = await apiFetch(`/campaigns/stats/global?${params.toString()}`);
+      if (res.ok) setGlobalStats(await res.json());
+    } catch (err) {
+      if (!(err instanceof ApiAuthError)) throw err;
+    } finally {
+      setGlobalStatsLoading(false);
+    }
+  };
+
   const handleLaunchCampaign = async () => {
     if (!campaign) return;
     if (!confirm(`Sei sicuro di voler lanciare la campagna "${campaign.name}"? L'invio ai destinatari avverrà asincronamente.`)) {
@@ -4084,115 +4123,100 @@ export function App(): React.JSX.Element {
           {/* VIEW: STATISTICHE */}
           {view === 'statistiche' && (
             <div>
-              <div className="row g-3 mb-4">
-                <div className="col-md-6 col-lg-3">
-                  <div className="card shadow-sm text-center p-3">
-                    <span className="text-muted small">Notifiche Totali</span>
-                    <h3 className="h2 mb-0 fw-bold text-primary">
-                      {campaigns.reduce((acc, c) => acc + c.totalRecipients, 0)}
-                    </h3>
+              <div className="card shadow-sm p-3 mb-3">
+                <div className="row g-2 align-items-end">
+                  <div className="col-md-3">
+                    <label className="form-label small mb-1">Da</label>
+                    <input type="date" className="form-control form-control-sm" value={statsDateFrom} onChange={e => setStatsDateFrom(e.target.value)} />
                   </div>
-                </div>
-                <div className="col-md-6 col-lg-3">
-                  <div className="card shadow-sm text-center p-3">
-                    <span className="text-muted small">Invii Avvenuti (Successo)</span>
-                    <h3 className="h2 mb-0 fw-bold text-success">
-                      {campaigns.reduce((acc, c) => acc + c.sentCount, 0)}
-                    </h3>
+                  <div className="col-md-3">
+                    <label className="form-label small mb-1">A</label>
+                    <input type="date" className="form-control form-control-sm" value={statsDateTo} onChange={e => setStatsDateTo(e.target.value)} />
                   </div>
-                </div>
-                <div className="col-md-6 col-lg-3">
-                  <div className="card shadow-sm text-center p-3">
-                    <span className="text-muted small">Fallimenti totali</span>
-                    <h3 className="h2 mb-0 fw-bold text-danger">
-                      {campaigns.reduce((acc, c) => acc + c.failedCount, 0)}
-                    </h3>
-                  </div>
-                </div>
-                <div className="col-md-6 col-lg-3">
-                  <div className="card shadow-sm text-center p-3">
-                    <span className="text-muted small">Percentuale Successo</span>
-                    <h3 className="h2 mb-0 fw-bold text-warning">
-                      {(() => {
-                        const tot = campaigns.reduce((acc, c) => acc + c.totalRecipients, 0);
-                        const ok = campaigns.reduce((acc, c) => acc + c.sentCount, 0);
-                        return tot > 0 ? `${((ok / tot) * 100).toFixed(1)}%` : '0%';
-                      })()}
-                    </h3>
+                  <div className="col-md-2">
+                    <button className="btn btn-primary btn-sm w-100" onClick={fetchGlobalStats} disabled={globalStatsLoading}>
+                      <i className="fas fa-filter me-1"></i>Applica
+                    </button>
                   </div>
                 </div>
               </div>
 
-              <div className="row g-3">
-                <div className="col-md-8">
-                  <div className="card shadow-sm">
-                    <div className="card-header bg-white py-3 border-bottom">
-                      <h3 className="h6 mb-0 fw-bold text-dark"><i className="fas fa-chart-line me-2 text-primary"></i>Andamento Invii Mensili</h3>
+              {globalStatsLoading && !globalStats ? (
+                <div className="text-center text-muted py-5">Caricamento statistiche…</div>
+              ) : globalStats && (
+                <>
+                  <div className="row g-3 mb-4">
+                    <div className="col-md-6 col-lg-3">
+                      <div className="card shadow-sm text-center p-3">
+                        <span className="text-muted small">Notifiche Totali</span>
+                        <h3 className="h2 mb-0 fw-bold text-primary">{globalStats.totals.totalRecipients}</h3>
+                      </div>
                     </div>
-                    <div className="card-body text-center p-4">
-                      <svg viewBox="0 0 500 200" style={{ width: '100%', height: '240px', background: '#f8fafc', borderRadius: '6px' }}>
-                        <line x1="40" y1="30" x2="480" y2="30" stroke="#e2e8f0" strokeDasharray="3" />
-                        <line x1="40" y1="80" x2="480" y2="80" stroke="#e2e8f0" strokeDasharray="3" />
-                        <line x1="40" y1="130" x2="480" y2="130" stroke="#e2e8f0" strokeDasharray="3" />
-                        <line x1="40" y1="170" x2="480" y2="170" stroke="#cbd5e1" strokeWidth="2" />
-                        
-                        <rect x="70" y="90" width="30" height="80" rx="3" fill="var(--bi-primary)" opacity="0.85" />
-                        <rect x="150" y="60" width="30" height="110" rx="3" fill="var(--bi-primary)" opacity="0.85" />
-                        <rect x="230" y="40" width="30" height="130" rx="3" fill="var(--bi-primary)" opacity="0.85" />
-                        <rect x="310" y="80" width="30" height="90" rx="3" fill="var(--bi-primary)" opacity="0.85" />
-                        <rect x="390" y="50" width="30" height="120" rx="3" fill="var(--bi-primary)" opacity="0.85" />
-                        
-                        <text x="85" y="185" textAnchor="middle" fontSize="10" fill="#64748b" fontFamily="sans-serif">Gen</text>
-                        <text x="165" y="185" textAnchor="middle" fontSize="10" fill="#64748b" fontFamily="sans-serif">Feb</text>
-                        <text x="245" y="185" textAnchor="middle" fontSize="10" fill="#64748b" fontFamily="sans-serif">Mar</text>
-                        <text x="325" y="185" textAnchor="middle" fontSize="10" fill="#64748b" fontFamily="sans-serif">Apr</text>
-                        <text x="405" y="185" textAnchor="middle" fontSize="10" fill="#64748b" fontFamily="sans-serif">Mag</text>
-
-                        <text x="85" y="80" textAnchor="middle" fontSize="9" fill="#0f172a" fontWeight="bold" fontFamily="sans-serif">8k</text>
-                        <text x="165" y="50" textAnchor="middle" fontSize="9" fill="#0f172a" fontWeight="bold" fontFamily="sans-serif">11k</text>
-                        <text x="245" y="30" textAnchor="middle" fontSize="9" fill="#0f172a" fontWeight="bold" fontFamily="sans-serif">13k</text>
-                        <text x="325" y="70" textAnchor="middle" fontSize="9" fill="#0f172a" fontWeight="bold" fontFamily="sans-serif">9k</text>
-                        <text x="405" y="40" textAnchor="middle" fontSize="9" fill="#0f172a" fontWeight="bold" fontFamily="sans-serif">12k</text>
-                      </svg>
+                    <div className="col-md-6 col-lg-3">
+                      <div className="card shadow-sm text-center p-3">
+                        <span className="text-muted small">Invii Avvenuti (Successo)</span>
+                        <h3 className="h2 mb-0 fw-bold text-success">{globalStats.totals.totalSent}</h3>
+                      </div>
                     </div>
-                  </div>
-                </div>
-
-                <div className="col-md-4">
-                  <div className="card shadow-sm">
-                    <div className="card-header bg-white py-3 border-bottom">
-                      <h3 className="h6 mb-0 fw-bold text-dark"><i className="fas fa-chart-pie me-2 text-primary"></i>Ripartizione per Canale</h3>
+                    <div className="col-md-6 col-lg-3">
+                      <div className="card shadow-sm text-center p-3">
+                        <span className="text-muted small">Fallimenti totali</span>
+                        <h3 className="h2 mb-0 fw-bold text-danger">{globalStats.totals.totalFailed}</h3>
+                      </div>
                     </div>
-                    <div className="card-body text-center p-4">
-                      <svg width="100%" height="240" viewBox="0 0 200 200">
-                        <circle cx="100" cy="100" r="60" fill="transparent" stroke="#f1f5f9" strokeWidth="25" />
-                        
-                        <circle cx="100" cy="100" r="60" fill="transparent" stroke="var(--bi-primary)" strokeWidth="25"
-                                strokeDasharray="170 207" strokeDashoffset="94" />
-                                
-                        <circle cx="100" cy="100" r="60" fill="transparent" stroke="var(--ms-purple-600)" strokeWidth="25"
-                                strokeDasharray="113 264" strokeDashoffset="-76" />
-                                
-                        <circle cx="100" cy="100" r="60" fill="transparent" stroke="var(--ms-gold-500)" strokeWidth="25"
-                                strokeDasharray="56 321" strokeDashoffset="-189" />
-
-                        <circle cx="100" cy="100" r="60" fill="transparent" stroke="var(--ms-green-600)" strokeWidth="25"
-                                strokeDasharray="38 339" strokeDashoffset="-245" />
-
-                        <text x="100" y="98" textAnchor="middle" fontSize="12" fontWeight="bold" fill="#0f172a" fontFamily="sans-serif">CANALI</text>
-                        <text x="100" y="115" textAnchor="middle" fontSize="9" fill="#64748b" fontFamily="sans-serif">Hub Invio</text>
-                      </svg>
-                      
-                      <div className="d-flex flex-wrap justify-content-center gap-3 mt-2" style={{ fontSize: '0.8rem' }}>
-                        <div><i className="fas fa-circle text-primary"></i> EMAIL (45%)</div>
-                        <div><i className="fas fa-circle text-purple" style={{ color: 'var(--ms-purple-600)' }}></i> PEC (30%)</div>
-                        <div><i className="fas fa-circle text-warning"></i> APP IO (15%)</div>
-                        <div><i className="fas fa-circle text-success"></i> SEND (10%)</div>
+                    <div className="col-md-6 col-lg-3">
+                      <div className="card shadow-sm text-center p-3">
+                        <span className="text-muted small">% Download</span>
+                        <h3 className="h2 mb-0 fw-bold text-warning">{globalStats.totals.downloadPercentage}%</h3>
                       </div>
                     </div>
                   </div>
-                </div>
-              </div>
+
+                  <div className="row g-3">
+                    <div className="col-md-8">
+                      <div className="card shadow-sm">
+                        <div className="card-header bg-white py-3 border-bottom">
+                          <h3 className="h6 mb-0 fw-bold text-dark"><i className="fas fa-chart-line me-2 text-primary"></i>Andamento Invii e Download</h3>
+                        </div>
+                        <div className="card-body">
+                          <ResponsiveContainer width="100%" height={260}>
+                            <LineChart data={globalStats.monthlyTrend}>
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis dataKey="month" fontSize={11} />
+                              <YAxis allowDecimals={false} />
+                              <Tooltip />
+                              <Legend />
+                              <Line type="monotone" dataKey="sent" name="Invii" stroke="var(--bi-primary)" strokeWidth={2} />
+                              <Line type="monotone" dataKey="downloaded" name="Download" stroke="var(--ms-green-600)" strokeWidth={2} />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="col-md-4">
+                      <div className="card shadow-sm">
+                        <div className="card-header bg-white py-3 border-bottom">
+                          <h3 className="h6 mb-0 fw-bold text-dark"><i className="fas fa-chart-pie me-2 text-primary"></i>Ripartizione Invii per Canale</h3>
+                        </div>
+                        <div className="card-body">
+                          <ResponsiveContainer width="100%" height={220}>
+                            <PieChart>
+                              <Pie data={globalStats.channelTotals} dataKey="sent" nameKey="channel" outerRadius={80} label>
+                                {globalStats.channelTotals.map((entry, idx) => (
+                                  <Cell key={entry.channel} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
+                                ))}
+                              </Pie>
+                              <Tooltip />
+                              <Legend />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
