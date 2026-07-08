@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import MDEditor from '@uiw/react-md-editor';
 import { TemplateEditor } from './components/TemplateEditor';
+import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 declare global {
   interface Window {
@@ -645,6 +646,7 @@ export function App(): React.JSX.Element {
   const [campaignFailures, setCampaignFailures] = useState<Array<{ recipientId: string; codiceFiscale: string; fullName: string | null; errorMessage: string | null; attemptNumber: number; lastAttemptAt: string }>>([]);
   const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number } | null>(null);
   const [downloadByChannel, setDownloadByChannel] = useState<Record<string, number> | null>(null);
+  const [downloadCrossChannel, setDownloadCrossChannel] = useState<{ primaryOnly: number; appIoOnly: number; both: number; none: number } | null>(null);
   const [retryBusyId, setRetryBusyId] = useState<string | null>(null);
 
 
@@ -2453,10 +2455,12 @@ export function App(): React.JSX.Element {
     setCampaignFailures([]);
     setChannelBreakdown(null);
     setDownloadByChannel(null);
+    setDownloadCrossChannel(null);
     fetchCampaignDetail(id);
     fetchCampaignFailures(id);
     fetchChannelBreakdown(id);
     fetchDownloadChannelStats(id);
+    fetchDownloadCrossChannelStats(id);
   };
 
   const fetchChannelBreakdown = async (id: string) => {
@@ -2476,6 +2480,17 @@ export function App(): React.JSX.Element {
       if (!res.ok) return;
       const data = await res.json();
       setDownloadByChannel(data.byChannel && Object.keys(data.byChannel).length > 0 ? data.byChannel : null);
+    } catch {
+      // Non bloccante.
+    }
+  };
+
+  const fetchDownloadCrossChannelStats = async (id: string) => {
+    try {
+      const res = await apiFetch(`/campaigns/${id}/download-cross-channel-stats`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setDownloadCrossChannel(data.stats);
     } catch {
       // Non bloccante.
     }
@@ -5684,6 +5699,53 @@ export function App(): React.JSX.Element {
                         )}
                       </div>
                     </div>
+
+                    {downloadCrossChannel && (
+                      <div className="card shadow-sm mt-4">
+                        <div className="card-header bg-white py-3 border-bottom">
+                          <h3 className="h6 mb-0 fw-bold text-dark">
+                            <i className="fas fa-chart-column me-2 text-primary"></i>Download per Combinazione Canali
+                          </h3>
+                        </div>
+                        <div className="card-body">
+                          <ResponsiveContainer width="100%" height={220}>
+                            <BarChart data={[
+                              { label: 'Solo primario', value: downloadCrossChannel.primaryOnly },
+                              { label: 'Solo App IO', value: downloadCrossChannel.appIoOnly },
+                              { label: 'Entrambi', value: downloadCrossChannel.both },
+                              { label: 'Nessuno', value: downloadCrossChannel.none },
+                            ]}>
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis dataKey="label" fontSize={11} />
+                              <YAxis allowDecimals={false} />
+                              <Tooltip />
+                              <Bar dataKey="value" fill="var(--bi-primary)" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                          <table className="table table-sm mb-0 mt-2">
+                            <tbody>
+                              {(() => {
+                                const total = downloadCrossChannel.primaryOnly + downloadCrossChannel.appIoOnly + downloadCrossChannel.both + downloadCrossChannel.none;
+                                const pct = (n: number) => (total > 0 ? `${Math.round((n / total) * 100)}%` : '0%');
+                                const rows: Array<[string, number]> = [
+                                  ['Solo primario', downloadCrossChannel.primaryOnly],
+                                  ['Solo App IO', downloadCrossChannel.appIoOnly],
+                                  ['Entrambi', downloadCrossChannel.both],
+                                  ['Nessuno', downloadCrossChannel.none],
+                                ];
+                                return rows.map(([label, value]) => (
+                                  <tr key={label}>
+                                    <td>{label}</td>
+                                    <td className="text-end fw-bold">{value}</td>
+                                    <td className="text-end text-muted">{pct(value)}</td>
+                                  </tr>
+                                ));
+                              })()}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : null}
