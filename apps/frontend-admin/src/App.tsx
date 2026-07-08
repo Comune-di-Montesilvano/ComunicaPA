@@ -34,8 +34,8 @@ const APP_IO_MARKDOWN_MAX = 10000;
 // Upload a chunk: un reverse proxy esterno davanti al backend in produzione
 // ha un limite di dimensione del body (osservato: 1MB) che spezzava in
 // un'unica richiesta l'upload di CSV/ZIP di migliaia di destinatari/
-// allegati. Chunk da 1MB per restare sotto quel limite con margine.
-const UPLOAD_CHUNK_SIZE = 1024 * 1024;
+// allegati. Chunk da 800KB per restare sotto quel limite con margine.
+const UPLOAD_CHUNK_SIZE = 800 * 1024;
 
 /** Upload di un singolo chunk via XHR (fetch non espone eventi di progresso in upload). */
 function uploadChunkXhr(url: string, token: string, chunk: Blob, onProgress: (loadedBytes: number) => void): Promise<void> {
