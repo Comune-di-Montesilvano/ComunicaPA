@@ -2536,21 +2536,25 @@ export function App(): React.JSX.Element {
   };
 
   const handleExportNeverDownloaded = async () => {
-    const params = new URLSearchParams();
-    if (statsDateFrom) params.set('dateFrom', statsDateFrom);
-    if (statsDateTo) params.set('dateTo', statsDateTo);
-    const res = await apiFetch(`/campaigns/stats/global/never-downloaded.csv?${params.toString()}`);
-    if (!res.ok) {
-      alert('Impossibile esportare il report.');
-      return;
+    try {
+      const params = new URLSearchParams();
+      if (statsDateFrom) params.set('dateFrom', statsDateFrom);
+      if (statsDateTo) params.set('dateTo', statsDateTo);
+      const res = await apiFetch(`/campaigns/stats/global/never-downloaded.csv?${params.toString()}`);
+      if (!res.ok) {
+        alert('Impossibile esportare il report.');
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'mai_scaricato.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      if (!(err instanceof ApiAuthError)) throw err;
     }
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'mai_scaricato.csv';
-    a.click();
-    URL.revokeObjectURL(url);
   };
 
   const handleLaunchCampaign = async () => {
@@ -4264,7 +4268,7 @@ export function App(): React.JSX.Element {
                               <div className="table-responsive">
                                 <table className="table table-sm mb-0">
                                   <tbody>
-                                    {globalStats.campaignLeaderboard.slice(-5).reverse().map(c => (
+                                    {globalStats.campaignLeaderboard.slice(Math.max(5, globalStats.campaignLeaderboard.length - 5)).reverse().map(c => (
                                       <tr key={c.campaignId} style={{ cursor: 'pointer' }} onClick={() => handleCampaignClick(c.campaignId)}>
                                         <td>{c.campaignName}</td>
                                         <td className="text-end">{c.totalRecipients}</td>
