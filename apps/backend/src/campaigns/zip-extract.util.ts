@@ -5,66 +5,103 @@ import * as yauzl from 'yauzl';
 /**
  * Extracts PDF files from a ZIP archive directly to the destination directory.
  * Avoids loading the whole file or extracted content into memory by using streams.
+ * Uses a concurrency limit of 50 to extract files in parallel, avoiding 504 timeouts.
  */
 export function extractZipWithYauzl(filePath: string, destDir: string): Promise<void> {
+  const CONCURRENCY_LIMIT = 50;
+
   return new Promise((resolve, reject) => {
     yauzl.open(filePath, { lazyEntries: true, autoClose: true }, (err, zipfile) => {
       if (err) return reject(err);
 
+      let activeCount = 0;
+      let hasEnded = false;
+      let errorOccurred = false;
+      let isReading = false;
+
+      const handleError = (error: Error) => {
+        if (errorOccurred) return;
+        errorOccurred = true;
+        zipfile.close();
+        reject(error);
+      };
+
       zipfile.on('error', (zipErr) => {
-        reject(zipErr);
+        handleError(zipErr);
       });
 
       zipfile.on('end', () => {
-        resolve();
+        hasEnded = true;
+        if (activeCount === 0 && !errorOccurred) {
+          resolve();
+        }
       });
 
+      function readNext() {
+        if (errorOccurred || hasEnded || isReading) return;
+        if (activeCount < CONCURRENCY_LIMIT) {
+          isReading = true;
+          zipfile.readEntry();
+        }
+      }
+
       zipfile.on('entry', (entry) => {
+        isReading = false;
+
         // Skip directories
         if (/\/$/.test(entry.fileName)) {
-          zipfile.readEntry();
+          readNext();
           return;
         }
 
         // Neutralize path traversal by getting only the basename
         const name = basename(entry.fileName);
         if (!name.toLowerCase().endsWith('.pdf')) {
-          zipfile.readEntry();
+          readNext();
           return;
         }
 
+        activeCount++;
+
         zipfile.openReadStream(entry, (streamErr, readStream) => {
           if (streamErr) {
-            zipfile.close();
-            return reject(streamErr);
+            activeCount--;
+            return handleError(streamErr);
           }
 
           const destPath = join(destDir, name);
           const writeStream = fs.createWriteStream(destPath);
 
-          let errorHandled = false;
-          const handleError = (streamErrToHandle: Error) => {
-            if (errorHandled) return;
-            errorHandled = true;
-            zipfile.close();
+          let streamErrorHandled = false;
+          const handleStreamError = (streamErrToHandle: Error) => {
+            if (streamErrorHandled) return;
+            streamErrorHandled = true;
             readStream.destroy();
             writeStream.destroy();
-            reject(streamErrToHandle);
+            handleError(streamErrToHandle);
           };
 
-          readStream.on('error', handleError);
-          writeStream.on('error', handleError);
+          readStream.on('error', handleStreamError);
+          writeStream.on('error', handleStreamError);
 
           writeStream.on('finish', () => {
-            zipfile.readEntry();
+            activeCount--;
+            if (hasEnded && activeCount === 0 && !errorOccurred) {
+              resolve();
+            } else {
+              readNext();
+            }
           });
 
           readStream.pipe(writeStream);
         });
+
+        // Request next entry (concurrency permitting)
+        readNext();
       });
 
       // Start the reader
-      zipfile.readEntry();
+      readNext();
     });
   });
 }
