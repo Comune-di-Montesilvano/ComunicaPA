@@ -839,11 +839,21 @@ export class CampaignsService {
       }
     }
 
-    // 3. Scarto dei non referenziati
+    // 3. Ridenominazione per case-insensitivity e scarto dei non referenziati
+    const referencedLowerMap = new Map<string, string>();
+    for (const ref of referenced) {
+      referencedLowerMap.set(ref.toLowerCase(), ref);
+    }
+
     let discarded = 0;
     const present = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
     for (const f of present) {
-      if (!referenced.has(f)) {
+      const expectedName = referencedLowerMap.get(f.toLowerCase());
+      if (expectedName) {
+        if (f !== expectedName) {
+          fs.renameSync(join(dir, f), join(dir, expectedName));
+        }
+      } else {
         fs.unlinkSync(join(dir, f));
         discarded++;
       }
