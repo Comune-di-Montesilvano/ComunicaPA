@@ -827,7 +827,7 @@ describe('CampaignsService.getDuplicateSource', () => {
 
 describe('CampaignsService.getFailures / retryRecipient', () => {
   const campaignRepoMock = { findOneBy: jest.fn(), decrement: jest.fn() };
-  const recipientRepoMock = { findOne: jest.fn(), update: jest.fn(), find: jest.fn() };
+  const recipientRepoMock = { findOne: jest.fn(), update: jest.fn(), find: jest.fn(), createQueryBuilder: jest.fn() };
   const attemptRepoMock = {
     find: jest.fn(),
     findOne: jest.fn(),
@@ -860,22 +860,30 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
     }).compile();
 
   it('getFailures ritorna solo i destinatari il cui stato attuale è FAILED, con ultimo tentativo', async () => {
-    recipientRepoMock.find = jest.fn().mockResolvedValue([
-      { id: 'r1', codiceFiscale: 'RSSMRA80A01H501X', fullName: 'Mario Rossi', createdAt: new Date('2026-06-30T00:00:00Z') },
-    ]);
-    attemptRepoMock.findOne = jest.fn().mockResolvedValue({
-      errorMessage: 'SMTP timeout',
-      attemptNumber: 2,
-      createdAt: new Date('2026-07-01T10:00:00Z'),
+    const qb: any = {};
+    ['leftJoin', 'select', 'addSelect', 'where', 'andWhere', 'orderBy'].forEach((m) => {
+      qb[m] = jest.fn().mockReturnValue(qb);
     });
+    qb.getRawMany = jest.fn().mockResolvedValue([
+      {
+        recipientId: 'r1',
+        codiceFiscale: 'RSSMRA80A01H501X',
+        fullName: 'Mario Rossi',
+        errorMessage: 'SMTP timeout',
+        attemptNumber: 2,
+        lastAttemptAt: new Date('2026-07-01T10:00:00Z'),
+        recipientCreatedAt: new Date('2026-06-30T00:00:00Z'),
+      },
+    ]);
+    recipientRepoMock.createQueryBuilder = jest.fn().mockReturnValue(qb);
     const moduleRef = await buildModule();
     const service = moduleRef.get(CampaignsService);
 
     const result = await service.getFailures('c1');
 
-    expect(recipientRepoMock.find).toHaveBeenCalledWith(expect.objectContaining({
-      where: { campaignId: 'c1', status: 'failed' },
-    }));
+    expect(recipientRepoMock.createQueryBuilder).toHaveBeenCalledTimes(1);
+    expect(qb.where).toHaveBeenCalledWith('r.campaignId = :campaignId', { campaignId: 'c1' });
+    expect(qb.andWhere).toHaveBeenCalledWith('r.status = :status', { status: RecipientStatus.FAILED });
     expect(result).toEqual([{
       recipientId: 'r1',
       codiceFiscale: 'RSSMRA80A01H501X',
@@ -886,19 +894,62 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
     }]);
   });
 
-  it('getFailures non ritorna un destinatario FAILED poi ritentato con successo (SENT)', async () => {
-    // Il destinatario r1 è stato ritentato con successo: il suo stato attuale è SENT,
-    // quindi la query su Recipient con status FAILED non lo include più anche se
-    // esiste ancora una NotificationAttempt storica con status FAILED per lui.
-    recipientRepoMock.find = jest.fn().mockResolvedValue([]);
+  it('getFailures usa una query aggregata invece di una findOne per destinatario (no N+1)', async () => {
+    const qb: any = {};
+    ['leftJoin', 'select', 'addSelect', 'where', 'andWhere', 'orderBy'].forEach((m) => {
+      qb[m] = jest.fn().mockReturnValue(qb);
+    });
+    qb.getRawMany = jest.fn().mockResolvedValue([
+      {
+        recipientId: 'r1',
+        codiceFiscale: 'AAA1',
+        fullName: 'Mario Rossi',
+        errorMessage: 'timeout',
+        attemptNumber: 2,
+        lastAttemptAt: new Date('2026-07-01T10:00:00Z'),
+        recipientCreatedAt: new Date('2026-06-30T09:00:00Z'),
+      },
+      {
+        recipientId: 'r2',
+        codiceFiscale: 'BBB2',
+        fullName: null,
+        errorMessage: null,
+        attemptNumber: null,
+        lastAttemptAt: null,
+        recipientCreatedAt: new Date('2026-06-30T09:05:00Z'),
+      },
+    ]);
+    recipientRepoMock.createQueryBuilder = jest.fn().mockReturnValue(qb);
     const moduleRef = await buildModule();
     const service = moduleRef.get(CampaignsService);
 
     const result = await service.getFailures('c1');
 
-    expect(recipientRepoMock.find).toHaveBeenCalledWith(expect.objectContaining({
-      where: { campaignId: 'c1', status: 'failed' },
-    }));
+    expect(recipientRepoMock.createQueryBuilder).toHaveBeenCalledTimes(1);
+    expect(attemptRepoMock.find).not.toHaveBeenCalled();
+    expect(result).toEqual([
+      { recipientId: 'r1', codiceFiscale: 'AAA1', fullName: 'Mario Rossi', errorMessage: 'timeout', attemptNumber: 2, lastAttemptAt: '2026-07-01T10:00:00.000Z' },
+      { recipientId: 'r2', codiceFiscale: 'BBB2', fullName: null, errorMessage: null, attemptNumber: 0, lastAttemptAt: '2026-06-30T09:05:00.000Z' },
+    ]);
+  });
+
+  it('getFailures non ritorna un destinatario FAILED poi ritentato con successo (SENT)', async () => {
+    // Il destinatario r1 è stato ritentato con successo: il suo stato attuale è SENT,
+    // quindi la query su Recipient con status FAILED non lo include più anche se
+    // esiste ancora una NotificationAttempt storica con status FAILED per lui.
+    const qb: any = {};
+    ['leftJoin', 'select', 'addSelect', 'where', 'andWhere', 'orderBy'].forEach((m) => {
+      qb[m] = jest.fn().mockReturnValue(qb);
+    });
+    qb.getRawMany = jest.fn().mockResolvedValue([]);
+    recipientRepoMock.createQueryBuilder = jest.fn().mockReturnValue(qb);
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    const result = await service.getFailures('c1');
+
+    expect(qb.where).toHaveBeenCalledWith('r.campaignId = :campaignId', { campaignId: 'c1' });
+    expect(qb.andWhere).toHaveBeenCalledWith('r.status = :status', { status: RecipientStatus.FAILED });
     expect(result).toEqual([]);
   });
 

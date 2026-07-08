@@ -39,3 +39,12 @@ export interface DownloadCrossChannelStatsDto {
   both: number;
   none: number;
 }
+
+export interface FailureRowDto {
+  recipientId: string;
+  codiceFiscale: string;
+  fullName: string | null;
+  errorMessage: string | null;
+  attemptNumber: number;
+  lastAttemptAt: string;
+}

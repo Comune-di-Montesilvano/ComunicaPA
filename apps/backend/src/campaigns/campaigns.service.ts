@@ -24,7 +24,7 @@ import { NotificationQueuesService } from '../queue/notification-queues.service'
 import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util';
 import type { CreateCampaignDto } from './dto/create-campaign.dto';
 import type { UpdateCampaignDto } from './dto/update-campaign.dto';
-import type { CampaignStatsDto, RecipientStatsPageDto, ChannelBreakdownDto, DownloadCrossChannelStatsDto } from './dto/campaign-stats.dto';
+import type { CampaignStatsDto, RecipientStatsPageDto, ChannelBreakdownDto, DownloadCrossChannelStatsDto, FailureRowDto } from './dto/campaign-stats.dto';
 import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.dto';
 import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util';
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto';
@@ -669,37 +669,46 @@ export class CampaignsService {
     }));
   }
 
-  async getFailures(campaignId: string): Promise<Array<{
-    recipientId: string;
-    codiceFiscale: string;
-    fullName: string | null;
-    errorMessage: string | null;
-    attemptNumber: number;
-    lastAttemptAt: string;
-  }>> {
-    // Solo i destinatari il cui stato ATTUALE è FAILED (non righe di tentativi
-    // storici: un destinatario ritentato con successo non deve più comparire qui).
-    const failedRecipients = await this.recipientRepo.find({
-      where: { campaignId, status: RecipientStatus.FAILED },
-      order: { createdAt: 'DESC' },
-    });
+  async getFailures(campaignId: string): Promise<FailureRowDto[]> {
+    // Query singola con subquery DISTINCT ON invece di una findOne per
+    // destinatario: con decine di migliaia di FAILED la versione N+1
+    // precedente rendeva il caricamento del dettaglio campagna impraticabile.
+    const rows = await this.recipientRepo
+      .createQueryBuilder('r')
+      .leftJoin(
+        `(SELECT DISTINCT ON (recipient_id) recipient_id, error_message, attempt_number, created_at
+          FROM notification_attempts ORDER BY recipient_id, attempt_number DESC)`,
+        'la',
+        'la.recipient_id = r.id',
+      )
+      .select('r.id', 'recipientId')
+      .addSelect('r.codiceFiscale', 'codiceFiscale')
+      .addSelect('r.fullName', 'fullName')
+      .addSelect('la.error_message', 'errorMessage')
+      .addSelect('la.attempt_number', 'attemptNumber')
+      .addSelect('la.created_at', 'lastAttemptAt')
+      .addSelect('r.createdAt', 'recipientCreatedAt')
+      .where('r.campaignId = :campaignId', { campaignId })
+      .andWhere('r.status = :status', { status: RecipientStatus.FAILED })
+      .orderBy('r.createdAt', 'DESC')
+      .getRawMany<{
+        recipientId: string;
+        codiceFiscale: string;
+        fullName: string | null;
+        errorMessage: string | null;
+        attemptNumber: number | null;
+        lastAttemptAt: Date | null;
+        recipientCreatedAt: Date;
+      }>();
 
-    return Promise.all(
-      failedRecipients.map(async (r) => {
-        const lastAttempt = await this.attemptRepo.findOne({
-          where: { recipientId: r.id },
-          order: { attemptNumber: 'DESC' },
-        });
-        return {
-          recipientId: r.id,
-          codiceFiscale: r.codiceFiscale,
-          fullName: r.fullName,
-          errorMessage: lastAttempt?.errorMessage ?? null,
-          attemptNumber: lastAttempt?.attemptNumber ?? 0,
-          lastAttemptAt: (lastAttempt?.createdAt ?? r.createdAt).toISOString(),
-        };
-      }),
-    );
+    return rows.map((r) => ({
+      recipientId: r.recipientId,
+      codiceFiscale: r.codiceFiscale,
+      fullName: r.fullName,
+      errorMessage: r.errorMessage,
+      attemptNumber: r.attemptNumber ?? 0,
+      lastAttemptAt: (r.lastAttemptAt ?? r.recipientCreatedAt).toISOString(),
+    }));
   }
 
   async retryRecipient(campaignId: string, recipientId: string): Promise<{ requeued: true; attemptId: string }> {
