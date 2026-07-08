@@ -73,6 +73,7 @@ async function uploadFileInChunks(
   file: Blob,
   filename: string,
   onProgress: (loadedBytes: number) => void,
+  onCompleteStart?: () => void,
 ): Promise<any> {
   const totalChunks = Math.max(1, Math.ceil(file.size / UPLOAD_CHUNK_SIZE));
 
@@ -95,6 +96,10 @@ async function uploadFileInChunks(
     const base = uploadedBefore;
     await uploadChunkXhr(`${baseUrl}/chunk/${uploadId}/${i}`, token, chunk, (loadedInChunk) => onProgress(base + loadedInChunk));
     uploadedBefore += chunk.size;
+  }
+
+  if (onCompleteStart) {
+    onCompleteStart();
   }
 
   const completeRes = await fetch(`${baseUrl}/complete/${uploadId}`, {
@@ -2370,6 +2375,7 @@ export function App(): React.JSX.Element {
         blob,
         'normalized_recipients.csv',
         (loaded) => setWizUploadProgress(p => (p ? { ...p, loaded } : p)),
+        () => setWizUploadProgress({ label: 'Elaborazione destinatari in corso', loaded: blob.size, total: blob.size }),
       );
       setWizUploadProgress(null);
       if (uploadData?.blocked) {
@@ -2385,12 +2391,18 @@ export function App(): React.JSX.Element {
         let lastAttachData: { uploaded: number; discarded?: number } | null = null;
         for (const file of wizPdfFiles) {
           const base = cumulativeBefore;
+          const isZip = file.name.toLowerCase().endsWith('.zip');
           lastAttachData = await uploadFileInChunks(
             `${ADMIN_API_BASE}/campaigns/${campaignObj.id}/attachments/upload`,
             token!,
             file,
             file.name,
             (loaded) => setWizUploadProgress(p => (p ? { ...p, loaded: base + loaded } : p)),
+            () => setWizUploadProgress({
+              label: isZip ? 'Estrazione allegati in corso' : 'Salvataggio allegato in corso',
+              loaded: base + file.size,
+              total: totalBytes
+            }),
           );
           cumulativeBefore += file.size;
         }
@@ -4027,7 +4039,11 @@ export function App(): React.JSX.Element {
                   )}
 
                   <div className="mt-4 pt-3 border-top d-flex justify-content-between">
-                    <button className="btn btn-outline-secondary" onClick={() => setWizStep(4)}>
+                    <button
+                      className="btn btn-outline-secondary"
+                      onClick={() => setWizStep(4)}
+                      disabled={wizSending}
+                    >
                       <i className="fas fa-arrow-left me-1"></i> Indietro
                     </button>
                     <button
@@ -4036,7 +4052,10 @@ export function App(): React.JSX.Element {
                       disabled={wizSending}
                     >
                       {wizSending ? (
-                        <><i className="fas fa-spinner fa-spin me-1"></i>Spedizione in corso...</>
+                        <>
+                          <i className="fas fa-spinner fa-spin me-1"></i>
+                          {wizUploadProgress ? `${wizUploadProgress.label}...` : 'Spedizione in corso...'}
+                        </>
                       ) : (
                         <><i className="fas fa-paper-plane me-1"></i>Conferma ed Avvia Campagna</>
                       )}
