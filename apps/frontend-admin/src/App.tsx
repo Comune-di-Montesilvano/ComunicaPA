@@ -653,6 +653,9 @@ export function App(): React.JSX.Element {
   const [launching, setLaunching] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [campaignFailures, setCampaignFailures] = useState<Array<{ recipientId: string; codiceFiscale: string; fullName: string | null; errorMessage: string | null; attemptNumber: number; lastAttemptAt: string }>>([]);
+  const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number }> } | null>(null);
+  const [recipientsSearch, setRecipientsSearch] = useState('');
+  const [recipientsPageNum, setRecipientsPageNum] = useState(1);
   const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number } | null>(null);
   const [downloadByChannel, setDownloadByChannel] = useState<Record<string, number> | null>(null);
   const [downloadCrossChannel, setDownloadCrossChannel] = useState<{ primaryOnly: number; appIoOnly: number; both: number; none: number } | null>(null);
@@ -696,6 +699,15 @@ export function App(): React.JSX.Element {
     }
     return () => clearInterval(timer);
   }, [view, selectedCampaignId, campaign]);
+
+  // Ricarica la pagina destinatari su cambio pagina/ricerca (debounce sulla ricerca)
+  useEffect(() => {
+    if (!selectedCampaignId || view !== 'campaign-detail') return;
+    const handle = setTimeout(() => {
+      fetchRecipientsPage(selectedCampaignId, recipientsPageNum, recipientsSearch);
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [selectedCampaignId, view, recipientsPageNum, recipientsSearch]);
 
   useEffect(() => {
     if (token) {
@@ -2495,11 +2507,15 @@ export function App(): React.JSX.Element {
     setChannelBreakdown(null);
     setDownloadByChannel(null);
     setDownloadCrossChannel(null);
+    setRecipientsPage(null);
+    setRecipientsSearch('');
+    setRecipientsPageNum(1);
     fetchCampaignDetail(id);
     fetchCampaignFailures(id);
     fetchChannelBreakdown(id);
     fetchDownloadChannelStats(id);
     fetchDownloadCrossChannelStats(id);
+    fetchRecipientsPage(id, 1, '');
   };
 
   const fetchChannelBreakdown = async (id: string) => {
@@ -2510,6 +2526,21 @@ export function App(): React.JSX.Element {
       setChannelBreakdown(data.breakdown);
     } catch {
       // Non bloccante: la pagina dettaglio resta usabile senza il breakdown.
+    }
+  };
+
+  const RECIPIENTS_PAGE_SIZE = 50;
+
+  const fetchRecipientsPage = async (campaignId: string, page: number, search: string) => {
+    try {
+      const params = new URLSearchParams({ page: String(page), pageSize: String(RECIPIENTS_PAGE_SIZE) });
+      if (search.trim()) params.set('search', search.trim());
+      const res = await apiFetch(`/campaigns/${campaignId}/stats/recipients?${params.toString()}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setRecipientsPage(data);
+    } catch {
+      // Non bloccante: la tabella resta sullo stato precedente.
     }
   };
 
@@ -5753,13 +5784,21 @@ export function App(): React.JSX.Element {
                     )}
 
                     <div className="card shadow-sm">
-                      <div className="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+                      <div className="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <h3 className="h6 mb-0 fw-bold text-dark">
-                          <i className="fas fa-users me-2"></i>Destinatari Caricati ({campaign.totalRecipients})
+                          <i className="fas fa-users me-2"></i>Destinatari Caricati ({recipientsPage?.total ?? campaign.totalRecipients})
                         </h3>
-                        <div className="d-flex align-items-center">
+                        <div className="d-flex align-items-center flex-wrap gap-2">
+                          <input
+                            type="text"
+                            className="form-control form-control-sm"
+                            style={{ maxWidth: 260 }}
+                            placeholder="Cerca per nominativo o CF..."
+                            value={recipientsSearch}
+                            onChange={(e) => { setRecipientsSearch(e.target.value); setRecipientsPageNum(1); }}
+                          />
                           {campaign.recipients && campaign.recipients.length > 0 && (
-                            <button className="btn btn-sm btn-outline-primary me-2 py-1" onClick={handleExportDownloadReport} title="Esporta Report CSV">
+                            <button className="btn btn-sm btn-outline-primary py-1" onClick={handleExportDownloadReport} title="Esporta Report CSV">
                               <i className="fas fa-file-excel me-1"></i> Esporta Report Download
                             </button>
                           )}
@@ -5769,56 +5808,66 @@ export function App(): React.JSX.Element {
                         </div>
                       </div>
                       <div className="card-body p-0">
-                        {!campaign.recipients || campaign.recipients.length === 0 ? (
+                        {!recipientsPage || recipientsPage.items.length === 0 ? (
                           <div className="text-center py-5 text-muted">Nessun destinatario associato a questa campagna.</div>
                         ) : (
-                          <div className="table-responsive" style={{ maxHeight: '400px', overflowY: 'auto' }}>
-                            <table className="table table-striped table-hover align-middle mb-0" style={{ fontSize: '0.82rem' }}>
-                              <thead className="table-light sticky-top">
-                                <tr>
-                                  <th>Codice Fiscale</th>
-                                  <th>Nominativo</th>
-                                  <th>Contatti (Email/PEC)</th>
-                                  <th>Stato Notifica</th>
-                                  <th className="text-center">Download</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {campaign.recipients.map((r) => (
-                                  <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => openNotificationDetail(r.id)}>
-                                    <td className="fw-mono fw-bold">{r.codiceFiscale}</td>
-                                    <td>{r.fullName || <span className="text-muted">N/D</span>}</td>
-                                    <td>
-                                      <div className="small d-flex flex-column gap-1">
-                                        {r.email && <div><i className="far fa-envelope me-1"></i> {r.email}</div>}
-                                        {r.pec && <div className="text-primary"><i className="fas fa-envelope-open-text me-1"></i> {r.pec}</div>}
-                                        {renderAppIoCoDeliveryBadge(r)}
-                                      </div>
-                                    </td>
-                                    <td>
-                                      <span className={`badge ${
-                                        r.status === 'pending' ? 'bg-secondary' :
-                                        r.status === 'queued' ? 'bg-info text-dark' :
-                                        r.status === 'sent' ? 'bg-success' :
-                                        r.status === 'failed' ? 'bg-danger' : 'bg-warning text-dark'
-                                      }`}>
-                                        {r.status.toUpperCase()}
-                                      </span>
-                                    </td>
-                                    <td className="text-center fw-bold">
-                                      {r.extraData?.['download_count'] ? (
-                                        <span className="text-success" title={`Scaricato il ${new Date(r.extraData['downloaded_at']).toLocaleDateString('it-IT')}`}>
-                                          <i className="fas fa-arrow-down me-1"></i> {r.extraData['download_count']}
-                                        </span>
-                                      ) : (
-                                        <span className="text-muted">—</span>
-                                      )}
-                                    </td>
+                          <>
+                            <div className="table-responsive" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                              <table className="table table-striped table-hover align-middle mb-0" style={{ fontSize: '0.82rem' }}>
+                                <thead className="table-light sticky-top">
+                                  <tr>
+                                    <th>Codice Fiscale</th>
+                                    <th>Nominativo</th>
+                                    <th>Contatti (Email/PEC)</th>
+                                    <th>Stato Notifica</th>
+                                    <th className="text-center">Download</th>
                                   </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
+                                </thead>
+                                <tbody>
+                                  {recipientsPage.items.map((r) => (
+                                    <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => openNotificationDetail(r.id)}>
+                                      <td className="fw-mono fw-bold">{r.codiceFiscale}</td>
+                                      <td>{r.fullName || <span className="text-muted">N/D</span>}</td>
+                                      <td>
+                                        <div className="small d-flex flex-column gap-1">
+                                          {r.email && <div><i className="far fa-envelope me-1"></i> {r.email}</div>}
+                                          {r.pec && <div className="text-primary"><i className="fas fa-envelope-open-text me-1"></i> {r.pec}</div>}
+                                        </div>
+                                      </td>
+                                      <td>
+                                        <span className={`badge ${
+                                          r.status === 'pending' ? 'bg-secondary' :
+                                          r.status === 'queued' ? 'bg-info text-dark' :
+                                          r.status === 'sent' ? 'bg-success' :
+                                          r.status === 'failed' ? 'bg-danger' : 'bg-warning text-dark'
+                                        }`}>
+                                          {r.status.toUpperCase()}
+                                        </span>
+                                      </td>
+                                      <td className="text-center fw-bold">
+                                        {r.downloadCount ? (
+                                          <span className="text-success">
+                                            <i className="fas fa-arrow-down me-1"></i> {r.downloadCount}
+                                          </span>
+                                        ) : (
+                                          <span className="text-muted">—</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                            <div className="d-flex justify-content-between align-items-center p-2 border-top">
+                              <span className="text-muted small">
+                                Pagina {recipientsPage.page} di {Math.max(1, Math.ceil(recipientsPage.total / recipientsPage.pageSize))}
+                              </span>
+                              <div className="btn-group btn-group-sm">
+                                <button className="btn btn-outline-secondary" disabled={recipientsPageNum <= 1} onClick={() => setRecipientsPageNum((p) => p - 1)}>Precedente</button>
+                                <button className="btn btn-outline-secondary" disabled={recipientsPageNum >= Math.ceil(recipientsPage.total / recipientsPage.pageSize)} onClick={() => setRecipientsPageNum((p) => p + 1)}>Successiva</button>
+                              </div>
+                            </div>
+                          </>
                         )}
                       </div>
                     </div>
