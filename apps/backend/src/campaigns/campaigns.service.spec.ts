@@ -631,6 +631,39 @@ describe('CampaignsService', () => {
     });
   });
 
+  describe('getNeverDownloadedRecipients', () => {
+    it('mappa i destinatari sent con downloadCount=0 nel periodo', async () => {
+      const qb: any = {};
+      ['innerJoinAndSelect', 'where', 'andWhere', 'orderBy'].forEach((m) => {
+        qb[m] = jest.fn().mockReturnValue(qb);
+      });
+      qb.getMany = jest.fn().mockResolvedValue([
+        {
+          codiceFiscale: 'AAA1',
+          fullName: 'Mario Rossi',
+          status: RecipientStatus.SENT,
+          createdAt: new Date('2026-06-01T10:00:00Z'),
+          campaign: { name: 'Tari 2026', channelType: 'EMAIL' },
+        },
+      ]);
+      mockRecipientRepo.createQueryBuilder = jest.fn().mockReturnValue(qb);
+
+      const result = await service.getNeverDownloadedRecipients('2026-06-01', '2026-07-08');
+
+      expect(result).toEqual([
+        {
+          codiceFiscale: 'AAA1',
+          fullName: 'Mario Rossi',
+          campaignName: 'Tari 2026',
+          channelType: 'EMAIL',
+          status: 'sent',
+          createdAt: '2026-06-01T10:00:00.000Z',
+        },
+      ]);
+      expect(qb.andWhere).toHaveBeenCalledWith('r.status = :status', { status: RecipientStatus.SENT });
+    });
+  });
+
   describe('remove', () => {
     it('lancia NotFoundException se la campagna non esiste', async () => {
       mockCampaignRepo.existsBy.mockResolvedValueOnce(false);

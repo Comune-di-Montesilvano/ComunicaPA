@@ -10,6 +10,7 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UploadedFile,
   UploadedFiles,
   UseInterceptors,
@@ -18,7 +19,7 @@ import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname, join } from 'path';
 import * as fs from 'fs';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import type { JwtOperatorPayload } from '@comunicapa/shared-types';
 import type { Campaign } from '../entities/campaign.entity';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -27,6 +28,7 @@ import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { UpdateCampaignDto } from './dto/update-campaign.dto';
 import { PreviewMessageDto } from './dto/preview-message.dto';
 import { getUploadsDir } from '../attachments/attachment-paths';
+import { buildNeverDownloadedCsv } from './never-downloaded-csv.util';
 import {
   assembleChunkedUpload,
   chunkUploadDir,
@@ -308,6 +310,18 @@ export class CampaignsController {
     @Query('dateTo') dateTo?: string,
   ) {
     return this.campaignsService.getGlobalStats(dateFrom, dateTo);
+  }
+
+  @Get('stats/global/never-downloaded.csv')
+  async exportNeverDownloadedCsv(
+    @Query('dateFrom') dateFrom: string | undefined,
+    @Query('dateTo') dateTo: string | undefined,
+    @Res() res: Response,
+  ): Promise<void> {
+    const rows = await this.campaignsService.getNeverDownloadedRecipients(dateFrom, dateTo);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="mai_scaricato.csv"');
+    res.send(buildNeverDownloadedCsv(rows));
   }
 
   @Get(':id/failures')

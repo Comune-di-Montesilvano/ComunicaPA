@@ -25,7 +25,7 @@ import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util
 import type { CreateCampaignDto } from './dto/create-campaign.dto';
 import type { UpdateCampaignDto } from './dto/update-campaign.dto';
 import type { CampaignStatsDto, RecipientStatsPageDto, ChannelBreakdownDto, DownloadCrossChannelStatsDto } from './dto/campaign-stats.dto';
-import type { GlobalStatsDto } from './dto/global-stats.dto';
+import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.dto';
 import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util';
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto';
 
@@ -637,6 +637,27 @@ export class CampaignsService {
         .sort((a, b) => b.downloadPercentage - a.downloadPercentage),
       neverDownloadedCount,
     };
+  }
+
+  async getNeverDownloadedRecipients(dateFrom?: string, dateTo?: string): Promise<NeverDownloadedRowDto[]> {
+    const range = buildDateRangeWhere('c', dateFrom, dateTo);
+    const rows = await this.recipientRepo
+      .createQueryBuilder('r')
+      .innerJoinAndSelect('r.campaign', 'c')
+      .where('r.downloadCount = 0')
+      .andWhere('r.status = :status', { status: RecipientStatus.SENT })
+      .andWhere(range.sql, range.params)
+      .orderBy('r.createdAt', 'DESC')
+      .getMany();
+
+    return rows.map((r) => ({
+      codiceFiscale: r.codiceFiscale,
+      fullName: r.fullName,
+      campaignName: r.campaign.name,
+      channelType: r.campaign.channelType,
+      status: r.status,
+      createdAt: r.createdAt.toISOString(),
+    }));
   }
 
   async getFailures(campaignId: string): Promise<Array<{

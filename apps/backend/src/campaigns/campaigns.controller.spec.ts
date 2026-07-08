@@ -10,6 +10,7 @@ describe('CampaignsController', () => {
     assertDraftForAttachments: jest.fn(),
     finalizeAttachments: jest.fn().mockResolvedValue({ uploaded: 2, discarded: 0 }),
     remove: jest.fn().mockResolvedValue({ deleted: true }),
+    getNeverDownloadedRecipients: jest.fn(),
   };
 
   beforeEach(() => {
@@ -99,6 +100,23 @@ describe('CampaignsController', () => {
       const result = await controller.remove('uuid-1');
       expect(mockService.remove).toHaveBeenCalledWith('uuid-1');
       expect(result).toEqual({ deleted: true });
+    });
+  });
+
+  describe('exportNeverDownloadedCsv', () => {
+    it('imposta gli header CSV e invia il body generato dal service', async () => {
+      const rows = [
+        { codiceFiscale: 'AAA1', fullName: null, campaignName: 'Tari', channelType: 'EMAIL', status: 'sent', createdAt: '2026-06-01T10:00:00.000Z' },
+      ];
+      mockService.getNeverDownloadedRecipients = jest.fn().mockResolvedValue(rows);
+      const res = { setHeader: jest.fn(), send: jest.fn() } as any;
+
+      await controller.exportNeverDownloadedCsv(undefined, undefined, res);
+
+      expect(mockService.getNeverDownloadedRecipients).toHaveBeenCalledWith(undefined, undefined);
+      expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/csv; charset=utf-8');
+      expect(res.setHeader).toHaveBeenCalledWith('Content-Disposition', 'attachment; filename="mai_scaricato.csv"');
+      expect(res.send).toHaveBeenCalledWith(expect.stringContaining('AAA1'));
     });
   });
 });

@@ -37,3 +37,12 @@ export interface GlobalStatsDto {
   campaignLeaderboard: CampaignLeaderboardEntryDto[];
   neverDownloadedCount: number;
 }
+
+export interface NeverDownloadedRowDto {
+  codiceFiscale: string;
+  fullName: string | null;
+  campaignName: string;
+  channelType: string;
+  status: string;
+  createdAt: string;
+}
