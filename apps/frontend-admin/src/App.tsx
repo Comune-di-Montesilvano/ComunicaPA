@@ -1944,6 +1944,11 @@ export function App(): React.JSX.Element {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const cfRegex = /^[A-Z0-9]{16}$/i;
     const pivaRegex = /^\d{11}$/;
+    // Pattern reale del Codice Fiscale (non un generico alfanumerico a 16
+    // caratteri): App IO/PagoPA rifiuta con HTTP 400 qualunque valore che non
+    // rispetti questo formato, incluse le Partite IVA — che il controllo
+    // generico sotto accetta come alternativa valida per gli altri canali.
+    const cfAppIoRegex = /^[A-Z]{6}[0-9LMNPQRSTUV]{2}[ABCDEHLMPRST][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]$/i;
 
     const cfField = wizMapping.codice_fiscale;
     const emailField = wizMapping.email;
@@ -2007,7 +2012,14 @@ export function App(): React.JSX.Element {
         const valClean = row[cfField].trim().replace(/\s/g, '');
         const isCf = cfRegex.test(valClean);
         const isPiva = pivaRegex.test(valClean);
-        if (!isCf && !isPiva) {
+        if (wizAppIoInvolved && !cfAppIoRegex.test(valClean)) {
+          // App IO accetta solo CF di persona fisica: una P.IVA (o qualunque
+          // valore fuori pattern) qui va scartata subito, altrimenti l'errore
+          // emerge solo alla spedizione reale (HTTP 400 da PagoPA) dopo aver
+          // già consumato un tentativo.
+          errors.push({ row: rowNum, field: 'Codice Fiscale (App IO)', val: row[cfField], err: 'Codice Fiscale non valido per App IO: richiesto un CF di persona fisica, non una Partita IVA o un valore fuori formato' });
+          isRowValid = false;
+        } else if (!isCf && !isPiva) {
           if (isCfMandatory) {
             // Only block when CF/P.IVA is strictly required (App IO, SEND)
             errors.push({ row: rowNum, field: 'Codice Fiscale / P.IVA', val: row[cfField], err: 'Codice Fiscale (16 caratteri) o P.IVA (11 cifre) non valida' });
