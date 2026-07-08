@@ -254,7 +254,16 @@ export class CampaignsController {
       } else {
         const dir = getUploadsDir(id);
         fs.mkdirSync(dir, { recursive: true });
-        fs.renameSync(path, join(dir, filename));
+        try {
+          fs.renameSync(path, join(dir, filename));
+        } catch (renameErr: any) {
+          if (renameErr.code === 'EXDEV') {
+            fs.copyFileSync(path, join(dir, filename));
+            fs.unlinkSync(path);
+          } else {
+            throw renameErr;
+          }
+        }
         result = await this.campaignsService.finalizeAttachments(id, []);
       }
       return { uploaded: result.uploaded, discarded: result.discarded, campaignId: id };
