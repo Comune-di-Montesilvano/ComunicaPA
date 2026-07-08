@@ -186,4 +186,53 @@ describe('AppIoStrategy', () => {
       'markdown must be at least 80 characters',
     );
   });
+
+  it('send() allega payment_data e due_date se configurati e abilitati', async () => {
+    const recipient = {
+      codiceFiscale: 'RSSMRA85M01H501Z',
+      fullName: 'Mario Rossi',
+      email: null,
+      pec: null,
+      extraData: {
+        importo: '150,50',
+        avviso: '302010203040506070',
+        scadenza: '31/12/2026',
+      },
+    };
+    const campaign = {
+      name: 'TARI',
+      channelConfig: {
+        subject: 'Tassa Rifiuti',
+        body: 'Paga la TARI.',
+        paymentConfig: {
+          enabled: true,
+          amountColumn: 'importo',
+          amountType: 'decimals',
+          noticeNumberColumn: 'avviso',
+          payeeFiscalCodeType: 'static',
+          payeeFiscalCodeStatic: '12345678901',
+          dueDateColumn: 'scadenza',
+        },
+      },
+    };
+
+    await strategy.send(recipient as never, campaign as never);
+
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      2,
+      'https://api.io.pagopa.it/api/v1/messages',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('"payment_data":{"amount":15050,"notice_number":"302010203040506070","invalid_after_due_date":true,"payee":{"fiscal_code":"12345678901"}}'),
+      }),
+    );
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      2,
+      'https://api.io.pagopa.it/api/v1/messages',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('"due_date":"2026-12-31T23:59:59.000Z"'),
+      }),
+    );
+  });
 });
