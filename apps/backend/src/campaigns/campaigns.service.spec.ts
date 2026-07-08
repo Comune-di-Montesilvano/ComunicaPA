@@ -1027,6 +1027,70 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
   });
 });
 
+describe('CampaignsService.getFailuresByReason', () => {
+  it('raggruppa i destinatari falliti per errorMessage con conteggio decrescente', async () => {
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      providers: [
+        CampaignsService,
+        { provide: getRepositoryToken(Campaign), useValue: {} },
+        { provide: getRepositoryToken(Recipient), useValue: {} },
+        { provide: getRepositoryToken(NotificationAttempt), useValue: {} },
+        { provide: getRepositoryToken(DownloadEvent), useValue: {} },
+        { provide: NotificationQueuesService, useValue: {} },
+        { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
+        { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
+      ],
+    }).compile();
+    const service = moduleRef.get(CampaignsService);
+
+    jest.spyOn(service, 'getFailures').mockResolvedValue([
+      { recipientId: 'r1', codiceFiscale: 'AAA1', fullName: 'A', errorMessage: 'timeout', attemptNumber: 1, lastAttemptAt: '2026-07-01T00:00:00.000Z' },
+      { recipientId: 'r2', codiceFiscale: 'BBB2', fullName: 'B', errorMessage: 'timeout', attemptNumber: 1, lastAttemptAt: '2026-07-01T00:00:00.000Z' },
+      { recipientId: 'r3', codiceFiscale: 'CCC3', fullName: 'C', errorMessage: 'CF non valido', attemptNumber: 1, lastAttemptAt: '2026-07-01T00:00:00.000Z' },
+      { recipientId: 'r4', codiceFiscale: 'DDD4', fullName: 'D', errorMessage: null, attemptNumber: 0, lastAttemptAt: '2026-07-01T00:00:00.000Z' },
+    ]);
+
+    const result = await service.getFailuresByReason('c1');
+
+    expect(result).toEqual([
+      { errorMessage: 'timeout', count: 2, recipientIds: ['r1', 'r2'] },
+      { errorMessage: 'CF non valido', count: 1, recipientIds: ['r3'] },
+      { errorMessage: 'Errore sconosciuto', count: 1, recipientIds: ['r4'] },
+    ]);
+  });
+});
+
+describe('CampaignsService.retryRecipientsBulk', () => {
+  it('ritenta ogni destinatario e conta successi/fallimenti separatamente', async () => {
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      providers: [
+        CampaignsService,
+        { provide: getRepositoryToken(Campaign), useValue: {} },
+        { provide: getRepositoryToken(Recipient), useValue: {} },
+        { provide: getRepositoryToken(NotificationAttempt), useValue: {} },
+        { provide: getRepositoryToken(DownloadEvent), useValue: {} },
+        { provide: NotificationQueuesService, useValue: {} },
+        { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
+        { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
+      ],
+    }).compile();
+    const service = moduleRef.get(CampaignsService);
+
+    jest
+      .spyOn(service, 'retryRecipient')
+      .mockResolvedValueOnce({ requeued: true, attemptId: 'a1' })
+      .mockRejectedValueOnce(new Error('Solo i destinatari in stato FAILED possono essere rimessi in coda'))
+      .mockResolvedValueOnce({ requeued: true, attemptId: 'a3' });
+
+    const result = await service.retryRecipientsBulk('c1', ['r1', 'r2', 'r3']);
+
+    expect(result).toEqual({
+      requeued: 2,
+      failed: [{ recipientId: 'r2', reason: 'Solo i destinatari in stato FAILED possono essere rimessi in coda' }],
+    });
+  });
+});
+
 describe('CampaignsService.updateDraft', () => {
   const campaignRepoMock = { findOneBy: jest.fn(), save: jest.fn((x) => x) };
 

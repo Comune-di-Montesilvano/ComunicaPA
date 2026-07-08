@@ -24,7 +24,7 @@ import { NotificationQueuesService } from '../queue/notification-queues.service'
 import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util';
 import type { CreateCampaignDto } from './dto/create-campaign.dto';
 import type { UpdateCampaignDto } from './dto/update-campaign.dto';
-import type { CampaignStatsDto, RecipientStatsPageDto, ChannelBreakdownDto, DownloadCrossChannelStatsDto, FailureRowDto } from './dto/campaign-stats.dto';
+import type { CampaignStatsDto, RecipientStatsPageDto, ChannelBreakdownDto, DownloadCrossChannelStatsDto, FailureRowDto, FailureGroupDto, RetryBulkResultDto } from './dto/campaign-stats.dto';
 import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.dto';
 import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util';
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto';
@@ -711,6 +711,21 @@ export class CampaignsService {
     }));
   }
 
+  async getFailuresByReason(campaignId: string): Promise<FailureGroupDto[]> {
+    const failures = await this.getFailures(campaignId);
+    const groups = new Map<string, FailureGroupDto>();
+
+    for (const f of failures) {
+      const key = f.errorMessage ?? 'Errore sconosciuto';
+      if (!groups.has(key)) groups.set(key, { errorMessage: key, count: 0, recipientIds: [] });
+      const group = groups.get(key)!;
+      group.count++;
+      group.recipientIds.push(f.recipientId);
+    }
+
+    return Array.from(groups.values()).sort((a, b) => b.count - a.count);
+  }
+
   async retryRecipient(campaignId: string, recipientId: string): Promise<{ requeued: true; attemptId: string }> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
@@ -749,6 +764,22 @@ export class CampaignsService {
     ]);
 
     return { requeued: true, attemptId };
+  }
+
+  async retryRecipientsBulk(campaignId: string, recipientIds: string[]): Promise<RetryBulkResultDto> {
+    let requeued = 0;
+    const failed: Array<{ recipientId: string; reason: string }> = [];
+
+    for (const recipientId of recipientIds) {
+      try {
+        await this.retryRecipient(campaignId, recipientId);
+        requeued++;
+      } catch (e) {
+        failed.push({ recipientId, reason: e instanceof Error ? e.message : 'Errore sconosciuto' });
+      }
+    }
+
+    return { requeued, failed };
   }
 
   async getRecipientStats(campaignId: string, page: number, pageSize: number): Promise<RecipientStatsPageDto> {

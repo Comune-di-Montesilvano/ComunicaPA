@@ -48,3 +48,14 @@ export interface FailureRowDto {
   attemptNumber: number;
   lastAttemptAt: string;
 }
+
+export interface FailureGroupDto {
+  errorMessage: string;
+  count: number;
+  recipientIds: string[];
+}
+
+export interface RetryBulkResultDto {
+  requeued: number;
+  failed: Array<{ recipientId: string; reason: string }>;
+}

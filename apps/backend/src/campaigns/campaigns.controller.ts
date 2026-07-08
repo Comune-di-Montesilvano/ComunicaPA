@@ -346,12 +346,28 @@ export class CampaignsController {
     return this.campaignsService.getFailures(id);
   }
 
+  @Get(':id/failures/by-reason')
+  getFailuresByReason(@Param('id', ParseUUIDPipe) id: string) {
+    return this.campaignsService.getFailuresByReason(id);
+  }
+
   @Post(':id/recipients/:recipientId/retry')
   retryRecipient(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('recipientId', ParseUUIDPipe) recipientId: string,
   ) {
     return this.campaignsService.retryRecipient(id, recipientId);
+  }
+
+  @Post(':id/recipients/retry-bulk')
+  retryRecipientsBulk(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body('recipientIds') recipientIds: string[],
+  ) {
+    if (!Array.isArray(recipientIds) || recipientIds.length === 0) {
+      throw new BadRequestException('recipientIds deve essere un array non vuoto');
+    }
+    return this.campaignsService.retryRecipientsBulk(id, recipientIds);
   }
 
   @Get(':id/stats/recipients')

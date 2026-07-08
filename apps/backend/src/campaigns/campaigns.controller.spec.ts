@@ -11,6 +11,8 @@ describe('CampaignsController', () => {
     finalizeAttachments: jest.fn().mockResolvedValue({ uploaded: 2, discarded: 0 }),
     remove: jest.fn().mockResolvedValue({ deleted: true }),
     getNeverDownloadedRecipients: jest.fn(),
+    getFailuresByReason: jest.fn(),
+    retryRecipientsBulk: jest.fn(),
   };
 
   beforeEach(() => {
@@ -117,6 +119,30 @@ describe('CampaignsController', () => {
       expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/csv; charset=utf-8');
       expect(res.setHeader).toHaveBeenCalledWith('Content-Disposition', 'attachment; filename="mai_scaricato.csv"');
       expect(res.send).toHaveBeenCalledWith(expect.stringContaining('AAA1'));
+    });
+  });
+
+  describe('getFailuresByReason', () => {
+    it('chiama il service con l\'id campagna', async () => {
+      mockService.getFailuresByReason = jest.fn().mockResolvedValue([]);
+      await controller.getFailuresByReason('uuid-1');
+      expect(mockService.getFailuresByReason).toHaveBeenCalledWith('uuid-1');
+    });
+  });
+
+  describe('retryRecipientsBulk', () => {
+    it('rifiuta un body senza recipientIds', () => {
+      expect(() => controller.retryRecipientsBulk('uuid-1', undefined as any)).toThrow(BadRequestException);
+    });
+
+    it('rifiuta un array vuoto', () => {
+      expect(() => controller.retryRecipientsBulk('uuid-1', [])).toThrow(BadRequestException);
+    });
+
+    it('chiama il service con id campagna e recipientIds', async () => {
+      mockService.retryRecipientsBulk = jest.fn().mockResolvedValue({ requeued: 1, failed: [] });
+      await controller.retryRecipientsBulk('uuid-1', ['r1']);
+      expect(mockService.retryRecipientsBulk).toHaveBeenCalledWith('uuid-1', ['r1']);
     });
   });
 });
