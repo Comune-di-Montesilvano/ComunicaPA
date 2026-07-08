@@ -128,10 +128,11 @@ describe('CampaignsService', () => {
   it('findOne returns campaign by id', async () => {
     const result = await service.findOne('uuid-1');
     expect(result).toEqual(mockCampaign);
+    expect(mockCampaignRepo.findOneBy).toHaveBeenCalledWith({ id: 'uuid-1' });
   });
 
   it('findOne throws NotFoundException for unknown id', async () => {
-    mockCampaignRepo.findOne.mockResolvedValueOnce(null);
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce(null);
     await expect(service.findOne('no-exist')).rejects.toThrow(NotFoundException);
   });
 
