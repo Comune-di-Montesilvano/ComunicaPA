@@ -197,6 +197,10 @@ export class CampaignsService {
     );
 
     try {
+      // Svuota i destinatari esistenti per evitare duplicati in caso di ri-upload o modifica bozza
+      await this.recipientRepo.delete({ campaignId });
+      await this.campaignRepo.update({ id: campaignId }, { totalRecipients: 0 });
+
       for await (const row of parser as AsyncIterable<Record<string, string>>) {
         const cf = String(row['codice_fiscale'] ?? '').toUpperCase().trim();
         if (!cf) continue;

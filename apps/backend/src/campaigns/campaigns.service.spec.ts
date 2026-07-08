@@ -65,6 +65,7 @@ describe('CampaignsService', () => {
     find: jest.fn().mockResolvedValue([]),
     save: jest.fn().mockResolvedValue(undefined),
     update: jest.fn().mockResolvedValue(undefined),
+    delete: jest.fn().mockResolvedValue(undefined),
     findAndCount: jest.fn().mockResolvedValue([[], 0]),
     createQueryBuilder: jest.fn(),
   };
