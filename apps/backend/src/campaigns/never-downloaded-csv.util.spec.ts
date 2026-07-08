@@ -16,6 +16,11 @@ describe('buildNeverDownloadedCsv', () => {
     expect(lines[0]).toBe('"Codice Fiscale";"Nominativo";"Campagna";"Canale";"Stato";"Data invio"');
     expect(lines[1]).toContain('"AAA1"');
     expect(lines[1]).toContain('"Mario ""Rossi"""');
+    // Blocca la formattazione locale it-IT (dipende dai dati ICU compilati nel
+    // runtime Node): se l'immagine Docker cambia e perde il supporto ICU
+    // completo, questa asserzione deve fallire prima che l'export CSV arrivi
+    // in produzione con un formato data inatteso.
+    expect(lines[1]).toContain('"01/06/2026, 10:00:00"');
   });
 
   it('sostituisce fullName null con stringa vuota', () => {
