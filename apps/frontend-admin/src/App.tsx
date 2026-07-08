@@ -5647,7 +5647,7 @@ export function App(): React.JSX.Element {
                               </thead>
                               <tbody>
                                 {campaign.recipients.map((r) => (
-                                  <tr key={r.id}>
+                                  <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => openNotificationDetail(r.id)}>
                                     <td className="fw-mono fw-bold">{r.codiceFiscale}</td>
                                     <td>{r.fullName || <span className="text-muted">N/D</span>}</td>
                                     <td>
