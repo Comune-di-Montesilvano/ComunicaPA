@@ -34,4 +34,27 @@ describe('buildNeverDownloadedCsv', () => {
     const csv = buildNeverDownloadedCsv([]);
     expect(csv.split('\n')).toHaveLength(1);
   });
+
+  it('previene la CSV/formula injection anteponendo un apice ai campi che iniziano con = + - @', () => {
+    const csv = buildNeverDownloadedCsv([
+      {
+        codiceFiscale: 'CCC3',
+        fullName: '=HYPERLINK("http://evil.com","click")',
+        campaignName: '+Tari 2026',
+        channelType: 'EMAIL',
+        status: 'sent',
+        createdAt: '2026-06-01T10:00:00.000Z',
+      },
+    ]);
+    const dataLine = csv.split('\n')[1];
+    expect(dataLine).toContain('"\'=HYPERLINK(""http://evil.com"",""click"")"');
+    expect(dataLine).toContain('"\'+Tari 2026"');
+  });
+
+  it('non altera un campo normale che non inizia con = + - @', () => {
+    const csv = buildNeverDownloadedCsv([
+      { codiceFiscale: 'DDD4', fullName: 'Mario Rossi', campaignName: 'Tari', channelType: 'PEC', status: 'sent', createdAt: '2026-06-01T10:00:00.000Z' },
+    ]);
+    expect(csv.split('\n')[1]).toContain('"Mario Rossi"');
+  });
 });
