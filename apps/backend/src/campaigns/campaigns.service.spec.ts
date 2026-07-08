@@ -495,6 +495,62 @@ describe('CampaignsService', () => {
     });
   });
 
+  describe('getDownloadCrossChannelStats', () => {
+    it('ritorna null se la campagna non ha co-consegna App IO configurata', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelConfig: {} });
+
+      const result = await service.getDownloadCrossChannelStats('uuid-1');
+
+      expect(result).toBeNull();
+      expect(mockRecipientRepo.find).not.toHaveBeenCalled();
+    });
+
+    it('ritorna tutti zero se la campagna non ha destinatari', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({
+        ...mockCampaign,
+        channelConfig: { appIo: { mode: 'parallel', ioServiceId: 'svc-1' } },
+      });
+      mockRecipientRepo.find.mockResolvedValueOnce([]);
+
+      const result = await service.getDownloadCrossChannelStats('uuid-1');
+
+      expect(result).toEqual({ primaryOnly: 0, appIoOnly: 0, both: 0, none: 0 });
+    });
+
+    it('classifica primario/appIo/entrambi/nessuno, trattando CITIZEN_PORTAL come primario', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({
+        ...mockCampaign,
+        channelType: 'EMAIL',
+        channelConfig: { appIo: { mode: 'parallel', ioServiceId: 'svc-1' } },
+      });
+      mockRecipientRepo.find.mockResolvedValueOnce([
+        { id: 'r-primary' },
+        { id: 'r-appio' },
+        { id: 'r-both' },
+        { id: 'r-citizen-portal' },
+        { id: 'r-none' },
+      ]);
+      const qbMock = {
+        innerJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([
+          { recipientId: 'r-primary', channel: 'EMAIL' },
+          { recipientId: 'r-appio', channel: 'APP_IO' },
+          { recipientId: 'r-both', channel: 'EMAIL' },
+          { recipientId: 'r-both', channel: 'APP_IO' },
+          { recipientId: 'r-citizen-portal', channel: 'CITIZEN_PORTAL' },
+        ]),
+      };
+      mockDownloadEventRepo.createQueryBuilder = jest.fn().mockReturnValue(qbMock);
+
+      const result = await service.getDownloadCrossChannelStats('uuid-1');
+
+      expect(result).toEqual({ primaryOnly: 2, appIoOnly: 1, both: 1, none: 1 });
+    });
+  });
+
   describe('remove', () => {
     it('lancia NotFoundException se la campagna non esiste', async () => {
       mockCampaignRepo.existsBy.mockResolvedValueOnce(false);

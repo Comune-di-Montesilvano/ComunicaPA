@@ -296,6 +296,12 @@ export class CampaignsController {
     return { campaignId: id, byChannel };
   }
 
+  @Get(':id/download-cross-channel-stats')
+  async getDownloadCrossChannelStats(@Param('id', ParseUUIDPipe) id: string) {
+    const stats = await this.campaignsService.getDownloadCrossChannelStats(id);
+    return { campaignId: id, stats };
+  }
+
   @Get(':id/failures')
   getFailures(@Param('id', ParseUUIDPipe) id: string) {
     return this.campaignsService.getFailures(id);

@@ -32,3 +32,10 @@ export interface ChannelBreakdownDto {
   appIoDespitePrimaryFail: number;
   neither: number;
 }
+
+export interface DownloadCrossChannelStatsDto {
+  primaryOnly: number;
+  appIoOnly: number;
+  both: number;
+  none: number;
+}

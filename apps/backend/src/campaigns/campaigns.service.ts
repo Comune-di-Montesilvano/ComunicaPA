@@ -24,7 +24,7 @@ import { NotificationQueuesService } from '../queue/notification-queues.service'
 import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util';
 import type { CreateCampaignDto } from './dto/create-campaign.dto';
 import type { UpdateCampaignDto } from './dto/update-campaign.dto';
-import type { CampaignStatsDto, RecipientStatsPageDto, ChannelBreakdownDto } from './dto/campaign-stats.dto';
+import type { CampaignStatsDto, RecipientStatsPageDto, ChannelBreakdownDto, DownloadCrossChannelStatsDto } from './dto/campaign-stats.dto';
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto';
 
 
@@ -484,6 +484,56 @@ export class CampaignsService {
       byChannel[row.channel] = parseInt(row.count, 10);
     }
     return byChannel;
+  }
+
+  /**
+   * Incrocio canali di download per destinatario: su quale combinazione
+   * (primario, App IO, entrambi, nessuno) ha scaricato ciascun destinatario.
+   * CITIZEN_PORTAL è trattato come equivalente al canale primario (stesso
+   * documento scaricato dal portale cittadino invece che dal link email/PEC),
+   * non è una categoria terza per questa metrica — resta visibile
+   * separatamente in getDownloadChannelStats(). Ritorna null se la campagna
+   * non ha co-consegna App IO configurata, come getChannelBreakdown().
+   */
+  async getDownloadCrossChannelStats(campaignId: string): Promise<DownloadCrossChannelStatsDto | null> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+
+    if (!resolveSecondaryAppIoConfig(campaign.channelConfig)) return null;
+
+    const recipients = await this.recipientRepo.find({ where: { campaignId }, select: ['id'] });
+    const result: DownloadCrossChannelStatsDto = { primaryOnly: 0, appIoOnly: 0, both: 0, none: 0 };
+    if (recipients.length === 0) return result;
+
+    const rows = await this.downloadEventRepo
+      .createQueryBuilder('de')
+      .innerJoin('de.recipient', 'r')
+      .select('de.recipientId', 'recipientId')
+      .addSelect('de.channel', 'channel')
+      .where('r.campaignId = :campaignId', { campaignId })
+      .getRawMany<{ recipientId: string; channel: string }>();
+
+    const channelsByRecipient = new Map<string, Set<string>>();
+    for (const row of rows) {
+      if (!channelsByRecipient.has(row.recipientId)) channelsByRecipient.set(row.recipientId, new Set());
+      channelsByRecipient.get(row.recipientId)!.add(row.channel);
+    }
+
+    for (const recipient of recipients) {
+      const channels = channelsByRecipient.get(recipient.id);
+      if (!channels || channels.size === 0) {
+        result.none++;
+        continue;
+      }
+      const hasAppIo = channels.has('APP_IO');
+      const hasPrimary = channels.has(campaign.channelType) || channels.has('CITIZEN_PORTAL');
+      if (hasAppIo && hasPrimary) result.both++;
+      else if (hasAppIo) result.appIoOnly++;
+      else if (hasPrimary) result.primaryOnly++;
+      else result.none++;
+    }
+
+    return result;
   }
 
   async getFailures(campaignId: string): Promise<Array<{
