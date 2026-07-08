@@ -5,8 +5,8 @@ import { createReadStream } from 'fs';
 import { unlink } from 'fs/promises';
 import { parse } from 'csv-parse';
 import * as fs from 'fs';
-import { basename, join } from 'path';
-import AdmZip from 'adm-zip';
+import { join } from 'path';
+import { extractZipWithYauzl } from './zip-extract.util';
 import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import type { AppConfiguration } from '../config/configuration';
@@ -637,13 +637,7 @@ export class CampaignsService {
     // 1. Estrazione ZIP
     for (const file of files) {
       if (!file.originalname.toLowerCase().endsWith('.zip')) continue;
-      const zip = new AdmZip(fs.readFileSync(file.path));
-      for (const entry of zip.getEntries()) {
-        if (entry.isDirectory) continue;
-        const name = basename(entry.entryName); // neutralizza path traversal
-        if (!name.toLowerCase().endsWith('.pdf')) continue;
-        fs.writeFileSync(join(dir, name), entry.getData());
-      }
+      await extractZipWithYauzl(file.path, dir);
       fs.unlinkSync(file.path);
     }
 
