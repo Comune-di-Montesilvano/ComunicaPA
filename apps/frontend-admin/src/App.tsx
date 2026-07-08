@@ -5937,6 +5937,51 @@ export function App(): React.JSX.Element {
                         </div>
                       </div>
                     )}
+
+                    {!downloadCrossChannel && campaign.channelType === 'APP_IO' && (
+                      <div className="card shadow-sm mt-4">
+                        <div className="card-header bg-white py-3 border-bottom">
+                          <h3 className="h6 mb-0 fw-bold text-dark">
+                            <i className="fas fa-chart-pie me-2 text-primary"></i>Esito Invio e Download
+                          </h3>
+                        </div>
+                        <div className="card-body">
+                          <ResponsiveContainer width="100%" height={220}>
+                            <PieChart>
+                              <Pie
+                                data={[
+                                  { label: 'Inviati con successo', value: campaign.sentCount },
+                                  { label: 'Falliti', value: campaign.failedCount },
+                                ]}
+                                dataKey="value"
+                                nameKey="label"
+                                cx="50%"
+                                cy="50%"
+                                outerRadius={80}
+                                label
+                              >
+                                <Cell fill="var(--bi-success, #198754)" />
+                                <Cell fill="var(--bi-danger, #dc3545)" />
+                              </Pie>
+                              <Tooltip />
+                              <Legend />
+                            </PieChart>
+                          </ResponsiveContainer>
+                          {downloadByChannel && (
+                            <table className="table table-sm mb-0 mt-2">
+                              <tbody>
+                                {Object.entries(downloadByChannel).map(([channel, count]) => (
+                                  <tr key={channel}>
+                                    <td>{channel}</td>
+                                    <td className="text-end fw-bold">{count}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : null}
