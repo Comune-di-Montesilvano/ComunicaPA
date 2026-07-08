@@ -926,7 +926,7 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
     const result = await service.getFailures('c1');
 
     expect(recipientRepoMock.createQueryBuilder).toHaveBeenCalledTimes(1);
-    expect(attemptRepoMock.find).not.toHaveBeenCalled();
+    expect(attemptRepoMock.findOne).not.toHaveBeenCalled();
     expect(result).toEqual([
       { recipientId: 'r1', codiceFiscale: 'AAA1', fullName: 'Mario Rossi', errorMessage: 'timeout', attemptNumber: 2, lastAttemptAt: '2026-07-01T10:00:00.000Z' },
       { recipientId: 'r2', codiceFiscale: 'BBB2', fullName: null, errorMessage: null, attemptNumber: 0, lastAttemptAt: '2026-06-30T09:05:00.000Z' },
