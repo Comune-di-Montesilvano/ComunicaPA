@@ -2535,6 +2535,24 @@ export function App(): React.JSX.Element {
     }
   };
 
+  const handleExportNeverDownloaded = async () => {
+    const params = new URLSearchParams();
+    if (statsDateFrom) params.set('dateFrom', statsDateFrom);
+    if (statsDateTo) params.set('dateTo', statsDateTo);
+    const res = await apiFetch(`/campaigns/stats/global/never-downloaded.csv?${params.toString()}`);
+    if (!res.ok) {
+      alert('Impossibile esportare il report.');
+      return;
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'mai_scaricato.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleLaunchCampaign = async () => {
     if (!campaign) return;
     if (!confirm(`Sei sicuro di voler lanciare la campagna "${campaign.name}"? L'invio ai destinatari avverrà asincronamente.`)) {
@@ -4211,6 +4229,68 @@ export function App(): React.JSX.Element {
                               <Legend />
                             </PieChart>
                           </ResponsiveContainer>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="row g-3 mt-1">
+                    <div className="col-md-8">
+                      <div className="card shadow-sm">
+                        <div className="card-header bg-white py-3 border-bottom">
+                          <h3 className="h6 mb-0 fw-bold text-dark"><i className="fas fa-ranking-star me-2 text-primary"></i>Classifica Campagne per Tasso Download</h3>
+                        </div>
+                        <div className="card-body p-0">
+                          <div className="table-responsive">
+                            <table className="table table-sm mb-0">
+                              <thead><tr><th>Campagna</th><th className="text-end">Destinatari</th><th className="text-end">% Download</th></tr></thead>
+                              <tbody>
+                                {globalStats.campaignLeaderboard.slice(0, 5).map(c => (
+                                  <tr key={c.campaignId} style={{ cursor: 'pointer' }} onClick={() => handleCampaignClick(c.campaignId)}>
+                                    <td>{c.campaignName}</td>
+                                    <td className="text-end">{c.totalRecipients}</td>
+                                    <td className="text-end fw-bold text-success">{c.downloadPercentage}%</td>
+                                  </tr>
+                                ))}
+                                {globalStats.campaignLeaderboard.length === 0 && (
+                                  <tr><td colSpan={3} className="text-center text-muted py-3">Nessuna campagna nel periodo selezionato</td></tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                          {globalStats.campaignLeaderboard.length > 5 && (
+                            <>
+                              <div className="px-3 py-2 small text-muted border-top">Peggiori 5</div>
+                              <div className="table-responsive">
+                                <table className="table table-sm mb-0">
+                                  <tbody>
+                                    {globalStats.campaignLeaderboard.slice(-5).reverse().map(c => (
+                                      <tr key={c.campaignId} style={{ cursor: 'pointer' }} onClick={() => handleCampaignClick(c.campaignId)}>
+                                        <td>{c.campaignName}</td>
+                                        <td className="text-end">{c.totalRecipients}</td>
+                                        <td className="text-end fw-bold text-danger">{c.downloadPercentage}%</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="col-md-4">
+                      <div className="card shadow-sm">
+                        <div className="card-header bg-white py-3 border-bottom">
+                          <h3 className="h6 mb-0 fw-bold text-dark"><i className="fas fa-triangle-exclamation me-2 text-warning"></i>Mai Scaricato</h3>
+                        </div>
+                        <div className="card-body text-center">
+                          <h3 className="h2 fw-bold text-danger">{globalStats.neverDownloadedCount}</h3>
+                          <p className="small text-muted">Destinatari con invio riuscito ma nessun download nel periodo selezionato.</p>
+                          <button className="btn btn-outline-danger btn-sm" onClick={handleExportNeverDownloaded}>
+                            <i className="fas fa-file-csv me-1"></i>Esporta CSV
+                          </button>
                         </div>
                       </div>
                     </div>
