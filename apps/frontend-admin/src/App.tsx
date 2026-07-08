@@ -653,6 +653,8 @@ export function App(): React.JSX.Element {
   const [launching, setLaunching] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [campaignFailures, setCampaignFailures] = useState<Array<{ recipientId: string; codiceFiscale: string; fullName: string | null; errorMessage: string | null; attemptNumber: number; lastAttemptAt: string }>>([]);
+  const [failureGroups, setFailureGroups] = useState<Array<{ errorMessage: string; count: number; recipientIds: string[] }>>([]);
+  const [retryingGroup, setRetryingGroup] = useState<string | null>(null);
   const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number }> } | null>(null);
   const [recipientsSearch, setRecipientsSearch] = useState('');
   const [recipientsPageNum, setRecipientsPageNum] = useState(1);
@@ -876,6 +878,37 @@ export function App(): React.JSX.Element {
     } catch (err) {
       if (err instanceof ApiAuthError) return;
       throw err;
+    }
+  };
+
+  const fetchFailureGroups = async (campaignId: string) => {
+    try {
+      const res = await apiFetch(`/campaigns/${campaignId}/failures/by-reason`);
+      if (!res.ok) return;
+      setFailureGroups(await res.json());
+    } catch {
+      // Non bloccante.
+    }
+  };
+
+  const handleRetryGroup = async (group: { errorMessage: string; recipientIds: string[] }) => {
+    if (!selectedCampaignId) return;
+    if (!confirm(`Rimettere in coda ${group.recipientIds.length} destinatari con errore "${group.errorMessage}"?`)) return;
+    setRetryingGroup(group.errorMessage);
+    try {
+      const res = await apiFetch(`/campaigns/${selectedCampaignId}/recipients/retry-bulk`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipientIds: group.recipientIds }),
+      });
+      if (res.ok) {
+        const result = await res.json();
+        alert(`${result.requeued} destinatari rimessi in coda${result.failed.length > 0 ? `, ${result.failed.length} non ritentabili` : ''}`);
+        await fetchFailureGroups(selectedCampaignId);
+        await fetchCampaignDetail(selectedCampaignId);
+      }
+    } finally {
+      setRetryingGroup(null);
     }
   };
 
@@ -2488,6 +2521,7 @@ export function App(): React.JSX.Element {
     setView('campaign-detail');
     setCampaign(null);
     setCampaignFailures([]);
+    setFailureGroups([]);
     setChannelBreakdown(null);
     setDownloadByChannel(null);
     setDownloadCrossChannel(null);
@@ -2496,6 +2530,7 @@ export function App(): React.JSX.Element {
     setRecipientsPageNum(1);
     fetchCampaignDetail(id);
     fetchCampaignFailures(id);
+    fetchFailureGroups(id);
     fetchChannelBreakdown(id);
     fetchDownloadChannelStats(id);
     fetchDownloadCrossChannelStats(id);
@@ -5673,25 +5708,24 @@ export function App(): React.JSX.Element {
                           <div className="mt-4 border-top pt-3">
                             <h4 className="small fw-bold mb-2 text-danger">
                               <i className="fas fa-triangle-exclamation me-1"></i>
-                              Destinatari con invio fallito ({campaignFailures.length})
+                              Destinatari con invio fallito ({campaignFailures.length}) — raggruppati per motivo
                             </h4>
                             <div className="table-responsive" style={{ maxHeight: 300, overflowY: 'auto' }}>
                               <table className="table table-sm">
-                                <thead><tr><th>CF</th><th>Nome</th><th>Tentativi</th><th>Motivo</th><th></th></tr></thead>
+                                <thead><tr><th>MOTIVO ERRORE</th><th className="text-end">DESTINATARI</th><th></th></tr></thead>
                                 <tbody>
-                                  {campaignFailures.map(f => (
-                                    <tr key={f.recipientId}>
-                                      <td className="font-monospace small">{f.codiceFiscale}</td>
-                                      <td className="small">{f.fullName || '—'}</td>
-                                      <td className="small">{f.attemptNumber}</td>
-                                      <td className="small text-danger">{f.errorMessage || '—'}</td>
-                                      <td>
+                                  {failureGroups.map((g) => (
+                                    <tr key={g.errorMessage}>
+                                      <td style={{ maxWidth: 400 }} className="text-break small text-danger">{g.errorMessage}</td>
+                                      <td className="text-end fw-bold small">{g.count}</td>
+                                      <td className="text-end">
                                         <button
                                           className="btn btn-sm btn-outline-primary"
-                                          disabled={retryBusyId === f.recipientId}
-                                          onClick={() => handleRetryRecipient(campaign.id, f.recipientId)}
+                                          disabled={retryingGroup === g.errorMessage}
+                                          onClick={() => handleRetryGroup(g)}
                                         >
-                                          <i className="fas fa-rotate-right me-1"></i>Rimetti in coda
+                                          <i className="fas fa-rotate-right me-1"></i>
+                                          {retryingGroup === g.errorMessage ? 'Rimetto in coda...' : 'Rimetti in coda tutti'}
                                         </button>
                                       </td>
                                     </tr>
