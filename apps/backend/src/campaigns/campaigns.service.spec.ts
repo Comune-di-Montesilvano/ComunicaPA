@@ -66,6 +66,7 @@ describe('CampaignsService', () => {
     save: jest.fn().mockResolvedValue(undefined),
     update: jest.fn().mockResolvedValue(undefined),
     findAndCount: jest.fn().mockResolvedValue([[], 0]),
+    createQueryBuilder: jest.fn(),
   };
   const mockAttemptRepo = {
     find: jest.fn(),
@@ -548,6 +549,85 @@ describe('CampaignsService', () => {
       const result = await service.getDownloadCrossChannelStats('uuid-1');
 
       expect(result).toEqual({ primaryOnly: 2, appIoOnly: 1, both: 1, none: 1 });
+    });
+  });
+
+  describe('getGlobalStats', () => {
+    function makeQb(terminal: { rawOne?: any; rawMany?: any[]; count?: number }) {
+      const qb: any = {};
+      ['select', 'addSelect', 'innerJoin', 'leftJoin', 'where', 'andWhere', 'groupBy', 'orderBy'].forEach((m) => {
+        qb[m] = jest.fn().mockReturnValue(qb);
+      });
+      qb.getRawOne = jest.fn().mockResolvedValue(terminal.rawOne);
+      qb.getRawMany = jest.fn().mockResolvedValue(terminal.rawMany ?? []);
+      qb.getCount = jest.fn().mockResolvedValue(terminal.count ?? 0);
+      return qb;
+    }
+
+    it('assembla il DTO combinando tutte le query aggregate nell\'ordine atteso', async () => {
+      mockCampaignRepo.createQueryBuilder = jest
+        .fn()
+        .mockReturnValueOnce(makeQb({ rawOne: { totalRecipients: '100', totalSent: '90', totalFailed: '10' } }))
+        .mockReturnValueOnce(makeQb({ rawMany: [{ month: '2026-06', sent: '50' }, { month: '2026-07', sent: '40' }] }))
+        .mockReturnValueOnce(makeQb({ rawMany: [{ channel: 'EMAIL', sent: '90' }] }))
+        .mockReturnValueOnce(makeQb({ rawMany: [{ campaignId: 'c1', campaignName: 'Tari', totalRecipients: '100', downloadedCount: '60' }] }));
+
+      mockRecipientRepo.createQueryBuilder = jest
+        .fn()
+        .mockReturnValueOnce(makeQb({ count: 60 }))
+        .mockReturnValueOnce(makeQb({ rawMany: [{ month: '2026-06', downloaded: '30' }] }))
+        .mockReturnValueOnce(makeQb({ count: 15 }));
+
+      mockDownloadEventRepo.createQueryBuilder = jest
+        .fn()
+        .mockReturnValueOnce(makeQb({ rawMany: [{ channel: 'EMAIL', count: '55' }] }));
+
+      const result = await service.getGlobalStats('2026-06-01', '2026-07-08');
+
+      expect(result.totals).toEqual({
+        totalRecipients: 100,
+        totalSent: 90,
+        totalFailed: 10,
+        totalDownloaded: 60,
+        downloadPercentage: 60,
+      });
+      expect(result.monthlyTrend).toEqual([
+        { month: '2026-06', sent: 50, downloaded: 30 },
+        { month: '2026-07', sent: 40, downloaded: 0 },
+      ]);
+      expect(result.channelTotals).toEqual([{ channel: 'EMAIL', sent: 90 }]);
+      expect(result.downloadChannelTotals).toEqual([{ channel: 'EMAIL', count: 55 }]);
+      expect(result.campaignLeaderboard).toEqual([
+        { campaignId: 'c1', campaignName: 'Tari', totalRecipients: 100, downloadPercentage: 60 },
+      ]);
+      expect(result.neverDownloadedCount).toBe(15);
+    });
+
+    it('ritorna totali a zero quando non ci sono campagne nel periodo', async () => {
+      mockCampaignRepo.createQueryBuilder = jest
+        .fn()
+        .mockReturnValueOnce(makeQb({ rawOne: undefined }))
+        .mockReturnValueOnce(makeQb({ rawMany: [] }))
+        .mockReturnValueOnce(makeQb({ rawMany: [] }))
+        .mockReturnValueOnce(makeQb({ rawMany: [] }));
+      mockRecipientRepo.createQueryBuilder = jest
+        .fn()
+        .mockReturnValueOnce(makeQb({ count: 0 }))
+        .mockReturnValueOnce(makeQb({ rawMany: [] }))
+        .mockReturnValueOnce(makeQb({ count: 0 }));
+      mockDownloadEventRepo.createQueryBuilder = jest.fn().mockReturnValueOnce(makeQb({ rawMany: [] }));
+
+      const result = await service.getGlobalStats();
+
+      expect(result.totals).toEqual({
+        totalRecipients: 0,
+        totalSent: 0,
+        totalFailed: 0,
+        totalDownloaded: 0,
+        downloadPercentage: 0,
+      });
+      expect(result.monthlyTrend).toEqual([]);
+      expect(result.campaignLeaderboard).toEqual([]);
     });
   });
 

@@ -25,6 +25,8 @@ import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util
 import type { CreateCampaignDto } from './dto/create-campaign.dto';
 import type { UpdateCampaignDto } from './dto/update-campaign.dto';
 import type { CampaignStatsDto, RecipientStatsPageDto, ChannelBreakdownDto, DownloadCrossChannelStatsDto } from './dto/campaign-stats.dto';
+import type { GlobalStatsDto } from './dto/global-stats.dto';
+import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util';
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto';
 
 
@@ -534,6 +536,107 @@ export class CampaignsService {
     }
 
     return result;
+  }
+
+  async getGlobalStats(dateFrom?: string, dateTo?: string): Promise<GlobalStatsDto> {
+    const range = buildDateRangeWhere('c', dateFrom, dateTo);
+
+    const totalsRow = await this.campaignRepo
+      .createQueryBuilder('c')
+      .select('COALESCE(SUM(c.totalRecipients), 0)', 'totalRecipients')
+      .addSelect('COALESCE(SUM(c.sentCount), 0)', 'totalSent')
+      .addSelect('COALESCE(SUM(c.failedCount), 0)', 'totalFailed')
+      .where(range.sql, range.params)
+      .getRawOne<{ totalRecipients: string; totalSent: string; totalFailed: string }>();
+
+    const totalDownloaded = await this.recipientRepo
+      .createQueryBuilder('r')
+      .innerJoin('r.campaign', 'c')
+      .where('r.downloadCount > 0')
+      .andWhere(range.sql, range.params)
+      .getCount();
+
+    const sentTrendRows = await this.campaignRepo
+      .createQueryBuilder('c')
+      .select("to_char(date_trunc('month', c.createdAt), 'YYYY-MM')", 'month')
+      .addSelect('COALESCE(SUM(c.sentCount), 0)', 'sent')
+      .where(range.sql, range.params)
+      .groupBy("date_trunc('month', c.createdAt)")
+      .orderBy("date_trunc('month', c.createdAt)", 'ASC')
+      .getRawMany<{ month: string; sent: string }>();
+
+    const downloadedTrendRows = await this.recipientRepo
+      .createQueryBuilder('r')
+      .innerJoin('r.campaign', 'c')
+      .select("to_char(date_trunc('month', c.createdAt), 'YYYY-MM')", 'month')
+      .addSelect('COUNT(*) FILTER (WHERE r.downloadCount > 0)', 'downloaded')
+      .where(range.sql, range.params)
+      .groupBy("date_trunc('month', c.createdAt)")
+      .getRawMany<{ month: string; downloaded: string }>();
+
+    const channelRows = await this.campaignRepo
+      .createQueryBuilder('c')
+      .select('c.channelType', 'channel')
+      .addSelect('COALESCE(SUM(c.sentCount), 0)', 'sent')
+      .where(range.sql, range.params)
+      .groupBy('c.channelType')
+      .getRawMany<{ channel: string; sent: string }>();
+
+    const downloadChannelRows = await this.downloadEventRepo
+      .createQueryBuilder('de')
+      .innerJoin('de.recipient', 'r')
+      .innerJoin('r.campaign', 'c')
+      .select('de.channel', 'channel')
+      .addSelect('COUNT(*)', 'count')
+      .where(range.sql, range.params)
+      .groupBy('de.channel')
+      .getRawMany<{ channel: string; count: string }>();
+
+    const leaderboardRows = await this.campaignRepo
+      .createQueryBuilder('c')
+      .leftJoin('c.recipients', 'r')
+      .select('c.id', 'campaignId')
+      .addSelect('c.name', 'campaignName')
+      .addSelect('c.totalRecipients', 'totalRecipients')
+      .addSelect('COUNT(*) FILTER (WHERE r.downloadCount > 0)', 'downloadedCount')
+      .where('c.totalRecipients > 0')
+      .andWhere(range.sql, range.params)
+      .groupBy('c.id')
+      .getRawMany<{ campaignId: string; campaignName: string; totalRecipients: string; downloadedCount: string }>();
+
+    const neverDownloadedCount = await this.recipientRepo
+      .createQueryBuilder('r')
+      .innerJoin('r.campaign', 'c')
+      .where('r.downloadCount = 0')
+      .andWhere('r.status = :status', { status: RecipientStatus.SENT })
+      .andWhere(range.sql, range.params)
+      .getCount();
+
+    const totalRecipients = Number(totalsRow?.totalRecipients ?? 0);
+    const totalSent = Number(totalsRow?.totalSent ?? 0);
+    const totalFailed = Number(totalsRow?.totalFailed ?? 0);
+
+    return {
+      totals: {
+        totalRecipients,
+        totalSent,
+        totalFailed,
+        totalDownloaded,
+        downloadPercentage: computeDownloadPercentage(totalDownloaded, totalRecipients),
+      },
+      monthlyTrend: mergeMonthlyTrend(sentTrendRows, downloadedTrendRows),
+      channelTotals: channelRows.map((r) => ({ channel: r.channel, sent: Number(r.sent) })),
+      downloadChannelTotals: downloadChannelRows.map((r) => ({ channel: r.channel, count: Number(r.count) })),
+      campaignLeaderboard: leaderboardRows
+        .map((r) => ({
+          campaignId: r.campaignId,
+          campaignName: r.campaignName,
+          totalRecipients: Number(r.totalRecipients),
+          downloadPercentage: computeDownloadPercentage(Number(r.downloadedCount), Number(r.totalRecipients)),
+        }))
+        .sort((a, b) => b.downloadPercentage - a.downloadPercentage),
+      neverDownloadedCount,
+    };
   }
 
   async getFailures(campaignId: string): Promise<Array<{

@@ -302,6 +302,14 @@ export class CampaignsController {
     return { campaignId: id, stats };
   }
 
+  @Get('stats/global')
+  getGlobalStats(
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ) {
+    return this.campaignsService.getGlobalStats(dateFrom, dateTo);
+  }
+
   @Get(':id/failures')
   getFailures(@Param('id', ParseUUIDPipe) id: string) {
     return this.campaignsService.getFailures(id);
