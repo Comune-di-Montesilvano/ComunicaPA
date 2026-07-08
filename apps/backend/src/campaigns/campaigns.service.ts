@@ -24,7 +24,7 @@ import { NotificationQueuesService } from '../queue/notification-queues.service'
 import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util';
 import type { CreateCampaignDto } from './dto/create-campaign.dto';
 import type { UpdateCampaignDto } from './dto/update-campaign.dto';
-import type { CampaignStatsDto, RecipientStatsPageDto, ChannelBreakdownDto, DownloadCrossChannelStatsDto, FailureRowDto, FailureGroupDto, RetryBulkResultDto } from './dto/campaign-stats.dto';
+import type { CampaignStatsDto, RecipientStatsPageDto, ChannelBreakdownDto, DownloadCrossChannelStatsDto, FailureRowDto, FailureGroupDto, RetryBulkResultDto, DownloadReportRowDto } from './dto/campaign-stats.dto';
 import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.dto';
 import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util';
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto';
@@ -805,6 +805,24 @@ export class CampaignsService {
       .getManyAndCount();
 
     return { campaignId, page, pageSize, total, items };
+  }
+
+  async getDownloadReportRows(campaignId: string): Promise<DownloadReportRowDto[]> {
+    const rows = await this.recipientRepo.find({
+      where: { campaignId },
+      select: ['codiceFiscale', 'fullName', 'email', 'pec', 'status', 'downloadCount', 'lastDownloadedAt'],
+      order: { createdAt: 'ASC' },
+    });
+
+    return rows.map((r) => ({
+      codiceFiscale: r.codiceFiscale,
+      fullName: r.fullName,
+      email: r.email,
+      pec: r.pec,
+      status: r.status,
+      downloadCount: r.downloadCount,
+      lastDownloadedAt: r.lastDownloadedAt ? r.lastDownloadedAt.toISOString() : null,
+    }));
   }
 
   async assertDraftForAttachments(campaignId: string): Promise<void> {

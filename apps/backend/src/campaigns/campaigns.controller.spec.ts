@@ -13,6 +13,7 @@ describe('CampaignsController', () => {
     getNeverDownloadedRecipients: jest.fn(),
     getFailuresByReason: jest.fn(),
     retryRecipientsBulk: jest.fn(),
+    getDownloadReportRows: jest.fn(),
   };
 
   beforeEach(() => {
@@ -148,6 +149,21 @@ describe('CampaignsController', () => {
       mockService.retryRecipientsBulk = jest.fn().mockResolvedValue({ requeued: 1, failed: [] });
       await controller.retryRecipientsBulk('uuid-1', ['r1']);
       expect(mockService.retryRecipientsBulk).toHaveBeenCalledWith('uuid-1', ['r1']);
+    });
+  });
+
+  describe('exportDownloadReportCsv', () => {
+    it('imposta gli header CSV e invia il body generato dal service', async () => {
+      mockService.getDownloadReportRows = jest.fn().mockResolvedValue([
+        { codiceFiscale: 'AAA1', fullName: null, email: null, pec: null, status: 'sent', downloadCount: 0, lastDownloadedAt: null },
+      ]);
+      const res = { setHeader: jest.fn(), send: jest.fn() } as any;
+
+      await controller.exportDownloadReportCsv('uuid-1', res);
+
+      expect(mockService.getDownloadReportRows).toHaveBeenCalledWith('uuid-1');
+      expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/csv; charset=utf-8');
+      expect(res.send).toHaveBeenCalledWith(expect.stringContaining('AAA1'));
     });
   });
 });

@@ -1112,6 +1112,56 @@ describe('CampaignsService.retryRecipientsBulk', () => {
   });
 });
 
+describe('CampaignsService.getDownloadReportRows', () => {
+  it('mappa i destinatari della campagna nel formato report', async () => {
+    const recipientRepoMock = { find: jest.fn() };
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      providers: [
+        CampaignsService,
+        { provide: getRepositoryToken(Campaign), useValue: {} },
+        { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
+        { provide: getRepositoryToken(NotificationAttempt), useValue: {} },
+        { provide: getRepositoryToken(DownloadEvent), useValue: {} },
+        { provide: NotificationQueuesService, useValue: {} },
+        { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
+        { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
+      ],
+    }).compile();
+    const service = moduleRef.get(CampaignsService);
+
+    recipientRepoMock.find = jest.fn().mockResolvedValueOnce([
+      {
+        codiceFiscale: 'AAA1',
+        fullName: 'Mario Rossi',
+        email: 'mario@example.com',
+        pec: null,
+        status: RecipientStatus.SENT,
+        downloadCount: 1,
+        lastDownloadedAt: new Date('2026-07-01T10:00:00Z'),
+      },
+    ]);
+
+    const result = await service.getDownloadReportRows('c1');
+
+    expect(recipientRepoMock.find).toHaveBeenCalledWith({
+      where: { campaignId: 'c1' },
+      select: ['codiceFiscale', 'fullName', 'email', 'pec', 'status', 'downloadCount', 'lastDownloadedAt'],
+      order: { createdAt: 'ASC' },
+    });
+    expect(result).toEqual([
+      {
+        codiceFiscale: 'AAA1',
+        fullName: 'Mario Rossi',
+        email: 'mario@example.com',
+        pec: null,
+        status: 'sent',
+        downloadCount: 1,
+        lastDownloadedAt: '2026-07-01T10:00:00.000Z',
+      },
+    ]);
+  });
+});
+
 describe('CampaignsService.updateDraft', () => {
   const campaignRepoMock = { findOneBy: jest.fn(), save: jest.fn((x) => x) };
 

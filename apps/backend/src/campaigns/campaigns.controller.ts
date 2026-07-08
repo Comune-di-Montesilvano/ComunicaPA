@@ -29,6 +29,7 @@ import { UpdateCampaignDto } from './dto/update-campaign.dto';
 import { PreviewMessageDto } from './dto/preview-message.dto';
 import { getUploadsDir } from '../attachments/attachment-paths';
 import { buildNeverDownloadedCsv } from './never-downloaded-csv.util';
+import { buildDownloadReportCsv } from './download-report-csv.util';
 import {
   assembleChunkedUpload,
   chunkUploadDir,
@@ -388,6 +389,14 @@ export class CampaignsController {
     }
 
     return this.campaignsService.getRecipientStats(id, parsedPage, parsedPageSize, search);
+  }
+
+  @Get(':id/export-download-report.csv')
+  async exportDownloadReportCsv(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response): Promise<void> {
+    const rows = await this.campaignsService.getDownloadReportRows(id);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="report_download_campagna_${id.slice(0, 8)}.csv"`);
+    res.send(buildDownloadReportCsv(rows));
   }
 
   @Delete(':id')

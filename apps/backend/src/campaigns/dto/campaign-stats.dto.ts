@@ -62,3 +62,13 @@ export interface RetryBulkResultDto {
   requeued: number;
   failed: Array<{ recipientId: string; reason: string }>;
 }
+
+export interface DownloadReportRowDto {
+  codiceFiscale: string;
+  fullName: string | null;
+  email: string | null;
+  pec: string | null;
+  status: string;
+  downloadCount: number;
+  lastDownloadedAt: string | null;
+}
