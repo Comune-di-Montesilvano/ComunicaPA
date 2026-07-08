@@ -2414,7 +2414,7 @@ export function App(): React.JSX.Element {
         const totalBytes = wizPdfFiles.reduce((sum, f) => sum + f.size, 0);
         setWizUploadProgress({ label: 'Caricamento allegati', loaded: 0, total: totalBytes });
         let cumulativeBefore = 0;
-        let lastAttachData: { uploaded: number; discarded?: number } | null = null;
+        let lastAttachData: { uploaded: number; discarded?: number; blocked?: boolean; message?: string } | null = null;
         for (const file of wizPdfFiles) {
           const base = cumulativeBefore;
           const isZip = file.name.toLowerCase().endsWith('.zip');
@@ -2433,6 +2433,9 @@ export function App(): React.JSX.Element {
           cumulativeBefore += file.size;
         }
         setWizUploadProgress(null);
+        if (lastAttachData?.blocked) {
+          throw new Error(lastAttachData.message || 'Errore durante la finalizzazione degli allegati.');
+        }
         discardCount = lastAttachData?.discarded || 0;
       }
 

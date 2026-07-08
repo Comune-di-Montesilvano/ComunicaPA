@@ -242,7 +242,7 @@ export class CampaignsController {
   async completeAttachmentsChunkedUpload(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('uploadId') uploadId: string,
-  ): Promise<{ uploaded: number; discarded: number; campaignId: string }> {
+  ): Promise<{ uploaded: number; discarded: number; campaignId: string; blocked?: boolean; message?: string }> {
     try {
       await this.campaignsService.assertDraftForAttachments(id);
       const { path, filename } = await assembleChunkedUpload(uploadId);
@@ -258,6 +258,14 @@ export class CampaignsController {
         result = await this.campaignsService.finalizeAttachments(id, []);
       }
       return { uploaded: result.uploaded, discarded: result.discarded, campaignId: id };
+    } catch (err: any) {
+      return {
+        uploaded: 0,
+        discarded: 0,
+        campaignId: id,
+        blocked: true,
+        message: err?.message ?? 'Errore durante la finalizzazione degli allegati',
+      };
     } finally {
       cleanupChunkedUpload(uploadId);
     }
