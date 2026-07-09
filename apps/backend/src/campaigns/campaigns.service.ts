@@ -360,8 +360,9 @@ export class CampaignsService {
 
     const queuedRecipients = await this.recipientRepo.find({
       where: { campaignId, status: RecipientStatus.QUEUED },
-      select: ['id'],
+      select: ['id', 'extraData'],
     });
+    const queuedById = new Map(queuedRecipients.map((r) => [r.id, r]));
 
     let cancelled = 0;
     if (queuedRecipients.length > 0) {
@@ -389,6 +390,30 @@ export class CampaignsService {
       if (removedAttemptIds.length > 0) {
         await this.attemptRepo.update({ id: In(removedAttemptIds) }, { status: AttemptStatus.CANCELLED });
         await this.recipientRepo.update({ id: In(removedRecipientIds) }, { status: RecipientStatus.CANCELLED });
+
+        // Il destinatario cancellato non riceverà mai la notifica: l'allegato
+        // personalizzato non serve più (non c'è download da servire), elimina
+        // subito invece di aspettare la scadenza retention.
+        const attachmentsConfig = resolveAttachmentsConfig(campaign.channelConfig);
+        const totalSlots = Math.max(attachmentsConfig.length, 1);
+        const dir = getUploadsDir(campaignId);
+        for (const recipientId of removedRecipientIds) {
+          const recipient = queuedById.get(recipientId);
+          if (!recipient) continue;
+          for (let index = 0; index < totalSlots; index++) {
+            const filename = resolveCustomAttachmentFilename(
+              { campaign, extraData: recipient.extraData } as unknown as Recipient,
+              index,
+            );
+            if (!filename) continue;
+            try {
+              await unlink(join(dir, filename));
+            } catch (err) {
+              this.logger.warn(`Allegato già assente o non eliminabile: ${filename}`);
+            }
+          }
+        }
+        await this.recipientRepo.update({ id: In(removedRecipientIds) }, { attachmentDeletedAt: new Date() });
       }
       cancelled = removedRecipientIds.length;
     }

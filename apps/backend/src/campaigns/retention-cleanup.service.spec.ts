@@ -3,8 +3,13 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { RetentionCleanupService } from './retention-cleanup.service';
 import { Recipient } from '../entities/recipient.entity';
+import { Campaign } from '../entities/campaign.entity';
 
-jest.mock('fs/promises', () => ({ unlink: jest.fn().mockResolvedValue(undefined) }));
+jest.mock('fs/promises', () => ({
+  unlink: jest.fn().mockResolvedValue(undefined),
+  rm: jest.fn().mockResolvedValue(undefined),
+  readdir: jest.fn().mockResolvedValue([]),
+}));
 
 describe('RetentionCleanupService', () => {
   let service: RetentionCleanupService;
@@ -27,6 +32,9 @@ describe('RetentionCleanupService', () => {
     createQueryBuilder: jest.fn().mockReturnValue(mockQb),
     update: jest.fn().mockResolvedValue(undefined),
   };
+  const mockCampaignRepo = {
+    existsBy: jest.fn().mockResolvedValue(true),
+  };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -35,7 +43,11 @@ describe('RetentionCleanupService', () => {
     mockQb.getMany.mockReset();
     mockQb.getMany.mockResolvedValueOnce([expiredRecipient]).mockResolvedValue([]);
     const module = await Test.createTestingModule({
-      providers: [RetentionCleanupService, { provide: getRepositoryToken(Recipient), useValue: mockRepo }],
+      providers: [
+        RetentionCleanupService,
+        { provide: getRepositoryToken(Recipient), useValue: mockRepo },
+        { provide: getRepositoryToken(Campaign), useValue: mockCampaignRepo },
+      ],
     }).compile();
     service = module.get(RetentionCleanupService);
   });
@@ -56,6 +68,24 @@ describe('RetentionCleanupService', () => {
   it('interroga la query builder con .take(200) per limitare la dimensione del lotto', async () => {
     await service.runCleanup();
     expect(mockQb.take).toHaveBeenCalledWith(200);
+  });
+
+  describe('runOrphanCleanup', () => {
+    it('elimina le cartelle uploads/<campaignId> senza campagna corrispondente in DB', async () => {
+      (fs.readdir as jest.Mock).mockResolvedValueOnce(['c-orfana', 'c-esistente']);
+      mockCampaignRepo.existsBy.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+      await service.runOrphanCleanup();
+
+      expect(fs.rm).toHaveBeenCalledTimes(1);
+      expect(fs.rm).toHaveBeenCalledWith(expect.stringContaining('c-orfana'), { recursive: true, force: true });
+    });
+
+    it('non fa nulla se uploads/ non esiste ancora', async () => {
+      (fs.readdir as jest.Mock).mockRejectedValueOnce(new Error('ENOENT'));
+      await expect(service.runOrphanCleanup()).resolves.not.toThrow();
+      expect(fs.rm).not.toHaveBeenCalled();
+    });
   });
 
   it('itera su più lotti finché la query non restituisce risultati vuoti (nessun caricamento non limitato in memoria)', async () => {

@@ -3,10 +3,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Cron } from '@nestjs/schedule';
 import { join } from 'path';
-import { unlink } from 'fs/promises';
+import { unlink, rm, readdir } from 'fs/promises';
 import { Recipient } from '../entities/recipient.entity';
+import { Campaign } from '../entities/campaign.entity';
 import { resolveAttachmentsConfig, resolveCustomAttachmentFilename } from '../attachments/attachment.service';
-import { getUploadsDir } from '../attachments/attachment-paths';
+import { getUploadsDir, getAttachmentsRoot } from '../attachments/attachment-paths';
 
 const BATCH_SIZE = 200;
 
@@ -17,11 +18,47 @@ export class RetentionCleanupService {
   constructor(
     @InjectRepository(Recipient)
     private readonly recipientRepo: Repository<Recipient>,
+    @InjectRepository(Campaign)
+    private readonly campaignRepo: Repository<Campaign>,
   ) {}
 
   @Cron('0 3 * * *')
   async handleCron(): Promise<void> {
     await this.runCleanup();
+    await this.runOrphanCleanup();
+  }
+
+  /**
+   * Cartelle allegati (`uploads/<campaignId>`) rimaste senza una riga
+   * `Campaign` corrispondente in DB (es. delete interrotta a metà, tampering
+   * manuale del DB) restano a occupare spazio indefinitamente: `remove()`
+   * cancella la cartella nella stessa richiesta che elimina la campagna, ma
+   * se quella richiesta fallisce dopo il delete DB e prima della `rm`, la
+   * cartella diventa orfana e nessun altro codice la ripulisce.
+   */
+  async runOrphanCleanup(): Promise<void> {
+    const uploadsRoot = join(getAttachmentsRoot(), 'uploads');
+    let entries: string[];
+    try {
+      entries = await readdir(uploadsRoot);
+    } catch (err) {
+      return; // uploads/ non ancora creata: niente da pulire
+    }
+
+    let removed = 0;
+    for (const campaignId of entries) {
+      const exists = await this.campaignRepo.existsBy({ id: campaignId });
+      if (exists) continue;
+      try {
+        await rm(getUploadsDir(campaignId), { recursive: true, force: true });
+        removed++;
+      } catch (err) {
+        this.logger.warn(`Cartella allegati orfana non eliminabile: ${campaignId}`);
+      }
+    }
+    if (removed > 0) {
+      this.logger.log(`Retention cleanup: ${removed} cartelle allegati orfane eliminate`);
+    }
   }
 
   async runCleanup(): Promise<void> {
