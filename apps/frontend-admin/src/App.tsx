@@ -646,12 +646,15 @@ export function App(): React.JSX.Element {
   useEffect(() => { if (token) fetchTemplates(); }, [token]);
 
   useEffect(() => {
+    let handle: any;
     if (view === 'audit-logs' && token) {
-      const handle = setTimeout(() => {
+      handle = setTimeout(() => {
         fetchAuditLogs(auditPage, auditSearch);
       }, 300);
-      return () => clearTimeout(handle);
     }
+    return () => {
+      if (handle) clearTimeout(handle);
+    };
   }, [view, token, auditPage, auditSearch]);
 
   // Carica le impostazioni persistite dal backend al login
