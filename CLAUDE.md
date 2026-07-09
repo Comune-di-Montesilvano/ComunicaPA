@@ -187,6 +187,16 @@ ZIP allegati) usare l'upload a chunk (`chunked-upload.util.ts` +
 chunk client-side da 512KB (sotto il limite del proxy), riassemblati lato
 server prima di riusare la logica di import esistente.
 
+Anche stando sotto ~1MB, un endpoint bulk che itera N operazioni sequenziali
+per-record dentro una singola richiesta HTTP (es. retry di massa su migliaia
+di destinatari falliti) resta a rischio timeout dietro il proxy, indipendente
+dal body size — 200-with-flag non basta se la richiesta stessa impiega troppo
+a rispondere. Ogni nuovo endpoint bulk deve avere un tetto esplicito sul
+numero di elementi per chiamata (validato sia server-side con
+`BadRequestException` sia client-side prima di inviare la richiesta, per non
+sprecare la chiamata) — vedi `retryRecipientsBulk`/`MAX_BULK_RETRY_SIZE` in
+`campaigns.service.ts` (limite 500).
+
 ## Log debug/verbose — gotcha
 
 Il logger NestJS di default (`NestFactory.create`) esclude i livelli

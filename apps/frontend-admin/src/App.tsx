@@ -5789,27 +5789,69 @@ export function App(): React.JSX.Element {
                       </div>
                     </div>
 
+                    <div className="card shadow-sm mt-4">
+                      <div className="card-header bg-white py-3 border-bottom">
+                        <h3 className="h6 mb-0 fw-bold text-dark">
+                          <i className="fas fa-chart-pie me-2 text-primary"></i>Esito Invio
+                        </h3>
+                      </div>
+                      <div className="card-body">
+                        <ResponsiveContainer width="100%" height={220}>
+                          <PieChart>
+                            <Pie
+                              data={[
+                                { label: 'Inviati con successo', value: campaign.sentCount },
+                                { label: 'Falliti', value: campaign.failedCount },
+                              ]}
+                              dataKey="value"
+                              nameKey="label"
+                              cx="50%"
+                              cy="50%"
+                              outerRadius={80}
+                              label
+                            >
+                              <Cell fill="var(--bi-success, #198754)" />
+                              <Cell fill="var(--bi-danger, #dc3545)" />
+                            </Pie>
+                            <Tooltip />
+                            <Legend />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+
                     {downloadCrossChannel && (
                       <div className="card shadow-sm mt-4">
                         <div className="card-header bg-white py-3 border-bottom">
                           <h3 className="h6 mb-0 fw-bold text-dark">
-                            <i className="fas fa-chart-column me-2 text-primary"></i>Download per Combinazione Canali
+                            <i className="fas fa-chart-pie me-2 text-primary"></i>Download per Combinazione Canali
                           </h3>
                         </div>
                         <div className="card-body">
                           <ResponsiveContainer width="100%" height={220}>
-                            <BarChart data={[
-                              { label: 'Solo primario', value: downloadCrossChannel.primaryOnly },
-                              { label: 'Solo App IO', value: downloadCrossChannel.appIoOnly },
-                              { label: 'Entrambi', value: downloadCrossChannel.both },
-                              { label: 'Nessuno', value: downloadCrossChannel.none },
-                            ]}>
-                              <CartesianGrid strokeDasharray="3 3" />
-                              <XAxis dataKey="label" fontSize={11} />
-                              <YAxis allowDecimals={false} />
+                            <PieChart>
+                              <Pie
+                                data={[
+                                  { label: 'Solo primario', value: downloadCrossChannel.primaryOnly },
+                                  { label: 'Solo App IO', value: downloadCrossChannel.appIoOnly },
+                                  { label: 'Entrambi', value: downloadCrossChannel.both },
+                                  { label: 'Nessuno', value: downloadCrossChannel.none },
+                                ]}
+                                dataKey="value"
+                                nameKey="label"
+                                cx="50%"
+                                cy="50%"
+                                outerRadius={80}
+                                label
+                              >
+                                <Cell fill="var(--bi-primary, #0d6efd)" />
+                                <Cell fill="var(--bi-info, #0dcaf0)" />
+                                <Cell fill="var(--bi-success, #198754)" />
+                                <Cell fill="var(--bi-secondary, #6c757d)" />
+                              </Pie>
                               <Tooltip />
-                              <Bar dataKey="value" fill="var(--bi-primary)" radius={[4, 4, 0, 0]} />
-                            </BarChart>
+                              <Legend />
+                            </PieChart>
                           </ResponsiveContainer>
                           <table className="table table-sm mb-0 mt-2">
                             <tbody>
@@ -5836,21 +5878,18 @@ export function App(): React.JSX.Element {
                       </div>
                     )}
 
-                    {!downloadCrossChannel && campaign.channelType === 'APP_IO' && (
+                    {!downloadCrossChannel && downloadByChannel && Object.keys(downloadByChannel).length > 0 && (
                       <div className="card shadow-sm mt-4">
                         <div className="card-header bg-white py-3 border-bottom">
                           <h3 className="h6 mb-0 fw-bold text-dark">
-                            <i className="fas fa-chart-pie me-2 text-primary"></i>Esito Invio e Download
+                            <i className="fas fa-chart-pie me-2 text-primary"></i>Download per Canale
                           </h3>
                         </div>
                         <div className="card-body">
                           <ResponsiveContainer width="100%" height={220}>
                             <PieChart>
                               <Pie
-                                data={[
-                                  { label: 'Inviati con successo', value: campaign.sentCount },
-                                  { label: 'Falliti', value: campaign.failedCount },
-                                ]}
+                                data={Object.entries(downloadByChannel).map(([channel, count]) => ({ label: channel, value: count }))}
                                 dataKey="value"
                                 nameKey="label"
                                 cx="50%"
@@ -5858,25 +5897,24 @@ export function App(): React.JSX.Element {
                                 outerRadius={80}
                                 label
                               >
-                                <Cell fill="var(--bi-success, #198754)" />
-                                <Cell fill="var(--bi-danger, #dc3545)" />
+                                {Object.keys(downloadByChannel).map((channel, i) => (
+                                  <Cell key={channel} fill={['var(--bi-primary, #0d6efd)', 'var(--bi-info, #0dcaf0)', 'var(--bi-success, #198754)', 'var(--bi-secondary, #6c757d)'][i % 4]} />
+                                ))}
                               </Pie>
                               <Tooltip />
                               <Legend />
                             </PieChart>
                           </ResponsiveContainer>
-                          {downloadByChannel && (
-                            <table className="table table-sm mb-0 mt-2">
-                              <tbody>
-                                {Object.entries(downloadByChannel).map(([channel, count]) => (
-                                  <tr key={channel}>
-                                    <td>{channel}</td>
-                                    <td className="text-end fw-bold">{count}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          )}
+                          <table className="table table-sm mb-0 mt-2">
+                            <tbody>
+                              {Object.entries(downloadByChannel).map(([channel, count]) => (
+                                <tr key={channel}>
+                                  <td>{channel}</td>
+                                  <td className="text-end fw-bold">{count}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
                         </div>
                       </div>
                     )}
