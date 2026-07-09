@@ -1,21 +1,24 @@
 import { Test } from '@nestjs/testing';
 import { SendStrategy } from './send.strategy';
 import { AppSettingsService } from '../../settings/app-settings.service';
+import { PdndAuthService } from './pdnd-auth.service';
 
 const mockFetch = jest.fn();
 global.fetch = mockFetch as unknown as typeof fetch;
 
 const settingsValues: Record<string, unknown> = {
-  'send.apiKey': 'send-key',
-  'send.baseUrl': 'https://send.test',
+  'send.environment': 'collaudo',
+  'send.test.baseUrl': 'https://send.test',
 };
 const mockSettings = { get: jest.fn(async (key: string) => settingsValues[key]) };
+const mockPdndAuth = { getVoucher: jest.fn(async () => 'voucher-abc') };
 
 describe('SendStrategy', () => {
   let strategy: SendStrategy;
 
   beforeEach(async () => {
     mockFetch.mockClear();
+    mockPdndAuth.getVoucher.mockClear();
     mockFetch.mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ notificationRequestId: 'send-001' }),
@@ -25,6 +28,7 @@ describe('SendStrategy', () => {
       providers: [
         SendStrategy,
         { provide: AppSettingsService, useValue: mockSettings },
+        { provide: PdndAuthService, useValue: mockPdndAuth },
       ],
     }).compile();
 
@@ -45,7 +49,7 @@ describe('SendStrategy', () => {
       'https://send.test/delivery/notifications/sent',
       expect.objectContaining({
         method: 'POST',
-        headers: expect.objectContaining({ 'x-api-key': 'send-key' }),
+        headers: expect.objectContaining({ Authorization: 'Bearer voucher-abc' }),
         body: JSON.stringify({
           recipientTaxId: 'RSSMRA85M01H501Z',
           subject: 'Avviso',

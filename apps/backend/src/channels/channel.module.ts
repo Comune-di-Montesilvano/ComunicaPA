@@ -7,6 +7,7 @@ import { EmailStrategy } from './email/email.strategy';
 import { PecStrategy } from './pec/pec.strategy';
 import { AppIoStrategy } from './app-io/app-io.strategy';
 import { SendStrategy } from './send/send.strategy';
+import { PdndAuthService } from './send/pdnd-auth.service';
 import { PostalStrategy } from './postal/postal.strategy';
 
 @Module({
@@ -16,6 +17,7 @@ import { PostalStrategy } from './postal/postal.strategy';
     PecStrategy,
     AppIoStrategy,
     SendStrategy,
+    PdndAuthService,
     PostalStrategy,
     {
       provide: CHANNEL_STRATEGIES,
@@ -35,6 +37,6 @@ import { PostalStrategy } from './postal/postal.strategy';
       inject: [EmailStrategy, PecStrategy, AppIoStrategy, SendStrategy, PostalStrategy],
     },
   ],
-  exports: [CHANNEL_STRATEGIES],
+  exports: [CHANNEL_STRATEGIES, PdndAuthService],
 })
 export class ChannelModule {}

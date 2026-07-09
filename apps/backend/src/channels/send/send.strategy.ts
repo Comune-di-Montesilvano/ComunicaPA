@@ -4,6 +4,8 @@ import type { ChannelLogFn, IChannelStrategy } from '../channel.interface';
 import type { Recipient } from '../../entities/recipient.entity';
 import type { Campaign } from '../../entities/campaign.entity';
 import { AppSettingsService } from '../../settings/app-settings.service';
+import type { SettingKey } from '../../settings/settings.registry';
+import { PdndAuthService } from './pdnd-auth.service';
 
 function interpolate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => vars[key] ?? `{{${key}}}`);
@@ -14,7 +16,10 @@ export class SendStrategy implements IChannelStrategy {
   private readonly logger = new Logger(SendStrategy.name);
   readonly channel: NotificationChannel = 'SEND';
 
-  constructor(private readonly settings: AppSettingsService) {}
+  constructor(
+    private readonly settings: AppSettingsService,
+    private readonly pdndAuth: PdndAuthService,
+  ) {}
 
   async send(recipient: Recipient, campaign: Campaign, onLog?: ChannelLogFn): Promise<ChannelSendResult> {
     const log = (msg: string): void => {
@@ -22,8 +27,11 @@ export class SendStrategy implements IChannelStrategy {
       onLog?.(msg);
     };
 
-    const apiKey = await this.settings.get<string>('send.apiKey');
-    const baseUrl = await this.settings.get<string>('send.baseUrl');
+    const env = await this.settings.get<string>('send.environment');
+    const envKey = env === 'produzione' ? 'prod' : 'test';
+    const prefix = `send.${envKey}`;
+    const baseUrl = await this.settings.get<string>(`${prefix}.baseUrl` as SettingKey);
+    const voucher = await this.pdndAuth.getVoucher(envKey);
 
     const vars: Record<string, string> = {
       fullName: recipient.fullName ?? '',
@@ -34,11 +42,14 @@ export class SendStrategy implements IChannelStrategy {
     const notificationBody = interpolate(cfg['body'] ?? '', vars);
 
     log(`Invio notifica SEND a CF ${recipient.codiceFiscale} via ${baseUrl} (subject="${subject}")`);
+    // TODO: endpoint e payload reali sono /delivery/v2.6/requests con schema
+    // multipart (allegati via preload) — questo resta un placeholder in attesa
+    // dell'implementazione del payload notifica completo.
     const response = await fetch(`${baseUrl}/delivery/notifications/sent`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': apiKey,
+        Authorization: `Bearer ${voucher}`,
       },
       body: JSON.stringify({
         recipientTaxId: recipient.codiceFiscale,

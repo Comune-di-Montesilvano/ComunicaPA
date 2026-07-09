@@ -8,7 +8,9 @@ describe('SettingsController — GET/PUT', () => {
     get: jest.fn(async () => ''),
   };
 
-  const controller = new SettingsController(settingsMock as never);
+  const pdndAuthMock = { getVoucher: jest.fn(async () => 'voucher') };
+
+  const controller = new SettingsController(settingsMock as never, pdndAuthMock as never);
 
   it('GET restituisce i settings mascherati', async () => {
     const res = await controller.getAll();

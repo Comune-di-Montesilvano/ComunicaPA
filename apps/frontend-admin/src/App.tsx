@@ -601,8 +601,25 @@ export function App(): React.JSX.Element {
   const [ioTestMsg, setIoTestMsg] = useState<{ id: string; text: string; error: boolean } | null>(null);
   const [editingIoService, setEditingIoService] = useState<IoService | null>(null);
 
-  const [settSendApiKey, setSettSendApiKey] = useState('');
-  const [settSendUrl, setSettSendUrl] = useState('https://api.notifichedigitali.it');
+  const [settSendEnvironment, setSettSendEnvironment] = useState<'collaudo' | 'produzione'>('collaudo');
+  const [settSendTestBaseUrl, setSettSendTestBaseUrl] = useState('https://api.uat.notifichedigitali.it');
+  const [settSendTestTokenUrl, setSettSendTestTokenUrl] = useState('https://auth.uat.interop.pagopa.it/token.oauth2');
+  const [settSendTestAudience, setSettSendTestAudience] = useState('auth.uat.interop.pagopa.it/client-assertion');
+  const [settSendTestClientId, setSettSendTestClientId] = useState('');
+  const [settSendTestKid, setSettSendTestKid] = useState('');
+  const [settSendTestPurposeId, setSettSendTestPurposeId] = useState('');
+  const [settSendTestPrivateKey, setSettSendTestPrivateKey] = useState('');
+  const [settSendProdBaseUrl, setSettSendProdBaseUrl] = useState('https://api.notifichedigitali.it');
+  const [settSendProdTokenUrl, setSettSendProdTokenUrl] = useState('https://auth.interop.pagopa.it/token.oauth2');
+  const [settSendProdAudience, setSettSendProdAudience] = useState('auth.interop.pagopa.it/client-assertion');
+  const [settSendProdClientId, setSettSendProdClientId] = useState('');
+  const [settSendProdKid, setSettSendProdKid] = useState('');
+  const [settSendProdPurposeId, setSettSendProdPurposeId] = useState('');
+  const [settSendProdPrivateKey, setSettSendProdPrivateKey] = useState('');
+  const [settSendGeneratingKey, setSettSendGeneratingKey] = useState<'test' | 'prod' | null>(null);
+  const [settSendGeneratedPubKey, setSettSendGeneratedPubKey] = useState<{ env: 'test' | 'prod'; pem: string } | null>(null);
+  const [settSendTesting, setSettSendTesting] = useState<'test' | 'prod' | null>(null);
+  const [settSendTestResult, setSettSendTestResult] = useState<{ env: 'test' | 'prod'; ok: boolean; message: string } | null>(null);
   const [settRetentionDays, setSettRetentionDays] = useState('90');
 
   const [settOidcIssuer, setSettOidcIssuer] = useState('');
@@ -742,8 +759,21 @@ export function App(): React.JSX.Element {
         setSettLogoValue(String(s['brand.logo'] ?? ''));
         setSettFaviconValue(String(s['brand.favicon'] ?? ''));
         // SMTP and PEC are loaded dynamically via fetchMailConfigs(); App IO via fetchIoServices()
-        setSettSendApiKey(String(s['send.apiKey'] ?? ''));
-        setSettSendUrl(String(s['send.baseUrl'] ?? ''));
+        setSettSendEnvironment((String(s['send.environment'] ?? 'collaudo')) as 'collaudo' | 'produzione');
+        setSettSendTestBaseUrl(String(s['send.test.baseUrl'] ?? ''));
+        setSettSendTestTokenUrl(String(s['send.test.pdndTokenUrl'] ?? ''));
+        setSettSendTestAudience(String(s['send.test.pdndAudience'] ?? ''));
+        setSettSendTestClientId(String(s['send.test.pdndClientId'] ?? ''));
+        setSettSendTestKid(String(s['send.test.pdndKid'] ?? ''));
+        setSettSendTestPurposeId(String(s['send.test.pdndPurposeId'] ?? ''));
+        setSettSendTestPrivateKey(String(s['send.test.pdndPrivateKey'] ?? ''));
+        setSettSendProdBaseUrl(String(s['send.prod.baseUrl'] ?? ''));
+        setSettSendProdTokenUrl(String(s['send.prod.pdndTokenUrl'] ?? ''));
+        setSettSendProdAudience(String(s['send.prod.pdndAudience'] ?? ''));
+        setSettSendProdClientId(String(s['send.prod.pdndClientId'] ?? ''));
+        setSettSendProdKid(String(s['send.prod.pdndKid'] ?? ''));
+        setSettSendProdPurposeId(String(s['send.prod.pdndPurposeId'] ?? ''));
+        setSettSendProdPrivateKey(String(s['send.prod.pdndPrivateKey'] ?? ''));
         setSettRetentionDays(String(s['retention.maxDays'] ?? '90'));
         setSettOidcIssuer(String(s['oidc.issuer'] ?? ''));
         setSettOidcAudience(String(s['oidc.audience'] ?? ''));
@@ -814,6 +844,77 @@ export function App(): React.JSX.Element {
       throw new ApiAuthError();
     }
     return res;
+  };
+
+  const downloadTextFile = (filename: string, content: string) => {
+    const blob = new Blob([content], { type: 'application/x-pem-file' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportSendPublicKey = async (env: 'test' | 'prod') => {
+    try {
+      const res = await apiFetch(`/settings/send/${env}/public-key`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'Errore durante il recupero della chiave pubblica.');
+      }
+      const data = await res.json();
+      downloadTextFile(`send-${env}-public.pem`, data.publicKey);
+    } catch (err: any) {
+      if (err instanceof ApiAuthError) return;
+      alert(err.message);
+    }
+  };
+
+  const handleExportSendPrivateKey = async (env: 'test' | 'prod') => {
+    if (!confirm('La chiave privata verrà scaricata in chiaro sul tuo dispositivo. Continuare?')) return;
+    try {
+      const res = await apiFetch(`/settings/send/${env}/private-key`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'Errore durante il recupero della chiave privata.');
+      }
+      const data = await res.json();
+      downloadTextFile(`send-${env}-private.pem`, data.privateKey);
+    } catch (err: any) {
+      if (err instanceof ApiAuthError) return;
+      alert(err.message);
+    }
+  };
+
+  const handleImportSendPrivateKeyFile = (env: 'test' | 'prod', file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const content = String(reader.result ?? '').trim();
+      if (env === 'test') setSettSendTestPrivateKey(content);
+      else setSettSendProdPrivateKey(content);
+      setSettSendGeneratedPubKey(null);
+    };
+    reader.readAsText(file);
+  };
+
+  const handleGenerateSendKeypair = async (env: 'test' | 'prod') => {
+    if (!confirm(`Generare una nuova coppia di chiavi RSA per l'ambiente ${env === 'prod' ? 'produzione' : 'collaudo'}? La chiave privata attuale verrà sostituita.`)) return;
+    setSettSendGeneratingKey(env);
+    setSettSendGeneratedPubKey(null);
+    try {
+      const res = await apiFetch(`/settings/send/${env}/generate-keypair`, { method: 'POST' });
+      if (!res.ok) throw new Error('Errore durante la generazione della coppia di chiavi.');
+      const data = await res.json();
+      setSettSendGeneratedPubKey({ env, pem: data.publicKey });
+      if (env === 'test') setSettSendTestPrivateKey('••••••••');
+      else setSettSendProdPrivateKey('••••••••');
+    } catch (err: any) {
+      if (err instanceof ApiAuthError) return;
+      alert(err.message);
+    } finally {
+      setSettSendGeneratingKey(null);
+    }
   };
 
   const runVerificaAppIo = async () => {
@@ -947,7 +1048,7 @@ export function App(): React.JSX.Element {
           const activePec = mailConfigs.find(c => c.type === 'PEC' && c.active);
           channelConfig = { from: activePec?.fromAddress || '', mailConfigId: activePec?.id };
         } else if (channelVal === 'SEND') {
-          channelConfig = { apiKey: settSendApiKey, baseUrl: settSendUrl };
+          channelConfig = {};
         }
       }
 
@@ -1195,6 +1296,36 @@ export function App(): React.JSX.Element {
   };
 
   // Settings Save handler
+  const buildSettingsPayload = () => ({
+    'brand.name': settEntityName,
+    'brand.subtitle': settSubtitle,
+    'brand.logo': settLogoValue,
+    'brand.favicon': settFaviconValue,
+    // SMTP and PEC are saved via their own endpoints; App IO via /io-services
+    'send.environment': settSendEnvironment,
+    'send.test.baseUrl': settSendTestBaseUrl,
+    'send.test.pdndTokenUrl': settSendTestTokenUrl,
+    'send.test.pdndAudience': settSendTestAudience,
+    'send.test.pdndClientId': settSendTestClientId,
+    'send.test.pdndKid': settSendTestKid,
+    'send.test.pdndPurposeId': settSendTestPurposeId,
+    'send.test.pdndPrivateKey': settSendTestPrivateKey,
+    'send.prod.baseUrl': settSendProdBaseUrl,
+    'send.prod.pdndTokenUrl': settSendProdTokenUrl,
+    'send.prod.pdndAudience': settSendProdAudience,
+    'send.prod.pdndClientId': settSendProdClientId,
+    'send.prod.pdndKid': settSendProdKid,
+    'send.prod.pdndPurposeId': settSendProdPurposeId,
+    'send.prod.pdndPrivateKey': settSendProdPrivateKey,
+    'retention.maxDays': Number(settRetentionDays) || 90,
+    'oidc.issuer': settOidcIssuer,
+    'oidc.audience': settOidcAudience,
+    'oidc.jwksUri': settOidcJwksUri,
+    'oidc.clientId': settOidcClientId,
+    'oidc.clientSecret': settOidcClientSecret,
+    'oidc.logoutUrl': settOidcLogoutUrl,
+  });
+
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     // Canali non ancora migrati al backend: restano su localStorage
@@ -1211,24 +1342,7 @@ export function App(): React.JSX.Element {
       const res = await apiFetch('/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          settings: {
-            'brand.name': settEntityName,
-            'brand.subtitle': settSubtitle,
-            'brand.logo': settLogoValue,
-            'brand.favicon': settFaviconValue,
-            // SMTP and PEC are saved via their own endpoints; App IO via /io-services
-            'send.apiKey': settSendApiKey,
-            'send.baseUrl': settSendUrl,
-            'retention.maxDays': Number(settRetentionDays) || 90,
-            'oidc.issuer': settOidcIssuer,
-            'oidc.audience': settOidcAudience,
-            'oidc.jwksUri': settOidcJwksUri,
-            'oidc.clientId': settOidcClientId,
-            'oidc.clientSecret': settOidcClientSecret,
-            'oidc.logoutUrl': settOidcLogoutUrl,
-          },
-        }),
+        body: JSON.stringify({ settings: buildSettingsPayload() }),
       });
       if (!res.ok) {
         const err = (await res.json()) as { message?: string };
@@ -1241,6 +1355,33 @@ export function App(): React.JSX.Element {
       setSettingsSavedMessage({ text: 'Errore di rete durante il salvataggio.', error: true });
     }
     setTimeout(() => setSettingsSavedMessage(null), 3000);
+  };
+
+  const handleTestSendConnection = async (env: 'test' | 'prod') => {
+    setSettSendTesting(env);
+    setSettSendTestResult(null);
+    try {
+      // Salva prima le impostazioni correnti: il test legge le credenziali dal DB.
+      const saveRes = await apiFetch('/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: buildSettingsPayload() }),
+      });
+      if (!saveRes.ok) {
+        const err = (await saveRes.json()) as { message?: string };
+        setSettSendTestResult({ env, ok: false, message: `Errore salvataggio: ${err.message ?? saveRes.status}` });
+        return;
+      }
+
+      const res = await apiFetch(`/settings/send/${env}/test-connection`, { method: 'POST' });
+      const data = await res.json() as { success: boolean; message: string };
+      setSettSendTestResult({ env, ok: data.success, message: data.message });
+    } catch (err: any) {
+      if (err instanceof ApiAuthError) return;
+      setSettSendTestResult({ env, ok: false, message: err.message || 'Errore di rete durante il test.' });
+    } finally {
+      setSettSendTesting(null);
+    }
   };
 
   const fetchEngines = async () => {
@@ -2370,7 +2511,7 @@ export function App(): React.JSX.Element {
           }
         }
       } else if (wizChannel === 'SEND') {
-        channelConfig = { apiKey: settSendApiKey, baseUrl: settSendUrl };
+        channelConfig = {};
       }
 
       if (wizPaymentEnabled) {
@@ -4872,28 +5013,182 @@ export function App(): React.JSX.Element {
                         {/* TAB: SEND */}
                         {activeSettingsTab === 'send' && (
                           <div>
-                            <div className="mb-3">
-                              <label className="form-label small fw-bold text-dark" htmlFor="send_api">Chiave API Privata SEND</label>
-                              <input
-                                type="text"
-                                id="send_api"
-                                className="form-control form-control-sm"
-                                value={settSendApiKey}
-                                onChange={(e) => setSettSendApiKey(e.target.value)}
-                                required
-                              />
+                            <div className="mb-4">
+                              <label className="form-label small fw-bold text-dark" htmlFor="send_env">Ambiente attivo</label>
+                              <select
+                                id="send_env"
+                                className="form-select form-select-sm"
+                                style={{ maxWidth: 260 }}
+                                value={settSendEnvironment}
+                                onChange={(e) => setSettSendEnvironment(e.target.value as 'collaudo' | 'produzione')}
+                              >
+                                <option value="collaudo">Collaudo (UAT)</option>
+                                <option value="produzione">Produzione</option>
+                              </select>
+                              <div className="form-text small text-muted">Determina quale set di credenziali sotto viene usato per l'invio reale.</div>
                             </div>
-                            <div className="mb-3">
-                              <label className="form-label small fw-semibold text-muted" htmlFor="send_url">Endpoint API SEND Notifiche Digitali</label>
-                              <input
-                                type="text"
-                                id="send_url"
-                                className="form-control form-control-sm"
-                                value={settSendUrl}
-                                onChange={(e) => setSettSendUrl(e.target.value)}
-                                required
-                              />
-                            </div>
+
+                            {([
+                              { label: 'Collaudo (UAT)', prefix: 'test' as const,
+                                baseUrl: settSendTestBaseUrl, setBaseUrl: setSettSendTestBaseUrl,
+                                tokenUrl: settSendTestTokenUrl, setTokenUrl: setSettSendTestTokenUrl,
+                                audience: settSendTestAudience, setAudience: setSettSendTestAudience,
+                                clientId: settSendTestClientId, setClientId: setSettSendTestClientId,
+                                kid: settSendTestKid, setKid: setSettSendTestKid,
+                                purposeId: settSendTestPurposeId, setPurposeId: setSettSendTestPurposeId,
+                                privateKey: settSendTestPrivateKey, setPrivateKey: setSettSendTestPrivateKey },
+                              { label: 'Produzione', prefix: 'prod' as const,
+                                baseUrl: settSendProdBaseUrl, setBaseUrl: setSettSendProdBaseUrl,
+                                tokenUrl: settSendProdTokenUrl, setTokenUrl: setSettSendProdTokenUrl,
+                                audience: settSendProdAudience, setAudience: setSettSendProdAudience,
+                                clientId: settSendProdClientId, setClientId: setSettSendProdClientId,
+                                kid: settSendProdKid, setKid: setSettSendProdKid,
+                                purposeId: settSendProdPurposeId, setPurposeId: setSettSendProdPurposeId,
+                                privateKey: settSendProdPrivateKey, setPrivateKey: setSettSendProdPrivateKey },
+                            ]).map((e) => (
+                              <fieldset key={e.prefix} className="border rounded p-3 mb-3">
+                                <legend className="float-none w-auto px-2 small fw-bold text-dark">{e.label}</legend>
+                                <div className="mb-3">
+                                  <label className="form-label small fw-semibold text-muted" htmlFor={`send_${e.prefix}_baseurl`}>Base URL API SEND</label>
+                                  <input
+                                    type="text"
+                                    id={`send_${e.prefix}_baseurl`}
+                                    className="form-control form-control-sm"
+                                    value={e.baseUrl}
+                                    onChange={(ev) => e.setBaseUrl(ev.target.value)}
+                                  />
+                                </div>
+                                <div className="mb-3">
+                                  <label className="form-label small fw-semibold text-muted" htmlFor={`send_${e.prefix}_tokenurl`}>Token endpoint PDND</label>
+                                  <input
+                                    type="text"
+                                    id={`send_${e.prefix}_tokenurl`}
+                                    className="form-control form-control-sm"
+                                    value={e.tokenUrl}
+                                    onChange={(ev) => e.setTokenUrl(ev.target.value)}
+                                  />
+                                </div>
+                                <div className="mb-3">
+                                  <label className="form-label small fw-semibold text-muted" htmlFor={`send_${e.prefix}_audience`}>Audience client_assertion</label>
+                                  <input
+                                    type="text"
+                                    id={`send_${e.prefix}_audience`}
+                                    className="form-control form-control-sm"
+                                    value={e.audience}
+                                    onChange={(ev) => e.setAudience(ev.target.value)}
+                                  />
+                                </div>
+                                <div className="mb-3">
+                                  <label className="form-label small fw-semibold text-muted" htmlFor={`send_${e.prefix}_clientid`}>Client ID PDND</label>
+                                  <input
+                                    type="text"
+                                    id={`send_${e.prefix}_clientid`}
+                                    className="form-control form-control-sm"
+                                    value={e.clientId}
+                                    onChange={(ev) => e.setClientId(ev.target.value)}
+                                  />
+                                </div>
+                                <div className="mb-3">
+                                  <label className="form-label small fw-semibold text-muted" htmlFor={`send_${e.prefix}_kid`}>Key ID (kid)</label>
+                                  <input
+                                    type="text"
+                                    id={`send_${e.prefix}_kid`}
+                                    className="form-control form-control-sm"
+                                    value={e.kid}
+                                    onChange={(ev) => e.setKid(ev.target.value)}
+                                  />
+                                </div>
+                                <div className="mb-3">
+                                  <label className="form-label small fw-semibold text-muted" htmlFor={`send_${e.prefix}_purposeid`}>Purpose ID</label>
+                                  <input
+                                    type="text"
+                                    id={`send_${e.prefix}_purposeid`}
+                                    className="form-control form-control-sm"
+                                    value={e.purposeId}
+                                    onChange={(ev) => e.setPurposeId(ev.target.value)}
+                                  />
+                                </div>
+                                <div className="mb-1">
+                                  <label className="form-label small fw-semibold text-muted" htmlFor={`send_${e.prefix}_privatekey`}>Chiave privata (PEM)</label>
+                                  <textarea
+                                    id={`send_${e.prefix}_privatekey`}
+                                    className="form-control form-control-sm font-monospace"
+                                    rows={4}
+                                    placeholder="-----BEGIN PRIVATE KEY-----"
+                                    value={e.privateKey}
+                                    onChange={(ev) => e.setPrivateKey(ev.target.value)}
+                                  />
+                                  <div className="form-text small text-muted">Cifrata a riposo. Lasciare il valore mascherato per non sovrascriverla, oppure incollarne una tua.</div>
+                                  <label className="btn btn-outline-secondary btn-sm mt-2 mb-0">
+                                    Importa da file (.pem/.priv)
+                                    <input
+                                      type="file"
+                                      accept=".pem,.priv,.key,text/plain"
+                                      hidden
+                                      onChange={(ev) => {
+                                        const f = ev.target.files?.[0];
+                                        if (f) handleImportSendPrivateKeyFile(e.prefix, f);
+                                        ev.target.value = '';
+                                      }}
+                                    />
+                                  </label>
+                                  <div className="form-text small text-muted">Carica una chiave generata altrove (es. via openssl): sostituisce il campo sopra, poi va salvata con "Salva impostazioni".</div>
+                                </div>
+                                <div className="mt-2 d-flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    className="btn btn-outline-secondary btn-sm"
+                                    disabled={settSendGeneratingKey === e.prefix}
+                                    onClick={() => handleGenerateSendKeypair(e.prefix)}
+                                  >
+                                    {settSendGeneratingKey === e.prefix ? 'Generazione…' : 'Genera nuova coppia di chiavi RSA'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn btn-outline-secondary btn-sm"
+                                    onClick={() => handleExportSendPublicKey(e.prefix)}
+                                  >
+                                    Esporta chiave pubblica
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn btn-outline-secondary btn-sm"
+                                    onClick={() => handleExportSendPrivateKey(e.prefix)}
+                                  >
+                                    Esporta chiave privata
+                                  </button>
+                                  <div className="form-text small text-muted w-100">"Genera" crea una nuova coppia e salva subito la privata. "Esporta pubblica" ricava la pubblica da quella già salvata sul server (funziona in ogni momento, non solo dopo "Genera"). "Esporta privata" scarica in chiaro quella salvata: usala solo per backup.</div>
+                                </div>
+                                {settSendGeneratedPubKey?.env === e.prefix && (
+                                  <div className="alert alert-success mt-3 mb-0">
+                                    <div className="fw-bold small mb-1">Chiave pubblica generata — caricala ora su PDND, non verrà mostrata di nuovo:</div>
+                                    <textarea
+                                      readOnly
+                                      className="form-control form-control-sm font-monospace"
+                                      rows={6}
+                                      value={settSendGeneratedPubKey.pem}
+                                      onFocus={(ev) => ev.target.select()}
+                                    />
+                                  </div>
+                                )}
+
+                                <hr className="my-3" />
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-sm"
+                                  disabled={settSendTesting === e.prefix}
+                                  onClick={() => handleTestSendConnection(e.prefix)}
+                                >
+                                  {settSendTesting === e.prefix ? 'Test in corso…' : 'Test connessione (voucher PDND)'}
+                                </button>
+                                <div className="form-text small text-muted">Salva le impostazioni correnti e prova a ottenere un voucher PDND reale con le credenziali qui sopra.</div>
+                                {settSendTestResult?.env === e.prefix && (
+                                  <div className={`alert ${settSendTestResult.ok ? 'alert-success' : 'alert-danger'} mt-2 mb-0 small`} style={{ wordBreak: 'break-word' }}>
+                                    {settSendTestResult.message}
+                                  </div>
+                                )}
+                              </fieldset>
+                            ))}
                           </div>
                         )}
 
