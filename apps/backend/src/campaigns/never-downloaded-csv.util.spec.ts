@@ -19,8 +19,9 @@ describe('buildNeverDownloadedCsv', () => {
     // Blocca la formattazione locale it-IT (dipende dai dati ICU compilati nel
     // runtime Node): se l'immagine Docker cambia e perde il supporto ICU
     // completo, questa asserzione deve fallire prima che l'export CSV arrivi
-    // in produzione con un formato data inatteso. Orario atteso in TZ
-    // Europe/Rome (container): 10:00 UTC = 12:00 CEST in giugno.
+    // in produzione con un formato data inatteso. timeZone fissato a
+    // Europe/Rome nella util stessa (non dipende dal TZ del processo): 10:00
+    // UTC = 12:00 CEST in giugno, indipendentemente da dove gira il test.
     expect(lines[1]).toContain('"01/06/2026, 12:00:00"');
   });
 

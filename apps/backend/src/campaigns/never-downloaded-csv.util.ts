@@ -13,7 +13,7 @@ export function buildNeverDownloadedCsv(rows: NeverDownloadedRowDto[]): string {
       r.campaignName,
       r.channelType,
       r.status,
-      new Date(r.createdAt).toLocaleString('it-IT'),
+      new Date(r.createdAt).toLocaleString('it-IT', { timeZone: 'Europe/Rome' }),
     ]
       .map(escapeCsvField)
       .join(';'),

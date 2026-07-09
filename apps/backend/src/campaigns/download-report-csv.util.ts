@@ -14,7 +14,7 @@ export function buildDownloadReportCsv(rows: DownloadReportRowDto[]): string {
       r.pec ?? '',
       r.status,
       String(r.downloadCount),
-      r.lastDownloadedAt ? new Date(r.lastDownloadedAt).toLocaleString('it-IT') : '',
+      r.lastDownloadedAt ? new Date(r.lastDownloadedAt).toLocaleString('it-IT', { timeZone: 'Europe/Rome' }) : '',
     ]
       .map(escapeCsvField)
       .join(';'),
