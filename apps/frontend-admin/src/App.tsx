@@ -427,87 +427,6 @@ export function App(): React.JSX.Element {
     return [fn1, fn2].filter(Boolean).join(' ');
   };
 
-  const renderAppIoCoDeliveryBadge = (r: Recipient) => {
-    try {
-      if (!r.attempts) return null;
-
-      const firstAttempt = (r.attempts.find((a: any) => {
-        const num = a.attemptNumber ?? a.attempt_number;
-        const payload = a.responsePayload ?? a.response_payload;
-        return num === 1 || payload?.appIo || payload?.app_io;
-      }) ?? r.attempts[0]) as any;
-      
-      const payload = firstAttempt?.responsePayload ?? firstAttempt?.response_payload;
-      const appIo = payload?.appIo ?? payload?.app_io;
-      const deliveredVia = payload?.deliveredVia ?? payload?.delivered_via;
-      const status = firstAttempt?.status;
-      const errorMsg = firstAttempt?.errorMessage ?? firstAttempt?.error_message;
-
-      // Check if App IO co-delivery was configured (check both casings for campaign properties)
-      const campaignAny = campaign as any;
-      const channelConfig = campaignAny?.channelConfig ?? campaignAny?.channel_config;
-      const secondaryChannels = channelConfig?.secondaryChannels ?? channelConfig?.secondary_channels;
-      const appIoConfig = channelConfig?.appIo ?? channelConfig?.app_io;
-
-      const hasAppIoCoDelivery = 
-        secondaryChannels?.some((sc: any) => (sc?.channel === 'APP_IO' || sc?.['channel'] === 'APP_IO')) ||
-        !!appIoConfig;
-
-      let badge = null;
-
-      // 1. Check for parallel co-delivery result
-      if (appIo) {
-        const success = appIo.success;
-        const error = appIo.error;
-        if (success) {
-          badge = (
-            <span className="badge bg-primary d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem', alignSelf: 'start', backgroundColor: '#0059b3' }}>
-              <i className="fas fa-mobile-alt"></i> App IO: Inviato
-            </span>
-          );
-        } else {
-          badge = (
-            <span className="badge bg-danger d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem', alignSelf: 'start' }} title={error || 'Errore'}>
-              <i className="fas fa-mobile-alt"></i> App IO: Fallito
-            </span>
-          );
-        }
-      }
-      // 2. Check for exclusive co-delivery result
-      else if (deliveredVia === 'APP_IO') {
-        if (status === 'success') {
-          badge = (
-            <span className="badge bg-primary d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem', alignSelf: 'start', backgroundColor: '#0059b3' }}>
-              <i className="fas fa-mobile-alt"></i> App IO: Inviato (Esclusivo)
-            </span>
-          );
-        } else {
-          badge = (
-            <span className="badge bg-danger d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem', alignSelf: 'start' }} title={errorMsg || 'Errore'}>
-              <i className="fas fa-mobile-alt"></i> App IO: Fallito (Esclusivo)
-            </span>
-          );
-        }
-      }
-      // 3. Fallback to Non attivo if co-delivery configured
-      else if (hasAppIoCoDelivery) {
-        badge = (
-          <span className="badge bg-light text-muted border d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem', alignSelf: 'start' }}>
-            <i className="fas fa-mobile-alt"></i> App IO: Non attivo
-          </span>
-        );
-      }
-
-      return badge;
-    } catch (err: any) {
-      return (
-        <span className="badge bg-warning text-dark d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem' }}>
-          <i className="fas fa-exclamation-triangle"></i> Err: {err.message}
-        </span>
-      );
-    }
-  };
-
   // Con CSV senza header le colonne sono "Colonna N": senza un'anteprima del
   // valore reale l'operatore non ha modo di sapere quale colonna scegliere.
   const wizColumnOptionLabel = (h: string): string => {
@@ -652,7 +571,6 @@ export function App(): React.JSX.Element {
   const [detailError, setDetailError] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
   const [cancelling, setCancelling] = useState(false);
-  const [campaignFailures, setCampaignFailures] = useState<Array<{ recipientId: string; codiceFiscale: string; fullName: string | null; errorMessage: string | null; attemptNumber: number; lastAttemptAt: string }>>([]);
   const [failureGroups, setFailureGroups] = useState<Array<{ errorMessage: string; count: number; recipientIds: string[] }>>([]);
   const [retryingGroup, setRetryingGroup] = useState<string | null>(null);
   const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number }> } | null>(null);
@@ -661,7 +579,6 @@ export function App(): React.JSX.Element {
   const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number } | null>(null);
   const [downloadByChannel, setDownloadByChannel] = useState<Record<string, number> | null>(null);
   const [downloadCrossChannel, setDownloadCrossChannel] = useState<{ primaryOnly: number; appIoOnly: number; both: number; none: number } | null>(null);
-  const [retryBusyId, setRetryBusyId] = useState<string | null>(null);
   const [statsDateFrom, setStatsDateFrom] = useState(() => {
     const d = new Date();
     d.setMonth(d.getMonth() - 6);
@@ -871,16 +788,6 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const fetchCampaignFailures = async (campaignId: string) => {
-    try {
-      const res = await apiFetch(`/campaigns/${campaignId}/failures`);
-      if (res.ok) setCampaignFailures(await res.json());
-    } catch (err) {
-      if (err instanceof ApiAuthError) return;
-      throw err;
-    }
-  };
-
   const fetchFailureGroups = async (campaignId: string) => {
     try {
       const res = await apiFetch(`/campaigns/${campaignId}/failures/by-reason`);
@@ -891,8 +798,14 @@ export function App(): React.JSX.Element {
     }
   };
 
+  const MAX_BULK_RETRY_SIZE = 500;
+
   const handleRetryGroup = async (group: { errorMessage: string; recipientIds: string[] }) => {
     if (!selectedCampaignId) return;
+    if (group.recipientIds.length > MAX_BULK_RETRY_SIZE) {
+      alert(`Impossibile rimettere in coda più di ${MAX_BULK_RETRY_SIZE} destinatari in una sola richiesta (richiesti: ${group.recipientIds.length}). Riduci la selezione o contatta l'amministratore per un'operazione batch.`);
+      return;
+    }
     if (!confirm(`Rimettere in coda ${group.recipientIds.length} destinatari con errore "${group.errorMessage}"?`)) return;
     setRetryingGroup(group.errorMessage);
     try {
@@ -911,19 +824,6 @@ export function App(): React.JSX.Element {
       alert(err.message);
     } finally {
       setRetryingGroup(null);
-    }
-  };
-
-  const handleRetryRecipient = async (campaignId: string, recipientId: string) => {
-    setRetryBusyId(recipientId);
-    try {
-      await fetch(`${ADMIN_API_BASE}/campaigns/${campaignId}/recipients/${recipientId}/retry`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      await fetchCampaignFailures(campaignId);
-    } finally {
-      setRetryBusyId(null);
     }
   };
 
@@ -2522,7 +2422,6 @@ export function App(): React.JSX.Element {
     setSelectedCampaignId(id);
     setView('campaign-detail');
     setCampaign(null);
-    setCampaignFailures([]);
     setFailureGroups([]);
     setChannelBreakdown(null);
     setDownloadByChannel(null);
@@ -2531,7 +2430,6 @@ export function App(): React.JSX.Element {
     setRecipientsSearch('');
     setRecipientsPageNum(1);
     fetchCampaignDetail(id);
-    fetchCampaignFailures(id);
     fetchFailureGroups(id);
     fetchChannelBreakdown(id);
     fetchDownloadChannelStats(id);
@@ -5706,11 +5604,11 @@ export function App(): React.JSX.Element {
                           </div>
                         )}
 
-                        {campaignFailures.length > 0 && (
+                        {failureGroups.length > 0 && (
                           <div className="mt-4 border-top pt-3">
                             <h4 className="small fw-bold mb-2 text-danger">
                               <i className="fas fa-triangle-exclamation me-1"></i>
-                              Destinatari con invio fallito ({campaignFailures.length}) — raggruppati per motivo
+                              Destinatari con invio fallito ({failureGroups.reduce((sum, g) => sum + g.count, 0)}) — raggruppati per motivo
                             </h4>
                             <div className="table-responsive" style={{ maxHeight: 300, overflowY: 'auto' }}>
                               <table className="table table-sm">

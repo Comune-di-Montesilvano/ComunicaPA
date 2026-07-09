@@ -29,6 +29,7 @@ import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.d
 import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util';
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto';
 
+const MAX_BULK_RETRY_SIZE = 500;
 
 @Injectable()
 export class CampaignsService {
@@ -764,6 +765,12 @@ export class CampaignsService {
   }
 
   async retryRecipientsBulk(campaignId: string, recipientIds: string[]): Promise<RetryBulkResultDto> {
+    if (recipientIds.length > MAX_BULK_RETRY_SIZE) {
+      throw new BadRequestException(
+        `Impossibile rimettere in coda più di ${MAX_BULK_RETRY_SIZE} destinatari in una sola richiesta (richiesti: ${recipientIds.length}). Riduci la selezione o contatta l'amministratore per un'operazione batch.`,
+      );
+    }
+
     let requeued = 0;
     const failed: Array<{ recipientId: string; reason: string }> = [];
 
