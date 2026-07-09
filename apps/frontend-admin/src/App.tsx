@@ -4440,7 +4440,14 @@ export function App(): React.JSX.Element {
 
                         <h6 className="fw-bold small">Storico Tentativi</h6>
                         <table className="table table-sm mb-4">
-                          <thead><tr><th>#</th><th>Stato</th><th>Canale</th><th>Data</th><th>Errore</th><th>App IO</th></tr></thead>
+                          <thead>
+                            <tr>
+                              <th>#</th><th>Stato</th><th>Canale</th><th>Data</th><th>Errore</th>
+                              {/* Colonna co-consegna App IO: non ha senso quando App IO è già il canale
+                                  primario della campagna — "Non tentato" leggerebbe come mancato invio. */}
+                              {notifDetail.campaign.channelType !== 'APP_IO' && <th>App IO</th>}
+                            </tr>
+                          </thead>
                           <tbody>
                             {notifDetail.attempts.map((a) => (
                               <tr key={a.attemptNumber}>
@@ -4449,11 +4456,13 @@ export function App(): React.JSX.Element {
                                 <td className="small">{a.channelType}</td>
                                 <td className="small text-muted">{new Date(a.createdAt).toLocaleString('it-IT')}</td>
                                 <td className="small text-danger">{a.errorMessage || '—'}</td>
-                                <td className="small">
-                                  {a.appIo.attempted
-                                    ? (a.appIo.success ? <span className="text-success">Consegnato</span> : <span className="text-danger">{a.appIo.error || 'Non consegnato'}</span>)
-                                    : <span className="text-muted">Non tentato</span>}
-                                </td>
+                                {notifDetail.campaign.channelType !== 'APP_IO' && (
+                                  <td className="small">
+                                    {a.appIo.attempted
+                                      ? (a.appIo.success ? <span className="text-success">Consegnato</span> : <span className="text-danger">{a.appIo.error || 'Non consegnato'}</span>)
+                                      : <span className="text-muted">Non tentato</span>}
+                                  </td>
+                                )}
                               </tr>
                             ))}
                           </tbody>
