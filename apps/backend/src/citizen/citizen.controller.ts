@@ -54,7 +54,7 @@ export class CitizenController {
 
     // 3. Spedisce il file
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="avviso_${id.slice(0, 8)}_${index + 1}.pdf"`);
+    res.setHeader('Content-Disposition', `inline; filename="avviso_${id.slice(0, 8)}_${index + 1}.pdf"`);
     res.setHeader('Content-Length', pdfBuffer.length);
     res.end(pdfBuffer);
   }
