@@ -54,7 +54,7 @@ describe('PublicDownloadController', () => {
   it('rifiuta con 403 se la firma non è valida', async () => {
     const res: any = { setHeader: jest.fn(), end: jest.fn() };
     await expect(
-      controller.download(recipientId, '0', String(futureExp), 'firma-non-valida', undefined, res),
+      controller.download(recipientId, '0', String(futureExp), 'firma-non-valida', undefined, undefined, res),
     ).rejects.toThrow(ForbiddenException);
   });
 
@@ -62,7 +62,7 @@ describe('PublicDownloadController', () => {
     const sig = signDownloadLink(recipientId, 0, futureExp, secret);
     const res: any = { setHeader: jest.fn(), end: jest.fn() };
     await expect(
-      controller.download(recipientId, '1', String(futureExp), sig, undefined, res),
+      controller.download(recipientId, '1', String(futureExp), sig, undefined, undefined, res),
     ).rejects.toThrow(ForbiddenException);
   });
 
@@ -70,7 +70,15 @@ describe('PublicDownloadController', () => {
     const sig = signDownloadLink(recipientId, 0, futureExp, secret, 'EMAIL');
     const res: any = { setHeader: jest.fn(), end: jest.fn() };
     await expect(
-      controller.download(recipientId, '0', String(futureExp), sig, 'APP_IO', res),
+      controller.download(recipientId, '0', String(futureExp), sig, 'APP_IO', undefined, res),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('rifiuta con 403 se preview=1 viene aggiunto a un link firmato senza preview', async () => {
+    const sig = signDownloadLink(recipientId, 0, futureExp, secret);
+    const res: any = { setHeader: jest.fn(), end: jest.fn() };
+    await expect(
+      controller.download(recipientId, '0', String(futureExp), sig, undefined, '1', res),
     ).rejects.toThrow(ForbiddenException);
   });
 
@@ -78,20 +86,20 @@ describe('PublicDownloadController', () => {
     const pastExp = Math.floor(Date.now() / 1000) - 10;
     const sig = signDownloadLink(recipientId, 0, pastExp, secret);
     const res: any = { setHeader: jest.fn(), end: jest.fn() };
-    await expect(controller.download(recipientId, '0', String(pastExp), sig, undefined, res)).rejects.toThrow(GoneException);
+    await expect(controller.download(recipientId, '0', String(pastExp), sig, undefined, undefined, res)).rejects.toThrow(GoneException);
   });
 
   it('rifiuta con 410 se l\'allegato è già stato eliminato per retention', async () => {
     mockRepo.findOne.mockResolvedValueOnce({ ...mockRecipient, attachmentDeletedAt: new Date() });
     const sig = signDownloadLink(recipientId, 0, futureExp, secret);
     const res: any = { setHeader: jest.fn(), end: jest.fn() };
-    await expect(controller.download(recipientId, '0', String(futureExp), sig, undefined, res)).rejects.toThrow(GoneException);
+    await expect(controller.download(recipientId, '0', String(futureExp), sig, undefined, undefined, res)).rejects.toThrow(GoneException);
   });
 
   it('serve il PDF, incrementa downloadCount e registra un DownloadEvent col canale corretto', async () => {
     const sig = signDownloadLink(recipientId, 1, futureExp, secret, 'EMAIL');
     const res: any = { setHeader: jest.fn(), end: jest.fn() };
-    await controller.download(recipientId, '1', String(futureExp), sig, 'EMAIL', res);
+    await controller.download(recipientId, '1', String(futureExp), sig, 'EMAIL', undefined, res);
     expect(mockAttachmentService.generatePdfBuffer).toHaveBeenCalledWith(mockRecipient, 1);
     expect(res.end).toHaveBeenCalledWith(Buffer.from('%PDF-fake'));
     expect(mockRepo.update).toHaveBeenCalledWith(
@@ -110,8 +118,18 @@ describe('PublicDownloadController', () => {
     const sig = signDownloadLink(recipientId, 1, futureExp, secret, 'EMAIL');
     const res: any = { setHeader: jest.fn(), end: jest.fn() };
     await expect(
-      controller.download(recipientId, '1', String(futureExp), sig, 'EMAIL', res),
+      controller.download(recipientId, '1', String(futureExp), sig, 'EMAIL', undefined, res),
     ).resolves.toBeUndefined();
     expect(res.end).toHaveBeenCalledWith(Buffer.from('%PDF-fake'));
+  });
+
+  it('con preview=1 (link firmato come preview) serve il PDF ma NON incrementa downloadCount né registra DownloadEvent', async () => {
+    const sig = signDownloadLink(recipientId, 1, futureExp, secret, 'EMAIL', true);
+    const res: any = { setHeader: jest.fn(), end: jest.fn() };
+    await controller.download(recipientId, '1', String(futureExp), sig, 'EMAIL', '1', res);
+    expect(mockAttachmentService.generatePdfBuffer).toHaveBeenCalledWith(mockRecipient, 1);
+    expect(res.end).toHaveBeenCalledWith(Buffer.from('%PDF-fake'));
+    expect(mockRepo.update).not.toHaveBeenCalled();
+    expect(mockDownloadEventRepo.insert).not.toHaveBeenCalled();
   });
 });

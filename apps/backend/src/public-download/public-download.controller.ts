@@ -31,17 +31,21 @@ export class PublicDownloadController {
     @Query('exp') exp: string,
     @Query('sig') sig: string,
     @Query('ch') channel: string | undefined,
+    @Query('preview') previewParam: string | undefined,
     @Res() res: Response,
   ): Promise<void> {
     const index = parseInt(indexParam, 10);
     const expiresAtUnix = parseInt(exp, 10);
     const secret = this.config.get('downloadLink.secret', { infer: true });
+    // Il flag preview è protetto dalla firma HMAC (vedi download-link.util.ts):
+    // non basta aggiungere ?preview=1 a un link reale, la verifica fallirebbe.
+    const preview = previewParam === '1';
 
     if (
       !Number.isFinite(index) ||
       index < 0 ||
       !Number.isFinite(expiresAtUnix) ||
-      !verifyDownloadLink(recipientId, index, expiresAtUnix, sig, secret, channel ?? '')
+      !verifyDownloadLink(recipientId, index, expiresAtUnix, sig, secret, channel ?? '', preview)
     ) {
       throw new ForbiddenException('Link non valido');
     }
@@ -59,19 +63,23 @@ export class PublicDownloadController {
 
     const pdfBuffer = await this.attachmentService.generatePdfBuffer(recipient, index);
 
-    await this.recipientRepo.update(recipientId, {
-      downloadCount: recipient.downloadCount + 1,
-      firstDownloadedAt: recipient.firstDownloadedAt ?? new Date(),
-      lastDownloadedAt: new Date(),
-    });
-    try {
-      await this.downloadEventRepo.insert({
-        recipientId,
-        channel: channel || 'UNKNOWN',
-        attachmentIndex: index,
+    // Anteprima backoffice (operatore che apre il link dal dettaglio notifica):
+    // niente incremento contatori né DownloadEvent, il PDF viene comunque servito.
+    if (!preview) {
+      await this.recipientRepo.update(recipientId, {
+        downloadCount: recipient.downloadCount + 1,
+        firstDownloadedAt: recipient.firstDownloadedAt ?? new Date(),
+        lastDownloadedAt: new Date(),
       });
-    } catch (err: any) {
-      this.logger.warn(`Impossibile registrare DownloadEvent per recipient ${recipientId}: ${err?.message ?? err}`);
+      try {
+        await this.downloadEventRepo.insert({
+          recipientId,
+          channel: channel || 'UNKNOWN',
+          attachmentIndex: index,
+        });
+      } catch (err: any) {
+        this.logger.warn(`Impossibile registrare DownloadEvent per recipient ${recipientId}: ${err?.message ?? err}`);
+      }
     }
 
     res.setHeader('Content-Type', 'application/pdf');

@@ -23,13 +23,15 @@ export function processTemplate(
   attachmentLabels: string[] = [],
   format: 'html' | 'markdown' = 'html',
   sourceChannel = '',
+  preview = false,
 ): string {
   let content = bodyTemplate;
 
   const buildDownloadUrl = (index: number): string => {
-    const sig = signDownloadLink(recipient.id, index, expiresAtUnix, downloadLinkSecret, sourceChannel);
+    const sig = signDownloadLink(recipient.id, index, expiresAtUnix, downloadLinkSecret, sourceChannel, preview);
     const chParam = sourceChannel ? `&ch=${encodeURIComponent(sourceChannel)}` : '';
-    return `${publicApiUrl}/public/download/${recipient.id}/${index}?exp=${expiresAtUnix}&sig=${sig}${chParam}`;
+    const previewParam = preview ? '&preview=1' : '';
+    return `${publicApiUrl}/public/download/${recipient.id}/${index}?exp=${expiresAtUnix}&sig=${sig}${chParam}${previewParam}`;
   };
 
   // 1. Placeholder individuali %%allegato1%%, %%allegato2%%, ... (uno per etichetta configurata)

@@ -124,7 +124,10 @@ export class CampaignsService {
     const bodyTemplate = (campaign.channelConfig?.['body'] as string) || '';
     const attachmentLabels = resolveAttachmentsConfig(campaign.channelConfig).map((a) => a.label);
 
-    return this.renderMessage(campaign.channelType, subjectTemplate, bodyTemplate, attachmentLabels, recipient, undefined, linkChannelTag);
+    // preview=true: il link generato qui è per un recipient REALE (a differenza di
+    // previewMessage) e quindi cliccabile/valido — va marcato per non farlo contare
+    // come download del cittadino se un operatore lo apre dal dettaglio notifica.
+    return this.renderMessage(campaign.channelType, subjectTemplate, bodyTemplate, attachmentLabels, recipient, undefined, linkChannelTag, true);
   }
 
   private async renderMessage(
@@ -135,6 +138,7 @@ export class CampaignsService {
     recipientLike: Recipient,
     format?: 'html' | 'markdown',
     linkChannelTag?: string,
+    preview = false,
   ): Promise<PreviewMessageResult> {
     const brandName = (await this.settings.get<string>('brand.name')) || 'Comune di Montesilvano';
     const publicApiUrl = await this.settings.get<string>('system.publicUrl');
@@ -145,8 +149,8 @@ export class CampaignsService {
     const resolvedFormat: 'html' | 'markdown' = format ?? (channelType === 'APP_IO' ? 'markdown' : 'html');
     const linkTag = linkChannelTag ?? channelType;
 
-    const subject = processTemplate(subjectTemplate, recipientLike, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, resolvedFormat, linkTag);
-    const body = processTemplate(bodyTemplate, recipientLike, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, resolvedFormat, linkTag);
+    const subject = processTemplate(subjectTemplate, recipientLike, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, resolvedFormat, linkTag, preview);
+    const body = processTemplate(bodyTemplate, recipientLike, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, resolvedFormat, linkTag, preview);
 
     if (resolvedFormat === 'markdown') {
       return { subject, bodyMarkdown: body };
