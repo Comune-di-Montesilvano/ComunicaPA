@@ -390,16 +390,9 @@ export class CampaignsController {
     return this.campaignsService.getChannelBreakdown(id).then((breakdown) => ({ campaignId: id, breakdown }));
   }
 
-  @Get(':id/download-channel-stats')
-  async getDownloadChannelStats(@Param('id', ParseUUIDPipe) id: string) {
-    const byChannel = await this.campaignsService.getDownloadChannelStats(id);
-    return { campaignId: id, byChannel };
-  }
-
-  @Get(':id/download-cross-channel-stats')
-  async getDownloadCrossChannelStats(@Param('id', ParseUUIDPipe) id: string) {
-    const stats = await this.campaignsService.getDownloadCrossChannelStats(id);
-    return { campaignId: id, stats };
+  @Get(':id/download-combination-stats')
+  async getDownloadCombinationStats(@Param('id', ParseUUIDPipe) id: string) {
+    return this.campaignsService.getDownloadCombinationStats(id);
   }
 
   @Get('stats/global')

@@ -36,11 +36,15 @@ export interface ChannelBreakdownDto {
   neither: number;
 }
 
-export interface DownloadCrossChannelStatsDto {
-  primaryOnly: number;
-  appIoOnly: number;
-  both: number;
-  none: number;
+export interface DownloadCombinationDto {
+  /** Canali da cui il destinatario ha scaricato (ordinati); [] = nessun download. */
+  channels: string[];
+  count: number;
+}
+
+export interface DownloadCombinationStatsDto {
+  totalRecipients: number;
+  combinations: DownloadCombinationDto[];
 }
 
 export interface FailureRowDto {

@@ -512,61 +512,22 @@ describe('CampaignsService', () => {
     });
   });
 
-  describe('getDownloadChannelStats', () => {
-    it('raggruppa i DownloadEvent per canale', async () => {
-      const qbMock = {
-        innerJoin: jest.fn().mockReturnThis(),
-        select: jest.fn().mockReturnThis(),
-        addSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        groupBy: jest.fn().mockReturnThis(),
-        getRawMany: jest.fn().mockResolvedValue([
-          { channel: 'EMAIL', count: '3' },
-          { channel: 'CITIZEN_PORTAL', count: '1' },
-        ]),
-      };
-      mockDownloadEventRepo.createQueryBuilder = jest.fn().mockReturnValue(qbMock);
-
-      const result = await service.getDownloadChannelStats('uuid-1');
-
-      expect(result).toEqual({ EMAIL: 3, CITIZEN_PORTAL: 1 });
-      expect(qbMock.where).toHaveBeenCalledWith('r.campaignId = :campaignId', { campaignId: 'uuid-1' });
-    });
-  });
-
-  describe('getDownloadCrossChannelStats', () => {
-    it('ritorna null se la campagna non ha co-consegna App IO configurata', async () => {
-      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelConfig: {} });
-
-      const result = await service.getDownloadCrossChannelStats('uuid-1');
-
-      expect(result).toBeNull();
-      expect(mockRecipientRepo.find).not.toHaveBeenCalled();
-    });
-
-    it('ritorna tutti zero se la campagna non ha destinatari', async () => {
-      mockCampaignRepo.findOneBy.mockResolvedValueOnce({
-        ...mockCampaign,
-        channelConfig: { appIo: { mode: 'parallel', ioServiceId: 'svc-1' } },
-      });
+  describe('getDownloadCombinationStats', () => {
+    it('ritorna combinazioni vuote se la campagna non ha destinatari', async () => {
       mockRecipientRepo.find.mockResolvedValueOnce([]);
 
-      const result = await service.getDownloadCrossChannelStats('uuid-1');
+      const result = await service.getDownloadCombinationStats('uuid-1');
 
-      expect(result).toEqual({ primaryOnly: 0, appIoOnly: 0, both: 0, none: 0 });
+      expect(result).toEqual({ totalRecipients: 0, combinations: [] });
+      expect(mockDownloadEventRepo.createQueryBuilder).not.toHaveBeenCalled();
     });
 
-    it('classifica primario/appIo/entrambi/nessuno, trattando CITIZEN_PORTAL come primario', async () => {
-      mockCampaignRepo.findOneBy.mockResolvedValueOnce({
-        ...mockCampaign,
-        channelType: 'EMAIL',
-        channelConfig: { appIo: { mode: 'parallel', ioServiceId: 'svc-1' } },
-      });
+    it('raggruppa i destinatari per insieme distinto di canali di download, incluso il bucket "nessuno"', async () => {
       mockRecipientRepo.find.mockResolvedValueOnce([
         { id: 'r-primary' },
         { id: 'r-appio' },
         { id: 'r-both' },
-        { id: 'r-citizen-portal' },
+        { id: 'r-portal-plus-primary' },
         { id: 'r-none' },
       ]);
       const qbMock = {
@@ -579,14 +540,25 @@ describe('CampaignsService', () => {
           { recipientId: 'r-appio', channel: 'APP_IO' },
           { recipientId: 'r-both', channel: 'EMAIL' },
           { recipientId: 'r-both', channel: 'APP_IO' },
-          { recipientId: 'r-citizen-portal', channel: 'CITIZEN_PORTAL' },
+          { recipientId: 'r-portal-plus-primary', channel: 'CITIZEN_PORTAL' },
+          { recipientId: 'r-portal-plus-primary', channel: 'EMAIL' },
         ]),
       };
       mockDownloadEventRepo.createQueryBuilder = jest.fn().mockReturnValue(qbMock);
 
-      const result = await service.getDownloadCrossChannelStats('uuid-1');
+      const result = await service.getDownloadCombinationStats('uuid-1');
 
-      expect(result).toEqual({ primaryOnly: 2, appIoOnly: 1, both: 1, none: 1 });
+      expect(result.totalRecipients).toBe(5);
+      expect(result.combinations).toEqual(
+        expect.arrayContaining([
+          { channels: ['EMAIL'], count: 1 },
+          { channels: ['APP_IO'], count: 1 },
+          { channels: ['APP_IO', 'EMAIL'], count: 1 },
+          { channels: ['CITIZEN_PORTAL', 'EMAIL'], count: 1 },
+          { channels: [], count: 1 },
+        ]),
+      );
+      expect(qbMock.where).toHaveBeenCalledWith('r.campaignId = :campaignId', { campaignId: 'uuid-1' });
     });
   });
 

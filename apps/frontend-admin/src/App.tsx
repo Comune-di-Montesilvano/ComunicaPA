@@ -12,6 +12,39 @@ declare global {
 const API_BASE = window.__COMUNICAPA_CONFIG__?.apiBase ?? 'http://localhost:8080';
 const ADMIN_API_BASE = `${API_BASE}/admin`;
 
+const CHANNEL_LABELS: Record<string, string> = {
+  PEC: 'PEC',
+  EMAIL: 'Email',
+  APP_IO: 'App IO',
+  SEND: 'SEND',
+  POSTAL: 'Postalizzazione',
+  CITIZEN_PORTAL: 'Portale Cittadino',
+  UNKNOWN: 'Sconosciuto',
+};
+
+function downloadComboLabel(channels: string[]): string {
+  if (channels.length === 0) return 'Non scaricato';
+  return channels.map((c) => CHANNEL_LABELS[c] ?? c).join(' + ');
+}
+
+// Le label di default di recharts Pie disegnano linea + testo fuori dal
+// raggio esterno: con più fette o nomi lunghi (combinazioni canali) finiscono
+// tagliate dal ResponsiveContainer. Mostriamo la percentuale dentro la fetta;
+// i nomi completi restano in Legend/tabella sotto.
+function renderPiePercentLabel(props: any): React.ReactNode {
+  const { cx, cy, midAngle, innerRadius, outerRadius, percent } = props;
+  if (!percent) return null;
+  const RADIAN = Math.PI / 180;
+  const radius = innerRadius + (outerRadius - innerRadius) * 0.6;
+  const x = cx + radius * Math.cos(-midAngle * RADIAN);
+  const y = cy + radius * Math.sin(-midAngle * RADIAN);
+  return (
+    <text x={x} y={y} fill="#fff" textAnchor="middle" dominantBaseline="central" fontSize={12} fontWeight={600}>
+      {`${Math.round(percent * 100)}%`}
+    </text>
+  );
+}
+
 // Tiptap's editor.getHTML() always returns a non-empty shell (e.g. '<p></p>')
 // even when the user has deleted all content, so a plain truthiness check on
 // the HTML string is not enough to detect an "empty" body.
@@ -584,8 +617,7 @@ export function App(): React.JSX.Element {
   const [recipientsSearch, setRecipientsSearch] = useState('');
   const [recipientsPageNum, setRecipientsPageNum] = useState(1);
   const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number } | null>(null);
-  const [downloadByChannel, setDownloadByChannel] = useState<Record<string, number> | null>(null);
-  const [downloadCrossChannel, setDownloadCrossChannel] = useState<{ primaryOnly: number; appIoOnly: number; both: number; none: number } | null>(null);
+  const [downloadCombinations, setDownloadCombinations] = useState<Array<{ channels: string[]; count: number }> | null>(null);
   const [statsDateFrom, setStatsDateFrom] = useState(() => {
     const d = new Date();
     d.setMonth(d.getMonth() - 6);
@@ -2466,16 +2498,14 @@ export function App(): React.JSX.Element {
     setCampaign(null);
     setFailureGroups([]);
     setChannelBreakdown(null);
-    setDownloadByChannel(null);
-    setDownloadCrossChannel(null);
+    setDownloadCombinations(null);
     setRecipientsPage(null);
     setRecipientsSearch('');
     setRecipientsPageNum(1);
     fetchCampaignDetail(id);
     fetchFailureGroups(id);
     fetchChannelBreakdown(id);
-    fetchDownloadChannelStats(id);
-    fetchDownloadCrossChannelStats(id);
+    fetchDownloadCombinationStats(id);
   };
 
   const fetchChannelBreakdown = async (id: string) => {
@@ -2504,23 +2534,12 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const fetchDownloadChannelStats = async (id: string) => {
+  const fetchDownloadCombinationStats = async (id: string) => {
     try {
-      const res = await apiFetch(`/campaigns/${id}/download-channel-stats`);
+      const res = await apiFetch(`/campaigns/${id}/download-combination-stats`);
       if (!res.ok) return;
       const data = await res.json();
-      setDownloadByChannel(data.byChannel && Object.keys(data.byChannel).length > 0 ? data.byChannel : null);
-    } catch {
-      // Non bloccante.
-    }
-  };
-
-  const fetchDownloadCrossChannelStats = async (id: string) => {
-    try {
-      const res = await apiFetch(`/campaigns/${id}/download-cross-channel-stats`);
-      if (!res.ok) return;
-      const data = await res.json();
-      setDownloadCrossChannel(data.stats);
+      setDownloadCombinations(data.combinations && data.combinations.length > 0 ? data.combinations : null);
     } catch {
       // Non bloccante.
     }
@@ -5848,22 +5867,6 @@ export function App(): React.JSX.Element {
                           </div>
                         )}
 
-                        {downloadByChannel && (
-                          <div className="mt-4 border-top pt-3">
-                            <h4 className="small fw-bold mb-2">
-                              <i className="fas fa-download me-1 text-primary"></i>Download per Canale
-                            </h4>
-                            <div className="small">
-                              {Object.entries(downloadByChannel).map(([channel, count]) => (
-                                <div key={channel} className="d-flex justify-content-between mb-1">
-                                  <span>{channel}</span>
-                                  <span className="fw-bold">{count}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
                         {failureGroups.length > 0 && (
                           <div className="mt-4 border-top pt-3">
                             <h4 className="small fw-bold mb-2 text-danger">
@@ -6049,135 +6052,94 @@ export function App(): React.JSX.Element {
                       </div>
                     </div>
 
-                    <div className="card shadow-sm mt-4">
-                      <div className="card-header bg-white py-3 border-bottom">
-                        <h3 className="h6 mb-0 fw-bold text-dark">
-                          <i className="fas fa-chart-pie me-2 text-primary"></i>Esito Invio
-                        </h3>
+                    <div className="row g-4 mt-0">
+                      <div className="col-md-6">
+                        <div className="card shadow-sm h-100">
+                          <div className="card-header bg-white py-3 border-bottom">
+                            <h3 className="h6 mb-0 fw-bold text-dark">
+                              <i className="fas fa-chart-pie me-2 text-primary"></i>Esito Invio
+                            </h3>
+                          </div>
+                          <div className="card-body">
+                            <ResponsiveContainer width="100%" height={220}>
+                              <PieChart>
+                                <Pie
+                                  data={[
+                                    { label: 'Inviati con successo', value: campaign.sentCount },
+                                    { label: 'Falliti', value: campaign.failedCount },
+                                  ]}
+                                  dataKey="value"
+                                  nameKey="label"
+                                  cx="50%"
+                                  cy="50%"
+                                  outerRadius={80}
+                                  label={renderPiePercentLabel}
+                                  labelLine={false}
+                                >
+                                  <Cell fill="var(--bi-success, #198754)" />
+                                  <Cell fill="var(--bi-danger, #dc3545)" />
+                                </Pie>
+                                <Tooltip />
+                                <Legend />
+                              </PieChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
                       </div>
-                      <div className="card-body">
-                        <ResponsiveContainer width="100%" height={220}>
-                          <PieChart>
-                            <Pie
-                              data={[
-                                { label: 'Inviati con successo', value: campaign.sentCount },
-                                { label: 'Falliti', value: campaign.failedCount },
-                              ]}
-                              dataKey="value"
-                              nameKey="label"
-                              cx="50%"
-                              cy="50%"
-                              outerRadius={80}
-                              label
-                            >
-                              <Cell fill="var(--bi-success, #198754)" />
-                              <Cell fill="var(--bi-danger, #dc3545)" />
-                            </Pie>
-                            <Tooltip />
-                            <Legend />
-                          </PieChart>
-                        </ResponsiveContainer>
+
+                      <div className="col-md-6">
+                        <div className="card shadow-sm h-100">
+                          <div className="card-header bg-white py-3 border-bottom">
+                            <h3 className="h6 mb-0 fw-bold text-dark">
+                              <i className="fas fa-chart-pie me-2 text-primary"></i>Download per Canale
+                            </h3>
+                          </div>
+                          <div className="card-body">
+                            {downloadCombinations ? (
+                              <>
+                                <ResponsiveContainer width="100%" height={220}>
+                                  <PieChart>
+                                    <Pie
+                                      data={downloadCombinations.map((c) => ({ label: downloadComboLabel(c.channels), value: c.count }))}
+                                      dataKey="value"
+                                      nameKey="label"
+                                      cx="50%"
+                                      cy="50%"
+                                      outerRadius={80}
+                                      label={renderPiePercentLabel}
+                                      labelLine={false}
+                                    >
+                                      {downloadCombinations.map((c, i) => (
+                                        <Cell key={c.channels.join('+') || 'none'} fill={c.channels.length === 0 ? '#adb5bd' : PIE_COLORS[i % PIE_COLORS.length]} />
+                                      ))}
+                                    </Pie>
+                                    <Tooltip />
+                                    <Legend />
+                                  </PieChart>
+                                </ResponsiveContainer>
+                                <table className="table table-sm mb-0 mt-2">
+                                  <tbody>
+                                    {(() => {
+                                      const total = downloadCombinations.reduce((sum, c) => sum + c.count, 0);
+                                      const pct = (n: number) => (total > 0 ? `${Math.round((n / total) * 100)}%` : '0%');
+                                      return downloadCombinations.map((c) => (
+                                        <tr key={c.channels.join('+') || 'none'}>
+                                          <td>{downloadComboLabel(c.channels)}</td>
+                                          <td className="text-end fw-bold">{c.count}</td>
+                                          <td className="text-end text-muted">{pct(c.count)}</td>
+                                        </tr>
+                                      ));
+                                    })()}
+                                  </tbody>
+                                </table>
+                              </>
+                            ) : (
+                              <div className="text-center text-muted py-4">Nessun dato di download disponibile.</div>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </div>
-
-                    {downloadCrossChannel && (
-                      <div className="card shadow-sm mt-4">
-                        <div className="card-header bg-white py-3 border-bottom">
-                          <h3 className="h6 mb-0 fw-bold text-dark">
-                            <i className="fas fa-chart-pie me-2 text-primary"></i>Download per Combinazione Canali
-                          </h3>
-                        </div>
-                        <div className="card-body">
-                          <ResponsiveContainer width="100%" height={220}>
-                            <PieChart>
-                              <Pie
-                                data={[
-                                  { label: 'Solo primario', value: downloadCrossChannel.primaryOnly },
-                                  { label: 'Solo App IO', value: downloadCrossChannel.appIoOnly },
-                                  { label: 'Entrambi', value: downloadCrossChannel.both },
-                                  { label: 'Nessuno', value: downloadCrossChannel.none },
-                                ]}
-                                dataKey="value"
-                                nameKey="label"
-                                cx="50%"
-                                cy="50%"
-                                outerRadius={80}
-                                label
-                              >
-                                <Cell fill="var(--bi-primary, #0d6efd)" />
-                                <Cell fill="var(--bi-info, #0dcaf0)" />
-                                <Cell fill="var(--bi-success, #198754)" />
-                                <Cell fill="var(--bi-secondary, #6c757d)" />
-                              </Pie>
-                              <Tooltip />
-                              <Legend />
-                            </PieChart>
-                          </ResponsiveContainer>
-                          <table className="table table-sm mb-0 mt-2">
-                            <tbody>
-                              {(() => {
-                                const total = downloadCrossChannel.primaryOnly + downloadCrossChannel.appIoOnly + downloadCrossChannel.both + downloadCrossChannel.none;
-                                const pct = (n: number) => (total > 0 ? `${Math.round((n / total) * 100)}%` : '0%');
-                                const rows: Array<[string, number]> = [
-                                  ['Solo primario', downloadCrossChannel.primaryOnly],
-                                  ['Solo App IO', downloadCrossChannel.appIoOnly],
-                                  ['Entrambi', downloadCrossChannel.both],
-                                  ['Nessuno', downloadCrossChannel.none],
-                                ];
-                                return rows.map(([label, value]) => (
-                                  <tr key={label}>
-                                    <td>{label}</td>
-                                    <td className="text-end fw-bold">{value}</td>
-                                    <td className="text-end text-muted">{pct(value)}</td>
-                                  </tr>
-                                ));
-                              })()}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
-
-                    {!downloadCrossChannel && downloadByChannel && Object.keys(downloadByChannel).length > 0 && (
-                      <div className="card shadow-sm mt-4">
-                        <div className="card-header bg-white py-3 border-bottom">
-                          <h3 className="h6 mb-0 fw-bold text-dark">
-                            <i className="fas fa-chart-pie me-2 text-primary"></i>Download per Canale
-                          </h3>
-                        </div>
-                        <div className="card-body">
-                          <ResponsiveContainer width="100%" height={220}>
-                            <PieChart>
-                              <Pie
-                                data={Object.entries(downloadByChannel).map(([channel, count]) => ({ label: channel, value: count }))}
-                                dataKey="value"
-                                nameKey="label"
-                                cx="50%"
-                                cy="50%"
-                                outerRadius={80}
-                                label
-                              >
-                                {Object.keys(downloadByChannel).map((channel, i) => (
-                                  <Cell key={channel} fill={['var(--bi-primary, #0d6efd)', 'var(--bi-info, #0dcaf0)', 'var(--bi-success, #198754)', 'var(--bi-secondary, #6c757d)'][i % 4]} />
-                                ))}
-                              </Pie>
-                              <Tooltip />
-                              <Legend />
-                            </PieChart>
-                          </ResponsiveContainer>
-                          <table className="table table-sm mb-0 mt-2">
-                            <tbody>
-                              {Object.entries(downloadByChannel).map(([channel, count]) => (
-                                <tr key={channel}>
-                                  <td>{channel}</td>
-                                  <td className="text-end fw-bold">{count}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
               ) : null}

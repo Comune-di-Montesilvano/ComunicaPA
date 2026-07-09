@@ -24,7 +24,7 @@ import { NotificationQueuesService } from '../queue/notification-queues.service'
 import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util';
 import type { CreateCampaignDto } from './dto/create-campaign.dto';
 import type { UpdateCampaignDto } from './dto/update-campaign.dto';
-import type { CampaignStatsDto, RecipientStatsPageDto, ChannelBreakdownDto, DownloadCrossChannelStatsDto, FailureRowDto, FailureGroupDto, RetryBulkResultDto, DownloadReportRowDto } from './dto/campaign-stats.dto';
+import type { CampaignStatsDto, RecipientStatsPageDto, ChannelBreakdownDto, DownloadCombinationDto, DownloadCombinationStatsDto, FailureRowDto, FailureGroupDto, RetryBulkResultDto, DownloadReportRowDto } from './dto/campaign-stats.dto';
 import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.dto';
 import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util';
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto';
@@ -503,41 +503,19 @@ export class CampaignsService {
     return breakdown;
   }
 
-  async getDownloadChannelStats(campaignId: string): Promise<Record<string, number>> {
-    const rows = await this.downloadEventRepo
-      .createQueryBuilder('de')
-      .innerJoin('de.recipient', 'r')
-      .select('de.channel', 'channel')
-      .addSelect('COUNT(*)', 'count')
-      .where('r.campaignId = :campaignId', { campaignId })
-      .groupBy('de.channel')
-      .getRawMany<{ channel: string; count: string }>();
-
-    const byChannel: Record<string, number> = {};
-    for (const row of rows) {
-      byChannel[row.channel] = parseInt(row.count, 10);
-    }
-    return byChannel;
-  }
-
   /**
-   * Incrocio canali di download per destinatario: su quale combinazione
-   * (primario, App IO, entrambi, nessuno) ha scaricato ciascun destinatario.
-   * CITIZEN_PORTAL è trattato come equivalente al canale primario (stesso
-   * documento scaricato dal portale cittadino invece che dal link email/PEC),
-   * non è una categoria terza per questa metrica — resta visibile
-   * separatamente in getDownloadChannelStats(). Ritorna null se la campagna
-   * non ha co-consegna App IO configurata, come getChannelBreakdown().
+   * Combinazione canali di download per destinatario: raggruppa i destinatari
+   * in base all'insieme distinto di canali (portale cittadino, canale
+   * primario, App IO co-consegna, ecc.) da cui ciascuno ha scaricato
+   * l'allegato almeno una volta. Generico per qualsiasi tipo di campagna —
+   * non assume quali canali esistano, raggruppa per i canali realmente
+   * osservati nei DownloadEvent. Il totale dei conteggi (incluso il bucket
+   * "nessuno", `channels: []`) coincide sempre con `totalRecipients`.
    */
-  async getDownloadCrossChannelStats(campaignId: string): Promise<DownloadCrossChannelStatsDto | null> {
-    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
-    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
-
-    if (!resolveSecondaryAppIoConfig(campaign.channelConfig)) return null;
-
+  async getDownloadCombinationStats(campaignId: string): Promise<DownloadCombinationStatsDto> {
     const recipients = await this.recipientRepo.find({ where: { campaignId }, select: ['id'] });
-    const result: DownloadCrossChannelStatsDto = { primaryOnly: 0, appIoOnly: 0, both: 0, none: 0 };
-    if (recipients.length === 0) return result;
+    const totalRecipients = recipients.length;
+    if (totalRecipients === 0) return { totalRecipients: 0, combinations: [] };
 
     const rows = await this.downloadEventRepo
       .createQueryBuilder('de')
@@ -553,21 +531,24 @@ export class CampaignsService {
       channelsByRecipient.get(row.recipientId)!.add(row.channel);
     }
 
+    const countByKey = new Map<string, DownloadCombinationDto>();
+    let none = 0;
     for (const recipient of recipients) {
       const channels = channelsByRecipient.get(recipient.id);
       if (!channels || channels.size === 0) {
-        result.none++;
+        none++;
         continue;
       }
-      const hasAppIo = channels.has('APP_IO');
-      const hasPrimary = channels.has(campaign.channelType) || channels.has('CITIZEN_PORTAL');
-      if (hasAppIo && hasPrimary) result.both++;
-      else if (hasAppIo) result.appIoOnly++;
-      else if (hasPrimary) result.primaryOnly++;
-      else result.none++;
+      const sorted = [...channels].sort();
+      const key = sorted.join('+');
+      const existing = countByKey.get(key);
+      if (existing) existing.count++;
+      else countByKey.set(key, { channels: sorted, count: 1 });
     }
 
-    return result;
+    const combinations = [...countByKey.values()];
+    if (none > 0) combinations.push({ channels: [], count: none });
+    return { totalRecipients, combinations };
   }
 
   async getGlobalStats(dateFrom?: string, dateTo?: string): Promise<GlobalStatsDto> {
