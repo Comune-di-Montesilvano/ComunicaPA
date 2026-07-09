@@ -198,6 +198,20 @@ button { font-family: inherit; }
 .status-notif-failed    { background: var(--ms-danger-bg);  color: var(--ms-danger); }
 .status-notif-failed .dot { background: var(--ms-danger); }
 
+/* Badge canale di invio (lista notifiche + dettaglio) */
+.channel-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; line-height: 1.4;
+}
+.channel-badge img { display: block; border-radius: 3px; }
+.channel-pec    { background: var(--ms-info-bg);    color: var(--ms-info); }
+.channel-email  { background: var(--ms-success-bg); color: var(--ms-success); }
+.channel-appio  { background: var(--ms-purple-100); color: var(--ms-purple-700); }
+.channel-send   { background: var(--ms-gold-100);   color: var(--ms-gold-700); }
+.channel-postal { background: var(--bg-2);          color: var(--fg-3); }
+.channel-portal { background: var(--bg-2);          color: var(--fg-3); }
+.channel-generic{ background: var(--bg-2);          color: var(--fg-3); }
+
 /* ============================================================================
    HERO
    ============================================================================ */
@@ -690,6 +704,20 @@ footer .f-bottom { border-top: 1px solid rgba(255,255,255,.1); }
 footer .f-bottom .container { padding-top: var(--sp-3); padding-bottom: var(--sp-3); display:flex; justify-content: space-between; gap: var(--sp-4); align-items:center; font-size: 12px; color: #94a3b8; flex-wrap: wrap; }
 footer .f-legal { display: flex; gap: var(--sp-4); flex-wrap: wrap; }
 
+footer .f-partners { border-top: 1px solid rgba(255,255,255,.1); }
+footer .f-partners .container {
+  padding: var(--sp-3) 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4);
+}
+footer .f-partners-lbl {
+  color: #fff; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+}
+footer .f-partner-link { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
+footer .f-partner-link img { display: block; }
+footer .f-partner-chip {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 6px; background: #fff; flex-shrink: 0;
+}
+
 @media (max-width: 760px) {
   footer .f-top { flex-direction: column; gap: var(--sp-5); padding: var(--sp-5) 0; }
   footer .f-help { font-size: 12px; }
@@ -1013,6 +1041,10 @@ body.density-compact .table td { padding: 12px 16px; }
    ============================================================================ */
 .notif-layout { display: grid; grid-template-columns: 1fr; gap: var(--sp-5); }
 .notif-layout.has-detail { grid-template-columns: 1fr 1fr; }
+/* La colonna lista si dimezza quando il dettaglio è aperto: la griglia filtri
+   a 6 colonne (pensata per la larghezza intera) diventa troppo stretta e i
+   campi si schiacciano/spariscono — passa a 2 colonne in quel caso. */
+.notif-layout.has-detail .filters-grid { grid-template-columns: 1fr 1fr; }
 @media (max-width: 920px) {
   .notif-layout.has-detail { grid-template-columns: 1fr; }
   .notif-layout.has-detail .notif-list-col { display: none; }

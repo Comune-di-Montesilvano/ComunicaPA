@@ -148,6 +148,29 @@ function statusBadge(status: Notification['status']): { cls: string; label: stri
   return { cls: 'status-notif-pending', label: 'In corso' };
 }
 
+const CHANNEL_META: Record<string, { label: string; icon: string; cls: string; logo?: string }> = {
+  PEC: { label: 'PEC', icon: 'fa-envelope-open-text', cls: 'channel-pec' },
+  EMAIL: { label: 'Email', icon: 'fa-envelope', cls: 'channel-email' },
+  APP_IO: { label: 'AppIO', icon: 'fa-mobile-screen', cls: 'channel-appio', logo: 'https://ioapp.it/assets/IO_84d780c485.svg' },
+  SEND: { label: 'SEND', icon: 'fa-paper-plane', cls: 'channel-send' },
+  POSTAL: { label: 'Postalizzazione', icon: 'fa-envelope-circle-check', cls: 'channel-postal' },
+  CITIZEN_PORTAL: { label: 'Portale Cittadino', icon: 'fa-globe', cls: 'channel-portal' },
+};
+
+function ChannelBadge({ channel }: { channel: string }): React.JSX.Element {
+  const meta = CHANNEL_META[channel] ?? { label: channel || '—', icon: 'fa-paper-plane', cls: 'channel-generic' };
+  return (
+    <span className={`channel-badge ${meta.cls}`}>
+      {meta.logo ? (
+        <img src={meta.logo} alt="" width={14} height={14} aria-hidden="true" />
+      ) : (
+        <i className={`fas ${meta.icon}`} aria-hidden="true"></i>
+      )}
+      {meta.label}
+    </span>
+  );
+}
+
 export function App(): React.JSX.Element {
   const [token, setToken] = useState<string | null>(localStorage.getItem('comunicapa_citizen_token'));
   const [cf, setCf] = useState<string | null>(localStorage.getItem('comunicapa_citizen_cf'));
@@ -868,7 +891,7 @@ export function App(): React.JSX.Element {
                       >
                         <option value="all">Tutti</option>
                         {availableChannels.map((c) => (
-                          <option key={c} value={c}>{c}</option>
+                          <option key={c} value={c}>{CHANNEL_META[c]?.label ?? c}</option>
                         ))}
                       </select>
                     </div>
@@ -944,7 +967,7 @@ export function App(): React.JSX.Element {
                             </div>
                             <h4 className="notif-list-item-title">{n.subject || '—'}</h4>
                             <div className="notif-list-item-meta">
-                              <span>Canale: <strong>{n.channelType || '—'}</strong></span>
+                              <ChannelBadge channel={n.channelType} />
                               {isDownloaded && (
                                 <span className="status status-notif-received">
                                   <span className="dot"></span>Scaricato
@@ -1003,7 +1026,7 @@ export function App(): React.JSX.Element {
 
                     <div className="avviso-row">
                       <span className="k">Canale di invio</span>
-                      <span className="v">{selectedNotif.channelType || '—'}</span>
+                      <span className="v"><ChannelBadge channel={selectedNotif.channelType} /></span>
                     </div>
                     <div className="avviso-row">
                       <span className="k">Stato spedizione</span>

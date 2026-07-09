@@ -31,6 +31,22 @@ export function Footer({ entityName, logoUrl, version }: FooterProps): React.JSX
           </div>
         </div>
       </div>
+      <div className="f-partners">
+        <div className="container">
+          <span className="f-partners-lbl">Servizi collegati</span>
+          <a href="https://ioapp.it" target="_blank" rel="noopener noreferrer" className="f-partner-link">
+            <span className="f-partner-chip"><img src="https://ioapp.it/assets/IO_84d780c485.svg" alt="" width={16} height={16} /></span>
+            App IO
+          </a>
+          <a href="https://www.notifichedigitali.it" target="_blank" rel="noopener noreferrer" className="f-partner-link">
+            <span className="f-partner-chip"><img src="https://notifichedigitali.it/assets/logo_d7df1d4592.svg" alt="" width={16} height={16} /></span>
+            SEND — Notifiche Digitali
+          </a>
+          <a href="https://www.pagopa.it" target="_blank" rel="noopener noreferrer" className="f-partner-link">
+            <img src="https://www.pagopa.gov.it/assets/images/logo-pagopa-bianco.svg" alt="PagoPA" height={16} />
+          </a>
+        </div>
+      </div>
       <div className="f-bottom">
         <div className="container">
           <div>
