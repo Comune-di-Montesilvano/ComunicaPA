@@ -40,10 +40,21 @@ export interface DownloadCombinationDto {
   /** Canali da cui il destinatario ha scaricato (ordinati); [] = nessun download. */
   channels: string[];
   count: number;
+  /**
+   * true = destinatario notificato con successo (primario o App IO
+   * co-consegna); false = ha scaricato pur non risultando notificato con
+   * successo (es. portale con link ancora valido nonostante l'invio
+   * fallito). Il denominatore delle percentuali lato UI è `sentCount`, non
+   * il totale destinatari: mescolare i falliti (che non hanno mai avuto un
+   * link da scaricare) nella stessa percentuale dei "non scaricato" era
+   * fuorviante.
+   */
+  sentSuccessfully: boolean;
 }
 
 export interface DownloadCombinationStatsDto {
-  totalRecipients: number;
+  /** Destinatari notificati con successo — denominatore delle percentuali di download. */
+  sentCount: number;
   combinations: DownloadCombinationDto[];
 }
 

@@ -617,7 +617,7 @@ export function App(): React.JSX.Element {
   const [recipientsSearch, setRecipientsSearch] = useState('');
   const [recipientsPageNum, setRecipientsPageNum] = useState(1);
   const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number } | null>(null);
-  const [downloadCombinations, setDownloadCombinations] = useState<Array<{ channels: string[]; count: number }> | null>(null);
+  const [downloadCombinations, setDownloadCombinations] = useState<Array<{ channels: string[]; count: number; sentSuccessfully: boolean }> | null>(null);
   const [statsDateFrom, setStatsDateFrom] = useState(() => {
     const d = new Date();
     d.setMonth(d.getMonth() - 6);
@@ -6095,45 +6095,75 @@ export function App(): React.JSX.Element {
                             </h3>
                           </div>
                           <div className="card-body">
-                            {downloadCombinations ? (
-                              <>
-                                <ResponsiveContainer width="100%" height={220}>
-                                  <PieChart>
-                                    <Pie
-                                      data={downloadCombinations.map((c) => ({ label: downloadComboLabel(c.channels), value: c.count }))}
-                                      dataKey="value"
-                                      nameKey="label"
-                                      cx="50%"
-                                      cy="50%"
-                                      outerRadius={80}
-                                      label={renderPiePercentLabel}
-                                      labelLine={false}
-                                    >
-                                      {downloadCombinations.map((c, i) => (
-                                        <Cell key={c.channels.join('+') || 'none'} fill={c.channels.length === 0 ? '#adb5bd' : PIE_COLORS[i % PIE_COLORS.length]} />
-                                      ))}
-                                    </Pie>
-                                    <Tooltip />
-                                    <Legend />
-                                  </PieChart>
-                                </ResponsiveContainer>
-                                <table className="table table-sm mb-0 mt-2">
-                                  <tbody>
-                                    {(() => {
-                                      const total = downloadCombinations.reduce((sum, c) => sum + c.count, 0);
-                                      const pct = (n: number) => (total > 0 ? `${Math.round((n / total) * 100)}%` : '0%');
-                                      return downloadCombinations.map((c) => (
+                            {downloadCombinations ? (() => {
+                              // Percentuali calcolate solo sui destinatari notificati con successo
+                              // (sentSuccessfully): un fallito non ha mai avuto un link da scaricare,
+                              // mescolarlo nel bucket "non scaricato" renderebbe la % fuorviante su
+                              // campagne con molti fallimenti (già visibili in "Esito Invio").
+                              const successCombos = downloadCombinations.filter((c) => c.sentSuccessfully);
+                              const anomalyCombos = downloadCombinations.filter((c) => !c.sentSuccessfully);
+                              const sentCount = successCombos.reduce((sum, c) => sum + c.count, 0);
+                              const notDownloaded = successCombos.find((c) => c.channels.length === 0)?.count ?? 0;
+                              const downloaded = sentCount - notDownloaded;
+                              const pct = (n: number) => (sentCount > 0 ? `${Math.round((n / sentCount) * 100)}%` : '0%');
+
+                              return (
+                                <>
+                                  <div className="d-flex justify-content-center gap-5 text-center mb-3">
+                                    <div>
+                                      <div className="h4 mb-0 text-success">{pct(downloaded)}</div>
+                                      <div className="small text-muted">Scaricati ({downloaded})</div>
+                                    </div>
+                                    <div>
+                                      <div className="h4 mb-0 text-secondary">{pct(notDownloaded)}</div>
+                                      <div className="small text-muted">Non scaricati ({notDownloaded})</div>
+                                    </div>
+                                  </div>
+                                  <ResponsiveContainer width="100%" height={220}>
+                                    <PieChart>
+                                      <Pie
+                                        data={successCombos.map((c) => ({ label: downloadComboLabel(c.channels), value: c.count }))}
+                                        dataKey="value"
+                                        nameKey="label"
+                                        cx="50%"
+                                        cy="50%"
+                                        outerRadius={80}
+                                        label={renderPiePercentLabel}
+                                        labelLine={false}
+                                      >
+                                        {successCombos.map((c, i) => (
+                                          <Cell key={c.channels.join('+') || 'none'} fill={c.channels.length === 0 ? '#adb5bd' : PIE_COLORS[i % PIE_COLORS.length]} />
+                                        ))}
+                                      </Pie>
+                                      <Tooltip />
+                                      <Legend />
+                                    </PieChart>
+                                  </ResponsiveContainer>
+                                  <table className="table table-sm mb-0 mt-2">
+                                    <tbody>
+                                      {successCombos.map((c) => (
                                         <tr key={c.channels.join('+') || 'none'}>
                                           <td>{downloadComboLabel(c.channels)}</td>
                                           <td className="text-end fw-bold">{c.count}</td>
                                           <td className="text-end text-muted">{pct(c.count)}</td>
                                         </tr>
-                                      ));
-                                    })()}
-                                  </tbody>
-                                </table>
-                              </>
-                            ) : (
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                  {anomalyCombos.length > 0 && (
+                                    <div className="alert alert-warning small mt-3 mb-0">
+                                      <i className="fas fa-triangle-exclamation me-1"></i>
+                                      {anomalyCombos.reduce((sum, c) => sum + c.count, 0)} destinatari non notificati con successo hanno comunque scaricato l'allegato (es. link ancora valido da un tentativo precedente):
+                                      <ul className="mb-0 mt-1">
+                                        {anomalyCombos.map((c) => (
+                                          <li key={c.channels.join('+') || 'none'}>{downloadComboLabel(c.channels)}: {c.count}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            })() : (
                               <div className="text-center text-muted py-4">Nessun dato di download disponibile.</div>
                             )}
                           </div>

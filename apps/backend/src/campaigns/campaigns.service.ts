@@ -504,18 +504,43 @@ export class CampaignsService {
   }
 
   /**
-   * Combinazione canali di download per destinatario: raggruppa i destinatari
-   * in base all'insieme distinto di canali (portale cittadino, canale
-   * primario, App IO co-consegna, ecc.) da cui ciascuno ha scaricato
-   * l'allegato almeno una volta. Generico per qualsiasi tipo di campagna —
-   * non assume quali canali esistano, raggruppa per i canali realmente
-   * osservati nei DownloadEvent. Il totale dei conteggi (incluso il bucket
-   * "nessuno", `channels: []`) coincide sempre con `totalRecipients`.
+   * Combinazione canali di download per destinatario, tra i soli destinatari
+   * notificati con successo (primario SENT, oppure App IO co-consegna
+   * riuscita nonostante il primario fallito). I destinatari mai notificati
+   * (falliti, senza alcun canale riuscito) non hanno mai avuto un link da
+   * scaricare: mescolarli nel bucket "nessun download" renderebbe la
+   * percentuale fuorviante su campagne con molti fallimenti — restano
+   * visibili nel grafico "Esito Invio", non qui.
+   * Generico per qualsiasi tipo di campagna: raggruppa per i canali
+   * realmente osservati nei DownloadEvent (portale, primario, App IO...),
+   * non assume quali esistano. Se un destinatario NON notificato risulta
+   * comunque avere scaricato (es. link portale ancora valido da un invio
+   * precedente), la combinazione viene marcata `sentSuccessfully: false` e va
+   * mostrata separatamente lato UI, fuori dalla percentuale sul totale.
    */
   async getDownloadCombinationStats(campaignId: string): Promise<DownloadCombinationStatsDto> {
-    const recipients = await this.recipientRepo.find({ where: { campaignId }, select: ['id'] });
-    const totalRecipients = recipients.length;
-    if (totalRecipients === 0) return { totalRecipients: 0, combinations: [] };
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+
+    const recipients = await this.recipientRepo.find({ where: { campaignId }, select: ['id', 'status'] });
+    if (recipients.length === 0) return { sentCount: 0, combinations: [] };
+
+    const appIoSuccessByRecipient = new Map<string, boolean>();
+    if (resolveSecondaryAppIoConfig(campaign.channelConfig)) {
+      const nonSentIds = recipients.filter((r) => r.status !== RecipientStatus.SENT).map((r) => r.id);
+      if (nonSentIds.length > 0) {
+        const firstAttempts = await this.attemptRepo.find({
+          where: { recipientId: In(nonSentIds), attemptNumber: 1 },
+          select: ['recipientId', 'responsePayload'],
+        });
+        for (const a of firstAttempts) {
+          const appIo = a.responsePayload?.['appIo'] as { success?: boolean } | undefined;
+          if (appIo?.success) appIoSuccessByRecipient.set(a.recipientId, true);
+        }
+      }
+    }
+    const wasNotified = (r: { id: string; status: RecipientStatus }) =>
+      r.status === RecipientStatus.SENT || appIoSuccessByRecipient.get(r.id) === true;
 
     const rows = await this.downloadEventRepo
       .createQueryBuilder('de')
@@ -532,23 +557,29 @@ export class CampaignsService {
     }
 
     const countByKey = new Map<string, DownloadCombinationDto>();
-    let none = 0;
+    let sentCount = 0;
+    let notDownloadedSent = 0;
     for (const recipient of recipients) {
+      const notified = wasNotified(recipient);
+      if (notified) sentCount++;
+
       const channels = channelsByRecipient.get(recipient.id);
       if (!channels || channels.size === 0) {
-        none++;
+        if (notified) notDownloadedSent++;
+        // Non notificato e non scaricato: nessun link è mai esistito, non
+        // interessante per questo grafico (già coperto da "Esito Invio").
         continue;
       }
       const sorted = [...channels].sort();
-      const key = sorted.join('+');
+      const key = `${notified}|${sorted.join('+')}`;
       const existing = countByKey.get(key);
       if (existing) existing.count++;
-      else countByKey.set(key, { channels: sorted, count: 1 });
+      else countByKey.set(key, { channels: sorted, count: 1, sentSuccessfully: notified });
     }
 
     const combinations = [...countByKey.values()];
-    if (none > 0) combinations.push({ channels: [], count: none });
-    return { totalRecipients, combinations };
+    if (notDownloadedSent > 0) combinations.push({ channels: [], count: notDownloadedSent, sentSuccessfully: true });
+    return { sentCount, combinations };
   }
 
   async getGlobalStats(dateFrom?: string, dateTo?: string): Promise<GlobalStatsDto> {

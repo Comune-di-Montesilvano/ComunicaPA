@@ -513,22 +513,26 @@ describe('CampaignsService', () => {
   });
 
   describe('getDownloadCombinationStats', () => {
+    it('lancia NotFoundException se la campagna non esiste', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce(null);
+      await expect(service.getDownloadCombinationStats('missing')).rejects.toThrow(NotFoundException);
+    });
+
     it('ritorna combinazioni vuote se la campagna non ha destinatari', async () => {
       mockRecipientRepo.find.mockResolvedValueOnce([]);
 
       const result = await service.getDownloadCombinationStats('uuid-1');
 
-      expect(result).toEqual({ totalRecipients: 0, combinations: [] });
+      expect(result).toEqual({ sentCount: 0, combinations: [] });
       expect(mockDownloadEventRepo.createQueryBuilder).not.toHaveBeenCalled();
     });
 
-    it('raggruppa i destinatari per insieme distinto di canali di download, incluso il bucket "nessuno"', async () => {
+    it('raggruppa solo i destinatari notificati (SENT) per canale, esclude i falliti senza download', async () => {
       mockRecipientRepo.find.mockResolvedValueOnce([
-        { id: 'r-primary' },
-        { id: 'r-appio' },
-        { id: 'r-both' },
-        { id: 'r-portal-plus-primary' },
-        { id: 'r-none' },
+        { id: 'r-primary', status: RecipientStatus.SENT },
+        { id: 'r-portal-plus-primary', status: RecipientStatus.SENT },
+        { id: 'r-sent-not-downloaded', status: RecipientStatus.SENT },
+        { id: 'r-failed-no-download', status: RecipientStatus.FAILED },
       ]);
       const qbMock = {
         innerJoin: jest.fn().mockReturnThis(),
@@ -537,9 +541,6 @@ describe('CampaignsService', () => {
         where: jest.fn().mockReturnThis(),
         getRawMany: jest.fn().mockResolvedValue([
           { recipientId: 'r-primary', channel: 'EMAIL' },
-          { recipientId: 'r-appio', channel: 'APP_IO' },
-          { recipientId: 'r-both', channel: 'EMAIL' },
-          { recipientId: 'r-both', channel: 'APP_IO' },
           { recipientId: 'r-portal-plus-primary', channel: 'CITIZEN_PORTAL' },
           { recipientId: 'r-portal-plus-primary', channel: 'EMAIL' },
         ]),
@@ -548,17 +549,64 @@ describe('CampaignsService', () => {
 
       const result = await service.getDownloadCombinationStats('uuid-1');
 
-      expect(result.totalRecipients).toBe(5);
+      // sentCount conta i notificati (3 SENT); il fallito senza download non entra nel grafico.
+      expect(result.sentCount).toBe(3);
       expect(result.combinations).toEqual(
         expect.arrayContaining([
-          { channels: ['EMAIL'], count: 1 },
-          { channels: ['APP_IO'], count: 1 },
-          { channels: ['APP_IO', 'EMAIL'], count: 1 },
-          { channels: ['CITIZEN_PORTAL', 'EMAIL'], count: 1 },
-          { channels: [], count: 1 },
+          { channels: ['EMAIL'], count: 1, sentSuccessfully: true },
+          { channels: ['CITIZEN_PORTAL', 'EMAIL'], count: 1, sentSuccessfully: true },
+          { channels: [], count: 1, sentSuccessfully: true },
         ]),
       );
+      expect(result.combinations).toHaveLength(3);
       expect(qbMock.where).toHaveBeenCalledWith('r.campaignId = :campaignId', { campaignId: 'uuid-1' });
+    });
+
+    it('marca sentSuccessfully: false chi scarica pur non essendo notificato con successo', async () => {
+      mockRecipientRepo.find.mockResolvedValueOnce([
+        { id: 'r-failed-downloaded', status: RecipientStatus.FAILED },
+      ]);
+      const qbMock = {
+        innerJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([{ recipientId: 'r-failed-downloaded', channel: 'CITIZEN_PORTAL' }]),
+      };
+      mockDownloadEventRepo.createQueryBuilder = jest.fn().mockReturnValue(qbMock);
+
+      const result = await service.getDownloadCombinationStats('uuid-1');
+
+      expect(result.sentCount).toBe(0);
+      expect(result.combinations).toEqual([{ channels: ['CITIZEN_PORTAL'], count: 1, sentSuccessfully: false }]);
+    });
+
+    it('considera notificato con successo il fallito primario con App IO co-consegna riuscita (payload primo tentativo)', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({
+        ...mockCampaign,
+        channelConfig: { appIo: { mode: 'parallel', ioServiceId: 'svc-1' } },
+      });
+      mockRecipientRepo.find.mockResolvedValueOnce([{ id: 'r-appio-despite-fail', status: RecipientStatus.FAILED }]);
+      mockAttemptRepo.find = jest.fn().mockResolvedValueOnce([
+        { recipientId: 'r-appio-despite-fail', responsePayload: { appIo: { success: true } } },
+      ]);
+      const qbMock = {
+        innerJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([{ recipientId: 'r-appio-despite-fail', channel: 'APP_IO' }]),
+      };
+      mockDownloadEventRepo.createQueryBuilder = jest.fn().mockReturnValue(qbMock);
+
+      const result = await service.getDownloadCombinationStats('uuid-1');
+
+      expect(mockAttemptRepo.find).toHaveBeenCalledWith({
+        where: { recipientId: In(['r-appio-despite-fail']), attemptNumber: 1 },
+        select: ['recipientId', 'responsePayload'],
+      });
+      expect(result.sentCount).toBe(1);
+      expect(result.combinations).toEqual([{ channels: ['APP_IO'], count: 1, sentSuccessfully: true }]);
     });
   });
 
