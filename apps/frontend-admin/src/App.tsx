@@ -4464,27 +4464,30 @@ export function App(): React.JSX.Element {
                           <thead>
                             <tr>
                               <th>#</th><th>Stato</th><th>Canale</th><th>Data</th><th>Errore</th>
-                              {/* Colonna co-consegna App IO: non ha senso quando App IO è già il canale
-                                  primario della campagna — "Non tentato" leggerebbe come mancato invio. */}
-                              {notifDetail.campaign.channelType !== 'APP_IO' && <th>App IO</th>}
                             </tr>
                           </thead>
                           <tbody>
                             {notifDetail.attempts.map((a) => (
-                              <tr key={a.attemptNumber}>
-                                <td>{a.attemptNumber}</td>
-                                <td><StatusBadge status={a.status} /></td>
-                                <td className="small"><ChannelBadge channel={a.channelType} /></td>
-                                <td className="small text-muted">{new Date(a.createdAt).toLocaleString('it-IT')}</td>
-                                <td className="small text-danger">{a.errorMessage || '—'}</td>
-                                {notifDetail.campaign.channelType !== 'APP_IO' && (
-                                  <td className="small">
-                                    {a.appIo.attempted
-                                      ? (a.appIo.success ? <span className="text-success">Consegnato</span> : <span className="text-danger">{a.appIo.error || 'Non consegnato'}</span>)
-                                      : <span className="text-muted">Non tentato</span>}
-                                  </td>
+                              <React.Fragment key={a.attemptNumber}>
+                                <tr>
+                                  <td>{a.attemptNumber}</td>
+                                  <td><StatusBadge status={a.status} /></td>
+                                  <td className="small"><ChannelBadge channel={a.channelType} /></td>
+                                  <td className="small text-muted">{new Date(a.createdAt).toLocaleString('it-IT')}</td>
+                                  <td className="small text-danger">{a.errorMessage || '—'}</td>
+                                </tr>
+                                {/* Co-consegna App IO come tentativo a parte: non ha senso quando
+                                    App IO è già il canale primario della campagna. */}
+                                {notifDetail.campaign.channelType !== 'APP_IO' && a.appIo.attempted && (
+                                  <tr>
+                                    <td>{a.attemptNumber}</td>
+                                    <td><StatusBadge status={a.appIo.success ? 'success' : 'failed'} /></td>
+                                    <td className="small"><ChannelBadge channel="APP_IO" /></td>
+                                    <td className="small text-muted">{new Date(a.createdAt).toLocaleString('it-IT')}</td>
+                                    <td className="small text-danger">{a.appIo.success ? '—' : (a.appIo.error || 'Non consegnato')}</td>
+                                  </tr>
                                 )}
-                              </tr>
+                              </React.Fragment>
                             ))}
                           </tbody>
                         </table>
