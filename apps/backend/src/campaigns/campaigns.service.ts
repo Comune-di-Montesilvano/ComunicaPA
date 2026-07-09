@@ -24,11 +24,12 @@ import { NotificationQueuesService } from '../queue/notification-queues.service'
 import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util';
 import type { CreateCampaignDto } from './dto/create-campaign.dto';
 import type { UpdateCampaignDto } from './dto/update-campaign.dto';
-import type { CampaignStatsDto, RecipientStatsPageDto, ChannelBreakdownDto, DownloadCrossChannelStatsDto } from './dto/campaign-stats.dto';
+import type { CampaignStatsDto, RecipientStatsPageDto, ChannelBreakdownDto, DownloadCrossChannelStatsDto, FailureRowDto, FailureGroupDto, RetryBulkResultDto, DownloadReportRowDto } from './dto/campaign-stats.dto';
 import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.dto';
 import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util';
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto';
 
+const MAX_BULK_RETRY_SIZE = 500;
 
 @Injectable()
 export class CampaignsService {
@@ -53,10 +54,7 @@ export class CampaignsService {
   }
 
   async findOne(id: string): Promise<Campaign> {
-    const campaign = await this.campaignRepo.findOne({
-      where: { id },
-      relations: ['recipients', 'recipients.attempts'],
-    });
+    const campaign = await this.campaignRepo.findOneBy({ id });
     if (!campaign) throw new NotFoundException(`Campaign ${id} not found`);
     return campaign;
   }
@@ -669,37 +667,61 @@ export class CampaignsService {
     }));
   }
 
-  async getFailures(campaignId: string): Promise<Array<{
-    recipientId: string;
-    codiceFiscale: string;
-    fullName: string | null;
-    errorMessage: string | null;
-    attemptNumber: number;
-    lastAttemptAt: string;
-  }>> {
-    // Solo i destinatari il cui stato ATTUALE è FAILED (non righe di tentativi
-    // storici: un destinatario ritentato con successo non deve più comparire qui).
-    const failedRecipients = await this.recipientRepo.find({
-      where: { campaignId, status: RecipientStatus.FAILED },
-      order: { createdAt: 'DESC' },
-    });
+  async getFailures(campaignId: string): Promise<FailureRowDto[]> {
+    // Query singola con subquery DISTINCT ON invece di una findOne per
+    // destinatario: con decine di migliaia di FAILED la versione N+1
+    // precedente rendeva il caricamento del dettaglio campagna impraticabile.
+    const rows = await this.recipientRepo
+      .createQueryBuilder('r')
+      .leftJoin(
+        `(SELECT DISTINCT ON (recipient_id) recipient_id, error_message, attempt_number, created_at
+          FROM notification_attempts ORDER BY recipient_id, attempt_number DESC)`,
+        'la',
+        'la.recipient_id = r.id',
+      )
+      .select('r.id', 'recipientId')
+      .addSelect('r.codiceFiscale', 'codiceFiscale')
+      .addSelect('r.fullName', 'fullName')
+      .addSelect('la.error_message', 'errorMessage')
+      .addSelect('la.attempt_number', 'attemptNumber')
+      .addSelect('la.created_at', 'lastAttemptAt')
+      .addSelect('r.createdAt', 'recipientCreatedAt')
+      .where('r.campaignId = :campaignId', { campaignId })
+      .andWhere('r.status = :status', { status: RecipientStatus.FAILED })
+      .orderBy('r.createdAt', 'DESC')
+      .getRawMany<{
+        recipientId: string;
+        codiceFiscale: string;
+        fullName: string | null;
+        errorMessage: string | null;
+        attemptNumber: number | null;
+        lastAttemptAt: Date | null;
+        recipientCreatedAt: Date;
+      }>();
 
-    return Promise.all(
-      failedRecipients.map(async (r) => {
-        const lastAttempt = await this.attemptRepo.findOne({
-          where: { recipientId: r.id },
-          order: { attemptNumber: 'DESC' },
-        });
-        return {
-          recipientId: r.id,
-          codiceFiscale: r.codiceFiscale,
-          fullName: r.fullName,
-          errorMessage: lastAttempt?.errorMessage ?? null,
-          attemptNumber: lastAttempt?.attemptNumber ?? 0,
-          lastAttemptAt: (lastAttempt?.createdAt ?? r.createdAt).toISOString(),
-        };
-      }),
-    );
+    return rows.map((r) => ({
+      recipientId: r.recipientId,
+      codiceFiscale: r.codiceFiscale,
+      fullName: r.fullName,
+      errorMessage: r.errorMessage,
+      attemptNumber: r.attemptNumber ?? 0,
+      lastAttemptAt: (r.lastAttemptAt ?? r.recipientCreatedAt).toISOString(),
+    }));
+  }
+
+  async getFailuresByReason(campaignId: string): Promise<FailureGroupDto[]> {
+    const failures = await this.getFailures(campaignId);
+    const groups = new Map<string, FailureGroupDto>();
+
+    for (const f of failures) {
+      const key = f.errorMessage ?? 'Errore sconosciuto';
+      if (!groups.has(key)) groups.set(key, { errorMessage: key, count: 0, recipientIds: [] });
+      const group = groups.get(key)!;
+      group.count++;
+      group.recipientIds.push(f.recipientId);
+    }
+
+    return Array.from(groups.values()).sort((a, b) => b.count - a.count);
   }
 
   async retryRecipient(campaignId: string, recipientId: string): Promise<{ requeued: true; attemptId: string }> {
@@ -742,19 +764,69 @@ export class CampaignsService {
     return { requeued: true, attemptId };
   }
 
-  async getRecipientStats(campaignId: string, page: number, pageSize: number): Promise<RecipientStatsPageDto> {
+  async retryRecipientsBulk(campaignId: string, recipientIds: string[]): Promise<RetryBulkResultDto> {
+    if (recipientIds.length > MAX_BULK_RETRY_SIZE) {
+      throw new BadRequestException(
+        `Impossibile rimettere in coda più di ${MAX_BULK_RETRY_SIZE} destinatari in una sola richiesta (richiesti: ${recipientIds.length}). Riduci la selezione o contatta l'amministratore per un'operazione batch.`,
+      );
+    }
+
+    let requeued = 0;
+    const failed: Array<{ recipientId: string; reason: string }> = [];
+
+    for (const recipientId of recipientIds) {
+      try {
+        await this.retryRecipient(campaignId, recipientId);
+        requeued++;
+      } catch (e) {
+        failed.push({ recipientId, reason: e instanceof Error ? e.message : 'Errore sconosciuto' });
+      }
+    }
+
+    return { requeued, failed };
+  }
+
+  async getRecipientStats(campaignId: string, page: number, pageSize: number, search?: string): Promise<RecipientStatsPageDto> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
-    const [items, total] = await this.recipientRepo.findAndCount({
+    const qb = this.recipientRepo
+      .createQueryBuilder('r')
+      .select([
+        'r.id', 'r.fullName', 'r.codiceFiscale', 'r.email', 'r.pec', 'r.status',
+        'r.downloadCount', 'r.firstDownloadedAt', 'r.lastDownloadedAt', 'r.attachmentDeletedAt',
+      ])
+      .where('r.campaignId = :campaignId', { campaignId });
+
+    if (search && search.trim()) {
+      qb.andWhere('(r.fullName ILIKE :search OR r.codiceFiscale ILIKE :search)', { search: `%${search.trim()}%` });
+    }
+
+    const [items, total] = await qb
+      .orderBy('r.createdAt', 'ASC')
+      .skip((page - 1) * pageSize)
+      .take(pageSize)
+      .getManyAndCount();
+
+    return { campaignId, page, pageSize, total, items };
+  }
+
+  async getDownloadReportRows(campaignId: string): Promise<DownloadReportRowDto[]> {
+    const rows = await this.recipientRepo.find({
       where: { campaignId },
-      select: ['id', 'fullName', 'codiceFiscale', 'downloadCount', 'firstDownloadedAt', 'lastDownloadedAt', 'attachmentDeletedAt'],
-      skip: (page - 1) * pageSize,
-      take: pageSize,
+      select: ['codiceFiscale', 'fullName', 'email', 'pec', 'status', 'downloadCount', 'lastDownloadedAt'],
       order: { createdAt: 'ASC' },
     });
 
-    return { campaignId, page, pageSize, total, items };
+    return rows.map((r) => ({
+      codiceFiscale: r.codiceFiscale,
+      fullName: r.fullName,
+      email: r.email,
+      pec: r.pec,
+      status: r.status,
+      downloadCount: r.downloadCount,
+      lastDownloadedAt: r.lastDownloadedAt ? r.lastDownloadedAt.toISOString() : null,
+    }));
   }
 
   async assertDraftForAttachments(campaignId: string): Promise<void> {

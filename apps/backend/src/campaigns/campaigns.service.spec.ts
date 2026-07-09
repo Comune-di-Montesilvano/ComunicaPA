@@ -128,10 +128,11 @@ describe('CampaignsService', () => {
   it('findOne returns campaign by id', async () => {
     const result = await service.findOne('uuid-1');
     expect(result).toEqual(mockCampaign);
+    expect(mockCampaignRepo.findOneBy).toHaveBeenCalledWith({ id: 'uuid-1' });
   });
 
   it('findOne throws NotFoundException for unknown id', async () => {
-    mockCampaignRepo.findOne.mockResolvedValueOnce(null);
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce(null);
     await expect(service.findOne('no-exist')).rejects.toThrow(NotFoundException);
   });
 
@@ -234,19 +235,40 @@ describe('CampaignsService', () => {
     await expect(service.getStats('no-exist')).rejects.toThrow(NotFoundException);
   });
 
-  it('getRecipientStats pagina i risultati', async () => {
-    mockCampaignRepo.findOneBy.mockResolvedValueOnce(mockCampaign);
-    mockRecipientRepo.findAndCount = jest.fn().mockResolvedValue([
-      [{ id: 'r1', fullName: 'Mario Rossi', codiceFiscale: 'CF1', downloadCount: 1, firstDownloadedAt: new Date(), lastDownloadedAt: new Date(), attachmentDeletedAt: null }],
+  it('getRecipientStats pagina i risultati e seleziona i nuovi campi', async () => {
+    const qb: any = {};
+    ['select', 'where', 'andWhere', 'orderBy', 'skip', 'take'].forEach((m) => {
+      qb[m] = jest.fn().mockReturnValue(qb);
+    });
+    qb.getManyAndCount = jest.fn().mockResolvedValue([
+      [{ id: 'r1', fullName: 'Mario Rossi', codiceFiscale: 'AAA1', email: null, pec: null, status: 'sent', downloadCount: 0, firstDownloadedAt: null, lastDownloadedAt: null, attachmentDeletedAt: null }],
       1,
     ]);
+    mockRecipientRepo.createQueryBuilder = jest.fn().mockReturnValue(qb);
 
     const page = await service.getRecipientStats('uuid-1', 1, 20);
 
-    expect(page.total).toBe(1);
-    expect(page.items).toHaveLength(1);
-    expect(mockRecipientRepo.findAndCount).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { campaignId: 'uuid-1' }, skip: 0, take: 20 }),
+    expect(mockRecipientRepo.createQueryBuilder).toHaveBeenCalledWith('r');
+    expect(qb.where).toHaveBeenCalledWith('r.campaignId = :campaignId', { campaignId: 'uuid-1' });
+    expect(qb.andWhere).not.toHaveBeenCalled();
+    expect(qb.skip).toHaveBeenCalledWith(0);
+    expect(qb.take).toHaveBeenCalledWith(20);
+    expect(page).toEqual({ campaignId: 'uuid-1', page: 1, pageSize: 20, total: 1, items: expect.any(Array) });
+  });
+
+  it('getRecipientStats applica il filtro search su fullName o codiceFiscale', async () => {
+    const qb: any = {};
+    ['select', 'where', 'andWhere', 'orderBy', 'skip', 'take'].forEach((m) => {
+      qb[m] = jest.fn().mockReturnValue(qb);
+    });
+    qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
+    mockRecipientRepo.createQueryBuilder = jest.fn().mockReturnValue(qb);
+
+    await service.getRecipientStats('uuid-1', 1, 20, 'rossi');
+
+    expect(qb.andWhere).toHaveBeenCalledWith(
+      '(r.fullName ILIKE :search OR r.codiceFiscale ILIKE :search)',
+      { search: '%rossi%' },
     );
   });
 
@@ -827,7 +849,7 @@ describe('CampaignsService.getDuplicateSource', () => {
 
 describe('CampaignsService.getFailures / retryRecipient', () => {
   const campaignRepoMock = { findOneBy: jest.fn(), decrement: jest.fn() };
-  const recipientRepoMock = { findOne: jest.fn(), update: jest.fn(), find: jest.fn() };
+  const recipientRepoMock = { findOne: jest.fn(), update: jest.fn(), find: jest.fn(), createQueryBuilder: jest.fn() };
   const attemptRepoMock = {
     find: jest.fn(),
     findOne: jest.fn(),
@@ -860,22 +882,30 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
     }).compile();
 
   it('getFailures ritorna solo i destinatari il cui stato attuale è FAILED, con ultimo tentativo', async () => {
-    recipientRepoMock.find = jest.fn().mockResolvedValue([
-      { id: 'r1', codiceFiscale: 'RSSMRA80A01H501X', fullName: 'Mario Rossi', createdAt: new Date('2026-06-30T00:00:00Z') },
-    ]);
-    attemptRepoMock.findOne = jest.fn().mockResolvedValue({
-      errorMessage: 'SMTP timeout',
-      attemptNumber: 2,
-      createdAt: new Date('2026-07-01T10:00:00Z'),
+    const qb: any = {};
+    ['leftJoin', 'select', 'addSelect', 'where', 'andWhere', 'orderBy'].forEach((m) => {
+      qb[m] = jest.fn().mockReturnValue(qb);
     });
+    qb.getRawMany = jest.fn().mockResolvedValue([
+      {
+        recipientId: 'r1',
+        codiceFiscale: 'RSSMRA80A01H501X',
+        fullName: 'Mario Rossi',
+        errorMessage: 'SMTP timeout',
+        attemptNumber: 2,
+        lastAttemptAt: new Date('2026-07-01T10:00:00Z'),
+        recipientCreatedAt: new Date('2026-06-30T00:00:00Z'),
+      },
+    ]);
+    recipientRepoMock.createQueryBuilder = jest.fn().mockReturnValue(qb);
     const moduleRef = await buildModule();
     const service = moduleRef.get(CampaignsService);
 
     const result = await service.getFailures('c1');
 
-    expect(recipientRepoMock.find).toHaveBeenCalledWith(expect.objectContaining({
-      where: { campaignId: 'c1', status: 'failed' },
-    }));
+    expect(recipientRepoMock.createQueryBuilder).toHaveBeenCalledTimes(1);
+    expect(qb.where).toHaveBeenCalledWith('r.campaignId = :campaignId', { campaignId: 'c1' });
+    expect(qb.andWhere).toHaveBeenCalledWith('r.status = :status', { status: RecipientStatus.FAILED });
     expect(result).toEqual([{
       recipientId: 'r1',
       codiceFiscale: 'RSSMRA80A01H501X',
@@ -886,19 +916,62 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
     }]);
   });
 
-  it('getFailures non ritorna un destinatario FAILED poi ritentato con successo (SENT)', async () => {
-    // Il destinatario r1 è stato ritentato con successo: il suo stato attuale è SENT,
-    // quindi la query su Recipient con status FAILED non lo include più anche se
-    // esiste ancora una NotificationAttempt storica con status FAILED per lui.
-    recipientRepoMock.find = jest.fn().mockResolvedValue([]);
+  it('getFailures usa una query aggregata invece di una findOne per destinatario (no N+1)', async () => {
+    const qb: any = {};
+    ['leftJoin', 'select', 'addSelect', 'where', 'andWhere', 'orderBy'].forEach((m) => {
+      qb[m] = jest.fn().mockReturnValue(qb);
+    });
+    qb.getRawMany = jest.fn().mockResolvedValue([
+      {
+        recipientId: 'r1',
+        codiceFiscale: 'AAA1',
+        fullName: 'Mario Rossi',
+        errorMessage: 'timeout',
+        attemptNumber: 2,
+        lastAttemptAt: new Date('2026-07-01T10:00:00Z'),
+        recipientCreatedAt: new Date('2026-06-30T09:00:00Z'),
+      },
+      {
+        recipientId: 'r2',
+        codiceFiscale: 'BBB2',
+        fullName: null,
+        errorMessage: null,
+        attemptNumber: null,
+        lastAttemptAt: null,
+        recipientCreatedAt: new Date('2026-06-30T09:05:00Z'),
+      },
+    ]);
+    recipientRepoMock.createQueryBuilder = jest.fn().mockReturnValue(qb);
     const moduleRef = await buildModule();
     const service = moduleRef.get(CampaignsService);
 
     const result = await service.getFailures('c1');
 
-    expect(recipientRepoMock.find).toHaveBeenCalledWith(expect.objectContaining({
-      where: { campaignId: 'c1', status: 'failed' },
-    }));
+    expect(recipientRepoMock.createQueryBuilder).toHaveBeenCalledTimes(1);
+    expect(attemptRepoMock.findOne).not.toHaveBeenCalled();
+    expect(result).toEqual([
+      { recipientId: 'r1', codiceFiscale: 'AAA1', fullName: 'Mario Rossi', errorMessage: 'timeout', attemptNumber: 2, lastAttemptAt: '2026-07-01T10:00:00.000Z' },
+      { recipientId: 'r2', codiceFiscale: 'BBB2', fullName: null, errorMessage: null, attemptNumber: 0, lastAttemptAt: '2026-06-30T09:05:00.000Z' },
+    ]);
+  });
+
+  it('getFailures non ritorna un destinatario FAILED poi ritentato con successo (SENT)', async () => {
+    // Il destinatario r1 è stato ritentato con successo: il suo stato attuale è SENT,
+    // quindi la query su Recipient con status FAILED non lo include più anche se
+    // esiste ancora una NotificationAttempt storica con status FAILED per lui.
+    const qb: any = {};
+    ['leftJoin', 'select', 'addSelect', 'where', 'andWhere', 'orderBy'].forEach((m) => {
+      qb[m] = jest.fn().mockReturnValue(qb);
+    });
+    qb.getRawMany = jest.fn().mockResolvedValue([]);
+    recipientRepoMock.createQueryBuilder = jest.fn().mockReturnValue(qb);
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    const result = await service.getFailures('c1');
+
+    expect(qb.where).toHaveBeenCalledWith('r.campaignId = :campaignId', { campaignId: 'c1' });
+    expect(qb.andWhere).toHaveBeenCalledWith('r.status = :status', { status: RecipientStatus.FAILED });
     expect(result).toEqual([]);
   });
 
@@ -973,6 +1046,142 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
     );
     expect(queuesMock.addBulk).not.toHaveBeenCalled();
     expect(campaignRepoMock.decrement).not.toHaveBeenCalled();
+  });
+});
+
+describe('CampaignsService.getFailuresByReason', () => {
+  it('raggruppa i destinatari falliti per errorMessage con conteggio decrescente', async () => {
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      providers: [
+        CampaignsService,
+        { provide: getRepositoryToken(Campaign), useValue: {} },
+        { provide: getRepositoryToken(Recipient), useValue: {} },
+        { provide: getRepositoryToken(NotificationAttempt), useValue: {} },
+        { provide: getRepositoryToken(DownloadEvent), useValue: {} },
+        { provide: NotificationQueuesService, useValue: {} },
+        { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
+        { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
+      ],
+    }).compile();
+    const service = moduleRef.get(CampaignsService);
+
+    jest.spyOn(service, 'getFailures').mockResolvedValue([
+      { recipientId: 'r1', codiceFiscale: 'AAA1', fullName: 'A', errorMessage: 'timeout', attemptNumber: 1, lastAttemptAt: '2026-07-01T00:00:00.000Z' },
+      { recipientId: 'r2', codiceFiscale: 'BBB2', fullName: 'B', errorMessage: 'timeout', attemptNumber: 1, lastAttemptAt: '2026-07-01T00:00:00.000Z' },
+      { recipientId: 'r3', codiceFiscale: 'CCC3', fullName: 'C', errorMessage: 'CF non valido', attemptNumber: 1, lastAttemptAt: '2026-07-01T00:00:00.000Z' },
+      { recipientId: 'r4', codiceFiscale: 'DDD4', fullName: 'D', errorMessage: null, attemptNumber: 0, lastAttemptAt: '2026-07-01T00:00:00.000Z' },
+    ]);
+
+    const result = await service.getFailuresByReason('c1');
+
+    expect(result).toEqual([
+      { errorMessage: 'timeout', count: 2, recipientIds: ['r1', 'r2'] },
+      { errorMessage: 'CF non valido', count: 1, recipientIds: ['r3'] },
+      { errorMessage: 'Errore sconosciuto', count: 1, recipientIds: ['r4'] },
+    ]);
+  });
+});
+
+describe('CampaignsService.retryRecipientsBulk', () => {
+  it('ritenta ogni destinatario e conta successi/fallimenti separatamente', async () => {
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      providers: [
+        CampaignsService,
+        { provide: getRepositoryToken(Campaign), useValue: {} },
+        { provide: getRepositoryToken(Recipient), useValue: {} },
+        { provide: getRepositoryToken(NotificationAttempt), useValue: {} },
+        { provide: getRepositoryToken(DownloadEvent), useValue: {} },
+        { provide: NotificationQueuesService, useValue: {} },
+        { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
+        { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
+      ],
+    }).compile();
+    const service = moduleRef.get(CampaignsService);
+
+    jest
+      .spyOn(service, 'retryRecipient')
+      .mockResolvedValueOnce({ requeued: true, attemptId: 'a1' })
+      .mockRejectedValueOnce(new Error('Solo i destinatari in stato FAILED possono essere rimessi in coda'))
+      .mockResolvedValueOnce({ requeued: true, attemptId: 'a3' });
+
+    const result = await service.retryRecipientsBulk('c1', ['r1', 'r2', 'r3']);
+
+    expect(result).toEqual({
+      requeued: 2,
+      failed: [{ recipientId: 'r2', reason: 'Solo i destinatari in stato FAILED possono essere rimessi in coda' }],
+    });
+  });
+
+  it('rifiuta più di 500 recipientIds senza chiamare retryRecipient', async () => {
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      providers: [
+        CampaignsService,
+        { provide: getRepositoryToken(Campaign), useValue: {} },
+        { provide: getRepositoryToken(Recipient), useValue: {} },
+        { provide: getRepositoryToken(NotificationAttempt), useValue: {} },
+        { provide: getRepositoryToken(DownloadEvent), useValue: {} },
+        { provide: NotificationQueuesService, useValue: {} },
+        { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
+        { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
+      ],
+    }).compile();
+    const service = moduleRef.get(CampaignsService);
+    const retrySpy = jest.spyOn(service, 'retryRecipient').mockResolvedValue({ requeued: true, attemptId: 'a1' });
+
+    const tooMany = Array.from({ length: 501 }, (_, i) => `r${i}`);
+
+    await expect(service.retryRecipientsBulk('c1', tooMany)).rejects.toThrow(BadRequestException);
+    expect(retrySpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('CampaignsService.getDownloadReportRows', () => {
+  it('mappa i destinatari della campagna nel formato report', async () => {
+    const recipientRepoMock = { find: jest.fn() };
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      providers: [
+        CampaignsService,
+        { provide: getRepositoryToken(Campaign), useValue: {} },
+        { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
+        { provide: getRepositoryToken(NotificationAttempt), useValue: {} },
+        { provide: getRepositoryToken(DownloadEvent), useValue: {} },
+        { provide: NotificationQueuesService, useValue: {} },
+        { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
+        { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
+      ],
+    }).compile();
+    const service = moduleRef.get(CampaignsService);
+
+    recipientRepoMock.find = jest.fn().mockResolvedValueOnce([
+      {
+        codiceFiscale: 'AAA1',
+        fullName: 'Mario Rossi',
+        email: 'mario@example.com',
+        pec: null,
+        status: RecipientStatus.SENT,
+        downloadCount: 1,
+        lastDownloadedAt: new Date('2026-07-01T10:00:00Z'),
+      },
+    ]);
+
+    const result = await service.getDownloadReportRows('c1');
+
+    expect(recipientRepoMock.find).toHaveBeenCalledWith({
+      where: { campaignId: 'c1' },
+      select: ['codiceFiscale', 'fullName', 'email', 'pec', 'status', 'downloadCount', 'lastDownloadedAt'],
+      order: { createdAt: 'ASC' },
+    });
+    expect(result).toEqual([
+      {
+        codiceFiscale: 'AAA1',
+        fullName: 'Mario Rossi',
+        email: 'mario@example.com',
+        pec: null,
+        status: 'sent',
+        downloadCount: 1,
+        lastDownloadedAt: '2026-07-01T10:00:00.000Z',
+      },
+    ]);
   });
 });
 

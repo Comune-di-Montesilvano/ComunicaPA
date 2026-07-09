@@ -11,6 +11,9 @@ describe('CampaignsController', () => {
     finalizeAttachments: jest.fn().mockResolvedValue({ uploaded: 2, discarded: 0 }),
     remove: jest.fn().mockResolvedValue({ deleted: true }),
     getNeverDownloadedRecipients: jest.fn(),
+    getFailuresByReason: jest.fn(),
+    retryRecipientsBulk: jest.fn(),
+    getDownloadReportRows: jest.fn(),
   };
 
   beforeEach(() => {
@@ -20,33 +23,38 @@ describe('CampaignsController', () => {
 
   describe('getRecipientStats', () => {
     it('usa i valori di default quando page/pageSize non sono forniti', async () => {
-      await controller.getRecipientStats('uuid-1', undefined, undefined);
-      expect(mockService.getRecipientStats).toHaveBeenCalledWith('uuid-1', 1, 50);
+      await controller.getRecipientStats('uuid-1', undefined, undefined, undefined);
+      expect(mockService.getRecipientStats).toHaveBeenCalledWith('uuid-1', 1, 50, undefined);
     });
 
     it('rifiuta un page non numerico con BadRequestException', () => {
-      expect(() => controller.getRecipientStats('uuid-1', 'abc', undefined)).toThrow(BadRequestException);
+      expect(() => controller.getRecipientStats('uuid-1', 'abc', undefined, undefined)).toThrow(BadRequestException);
       expect(mockService.getRecipientStats).not.toHaveBeenCalled();
     });
 
     it('rifiuta un pageSize non numerico con BadRequestException', () => {
-      expect(() => controller.getRecipientStats('uuid-1', undefined, 'xyz')).toThrow(BadRequestException);
+      expect(() => controller.getRecipientStats('uuid-1', undefined, 'xyz', undefined)).toThrow(BadRequestException);
       expect(mockService.getRecipientStats).not.toHaveBeenCalled();
     });
 
     it('rifiuta un page negativo con BadRequestException', () => {
-      expect(() => controller.getRecipientStats('uuid-1', '-1', undefined)).toThrow(BadRequestException);
+      expect(() => controller.getRecipientStats('uuid-1', '-1', undefined, undefined)).toThrow(BadRequestException);
       expect(mockService.getRecipientStats).not.toHaveBeenCalled();
     });
 
     it('rifiuta un pageSize pari a zero con BadRequestException', () => {
-      expect(() => controller.getRecipientStats('uuid-1', undefined, '0')).toThrow(BadRequestException);
+      expect(() => controller.getRecipientStats('uuid-1', undefined, '0', undefined)).toThrow(BadRequestException);
       expect(mockService.getRecipientStats).not.toHaveBeenCalled();
     });
 
     it('accetta valori validi e li inoltra al servizio', async () => {
-      await controller.getRecipientStats('uuid-1', '2', '25');
-      expect(mockService.getRecipientStats).toHaveBeenCalledWith('uuid-1', 2, 25);
+      await controller.getRecipientStats('uuid-1', '2', '25', undefined);
+      expect(mockService.getRecipientStats).toHaveBeenCalledWith('uuid-1', 2, 25, undefined);
+    });
+
+    it('inoltra il parametro search al servizio', async () => {
+      await controller.getRecipientStats('uuid-1', '1', '50', 'rossi');
+      expect(mockService.getRecipientStats).toHaveBeenCalledWith('uuid-1', 1, 50, 'rossi');
     });
   });
 
@@ -116,6 +124,45 @@ describe('CampaignsController', () => {
       expect(mockService.getNeverDownloadedRecipients).toHaveBeenCalledWith(undefined, undefined);
       expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/csv; charset=utf-8');
       expect(res.setHeader).toHaveBeenCalledWith('Content-Disposition', 'attachment; filename="mai_scaricato.csv"');
+      expect(res.send).toHaveBeenCalledWith(expect.stringContaining('AAA1'));
+    });
+  });
+
+  describe('getFailuresByReason', () => {
+    it('chiama il service con l\'id campagna', async () => {
+      mockService.getFailuresByReason = jest.fn().mockResolvedValue([]);
+      await controller.getFailuresByReason('uuid-1');
+      expect(mockService.getFailuresByReason).toHaveBeenCalledWith('uuid-1');
+    });
+  });
+
+  describe('retryRecipientsBulk', () => {
+    it('rifiuta un body senza recipientIds', () => {
+      expect(() => controller.retryRecipientsBulk('uuid-1', undefined as any)).toThrow(BadRequestException);
+    });
+
+    it('rifiuta un array vuoto', () => {
+      expect(() => controller.retryRecipientsBulk('uuid-1', [])).toThrow(BadRequestException);
+    });
+
+    it('chiama il service con id campagna e recipientIds', async () => {
+      mockService.retryRecipientsBulk = jest.fn().mockResolvedValue({ requeued: 1, failed: [] });
+      await controller.retryRecipientsBulk('uuid-1', ['r1']);
+      expect(mockService.retryRecipientsBulk).toHaveBeenCalledWith('uuid-1', ['r1']);
+    });
+  });
+
+  describe('exportDownloadReportCsv', () => {
+    it('imposta gli header CSV e invia il body generato dal service', async () => {
+      mockService.getDownloadReportRows = jest.fn().mockResolvedValue([
+        { codiceFiscale: 'AAA1', fullName: null, email: null, pec: null, status: 'sent', downloadCount: 0, lastDownloadedAt: null },
+      ]);
+      const res = { setHeader: jest.fn(), send: jest.fn() } as any;
+
+      await controller.exportDownloadReportCsv('uuid-1', res);
+
+      expect(mockService.getDownloadReportRows).toHaveBeenCalledWith('uuid-1');
+      expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/csv; charset=utf-8');
       expect(res.send).toHaveBeenCalledWith(expect.stringContaining('AAA1'));
     });
   });

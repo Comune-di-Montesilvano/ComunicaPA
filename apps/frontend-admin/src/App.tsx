@@ -427,87 +427,6 @@ export function App(): React.JSX.Element {
     return [fn1, fn2].filter(Boolean).join(' ');
   };
 
-  const renderAppIoCoDeliveryBadge = (r: Recipient) => {
-    try {
-      if (!r.attempts) return null;
-
-      const firstAttempt = (r.attempts.find((a: any) => {
-        const num = a.attemptNumber ?? a.attempt_number;
-        const payload = a.responsePayload ?? a.response_payload;
-        return num === 1 || payload?.appIo || payload?.app_io;
-      }) ?? r.attempts[0]) as any;
-      
-      const payload = firstAttempt?.responsePayload ?? firstAttempt?.response_payload;
-      const appIo = payload?.appIo ?? payload?.app_io;
-      const deliveredVia = payload?.deliveredVia ?? payload?.delivered_via;
-      const status = firstAttempt?.status;
-      const errorMsg = firstAttempt?.errorMessage ?? firstAttempt?.error_message;
-
-      // Check if App IO co-delivery was configured (check both casings for campaign properties)
-      const campaignAny = campaign as any;
-      const channelConfig = campaignAny?.channelConfig ?? campaignAny?.channel_config;
-      const secondaryChannels = channelConfig?.secondaryChannels ?? channelConfig?.secondary_channels;
-      const appIoConfig = channelConfig?.appIo ?? channelConfig?.app_io;
-
-      const hasAppIoCoDelivery = 
-        secondaryChannels?.some((sc: any) => (sc?.channel === 'APP_IO' || sc?.['channel'] === 'APP_IO')) ||
-        !!appIoConfig;
-
-      let badge = null;
-
-      // 1. Check for parallel co-delivery result
-      if (appIo) {
-        const success = appIo.success;
-        const error = appIo.error;
-        if (success) {
-          badge = (
-            <span className="badge bg-primary d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem', alignSelf: 'start', backgroundColor: '#0059b3' }}>
-              <i className="fas fa-mobile-alt"></i> App IO: Inviato
-            </span>
-          );
-        } else {
-          badge = (
-            <span className="badge bg-danger d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem', alignSelf: 'start' }} title={error || 'Errore'}>
-              <i className="fas fa-mobile-alt"></i> App IO: Fallito
-            </span>
-          );
-        }
-      }
-      // 2. Check for exclusive co-delivery result
-      else if (deliveredVia === 'APP_IO') {
-        if (status === 'success') {
-          badge = (
-            <span className="badge bg-primary d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem', alignSelf: 'start', backgroundColor: '#0059b3' }}>
-              <i className="fas fa-mobile-alt"></i> App IO: Inviato (Esclusivo)
-            </span>
-          );
-        } else {
-          badge = (
-            <span className="badge bg-danger d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem', alignSelf: 'start' }} title={errorMsg || 'Errore'}>
-              <i className="fas fa-mobile-alt"></i> App IO: Fallito (Esclusivo)
-            </span>
-          );
-        }
-      }
-      // 3. Fallback to Non attivo if co-delivery configured
-      else if (hasAppIoCoDelivery) {
-        badge = (
-          <span className="badge bg-light text-muted border d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem', alignSelf: 'start' }}>
-            <i className="fas fa-mobile-alt"></i> App IO: Non attivo
-          </span>
-        );
-      }
-
-      return badge;
-    } catch (err: any) {
-      return (
-        <span className="badge bg-warning text-dark d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: '0.72rem' }}>
-          <i className="fas fa-exclamation-triangle"></i> Err: {err.message}
-        </span>
-      );
-    }
-  };
-
   // Con CSV senza header le colonne sono "Colonna N": senza un'anteprima del
   // valore reale l'operatore non ha modo di sapere quale colonna scegliere.
   const wizColumnOptionLabel = (h: string): string => {
@@ -652,11 +571,14 @@ export function App(): React.JSX.Element {
   const [detailError, setDetailError] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
   const [cancelling, setCancelling] = useState(false);
-  const [campaignFailures, setCampaignFailures] = useState<Array<{ recipientId: string; codiceFiscale: string; fullName: string | null; errorMessage: string | null; attemptNumber: number; lastAttemptAt: string }>>([]);
+  const [failureGroups, setFailureGroups] = useState<Array<{ errorMessage: string; count: number; recipientIds: string[] }>>([]);
+  const [retryingGroup, setRetryingGroup] = useState<string | null>(null);
+  const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number }> } | null>(null);
+  const [recipientsSearch, setRecipientsSearch] = useState('');
+  const [recipientsPageNum, setRecipientsPageNum] = useState(1);
   const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number } | null>(null);
   const [downloadByChannel, setDownloadByChannel] = useState<Record<string, number> | null>(null);
   const [downloadCrossChannel, setDownloadCrossChannel] = useState<{ primaryOnly: number; appIoOnly: number; both: number; none: number } | null>(null);
-  const [retryBusyId, setRetryBusyId] = useState<string | null>(null);
   const [statsDateFrom, setStatsDateFrom] = useState(() => {
     const d = new Date();
     d.setMonth(d.getMonth() - 6);
@@ -696,6 +618,15 @@ export function App(): React.JSX.Element {
     }
     return () => clearInterval(timer);
   }, [view, selectedCampaignId, campaign]);
+
+  // Ricarica la pagina destinatari su cambio pagina/ricerca (debounce sulla ricerca)
+  useEffect(() => {
+    if (!selectedCampaignId || view !== 'campaign-detail') return;
+    const handle = setTimeout(() => {
+      fetchRecipientsPage(selectedCampaignId, recipientsPageNum, recipientsSearch);
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [selectedCampaignId, view, recipientsPageNum, recipientsSearch]);
 
   useEffect(() => {
     if (token) {
@@ -857,26 +788,42 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const fetchCampaignFailures = async (campaignId: string) => {
+  const fetchFailureGroups = async (campaignId: string) => {
     try {
-      const res = await apiFetch(`/campaigns/${campaignId}/failures`);
-      if (res.ok) setCampaignFailures(await res.json());
-    } catch (err) {
-      if (err instanceof ApiAuthError) return;
-      throw err;
+      const res = await apiFetch(`/campaigns/${campaignId}/failures/by-reason`);
+      if (!res.ok) return;
+      setFailureGroups(await res.json());
+    } catch {
+      // Non bloccante.
     }
   };
 
-  const handleRetryRecipient = async (campaignId: string, recipientId: string) => {
-    setRetryBusyId(recipientId);
+  const MAX_BULK_RETRY_SIZE = 500;
+
+  const handleRetryGroup = async (group: { errorMessage: string; recipientIds: string[] }) => {
+    if (!selectedCampaignId) return;
+    if (group.recipientIds.length > MAX_BULK_RETRY_SIZE) {
+      alert(`Impossibile rimettere in coda più di ${MAX_BULK_RETRY_SIZE} destinatari in una sola richiesta (richiesti: ${group.recipientIds.length}). Riduci la selezione o contatta l'amministratore per un'operazione batch.`);
+      return;
+    }
+    if (!confirm(`Rimettere in coda ${group.recipientIds.length} destinatari con errore "${group.errorMessage}"?`)) return;
+    setRetryingGroup(group.errorMessage);
     try {
-      await fetch(`${ADMIN_API_BASE}/campaigns/${campaignId}/recipients/${recipientId}/retry`, {
+      const res = await apiFetch(`/campaigns/${selectedCampaignId}/recipients/retry-bulk`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipientIds: group.recipientIds }),
       });
-      await fetchCampaignFailures(campaignId);
+      if (!res.ok) throw new Error('Errore durante la rimessa in coda dei destinatari.');
+      const result = await res.json();
+      alert(`${result.requeued} destinatari rimessi in coda${result.failed.length > 0 ? `, ${result.failed.length} non ritentabili` : ''}`);
+      await fetchFailureGroups(selectedCampaignId);
+      await fetchCampaignDetail(selectedCampaignId);
+    } catch (err: any) {
+      if (err instanceof ApiAuthError) return;
+      alert(err.message);
     } finally {
-      setRetryBusyId(null);
+      setRetryingGroup(null);
     }
   };
 
@@ -1775,42 +1722,26 @@ export function App(): React.JSX.Element {
   };
 
 
-  const handleExportDownloadReport = () => {
-    if (!campaign || !campaign.recipients || campaign.recipients.length === 0) {
-      alert('Nessun destinatario da esportare');
-      return;
+  const handleExportDownloadReport = async () => {
+    if (!campaign) return;
+    try {
+      const res = await apiFetch(`/campaigns/${campaign.id}/export-download-report.csv`);
+      if (!res.ok) {
+        alert('Errore durante il download del report');
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `report_download_campagna_${campaign.id.slice(0, 8)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Errore durante il download del report');
     }
-
-    const headers = ['Codice Fiscale', 'Nominativo', 'Email', 'PEC', 'Stato Invio', 'Download Effettuati', 'Data Ultimo Download'];
-    const rows = campaign.recipients.map(r => {
-      const downloadCount = r.extraData?.['download_count'] ?? 0;
-      const downloadedAt = r.extraData?.['downloaded_at'] 
-        ? new Date(r.extraData['downloaded_at']).toLocaleString('it-IT')
-        : '';
-      return [
-        r.codiceFiscale,
-        r.fullName || '',
-        r.email || '',
-        r.pec || '',
-        r.status,
-        downloadCount,
-        downloadedAt
-      ];
-    });
-
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.map(val => `"${String(val).replace(/"/g, '""')}"`).join(','))
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `report_download_campagna_${campaign.id.slice(0, 8)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
   };
 
   const parseCsvFile = (file: File, hasHeaders: boolean) => {
@@ -1944,6 +1875,11 @@ export function App(): React.JSX.Element {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const cfRegex = /^[A-Z0-9]{16}$/i;
     const pivaRegex = /^\d{11}$/;
+    // Pattern reale del Codice Fiscale (non un generico alfanumerico a 16
+    // caratteri): App IO/PagoPA rifiuta con HTTP 400 qualunque valore che non
+    // rispetti questo formato, incluse le Partite IVA — che il controllo
+    // generico sotto accetta come alternativa valida per gli altri canali.
+    const cfAppIoRegex = /^[A-Z]{6}[0-9LMNPQRSTUV]{2}[ABCDEHLMPRST][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]$/i;
 
     const cfField = wizMapping.codice_fiscale;
     const emailField = wizMapping.email;
@@ -2007,7 +1943,14 @@ export function App(): React.JSX.Element {
         const valClean = row[cfField].trim().replace(/\s/g, '');
         const isCf = cfRegex.test(valClean);
         const isPiva = pivaRegex.test(valClean);
-        if (!isCf && !isPiva) {
+        if (wizAppIoInvolved && !cfAppIoRegex.test(valClean)) {
+          // App IO accetta solo CF di persona fisica: una P.IVA (o qualunque
+          // valore fuori pattern) qui va scartata subito, altrimenti l'errore
+          // emerge solo alla spedizione reale (HTTP 400 da PagoPA) dopo aver
+          // già consumato un tentativo.
+          errors.push({ row: rowNum, field: 'Codice Fiscale (App IO)', val: row[cfField], err: 'Codice Fiscale non valido per App IO: richiesto un CF di persona fisica, non una Partita IVA o un valore fuori formato' });
+          isRowValid = false;
+        } else if (!isCf && !isPiva) {
           if (isCfMandatory) {
             // Only block when CF/P.IVA is strictly required (App IO, SEND)
             errors.push({ row: rowNum, field: 'Codice Fiscale / P.IVA', val: row[cfField], err: 'Codice Fiscale (16 caratteri) o P.IVA (11 cifre) non valida' });
@@ -2479,12 +2422,15 @@ export function App(): React.JSX.Element {
     setSelectedCampaignId(id);
     setView('campaign-detail');
     setCampaign(null);
-    setCampaignFailures([]);
+    setFailureGroups([]);
     setChannelBreakdown(null);
     setDownloadByChannel(null);
     setDownloadCrossChannel(null);
+    setRecipientsPage(null);
+    setRecipientsSearch('');
+    setRecipientsPageNum(1);
     fetchCampaignDetail(id);
-    fetchCampaignFailures(id);
+    fetchFailureGroups(id);
     fetchChannelBreakdown(id);
     fetchDownloadChannelStats(id);
     fetchDownloadCrossChannelStats(id);
@@ -2498,6 +2444,21 @@ export function App(): React.JSX.Element {
       setChannelBreakdown(data.breakdown);
     } catch {
       // Non bloccante: la pagina dettaglio resta usabile senza il breakdown.
+    }
+  };
+
+  const RECIPIENTS_PAGE_SIZE = 50;
+
+  const fetchRecipientsPage = async (campaignId: string, page: number, search: string) => {
+    try {
+      const params = new URLSearchParams({ page: String(page), pageSize: String(RECIPIENTS_PAGE_SIZE) });
+      if (search.trim()) params.set('search', search.trim());
+      const res = await apiFetch(`/campaigns/${campaignId}/stats/recipients?${params.toString()}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setRecipientsPage(data);
+    } catch {
+      // Non bloccante: la tabella resta sullo stato precedente.
     }
   };
 
@@ -5643,29 +5604,28 @@ export function App(): React.JSX.Element {
                           </div>
                         )}
 
-                        {campaignFailures.length > 0 && (
+                        {failureGroups.length > 0 && (
                           <div className="mt-4 border-top pt-3">
                             <h4 className="small fw-bold mb-2 text-danger">
                               <i className="fas fa-triangle-exclamation me-1"></i>
-                              Destinatari con invio fallito ({campaignFailures.length})
+                              Destinatari con invio fallito ({failureGroups.reduce((sum, g) => sum + g.count, 0)}) — raggruppati per motivo
                             </h4>
                             <div className="table-responsive" style={{ maxHeight: 300, overflowY: 'auto' }}>
                               <table className="table table-sm">
-                                <thead><tr><th>CF</th><th>Nome</th><th>Tentativi</th><th>Motivo</th><th></th></tr></thead>
+                                <thead><tr><th>MOTIVO ERRORE</th><th className="text-end">DESTINATARI</th><th></th></tr></thead>
                                 <tbody>
-                                  {campaignFailures.map(f => (
-                                    <tr key={f.recipientId}>
-                                      <td className="font-monospace small">{f.codiceFiscale}</td>
-                                      <td className="small">{f.fullName || '—'}</td>
-                                      <td className="small">{f.attemptNumber}</td>
-                                      <td className="small text-danger">{f.errorMessage || '—'}</td>
-                                      <td>
+                                  {failureGroups.map((g) => (
+                                    <tr key={g.errorMessage}>
+                                      <td style={{ maxWidth: 400 }} className="text-break small text-danger">{g.errorMessage}</td>
+                                      <td className="text-end fw-bold small">{g.count}</td>
+                                      <td className="text-end">
                                         <button
                                           className="btn btn-sm btn-outline-primary"
-                                          disabled={retryBusyId === f.recipientId}
-                                          onClick={() => handleRetryRecipient(campaign.id, f.recipientId)}
+                                          disabled={retryingGroup === g.errorMessage}
+                                          onClick={() => handleRetryGroup(g)}
                                         >
-                                          <i className="fas fa-rotate-right me-1"></i>Rimetti in coda
+                                          <i className="fas fa-rotate-right me-1"></i>
+                                          {retryingGroup === g.errorMessage ? 'Rimetto in coda...' : 'Rimetti in coda tutti'}
                                         </button>
                                       </td>
                                     </tr>
@@ -5741,13 +5701,21 @@ export function App(): React.JSX.Element {
                     )}
 
                     <div className="card shadow-sm">
-                      <div className="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+                      <div className="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <h3 className="h6 mb-0 fw-bold text-dark">
-                          <i className="fas fa-users me-2"></i>Destinatari Caricati ({campaign.totalRecipients})
+                          <i className="fas fa-users me-2"></i>Destinatari Caricati ({recipientsPage?.total ?? campaign.totalRecipients})
                         </h3>
-                        <div className="d-flex align-items-center">
-                          {campaign.recipients && campaign.recipients.length > 0 && (
-                            <button className="btn btn-sm btn-outline-primary me-2 py-1" onClick={handleExportDownloadReport} title="Esporta Report CSV">
+                        <div className="d-flex align-items-center flex-wrap gap-2">
+                          <input
+                            type="text"
+                            className="form-control form-control-sm"
+                            style={{ maxWidth: 260 }}
+                            placeholder="Cerca per nominativo o CF..."
+                            value={recipientsSearch}
+                            onChange={(e) => { setRecipientsSearch(e.target.value); setRecipientsPageNum(1); }}
+                          />
+                          {(campaign?.totalRecipients ?? 0) > 0 && (
+                            <button className="btn btn-sm btn-outline-primary py-1" onClick={handleExportDownloadReport} title="Esporta Report CSV">
                               <i className="fas fa-file-excel me-1"></i> Esporta Report Download
                             </button>
                           )}
@@ -5757,56 +5725,66 @@ export function App(): React.JSX.Element {
                         </div>
                       </div>
                       <div className="card-body p-0">
-                        {!campaign.recipients || campaign.recipients.length === 0 ? (
+                        {!recipientsPage || recipientsPage.items.length === 0 ? (
                           <div className="text-center py-5 text-muted">Nessun destinatario associato a questa campagna.</div>
                         ) : (
-                          <div className="table-responsive" style={{ maxHeight: '400px', overflowY: 'auto' }}>
-                            <table className="table table-striped table-hover align-middle mb-0" style={{ fontSize: '0.82rem' }}>
-                              <thead className="table-light sticky-top">
-                                <tr>
-                                  <th>Codice Fiscale</th>
-                                  <th>Nominativo</th>
-                                  <th>Contatti (Email/PEC)</th>
-                                  <th>Stato Notifica</th>
-                                  <th className="text-center">Download</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {campaign.recipients.map((r) => (
-                                  <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => openNotificationDetail(r.id)}>
-                                    <td className="fw-mono fw-bold">{r.codiceFiscale}</td>
-                                    <td>{r.fullName || <span className="text-muted">N/D</span>}</td>
-                                    <td>
-                                      <div className="small d-flex flex-column gap-1">
-                                        {r.email && <div><i className="far fa-envelope me-1"></i> {r.email}</div>}
-                                        {r.pec && <div className="text-primary"><i className="fas fa-envelope-open-text me-1"></i> {r.pec}</div>}
-                                        {renderAppIoCoDeliveryBadge(r)}
-                                      </div>
-                                    </td>
-                                    <td>
-                                      <span className={`badge ${
-                                        r.status === 'pending' ? 'bg-secondary' :
-                                        r.status === 'queued' ? 'bg-info text-dark' :
-                                        r.status === 'sent' ? 'bg-success' :
-                                        r.status === 'failed' ? 'bg-danger' : 'bg-warning text-dark'
-                                      }`}>
-                                        {r.status.toUpperCase()}
-                                      </span>
-                                    </td>
-                                    <td className="text-center fw-bold">
-                                      {r.extraData?.['download_count'] ? (
-                                        <span className="text-success" title={`Scaricato il ${new Date(r.extraData['downloaded_at']).toLocaleDateString('it-IT')}`}>
-                                          <i className="fas fa-arrow-down me-1"></i> {r.extraData['download_count']}
-                                        </span>
-                                      ) : (
-                                        <span className="text-muted">—</span>
-                                      )}
-                                    </td>
+                          <>
+                            <div className="table-responsive" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                              <table className="table table-striped table-hover align-middle mb-0" style={{ fontSize: '0.82rem' }}>
+                                <thead className="table-light sticky-top">
+                                  <tr>
+                                    <th>Codice Fiscale</th>
+                                    <th>Nominativo</th>
+                                    <th>Contatti (Email/PEC)</th>
+                                    <th>Stato Notifica</th>
+                                    <th className="text-center">Download</th>
                                   </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
+                                </thead>
+                                <tbody>
+                                  {recipientsPage.items.map((r) => (
+                                    <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => openNotificationDetail(r.id)}>
+                                      <td className="fw-mono fw-bold">{r.codiceFiscale}</td>
+                                      <td>{r.fullName || <span className="text-muted">N/D</span>}</td>
+                                      <td>
+                                        <div className="small d-flex flex-column gap-1">
+                                          {r.email && <div><i className="far fa-envelope me-1"></i> {r.email}</div>}
+                                          {r.pec && <div className="text-primary"><i className="fas fa-envelope-open-text me-1"></i> {r.pec}</div>}
+                                        </div>
+                                      </td>
+                                      <td>
+                                        <span className={`badge ${
+                                          r.status === 'pending' ? 'bg-secondary' :
+                                          r.status === 'queued' ? 'bg-info text-dark' :
+                                          r.status === 'sent' ? 'bg-success' :
+                                          r.status === 'failed' ? 'bg-danger' : 'bg-warning text-dark'
+                                        }`}>
+                                          {r.status.toUpperCase()}
+                                        </span>
+                                      </td>
+                                      <td className="text-center fw-bold">
+                                        {r.downloadCount ? (
+                                          <span className="text-success">
+                                            <i className="fas fa-arrow-down me-1"></i> {r.downloadCount}
+                                          </span>
+                                        ) : (
+                                          <span className="text-muted">—</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                            <div className="d-flex justify-content-between align-items-center p-2 border-top">
+                              <span className="text-muted small">
+                                Pagina {recipientsPage.page} di {Math.max(1, Math.ceil(recipientsPage.total / recipientsPage.pageSize))}
+                              </span>
+                              <div className="btn-group btn-group-sm">
+                                <button className="btn btn-outline-secondary" disabled={recipientsPageNum <= 1} onClick={() => setRecipientsPageNum((p) => p - 1)}>Precedente</button>
+                                <button className="btn btn-outline-secondary" disabled={recipientsPageNum >= Math.ceil(recipientsPage.total / recipientsPage.pageSize)} onClick={() => setRecipientsPageNum((p) => p + 1)}>Successiva</button>
+                              </div>
+                            </div>
+                          </>
                         )}
                       </div>
                     </div>
@@ -5854,6 +5832,51 @@ export function App(): React.JSX.Element {
                               })()}
                             </tbody>
                           </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {!downloadCrossChannel && campaign.channelType === 'APP_IO' && (
+                      <div className="card shadow-sm mt-4">
+                        <div className="card-header bg-white py-3 border-bottom">
+                          <h3 className="h6 mb-0 fw-bold text-dark">
+                            <i className="fas fa-chart-pie me-2 text-primary"></i>Esito Invio e Download
+                          </h3>
+                        </div>
+                        <div className="card-body">
+                          <ResponsiveContainer width="100%" height={220}>
+                            <PieChart>
+                              <Pie
+                                data={[
+                                  { label: 'Inviati con successo', value: campaign.sentCount },
+                                  { label: 'Falliti', value: campaign.failedCount },
+                                ]}
+                                dataKey="value"
+                                nameKey="label"
+                                cx="50%"
+                                cy="50%"
+                                outerRadius={80}
+                                label
+                              >
+                                <Cell fill="var(--bi-success, #198754)" />
+                                <Cell fill="var(--bi-danger, #dc3545)" />
+                              </Pie>
+                              <Tooltip />
+                              <Legend />
+                            </PieChart>
+                          </ResponsiveContainer>
+                          {downloadByChannel && (
+                            <table className="table table-sm mb-0 mt-2">
+                              <tbody>
+                                {Object.entries(downloadByChannel).map(([channel, count]) => (
+                                  <tr key={channel}>
+                                    <td>{channel}</td>
+                                    <td className="text-end fw-bold">{count}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
                         </div>
                       </div>
                     )}

@@ -29,6 +29,7 @@ import { UpdateCampaignDto } from './dto/update-campaign.dto';
 import { PreviewMessageDto } from './dto/preview-message.dto';
 import { getUploadsDir } from '../attachments/attachment-paths';
 import { buildNeverDownloadedCsv } from './never-downloaded-csv.util';
+import { buildDownloadReportCsv } from './download-report-csv.util';
 import {
   assembleChunkedUpload,
   chunkUploadDir,
@@ -346,6 +347,11 @@ export class CampaignsController {
     return this.campaignsService.getFailures(id);
   }
 
+  @Get(':id/failures/by-reason')
+  getFailuresByReason(@Param('id', ParseUUIDPipe) id: string) {
+    return this.campaignsService.getFailuresByReason(id);
+  }
+
   @Post(':id/recipients/:recipientId/retry')
   retryRecipient(
     @Param('id', ParseUUIDPipe) id: string,
@@ -354,11 +360,23 @@ export class CampaignsController {
     return this.campaignsService.retryRecipient(id, recipientId);
   }
 
+  @Post(':id/recipients/retry-bulk')
+  retryRecipientsBulk(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body('recipientIds') recipientIds: string[],
+  ) {
+    if (!Array.isArray(recipientIds) || recipientIds.length === 0) {
+      throw new BadRequestException('recipientIds deve essere un array non vuoto');
+    }
+    return this.campaignsService.retryRecipientsBulk(id, recipientIds);
+  }
+
   @Get(':id/stats/recipients')
   getRecipientStats(
     @Param('id', ParseUUIDPipe) id: string,
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
+    @Query('search') search?: string,
   ) {
     const parsedPage = parseInt(page ?? '1', 10);
     const parsedPageSize = parseInt(pageSize ?? '50', 10);
@@ -370,7 +388,15 @@ export class CampaignsController {
       throw new BadRequestException('Il parametro pageSize deve essere un numero intero maggiore o uguale a 1');
     }
 
-    return this.campaignsService.getRecipientStats(id, parsedPage, parsedPageSize);
+    return this.campaignsService.getRecipientStats(id, parsedPage, parsedPageSize, search);
+  }
+
+  @Get(':id/export-download-report.csv')
+  async exportDownloadReportCsv(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response): Promise<void> {
+    const rows = await this.campaignsService.getDownloadReportRows(id);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="report_download_campagna_${id.slice(0, 8)}.csv"`);
+    res.send(buildDownloadReportCsv(rows));
   }
 
   @Delete(':id')

@@ -11,6 +11,9 @@ export interface RecipientStatDto {
   id: string;
   fullName: string | null;
   codiceFiscale: string;
+  email: string | null;
+  pec: string | null;
+  status: string;
   downloadCount: number;
   firstDownloadedAt: Date | null;
   lastDownloadedAt: Date | null;
@@ -38,4 +41,34 @@ export interface DownloadCrossChannelStatsDto {
   appIoOnly: number;
   both: number;
   none: number;
+}
+
+export interface FailureRowDto {
+  recipientId: string;
+  codiceFiscale: string;
+  fullName: string | null;
+  errorMessage: string | null;
+  attemptNumber: number;
+  lastAttemptAt: string;
+}
+
+export interface FailureGroupDto {
+  errorMessage: string;
+  count: number;
+  recipientIds: string[];
+}
+
+export interface RetryBulkResultDto {
+  requeued: number;
+  failed: Array<{ recipientId: string; reason: string }>;
+}
+
+export interface DownloadReportRowDto {
+  codiceFiscale: string;
+  fullName: string | null;
+  email: string | null;
+  pec: string | null;
+  status: string;
+  downloadCount: number;
+  lastDownloadedAt: string | null;
 }
