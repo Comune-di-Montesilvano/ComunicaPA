@@ -53,7 +53,7 @@ export function processTemplate(
               (label, index) =>
                 `<table style="width:100%; border-collapse: collapse; margin: 0 0 12px 0; background-color: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px;"><tr>` +
                 `<td style="padding: 16px 20px; font-weight: 600; color: #1a202c; font-size: 0.95rem;">📄 ${label}</td>` +
-                `<td style="padding: 16px 20px; text-align: right; white-space: nowrap;"><a href="${buildDownloadUrl(index)}" style="display:inline-block; background-color:#0066cc; color:#ffffff; text-decoration:none; font-weight:600; padding:10px 22px; border-radius:6px; font-size:0.875rem;">Scarica</a></td>` +
+                `<td style="padding: 16px 20px; text-align: right; white-space: nowrap;"><a href="${buildDownloadUrl(index)}" target="_blank" rel="noopener" style="display:inline-block; background-color:#0066cc; color:#ffffff; text-decoration:none; font-weight:600; padding:10px 22px; border-radius:6px; font-size:0.875rem;">Scarica</a></td>` +
                 `</tr></table>`,
             )
             .join('');

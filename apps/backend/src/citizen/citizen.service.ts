@@ -41,7 +41,9 @@ export class CitizenService {
   ) {}
 
   private async toCitizenDto(recipient: Recipient): Promise<CitizenNotificationDto> {
-    const preview = await this.campaignsService.renderMessageForRecipient(recipient.id, 'CITIZEN_PORTAL');
+    // preview=false: questo è il link REALE mostrato al cittadino nel suo portale,
+    // non un'anteprima backoffice — il click deve continuare a contare come download.
+    const preview = await this.campaignsService.renderMessageForRecipient(recipient.id, 'CITIZEN_PORTAL', false);
     const attachments = resolveAttachmentsConfig(recipient.campaign.channelConfig).map((a, index) => ({ index, label: a.label }));
     return {
       id: recipient.id,

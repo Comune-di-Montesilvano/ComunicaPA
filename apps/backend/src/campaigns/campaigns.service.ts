@@ -110,12 +110,17 @@ export class CampaignsService {
   }
 
   /**
-   * Rende oggetto+corpo di un destinatario REALE (già persistito), per la
-   * maschera di dettaglio notifica nella ricerca — mostra esattamente ciò
-   * che è stato realmente inviato, con lo stesso motore di `previewMessage`
-   * (nessuna duplicazione di logica).
+   * Rende oggetto+corpo di un destinatario REALE (già persistito), usata sia dal
+   * dettaglio notifica del backoffice sia dal portale cittadino (stesso motore di
+   * `previewMessage`, nessuna duplicazione di logica) — mostra esattamente ciò che
+   * è stato realmente inviato.
+   *
+   * `preview` distingue i due casi: true = link marcato come anteprima backoffice
+   * (un click dell'operatore non conta come download), false = link "vero" del
+   * portale cittadino (il click del cittadino DEVE continuare a contare — non
+   * passare mai true per il rendering mostrato al cittadino stesso).
    */
-  async renderMessageForRecipient(recipientId: string, linkChannelTag?: string): Promise<PreviewMessageResult> {
+  async renderMessageForRecipient(recipientId: string, linkChannelTag?: string, preview = true): Promise<PreviewMessageResult> {
     const recipient = await this.recipientRepo.findOne({ where: { id: recipientId }, relations: ['campaign'] });
     if (!recipient) throw new NotFoundException(`Recipient ${recipientId} not found`);
 
@@ -124,10 +129,7 @@ export class CampaignsService {
     const bodyTemplate = (campaign.channelConfig?.['body'] as string) || '';
     const attachmentLabels = resolveAttachmentsConfig(campaign.channelConfig).map((a) => a.label);
 
-    // preview=true: il link generato qui è per un recipient REALE (a differenza di
-    // previewMessage) e quindi cliccabile/valido — va marcato per non farlo contare
-    // come download del cittadino se un operatore lo apre dal dettaglio notifica.
-    return this.renderMessage(campaign.channelType, subjectTemplate, bodyTemplate, attachmentLabels, recipient, undefined, linkChannelTag, true);
+    return this.renderMessage(campaign.channelType, subjectTemplate, bodyTemplate, attachmentLabels, recipient, undefined, linkChannelTag, preview);
   }
 
   private async renderMessage(
