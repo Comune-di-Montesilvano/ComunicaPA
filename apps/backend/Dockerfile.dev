@@ -1,4 +1,6 @@
 FROM node:22-alpine
+RUN apk add --no-cache tzdata
+ENV TZ=Europe/Rome
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@latest --activate
 

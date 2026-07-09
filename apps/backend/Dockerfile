@@ -25,8 +25,9 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
 
 # ── Runtime ───────────────────────────────────────────────────────────────────
 FROM node:22-alpine
+RUN apk add --no-cache tzdata
 ARG APP_VERSION=dev
-ENV APP_VERSION=${APP_VERSION} NODE_ENV=production
+ENV APP_VERSION=${APP_VERSION} NODE_ENV=production TZ=Europe/Rome
 WORKDIR /app
 COPY --from=build --chown=node:node /prod/backend /app
 USER node
