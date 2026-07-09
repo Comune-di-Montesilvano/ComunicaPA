@@ -18,6 +18,7 @@ import { EnginesModule } from './engines/engines.module';
 import { IoServicesModule } from './io-services/io-services.module';
 import { NotificationsSearchModule } from './notifications-search/notifications-search.module';
 import { TemplatesModule } from './templates/templates.module';
+import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import configuration from './config/configuration';
@@ -43,6 +44,7 @@ import configuration from './config/configuration';
     IoServicesModule,
     NotificationsSearchModule,
     TemplatesModule,
+    AuditLogsModule,
   ],
   controllers: [AppController],
   providers: [

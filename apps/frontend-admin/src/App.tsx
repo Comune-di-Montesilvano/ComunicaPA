@@ -220,7 +220,7 @@ export function App(): React.JSX.Element {
   const [token, setToken] = useState<string | null>(localStorage.getItem('comunicapa_token'));
   const [username, setUsername] = useState<string | null>(localStorage.getItem('comunicapa_username'));
   const [role, setRole] = useState<string | null>(localStorage.getItem('comunicapa_role'));
-  const [view, setView] = useState<'dashboard' | 'invio-singolo' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'notifiche-ricerca' | 'verifica-appio' | 'template-dashboard' | 'impostazioni' | 'campaign-detail'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'invio-singolo' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'notifiche-ricerca' | 'verifica-appio' | 'template-dashboard' | 'impostazioni' | 'campaign-detail' | 'audit-logs'>('dashboard');
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [templates, setTemplates] = useState<TemplateItem[]>([]);
   const [editingTemplate, setEditingTemplate] = useState<Partial<TemplateItem> & { type: 'MAIL' | 'APP_IO' } | null>(null);
@@ -229,6 +229,13 @@ export function App(): React.JSX.Element {
   const [brandLogoUrl, setBrandLogoUrl] = useState<string | null>(null);
   const [brandName, setBrandName] = useState<string>('ComunicaPA');
   const [brandSubtitle, setBrandSubtitle] = useState<string>('Amministrazione & Gestione Invii');
+
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [auditTotal, setAuditTotal] = useState(0);
+  const [auditPage, setAuditPage] = useState(1);
+  const [auditPageSize] = useState(25);
+  const [auditSearch, setAuditSearch] = useState('');
+  const [auditLoading, setAuditLoading] = useState(false);
 
   const [searchCf, setSearchCf] = useState('');
   const [searchCampaignId, setSearchCampaignId] = useState('');
@@ -638,6 +645,15 @@ export function App(): React.JSX.Element {
 
   useEffect(() => { if (token) fetchTemplates(); }, [token]);
 
+  useEffect(() => {
+    if (view === 'audit-logs' && token) {
+      const handle = setTimeout(() => {
+        fetchAuditLogs(auditPage, auditSearch);
+      }, 300);
+      return () => clearTimeout(handle);
+    }
+  }, [view, token, auditPage, auditSearch]);
+
   // Carica le impostazioni persistite dal backend al login
   useEffect(() => {
     if (!token) return;
@@ -769,6 +785,29 @@ export function App(): React.JSX.Element {
       setDashboardError(err.message);
     } finally {
       setLoadingCampaigns(false);
+    }
+  };
+
+  const fetchAuditLogs = async (page = 1, search = '') => {
+    setAuditLoading(true);
+    try {
+      const params = new URLSearchParams();
+      params.append('page', String(page));
+      params.append('pageSize', String(auditPageSize));
+      if (search) {
+        params.append('search', search);
+      }
+      const res = await apiFetch(`/audit-logs?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        setAuditLogs(data.data || []);
+        setAuditTotal(data.total || 0);
+        setAuditPage(data.page || 1);
+      }
+    } catch (err) {
+      console.error('Errore durante il recupero dei log di audit:', err);
+    } finally {
+      setAuditLoading(false);
     }
   };
 
@@ -2743,6 +2782,14 @@ export function App(): React.JSX.Element {
               <span>Impostazioni</span>
             </a>
           )}
+          <a
+            className={`bo-nav-item ${view === 'audit-logs' ? 'is-active' : ''}`}
+            href="#"
+            onClick={(e) => { e.preventDefault(); setView('audit-logs'); setAuditPage(1); }}
+          >
+            <i className="fas fa-history"></i>
+            <span>Registro Attività</span>
+          </a>
         </nav>
 
         <div className="bo-sidebar-meta mt-auto">
@@ -2784,6 +2831,7 @@ export function App(): React.JSX.Element {
           {view === 'notifiche-ricerca' && 'Ricerca Notifiche'}
           {view === 'template-dashboard' && 'Template'}
           {view === 'impostazioni' && 'Impostazioni di Sistema'}
+          {view === 'audit-logs' && 'Registro Attività'}
           {view === 'campaign-detail' && `Dettaglio Campagna / ${campaign?.name || '...'}`}
         </h2>
 
@@ -5467,6 +5515,215 @@ export function App(): React.JSX.Element {
                     </div>
                   </div>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* VIEW: AUDIT LOGS */}
+          {view === 'audit-logs' && (
+            <div className="card shadow-sm border-0 rounded-3">
+              <div className="card-header bg-white border-0 pt-4 pb-3">
+                <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                  <div>
+                    <h3 className="h5 mb-1 text-dark fw-bold">Registro Attività</h3>
+                    <p className="text-muted small mb-0">Cronologia di tutte le operazioni effettuate sulle campagne di invio massivo</p>
+                  </div>
+                  <div style={{ maxWidth: '350px', width: '100%' }}>
+                    <div className="input-group">
+                      <span className="input-group-text bg-light border-end-0 text-muted">
+                        <i className="fas fa-search"></i>
+                      </span>
+                      <input
+                        type="text"
+                        className="form-control bg-light border-start-0 ps-0 shadow-none"
+                        placeholder="Cerca per operatore o campagna..."
+                        value={auditSearch}
+                        onChange={(e) => { setAuditSearch(e.target.value); setAuditPage(1); }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="card-body p-0">
+                {auditLoading ? (
+                  <div className="d-flex justify-content-center align-items-center py-5">
+                    <div className="spinner-border text-primary" role="status">
+                      <span className="visually-hidden">Caricamento in corso...</span>
+                    </div>
+                  </div>
+                ) : auditLogs.length === 0 ? (
+                  <div className="text-center py-5 text-muted">
+                    <i className="fas fa-history fa-3x mb-3 text-light"></i>
+                    <p className="mb-0">Nessuna attività registrata con i filtri correnti.</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="table-responsive">
+                      <table className="table table-hover align-middle mb-0" style={{ borderCollapse: 'separate' }}>
+                        <thead className="table-light text-muted small text-uppercase">
+                          <tr>
+                            <th className="px-4 py-3" style={{ width: '180px' }}>Data e Ora</th>
+                            <th className="py-3" style={{ width: '180px' }}>Operatore</th>
+                            <th className="py-3" style={{ width: '180px' }}>Operazione</th>
+                            <th className="py-3">Campagna</th>
+                            <th className="px-4 py-3">Dettagli</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {auditLogs.map((log) => {
+                            let badgeClass = 'bg-secondary';
+                            let actionText = log.action;
+                            if (log.action === 'CREATE') {
+                              badgeClass = 'bg-success-subtle text-success border border-success-subtle';
+                              actionText = 'Creazione';
+                            } else if (log.action === 'UPDATE_DRAFT') {
+                              badgeClass = 'bg-info-subtle text-info border border-info-subtle';
+                              actionText = 'Modifica';
+                            } else if (log.action === 'UPLOAD_RECIPIENTS') {
+                              badgeClass = 'bg-primary-subtle text-primary border border-primary-subtle';
+                              actionText = 'Destinatari';
+                            } else if (log.action === 'UPLOAD_ATTACHMENTS') {
+                              badgeClass = 'bg-primary-subtle text-primary border border-primary-subtle';
+                              actionText = 'Allegati';
+                            } else if (log.action === 'LAUNCH') {
+                              badgeClass = 'bg-success text-white border border-success';
+                              actionText = 'Lancio';
+                            } else if (log.action === 'CANCEL') {
+                              badgeClass = 'bg-warning-subtle text-warning border border-warning-subtle';
+                              actionText = 'Annullamento';
+                            } else if (log.action === 'DELETE') {
+                              badgeClass = 'bg-danger-subtle text-danger border border-danger-subtle';
+                              actionText = 'Eliminazione';
+                            } else if (log.action === 'RETRY') {
+                              badgeClass = 'bg-warning-subtle text-warning border border-warning-subtle';
+                              actionText = 'Rinvio';
+                            }
+
+                            // Dettagli dinamici descrittivi
+                            let detailText = '';
+                            if (log.action === 'CREATE') {
+                              detailText = 'Creazione bozza campagna';
+                            } else if (log.action === 'UPDATE_DRAFT') {
+                              detailText = 'Modifica parametri/configurazione';
+                            } else if (log.action === 'UPLOAD_RECIPIENTS') {
+                              const fn = log.details?.filename || 'destinatari.csv';
+                              const count = log.details?.imported || 0;
+                              detailText = `Caricamento file CSV "${fn}" (${count} destinatari importati)`;
+                            } else if (log.action === 'UPLOAD_ATTACHMENTS') {
+                              const up = log.details?.uploaded || 0;
+                              const disc = log.details?.discarded || 0;
+                              const fn = log.details?.filename;
+                              detailText = fn 
+                                ? `Caricato pacchetto allegati "${fn}" (${up} caricati, ${disc} scartati)`
+                                : `Caricamento allegati singoli (${up} caricati, ${disc} scartati)`;
+                            } else if (log.action === 'LAUNCH') {
+                              const l = log.details?.launched || 0;
+                              detailText = `Lancio completato, ${l} notifiche messe in coda per l'invio`;
+                            } else if (log.action === 'CANCEL') {
+                              const c = log.details?.cancelled || 0;
+                              detailText = `Invio annullato, ${c} tentativi non ancora inviati rimossi dalla coda`;
+                            } else if (log.action === 'DELETE') {
+                              detailText = 'Campagna eliminata definitivamente dal sistema';
+                            } else if (log.action === 'RETRY') {
+                              const count = log.details?.count;
+                              detailText = count 
+                                ? `Rinvio bulk avviato per ${count} notifiche fallite`
+                                : `Rinvio avviato per notifica fallita`;
+                            } else if (log.details) {
+                              detailText = JSON.stringify(log.details);
+                            }
+
+                            return (
+                              <tr key={log.id}>
+                                <td className="px-4 text-muted small">
+                                  {new Date(log.createdAt).toLocaleString('it-IT')}
+                                </td>
+                                <td className="fw-medium text-dark">
+                                  <i className="fas fa-user-circle me-2 text-muted"></i>
+                                  {log.operator}
+                                </td>
+                                <td>
+                                  <span className={`badge ${badgeClass} px-2.5 py-1.5 rounded-pill font-monospace small`} style={{ fontSize: '0.75rem' }}>
+                                    {actionText}
+                                  </span>
+                                </td>
+                                <td>
+                                  {log.campaignId && log.action !== 'DELETE' ? (
+                                    <a
+                                      href="#"
+                                      className="text-decoration-none fw-semibold"
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        setSelectedCampaignId(log.campaignId);
+                                        setView('campaign-detail');
+                                      }}
+                                    >
+                                      {log.campaignName || 'Visualizza Dettaglio'}
+                                    </a>
+                                  ) : (
+                                    <span className="text-muted text-italic">
+                                      {log.campaignName || 'Nessun riferimento'}
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="px-4 text-muted small">
+                                  {detailText}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Pagination */}
+                    {auditTotal > auditPageSize && (
+                      <div className="card-footer bg-white border-0 d-flex flex-column flex-md-row justify-content-between align-items-center gap-3 py-3 px-4">
+                        <span className="small text-muted">
+                          Mostrati <strong>{((auditPage - 1) * auditPageSize) + 1}</strong> - <strong>{Math.min(auditPage * auditPageSize, auditTotal)}</strong> di <strong>{auditTotal}</strong> risultati
+                        </span>
+                        <nav aria-label="Navigazione pagine audit logs">
+                          <ul className="pagination pagination-sm mb-0">
+                            <li className={`page-item ${auditPage === 1 ? 'disabled' : ''}`}>
+                              <button
+                                className="page-item page-link border-0 rounded-circle me-1"
+                                onClick={() => setAuditPage((p) => Math.max(p - 1, 1))}
+                                disabled={auditPage === 1}
+                              >
+                                <i className="fas fa-chevron-left"></i>
+                              </button>
+                            </li>
+                            {Array.from({ length: Math.ceil(auditTotal / auditPageSize) }, (_, i) => i + 1).map((p) => {
+                              const isNear = Math.abs(p - auditPage) <= 2;
+                              const isEdge = p === 1 || p === Math.ceil(auditTotal / auditPageSize);
+                              if (!isNear && !isEdge) return null;
+                              
+                              return (
+                                <li key={p} className={`page-item ${auditPage === p ? 'active' : ''}`}>
+                                  <button
+                                    className={`page-link border-0 rounded-circle mx-1 ${auditPage === p ? 'bg-primary text-white' : 'text-dark bg-transparent'}`}
+                                    onClick={() => setAuditPage(p)}
+                                  >
+                                    {p}
+                                  </button>
+                                </li>
+                              );
+                            })}
+                            <li className={`page-item ${auditPage >= Math.ceil(auditTotal / auditPageSize) ? 'disabled' : ''}`}>
+                              <button
+                                className="page-item page-link border-0 rounded-circle ms-1"
+                                onClick={() => setAuditPage((p) => Math.min(p + 1, Math.ceil(auditTotal / auditPageSize)))}
+                                disabled={auditPage >= Math.ceil(auditTotal / auditPageSize)}
+                              >
+                                <i className="fas fa-chevron-right"></i>
+                              </button>
+                            </li>
+                          </ul>
+                        </nav>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             </div>
           )}

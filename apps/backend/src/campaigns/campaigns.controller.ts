@@ -24,6 +24,7 @@ import type { JwtOperatorPayload } from '@comunicapa/shared-types';
 import type { Campaign } from '../entities/campaign.entity';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CampaignsService } from './campaigns.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { UpdateCampaignDto } from './dto/update-campaign.dto';
 import { PreviewMessageDto } from './dto/preview-message.dto';
@@ -41,7 +42,10 @@ import {
 @Controller('admin/campaigns')
 @Roles('user', 'admin')
 export class CampaignsController {
-  constructor(private readonly campaignsService: CampaignsService) {}
+  constructor(
+    private readonly campaignsService: CampaignsService,
+    private readonly auditLogsService: AuditLogsService,
+  ) {}
 
   @Get()
   findAll(): Promise<Campaign[]> {
@@ -54,18 +58,36 @@ export class CampaignsController {
   }
 
   @Post()
-  create(
+  async create(
     @Body() dto: CreateCampaignDto,
     @Req() req: Request & { user: JwtOperatorPayload },
   ): Promise<Campaign> {
-    return this.campaignsService.create(dto, req.user.username);
+    const campaign = await this.campaignsService.create(dto, req.user.username);
+    await this.auditLogsService.log({
+      campaignId: campaign.id,
+      campaignName: campaign.name,
+      operator: req.user.username,
+      action: 'CREATE',
+      details: { name: campaign.name, channelType: campaign.channelType },
+    });
+    return campaign;
   }
-
   @Patch(':id')
-  updateDraft(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateCampaignDto) {
-    return this.campaignsService.updateDraft(id, dto);
+  async updateDraft(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateCampaignDto,
+    @Req() req: Request & { user: JwtOperatorPayload },
+  ) {
+    const campaign = await this.campaignsService.updateDraft(id, dto);
+    await this.auditLogsService.log({
+      campaignId: campaign.id,
+      campaignName: campaign.name,
+      operator: req.user.username,
+      action: 'UPDATE_DRAFT',
+      details: { name: campaign.name, channelType: campaign.channelType },
+    });
+    return campaign;
   }
-
   @Post('preview')
   previewMessage(@Body() dto: PreviewMessageDto) {
     return this.campaignsService.previewMessage(dto);
@@ -87,14 +109,24 @@ export class CampaignsController {
       limits: { fileSize: 50 * 1024 * 1024 },
     }),
   )
-  uploadCsv(
+  async uploadCsv(
     @Param('id', ParseUUIDPipe) id: string,
     @UploadedFile() file: Express.Multer.File,
+    @Req() req: Request & { user: JwtOperatorPayload },
   ): Promise<{ imported: number; campaignId: string; blocked?: boolean; message?: string }> {
     if (!file) {
       throw new BadRequestException('File CSV richiesto (Content-Type: text/csv)');
     }
-    return this.campaignsService.uploadCsv(id, file.path);
+    const result = await this.campaignsService.uploadCsv(id, file.path);
+    const campaign = await this.campaignsService.findOne(id).catch(() => null);
+    await this.auditLogsService.log({
+      campaignId: id,
+      campaignName: campaign ? campaign.name : null,
+      operator: req.user.username,
+      action: 'UPLOAD_RECIPIENTS',
+      details: { imported: result.imported, filename: file.originalname },
+    });
+    return result;
   }
 
   // ── Upload CSV destinatari a chunk ──────────────────────────────────────
@@ -142,10 +174,20 @@ export class CampaignsController {
   async completeRecipientsChunkedUpload(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('uploadId') uploadId: string,
+    @Req() req: Request & { user: JwtOperatorPayload },
   ): Promise<{ imported: number; campaignId: string; blocked?: boolean; message?: string }> {
     try {
       const { path } = await assembleChunkedUpload(uploadId);
-      return await this.campaignsService.uploadCsv(id, path);
+      const result = await this.campaignsService.uploadCsv(id, path);
+      const campaign = await this.campaignsService.findOne(id).catch(() => null);
+      await this.auditLogsService.log({
+        campaignId: id,
+        campaignName: campaign ? campaign.name : null,
+        operator: req.user.username,
+        action: 'UPLOAD_RECIPIENTS',
+        details: { imported: result.imported, filename: 'chunked_upload.csv' },
+      });
+      return result;
     } catch (err: any) {
       return { imported: 0, campaignId: id, blocked: true, message: err?.message ?? 'Errore durante il riassemblaggio dei chunk' };
     } finally {
@@ -178,6 +220,7 @@ export class CampaignsController {
   async uploadAttachments(
     @Param('id', ParseUUIDPipe) id: string,
     @UploadedFiles() files: Express.Multer.File[],
+    @Req() req: Request & { user: JwtOperatorPayload },
   ) {
     // FilesInterceptor + diskStorage scrivono i file su disco PRIMA che questo handler venga
     // eseguito. Se la campagna non è in DRAFT il file (potenzialmente sovrascritto) è già a
@@ -192,6 +235,14 @@ export class CampaignsController {
       throw err;
     }
     const result = await this.campaignsService.finalizeAttachments(id, files ?? []);
+    const campaign = await this.campaignsService.findOne(id).catch(() => null);
+    await this.auditLogsService.log({
+      campaignId: id,
+      campaignName: campaign ? campaign.name : null,
+      operator: req.user.username,
+      action: 'UPLOAD_ATTACHMENTS',
+      details: { uploaded: result.uploaded, discarded: result.discarded, fileCount: (files ?? []).length },
+    });
     return {
       uploaded: result.uploaded,
       discarded: result.discarded,
@@ -243,6 +294,7 @@ export class CampaignsController {
   async completeAttachmentsChunkedUpload(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('uploadId') uploadId: string,
+    @Req() req: Request & { user: JwtOperatorPayload },
   ): Promise<{ uploaded: number; discarded: number; campaignId: string; blocked?: boolean; message?: string }> {
     try {
       await this.campaignsService.assertDraftForAttachments(id);
@@ -267,6 +319,14 @@ export class CampaignsController {
         }
         result = await this.campaignsService.finalizeAttachments(id, []);
       }
+      const campaign = await this.campaignsService.findOne(id).catch(() => null);
+      await this.auditLogsService.log({
+        campaignId: id,
+        campaignName: campaign ? campaign.name : null,
+        operator: req.user.username,
+        action: 'UPLOAD_ATTACHMENTS',
+        details: { uploaded: result.uploaded, discarded: result.discarded, filename },
+      });
       return { uploaded: result.uploaded, discarded: result.discarded, campaignId: id };
     } catch (err: any) {
       return {
@@ -282,17 +342,37 @@ export class CampaignsController {
   }
 
   @Post(':id/launch')
-  launch(
+  async launch(
     @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request & { user: JwtOperatorPayload },
   ): Promise<{ launched: number; campaignId: string }> {
-    return this.campaignsService.launch(id);
+    const result = await this.campaignsService.launch(id);
+    const campaign = await this.campaignsService.findOne(id).catch(() => null);
+    await this.auditLogsService.log({
+      campaignId: id,
+      campaignName: campaign ? campaign.name : null,
+      operator: req.user.username,
+      action: 'LAUNCH',
+      details: { launched: result.launched },
+    });
+    return result;
   }
 
   @Post(':id/cancel')
-  cancel(
+  async cancel(
     @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request & { user: JwtOperatorPayload },
   ): Promise<{ cancelled: number; campaignId: string }> {
-    return this.campaignsService.cancel(id);
+    const result = await this.campaignsService.cancel(id);
+    const campaign = await this.campaignsService.findOne(id).catch(() => null);
+    await this.auditLogsService.log({
+      campaignId: id,
+      campaignName: campaign ? campaign.name : null,
+      operator: req.user.username,
+      action: 'CANCEL',
+      details: { cancelled: result.cancelled },
+    });
+    return result;
   }
 
   @Get(':id/duplicate-source')
@@ -353,22 +433,43 @@ export class CampaignsController {
   }
 
   @Post(':id/recipients/:recipientId/retry')
-  retryRecipient(
+  async retryRecipient(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('recipientId', ParseUUIDPipe) recipientId: string,
+    @Req() req: Request & { user: JwtOperatorPayload },
   ) {
-    return this.campaignsService.retryRecipient(id, recipientId);
+    const result = await this.campaignsService.retryRecipient(id, recipientId);
+    const campaign = await this.campaignsService.findOne(id).catch(() => null);
+    await this.auditLogsService.log({
+      campaignId: id,
+      campaignName: campaign ? campaign.name : null,
+      operator: req.user.username,
+      action: 'RETRY',
+      details: { recipientId },
+    });
+    return result;
   }
 
   @Post(':id/recipients/retry-bulk')
   retryRecipientsBulk(
     @Param('id', ParseUUIDPipe) id: string,
     @Body('recipientIds') recipientIds: string[],
-  ) {
+    @Req() req: Request & { user: JwtOperatorPayload },
+  ): Promise<any> {
     if (!Array.isArray(recipientIds) || recipientIds.length === 0) {
       throw new BadRequestException('recipientIds deve essere un array non vuoto');
     }
-    return this.campaignsService.retryRecipientsBulk(id, recipientIds);
+    return this.campaignsService.retryRecipientsBulk(id, recipientIds).then(async (result) => {
+      const campaign = await this.campaignsService.findOne(id).catch(() => null);
+      await this.auditLogsService.log({
+        campaignId: id,
+        campaignName: campaign ? campaign.name : null,
+        operator: req.user.username,
+        action: 'RETRY',
+        details: { count: recipientIds.length },
+      });
+      return result;
+    });
   }
 
   @Get(':id/stats/recipients')
@@ -401,7 +502,19 @@ export class CampaignsController {
 
   @Delete(':id')
   @Roles('admin')
-  remove(@Param('id', ParseUUIDPipe) id: string): Promise<{ deleted: true }> {
-    return this.campaignsService.remove(id);
+  async remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request & { user: JwtOperatorPayload },
+  ): Promise<{ deleted: true }> {
+    const campaign = await this.campaignsService.findOne(id).catch(() => null);
+    const result = await this.campaignsService.remove(id);
+    await this.auditLogsService.log({
+      campaignId: id,
+      campaignName: campaign ? campaign.name : 'Campagna Eliminata',
+      operator: req.user.username,
+      action: 'DELETE',
+      details: {},
+    });
+    return result;
   }
 }

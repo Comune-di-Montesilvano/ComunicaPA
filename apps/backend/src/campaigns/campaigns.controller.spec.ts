@@ -14,11 +14,27 @@ describe('CampaignsController', () => {
     getFailuresByReason: jest.fn(),
     retryRecipientsBulk: jest.fn(),
     getDownloadReportRows: jest.fn(),
+    findOne: jest.fn().mockResolvedValue({ id: 'uuid-1', name: 'Test Campaign' }),
   };
+
+  const mockAuditLogsService = {
+    log: jest.fn().mockResolvedValue({}),
+  };
+
+  const mockReq = {
+    user: {
+      username: 'test-operator',
+      role: 'admin',
+      type: 'operator',
+    },
+  } as any;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    controller = new CampaignsController(mockService as unknown as CampaignsService);
+    controller = new CampaignsController(
+      mockService as unknown as CampaignsService,
+      mockAuditLogsService as any,
+    );
   });
 
   describe('getRecipientStats', () => {
@@ -70,7 +86,7 @@ describe('CampaignsController', () => {
         new BadRequestException('La campagna non è in stato DRAFT'),
       );
 
-      await expect(controller.uploadAttachments('uuid-1', files)).rejects.toThrow(BadRequestException);
+      await expect(controller.uploadAttachments('uuid-1', files, mockReq)).rejects.toThrow(BadRequestException);
 
       expect(unlinkSpy).toHaveBeenCalledTimes(2);
       expect(unlinkSpy).toHaveBeenCalledWith('/tmp/uploads/a.pdf');
@@ -86,7 +102,7 @@ describe('CampaignsController', () => {
         new BadRequestException('La campagna non è in stato DRAFT'),
       );
 
-      await expect(controller.uploadAttachments('uuid-1', files)).rejects.toThrow(BadRequestException);
+      await expect(controller.uploadAttachments('uuid-1', files, mockReq)).rejects.toThrow(BadRequestException);
       expect(unlinkSpy).toHaveBeenCalledTimes(2);
       unlinkSpy.mockRestore();
     });
@@ -95,7 +111,7 @@ describe('CampaignsController', () => {
       const unlinkSpy = jest.spyOn(fs.promises, 'unlink').mockResolvedValue(undefined);
       mockService.assertDraftForAttachments.mockResolvedValueOnce(undefined);
 
-      const res = await controller.uploadAttachments('uuid-1', files);
+      const res = await controller.uploadAttachments('uuid-1', files, mockReq);
 
       expect(res).toEqual({ uploaded: 2, discarded: 0, campaignId: 'uuid-1' });
       expect(unlinkSpy).not.toHaveBeenCalled();
@@ -105,7 +121,7 @@ describe('CampaignsController', () => {
 
   describe('remove', () => {
     it('delega a campaignsService.remove', async () => {
-      const result = await controller.remove('uuid-1');
+      const result = await controller.remove('uuid-1', mockReq);
       expect(mockService.remove).toHaveBeenCalledWith('uuid-1');
       expect(result).toEqual({ deleted: true });
     });
@@ -138,16 +154,16 @@ describe('CampaignsController', () => {
 
   describe('retryRecipientsBulk', () => {
     it('rifiuta un body senza recipientIds', () => {
-      expect(() => controller.retryRecipientsBulk('uuid-1', undefined as any)).toThrow(BadRequestException);
+      expect(() => controller.retryRecipientsBulk('uuid-1', undefined as any, mockReq)).toThrow(BadRequestException);
     });
 
     it('rifiuta un array vuoto', () => {
-      expect(() => controller.retryRecipientsBulk('uuid-1', [])).toThrow(BadRequestException);
+      expect(() => controller.retryRecipientsBulk('uuid-1', [], mockReq)).toThrow(BadRequestException);
     });
 
     it('chiama il service con id campagna e recipientIds', async () => {
       mockService.retryRecipientsBulk = jest.fn().mockResolvedValue({ requeued: 1, failed: [] });
-      await controller.retryRecipientsBulk('uuid-1', ['r1']);
+      await controller.retryRecipientsBulk('uuid-1', ['r1'], mockReq);
       expect(mockService.retryRecipientsBulk).toHaveBeenCalledWith('uuid-1', ['r1']);
     });
   });

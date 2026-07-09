@@ -92,6 +92,71 @@ describe('LdapService', () => {
     expect(result.displayName).toBe('Mario Rossi');
   });
 
+  it('should resolve with role=user using recursive membership check if user is not in required group directly', async () => {
+    mockClient.bind.mockImplementation(
+      (_dn: string, _pw: string, cb: (err: null) => void) => cb(null),
+    );
+
+    mockClient.search.mockImplementation((_base: string, searchOpts: any, cb: any) => {
+      const filter = searchOpts.filter || '';
+
+      const mockSearchRes = {
+        on: jest.fn().mockImplementation(function (
+          this: typeof mockSearchRes,
+          event: string,
+          eventCb: (...args: unknown[]) => void,
+        ) {
+          if (event === 'searchEntry') {
+            if (filter.includes('1.2.840.113556.1.4.1941')) {
+              // recursive check
+              if (filter.includes('CN=COMUNICAPA_USERS')) {
+                eventCb({
+                  object: {
+                    sAMAccountName: 'mario.rossi',
+                  },
+                });
+              }
+            } else if (filter.includes('sAMAccountName=mario.rossi')) {
+              // User search: returns user with only unrelated direct groups
+              eventCb({
+                object: {
+                  sAMAccountName: 'mario.rossi',
+                  displayName: 'Mario Rossi',
+                  memberOf: ['CN=UNRELATED_GROUP,OU=Groups,DC=test,DC=local'],
+                },
+              });
+            } else if (filter.includes('objectClass=group')) {
+              // findGroupDns search: returns group CNs and DNs
+              eventCb({
+                object: {
+                  cn: 'COMUNICAPA_USERS',
+                  distinguishedName: 'CN=COMUNICAPA_USERS,OU=Groups,DC=test,DC=local',
+                },
+              });
+              eventCb({
+                object: {
+                  cn: 'COMUNICAPA_ADMINS',
+                  distinguishedName: 'CN=COMUNICAPA_ADMINS,OU=Groups,DC=test,DC=local',
+                },
+              });
+            }
+          }
+          if (event === 'end') {
+            eventCb({ status: 0 });
+          }
+          return this;
+        }),
+      };
+      cb(null, mockSearchRes);
+    });
+
+    const result = await service.authenticate('mario.rossi', 'password123');
+
+    expect(result.username).toBe('mario.rossi');
+    expect(result.role).toBe('user');
+    expect(result.displayName).toBe('Mario Rossi');
+  });
+
   it('should reject when bind fails (wrong password)', async () => {
     mockClient.bind.mockImplementation(
       (_dn: string, _pw: string, cb: (err: Error) => void) =>
