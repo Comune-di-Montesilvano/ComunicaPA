@@ -6116,9 +6116,11 @@ export function App(): React.JSX.Element {
                               const downloaded = sentCount - notDownloaded;
                               const pct = (n: number) => (sentCount > 0 ? `${Math.round((n / sentCount) * 100)}%` : '0%');
 
+                              const colorFor = (c: { channels: string[] }, i: number) => (c.channels.length === 0 ? '#adb5bd' : PIE_COLORS[i % PIE_COLORS.length]);
+
                               return (
                                 <>
-                                  <div className="d-flex justify-content-center gap-5 text-center mb-3">
+                                  <div className="d-flex justify-content-center text-center mb-3" style={{ gap: '3rem' }}>
                                     <div>
                                       <div className="h4 mb-0 text-success">{pct(downloaded)}</div>
                                       <div className="small text-muted">Scaricati ({downloaded})</div>
@@ -6136,23 +6138,28 @@ export function App(): React.JSX.Element {
                                         nameKey="label"
                                         cx="50%"
                                         cy="50%"
-                                        outerRadius={80}
+                                        outerRadius={90}
                                         label={renderPiePercentLabel}
                                         labelLine={false}
                                       >
                                         {successCombos.map((c, i) => (
-                                          <Cell key={c.channels.join('+') || 'none'} fill={c.channels.length === 0 ? '#adb5bd' : PIE_COLORS[i % PIE_COLORS.length]} />
+                                          <Cell key={c.channels.join('+') || 'none'} fill={colorFor(c, i)} />
                                         ))}
                                       </Pie>
                                       <Tooltip />
-                                      <Legend />
                                     </PieChart>
                                   </ResponsiveContainer>
                                   <table className="table table-sm mb-0 mt-2">
                                     <tbody>
-                                      {successCombos.map((c) => (
+                                      {successCombos.map((c, i) => (
                                         <tr key={c.channels.join('+') || 'none'}>
-                                          <td>{downloadComboLabel(c.channels)}</td>
+                                          <td>
+                                            <span
+                                              className="d-inline-block me-2"
+                                              style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: colorFor(c, i) }}
+                                            ></span>
+                                            {downloadComboLabel(c.channels)}
+                                          </td>
                                           <td className="text-end fw-bold">{c.count}</td>
                                           <td className="text-end text-muted">{pct(c.count)}</td>
                                         </tr>
