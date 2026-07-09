@@ -229,6 +229,8 @@
 .text-danger { color: var(--danger) !important; }
 .text-primary { color: var(--primary) !important; }
 .text-warning { color: var(--warning) !important; }
+.text-success { color: var(--success) !important; }
+.text-info { color: var(--info) !important; }
 .small { font-size: 0.875rem !important; }
 .fw-bold { font-weight: 700 !important; }
 .fw-semibold { font-weight: 600 !important; }

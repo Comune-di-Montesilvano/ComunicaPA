@@ -12,19 +12,53 @@ declare global {
 const API_BASE = window.__COMUNICAPA_CONFIG__?.apiBase ?? 'http://localhost:8080';
 const ADMIN_API_BASE = `${API_BASE}/admin`;
 
-const CHANNEL_LABELS: Record<string, string> = {
-  PEC: 'PEC',
-  EMAIL: 'Email',
-  APP_IO: 'App IO',
-  SEND: 'SEND',
-  POSTAL: 'Postalizzazione',
-  CITIZEN_PORTAL: 'Portale Cittadino',
-  UNKNOWN: 'Sconosciuto',
+const CHANNEL_META: Record<string, { label: string; icon: string; badge: string }> = {
+  PEC: { label: 'PEC', icon: 'fa-envelope-open-text', badge: 'bg-info' },
+  EMAIL: { label: 'Email', icon: 'fa-envelope', badge: 'bg-success' },
+  APP_IO: { label: 'AppIO', icon: 'fa-mobile-screen', badge: 'bg-primary' },
+  SEND: { label: 'SEND', icon: 'fa-paper-plane', badge: 'bg-warning text-dark' },
+  POSTAL: { label: 'Postalizzazione', icon: 'fa-envelope-circle-check', badge: 'bg-secondary' },
+  CITIZEN_PORTAL: { label: 'Portale Cittadino', icon: 'fa-globe', badge: 'bg-dark' },
+  UNKNOWN: { label: 'Sconosciuto', icon: 'fa-question', badge: 'bg-secondary' },
 };
+
+function channelLabel(channel: string): string {
+  return CHANNEL_META[channel]?.label ?? channel;
+}
+
+function ChannelBadge({ channel, extra }: { channel: string; extra?: string | null }): React.JSX.Element {
+  const meta = CHANNEL_META[channel] ?? { label: channel, icon: 'fa-paper-plane', badge: 'bg-light text-dark border' };
+  return (
+    <span className={`badge ${meta.badge}`}>
+      <i className={`fas ${meta.icon} me-1`}></i>{meta.label}{extra ? ` (${extra})` : ''}
+    </span>
+  );
+}
+
+// Stati condivisi tra recipient/attempt/campaign: stessa parola, stesso
+// significato, stesso colore ovunque compaia in UI (coerenza grafica).
+const STATUS_META: Record<string, { label: string; badge: string }> = {
+  draft: { label: 'Bozza', badge: 'bg-secondary' },
+  pending: { label: 'In attesa', badge: 'bg-secondary' },
+  queued: { label: 'In coda', badge: 'bg-info' },
+  processing: { label: 'In elaborazione', badge: 'bg-info' },
+  running: { label: 'In corso', badge: 'bg-warning text-dark' },
+  sent: { label: 'Inviato', badge: 'bg-success' },
+  success: { label: 'Riuscito', badge: 'bg-success' },
+  completed: { label: 'Completata', badge: 'bg-success' },
+  failed: { label: 'Fallito', badge: 'bg-danger' },
+  skipped: { label: 'Saltato', badge: 'bg-secondary' },
+  cancelled: { label: 'Annullato', badge: 'bg-dark' },
+};
+
+function StatusBadge({ status }: { status: string }): React.JSX.Element {
+  const meta = STATUS_META[status] ?? { label: status, badge: 'bg-light text-dark border' };
+  return <span className={`badge ${meta.badge}`}>{meta.label}</span>;
+}
 
 function downloadComboLabel(channels: string[]): string {
   if (channels.length === 0) return 'Non scaricato';
-  return channels.map((c) => CHANNEL_LABELS[c] ?? c).join(' + ');
+  return channels.map((c) => channelLabel(c)).join(' + ');
 }
 
 // Le label di default di recharts Pie disegnano linea + testo fuori dal
@@ -2951,12 +2985,8 @@ export function App(): React.JSX.Element {
                               {campaigns.slice(0, 5).map((c) => (
                                 <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => handleCampaignClick(c.id)}>
                                   <td className="fw-bold text-primary">{c.name}</td>
-                                  <td>{c.channelType}</td>
-                                  <td>
-                                    <span className={`badge ${c.status === 'completed' ? 'bg-success' : 'bg-secondary'}`}>
-                                      {c.status.toUpperCase()}
-                                    </span>
-                                  </td>
+                                  <td><ChannelBadge channel={c.channelType} /></td>
+                                  <td><StatusBadge status={c.status} /></td>
                                   <td className="text-end fw-bold">{c.sentCount} / {c.totalRecipients}</td>
                                 </tr>
                               ))}
@@ -3183,20 +3213,11 @@ export function App(): React.JSX.Element {
                               <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => handleCampaignClick(c.id)}>
                                 <td className="fw-bold text-primary">{c.name}</td>
                                 <td>
-                                  <span className="badge bg-light text-dark border">
-                                    {c.channelType}
-                                    {c.channelConfig?.['serviceName'] && ` (${c.channelConfig['serviceName']})`}
-                                  </span>
+                                  <ChannelBadge channel={c.channelType} extra={c.channelConfig?.['serviceName'] as string | undefined} />
                                 </td>
                                 <td className="text-center fw-bold">{c.totalRecipients}</td>
                                 <td className="text-center">
-                                  <span className={`badge ${
-                                    c.status === 'completed' ? 'bg-success' :
-                                    c.status === 'draft' ? 'bg-secondary' :
-                                    c.status === 'cancelled' ? 'bg-dark' : 'bg-warning text-dark'
-                                  }`}>
-                                    {c.status.toUpperCase()}
-                                  </span>
+                                  <StatusBadge status={c.status} />
                                 </td>
                                 <td className="text-muted">{new Date(c.createdAt).toLocaleDateString('it-IT')}</td>
                                 <td className="text-end" onClick={(e) => e.stopPropagation()}>
@@ -4392,8 +4413,8 @@ export function App(): React.JSX.Element {
                           <td className="font-monospace small">{r.codiceFiscale}</td>
                           <td className="small">{r.fullName || '—'}</td>
                           <td className="small">{r.campaignName}</td>
-                          <td className="small">{r.channelType}</td>
-                          <td><span className="badge bg-light text-dark border">{r.status}</span></td>
+                          <td><ChannelBadge channel={r.channelType} /></td>
+                          <td><StatusBadge status={r.status} /></td>
                           <td className="small text-muted">{new Date(r.createdAt).toLocaleString('it-IT')}</td>
                         </tr>
                       ))}
@@ -4435,7 +4456,7 @@ export function App(): React.JSX.Element {
                       <>
                         <div className="mb-3">
                           <div><strong>Destinatario:</strong> {notifDetail.recipient.fullName || notifDetail.recipient.codiceFiscale} ({notifDetail.recipient.codiceFiscale})</div>
-                          <div><strong>Campagna:</strong> {notifDetail.campaign.name} <span className="badge bg-light text-dark border ms-1">{notifDetail.campaign.channelType}</span></div>
+                          <div><strong>Campagna:</strong> {notifDetail.campaign.name} <span className="ms-1"><ChannelBadge channel={notifDetail.campaign.channelType} /></span></div>
                         </div>
 
                         <h6 className="fw-bold small">Storico Tentativi</h6>
@@ -4452,8 +4473,8 @@ export function App(): React.JSX.Element {
                             {notifDetail.attempts.map((a) => (
                               <tr key={a.attemptNumber}>
                                 <td>{a.attemptNumber}</td>
-                                <td><span className="badge bg-light text-dark border">{a.status}</span></td>
-                                <td className="small">{a.channelType}</td>
+                                <td><StatusBadge status={a.status} /></td>
+                                <td className="small"><ChannelBadge channel={a.channelType} /></td>
                                 <td className="small text-muted">{new Date(a.createdAt).toLocaleString('it-IT')}</td>
                                 <td className="small text-danger">{a.errorMessage || '—'}</td>
                                 {notifDetail.campaign.channelType !== 'APP_IO' && (
@@ -4476,7 +4497,7 @@ export function App(): React.JSX.Element {
                               <tbody>
                                 {notifDetail.downloads.map((d, idx) => (
                                   <tr key={idx}>
-                                    <td className="small">{d.channel}</td>
+                                    <td className="small"><ChannelBadge channel={d.channel} /></td>
                                     <td className="small">#{d.attachmentIndex + 1}</td>
                                     <td className="small text-muted">{new Date(d.downloadedAt).toLocaleString('it-IT')}</td>
                                   </tr>
@@ -4606,7 +4627,7 @@ export function App(): React.JSX.Element {
                       {templates.map(t => (
                         <tr key={t.id}>
                           <td>{t.name}</td>
-                          <td><span className="badge bg-light text-dark border">{t.type}</span></td>
+                          <td><ChannelBadge channel={t.type} /></td>
                           <td className="small text-muted">{t.subject}</td>
                           <td className="small">{t.pairedTemplateId ? templates.find(x => x.id === t.pairedTemplateId)?.name || '—' : '—'}</td>
                           <td className="text-end">
@@ -5797,24 +5818,13 @@ export function App(): React.JSX.Element {
                         <div className="mb-3">
                           <label className="text-muted small fw-semibold block">Canale</label>
                           <div>
-                            <span className="badge bg-light text-dark border">
-                              <i className="fas fa-paper-plane me-1"></i> {campaign.channelType}
-                              {campaign.channelConfig?.['serviceName'] && ` (${campaign.channelConfig['serviceName']})`}
-                            </span>
+                            <ChannelBadge channel={campaign.channelType} extra={campaign.channelConfig?.['serviceName'] as string | undefined} />
                           </div>
                         </div>
                         <div className="mb-3">
                           <label className="text-muted small fw-semibold block">Stato</label>
                           <div>
-                            <span className={`badge ${
-                              campaign.status === 'draft' ? 'bg-secondary' :
-                              campaign.status === 'queued' ? 'bg-info text-dark' :
-                              campaign.status === 'running' ? 'bg-warning text-dark' :
-                              campaign.status === 'completed' ? 'bg-success' :
-                              campaign.status === 'cancelled' ? 'bg-dark' : 'bg-danger'
-                            }`}>
-                              {campaign.status.toUpperCase()}
-                            </span>
+                            <StatusBadge status={campaign.status} />
                           </div>
                         </div>
                         <div className="mb-3">
@@ -6023,16 +6033,7 @@ export function App(): React.JSX.Element {
                                           {r.pec && <div className="text-primary"><i className="fas fa-envelope-open-text me-1"></i> {r.pec}</div>}
                                         </div>
                                       </td>
-                                      <td>
-                                        <span className={`badge ${
-                                          r.status === 'pending' ? 'bg-secondary' :
-                                          r.status === 'queued' ? 'bg-info text-dark' :
-                                          r.status === 'sent' ? 'bg-success' :
-                                          r.status === 'failed' ? 'bg-danger' : 'bg-warning text-dark'
-                                        }`}>
-                                          {r.status.toUpperCase()}
-                                        </span>
-                                      </td>
+                                      <td><StatusBadge status={r.status} /></td>
                                       <td className="text-center fw-bold">
                                         {r.downloadCount ? (
                                           <span className="text-success">
