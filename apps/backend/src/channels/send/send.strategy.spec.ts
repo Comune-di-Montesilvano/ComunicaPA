@@ -171,6 +171,17 @@ describe('SendStrategy', () => {
     expect(payload.documents[1].docIdx).toBe(1);
   });
 
+  it('usa attemptId come idempotenceToken quando passato (retry BullMQ = stesso token)', async () => {
+    const recipient = makeRecipient();
+    const campaign = makeCampaign({ subject: 'Avviso', protocolla: true, taxonomyCode: '010101P' });
+
+    await strategy.send(recipient as never, campaign as never, undefined, 'attempt-xyz-123');
+
+    const sendCall = mockFetch.mock.calls.find(([url]) => url === 'https://send.test/delivery/v2.6/requests');
+    const payload = JSON.parse(sendCall![1].body as string);
+    expect(payload.idempotenceToken).toBe('attempt-xyz-123');
+  });
+
   it('lancia errore leggibile se PN risponde diverso da 202', async () => {
     mockFetch.mockImplementation((url: string) => {
       if (url === 'https://send.test/delivery/v2.6/requests') {

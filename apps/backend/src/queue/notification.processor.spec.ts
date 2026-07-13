@@ -184,7 +184,7 @@ describe('NotificationProcessor', () => {
     await processor.process(mockJob(baseData));
 
     expect(mockAttemptRepo.update).toHaveBeenCalledWith('att-1', { status: AttemptStatus.PROCESSING });
-    expect(mockStrategy.send).toHaveBeenCalledWith(mockRecipient, mockCampaign, expect.any(Function));
+    expect(mockStrategy.send).toHaveBeenCalledWith(mockRecipient, mockCampaign, expect.any(Function), 'att-1');
     expect(mockAttemptRepo.update).toHaveBeenCalledWith('att-1', expect.objectContaining({
       status: AttemptStatus.SUCCESS,
       responsePayload: expect.any(Object),

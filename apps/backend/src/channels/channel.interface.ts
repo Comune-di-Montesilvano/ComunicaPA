@@ -7,7 +7,13 @@ export type ChannelLogFn = (message: string) => void;
 
 export interface IChannelStrategy {
   readonly channel: NotificationChannel;
-  send(recipient: Recipient, campaign: Campaign, onLog?: ChannelLogFn): Promise<ChannelSendResult>;
+  /**
+   * attemptId: id di NotificationAttempt (= BullMQ jobId), opzionale.
+   * Usato dalle strategy che espongono un idempotence token verso il provider
+   * esterno (es. SEND/PN) per far riconoscere una redelivery dello stesso job
+   * come duplicato invece di generare un secondo invio reale.
+   */
+  send(recipient: Recipient, campaign: Campaign, onLog?: ChannelLogFn, attemptId?: string): Promise<ChannelSendResult>;
 }
 
 export const CHANNEL_STRATEGIES = Symbol('CHANNEL_STRATEGIES');

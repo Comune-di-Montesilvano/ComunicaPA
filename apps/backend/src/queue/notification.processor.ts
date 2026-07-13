@@ -145,7 +145,7 @@ export class NotificationProcessor extends WorkerHost {
     // 1. Invio canale primario (saltato solo in esclusiva riuscita)
     if (!skipPrimary) {
       try {
-        primaryResult = await strategy.send(recipient, campaign, jobLog);
+        primaryResult = await strategy.send(recipient, campaign, jobLog, attemptId);
       } catch (err: any) {
         primaryError = err instanceof Error ? err : new Error(String(err));
         jobLog(`Errore canale primario ${channel}: ${primaryError.message}`);

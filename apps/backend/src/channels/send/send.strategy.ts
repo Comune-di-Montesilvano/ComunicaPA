@@ -37,7 +37,7 @@ export class SendStrategy implements IChannelStrategy {
     private readonly attachmentUpload: SendAttachmentUploadService,
   ) {}
 
-  async send(recipient: Recipient, campaign: Campaign, onLog?: ChannelLogFn): Promise<ChannelSendResult> {
+  async send(recipient: Recipient, campaign: Campaign, onLog?: ChannelLogFn, attemptId?: string): Promise<ChannelSendResult> {
     const log = (msg: string): void => {
       this.logger.debug(msg);
       onLog?.(msg);
@@ -114,7 +114,12 @@ export class SendStrategy implements IChannelStrategy {
     const physicalCommunicationType = (cfg['physicalCommunicationType'] as string) || 'AR_REGISTERED_LETTER';
 
     const payload: Record<string, unknown> = {
-      idempotenceToken: randomUUID(),
+      // Deterministico sull'attemptId (= BullMQ jobId): una redelivery dello stesso
+      // job (crash/stall del worker tra 202 accettato e attempt marcato SUCCESS su
+      // DB) riusa lo stesso token, così PN riconosce/deduplica il retry invece di
+      // creare una seconda notifica legale reale. Fallback random solo per chiamate
+      // dirette fuori dal flusso coda (es. test) prive di attemptId.
+      idempotenceToken: attemptId ?? randomUUID(),
       paProtocolNumber,
       notificationFeePolicy: 'FLAT_RATE',
       physicalCommunicationType,
