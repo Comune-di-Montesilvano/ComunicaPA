@@ -3608,7 +3608,13 @@ export function App(): React.JSX.Element {
                       className="form-check-input"
                       id="wiz-payment-enabled"
                       checked={wizPaymentEnabled}
-                      onChange={e => setWizPaymentEnabled(e.target.checked)}
+                      onChange={e => {
+                        setWizPaymentEnabled(e.target.checked);
+                        // La lista tassonomie si rifiltra su P/N in base a questo toggle:
+                        // una tassonomia già selezionata per lo stato precedente può non
+                        // essere più valida, va fatta riselezionare.
+                        setWizTaxonomyCode('');
+                      }}
                     />
                     <label className="form-check-label small fw-bold" htmlFor="wiz-payment-enabled" style={{ cursor: 'pointer' }}>
                       Integrazione pagamenti pagoPA
