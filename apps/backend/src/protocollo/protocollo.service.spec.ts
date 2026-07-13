@@ -87,4 +87,75 @@ describe('ProtocolloService', () => {
     });
     await expect(service.login()).rejects.toThrow(/Login Protocollo fallito.*Credenziali non valide/);
   });
+
+  it('esegue Inserimento + Protocollazione e ritorna numero/anno/data', async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(soapEnvelope(
+          '<LoginResponse><return><strDST>dst-abc</strDST><IngErrNumber>0</IngErrNumber><strErrString></strErrString></return></LoginResponse>',
+        )),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(soapEnvelope(
+          '<InserimentoResponse><return><IngDocID>999</IngDocID><IngErrNumber>0</IngErrNumber><strErrString></strErrString></return></InserimentoResponse>',
+        )),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(soapEnvelope(
+          '<ProtocollazioneResponse><return><IngNumPG>4321</IngNumPG><IngAnnoPG>2026</IngAnnoPG><StrDataPG>13/07/2026</StrDataPG><IngErrNumber>0</IngErrNumber><strErrString></strErrString></return></ProtocollazioneResponse>',
+        )),
+      });
+
+    const result = await service.protocolla({
+      oggetto: 'Avviso TARI 2026',
+      destinatario: { codiceFiscale: 'RSSMRA85M01H501Z', nome: 'Mario', cognome: 'Rossi', denominazione: 'Mario Rossi' },
+      documentBuffer: Buffer.from('%PDF-1.4 test'),
+      documentFilename: 'avviso.pdf',
+    });
+
+    expect(result).toEqual({ numeroProtocollo: 4321, annoProtocollo: 2026, dataProtocollazione: '13/07/2026' });
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+
+    const inserimentoBody = mockFetch.mock.calls[1][1].body as string;
+    expect(inserimentoBody).toContain('dst-abc');
+
+    const protocollazioneBody = mockFetch.mock.calls[2][1].body as string;
+    const fileXmlMatch = protocollazioneBody.match(/<FileXML>([\s\S]*?)<\/FileXML>/);
+    const segnaturaXml = Buffer.from(fileXmlMatch![1], 'base64').toString('utf-8');
+    expect(segnaturaXml).toContain('RSSMRA85M01H501Z');
+    expect(segnaturaXml).toContain('<Flusso>U</Flusso>');
+    expect(segnaturaXml).toContain('id="999"');
+  });
+
+  it('lancia errore leggibile se Protocollazione fallisce', async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(soapEnvelope(
+          '<LoginResponse><return><strDST>dst-abc</strDST><IngErrNumber>0</IngErrNumber><strErrString></strErrString></return></LoginResponse>',
+        )),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(soapEnvelope(
+          '<InserimentoResponse><return><IngDocID>999</IngDocID><IngErrNumber>0</IngErrNumber><strErrString></strErrString></return></InserimentoResponse>',
+        )),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(soapEnvelope(
+          '<ProtocollazioneResponse><return><IngNumPG>0</IngNumPG><IngAnnoPG>0</IngAnnoPG><StrDataPG></StrDataPG><IngErrNumber>7</IngErrNumber><strErrString>Classifica non valida</strErrString></return></ProtocollazioneResponse>',
+        )),
+      });
+
+    await expect(service.protocolla({
+      oggetto: 'Test',
+      destinatario: { codiceFiscale: 'CF', nome: 'N', cognome: 'C', denominazione: 'N C' },
+      documentBuffer: Buffer.from('x'),
+      documentFilename: 'x.pdf',
+    })).rejects.toThrow(/Protocollazione fallita.*Classifica non valida/);
+  });
 });
