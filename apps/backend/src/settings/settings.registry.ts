@@ -58,6 +58,16 @@ export const SETTING_DEFS = {
   'inad.prod.purposeId': { type: 'string', default: '' },
   'inipec.test.purposeId': { type: 'string', default: '' },
   'inipec.prod.purposeId': { type: 'string', default: '' },
+
+  'protocollo.provider': { type: 'string', default: 'tinn' },
+  'protocollo.baseUrl': { type: 'string', default: '' },
+  'protocollo.codiceEnte': { type: 'string', default: '' },
+  'protocollo.username': { type: 'string', default: '' },
+  'protocollo.password': { type: 'string', secret: true, default: '' },
+  'protocollo.codiceTitolario': { type: 'string', default: '6022' },
+  'protocollo.codiceAmministrazione': { type: 'string', default: '1' },
+  'protocollo.unitaOrganizzativa': { type: 'string', default: '1' },
+  'protocollo.mittenteDenominazione': { type: 'string', default: '' },
   'system.publicUrl': {
     env: 'PUBLIC_BACKEND_URL',
     type: 'string',
