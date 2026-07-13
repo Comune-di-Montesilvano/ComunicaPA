@@ -12,7 +12,8 @@ Notifiche). Questo documento disegna l'implementazione del payload reale
 pagamento.
 
 Terzo sotto-progetto (stato/timeline reale nel portale cittadino/operatore,
-demone di sincronizzazione per export tracciati verso altri software) resta
+che consumerà le colonne `iun`/`sendStatus` popolate dal demone incluso
+qui) resta
 fuori scope qui — deciso esplicitamente con l'utente.
 
 ## Riferimento API (verificato riga per riga sullo YAML ufficiale)
@@ -143,10 +144,24 @@ Dettagli verificati:
 `202 Accepted`: `{ "notificationRequestId": "<uuid>" }`. Lo stato
 definitivo (`ACCEPTED`/`REFUSED`, IUN) si ottiene con
 `GET /delivery/v2.6/requests?requestId=...`, che può restare `WAITING` per
-un tempo non determinato — la risoluzione IUN e il monitoraggio continuo
-sono il demone di sincronizzazione (sotto-progetto futuro, fuori scope
-qui). `SendStrategy.send()` si considera riuscito già al 202, salvando
-`notificationRequestId` in `responsePayload`.
+un tempo non determinato. `SendStrategy.send()` si considera riuscito già
+al 202, salvando `notificationRequestId` in `responsePayload` — la
+risoluzione IUN e il monitoraggio dello stato **sono incluse in questo
+sotto-progetto** (decisione aggiornata rispetto alla bozza iniziale, che le
+rimandava a un sotto-progetto futuro), vedi sezione "Demone di
+sincronizzazione stato SEND" più sotto.
+
+### 3. Dettaglio/stato notifica (per il demone)
+
+**`GET /delivery/v2.9/notifications/sent/{iun}`** — campi rilevanti:
+`notificationStatus` (enum: `ACCEPTED`, `DELIVERING`, `DELIVERED`,
+`VIEWED`, `EFFECTIVE_DATE`, `UNREACHABLE`, `CANCELLED`,
+`RETURNED_TO_SENDER`). Stati **terminali** (il demone smette di
+interrogare quell'attempt): `VIEWED`, `EFFECTIVE_DATE`, `UNREACHABLE`,
+`CANCELLED`, `RETURNED_TO_SENDER`. Stati non terminali (si continua a
+interrogare): `ACCEPTED`, `DELIVERING`, `DELIVERED` (attenzione:
+`DELIVERED` ≠ perfezionata — la notifica è perfezionata solo con `VIEWED`
+o `EFFECTIVE_DATE`, che sono eventi successivi).
 
 ## Decisioni con l'utente
 
@@ -185,10 +200,12 @@ qui). `SendStrategy.send()` si considera riuscito già al 202, salvando
   schema: `attachment` opzionale). Riuso della logica di risoluzione dati
   già esistente per App IO (`noticeCode`/`creditorTaxId`/importo), estratta
   in utility condivisa.
-- **Demone di sincronizzazione stato/IUN**: esplicitamente rimandato a un
-  sotto-progetto successivo (serve anche per export tracciati verso altri
-  software con stati/date di consegna reali) — qui il job di invio si
-  ferma al 202 Accepted.
+- **Demone di sincronizzazione stato/IUN**: incluso in questo
+  sotto-progetto (decisione aggiornata — inizialmente rimandato, poi
+  richiesto esplicitamente qui). Job schedulato ogni 15 minuti, risolve
+  IUN e aggiorna lo stato reale per ogni tentativo SEND non ancora
+  terminale. Serve anche per il futuro export di tracciati con stati/date
+  di consegna reali verso altri software.
 
 ## Architettura
 
@@ -284,6 +301,50 @@ al protocollo dell'`url` restituito) con headers `content-type`,
 - Step 4: nessun cambiamento aggiuntivo oltre a quanto già esiste
   (subject/body già passati per SEND dal lavoro del sotto-progetto 1).
 
+### Demone di sincronizzazione stato SEND
+
+**Dati**: nuove colonne su `NotificationAttempt` (migration):
+- `iun` (varchar nullable) — IUN risolto, popolato quando
+  `notificationRequestStatus` diventa `ACCEPTED`.
+- `sendStatus` (varchar nullable) — ultimo `notificationStatus` noto
+  (`ACCEPTED`/`DELIVERING`/`DELIVERED`/`VIEWED`/`EFFECTIVE_DATE`/
+  `UNREACHABLE`/`CANCELLED`/`RETURNED_TO_SENDER`), o `REFUSED` se PN
+  rifiuta la richiesta (stato terminale sintetico, non del vocabolario
+  PN — usato per distinguere "mai accettata" da "accettata poi fallita").
+  `NULL` finché non risolto nemmeno il primo stato.
+  `sendStatusUpdatedAt` (timestamptz nullable) — ultimo aggiornamento.
+
+**`apps/backend/src/channels/send/send-status-sync.service.ts`** (nuovo),
+pattern identico a `RetentionCleanupService`
+(`apps/backend/src/campaigns/retention-cleanup.service.ts`, `@Cron` da
+`@nestjs/schedule`, già attivo in `AppModule` via `ScheduleModule.forRoot()`):
+
+```ts
+const BATCH_SIZE = 200;
+const TERMINAL_STATUSES = ['VIEWED', 'EFFECTIVE_DATE', 'UNREACHABLE', 'CANCELLED', 'RETURNED_TO_SENDER', 'REFUSED'];
+
+@Injectable()
+export class SendStatusSyncService {
+  @Cron('*/15 * * * *')
+  async handleCron(): Promise<void> {
+    // 1. Attempt SEND con notificationRequestId ma senza iun: risolvi IUN
+    //    via GET /delivery/v2.6/requests?requestId=... — se ACCEPTED salva
+    //    iun+sendStatus='ACCEPTED', se REFUSED salva sendStatus='REFUSED'
+    //    (terminale), se WAITING non fare nulla (riprova al prossimo giro).
+    // 2. Attempt SEND con iun valorizzato e sendStatus non in
+    //    TERMINAL_STATUSES: GET /delivery/v2.9/notifications/sent/{iun},
+    //    aggiorna sendStatus + sendStatusUpdatedAt.
+    // Batch da BATCH_SIZE per query, stesso pattern retention-cleanup.
+  }
+}
+```
+
+Riusa `PdndAuthService.getVoucher(env, purposeId)` (stesso purposeId SEND
+già configurato) per l'autenticazione verso entrambe le chiamate GET.
+Nessun nuovo servizio HTTP: stesso `fetch` diretto già usato in
+`send.strategy.ts`/`pdnd-auth.service.ts` (nessun trailer/upload coinvolto
+qui, solo GET semplici — niente bisogno di `send-attachment-upload.service.ts`).
+
 ## Verifica
 
 - Unit test per `payment-config.util.ts` (già coperto indirettamente dai
@@ -293,6 +354,11 @@ al protocollo dell'`url` restituito) con headers `content-type`,
   parsing `x-amz-version-id`).
 - Unit test `send.strategy.spec.ts` aggiornato per il nuovo payload
   completo.
+- Unit test `send-status-sync.service.spec.ts` (mock fetch): risoluzione
+  IUN da WAITING/ACCEPTED/REFUSED, aggiornamento stato da
+  `notifications/sent/{iun}`, stop su stato terminale, batch size.
+- Migration testata su DB temporaneo (sez. "Migration DB" CLAUDE.md) per
+  le nuove colonne `iun`/`sendStatus`/`sendStatusUpdatedAt`.
 - **Nessun test end-to-end automatico contro PN reale** (ambiente di
   collaudo PN richiederebbe credenziali dedicate collaudo, fuori scope
   verificarle in questa sessione) — un test manuale guidato con l'utente,
@@ -310,6 +376,11 @@ al protocollo dell'`url` restituito) con headers `content-type`,
   usare `payment-config.util.ts`)
 - `apps/backend/src/queue/notification.processor.ts` (refactor per usare
   `payment-config.util.ts`)
+- `apps/backend/src/channels/send/send-status-sync.service.ts` (nuovo)
+- `apps/backend/src/entities/notification-attempt.entity.ts` (nuove
+  colonne `iun`, `sendStatus`, `sendStatusUpdatedAt`)
+- `apps/backend/src/database/migrations/<timestamp>-AddSendStatusColumns.ts`
+  (nuova)
 - `apps/backend/src/settings/settings.registry.ts` (`send.senderTaxId`,
   `send.enabledTaxonomyCodes`)
 - `apps/frontend-admin/src/App.tsx` (tab SEND: gestione tassonomie
