@@ -30,6 +30,7 @@ const mockMailConfigs = {
 
 const mockAttemptRepo = {
   update: jest.fn(),
+  findOne: jest.fn(),
 };
 
 const mockCampaignRepo = {
@@ -115,6 +116,7 @@ describe('NotificationProcessor', () => {
 
     mockCampaignRepo.findOne.mockResolvedValue(mockCampaign);
     mockRecipientRepo.findOne.mockResolvedValue(mockRecipient);
+    mockAttemptRepo.findOne.mockResolvedValue({ id: 'att-1', status: AttemptStatus.QUEUED, responsePayload: null });
     mockRecipientRepo.update.mockResolvedValue(undefined);
     mockRecipientRepo.count.mockResolvedValue(1);
     mockCampaignRepo.increment.mockResolvedValue(undefined);
@@ -225,6 +227,74 @@ describe('NotificationProcessor', () => {
     await expect(processor.process(job, 'tok')).rejects.toThrow(DelayedError);
     expect(job.moveToDelayed).toHaveBeenCalled();
     expect(mockRedis.decr).toHaveBeenCalled();
+  });
+
+  describe('redelivery: guardia contro doppio invio (BullMQ redelivery)', () => {
+    it('non richiama strategy.send se l\'attempt è già SUCCESS in DB', async () => {
+      mockAttemptRepo.findOne.mockResolvedValueOnce({
+        id: 'att-1',
+        status: AttemptStatus.SUCCESS,
+        responsePayload: { messageId: 'msg-001' },
+      });
+
+      await processor.process(mockJob(baseData));
+
+      expect(mockStrategy.send).not.toHaveBeenCalled();
+      // Non deve ri-eseguire le transizioni di stato normali (già SUCCESS, non toccare).
+      expect(mockAttemptRepo.update).not.toHaveBeenCalledWith('att-1', { status: AttemptStatus.PROCESSING });
+    });
+
+    it('non richiama strategy.send se responsePayload ha già notificationRequestId (PN aveva già accettato), ma completa gli aggiornamenti sospesi', async () => {
+      // Simula il crash-window reale: strategy.send() ha già ottenuto l'ack dal
+      // provider (notificationRequestId scritto su DB) ma il worker è morto
+      // prima di completare recipient/campaign/attempt SUCCESS.
+      mockAttemptRepo.findOne.mockResolvedValueOnce({
+        id: 'att-1',
+        status: AttemptStatus.PROCESSING,
+        responsePayload: { notificationRequestId: 'req-xyz', messageId: 'req-xyz' },
+      });
+
+      await processor.process(mockJob(baseData));
+
+      expect(mockStrategy.send).not.toHaveBeenCalled();
+      // La coda di completamento va comunque eseguita, riusando il responsePayload esistente.
+      expect(mockAttemptRepo.update).toHaveBeenCalledWith('att-1', expect.objectContaining({
+        status: AttemptStatus.SUCCESS,
+        responsePayload: { notificationRequestId: 'req-xyz', messageId: 'req-xyz' },
+      }));
+      expect(mockRecipientRepo.update).toHaveBeenCalledWith('rec-1', expect.objectContaining({
+        status: RecipientStatus.SENT,
+        attachmentExpiresAt: expect.any(Date),
+      }));
+      expect(mockCampaignRepo.increment).toHaveBeenCalledWith({ id: 'camp-1' }, 'sentCount', 1);
+    });
+
+    it('persiste subito il responsePayload (con notificationRequestId) appena strategy.send() ha successo, prima dell\'update finale SUCCESS', async () => {
+      mockStrategy.send.mockResolvedValueOnce({
+        messageId: 'req-xyz',
+        responsePayload: { notificationRequestId: 'req-xyz' },
+      });
+
+      await processor.process(mockJob(baseData));
+
+      // Scrittura intermedia con solo responsePayload (senza status), che rende visibile
+      // a un'eventuale redelivery l'ack del provider anche se il worker muore subito dopo.
+      expect(mockAttemptRepo.update).toHaveBeenCalledWith('att-1', {
+        responsePayload: expect.objectContaining({ notificationRequestId: 'req-xyz' }),
+      });
+    });
+
+    it('procede normalmente (chiama strategy.send) se l\'attempt non è ancora SUCCESS e non ha notificationRequestId', async () => {
+      mockAttemptRepo.findOne.mockResolvedValueOnce({
+        id: 'att-1',
+        status: AttemptStatus.QUEUED,
+        responsePayload: null,
+      });
+
+      await processor.process(mockJob(baseData));
+
+      expect(mockStrategy.send).toHaveBeenCalled();
+    });
   });
 
   describe('App IO indipendente dal canale primario', () => {

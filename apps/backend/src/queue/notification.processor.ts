@@ -88,6 +88,39 @@ export class NotificationProcessor extends WorkerHost {
       }
     }
 
+    // Guardia contro redelivery BullMQ: se il worker crasha/stalla tra il "send"
+    // side-effecting (che per SEND registra un nuovo protocollo reale e può far
+    // accettare a PN una seconda notifica legale, vedi send.strategy.ts) e la
+    // scrittura SUCCESS su DB, il job può essere ri-consegnato. Rileggiamo
+    // l'attempt fresco da DB (non dai dati del job, potenzialmente stantii).
+    // Due casi distinti, gestiti diversamente:
+    // 1. status già SUCCESS: il run precedente ha completato per intero (incluso
+    //    l'incremento di sentCount) — non c'è nulla da fare, un secondo giro
+    //    incrementerebbe i contatori due volte. Log e uscita.
+    // 2. status non ancora SUCCESS ma responsePayload contiene già
+    //    notificationRequestId (scritto subito dopo che strategy.send() ha
+    //    ottenuto l'ack dal provider esterno, vedi sotto): il provider ha già
+    //    accettato l'invio ma il worker è morto prima di completare gli
+    //    aggiornamenti finali (recipient/campaign/attempt SUCCESS). In questo
+    //    caso NON richiamiamo strategy.send() (eviterebbe il doppio invio) ma
+    //    completiamo comunque la coda di aggiornamenti che normalmente segue
+    //    un invio riuscito, riusando il responsePayload già persistito.
+    const existingAttempt = await this.attemptRepo.findOne({ where: { id: attemptId } });
+    if (existingAttempt?.status === AttemptStatus.SUCCESS) {
+      const msg = `Job ${job.id}: attempt ${attemptId} già SUCCESS (redelivery BullMQ) — nessuna azione, strategy.send() NON richiamato.`;
+      this.logger.warn(msg);
+      jobLog(msg);
+      return;
+    }
+    const existingResponsePayload = existingAttempt?.responsePayload as Record<string, unknown> | null;
+    if (existingResponsePayload?.['notificationRequestId']) {
+      const msg = `Job ${job.id}: attempt ${attemptId} risulta già accettato dal provider esterno in un run precedente (redelivery BullMQ) — strategy.send() NON richiamato, completo gli aggiornamenti rimasti in sospeso.`;
+      this.logger.warn(msg);
+      jobLog(msg);
+      await this.completeSuccess(attemptId, recipientId, campaignId, campaign, existingResponsePayload);
+      return;
+    }
+
     await this.attemptRepo.update(attemptId, { status: AttemptStatus.PROCESSING });
 
     const strategy = this.strategies.get(channel);
@@ -153,6 +186,16 @@ export class NotificationProcessor extends WorkerHost {
       Object.assign(responsePayload, primaryResult?.responsePayload || {});
       responsePayload.messageId = primaryResult?.messageId;
 
+      // Scrittura immediata (subito dopo l'ack del provider esterno, PRIMA di
+      // retention/App IO co-delivery che seguono): se il worker crasha in
+      // questa finestra, la guardia redelivery in testa a process() vede già
+      // notificationRequestId su DB e non richiama strategy.send() una seconda
+      // volta — senza questa scrittura, un crash qui lascerebbe l'attempt in
+      // PROCESSING con responsePayload vuoto, invisibile alla guardia.
+      if (primaryResult) {
+        await this.attemptRepo.update(attemptId, { responsePayload });
+      }
+
       // 2. Co-delivery PARALLELA (comportamento attuale, solo primo tentativo)
       if (appIoMode === 'parallel' && isMailChannel && job.attemptsMade === 0) {
         const hasAppIo = await this.checkAppIoProfile(
@@ -197,6 +240,24 @@ export class NotificationProcessor extends WorkerHost {
       throw primaryError;
     }
 
+    await this.completeSuccess(attemptId, recipientId, campaignId, campaign, responsePayload);
+  }
+
+  /**
+   * Coda di aggiornamenti che segue un invio primario riuscito: marca l'attempt
+   * SUCCESS, il destinatario SENT (con scadenza allegato da retention), incrementa
+   * sentCount e verifica il completamento campagna. Estratto in un metodo a parte
+   * perché va rieseguito anche dalla guardia di redelivery in process() quando un
+   * run precedente ha ottenuto l'ack dal provider esterno ma non ha completato
+   * questi aggiornamenti prima di un crash/stall del worker (vedi commento in process()).
+   */
+  private async completeSuccess(
+    attemptId: string,
+    recipientId: string,
+    campaignId: string,
+    campaign: Campaign,
+    responsePayload: Record<string, any>,
+  ): Promise<void> {
     const retentionMaxDaysForExpiry = await this.settings.get<number>('retention.maxDays');
     const retentionDaysForExpiry = getEffectiveRetentionDays(campaign, retentionMaxDaysForExpiry);
     const attachmentExpiresAt = new Date(Date.now() + retentionDaysForExpiry * 86400 * 1000);

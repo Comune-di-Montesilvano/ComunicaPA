@@ -42,6 +42,11 @@ export class SendStatusSyncService {
       .where('attempt.channel_type = :ch', { ch: 'SEND' })
       .andWhere('attempt.iun IS NULL')
       .andWhere("attempt.response_payload ->> 'notificationRequestId' IS NOT NULL")
+      // Un attempt REFUSED non avrà mai un IUN: senza questa esclusione resta
+      // candidato per sempre ad ogni run del cron, e con BATCH_SIZE=200 senza
+      // ORDER BY può saturare il batch a scapito di attempt genuinamente nuovi.
+      .andWhere("(attempt.send_status IS NULL OR attempt.send_status <> :refused)", { refused: 'REFUSED' })
+      .orderBy('attempt.created_at', 'ASC')
       .take(BATCH_SIZE)
       .getMany();
 
@@ -84,6 +89,7 @@ export class SendStatusSyncService {
       .where('attempt.channel_type = :ch', { ch: 'SEND' })
       .andWhere('attempt.iun IS NOT NULL')
       .andWhere('(attempt.send_status IS NULL OR attempt.send_status NOT IN (:...terminal))', { terminal: TERMINAL_STATUSES })
+      .orderBy('attempt.created_at', 'ASC')
       .take(BATCH_SIZE)
       .getMany();
 
