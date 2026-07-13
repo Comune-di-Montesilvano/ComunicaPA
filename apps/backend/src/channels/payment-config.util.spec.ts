@@ -82,4 +82,23 @@ describe('resolvePaymentData', () => {
     });
     expect(result?.dueDateIso).toBe('2026-12-31T23:59:59.000Z');
   });
+
+  it('risolve la data di scadenza anche se notice code/importo non sono validi', () => {
+    const recipient = makeRecipient({ importo: '0', scadenza: '2026-12-31' });
+    const result = resolvePaymentData(recipient, {
+      enabled: true,
+      amountColumn: 'importo',
+      amountType: 'euro',
+      noticeNumberColumn: 'avviso', // colonna assente -> notice code vuoto
+      payeeFiscalCodeType: 'static',
+      payeeFiscalCodeStatic: 'X',
+      dueDateColumn: 'scadenza',
+    });
+    expect(result).toEqual({
+      noticeCode: null,
+      amountCents: null,
+      creditorTaxId: null,
+      dueDateIso: '2026-12-31T23:59:59.000Z',
+    });
+  });
 });

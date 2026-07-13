@@ -316,7 +316,7 @@ export class NotificationProcessor extends WorkerHost {
 
       const paymentConfig = campaign.channelConfig?.['paymentConfig'] as Record<string, any> | undefined;
       const resolvedPayment = resolvePaymentData(recipient, paymentConfig);
-      if (resolvedPayment) {
+      if (resolvedPayment?.noticeCode && resolvedPayment.amountCents != null) {
         const paymentData: Record<string, any> = {
           amount: resolvedPayment.amountCents,
           notice_number: resolvedPayment.noticeCode,
@@ -326,9 +326,9 @@ export class NotificationProcessor extends WorkerHost {
           paymentData.payee = { fiscal_code: resolvedPayment.creditorTaxId };
         }
         contentPayload.payment_data = paymentData;
-        if (resolvedPayment.dueDateIso) {
-          contentPayload.due_date = resolvedPayment.dueDateIso;
-        }
+      }
+      if (resolvedPayment?.dueDateIso) {
+        contentPayload.due_date = resolvedPayment.dueDateIso;
       }
 
       onLog?.(`Invio App IO (co-delivery) a CF ${recipient.codiceFiscale}: markdown length=${processedMarkdown.length}`);

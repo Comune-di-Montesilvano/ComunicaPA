@@ -1,9 +1,9 @@
 import type { Recipient } from '../entities/recipient.entity';
 
 export interface ResolvedPaymentData {
-  noticeCode: string;
-  amountCents: number;
-  creditorTaxId: string;
+  noticeCode: string | null;
+  amountCents: number | null;
+  creditorTaxId: string | null;
   dueDateIso: string | null;
 }
 
@@ -70,7 +70,20 @@ export function resolvePaymentData(
     amountCents = Math.round(parsed * 100);
   }
 
-  if (!noticeCode || amountCents <= 0) return null;
+  const hasValidPayment = !!noticeCode && amountCents > 0;
+
+  // Il due_date è indipendente dalla validità di notice/amount: valorizzato
+  // ogni volta che dueDateColumn è configurata, anche se il resto non risolve.
+  let dueDateIso: string | null = null;
+  if (paymentConfig.dueDateColumn) {
+    dueDateIso = parseDateToIso(getColumnValue(recipient, paymentConfig.dueDateColumn));
+  }
+
+  if (!hasValidPayment && !dueDateIso) return null;
+
+  if (!hasValidPayment) {
+    return { noticeCode: null, amountCents: null, creditorTaxId: null, dueDateIso };
+  }
 
   let creditorTaxId = '';
   if (paymentConfig.payeeFiscalCodeType === 'static') {
@@ -79,11 +92,6 @@ export function resolvePaymentData(
     creditorTaxId = getColumnValue(recipient, paymentConfig.payeeFiscalCodeColumn);
   }
   creditorTaxId = creditorTaxId.toUpperCase().trim();
-
-  let dueDateIso: string | null = null;
-  if (paymentConfig.dueDateColumn) {
-    dueDateIso = parseDateToIso(getColumnValue(recipient, paymentConfig.dueDateColumn));
-  }
 
   return { noticeCode, amountCents, creditorTaxId, dueDateIso };
 }
