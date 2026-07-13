@@ -469,6 +469,7 @@ export function App(): React.JSX.Element {
   const [wizValidationWarnings, setWizValidationWarnings] = useState<Array<{ row: number; field: string; val: string; warn: string }>>([]);
   const [wizValidRows, setWizValidRows] = useState<Record<string, string>[]>([]);
   const [wizSubject, setWizSubject] = useState('');
+  const [wizProtocolla, setWizProtocolla] = useState(false);
   const [wizBody, setWizBody] = useState('');
   const [wizPreviewIndex, setWizPreviewIndex] = useState(0);
   const [wizPreviewResult, setWizPreviewResult] = useState<{ subject: string; bodyHtml?: string; bodyMarkdown?: string } | null>(null);
@@ -2322,6 +2323,7 @@ export function App(): React.JSX.Element {
     setWizName('');
     setWizDesc('');
     setWizSubject('');
+    setWizProtocolla(false);
     setWizBody('');
     setWizCsvFile(null);
     setWizCsvHeaders([]);
@@ -2368,6 +2370,7 @@ export function App(): React.JSX.Element {
     setWizDesc(source.description || '');
     setWizChannel(source.channelType);
     setWizSubject(source.channelConfig?.subject || '');
+    setWizProtocolla(Boolean(source.channelConfig?.protocolla));
     setWizBody(source.channelConfig?.body || '');
     setWizMailConfigId(source.channelConfig?.mailConfigId || '');
 
@@ -2454,7 +2457,7 @@ export function App(): React.JSX.Element {
   };
 
   const buildWizChannelConfigDraft = (): Record<string, any> => {
-    const cfg: Record<string, any> = { subject: wizSubject, body: wizBody, mailConfigId: wizMailConfigId };
+    const cfg: Record<string, any> = { subject: wizSubject, body: wizBody, mailConfigId: wizMailConfigId, protocolla: wizProtocolla };
     if (wizAttachments.length > 0) cfg.attachments = wizAttachments;
     if (wizMapping.codice_fiscale) cfg.csvMapping = wizMapping;
     if (wizChannel === 'APP_IO') {
@@ -2567,7 +2570,11 @@ export function App(): React.JSX.Element {
           }
         }
       } else if (wizChannel === 'SEND') {
-        channelConfig = {};
+        channelConfig = { subject: wizSubject, body: wizBody, protocolla: true };
+      }
+
+      if (wizChannel !== 'SEND') {
+        channelConfig.protocolla = wizProtocolla;
       }
 
       if (wizPaymentEnabled) {
@@ -3541,6 +3548,7 @@ export function App(): React.JSX.Element {
                         const activeCfg = mailConfigs.find(c => c.type === newChan && c.active);
                         setWizMailConfigId(activeCfg?.id || '');
                         setWizBlockedChannels(prev => prev.filter(x => x !== newChan));
+                        if (newChan === 'SEND') setWizProtocolla(true);
                       }}
                     >
                       <option value="EMAIL">EMAIL</option>
@@ -4187,6 +4195,23 @@ export function App(): React.JSX.Element {
                         (attuale: {wizAppIoBodyLen}). PagoPA rifiuta messaggi più corti o più lunghi.
                       </div>
                     )}
+
+                    <div className="form-check mt-3">
+                      <input
+                        type="checkbox"
+                        className="form-check-input"
+                        id="wiz_protocolla"
+                        checked={wizProtocolla}
+                        disabled={wizChannel === 'SEND'}
+                        onChange={(e) => setWizProtocolla(e.target.checked)}
+                      />
+                      <label className="form-check-label small" htmlFor="wiz_protocolla">
+                        Protocolla questo invio
+                        {wizChannel === 'SEND' && (
+                          <span className="text-muted"> (obbligatorio per SEND: ogni invio viene registrato sul Protocollo Informatico prima della trasmissione)</span>
+                        )}
+                      </label>
+                    </div>
 
                     <div className="mt-4 pt-3 border-top d-flex justify-content-between">
                       <button className="btn btn-outline-secondary" onClick={() => setWizStep(3)}>
