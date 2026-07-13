@@ -3559,6 +3559,23 @@ export function App(): React.JSX.Element {
                     </select>
                   </div>
 
+                  <div className="form-check mb-3">
+                    <input
+                      type="checkbox"
+                      className="form-check-input"
+                      id="wiz_protocolla"
+                      checked={wizProtocolla}
+                      disabled={wizChannel === 'SEND'}
+                      onChange={(e) => setWizProtocolla(e.target.checked)}
+                    />
+                    <label className="form-check-label small" htmlFor="wiz_protocolla">
+                      Protocolla questo invio
+                      {wizChannel === 'SEND' && (
+                        <span className="text-muted"> (obbligatorio per SEND: ogni invio viene registrato sul Protocollo Informatico prima della trasmissione)</span>
+                      )}
+                    </label>
+                  </div>
+
                   {(wizChannel === 'EMAIL' || wizChannel === 'PEC') && (
                     <div className="mb-3">
                       <label className="form-label small fw-bold">Server di Invio / Mittente *</label>
@@ -4195,23 +4212,6 @@ export function App(): React.JSX.Element {
                         (attuale: {wizAppIoBodyLen}). PagoPA rifiuta messaggi più corti o più lunghi.
                       </div>
                     )}
-
-                    <div className="form-check mt-3">
-                      <input
-                        type="checkbox"
-                        className="form-check-input"
-                        id="wiz_protocolla"
-                        checked={wizProtocolla}
-                        disabled={wizChannel === 'SEND'}
-                        onChange={(e) => setWizProtocolla(e.target.checked)}
-                      />
-                      <label className="form-check-label small" htmlFor="wiz_protocolla">
-                        Protocolla questo invio
-                        {wizChannel === 'SEND' && (
-                          <span className="text-muted"> (obbligatorio per SEND: ogni invio viene registrato sul Protocollo Informatico prima della trasmissione)</span>
-                        )}
-                      </label>
-                    </div>
 
                     <div className="mt-4 pt-3 border-top d-flex justify-content-between">
                       <button className="btn btn-outline-secondary" onClick={() => setWizStep(3)}>
