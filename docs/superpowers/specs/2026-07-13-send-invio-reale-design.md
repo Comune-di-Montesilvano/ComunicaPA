@@ -157,12 +157,30 @@ qui). `SendStrategy.send()` si considera riuscito già al 202, salvando
   (spostato allo step 1) è attivo mostra solo codici che finiscono per
   `P`, altrimenti solo quelli che finiscono per `N`.
 - **physicalCommunicationType**: selezionabile nel wizard (step 1),
-  default `AR_REGISTERED_LETTER`. Alert informativo con differenze
-  procedurali tra AR e 890 e link alla pagina ufficiale costi
-  (`developer.pagopa.it/it/send/guides/knowledge-base/v2.5/readme/pagamenti-e-spese-di-notifica`)
-  — **nessuna cifra di costo hardcoded**: non è stato possibile verificare
-  tariffe ufficiali aggiornate, riportare numeri non verificati in un
-  contesto di spesa pubblica è un rischio maggiore che ometterli.
+  default `AR_REGISTERED_LETTER`. Alert informativo con struttura costi
+  reale (fonte: listino ufficiale PagoPA, vedi sotto) — **generica, non
+  con cifre di una regione specifica hardcoded**: ComunicaPA è
+  open-source e distribuibile da enti di regioni diverse, ognuno con
+  tariffe di lotto diverse (il costo cartaceo varia per regione/zona di
+  recapito). L'alert mostra la struttura (fasce di peso, differenza
+  A/R vs 890, IVA esclusa) e linka il listino ufficiale aggiornato
+  (`https://notifichedigitali.pagopa.it/static/documents/Prezzi%20Ente%202024.pdf`)
+  perché l'operatore verifichi le cifre esatte del proprio lotto/regione.
+
+  **Dati reali verificati** (listino ufficiale, in vigore dal 1/2/2024,
+  scaricato e letto direttamente — non un riassunto automatico): costo
+  notifica digitale (gestione piattaforma) **€1,00 + IVA**, sempre
+  addebitato indipendentemente dall'esito. Fallback cartaceo, solo se la
+  consegna digitale fallisce del tutto: **A/R è sistematicamente più
+  economica di 890** a parità di fascia di peso (es. Abruzzo, Lotto 13
+  vs Lotto 30: fino a 20g **890 = €8,47** contro **A/R = €2,70–3,46**
+  a seconda della zona di recapito AM/CP/EU). Il costo omnicomprensivo
+  copre 1 foglio, +€0,03/foglio successivo; limiti piattaforma: max 99
+  fogli se A/R, max 17 fogli se 890. Zone AM/CP/EU sono assegnate
+  automaticamente da PN in base al recapitista, non selezionabili
+  dall'ente. Questo conferma che il default `AR_REGISTERED_LETTER`
+  proposto è anche la scelta economicamente più sensata nella grande
+  maggioranza dei casi.
 - **payments**: nessun PDF bollettino da generare (confermato dallo
   schema: `attachment` opzionale). Riuso della logica di risoluzione dati
   già esistente per App IO (`noticeCode`/`creditorTaxId`/importo), estratta
@@ -259,8 +277,10 @@ al protocollo dell'`url` restituito) con headers `content-type`,
   già esistente). Per SEND: select "Tassonomia" filtrata (P se pagamenti
   ON, N se OFF) dalle voci abilitate in Impostazioni; select "Tipo
   comunicazione fisica" (`AR_REGISTERED_LETTER` default /
-  `REGISTERED_LETTER_890`) con alert informativo differenze + link costi
-  ufficiali (nessuna cifra hardcoded).
+  `REGISTERED_LETTER_890`) con alert informativo (struttura costi generica
+  verificata da listino ufficiale — A/R sistematicamente più economica di
+  890 — + link al PDF ufficiale aggiornato per le cifre esatte del
+  lotto/regione dell'ente, vedi sezione "Decisioni con l'utente").
 - Step 4: nessun cambiamento aggiuntivo oltre a quanto già esiste
   (subject/body già passati per SEND dal lavoro del sotto-progetto 1).
 
