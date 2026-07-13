@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import type { NotificationChannel } from '@comunicapa/shared-types';
 import { PdfModule } from '../pdf/pdf.module';
 import { PdndModule } from '../pdnd/pdnd.module';
+import { ProtocolloModule } from '../protocollo/protocollo.module';
+import { AttachmentModule } from '../attachments/attachment.module';
 import type { IChannelStrategy } from './channel.interface';
 import { CHANNEL_STRATEGIES } from './channel.interface';
 import { EmailStrategy } from './email/email.strategy';
@@ -11,7 +13,7 @@ import { SendStrategy } from './send/send.strategy';
 import { PostalStrategy } from './postal/postal.strategy';
 
 @Module({
-  imports: [PdfModule, PdndModule],
+  imports: [PdfModule, PdndModule, ProtocolloModule, AttachmentModule],
   providers: [
     EmailStrategy,
     PecStrategy,

@@ -6,9 +6,18 @@ import type { Campaign } from '../../entities/campaign.entity';
 import { AppSettingsService } from '../../settings/app-settings.service';
 import type { SettingKey } from '../../settings/settings.registry';
 import { PdndAuthService } from '../../pdnd/pdnd-auth.service';
+import { ProtocolloService } from '../../protocollo/protocollo.service';
+import { AttachmentService } from '../../attachments/attachment.service';
 
 function interpolate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => vars[key] ?? `{{${key}}}`);
+}
+
+function splitFullName(fullName: string | null | undefined): { nome: string; cognome: string } {
+  const parts = (fullName ?? '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { nome: '', cognome: '' };
+  if (parts.length === 1) return { nome: parts[0], cognome: '' };
+  return { nome: parts.slice(0, -1).join(' '), cognome: parts[parts.length - 1] };
 }
 
 @Injectable()
@@ -19,6 +28,8 @@ export class SendStrategy implements IChannelStrategy {
   constructor(
     private readonly settings: AppSettingsService,
     private readonly pdndAuth: PdndAuthService,
+    private readonly protocollo: ProtocolloService,
+    private readonly attachments: AttachmentService,
   ) {}
 
   async send(recipient: Recipient, campaign: Campaign, onLog?: ChannelLogFn): Promise<ChannelSendResult> {
@@ -38,14 +49,34 @@ export class SendStrategy implements IChannelStrategy {
       fullName: recipient.fullName ?? '',
       codiceFiscale: recipient.codiceFiscale,
     };
-    const cfg = campaign.channelConfig as Record<string, string>;
-    const subject = interpolate(cfg['subject'] ?? campaign.name, vars);
-    const notificationBody = interpolate(cfg['body'] ?? '', vars);
+    const cfg = campaign.channelConfig as Record<string, unknown>;
+    const subject = interpolate((cfg['subject'] as string) ?? campaign.name, vars);
+    const notificationBody = interpolate((cfg['body'] as string) ?? '', vars);
+
+    const extraResponsePayload: Record<string, unknown> = {};
+    if (cfg['protocolla'] === true) {
+      log(`Protocollazione SEND per CF ${recipient.codiceFiscale}`);
+      const { nome, cognome } = splitFullName(recipient.fullName);
+      const documentBuffer = await this.attachments.generatePdfBuffer(recipient, 0);
+      const protocolloResult = await this.protocollo.protocolla({
+        oggetto: subject,
+        destinatario: {
+          codiceFiscale: recipient.codiceFiscale,
+          nome,
+          cognome,
+          denominazione: recipient.fullName ?? recipient.codiceFiscale,
+        },
+        documentBuffer,
+        documentFilename: `${recipient.codiceFiscale}.pdf`,
+      });
+      extraResponsePayload.protocollo = protocolloResult;
+      log(`Protocollazione OK: ${protocolloResult.numeroProtocollo}/${protocolloResult.annoProtocollo}`);
+    }
 
     log(`Invio notifica SEND a CF ${recipient.codiceFiscale} via ${baseUrl} (subject="${subject}")`);
     // TODO: endpoint e payload reali sono /delivery/v2.6/requests con schema
     // multipart (allegati via preload) — questo resta un placeholder in attesa
-    // dell'implementazione del payload notifica completo.
+    // dell'implementazione del payload notifica completo (sotto-progetto 2).
     const response = await fetch(`${baseUrl}/delivery/notifications/sent`, {
       method: 'POST',
       headers: {
@@ -68,7 +99,7 @@ export class SendStrategy implements IChannelStrategy {
     this.logger.log(`Notifica SEND inviata a CF ${recipient.codiceFiscale}: messageId=${data.notificationRequestId}`);
     return {
       messageId: data.notificationRequestId,
-      responsePayload: data as unknown as Record<string, unknown>,
+      responsePayload: { ...data, ...extraResponsePayload } as unknown as Record<string, unknown>,
     };
   }
 }
