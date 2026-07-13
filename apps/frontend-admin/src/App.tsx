@@ -5442,7 +5442,6 @@ export function App(): React.JSX.Element {
                                 value={settProtoUrl}
                                 onChange={(e) => setSettProtoUrl(e.target.value)}
                                 placeholder="https://protows01.esempio.it/"
-                                required
                               />
                             </div>
                             <div className="col-md-6">
