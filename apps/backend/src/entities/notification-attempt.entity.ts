@@ -43,6 +43,15 @@ export class NotificationAttempt {
   @Column({ type: 'jsonb', name: 'response_payload', nullable: true })
   responsePayload!: Record<string, unknown> | null;
 
+  @Column({ type: 'varchar', length: 26, nullable: true })
+  iun!: string | null;
+
+  @Column({ name: 'send_status', type: 'varchar', length: 30, nullable: true })
+  sendStatus!: string | null;
+
+  @Column({ name: 'send_status_updated_at', type: 'timestamptz', nullable: true })
+  sendStatusUpdatedAt!: Date | null;
+
   @Column({ name: 'error_message', type: 'text', nullable: true })
   errorMessage!: string | null;
 
