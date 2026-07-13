@@ -642,10 +642,15 @@ export function App(): React.JSX.Element {
   const [settOidcLogoutUrl, setSettOidcLogoutUrl] = useState('');
   const [settCitizenPublicUrl, setSettCitizenPublicUrl] = useState('');
 
-  const [settProtoProvider, setSettProtoProvider] = useState(localStorage.getItem('sett_proto_provider') || 'Maggioli');
-  const [settProtoUrl, setSettProtoUrl] = useState(localStorage.getItem('sett_proto_url') || 'https://protocollo.comune.montesilvano.pe.it/api');
-  const [settProtoUser, setSettProtoUser] = useState(localStorage.getItem('sett_proto_user') || 'api_user');
-  const [settProtoPass, setSettProtoPass] = useState(localStorage.getItem('sett_proto_pass') || '••••••••');
+  const [settProtoProvider, setSettProtoProvider] = useState('tinn');
+  const [settProtoUrl, setSettProtoUrl] = useState('');
+  const [settProtoCodiceEnte, setSettProtoCodiceEnte] = useState('');
+  const [settProtoUser, setSettProtoUser] = useState('');
+  const [settProtoPass, setSettProtoPass] = useState('');
+  const [settProtoCodiceTitolario, setSettProtoCodiceTitolario] = useState('6022');
+  const [settProtoCodiceAmministrazione, setSettProtoCodiceAmministrazione] = useState('1');
+  const [settProtoUnitaOrganizzativa, setSettProtoUnitaOrganizzativa] = useState('1');
+  const [settProtoMittenteDenominazione, setSettProtoMittenteDenominazione] = useState('');
 
   const [settPostalProvider, setSettPostalProvider] = useState(localStorage.getItem('sett_postal_provider') || 'Postel');
   const [settPostalKey, setSettPostalKey] = useState(localStorage.getItem('sett_postal_key') || '');
@@ -790,6 +795,15 @@ export function App(): React.JSX.Element {
         setSettInadProdPurposeId(String(s['inad.prod.purposeId'] ?? ''));
         setSettInipecTestPurposeId(String(s['inipec.test.purposeId'] ?? ''));
         setSettInipecProdPurposeId(String(s['inipec.prod.purposeId'] ?? ''));
+        setSettProtoProvider(String(s['protocollo.provider'] ?? 'tinn'));
+        setSettProtoUrl(String(s['protocollo.baseUrl'] ?? ''));
+        setSettProtoCodiceEnte(String(s['protocollo.codiceEnte'] ?? ''));
+        setSettProtoUser(String(s['protocollo.username'] ?? ''));
+        setSettProtoPass(String(s['protocollo.password'] ?? ''));
+        setSettProtoCodiceTitolario(String(s['protocollo.codiceTitolario'] ?? '6022'));
+        setSettProtoCodiceAmministrazione(String(s['protocollo.codiceAmministrazione'] ?? '1'));
+        setSettProtoUnitaOrganizzativa(String(s['protocollo.unitaOrganizzativa'] ?? '1'));
+        setSettProtoMittenteDenominazione(String(s['protocollo.mittenteDenominazione'] ?? ''));
         setSettRetentionDays(String(s['retention.maxDays'] ?? '90'));
         setSettOidcIssuer(String(s['oidc.issuer'] ?? ''));
         setSettOidcAudience(String(s['oidc.audience'] ?? ''));
@@ -1337,6 +1351,15 @@ export function App(): React.JSX.Element {
     'inad.prod.purposeId': settInadProdPurposeId,
     'inipec.test.purposeId': settInipecTestPurposeId,
     'inipec.prod.purposeId': settInipecProdPurposeId,
+    'protocollo.provider': settProtoProvider,
+    'protocollo.baseUrl': settProtoUrl,
+    'protocollo.codiceEnte': settProtoCodiceEnte,
+    'protocollo.username': settProtoUser,
+    'protocollo.password': settProtoPass,
+    'protocollo.codiceTitolario': settProtoCodiceTitolario,
+    'protocollo.codiceAmministrazione': settProtoCodiceAmministrazione,
+    'protocollo.unitaOrganizzativa': settProtoUnitaOrganizzativa,
+    'protocollo.mittenteDenominazione': settProtoMittenteDenominazione,
     'retention.maxDays': Number(settRetentionDays) || 90,
     'oidc.issuer': settOidcIssuer,
     'oidc.audience': settOidcAudience,
@@ -1350,10 +1373,6 @@ export function App(): React.JSX.Element {
     e.preventDefault();
     // Canali non ancora migrati al backend: restano su localStorage
     // (App IO ora persistito lato server via /io-services, niente più localStorage)
-    localStorage.setItem('sett_proto_provider', settProtoProvider);
-    localStorage.setItem('sett_proto_url', settProtoUrl);
-    localStorage.setItem('sett_proto_user', settProtoUser);
-    localStorage.setItem('sett_proto_pass', settProtoPass);
     localStorage.setItem('sett_postal_provider', settPostalProvider);
     localStorage.setItem('sett_postal_key', settPostalKey);
     localStorage.setItem('sett_postal_url', settPostalUrl);
@@ -5386,25 +5405,33 @@ export function App(): React.JSX.Element {
                                 value={settProtoProvider}
                                 onChange={(e) => setSettProtoProvider(e.target.value)}
                               >
-                                <option value="Maggioli">Maggioli (ApriPA)</option>
-                                <option value="Saga">Saga (Siger)</option>
-                                <option value="Halley">Halley Protocollo</option>
-                                <option value="Custom">Strategia Custom (Plugin)</option>
+                                <option value="tinn">TINN (Affari Generali)</option>
                               </select>
                             </div>
                             <div className="col-md-6">
-                              <label className="form-label small fw-bold text-dark" htmlFor="proto_url">Endpoint Webservice</label>
+                              <label className="form-label small fw-bold text-dark" htmlFor="proto_url">URL Protocollazione</label>
                               <input
                                 type="text"
                                 id="proto_url"
                                 className="form-control form-control-sm"
                                 value={settProtoUrl}
                                 onChange={(e) => setSettProtoUrl(e.target.value)}
+                                placeholder="https://protows01.esempio.it/"
                                 required
                               />
                             </div>
                             <div className="col-md-6">
-                              <label className="form-label small fw-semibold text-muted" htmlFor="proto_user">User ID</label>
+                              <label className="form-label small fw-semibold text-muted" htmlFor="proto_codice_ente">Codice Ente</label>
+                              <input
+                                type="text"
+                                id="proto_codice_ente"
+                                className="form-control form-control-sm"
+                                value={settProtoCodiceEnte}
+                                onChange={(e) => setSettProtoCodiceEnte(e.target.value)}
+                              />
+                            </div>
+                            <div className="col-md-6">
+                              <label className="form-label small fw-semibold text-muted" htmlFor="proto_user">Username</label>
                               <input
                                 type="text"
                                 id="proto_user"
@@ -5414,13 +5441,54 @@ export function App(): React.JSX.Element {
                               />
                             </div>
                             <div className="col-md-6">
-                              <label className="form-label small fw-semibold text-muted" htmlFor="proto_pass">Chiave/Password</label>
+                              <label className="form-label small fw-semibold text-muted" htmlFor="proto_pass">Password</label>
                               <input
                                 type="password"
                                 id="proto_pass"
                                 className="form-control form-control-sm"
                                 value={settProtoPass}
                                 onChange={(e) => setSettProtoPass(e.target.value)}
+                              />
+                            </div>
+                            <div className="col-md-6">
+                              <label className="form-label small fw-semibold text-muted" htmlFor="proto_gerarchia">Gerarchia di Classificazione (Codice Titolario)</label>
+                              <input
+                                type="text"
+                                id="proto_gerarchia"
+                                className="form-control form-control-sm"
+                                value={settProtoCodiceTitolario}
+                                onChange={(e) => setSettProtoCodiceTitolario(e.target.value)}
+                              />
+                            </div>
+                            <div className="col-md-6">
+                              <label className="form-label small fw-semibold text-muted" htmlFor="proto_codice_amm">Codice Amministrazione (Classifica)</label>
+                              <input
+                                type="text"
+                                id="proto_codice_amm"
+                                className="form-control form-control-sm"
+                                value={settProtoCodiceAmministrazione}
+                                onChange={(e) => setSettProtoCodiceAmministrazione(e.target.value)}
+                              />
+                            </div>
+                            <div className="col-md-6">
+                              <label className="form-label small fw-semibold text-muted" htmlFor="proto_unita_org">Unità Organizzativa</label>
+                              <input
+                                type="text"
+                                id="proto_unita_org"
+                                className="form-control form-control-sm"
+                                value={settProtoUnitaOrganizzativa}
+                                onChange={(e) => setSettProtoUnitaOrganizzativa(e.target.value)}
+                              />
+                            </div>
+                            <div className="col-md-6">
+                              <label className="form-label small fw-semibold text-muted" htmlFor="proto_mittente">Denominazione Mittente (Ente)</label>
+                              <input
+                                type="text"
+                                id="proto_mittente"
+                                className="form-control form-control-sm"
+                                value={settProtoMittenteDenominazione}
+                                onChange={(e) => setSettProtoMittenteDenominazione(e.target.value)}
+                                placeholder="Es: Comune di Montesilvano"
                               />
                             </div>
                           </div>
