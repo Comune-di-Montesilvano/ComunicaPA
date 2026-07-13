@@ -470,6 +470,8 @@ export function App(): React.JSX.Element {
   const [wizValidRows, setWizValidRows] = useState<Record<string, string>[]>([]);
   const [wizSubject, setWizSubject] = useState('');
   const [wizProtocolla, setWizProtocolla] = useState(false);
+  const [wizTaxonomyCode, setWizTaxonomyCode] = useState('');
+  const [wizPhysicalCommunicationType, setWizPhysicalCommunicationType] = useState<'AR_REGISTERED_LETTER' | 'REGISTERED_LETTER_890'>('AR_REGISTERED_LETTER');
   const [wizBody, setWizBody] = useState('');
   const [wizPreviewIndex, setWizPreviewIndex] = useState(0);
   const [wizPreviewResult, setWizPreviewResult] = useState<{ subject: string; bodyHtml?: string; bodyMarkdown?: string } | null>(null);
@@ -2334,6 +2336,8 @@ export function App(): React.JSX.Element {
     setWizDesc('');
     setWizSubject('');
     setWizProtocolla(false);
+    setWizTaxonomyCode('');
+    setWizPhysicalCommunicationType('AR_REGISTERED_LETTER');
     setWizBody('');
     setWizCsvFile(null);
     setWizCsvHeaders([]);
@@ -2381,6 +2385,8 @@ export function App(): React.JSX.Element {
     setWizChannel(source.channelType);
     setWizSubject(source.channelConfig?.subject || '');
     setWizProtocolla(Boolean(source.channelConfig?.protocolla));
+    setWizTaxonomyCode(source.channelConfig?.taxonomyCode || '');
+    setWizPhysicalCommunicationType(source.channelConfig?.physicalCommunicationType || 'AR_REGISTERED_LETTER');
     setWizBody(source.channelConfig?.body || '');
     setWizMailConfigId(source.channelConfig?.mailConfigId || '');
 
@@ -2468,6 +2474,10 @@ export function App(): React.JSX.Element {
 
   const buildWizChannelConfigDraft = (): Record<string, any> => {
     const cfg: Record<string, any> = { subject: wizSubject, body: wizBody, mailConfigId: wizMailConfigId, protocolla: wizProtocolla };
+    if (wizChannel === 'SEND') {
+      cfg.taxonomyCode = wizTaxonomyCode;
+      cfg.physicalCommunicationType = wizPhysicalCommunicationType;
+    }
     if (wizAttachments.length > 0) cfg.attachments = wizAttachments;
     if (wizMapping.codice_fiscale) cfg.csvMapping = wizMapping;
     if (wizChannel === 'APP_IO') {
@@ -2580,7 +2590,13 @@ export function App(): React.JSX.Element {
           }
         }
       } else if (wizChannel === 'SEND') {
-        channelConfig = { subject: wizSubject, body: wizBody, protocolla: true };
+        channelConfig = {
+          subject: wizSubject,
+          body: wizBody,
+          protocolla: true,
+          taxonomyCode: wizTaxonomyCode,
+          physicalCommunicationType: wizPhysicalCommunicationType,
+        };
       }
 
       if (wizChannel !== 'SEND') {
@@ -3586,6 +3602,63 @@ export function App(): React.JSX.Element {
                     </label>
                   </div>
 
+                  <div className="form-check mb-3">
+                    <input
+                      type="checkbox"
+                      className="form-check-input"
+                      id="wiz-payment-enabled"
+                      checked={wizPaymentEnabled}
+                      onChange={e => setWizPaymentEnabled(e.target.checked)}
+                    />
+                    <label className="form-check-label small fw-bold" htmlFor="wiz-payment-enabled" style={{ cursor: 'pointer' }}>
+                      Integrazione pagamenti pagoPA
+                    </label>
+                    <div className="form-text small text-muted">Il mapping delle colonne CSV per importo/avviso/CF ente si configura allo step 3.</div>
+                  </div>
+
+                  {wizChannel === 'SEND' && (
+                    <>
+                      <div className="mb-3">
+                        <label className="form-label small fw-bold">Tassonomia SEND *</label>
+                        <select
+                          className="form-select form-select-sm"
+                          value={wizTaxonomyCode}
+                          onChange={e => setWizTaxonomyCode(e.target.value)}
+                          required
+                        >
+                          <option value="">-- Seleziona tassonomia --</option>
+                          {settSendTaxonomies
+                            .filter(t => t.code.endsWith(wizPaymentEnabled ? 'P' : 'N'))
+                            .map(t => (
+                              <option key={t.code} value={t.code}>{t.code} — {t.label}</option>
+                            ))}
+                        </select>
+                        {settSendTaxonomies.filter(t => t.code.endsWith(wizPaymentEnabled ? 'P' : 'N')).length === 0 && (
+                          <div className="form-text text-danger small">
+                            Nessuna tassonomia {wizPaymentEnabled ? 'con pagamento (P)' : 'senza pagamento (N)'} abilitata. Configurale in Impostazioni → SEND.
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="mb-3">
+                        <label className="form-label small fw-bold">Tipo comunicazione fisica (fallback se la consegna digitale fallisce)</label>
+                        <select
+                          className="form-select form-select-sm"
+                          value={wizPhysicalCommunicationType}
+                          onChange={e => setWizPhysicalCommunicationType(e.target.value as any)}
+                        >
+                          <option value="AR_REGISTERED_LETTER">Raccomandata A/R</option>
+                          <option value="REGISTERED_LETTER_890">Notifica ex L.890/1982</option>
+                        </select>
+                        <div className="alert alert-info small mt-2 mb-0">
+                          Il costo del cartaceo si applica solo se la consegna digitale fallisce del tutto, e varia per regione/zona di recapito.
+                          In generale la <strong>raccomandata A/R</strong> è più economica della <strong>890</strong> a parità di peso.
+                          Consulta il <a href="https://notifichedigitali.pagopa.it/static/documents/Prezzi%20Ente%202024.pdf" target="_blank" rel="noreferrer">listino ufficiale aggiornato</a> per le tariffe esatte del tuo lotto/regione.
+                        </div>
+                      </div>
+                    </>
+                  )}
+
                   {(wizChannel === 'EMAIL' || wizChannel === 'PEC') && (
                     <div className="mb-3">
                       <label className="form-label small fw-bold">Server di Invio / Mittente *</label>
@@ -3956,24 +4029,12 @@ export function App(): React.JSX.Element {
                     </div>
                   </div>
 
-                  {(wizChannel === 'APP_IO' || (wizAppIoMode && wizAppIoMode !== 'none')) && (
+                  {(wizChannel === 'APP_IO' || wizChannel === 'SEND' || (wizAppIoMode && wizAppIoMode !== 'none')) && (
                     <div className="card border-light shadow-sm mb-4" style={{ background: '#f8f9fc' }}>
                       <div className="card-body p-3">
                         <h6 className="small fw-bold text-dark mb-3">
                           <i className="fas fa-credit-card me-2 text-primary"></i>Integrazione Pagamenti pagoPA (Opzionale)
                         </h6>
-                        <div className="form-check mb-3">
-                          <input
-                            type="checkbox"
-                            className="form-check-input"
-                            id="wiz-payment-enabled"
-                            checked={wizPaymentEnabled}
-                            onChange={e => setWizPaymentEnabled(e.target.checked)}
-                          />
-                          <label className="form-check-label small fw-bold" htmlFor="wiz-payment-enabled" style={{ cursor: 'pointer' }}>
-                            Abilita avviso di pagamento pagoPA nel messaggio
-                          </label>
-                        </div>
 
                         {wizPaymentEnabled && (
                           <div className="row g-2">
