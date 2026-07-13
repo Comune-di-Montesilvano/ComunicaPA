@@ -37,6 +37,8 @@ export const SETTING_DEFS = {
   'send.test.purposeId': { type: 'string', default: '' },
   'send.prod.baseUrl': { type: 'string', default: 'https://api.notifichedigitali.it' },
   'send.prod.purposeId': { type: 'string', default: '' },
+  'send.senderTaxId': { type: 'string', default: '' },
+  'send.enabledTaxonomyCodes': { type: 'string', default: '[]' },
 
   'pdnd.test.tokenUrl': { type: 'string', default: 'https://auth.uat.interop.pagopa.it/token.oauth2' },
   'pdnd.test.audience': { type: 'string', default: 'auth.uat.interop.pagopa.it/client-assertion' },
