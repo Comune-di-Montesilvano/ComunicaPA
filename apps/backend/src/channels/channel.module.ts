@@ -1,23 +1,22 @@
 import { Module } from '@nestjs/common';
 import type { NotificationChannel } from '@comunicapa/shared-types';
 import { PdfModule } from '../pdf/pdf.module';
+import { PdndModule } from '../pdnd/pdnd.module';
 import type { IChannelStrategy } from './channel.interface';
 import { CHANNEL_STRATEGIES } from './channel.interface';
 import { EmailStrategy } from './email/email.strategy';
 import { PecStrategy } from './pec/pec.strategy';
 import { AppIoStrategy } from './app-io/app-io.strategy';
 import { SendStrategy } from './send/send.strategy';
-import { PdndAuthService } from './send/pdnd-auth.service';
 import { PostalStrategy } from './postal/postal.strategy';
 
 @Module({
-  imports: [PdfModule],
+  imports: [PdfModule, PdndModule],
   providers: [
     EmailStrategy,
     PecStrategy,
     AppIoStrategy,
     SendStrategy,
-    PdndAuthService,
     PostalStrategy,
     {
       provide: CHANNEL_STRATEGIES,
@@ -37,6 +36,6 @@ import { PostalStrategy } from './postal/postal.strategy';
       inject: [EmailStrategy, PecStrategy, AppIoStrategy, SendStrategy, PostalStrategy],
     },
   ],
-  exports: [CHANNEL_STRATEGIES, PdndAuthService],
+  exports: [CHANNEL_STRATEGIES],
 })
 export class ChannelModule {}

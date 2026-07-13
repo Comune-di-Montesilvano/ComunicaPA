@@ -603,23 +603,29 @@ export function App(): React.JSX.Element {
 
   const [settSendEnvironment, setSettSendEnvironment] = useState<'collaudo' | 'produzione'>('collaudo');
   const [settSendTestBaseUrl, setSettSendTestBaseUrl] = useState('https://api.uat.notifichedigitali.it');
-  const [settSendTestTokenUrl, setSettSendTestTokenUrl] = useState('https://auth.uat.interop.pagopa.it/token.oauth2');
-  const [settSendTestAudience, setSettSendTestAudience] = useState('auth.uat.interop.pagopa.it/client-assertion');
-  const [settSendTestClientId, setSettSendTestClientId] = useState('');
-  const [settSendTestKid, setSettSendTestKid] = useState('');
   const [settSendTestPurposeId, setSettSendTestPurposeId] = useState('');
-  const [settSendTestPrivateKey, setSettSendTestPrivateKey] = useState('');
   const [settSendProdBaseUrl, setSettSendProdBaseUrl] = useState('https://api.notifichedigitali.it');
-  const [settSendProdTokenUrl, setSettSendProdTokenUrl] = useState('https://auth.interop.pagopa.it/token.oauth2');
-  const [settSendProdAudience, setSettSendProdAudience] = useState('auth.interop.pagopa.it/client-assertion');
-  const [settSendProdClientId, setSettSendProdClientId] = useState('');
-  const [settSendProdKid, setSettSendProdKid] = useState('');
   const [settSendProdPurposeId, setSettSendProdPurposeId] = useState('');
-  const [settSendProdPrivateKey, setSettSendProdPrivateKey] = useState('');
-  const [settSendGeneratingKey, setSettSendGeneratingKey] = useState<'test' | 'prod' | null>(null);
-  const [settSendGeneratedPubKey, setSettSendGeneratedPubKey] = useState<{ env: 'test' | 'prod'; pem: string } | null>(null);
-  const [settSendTesting, setSettSendTesting] = useState<'test' | 'prod' | null>(null);
-  const [settSendTestResult, setSettSendTestResult] = useState<{ env: 'test' | 'prod'; ok: boolean; message: string } | null>(null);
+
+  const [settPdndTestTokenUrl, setSettPdndTestTokenUrl] = useState('https://auth.uat.interop.pagopa.it/token.oauth2');
+  const [settPdndTestAudience, setSettPdndTestAudience] = useState('auth.uat.interop.pagopa.it/client-assertion');
+  const [settPdndTestClientId, setSettPdndTestClientId] = useState('');
+  const [settPdndTestKid, setSettPdndTestKid] = useState('');
+  const [settPdndTestPrivateKey, setSettPdndTestPrivateKey] = useState('');
+  const [settPdndProdTokenUrl, setSettPdndProdTokenUrl] = useState('https://auth.interop.pagopa.it/token.oauth2');
+  const [settPdndProdAudience, setSettPdndProdAudience] = useState('auth.interop.pagopa.it/client-assertion');
+  const [settPdndProdClientId, setSettPdndProdClientId] = useState('');
+  const [settPdndProdKid, setSettPdndProdKid] = useState('');
+  const [settPdndProdPrivateKey, setSettPdndProdPrivateKey] = useState('');
+  const [settPdndGeneratingKey, setSettPdndGeneratingKey] = useState<'test' | 'prod' | null>(null);
+  const [settPdndGeneratedPubKey, setSettPdndGeneratedPubKey] = useState<{ env: 'test' | 'prod'; pem: string } | null>(null);
+  const [settPdndTesting, setSettPdndTesting] = useState<'test' | 'prod' | null>(null);
+  const [settPdndTestResult, setSettPdndTestResult] = useState<{ env: 'test' | 'prod'; ok: boolean; message: string } | null>(null);
+
+  const [settInadTestPurposeId, setSettInadTestPurposeId] = useState('');
+  const [settInadProdPurposeId, setSettInadProdPurposeId] = useState('');
+  const [settInipecTestPurposeId, setSettInipecTestPurposeId] = useState('');
+  const [settInipecProdPurposeId, setSettInipecProdPurposeId] = useState('');
   const [settRetentionDays, setSettRetentionDays] = useState('90');
 
   const [settOidcIssuer, setSettOidcIssuer] = useState('');
@@ -639,7 +645,7 @@ export function App(): React.JSX.Element {
   const [settPostalKey, setSettPostalKey] = useState(localStorage.getItem('sett_postal_key') || '');
   const [settPostalUrl, setSettPostalUrl] = useState(localStorage.getItem('sett_postal_url') || 'https://gateway.postel.it/postalization');
 
-  const [activeSettingsTab, setActiveSettingsTab] = useState<'personalizzazione' | 'smtp' | 'pec' | 'app-io' | 'send' | 'protocollo' | 'postalizzazione' | 'oidc' | 'motori'>('personalizzazione');
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'personalizzazione' | 'smtp' | 'pec' | 'app-io' | 'pdnd' | 'send' | 'inad' | 'inipec' | 'protocollo' | 'postalizzazione' | 'oidc' | 'motori'>('personalizzazione');
   const [engines, setEngines] = useState<any[]>([]);
   const [loadingEngines, setLoadingEngines] = useState(false);
   const [enginesError, setEnginesError] = useState<string | null>(null);
@@ -761,19 +767,23 @@ export function App(): React.JSX.Element {
         // SMTP and PEC are loaded dynamically via fetchMailConfigs(); App IO via fetchIoServices()
         setSettSendEnvironment((String(s['send.environment'] ?? 'collaudo')) as 'collaudo' | 'produzione');
         setSettSendTestBaseUrl(String(s['send.test.baseUrl'] ?? ''));
-        setSettSendTestTokenUrl(String(s['send.test.pdndTokenUrl'] ?? ''));
-        setSettSendTestAudience(String(s['send.test.pdndAudience'] ?? ''));
-        setSettSendTestClientId(String(s['send.test.pdndClientId'] ?? ''));
-        setSettSendTestKid(String(s['send.test.pdndKid'] ?? ''));
-        setSettSendTestPurposeId(String(s['send.test.pdndPurposeId'] ?? ''));
-        setSettSendTestPrivateKey(String(s['send.test.pdndPrivateKey'] ?? ''));
+        setSettSendTestPurposeId(String(s['send.test.purposeId'] ?? ''));
         setSettSendProdBaseUrl(String(s['send.prod.baseUrl'] ?? ''));
-        setSettSendProdTokenUrl(String(s['send.prod.pdndTokenUrl'] ?? ''));
-        setSettSendProdAudience(String(s['send.prod.pdndAudience'] ?? ''));
-        setSettSendProdClientId(String(s['send.prod.pdndClientId'] ?? ''));
-        setSettSendProdKid(String(s['send.prod.pdndKid'] ?? ''));
-        setSettSendProdPurposeId(String(s['send.prod.pdndPurposeId'] ?? ''));
-        setSettSendProdPrivateKey(String(s['send.prod.pdndPrivateKey'] ?? ''));
+        setSettSendProdPurposeId(String(s['send.prod.purposeId'] ?? ''));
+        setSettPdndTestTokenUrl(String(s['pdnd.test.tokenUrl'] ?? ''));
+        setSettPdndTestAudience(String(s['pdnd.test.audience'] ?? ''));
+        setSettPdndTestClientId(String(s['pdnd.test.clientId'] ?? ''));
+        setSettPdndTestKid(String(s['pdnd.test.kid'] ?? ''));
+        setSettPdndTestPrivateKey(String(s['pdnd.test.privateKey'] ?? ''));
+        setSettPdndProdTokenUrl(String(s['pdnd.prod.tokenUrl'] ?? ''));
+        setSettPdndProdAudience(String(s['pdnd.prod.audience'] ?? ''));
+        setSettPdndProdClientId(String(s['pdnd.prod.clientId'] ?? ''));
+        setSettPdndProdKid(String(s['pdnd.prod.kid'] ?? ''));
+        setSettPdndProdPrivateKey(String(s['pdnd.prod.privateKey'] ?? ''));
+        setSettInadTestPurposeId(String(s['inad.test.purposeId'] ?? ''));
+        setSettInadProdPurposeId(String(s['inad.prod.purposeId'] ?? ''));
+        setSettInipecTestPurposeId(String(s['inipec.test.purposeId'] ?? ''));
+        setSettInipecProdPurposeId(String(s['inipec.prod.purposeId'] ?? ''));
         setSettRetentionDays(String(s['retention.maxDays'] ?? '90'));
         setSettOidcIssuer(String(s['oidc.issuer'] ?? ''));
         setSettOidcAudience(String(s['oidc.audience'] ?? ''));
@@ -856,64 +866,64 @@ export function App(): React.JSX.Element {
     URL.revokeObjectURL(url);
   };
 
-  const handleExportSendPublicKey = async (env: 'test' | 'prod') => {
+  const handleExportPdndPublicKey = async (env: 'test' | 'prod') => {
     try {
-      const res = await apiFetch(`/settings/send/${env}/public-key`);
+      const res = await apiFetch(`/settings/pdnd/${env}/public-key`);
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.message || 'Errore durante il recupero della chiave pubblica.');
       }
       const data = await res.json();
-      downloadTextFile(`send-${env}-public.pem`, data.publicKey);
+      downloadTextFile(`pdnd-${env}-public.pem`, data.publicKey);
     } catch (err: any) {
       if (err instanceof ApiAuthError) return;
       alert(err.message);
     }
   };
 
-  const handleExportSendPrivateKey = async (env: 'test' | 'prod') => {
+  const handleExportPdndPrivateKey = async (env: 'test' | 'prod') => {
     if (!confirm('La chiave privata verrà scaricata in chiaro sul tuo dispositivo. Continuare?')) return;
     try {
-      const res = await apiFetch(`/settings/send/${env}/private-key`);
+      const res = await apiFetch(`/settings/pdnd/${env}/private-key`);
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.message || 'Errore durante il recupero della chiave privata.');
       }
       const data = await res.json();
-      downloadTextFile(`send-${env}-private.pem`, data.privateKey);
+      downloadTextFile(`pdnd-${env}-private.pem`, data.privateKey);
     } catch (err: any) {
       if (err instanceof ApiAuthError) return;
       alert(err.message);
     }
   };
 
-  const handleImportSendPrivateKeyFile = (env: 'test' | 'prod', file: File) => {
+  const handleImportPdndPrivateKeyFile = (env: 'test' | 'prod', file: File) => {
     const reader = new FileReader();
     reader.onload = () => {
       const content = String(reader.result ?? '').trim();
-      if (env === 'test') setSettSendTestPrivateKey(content);
-      else setSettSendProdPrivateKey(content);
-      setSettSendGeneratedPubKey(null);
+      if (env === 'test') setSettPdndTestPrivateKey(content);
+      else setSettPdndProdPrivateKey(content);
+      setSettPdndGeneratedPubKey(null);
     };
     reader.readAsText(file);
   };
 
-  const handleGenerateSendKeypair = async (env: 'test' | 'prod') => {
+  const handleGeneratePdndKeypair = async (env: 'test' | 'prod') => {
     if (!confirm(`Generare una nuova coppia di chiavi RSA per l'ambiente ${env === 'prod' ? 'produzione' : 'collaudo'}? La chiave privata attuale verrà sostituita.`)) return;
-    setSettSendGeneratingKey(env);
-    setSettSendGeneratedPubKey(null);
+    setSettPdndGeneratingKey(env);
+    setSettPdndGeneratedPubKey(null);
     try {
-      const res = await apiFetch(`/settings/send/${env}/generate-keypair`, { method: 'POST' });
+      const res = await apiFetch(`/settings/pdnd/${env}/generate-keypair`, { method: 'POST' });
       if (!res.ok) throw new Error('Errore durante la generazione della coppia di chiavi.');
       const data = await res.json();
-      setSettSendGeneratedPubKey({ env, pem: data.publicKey });
-      if (env === 'test') setSettSendTestPrivateKey('••••••••');
-      else setSettSendProdPrivateKey('••••••••');
+      setSettPdndGeneratedPubKey({ env, pem: data.publicKey });
+      if (env === 'test') setSettPdndTestPrivateKey('••••••••');
+      else setSettPdndProdPrivateKey('••••••••');
     } catch (err: any) {
       if (err instanceof ApiAuthError) return;
       alert(err.message);
     } finally {
-      setSettSendGeneratingKey(null);
+      setSettPdndGeneratingKey(null);
     }
   };
 
@@ -1304,19 +1314,23 @@ export function App(): React.JSX.Element {
     // SMTP and PEC are saved via their own endpoints; App IO via /io-services
     'send.environment': settSendEnvironment,
     'send.test.baseUrl': settSendTestBaseUrl,
-    'send.test.pdndTokenUrl': settSendTestTokenUrl,
-    'send.test.pdndAudience': settSendTestAudience,
-    'send.test.pdndClientId': settSendTestClientId,
-    'send.test.pdndKid': settSendTestKid,
-    'send.test.pdndPurposeId': settSendTestPurposeId,
-    'send.test.pdndPrivateKey': settSendTestPrivateKey,
+    'send.test.purposeId': settSendTestPurposeId,
     'send.prod.baseUrl': settSendProdBaseUrl,
-    'send.prod.pdndTokenUrl': settSendProdTokenUrl,
-    'send.prod.pdndAudience': settSendProdAudience,
-    'send.prod.pdndClientId': settSendProdClientId,
-    'send.prod.pdndKid': settSendProdKid,
-    'send.prod.pdndPurposeId': settSendProdPurposeId,
-    'send.prod.pdndPrivateKey': settSendProdPrivateKey,
+    'send.prod.purposeId': settSendProdPurposeId,
+    'pdnd.test.tokenUrl': settPdndTestTokenUrl,
+    'pdnd.test.audience': settPdndTestAudience,
+    'pdnd.test.clientId': settPdndTestClientId,
+    'pdnd.test.kid': settPdndTestKid,
+    'pdnd.test.privateKey': settPdndTestPrivateKey,
+    'pdnd.prod.tokenUrl': settPdndProdTokenUrl,
+    'pdnd.prod.audience': settPdndProdAudience,
+    'pdnd.prod.clientId': settPdndProdClientId,
+    'pdnd.prod.kid': settPdndProdKid,
+    'pdnd.prod.privateKey': settPdndProdPrivateKey,
+    'inad.test.purposeId': settInadTestPurposeId,
+    'inad.prod.purposeId': settInadProdPurposeId,
+    'inipec.test.purposeId': settInipecTestPurposeId,
+    'inipec.prod.purposeId': settInipecProdPurposeId,
     'retention.maxDays': Number(settRetentionDays) || 90,
     'oidc.issuer': settOidcIssuer,
     'oidc.audience': settOidcAudience,
@@ -1357,9 +1371,9 @@ export function App(): React.JSX.Element {
     setTimeout(() => setSettingsSavedMessage(null), 3000);
   };
 
-  const handleTestSendConnection = async (env: 'test' | 'prod') => {
-    setSettSendTesting(env);
-    setSettSendTestResult(null);
+  const handleTestPdndConnection = async (env: 'test' | 'prod') => {
+    setSettPdndTesting(env);
+    setSettPdndTestResult(null);
     try {
       // Salva prima le impostazioni correnti: il test legge le credenziali dal DB.
       const saveRes = await apiFetch('/settings', {
@@ -1369,18 +1383,18 @@ export function App(): React.JSX.Element {
       });
       if (!saveRes.ok) {
         const err = (await saveRes.json()) as { message?: string };
-        setSettSendTestResult({ env, ok: false, message: `Errore salvataggio: ${err.message ?? saveRes.status}` });
+        setSettPdndTestResult({ env, ok: false, message: `Errore salvataggio: ${err.message ?? saveRes.status}` });
         return;
       }
 
-      const res = await apiFetch(`/settings/send/${env}/test-connection`, { method: 'POST' });
+      const res = await apiFetch(`/settings/pdnd/${env}/test-connection`, { method: 'POST' });
       const data = await res.json() as { success: boolean; message: string };
-      setSettSendTestResult({ env, ok: data.success, message: data.message });
+      setSettPdndTestResult({ env, ok: data.success, message: data.message });
     } catch (err: any) {
       if (err instanceof ApiAuthError) return;
-      setSettSendTestResult({ env, ok: false, message: err.message || 'Errore di rete durante il test.' });
+      setSettPdndTestResult({ env, ok: false, message: err.message || 'Errore di rete durante il test.' });
     } finally {
-      setSettSendTesting(null);
+      setSettPdndTesting(null);
     }
   };
 
@@ -4884,10 +4898,31 @@ export function App(): React.JSX.Element {
                     </button>
                     <button
                       type="button"
+                      className={`nav-link border-0 text-start bg-transparent ${activeSettingsTab === 'pdnd' ? 'active' : ''}`}
+                      onClick={() => setActiveSettingsTab('pdnd')}
+                    >
+                      <i className="fas fa-key me-2"></i>Client PDND
+                    </button>
+                    <button
+                      type="button"
                       className={`nav-link border-0 text-start bg-transparent ${activeSettingsTab === 'send' ? 'active' : ''}`}
                       onClick={() => setActiveSettingsTab('send')}
                     >
                       <i className="fas fa-paper-plane me-2"></i>SEND (Digitale)
+                    </button>
+                    <button
+                      type="button"
+                      className={`nav-link border-0 text-start bg-transparent ${activeSettingsTab === 'inad' ? 'active' : ''}`}
+                      onClick={() => setActiveSettingsTab('inad')}
+                    >
+                      <i className="fas fa-address-book me-2"></i>INAD
+                    </button>
+                    <button
+                      type="button"
+                      className={`nav-link border-0 text-start bg-transparent ${activeSettingsTab === 'inipec' ? 'active' : ''}`}
+                      onClick={() => setActiveSettingsTab('inipec')}
+                    >
+                      <i className="fas fa-address-card me-2"></i>INIPEC
                     </button>
                     <button
                       type="button"
@@ -4935,7 +4970,10 @@ export function App(): React.JSX.Element {
                         {activeSettingsTab === 'smtp' && 'Mail Server (SMTP) - Configurazione'}
                         {activeSettingsTab === 'pec' && 'PEC Server - Configurazione'}
                         {activeSettingsTab === 'app-io' && 'Configurazione Servizi App IO'}
+                        {activeSettingsTab === 'pdnd' && 'Client PDND (Piattaforma Digitale Nazionale Dati)'}
                         {activeSettingsTab === 'send' && 'Integrazione SEND (Digital Delivery)'}
+                        {activeSettingsTab === 'inad' && 'Integrazione INAD (Indice Nazionale Domicili Digitali)'}
+                        {activeSettingsTab === 'inipec' && 'Integrazione INIPEC'}
                         {activeSettingsTab === 'protocollo' && 'Connettore Protocollo Informatico'}
                         {activeSettingsTab === 'postalizzazione' && 'Postalizzazione Cartacea Istituzionale'}
                         {activeSettingsTab === 'oidc' && 'SPID / CIE (OIDC) - Autenticazione Cittadini'}
@@ -5011,6 +5049,153 @@ export function App(): React.JSX.Element {
                         {/* TAB: APP IO — rendered outside the form (see below) */}
 
                         {/* TAB: SEND */}
+                        {activeSettingsTab === 'pdnd' && (
+                          <div>
+                            <div className="alert alert-info small mb-3">
+                              Client PDND condiviso: le credenziali qui sotto vengono usate da tutte le
+                              integrazioni PDND (SEND, e in futuro INAD/INIPEC). Ogni integrazione ha
+                              il proprio Purpose ID configurato nella sua scheda dedicata.
+                            </div>
+                            {([
+                              { label: 'Collaudo (UAT)', prefix: 'test' as const,
+                                tokenUrl: settPdndTestTokenUrl, setTokenUrl: setSettPdndTestTokenUrl,
+                                audience: settPdndTestAudience, setAudience: setSettPdndTestAudience,
+                                clientId: settPdndTestClientId, setClientId: setSettPdndTestClientId,
+                                kid: settPdndTestKid, setKid: setSettPdndTestKid,
+                                privateKey: settPdndTestPrivateKey, setPrivateKey: setSettPdndTestPrivateKey },
+                              { label: 'Produzione', prefix: 'prod' as const,
+                                tokenUrl: settPdndProdTokenUrl, setTokenUrl: setSettPdndProdTokenUrl,
+                                audience: settPdndProdAudience, setAudience: setSettPdndProdAudience,
+                                clientId: settPdndProdClientId, setClientId: setSettPdndProdClientId,
+                                kid: settPdndProdKid, setKid: setSettPdndProdKid,
+                                privateKey: settPdndProdPrivateKey, setPrivateKey: setSettPdndProdPrivateKey },
+                            ]).map((e) => (
+                              <fieldset key={e.prefix} className="border rounded p-3 mb-3">
+                                <legend className="float-none w-auto px-2 small fw-bold text-dark">{e.label}</legend>
+                                <div className="mb-3">
+                                  <label className="form-label small fw-semibold text-muted" htmlFor={`pdnd_${e.prefix}_tokenurl`}>Token endpoint PDND</label>
+                                  <input
+                                    type="text"
+                                    id={`pdnd_${e.prefix}_tokenurl`}
+                                    className="form-control form-control-sm"
+                                    value={e.tokenUrl}
+                                    onChange={(ev) => e.setTokenUrl(ev.target.value)}
+                                  />
+                                </div>
+                                <div className="mb-3">
+                                  <label className="form-label small fw-semibold text-muted" htmlFor={`pdnd_${e.prefix}_audience`}>Audience client_assertion</label>
+                                  <input
+                                    type="text"
+                                    id={`pdnd_${e.prefix}_audience`}
+                                    className="form-control form-control-sm"
+                                    value={e.audience}
+                                    onChange={(ev) => e.setAudience(ev.target.value)}
+                                  />
+                                </div>
+                                <div className="mb-3">
+                                  <label className="form-label small fw-semibold text-muted" htmlFor={`pdnd_${e.prefix}_clientid`}>Client ID PDND</label>
+                                  <input
+                                    type="text"
+                                    id={`pdnd_${e.prefix}_clientid`}
+                                    className="form-control form-control-sm"
+                                    value={e.clientId}
+                                    onChange={(ev) => e.setClientId(ev.target.value)}
+                                  />
+                                </div>
+                                <div className="mb-3">
+                                  <label className="form-label small fw-semibold text-muted" htmlFor={`pdnd_${e.prefix}_kid`}>Key ID (kid)</label>
+                                  <input
+                                    type="text"
+                                    id={`pdnd_${e.prefix}_kid`}
+                                    className="form-control form-control-sm"
+                                    value={e.kid}
+                                    onChange={(ev) => e.setKid(ev.target.value)}
+                                  />
+                                </div>
+                                <div className="mb-1">
+                                  <label className="form-label small fw-semibold text-muted" htmlFor={`pdnd_${e.prefix}_privatekey`}>Chiave privata (PEM)</label>
+                                  <textarea
+                                    id={`pdnd_${e.prefix}_privatekey`}
+                                    className="form-control form-control-sm font-monospace"
+                                    rows={4}
+                                    placeholder="-----BEGIN PRIVATE KEY-----"
+                                    value={e.privateKey}
+                                    onChange={(ev) => e.setPrivateKey(ev.target.value)}
+                                  />
+                                  <div className="form-text small text-muted">Cifrata a riposo. Lasciare il valore mascherato per non sovrascriverla, oppure incollarne una tua.</div>
+                                  <label className="btn btn-outline-secondary btn-sm mt-2 mb-0">
+                                    Importa da file (.pem/.priv)
+                                    <input
+                                      type="file"
+                                      accept=".pem,.priv,.key,text/plain"
+                                      hidden
+                                      onChange={(ev) => {
+                                        const f = ev.target.files?.[0];
+                                        if (f) handleImportPdndPrivateKeyFile(e.prefix, f);
+                                        ev.target.value = '';
+                                      }}
+                                    />
+                                  </label>
+                                  <div className="form-text small text-muted">Carica una chiave generata altrove (es. via openssl): sostituisce il campo sopra, poi va salvata con "Salva impostazioni".</div>
+                                </div>
+                                <div className="mt-2 d-flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    className="btn btn-outline-secondary btn-sm"
+                                    disabled={settPdndGeneratingKey === e.prefix}
+                                    onClick={() => handleGeneratePdndKeypair(e.prefix)}
+                                  >
+                                    {settPdndGeneratingKey === e.prefix ? 'Generazione…' : 'Genera nuova coppia di chiavi RSA'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn btn-outline-secondary btn-sm"
+                                    onClick={() => handleExportPdndPublicKey(e.prefix)}
+                                  >
+                                    Esporta chiave pubblica
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn btn-outline-secondary btn-sm"
+                                    onClick={() => handleExportPdndPrivateKey(e.prefix)}
+                                  >
+                                    Esporta chiave privata
+                                  </button>
+                                  <div className="form-text small text-muted w-100">"Genera" crea una nuova coppia e salva subito la privata. "Esporta pubblica" ricava la pubblica da quella già salvata sul server (funziona in ogni momento, non solo dopo "Genera"). "Esporta privata" scarica in chiaro quella salvata: usala solo per backup.</div>
+                                </div>
+                                {settPdndGeneratedPubKey?.env === e.prefix && (
+                                  <div className="alert alert-success mt-3 mb-0">
+                                    <div className="fw-bold small mb-1">Chiave pubblica generata — caricala ora su PDND, non verrà mostrata di nuovo:</div>
+                                    <textarea
+                                      readOnly
+                                      className="form-control form-control-sm font-monospace"
+                                      rows={6}
+                                      value={settPdndGeneratedPubKey.pem}
+                                      onFocus={(ev) => ev.target.select()}
+                                    />
+                                  </div>
+                                )}
+
+                                <hr className="my-3" />
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-sm"
+                                  disabled={settPdndTesting === e.prefix}
+                                  onClick={() => handleTestPdndConnection(e.prefix)}
+                                >
+                                  {settPdndTesting === e.prefix ? 'Test in corso…' : 'Test connessione (voucher PDND)'}
+                                </button>
+                                <div className="form-text small text-muted">Salva le impostazioni correnti e prova a ottenere un voucher PDND reale con le credenziali qui sopra.</div>
+                                {settPdndTestResult?.env === e.prefix && (
+                                  <div className={`alert ${settPdndTestResult.ok ? 'alert-success' : 'alert-danger'} mt-2 mb-0 small`} style={{ wordBreak: 'break-word' }}>
+                                    {settPdndTestResult.message}
+                                  </div>
+                                )}
+                              </fieldset>
+                            ))}
+                          </div>
+                        )}
+
                         {activeSettingsTab === 'send' && (
                           <div>
                             <div className="mb-4">
@@ -5031,20 +5216,10 @@ export function App(): React.JSX.Element {
                             {([
                               { label: 'Collaudo (UAT)', prefix: 'test' as const,
                                 baseUrl: settSendTestBaseUrl, setBaseUrl: setSettSendTestBaseUrl,
-                                tokenUrl: settSendTestTokenUrl, setTokenUrl: setSettSendTestTokenUrl,
-                                audience: settSendTestAudience, setAudience: setSettSendTestAudience,
-                                clientId: settSendTestClientId, setClientId: setSettSendTestClientId,
-                                kid: settSendTestKid, setKid: setSettSendTestKid,
-                                purposeId: settSendTestPurposeId, setPurposeId: setSettSendTestPurposeId,
-                                privateKey: settSendTestPrivateKey, setPrivateKey: setSettSendTestPrivateKey },
+                                purposeId: settSendTestPurposeId, setPurposeId: setSettSendTestPurposeId },
                               { label: 'Produzione', prefix: 'prod' as const,
                                 baseUrl: settSendProdBaseUrl, setBaseUrl: setSettSendProdBaseUrl,
-                                tokenUrl: settSendProdTokenUrl, setTokenUrl: setSettSendProdTokenUrl,
-                                audience: settSendProdAudience, setAudience: setSettSendProdAudience,
-                                clientId: settSendProdClientId, setClientId: setSettSendProdClientId,
-                                kid: settSendProdKid, setKid: setSettSendProdKid,
-                                purposeId: settSendProdPurposeId, setPurposeId: setSettSendProdPurposeId,
-                                privateKey: settSendProdPrivateKey, setPrivateKey: setSettSendProdPrivateKey },
+                                purposeId: settSendProdPurposeId, setPurposeId: setSettSendProdPurposeId },
                             ]).map((e) => (
                               <fieldset key={e.prefix} className="border rounded p-3 mb-3">
                                 <legend className="float-none w-auto px-2 small fw-bold text-dark">{e.label}</legend>
@@ -5058,47 +5233,7 @@ export function App(): React.JSX.Element {
                                     onChange={(ev) => e.setBaseUrl(ev.target.value)}
                                   />
                                 </div>
-                                <div className="mb-3">
-                                  <label className="form-label small fw-semibold text-muted" htmlFor={`send_${e.prefix}_tokenurl`}>Token endpoint PDND</label>
-                                  <input
-                                    type="text"
-                                    id={`send_${e.prefix}_tokenurl`}
-                                    className="form-control form-control-sm"
-                                    value={e.tokenUrl}
-                                    onChange={(ev) => e.setTokenUrl(ev.target.value)}
-                                  />
-                                </div>
-                                <div className="mb-3">
-                                  <label className="form-label small fw-semibold text-muted" htmlFor={`send_${e.prefix}_audience`}>Audience client_assertion</label>
-                                  <input
-                                    type="text"
-                                    id={`send_${e.prefix}_audience`}
-                                    className="form-control form-control-sm"
-                                    value={e.audience}
-                                    onChange={(ev) => e.setAudience(ev.target.value)}
-                                  />
-                                </div>
-                                <div className="mb-3">
-                                  <label className="form-label small fw-semibold text-muted" htmlFor={`send_${e.prefix}_clientid`}>Client ID PDND</label>
-                                  <input
-                                    type="text"
-                                    id={`send_${e.prefix}_clientid`}
-                                    className="form-control form-control-sm"
-                                    value={e.clientId}
-                                    onChange={(ev) => e.setClientId(ev.target.value)}
-                                  />
-                                </div>
-                                <div className="mb-3">
-                                  <label className="form-label small fw-semibold text-muted" htmlFor={`send_${e.prefix}_kid`}>Key ID (kid)</label>
-                                  <input
-                                    type="text"
-                                    id={`send_${e.prefix}_kid`}
-                                    className="form-control form-control-sm"
-                                    value={e.kid}
-                                    onChange={(ev) => e.setKid(ev.target.value)}
-                                  />
-                                </div>
-                                <div className="mb-3">
+                                <div className="mb-1">
                                   <label className="form-label small fw-semibold text-muted" htmlFor={`send_${e.prefix}_purposeid`}>Purpose ID</label>
                                   <input
                                     type="text"
@@ -5107,86 +5242,66 @@ export function App(): React.JSX.Element {
                                     value={e.purposeId}
                                     onChange={(ev) => e.setPurposeId(ev.target.value)}
                                   />
+                                  <div className="form-text small text-muted">Le credenziali del client PDND (client ID, kid, chiave privata) si configurano nella scheda "Client PDND".</div>
                                 </div>
-                                <div className="mb-1">
-                                  <label className="form-label small fw-semibold text-muted" htmlFor={`send_${e.prefix}_privatekey`}>Chiave privata (PEM)</label>
-                                  <textarea
-                                    id={`send_${e.prefix}_privatekey`}
-                                    className="form-control form-control-sm font-monospace"
-                                    rows={4}
-                                    placeholder="-----BEGIN PRIVATE KEY-----"
-                                    value={e.privateKey}
-                                    onChange={(ev) => e.setPrivateKey(ev.target.value)}
-                                  />
-                                  <div className="form-text small text-muted">Cifrata a riposo. Lasciare il valore mascherato per non sovrascriverla, oppure incollarne una tua.</div>
-                                  <label className="btn btn-outline-secondary btn-sm mt-2 mb-0">
-                                    Importa da file (.pem/.priv)
-                                    <input
-                                      type="file"
-                                      accept=".pem,.priv,.key,text/plain"
-                                      hidden
-                                      onChange={(ev) => {
-                                        const f = ev.target.files?.[0];
-                                        if (f) handleImportSendPrivateKeyFile(e.prefix, f);
-                                        ev.target.value = '';
-                                      }}
-                                    />
-                                  </label>
-                                  <div className="form-text small text-muted">Carica una chiave generata altrove (es. via openssl): sostituisce il campo sopra, poi va salvata con "Salva impostazioni".</div>
-                                </div>
-                                <div className="mt-2 d-flex flex-wrap gap-2">
-                                  <button
-                                    type="button"
-                                    className="btn btn-outline-secondary btn-sm"
-                                    disabled={settSendGeneratingKey === e.prefix}
-                                    onClick={() => handleGenerateSendKeypair(e.prefix)}
-                                  >
-                                    {settSendGeneratingKey === e.prefix ? 'Generazione…' : 'Genera nuova coppia di chiavi RSA'}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="btn btn-outline-secondary btn-sm"
-                                    onClick={() => handleExportSendPublicKey(e.prefix)}
-                                  >
-                                    Esporta chiave pubblica
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="btn btn-outline-secondary btn-sm"
-                                    onClick={() => handleExportSendPrivateKey(e.prefix)}
-                                  >
-                                    Esporta chiave privata
-                                  </button>
-                                  <div className="form-text small text-muted w-100">"Genera" crea una nuova coppia e salva subito la privata. "Esporta pubblica" ricava la pubblica da quella già salvata sul server (funziona in ogni momento, non solo dopo "Genera"). "Esporta privata" scarica in chiaro quella salvata: usala solo per backup.</div>
-                                </div>
-                                {settSendGeneratedPubKey?.env === e.prefix && (
-                                  <div className="alert alert-success mt-3 mb-0">
-                                    <div className="fw-bold small mb-1">Chiave pubblica generata — caricala ora su PDND, non verrà mostrata di nuovo:</div>
-                                    <textarea
-                                      readOnly
-                                      className="form-control form-control-sm font-monospace"
-                                      rows={6}
-                                      value={settSendGeneratedPubKey.pem}
-                                      onFocus={(ev) => ev.target.select()}
-                                    />
-                                  </div>
-                                )}
+                              </fieldset>
+                            ))}
+                          </div>
+                        )}
 
-                                <hr className="my-3" />
-                                <button
-                                  type="button"
-                                  className="btn btn-primary btn-sm"
-                                  disabled={settSendTesting === e.prefix}
-                                  onClick={() => handleTestSendConnection(e.prefix)}
-                                >
-                                  {settSendTesting === e.prefix ? 'Test in corso…' : 'Test connessione (voucher PDND)'}
-                                </button>
-                                <div className="form-text small text-muted">Salva le impostazioni correnti e prova a ottenere un voucher PDND reale con le credenziali qui sopra.</div>
-                                {settSendTestResult?.env === e.prefix && (
-                                  <div className={`alert ${settSendTestResult.ok ? 'alert-success' : 'alert-danger'} mt-2 mb-0 small`} style={{ wordBreak: 'break-word' }}>
-                                    {settSendTestResult.message}
-                                  </div>
-                                )}
+                        {activeSettingsTab === 'inad' && (
+                          <div>
+                            <div className="alert alert-warning small mb-3">
+                              Integrazione INAD in attesa di approvazione PDND: le specifiche non sono
+                              ancora definite. Solo il Purpose ID è configurabile per ora.
+                            </div>
+                            {([
+                              { label: 'Collaudo (UAT)', prefix: 'test' as const,
+                                purposeId: settInadTestPurposeId, setPurposeId: setSettInadTestPurposeId },
+                              { label: 'Produzione', prefix: 'prod' as const,
+                                purposeId: settInadProdPurposeId, setPurposeId: setSettInadProdPurposeId },
+                            ]).map((e) => (
+                              <fieldset key={e.prefix} className="border rounded p-3 mb-3">
+                                <legend className="float-none w-auto px-2 small fw-bold text-dark">{e.label}</legend>
+                                <div className="mb-1">
+                                  <label className="form-label small fw-semibold text-muted" htmlFor={`inad_${e.prefix}_purposeid`}>Purpose ID</label>
+                                  <input
+                                    type="text"
+                                    id={`inad_${e.prefix}_purposeid`}
+                                    className="form-control form-control-sm"
+                                    value={e.purposeId}
+                                    onChange={(ev) => e.setPurposeId(ev.target.value)}
+                                  />
+                                </div>
+                              </fieldset>
+                            ))}
+                          </div>
+                        )}
+
+                        {activeSettingsTab === 'inipec' && (
+                          <div>
+                            <div className="alert alert-warning small mb-3">
+                              Integrazione INIPEC in attesa di approvazione PDND: le specifiche non sono
+                              ancora definite. Solo il Purpose ID è configurabile per ora.
+                            </div>
+                            {([
+                              { label: 'Collaudo (UAT)', prefix: 'test' as const,
+                                purposeId: settInipecTestPurposeId, setPurposeId: setSettInipecTestPurposeId },
+                              { label: 'Produzione', prefix: 'prod' as const,
+                                purposeId: settInipecProdPurposeId, setPurposeId: setSettInipecProdPurposeId },
+                            ]).map((e) => (
+                              <fieldset key={e.prefix} className="border rounded p-3 mb-3">
+                                <legend className="float-none w-auto px-2 small fw-bold text-dark">{e.label}</legend>
+                                <div className="mb-1">
+                                  <label className="form-label small fw-semibold text-muted" htmlFor={`inipec_${e.prefix}_purposeid`}>Purpose ID</label>
+                                  <input
+                                    type="text"
+                                    id={`inipec_${e.prefix}_purposeid`}
+                                    className="form-control form-control-sm"
+                                    value={e.purposeId}
+                                    onChange={(ev) => e.setPurposeId(ev.target.value)}
+                                  />
+                                </div>
                               </fieldset>
                             ))}
                           </div>

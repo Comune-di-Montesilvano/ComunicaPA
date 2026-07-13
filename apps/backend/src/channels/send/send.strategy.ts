@@ -5,7 +5,7 @@ import type { Recipient } from '../../entities/recipient.entity';
 import type { Campaign } from '../../entities/campaign.entity';
 import { AppSettingsService } from '../../settings/app-settings.service';
 import type { SettingKey } from '../../settings/settings.registry';
-import { PdndAuthService } from './pdnd-auth.service';
+import { PdndAuthService } from '../../pdnd/pdnd-auth.service';
 
 function interpolate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => vars[key] ?? `{{${key}}}`);
@@ -31,7 +31,8 @@ export class SendStrategy implements IChannelStrategy {
     const envKey = env === 'produzione' ? 'prod' : 'test';
     const prefix = `send.${envKey}`;
     const baseUrl = await this.settings.get<string>(`${prefix}.baseUrl` as SettingKey);
-    const voucher = await this.pdndAuth.getVoucher(envKey);
+    const purposeId = await this.settings.get<string>(`${prefix}.purposeId` as SettingKey);
+    const voucher = await this.pdndAuth.getVoucher(envKey, purposeId);
 
     const vars: Record<string, string> = {
       fullName: recipient.fullName ?? '',

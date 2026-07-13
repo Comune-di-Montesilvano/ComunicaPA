@@ -34,19 +34,30 @@ export const SETTING_DEFS = {
   'pec.from': { env: 'PEC_FROM', type: 'string', default: 'noreply@pec.comunicapa.local' },
   'send.environment': { env: 'SEND_ENVIRONMENT', type: 'string', default: 'collaudo' },
   'send.test.baseUrl': { type: 'string', default: 'https://api.uat.notifichedigitali.it' },
-  'send.test.pdndTokenUrl': { type: 'string', default: 'https://auth.uat.interop.pagopa.it/token.oauth2' },
-  'send.test.pdndAudience': { type: 'string', default: 'auth.uat.interop.pagopa.it/client-assertion' },
-  'send.test.pdndClientId': { type: 'string', default: '' },
-  'send.test.pdndKid': { type: 'string', default: '' },
-  'send.test.pdndPurposeId': { type: 'string', default: '' },
-  'send.test.pdndPrivateKey': { type: 'string', secret: true, default: '' },
+  'send.test.purposeId': { type: 'string', default: '' },
   'send.prod.baseUrl': { type: 'string', default: 'https://api.notifichedigitali.it' },
-  'send.prod.pdndTokenUrl': { type: 'string', default: 'https://auth.interop.pagopa.it/token.oauth2' },
-  'send.prod.pdndAudience': { type: 'string', default: 'auth.interop.pagopa.it/client-assertion' },
-  'send.prod.pdndClientId': { type: 'string', default: '' },
-  'send.prod.pdndKid': { type: 'string', default: '' },
-  'send.prod.pdndPurposeId': { type: 'string', default: '' },
-  'send.prod.pdndPrivateKey': { type: 'string', secret: true, default: '' },
+  'send.prod.purposeId': { type: 'string', default: '' },
+
+  'pdnd.test.tokenUrl': { type: 'string', default: 'https://auth.uat.interop.pagopa.it/token.oauth2' },
+  'pdnd.test.audience': { type: 'string', default: 'auth.uat.interop.pagopa.it/client-assertion' },
+  'pdnd.test.clientId': { type: 'string', default: '' },
+  'pdnd.test.kid': { type: 'string', default: '' },
+  'pdnd.test.privateKey': { type: 'string', secret: true, default: '' },
+  'pdnd.prod.tokenUrl': { type: 'string', default: 'https://auth.interop.pagopa.it/token.oauth2' },
+  'pdnd.prod.audience': { type: 'string', default: 'auth.interop.pagopa.it/client-assertion' },
+  'pdnd.prod.clientId': { type: 'string', default: '' },
+  'pdnd.prod.kid': { type: 'string', default: '' },
+  'pdnd.prod.privateKey': { type: 'string', secret: true, default: '' },
+
+  // INAD/INIPEC: scaffolding in attesa di approvazione PDND e specifiche di
+  // integrazione. Solo purposeId per ora (client PDND condiviso via pdnd.*).
+  // Se in futuro serve un baseUrl API dedicato, aggiungere qui
+  // 'inad.{test,prod}.baseUrl' / 'inipec.{test,prod}.baseUrl' — non anticipato
+  // ora perché endpoint non ancora noti.
+  'inad.test.purposeId': { type: 'string', default: '' },
+  'inad.prod.purposeId': { type: 'string', default: '' },
+  'inipec.test.purposeId': { type: 'string', default: '' },
+  'inipec.prod.purposeId': { type: 'string', default: '' },
   'system.publicUrl': {
     env: 'PUBLIC_BACKEND_URL',
     type: 'string',

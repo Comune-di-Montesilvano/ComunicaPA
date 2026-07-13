@@ -1,7 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { SendStrategy } from './send.strategy';
 import { AppSettingsService } from '../../settings/app-settings.service';
-import { PdndAuthService } from './pdnd-auth.service';
+import { PdndAuthService } from '../../pdnd/pdnd-auth.service';
 
 const mockFetch = jest.fn();
 global.fetch = mockFetch as unknown as typeof fetch;
@@ -9,6 +9,7 @@ global.fetch = mockFetch as unknown as typeof fetch;
 const settingsValues: Record<string, unknown> = {
   'send.environment': 'collaudo',
   'send.test.baseUrl': 'https://send.test',
+  'send.test.purposeId': 'purpose-test',
 };
 const mockSettings = { get: jest.fn(async (key: string) => settingsValues[key]) };
 const mockPdndAuth = { getVoucher: jest.fn(async () => 'voucher-abc') };
@@ -58,6 +59,7 @@ describe('SendStrategy', () => {
       }),
     );
     expect(result.messageId).toBe('send-001');
+    expect(mockPdndAuth.getVoucher).toHaveBeenCalledWith('test', 'purpose-test');
   });
 
   it('send() lancia Error se SEND API risponde con ok: false', async () => {

@@ -18,7 +18,7 @@ import * as nodemailer from 'nodemailer';
 import { AppSettingsService } from './app-settings.service';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { isSettingKey } from './settings.registry';
-import { PdndAuthService } from '../channels/send/pdnd-auth.service';
+import { PdndAuthService } from '../pdnd/pdnd-auth.service';
 
 class TestConnectionDto {
   host!: string;
@@ -113,10 +113,10 @@ export class SettingsController {
     }
   }
 
-  @Post('send/:env/generate-keypair')
+  @Post('pdnd/:env/generate-keypair')
   @HttpCode(HttpStatus.OK)
-  async generateSendKeypair(@Param('env') env: string, @Req() req: Request) {
-    const key = this.sendPrivateKeySetting(env);
+  async generatePdndKeypair(@Param('env') env: string, @Req() req: Request) {
+    const key = this.pdndPrivateKeySetting(env);
 
     const { publicKey, privateKey } = generateKeyPairSync('rsa', {
       modulusLength: 2048,
@@ -131,23 +131,28 @@ export class SettingsController {
     return { publicKey };
   }
 
-  @Post('send/:env/test-connection')
+  @Post('pdnd/:env/test-connection')
   @HttpCode(HttpStatus.OK)
-  async testSendConnection(@Param('env') env: string) {
+  async testPdndConnection(@Param('env') env: string) {
     if (env !== 'test' && env !== 'prod') {
       throw new BadRequestException('Ambiente non valido: usare "test" o "prod"');
     }
     try {
-      await this.pdndAuth.getVoucher(env, true);
+      // Il client PDND è condiviso tra più finalità (SEND/INAD/INIPEC): qui si
+      // verificano solo le credenziali del client (tokenUrl/audience/clientId/
+      // kid/privateKey), non un purposeId specifico di servizio. PDND non
+      // valida il purposeId in fase di rilascio voucher, quindi un valore
+      // placeholder è sufficiente per costruire una client_assertion well-formed.
+      await this.pdndAuth.getVoucher(env, 'test-connection', true);
       return { success: true, message: 'Voucher PDND ottenuto correttamente: credenziali valide.' };
     } catch (error: any) {
       return { success: false, message: error.message || 'Errore sconosciuto durante la richiesta del voucher PDND.' };
     }
   }
 
-  @Get('send/:env/private-key')
-  async exportSendPrivateKey(@Param('env') env: string) {
-    const key = this.sendPrivateKeySetting(env);
+  @Get('pdnd/:env/private-key')
+  async exportPdndPrivateKey(@Param('env') env: string) {
+    const key = this.pdndPrivateKeySetting(env);
     const privateKey = await this.appSettings.get<string>(key);
     if (!privateKey) {
       throw new BadRequestException(`Nessuna chiave privata salvata per l'ambiente "${env}"`);
@@ -155,9 +160,9 @@ export class SettingsController {
     return { privateKey };
   }
 
-  @Get('send/:env/public-key')
-  async exportSendPublicKey(@Param('env') env: string) {
-    const key = this.sendPrivateKeySetting(env);
+  @Get('pdnd/:env/public-key')
+  async exportPdndPublicKey(@Param('env') env: string) {
+    const key = this.pdndPrivateKeySetting(env);
     const privateKey = await this.appSettings.get<string>(key);
     if (!privateKey) {
       throw new BadRequestException(`Nessuna chiave privata salvata per l'ambiente "${env}": genera o importa prima una coppia di chiavi.`);
@@ -170,11 +175,11 @@ export class SettingsController {
     }
   }
 
-  private sendPrivateKeySetting(env: string) {
+  private pdndPrivateKeySetting(env: string) {
     if (env !== 'test' && env !== 'prod') {
       throw new BadRequestException('Ambiente non valido: usare "test" o "prod"');
     }
-    const key = `send.${env}.pdndPrivateKey`;
+    const key = `pdnd.${env}.privateKey`;
     if (!isSettingKey(key)) {
       throw new BadRequestException(`Chiave setting non trovata: ${key}`);
     }

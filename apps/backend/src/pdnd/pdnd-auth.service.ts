@@ -1,45 +1,51 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as jwt from 'jsonwebtoken';
 import { randomUUID } from 'node:crypto';
-import { AppSettingsService } from '../../settings/app-settings.service';
-import type { SettingKey } from '../../settings/settings.registry';
+import { AppSettingsService } from '../settings/app-settings.service';
+import type { SettingKey } from '../settings/settings.registry';
 
-export type SendEnvironment = 'test' | 'prod';
+export type PdndEnvironment = 'test' | 'prod';
 
 interface CachedVoucher {
   accessToken: string;
   expiresAt: number;
 }
 
+/**
+ * Client PDND condiviso: le credenziali (client_id/kid/chiave privata) sono
+ * uniche per ente, ma un client può essere associato a più finalità
+ * ("purpose") — SEND, e in futuro INAD/INIPEC. Il purposeId arriva quindi dal
+ * chiamante invece di essere letto internamente.
+ */
 @Injectable()
 export class PdndAuthService {
   private readonly logger = new Logger(PdndAuthService.name);
-  private readonly cache = new Map<SendEnvironment, CachedVoucher>();
+  private readonly cache = new Map<string, CachedVoucher>();
 
   constructor(private readonly settings: AppSettingsService) {}
 
-  /** Restituisce un voucher PDND valido, riusando la cache se non scaduto (margine 5s). */
-  async getVoucher(env: SendEnvironment, forceRefresh = false): Promise<string> {
-    const cached = this.cache.get(env);
+  /** Restituisce un voucher PDND valido per (env, purposeId), riusando la cache se non scaduto (margine 5s). */
+  async getVoucher(env: PdndEnvironment, purposeId: string, forceRefresh = false): Promise<string> {
+    const cacheKey = `${env}:${purposeId}`;
+    const cached = this.cache.get(cacheKey);
     if (!forceRefresh && cached && cached.expiresAt > Date.now() + 5_000) {
       return cached.accessToken;
     }
 
-    const prefix = `send.${env}`;
-    const [tokenUrl, audience, clientId, kid, purposeId, privateKey] = await Promise.all([
-      this.settings.get<string>(`${prefix}.pdndTokenUrl` as SettingKey),
-      this.settings.get<string>(`${prefix}.pdndAudience` as SettingKey),
-      this.settings.get<string>(`${prefix}.pdndClientId` as SettingKey),
-      this.settings.get<string>(`${prefix}.pdndKid` as SettingKey),
-      this.settings.get<string>(`${prefix}.pdndPurposeId` as SettingKey),
-      this.settings.get<string>(`${prefix}.pdndPrivateKey` as SettingKey),
+    const prefix = `pdnd.${env}`;
+    const [tokenUrl, audience, clientId, kid, privateKey] = await Promise.all([
+      this.settings.get<string>(`${prefix}.tokenUrl` as SettingKey),
+      this.settings.get<string>(`${prefix}.audience` as SettingKey),
+      this.settings.get<string>(`${prefix}.clientId` as SettingKey),
+      this.settings.get<string>(`${prefix}.kid` as SettingKey),
+      this.settings.get<string>(`${prefix}.privateKey` as SettingKey),
     ]);
 
     const missing = Object.entries({ tokenUrl, audience, clientId, kid, purposeId, privateKey })
       .filter(([, v]) => !v)
       .map(([k]) => k);
     if (missing.length > 0) {
-      throw new Error(`Configurazione SEND (${env}) incompleta: mancano ${missing.join(', ')}`);
+      throw new Error(`Configurazione PDND (${env}) incompleta: mancano ${missing.join(', ')}`);
     }
 
     const clientAssertion = jwt.sign(
@@ -85,13 +91,18 @@ export class PdndAuthService {
     }
 
     const expiresAt = Date.now() + (data.expires_in ?? 600) * 1000;
-    this.cache.set(env, { accessToken: data.access_token, expiresAt });
+    this.cache.set(cacheKey, { accessToken: data.access_token, expiresAt });
     this.logger.log(`Voucher PDND (${env}) ottenuto, valido ${data.expires_in ?? 600}s`);
     return data.access_token;
   }
 
-  clearCache(env?: SendEnvironment): void {
-    if (env) this.cache.delete(env);
-    else this.cache.clear();
+  clearCache(env?: PdndEnvironment): void {
+    if (env) {
+      for (const key of this.cache.keys()) {
+        if (key.startsWith(`${env}:`)) this.cache.delete(key);
+      }
+    } else {
+      this.cache.clear();
+    }
   }
 }
