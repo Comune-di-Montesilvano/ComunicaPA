@@ -605,6 +605,8 @@ export function App(): React.JSX.Element {
   const [settSendEnvironment, setSettSendEnvironment] = useState<'collaudo' | 'produzione'>('collaudo');
   const [settSendTestBaseUrl, setSettSendTestBaseUrl] = useState('https://api.uat.notifichedigitali.it');
   const [settSendTestPurposeId, setSettSendTestPurposeId] = useState('');
+  const [settSendSenderTaxId, setSettSendSenderTaxId] = useState('');
+  const [settSendTaxonomies, setSettSendTaxonomies] = useState<Array<{ code: string; label: string }>>([]);
   const [settSendProdBaseUrl, setSettSendProdBaseUrl] = useState('https://api.notifichedigitali.it');
   const [settSendProdPurposeId, setSettSendProdPurposeId] = useState('');
   const [settSendTesting, setSettSendTesting] = useState<'test' | 'prod' | null>(null);
@@ -780,6 +782,12 @@ export function App(): React.JSX.Element {
         setSettSendEnvironment((String(s['send.environment'] ?? 'collaudo')) as 'collaudo' | 'produzione');
         setSettSendTestBaseUrl(String(s['send.test.baseUrl'] ?? ''));
         setSettSendTestPurposeId(String(s['send.test.purposeId'] ?? ''));
+        setSettSendSenderTaxId(String(s['send.senderTaxId'] ?? ''));
+        try {
+          setSettSendTaxonomies(JSON.parse(String(s['send.enabledTaxonomyCodes'] ?? '[]')));
+        } catch {
+          setSettSendTaxonomies([]);
+        }
         setSettSendProdBaseUrl(String(s['send.prod.baseUrl'] ?? ''));
         setSettSendProdPurposeId(String(s['send.prod.purposeId'] ?? ''));
         setSettPdndTestTokenUrl(String(s['pdnd.test.tokenUrl'] ?? ''));
@@ -1336,6 +1344,8 @@ export function App(): React.JSX.Element {
     'send.environment': settSendEnvironment,
     'send.test.baseUrl': settSendTestBaseUrl,
     'send.test.purposeId': settSendTestPurposeId,
+    'send.senderTaxId': settSendSenderTaxId,
+    'send.enabledTaxonomyCodes': JSON.stringify(settSendTaxonomies),
     'send.prod.baseUrl': settSendProdBaseUrl,
     'send.prod.purposeId': settSendProdPurposeId,
     'pdnd.test.tokenUrl': settPdndTestTokenUrl,
@@ -5278,6 +5288,62 @@ export function App(): React.JSX.Element {
                                 <option value="produzione">Produzione</option>
                               </select>
                               <div className="form-text small text-muted">Determina quale set di credenziali sotto viene usato per l'invio reale.</div>
+                            </div>
+
+                            <div className="mb-4">
+                              <label className="form-label small fw-bold text-dark" htmlFor="send_sender_taxid">Codice Fiscale / P.IVA Ente (senderTaxId)</label>
+                              <input
+                                type="text"
+                                id="send_sender_taxid"
+                                className="form-control form-control-sm"
+                                style={{ maxWidth: 260 }}
+                                value={settSendSenderTaxId}
+                                onChange={(e) => setSettSendSenderTaxId(e.target.value)}
+                                maxLength={11}
+                              />
+                              <div className="form-text small text-muted">11 cifre, obbligatorio nel payload SEND come mittente.</div>
+                            </div>
+
+                            <div className="mb-4">
+                              <label className="form-label small fw-bold text-dark">Tassonomie SEND abilitate</label>
+                              <div className="form-text small text-muted mb-2">
+                                Codici a 7 caratteri dalla <a href="https://developer.pagopa.it/it/send/guides/knowledge-base/v2.5/tassonomia-send" target="_blank" rel="noreferrer">tabella ufficiale SEND</a>.
+                                Termina per "P" se prevede pagamento, "N" se no — inseriscili qui manualmente, saranno selezionabili nel wizard.
+                              </div>
+                              {settSendTaxonomies.map((t, idx) => (
+                                <div key={idx} className="d-flex gap-2 mb-2">
+                                  <input
+                                    type="text"
+                                    className="form-control form-control-sm"
+                                    style={{ maxWidth: 120 }}
+                                    placeholder="Codice"
+                                    value={t.code}
+                                    maxLength={7}
+                                    onChange={(e) => setSettSendTaxonomies(prev => prev.map((row, i) => i === idx ? { ...row, code: e.target.value.toUpperCase() } : row))}
+                                  />
+                                  <input
+                                    type="text"
+                                    className="form-control form-control-sm"
+                                    placeholder="Etichetta descrittiva"
+                                    value={t.label}
+                                    onChange={(e) => setSettSendTaxonomies(prev => prev.map((row, i) => i === idx ? { ...row, label: e.target.value } : row))}
+                                  />
+                                  <button
+                                    type="button"
+                                    className="btn btn-outline-danger btn-sm"
+                                    onClick={() => setSettSendTaxonomies(prev => prev.filter((_, i) => i !== idx))}
+                                  >
+                                    Rimuovi
+                                  </button>
+                                </div>
+                              ))}
+                              <button
+                                type="button"
+                                className="btn btn-outline-secondary btn-sm"
+                                onClick={() => setSettSendTaxonomies(prev => [...prev, { code: '', label: '' }])}
+                              >
+                                + Aggiungi tassonomia
+                              </button>
                             </div>
 
                             {([
