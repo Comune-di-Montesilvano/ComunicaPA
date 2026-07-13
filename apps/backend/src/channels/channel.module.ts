@@ -10,6 +10,7 @@ import { EmailStrategy } from './email/email.strategy';
 import { PecStrategy } from './pec/pec.strategy';
 import { AppIoStrategy } from './app-io/app-io.strategy';
 import { SendStrategy } from './send/send.strategy';
+import { SendAttachmentUploadService } from './send/send-attachment-upload.service';
 import { PostalStrategy } from './postal/postal.strategy';
 
 @Module({
@@ -19,6 +20,7 @@ import { PostalStrategy } from './postal/postal.strategy';
     PecStrategy,
     AppIoStrategy,
     SendStrategy,
+    SendAttachmentUploadService,
     PostalStrategy,
     {
       provide: CHANNEL_STRATEGIES,
