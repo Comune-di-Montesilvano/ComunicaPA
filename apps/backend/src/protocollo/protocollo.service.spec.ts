@@ -47,7 +47,7 @@ describe('ProtocolloService', () => {
     expect(dst).toBe('dst-token-123');
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const [url, init] = mockFetch.mock.calls[0];
-    expect(url).toBe('https://proto.test.local/');
+    expect(url).toBe('https://proto.test.local/soap/DOCAREAProto');
     expect(init.method).toBe('POST');
     expect(init.body).toContain('0000000000');
     expect(init.body).toContain('OPERATORE_WS');

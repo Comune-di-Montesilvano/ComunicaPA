@@ -23,7 +23,9 @@ function xmlEscape(value: string): string {
 }
 
 function extractTag(xml: string, tag: string): string {
-  const match = xml.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`));
+  // Il servizio serializza in stile SOAP RPC/encoded: i tag possono avere
+  // attributi (es. <strDST xsi:type="xsd:string">valore</strDST>).
+  const match = xml.match(new RegExp(`<[\\w:]*${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</[\\w:]*${tag}>`));
   return match ? match[1] : '';
 }
 
@@ -67,9 +69,14 @@ export class ProtocolloService {
     return { baseUrl, codiceEnte, username, password, codiceTitolario, codiceAmministrazione, unitaOrganizzativa, mittenteDenominazione };
   }
 
+  /** Il WSDL espone il servizio su /soap/DOCAREAProto: l'utente configura solo l'host. */
+  private serviceUrl(baseUrl: string): string {
+    return `${baseUrl.replace(/\/$/, '')}/soap/DOCAREAProto`;
+  }
+
   private async soapCall(baseUrl: string, soapAction: string, body: string): Promise<string> {
     const envelope = `<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap:Body>${body}</soap:Body></soap:Envelope>`;
-    const response = await fetch(baseUrl, {
+    const response = await fetch(this.serviceUrl(baseUrl), {
       method: 'POST',
       headers: {
         'Content-Type': 'text/xml; charset=utf-8',
