@@ -17,7 +17,7 @@ import type { Request } from 'express';
 import * as nodemailer from 'nodemailer';
 import { AppSettingsService } from './app-settings.service';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
-import { isSettingKey } from './settings.registry';
+import { isSettingKey, type SettingKey } from './settings.registry';
 import { PdndAuthService } from '../pdnd/pdnd-auth.service';
 
 class TestConnectionDto {
@@ -131,20 +131,69 @@ export class SettingsController {
     return { publicKey };
   }
 
-  @Post('pdnd/:env/test-connection')
+  @Post('pdnd/:env/validate-client')
   @HttpCode(HttpStatus.OK)
-  async testPdndConnection(@Param('env') env: string) {
+  async validatePdndClient(@Param('env') env: string) {
     if (env !== 'test' && env !== 'prod') {
       throw new BadRequestException('Ambiente non valido: usare "test" o "prod"');
     }
+    // PDND rilascia un voucher solo per la coppia client+finalità: non esiste un
+    // endpoint per validare il client da solo. Qui si verifica quindi solo in
+    // locale che le credenziali siano compilate e la chiave privata sia
+    // effettivamente una chiave RSA valida — nessuna chiamata a PDND. Il test
+    // reale del voucher va fatto dal tab del servizio (SEND/INAD/INIPEC) con
+    // il relativo Purpose ID.
+    const prefix = `pdnd.${env}`;
+    const [tokenUrl, audience, clientId, kid, privateKey] = await Promise.all([
+      this.appSettings.get<string>(`${prefix}.tokenUrl` as SettingKey),
+      this.appSettings.get<string>(`${prefix}.audience` as SettingKey),
+      this.appSettings.get<string>(`${prefix}.clientId` as SettingKey),
+      this.appSettings.get<string>(`${prefix}.kid` as SettingKey),
+      this.appSettings.get<string>(`${prefix}.privateKey` as SettingKey),
+    ]);
+    const missing = Object.entries({ tokenUrl, audience, clientId, kid, privateKey })
+      .filter(([, v]) => !v)
+      .map(([k]) => k);
+    if (missing.length > 0) {
+      return { success: false, message: `Configurazione PDND (${env}) incompleta: mancano ${missing.join(', ')}` };
+    }
     try {
-      // Il client PDND è condiviso tra più finalità (SEND/INAD/INIPEC): qui si
-      // verificano solo le credenziali del client (tokenUrl/audience/clientId/
-      // kid/privateKey), non un purposeId specifico di servizio. PDND non
-      // valida il purposeId in fase di rilascio voucher, quindi un valore
-      // placeholder è sufficiente per costruire una client_assertion well-formed.
-      await this.pdndAuth.getVoucher(env, 'test-connection', true);
-      return { success: true, message: 'Voucher PDND ottenuto correttamente: credenziali valide.' };
+      createPrivateKey(privateKey);
+    } catch (error: any) {
+      return { success: false, message: `Chiave privata non valida: ${error.message}` };
+    }
+    return { success: true, message: 'Configurazione locale valida: campi compilati e chiave privata corretta. Per verificare il voucher reale usa "Test connessione" nel tab del servizio (SEND/INAD/INIPEC).' };
+  }
+
+  @Post('send/:env/test-connection')
+  @HttpCode(HttpStatus.OK)
+  async testSendConnection(@Param('env') env: string) {
+    return this.testServicePurposeConnection(env, 'send');
+  }
+
+  @Post('inad/:env/test-connection')
+  @HttpCode(HttpStatus.OK)
+  async testInadConnection(@Param('env') env: string) {
+    return this.testServicePurposeConnection(env, 'inad');
+  }
+
+  @Post('inipec/:env/test-connection')
+  @HttpCode(HttpStatus.OK)
+  async testInipecConnection(@Param('env') env: string) {
+    return this.testServicePurposeConnection(env, 'inipec');
+  }
+
+  private async testServicePurposeConnection(env: string, service: 'send' | 'inad' | 'inipec') {
+    if (env !== 'test' && env !== 'prod') {
+      throw new BadRequestException('Ambiente non valido: usare "test" o "prod"');
+    }
+    const purposeId = await this.appSettings.get<string>(`${service}.${env}.purposeId` as SettingKey);
+    if (!purposeId) {
+      return { success: false, message: `Purpose ID ${service.toUpperCase()} (${env}) non configurato.` };
+    }
+    try {
+      await this.pdndAuth.getVoucher(env, purposeId, true);
+      return { success: true, message: 'Voucher PDND ottenuto correttamente: client e finalità validi.' };
     } catch (error: any) {
       return { success: false, message: error.message || 'Errore sconosciuto durante la richiesta del voucher PDND.' };
     }

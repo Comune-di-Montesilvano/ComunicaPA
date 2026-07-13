@@ -606,6 +606,8 @@ export function App(): React.JSX.Element {
   const [settSendTestPurposeId, setSettSendTestPurposeId] = useState('');
   const [settSendProdBaseUrl, setSettSendProdBaseUrl] = useState('https://api.notifichedigitali.it');
   const [settSendProdPurposeId, setSettSendProdPurposeId] = useState('');
+  const [settSendTesting, setSettSendTesting] = useState<'test' | 'prod' | null>(null);
+  const [settSendTestResult, setSettSendTestResult] = useState<{ env: 'test' | 'prod'; ok: boolean; message: string } | null>(null);
 
   const [settPdndTestTokenUrl, setSettPdndTestTokenUrl] = useState('https://auth.uat.interop.pagopa.it/token.oauth2');
   const [settPdndTestAudience, setSettPdndTestAudience] = useState('auth.uat.interop.pagopa.it/client-assertion');
@@ -624,8 +626,12 @@ export function App(): React.JSX.Element {
 
   const [settInadTestPurposeId, setSettInadTestPurposeId] = useState('');
   const [settInadProdPurposeId, setSettInadProdPurposeId] = useState('');
+  const [settInadTesting, setSettInadTesting] = useState<'test' | 'prod' | null>(null);
+  const [settInadTestResult, setSettInadTestResult] = useState<{ env: 'test' | 'prod'; ok: boolean; message: string } | null>(null);
   const [settInipecTestPurposeId, setSettInipecTestPurposeId] = useState('');
   const [settInipecProdPurposeId, setSettInipecProdPurposeId] = useState('');
+  const [settInipecTesting, setSettInipecTesting] = useState<'test' | 'prod' | null>(null);
+  const [settInipecTestResult, setSettInipecTestResult] = useState<{ env: 'test' | 'prod'; ok: boolean; message: string } | null>(null);
   const [settRetentionDays, setSettRetentionDays] = useState('90');
 
   const [settOidcIssuer, setSettOidcIssuer] = useState('');
@@ -1371,9 +1377,14 @@ export function App(): React.JSX.Element {
     setTimeout(() => setSettingsSavedMessage(null), 3000);
   };
 
-  const handleTestPdndConnection = async (env: 'test' | 'prod') => {
-    setSettPdndTesting(env);
-    setSettPdndTestResult(null);
+  const runPdndTest = async (
+    endpoint: string,
+    env: 'test' | 'prod',
+    setTesting: (v: 'test' | 'prod' | null) => void,
+    setResult: (v: { env: 'test' | 'prod'; ok: boolean; message: string } | null) => void,
+  ) => {
+    setTesting(env);
+    setResult(null);
     try {
       // Salva prima le impostazioni correnti: il test legge le credenziali dal DB.
       const saveRes = await apiFetch('/settings', {
@@ -1383,20 +1394,32 @@ export function App(): React.JSX.Element {
       });
       if (!saveRes.ok) {
         const err = (await saveRes.json()) as { message?: string };
-        setSettPdndTestResult({ env, ok: false, message: `Errore salvataggio: ${err.message ?? saveRes.status}` });
+        setResult({ env, ok: false, message: `Errore salvataggio: ${err.message ?? saveRes.status}` });
         return;
       }
 
-      const res = await apiFetch(`/settings/pdnd/${env}/test-connection`, { method: 'POST' });
+      const res = await apiFetch(endpoint, { method: 'POST' });
       const data = await res.json() as { success: boolean; message: string };
-      setSettPdndTestResult({ env, ok: data.success, message: data.message });
+      setResult({ env, ok: data.success, message: data.message });
     } catch (err: any) {
       if (err instanceof ApiAuthError) return;
-      setSettPdndTestResult({ env, ok: false, message: err.message || 'Errore di rete durante il test.' });
+      setResult({ env, ok: false, message: err.message || 'Errore di rete durante il test.' });
     } finally {
-      setSettPdndTesting(null);
+      setTesting(null);
     }
   };
+
+  const handleValidatePdndClient = (env: 'test' | 'prod') =>
+    runPdndTest(`/settings/pdnd/${env}/validate-client`, env, setSettPdndTesting, setSettPdndTestResult);
+
+  const handleTestSendConnection = (env: 'test' | 'prod') =>
+    runPdndTest(`/settings/send/${env}/test-connection`, env, setSettSendTesting, setSettSendTestResult);
+
+  const handleTestInadConnection = (env: 'test' | 'prod') =>
+    runPdndTest(`/settings/inad/${env}/test-connection`, env, setSettInadTesting, setSettInadTestResult);
+
+  const handleTestInipecConnection = (env: 'test' | 'prod') =>
+    runPdndTest(`/settings/inipec/${env}/test-connection`, env, setSettInipecTesting, setSettInipecTestResult);
 
   const fetchEngines = async () => {
     if (!token) return;
@@ -5179,13 +5202,13 @@ export function App(): React.JSX.Element {
                                 <hr className="my-3" />
                                 <button
                                   type="button"
-                                  className="btn btn-primary btn-sm"
+                                  className="btn btn-outline-primary btn-sm"
                                   disabled={settPdndTesting === e.prefix}
-                                  onClick={() => handleTestPdndConnection(e.prefix)}
+                                  onClick={() => handleValidatePdndClient(e.prefix)}
                                 >
-                                  {settPdndTesting === e.prefix ? 'Test in corso…' : 'Test connessione (voucher PDND)'}
+                                  {settPdndTesting === e.prefix ? 'Verifica in corso…' : 'Verifica configurazione (locale)'}
                                 </button>
-                                <div className="form-text small text-muted">Salva le impostazioni correnti e prova a ottenere un voucher PDND reale con le credenziali qui sopra.</div>
+                                <div className="form-text small text-muted">Salva le impostazioni e verifica in locale che i campi siano compilati e la chiave privata sia valida. PDND rilascia voucher solo per client+finalità insieme: il test reale va fatto dal tab del servizio (SEND/INAD/INIPEC).</div>
                                 {settPdndTestResult?.env === e.prefix && (
                                   <div className={`alert ${settPdndTestResult.ok ? 'alert-success' : 'alert-danger'} mt-2 mb-0 small`} style={{ wordBreak: 'break-word' }}>
                                     {settPdndTestResult.message}
@@ -5244,6 +5267,21 @@ export function App(): React.JSX.Element {
                                   />
                                   <div className="form-text small text-muted">Le credenziali del client PDND (client ID, kid, chiave privata) si configurano nella scheda "Client PDND".</div>
                                 </div>
+                                <hr className="my-3" />
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-sm"
+                                  disabled={settSendTesting === e.prefix}
+                                  onClick={() => handleTestSendConnection(e.prefix)}
+                                >
+                                  {settSendTesting === e.prefix ? 'Test in corso…' : 'Test connessione (voucher PDND)'}
+                                </button>
+                                <div className="form-text small text-muted">Salva le impostazioni e prova a ottenere un voucher PDND reale con client PDND + Purpose ID SEND.</div>
+                                {settSendTestResult?.env === e.prefix && (
+                                  <div className={`alert ${settSendTestResult.ok ? 'alert-success' : 'alert-danger'} mt-2 mb-0 small`} style={{ wordBreak: 'break-word' }}>
+                                    {settSendTestResult.message}
+                                  </div>
+                                )}
                               </fieldset>
                             ))}
                           </div>
@@ -5273,6 +5311,21 @@ export function App(): React.JSX.Element {
                                     onChange={(ev) => e.setPurposeId(ev.target.value)}
                                   />
                                 </div>
+                                <hr className="my-3" />
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-sm"
+                                  disabled={settInadTesting === e.prefix}
+                                  onClick={() => handleTestInadConnection(e.prefix)}
+                                >
+                                  {settInadTesting === e.prefix ? 'Test in corso…' : 'Test connessione (voucher PDND)'}
+                                </button>
+                                <div className="form-text small text-muted">Salva le impostazioni e prova a ottenere un voucher PDND reale con client PDND + Purpose ID INAD.</div>
+                                {settInadTestResult?.env === e.prefix && (
+                                  <div className={`alert ${settInadTestResult.ok ? 'alert-success' : 'alert-danger'} mt-2 mb-0 small`} style={{ wordBreak: 'break-word' }}>
+                                    {settInadTestResult.message}
+                                  </div>
+                                )}
                               </fieldset>
                             ))}
                           </div>
@@ -5302,6 +5355,21 @@ export function App(): React.JSX.Element {
                                     onChange={(ev) => e.setPurposeId(ev.target.value)}
                                   />
                                 </div>
+                                <hr className="my-3" />
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-sm"
+                                  disabled={settInipecTesting === e.prefix}
+                                  onClick={() => handleTestInipecConnection(e.prefix)}
+                                >
+                                  {settInipecTesting === e.prefix ? 'Test in corso…' : 'Test connessione (voucher PDND)'}
+                                </button>
+                                <div className="form-text small text-muted">Salva le impostazioni e prova a ottenere un voucher PDND reale con client PDND + Purpose ID INIPEC.</div>
+                                {settInipecTestResult?.env === e.prefix && (
+                                  <div className={`alert ${settInipecTestResult.ok ? 'alert-success' : 'alert-danger'} mt-2 mb-0 small`} style={{ wordBreak: 'break-word' }}>
+                                    {settInipecTestResult.message}
+                                  </div>
+                                )}
                               </fieldset>
                             ))}
                           </div>
