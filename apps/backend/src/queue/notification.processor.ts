@@ -21,6 +21,7 @@ import { MailConfigsService } from '../mail-configs/mail-configs.service';
 import { IoServicesService } from '../io-services/io-services.service';
 import { APP_IO_BASE_URL } from '../channels/app-io/app-io.strategy';
 import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util';
+import { resolvePaymentData } from '../channels/payment-config.util';
 
 @Injectable()
 export class NotificationProcessor extends WorkerHost {
@@ -314,48 +315,19 @@ export class NotificationProcessor extends WorkerHost {
       };
 
       const paymentConfig = campaign.channelConfig?.['paymentConfig'] as Record<string, any> | undefined;
-      if (paymentConfig && paymentConfig.enabled) {
-        const rawAmount = getColumnValue(recipient, paymentConfig.amountColumn);
-        const noticeNumber = getColumnValue(recipient, paymentConfig.noticeNumberColumn);
-
-        let amountCents = 0;
-        if (paymentConfig.amountType === 'cents') {
-          amountCents = parseInt(rawAmount, 10) || 0;
-        } else {
-          const cleaned = (rawAmount || '').replace(',', '.');
-          const parsed = parseFloat(cleaned) || 0;
-          amountCents = Math.round(parsed * 100);
+      const resolvedPayment = resolvePaymentData(recipient, paymentConfig);
+      if (resolvedPayment) {
+        const paymentData: Record<string, any> = {
+          amount: resolvedPayment.amountCents,
+          notice_number: resolvedPayment.noticeCode,
+          invalid_after_due_date: true,
+        };
+        if (resolvedPayment.creditorTaxId) {
+          paymentData.payee = { fiscal_code: resolvedPayment.creditorTaxId };
         }
-
-        if (noticeNumber && amountCents > 0) {
-          const paymentData: Record<string, any> = {
-            amount: amountCents,
-            notice_number: noticeNumber.replace(/\s+/g, ''),
-            invalid_after_due_date: true,
-          };
-
-          let payeeFiscalCode = '';
-          if (paymentConfig.payeeFiscalCodeType === 'static') {
-            payeeFiscalCode = paymentConfig.payeeFiscalCodeStatic || '';
-          } else if (paymentConfig.payeeFiscalCodeType === 'column') {
-            payeeFiscalCode = getColumnValue(recipient, paymentConfig.payeeFiscalCodeColumn);
-          }
-
-          if (payeeFiscalCode) {
-            paymentData.payee = {
-              fiscal_code: payeeFiscalCode.toUpperCase().trim(),
-            };
-          }
-
-          contentPayload.payment_data = paymentData;
-        }
-
-        if (paymentConfig.dueDateColumn) {
-          const rawDate = getColumnValue(recipient, paymentConfig.dueDateColumn);
-          const parsedDate = parseDateToIso(rawDate);
-          if (parsedDate) {
-            contentPayload.due_date = parsedDate;
-          }
+        contentPayload.payment_data = paymentData;
+        if (resolvedPayment.dueDateIso) {
+          contentPayload.due_date = resolvedPayment.dueDateIso;
         }
       }
 
@@ -384,50 +356,3 @@ export class NotificationProcessor extends WorkerHost {
     }
   }
 }
-
-function getColumnValue(recipient: Recipient, columnName?: string): string {
-  if (!columnName) return '';
-  const col = columnName.toLowerCase().trim();
-  if (col === 'codice_fiscale' || col === 'cf') return recipient.codiceFiscale;
-  if (col === 'full_name' || col === 'nome' || col === 'nominativo') return recipient.fullName || '';
-  if (col === 'email') return recipient.email || '';
-  if (col === 'pec') return recipient.pec || '';
-
-  if (recipient.extraData) {
-    for (const [key, val] of Object.entries(recipient.extraData)) {
-      if (key.toLowerCase().trim() === col) {
-        return String(val ?? '');
-      }
-    }
-  }
-  return '';
-}
-
-function parseDateToIso(dateStr?: string): string | null {
-  if (!dateStr) return null;
-
-  // Try parsing ISO format directly: YYYY-MM-DD
-  let match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (match) {
-    return `${match[1]}-${match[2]}-${match[3]}T23:59:59.000Z`;
-  }
-
-  // Try parsing DD/MM/YYYY
-  match = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (match) {
-    const day = match[1].padStart(2, '0');
-    const month = match[2].padStart(2, '0');
-    const year = match[3];
-    return `${year}-${month}-${day}T23:59:59.000Z`;
-  }
-
-  try {
-    const d = new Date(dateStr);
-    if (!isNaN(d.getTime())) {
-      return d.toISOString();
-    }
-  } catch {}
-
-  return null;
-}
-
