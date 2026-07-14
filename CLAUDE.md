@@ -254,3 +254,51 @@ altrove (es. sulla pagina dettaglio campagna) — bypassano quelle validazioni
 e hanno già causato invii falliti in produzione (CF troncato, markdown vuoto
 per App IO). Per riprendere una bozza: bottone "Riprendi wizard"
 (`handleResumeDraft`), non un importer dedicato.
+
+## SEND — autenticazione reale verso PN, gotcha critico
+
+PN (`api.notifichedigitali.it`/`api.uat.notifichedigitali.it`) richiede
+**ENTRAMBI** gli header su ogni chiamata `/delivery/*`: `x-api-key` (emesso
+dal portale self-care PN) **e** `Authorization: Bearer <voucher PDND>`.
+Lo spec OpenAPI backend (`components.securitySchemes`) documenta SOLO
+`x-api-key` — non descrive il layer di gateway PDND davanti al backend
+reale. Verificato solo contro l'esempio curl verbatim della guida ufficiale
+(developer.pagopa.it, "Inserimento notifica con il comando curl"), non
+fidandosi dello spec YAML da solo. Un solo header → 403/401.
+
+**Upload allegati**: `x-amz-checksum-sha256` sull'URL S3 presigned va come
+header HTTP normale, MAI come trailer chunked — un trailer produce
+`SignatureDoesNotMatch` (la firma dell'URL presigned assume il checksum tra
+gli header firmati). Vedi `send-attachment-upload.service.ts`.
+
+**Payload `documents[].docIdx`**: deve essere stringa (`"0"`), non numero
+— lo schema PN è `allOf` di 2 sotto-schemi e un numero fa fallire la
+validazione con un errore criptico ("matched only 1 out of 2").
+
+**Campi opzionali ma a volte obbligatori**: `physicalAddress` (destinatario)
+è richiesto se PN non risolve un domicilio digitale legale (es. CF non
+trovato su ANPR/INAD) — errore "PhysicalAddress cannot be null". `group`
+(root payload) è richiesto se l'account PN è associato a più gruppi utenti
+(self-care PN) — errore "Specify a group in cx_groups=[...]". Entrambi
+configurabili via Impostazioni → SEND, nessun default hardcoded.
+
+**Verifica spec**: mai fidarsi di un riassunto AI dello spec OpenAPI —
+scaricare il raw YAML (`curl` su `pn-openapi-devportal/docs/openapi/
+api-external-b2b-pa-bundle.yaml`) e grep diretto su `securitySchemes`/
+schema dei singoli campi. Un riassunto ha già portato a un fix sbagliato
+una volta in questa stessa giornata di debug.
+
+## TypeORM — leftJoinAndSelect + orderBy + take, bug interno
+
+TypeORM 0.3.30 lancia `Cannot read properties of undefined (reading
+'databaseName')` in `createOrderByCombinedWithSelectExpression` quando
+`take()`+`orderBy()` sono combinati con `leftJoinAndSelect()` su relazioni
+dichiarate per stringa (`@ManyToOne('Campaign', ...)`, pattern usato in
+tutte le entity di questo repo per evitare import circolari). Il bug è
+silenzioso nei log di produzione (una riga di errore ogni tick cron, senza
+stack trace) — un demone `@Cron` che lo colpisce non processa MAI nulla,
+senza errori visibili all'avvio. Workaround: due query separate — la prima
+(senza join) seleziona solo gli id con `where`/`orderBy`/`take`, la seconda
+carica le relazioni via `Repository.find({ where: { id: In(ids) },
+relations })`, senza `orderBy`/`take`. Vedi `protocollazione-sync.service.ts`
+e `send-dispatch.service.ts`.
