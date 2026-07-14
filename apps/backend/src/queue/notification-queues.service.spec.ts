@@ -21,7 +21,6 @@ describe('NotificationQueuesService.getJobsDetail', () => {
         { provide: getQueueToken(CHANNEL_QUEUES.EMAIL), useValue: { getJobs } },
         { provide: getQueueToken(CHANNEL_QUEUES.PEC), useValue: {} },
         { provide: getQueueToken(CHANNEL_QUEUES.APP_IO), useValue: {} },
-        { provide: getQueueToken(CHANNEL_QUEUES.SEND), useValue: {} },
         { provide: getQueueToken(CHANNEL_QUEUES.POSTAL), useValue: {} },
       ],
     }).compile();
@@ -55,7 +54,6 @@ describe('NotificationQueuesService.getJob', () => {
         { provide: getQueueToken(CHANNEL_QUEUES.EMAIL), useValue: { getJob } },
         { provide: getQueueToken(CHANNEL_QUEUES.PEC), useValue: {} },
         { provide: getQueueToken(CHANNEL_QUEUES.APP_IO), useValue: {} },
-        { provide: getQueueToken(CHANNEL_QUEUES.SEND), useValue: {} },
         { provide: getQueueToken(CHANNEL_QUEUES.POSTAL), useValue: {} },
       ],
     }).compile();
@@ -75,7 +73,6 @@ describe('NotificationQueuesService.getJob', () => {
         { provide: getQueueToken(CHANNEL_QUEUES.EMAIL), useValue: { getJob } },
         { provide: getQueueToken(CHANNEL_QUEUES.PEC), useValue: {} },
         { provide: getQueueToken(CHANNEL_QUEUES.APP_IO), useValue: {} },
-        { provide: getQueueToken(CHANNEL_QUEUES.SEND), useValue: {} },
         { provide: getQueueToken(CHANNEL_QUEUES.POSTAL), useValue: {} },
       ],
     }).compile();

@@ -338,7 +338,7 @@ export class CampaignsService {
       for (let i = 0; i < recipients.length; i += JOB_CHUNK) {
         const chunk = recipients.slice(i, i + JOB_CHUNK);
         await this.notificationQueues.addBulk(
-          campaign.channelType,
+          campaign.channelType as Exclude<typeof campaign.channelType, 'SEND'>,
           chunk.map((r, idx) => ({
             name: NOTIFICATION_JOB_SEND,
             data: {
@@ -401,7 +401,10 @@ export class CampaignsService {
         removedAttemptIds = [];
         removedRecipientIds = [];
         for (const attempt of liveAttempts) {
-          const job = await this.notificationQueues.getJob(campaign.channelType, attempt.id);
+          const job = await this.notificationQueues.getJob(
+            campaign.channelType as Exclude<typeof campaign.channelType, 'SEND'>,
+            attempt.id,
+          );
           if (!job) continue;
           try {
             await job.remove();
@@ -825,7 +828,7 @@ export class CampaignsService {
     await this.campaignRepo.decrement({ id: campaignId }, 'failedCount', 1);
 
     if (campaign.channelType !== 'SEND') {
-      await this.notificationQueues.addBulk(campaign.channelType, [
+      await this.notificationQueues.addBulk(campaign.channelType as Exclude<typeof campaign.channelType, 'SEND'>, [
         { name: NOTIFICATION_JOB_SEND, data: { campaignId, recipientId, attemptId, channel: campaign.channelType }, opts: { jobId: attemptId } },
       ]);
     }

@@ -15,8 +15,5 @@ export class PecNotificationProcessor extends NotificationProcessor {}
 @Processor(CHANNEL_QUEUES.APP_IO)
 export class AppIoNotificationProcessor extends NotificationProcessor {}
 
-@Processor(CHANNEL_QUEUES.SEND)
-export class SendNotificationProcessor extends NotificationProcessor {}
-
 @Processor(CHANNEL_QUEUES.POSTAL)
 export class PostalNotificationProcessor extends NotificationProcessor {}

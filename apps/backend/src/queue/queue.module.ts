@@ -9,7 +9,6 @@ import {
   EmailNotificationProcessor,
   PecNotificationProcessor,
   AppIoNotificationProcessor,
-  SendNotificationProcessor,
   PostalNotificationProcessor,
 } from './channel-processors';
 import { NotificationQueuesService } from './notification-queues.service';
@@ -43,7 +42,6 @@ import { ChannelModule } from '../channels/channel.module';
     EmailNotificationProcessor,
     PecNotificationProcessor,
     AppIoNotificationProcessor,
-    SendNotificationProcessor,
     PostalNotificationProcessor,
     NotificationQueuesService,
     {

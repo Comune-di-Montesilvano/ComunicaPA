@@ -30,7 +30,7 @@ describe('EnginesController', () => {
 
   it('list() ritorna lo stato di tutti i canali', async () => {
     const res = await controller.list();
-    expect(res.engines).toHaveLength(5);
+    expect(res.engines).toHaveLength(4);
     expect(res.engines[0]).toEqual({
       channel: 'EMAIL',
       queueName: 'notifications-email',
