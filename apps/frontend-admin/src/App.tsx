@@ -663,6 +663,7 @@ export function App(): React.JSX.Element {
 
   const [activeSettingsTab, setActiveSettingsTab] = useState<'personalizzazione' | 'smtp' | 'pec' | 'app-io' | 'pdnd' | 'send' | 'inad' | 'inipec' | 'protocollo' | 'postalizzazione' | 'oidc' | 'motori'>('personalizzazione');
   const [engines, setEngines] = useState<any[]>([]);
+  const [sendStageCounts, setSendStageCounts] = useState<{ queued: number; protocollato: number; inviato: number; fallito: number } | null>(null);
   const [loadingEngines, setLoadingEngines] = useState(false);
   const [enginesError, setEnginesError] = useState<string | null>(null);
   const [engineJobsChannel, setEngineJobsChannel] = useState<string | null>(null);
@@ -1464,6 +1465,10 @@ export function App(): React.JSX.Element {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setEngines(data.engines || []);
+      const stageRes = await fetch(`${ADMIN_API_BASE}/engines/send/stage-counts`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (stageRes.ok) setSendStageCounts(await stageRes.json());
     } catch (err: any) {
       setEnginesError(`Errore nel caricamento dei motori: ${err.message}`);
     } finally {
@@ -6265,6 +6270,40 @@ export function App(): React.JSX.Element {
                                   </div>
                                 );
                               })}
+
+                              {sendStageCounts && (
+                                <div className="card border shadow-sm border-light">
+                                  <div className="card-body p-3">
+                                    <div className="d-flex align-items-center gap-3 mb-2">
+                                      <div className="rounded-circle d-flex align-items-center justify-content-center text-white bg-primary" style={{ width: 40, height: 40 }}>
+                                        <i className="fas fa-paper-plane"></i>
+                                      </div>
+                                      <div>
+                                        <div className="fw-bold text-dark">SEND</div>
+                                        <div className="text-muted small">Pipeline a stadi (nessuna coda BullMQ): protocollazione e invio girano come demoni schedulati.</div>
+                                      </div>
+                                    </div>
+                                    <div className="d-flex gap-3 text-center">
+                                      <div>
+                                        <div className="fw-bold text-primary">{sendStageCounts.queued}</div>
+                                        <div className="text-muted" style={{ fontSize: '0.7rem' }}>In coda (da protocollare)</div>
+                                      </div>
+                                      <div>
+                                        <div className="fw-bold text-info">{sendStageCounts.protocollato}</div>
+                                        <div className="text-muted" style={{ fontSize: '0.7rem' }}>Protocollato (da inviare)</div>
+                                      </div>
+                                      <div>
+                                        <div className="fw-bold text-success">{sendStageCounts.inviato}</div>
+                                        <div className="text-muted" style={{ fontSize: '0.7rem' }}>Inviato</div>
+                                      </div>
+                                      <div>
+                                        <div className={`fw-bold ${sendStageCounts.fallito > 0 ? 'text-danger' : 'text-muted'}`}>{sendStageCounts.fallito}</div>
+                                        <div className="text-muted" style={{ fontSize: '0.7rem' }}>Fallito</div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>

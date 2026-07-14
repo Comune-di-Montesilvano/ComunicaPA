@@ -1,7 +1,10 @@
 import { Controller, Get, Post, Param, Query, HttpStatus, HttpCode, BadRequestException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Not, IsNull, Repository } from 'typeorm';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { NotificationQueuesService } from '../queue/notification-queues.service';
 import { QUEUED_CHANNELS } from '../queue/notification-job.types';
+import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity';
 import type { NotificationChannel } from '@comunicapa/shared-types';
 
 function isQueuedChannel(channel: NotificationChannel): channel is Exclude<NotificationChannel, 'SEND'> {
@@ -10,7 +13,11 @@ function isQueuedChannel(channel: NotificationChannel): channel is Exclude<Notif
 
 @Controller('admin/engines')
 export class EnginesController {
-  constructor(private readonly queues: NotificationQueuesService) {}
+  constructor(
+    private readonly queues: NotificationQueuesService,
+    @InjectRepository(NotificationAttempt)
+    private readonly attemptRepo: Repository<NotificationAttempt>,
+  ) {}
 
   @Get()
   @Roles('admin', 'user')
@@ -30,6 +37,22 @@ export class EnginesController {
       }),
     );
     return { engines };
+  }
+
+  @Get('send/stage-counts')
+  @Roles('admin', 'user')
+  async sendStageCounts() {
+    const [queued, protocollato, inviato, fallito] = await Promise.all([
+      this.attemptRepo.count({
+        where: { channelType: 'SEND', status: AttemptStatus.QUEUED, protocolledAt: IsNull() },
+      }),
+      this.attemptRepo.count({
+        where: { channelType: 'SEND', status: AttemptStatus.QUEUED, protocolledAt: Not(IsNull()) },
+      }),
+      this.attemptRepo.count({ where: { channelType: 'SEND', status: AttemptStatus.SUCCESS } }),
+      this.attemptRepo.count({ where: { channelType: 'SEND', status: AttemptStatus.FAILED } }),
+    ]);
+    return { queued, protocollato, inviato, fallito };
   }
 
   @Post(':channel/pause')

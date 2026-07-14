@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
 import { EnginesController } from './engines.controller';
 import { NotificationQueuesService } from '../queue/notification-queues.service';
+import { NotificationAttempt } from '../entities/notification-attempt.entity';
 import { BadRequestException } from '@nestjs/common';
 
 describe('EnginesController', () => {
@@ -12,6 +14,7 @@ describe('EnginesController', () => {
     resume: jest.fn(),
     getJobsDetail: jest.fn().mockResolvedValue([{ jobId: 'j1' }]),
   };
+  const mockAttemptRepo = { count: jest.fn(), createQueryBuilder: jest.fn() };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -21,6 +24,10 @@ describe('EnginesController', () => {
         {
           provide: NotificationQueuesService,
           useValue: mockQueuesService,
+        },
+        {
+          provide: getRepositoryToken(NotificationAttempt),
+          useValue: mockAttemptRepo,
         },
       ],
     }).compile();
@@ -64,5 +71,17 @@ describe('EnginesController', () => {
 
   it('jobs() rifiuta un canale sconosciuto', async () => {
     await expect(controller.jobs('fax', 'failed', '10')).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('GET send/stage-counts ritorna i contatori per stadio SEND', async () => {
+    mockAttemptRepo.count
+      .mockResolvedValueOnce(3) // queued (non protocollato)
+      .mockResolvedValueOnce(2) // protocollato non inviato
+      .mockResolvedValueOnce(10) // inviato
+      .mockResolvedValueOnce(1); // fallito
+
+    const result = await controller.sendStageCounts();
+
+    expect(result).toEqual({ queued: 3, protocollato: 2, inviato: 10, fallito: 1 });
   });
 });
