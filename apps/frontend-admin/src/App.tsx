@@ -244,6 +244,12 @@ interface Recipient {
     responsePayload?: any;
     errorMessage?: string | null;
     attemptNumber: number;
+    iun?: string | null;
+    sendStatus?: string | null;
+    sendStatusUpdatedAt?: string | null;
+    protocolNumber?: number | null;
+    protocolYear?: number | null;
+    protocolledAt?: string | null;
   }>;
 }
 
@@ -319,7 +325,7 @@ export function App(): React.JSX.Element {
   const [notifDetail, setNotifDetail] = useState<{
     recipient: { id: string; codiceFiscale: string; fullName: string | null; email: string | null; pec: string | null; status: string };
     campaign: { id: string; name: string; channelType: string };
-    attempts: Array<{ attemptNumber: number; status: string; channelType: string; errorMessage: string | null; sentAt: string | null; createdAt: string; appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null } }>;
+    attempts: Array<{ attemptNumber: number; status: string; channelType: string; errorMessage: string | null; sentAt: string | null; createdAt: string; appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null }; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; protocolNumber?: number | null; protocolYear?: number | null; protocolledAt?: string | null }>;
     preview: { subject: string; bodyHtml?: string; bodyMarkdown?: string };
     downloads: Array<{ channel: string; attachmentIndex: number; downloadedAt: string }>;
   } | null>(null);
@@ -697,7 +703,7 @@ export function App(): React.JSX.Element {
   const [cancelling, setCancelling] = useState(false);
   const [failureGroups, setFailureGroups] = useState<Array<{ errorMessage: string; count: number; recipientIds: string[] }>>([]);
   const [retryingGroup, setRetryingGroup] = useState<string | null>(null);
-  const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number }> } | null>(null);
+  const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; protocolNumber?: number | null; protocolYear?: number | null }> } | null>(null);
   const [recipientsSearch, setRecipientsSearch] = useState('');
   const [recipientsPageNum, setRecipientsPageNum] = useState(1);
   const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number } | null>(null);
@@ -4814,7 +4820,11 @@ export function App(): React.JSX.Element {
                         <table className="table table-sm mb-4">
                           <thead>
                             <tr>
-                              <th>#</th><th>Stato</th><th>Canale</th><th>Data</th><th>Errore</th>
+                              <th>#</th><th>Stato</th><th>Canale</th><th>Data</th>
+                              {notifDetail.campaign.channelType === 'SEND' && (
+                                <><th>IUN</th><th>Protocollo</th><th>Stato SEND</th><th>Aggiornato il</th></>
+                              )}
+                              <th>Errore</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -4825,6 +4835,14 @@ export function App(): React.JSX.Element {
                                   <td><StatusBadge status={a.status} /></td>
                                   <td className="small"><ChannelBadge channel={a.channelType} /></td>
                                   <td className="small text-muted">{new Date(a.createdAt).toLocaleString('it-IT')}</td>
+                                  {notifDetail.campaign.channelType === 'SEND' && (
+                                    <>
+                                      <td className="small fw-mono">{a.iun || '—'}</td>
+                                      <td className="small">{a.protocolNumber ? `${a.protocolNumber}/${a.protocolYear}` : '—'}</td>
+                                      <td className="small">{a.sendStatus || '—'}</td>
+                                      <td className="small text-muted">{a.sendStatusUpdatedAt ? new Date(a.sendStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
+                                    </>
+                                  )}
                                   <td className="small text-danger">{a.errorMessage || '—'}</td>
                                 </tr>
                                 {/* Co-consegna App IO come tentativo a parte: non ha senso quando
@@ -4861,16 +4879,18 @@ export function App(): React.JSX.Element {
                           </>
                         )}
 
-                        <h6 className="fw-bold small">Anteprima Messaggio Inviato</h6>
+                        <h6 className="fw-bold small">{notifDetail.campaign.channelType === 'SEND' ? 'Oggetto Inviato' : 'Anteprima Messaggio Inviato'}</h6>
                         <div className="mb-2 small text-muted"><strong>Oggetto:</strong> {notifDetail.preview.subject}</div>
-                        {notifDetail.preview.bodyHtml ? (
-                          <div className="bg-white border rounded overflow-hidden" style={{ padding: '4px' }} dangerouslySetInnerHTML={{ __html: notifDetail.preview.bodyHtml }} />
-                        ) : notifDetail.preview.bodyMarkdown ? (
-                          <div className="bg-white border rounded p-3" data-color-mode="light">
-                            <MDEditor.Markdown source={notifDetail.preview.bodyMarkdown} />
-                          </div>
-                        ) : (
-                          <div className="text-muted small">Nessuna anteprima disponibile.</div>
+                        {notifDetail.campaign.channelType !== 'SEND' && (
+                          notifDetail.preview.bodyHtml ? (
+                            <div className="bg-white border rounded overflow-hidden" style={{ padding: '4px' }} dangerouslySetInnerHTML={{ __html: notifDetail.preview.bodyHtml }} />
+                          ) : notifDetail.preview.bodyMarkdown ? (
+                            <div className="bg-white border rounded p-3" data-color-mode="light">
+                              <MDEditor.Markdown source={notifDetail.preview.bodyMarkdown} />
+                            </div>
+                          ) : (
+                            <div className="text-muted small">Nessuna anteprima disponibile.</div>
+                          )
                         )}
                       </>
                     )}
@@ -6724,12 +6744,14 @@ export function App(): React.JSX.Element {
                             <StatusBadge status={campaign.status} />
                           </div>
                         </div>
-                        <div className="mb-3">
-                          <label className="text-muted small fw-semibold block">Testo Messaggio</label>
-                          <div className="p-2 bg-light border rounded small" style={{ whiteSpace: 'pre-wrap' }}>
-                            {campaign.description}
+                        {campaign.channelType !== 'SEND' && (
+                          <div className="mb-3">
+                            <label className="text-muted small fw-semibold block">Testo Messaggio</label>
+                            <div className="p-2 bg-light border rounded small" style={{ whiteSpace: 'pre-wrap' }}>
+                              {campaign.description}
+                            </div>
                           </div>
-                        </div>
+                        )}
 
                         {(campaign.status === 'running' || campaign.status === 'completed' || campaign.status === 'queued' || campaign.status === 'cancelled') && (
                           <div className="mt-4 border-top pt-3">
@@ -6916,7 +6938,11 @@ export function App(): React.JSX.Element {
                                     <th>Nominativo</th>
                                     <th>Contatti (Email/PEC)</th>
                                     <th>Stato Notifica</th>
-                                    <th className="text-center">Download</th>
+                                    {campaign.channelType === 'SEND' ? (
+                                      <><th>IUN</th><th>Protocollo</th><th>Stato SEND</th><th>Aggiornato il</th></>
+                                    ) : (
+                                      <th className="text-center">Download</th>
+                                    )}
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -6931,15 +6957,24 @@ export function App(): React.JSX.Element {
                                         </div>
                                       </td>
                                       <td><StatusBadge status={r.status} /></td>
-                                      <td className="text-center fw-bold">
-                                        {r.downloadCount ? (
-                                          <span className="text-success">
-                                            <i className="fas fa-arrow-down me-1"></i> {r.downloadCount}
-                                          </span>
-                                        ) : (
-                                          <span className="text-muted">—</span>
-                                        )}
-                                      </td>
+                                      {campaign.channelType === 'SEND' ? (
+                                        <>
+                                          <td className="small fw-mono">{r.iun || '—'}</td>
+                                          <td className="small">{r.protocolNumber ? `${r.protocolNumber}/${r.protocolYear}` : '—'}</td>
+                                          <td className="small">{r.sendStatus || '—'}</td>
+                                          <td className="small text-muted">{r.sendStatusUpdatedAt ? new Date(r.sendStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
+                                        </>
+                                      ) : (
+                                        <td className="text-center fw-bold">
+                                          {r.downloadCount ? (
+                                            <span className="text-success">
+                                              <i className="fas fa-arrow-down me-1"></i> {r.downloadCount}
+                                            </span>
+                                          ) : (
+                                            <span className="text-muted">—</span>
+                                          )}
+                                        </td>
+                                      )}
                                     </tr>
                                   ))}
                                 </tbody>
