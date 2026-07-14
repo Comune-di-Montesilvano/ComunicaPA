@@ -1,7 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import * as https from 'node:https';
-import * as http from 'node:http';
 
 export interface UploadedDocument {
   key: string;
@@ -46,12 +44,18 @@ export class SendAttachmentUploadService {
       throw new Error(`Preload allegato SEND: risposta priva della entry per preloadIdx=${preloadIdx}`);
     }
 
-    const versionToken = await this.uploadWithTrailer(entry.url, entry.httpMethod, entry.secret, contentType, buffer, sha256Base64);
+    const versionToken = await this.uploadFile(entry.url, entry.httpMethod, entry.secret, contentType, buffer, sha256Base64);
     this.logger.log(`Allegato SEND caricato: key=${entry.key} versionToken=${versionToken}`);
     return { key: entry.key, versionToken, sha256Base64 };
   }
 
-  private uploadWithTrailer(
+  // x-amz-checksum-sha256 è un header normale, NON un trailer HTTP — confermato
+  // dalla documentazione ufficiale developer.pagopa.it (esempio curl verbatim,
+  // guida "Inserimento notifica con il comando curl"): la firma dell'URL
+  // presigned S3 è calcolata assumendo il checksum tra gli header firmati, non
+  // in coda al body via chunked-trailer — inviarlo come trailer produce
+  // SignatureDoesNotMatch da S3 (verificato contro l'ambiente reale).
+  private async uploadFile(
     url: string,
     method: 'PUT' | 'POST',
     secret: string,
@@ -59,42 +63,23 @@ export class SendAttachmentUploadService {
     buffer: Buffer,
     sha256Base64: string,
   ): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const parsed = new URL(url);
-      const client = parsed.protocol === 'http:' ? http : https;
-      const req = client.request(
-        {
-          hostname: parsed.hostname,
-          port: parsed.port || (parsed.protocol === 'http:' ? 80 : 443),
-          path: `${parsed.pathname}${parsed.search}`,
-          method,
-          headers: {
-            'content-type': contentType,
-            'x-amz-meta-secret': secret,
-            trailer: 'x-amz-checksum-sha256',
-          },
-        },
-        (res) => {
-          let body = '';
-          res.on('data', (chunk) => { body += chunk; });
-          res.on('end', () => {
-            if (res.statusCode !== 200) {
-              reject(new Error(`Upload allegato SEND fallito: HTTP ${res.statusCode} — ${body.slice(0, 500)}`));
-              return;
-            }
-            const versionToken = res.headers['x-amz-version-id'];
-            if (!versionToken || Array.isArray(versionToken)) {
-              reject(new Error('Upload allegato SEND: header x-amz-version-id mancante nella risposta'));
-              return;
-            }
-            resolve(versionToken);
-          });
-        },
-      );
-      req.on('error', reject);
-      req.write(buffer);
-      req.addTrailers({ 'x-amz-checksum-sha256': sha256Base64 });
-      req.end();
+    const res = await fetch(url, {
+      method,
+      headers: {
+        'Content-Type': contentType,
+        'x-amz-meta-secret': secret,
+        'x-amz-checksum-sha256': sha256Base64,
+      },
+      body: new Uint8Array(buffer),
     });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`Upload allegato SEND fallito: HTTP ${res.status} — ${body.slice(0, 500)}`);
+    }
+    const versionToken = res.headers.get('x-amz-version-id');
+    if (!versionToken) {
+      throw new Error('Upload allegato SEND: header x-amz-version-id mancante nella risposta');
+    }
+    return versionToken;
   }
 }
