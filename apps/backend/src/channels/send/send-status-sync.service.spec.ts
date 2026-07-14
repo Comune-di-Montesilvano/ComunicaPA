@@ -59,7 +59,7 @@ describe('SendStatusSyncService', () => {
     await service.resolveMissingIun();
 
     expect(mockFetch).toHaveBeenCalledWith(
-      'https://send.test/delivery/v2.6/requests?requestId=req-1',
+      'https://send.test/delivery/v2.6/requests?notificationRequestId=req-1',
       expect.objectContaining({ headers: { 'x-api-key': 'apikey-abc', Authorization: 'Bearer voucher-abc' } }),
     );
     expect(attempt.iun).toBe('IUN-123');

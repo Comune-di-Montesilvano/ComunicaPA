@@ -70,7 +70,7 @@ describe('SettingsController — SEND test-connection (x-api-key + voucher PDND)
 
     expect(pdndAuthMock.getVoucher).toHaveBeenCalledWith('test', 'purpose-test', true);
     expect(mockFetch).toHaveBeenCalledWith(
-      'https://send.test/delivery/v2.6/requests?requestId=comunicapa-test-connection',
+      'https://send.test/delivery/v2.6/requests?notificationRequestId=comunicapa-test-connection',
       { headers: { 'x-api-key': 'apikey-real', Authorization: 'Bearer voucher-abc' } },
     );
     expect(res.success).toBe(true);

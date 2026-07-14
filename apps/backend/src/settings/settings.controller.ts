@@ -192,7 +192,9 @@ export class SettingsController {
       return { success: false, message: error.message || 'Errore sconosciuto durante la richiesta del voucher PDND.' };
     }
     try {
-      const res = await fetch(`${baseUrl}/delivery/v2.6/requests?requestId=comunicapa-test-connection`, {
+      // Query param si chiama notificationRequestId, NON requestId (schema
+      // GET /delivery/v2.6/requests) — vedi send-status-sync.service.ts.
+      const res = await fetch(`${baseUrl}/delivery/v2.6/requests?notificationRequestId=comunicapa-test-connection`, {
         headers: { 'x-api-key': apiKey, Authorization: `Bearer ${voucher}` },
       });
       if (res.status === 401 || res.status === 403) {

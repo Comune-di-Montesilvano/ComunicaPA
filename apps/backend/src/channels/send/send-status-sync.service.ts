@@ -60,7 +60,12 @@ export class SendStatusSyncService {
     for (const attempt of attempts) {
       const requestId = (attempt.responsePayload as Record<string, unknown>)['notificationRequestId'] as string;
       try {
-        const res = await fetch(`${baseUrl}/delivery/v2.6/requests?requestId=${encodeURIComponent(requestId)}`, {
+        // Query param si chiama notificationRequestId, NON requestId (schema
+        // GET /delivery/v2.6/requests, components.parameters.notificationRequestId)
+        // — con il nome sbagliato PN risponde PN_GENERIC_INVALIDPARAMETER_REQUIRED
+        // su paProtocolNumber (nessuno dei parametri riconosciuti risultava
+        // valorizzato, quindi cade sul fallback obbligatorio).
+        const res = await fetch(`${baseUrl}/delivery/v2.6/requests?notificationRequestId=${encodeURIComponent(requestId)}`, {
           headers: { 'x-api-key': apiKey, Authorization: `Bearer ${voucher}` },
         });
         const text = await res.text();
