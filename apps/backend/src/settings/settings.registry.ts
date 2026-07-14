@@ -54,6 +54,7 @@ export const SETTING_DEFS = {
   'send.prod.purposeId': { type: 'string', default: '' },
   'send.prod.group': { type: 'string', default: '' },
   'send.senderTaxId': { type: 'string', default: '' },
+  'send.entityType': { type: 'string', default: '' },
   'send.enabledTaxonomyCodes': { type: 'string', default: '[]' },
 
   'pdnd.test.tokenUrl': { type: 'string', default: 'https://auth.uat.interop.pagopa.it/token.oauth2' },
