@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import MDEditor from '@uiw/react-md-editor';
 import { TemplateEditor } from './components/TemplateEditor';
+import { SEND_ENTITY_TYPES, SEND_TAXONOMY_CATALOG } from './data/sendTaxonomy';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 declare global {
@@ -611,6 +612,8 @@ export function App(): React.JSX.Element {
   const [settSendTestGroup, setSettSendTestGroup] = useState('');
   const [settSendSenderTaxId, setSettSendSenderTaxId] = useState('');
   const [settSendTaxonomies, setSettSendTaxonomies] = useState<Array<{ code: string; label: string }>>([]);
+  const [settSendEntityType, setSettSendEntityType] = useState('');
+  const [wizAddTaxonomyCode, setWizAddTaxonomyCode] = useState('');
   const [settSendProdBaseUrl, setSettSendProdBaseUrl] = useState('https://api.notifichedigitali.it');
   const [settSendProdApiKey, setSettSendProdApiKey] = useState('');
   const [settSendProdPurposeId, setSettSendProdPurposeId] = useState('');
@@ -792,6 +795,7 @@ export function App(): React.JSX.Element {
         setSettSendTestPurposeId(String(s['send.test.purposeId'] ?? ''));
         setSettSendTestGroup(String(s['send.test.group'] ?? ''));
         setSettSendSenderTaxId(String(s['send.senderTaxId'] ?? ''));
+        setSettSendEntityType(String(s['send.entityType'] ?? ''));
         try {
           setSettSendTaxonomies(JSON.parse(String(s['send.enabledTaxonomyCodes'] ?? '[]')));
         } catch {
@@ -1358,6 +1362,7 @@ export function App(): React.JSX.Element {
     'send.test.purposeId': settSendTestPurposeId,
     'send.test.group': settSendTestGroup,
     'send.senderTaxId': settSendSenderTaxId,
+    'send.entityType': settSendEntityType,
     'send.enabledTaxonomyCodes': JSON.stringify(settSendTaxonomies),
     'send.prod.baseUrl': settSendProdBaseUrl,
     'send.prod.apiKey': settSendProdApiKey,
@@ -5388,11 +5393,63 @@ export function App(): React.JSX.Element {
                               <div className="form-text small text-muted">11 cifre, obbligatorio nel payload SEND come mittente.</div>
                             </div>
 
+                            <div className="mb-3">
+                              <label className="form-label small fw-bold text-dark" htmlFor="send_entity_type">Tipologia Ente</label>
+                              <select
+                                id="send_entity_type"
+                                className="form-select form-select-sm"
+                                style={{ maxWidth: 340 }}
+                                value={settSendEntityType}
+                                onChange={(e) => { setSettSendEntityType(e.target.value); setWizAddTaxonomyCode(''); }}
+                              >
+                                <option value="">-- Seleziona tipologia ente --</option>
+                                {SEND_ENTITY_TYPES.map(et => (
+                                  <option key={et.code} value={et.code}>{et.code} - {et.label}</option>
+                                ))}
+                              </select>
+                              <div className="form-text small text-muted">Filtra le tassonomie ufficiali selezionabili qui sotto. Un ente ha di norma una sola tipologia.</div>
+                            </div>
+
                             <div className="mb-4">
                               <label className="form-label small fw-bold text-dark">Tassonomie SEND abilitate</label>
                               <div className="form-text small text-muted mb-2">
                                 Codici a 7 caratteri dalla <a href="https://developer.pagopa.it/it/send/guides/knowledge-base/v2.5/tassonomia-send" target="_blank" rel="noreferrer">tabella ufficiale SEND</a>.
-                                Termina per "P" se prevede pagamento, "N" se no — inseriscili qui manualmente, saranno selezionabili nel wizard.
+                                Termina per "P" se prevede pagamento, "N" se no.
+                              </div>
+                              <div className="d-flex gap-2 mb-3">
+                                <select
+                                  className="form-select form-select-sm"
+                                  value={wizAddTaxonomyCode}
+                                  onChange={(e) => setWizAddTaxonomyCode(e.target.value)}
+                                >
+                                  <option value="">-- Scegli tassonomia da elenco ufficiale --</option>
+                                  {SEND_TAXONOMY_CATALOG
+                                    .filter(t => !settSendEntityType || t.entityType === settSendEntityType)
+                                    .map(t => (
+                                      <option key={t.code} value={t.code}>{t.code} — {t.title}</option>
+                                    ))}
+                                </select>
+                                <button
+                                  type="button"
+                                  className="btn btn-outline-primary btn-sm text-nowrap"
+                                  disabled={!wizAddTaxonomyCode}
+                                  onClick={() => {
+                                    const entry = SEND_TAXONOMY_CATALOG.find(t => t.code === wizAddTaxonomyCode);
+                                    if (!entry) return;
+                                    setSettSendTaxonomies(prev => [...prev, { code: entry.code, label: entry.title }]);
+                                    setWizAddTaxonomyCode('');
+                                  }}
+                                >
+                                  + Aggiungi da elenco
+                                </button>
+                              </div>
+                              {wizAddTaxonomyCode && (
+                                <div className="form-text small text-muted mb-2">
+                                  {SEND_TAXONOMY_CATALOG.find(t => t.code === wizAddTaxonomyCode)?.description}
+                                </div>
+                              )}
+                              <div className="form-text small text-muted mb-2">
+                                Codice non in elenco? Compila il <a href="https://tassonomia-send.limesurvey.net/638616?newtest=Y&lang=it" target="_blank" rel="noreferrer">questionario ufficiale</a> e inseriscilo qui sotto a mano.
                               </div>
                               {settSendTaxonomies.map((t, idx) => (
                                 <div key={idx} className="d-flex gap-2 mb-2">
