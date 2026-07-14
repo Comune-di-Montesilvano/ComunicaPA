@@ -620,6 +620,9 @@ export function App(): React.JSX.Element {
   const [settSendProdGroup, setSettSendProdGroup] = useState('');
   const [settSendTesting, setSettSendTesting] = useState<'test' | 'prod' | null>(null);
   const [settSendTestResult, setSettSendTestResult] = useState<{ env: 'test' | 'prod'; ok: boolean; message: string } | null>(null);
+  const [settSendGroups, setSettSendGroups] = useState<Record<'test' | 'prod', Array<{ id: string; name: string; description: string }>>>({ test: [], prod: [] });
+  const [settSendGroupsLoading, setSettSendGroupsLoading] = useState<'test' | 'prod' | null>(null);
+  const [settSendGroupsError, setSettSendGroupsError] = useState<Record<'test' | 'prod', string | null>>({ test: null, prod: null });
 
   const [settPdndTestTokenUrl, setSettPdndTestTokenUrl] = useState('https://auth.uat.interop.pagopa.it/token.oauth2');
   const [settPdndTestAudience, setSettPdndTestAudience] = useState('auth.uat.interop.pagopa.it/client-assertion');
@@ -1464,6 +1467,33 @@ export function App(): React.JSX.Element {
 
   const handleTestSendConnection = (env: 'test' | 'prod') =>
     runPdndTest(`/settings/send/${env}/test-connection`, env, setSettSendTesting, setSettSendTestResult);
+
+  const handleLoadSendGroups = async (env: 'test' | 'prod') => {
+    setSettSendGroupsLoading(env);
+    setSettSendGroupsError(prev => ({ ...prev, [env]: null }));
+    try {
+      // Salva prima le impostazioni correnti: l'endpoint legge baseUrl/apiKey dal DB.
+      const saveRes = await apiFetch('/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: buildSettingsPayload() }),
+      });
+      if (!saveRes.ok) {
+        const err = (await saveRes.json()) as { message?: string };
+        setSettSendGroupsError(prev => ({ ...prev, [env]: `Errore salvataggio: ${err.message ?? saveRes.status}` }));
+        return;
+      }
+      const res = await apiFetch(`/settings/send/${env}/groups`);
+      const data = await res.json() as { groups: Array<{ id: string; name: string; description: string }>; error?: string };
+      setSettSendGroups(prev => ({ ...prev, [env]: data.groups }));
+      if (data.error) setSettSendGroupsError(prev => ({ ...prev, [env]: data.error! }));
+    } catch (err: any) {
+      if (err instanceof ApiAuthError) return;
+      setSettSendGroupsError(prev => ({ ...prev, [env]: err.message || 'Errore di rete durante il caricamento dei gruppi.' }));
+    } finally {
+      setSettSendGroupsLoading(null);
+    }
+  };
 
   const handleTestInadConnection = (env: 'test' | 'prod') =>
     runPdndTest(`/settings/inad/${env}/test-connection`, env, setSettInadTesting, setSettInadTestResult);
@@ -5535,6 +5565,33 @@ export function App(): React.JSX.Element {
                                 </div>
                                 <div className="mb-1">
                                   <label className="form-label small fw-semibold text-muted" htmlFor={`send_${e.prefix}_group`}>Gruppo PN (opzionale)</label>
+                                  <div className="d-flex gap-2 mb-2">
+                                    <button
+                                      type="button"
+                                      className="btn btn-outline-secondary btn-sm text-nowrap"
+                                      disabled={settSendGroupsLoading === e.prefix}
+                                      onClick={() => handleLoadSendGroups(e.prefix)}
+                                    >
+                                      {settSendGroupsLoading === e.prefix ? 'Carico…' : 'Carica gruppi'}
+                                    </button>
+                                    {settSendGroups[e.prefix].length > 0 && (
+                                      <select
+                                        className="form-select form-select-sm"
+                                        value={e.group}
+                                        onChange={(ev) => e.setGroup(ev.target.value)}
+                                      >
+                                        <option value="">-- Nessun gruppo --</option>
+                                        {settSendGroups[e.prefix].map(g => (
+                                          <option key={g.id} value={g.id}>{g.name} — {g.description}</option>
+                                        ))}
+                                      </select>
+                                    )}
+                                  </div>
+                                  {settSendGroupsError[e.prefix] && (
+                                    <div className="alert alert-danger mt-0 mb-2 small" style={{ wordBreak: 'break-word' }}>
+                                      {settSendGroupsError[e.prefix]}
+                                    </div>
+                                  )}
                                   <input
                                     type="text"
                                     id={`send_${e.prefix}_group`}
@@ -5542,7 +5599,7 @@ export function App(): React.JSX.Element {
                                     value={e.group}
                                     onChange={(ev) => e.setGroup(ev.target.value)}
                                   />
-                                  <div className="form-text small text-muted">Necessario solo se l'account PN è associato a più gruppi utenti (portale self-care PN) — PN rifiuta l'invio senza specificarlo in quel caso ("Specify a group in cx_groups=..."). Lascia vuoto se l'account ha un solo gruppo.</div>
+                                  <div className="form-text small text-muted">Necessario solo se l'account PN è associato a più gruppi utenti (portale self-care PN) — PN rifiuta l'invio senza specificarlo in quel caso ("Specify a group in cx_groups=..."). Usa "Carica gruppi" per scegliere da elenco, oppure inserisci l'id a mano. Lascia vuoto se l'account ha un solo gruppo.</div>
                                 </div>
                                 <hr className="my-3" />
                                 <button
