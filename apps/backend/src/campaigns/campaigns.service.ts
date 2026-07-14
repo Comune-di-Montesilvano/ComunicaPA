@@ -341,27 +341,28 @@ export class CampaignsService {
       attemptIds.push(...(result.raw as Array<{ id: string }>).map((row) => row.id));
     }
 
-    // SEND non passa da BullMQ: i demoni ProtocollazioneSyncService/SendDispatchService
-    // pollano gli attempt QUEUED e li portano avanti a stadi (protocollato → inviato).
-    if (campaign.channelType !== 'SEND') {
-      // Accoda job BullMQ in bulk (chunk di 1000 per evitare payload Redis troppo grandi)
-      const JOB_CHUNK = 1000;
-      for (let i = 0; i < recipients.length; i += JOB_CHUNK) {
-        const chunk = recipients.slice(i, i + JOB_CHUNK);
-        await this.notificationQueues.addBulk(
-          campaign.channelType as Exclude<typeof campaign.channelType, 'SEND'>,
-          chunk.map((r, idx) => ({
-            name: NOTIFICATION_JOB_SEND,
-            data: {
-              campaignId,
-              recipientId: r.id,
-              attemptId: attemptIds[i + idx],
-              channel: campaign.channelType,
-            },
-            opts: { jobId: attemptIds[i + idx] },
-          })),
-        );
-      }
+    // Accoda job BullMQ in bulk (chunk di 1000 per evitare payload Redis troppo
+    // grandi). SEND non ha una propria coda di invio (SendDispatchService resta
+    // poll-based, vedi pipeline-demoni-send-design) ma la protocollazione
+    // (sempre richiesta per SEND, enforced sopra) sì: motore dedicato con
+    // coda/UI/log come gli altri canali.
+    const JOB_CHUNK = 1000;
+    const engineName = campaign.channelType === 'SEND' ? 'PROTOCOLLAZIONE' : campaign.channelType;
+    for (let i = 0; i < recipients.length; i += JOB_CHUNK) {
+      const chunk = recipients.slice(i, i + JOB_CHUNK);
+      await this.notificationQueues.addBulk(
+        engineName,
+        chunk.map((r, idx) => ({
+          name: NOTIFICATION_JOB_SEND,
+          data: {
+            campaignId,
+            recipientId: r.id,
+            attemptId: attemptIds[i + idx],
+            channel: campaign.channelType,
+          },
+          opts: { jobId: attemptIds[i + idx] },
+        })),
+      );
     }
 
     await this.recipientRepo.update(
@@ -424,6 +425,15 @@ export class CampaignsService {
             .execute();
           removedAttemptIds = (updateResult.raw as Array<{ id: string }>).map((row) => row.id);
           removedRecipientIds = removedAttemptIds.map((id) => recipientByAttemptId.get(id)!);
+
+          for (const removedId of removedAttemptIds) {
+            try {
+              const job = await this.notificationQueues.getJob('PROTOCOLLAZIONE', removedId);
+              if (job) await job.remove();
+            } catch (err) {
+              this.logger.warn(`Job protocollazione ${removedId} non rimosso: ${err instanceof Error ? err.message : err}`);
+            }
+          }
         }
       } else {
         removedAttemptIds = [];
@@ -888,6 +898,13 @@ export class CampaignsService {
 
     if (campaign.channelType !== 'SEND') {
       await this.notificationQueues.addBulk(campaign.channelType as Exclude<typeof campaign.channelType, 'SEND'>, [
+        { name: NOTIFICATION_JOB_SEND, data: { campaignId, recipientId, attemptId, channel: campaign.channelType }, opts: { jobId: attemptId } },
+      ]);
+    } else if (!inheritedProtocol.protocolledAt) {
+      // Non eredita un protocollo già fatto: va (ri)protocollato dal motore
+      // dedicato. Se invece eredita (branch inheritedProtocol sopra), l'attempt
+      // è già pronto per SendDispatchService, nessuna coda da toccare.
+      await this.notificationQueues.addBulk('PROTOCOLLAZIONE', [
         { name: NOTIFICATION_JOB_SEND, data: { campaignId, recipientId, attemptId, channel: campaign.channelType }, opts: { jobId: attemptId } },
       ]);
     }

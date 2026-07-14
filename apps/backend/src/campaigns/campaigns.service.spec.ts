@@ -203,7 +203,7 @@ describe('CampaignsService', () => {
     );
   });
 
-  it('launch NON accoda job BullMQ per campagne SEND (demoni pollano lo stato QUEUED)', async () => {
+  it('launch NON accoda job sui motori canale per campagne SEND, ma accoda PROTOCOLLAZIONE (demoni pollano lo stato QUEUED)', async () => {
     mockCampaignQb.execute.mockResolvedValueOnce({ affected: 1 });
     mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'SEND', channelConfig: { protocolla: true } });
     mockRecipientRepo.find.mockResolvedValueOnce([{ id: 'r1' }]);
@@ -217,8 +217,35 @@ describe('CampaignsService', () => {
 
     const result = await service.launch('c1');
 
-    expect(mockQueue.addBulk).not.toHaveBeenCalled();
+    expect(mockQueue.addBulk).toHaveBeenCalledTimes(1);
+    expect(mockQueue.addBulk).toHaveBeenCalledWith(
+      'PROTOCOLLAZIONE',
+      [expect.objectContaining({ opts: { jobId: 'att-1' } })],
+    );
     expect(result).toEqual({ launched: 1, campaignId: 'c1' });
+  });
+
+  it('launch accoda un job PROTOCOLLAZIONE per attempt con jobId=attemptId per campagne SEND', async () => {
+    mockCampaignQb.execute.mockResolvedValueOnce({ affected: 1 });
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'SEND', channelConfig: { protocolla: true } });
+    mockRecipientRepo.find.mockResolvedValueOnce([{ id: 'r1' }, { id: 'r2' }]);
+    mockAttemptRepo.createQueryBuilder.mockReturnValue({
+      insert: jest.fn().mockReturnThis(),
+      into: jest.fn().mockReturnThis(),
+      values: jest.fn().mockReturnThis(),
+      returning: jest.fn().mockReturnThis(),
+      execute: jest.fn().mockResolvedValue({ raw: [{ id: 'att-1' }, { id: 'att-2' }] }),
+    });
+
+    await service.launch('c1');
+
+    expect(mockQueue.addBulk).toHaveBeenCalledWith(
+      'PROTOCOLLAZIONE',
+      [
+        expect.objectContaining({ opts: { jobId: 'att-1' } }),
+        expect.objectContaining({ opts: { jobId: 'att-2' } }),
+      ],
+    );
   });
 
   it('launch rifiuta campagne SEND senza channelConfig.protocolla=true (fail fast, niente insert attempt)', async () => {
@@ -901,7 +928,7 @@ describe('CampaignsService', () => {
       expect(result).toEqual({ cancelled: 0, campaignId: 'c1' });
     });
 
-    it('per campagne SEND annulla via update diretto DB, senza toccare BullMQ', async () => {
+    it('per campagne SEND annulla via update diretto DB, senza toccare BullMQ canale, ma rimuove i job PROTOCOLLAZIONE pendenti', async () => {
       mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, id: 'c1', status: CampaignStatus.QUEUED, channelType: 'SEND' });
       mockRecipientRepo.find.mockResolvedValueOnce([{ id: 'r1' }, { id: 'r2' }]);
       mockAttemptRepo.find = jest.fn().mockResolvedValueOnce([
@@ -917,17 +944,41 @@ describe('CampaignsService', () => {
       };
       mockAttemptRepo.createQueryBuilder = jest.fn().mockReturnValue(updateQb);
       mockRecipientRepo.update = jest.fn().mockResolvedValue(undefined);
+      const removeOk = jest.fn().mockResolvedValue(undefined);
+      mockQueue.getJob.mockResolvedValue({ id: 'job', remove: removeOk });
 
       const result = await service.cancel('c1');
 
-      expect(mockQueue.getJob).not.toHaveBeenCalled();
       expect(updateQb.set).toHaveBeenCalledWith({ status: AttemptStatus.CANCELLED });
       expect(updateQb.where).toHaveBeenCalledWith(
         'id IN (:...ids) AND status = :status',
         { ids: ['att-1', 'att-2'], status: AttemptStatus.QUEUED },
       );
+      expect(mockQueue.getJob).toHaveBeenCalledWith('PROTOCOLLAZIONE', 'att-1');
+      expect(mockQueue.getJob).toHaveBeenCalledWith('PROTOCOLLAZIONE', 'att-2');
+      expect(removeOk).toHaveBeenCalledTimes(2);
       expect(mockRecipientRepo.update).toHaveBeenCalledWith({ id: In(['r1', 'r2']) }, { status: RecipientStatus.CANCELLED });
       expect(result).toEqual({ cancelled: 2, campaignId: 'c1' });
+    });
+
+    it('per campagne SEND non fallisce se il job PROTOCOLLAZIONE non esiste più (già consumato)', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, id: 'c1', status: CampaignStatus.QUEUED, channelType: 'SEND' });
+      mockRecipientRepo.find.mockResolvedValueOnce([{ id: 'r1' }]);
+      mockAttemptRepo.find = jest.fn().mockResolvedValueOnce([
+        { id: 'att-1', recipientId: 'r1' },
+      ]);
+      const updateQb = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        returning: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ raw: [{ id: 'att-1' }] }),
+      };
+      mockAttemptRepo.createQueryBuilder = jest.fn().mockReturnValue(updateQb);
+      mockRecipientRepo.update = jest.fn().mockResolvedValue(undefined);
+      mockQueue.getJob.mockResolvedValueOnce(null);
+
+      await expect(service.cancel('c1')).resolves.toEqual({ cancelled: 1, campaignId: 'c1' });
     });
 
     it('per campagne SEND annulla solo i recipient il cui attempt è ancora QUEUED al momento dell\'update (race col demone invio)', async () => {
@@ -1163,7 +1214,7 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
     expect(result).toEqual({ requeued: true, attemptId: 'attempt-2' });
   });
 
-  it('retryRecipient NON riaccoda job BullMQ per campagne SEND', async () => {
+  it('retryRecipient NON riaccoda job sul motore canale per campagne SEND (accoda invece PROTOCOLLAZIONE)', async () => {
     campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'SEND' });
     recipientRepoMock.findOne = jest.fn().mockResolvedValue({ id: 'r1', campaignId: 'c1', status: RecipientStatus.FAILED });
     attemptRepoMock.findOne = jest.fn().mockResolvedValue({ attemptNumber: 1 });
@@ -1178,7 +1229,10 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
 
     const result = await service.retryRecipient('c1', 'r1');
 
-    expect(queuesMock.addBulk).not.toHaveBeenCalled();
+    expect(queuesMock.addBulk).not.toHaveBeenCalledWith('SEND', expect.anything());
+    expect(queuesMock.addBulk).toHaveBeenCalledWith('PROTOCOLLAZIONE', [
+      { name: 'send', data: { campaignId: 'c1', recipientId: 'r1', attemptId: 'attempt-2', channel: 'SEND' }, opts: { jobId: 'attempt-2' } },
+    ]);
     expect(result).toEqual({ requeued: true, attemptId: 'attempt-2' });
   });
 
@@ -1213,6 +1267,8 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
       protocolYear: 2026,
       protocolledAt,
     }));
+    // Protocollo ereditato: nessun bisogno di riprotocollare, nessun job accodato.
+    expect(queuesMock.addBulk).not.toHaveBeenCalled();
   });
 
   it('retryRecipient per SEND NON eredita protocollo se l\'ultimo attempt non era mai stato protocollato', async () => {
@@ -1239,6 +1295,10 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
     expect(insertedValues.protocolNumber).toBeUndefined();
     expect(insertedValues.protocolYear).toBeUndefined();
     expect(insertedValues.protocolledAt).toBeUndefined();
+    // Nessun protocollo ereditato: va (ri)protocollato dal motore dedicato.
+    expect(queuesMock.addBulk).toHaveBeenCalledWith('PROTOCOLLAZIONE', [
+      { name: 'send', data: { campaignId: 'c1', recipientId: 'r1', attemptId: 'attempt-2', channel: 'SEND' }, opts: { jobId: 'attempt-2' } },
+    ]);
   });
 
   it('retryRecipient per SEND eredita uploadedDocuments se l\'ultimo attempt aveva già caricato allegati', async () => {
