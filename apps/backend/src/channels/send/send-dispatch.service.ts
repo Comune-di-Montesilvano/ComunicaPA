@@ -121,10 +121,27 @@ export class SendDispatchService {
 
     const attachmentsConfig = resolveAttachmentsConfig(campaign.channelConfig);
     const docCount = Math.max(attachmentsConfig.length, 1);
+    // Un retry (nuovo attempt, vedi campaigns.service.ts#retryRecipient) può
+    // ereditare uploadedDocuments dall'ultimo tentativo dello stesso
+    // destinatario: se un documento è già stato caricato su PN in precedenza
+    // (es. l'attempt è fallito DOPO l'upload ma PRIMA del POST v2.6/requests),
+    // lo riusiamo invece di ricaricarlo — l'oggetto S3 è già lì, gli URL
+    // presigned scadono ma key/versionToken restano validi come riferimento.
+    const uploadedByIdx = new Map((attempt.uploadedDocuments ?? []).map((d) => [d.docIdx, d]));
     const documents: Array<Record<string, unknown>> = [];
     for (let idx = 0; idx < docCount; idx++) {
-      const buffer = await this.attachments.generatePdfBuffer(recipient, idx);
-      const uploaded = await this.attachmentUpload.preloadAndUpload(baseUrl, apiKey, voucher, buffer, 'application/pdf', `doc-${idx}`);
+      let uploaded = uploadedByIdx.get(idx);
+      if (!uploaded) {
+        const buffer = await this.attachments.generatePdfBuffer(recipient, idx);
+        const result = await this.attachmentUpload.preloadAndUpload(baseUrl, apiKey, voucher, buffer, 'application/pdf', `doc-${idx}`);
+        uploaded = { docIdx: idx, key: result.key, versionToken: result.versionToken, sha256Base64: result.sha256Base64 };
+        uploadedByIdx.set(idx, uploaded);
+        // Scrittura durevole subito dopo ogni upload riuscito: se il demone si
+        // ferma a metà di un documento multi-allegato, il prossimo giro (o un
+        // retry) non ricarica quelli già presenti su PN.
+        attempt.uploadedDocuments = [...uploadedByIdx.values()];
+        await this.attemptRepo.update({ id: attempt.id, status: AttemptStatus.QUEUED }, { uploadedDocuments: attempt.uploadedDocuments });
+      }
       documents.push({
         ref: { key: uploaded.key, versionToken: uploaded.versionToken },
         title: subject,

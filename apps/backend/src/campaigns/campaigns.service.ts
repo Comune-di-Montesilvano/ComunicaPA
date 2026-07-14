@@ -857,6 +857,15 @@ export class CampaignsService {
           }
         : {};
 
+    // SEND: se l'ultimo tentativo aveva già caricato allegati su PN, il nuovo
+    // attempt li eredita — l'oggetto è già su S3 (key/versionToken restano
+    // validi), ricaricarlo sprecherebbe tempo/banda senza motivo se il
+    // documento non è cambiato tra un retry e l'altro.
+    const inheritedUploads =
+      campaign.channelType === 'SEND' && lastAttempt?.uploadedDocuments?.length
+        ? { uploadedDocuments: lastAttempt.uploadedDocuments }
+        : {};
+
     const result = await this.attemptRepo
       .createQueryBuilder()
       .insert()
@@ -867,6 +876,7 @@ export class CampaignsService {
         status: AttemptStatus.QUEUED,
         attemptNumber: nextAttemptNumber,
         ...inheritedProtocol,
+        ...inheritedUploads,
       })
       .returning('id')
       .execute();

@@ -61,6 +61,14 @@ export class NotificationAttempt {
   @Column({ name: 'protocolled_at', type: 'timestamptz', nullable: true })
   protocolledAt!: Date | null;
 
+  // Allegati SEND già caricati su PN (key/versionToken/sha256 per docIdx),
+  // scritti man mano durante il loop di upload — un retry (nuovo attempt,
+  // vedi campaigns.service.ts#retryRecipient) può ereditare questo campo
+  // dall'ultimo tentativo dello stesso destinatario ed evitare di ricaricare
+  // documenti già presenti su PN.
+  @Column({ type: 'jsonb', name: 'uploaded_documents', nullable: true })
+  uploadedDocuments!: Array<{ docIdx: number; key: string; versionToken: string; sha256Base64: string }> | null;
+
   @Column({ name: 'error_message', type: 'text', nullable: true })
   errorMessage!: string | null;
 

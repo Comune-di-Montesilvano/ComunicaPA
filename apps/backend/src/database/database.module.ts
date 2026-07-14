@@ -22,6 +22,7 @@ import { CreateAuditLogs1783500000000 } from './migrations/1783500000000-CreateA
 import { RenamePdndSettingsKeys1783600000000 } from './migrations/1783600000000-RenamePdndSettingsKeys';
 import { AddSendStatusColumns1783700000000 } from './migrations/1783700000000-AddSendStatusColumns';
 import { AddProtocolColumns1783800000000 } from './migrations/1783800000000-AddProtocolColumns';
+import { AddUploadedDocumentsColumn1784100000000 } from './migrations/1784100000000-AddUploadedDocumentsColumn';
 import type { AppConfiguration } from '../config/configuration';
 
 @Module({
@@ -35,7 +36,7 @@ import type { AppConfiguration } from '../config/configuration';
         entities: [Campaign, Recipient, NotificationAttempt, AppSetting, MailServerConfig, IoServiceConfig, Template, DownloadEvent, AuditLog],
         // Dev: schema allineato da synchronize. Prod: migrations eseguite all'avvio.
         synchronize: config.get('nodeEnv', { infer: true }) === 'development',
-        migrations: [InitialSchema1783023440824, AddMailServerConfigs1783071728873, AddIoServiceConfigs1783092759564, AddTemplates1783109448492, FixRecipientCampaignJoin1783148719725, AddDownloadEvents1783200000000, FixRecipientAttemptJoin1783358259000, AddCancelledStatus1783426587867, CreateAuditLogs1783500000000, RenamePdndSettingsKeys1783600000000, AddSendStatusColumns1783700000000, AddProtocolColumns1783800000000],
+        migrations: [InitialSchema1783023440824, AddMailServerConfigs1783071728873, AddIoServiceConfigs1783092759564, AddTemplates1783109448492, FixRecipientCampaignJoin1783148719725, AddDownloadEvents1783200000000, FixRecipientAttemptJoin1783358259000, AddCancelledStatus1783426587867, CreateAuditLogs1783500000000, RenamePdndSettingsKeys1783600000000, AddSendStatusColumns1783700000000, AddProtocolColumns1783800000000, AddUploadedDocumentsColumn1784100000000],
         migrationsRun: config.get('nodeEnv', { infer: true }) !== 'development',
         logging: config.get('nodeEnv', { infer: true }) === 'development',
       }),

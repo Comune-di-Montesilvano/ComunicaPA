@@ -1186,6 +1186,67 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
     expect(insertedValues.protocolledAt).toBeUndefined();
   });
 
+  it('retryRecipient per SEND eredita uploadedDocuments se l\'ultimo attempt aveva già caricato allegati', async () => {
+    campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'SEND' });
+    recipientRepoMock.findOne = jest.fn().mockResolvedValue({ id: 'r1', campaignId: 'c1', status: RecipientStatus.FAILED });
+    const protocolledAt = new Date('2026-07-14T09:16:25.603Z');
+    const uploadedDocuments = [{ docIdx: 0, key: 'key-old', versionToken: 'vt-old', sha256Base64: 'sha-old==' }];
+    attemptRepoMock.findOne = jest.fn().mockResolvedValue({
+      attemptNumber: 1,
+      protocolNumber: 44919,
+      protocolYear: 2026,
+      protocolledAt,
+      uploadedDocuments,
+    });
+    const valuesFn = jest.fn().mockReturnThis();
+    const insertExec = jest.fn().mockResolvedValue({ raw: [{ id: 'attempt-2' }] });
+    attemptRepoMock.createQueryBuilder.mockReturnValue({
+      insert: jest.fn().mockReturnThis(),
+      into: jest.fn().mockReturnThis(),
+      values: valuesFn,
+      returning: jest.fn().mockReturnThis(),
+      execute: insertExec,
+    });
+    recipientRepoMock.update.mockResolvedValue({ affected: 1 });
+
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    await service.retryRecipient('c1', 'r1');
+
+    expect(valuesFn).toHaveBeenCalledWith(expect.objectContaining({ uploadedDocuments }));
+  });
+
+  it('retryRecipient per SEND NON eredita uploadedDocuments se l\'ultimo attempt non aveva caricato nulla', async () => {
+    campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'SEND' });
+    recipientRepoMock.findOne = jest.fn().mockResolvedValue({ id: 'r1', campaignId: 'c1', status: RecipientStatus.FAILED });
+    attemptRepoMock.findOne = jest.fn().mockResolvedValue({
+      attemptNumber: 1,
+      protocolNumber: 44919,
+      protocolYear: 2026,
+      protocolledAt: new Date('2026-07-14T09:16:25.603Z'),
+      uploadedDocuments: null,
+    });
+    const valuesFn = jest.fn().mockReturnThis();
+    const insertExec = jest.fn().mockResolvedValue({ raw: [{ id: 'attempt-2' }] });
+    attemptRepoMock.createQueryBuilder.mockReturnValue({
+      insert: jest.fn().mockReturnThis(),
+      into: jest.fn().mockReturnThis(),
+      values: valuesFn,
+      returning: jest.fn().mockReturnThis(),
+      execute: insertExec,
+    });
+    recipientRepoMock.update.mockResolvedValue({ affected: 1 });
+
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    await service.retryRecipient('c1', 'r1');
+
+    const insertedValues = valuesFn.mock.calls[0][0];
+    expect(insertedValues.uploadedDocuments).toBeUndefined();
+  });
+
   it('retryRecipient lancia NotFoundException se il recipientId non esiste', async () => {
     campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'EMAIL' });
     recipientRepoMock.findOne = jest.fn().mockResolvedValue(null);

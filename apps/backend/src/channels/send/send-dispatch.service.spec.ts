@@ -144,13 +144,48 @@ describe('SendDispatchService', () => {
   });
 
   it('non aggiorna recipient/campaign se l\'attempt non è più QUEUED (cancellato durante l\'invio)', async () => {
-    mockAttemptRepo.update.mockResolvedValueOnce({ affected: 0 });
+    // Ogni update() guardato su status=QUEUED riporta 0 righe toccate: sia la
+    // scrittura durevole intermedia (post-upload) sia quella finale (markSuccess)
+    // devono rispettare la cancellazione avvenuta nel frattempo.
+    mockAttemptRepo.update.mockResolvedValue({ affected: 0 });
     mockBatch([makeAttempt()]);
 
     await service.handleCron();
 
     expect(mockRecipientRepo.update).not.toHaveBeenCalled();
     expect(mockCampaignRepo.increment).not.toHaveBeenCalled();
+  });
+
+  it('scrive uploadedDocuments su DB subito dopo ogni upload riuscito (scrittura durevole)', async () => {
+    mockBatch([makeAttempt()]);
+
+    await service.handleCron();
+
+    expect(mockAttemptRepo.update).toHaveBeenCalledWith(
+      { id: 'att-1', status: AttemptStatus.QUEUED },
+      { uploadedDocuments: [{ docIdx: 0, key: 'key-doc-0', versionToken: 'vt-doc-0', sha256Base64: 'abc123==' }] },
+    );
+  });
+
+  it('riusa un documento già caricato (uploadedDocuments ereditato da un retry) invece di ricaricarlo', async () => {
+    const attempt = makeAttempt({
+      uploadedDocuments: [{ docIdx: 0, key: 'key-old', versionToken: 'vt-old', sha256Base64: 'sha-old==' }],
+    });
+    mockBatch([attempt]);
+
+    await service.handleCron();
+
+    expect(mockUpload.preloadAndUpload).not.toHaveBeenCalled();
+    expect(mockAttachments.generatePdfBuffer).not.toHaveBeenCalled();
+    const sendCall = mockFetch.mock.calls.find(([url]) => url === 'https://send.test/delivery/v2.6/requests');
+    const payload = JSON.parse(sendCall![1].body as string);
+    expect(payload.documents).toEqual([{
+      ref: { key: 'key-old', versionToken: 'vt-old' },
+      title: 'Avviso TARI 2026',
+      digests: { sha256: 'sha-old==' },
+      contentType: 'application/pdf',
+      docIdx: 0,
+    }]);
   });
 
   it('include payments nel destinatario se paymentConfig risolve dati validi', async () => {
