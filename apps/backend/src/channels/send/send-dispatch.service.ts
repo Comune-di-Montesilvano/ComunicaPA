@@ -147,7 +147,13 @@ export class SendDispatchService {
         title: subject,
         digests: { sha256: uploaded.sha256Base64 },
         contentType: 'application/pdf',
-        docIdx: idx,
+        // docIdx nello schema NotificationDocument di PN è type:string
+        // (pattern ^\d+$), non un numero — un numero JSON fa fallire la
+        // validazione allOf del documento (errore reale riscontrato:
+        // "instance failed to match all required schemas (matched only 1
+        // out of 2)", dove i 2 branch sono NotificationAttachment + l'oggetto
+        // extra con title/docIdx).
+        docIdx: String(idx),
       });
     }
 

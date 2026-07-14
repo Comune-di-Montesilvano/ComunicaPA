@@ -184,7 +184,7 @@ describe('SendDispatchService', () => {
       title: 'Avviso TARI 2026',
       digests: { sha256: 'sha-old==' },
       contentType: 'application/pdf',
-      docIdx: 0,
+      docIdx: '0',
     }]);
   });
 
