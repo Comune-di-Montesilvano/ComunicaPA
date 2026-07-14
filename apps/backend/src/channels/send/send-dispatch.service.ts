@@ -12,6 +12,7 @@ import { AttachmentService, resolveAttachmentsConfig } from '../../attachments/a
 import { SendAttachmentUploadService } from './send-attachment-upload.service';
 import { resolvePaymentData, resolvePhysicalAddress } from '../payment-config.util';
 import { getEffectiveRetentionDays } from '../../campaigns/retention.util';
+import { CampaignCompletionService } from '../../campaigns/campaign-completion.service';
 
 const BATCH_SIZE = 200;
 
@@ -41,6 +42,7 @@ export class SendDispatchService {
     private readonly pdndAuth: PdndAuthService,
     private readonly attachments: AttachmentService,
     private readonly attachmentUpload: SendAttachmentUploadService,
+    private readonly campaignCompletion: CampaignCompletionService,
   ) {}
 
   @Cron('*/2 * * * *')
@@ -241,6 +243,7 @@ export class SendDispatchService {
     }
     await this.recipientRepo.update(attempt.recipient.id, { status: RecipientStatus.SENT, attachmentExpiresAt });
     await this.campaignRepo.increment({ id: campaign.id }, 'sentCount', 1);
+    await this.campaignCompletion.checkAndComplete(campaign.id);
   }
 
   private async markFailed(attempt: NotificationAttempt, message: string): Promise<void> {
@@ -255,5 +258,6 @@ export class SendDispatchService {
     }
     await this.recipientRepo.update(attempt.recipient.id, { status: RecipientStatus.FAILED });
     await this.campaignRepo.increment({ id: attempt.recipient.campaign.id }, 'failedCount', 1);
+    await this.campaignCompletion.checkAndComplete(attempt.recipient.campaign.id);
   }
 }

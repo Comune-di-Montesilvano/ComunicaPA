@@ -8,6 +8,7 @@ import { AppSettingsService } from '../../settings/app-settings.service';
 import { PdndAuthService } from '../../pdnd/pdnd-auth.service';
 import { AttachmentService } from '../../attachments/attachment.service';
 import { SendAttachmentUploadService } from './send-attachment-upload.service';
+import { CampaignCompletionService } from '../../campaigns/campaign-completion.service';
 
 const mockFetch = jest.fn();
 global.fetch = mockFetch as unknown as typeof fetch;
@@ -42,6 +43,7 @@ describe('SendDispatchService', () => {
   const mockPdndAuth = { getVoucher: jest.fn(async () => 'voucher-abc') };
   const mockAttachments = { generatePdfBuffer: jest.fn(async () => Buffer.from('%PDF-1.4 test')) };
   const mockUpload = { preloadAndUpload: jest.fn(async (_b: string, _ak: string, _v: string, _buf: Buffer, _ct: string, idx: string) => ({ key: `key-${idx}`, versionToken: `vt-${idx}`, sha256Base64: 'abc123==' })) };
+  const mockCompletion = { checkAndComplete: jest.fn().mockResolvedValue(undefined) };
 
   function makeAttempt(overrides: Partial<NotificationAttempt> = {}): NotificationAttempt {
     return {
@@ -72,6 +74,11 @@ describe('SendDispatchService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     mockAttemptRepo.createQueryBuilder.mockReturnValue(mockQb);
+    // jest.clearAllMocks() non ripristina le implementazioni (solo call/istanze):
+    // un test precedente puo' sovrascrivere update() con mockResolvedValue({ affected: 0 })
+    // in modo persistente (non ...Once) — repristinare qui il default affinche' i test
+    // successivi non lo ereditino silenziosamente.
+    mockAttemptRepo.update.mockResolvedValue({ affected: 1 });
     mockFetch.mockResolvedValue({ ok: true, status: 202, json: () => Promise.resolve({ notificationRequestId: 'req-001' }) });
     settingsValues['retention.maxDays'] = 90;
     const module = await Test.createTestingModule({
@@ -84,6 +91,7 @@ describe('SendDispatchService', () => {
         { provide: PdndAuthService, useValue: mockPdndAuth },
         { provide: AttachmentService, useValue: mockAttachments },
         { provide: SendAttachmentUploadService, useValue: mockUpload },
+        { provide: CampaignCompletionService, useValue: mockCompletion },
       ],
     }).compile();
     service = module.get(SendDispatchService);
@@ -271,5 +279,22 @@ describe('SendDispatchService', () => {
     const sendCall = mockFetch.mock.calls.find(([url]) => url === 'https://send.test/delivery/v2.6/requests');
     const payload = JSON.parse(sendCall![1].body as string);
     expect(payload.group).toBeUndefined();
+  });
+
+  it('chiama CampaignCompletionService dopo un invio riuscito', async () => {
+    mockBatch([makeAttempt()]);
+
+    await service.handleCron();
+
+    expect(mockCompletion.checkAndComplete).toHaveBeenCalledWith('camp-1');
+  });
+
+  it('chiama CampaignCompletionService anche quando l\'invio a PN fallisce', async () => {
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 500, text: async () => 'errore' });
+    mockBatch([makeAttempt()]);
+
+    await service.handleCron();
+
+    expect(mockCompletion.checkAndComplete).toHaveBeenCalledWith('camp-1');
   });
 });
