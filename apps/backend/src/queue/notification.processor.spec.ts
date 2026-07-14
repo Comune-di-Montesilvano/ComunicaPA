@@ -12,6 +12,7 @@ import { CHANNEL_STRATEGIES } from '../channels/channel.interface';
 import { THROTTLE_REDIS } from './notification-job.types';
 import { MailConfigsService } from '../mail-configs/mail-configs.service';
 import { IoServicesService } from '../io-services/io-services.service';
+import { CampaignCompletionService } from '../campaigns/campaign-completion.service';
 import type { NotificationJobData } from '@comunicapa/shared-types';
 
 const mockRedis = {
@@ -44,6 +45,8 @@ const mockRecipientRepo = {
   update: jest.fn(),
   count: jest.fn(),
 };
+
+const mockCampaignCompletion = { checkAndComplete: jest.fn().mockResolvedValue(undefined) };
 
 const mockStrategy = {
   send: jest.fn(),
@@ -135,6 +138,7 @@ describe('NotificationProcessor', () => {
         { provide: THROTTLE_REDIS, useValue: mockRedis },
         { provide: MailConfigsService, useValue: mockMailConfigs },
         { provide: IoServicesService, useValue: mockIoServices },
+        { provide: CampaignCompletionService, useValue: mockCampaignCompletion },
       ],
     }).compile();
 
@@ -146,39 +150,18 @@ describe('NotificationProcessor', () => {
   });
 
   describe('completamento campagna', () => {
-    it('marca la campagna COMPLETED quando non restano destinatari PENDING/QUEUED dopo un invio riuscito', async () => {
-      mockRecipientRepo.count.mockResolvedValueOnce(0);
-
+    it('chiama CampaignCompletionService dopo un invio riuscito', async () => {
       await processor.process(mockJob(baseData));
 
-      expect(mockRecipientRepo.count).toHaveBeenCalledWith({
-        where: { campaignId: 'camp-1', status: expect.anything() },
-      });
-      expect(mockCampaignRepo.createQueryBuilder).toHaveBeenCalled();
-      expect(mockQb.update).toHaveBeenCalled();
-      expect(mockQb.set).toHaveBeenCalledWith(
-        expect.objectContaining({ status: CampaignStatus.COMPLETED, completedAt: expect.any(Date) }),
-      );
+      expect(mockCampaignCompletion.checkAndComplete).toHaveBeenCalledWith('camp-1');
     });
 
-    it('NON marca la campagna COMPLETED se restano altri destinatari da processare', async () => {
-      mockRecipientRepo.count.mockResolvedValueOnce(2);
-
-      await processor.process(mockJob(baseData));
-
-      expect(mockCampaignRepo.createQueryBuilder).not.toHaveBeenCalled();
-    });
-
-    it('marca comunque la campagna COMPLETED quando l\'ultimo destinatario fallisce (strategy lancia)', async () => {
+    it('chiama CampaignCompletionService anche quando l\'ultimo destinatario fallisce (strategy lancia)', async () => {
       mockStrategy.send.mockRejectedValueOnce(new Error('SMTP timeout'));
-      mockRecipientRepo.count.mockResolvedValueOnce(0);
 
       await expect(processor.process(mockJob(baseData))).rejects.toThrow('SMTP timeout');
 
-      expect(mockCampaignRepo.createQueryBuilder).toHaveBeenCalled();
-      expect(mockQb.set).toHaveBeenCalledWith(
-        expect.objectContaining({ status: CampaignStatus.COMPLETED, completedAt: expect.any(Date) }),
-      );
+      expect(mockCampaignCompletion.checkAndComplete).toHaveBeenCalledWith('camp-1');
     });
   });
 

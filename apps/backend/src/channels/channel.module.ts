@@ -18,6 +18,7 @@ import { SendStatusSyncService } from './send/send-status-sync.service';
 import { SendDispatchService } from './send/send-dispatch.service';
 import { ProtocollazioneSyncService } from './protocollazione-sync.service';
 import { PostalStrategy } from './postal/postal.strategy';
+import { CampaignCompletionService } from '../campaigns/campaign-completion.service';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { PostalStrategy } from './postal/postal.strategy';
     SendStatusSyncService,
     SendDispatchService,
     ProtocollazioneSyncService,
+    CampaignCompletionService,
     {
       provide: CHANNEL_STRATEGIES,
       useFactory: (
@@ -53,6 +55,6 @@ import { PostalStrategy } from './postal/postal.strategy';
       inject: [EmailStrategy, PecStrategy, AppIoStrategy, PostalStrategy],
     },
   ],
-  exports: [CHANNEL_STRATEGIES],
+  exports: [CHANNEL_STRATEGIES, CampaignCompletionService],
 })
 export class ChannelModule {}
