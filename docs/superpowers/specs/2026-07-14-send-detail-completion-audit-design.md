@@ -52,6 +52,15 @@ campi SEND vengono scartati prima di arrivare al frontend.
 `cfg['body']` — il corpo del messaggio è puro attrito per l'operatore SEND,
 mai consumato a valle.
 
+**D-bis. Oggetto SEND può variare per destinatario (dubbio emerso durante il
+design), non solo per template.** Oggi `wizSubject` è un unico template di
+campagna con placeholder (`%%nominativo%%` etc.), stesso per ogni riga. Per
+SEND ha senso poter mappare l'oggetto da una colonna del CSV (es. tributi
+diversi nello stesso invio), analogo a come `codice_fiscale`/`full_name`/
+`email`/`pec` si mappano in Step 3. Decisione utente: mappabile da CSV, con
+fallback al template generico quando la colonna non è mappata o la cella per
+quella riga è vuota.
+
 **E. Nessuna vista con IUN/protocollo/stato nella tabella destinatari.**
 `getRecipientStats()` (`campaigns.service.ts:919-942`) interroga solo
 `Recipient` (id/fullName/codiceFiscale/email/pec/status/downloadCount/...),
@@ -123,6 +132,41 @@ bottone "Avanti" per SEND resta abilitato in base al solo `wizSubject`
 `wizAppIoBodyLenInvalid` che non lo riguardano). Per tutti gli altri canali,
 comportamento invariato.
 
+### D-bis. Oggetto mappabile da colonna CSV (solo SEND)
+
+- `wizMapping` (`App.tsx:455-461`) guadagna un campo opzionale
+  `subject: ''` (nome colonna CSV), analogo a `email`/`pec`. Popolato in
+  Step 3 (stesso blocco UI dei mapping esistenti, riga ~3981-4032: nuovo
+  `<select>` "Oggetto (per destinatario, opzionale)" con le colonne CSV
+  disponibili + opzione vuota).
+- Salvato in `channelConfig` come `subjectColumn: wizMapping.subject`
+  (solo se non vuoto), stesso punto dove oggi si salva `csvMapping`
+  (`App.tsx:2534`, `:2674-2675`) — non serve un campo nuovo separato dal
+  `csvMapping` esistente se `subject` vi rientra già come proprietà.
+- Import CSV (`campaigns.service.ts:212-224`, costruzione `extraData`):
+  nessun cambio — la colonna oggetto, chiunque sia il suo nome, finisce già
+  in `recipient.extraData` come tutte le colonne non riservate
+  (`codice_fiscale`/`email`/`pec`/`full_name` sono le uniche escluse).
+- `send-dispatch.service.ts` (righe ~118-120): 
+  ```ts
+  const subjectColumn = cfg['subjectColumn'] as string | undefined;
+  const perRecipientSubject = subjectColumn ? (recipient.extraData?.[subjectColumn] as string | undefined) : undefined;
+  const subjectTemplate = (perRecipientSubject?.trim() || (cfg['subject'] as string) || campaign.name);
+  const subject = interpolate(subjectTemplate, vars);
+  ```
+  Fallback al template generico se la colonna non è mappata o la cella è
+  vuota per quella riga — il valore per-riga passa comunque per
+  `interpolate()` (può contenere placeholder come il template).
+- Step 4 wizard: il campo "Oggetto" generico (`wizSubject`) resta
+  **sempre obbligatorio** anche quando è mappata una colonna per-riga — è
+  il fallback, deve esistere un valore di default. Anteprima Step 4 (se
+  già mostra un oggetto calcolato per la riga di preview) usa la stessa
+  logica fallback per coerenza con l'invio reale.
+- Anteprima singolo destinatario (`renderMessageForRecipient`,
+  `campaigns.service.ts:123-133`, usata anche dal modal Dettaglio Notifica,
+  punto C): stessa logica di fallback, per mostrare l'oggetto realmente
+  usato per quel destinatario, non solo il template.
+
 ### E. Colonne SEND nella tabella destinatari
 
 `getRecipientStats()` (`campaigns.service.ts:919-942`): quando
@@ -159,6 +203,11 @@ beneficia già del fix B.
 - Unit test `getRecipientStats()`: campagna SEND con destinatario che ha 2
   attempt (uno FAILED vecchio, uno SUCCESS più recente con iun) → riga
   ritorna i dati dell'ultimo attempt, non duplica righe.
+- Unit test `send-dispatch.service.ts`: `subjectColumn` configurato e cella
+  valorizzata → usa il valore per-riga (interpolato); `subjectColumn`
+  configurato ma cella vuota per quella riga → fallback al template
+  generico; `subjectColumn` non configurato → comportamento invariato
+  (solo template).
 - Verifica manuale UI: wizard SEND step 4 mostra solo Oggetto, procede senza
   corpo; dettaglio campagna SEND non mostra "Testo Messaggio"; tabella
   destinatari SEND mostra IUN/Protocollo/Stato; modal dettaglio notifica SEND
@@ -179,7 +228,11 @@ beneficia già del fix B.
 - `apps/backend/src/queue/notification.processor.ts` (chiama il metodo
   spostato invece della copia privata)
 - `apps/backend/src/channels/send/send-dispatch.service.ts` (chiama il
-  completamento in `markSuccess`/`markFailed`)
+  completamento in `markSuccess`/`markFailed`; legge `subjectColumn` +
+  fallback per l'oggetto per-destinatario)
+- `apps/backend/src/campaigns/campaigns.service.ts` (`renderMessageForRecipient`:
+  stessa logica fallback oggetto per-destinatario, usata dal modal
+  Dettaglio Notifica)
 - `apps/backend/src/notifications-search/dto/notification-detail.dto.ts`
   (nuovi campi `AttemptDetailDto`)
 - `apps/backend/src/notifications-search/notifications-search.service.ts`
