@@ -52,6 +52,15 @@ export class NotificationAttempt {
   @Column({ name: 'send_status_updated_at', type: 'timestamptz', nullable: true })
   sendStatusUpdatedAt!: Date | null;
 
+  @Column({ type: 'int', name: 'protocol_number', nullable: true })
+  protocolNumber!: number | null;
+
+  @Column({ type: 'int', name: 'protocol_year', nullable: true })
+  protocolYear!: number | null;
+
+  @Column({ name: 'protocolled_at', type: 'timestamptz', nullable: true })
+  protocolledAt!: Date | null;
+
   @Column({ name: 'error_message', type: 'text', nullable: true })
   errorMessage!: string | null;
 
