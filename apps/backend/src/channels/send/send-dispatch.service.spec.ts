@@ -5,6 +5,7 @@ import { NotificationAttempt, AttemptStatus } from '../../entities/notification-
 import { Campaign } from '../../entities/campaign.entity';
 import { Recipient, RecipientStatus } from '../../entities/recipient.entity';
 import { AppSettingsService } from '../../settings/app-settings.service';
+import { PdndAuthService } from '../../pdnd/pdnd-auth.service';
 import { AttachmentService } from '../../attachments/attachment.service';
 import { SendAttachmentUploadService } from './send-attachment-upload.service';
 
@@ -15,6 +16,7 @@ const settingsValues: Record<string, unknown> = {
   'send.environment': 'collaudo',
   'send.test.baseUrl': 'https://send.test',
   'send.test.apiKey': 'apikey-abc',
+  'send.test.purposeId': 'purpose-test',
   'send.senderTaxId': '01234567890',
   'brand.name': 'Comune di Prova',
 };
@@ -37,8 +39,9 @@ describe('SendDispatchService', () => {
   const mockRecipientRepo = { update: jest.fn().mockResolvedValue(undefined) };
   const mockCampaignRepo = { increment: jest.fn().mockResolvedValue(undefined) };
   const mockSettings = { get: jest.fn(async (key: string) => settingsValues[key]) };
+  const mockPdndAuth = { getVoucher: jest.fn(async () => 'voucher-abc') };
   const mockAttachments = { generatePdfBuffer: jest.fn(async () => Buffer.from('%PDF-1.4 test')) };
-  const mockUpload = { preloadAndUpload: jest.fn(async (_b: string, _v: string, _buf: Buffer, _ct: string, idx: string) => ({ key: `key-${idx}`, versionToken: `vt-${idx}`, sha256Base64: 'abc123==' })) };
+  const mockUpload = { preloadAndUpload: jest.fn(async (_b: string, _ak: string, _v: string, _buf: Buffer, _ct: string, idx: string) => ({ key: `key-${idx}`, versionToken: `vt-${idx}`, sha256Base64: 'abc123==' })) };
 
   function makeAttempt(overrides: Partial<NotificationAttempt> = {}): NotificationAttempt {
     return {
@@ -78,6 +81,7 @@ describe('SendDispatchService', () => {
         { provide: getRepositoryToken(Recipient), useValue: mockRecipientRepo },
         { provide: getRepositoryToken(Campaign), useValue: mockCampaignRepo },
         { provide: AppSettingsService, useValue: mockSettings },
+        { provide: PdndAuthService, useValue: mockPdndAuth },
         { provide: AttachmentService, useValue: mockAttachments },
         { provide: SendAttachmentUploadService, useValue: mockUpload },
       ],
@@ -106,6 +110,10 @@ describe('SendDispatchService', () => {
 
     const sendCall = mockFetch.mock.calls.find(([url]) => url === 'https://send.test/delivery/v2.6/requests');
     expect(sendCall).toBeDefined();
+    expect(sendCall![1].headers).toEqual(expect.objectContaining({
+      'x-api-key': 'apikey-abc',
+      Authorization: 'Bearer voucher-abc',
+    }));
     const payload = JSON.parse(sendCall![1].body as string);
     expect(payload.paProtocolNumber).toBe('111/2026');
     expect(payload.idempotenceToken).toBe('att-1');

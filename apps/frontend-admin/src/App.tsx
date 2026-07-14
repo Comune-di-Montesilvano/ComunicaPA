@@ -5455,10 +5455,10 @@ export function App(): React.JSX.Element {
                                     value={e.apiKey}
                                     onChange={(ev) => e.setApiKey(ev.target.value)}
                                   />
-                                  <div className="form-text small text-muted">Emessa dal portale self-care di PN (Piattaforma Notifiche) — header x-api-key, obbligatoria per l'invio reale.</div>
+                                  <div className="form-text small text-muted">Emessa dal portale self-care di PN (Piattaforma Notifiche) — header x-api-key, richiesta insieme al voucher PDND su ogni chiamata.</div>
                                 </div>
                                 <div className="mb-1">
-                                  <label className="form-label small fw-semibold text-muted" htmlFor={`send_${e.prefix}_purposeid`}>Purpose ID (PDND, non usato per l'invio SEND)</label>
+                                  <label className="form-label small fw-semibold text-muted" htmlFor={`send_${e.prefix}_purposeid`}>Purpose ID</label>
                                   <input
                                     type="text"
                                     id={`send_${e.prefix}_purposeid`}
@@ -5466,7 +5466,7 @@ export function App(): React.JSX.Element {
                                     value={e.purposeId}
                                     onChange={(ev) => e.setPurposeId(ev.target.value)}
                                   />
-                                  <div className="form-text small text-muted">Non richiesto dall'API SEND (autentica via API Key sopra) — riservato a eventuali usi PDND futuri (es. INAD/INIPEC).</div>
+                                  <div className="form-text small text-muted">Usato per ottenere il voucher PDND (header Authorization), richiesto insieme alla API Key sopra. Le credenziali del client PDND (client ID, kid, chiave privata) si configurano nella scheda "Client PDND".</div>
                                 </div>
                                 <hr className="my-3" />
                                 <button
@@ -5475,9 +5475,9 @@ export function App(): React.JSX.Element {
                                   disabled={settSendTesting === e.prefix}
                                   onClick={() => handleTestSendConnection(e.prefix)}
                                 >
-                                  {settSendTesting === e.prefix ? 'Test in corso…' : 'Test connessione (API Key)'}
+                                  {settSendTesting === e.prefix ? 'Test in corso…' : 'Test connessione (API Key + voucher PDND)'}
                                 </button>
-                                <div className="form-text small text-muted">Salva le impostazioni e prova a ottenere un voucher PDND reale con client PDND + Purpose ID SEND.</div>
+                                <div className="form-text small text-muted">Salva le impostazioni e prova una chiamata reale a PN con API Key + voucher PDND (client PDND + Purpose ID SEND).</div>
                                 {settSendTestResult?.env === e.prefix && (
                                   <div className={`alert ${settSendTestResult.ok ? 'alert-success' : 'alert-danger'} mt-2 mb-0 small`} style={{ wordBreak: 'break-word' }}>
                                     {settSendTestResult.message}

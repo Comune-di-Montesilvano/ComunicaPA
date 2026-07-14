@@ -24,6 +24,7 @@ export class SendAttachmentUploadService {
   async preloadAndUpload(
     baseUrl: string,
     apiKey: string,
+    voucher: string,
     buffer: Buffer,
     contentType: 'application/pdf' | 'application/json',
     preloadIdx: string,
@@ -32,7 +33,7 @@ export class SendAttachmentUploadService {
 
     const preloadRes = await fetch(`${baseUrl}/delivery/attachments/preload`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, Authorization: `Bearer ${voucher}` },
       body: JSON.stringify([{ preloadIdx, contentType, sha256: sha256Base64 }]),
     });
     const preloadText = await preloadRes.text();

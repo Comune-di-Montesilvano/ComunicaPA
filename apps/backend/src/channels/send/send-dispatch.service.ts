@@ -7,6 +7,7 @@ import { Campaign } from '../../entities/campaign.entity';
 import { Recipient, RecipientStatus } from '../../entities/recipient.entity';
 import { AppSettingsService } from '../../settings/app-settings.service';
 import type { SettingKey } from '../../settings/settings.registry';
+import { PdndAuthService } from '../../pdnd/pdnd-auth.service';
 import { AttachmentService, resolveAttachmentsConfig } from '../../attachments/attachment.service';
 import { SendAttachmentUploadService } from './send-attachment-upload.service';
 import { resolvePaymentData } from '../payment-config.util';
@@ -37,6 +38,7 @@ export class SendDispatchService {
     @InjectRepository(Campaign)
     private readonly campaignRepo: Repository<Campaign>,
     private readonly settings: AppSettingsService,
+    private readonly pdndAuth: PdndAuthService,
     private readonly attachments: AttachmentService,
     private readonly attachmentUpload: SendAttachmentUploadService,
   ) {}
@@ -104,10 +106,14 @@ export class SendDispatchService {
     const envKey = env === 'produzione' ? 'prod' : 'test';
     const prefix = `send.${envKey}`;
     const baseUrl = await this.settings.get<string>(`${prefix}.baseUrl` as SettingKey);
-    // PN autentica via header x-api-key (portale self-care PN), non un voucher
-    // PDND — confermato dallo spec OpenAPI ufficiale (securitySchemes: solo
-    // ApiKeyAuth/x-api-key, nessun OAuth2/Bearer). Vedi settings.registry.ts.
+    // PN richiede ENTRAMBI gli header su ogni chiamata: x-api-key (portale
+    // self-care PN) e Authorization: Bearer <voucher PDND> — confermato dalla
+    // documentazione ufficiale developer.pagopa.it (esempio curl verbatim),
+    // non solo dallo spec OpenAPI backend (che documenta solo x-api-key, senza
+    // il layer di gateway PDND davanti). Vedi settings.registry.ts.
     const apiKey = await this.settings.get<string>(`${prefix}.apiKey` as SettingKey);
+    const purposeId = await this.settings.get<string>(`${prefix}.purposeId` as SettingKey);
+    const voucher = await this.pdndAuth.getVoucher(envKey, purposeId);
 
     const vars: Record<string, string> = { fullName: recipient.fullName ?? '', codiceFiscale: recipient.codiceFiscale };
     const subject = interpolate((cfg['subject'] as string) ?? campaign.name, vars);
@@ -118,7 +124,7 @@ export class SendDispatchService {
     const documents: Array<Record<string, unknown>> = [];
     for (let idx = 0; idx < docCount; idx++) {
       const buffer = await this.attachments.generatePdfBuffer(recipient, idx);
-      const uploaded = await this.attachmentUpload.preloadAndUpload(baseUrl, apiKey, buffer, 'application/pdf', `doc-${idx}`);
+      const uploaded = await this.attachmentUpload.preloadAndUpload(baseUrl, apiKey, voucher, buffer, 'application/pdf', `doc-${idx}`);
       documents.push({
         ref: { key: uploaded.key, versionToken: uploaded.versionToken },
         title: subject,
@@ -165,7 +171,7 @@ export class SendDispatchService {
 
     const response = await fetch(`${baseUrl}/delivery/v2.6/requests`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, Authorization: `Bearer ${voucher}` },
       body: JSON.stringify(payload),
     });
 

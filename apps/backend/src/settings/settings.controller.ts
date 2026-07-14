@@ -168,11 +168,11 @@ export class SettingsController {
   @Post('send/:env/test-connection')
   @HttpCode(HttpStatus.OK)
   async testSendConnection(@Param('env') env: string) {
-    // SEND autentica verso PN via header x-api-key (portale self-care PN),
-    // NON un voucher PDND — confermato dallo spec OpenAPI ufficiale (securitySchemes:
-    // solo ApiKeyAuth/x-api-key, nessun OAuth2/Bearer). Test dedicato: chiamata
-    // reale GET senza side-effect (nessun invio/protocollo), solo per validare
-    // la API Key configurata.
+    // PN richiede ENTRAMBI gli header su ogni chiamata: x-api-key (portale
+    // self-care PN) e Authorization: Bearer <voucher PDND> — confermato dalla
+    // documentazione ufficiale developer.pagopa.it (esempio curl verbatim).
+    // Test dedicato: chiamata reale GET senza side-effect (nessun
+    // invio/protocollo), solo per validare API Key + voucher.
     if (env !== 'test' && env !== 'prod') {
       throw new BadRequestException('Ambiente non valido: usare "test" o "prod"');
     }
@@ -181,18 +181,28 @@ export class SettingsController {
     if (!apiKey) {
       return { success: false, message: `API Key SEND (${env}) non configurata.` };
     }
+    const purposeId = await this.appSettings.get<string>(`send.${env}.purposeId` as SettingKey);
+    if (!purposeId) {
+      return { success: false, message: `Purpose ID SEND (${env}) non configurato (necessario per ottenere il voucher PDND).` };
+    }
+    let voucher: string;
+    try {
+      voucher = await this.pdndAuth.getVoucher(env, purposeId, true);
+    } catch (error: any) {
+      return { success: false, message: error.message || 'Errore sconosciuto durante la richiesta del voucher PDND.' };
+    }
     try {
       const res = await fetch(`${baseUrl}/delivery/v2.6/requests?requestId=comunicapa-test-connection`, {
-        headers: { 'x-api-key': apiKey },
+        headers: { 'x-api-key': apiKey, Authorization: `Bearer ${voucher}` },
       });
       if (res.status === 401 || res.status === 403) {
-        return { success: false, message: `API Key SEND (${env}) rifiutata da PN: HTTP ${res.status}.` };
+        return { success: false, message: `API Key/voucher SEND (${env}) rifiutati da PN: HTTP ${res.status}.` };
       }
       // 400/404 sono attesi (requestId inventato non esiste): confermano solo
       // che l'autenticazione è passata, non che la richiesta abbia senso.
-      return { success: true, message: `API Key SEND (${env}) accettata da PN (HTTP ${res.status}).` };
+      return { success: true, message: `API Key + voucher PDND SEND (${env}) accettati da PN (HTTP ${res.status}).` };
     } catch (error: any) {
-      return { success: false, message: error.message || 'Errore sconosciuto durante la verifica della API Key SEND.' };
+      return { success: false, message: error.message || 'Errore sconosciuto durante la verifica della connessione SEND.' };
     }
   }
 

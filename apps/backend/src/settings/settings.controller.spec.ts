@@ -25,16 +25,17 @@ describe('SettingsController — GET/PUT', () => {
   });
 });
 
-describe('SettingsController — SEND test-connection (x-api-key, no PDND)', () => {
+describe('SettingsController — SEND test-connection (x-api-key + voucher PDND)', () => {
   const mockFetch = jest.fn();
   global.fetch = mockFetch as unknown as typeof fetch;
 
   const values: Record<string, unknown> = {
     'send.test.baseUrl': 'https://send.test',
     'send.test.apiKey': '',
+    'send.test.purposeId': '',
   };
   const settingsMock = { get: jest.fn(async (key: string) => values[key]) };
-  const pdndAuthMock = { getVoucher: jest.fn() };
+  const pdndAuthMock = { getVoucher: jest.fn(async () => 'voucher-abc') };
   const controller = new SettingsController(settingsMock as never, pdndAuthMock as never);
 
   beforeEach(() => {
@@ -44,32 +45,55 @@ describe('SettingsController — SEND test-connection (x-api-key, no PDND)', () 
 
   it('fallisce senza chiamare PN se apiKey non è configurata', async () => {
     values['send.test.apiKey'] = '';
+    values['send.test.purposeId'] = 'purpose-test';
     const res = await controller.testSendConnection('test');
     expect(res.success).toBe(false);
     expect(mockFetch).not.toHaveBeenCalled();
     expect(pdndAuthMock.getVoucher).not.toHaveBeenCalled();
   });
 
-  it('usa x-api-key (non Authorization/Bearer) e non chiama mai PdndAuthService', async () => {
+  it('fallisce senza chiamare PN se purposeId non è configurato', async () => {
     values['send.test.apiKey'] = 'apikey-real';
+    values['send.test.purposeId'] = '';
+    const res = await controller.testSendConnection('test');
+    expect(res.success).toBe(false);
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(pdndAuthMock.getVoucher).not.toHaveBeenCalled();
+  });
+
+  it('invia ENTRAMBI x-api-key e Authorization:Bearer <voucher PDND>', async () => {
+    values['send.test.apiKey'] = 'apikey-real';
+    values['send.test.purposeId'] = 'purpose-test';
     mockFetch.mockResolvedValueOnce({ status: 400 });
 
     const res = await controller.testSendConnection('test');
 
+    expect(pdndAuthMock.getVoucher).toHaveBeenCalledWith('test', 'purpose-test', true);
     expect(mockFetch).toHaveBeenCalledWith(
       'https://send.test/delivery/v2.6/requests?requestId=comunicapa-test-connection',
-      { headers: { 'x-api-key': 'apikey-real' } },
+      { headers: { 'x-api-key': 'apikey-real', Authorization: 'Bearer voucher-abc' } },
     );
-    expect(pdndAuthMock.getVoucher).not.toHaveBeenCalled();
     expect(res.success).toBe(true);
   });
 
-  it('segnala fallimento su 401/403 (api key rifiutata)', async () => {
+  it('segnala fallimento su 401/403 (api key/voucher rifiutati)', async () => {
     values['send.test.apiKey'] = 'apikey-invalid';
+    values['send.test.purposeId'] = 'purpose-test';
     mockFetch.mockResolvedValueOnce({ status: 401 });
 
     const res = await controller.testSendConnection('test');
 
     expect(res.success).toBe(false);
+  });
+
+  it('segnala fallimento se PdndAuthService non riesce a ottenere il voucher', async () => {
+    values['send.test.apiKey'] = 'apikey-real';
+    values['send.test.purposeId'] = 'purpose-test';
+    pdndAuthMock.getVoucher.mockRejectedValueOnce(new Error('015-0008'));
+
+    const res = await controller.testSendConnection('test');
+
+    expect(res.success).toBe(false);
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 });
