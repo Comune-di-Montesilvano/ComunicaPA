@@ -737,6 +737,7 @@ export function App(): React.JSX.Element {
   const [recipientsSearch, setRecipientsSearch] = useState('');
   const [recipientsPageNum, setRecipientsPageNum] = useState(1);
   const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number } | null>(null);
+  const [campaignSendStageCounts, setCampaignSendStageCounts] = useState<{ queued: number; protocollato: number; inviato: number; fallito: number } | null>(null);
   const [downloadCombinations, setDownloadCombinations] = useState<Array<{ channels: string[]; count: number; sentSuccessfully: boolean }> | null>(null);
   const [statsDateFrom, setStatsDateFrom] = useState(() => {
     const d = new Date();
@@ -2852,6 +2853,7 @@ export function App(): React.JSX.Element {
     setCampaign(null);
     setFailureGroups([]);
     setChannelBreakdown(null);
+    setCampaignSendStageCounts(null);
     setDownloadCombinations(null);
     setRecipientsPage(null);
     setRecipientsSearch('');
@@ -2859,6 +2861,7 @@ export function App(): React.JSX.Element {
     fetchCampaignDetail(id);
     fetchFailureGroups(id);
     fetchChannelBreakdown(id);
+    fetchCampaignSendStageCounts(id);
     fetchDownloadCombinationStats(id);
   };
 
@@ -2870,6 +2873,16 @@ export function App(): React.JSX.Element {
       setChannelBreakdown(data.breakdown);
     } catch {
       // Non bloccante: la pagina dettaglio resta usabile senza il breakdown.
+    }
+  };
+
+  const fetchCampaignSendStageCounts = async (id: string) => {
+    try {
+      const res = await apiFetch(`/campaigns/${id}/send-stage-counts`);
+      if (!res.ok) return;
+      setCampaignSendStageCounts(await res.json());
+    } catch {
+      // Non bloccante: il dettaglio campagna resta usabile senza la barra a stadi.
     }
   };
 
@@ -6820,6 +6833,32 @@ export function App(): React.JSX.Element {
                             <div className="d-flex justify-content-between small text-muted">
                               <span><i className="fas fa-check text-success"></i> Successo: {campaign.sentCount}</span>
                               <span><i className="fas fa-times text-danger"></i> Errori: {campaign.failedCount}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {campaign.channelType === 'SEND' && campaignSendStageCounts && (
+                          <div className="mt-4 border-top pt-3">
+                            <h4 className="small fw-bold mb-2">
+                              <i className="fas fa-stamp me-1 text-primary"></i>Progressione SEND
+                            </h4>
+                            <div className="d-flex gap-3 text-center small">
+                              <div>
+                                <div className="fw-bold text-secondary">{campaignSendStageCounts.queued}</div>
+                                <div className="text-muted" style={{ fontSize: '0.7rem' }}>In attesa protocollo</div>
+                              </div>
+                              <div>
+                                <div className="fw-bold text-info">{campaignSendStageCounts.protocollato}</div>
+                                <div className="text-muted" style={{ fontSize: '0.7rem' }}>Protocollato (in attesa invio)</div>
+                              </div>
+                              <div>
+                                <div className="fw-bold text-success">{campaignSendStageCounts.inviato}</div>
+                                <div className="text-muted" style={{ fontSize: '0.7rem' }}>Inviato</div>
+                              </div>
+                              <div>
+                                <div className={`fw-bold ${campaignSendStageCounts.fallito > 0 ? 'text-danger' : 'text-muted'}`}>{campaignSendStageCounts.fallito}</div>
+                                <div className="text-muted" style={{ fontSize: '0.7rem' }}>Fallito</div>
+                              </div>
                             </div>
                           </div>
                         )}
