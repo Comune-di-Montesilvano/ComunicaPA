@@ -12,6 +12,7 @@ import {
   PostalNotificationProcessor,
 } from './channel-processors';
 import { NotificationQueuesService } from './notification-queues.service';
+import { ProtocollazioneProcessor } from './protocollazione.processor';
 import { NotificationAttempt } from '../entities/notification-attempt.entity';
 import { Campaign } from '../entities/campaign.entity';
 import { Recipient } from '../entities/recipient.entity';
@@ -48,6 +49,7 @@ import { AttachmentModule } from '../attachments/attachment.module';
     PecNotificationProcessor,
     AppIoNotificationProcessor,
     PostalNotificationProcessor,
+    ProtocollazioneProcessor,
     NotificationQueuesService,
     {
       provide: THROTTLE_REDIS,

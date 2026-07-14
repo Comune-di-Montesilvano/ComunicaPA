@@ -16,7 +16,6 @@ import { AppIoStrategy } from './app-io/app-io.strategy';
 import { SendAttachmentUploadService } from './send/send-attachment-upload.service';
 import { SendStatusSyncService } from './send/send-status-sync.service';
 import { SendDispatchService } from './send/send-dispatch.service';
-import { ProtocollazioneSyncService } from './protocollazione-sync.service';
 import { PostalStrategy } from './postal/postal.strategy';
 import { CampaignCompletionService } from '../campaigns/campaign-completion.service';
 
@@ -36,7 +35,6 @@ import { CampaignCompletionService } from '../campaigns/campaign-completion.serv
     SendAttachmentUploadService,
     SendStatusSyncService,
     SendDispatchService,
-    ProtocollazioneSyncService,
     CampaignCompletionService,
     {
       provide: CHANNEL_STRATEGIES,
