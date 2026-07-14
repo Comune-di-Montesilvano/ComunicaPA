@@ -307,6 +307,61 @@ describe('CampaignsService', () => {
     );
   });
 
+  describe('CampaignsService.getRecipientStats — colonne SEND', () => {
+    it('include iun/protocollo/stato SEND per l\'ultimo attempt di ciascun destinatario', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ id: 'camp-1', channelType: 'SEND' });
+      const mockQb = {
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getManyAndCount: jest.fn().mockResolvedValue([
+          [{ id: 'r1', fullName: 'Mario Rossi', codiceFiscale: 'RSSMRA85M01H501Z', email: null, pec: null, status: 'sent', downloadCount: 0, firstDownloadedAt: null, lastDownloadedAt: null, attachmentDeletedAt: null }],
+          1,
+        ]),
+      };
+      mockRecipientRepo.createQueryBuilder.mockReturnValue(mockQb);
+      mockAttemptRepo.find.mockResolvedValueOnce([
+        { recipientId: 'r1', attemptNumber: 1, iun: null, sendStatus: null, sendStatusUpdatedAt: null, protocolNumber: 55, protocolYear: 2026 },
+        { recipientId: 'r1', attemptNumber: 2, iun: 'ABCD-1234', sendStatus: 'ACCEPTED', sendStatusUpdatedAt: new Date('2026-07-11T08:00:00Z'), protocolNumber: 56, protocolYear: 2026 },
+      ]);
+
+      const result = await service.getRecipientStats('camp-1', 1, 50);
+
+      expect(result.items[0]).toMatchObject({
+        id: 'r1',
+        iun: 'ABCD-1234',
+        sendStatus: 'ACCEPTED',
+        protocolNumber: 56,
+        protocolYear: 2026,
+      });
+    });
+
+    it('non aggiunge campi SEND per campagne di altri canali', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ id: 'camp-2', channelType: 'EMAIL' });
+      const mockQb = {
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getManyAndCount: jest.fn().mockResolvedValue([
+          [{ id: 'r2', fullName: 'Luigi Bianchi', codiceFiscale: 'BNCLGU80A01H501Y', email: 'l@b.it', pec: null, status: 'sent', downloadCount: 1, firstDownloadedAt: null, lastDownloadedAt: null, attachmentDeletedAt: null }],
+          1,
+        ]),
+      };
+      mockRecipientRepo.createQueryBuilder.mockReturnValue(mockQb);
+
+      const result = await service.getRecipientStats('camp-2', 1, 50);
+
+      expect(mockAttemptRepo.find).not.toHaveBeenCalled();
+      expect(result.items[0].iun).toBeUndefined();
+    });
+  });
+
   it('assertDraftForAttachments passa per campagna DRAFT', async () => {
     mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, status: CampaignStatus.DRAFT });
     await expect(service.assertDraftForAttachments('uuid-1')).resolves.toBeUndefined();

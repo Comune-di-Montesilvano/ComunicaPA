@@ -24,7 +24,7 @@ import { NotificationQueuesService } from '../queue/notification-queues.service'
 import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util';
 import type { CreateCampaignDto } from './dto/create-campaign.dto';
 import type { UpdateCampaignDto } from './dto/update-campaign.dto';
-import type { CampaignStatsDto, RecipientStatsPageDto, ChannelBreakdownDto, DownloadCombinationDto, DownloadCombinationStatsDto, FailureRowDto, FailureGroupDto, RetryBulkResultDto, DownloadReportRowDto } from './dto/campaign-stats.dto';
+import type { CampaignStatsDto, RecipientStatDto, RecipientStatsPageDto, ChannelBreakdownDto, DownloadCombinationDto, DownloadCombinationStatsDto, FailureRowDto, FailureGroupDto, RetryBulkResultDto, DownloadReportRowDto } from './dto/campaign-stats.dto';
 import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.dto';
 import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util';
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto';
@@ -932,11 +932,47 @@ export class CampaignsService {
       qb.andWhere('(r.fullName ILIKE :search OR r.codiceFiscale ILIKE :search)', { search: `%${search.trim()}%` });
     }
 
-    const [items, total] = await qb
+    const [rawItems, total] = await qb
       .orderBy('r.createdAt', 'ASC')
       .skip((page - 1) * pageSize)
       .take(pageSize)
       .getManyAndCount();
+    // Selezione parziale via .select(): il risultato ha solo i campi
+    // proiettati (compatibili con RecipientStatDto), non un Recipient
+    // completo — tipizzato esplicitamente per poter assegnare le colonne
+    // SEND opzionali qui sotto.
+    const items: RecipientStatDto[] = rawItems;
+
+    if (campaign.channelType === 'SEND' && items.length > 0) {
+      // Due query separate invece di leftJoinAndSelect: stesso motivo del
+      // bug TypeORM documentato in protocollazione-sync.service.ts/
+      // send-dispatch.service.ts (leftJoinAndSelect + orderBy + take su
+      // relazione dichiarata per stringa). Qui il join sarebbe su una
+      // relazione 1-a-molti (un destinatario può avere più attempt): il
+      // riduttore "ultimo per destinatario" si fa in JS sul risultato,
+      // batch piccolo (una pagina di destinatari), nessun impatto pratico.
+      const recipientIds = items.map((r) => r.id);
+      const attempts = await this.attemptRepo.find({
+        where: { recipientId: In(recipientIds), channelType: 'SEND' },
+      });
+      const latestByRecipient = new Map<string, NotificationAttempt>();
+      for (const a of attempts) {
+        const current = latestByRecipient.get(a.recipientId);
+        if (!current || a.attemptNumber > current.attemptNumber) {
+          latestByRecipient.set(a.recipientId, a);
+        }
+      }
+      for (const item of items) {
+        const latest = latestByRecipient.get(item.id);
+        if (latest) {
+          item.iun = latest.iun;
+          item.sendStatus = latest.sendStatus;
+          item.sendStatusUpdatedAt = latest.sendStatusUpdatedAt;
+          item.protocolNumber = latest.protocolNumber;
+          item.protocolYear = latest.protocolYear;
+        }
+      }
+    }
 
     return { campaignId, page, pageSize, total, items };
   }
