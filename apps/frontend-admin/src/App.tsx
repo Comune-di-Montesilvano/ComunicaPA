@@ -608,11 +608,13 @@ export function App(): React.JSX.Element {
   const [settSendTestBaseUrl, setSettSendTestBaseUrl] = useState('https://api.uat.notifichedigitali.it');
   const [settSendTestApiKey, setSettSendTestApiKey] = useState('');
   const [settSendTestPurposeId, setSettSendTestPurposeId] = useState('');
+  const [settSendTestGroup, setSettSendTestGroup] = useState('');
   const [settSendSenderTaxId, setSettSendSenderTaxId] = useState('');
   const [settSendTaxonomies, setSettSendTaxonomies] = useState<Array<{ code: string; label: string }>>([]);
   const [settSendProdBaseUrl, setSettSendProdBaseUrl] = useState('https://api.notifichedigitali.it');
   const [settSendProdApiKey, setSettSendProdApiKey] = useState('');
   const [settSendProdPurposeId, setSettSendProdPurposeId] = useState('');
+  const [settSendProdGroup, setSettSendProdGroup] = useState('');
   const [settSendTesting, setSettSendTesting] = useState<'test' | 'prod' | null>(null);
   const [settSendTestResult, setSettSendTestResult] = useState<{ env: 'test' | 'prod'; ok: boolean; message: string } | null>(null);
 
@@ -788,6 +790,7 @@ export function App(): React.JSX.Element {
         setSettSendTestBaseUrl(String(s['send.test.baseUrl'] ?? ''));
         setSettSendTestApiKey(String(s['send.test.apiKey'] ?? ''));
         setSettSendTestPurposeId(String(s['send.test.purposeId'] ?? ''));
+        setSettSendTestGroup(String(s['send.test.group'] ?? ''));
         setSettSendSenderTaxId(String(s['send.senderTaxId'] ?? ''));
         try {
           setSettSendTaxonomies(JSON.parse(String(s['send.enabledTaxonomyCodes'] ?? '[]')));
@@ -797,6 +800,7 @@ export function App(): React.JSX.Element {
         setSettSendProdBaseUrl(String(s['send.prod.baseUrl'] ?? ''));
         setSettSendProdApiKey(String(s['send.prod.apiKey'] ?? ''));
         setSettSendProdPurposeId(String(s['send.prod.purposeId'] ?? ''));
+        setSettSendProdGroup(String(s['send.prod.group'] ?? ''));
         setSettPdndTestTokenUrl(String(s['pdnd.test.tokenUrl'] ?? ''));
         setSettPdndTestAudience(String(s['pdnd.test.audience'] ?? ''));
         setSettPdndTestClientId(String(s['pdnd.test.clientId'] ?? ''));
@@ -1352,11 +1356,13 @@ export function App(): React.JSX.Element {
     'send.test.baseUrl': settSendTestBaseUrl,
     'send.test.apiKey': settSendTestApiKey,
     'send.test.purposeId': settSendTestPurposeId,
+    'send.test.group': settSendTestGroup,
     'send.senderTaxId': settSendSenderTaxId,
     'send.enabledTaxonomyCodes': JSON.stringify(settSendTaxonomies),
     'send.prod.baseUrl': settSendProdBaseUrl,
     'send.prod.apiKey': settSendProdApiKey,
     'send.prod.purposeId': settSendProdPurposeId,
+    'send.prod.group': settSendProdGroup,
     'pdnd.test.tokenUrl': settPdndTestTokenUrl,
     'pdnd.test.audience': settPdndTestAudience,
     'pdnd.test.clientId': settPdndTestClientId,
@@ -5428,11 +5434,13 @@ export function App(): React.JSX.Element {
                               { label: 'Collaudo (UAT)', prefix: 'test' as const,
                                 baseUrl: settSendTestBaseUrl, setBaseUrl: setSettSendTestBaseUrl,
                                 apiKey: settSendTestApiKey, setApiKey: setSettSendTestApiKey,
-                                purposeId: settSendTestPurposeId, setPurposeId: setSettSendTestPurposeId },
+                                purposeId: settSendTestPurposeId, setPurposeId: setSettSendTestPurposeId,
+                                group: settSendTestGroup, setGroup: setSettSendTestGroup },
                               { label: 'Produzione', prefix: 'prod' as const,
                                 baseUrl: settSendProdBaseUrl, setBaseUrl: setSettSendProdBaseUrl,
                                 apiKey: settSendProdApiKey, setApiKey: setSettSendProdApiKey,
-                                purposeId: settSendProdPurposeId, setPurposeId: setSettSendProdPurposeId },
+                                purposeId: settSendProdPurposeId, setPurposeId: setSettSendProdPurposeId,
+                                group: settSendProdGroup, setGroup: setSettSendProdGroup },
                             ]).map((e) => (
                               <fieldset key={e.prefix} className="border rounded p-3 mb-3">
                                 <legend className="float-none w-auto px-2 small fw-bold text-dark">{e.label}</legend>
@@ -5467,6 +5475,17 @@ export function App(): React.JSX.Element {
                                     onChange={(ev) => e.setPurposeId(ev.target.value)}
                                   />
                                   <div className="form-text small text-muted">Usato per ottenere il voucher PDND (header Authorization), richiesto insieme alla API Key sopra. Le credenziali del client PDND (client ID, kid, chiave privata) si configurano nella scheda "Client PDND".</div>
+                                </div>
+                                <div className="mb-1">
+                                  <label className="form-label small fw-semibold text-muted" htmlFor={`send_${e.prefix}_group`}>Gruppo PN (opzionale)</label>
+                                  <input
+                                    type="text"
+                                    id={`send_${e.prefix}_group`}
+                                    className="form-control form-control-sm"
+                                    value={e.group}
+                                    onChange={(ev) => e.setGroup(ev.target.value)}
+                                  />
+                                  <div className="form-text small text-muted">Necessario solo se l'account PN è associato a più gruppi utenti (portale self-care PN) — PN rifiuta l'invio senza specificarlo in quel caso ("Specify a group in cx_groups=..."). Lascia vuoto se l'account ha un solo gruppo.</div>
                                 </div>
                                 <hr className="my-3" />
                                 <button

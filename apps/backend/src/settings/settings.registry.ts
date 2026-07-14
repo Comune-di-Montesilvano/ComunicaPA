@@ -43,9 +43,16 @@ export const SETTING_DEFS = {
   // usato per ottenere il voucher PDND via PdndAuthService.
   'send.test.apiKey': { type: 'string', secret: true, default: '' },
   'send.test.purposeId': { type: 'string', default: '' },
+  // Alcuni account PN sono associati a più "cx_groups" (gruppi utenti ente
+  // configurati sul portale self-care PN): in quel caso PN rifiuta la
+  // richiesta di invio senza un group esplicito (errore reale riscontrato:
+  // "Specify a group in cx_groups=[...]"). Facoltativo — se l'account ha un
+  // solo gruppo, PN non lo richiede e questo campo può restare vuoto.
+  'send.test.group': { type: 'string', default: '' },
   'send.prod.baseUrl': { type: 'string', default: 'https://api.notifichedigitali.it' },
   'send.prod.apiKey': { type: 'string', secret: true, default: '' },
   'send.prod.purposeId': { type: 'string', default: '' },
+  'send.prod.group': { type: 'string', default: '' },
   'send.senderTaxId': { type: 'string', default: '' },
   'send.enabledTaxonomyCodes': { type: 'string', default: '[]' },
 

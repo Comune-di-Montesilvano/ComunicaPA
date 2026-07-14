@@ -250,4 +250,26 @@ describe('SendDispatchService', () => {
       province: 'XX',
     });
   });
+
+  it('include group nel payload se configurato per l\'ambiente (account PN multi-gruppo)', async () => {
+    settingsValues['send.test.group'] = 'gruppo-tributi';
+    mockBatch([makeAttempt()]);
+
+    await service.handleCron();
+
+    const sendCall = mockFetch.mock.calls.find(([url]) => url === 'https://send.test/delivery/v2.6/requests');
+    const payload = JSON.parse(sendCall![1].body as string);
+    expect(payload.group).toBe('gruppo-tributi');
+  });
+
+  it('omette group dal payload se non configurato', async () => {
+    delete settingsValues['send.test.group'];
+    mockBatch([makeAttempt()]);
+
+    await service.handleCron();
+
+    const sendCall = mockFetch.mock.calls.find(([url]) => url === 'https://send.test/delivery/v2.6/requests');
+    const payload = JSON.parse(sendCall![1].body as string);
+    expect(payload.group).toBeUndefined();
+  });
 });

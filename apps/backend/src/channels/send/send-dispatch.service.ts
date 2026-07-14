@@ -175,6 +175,7 @@ export class SendDispatchService {
     const senderDenomination = await this.settings.get<string>('brand.name' as SettingKey);
     const taxonomyCode = cfg['taxonomyCode'] as string;
     const physicalCommunicationType = (cfg['physicalCommunicationType'] as string) || 'AR_REGISTERED_LETTER';
+    const group = await this.settings.get<string>(`${prefix}.group` as SettingKey);
 
     const payload: Record<string, unknown> = {
       // Deterministico sull'attemptId: un retry del demone (crash, errore rete)
@@ -190,6 +191,7 @@ export class SendDispatchService {
       senderTaxId,
       taxonomyCode,
       subject,
+      ...(group ? { group } : {}),
       recipients: [{
         recipientType: 'PF',
         taxId: recipient.codiceFiscale,
