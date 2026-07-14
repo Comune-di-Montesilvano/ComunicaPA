@@ -57,6 +57,35 @@ function StatusBadge({ status }: { status: string }): React.JSX.Element {
   return <span className={`badge ${meta.badge}`}>{meta.label}</span>;
 }
 
+// Stati SEND (campo sendStatus, popolato da SendStatusSyncService da PN
+// GET /delivery/v2.9/notifications/sent/{iun}) — spazio valori distinto da
+// STATUS_META sopra (quello è per recipient/attempt/campaign interni).
+// Fonte: NotificationStatusV26 nello spec ufficiale PN (pn-delivery,
+// api-external-b2b-pa-bundle.yaml), 11 valori, verificato 2026-07-14.
+const SEND_STATUS_META: Record<string, { label: string; badge: string; icon: string }> = {
+  IN_VALIDATION: { label: 'In validazione', badge: 'bg-secondary', icon: 'fa-hourglass-half' },
+  ACCEPTED: { label: 'Accettata da SEND', badge: 'bg-info', icon: 'fa-inbox' },
+  REFUSED: { label: 'Rifiutata', badge: 'bg-danger', icon: 'fa-ban' },
+  DELIVERING: { label: 'In consegna', badge: 'bg-warning text-dark', icon: 'fa-truck' },
+  DELIVERED: { label: 'Consegnata', badge: 'bg-primary', icon: 'fa-envelope-circle-check' },
+  VIEWED: { label: 'Letta dal destinatario', badge: 'bg-success', icon: 'fa-eye' },
+  EFFECTIVE_DATE: { label: 'Perfezionata per decorrenza termini', badge: 'bg-success', icon: 'fa-calendar-check' },
+  PAID: { label: 'Pagata (deprecato)', badge: 'bg-secondary', icon: 'fa-money-check-dollar' },
+  UNREACHABLE: { label: 'Destinatario irreperibile', badge: 'bg-danger', icon: 'fa-user-slash' },
+  CANCELLED: { label: 'Annullata', badge: 'bg-dark', icon: 'fa-xmark' },
+  RETURNED_TO_SENDER: { label: 'Restituita al mittente', badge: 'bg-danger', icon: 'fa-rotate-left' },
+};
+
+function SendStatusBadge({ status }: { status: string | null | undefined }): React.JSX.Element {
+  if (!status) return <span className="text-muted">—</span>;
+  const meta = SEND_STATUS_META[status] ?? { label: status, badge: 'bg-light text-dark border', icon: 'fa-circle-question' };
+  return (
+    <span className={`badge ${meta.badge}`}>
+      <i className={`fas ${meta.icon} me-1`}></i>{meta.label}
+    </span>
+  );
+}
+
 function downloadComboLabel(channels: string[]): string {
   if (channels.length === 0) return 'Non scaricato';
   return channels.map((c) => channelLabel(c)).join(' + ');
@@ -4861,7 +4890,7 @@ export function App(): React.JSX.Element {
                                     <>
                                       <td className="small fw-mono">{a.iun || '—'}</td>
                                       <td className="small">{a.protocolNumber ? `${a.protocolNumber}/${a.protocolYear}` : '—'}</td>
-                                      <td className="small">{a.sendStatus || '—'}</td>
+                                      <td className="small"><SendStatusBadge status={a.sendStatus} /></td>
                                       <td className="small text-muted">{a.sendStatusUpdatedAt ? new Date(a.sendStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
                                     </>
                                   )}
@@ -6983,7 +7012,7 @@ export function App(): React.JSX.Element {
                                         <>
                                           <td className="small fw-mono">{r.iun || '—'}</td>
                                           <td className="small">{r.protocolNumber ? `${r.protocolNumber}/${r.protocolYear}` : '—'}</td>
-                                          <td className="small">{r.sendStatus || '—'}</td>
+                                          <td className="small"><SendStatusBadge status={r.sendStatus} /></td>
                                           <td className="small text-muted">{r.sendStatusUpdatedAt ? new Date(r.sendStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
                                         </>
                                       ) : (
