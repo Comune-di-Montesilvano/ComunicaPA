@@ -464,6 +464,7 @@ export function App(): React.JSX.Element {
     full_name_2: '',
     email: '',
     pec: '',
+    subject: '',
   });
   const [wizAttachments, setWizAttachments] = useState<Array<{ key: string; label: string }>>([]);
   // Mappatura colonna→campo e colonne allegato salvate su una campagna sorgente
@@ -538,7 +539,7 @@ export function App(): React.JSX.Element {
           channelType: wizPreviewChannelTab === 'APP_IO' ? 'APP_IO' : wizChannel,
           subject: wizPreviewChannelTab === 'APP_IO'
             ? (wizAppIoDifferentiate ? wizAppIoSubjectOverride : wizSubject)
-            : wizSubject,
+            : ((wizMapping.subject && row[wizMapping.subject]?.trim()) || wizSubject),
           body: wizPreviewChannelTab === 'APP_IO'
             ? (wizAppIoDifferentiate ? wizAppIoBodyOverride : wizBody)
             : wizBody,
@@ -2187,6 +2188,7 @@ export function App(): React.JSX.Element {
         full_name_2: '',
         email: '',
         pec: '',
+        subject: '',
       };
       headers.forEach(h => {
         const hLower = h.toLowerCase().replace(/[\s_-]/g, '');
@@ -2408,6 +2410,7 @@ export function App(): React.JSX.Element {
       full_name_2: '',
       email: '',
       pec: '',
+      subject: '',
     });
     setWizAttachments([]);
     setWizValidationErrors([]);
@@ -3918,7 +3921,7 @@ export function App(): React.JSX.Element {
                             setWizCsvFile(null);
                             setWizCsvHeaders([]);
                             setWizCsvRows([]);
-                            setWizMapping({ codice_fiscale: '', full_name: '', full_name_2: '', email: '', pec: '' });
+                            setWizMapping({ codice_fiscale: '', full_name: '', full_name_2: '', email: '', pec: '', subject: '' });
                             setWizAttachments([]);
                             const input = document.getElementById('wiz_csv_input') as HTMLInputElement;
                             if (input) input.value = '';
@@ -4043,6 +4046,21 @@ export function App(): React.JSX.Element {
                         {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
                       </select>
                     </div>
+
+                    {wizChannel === 'SEND' && (
+                      <div className="col-md-6">
+                        <label className="form-label small fw-semibold text-muted">Oggetto (per destinatario - Opzionale)</label>
+                        <select
+                          className="form-select form-select-sm"
+                          value={wizMapping.subject}
+                          onChange={e => handleWizMappingChange('subject', e.target.value)}
+                        >
+                          <option value="">-- Usa template unico (Passo 4) --</option>
+                          {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
+                        </select>
+                        <div className="form-text small text-muted">Se una riga ha questa colonna vuota, viene usato l'Oggetto generico del Passo 4.</div>
+                      </div>
+                    )}
 
                     <div className="col-12">
                       <label className="form-label small fw-semibold text-muted">Colonne Allegato (una o più, con etichetta)</label>
@@ -4309,8 +4327,8 @@ export function App(): React.JSX.Element {
               {wizStep === 4 && (
                 <div className="row g-4">
                   <div className="col-lg-6 border-end">
-                    <h4 className="h6 fw-bold text-dark mb-3">Passo 4: Scrittura Template & Jolly Fields</h4>
-                    
+                    <h4 className="h6 fw-bold text-dark mb-3">{wizChannel === 'SEND' ? 'Passo 4: Oggetto della Comunicazione' : 'Passo 4: Scrittura Template & Jolly Fields'}</h4>
+
                     <div className="mb-3">
                       <label className="form-label small fw-bold">Oggetto della Comunicazione (Template)</label>
                       <input
@@ -4323,29 +4341,33 @@ export function App(): React.JSX.Element {
                       />
                     </div>
 
-                    <div className="mb-3">
-                      <label className="form-label small fw-bold">Corpo del Messaggio (Template)</label>
-                      <TemplateEditor
-                        value={wizBody}
-                        onChange={setWizBody}
-                        placeholders={[
-                          ...(wizAttachments.length > 0 ? [{ label: 'Elenco Allegati', token: '%%elenco_allegati%%' }] : []),
-                          ...wizAttachments.map((a, idx) => ({ label: `Link: ${a.label || `Allegato ${idx + 1}`}`, token: `%%allegato${idx + 1}%%` })),
-                          { label: 'Nominativo', token: '%%nominativo%%' },
-                          { label: 'Codice Fiscale', token: '%%codice_fiscale%%' },
-                          ...wizCsvHeaders
-                            .filter(h => h !== wizMapping.codice_fiscale && h !== wizMapping.full_name && h !== wizMapping.email && h !== wizMapping.pec && !wizAttachments.some(a => a.key === h))
-                            .map(h => ({ label: `Colonna: ${h}`, token: `%%${h}%%` })),
-                        ]}
-                      />
-                    </div>
+                    {wizChannel !== 'SEND' && (
+                      <>
+                        <div className="mb-3">
+                          <label className="form-label small fw-bold">Corpo del Messaggio (Template)</label>
+                          <TemplateEditor
+                            value={wizBody}
+                            onChange={setWizBody}
+                            placeholders={[
+                              ...(wizAttachments.length > 0 ? [{ label: 'Elenco Allegati', token: '%%elenco_allegati%%' }] : []),
+                              ...wizAttachments.map((a, idx) => ({ label: `Link: ${a.label || `Allegato ${idx + 1}`}`, token: `%%allegato${idx + 1}%%` })),
+                              { label: 'Nominativo', token: '%%nominativo%%' },
+                              { label: 'Codice Fiscale', token: '%%codice_fiscale%%' },
+                              ...wizCsvHeaders
+                                .filter(h => h !== wizMapping.codice_fiscale && h !== wizMapping.full_name && h !== wizMapping.email && h !== wizMapping.pec && !wizAttachments.some(a => a.key === h))
+                                .map(h => ({ label: `Colonna: ${h}`, token: `%%${h}%%` })),
+                            ]}
+                          />
+                        </div>
 
-                    {wizAppIoBodyLenInvalid && (
-                      <div className="alert alert-warning py-2 small mb-0">
-                        <i className="fas fa-exclamation-triangle me-1"></i>
-                        Il testo per App IO deve essere lungo tra {APP_IO_MARKDOWN_MIN} e {APP_IO_MARKDOWN_MAX} caratteri
-                        (attuale: {wizAppIoBodyLen}). PagoPA rifiuta messaggi più corti o più lunghi.
-                      </div>
+                        {wizAppIoBodyLenInvalid && (
+                          <div className="alert alert-warning py-2 small mb-0">
+                            <i className="fas fa-exclamation-triangle me-1"></i>
+                            Il testo per App IO deve essere lungo tra {APP_IO_MARKDOWN_MIN} e {APP_IO_MARKDOWN_MAX} caratteri
+                            (attuale: {wizAppIoBodyLen}). PagoPA rifiuta messaggi più corti o più lunghi.
+                          </div>
+                        )}
+                      </>
                     )}
 
                     <div className="mt-4 pt-3 border-top d-flex justify-content-between">
@@ -4355,7 +4377,7 @@ export function App(): React.JSX.Element {
                       <button
                         className="btn btn-primary"
                         onClick={() => setWizStep(5)}
-                        disabled={!wizSubject || isWizBodyEmpty(wizBody) || wizAppIoBodyLenInvalid}
+                        disabled={!wizSubject || (wizChannel !== 'SEND' && (isWizBodyEmpty(wizBody) || wizAppIoBodyLenInvalid))}
                       >
                         Riepilogo <i className="fas fa-arrow-right ms-1"></i>
                       </button>
