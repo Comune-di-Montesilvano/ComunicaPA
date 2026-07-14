@@ -853,18 +853,52 @@ describe('CampaignsService', () => {
         { id: 'att-1', recipientId: 'r1' },
         { id: 'att-2', recipientId: 'r2' },
       ]);
-      mockAttemptRepo.update = jest.fn().mockResolvedValue(undefined);
+      const updateQb = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        returning: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ raw: [{ id: 'att-1' }, { id: 'att-2' }] }),
+      };
+      mockAttemptRepo.createQueryBuilder = jest.fn().mockReturnValue(updateQb);
       mockRecipientRepo.update = jest.fn().mockResolvedValue(undefined);
 
       const result = await service.cancel('c1');
 
       expect(mockQueue.getJob).not.toHaveBeenCalled();
-      expect(mockAttemptRepo.update).toHaveBeenCalledWith(
-        { id: In(['att-1', 'att-2']), status: AttemptStatus.QUEUED },
-        { status: AttemptStatus.CANCELLED },
+      expect(updateQb.set).toHaveBeenCalledWith({ status: AttemptStatus.CANCELLED });
+      expect(updateQb.where).toHaveBeenCalledWith(
+        'id IN (:...ids) AND status = :status',
+        { ids: ['att-1', 'att-2'], status: AttemptStatus.QUEUED },
       );
       expect(mockRecipientRepo.update).toHaveBeenCalledWith({ id: In(['r1', 'r2']) }, { status: RecipientStatus.CANCELLED });
       expect(result).toEqual({ cancelled: 2, campaignId: 'c1' });
+    });
+
+    it('per campagne SEND annulla solo i recipient il cui attempt è ancora QUEUED al momento dell\'update (race col demone invio)', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, id: 'c1', status: CampaignStatus.QUEUED, channelType: 'SEND' });
+      mockRecipientRepo.find.mockResolvedValueOnce([{ id: 'r1' }, { id: 'r2' }]);
+      mockAttemptRepo.find = jest.fn().mockResolvedValueOnce([
+        { id: 'att-1', recipientId: 'r1' },
+        { id: 'att-2', recipientId: 'r2' },
+      ]);
+      // Il demone SendDispatchService ha già marcato att-2 SUCCESS tra la find()
+      // e questo update: l'UPDATE guardato su status=QUEUED tocca solo att-1.
+      const updateQb = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        returning: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ raw: [{ id: 'att-1' }] }),
+      };
+      mockAttemptRepo.createQueryBuilder = jest.fn().mockReturnValue(updateQb);
+      mockRecipientRepo.update = jest.fn().mockResolvedValue(undefined);
+
+      const result = await service.cancel('c1');
+
+      expect(mockRecipientRepo.update).toHaveBeenCalledWith({ id: In(['r1']) }, { status: RecipientStatus.CANCELLED });
+      expect(mockRecipientRepo.update).not.toHaveBeenCalledWith({ id: In(['r1', 'r2']) }, expect.anything());
+      expect(result).toEqual({ cancelled: 1, campaignId: 'c1' });
     });
   });
 });

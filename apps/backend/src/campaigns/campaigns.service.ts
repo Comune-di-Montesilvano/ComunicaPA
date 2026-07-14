@@ -399,13 +399,30 @@ export class CampaignsService {
         // (non protocollati, o protocollati ma non ancora inviati — in
         // entrambi i casi lo status resta QUEUED finché SendDispatchService
         // non lo marca SUCCESS/FAILED) con un update diretto su DB.
-        removedAttemptIds = liveAttempts.map((a) => a.id);
-        removedRecipientIds = liveAttempts.map((a) => a.recipientId);
-        if (removedAttemptIds.length > 0) {
-          await this.attemptRepo.update(
-            { id: In(removedAttemptIds), status: AttemptStatus.QUEUED },
-            { status: AttemptStatus.CANCELLED },
-          );
+        //
+        // `returning('id')` invece di un update() cieco: SendDispatchService
+        // gira in parallelo (cron) e può aver già marcato un attempt
+        // SUCCESS/FAILED tra la find() sopra e questo update — senza
+        // riportare quali id l'UPDATE ha davvero toccato, il recipient
+        // verrebbe comunque marcato CANCELLED anche se l'attempt è già
+        // stato inviato (recipient CANCELLED ma notifica reale spedita).
+        removedAttemptIds = [];
+        removedRecipientIds = [];
+        const candidateAttemptIds = liveAttempts.map((a) => a.id);
+        if (candidateAttemptIds.length > 0) {
+          const recipientByAttemptId = new Map(liveAttempts.map((a) => [a.id, a.recipientId]));
+          const updateResult = await this.attemptRepo
+            .createQueryBuilder()
+            .update(NotificationAttempt)
+            .set({ status: AttemptStatus.CANCELLED })
+            .where('id IN (:...ids) AND status = :status', {
+              ids: candidateAttemptIds,
+              status: AttemptStatus.QUEUED,
+            })
+            .returning('id')
+            .execute();
+          removedAttemptIds = (updateResult.raw as Array<{ id: string }>).map((row) => row.id);
+          removedRecipientIds = removedAttemptIds.map((id) => recipientByAttemptId.get(id)!);
         }
       } else {
         removedAttemptIds = [];
