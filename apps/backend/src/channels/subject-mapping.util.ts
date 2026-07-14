@@ -10,9 +10,9 @@ export function resolveSubjectTemplate(
   campaign: { channelConfig: Record<string, unknown>; name: string },
   recipient: { extraData: Record<string, unknown> },
 ): string {
-  const csvMapping = campaign.channelConfig['csvMapping'] as Record<string, unknown> | undefined;
+  const csvMapping = campaign.channelConfig?.['csvMapping'] as Record<string, unknown> | undefined;
   const subjectColumn = csvMapping?.['subject'] as string | undefined;
-  const perRecipientSubject = subjectColumn ? (recipient.extraData[subjectColumn] as string | undefined) : undefined;
-  if (perRecipientSubject && perRecipientSubject.trim()) return perRecipientSubject;
-  return (campaign.channelConfig['subject'] as string) || campaign.name;
+  const perRecipientSubject = subjectColumn ? (recipient.extraData?.[subjectColumn] as string | undefined) : undefined;
+  if (perRecipientSubject && perRecipientSubject.trim()) return perRecipientSubject.trim();
+  return (campaign.channelConfig?.['subject'] as string) || campaign.name;
 }
