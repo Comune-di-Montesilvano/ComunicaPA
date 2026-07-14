@@ -330,23 +330,27 @@ export class CampaignsService {
       attemptIds.push(...(result.raw as Array<{ id: string }>).map((row) => row.id));
     }
 
-    // Accoda job BullMQ in bulk (chunk di 1000 per evitare payload Redis troppo grandi)
-    const JOB_CHUNK = 1000;
-    for (let i = 0; i < recipients.length; i += JOB_CHUNK) {
-      const chunk = recipients.slice(i, i + JOB_CHUNK);
-      await this.notificationQueues.addBulk(
-        campaign.channelType,
-        chunk.map((r, idx) => ({
-          name: NOTIFICATION_JOB_SEND,
-          data: {
-            campaignId,
-            recipientId: r.id,
-            attemptId: attemptIds[i + idx],
-            channel: campaign.channelType,
-          },
-          opts: { jobId: attemptIds[i + idx] },
-        })),
-      );
+    // SEND non passa da BullMQ: i demoni ProtocollazioneSyncService/SendDispatchService
+    // pollano gli attempt QUEUED e li portano avanti a stadi (protocollato → inviato).
+    if (campaign.channelType !== 'SEND') {
+      // Accoda job BullMQ in bulk (chunk di 1000 per evitare payload Redis troppo grandi)
+      const JOB_CHUNK = 1000;
+      for (let i = 0; i < recipients.length; i += JOB_CHUNK) {
+        const chunk = recipients.slice(i, i + JOB_CHUNK);
+        await this.notificationQueues.addBulk(
+          campaign.channelType,
+          chunk.map((r, idx) => ({
+            name: NOTIFICATION_JOB_SEND,
+            data: {
+              campaignId,
+              recipientId: r.id,
+              attemptId: attemptIds[i + idx],
+              channel: campaign.channelType,
+            },
+            opts: { jobId: attemptIds[i + idx] },
+          })),
+        );
+      }
     }
 
     await this.recipientRepo.update(
@@ -800,9 +804,11 @@ export class CampaignsService {
     await this.recipientRepo.update({ id: recipientId }, { status: RecipientStatus.QUEUED });
     await this.campaignRepo.decrement({ id: campaignId }, 'failedCount', 1);
 
-    await this.notificationQueues.addBulk(campaign.channelType, [
-      { name: NOTIFICATION_JOB_SEND, data: { campaignId, recipientId, attemptId, channel: campaign.channelType }, opts: { jobId: attemptId } },
-    ]);
+    if (campaign.channelType !== 'SEND') {
+      await this.notificationQueues.addBulk(campaign.channelType, [
+        { name: NOTIFICATION_JOB_SEND, data: { campaignId, recipientId, attemptId, channel: campaign.channelType }, opts: { jobId: attemptId } },
+      ]);
+    }
 
     return { requeued: true, attemptId };
   }

@@ -203,6 +203,24 @@ describe('CampaignsService', () => {
     );
   });
 
+  it('launch NON accoda job BullMQ per campagne SEND (demoni pollano lo stato QUEUED)', async () => {
+    mockCampaignQb.execute.mockResolvedValueOnce({ affected: 1 });
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'SEND', channelConfig: { protocolla: true } });
+    mockRecipientRepo.find.mockResolvedValueOnce([{ id: 'r1' }]);
+    mockAttemptRepo.createQueryBuilder.mockReturnValue({
+      insert: jest.fn().mockReturnThis(),
+      into: jest.fn().mockReturnThis(),
+      values: jest.fn().mockReturnThis(),
+      returning: jest.fn().mockReturnThis(),
+      execute: jest.fn().mockResolvedValue({ raw: [{ id: 'att-1' }] }),
+    });
+
+    const result = await service.launch('c1');
+
+    expect(mockQueue.addBulk).not.toHaveBeenCalled();
+    expect(result).toEqual({ launched: 1, campaignId: 'c1' });
+  });
+
   it('uploadCsv uses increment for totalRecipients instead of update (no overwrite)', async () => {
     mockCampaignRepo.findOneBy.mockResolvedValueOnce(null);
     await expect(
@@ -1015,6 +1033,25 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
     expect(queuesMock.addBulk).toHaveBeenCalledWith('EMAIL', [
       { name: 'send', data: { campaignId: 'c1', recipientId: 'r1', attemptId: 'attempt-2', channel: 'EMAIL' }, opts: { jobId: 'attempt-2' } },
     ]);
+    expect(result).toEqual({ requeued: true, attemptId: 'attempt-2' });
+  });
+
+  it('retryRecipient NON riaccoda job BullMQ per campagne SEND', async () => {
+    campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'SEND' });
+    recipientRepoMock.findOne = jest.fn().mockResolvedValue({ id: 'r1', campaignId: 'c1', status: RecipientStatus.FAILED });
+    attemptRepoMock.findOne = jest.fn().mockResolvedValue({ attemptNumber: 1 });
+    const insertExec = jest.fn().mockResolvedValue({ raw: [{ id: 'attempt-2' }] });
+    attemptRepoMock.createQueryBuilder.mockReturnValue({
+      insert: () => ({ into: () => ({ values: () => ({ returning: () => ({ execute: insertExec }) }) }) }),
+    });
+    recipientRepoMock.update.mockResolvedValue({ affected: 1 });
+
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    const result = await service.retryRecipient('c1', 'r1');
+
+    expect(queuesMock.addBulk).not.toHaveBeenCalled();
     expect(result).toEqual({ requeued: true, attemptId: 'attempt-2' });
   });
 
