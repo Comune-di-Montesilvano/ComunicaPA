@@ -131,6 +131,12 @@ export class NotificationsSearchService {
           appIo: appIoPayload
             ? { attempted: true as const, success: !!appIoPayload.success, error: appIoPayload.error ?? null }
             : { attempted: false as const },
+          iun: a.iun,
+          sendStatus: a.sendStatus,
+          sendStatusUpdatedAt: a.sendStatusUpdatedAt ? a.sendStatusUpdatedAt.toISOString() : null,
+          protocolNumber: a.protocolNumber,
+          protocolYear: a.protocolYear,
+          protocolledAt: a.protocolledAt ? a.protocolledAt.toISOString() : null,
         };
       }),
       downloads: downloads.map((d) => ({

@@ -8,6 +8,12 @@ export interface AttemptDetailDto {
   sentAt: string | null;
   createdAt: string;
   appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null };
+  iun: string | null;
+  sendStatus: string | null;
+  sendStatusUpdatedAt: string | null;
+  protocolNumber: number | null;
+  protocolYear: number | null;
+  protocolledAt: string | null;
 }
 
 export interface NotificationDetailDto {

@@ -127,6 +127,12 @@ describe('NotificationsSearchService.getDetail', () => {
         sentAt: new Date('2026-07-01T10:00:00Z'),
         createdAt: new Date('2026-07-01T09:59:00Z'),
         responsePayload: { appIo: { success: true } },
+        iun: null,
+        sendStatus: null,
+        sendStatusUpdatedAt: null,
+        protocolNumber: null,
+        protocolYear: null,
+        protocolledAt: null,
       },
     ]);
     campaignsServiceMock.renderMessageForRecipient.mockResolvedValueOnce({ subject: 'Ciao Mario', bodyHtml: '<p>Corpo</p>' });
@@ -154,9 +160,99 @@ describe('NotificationsSearchService.getDetail', () => {
         sentAt: '2026-07-01T10:00:00.000Z',
         createdAt: '2026-07-01T09:59:00.000Z',
         appIo: { attempted: true, success: true, error: null },
+        iun: null,
+        sendStatus: null,
+        sendStatusUpdatedAt: null,
+        protocolNumber: null,
+        protocolYear: null,
+        protocolledAt: null,
       }],
       downloads: [{ channel: 'EMAIL', attachmentIndex: 0, downloadedAt: '2026-07-02T08:00:00.000Z' }],
       preview: { subject: 'Ciao Mario', bodyHtml: '<p>Corpo</p>' },
+    });
+  });
+
+  it('espone iun/protocollo/stato SEND quando presenti sull\'attempt', async () => {
+    recipientRepoMock.findOne.mockResolvedValueOnce({
+      id: 'r1',
+      codiceFiscale: 'RSSMRA80A01H501X',
+      fullName: 'Mario Rossi',
+      email: 'mario@test.it',
+      pec: null,
+      status: 'sent',
+      campaign: { id: 'c1', name: 'Avviso TARI', channelType: 'SEND' },
+    });
+    attemptRepoMock.find.mockResolvedValueOnce([
+      {
+        attemptNumber: 1,
+        status: 'success',
+        channelType: 'SEND',
+        errorMessage: null,
+        sentAt: new Date('2026-07-10T10:00:00Z'),
+        createdAt: new Date('2026-07-10T09:00:00Z'),
+        responsePayload: null,
+        iun: 'ABCD-EFGH-ILMN-202607-X-1',
+        sendStatus: 'ACCEPTED',
+        sendStatusUpdatedAt: new Date('2026-07-11T08:00:00Z'),
+        protocolNumber: 123,
+        protocolYear: 2026,
+        protocolledAt: new Date('2026-07-10T08:30:00Z'),
+      },
+    ]);
+    campaignsServiceMock.renderMessageForRecipient.mockResolvedValueOnce({ subject: 'Ciao Mario', bodyHtml: '<p>Corpo</p>' });
+    downloadEventRepoMock.find.mockResolvedValueOnce([]);
+
+    const result = await service.getDetail('rec-1');
+
+    expect(result.attempts[0]).toMatchObject({
+      iun: 'ABCD-EFGH-ILMN-202607-X-1',
+      sendStatus: 'ACCEPTED',
+      sendStatusUpdatedAt: '2026-07-11T08:00:00.000Z',
+      protocolNumber: 123,
+      protocolYear: 2026,
+      protocolledAt: '2026-07-10T08:30:00.000Z',
+    });
+  });
+
+  it('espone i campi SEND come null per un attempt di un altro canale', async () => {
+    recipientRepoMock.findOne.mockResolvedValueOnce({
+      id: 'r1',
+      codiceFiscale: 'RSSMRA80A01H501X',
+      fullName: 'Mario Rossi',
+      email: 'mario@test.it',
+      pec: null,
+      status: 'sent',
+      campaign: { id: 'c1', name: 'Avviso TARI', channelType: 'EMAIL' },
+    });
+    attemptRepoMock.find.mockResolvedValueOnce([
+      {
+        attemptNumber: 1,
+        status: 'success',
+        channelType: 'EMAIL',
+        errorMessage: null,
+        sentAt: new Date('2026-07-10T10:00:00Z'),
+        createdAt: new Date('2026-07-10T09:00:00Z'),
+        responsePayload: null,
+        iun: null,
+        sendStatus: null,
+        sendStatusUpdatedAt: null,
+        protocolNumber: null,
+        protocolYear: null,
+        protocolledAt: null,
+      },
+    ]);
+    campaignsServiceMock.renderMessageForRecipient.mockResolvedValueOnce({ subject: 'Ciao Mario', bodyHtml: '<p>Corpo</p>' });
+    downloadEventRepoMock.find.mockResolvedValueOnce([]);
+
+    const result = await service.getDetail('rec-1');
+
+    expect(result.attempts[0]).toMatchObject({
+      iun: null,
+      sendStatus: null,
+      sendStatusUpdatedAt: null,
+      protocolNumber: null,
+      protocolYear: null,
+      protocolledAt: null,
     });
   });
 });
