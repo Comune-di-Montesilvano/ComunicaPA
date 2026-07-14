@@ -709,7 +709,7 @@ export function App(): React.JSX.Element {
 
   const [activeSettingsTab, setActiveSettingsTab] = useState<'personalizzazione' | 'smtp' | 'pec' | 'app-io' | 'pdnd' | 'send' | 'inad' | 'inipec' | 'protocollo' | 'postalizzazione' | 'oidc' | 'motori'>('personalizzazione');
   const [engines, setEngines] = useState<any[]>([]);
-  const [sendStageCounts, setSendStageCounts] = useState<{ queued: number; protocollato: number; inviato: number; fallito: number } | null>(null);
+  const [sendStageCounts, setSendStageCounts] = useState<{ protocollato: number; inviato: number; fallito: number } | null>(null);
   const [loadingEngines, setLoadingEngines] = useState(false);
   const [enginesError, setEnginesError] = useState<string | null>(null);
   const [engineJobsChannel, setEngineJobsChannel] = useState<string | null>(null);
@@ -6354,6 +6354,7 @@ export function App(): React.JSX.Element {
                                   APP_IO: 'App IO',
                                   SEND: 'SEND',
                                   POSTAL: 'Postale',
+                                  PROTOCOLLAZIONE: 'Protocollazione',
                                 };
                                 const channelIcon: Record<string, string> = {
                                   EMAIL: 'fa-envelope',
@@ -6361,6 +6362,7 @@ export function App(): React.JSX.Element {
                                   APP_IO: 'fa-mobile-alt',
                                   SEND: 'fa-paper-plane',
                                   POSTAL: 'fa-mail-bulk',
+                                  PROTOCOLLAZIONE: 'fa-stamp',
                                 };
                                 const total = (eng.counts?.waiting ?? 0) + (eng.counts?.active ?? 0) + (eng.counts?.delayed ?? 0);
                                 const failed = eng.counts?.failed ?? 0;
@@ -6503,14 +6505,10 @@ export function App(): React.JSX.Element {
                                       </div>
                                       <div>
                                         <div className="fw-bold text-dark">SEND</div>
-                                        <div className="text-muted small">Pipeline a stadi (nessuna coda BullMQ): protocollazione e invio girano come demoni schedulati.</div>
+                                        <div className="text-muted small">Invio (nessuna coda BullMQ, demone schedulato) — la protocollazione ha il suo motore dedicato sopra.</div>
                                       </div>
                                     </div>
                                     <div className="d-flex gap-3 text-center">
-                                      <div>
-                                        <div className="fw-bold text-primary">{sendStageCounts.queued}</div>
-                                        <div className="text-muted" style={{ fontSize: '0.7rem' }}>In coda (da protocollare)</div>
-                                      </div>
                                       <div>
                                         <div className="fw-bold text-info">{sendStageCounts.protocollato}</div>
                                         <div className="text-muted" style={{ fontSize: '0.7rem' }}>Protocollato (da inviare)</div>
