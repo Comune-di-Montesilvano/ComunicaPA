@@ -2,7 +2,6 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { SendStatusSyncService } from './send-status-sync.service';
 import { AppSettingsService } from '../../settings/app-settings.service';
-import { PdndAuthService } from '../../pdnd/pdnd-auth.service';
 import { NotificationAttempt } from '../../entities/notification-attempt.entity';
 
 const mockFetch = jest.fn();
@@ -11,10 +10,9 @@ global.fetch = mockFetch as unknown as typeof fetch;
 const settingsValues: Record<string, unknown> = {
   'send.environment': 'collaudo',
   'send.test.baseUrl': 'https://send.test',
-  'send.test.purposeId': 'purpose-test',
+  'send.test.apiKey': 'apikey-abc',
 };
 const mockSettings = { get: jest.fn(async (key: string) => settingsValues[key]) };
-const mockPdndAuth = { getVoucher: jest.fn(async () => 'voucher-abc') };
 
 function makeQueryBuilder(results: any[]) {
   const qb: any = {
@@ -40,7 +38,6 @@ describe('SendStatusSyncService', () => {
         SendStatusSyncService,
         { provide: getRepositoryToken(NotificationAttempt), useValue: mockRepo },
         { provide: AppSettingsService, useValue: mockSettings },
-        { provide: PdndAuthService, useValue: mockPdndAuth },
       ],
     }).compile();
 
@@ -59,7 +56,7 @@ describe('SendStatusSyncService', () => {
 
     expect(mockFetch).toHaveBeenCalledWith(
       'https://send.test/delivery/v2.6/requests?requestId=req-1',
-      expect.objectContaining({ headers: { Authorization: 'Bearer voucher-abc' } }),
+      expect.objectContaining({ headers: { 'x-api-key': 'apikey-abc' } }),
     );
     expect(attempt.iun).toBe('IUN-123');
     expect(attempt.sendStatus).toBe('ACCEPTED');
@@ -124,7 +121,7 @@ describe('SendStatusSyncService', () => {
 
     expect(mockFetch).toHaveBeenCalledWith(
       'https://send.test/delivery/v2.9/notifications/sent/IUN-123',
-      expect.objectContaining({ headers: { Authorization: 'Bearer voucher-abc' } }),
+      expect.objectContaining({ headers: { 'x-api-key': 'apikey-abc' } }),
     );
     expect(attempt.sendStatus).toBe('DELIVERED');
     expect(mockRepo.save).toHaveBeenCalledWith(attempt);

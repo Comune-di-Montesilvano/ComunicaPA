@@ -606,10 +606,12 @@ export function App(): React.JSX.Element {
 
   const [settSendEnvironment, setSettSendEnvironment] = useState<'collaudo' | 'produzione'>('collaudo');
   const [settSendTestBaseUrl, setSettSendTestBaseUrl] = useState('https://api.uat.notifichedigitali.it');
+  const [settSendTestApiKey, setSettSendTestApiKey] = useState('');
   const [settSendTestPurposeId, setSettSendTestPurposeId] = useState('');
   const [settSendSenderTaxId, setSettSendSenderTaxId] = useState('');
   const [settSendTaxonomies, setSettSendTaxonomies] = useState<Array<{ code: string; label: string }>>([]);
   const [settSendProdBaseUrl, setSettSendProdBaseUrl] = useState('https://api.notifichedigitali.it');
+  const [settSendProdApiKey, setSettSendProdApiKey] = useState('');
   const [settSendProdPurposeId, setSettSendProdPurposeId] = useState('');
   const [settSendTesting, setSettSendTesting] = useState<'test' | 'prod' | null>(null);
   const [settSendTestResult, setSettSendTestResult] = useState<{ env: 'test' | 'prod'; ok: boolean; message: string } | null>(null);
@@ -784,6 +786,7 @@ export function App(): React.JSX.Element {
         // SMTP and PEC are loaded dynamically via fetchMailConfigs(); App IO via fetchIoServices()
         setSettSendEnvironment((String(s['send.environment'] ?? 'collaudo')) as 'collaudo' | 'produzione');
         setSettSendTestBaseUrl(String(s['send.test.baseUrl'] ?? ''));
+        setSettSendTestApiKey(String(s['send.test.apiKey'] ?? ''));
         setSettSendTestPurposeId(String(s['send.test.purposeId'] ?? ''));
         setSettSendSenderTaxId(String(s['send.senderTaxId'] ?? ''));
         try {
@@ -792,6 +795,7 @@ export function App(): React.JSX.Element {
           setSettSendTaxonomies([]);
         }
         setSettSendProdBaseUrl(String(s['send.prod.baseUrl'] ?? ''));
+        setSettSendProdApiKey(String(s['send.prod.apiKey'] ?? ''));
         setSettSendProdPurposeId(String(s['send.prod.purposeId'] ?? ''));
         setSettPdndTestTokenUrl(String(s['pdnd.test.tokenUrl'] ?? ''));
         setSettPdndTestAudience(String(s['pdnd.test.audience'] ?? ''));
@@ -1346,10 +1350,12 @@ export function App(): React.JSX.Element {
     // SMTP and PEC are saved via their own endpoints; App IO via /io-services
     'send.environment': settSendEnvironment,
     'send.test.baseUrl': settSendTestBaseUrl,
+    'send.test.apiKey': settSendTestApiKey,
     'send.test.purposeId': settSendTestPurposeId,
     'send.senderTaxId': settSendSenderTaxId,
     'send.enabledTaxonomyCodes': JSON.stringify(settSendTaxonomies),
     'send.prod.baseUrl': settSendProdBaseUrl,
+    'send.prod.apiKey': settSendProdApiKey,
     'send.prod.purposeId': settSendProdPurposeId,
     'pdnd.test.tokenUrl': settPdndTestTokenUrl,
     'pdnd.test.audience': settPdndTestAudience,
@@ -5421,9 +5427,11 @@ export function App(): React.JSX.Element {
                             {([
                               { label: 'Collaudo (UAT)', prefix: 'test' as const,
                                 baseUrl: settSendTestBaseUrl, setBaseUrl: setSettSendTestBaseUrl,
+                                apiKey: settSendTestApiKey, setApiKey: setSettSendTestApiKey,
                                 purposeId: settSendTestPurposeId, setPurposeId: setSettSendTestPurposeId },
                               { label: 'Produzione', prefix: 'prod' as const,
                                 baseUrl: settSendProdBaseUrl, setBaseUrl: setSettSendProdBaseUrl,
+                                apiKey: settSendProdApiKey, setApiKey: setSettSendProdApiKey,
                                 purposeId: settSendProdPurposeId, setPurposeId: setSettSendProdPurposeId },
                             ]).map((e) => (
                               <fieldset key={e.prefix} className="border rounded p-3 mb-3">
@@ -5438,8 +5446,19 @@ export function App(): React.JSX.Element {
                                     onChange={(ev) => e.setBaseUrl(ev.target.value)}
                                   />
                                 </div>
+                                <div className="mb-3">
+                                  <label className="form-label small fw-semibold text-muted" htmlFor={`send_${e.prefix}_apikey`}>API Key</label>
+                                  <input
+                                    type="password"
+                                    id={`send_${e.prefix}_apikey`}
+                                    className="form-control form-control-sm"
+                                    value={e.apiKey}
+                                    onChange={(ev) => e.setApiKey(ev.target.value)}
+                                  />
+                                  <div className="form-text small text-muted">Emessa dal portale self-care di PN (Piattaforma Notifiche) — header x-api-key, obbligatoria per l'invio reale.</div>
+                                </div>
                                 <div className="mb-1">
-                                  <label className="form-label small fw-semibold text-muted" htmlFor={`send_${e.prefix}_purposeid`}>Purpose ID</label>
+                                  <label className="form-label small fw-semibold text-muted" htmlFor={`send_${e.prefix}_purposeid`}>Purpose ID (PDND, non usato per l'invio SEND)</label>
                                   <input
                                     type="text"
                                     id={`send_${e.prefix}_purposeid`}
@@ -5447,7 +5466,7 @@ export function App(): React.JSX.Element {
                                     value={e.purposeId}
                                     onChange={(ev) => e.setPurposeId(ev.target.value)}
                                   />
-                                  <div className="form-text small text-muted">Le credenziali del client PDND (client ID, kid, chiave privata) si configurano nella scheda "Client PDND".</div>
+                                  <div className="form-text small text-muted">Non richiesto dall'API SEND (autentica via API Key sopra) — riservato a eventuali usi PDND futuri (es. INAD/INIPEC).</div>
                                 </div>
                                 <hr className="my-3" />
                                 <button
@@ -5456,7 +5475,7 @@ export function App(): React.JSX.Element {
                                   disabled={settSendTesting === e.prefix}
                                   onClick={() => handleTestSendConnection(e.prefix)}
                                 >
-                                  {settSendTesting === e.prefix ? 'Test in corso…' : 'Test connessione (voucher PDND)'}
+                                  {settSendTesting === e.prefix ? 'Test in corso…' : 'Test connessione (API Key)'}
                                 </button>
                                 <div className="form-text small text-muted">Salva le impostazioni e prova a ottenere un voucher PDND reale con client PDND + Purpose ID SEND.</div>
                                 {settSendTestResult?.env === e.prefix && (

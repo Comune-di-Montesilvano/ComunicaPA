@@ -34,8 +34,16 @@ export const SETTING_DEFS = {
   'pec.from': { env: 'PEC_FROM', type: 'string', default: 'noreply@pec.comunicapa.local' },
   'send.environment': { env: 'SEND_ENVIRONMENT', type: 'string', default: 'collaudo' },
   'send.test.baseUrl': { type: 'string', default: 'https://api.uat.notifichedigitali.it' },
+  // Autenticazione reale verso PN (api.notifichedigitali.it): header x-api-key
+  // emesso dal portale self-care PN, NON un voucher PDND — confermato dallo
+  // spec OpenAPI ufficiale (components.securitySchemes: solo ApiKeyAuth/
+  // x-api-key, nessuno schema OAuth2/Bearer in tutto lo spec). purposeId
+  // resta in registry per compatibilità dati ma non è più letto dal codice
+  // di invio: PDND non è coinvolto nell'autenticazione verso PN.
+  'send.test.apiKey': { type: 'string', secret: true, default: '' },
   'send.test.purposeId': { type: 'string', default: '' },
   'send.prod.baseUrl': { type: 'string', default: 'https://api.notifichedigitali.it' },
+  'send.prod.apiKey': { type: 'string', secret: true, default: '' },
   'send.prod.purposeId': { type: 'string', default: '' },
   'send.senderTaxId': { type: 'string', default: '' },
   'send.enabledTaxonomyCodes': { type: 'string', default: '[]' },

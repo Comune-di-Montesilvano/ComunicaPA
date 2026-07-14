@@ -842,11 +842,32 @@ export class CampaignsService {
     });
     const nextAttemptNumber = (lastAttempt?.attemptNumber ?? 0) + 1;
 
+    // SEND: se l'ultimo tentativo era già protocollato, il nuovo attempt eredita
+    // lo stesso protocolNumber/protocolYear/protocolledAt invece di richiedere un
+    // nuovo protocollo reale al demone — il documento non è cambiato, un retry
+    // (es. dopo un errore di configurazione/rete verso PN) non giustifica una
+    // nuova protocollazione. Riprotocolla da zero solo se l'ultimo tentativo
+    // non era mai arrivato a protocollare (protocolledAt ancora null).
+    const inheritedProtocol =
+      campaign.channelType === 'SEND' && lastAttempt?.protocolledAt
+        ? {
+            protocolNumber: lastAttempt.protocolNumber,
+            protocolYear: lastAttempt.protocolYear,
+            protocolledAt: lastAttempt.protocolledAt,
+          }
+        : {};
+
     const result = await this.attemptRepo
       .createQueryBuilder()
       .insert()
       .into(NotificationAttempt)
-      .values({ recipientId, channelType: campaign.channelType, status: AttemptStatus.QUEUED, attemptNumber: nextAttemptNumber })
+      .values({
+        recipientId,
+        channelType: campaign.channelType,
+        status: AttemptStatus.QUEUED,
+        attemptNumber: nextAttemptNumber,
+        ...inheritedProtocol,
+      })
       .returning('id')
       .execute();
     const attemptId = (result.raw as Array<{ id: string }>)[0].id;

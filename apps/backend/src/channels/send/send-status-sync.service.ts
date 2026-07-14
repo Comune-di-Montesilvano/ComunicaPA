@@ -5,7 +5,6 @@ import { Cron } from '@nestjs/schedule';
 import { NotificationAttempt } from '../../entities/notification-attempt.entity';
 import { AppSettingsService } from '../../settings/app-settings.service';
 import type { SettingKey } from '../../settings/settings.registry';
-import { PdndAuthService } from '../../pdnd/pdnd-auth.service';
 
 const BATCH_SIZE = 200;
 const TERMINAL_STATUSES = ['VIEWED', 'EFFECTIVE_DATE', 'UNREACHABLE', 'CANCELLED', 'RETURNED_TO_SENDER', 'REFUSED'];
@@ -18,7 +17,6 @@ export class SendStatusSyncService {
     @InjectRepository(NotificationAttempt)
     private readonly attemptRepo: Repository<NotificationAttempt>,
     private readonly settings: AppSettingsService,
-    private readonly pdndAuth: PdndAuthService,
   ) {}
 
   @Cron('*/15 * * * *')
@@ -27,16 +25,19 @@ export class SendStatusSyncService {
     await this.updateStatuses();
   }
 
-  private async getEnvAndBaseUrl(): Promise<{ envKey: 'test' | 'prod'; baseUrl: string; purposeId: string }> {
+  private async getEnvAndBaseUrl(): Promise<{ baseUrl: string; apiKey: string }> {
     const env = await this.settings.get<string>('send.environment');
     const envKey = env === 'produzione' ? 'prod' : 'test';
     const baseUrl = await this.settings.get<string>(`send.${envKey}.baseUrl` as SettingKey);
-    const purposeId = await this.settings.get<string>(`send.${envKey}.purposeId` as SettingKey);
-    return { envKey, baseUrl, purposeId };
+    // PN autentica via header x-api-key (portale self-care PN), non un voucher
+    // PDND — confermato dallo spec OpenAPI ufficiale (securitySchemes: solo
+    // ApiKeyAuth/x-api-key, nessun OAuth2/Bearer). Vedi settings.registry.ts.
+    const apiKey = await this.settings.get<string>(`send.${envKey}.apiKey` as SettingKey);
+    return { baseUrl, apiKey };
   }
 
   async resolveMissingIun(): Promise<void> {
-    const { envKey, baseUrl, purposeId } = await this.getEnvAndBaseUrl();
+    const { baseUrl, apiKey } = await this.getEnvAndBaseUrl();
     const attempts = await this.attemptRepo
       .createQueryBuilder('attempt')
       .where('attempt.channel_type = :ch', { ch: 'SEND' })
@@ -51,13 +52,12 @@ export class SendStatusSyncService {
       .getMany();
 
     if (attempts.length === 0) return;
-    const voucher = await this.pdndAuth.getVoucher(envKey, purposeId);
 
     for (const attempt of attempts) {
       const requestId = (attempt.responsePayload as Record<string, unknown>)['notificationRequestId'] as string;
       try {
         const res = await fetch(`${baseUrl}/delivery/v2.6/requests?requestId=${encodeURIComponent(requestId)}`, {
-          headers: { Authorization: `Bearer ${voucher}` },
+          headers: { 'x-api-key': apiKey },
         });
         const text = await res.text();
         if (!res.ok) {
@@ -83,7 +83,7 @@ export class SendStatusSyncService {
   }
 
   async updateStatuses(): Promise<void> {
-    const { envKey, baseUrl, purposeId } = await this.getEnvAndBaseUrl();
+    const { baseUrl, apiKey } = await this.getEnvAndBaseUrl();
     const attempts = await this.attemptRepo
       .createQueryBuilder('attempt')
       .where('attempt.channel_type = :ch', { ch: 'SEND' })
@@ -94,12 +94,11 @@ export class SendStatusSyncService {
       .getMany();
 
     if (attempts.length === 0) return;
-    const voucher = await this.pdndAuth.getVoucher(envKey, purposeId);
 
     for (const attempt of attempts) {
       try {
         const res = await fetch(`${baseUrl}/delivery/v2.9/notifications/sent/${attempt.iun}`, {
-          headers: { Authorization: `Bearer ${voucher}` },
+          headers: { 'x-api-key': apiKey },
         });
         const text = await res.text();
         if (!res.ok) {

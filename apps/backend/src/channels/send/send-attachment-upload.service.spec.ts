@@ -54,13 +54,13 @@ describe('SendAttachmentUploadService', () => {
       ])),
     });
 
-    const result = await service.preloadAndUpload('https://send.test', 'voucher-xyz', buffer, 'application/pdf', 'doc-0');
+    const result = await service.preloadAndUpload('https://send.test', 'apikey-xyz', buffer, 'application/pdf', 'doc-0');
 
     expect(mockFetch).toHaveBeenCalledWith(
       'https://send.test/delivery/attachments/preload',
       expect.objectContaining({
         method: 'POST',
-        headers: expect.objectContaining({ Authorization: 'Bearer voucher-xyz' }),
+        headers: expect.objectContaining({ 'x-api-key': 'apikey-xyz' }),
       }),
     );
     const preloadBody = JSON.parse((mockFetch.mock.calls[0][1] as any).body);
@@ -77,7 +77,7 @@ describe('SendAttachmentUploadService', () => {
   it('lancia errore leggibile se il preload fallisce', async () => {
     mockFetch.mockResolvedValue({ ok: false, status: 400, text: () => Promise.resolve('{"error":"bad request"}') });
     await expect(
-      service.preloadAndUpload('https://send.test', 'voucher-xyz', Buffer.from('x'), 'application/pdf', 'doc-0'),
+      service.preloadAndUpload('https://send.test', 'apikey-xyz', Buffer.from('x'), 'application/pdf', 'doc-0'),
     ).rejects.toThrow(/Preload allegato SEND fallito: HTTP 400/);
   });
 
@@ -101,7 +101,7 @@ describe('SendAttachmentUploadService', () => {
       ])),
     });
     await expect(
-      service.preloadAndUpload('https://send.test', 'voucher-xyz', Buffer.from('x'), 'application/pdf', 'doc-0'),
+      service.preloadAndUpload('https://send.test', 'apikey-xyz', Buffer.from('x'), 'application/pdf', 'doc-0'),
     ).rejects.toThrow(/Upload allegato SEND fallito: HTTP 500/);
     failServer.close();
   });
