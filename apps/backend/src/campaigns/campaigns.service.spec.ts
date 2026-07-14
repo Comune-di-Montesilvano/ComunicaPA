@@ -828,6 +828,27 @@ describe('CampaignsService', () => {
       expect(mockRecipientRepo.update).not.toHaveBeenCalled();
       expect(result).toEqual({ cancelled: 0, campaignId: 'c1' });
     });
+
+    it('per campagne SEND annulla via update diretto DB, senza toccare BullMQ', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, id: 'c1', status: CampaignStatus.QUEUED, channelType: 'SEND' });
+      mockRecipientRepo.find.mockResolvedValueOnce([{ id: 'r1' }, { id: 'r2' }]);
+      mockAttemptRepo.find = jest.fn().mockResolvedValueOnce([
+        { id: 'att-1', recipientId: 'r1' },
+        { id: 'att-2', recipientId: 'r2' },
+      ]);
+      mockAttemptRepo.update = jest.fn().mockResolvedValue(undefined);
+      mockRecipientRepo.update = jest.fn().mockResolvedValue(undefined);
+
+      const result = await service.cancel('c1');
+
+      expect(mockQueue.getJob).not.toHaveBeenCalled();
+      expect(mockAttemptRepo.update).toHaveBeenCalledWith(
+        { id: In(['att-1', 'att-2']), status: AttemptStatus.QUEUED },
+        { status: AttemptStatus.CANCELLED },
+      );
+      expect(mockRecipientRepo.update).toHaveBeenCalledWith({ id: In(['r1', 'r2']) }, { status: RecipientStatus.CANCELLED });
+      expect(result).toEqual({ cancelled: 2, campaignId: 'c1' });
+    });
   });
 });
 

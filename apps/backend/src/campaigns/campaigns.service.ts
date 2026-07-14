@@ -381,24 +381,44 @@ export class CampaignsService {
         where: { recipientId: In(recipientIds), status: AttemptStatus.QUEUED },
       });
 
-      const removedAttemptIds: string[] = [];
-      const removedRecipientIds: string[] = [];
-      for (const attempt of liveAttempts) {
-        const job = await this.notificationQueues.getJob(campaign.channelType, attempt.id);
-        if (!job) continue;
-        try {
-          await job.remove();
-          removedAttemptIds.push(attempt.id);
-          removedRecipientIds.push(attempt.recipientId);
-        } catch (err) {
-          this.logger.warn(
-            `Job ${attempt.id} non rimosso (probabilmente in elaborazione): ${err instanceof Error ? err.message : err}`,
+      let removedAttemptIds: string[];
+      let removedRecipientIds: string[];
+
+      if (campaign.channelType === 'SEND') {
+        // SEND non passa da BullMQ: annulla tutti gli attempt ancora QUEUED
+        // (non protocollati, o protocollati ma non ancora inviati — in
+        // entrambi i casi lo status resta QUEUED finché SendDispatchService
+        // non lo marca SUCCESS/FAILED) con un update diretto su DB.
+        removedAttemptIds = liveAttempts.map((a) => a.id);
+        removedRecipientIds = liveAttempts.map((a) => a.recipientId);
+        if (removedAttemptIds.length > 0) {
+          await this.attemptRepo.update(
+            { id: In(removedAttemptIds), status: AttemptStatus.QUEUED },
+            { status: AttemptStatus.CANCELLED },
           );
+        }
+      } else {
+        removedAttemptIds = [];
+        removedRecipientIds = [];
+        for (const attempt of liveAttempts) {
+          const job = await this.notificationQueues.getJob(campaign.channelType, attempt.id);
+          if (!job) continue;
+          try {
+            await job.remove();
+            removedAttemptIds.push(attempt.id);
+            removedRecipientIds.push(attempt.recipientId);
+          } catch (err) {
+            this.logger.warn(
+              `Job ${attempt.id} non rimosso (probabilmente in elaborazione): ${err instanceof Error ? err.message : err}`,
+            );
+          }
+        }
+        if (removedAttemptIds.length > 0) {
+          await this.attemptRepo.update({ id: In(removedAttemptIds) }, { status: AttemptStatus.CANCELLED });
         }
       }
 
-      if (removedAttemptIds.length > 0) {
-        await this.attemptRepo.update({ id: In(removedAttemptIds) }, { status: AttemptStatus.CANCELLED });
+      if (removedRecipientIds.length > 0) {
         await this.recipientRepo.update({ id: In(removedRecipientIds) }, { status: RecipientStatus.CANCELLED });
 
         // Il destinatario cancellato non riceverà mai la notifica: l'allegato
