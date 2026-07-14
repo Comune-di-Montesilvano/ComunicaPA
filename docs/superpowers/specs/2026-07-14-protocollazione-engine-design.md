@@ -152,6 +152,18 @@ rimuovere il job BullMQ corrispondente (stesso try/catch già usato nel
 branch non-SEND per gli altri canali) — difesa aggiuntiva insieme al guard
 nel processor (punto 3), non sostitutiva.
 
+### 6-bis. Widget SEND globale esistente in Motori — rimuove colonna ridondante
+
+`GET admin/engines/send/stage-counts` (`engines.controller.ts:42-56`) perde
+il calcolo/campo `queued` ("in coda da protocollare") — quel numero ora è
+già visibile come conteggio del motore Protocollazione (waiting/active
+della sua coda BullMQ), mostrarlo due volte in punti diversi della stessa
+tab è confuso. Restano `protocollato`/`inviato`/`fallito` (uniche colonne
+non mostrate altrove: la profondità della coda poll di `SendDispatchService`
+non ha altra visibilità). Frontend: widget SEND esistente in Motori
+(righe ~6497-6529) passa da 4 a 3 colonne, rimuove "In coda (da
+protocollare)".
+
 ### 6. `EnginesController`/UI Motori — riga Protocollazione
 
 `list()` itera su `Object.keys(ENGINE_QUEUES)` invece di `QUEUED_CHANNELS`
