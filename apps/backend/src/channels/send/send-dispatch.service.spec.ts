@@ -217,4 +217,37 @@ describe('SendDispatchService', () => {
       { pagoPa: { noticeCode: '999888777', creditorTaxId: '00223344556', applyCost: true } },
     ]);
   });
+
+  it('include physicalAddress nel destinatario se physicalAddressConfig risolve dati validi', async () => {
+    const attempt = makeAttempt({
+      recipient: {
+        id: 'r1',
+        codiceFiscale: 'RSSMRA85M01H501Z',
+        fullName: 'Mario Rossi',
+        extraData: { indirizzo: 'Via Roma 1', comune: 'Comuneesempio', cap: '00000', prov: 'XX' },
+        campaign: {
+          id: 'camp-1',
+          name: 'TARI',
+          retentionDays: null,
+          channelConfig: {
+            subject: 'Avviso',
+            taxonomyCode: '010101P',
+            physicalAddressConfig: { enabled: true, addressColumn: 'indirizzo', municipalityColumn: 'comune', zipColumn: 'cap', provinceColumn: 'prov' },
+          },
+        } as unknown as Campaign,
+      } as unknown as Recipient,
+    });
+    mockBatch([attempt]);
+
+    await service.handleCron();
+
+    const sendCall = mockFetch.mock.calls.find(([url]) => url === 'https://send.test/delivery/v2.6/requests');
+    const payload = JSON.parse(sendCall![1].body as string);
+    expect(payload.recipients[0].physicalAddress).toEqual({
+      address: 'Via Roma 1',
+      municipality: 'Comuneesempio',
+      zip: '00000',
+      province: 'XX',
+    });
+  });
 });

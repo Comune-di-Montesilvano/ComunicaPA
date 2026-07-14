@@ -7,6 +7,13 @@ export interface ResolvedPaymentData {
   dueDateIso: string | null;
 }
 
+export interface ResolvedPhysicalAddress {
+  address: string;
+  municipality: string;
+  zip?: string;
+  province?: string;
+}
+
 export function getColumnValue(recipient: Recipient, columnName?: string): string {
   if (!columnName) return '';
   const col = columnName.toLowerCase().trim();
@@ -94,4 +101,31 @@ export function resolvePaymentData(
   creditorTaxId = creditorTaxId.toUpperCase().trim();
 
   return { noticeCode, amountCents, creditorTaxId, dueDateIso };
+}
+
+/**
+ * Risolve l'indirizzo fisico di fallback per SEND (PN richiede physicalAddress
+ * quando non riesce a risolvere un domicilio digitale legale per il
+ * destinatario, es. via ANPR/INAD): address e municipality sono obbligatori
+ * nello schema PN, ritorna null se anche solo uno dei due non risolve.
+ */
+export function resolvePhysicalAddress(
+  recipient: Recipient,
+  physicalAddressConfig: Record<string, any> | undefined,
+): ResolvedPhysicalAddress | null {
+  if (!physicalAddressConfig || !physicalAddressConfig.enabled) return null;
+
+  const address = getColumnValue(recipient, physicalAddressConfig.addressColumn).trim();
+  const municipality = getColumnValue(recipient, physicalAddressConfig.municipalityColumn).trim();
+  if (!address || !municipality) return null;
+
+  const zip = getColumnValue(recipient, physicalAddressConfig.zipColumn).trim();
+  const province = getColumnValue(recipient, physicalAddressConfig.provinceColumn).trim();
+
+  return {
+    address,
+    municipality,
+    ...(zip ? { zip } : {}),
+    ...(province ? { province } : {}),
+  };
 }

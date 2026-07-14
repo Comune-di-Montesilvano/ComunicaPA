@@ -1,4 +1,4 @@
-import { resolvePaymentData } from './payment-config.util';
+import { resolvePaymentData, resolvePhysicalAddress } from './payment-config.util';
 import type { Recipient } from '../entities/recipient.entity';
 
 function makeRecipient(extraData: Record<string, unknown> = {}): Recipient {
@@ -100,5 +100,57 @@ describe('resolvePaymentData', () => {
       creditorTaxId: null,
       dueDateIso: '2026-12-31T23:59:59.000Z',
     });
+  });
+});
+
+describe('resolvePhysicalAddress', () => {
+  it('ritorna null se physicalAddressConfig è undefined', () => {
+    expect(resolvePhysicalAddress(makeRecipient(), undefined)).toBeNull();
+  });
+
+  it('ritorna null se physicalAddressConfig.enabled è false', () => {
+    expect(resolvePhysicalAddress(makeRecipient(), { enabled: false })).toBeNull();
+  });
+
+  it('risolve address/municipality/zip/province dalle colonne configurate', () => {
+    const recipient = makeRecipient({
+      indirizzo: 'Via Roma 1',
+      comune: 'Comuneesempio',
+      cap: '00000',
+      prov: 'XX',
+    });
+    const result = resolvePhysicalAddress(recipient, {
+      enabled: true,
+      addressColumn: 'indirizzo',
+      municipalityColumn: 'comune',
+      zipColumn: 'cap',
+      provinceColumn: 'prov',
+    });
+    expect(result).toEqual({
+      address: 'Via Roma 1',
+      municipality: 'Comuneesempio',
+      zip: '00000',
+      province: 'XX',
+    });
+  });
+
+  it('ritorna null se manca address o municipality (entrambi obbligatori per PN)', () => {
+    const recipient = makeRecipient({ indirizzo: 'Via Roma 1' });
+    const result = resolvePhysicalAddress(recipient, {
+      enabled: true,
+      addressColumn: 'indirizzo',
+      municipalityColumn: 'comune', // colonna assente
+    });
+    expect(result).toBeNull();
+  });
+
+  it('omette zip/province se non configurati o non risolti', () => {
+    const recipient = makeRecipient({ indirizzo: 'Via Roma 1', comune: 'Roma' });
+    const result = resolvePhysicalAddress(recipient, {
+      enabled: true,
+      addressColumn: 'indirizzo',
+      municipalityColumn: 'comune',
+    });
+    expect(result).toEqual({ address: 'Via Roma 1', municipality: 'Roma' });
   });
 });

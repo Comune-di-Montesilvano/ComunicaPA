@@ -10,7 +10,7 @@ import type { SettingKey } from '../../settings/settings.registry';
 import { PdndAuthService } from '../../pdnd/pdnd-auth.service';
 import { AttachmentService, resolveAttachmentsConfig } from '../../attachments/attachment.service';
 import { SendAttachmentUploadService } from './send-attachment-upload.service';
-import { resolvePaymentData } from '../payment-config.util';
+import { resolvePaymentData, resolvePhysicalAddress } from '../payment-config.util';
 import { getEffectiveRetentionDays } from '../../campaigns/retention.util';
 
 const BATCH_SIZE = 200;
@@ -164,6 +164,13 @@ export class SendDispatchService {
         ? [{ pagoPa: { noticeCode: resolvedPayment.noticeCode, creditorTaxId: resolvedPayment.creditorTaxId, applyCost: true } }]
         : undefined;
 
+    // PN richiede physicalAddress quando non risolve un domicilio digitale
+    // legale per il destinatario (es. non trovato su ANPR/INAD) — errore reale
+    // riscontrato in produzione: "PhysicalAddress cannot be null". Configurabile
+    // per campagna (colonne CSV), analogo a paymentConfig.
+    const physicalAddressConfig = cfg['physicalAddressConfig'] as Record<string, unknown> | undefined;
+    const physicalAddress = resolvePhysicalAddress(recipient, physicalAddressConfig);
+
     const senderTaxId = await this.settings.get<string>('send.senderTaxId' as SettingKey);
     const senderDenomination = await this.settings.get<string>('brand.name' as SettingKey);
     const taxonomyCode = cfg['taxonomyCode'] as string;
@@ -188,6 +195,7 @@ export class SendDispatchService {
         taxId: recipient.codiceFiscale,
         denomination: recipient.fullName ?? recipient.codiceFiscale,
         ...(payments ? { payments } : {}),
+        ...(physicalAddress ? { physicalAddress } : {}),
       }],
       documents,
     };
