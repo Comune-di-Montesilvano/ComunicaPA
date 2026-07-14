@@ -4,7 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import Redis from 'ioredis';
 import type { AppConfiguration } from '../config/configuration';
-import { CHANNEL_QUEUES, THROTTLE_REDIS } from './notification-job.types';
+import { CHANNEL_QUEUES, PROTOCOLLAZIONE_QUEUE, THROTTLE_REDIS } from './notification-job.types';
 import {
   EmailNotificationProcessor,
   PecNotificationProcessor,
@@ -16,6 +16,8 @@ import { NotificationAttempt } from '../entities/notification-attempt.entity';
 import { Campaign } from '../entities/campaign.entity';
 import { Recipient } from '../entities/recipient.entity';
 import { ChannelModule } from '../channels/channel.module';
+import { ProtocolloModule } from '../protocollo/protocollo.module';
+import { AttachmentModule } from '../attachments/attachment.module';
 
 @Module({
   imports: [
@@ -34,9 +36,12 @@ import { ChannelModule } from '../channels/channel.module';
     }),
     BullModule.registerQueue(
       ...Object.values(CHANNEL_QUEUES).map((name) => ({ name })),
+      { name: PROTOCOLLAZIONE_QUEUE },
     ),
     TypeOrmModule.forFeature([NotificationAttempt, Campaign, Recipient]),
     ChannelModule,
+    ProtocolloModule,
+    AttachmentModule,
   ],
   providers: [
     EmailNotificationProcessor,

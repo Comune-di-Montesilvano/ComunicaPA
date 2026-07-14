@@ -1,7 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { getQueueToken } from '@nestjs/bullmq';
 import { NotificationQueuesService } from './notification-queues.service';
-import { CHANNEL_QUEUES } from './notification-job.types';
+import { CHANNEL_QUEUES, PROTOCOLLAZIONE_QUEUE } from './notification-job.types';
 
 describe('NotificationQueuesService.getJobsDetail', () => {
   const mockJob = {
@@ -22,6 +22,7 @@ describe('NotificationQueuesService.getJobsDetail', () => {
         { provide: getQueueToken(CHANNEL_QUEUES.PEC), useValue: {} },
         { provide: getQueueToken(CHANNEL_QUEUES.APP_IO), useValue: {} },
         { provide: getQueueToken(CHANNEL_QUEUES.POSTAL), useValue: {} },
+        { provide: getQueueToken(PROTOCOLLAZIONE_QUEUE), useValue: {} },
       ],
     }).compile();
 
@@ -55,6 +56,7 @@ describe('NotificationQueuesService.getJob', () => {
         { provide: getQueueToken(CHANNEL_QUEUES.PEC), useValue: {} },
         { provide: getQueueToken(CHANNEL_QUEUES.APP_IO), useValue: {} },
         { provide: getQueueToken(CHANNEL_QUEUES.POSTAL), useValue: {} },
+        { provide: getQueueToken(PROTOCOLLAZIONE_QUEUE), useValue: {} },
       ],
     }).compile();
 
@@ -74,6 +76,7 @@ describe('NotificationQueuesService.getJob', () => {
         { provide: getQueueToken(CHANNEL_QUEUES.PEC), useValue: {} },
         { provide: getQueueToken(CHANNEL_QUEUES.APP_IO), useValue: {} },
         { provide: getQueueToken(CHANNEL_QUEUES.POSTAL), useValue: {} },
+        { provide: getQueueToken(PROTOCOLLAZIONE_QUEUE), useValue: {} },
       ],
     }).compile();
 

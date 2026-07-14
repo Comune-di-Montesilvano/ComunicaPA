@@ -2,63 +2,63 @@ import { Injectable } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
 import type { NotificationJobData } from '@comunicapa/shared-types';
-import { CHANNEL_QUEUES } from './notification-job.types';
-
-type QueuedChannel = keyof typeof CHANNEL_QUEUES;
+import { CHANNEL_QUEUES, PROTOCOLLAZIONE_QUEUE, type EngineName } from './notification-job.types';
 
 @Injectable()
 export class NotificationQueuesService {
-  private readonly queues: Map<QueuedChannel, Queue<NotificationJobData>>;
+  private readonly queues: Map<EngineName, Queue<NotificationJobData>>;
 
   constructor(
     @InjectQueue(CHANNEL_QUEUES.EMAIL) emailQueue: Queue<NotificationJobData>,
     @InjectQueue(CHANNEL_QUEUES.PEC) pecQueue: Queue<NotificationJobData>,
     @InjectQueue(CHANNEL_QUEUES.APP_IO) appIoQueue: Queue<NotificationJobData>,
     @InjectQueue(CHANNEL_QUEUES.POSTAL) postalQueue: Queue<NotificationJobData>,
+    @InjectQueue(PROTOCOLLAZIONE_QUEUE) protocollazioneQueue: Queue<NotificationJobData>,
   ) {
     this.queues = new Map([
       ['EMAIL', emailQueue],
       ['PEC', pecQueue],
       ['APP_IO', appIoQueue],
       ['POSTAL', postalQueue],
+      ['PROTOCOLLAZIONE', protocollazioneQueue],
     ]);
   }
 
-  getQueue(channel: QueuedChannel): Queue<NotificationJobData> {
+  getQueue(channel: EngineName): Queue<NotificationJobData> {
     const queue = this.queues.get(channel);
-    if (!queue) throw new Error(`Nessuna coda registrata per il canale ${channel}`);
+    if (!queue) throw new Error(`Nessuna coda registrata per il motore ${channel}`);
     return queue;
   }
 
   addBulk(
-    channel: QueuedChannel,
+    channel: EngineName,
     jobs: Array<{ name: string; data: NotificationJobData; opts?: { jobId?: string } }>,
   ) {
     return this.getQueue(channel).addBulk(jobs);
   }
 
-  getJob(channel: QueuedChannel, jobId: string) {
+  getJob(channel: EngineName, jobId: string) {
     return this.getQueue(channel).getJob(jobId);
   }
 
-  getJobCounts(channel: QueuedChannel): Promise<Record<string, number>> {
+  getJobCounts(channel: EngineName): Promise<Record<string, number>> {
     return this.getQueue(channel).getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed') as Promise<Record<string, number>>;
   }
 
-  isPaused(channel: QueuedChannel): Promise<boolean> {
+  isPaused(channel: EngineName): Promise<boolean> {
     return this.getQueue(channel).isPaused();
   }
 
-  pause(channel: QueuedChannel): Promise<void> {
+  pause(channel: EngineName): Promise<void> {
     return this.getQueue(channel).pause();
   }
 
-  resume(channel: QueuedChannel): Promise<void> {
+  resume(channel: EngineName): Promise<void> {
     return this.getQueue(channel).resume();
   }
 
   async getJobsDetail(
-    channel: QueuedChannel,
+    channel: EngineName,
     status: 'failed' | 'completed' | 'active' | 'waiting' | 'delayed',
     limit = 50,
   ): Promise<Array<{
@@ -84,7 +84,7 @@ export class NotificationQueuesService {
     }));
   }
 
-  async getJobLogs(channel: QueuedChannel, jobId: string): Promise<string[]> {
+  async getJobLogs(channel: EngineName, jobId: string): Promise<string[]> {
     const { logs } = await this.getQueue(channel).getJobLogs(jobId);
     return logs;
   }
