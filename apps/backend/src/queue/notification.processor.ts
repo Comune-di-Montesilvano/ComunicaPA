@@ -89,16 +89,16 @@ export class NotificationProcessor extends WorkerHost {
     }
 
     // Guardia contro redelivery BullMQ: se il worker crasha/stalla tra il "send"
-    // side-effecting (che per SEND registra un nuovo protocollo reale e può far
-    // accettare a PN una seconda notifica legale, vedi send.strategy.ts) e la
-    // scrittura SUCCESS su DB, il job può essere ri-consegnato. Rileggiamo
-    // l'attempt fresco da DB (non dai dati del job, potenzialmente stantii).
-    // Due casi distinti, gestiti diversamente:
+    // side-effecting sul provider esterno (EMAIL/PEC/APP_IO/POSTAL — SEND non
+    // passa più da questo processor, vedi ProtocollazioneSyncService/
+    // SendDispatchService) e la scrittura SUCCESS su DB, il job può essere
+    // ri-consegnato. Rileggiamo l'attempt fresco da DB (non dai dati del job,
+    // potenzialmente stantii). Due casi distinti, gestiti diversamente:
     // 1. status già SUCCESS: il run precedente ha completato per intero (incluso
     //    l'incremento di sentCount) — non c'è nulla da fare, un secondo giro
     //    incrementerebbe i contatori due volte. Log e uscita.
-    // 2. status non ancora SUCCESS ma responsePayload contiene già
-    //    notificationRequestId (scritto subito dopo che strategy.send() ha
+    // 2. status non ancora SUCCESS ma responsePayload contiene già un
+    //    identificativo esterno (scritto subito dopo che strategy.send() ha
     //    ottenuto l'ack dal provider esterno, vedi sotto): il provider ha già
     //    accettato l'invio ma il worker è morto prima di completare gli
     //    aggiornamenti finali (recipient/campaign/attempt SUCCESS). In questo

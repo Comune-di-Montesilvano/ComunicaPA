@@ -28,6 +28,7 @@ function interpolate(template: string, vars: Record<string, string>): string {
 @Injectable()
 export class SendDispatchService {
   private readonly logger = new Logger(SendDispatchService.name);
+  private running = false;
 
   constructor(
     @InjectRepository(NotificationAttempt)
@@ -44,6 +45,19 @@ export class SendDispatchService {
 
   @Cron('*/2 * * * *')
   async handleCron(): Promise<void> {
+    if (this.running) {
+      this.logger.warn('Tick precedente di SendDispatchService ancora in corso — salto questo giro per evitare doppio invio.');
+      return;
+    }
+    this.running = true;
+    try {
+      await this.runOnce();
+    } finally {
+      this.running = false;
+    }
+  }
+
+  private async runOnce(): Promise<void> {
     const attempts = await this.attemptRepo
       .createQueryBuilder('attempt')
       .leftJoinAndSelect('attempt.recipient', 'recipient')
@@ -153,18 +167,36 @@ export class SendDispatchService {
     const retentionDays = getEffectiveRetentionDays(campaign, retentionMaxDays);
     const attachmentExpiresAt = new Date(Date.now() + retentionDays * 86400 * 1000);
 
-    attempt.status = AttemptStatus.SUCCESS;
-    attempt.sentAt = new Date();
-    attempt.responsePayload = responsePayload;
-    await this.attemptRepo.save(attempt);
+    // Update guardato su status=QUEUED (non blind save): se l'attempt è stato
+    // annullato (cancel()) mentre l'invio a PN era in volo, non deve tornare
+    // indietro a SUCCESS né gonfiare sentCount per una notifica che l'operatore
+    // ha già considerato cancellata.
+    const result = await this.attemptRepo.update(
+      { id: attempt.id, status: AttemptStatus.QUEUED },
+      // responsePayload è una colonna jsonb tipata Record<string, unknown> | null:
+      // il tipo _QueryDeepPartialEntity di TypeORM prova a rendere l'oggetto
+      // ricorsivamente parziale e non combacia con un Record generico — cast
+      // esplicito, stesso pattern necessario per qualunque colonna jsonb "libera".
+      { status: AttemptStatus.SUCCESS, sentAt: new Date(), responsePayload } as unknown as Parameters<typeof this.attemptRepo.update>[1],
+    );
+    if (!result.affected) {
+      this.logger.warn(`Attempt ${attempt.id} non più QUEUED (probabile cancel() concorrente) — invio a PN riuscito ma esito SUCCESS non applicato, contatori non toccati.`);
+      return;
+    }
     await this.recipientRepo.update(attempt.recipient.id, { status: RecipientStatus.SENT, attachmentExpiresAt });
     await this.campaignRepo.increment({ id: campaign.id }, 'sentCount', 1);
   }
 
   private async markFailed(attempt: NotificationAttempt, message: string): Promise<void> {
-    attempt.status = AttemptStatus.FAILED;
-    attempt.errorMessage = message;
-    await this.attemptRepo.save(attempt);
+    // Stesso guard di markSuccess: non sovrascrivere un attempt non più QUEUED.
+    const result = await this.attemptRepo.update(
+      { id: attempt.id, status: AttemptStatus.QUEUED },
+      { status: AttemptStatus.FAILED, errorMessage: message },
+    );
+    if (!result.affected) {
+      this.logger.warn(`Attempt ${attempt.id} non più QUEUED (probabile cancel() concorrente) — invio a PN fallito ma esito FAILED non applicato, contatori non toccati.`);
+      return;
+    }
     await this.recipientRepo.update(attempt.recipient.id, { status: RecipientStatus.FAILED });
     await this.campaignRepo.increment({ id: attempt.recipient.campaign.id }, 'failedCount', 1);
   }

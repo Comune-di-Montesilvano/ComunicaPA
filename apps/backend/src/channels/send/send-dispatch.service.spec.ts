@@ -30,7 +30,7 @@ describe('SendDispatchService', () => {
     take: jest.fn().mockReturnThis(),
     getMany: jest.fn(),
   };
-  const mockAttemptRepo = { createQueryBuilder: jest.fn(() => mockQb), save: jest.fn().mockResolvedValue(undefined) };
+  const mockAttemptRepo = { createQueryBuilder: jest.fn(() => mockQb), update: jest.fn().mockResolvedValue({ affected: 1 }) };
   const mockRecipientRepo = { update: jest.fn().mockResolvedValue(undefined) };
   const mockCampaignRepo = { increment: jest.fn().mockResolvedValue(undefined) };
   const mockSettings = { get: jest.fn(async (key: string) => settingsValues[key]) };
@@ -99,11 +99,13 @@ describe('SendDispatchService', () => {
     expect(payload.paProtocolNumber).toBe('111/2026');
     expect(payload.idempotenceToken).toBe('att-1');
 
-    expect(mockAttemptRepo.save).toHaveBeenCalledWith(expect.objectContaining({
-      id: 'att-1',
-      status: AttemptStatus.SUCCESS,
-      responsePayload: expect.objectContaining({ notificationRequestId: 'req-001' }),
-    }));
+    expect(mockAttemptRepo.update).toHaveBeenCalledWith(
+      { id: 'att-1', status: AttemptStatus.QUEUED },
+      expect.objectContaining({
+        status: AttemptStatus.SUCCESS,
+        responsePayload: expect.objectContaining({ notificationRequestId: 'req-001' }),
+      }),
+    );
     expect(mockRecipientRepo.update).toHaveBeenCalledWith('r1', expect.objectContaining({ status: RecipientStatus.SENT }));
     expect(mockCampaignRepo.increment).toHaveBeenCalledWith({ id: 'camp-1' }, 'sentCount', 1);
   });
@@ -114,9 +116,22 @@ describe('SendDispatchService', () => {
 
     await service.handleCron();
 
-    expect(mockAttemptRepo.save).toHaveBeenCalledWith(expect.objectContaining({ id: 'att-1', status: AttemptStatus.FAILED }));
+    expect(mockAttemptRepo.update).toHaveBeenCalledWith(
+      { id: 'att-1', status: AttemptStatus.QUEUED },
+      expect.objectContaining({ status: AttemptStatus.FAILED }),
+    );
     expect(mockRecipientRepo.update).toHaveBeenCalledWith('r1', expect.objectContaining({ status: RecipientStatus.FAILED }));
     expect(mockCampaignRepo.increment).toHaveBeenCalledWith({ id: 'camp-1' }, 'failedCount', 1);
+  });
+
+  it('non aggiorna recipient/campaign se l\'attempt non è più QUEUED (cancellato durante l\'invio)', async () => {
+    mockAttemptRepo.update.mockResolvedValueOnce({ affected: 0 });
+    mockQb.getMany.mockResolvedValueOnce([makeAttempt()]);
+
+    await service.handleCron();
+
+    expect(mockRecipientRepo.update).not.toHaveBeenCalled();
+    expect(mockCampaignRepo.increment).not.toHaveBeenCalled();
   });
 
   it('include payments nel destinatario se paymentConfig risolve dati validi', async () => {

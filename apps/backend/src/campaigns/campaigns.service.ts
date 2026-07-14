@@ -275,6 +275,16 @@ export class CampaignsService {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
+    // SEND richiede sempre protocollazione preventiva (ProtocollazioneSyncService
+    // pesca solo attempt con channelConfig.protocolla=true; SendDispatchService
+    // pesca solo attempt già protocollati) — se il wizard non l'ha impostato,
+    // una campagna SEND resterebbe QUEUED per sempre senza errore visibile.
+    // Fail fast qui, come faceva SendStrategy.send() prima della migrazione ai demoni.
+    if (campaign.channelType === 'SEND' && campaign.channelConfig?.['protocolla'] !== true) {
+      await this.campaignRepo.update({ id: campaignId }, { status: CampaignStatus.DRAFT });
+      throw new BadRequestException('Protocollazione obbligatoria per SEND: channelConfig.protocolla deve essere true');
+    }
+
     const missingAttachments = await this.findMissingAttachments(campaign);
     if (missingAttachments.length > 0) {
       await this.campaignRepo.update({ id: campaignId }, { status: CampaignStatus.DRAFT });

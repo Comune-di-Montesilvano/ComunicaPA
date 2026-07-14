@@ -221,6 +221,23 @@ describe('CampaignsService', () => {
     expect(result).toEqual({ launched: 1, campaignId: 'c1' });
   });
 
+  it('launch rifiuta campagne SEND senza channelConfig.protocolla=true (fail fast, niente insert attempt)', async () => {
+    mockCampaignQb.execute.mockResolvedValueOnce({ affected: 1 });
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'SEND', channelConfig: {} });
+
+    await expect(service.launch('c-no-protocolla')).rejects.toThrow(BadRequestException);
+    expect(mockAttemptRepo.createQueryBuilder).not.toHaveBeenCalled();
+    expect(mockCampaignRepo.update).toHaveBeenCalledWith({ id: 'c-no-protocolla' }, { status: CampaignStatus.DRAFT });
+  });
+
+  it('launch rifiuta campagne SEND con channelConfig.protocolla=false', async () => {
+    mockCampaignQb.execute.mockResolvedValueOnce({ affected: 1 });
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'SEND', channelConfig: { protocolla: false } });
+
+    await expect(service.launch('c-protocolla-false')).rejects.toThrow(BadRequestException);
+    expect(mockAttemptRepo.createQueryBuilder).not.toHaveBeenCalled();
+  });
+
   it('uploadCsv uses increment for totalRecipients instead of update (no overwrite)', async () => {
     mockCampaignRepo.findOneBy.mockResolvedValueOnce(null);
     await expect(

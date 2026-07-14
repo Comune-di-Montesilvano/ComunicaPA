@@ -17,6 +17,7 @@ const BATCH_SIZE = 200;
 @Injectable()
 export class ProtocollazioneSyncService {
   private readonly logger = new Logger(ProtocollazioneSyncService.name);
+  private running = false;
 
   constructor(
     @InjectRepository(NotificationAttempt)
@@ -27,6 +28,19 @@ export class ProtocollazioneSyncService {
 
   @Cron('*/2 * * * *')
   async handleCron(): Promise<void> {
+    if (this.running) {
+      this.logger.warn('Tick precedente di ProtocollazioneSyncService ancora in corso — salto questo giro per evitare doppia protocollazione.');
+      return;
+    }
+    this.running = true;
+    try {
+      await this.runOnce();
+    } finally {
+      this.running = false;
+    }
+  }
+
+  private async runOnce(): Promise<void> {
     const attempts = await this.attemptRepo
       .createQueryBuilder('attempt')
       .leftJoinAndSelect('attempt.recipient', 'recipient')
