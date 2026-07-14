@@ -575,6 +575,33 @@ export class CampaignsService {
   }
 
   /**
+   * Conteggi a stadi per la barra di progresso SEND nel dettaglio di UNA
+   * campagna (versione scoped di `GET admin/engines/send/stage-counts`, che
+   * conta invece su tutte le campagne). Stessa forma `{queued, protocollato,
+   * inviato, fallito}`.
+   */
+  async getSendStageCounts(campaignId: string): Promise<{ queued: number; protocollato: number; inviato: number; fallito: number }> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+
+    const baseQb = () =>
+      this.attemptRepo
+        .createQueryBuilder('attempt')
+        .innerJoin('attempt.recipient', 'recipient')
+        .where('recipient.campaignId = :campaignId', { campaignId })
+        .andWhere('attempt.channel_type = :ch', { ch: 'SEND' });
+
+    const [queued, protocollato, inviato, fallito] = await Promise.all([
+      baseQb().andWhere('attempt.status = :status', { status: AttemptStatus.QUEUED }).andWhere('attempt.protocolled_at IS NULL').getCount(),
+      baseQb().andWhere('attempt.status = :status', { status: AttemptStatus.QUEUED }).andWhere('attempt.protocolled_at IS NOT NULL').getCount(),
+      baseQb().andWhere('attempt.status = :status', { status: AttemptStatus.SUCCESS }).getCount(),
+      baseQb().andWhere('attempt.status = :status', { status: AttemptStatus.FAILED }).getCount(),
+    ]);
+
+    return { queued, protocollato, inviato, fallito };
+  }
+
+  /**
    * Combinazione canali di download per destinatario, tra i soli destinatari
    * notificati con successo (primario SENT, oppure App IO co-consegna
    * riuscita nonostante il primario fallito). I destinatari mai notificati

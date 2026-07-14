@@ -395,6 +395,11 @@ export class CampaignsController {
     return this.campaignsService.getDownloadCombinationStats(id);
   }
 
+  @Get(':id/send-stage-counts')
+  getSendStageCounts(@Param('id', ParseUUIDPipe) id: string) {
+    return this.campaignsService.getSendStageCounts(id);
+  }
+
   @Get('stats/global')
   getGlobalStats(
     @Query('dateFrom') dateFrom?: string,

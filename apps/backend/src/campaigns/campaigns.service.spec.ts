@@ -1007,6 +1007,32 @@ describe('CampaignsService', () => {
       expect(result).toEqual({ cancelled: 1, campaignId: 'c1' });
     });
   });
+
+  describe('CampaignsService.getSendStageCounts', () => {
+    it('conta gli attempt SEND per stadio, filtrati per campagna', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ id: 'camp-1', channelType: 'SEND' });
+      const mockQb = {
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getCount: jest.fn()
+          .mockResolvedValueOnce(3)  // queued (non protocollato)
+          .mockResolvedValueOnce(2)  // protocollato non inviato
+          .mockResolvedValueOnce(10) // inviato
+          .mockResolvedValueOnce(1), // fallito
+      };
+      mockAttemptRepo.createQueryBuilder.mockReturnValue(mockQb);
+
+      const result = await service.getSendStageCounts('camp-1');
+
+      expect(result).toEqual({ queued: 3, protocollato: 2, inviato: 10, fallito: 1 });
+    });
+
+    it('lancia NotFoundException se la campagna non esiste', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce(null);
+      await expect(service.getSendStageCounts('camp-inesistente')).rejects.toThrow(NotFoundException);
+    });
+  });
 });
 
 describe('CampaignsService.getDuplicateSource', () => {
