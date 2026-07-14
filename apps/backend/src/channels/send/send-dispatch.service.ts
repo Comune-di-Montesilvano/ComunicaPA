@@ -13,6 +13,7 @@ import { SendAttachmentUploadService } from './send-attachment-upload.service';
 import { resolvePaymentData, resolvePhysicalAddress } from '../payment-config.util';
 import { getEffectiveRetentionDays } from '../../campaigns/retention.util';
 import { CampaignCompletionService } from '../../campaigns/campaign-completion.service';
+import { resolveSubjectTemplate } from '../subject-mapping.util';
 
 const BATCH_SIZE = 200;
 
@@ -118,7 +119,7 @@ export class SendDispatchService {
     const voucher = await this.pdndAuth.getVoucher(envKey, purposeId);
 
     const vars: Record<string, string> = { fullName: recipient.fullName ?? '', codiceFiscale: recipient.codiceFiscale };
-    const subject = interpolate((cfg['subject'] as string) ?? campaign.name, vars);
+    const subject = interpolate(resolveSubjectTemplate(campaign, recipient), vars);
     const paProtocolNumber = `${attempt.protocolNumber}/${attempt.protocolYear}`;
 
     const attachmentsConfig = resolveAttachmentsConfig(campaign.channelConfig);

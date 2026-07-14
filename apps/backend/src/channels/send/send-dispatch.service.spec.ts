@@ -297,4 +297,18 @@ describe('SendDispatchService', () => {
 
     expect(mockCompletion.checkAndComplete).toHaveBeenCalledWith('camp-1');
   });
+
+  it('usa l\'oggetto per-destinatario quando csvMapping.subject è configurato', async () => {
+    const attempt = makeAttempt();
+    (attempt.recipient as any).campaign.channelConfig.csvMapping = { subject: 'oggetto_custom' };
+    (attempt.recipient as any).extraData = { oggetto_custom: 'Oggetto specifico per Mario' };
+    mockBatch([attempt]);
+
+    await service.handleCron();
+
+    const sendCall = mockFetch.mock.calls.find(([url]) => url === 'https://send.test/delivery/v2.6/requests');
+    const body = JSON.parse(sendCall![1].body);
+    expect(body.subject).toBe('Oggetto specifico per Mario');
+    expect(body.documents[0].title).toBe('Oggetto specifico per Mario');
+  });
 });

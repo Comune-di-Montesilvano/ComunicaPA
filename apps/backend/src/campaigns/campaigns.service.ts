@@ -15,6 +15,7 @@ import { processTemplate, wrapInHtmlLayout } from '../channels/template.helper';
 import { getEffectiveRetentionDays } from './retention.util';
 import { getUploadsDir } from '../attachments/attachment-paths';
 import { resolveAttachmentsConfig, resolveCustomAttachmentFilename } from '../attachments/attachment.service';
+import { resolveSubjectTemplate } from '../channels/subject-mapping.util';
 import { Campaign, CampaignStatus } from '../entities/campaign.entity';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity';
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity';
@@ -125,7 +126,7 @@ export class CampaignsService {
     if (!recipient) throw new NotFoundException(`Recipient ${recipientId} not found`);
 
     const campaign = recipient.campaign;
-    const subjectTemplate = (campaign.channelConfig?.['subject'] as string) || campaign.name;
+    const subjectTemplate = resolveSubjectTemplate(campaign, recipient);
     const bodyTemplate = (campaign.channelConfig?.['body'] as string) || '';
     const attachmentLabels = resolveAttachmentsConfig(campaign.channelConfig).map((a) => a.label);
 
