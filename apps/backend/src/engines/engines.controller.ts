@@ -3,12 +3,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Not, IsNull, Repository } from 'typeorm';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { NotificationQueuesService } from '../queue/notification-queues.service';
-import { QUEUED_CHANNELS } from '../queue/notification-job.types';
+import { ENGINE_NAMES, type EngineName } from '../queue/notification-job.types';
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity';
-import type { NotificationChannel } from '@comunicapa/shared-types';
 
-function isQueuedChannel(channel: NotificationChannel): channel is Exclude<NotificationChannel, 'SEND'> {
-  return (QUEUED_CHANNELS as readonly NotificationChannel[]).includes(channel);
+function isEngineName(name: string): name is EngineName {
+  return (ENGINE_NAMES as readonly string[]).includes(name);
 }
 
 @Controller('admin/engines')
@@ -23,14 +22,14 @@ export class EnginesController {
   @Roles('admin', 'user')
   async list() {
     const engines = await Promise.all(
-      QUEUED_CHANNELS.map(async (channel) => {
+      ENGINE_NAMES.map(async (name) => {
         const [paused, counts] = await Promise.all([
-          this.queues.isPaused(channel),
-          this.queues.getJobCounts(channel),
+          this.queues.isPaused(name),
+          this.queues.getJobCounts(name),
         ]);
         return {
-          channel,
-          queueName: `notifications-${channel.toLowerCase()}`,
+          channel: name,
+          queueName: `notifications-${name.toLowerCase()}`,
           paused,
           counts,
         };
@@ -42,26 +41,23 @@ export class EnginesController {
   @Get('send/stage-counts')
   @Roles('admin', 'user')
   async sendStageCounts() {
-    const [queued, protocollato, inviato, fallito] = await Promise.all([
-      this.attemptRepo.count({
-        where: { channelType: 'SEND', status: AttemptStatus.QUEUED, protocolledAt: IsNull() },
-      }),
+    const [protocollato, inviato, fallito] = await Promise.all([
       this.attemptRepo.count({
         where: { channelType: 'SEND', status: AttemptStatus.QUEUED, protocolledAt: Not(IsNull()) },
       }),
       this.attemptRepo.count({ where: { channelType: 'SEND', status: AttemptStatus.SUCCESS } }),
       this.attemptRepo.count({ where: { channelType: 'SEND', status: AttemptStatus.FAILED } }),
     ]);
-    return { queued, protocollato, inviato, fallito };
+    return { protocollato, inviato, fallito };
   }
 
   @Post(':channel/pause')
   @Roles('admin')
   @HttpCode(HttpStatus.OK)
   async pause(@Param('channel') channel: string) {
-    const uc = channel.toUpperCase() as NotificationChannel;
-    if (!isQueuedChannel(uc)) {
-      throw new BadRequestException(`Canale ${channel} non supportato`);
+    const uc = channel.toUpperCase();
+    if (!isEngineName(uc)) {
+      throw new BadRequestException(`Motore ${channel} non supportato`);
     }
     await this.queues.pause(uc);
     return { success: true, channel: uc, paused: true };
@@ -71,9 +67,9 @@ export class EnginesController {
   @Roles('admin')
   @HttpCode(HttpStatus.OK)
   async resume(@Param('channel') channel: string) {
-    const uc = channel.toUpperCase() as NotificationChannel;
-    if (!isQueuedChannel(uc)) {
-      throw new BadRequestException(`Canale ${channel} non supportato`);
+    const uc = channel.toUpperCase();
+    if (!isEngineName(uc)) {
+      throw new BadRequestException(`Motore ${channel} non supportato`);
     }
     await this.queues.resume(uc);
     return { success: true, channel: uc, paused: false };
@@ -86,9 +82,9 @@ export class EnginesController {
     @Query('status') status = 'failed',
     @Query('limit') limit = '50',
   ) {
-    const uc = channel.toUpperCase() as NotificationChannel;
-    if (!isQueuedChannel(uc)) {
-      throw new BadRequestException(`Canale ${channel} non supportato`);
+    const uc = channel.toUpperCase();
+    if (!isEngineName(uc)) {
+      throw new BadRequestException(`Motore ${channel} non supportato`);
     }
     const allowedStatuses = ['failed', 'completed', 'active', 'waiting', 'delayed'] as const;
     if (!allowedStatuses.includes(status as (typeof allowedStatuses)[number])) {
@@ -106,9 +102,9 @@ export class EnginesController {
   @Get(':channel/jobs/:jobId/logs')
   @Roles('admin', 'user')
   async jobLogs(@Param('channel') channel: string, @Param('jobId') jobId: string) {
-    const uc = channel.toUpperCase() as NotificationChannel;
-    if (!isQueuedChannel(uc)) {
-      throw new BadRequestException(`Canale ${channel} non supportato`);
+    const uc = channel.toUpperCase();
+    if (!isEngineName(uc)) {
+      throw new BadRequestException(`Motore ${channel} non supportato`);
     }
     const logs = await this.queues.getJobLogs(uc, jobId);
     return { channel: uc, jobId, logs };

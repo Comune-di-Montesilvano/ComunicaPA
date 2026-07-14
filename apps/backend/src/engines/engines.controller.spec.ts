@@ -35,15 +35,16 @@ describe('EnginesController', () => {
     controller = module.get<EnginesController>(EnginesController);
   });
 
-  it('list() ritorna lo stato di tutti i canali', async () => {
+  it('list() ritorna lo stato di tutti i motori (4 canali + protocollazione)', async () => {
     const res = await controller.list();
-    expect(res.engines).toHaveLength(4);
+    expect(res.engines).toHaveLength(5);
     expect(res.engines[0]).toEqual({
       channel: 'EMAIL',
       queueName: 'notifications-email',
       paused: false,
       counts: { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 },
     });
+    expect(res.engines.map((e: any) => e.channel)).toContain('PROTOCOLLAZIONE');
   });
 
   it('pause() mette in pausa un canale valido', async () => {
@@ -73,15 +74,14 @@ describe('EnginesController', () => {
     await expect(controller.jobs('fax', 'failed', '10')).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('GET send/stage-counts ritorna i contatori per stadio SEND', async () => {
+  it('GET send/stage-counts ritorna i contatori (senza queued, ora nel motore protocollazione)', async () => {
     mockAttemptRepo.count
-      .mockResolvedValueOnce(3) // queued (non protocollato)
       .mockResolvedValueOnce(2) // protocollato non inviato
       .mockResolvedValueOnce(10) // inviato
       .mockResolvedValueOnce(1); // fallito
 
     const result = await controller.sendStageCounts();
 
-    expect(result).toEqual({ queued: 3, protocollato: 2, inviato: 10, fallito: 1 });
+    expect(result).toEqual({ protocollato: 2, inviato: 10, fallito: 1 });
   });
 });
