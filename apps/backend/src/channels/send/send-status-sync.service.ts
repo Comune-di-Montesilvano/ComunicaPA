@@ -21,7 +21,7 @@ export class SendStatusSyncService {
     private readonly pdndAuth: PdndAuthService,
   ) {}
 
-  @Cron('*/15 * * * *')
+  @Cron('*/5 * * * *')
   async handleCron(): Promise<void> {
     await this.resolveMissingIun();
     await this.updateStatuses();
