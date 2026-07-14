@@ -27,7 +27,6 @@ describe('SettingsController — GET/PUT', () => {
 
 describe('SettingsController — SEND test-connection (x-api-key + voucher PDND)', () => {
   const mockFetch = jest.fn();
-  global.fetch = mockFetch as unknown as typeof fetch;
 
   const values: Record<string, unknown> = {
     'send.test.baseUrl': 'https://send.test',
@@ -39,6 +38,12 @@ describe('SettingsController — SEND test-connection (x-api-key + voucher PDND)
   const controller = new SettingsController(settingsMock as never, pdndAuthMock as never);
 
   beforeEach(() => {
+    // Riassegnato ad ogni test: più describe block in questo file impostano
+    // global.fetch al proprio mock locale a livello di describe-body (eseguito
+    // in fase di collection, prima di qualsiasi test) — l'ultima assegnazione
+    // vince altrimenti per l'intero file, indipendentemente da quale describe
+    // sta eseguendo i propri test.
+    global.fetch = mockFetch as unknown as typeof fetch;
     mockFetch.mockClear();
     pdndAuthMock.getVoucher.mockClear();
   });
@@ -95,5 +100,76 @@ describe('SettingsController — SEND test-connection (x-api-key + voucher PDND)
 
     expect(res.success).toBe(false);
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('SettingsController — SEND groups (elenco gruppi PN self-care)', () => {
+  const mockFetch = jest.fn();
+
+  const values: Record<string, unknown> = {
+    'send.test.baseUrl': 'https://send.test',
+    'send.test.apiKey': '',
+  };
+  const settingsMock = { get: jest.fn(async (key: string) => values[key]) };
+  const pdndAuthMock = { getVoucher: jest.fn(async () => 'voucher-abc') };
+  const controller = new SettingsController(settingsMock as never, pdndAuthMock as never);
+
+  beforeEach(() => {
+    // Vedi commento nel describe block "SEND test-connection" sopra.
+    global.fetch = mockFetch as unknown as typeof fetch;
+    mockFetch.mockClear();
+  });
+
+  it('ritorna errore leggibile senza chiamare PN se apiKey non è configurata', async () => {
+    values['send.test.apiKey'] = '';
+    const res = await controller.getSendGroups('test');
+    expect(res.groups).toEqual([]);
+    expect(res.error).toContain('API Key');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('chiama solo x-api-key (nessun voucher PDND) e ritorna i gruppi ACTIVE', async () => {
+    values['send.test.apiKey'] = 'apikey-real';
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => [
+        { id: 'g1', name: 'Tributi', description: 'Ufficio tributi', status: 'ACTIVE' },
+        { id: 'g2', name: 'Vecchio', description: 'Non più attivo', status: 'DELETED' },
+      ],
+    });
+
+    const res = await controller.getSendGroups('test');
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://send.test/ext-registry-b2b/pa/v1/groups?statusFilter=ACTIVE',
+      { headers: { 'x-api-key': 'apikey-real' } },
+    );
+    expect(res.groups).toEqual([{ id: 'g1', name: 'Tributi', description: 'Ufficio tributi', status: 'ACTIVE' }]);
+    expect(res.error).toBeUndefined();
+  });
+
+  it('ritorna errore leggibile (HTTP 200) se PN risponde con errore, senza lanciare eccezione', async () => {
+    values['send.test.apiKey'] = 'apikey-invalid';
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 403 });
+
+    const res = await controller.getSendGroups('test');
+
+    expect(res.groups).toEqual([]);
+    expect(res.error).toContain('403');
+  });
+
+  it('ritorna errore leggibile se la chiamata di rete fallisce', async () => {
+    values['send.test.apiKey'] = 'apikey-real';
+    mockFetch.mockRejectedValueOnce(new Error('network down'));
+
+    const res = await controller.getSendGroups('test');
+
+    expect(res.groups).toEqual([]);
+    expect(res.error).toBe('network down');
+  });
+
+  it('rifiuta env non valido con BadRequestException', async () => {
+    await expect(controller.getSendGroups('staging')).rejects.toThrow('Ambiente non valido');
   });
 });

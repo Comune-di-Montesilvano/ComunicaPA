@@ -208,6 +208,36 @@ export class SettingsController {
     }
   }
 
+  @Get('send/:env/groups')
+  @HttpCode(HttpStatus.OK)
+  async getSendGroups(@Param('env') env: string): Promise<{ groups: Array<{ id: string; name: string; description: string; status: string }>; error?: string }> {
+    // /ext-registry-b2b/pa/v1/groups (repo pn-external-registries) richiede
+    // SOLO x-api-key — a differenza di /delivery/*, questo endpoint NON
+    // richiede il voucher PDND (securitySchemes: solo ApiKeyAuth). Sempre
+    // HTTP 200 anche in errore: il reverse proxy esterno in produzione
+    // sostituisce il body delle risposte non-2xx (vedi CLAUDE.md).
+    if (env !== 'test' && env !== 'prod') {
+      throw new BadRequestException('Ambiente non valido: usare "test" o "prod"');
+    }
+    const baseUrl = await this.appSettings.get<string>(`send.${env}.baseUrl` as SettingKey);
+    const apiKey = await this.appSettings.get<string>(`send.${env}.apiKey` as SettingKey);
+    if (!apiKey) {
+      return { groups: [], error: `API Key SEND (${env}) non configurata.` };
+    }
+    try {
+      const res = await fetch(`${baseUrl}/ext-registry-b2b/pa/v1/groups?statusFilter=ACTIVE`, {
+        headers: { 'x-api-key': apiKey },
+      });
+      if (!res.ok) {
+        return { groups: [], error: `PN ha rifiutato la richiesta gruppi: HTTP ${res.status}.` };
+      }
+      const data = (await res.json()) as Array<{ id: string; name: string; description: string; status: string }>;
+      return { groups: data.filter((g) => g.status === 'ACTIVE') };
+    } catch (error: any) {
+      return { groups: [], error: error.message || 'Errore sconosciuto durante il recupero dei gruppi PN.' };
+    }
+  }
+
   @Post('inad/:env/test-connection')
   @HttpCode(HttpStatus.OK)
   async testInadConnection(@Param('env') env: string) {
