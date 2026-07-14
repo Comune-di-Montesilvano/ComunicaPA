@@ -8,15 +8,17 @@ import { AttachmentService } from '../attachments/attachment.service';
 describe('ProtocollazioneSyncService', () => {
   let service: ProtocollazioneSyncService;
   const mockQb = {
-    leftJoinAndSelect: jest.fn().mockReturnThis(),
+    innerJoin: jest.fn().mockReturnThis(),
+    select: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
     take: jest.fn().mockReturnThis(),
-    getMany: jest.fn(),
+    getRawMany: jest.fn(),
   };
   const mockAttemptRepo = {
     createQueryBuilder: jest.fn(() => mockQb),
+    find: jest.fn(),
     save: jest.fn().mockResolvedValue(undefined),
   };
   const mockProtocollo = { protocolla: jest.fn() };
@@ -37,11 +39,12 @@ describe('ProtocollazioneSyncService', () => {
   });
 
   it('interroga attempt QUEUED non protocollati di campagne con protocolla=true', async () => {
-    mockQb.getMany.mockResolvedValueOnce([]);
+    mockQb.getRawMany.mockResolvedValueOnce([]);
     await service.handleCron();
     expect(mockQb.where).toHaveBeenCalledWith('attempt.status = :status', { status: AttemptStatus.QUEUED });
     expect(mockQb.andWhere).toHaveBeenCalledWith('attempt.protocolled_at IS NULL');
     expect(mockQb.andWhere).toHaveBeenCalledWith("campaign.channel_config ->> 'protocolla' = 'true'");
+    expect(mockAttemptRepo.find).not.toHaveBeenCalled();
   });
 
   it('protocolla un attempt e scrive protocolNumber/protocolYear/protocolledAt', async () => {
@@ -53,11 +56,15 @@ describe('ProtocollazioneSyncService', () => {
         campaign: { name: 'TARI', channelConfig: { subject: 'Avviso TARI' } },
       } as any,
     };
-    mockQb.getMany.mockResolvedValueOnce([attempt]);
+    mockQb.getRawMany.mockResolvedValueOnce([{ id: 'att-1' }]);
+    mockAttemptRepo.find.mockResolvedValueOnce([attempt]);
     mockProtocollo.protocolla.mockResolvedValueOnce({ numeroProtocollo: 111, annoProtocollo: 2026, dataProtocollazione: '14/07/2026' });
 
     await service.handleCron();
 
+    expect(mockAttemptRepo.find).toHaveBeenCalledWith(expect.objectContaining({
+      relations: { recipient: { campaign: true } },
+    }));
     expect(mockProtocollo.protocolla).toHaveBeenCalledWith(expect.objectContaining({
       oggetto: 'Avviso TARI',
       destinatario: expect.objectContaining({ codiceFiscale: 'RSSMRA85M01H501Z', nome: 'Mario', cognome: 'Rossi' }),
@@ -79,7 +86,8 @@ describe('ProtocollazioneSyncService', () => {
       id: 'att-2',
       recipient: { codiceFiscale: 'BBB', fullName: 'C D', campaign: { name: 'X', channelConfig: {} } } as any,
     };
-    mockQb.getMany.mockResolvedValueOnce([attempt1, attempt2]);
+    mockQb.getRawMany.mockResolvedValueOnce([{ id: 'att-1' }, { id: 'att-2' }]);
+    mockAttemptRepo.find.mockResolvedValueOnce([attempt1, attempt2]);
     mockProtocollo.protocolla
       .mockRejectedValueOnce(new Error('SOAP timeout'))
       .mockResolvedValueOnce({ numeroProtocollo: 5, annoProtocollo: 2026, dataProtocollazione: '14/07/2026' });

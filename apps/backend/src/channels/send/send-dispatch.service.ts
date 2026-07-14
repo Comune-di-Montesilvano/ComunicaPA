@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Cron } from '@nestjs/schedule';
 import { NotificationAttempt, AttemptStatus } from '../../entities/notification-attempt.entity';
 import { Campaign } from '../../entities/campaign.entity';
@@ -58,17 +58,34 @@ export class SendDispatchService {
   }
 
   private async runOnce(): Promise<void> {
-    const attempts = await this.attemptRepo
-      .createQueryBuilder('attempt')
-      .leftJoinAndSelect('attempt.recipient', 'recipient')
-      .leftJoinAndSelect('recipient.campaign', 'campaign')
-      .where('attempt.channel_type = :ch', { ch: 'SEND' })
-      .andWhere('attempt.status = :status', { status: AttemptStatus.QUEUED })
-      .andWhere('attempt.protocolled_at IS NOT NULL')
-      .andWhere("attempt.response_payload ->> 'notificationRequestId' IS NULL")
-      .orderBy('attempt.created_at', 'ASC')
-      .take(BATCH_SIZE)
-      .getMany();
+    // Due query separate invece di un unico leftJoinAndSelect+orderBy+take:
+    // TypeORM (0.3.30) lancia "Cannot read properties of undefined (reading
+    // 'databaseName')" in createOrderByCombinedWithSelectExpression quando
+    // take()+orderBy() sono combinati con leftJoinAndSelect su relazioni
+    // dichiarate per stringa (@ManyToOne('Campaign', ...)) come in questo
+    // schema — bug interno riproducibile in isolamento, non risolvibile
+    // riordinando le chiamate del query builder. La prima query (nessun join)
+    // seleziona solo gli id nell'ordine/limite corretti; la seconda carica le
+    // relazioni per quegli id, senza orderBy/take.
+    const candidateIds = (
+      await this.attemptRepo
+        .createQueryBuilder('attempt')
+        .select('attempt.id', 'id')
+        .where('attempt.channel_type = :ch', { ch: 'SEND' })
+        .andWhere('attempt.status = :status', { status: AttemptStatus.QUEUED })
+        .andWhere('attempt.protocolled_at IS NOT NULL')
+        .andWhere("attempt.response_payload ->> 'notificationRequestId' IS NULL")
+        .orderBy('attempt.created_at', 'ASC')
+        .take(BATCH_SIZE)
+        .getRawMany<{ id: string }>()
+    ).map((row) => row.id);
+
+    if (candidateIds.length === 0) return;
+
+    const attempts = await this.attemptRepo.find({
+      where: { id: In(candidateIds) },
+      relations: { recipient: { campaign: true } },
+    });
 
     for (const attempt of attempts) {
       try {
