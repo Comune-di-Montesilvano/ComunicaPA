@@ -123,7 +123,14 @@ export class GlobalComClient {
     }
     this.logger.debug(`createSession: LoginAsync risposta = ${JSON.stringify(loginResult)}`);
     if (!loginResult.LoginResult) {
-      throw new Error(`Login GlobalCom fallito: ${loginResult.message || 'credenziali non valide'}`);
+      // Il messaggio è quello letterale del server GlobalCom — verificato in
+      // test reale che risponde con lo stesso identico testo ("La
+      // combinazione di utente e gruppo non è valida") sia per uno username/
+      // gruppo effettivamente sbagliato sia per una password errata: non
+      // distingue le due cause lato loro. Nota aggiunta per non far perdere
+      // tempo a controllare solo utente/gruppo quando la causa più comune è
+      // la password.
+      throw new Error(`Login GlobalCom fallito: ${loginResult.message || 'credenziali non valide'} (verifica anche la password, non solo utente/gruppo — GlobalCom usa lo stesso messaggio per entrambe le cause)`);
     }
     const setCookie = (client as any).lastResponseHeaders?.['set-cookie'];
     if (setCookie) {
