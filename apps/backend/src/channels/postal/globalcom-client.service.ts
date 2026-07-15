@@ -46,6 +46,22 @@ export interface GbcDocStatus {
   descrizione?: string;
 }
 
+export interface GbcContratto {
+  codiceContratto: string;
+  descrizione: string;
+  tipologia: string;
+}
+
+export interface GbcInfoUtenza {
+  operazioneRiuscita: boolean;
+  messaggioErrore?: string;
+  centroDiCosto?: string;
+  /** ServiceType leggibili/inviabili dall'utenza — popola il dropdown del wizard campagna. */
+  prodottiDisponibili: string[];
+  /** Codici contratto disponibili per i Servizio Market/Contest/Atto Giudiziario. */
+  contratti: GbcContratto[];
+}
+
 function toInfoIndirizzoExt(addr: GbcAddress): Record<string, unknown> {
   return {
     Denominazione1: addr.denominazione1,
@@ -201,5 +217,52 @@ export class GlobalComClient {
     const [result] = await (client as any).dettagli_documentoAsync({ IDPRO: idPro });
     if (!result.dettagli_documentoResult || !result.Risposta) return null;
     return mapDocStatus(result.Risposta);
+  }
+
+  /**
+   * Audit permessi/contratti dell'utenza (manuale §2.2.60) — solo
+   * informativo, nessun invio: usato dal tasto "Test" del provider per
+   * scoprire automaticamente quali Servizio l'utenza può davvero inviare e
+   * con quali codici contratto, invece di farli configurare a mano
+   * (verificato in test reale: un'utenza può essere abilitata solo su
+   * varianti Market/Contest, mai su Lettera/Raccomandata standard, e i
+   * codici contratto sono specifici per utenza — nessun default valido).
+   */
+  async informazioniUtenza(creds: GbcCredentials): Promise<GbcInfoUtenza> {
+    const client = await this.createSession(creds);
+    const [result] = await (client as any).InformazioniUtenzaAsync({});
+    const info = result.InformazioniUtenzaResult as Record<string, unknown>;
+    if (!info?.['OperazioneRiuscita']) {
+      return {
+        operazioneRiuscita: false,
+        messaggioErrore: (info?.['MessaggioErrore'] as string) || 'Recupero informazioni utenza fallito',
+        prodottiDisponibili: [],
+        contratti: [],
+      };
+    }
+    // ProdottiDisponibili/ContrattiH2H sono tipi WSDL "ArrayOfX" anche in
+    // risposta (ArrayOfServiceType/ArrayOfDatiContrattoCOLMOLExt): l'elemento
+    // ripetuto sta dentro un wrapper con il nome del TIPO, non del campo —
+    // stesso pattern verificato per Destinatari/Files in invioExtSingolo.
+    const prodottiWrapper = info['ProdottiDisponibili'] as { ServiceType?: string | string[] } | undefined;
+    const prodotti = prodottiWrapper?.ServiceType;
+    const prodottiDisponibili = Array.isArray(prodotti) ? prodotti : prodotti ? [prodotti] : [];
+    const contrattiWrapper = info['ContrattiH2H'] as {
+      DatiContrattoCOLMOLExt?:
+        | { CodiceContratto?: string; Descrizione?: string; Tipologia?: string }
+        | Array<{ CodiceContratto?: string; Descrizione?: string; Tipologia?: string }>;
+    } | undefined;
+    const contrattiRaw = contrattiWrapper?.DatiContrattoCOLMOLExt;
+    const contrattiList = Array.isArray(contrattiRaw) ? contrattiRaw : contrattiRaw ? [contrattiRaw] : [];
+    return {
+      operazioneRiuscita: true,
+      centroDiCosto: (info['CentroDiCosto'] as string) || undefined,
+      prodottiDisponibili: prodottiDisponibili as string[],
+      contratti: contrattiList.map((c) => ({
+        codiceContratto: c.CodiceContratto || '',
+        descrizione: c.Descrizione || '',
+        tipologia: c.Tipologia || '',
+      })),
+    };
   }
 }

@@ -14,6 +14,7 @@ import { CitizenModule } from './citizen/citizen.module';
 import { PublicDownloadModule } from './public-download/public-download.module';
 import { SettingsModule } from './settings/settings.module';
 import { MailConfigsModule } from './mail-configs/mail-configs.module';
+import { PostalProvidersModule } from './postal-providers/postal-providers.module';
 import { EnginesModule } from './engines/engines.module';
 import { IoServicesModule } from './io-services/io-services.module';
 import { NotificationsSearchModule } from './notifications-search/notifications-search.module';
@@ -40,6 +41,7 @@ import configuration from './config/configuration';
     PublicDownloadModule,
     SettingsModule,
     MailConfigsModule,
+    PostalProvidersModule,
     EnginesModule,
     IoServicesModule,
     NotificationsSearchModule,

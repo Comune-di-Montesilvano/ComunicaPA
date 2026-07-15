@@ -16,7 +16,7 @@ import { SendAttachmentUploadService } from './send/send-attachment-upload.servi
 import { SendStatusSyncService } from './send/send-status-sync.service';
 import { SendDispatchService } from './send/send-dispatch.service';
 import { PostalStrategy } from './postal/postal.strategy';
-import { GlobalComClient } from './postal/globalcom-client.service';
+import { GlobalComClientModule } from './postal/globalcom-client.module';
 import { PostalStatusSyncService } from './postal/postal-status-sync.service';
 import { CampaignCompletionService } from '../campaigns/campaign-completion.service';
 
@@ -25,13 +25,13 @@ import { CampaignCompletionService } from '../campaigns/campaign-completion.serv
     PdndModule,
     ProtocolloModule,
     AttachmentModule,
+    GlobalComClientModule,
     TypeOrmModule.forFeature([NotificationAttempt, Campaign, Recipient]),
   ],
   providers: [
     EmailStrategy,
     PecStrategy,
     AppIoStrategy,
-    GlobalComClient,
     PostalStrategy,
     SendAttachmentUploadService,
     SendStatusSyncService,

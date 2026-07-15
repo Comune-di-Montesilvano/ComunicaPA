@@ -3,8 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Cron } from '@nestjs/schedule';
 import { NotificationAttempt, AttemptStatus } from '../../entities/notification-attempt.entity';
-import { AppSettingsService } from '../../settings/app-settings.service';
-import { GlobalComClient, type GbcCredentials } from './globalcom-client.service';
+import { PostalProvidersService } from '../../postal-providers/postal-providers.service';
+import { GlobalComClient } from './globalcom-client.service';
 
 const BATCH_SIZE = 200;
 // GBCStatus terminali (manuale §3.1) — tutti gli altri sono transitori e
@@ -25,7 +25,7 @@ export class PostalStatusSyncService {
   constructor(
     @InjectRepository(NotificationAttempt)
     private readonly attemptRepo: Repository<NotificationAttempt>,
-    private readonly settings: AppSettingsService,
+    private readonly providers: PostalProvidersService,
     private readonly globalCom: GlobalComClient,
   ) {}
 
@@ -43,12 +43,9 @@ export class PostalStatusSyncService {
 
     if (attempts.length === 0) return;
 
-    const creds: GbcCredentials = {
-      baseUrl: await this.settings.get<string>('postal.baseUrl'),
-      user: await this.settings.get<string>('postal.user'),
-      password: await this.settings.get<string>('postal.password'),
-      group: await this.settings.get<string>('postal.group'),
-    };
+    const provider = await this.providers.getActive();
+    if (!provider) return;
+    const creds = provider.creds;
 
     for (const attempt of attempts) {
       try {

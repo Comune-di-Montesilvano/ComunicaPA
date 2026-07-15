@@ -88,28 +88,11 @@ export const SETTING_DEFS = {
   'protocollo.unitaOrganizzativa': { type: 'string', default: '1' },
   'protocollo.mittenteDenominazione': { type: 'string', default: '' },
 
-  // GlobalCom (corrispondenzadigitale.it) — postalizzazione reale canale
-  // POSTAL. baseUrl è specifico per installazione (sottodominio comunale),
-  // nessun default valido generico.
-  'postal.baseUrl': { type: 'string', default: '' },
-  'postal.user': { type: 'string', default: '' },
-  'postal.password': { type: 'string', secret: true, default: '' },
-  'postal.group': { type: 'string', default: '' },
-  'postal.centroDiCosto': { type: 'string', default: '' },
-  // Obbligatorio per i Servizio "Market"/"Contest" (es. RaccomandataMarket4,
-  // LetteraContest4 — utenze abilitate solo su questi tier via canale
-  // Postel/Irideos invece che Poste H2H dirette): senza CodiceContratto
-  // valorizzato GlobalCom rifiuta l'invio con "È necessario specificare un
-  // contratto <Servizio> valido per questa spedizione" — verificato in test
-  // con credenziali reali. Non richiesto per Lettera/Raccomandata standard.
-  'postal.codiceContratto': { type: 'string', default: '' },
-  // Mittente esplicito facoltativo: se denominazione1 è vuoto, si usa il
-  // mittente predefinito dell'utenza GlobalCom (UsaMittentePredefinito=true).
-  'postal.mittente.denominazione1': { type: 'string', default: '' },
-  'postal.mittente.indirizzo1': { type: 'string', default: '' },
-  'postal.mittente.cap': { type: 'string', default: '' },
-  'postal.mittente.citta': { type: 'string', default: '' },
-  'postal.mittente.provincia': { type: 'string', default: '' },
+  // Postalizzazione (GlobalCom e futuri provider): NON qui — vive nella
+  // tabella dedicata postal_provider_configs (multi-provider, come
+  // mail_server_configs per EMAIL/PEC), gestita da PostalProvidersService.
+  // Tipologie abilitate e codici contratto sono scoperti automaticamente dal
+  // tasto "Test" (InformazioniUtenza), non configurabili a mano.
 
   'system.publicUrl': {
     env: 'PUBLIC_BACKEND_URL',

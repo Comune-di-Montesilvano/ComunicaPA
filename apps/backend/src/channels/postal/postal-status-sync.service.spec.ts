@@ -2,17 +2,22 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { PostalStatusSyncService } from './postal-status-sync.service';
 import { GlobalComClient } from './globalcom-client.service';
-import { AppSettingsService } from '../../settings/app-settings.service';
+import { PostalProvidersService, type ResolvedPostalProvider } from '../../postal-providers/postal-providers.service';
 import { NotificationAttempt } from '../../entities/notification-attempt.entity';
 
 describe('PostalStatusSyncService', () => {
   let service: PostalStatusSyncService;
   let globalCom: jest.Mocked<GlobalComClient>;
+  let providers: jest.Mocked<PostalProvidersService>;
   let attemptRepo: { find: jest.Mock; save: jest.Mock; createQueryBuilder: jest.Mock };
 
-  const settingsMap: Record<string, unknown> = {
-    'postal.baseUrl': 'https://esempio.corrispondenzadigitale.it/gbcweb/GBCWebservice.asmx',
-    'postal.user': 'u', 'postal.password': 'p', 'postal.group': 'g',
+  const activeProvider: ResolvedPostalProvider = {
+    id: 'provider-1',
+    creds: { baseUrl: 'https://esempio.corrispondenzadigitale.it/gbcweb/GBCWebservice.asmx', user: 'u', password: 'p', group: 'g' },
+    centroDiCosto: '',
+    mittente: null,
+    enabledServiceTypes: ['Raccomandata'],
+    contratti: [],
   };
 
   function makeQueryBuilder(rows: any[]) {
@@ -28,24 +33,34 @@ describe('PostalStatusSyncService', () => {
 
   beforeEach(async () => {
     const mockGlobalCom = { dettagliDocumento: jest.fn(), invioExtSingolo: jest.fn(), cercaPerTesto: jest.fn() };
-    const mockSettings = { get: jest.fn(async (key: string) => settingsMap[key]) };
+    const mockProviders = { getActive: jest.fn(async () => activeProvider) };
     attemptRepo = { find: jest.fn(), save: jest.fn(), createQueryBuilder: jest.fn() };
 
     const module = await Test.createTestingModule({
       providers: [
         PostalStatusSyncService,
         { provide: GlobalComClient, useValue: mockGlobalCom },
-        { provide: AppSettingsService, useValue: mockSettings },
+        { provide: PostalProvidersService, useValue: mockProviders },
         { provide: getRepositoryToken(NotificationAttempt), useValue: attemptRepo },
       ],
     }).compile();
 
     service = module.get(PostalStatusSyncService);
     globalCom = module.get(GlobalComClient) as any;
+    providers = module.get(PostalProvidersService) as any;
   });
 
   it('non fa nulla se non ci sono attempt candidati', async () => {
     attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([]));
+
+    await service.handleCron();
+
+    expect(globalCom.dettagliDocumento).not.toHaveBeenCalled();
+  });
+
+  it('non fa nulla se non c\'è un provider attivo', async () => {
+    providers.getActive.mockResolvedValue(null);
+    attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([{ id: 'a1', postalTrackingId: 'IDPRO1', postalStatus: null }]));
 
     await service.handleCron();
 
@@ -60,7 +75,7 @@ describe('PostalStatusSyncService', () => {
     await service.handleCron();
 
     expect(globalCom.dettagliDocumento).toHaveBeenCalledWith(
-      expect.objectContaining({ baseUrl: settingsMap['postal.baseUrl'] }),
+      expect.objectContaining({ baseUrl: activeProvider.creds.baseUrl }),
       'IDPRO1',
     );
     expect(attemptRepo.save).toHaveBeenCalledWith(expect.objectContaining({ id: 'a1', postalStatus: 'Consegnato' }));

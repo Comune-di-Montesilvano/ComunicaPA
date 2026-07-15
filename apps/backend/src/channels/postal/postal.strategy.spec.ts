@@ -1,13 +1,13 @@
 import { Test } from '@nestjs/testing';
 import { PostalStrategy } from './postal.strategy';
 import { GlobalComClient } from './globalcom-client.service';
-import { AppSettingsService } from '../../settings/app-settings.service';
+import { PostalProvidersService, type ResolvedPostalProvider } from '../../postal-providers/postal-providers.service';
 import { AttachmentService } from '../../attachments/attachment.service';
 
 describe('PostalStrategy', () => {
   let strategy: PostalStrategy;
   let globalCom: jest.Mocked<GlobalComClient>;
-  let settings: jest.Mocked<AppSettingsService>;
+  let providers: jest.Mocked<PostalProvidersService>;
   let attachments: jest.Mocked<AttachmentService>;
 
   const baseRecipient = {
@@ -19,18 +19,22 @@ describe('PostalStrategy', () => {
     extraData: { indirizzo: 'Via Roma 1', comune: 'Montesilvano', cap: '65015', prov: 'PE' },
   };
 
-  const settingsMap: Record<string, unknown> = {
-    'postal.baseUrl': 'https://esempio.corrispondenzadigitale.it/gbcweb/GBCWebservice.asmx',
-    'postal.user': 'user1',
-    'postal.password': 'pass1',
-    'postal.group': 'group1',
-    'postal.centroDiCosto': '',
-    'postal.mittente.denominazione1': '',
-    'postal.mittente.indirizzo1': '',
-    'postal.mittente.cap': '',
-    'postal.mittente.citta': '',
-    'postal.mittente.provincia': '',
-  };
+  function baseProvider(overrides: Partial<ResolvedPostalProvider> = {}): ResolvedPostalProvider {
+    return {
+      id: 'provider-1',
+      creds: {
+        baseUrl: 'https://esempio.corrispondenzadigitale.it/gbcweb/GBCWebservice.asmx',
+        user: 'user1',
+        password: 'pass1',
+        group: 'group1',
+      },
+      centroDiCosto: '',
+      mittente: null,
+      enabledServiceTypes: ['Raccomandata', 'Lettera'],
+      contratti: [],
+      ...overrides,
+    };
+  }
 
   function baseCampaign(overrides: Record<string, unknown> = {}) {
     return {
@@ -57,23 +61,22 @@ describe('PostalStrategy', () => {
       cercaPerTesto: jest.fn(),
       dettagliDocumento: jest.fn(),
     };
-    const mockSettings = { get: jest.fn(async (key: string) => settingsMap[key]) };
+    const mockProviders = { getActive: jest.fn(async () => baseProvider()) };
     const mockAttachments = { generatePdfBuffer: jest.fn(async () => Buffer.from('%PDF-1.4 test')) };
 
     const module = await Test.createTestingModule({
       providers: [
         PostalStrategy,
         { provide: GlobalComClient, useValue: mockGlobalCom },
-        { provide: AppSettingsService, useValue: mockSettings },
+        { provide: PostalProvidersService, useValue: mockProviders },
         { provide: AttachmentService, useValue: mockAttachments },
       ],
     }).compile();
 
     strategy = module.get(PostalStrategy);
     globalCom = module.get(GlobalComClient);
-    settings = module.get(AppSettingsService) as any;
+    providers = module.get(PostalProvidersService) as any;
     attachments = module.get(AttachmentService) as any;
-    void settings;
   });
 
   it('is defined with channel POSTAL', () => {
@@ -87,7 +90,7 @@ describe('PostalStrategy', () => {
 
     expect(attachments.generatePdfBuffer).toHaveBeenCalledWith(baseRecipient, 0);
     expect(globalCom.invioExtSingolo).toHaveBeenCalledWith(
-      expect.objectContaining({ baseUrl: settingsMap['postal.baseUrl'], user: 'user1' }),
+      expect.objectContaining({ baseUrl: expect.any(String), user: 'user1' }),
       expect.objectContaining({
         servizio: 'Raccomandata',
         ricevutaDiRitorno: true,
@@ -98,6 +101,15 @@ describe('PostalStrategy', () => {
     );
     expect(result.messageId).toBe('IDPRO123');
     expect(result.responsePayload).toEqual({ stato: 'Accettato', idPro: 'IDPRO123' });
+  });
+
+  it('send() lancia se nessun provider attivo', async () => {
+    providers.getActive.mockResolvedValue(null);
+
+    await expect(
+      strategy.send(baseRecipient as never, baseCampaign() as never, undefined, 'attempt-uuid-0', 0),
+    ).rejects.toThrow(/nessun provider di postalizzazione attivo/i);
+    expect(globalCom.invioExtSingolo).not.toHaveBeenCalled();
   });
 
   it('send() lancia se indirizzo destinatario non risolvibile', async () => {
@@ -130,10 +142,7 @@ describe('PostalStrategy', () => {
 
     const result = await strategy.send(baseRecipient as never, baseCampaign() as never, undefined, 'attempt-uuid-5', 1);
 
-    expect(globalCom.cercaPerTesto).toHaveBeenCalledWith(
-      expect.objectContaining({ baseUrl: settingsMap['postal.baseUrl'] }),
-      'recipient-1',
-    );
+    expect(globalCom.cercaPerTesto).toHaveBeenCalledWith(expect.anything(), 'recipient-1');
     expect(globalCom.invioExtSingolo).not.toHaveBeenCalled();
     expect(result.messageId).toBe('IDPRO-ESISTENTE');
   });
@@ -144,10 +153,7 @@ describe('PostalStrategy', () => {
 
     const result = await strategy.send(recipienteRetryManuale as never, baseCampaign() as never, undefined, 'attempt-uuid-manual-retry', 0);
 
-    expect(globalCom.cercaPerTesto).toHaveBeenCalledWith(
-      expect.objectContaining({ baseUrl: settingsMap['postal.baseUrl'] }),
-      'recipient-1',
-    );
+    expect(globalCom.cercaPerTesto).toHaveBeenCalledWith(expect.anything(), 'recipient-1');
     expect(globalCom.invioExtSingolo).not.toHaveBeenCalled();
     expect(result.messageId).toBe('IDPRO-ESISTENTE');
   });
@@ -170,12 +176,10 @@ describe('PostalStrategy', () => {
     expect(result.messageId).toBe('IDPRO-NUOVO');
   });
 
-  it('send() usa Mittente esplicito se configurato nelle settings', async () => {
-    settingsMap['postal.mittente.denominazione1'] = 'Comune di Montesilvano';
-    settingsMap['postal.mittente.indirizzo1'] = 'Via Roma 1';
-    settingsMap['postal.mittente.cap'] = '65016';
-    settingsMap['postal.mittente.citta'] = 'Montesilvano';
-    settingsMap['postal.mittente.provincia'] = 'PE';
+  it('send() usa Mittente esplicito dal provider se configurato', async () => {
+    providers.getActive.mockResolvedValue(baseProvider({
+      mittente: { denominazione1: 'Comune di Montesilvano', indirizzo1: 'Via Roma 1', cap: '65016', citta: 'Montesilvano', provincia: 'PE' },
+    }));
     globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' });
 
     await strategy.send(baseRecipient as never, baseCampaign() as never, undefined, 'attempt-uuid-7', 0);
@@ -184,12 +188,6 @@ describe('PostalStrategy', () => {
       expect.anything(),
       expect.objectContaining({ mittente: expect.objectContaining({ denominazione1: 'Comune di Montesilvano' }) }),
     );
-
-    settingsMap['postal.mittente.denominazione1'] = '';
-    settingsMap['postal.mittente.indirizzo1'] = '';
-    settingsMap['postal.mittente.cap'] = '';
-    settingsMap['postal.mittente.citta'] = '';
-    settingsMap['postal.mittente.provincia'] = '';
   });
 
   it('send() passa UserData1 da userDataColumn quando configurato', async () => {
@@ -217,6 +215,42 @@ describe('PostalStrategy', () => {
     expect(globalCom.invioExtSingolo).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ protocollo: '42/2026' }),
+    );
+  });
+
+  it('send() risolve CodiceContratto dal provider in base al prefisso Tipologia/Servizio', async () => {
+    providers.getActive.mockResolvedValue(baseProvider({
+      contratti: [{ codiceContratto: '40009679559', descrizione: 'Racc. Market 4', tipologia: 'RaccomandataMarket' }],
+    }));
+    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' });
+
+    await strategy.send(
+      baseRecipient as never,
+      baseCampaign({ postalServiceType: 'RaccomandataMarket4' }) as never,
+      undefined, 'attempt-uuid-10', 0,
+    );
+
+    expect(globalCom.invioExtSingolo).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ codiceContratto: '40009679559' }),
+    );
+  });
+
+  it('send() usa postalCodiceContratto esplicito da channelConfig se impostato (override)', async () => {
+    providers.getActive.mockResolvedValue(baseProvider({
+      contratti: [{ codiceContratto: 'AUTO-123', descrizione: 'Auto', tipologia: 'RaccomandataMarket' }],
+    }));
+    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' });
+
+    await strategy.send(
+      baseRecipient as never,
+      baseCampaign({ postalServiceType: 'RaccomandataMarket4', postalCodiceContratto: 'MANUALE-999' }) as never,
+      undefined, 'attempt-uuid-11', 0,
+    );
+
+    expect(globalCom.invioExtSingolo).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ codiceContratto: 'MANUALE-999' }),
     );
   });
 });
