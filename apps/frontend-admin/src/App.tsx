@@ -86,6 +86,31 @@ function SendStatusBadge({ status }: { status: string | null | undefined }): Rea
   );
 }
 
+// Stati POSTAL (campo postalStatus, popolato da PostalStatusSyncService da
+// GlobalCom) — 14 valori dell'enum GBCStatus.
+const POSTAL_STATUS_META: Record<string, { label: string; badge: string; icon: string }> = {
+  Accettato: { label: 'Accettato', badge: 'bg-secondary-subtle text-secondary-emphasis border', icon: 'fa-inbox' },
+  Sospeso: { label: 'Sospeso', badge: 'bg-secondary-subtle text-secondary-emphasis border', icon: 'fa-pause' },
+  Verificato: { label: 'Verificato', badge: 'bg-info-subtle text-info-emphasis border', icon: 'fa-check' },
+  Normalizzazione: { label: 'Normalizzazione indirizzo', badge: 'bg-warning-subtle text-warning-emphasis border', icon: 'fa-map-pin' },
+  Inviato: { label: 'Inviato a Poste', badge: 'bg-info-subtle text-info-emphasis border', icon: 'fa-truck' },
+  Elaborato: { label: 'Elaborato', badge: 'bg-info-subtle text-info-emphasis border', icon: 'fa-gears' },
+  AttesaStampa: { label: 'Attesa stampa', badge: 'bg-info-subtle text-info-emphasis border', icon: 'fa-print' },
+  Confermato: { label: 'Confermato', badge: 'bg-primary-subtle text-primary-emphasis border', icon: 'fa-thumbs-up' },
+  Rimandato: { label: 'Rimandato (ritento)', badge: 'bg-warning-subtle text-warning-emphasis border', icon: 'fa-rotate' },
+  Consegnato: { label: 'Consegnato', badge: 'bg-success-subtle text-success-emphasis border', icon: 'fa-circle-check' },
+  NonConsegnato: { label: 'Non consegnato', badge: 'bg-danger-subtle text-danger-emphasis border', icon: 'fa-circle-xmark' },
+  ConsegnaParziale: { label: 'Consegna parziale', badge: 'bg-warning-subtle text-warning-emphasis border', icon: 'fa-triangle-exclamation' },
+  Errore: { label: 'Errore', badge: 'bg-danger-subtle text-danger-emphasis border', icon: 'fa-circle-exclamation' },
+  Eliminato: { label: 'Eliminato', badge: 'bg-light text-dark border', icon: 'fa-trash' },
+};
+
+function PostalStatusBadge({ status }: { status: string | null | undefined }): React.JSX.Element {
+  if (!status) return <span className="badge bg-light text-dark border">In corso</span>;
+  const meta = POSTAL_STATUS_META[status] ?? { label: status, badge: 'bg-light text-dark border', icon: 'fa-circle-question' };
+  return <span className={`badge ${meta.badge}`}><i className={`fas ${meta.icon} me-1`}></i>{meta.label}</span>;
+}
+
 const SEND_LEGAL_FACT_CATEGORY_LABELS: Record<string, string> = {
   SENDER_ACK: 'Presa in carico',
   DIGITAL_DELIVERY: 'Consegna digitale (PEC)',
@@ -286,6 +311,8 @@ interface Recipient {
     iun?: string | null;
     sendStatus?: string | null;
     sendStatusUpdatedAt?: string | null;
+    postalStatus?: string | null;
+    postalStatusUpdatedAt?: string | null;
     protocolNumber?: number | null;
     protocolYear?: number | null;
     protocolledAt?: string | null;
@@ -364,7 +391,7 @@ export function App(): React.JSX.Element {
   const [notifDetail, setNotifDetail] = useState<{
     recipient: { id: string; codiceFiscale: string; fullName: string | null; email: string | null; pec: string | null; status: string };
     campaign: { id: string; name: string; channelType: string };
-    attempts: Array<{ attemptNumber: number; status: string; channelType: string; errorMessage: string | null; sentAt: string | null; createdAt: string; appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null }; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; protocolNumber?: number | null; protocolYear?: number | null; protocolledAt?: string | null }>;
+    attempts: Array<{ attemptNumber: number; status: string; channelType: string; errorMessage: string | null; sentAt: string | null; createdAt: string; appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null }; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; protocolNumber?: number | null; protocolYear?: number | null; protocolledAt?: string | null }>;
     preview: { subject: string; bodyHtml?: string; bodyMarkdown?: string };
     downloads: Array<{ channel: string; attachmentIndex: number; downloadedAt: string }>;
   } | null>(null);
@@ -838,7 +865,7 @@ export function App(): React.JSX.Element {
   const [cancelling, setCancelling] = useState(false);
   const [failureGroups, setFailureGroups] = useState<Array<{ errorMessage: string; count: number; recipientIds: string[] }>>([]);
   const [retryingGroup, setRetryingGroup] = useState<string | null>(null);
-  const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; protocolNumber?: number | null; protocolYear?: number | null }> } | null>(null);
+  const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; protocolNumber?: number | null; protocolYear?: number | null }> } | null>(null);
   const [recipientsSearch, setRecipientsSearch] = useState('');
   const [recipientsPageNum, setRecipientsPageNum] = useState(1);
   const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number } | null>(null);
@@ -5157,6 +5184,9 @@ export function App(): React.JSX.Element {
                                 {notifDetail.campaign.channelType === 'SEND' && (
                                   <><th>IUN</th><th>Protocollo</th><th>Stato SEND</th><th>Aggiornato il</th></>
                                 )}
+                                {notifDetail.campaign.channelType === 'POSTAL' && (
+                                  <><th>Stato Consegna</th><th>Aggiornato il</th></>
+                                )}
                                 <th>Errore</th>
                               </tr>
                             </thead>
@@ -5176,6 +5206,12 @@ export function App(): React.JSX.Element {
                                         <td className="small text-muted">{a.sendStatusUpdatedAt ? new Date(a.sendStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
                                       </>
                                     )}
+                                    {notifDetail.campaign.channelType === 'POSTAL' && (
+                                      <>
+                                        <td className="small"><PostalStatusBadge status={a.postalStatus} /></td>
+                                        <td className="small text-muted">{a.postalStatusUpdatedAt ? new Date(a.postalStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
+                                      </>
+                                    )}
                                     <td className="small text-danger text-break" style={{ maxWidth: '350px' }}>{a.errorMessage || '—'}</td>
                                   </tr>
                                   {/* Co-consegna App IO come tentativo a parte: non ha senso quando
@@ -5190,6 +5226,12 @@ export function App(): React.JSX.Element {
                                         <>
                                           <td>—</td>
                                           <td>—</td>
+                                          <td>—</td>
+                                          <td>—</td>
+                                        </>
+                                      )}
+                                      {notifDetail.campaign.channelType === 'POSTAL' && (
+                                        <>
                                           <td>—</td>
                                           <td>—</td>
                                         </>
@@ -7486,6 +7528,8 @@ export function App(): React.JSX.Element {
                                     <th>Stato Notifica</th>
                                     {campaign.channelType === 'SEND' ? (
                                       <><th>IUN</th><th>Protocollo</th><th>Stato SEND</th><th>Aggiornato il</th></>
+                                    ) : campaign.channelType === 'POSTAL' ? (
+                                      <><th>Stato Consegna</th><th>Aggiornato il</th></>
                                     ) : campaign.channelConfig?.['protocolla'] ? (
                                       <><th>Protocollo</th><th className="text-center">Download</th></>
                                     ) : (
@@ -7511,6 +7555,11 @@ export function App(): React.JSX.Element {
                                           <td className="small">{r.protocolNumber ? `${r.protocolNumber}/${r.protocolYear}` : '—'}</td>
                                           <td className="small"><SendStatusBadge status={r.sendStatus} /></td>
                                           <td className="small text-muted">{r.sendStatusUpdatedAt ? new Date(r.sendStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
+                                        </>
+                                      ) : campaign.channelType === 'POSTAL' ? (
+                                        <>
+                                          <td className="small"><PostalStatusBadge status={r.postalStatus} /></td>
+                                          <td className="small text-muted">{r.postalStatusUpdatedAt ? new Date(r.postalStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
                                         </>
                                       ) : campaign.channelConfig?.['protocolla'] ? (
                                         <>
