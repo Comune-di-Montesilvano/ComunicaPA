@@ -81,7 +81,15 @@ export class GlobalComClient {
     this.logger.debug('createSession: client SOAP creato, chiamo LoginAsync...');
     let loginResult: any;
     try {
-      [loginResult] = await client.LoginAsync({ user: creds.user, password: creds.password, gruppo: creds.group });
+      // Nome parametro WSDL reale: "group" (inglese) — il manuale tecnico
+      // usa "gruppo" solo nel testo descrittivo italiano e nell'esempio C#
+      // (parametro posizionale, nome locale irrilevante). Con "gruppo" il
+      // valore non arriva mai al server (elemento "group" resta assente/
+      // null), causando un NullReferenceException lato GlobalCom
+      // indipendentemente dal valore configurato in postal.group — bug
+      // reale riscontrato in test con credenziali vere, verificato
+      // scaricando l'XSD della Login request dal WSDL live.
+      [loginResult] = await client.LoginAsync({ user: creds.user, password: creds.password, group: creds.group });
     } catch (err: any) {
       // MAI loggare (client as any).lastRequest qui: il body SOAP di Login
       // contiene la password in chiaro (<password>...</password>) — solo la

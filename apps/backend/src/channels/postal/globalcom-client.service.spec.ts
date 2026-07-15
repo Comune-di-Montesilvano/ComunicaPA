@@ -43,7 +43,7 @@ describe('GlobalComClient', () => {
       fileBuffer: Buffer.from('%PDF-1.4 test'),
     });
 
-    expect(mockLoginAsync).toHaveBeenCalledWith({ user: 'u', password: 'p', gruppo: 'g' });
+    expect(mockLoginAsync).toHaveBeenCalledWith({ user: 'u', password: 'p', group: 'g' });
     expect(mockAddHttpHeader).toHaveBeenCalledWith('Cookie', 'ASP.NET_SessionId=abc123');
     expect(mockInvioAsync).toHaveBeenCalledWith(expect.objectContaining({
       Invio: expect.objectContaining({
