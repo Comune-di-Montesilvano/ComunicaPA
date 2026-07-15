@@ -4881,65 +4881,77 @@ export function App(): React.JSX.Element {
                         </div>
 
                         <h6 className="fw-bold small">Storico Tentativi</h6>
-                        <table className="table table-sm mb-4">
-                          <thead>
-                            <tr>
-                              <th>#</th><th>Stato</th><th>Canale</th><th>Data</th>
-                              {notifDetail.campaign.channelType === 'SEND' && (
-                                <><th>IUN</th><th>Protocollo</th><th>Stato SEND</th><th>Aggiornato il</th></>
-                              )}
-                              <th>Errore</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {notifDetail.attempts.map((a) => (
-                              <React.Fragment key={a.attemptNumber}>
-                                <tr>
-                                  <td>{a.attemptNumber}</td>
-                                  <td><StatusBadge status={a.status} /></td>
-                                  <td className="small"><ChannelBadge channel={a.channelType} /></td>
-                                  <td className="small text-muted">{new Date(a.createdAt).toLocaleString('it-IT')}</td>
-                                  {notifDetail.campaign.channelType === 'SEND' && (
-                                    <>
-                                      <td className="small fw-mono">{a.iun || '—'}</td>
-                                      <td className="small">{a.protocolNumber ? `${a.protocolNumber}/${a.protocolYear}` : '—'}</td>
-                                      <td className="small"><SendStatusBadge status={a.sendStatus} /></td>
-                                      <td className="small text-muted">{a.sendStatusUpdatedAt ? new Date(a.sendStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
-                                    </>
-                                  )}
-                                  <td className="small text-danger">{a.errorMessage || '—'}</td>
-                                </tr>
-                                {/* Co-consegna App IO come tentativo a parte: non ha senso quando
-                                    App IO è già il canale primario della campagna. */}
-                                {notifDetail.campaign.channelType !== 'APP_IO' && a.appIo.attempted && (
+                        <div className="table-responsive">
+                          <table className="table table-sm mb-4">
+                            <thead>
+                              <tr>
+                                <th>#</th><th>Stato</th><th>Canale</th><th>Data</th>
+                                {notifDetail.campaign.channelType === 'SEND' && (
+                                  <><th>IUN</th><th>Protocollo</th><th>Stato SEND</th><th>Aggiornato il</th></>
+                                )}
+                                <th>Errore</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {notifDetail.attempts.map((a) => (
+                                <React.Fragment key={a.attemptNumber}>
                                   <tr>
                                     <td>{a.attemptNumber}</td>
-                                    <td><StatusBadge status={a.appIo.success ? 'success' : 'failed'} /></td>
-                                    <td className="small"><ChannelBadge channel="APP_IO" /></td>
+                                    <td><StatusBadge status={a.status} /></td>
+                                    <td className="small"><ChannelBadge channel={a.channelType} /></td>
                                     <td className="small text-muted">{new Date(a.createdAt).toLocaleString('it-IT')}</td>
-                                    <td className="small text-danger">{a.appIo.success ? '—' : (a.appIo.error || 'Non consegnato')}</td>
+                                    {notifDetail.campaign.channelType === 'SEND' && (
+                                      <>
+                                        <td className="small fw-mono">{a.iun || '—'}</td>
+                                        <td className="small">{a.protocolNumber ? `${a.protocolNumber}/${a.protocolYear}` : '—'}</td>
+                                        <td className="small"><SendStatusBadge status={a.sendStatus} /></td>
+                                        <td className="small text-muted">{a.sendStatusUpdatedAt ? new Date(a.sendStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
+                                      </>
+                                    )}
+                                    <td className="small text-danger text-break" style={{ maxWidth: '350px' }}>{a.errorMessage || '—'}</td>
                                   </tr>
-                                )}
-                              </React.Fragment>
-                            ))}
-                          </tbody>
-                        </table>
+                                  {/* Co-consegna App IO come tentativo a parte: non ha senso quando
+                                      App IO è già il canale primario della campagna. */}
+                                  {notifDetail.campaign.channelType !== 'APP_IO' && a.appIo.attempted && (
+                                    <tr>
+                                      <td>{a.attemptNumber}</td>
+                                      <td><StatusBadge status={a.appIo.success ? 'success' : 'failed'} /></td>
+                                      <td className="small"><ChannelBadge channel="APP_IO" /></td>
+                                      <td className="small text-muted">{new Date(a.createdAt).toLocaleString('it-IT')}</td>
+                                      {notifDetail.campaign.channelType === 'SEND' && (
+                                        <>
+                                          <td>—</td>
+                                          <td>—</td>
+                                          <td>—</td>
+                                          <td>—</td>
+                                        </>
+                                      )}
+                                      <td className="small text-danger text-break" style={{ maxWidth: '350px' }}>{a.appIo.success ? '—' : (a.appIo.error || 'Non consegnato')}</td>
+                                    </tr>
+                                  )}
+                                </React.Fragment>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
 
                         {notifDetail.downloads.length > 0 && (
                           <>
                             <h6 className="fw-bold small">Download</h6>
-                            <table className="table table-sm mb-4">
-                              <thead><tr><th>Canale</th><th>Allegato</th><th>Data</th></tr></thead>
-                              <tbody>
-                                {notifDetail.downloads.map((d, idx) => (
-                                  <tr key={idx}>
-                                    <td className="small"><ChannelBadge channel={d.channel} /></td>
-                                    <td className="small">#{d.attachmentIndex + 1}</td>
-                                    <td className="small text-muted">{new Date(d.downloadedAt).toLocaleString('it-IT')}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                            <div className="table-responsive">
+                              <table className="table table-sm mb-4">
+                                <thead><tr><th>Canale</th><th>Allegato</th><th>Data</th></tr></thead>
+                                <tbody>
+                                  {notifDetail.downloads.map((d, idx) => (
+                                    <tr key={idx}>
+                                      <td className="small"><ChannelBadge channel={d.channel} /></td>
+                                      <td className="small">#{d.attachmentIndex + 1}</td>
+                                      <td className="small text-muted">{new Date(d.downloadedAt).toLocaleString('it-IT')}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
                           </>
                         )}
 
