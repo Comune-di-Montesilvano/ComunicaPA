@@ -76,8 +76,20 @@ export class GlobalComClient {
     // browser durante il test del WSDL) per evitare "...asmx?wsdl?wsdl" e
     // un endpoint SOAP reale sbagliato per le chiamate successive al Login.
     const endpoint = creds.baseUrl.replace(/\?wsdl$/i, '');
+    this.logger.debug(`createSession: WSDL=${endpoint}?wsdl, endpoint=${endpoint}, user=${creds.user}, group=${creds.group}`);
     const client = await soap.createClientAsync(`${endpoint}?wsdl`, { endpoint });
-    const [loginResult] = await client.LoginAsync({ user: creds.user, password: creds.password, gruppo: creds.group });
+    this.logger.debug('createSession: client SOAP creato, chiamo LoginAsync...');
+    let loginResult: any;
+    try {
+      [loginResult] = await client.LoginAsync({ user: creds.user, password: creds.password, gruppo: creds.group });
+    } catch (err: any) {
+      // MAI loggare (client as any).lastRequest qui: il body SOAP di Login
+      // contiene la password in chiaro (<password>...</password>) — solo la
+      // risposta (che non la contiene mai) è sicura da loggare.
+      this.logger.debug(`createSession: LoginAsync HA LANCIATO — response XML: ${(client as any).lastResponse}`);
+      throw err;
+    }
+    this.logger.debug(`createSession: LoginAsync risposta = ${JSON.stringify(loginResult)}`);
     if (!loginResult.LoginResult) {
       throw new Error(`Login GlobalCom fallito: ${loginResult.message || 'credenziali non valide'}`);
     }
