@@ -10,3 +10,6 @@ Thumbs.db
 .serena/
 .pnpm-store/
 *.tsbuildinfo
+
+# Superpowers scratch (progress ledger, not project docs)
+.superpowers/
