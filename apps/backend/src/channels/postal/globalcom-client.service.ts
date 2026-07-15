@@ -68,8 +68,6 @@ function mapDocStatus(raw: any): GbcDocStatus {
  */
 @Injectable()
 export class GlobalComClient {
-  // private readonly logger = new Logger(GlobalComClient.name);
-
   private async createSession(creds: GbcCredentials): Promise<soap.Client> {
     const client = await soap.createClientAsync(`${creds.baseUrl}?wsdl`, { endpoint: creds.baseUrl });
     const [loginResult] = await client.LoginAsync({ user: creds.user, password: creds.password, gruppo: creds.group });
