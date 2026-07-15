@@ -172,19 +172,53 @@ export class ProtocolloService {
   /** Orchestratore: login (se serve) → Inserimento → Protocollazione (Flusso=U). */
   async protocolla(input: ProtocollaInput): Promise<ProtocollaResult> {
     const config = await this.getConfig();
-    const dst = await this.login();
-    const docId = await this.inserimento(config, dst, input.documentBuffer);
+    let dst = await this.login();
+    
+    let docId: number;
+    try {
+      docId = await this.inserimento(config, dst, input.documentBuffer);
+    } catch (err: any) {
+      if (err.message.includes('DST non valido') || err.message.includes('sessione scaduta') || err.message.includes('(-2)')) {
+        this.logger.warn('DST scaduto o non valido: eseguo relogin e riprovo inserimento principale...');
+        dst = await this.login(true);
+        docId = await this.inserimento(config, dst, input.documentBuffer);
+      } else {
+        throw err;
+      }
+    }
     
     const allegatoIds: number[] = [];
     if (input.allegati && input.allegati.length > 0) {
       for (const a of input.allegati) {
-        const aId = await this.inserimento(config, dst, a.buffer);
+        let aId: number;
+        try {
+          aId = await this.inserimento(config, dst, a.buffer);
+        } catch (err: any) {
+          if (err.message.includes('DST non valido') || err.message.includes('sessione scaduta') || err.message.includes('(-2)')) {
+            this.logger.warn('DST scaduto o non valido durante allegati: eseguo relogin e riprovo...');
+            dst = await this.login(true);
+            aId = await this.inserimento(config, dst, a.buffer);
+          } else {
+            throw err;
+          }
+        }
         allegatoIds.push(aId);
       }
     }
 
     const segnaturaXml = this.buildSegnatura(config, input, docId, allegatoIds);
-    const result = await this.protocollazione(config, dst, segnaturaXml);
+    let result: ProtocollaResult;
+    try {
+      result = await this.protocollazione(config, dst, segnaturaXml);
+    } catch (err: any) {
+      if (err.message.includes('DST non valido') || err.message.includes('sessione scaduta') || err.message.includes('(-2)')) {
+        this.logger.warn('DST scaduto o non valido durante protocollazione: eseguo relogin e riprovo...');
+        dst = await this.login(true);
+        result = await this.protocollazione(config, dst, segnaturaXml);
+      } else {
+        throw err;
+      }
+    }
     this.logger.log(`Protocollazione OK: ${result.numeroProtocollo}/${result.annoProtocollo}`);
     return result;
   }

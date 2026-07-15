@@ -6951,10 +6951,11 @@ export function App(): React.JSX.Element {
                           </div>
                         )}
 
-                        {campaign.channelType === 'SEND' && campaignSendStageCounts && (
+                        {(campaign.channelType === 'SEND' || campaign.channelConfig?.['protocolla'] === true) && campaignSendStageCounts && (
                           <div className="mt-4 border-top pt-3">
                             <h4 className="small fw-bold mb-2">
-                              <i className="fas fa-stamp me-1 text-primary"></i>Progressione SEND
+                              <i className="fas fa-stamp me-1 text-primary"></i>
+                              {campaign.channelType === 'SEND' ? 'Progressione SEND' : 'Stato Protocollazione'}
                             </h4>
                             <div className="d-flex gap-3 text-center small">
                               <div>

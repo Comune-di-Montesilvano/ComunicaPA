@@ -590,7 +590,7 @@ export class CampaignsService {
         .createQueryBuilder('attempt')
         .innerJoin('attempt.recipient', 'recipient')
         .where('recipient.campaignId = :campaignId', { campaignId })
-        .andWhere('attempt.channel_type = :ch', { ch: 'SEND' });
+        .andWhere('attempt.channel_type = :ch', { ch: campaign.channelType });
 
     const [queued, protocollato, inviato, fallito] = await Promise.all([
       baseQb().andWhere('attempt.status = :status', { status: AttemptStatus.QUEUED }).andWhere('attempt.protocolled_at IS NULL').getCount(),
