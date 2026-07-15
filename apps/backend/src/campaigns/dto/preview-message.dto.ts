@@ -28,6 +28,10 @@ export class PreviewRecipientDto {
   @IsOptional()
   pec?: string;
 
+  @IsString()
+  @IsOptional()
+  protocolNumber?: string;
+
   @IsObject()
   @IsOptional()
   extraData?: Record<string, string>;

@@ -123,6 +123,10 @@ export class NotificationProcessor extends WorkerHost {
       return;
     }
 
+    if (existingAttempt && existingAttempt.protocolNumber) {
+      (recipient as any).protocolNumber = `${existingAttempt.protocolNumber}/${existingAttempt.protocolYear}`;
+    }
+
     await this.attemptRepo.update(attemptId, { status: AttemptStatus.PROCESSING });
 
     const strategy = this.strategies.get(channel);

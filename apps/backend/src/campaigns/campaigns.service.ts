@@ -104,6 +104,7 @@ export class CampaignsService {
       email: dto.recipient.email ?? null,
       pec: dto.recipient.pec ?? null,
       extraData: dto.recipient.extraData ?? {},
+      protocolNumber: dto.recipient.protocolNumber ?? null,
     } as unknown as Recipient;
 
     const attachmentLabels = (dto.attachments ?? []).map((a) => a.label);

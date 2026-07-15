@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import MDEditor from '@uiw/react-md-editor';
 import { TemplateEditor } from './components/TemplateEditor';
 import { SEND_ENTITY_TYPES, SEND_TAXONOMY_CATALOG } from './data/sendTaxonomy';
@@ -510,6 +510,24 @@ export function App(): React.JSX.Element {
   const [wizTaxonomyCode, setWizTaxonomyCode] = useState('');
   const [wizPhysicalCommunicationType, setWizPhysicalCommunicationType] = useState<'AR_REGISTERED_LETTER' | 'REGISTERED_LETTER_890'>('AR_REGISTERED_LETTER');
   const [wizBody, setWizBody] = useState('');
+  const subjectInputRef = useRef<HTMLInputElement>(null);
+  const [wizLastFocusedField, setWizLastFocusedField] = useState<'subject' | 'body'>('body');
+
+  const insertTokenIntoSubject = (token: string) => {
+    const input = subjectInputRef.current;
+    if (!input) return;
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? input.value.length;
+    const value = input.value;
+    const newValue = value.substring(0, start) + ` ${token} ` + value.substring(end);
+    setWizSubject(newValue);
+    setTimeout(() => {
+      input.focus();
+      const newCursorPos = start + token.length + 2; // +2 for surrounding spaces
+      input.setSelectionRange(newCursorPos, newCursorPos);
+    }, 0);
+  };
+
   const [wizPreviewIndex, setWizPreviewIndex] = useState(0);
   const [wizPreviewResult, setWizPreviewResult] = useState<{ subject: string; bodyHtml?: string; bodyMarkdown?: string } | null>(null);
   const [wizPreviewLoading, setWizPreviewLoading] = useState(false);
@@ -579,6 +597,7 @@ export function App(): React.JSX.Element {
             email: row[wizMapping.email] || undefined,
             pec: row[wizMapping.pec] || undefined,
             extraData: row,
+            protocolNumber: wizProtocolla ? '44919/2026' : undefined,
           },
         }),
       })
@@ -594,7 +613,7 @@ export function App(): React.JSX.Element {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [wizStep, wizPreviewIndex, wizSubject, wizBody, wizChannel, wizAttachments, wizValidRows, wizMapping, token, wizPreviewChannelTab, wizAppIoDifferentiate, wizAppIoSubjectOverride, wizAppIoBodyOverride]);
+  }, [wizStep, wizPreviewIndex, wizSubject, wizBody, wizChannel, wizAttachments, wizValidRows, wizMapping, token, wizPreviewChannelTab, wizAppIoDifferentiate, wizAppIoSubjectOverride, wizAppIoBodyOverride, wizProtocolla]);
 
   // App IO impone al campo content.markdown una lunghezza >= 80 e < 10001
   // caratteri (altrimenti PagoPA rifiuta con HTTP 400 "Invalid message
@@ -4374,11 +4393,13 @@ export function App(): React.JSX.Element {
                     <div className="mb-3">
                       <label className="form-label small fw-bold">Oggetto della Comunicazione (Template)</label>
                       <input
+                        ref={subjectInputRef}
                         type="text"
                         className="form-control form-control-sm"
                         placeholder="Es: Avviso Scadenza TARI 2026 - %%nominativo%%"
                         value={wizSubject}
                         onChange={e => setWizSubject(e.target.value)}
+                        onFocus={() => setWizLastFocusedField('subject')}
                         required
                       />
                     </div>
@@ -4390,15 +4411,40 @@ export function App(): React.JSX.Element {
                           <TemplateEditor
                             value={wizBody}
                             onChange={setWizBody}
-                            placeholders={[
+                            systemPlaceholders={[
                               ...(wizAttachments.length > 0 ? [{ label: 'Elenco Allegati', token: '%%elenco_allegati%%' }] : []),
                               ...wizAttachments.map((a, idx) => ({ label: `Link: ${a.label || `Allegato ${idx + 1}`}`, token: `%%allegato${idx + 1}%%` })),
                               { label: 'Nominativo', token: '%%nominativo%%' },
                               { label: 'Codice Fiscale', token: '%%codice_fiscale%%' },
-                              ...wizCsvHeaders
-                                .filter(h => h !== wizMapping.codice_fiscale && h !== wizMapping.full_name && h !== wizMapping.email && h !== wizMapping.pec && !wizAttachments.some(a => a.key === h))
-                                .map(h => ({ label: `Colonna: ${h}`, token: `%%${h}%%` })),
+                              ...(wizProtocolla ? [{ label: 'Numero di Protocollo', token: '%%numero_protocollo%%' }] : []),
+                              ...(wizPaymentEnabled && wizPaymentNoticeCol ? [{ label: 'pagoPA: Numero Avviso', token: `%%${wizPaymentNoticeCol}%%` }] : []),
+                              ...(wizPaymentEnabled && wizPaymentAmountCol ? [{ label: 'pagoPA: Importo', token: `%%${wizPaymentAmountCol}%%` }] : []),
+                              ...(wizPaymentEnabled && wizPaymentDueDateCol ? [{ label: 'pagoPA: Data Scadenza', token: `%%${wizPaymentDueDateCol}%%` }] : []),
+                              ...(wizPaymentEnabled && wizPaymentPayeeType === 'column' && wizPaymentPayeeCol ? [{ label: 'pagoPA: Codice Fiscale Ente', token: `%%${wizPaymentPayeeCol}%%` }] : []),
                             ]}
+                            csvPlaceholders={wizCsvHeaders
+                              .filter(h => {
+                                const isMappedToSystem =
+                                  h === wizMapping.codice_fiscale ||
+                                  h === wizMapping.full_name ||
+                                  h === wizMapping.full_name_2 ||
+                                  h === wizMapping.email ||
+                                  h === wizMapping.pec ||
+                                  h === wizMapping.subject ||
+                                  (wizPaymentEnabled && (
+                                    h === wizPaymentNoticeCol ||
+                                    h === wizPaymentAmountCol ||
+                                    h === wizPaymentDueDateCol ||
+                                    (wizPaymentPayeeType === 'column' && h === wizPaymentPayeeCol)
+                                  )) ||
+                                  wizAttachments.some(a => a.key === h);
+                                return !isMappedToSystem;
+                              })
+                              .map(h => ({ label: `Colonna: ${h}`, token: `%%${h}%%` }))
+                            }
+                            wizLastFocusedField={wizLastFocusedField}
+                            onInsertSubjectToken={insertTokenIntoSubject}
+                            onFocusEditor={() => setWizLastFocusedField('body')}
                           />
                         </div>
 
@@ -5107,10 +5153,11 @@ export function App(): React.JSX.Element {
                       <TemplateEditor
                         value={editingTemplate.bodyHtml || ''}
                         onChange={(v) => setEditingTemplate({ ...editingTemplate, bodyHtml: v })}
-                        placeholders={[
+                        systemPlaceholders={[
                           { label: 'Nominativo', token: '%%nominativo%%' },
                           { label: 'Codice Fiscale', token: '%%codice_fiscale%%' },
                         ]}
+                        csvPlaceholders={[]}
                       />
                     </div>
                   ) : (

@@ -108,6 +108,13 @@ describe('processTemplate — carattere % letterale nel testo', () => {
     const result = processTemplate('Importo: %%Pagamento: importo notifica%%', recipient, 'http://api.test', secret, exp);
     expect(result).toBe('Importo: 67,00');
   });
+
+  it('risolve il token %%numero_protocollo%% se attaccato temporaneamente all\'oggetto recipient', () => {
+    const recipient = { ...baseRecipient } as any;
+    recipient.protocolNumber = '5566/2026';
+    const result = processTemplate('Protocollo: %%numero_protocollo%%', recipient, 'http://api.test', secret, exp);
+    expect(result).toBe('Protocollo: 5566/2026');
+  });
 });
 
 describe('wrapInHtmlLayout con logo e portale', () => {

@@ -75,6 +75,9 @@ export function processTemplate(
     if (k === 'pec') {
       return recipient.pec || '';
     }
+    if (k === 'numero_protocollo' || k === 'numeroprotocollo' || k === 'protocollo' || k === 'protocol_number') {
+      return (recipient as any).protocolNumber || '';
+    }
     // Search in extraData keys case-insensitively
     if (recipient.extraData) {
       for (const [exKey, exVal] of Object.entries(recipient.extraData)) {

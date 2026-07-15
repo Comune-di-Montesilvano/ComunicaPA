@@ -6,43 +6,92 @@ import { useState } from 'react';
 interface TemplateEditorProps {
   value: string;
   onChange: (html: string) => void;
-  placeholders: { label: string; token: string }[];
+  systemPlaceholders: { label: string; token: string }[];
+  csvPlaceholders: { label: string; token: string }[];
+  wizLastFocusedField?: 'subject' | 'body';
+  onInsertSubjectToken?: (token: string) => void;
+  onFocusEditor?: () => void;
 }
 
-export function TemplateEditor({ value, onChange, placeholders }: TemplateEditorProps) {
+export function TemplateEditor({
+  value,
+  onChange,
+  systemPlaceholders,
+  csvPlaceholders,
+  wizLastFocusedField = 'body',
+  onInsertSubjectToken,
+  onFocusEditor,
+}: TemplateEditorProps) {
   const [viewport, setViewport] = useState<'desktop' | 'mobile'>('desktop');
 
   const editor = useEditor({
     extensions: [StarterKit, Link.configure({ openOnClick: false })],
     content: value,
     onUpdate: ({ editor }) => onChange(editor.getHTML()),
+    onFocus: () => onFocusEditor?.(),
   });
 
   if (!editor) return null;
 
-  const insertPlaceholder = (token: string) => {
-    editor.chain().focus().insertContent(` ${token} `).run();
+  const handlePlaceholderClick = (token: string) => {
+    if (wizLastFocusedField === 'subject') {
+      onInsertSubjectToken?.(token);
+    } else {
+      editor.chain().focus().insertContent(` ${token} `).run();
+    }
   };
 
   return (
     <div>
-      <div className="p-3 border rounded bg-light mb-3">
-        <strong className="small text-dark d-block mb-2">
-          <i className="fas fa-keyboard me-1 text-primary"></i>Clicca per inserire il parametro:
+      <div className="p-3 border rounded bg-light mb-3" style={{ borderLeft: '4px solid var(--bo-accent, #0066cc)' }}>
+        <strong className="small text-dark d-block mb-3">
+          <i className="fas fa-keyboard me-1 text-primary"></i>Clicca per inserire il parametro nel campo attivo ({wizLastFocusedField === 'subject' ? 'Oggetto' : 'Corpo'}):
         </strong>
-        <div className="d-flex flex-wrap gap-1">
-          {placeholders.map((p) => (
-            <button
-              key={p.token}
-              type="button"
-              className="btn btn-xs btn-outline-secondary"
-              style={{ fontSize: '0.74rem' }}
-              onClick={() => insertPlaceholder(p.token)}
-            >
-              {p.label}
-            </button>
-          ))}
+
+        {/* Parametri di Sistema */}
+        <div className="mb-2">
+          <span className="small text-muted d-block mb-2 fw-bold text-uppercase" style={{ fontSize: '0.68rem', letterSpacing: '0.04em' }}>
+            Parametri di Sistema
+          </span>
+          <div className="d-flex flex-wrap gap-1">
+            {systemPlaceholders.map((p) => (
+              <button
+                key={p.token}
+                type="button"
+                className="btn btn-xs btn-outline-primary fw-semibold"
+                style={{ fontSize: '0.72rem', padding: '3px 8px' }}
+                onClick={() => handlePlaceholderClick(p.token)}
+              >
+                {p.label}
+              </button>
+            ))}
+            {systemPlaceholders.length === 0 && (
+              <span className="text-muted small italic">Nessun parametro di sistema</span>
+            )}
+          </div>
         </div>
+
+        {/* Colonne CSV (Expandable) */}
+        {csvPlaceholders.length > 0 && (
+          <details className="mt-3 border-top pt-2" style={{ outline: 'none' }}>
+            <summary className="small text-dark fw-bold cursor-pointer select-none" style={{ fontSize: '0.74rem', outline: 'none' }}>
+              <i className="fas fa-file-csv me-1 text-success"></i> Colonne del File CSV ({csvPlaceholders.length})
+            </summary>
+            <div className="d-flex flex-wrap gap-1 mt-2">
+              {csvPlaceholders.map((p) => (
+                <button
+                  key={p.token}
+                  type="button"
+                  className="btn btn-xs btn-outline-secondary"
+                  style={{ fontSize: '0.72rem', padding: '3px 8px' }}
+                  onClick={() => handlePlaceholderClick(p.token)}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </details>
+        )}
       </div>
 
       <div className="btn-toolbar mb-2 gap-1" role="toolbar">
