@@ -17,6 +17,7 @@ import { SendStatusSyncService } from './send/send-status-sync.service';
 import { SendDispatchService } from './send/send-dispatch.service';
 import { PostalStrategy } from './postal/postal.strategy';
 import { GlobalComClient } from './postal/globalcom-client.service';
+import { PostalStatusSyncService } from './postal/postal-status-sync.service';
 import { CampaignCompletionService } from '../campaigns/campaign-completion.service';
 
 @Module({
@@ -35,6 +36,7 @@ import { CampaignCompletionService } from '../campaigns/campaign-completion.serv
     SendAttachmentUploadService,
     SendStatusSyncService,
     SendDispatchService,
+    PostalStatusSyncService,
     CampaignCompletionService,
     {
       provide: CHANNEL_STRATEGIES,
