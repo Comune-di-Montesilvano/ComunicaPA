@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import * as crypto from 'crypto';
 import * as soap from 'soap';
 
@@ -68,6 +68,8 @@ function mapDocStatus(raw: any): GbcDocStatus {
  */
 @Injectable()
 export class GlobalComClient {
+  private readonly logger = new Logger(GlobalComClient.name);
+
   private async createSession(creds: GbcCredentials): Promise<soap.Client> {
     // baseUrl configurabile da UI: normalizza un eventuale "?wsdl" già
     // presente (operatore che ha incollato l'URL così come appare nel
@@ -111,11 +113,22 @@ export class GlobalComClient {
       ...(params.userData1 ? { UserData1: params.userData1 } : {}),
     };
 
-    const [result] = await (client as any).invio_ext_singoloAsync({ Invio: invio });
-    if (!result.Result) {
-      throw new Error(`invio_ext_singolo fallito: ${result.Messaggio || 'errore sconosciuto'}`);
+    try {
+      const [result] = await (client as any).invio_ext_singoloAsync({ Invio: invio });
+      this.logger.debug(`invio_ext_singolo request: ${(client as any).lastRequest}`);
+      if (!result.Result) {
+        throw new Error(`invio_ext_singolo fallito: ${result.Messaggio || 'errore sconosciuto'}`);
+      }
+      return mapDocStatus(result.Risposta);
+    } catch (err) {
+      // Log diagnostico: XML grezzo inviato/ricevuto, utile per un SOAP
+      // Fault server-side (es. NullReferenceException lato GlobalCom) dove
+      // il messaggio d'errore da solo non basta a capire quale campo del
+      // payload lo scatena. Solo a LOG_LEVEL=debug (vedi CLAUDE.md).
+      this.logger.debug(`invio_ext_singolo FALLITO — request XML: ${(client as any).lastRequest}`);
+      this.logger.debug(`invio_ext_singolo FALLITO — response XML: ${(client as any).lastResponse}`);
+      throw err;
     }
-    return mapDocStatus(result.Risposta);
   }
 
   /** Ricerca testuale su PROTOCOLLO/LOTTO/NOTE — usata per il dedup su retry. */
