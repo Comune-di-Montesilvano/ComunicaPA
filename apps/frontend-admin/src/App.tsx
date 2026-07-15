@@ -354,6 +354,32 @@ const EMPTY_MAIL_CONFIG: Omit<MailConfigItem, 'id' | 'testedAt' | 'active'> = {
   batchSize: 100, batchIntervalSeconds: 60,
 };
 
+type PostalProviderItem = {
+  id: string;
+  type: 'GLOBALCOM';
+  name: string;
+  baseUrl: string;
+  username: string;
+  password: string;
+  group: string;
+  centroDiCosto: string;
+  mittenteDenominazione1: string;
+  mittenteIndirizzo1: string;
+  mittenteCap: string;
+  mittenteCitta: string;
+  mittenteProvincia: string;
+  enabledServiceTypes: string[];
+  contratti: Array<{ codiceContratto: string; descrizione: string; tipologia: string }>;
+  testedAt: string | null;
+  active: boolean;
+};
+
+const EMPTY_POSTAL_PROVIDER: Omit<PostalProviderItem, 'id' | 'testedAt' | 'active' | 'enabledServiceTypes' | 'contratti'> = {
+  type: 'GLOBALCOM', name: '', baseUrl: '', username: '', password: '', group: '',
+  centroDiCosto: '', mittenteDenominazione1: '', mittenteIndirizzo1: '', mittenteCap: '',
+  mittenteCitta: '', mittenteProvincia: '',
+};
+
 const PIE_COLORS = ['var(--bi-primary)', 'var(--ms-purple-600)', 'var(--ms-gold-500)', 'var(--ms-green-600)', 'var(--ms-blue-600)'];
 
 export function App(): React.JSX.Element {
@@ -603,8 +629,9 @@ export function App(): React.JSX.Element {
   const [wizProtocolla, setWizProtocolla] = useState(false);
   const [wizTaxonomyCode, setWizTaxonomyCode] = useState('');
   const [wizPhysicalCommunicationType, setWizPhysicalCommunicationType] = useState<'AR_REGISTERED_LETTER' | 'REGISTERED_LETTER_890'>('AR_REGISTERED_LETTER');
-  const [wizPostalServiceType, setWizPostalServiceType] = useState<'Raccomandata' | 'Lettera'>('Raccomandata');
+  const [wizPostalServiceType, setWizPostalServiceType] = useState('');
   const [wizPostalReturnReceipt, setWizPostalReturnReceipt] = useState(true);
+  const [wizPostalCodiceContratto, setWizPostalCodiceContratto] = useState('');
   const [wizPostalAddressColumn, setWizPostalAddressColumn] = useState('');
   const [wizPostalMunicipalityColumn, setWizPostalMunicipalityColumn] = useState('');
   const [wizPostalZipColumn, setWizPostalZipColumn] = useState('');
@@ -780,17 +807,13 @@ export function App(): React.JSX.Element {
   const [settSendGroupsLoading, setSettSendGroupsLoading] = useState<'test' | 'prod' | null>(null);
   const [settSendGroupsError, setSettSendGroupsError] = useState<Record<'test' | 'prod', string | null>>({ test: null, prod: null });
 
-  // Postalizzazione (GlobalCom SOAP) — credenziali reali, persistite via app_settings (postal.*)
-  const [settPostalBaseUrl, setSettPostalBaseUrl] = useState('');
-  const [settPostalUser, setSettPostalUser] = useState('');
-  const [settPostalPassword, setSettPostalPassword] = useState('');
-  const [settPostalGroup, setSettPostalGroup] = useState('');
-  const [settPostalCentroDiCosto, setSettPostalCentroDiCosto] = useState('');
-  const [settPostalMittenteDenominazione1, setSettPostalMittenteDenominazione1] = useState('');
-  const [settPostalMittenteIndirizzo1, setSettPostalMittenteIndirizzo1] = useState('');
-  const [settPostalMittenteCap, setSettPostalMittenteCap] = useState('');
-  const [settPostalMittenteCitta, setSettPostalMittenteCitta] = useState('');
-  const [settPostalMittenteProvincia, setSettPostalMittenteProvincia] = useState('');
+  // Postalizzazione — provider multi-riga (postal_provider_configs), stesso
+  // pattern di mailConfigs: CRUD + test (InformazioniUtenza, auto-discovery
+  // tipologie/contratti) + attiva/disattiva. Non più app_settings postal.*.
+  const [postalProviders, setPostalProviders] = useState<PostalProviderItem[]>([]);
+  const [editingPostalProvider, setEditingPostalProvider] = useState<(Partial<PostalProviderItem> & { type: 'GLOBALCOM' }) | null>(null);
+  const [postalProviderBusyId, setPostalProviderBusyId] = useState<string | null>(null);
+  const [postalProviderMsg, setPostalProviderMsg] = useState<{ text: string; error: boolean } | null>(null);
 
   const [settPdndTestTokenUrl, setSettPdndTestTokenUrl] = useState('https://auth.uat.interop.pagopa.it/token.oauth2');
   const [settPdndTestAudience, setSettPdndTestAudience] = useState('auth.uat.interop.pagopa.it/client-assertion');
@@ -835,9 +858,6 @@ export function App(): React.JSX.Element {
   const [settProtoUnitaOrganizzativa, setSettProtoUnitaOrganizzativa] = useState('1');
   const [settProtoMittenteDenominazione, setSettProtoMittenteDenominazione] = useState('');
 
-  const [settPostalProvider, setSettPostalProvider] = useState(localStorage.getItem('sett_postal_provider') || 'Postel');
-  const [settPostalKey, setSettPostalKey] = useState(localStorage.getItem('sett_postal_key') || '');
-  const [settPostalUrl, setSettPostalUrl] = useState(localStorage.getItem('sett_postal_url') || 'https://gateway.postel.it/postalization');
 
   const [activeSettingsTab, setActiveSettingsTab] = useState<'personalizzazione' | 'smtp' | 'pec' | 'app-io' | 'pdnd' | 'send' | 'inad' | 'inipec' | 'protocollo' | 'postalizzazione' | 'oidc' | 'motori'>('personalizzazione');
   const [engines, setEngines] = useState<any[]>([]);
@@ -924,6 +944,7 @@ export function App(): React.JSX.Element {
     if (token) {
       fetchCampaigns();
       fetchMailConfigs();
+      fetchPostalProviders();
       fetchIoServices();
     }
   }, [token]);
@@ -977,16 +998,6 @@ export function App(): React.JSX.Element {
         setSettSendProdApiKey(String(s['send.prod.apiKey'] ?? ''));
         setSettSendProdPurposeId(String(s['send.prod.purposeId'] ?? ''));
         setSettSendProdGroup(String(s['send.prod.group'] ?? ''));
-        setSettPostalBaseUrl(String(s['postal.baseUrl'] ?? ''));
-        setSettPostalUser(String(s['postal.user'] ?? ''));
-        setSettPostalPassword(String(s['postal.password'] ?? ''));
-        setSettPostalGroup(String(s['postal.group'] ?? ''));
-        setSettPostalCentroDiCosto(String(s['postal.centroDiCosto'] ?? ''));
-        setSettPostalMittenteDenominazione1(String(s['postal.mittente.denominazione1'] ?? ''));
-        setSettPostalMittenteIndirizzo1(String(s['postal.mittente.indirizzo1'] ?? ''));
-        setSettPostalMittenteCap(String(s['postal.mittente.cap'] ?? ''));
-        setSettPostalMittenteCitta(String(s['postal.mittente.citta'] ?? ''));
-        setSettPostalMittenteProvincia(String(s['postal.mittente.provincia'] ?? ''));
         setSettPdndTestTokenUrl(String(s['pdnd.test.tokenUrl'] ?? ''));
         setSettPdndTestAudience(String(s['pdnd.test.audience'] ?? ''));
         setSettPdndTestClientId(String(s['pdnd.test.clientId'] ?? ''));
@@ -1550,16 +1561,6 @@ export function App(): React.JSX.Element {
     'send.prod.apiKey': settSendProdApiKey,
     'send.prod.purposeId': settSendProdPurposeId,
     'send.prod.group': settSendProdGroup,
-    'postal.baseUrl': settPostalBaseUrl,
-    'postal.user': settPostalUser,
-    'postal.password': settPostalPassword,
-    'postal.group': settPostalGroup,
-    'postal.centroDiCosto': settPostalCentroDiCosto,
-    'postal.mittente.denominazione1': settPostalMittenteDenominazione1,
-    'postal.mittente.indirizzo1': settPostalMittenteIndirizzo1,
-    'postal.mittente.cap': settPostalMittenteCap,
-    'postal.mittente.citta': settPostalMittenteCitta,
-    'postal.mittente.provincia': settPostalMittenteProvincia,
     'pdnd.test.tokenUrl': settPdndTestTokenUrl,
     'pdnd.test.audience': settPdndTestAudience,
     'pdnd.test.clientId': settPdndTestClientId,
@@ -1594,12 +1595,6 @@ export function App(): React.JSX.Element {
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Canali non ancora migrati al backend: restano su localStorage
-    // (App IO ora persistito lato server via /io-services, niente più localStorage)
-    localStorage.setItem('sett_postal_provider', settPostalProvider);
-    localStorage.setItem('sett_postal_key', settPostalKey);
-    localStorage.setItem('sett_postal_url', settPostalUrl);
-
     try {
       const res = await apiFetch('/settings', {
         method: 'PUT',
@@ -1978,6 +1973,414 @@ export function App(): React.JSX.Element {
     } finally {
       setMailConfigBusyId(null);
     }
+  };
+
+  const fetchPostalProviders = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${ADMIN_API_BASE}/postal-providers`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPostalProviders(data.providers || []);
+      }
+    } catch (err) {
+      console.error("Errore caricamento postal-providers:", err);
+    }
+  };
+
+  const handleSavePostalProvider = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPostalProvider || !token) return;
+    setPostalProviderBusyId(editingPostalProvider.id || 'new');
+    setPostalProviderMsg(null);
+
+    const isEdit = !!editingPostalProvider.id;
+    const body: Record<string, unknown> = {
+      // UpdatePostalProviderDto (backend) vieta esplicitamente la proprietà "type"
+      ...(isEdit ? {} : { type: editingPostalProvider.type }),
+      name: editingPostalProvider.name,
+      baseUrl: editingPostalProvider.baseUrl,
+      username: editingPostalProvider.username,
+      password: editingPostalProvider.password,
+      group: editingPostalProvider.group,
+      centroDiCosto: editingPostalProvider.centroDiCosto,
+      mittenteDenominazione1: editingPostalProvider.mittenteDenominazione1,
+      mittenteIndirizzo1: editingPostalProvider.mittenteIndirizzo1,
+      mittenteCap: editingPostalProvider.mittenteCap,
+      mittenteCitta: editingPostalProvider.mittenteCitta,
+      mittenteProvincia: editingPostalProvider.mittenteProvincia,
+    };
+
+    try {
+      const url = isEdit ? `${ADMIN_API_BASE}/postal-providers/${editingPostalProvider.id}` : `${ADMIN_API_BASE}/postal-providers`;
+      const res = await fetch(url, {
+        method: isEdit ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || `Errore salvataggio (HTTP ${res.status})`);
+      }
+      setPostalProviderMsg({ text: 'Provider salvato con successo!', error: false });
+      setEditingPostalProvider(null);
+      fetchPostalProviders();
+    } catch (err: any) {
+      setPostalProviderMsg({ text: err.message || 'Errore di rete', error: true });
+    } finally {
+      setPostalProviderBusyId(null);
+    }
+  };
+
+  const handleDeletePostalProvider = async (id: string, name: string) => {
+    if (!token || !window.confirm(`Eliminare il provider "${name}"?`)) return;
+    setPostalProviderBusyId(id);
+    setPostalProviderMsg(null);
+    try {
+      const res = await fetch(`${ADMIN_API_BASE}/postal-providers/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok && res.status !== 204) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || `Errore eliminazione (HTTP ${res.status})`);
+      }
+      setPostalProviderMsg({ text: 'Provider eliminato.', error: false });
+      fetchPostalProviders();
+    } catch (err: any) {
+      setPostalProviderMsg({ text: err.message || 'Errore di rete', error: true });
+    } finally {
+      setPostalProviderBusyId(null);
+    }
+  };
+
+  const handleTogglePostalProviderActive = async (id: string, currentActive: boolean) => {
+    if (!token) return;
+    setPostalProviderBusyId(id);
+    setPostalProviderMsg(null);
+    try {
+      const res = await fetch(`${ADMIN_API_BASE}/postal-providers/${id}/active`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ active: !currentActive }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || `Errore (HTTP ${res.status})`);
+      }
+      setPostalProviderMsg({ text: !currentActive ? 'Provider attivato.' : 'Provider disattivato.', error: false });
+      fetchPostalProviders();
+    } catch (err: any) {
+      setPostalProviderMsg({ text: err.message || 'Errore di rete', error: true });
+    } finally {
+      setPostalProviderBusyId(null);
+    }
+  };
+
+  const handleTestPostalProvider = async (id: string) => {
+    if (!token) return;
+    setPostalProviderBusyId(id);
+    setPostalProviderMsg(null);
+    try {
+      const res = await fetch(`${ADMIN_API_BASE}/postal-providers/${id}/test`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.success === false) {
+        throw new Error(data.message || `Errore test (HTTP ${res.status})`);
+      }
+      setPostalProviderMsg({ text: data.message || 'Test riuscito.', error: false });
+      fetchPostalProviders();
+    } catch (err: any) {
+      setPostalProviderMsg({ text: err.message || 'Errore di rete', error: true });
+    } finally {
+      setPostalProviderBusyId(null);
+    }
+  };
+
+  const renderPostalProvidersTab = () => {
+    const editing = editingPostalProvider;
+
+    return (
+      <div className="d-flex flex-column gap-4">
+        {postalProviderMsg && (
+          <div className={`alert ${postalProviderMsg.error ? 'alert-danger' : 'alert-success'} d-flex align-items-center gap-2 mb-0`}>
+            <i className={`fas ${postalProviderMsg.error ? 'fa-triangle-exclamation' : 'fa-check-circle'}`}></i>
+            <div>{postalProviderMsg.text}</div>
+          </div>
+        )}
+
+        {!editing && (
+          <div>
+            <div className="d-flex justify-content-between align-items-center mb-3">
+              <h5 className="mb-0 text-dark fw-bold small text-uppercase tracking-wider">
+                Provider Postalizzazione ({postalProviders.length})
+              </h5>
+              <button
+                type="button"
+                className="btn btn-sm btn-primary px-3 d-flex align-items-center gap-1"
+                onClick={() => setEditingPostalProvider({ ...EMPTY_POSTAL_PROVIDER })}
+              >
+                <i className="fas fa-plus"></i> Nuovo Provider
+              </button>
+            </div>
+
+            {postalProviders.length === 0 ? (
+              <div className="text-center py-4 border rounded bg-white text-muted">
+                <i className="fas fa-truck fa-2x mb-2 text-secondary"></i>
+                <p className="mb-0">Nessun provider di postalizzazione configurato.</p>
+              </div>
+            ) : (
+              <div className="d-flex flex-column gap-3">
+                {postalProviders.map((p) => (
+                  <div key={p.id} className={`card border shadow-sm ${p.active ? 'border-success' : 'border-light'}`}>
+                    <div className="card-body p-3">
+                      <div className="d-flex justify-content-between align-items-start flex-wrap gap-3">
+                        <div className="d-flex align-items-start gap-3 flex-grow-1" style={{ minWidth: 0 }}>
+                          <div className={`rounded-circle d-flex align-items-center justify-content-center text-white flex-shrink-0 ${p.active ? 'bg-success' : 'bg-secondary'}`} style={{ width: 40, height: 40 }}>
+                            <i className="fas fa-truck"></i>
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <div className="fw-bold text-dark d-flex align-items-center gap-2">
+                              {p.name}
+                              <span className="badge bg-info" style={{ fontSize: '0.65rem' }}>GlobalCom</span>
+                              <span className={`badge ${p.active ? 'bg-success' : 'bg-secondary'}`} style={{ fontSize: '0.65rem' }}>
+                                {p.active ? 'Attivo' : 'Inattivo'}
+                              </span>
+                            </div>
+                            <div className="text-muted small mt-1">
+                              <i className="fas fa-server me-1"></i>
+                              <code>{p.baseUrl}</code>
+                            </div>
+                            <div className="text-muted small mt-1">
+                              <i className="fas fa-user me-1"></i>
+                              {p.username} / {p.group || '(nessun gruppo)'}
+                              {p.testedAt && (
+                                <span className="ms-3 text-success">
+                                  <i className="fas fa-check-circle me-1"></i>
+                                  Testato il {new Date(p.testedAt).toLocaleDateString('it-IT')}
+                                </span>
+                              )}
+                            </div>
+                            {p.testedAt && (
+                              <div className="mt-2">
+                                <div className="small text-muted fw-semibold mb-1">Tipologie abilitate ({p.enabledServiceTypes.length}):</div>
+                                <div className="d-flex flex-wrap gap-1">
+                                  {p.enabledServiceTypes.length === 0 && <span className="text-muted small fst-italic">nessuna</span>}
+                                  {p.enabledServiceTypes.map((st) => (
+                                    <span key={st} className="badge bg-light text-dark border" style={{ fontSize: '0.65rem' }}>{st}</span>
+                                  ))}
+                                </div>
+                                {p.contratti.length > 0 && (
+                                  <div className="mt-2">
+                                    <div className="small text-muted fw-semibold mb-1">Contratti disponibili ({p.contratti.length}):</div>
+                                    <ul className="small mb-0 ps-3">
+                                      {p.contratti.map((c) => (
+                                        <li key={c.codiceContratto}>
+                                          <code>{c.codiceContratto}</code> — {c.descrizione} <span className="text-muted">({c.tipologia})</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="d-flex flex-column gap-2 flex-shrink-0">
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1"
+                            onClick={() => handleTestPostalProvider(p.id)}
+                            disabled={postalProviderBusyId === p.id}
+                          >
+                            <i className="fas fa-vial"></i> {postalProviderBusyId === p.id ? 'Test in corso…' : 'Test'}
+                          </button>
+                          <button
+                            type="button"
+                            className={`btn btn-sm ${p.active ? 'btn-outline-success' : 'btn-outline-secondary'} d-flex align-items-center gap-1`}
+                            onClick={() => handleTogglePostalProviderActive(p.id, p.active)}
+                            disabled={postalProviderBusyId === p.id || (!p.active && !p.testedAt)}
+                            title={!p.active && !p.testedAt ? 'Esegui prima il Test' : undefined}
+                          >
+                            <i className={`fas fa-toggle-${p.active ? 'on' : 'off'}`}></i>
+                            {p.active ? 'Disattiva' : 'Attiva'}
+                          </button>
+                          <div className="d-flex gap-1">
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-primary px-2"
+                              onClick={() => setEditingPostalProvider(p)}
+                              title="Modifica"
+                            >
+                              <i className="fas fa-edit me-1"></i>Modifica
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-danger px-2"
+                              onClick={() => handleDeletePostalProvider(p.id, p.name)}
+                              disabled={postalProviderBusyId === p.id}
+                              title="Elimina"
+                            >
+                              <i className="fas fa-trash"></i>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {editing && (
+          <form onSubmit={handleSavePostalProvider} className="border rounded bg-white p-4 shadow-sm">
+            <h5 className="text-dark fw-bold mb-4">
+              {editing.id ? 'Modifica Provider' : 'Nuovo Provider'}
+            </h5>
+
+            <div className="row g-3">
+              <div className="col-md-6">
+                <label className="form-label small fw-bold">Tipo Provider</label>
+                <select className="form-select form-select-sm" value={editing.type} disabled>
+                  <option value="GLOBALCOM">GlobalCom</option>
+                </select>
+              </div>
+              <div className="col-md-6">
+                <label className="form-label small fw-bold">Nome Configurazione</label>
+                <input
+                  type="text"
+                  className="form-control form-control-sm"
+                  required
+                  placeholder="Es. GlobalCom Montesilvano"
+                  value={editing.name || ''}
+                  onChange={(e) => setEditingPostalProvider({ ...editing, name: e.target.value })}
+                />
+              </div>
+
+              <div className="col-md-8">
+                <label className="form-label small fw-bold">URL Web Service (WSDL)</label>
+                <input
+                  type="text"
+                  className="form-control form-control-sm"
+                  required
+                  placeholder="https://<comune>.corrispondenzadigitale.it/gbcweb/GBCWebservice.asmx"
+                  value={editing.baseUrl || ''}
+                  onChange={(e) => setEditingPostalProvider({ ...editing, baseUrl: e.target.value })}
+                />
+              </div>
+              <div className="col-md-4">
+                <label className="form-label small fw-bold">Centro di Costo</label>
+                <input
+                  type="text"
+                  className="form-control form-control-sm"
+                  value={editing.centroDiCosto || ''}
+                  onChange={(e) => setEditingPostalProvider({ ...editing, centroDiCosto: e.target.value })}
+                />
+              </div>
+
+              <div className="col-md-4">
+                <label className="form-label small fw-bold">Utente</label>
+                <input
+                  type="text"
+                  className="form-control form-control-sm"
+                  required
+                  value={editing.username || ''}
+                  onChange={(e) => setEditingPostalProvider({ ...editing, username: e.target.value })}
+                />
+              </div>
+              <div className="col-md-4">
+                <label className="form-label small fw-bold">Password</label>
+                <input
+                  type="password"
+                  className="form-control form-control-sm"
+                  placeholder={editing.id ? '••••••••' : ''}
+                  value={editing.password || ''}
+                  onChange={(e) => setEditingPostalProvider({ ...editing, password: e.target.value })}
+                />
+              </div>
+              <div className="col-md-4">
+                <label className="form-label small fw-bold">Gruppo</label>
+                <input
+                  type="text"
+                  className="form-control form-control-sm"
+                  placeholder="<DEFAULT> se utenza spare"
+                  value={editing.group || ''}
+                  onChange={(e) => setEditingPostalProvider({ ...editing, group: e.target.value })}
+                />
+              </div>
+
+              <div className="col-12"><hr /><span className="small text-muted fw-bold">Mittente (opzionale — vuoto = mittente predefinito utenza GlobalCom)</span></div>
+              <div className="col-md-6">
+                <label className="form-label small text-dark">Denominazione</label>
+                <input
+                  type="text"
+                  className="form-control form-control-sm"
+                  value={editing.mittenteDenominazione1 || ''}
+                  onChange={(e) => setEditingPostalProvider({ ...editing, mittenteDenominazione1: e.target.value })}
+                />
+              </div>
+              <div className="col-md-6">
+                <label className="form-label small text-dark">Indirizzo</label>
+                <input
+                  type="text"
+                  className="form-control form-control-sm"
+                  value={editing.mittenteIndirizzo1 || ''}
+                  onChange={(e) => setEditingPostalProvider({ ...editing, mittenteIndirizzo1: e.target.value })}
+                />
+              </div>
+              <div className="col-md-4">
+                <label className="form-label small text-dark">CAP</label>
+                <input
+                  type="text"
+                  className="form-control form-control-sm"
+                  value={editing.mittenteCap || ''}
+                  onChange={(e) => setEditingPostalProvider({ ...editing, mittenteCap: e.target.value })}
+                />
+              </div>
+              <div className="col-md-4">
+                <label className="form-label small text-dark">Città</label>
+                <input
+                  type="text"
+                  className="form-control form-control-sm"
+                  value={editing.mittenteCitta || ''}
+                  onChange={(e) => setEditingPostalProvider({ ...editing, mittenteCitta: e.target.value })}
+                />
+              </div>
+              <div className="col-md-4">
+                <label className="form-label small text-dark">Provincia</label>
+                <input
+                  type="text"
+                  className="form-control form-control-sm"
+                  maxLength={2}
+                  value={editing.mittenteProvincia || ''}
+                  onChange={(e) => setEditingPostalProvider({ ...editing, mittenteProvincia: e.target.value.toUpperCase() })}
+                />
+              </div>
+
+              <div className="col-12 form-text small text-muted">
+                Dopo il salvataggio, esegui il <strong>Test</strong> dalla lista: verifica le credenziali e scopre automaticamente le tipologie di invio e i codici contratto abilitati per questa utenza (nessuna spedizione reale).
+              </div>
+            </div>
+
+            <div className="d-flex gap-2 mt-4 pt-3 border-top">
+              <button type="submit" className="btn btn-primary" disabled={postalProviderBusyId === (editing.id || 'new')}>
+                {postalProviderBusyId === (editing.id || 'new') ? 'Salvataggio…' : 'Salva'}
+              </button>
+              <button type="button" className="btn btn-outline-secondary" onClick={() => setEditingPostalProvider(null)}>
+                Annulla
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    );
   };
 
   const renderMailConfigTab = (type: 'EMAIL' | 'PEC') => {
@@ -2630,8 +3033,9 @@ export function App(): React.JSX.Element {
     setWizProtocolla(Boolean(source.channelConfig?.protocolla));
     setWizTaxonomyCode(source.channelConfig?.taxonomyCode || '');
     setWizPhysicalCommunicationType(source.channelConfig?.physicalCommunicationType || 'AR_REGISTERED_LETTER');
-    setWizPostalServiceType(source.channelConfig?.postalServiceType || 'Raccomandata');
+    setWizPostalServiceType(source.channelConfig?.postalServiceType || '');
     setWizPostalReturnReceipt(source.channelConfig?.postalReturnReceipt !== undefined ? Boolean(source.channelConfig.postalReturnReceipt) : true);
+    setWizPostalCodiceContratto(source.channelConfig?.postalCodiceContratto || '');
     setWizPostalAddressColumn(source.channelConfig?.physicalAddressConfig?.addressColumn || '');
     setWizPostalMunicipalityColumn(source.channelConfig?.physicalAddressConfig?.municipalityColumn || '');
     setWizPostalZipColumn(source.channelConfig?.physicalAddressConfig?.zipColumn || '');
@@ -2755,6 +3159,9 @@ export function App(): React.JSX.Element {
     if (wizChannel === 'POSTAL') {
       cfg.postalServiceType = wizPostalServiceType;
       cfg.postalReturnReceipt = wizPostalReturnReceipt;
+      if (wizPostalCodiceContratto) {
+        cfg.postalCodiceContratto = wizPostalCodiceContratto;
+      }
       cfg.physicalAddressConfig = {
         enabled: true,
         addressColumn: wizPostalAddressColumn,
@@ -2902,6 +3309,9 @@ export function App(): React.JSX.Element {
       } else if (wizChannel === 'POSTAL') {
         channelConfig.postalServiceType = wizPostalServiceType;
         channelConfig.postalReturnReceipt = wizPostalReturnReceipt;
+        if (wizPostalCodiceContratto) {
+          channelConfig.postalCodiceContratto = wizPostalCodiceContratto;
+        }
         channelConfig.physicalAddressConfig = {
           enabled: true,
           addressColumn: wizPostalAddressColumn,
@@ -3992,23 +4402,49 @@ export function App(): React.JSX.Element {
                     </>
                   )}
 
-                  {wizChannel === 'POSTAL' && (
+                  {wizChannel === 'POSTAL' && (() => {
+                    const activeProvider = postalProviders.find((p) => p.active);
+                    const enabledTypes = activeProvider?.enabledServiceTypes ?? [];
+                    const contrattiPerTipo = activeProvider?.contratti.filter((c) => wizPostalServiceType.startsWith(c.tipologia)) ?? [];
+                    return (
                     <div className="row g-3 mb-3">
+                      {!activeProvider && (
+                        <div className="col-12">
+                          <div className="alert alert-warning small mb-0">
+                            Nessun provider di postalizzazione attivo — configuralo e testalo in Impostazioni → Postalizzazione prima di lanciare questa campagna.
+                          </div>
+                        </div>
+                      )}
                       <div className="col-md-4">
-                        <label className="form-label small fw-bold">Tipo di invio</label>
-                        <select className="form-select" value={wizPostalServiceType}
-                          onChange={(e) => setWizPostalServiceType(e.target.value as 'Raccomandata' | 'Lettera')}>
-                          <option value="Raccomandata">Raccomandata</option>
-                          <option value="Lettera">Lettera (ordinaria)</option>
+                        <label className="form-label small fw-bold">Tipo di invio *</label>
+                        <select className="form-select" value={wizPostalServiceType} required disabled={enabledTypes.length === 0}
+                          onChange={(e) => { setWizPostalServiceType(e.target.value); setWizPostalCodiceContratto(''); }}>
+                          <option value="">Seleziona…</option>
+                          {enabledTypes.map((st) => <option key={st} value={st}>{st}</option>)}
                         </select>
+                        {activeProvider && enabledTypes.length === 0 && (
+                          <div className="form-text small text-warning">Nessuna tipologia abilitata — esegui il Test del provider in Impostazioni.</div>
+                        )}
                       </div>
-                      {wizPostalServiceType === 'Raccomandata' && (
+                      {wizPostalServiceType.startsWith('Raccomandata') && (
                         <div className="col-md-4 d-flex align-items-end">
                           <div className="form-check">
                             <input className="form-check-input" type="checkbox" id="wizPostalAR"
                               checked={wizPostalReturnReceipt} onChange={(e) => setWizPostalReturnReceipt(e.target.checked)} />
                             <label className="form-check-label small" htmlFor="wizPostalAR">Ricevuta di ritorno (AR)</label>
                           </div>
+                        </div>
+                      )}
+                      {contrattiPerTipo.length > 0 && (
+                        <div className="col-md-4">
+                          <label className="form-label small fw-bold">Contratto {contrattiPerTipo.length > 1 ? '*' : ''}</label>
+                          <select className="form-select" value={wizPostalCodiceContratto} required={contrattiPerTipo.length > 1}
+                            onChange={(e) => setWizPostalCodiceContratto(e.target.value)}>
+                            {contrattiPerTipo.length > 1 && <option value="">Seleziona…</option>}
+                            {contrattiPerTipo.map((c) => (
+                              <option key={c.codiceContratto} value={c.codiceContratto}>{c.descrizione} ({c.codiceContratto})</option>
+                            ))}
+                          </select>
                         </div>
                       )}
                       <div className="col-12"><hr /><span className="small text-muted fw-bold">Indirizzo destinatario (colonne CSV)</span></div>
@@ -4034,7 +4470,8 @@ export function App(): React.JSX.Element {
                         <input className="form-control" placeholder="es. numero_avviso" value={wizPostalUserDataColumn} onChange={(e) => setWizPostalUserDataColumn(e.target.value)} />
                       </div>
                     </div>
-                  )}
+                    );
+                  })()}
 
                   {(wizChannel === 'EMAIL' || wizChannel === 'PEC') && (
                     <div className="mb-3">
@@ -4204,7 +4641,7 @@ export function App(): React.JSX.Element {
                         ((wizChannel === 'EMAIL' || wizChannel === 'PEC') && !wizMailConfigId) ||
                         ((wizChannel === 'EMAIL' || wizChannel === 'PEC') && wizAppIoMode !== 'none' && !wizAppIoServiceId) ||
                         (wizChannel === 'APP_IO' && !wizAppIoServiceId) ||
-                        (wizChannel === 'POSTAL' && (!wizPostalAddressColumn || !wizPostalMunicipalityColumn))
+                        (wizChannel === 'POSTAL' && (!wizPostalServiceType || !wizPostalAddressColumn || !wizPostalMunicipalityColumn))
                       }
                     >
                       Avanti <i className="fas fa-arrow-right ms-1"></i>
@@ -6272,149 +6709,7 @@ export function App(): React.JSX.Element {
                         )}
 
                         {/* TAB: POSTALIZZAZIONE */}
-                        {activeSettingsTab === 'postalizzazione' && (
-                          <div className="row g-3">
-                            <div className="col-md-6">
-                              <label className="form-label small fw-bold text-dark" htmlFor="postal_provider">Gestore Postalizzazione</label>
-                              <select
-                                id="postal_provider"
-                                className="form-select form-select-sm"
-                                value={settPostalProvider}
-                                onChange={(e) => setSettPostalProvider(e.target.value)}
-                              >
-                                <option value="Postel">Postel (Gruppo Poste Italiane)</option>
-                                <option value="HCS">HCS Civico</option>
-                                <option value="Simulazione">Strategia Stateless Interna</option>
-                              </select>
-                            </div>
-                            <div className="col-md-6">
-                              <label className="form-label small fw-bold text-dark" htmlFor="postal_url">Endpoint Gateway</label>
-                              <input
-                                type="text"
-                                id="postal_url"
-                                className="form-control form-control-sm"
-                                value={settPostalUrl}
-                                onChange={(e) => setSettPostalUrl(e.target.value)}
-                              />
-                            </div>
-                            <div className="col-12">
-                              <label className="form-label small fw-bold text-dark" htmlFor="postal_key">Token di Autorizzazione API</label>
-                              <input
-                                type="text"
-                                id="postal_key"
-                                className="form-control form-control-sm"
-                                value={settPostalKey}
-                                onChange={(e) => setSettPostalKey(e.target.value)}
-                              />
-                            </div>
-
-                            <div className="col-12"><hr /><span className="small text-muted fw-bold">Postalizzazione (GlobalCom)</span></div>
-                            <div className="col-md-8">
-                              <label className="form-label small fw-bold text-dark" htmlFor="postal_globalcom_baseurl">URL Web Service (WSDL)</label>
-                              <input
-                                type="text"
-                                id="postal_globalcom_baseurl"
-                                className="form-control form-control-sm"
-                                placeholder="https://<comune>.corrispondenzadigitale.it/gbcweb/GBCWebservice.asmx"
-                                value={settPostalBaseUrl}
-                                onChange={(e) => setSettPostalBaseUrl(e.target.value)}
-                              />
-                            </div>
-                            <div className="col-md-4">
-                              <label className="form-label small fw-bold text-dark" htmlFor="postal_globalcom_centrocosto">Centro di Costo</label>
-                              <input
-                                type="text"
-                                id="postal_globalcom_centrocosto"
-                                className="form-control form-control-sm"
-                                value={settPostalCentroDiCosto}
-                                onChange={(e) => setSettPostalCentroDiCosto(e.target.value)}
-                              />
-                            </div>
-                            <div className="col-md-4">
-                              <label className="form-label small fw-bold text-dark" htmlFor="postal_globalcom_user">Utente</label>
-                              <input
-                                type="text"
-                                id="postal_globalcom_user"
-                                className="form-control form-control-sm"
-                                value={settPostalUser}
-                                onChange={(e) => setSettPostalUser(e.target.value)}
-                              />
-                            </div>
-                            <div className="col-md-4">
-                              <label className="form-label small fw-bold text-dark" htmlFor="postal_globalcom_password">Password</label>
-                              <input
-                                type="password"
-                                id="postal_globalcom_password"
-                                className="form-control form-control-sm"
-                                value={settPostalPassword}
-                                onChange={(e) => setSettPostalPassword(e.target.value)}
-                              />
-                            </div>
-                            <div className="col-md-4">
-                              <label className="form-label small fw-bold text-dark" htmlFor="postal_globalcom_group">Gruppo</label>
-                              <input
-                                type="text"
-                                id="postal_globalcom_group"
-                                className="form-control form-control-sm"
-                                placeholder="<DEFAULT> se utenza spare"
-                                value={settPostalGroup}
-                                onChange={(e) => setSettPostalGroup(e.target.value)}
-                              />
-                            </div>
-                            <div className="col-12"><span className="small text-muted fw-bold">Mittente (opzionale — vuoto = mittente predefinito utenza GlobalCom)</span></div>
-                            <div className="col-md-6">
-                              <label className="form-label small text-dark" htmlFor="postal_globalcom_mitt_denom">Denominazione</label>
-                              <input
-                                type="text"
-                                id="postal_globalcom_mitt_denom"
-                                className="form-control form-control-sm"
-                                value={settPostalMittenteDenominazione1}
-                                onChange={(e) => setSettPostalMittenteDenominazione1(e.target.value)}
-                              />
-                            </div>
-                            <div className="col-md-6">
-                              <label className="form-label small text-dark" htmlFor="postal_globalcom_mitt_indirizzo">Indirizzo</label>
-                              <input
-                                type="text"
-                                id="postal_globalcom_mitt_indirizzo"
-                                className="form-control form-control-sm"
-                                value={settPostalMittenteIndirizzo1}
-                                onChange={(e) => setSettPostalMittenteIndirizzo1(e.target.value)}
-                              />
-                            </div>
-                            <div className="col-md-4">
-                              <label className="form-label small text-dark" htmlFor="postal_globalcom_mitt_cap">CAP</label>
-                              <input
-                                type="text"
-                                id="postal_globalcom_mitt_cap"
-                                className="form-control form-control-sm"
-                                value={settPostalMittenteCap}
-                                onChange={(e) => setSettPostalMittenteCap(e.target.value)}
-                              />
-                            </div>
-                            <div className="col-md-4">
-                              <label className="form-label small text-dark" htmlFor="postal_globalcom_mitt_citta">Città</label>
-                              <input
-                                type="text"
-                                id="postal_globalcom_mitt_citta"
-                                className="form-control form-control-sm"
-                                value={settPostalMittenteCitta}
-                                onChange={(e) => setSettPostalMittenteCitta(e.target.value)}
-                              />
-                            </div>
-                            <div className="col-md-4">
-                              <label className="form-label small text-dark" htmlFor="postal_globalcom_mitt_provincia">Provincia</label>
-                              <input
-                                type="text"
-                                id="postal_globalcom_mitt_provincia"
-                                className="form-control form-control-sm"
-                                maxLength={2}
-                                value={settPostalMittenteProvincia}
-                                onChange={(e) => setSettPostalMittenteProvincia(e.target.value.toUpperCase())}
-                              />
-                            </div>
-                          </div>
-                        )}
+                        {activeSettingsTab === 'postalizzazione' && renderPostalProvidersTab()}
 
                         {/* TAB: OIDC (SPID/CIE) */}
                         {activeSettingsTab === 'oidc' && (
