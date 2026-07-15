@@ -7529,7 +7529,11 @@ export function App(): React.JSX.Element {
                                     {campaign.channelType === 'SEND' ? (
                                       <><th>IUN</th><th>Protocollo</th><th>Stato SEND</th><th>Aggiornato il</th></>
                                     ) : campaign.channelType === 'POSTAL' ? (
-                                      <><th>Stato Consegna</th><th>Aggiornato il</th></>
+                                      campaign.channelConfig?.['protocolla'] ? (
+                                        <><th>Protocollo</th><th>Stato Consegna</th><th>Aggiornato il</th></>
+                                      ) : (
+                                        <><th>Stato Consegna</th><th>Aggiornato il</th></>
+                                      )
                                     ) : campaign.channelConfig?.['protocolla'] ? (
                                       <><th>Protocollo</th><th className="text-center">Download</th></>
                                     ) : (
@@ -7557,10 +7561,18 @@ export function App(): React.JSX.Element {
                                           <td className="small text-muted">{r.sendStatusUpdatedAt ? new Date(r.sendStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
                                         </>
                                       ) : campaign.channelType === 'POSTAL' ? (
-                                        <>
-                                          <td className="small"><PostalStatusBadge status={r.postalStatus} /></td>
-                                          <td className="small text-muted">{r.postalStatusUpdatedAt ? new Date(r.postalStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
-                                        </>
+                                        campaign.channelConfig?.['protocolla'] ? (
+                                          <>
+                                            <td className="small">{r.protocolNumber ? `${r.protocolNumber}/${r.protocolYear}` : '—'}</td>
+                                            <td className="small"><PostalStatusBadge status={r.postalStatus} /></td>
+                                            <td className="small text-muted">{r.postalStatusUpdatedAt ? new Date(r.postalStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <td className="small"><PostalStatusBadge status={r.postalStatus} /></td>
+                                            <td className="small text-muted">{r.postalStatusUpdatedAt ? new Date(r.postalStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
+                                          </>
+                                        )
                                       ) : campaign.channelConfig?.['protocolla'] ? (
                                         <>
                                           <td className="small">{r.protocolNumber ? `${r.protocolNumber}/${r.protocolYear}` : '—'}</td>
