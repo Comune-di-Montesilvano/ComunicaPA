@@ -746,6 +746,18 @@ export function App(): React.JSX.Element {
   const [settSendGroupsLoading, setSettSendGroupsLoading] = useState<'test' | 'prod' | null>(null);
   const [settSendGroupsError, setSettSendGroupsError] = useState<Record<'test' | 'prod', string | null>>({ test: null, prod: null });
 
+  // Postalizzazione (GlobalCom SOAP) — credenziali reali, persistite via app_settings (postal.*)
+  const [settPostalBaseUrl, setSettPostalBaseUrl] = useState('');
+  const [settPostalUser, setSettPostalUser] = useState('');
+  const [settPostalPassword, setSettPostalPassword] = useState('');
+  const [settPostalGroup, setSettPostalGroup] = useState('');
+  const [settPostalCentroDiCosto, setSettPostalCentroDiCosto] = useState('');
+  const [settPostalMittenteDenominazione1, setSettPostalMittenteDenominazione1] = useState('');
+  const [settPostalMittenteIndirizzo1, setSettPostalMittenteIndirizzo1] = useState('');
+  const [settPostalMittenteCap, setSettPostalMittenteCap] = useState('');
+  const [settPostalMittenteCitta, setSettPostalMittenteCitta] = useState('');
+  const [settPostalMittenteProvincia, setSettPostalMittenteProvincia] = useState('');
+
   const [settPdndTestTokenUrl, setSettPdndTestTokenUrl] = useState('https://auth.uat.interop.pagopa.it/token.oauth2');
   const [settPdndTestAudience, setSettPdndTestAudience] = useState('auth.uat.interop.pagopa.it/client-assertion');
   const [settPdndTestClientId, setSettPdndTestClientId] = useState('');
@@ -931,6 +943,16 @@ export function App(): React.JSX.Element {
         setSettSendProdApiKey(String(s['send.prod.apiKey'] ?? ''));
         setSettSendProdPurposeId(String(s['send.prod.purposeId'] ?? ''));
         setSettSendProdGroup(String(s['send.prod.group'] ?? ''));
+        setSettPostalBaseUrl(String(s['postal.baseUrl'] ?? ''));
+        setSettPostalUser(String(s['postal.user'] ?? ''));
+        setSettPostalPassword(String(s['postal.password'] ?? ''));
+        setSettPostalGroup(String(s['postal.group'] ?? ''));
+        setSettPostalCentroDiCosto(String(s['postal.centroDiCosto'] ?? ''));
+        setSettPostalMittenteDenominazione1(String(s['postal.mittente.denominazione1'] ?? ''));
+        setSettPostalMittenteIndirizzo1(String(s['postal.mittente.indirizzo1'] ?? ''));
+        setSettPostalMittenteCap(String(s['postal.mittente.cap'] ?? ''));
+        setSettPostalMittenteCitta(String(s['postal.mittente.citta'] ?? ''));
+        setSettPostalMittenteProvincia(String(s['postal.mittente.provincia'] ?? ''));
         setSettPdndTestTokenUrl(String(s['pdnd.test.tokenUrl'] ?? ''));
         setSettPdndTestAudience(String(s['pdnd.test.audience'] ?? ''));
         setSettPdndTestClientId(String(s['pdnd.test.clientId'] ?? ''));
@@ -1494,6 +1516,16 @@ export function App(): React.JSX.Element {
     'send.prod.apiKey': settSendProdApiKey,
     'send.prod.purposeId': settSendProdPurposeId,
     'send.prod.group': settSendProdGroup,
+    'postal.baseUrl': settPostalBaseUrl,
+    'postal.user': settPostalUser,
+    'postal.password': settPostalPassword,
+    'postal.group': settPostalGroup,
+    'postal.centroDiCosto': settPostalCentroDiCosto,
+    'postal.mittente.denominazione1': settPostalMittenteDenominazione1,
+    'postal.mittente.indirizzo1': settPostalMittenteIndirizzo1,
+    'postal.mittente.cap': settPostalMittenteCap,
+    'postal.mittente.citta': settPostalMittenteCitta,
+    'postal.mittente.provincia': settPostalMittenteProvincia,
     'pdnd.test.tokenUrl': settPdndTestTokenUrl,
     'pdnd.test.audience': settPdndTestAudience,
     'pdnd.test.clientId': settPdndTestClientId,
@@ -6135,7 +6167,6 @@ export function App(): React.JSX.Element {
                                 className="form-control form-control-sm"
                                 value={settPostalUrl}
                                 onChange={(e) => setSettPostalUrl(e.target.value)}
-                                required
                               />
                             </div>
                             <div className="col-12">
@@ -6146,7 +6177,112 @@ export function App(): React.JSX.Element {
                                 className="form-control form-control-sm"
                                 value={settPostalKey}
                                 onChange={(e) => setSettPostalKey(e.target.value)}
-                                required
+                              />
+                            </div>
+
+                            <div className="col-12"><hr /><span className="small text-muted fw-bold">Postalizzazione (GlobalCom)</span></div>
+                            <div className="col-md-8">
+                              <label className="form-label small fw-bold text-dark" htmlFor="postal_globalcom_baseurl">URL Web Service (WSDL)</label>
+                              <input
+                                type="text"
+                                id="postal_globalcom_baseurl"
+                                className="form-control form-control-sm"
+                                placeholder="https://<comune>.corrispondenzadigitale.it/gbcweb/GBCWebservice.asmx"
+                                value={settPostalBaseUrl}
+                                onChange={(e) => setSettPostalBaseUrl(e.target.value)}
+                              />
+                            </div>
+                            <div className="col-md-4">
+                              <label className="form-label small fw-bold text-dark" htmlFor="postal_globalcom_centrocosto">Centro di Costo</label>
+                              <input
+                                type="text"
+                                id="postal_globalcom_centrocosto"
+                                className="form-control form-control-sm"
+                                value={settPostalCentroDiCosto}
+                                onChange={(e) => setSettPostalCentroDiCosto(e.target.value)}
+                              />
+                            </div>
+                            <div className="col-md-4">
+                              <label className="form-label small fw-bold text-dark" htmlFor="postal_globalcom_user">Utente</label>
+                              <input
+                                type="text"
+                                id="postal_globalcom_user"
+                                className="form-control form-control-sm"
+                                value={settPostalUser}
+                                onChange={(e) => setSettPostalUser(e.target.value)}
+                              />
+                            </div>
+                            <div className="col-md-4">
+                              <label className="form-label small fw-bold text-dark" htmlFor="postal_globalcom_password">Password</label>
+                              <input
+                                type="password"
+                                id="postal_globalcom_password"
+                                className="form-control form-control-sm"
+                                value={settPostalPassword}
+                                onChange={(e) => setSettPostalPassword(e.target.value)}
+                              />
+                            </div>
+                            <div className="col-md-4">
+                              <label className="form-label small fw-bold text-dark" htmlFor="postal_globalcom_group">Gruppo</label>
+                              <input
+                                type="text"
+                                id="postal_globalcom_group"
+                                className="form-control form-control-sm"
+                                placeholder="<DEFAULT> se utenza spare"
+                                value={settPostalGroup}
+                                onChange={(e) => setSettPostalGroup(e.target.value)}
+                              />
+                            </div>
+                            <div className="col-12"><span className="small text-muted fw-bold">Mittente (opzionale — vuoto = mittente predefinito utenza GlobalCom)</span></div>
+                            <div className="col-md-6">
+                              <label className="form-label small text-dark" htmlFor="postal_globalcom_mitt_denom">Denominazione</label>
+                              <input
+                                type="text"
+                                id="postal_globalcom_mitt_denom"
+                                className="form-control form-control-sm"
+                                value={settPostalMittenteDenominazione1}
+                                onChange={(e) => setSettPostalMittenteDenominazione1(e.target.value)}
+                              />
+                            </div>
+                            <div className="col-md-6">
+                              <label className="form-label small text-dark" htmlFor="postal_globalcom_mitt_indirizzo">Indirizzo</label>
+                              <input
+                                type="text"
+                                id="postal_globalcom_mitt_indirizzo"
+                                className="form-control form-control-sm"
+                                value={settPostalMittenteIndirizzo1}
+                                onChange={(e) => setSettPostalMittenteIndirizzo1(e.target.value)}
+                              />
+                            </div>
+                            <div className="col-md-4">
+                              <label className="form-label small text-dark" htmlFor="postal_globalcom_mitt_cap">CAP</label>
+                              <input
+                                type="text"
+                                id="postal_globalcom_mitt_cap"
+                                className="form-control form-control-sm"
+                                value={settPostalMittenteCap}
+                                onChange={(e) => setSettPostalMittenteCap(e.target.value)}
+                              />
+                            </div>
+                            <div className="col-md-4">
+                              <label className="form-label small text-dark" htmlFor="postal_globalcom_mitt_citta">Città</label>
+                              <input
+                                type="text"
+                                id="postal_globalcom_mitt_citta"
+                                className="form-control form-control-sm"
+                                value={settPostalMittenteCitta}
+                                onChange={(e) => setSettPostalMittenteCitta(e.target.value)}
+                              />
+                            </div>
+                            <div className="col-md-4">
+                              <label className="form-label small text-dark" htmlFor="postal_globalcom_mitt_provincia">Provincia</label>
+                              <input
+                                type="text"
+                                id="postal_globalcom_mitt_provincia"
+                                className="form-control form-control-sm"
+                                maxLength={2}
+                                value={settPostalMittenteProvincia}
+                                onChange={(e) => setSettPostalMittenteProvincia(e.target.value.toUpperCase())}
                               />
                             </div>
                           </div>
