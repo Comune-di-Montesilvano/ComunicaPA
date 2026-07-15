@@ -7,6 +7,9 @@ import { Campaign } from '../entities/campaign.entity';
 import { ProtocolloService } from '../protocollo/protocollo.service';
 import { AttachmentService } from '../attachments/attachment.service';
 import { CampaignCompletionService } from '../campaigns/campaign-completion.service';
+import { NotificationQueuesService } from './notification-queues.service';
+import { ConfigService } from '@nestjs/config';
+import { AppSettingsService } from '../settings/app-settings.service';
 
 describe('ProtocollazioneProcessor', () => {
   let processor: ProtocollazioneProcessor;
@@ -17,6 +20,14 @@ describe('ProtocollazioneProcessor', () => {
   const mockProtocollo = { protocolla: jest.fn() };
   const mockAttachments = { generatePdfBuffer: jest.fn(async () => Buffer.from('%PDF-1.4 test')) };
   const mockCompletion = { checkAndComplete: jest.fn().mockResolvedValue(undefined) };
+  const mockQueues = { addBulk: jest.fn().mockResolvedValue(undefined) };
+  const mockConfig = { get: jest.fn(() => 'secret_secret') };
+  const mockSettings = { get: jest.fn(async (key: string) => {
+    if (key === 'brand.name') return 'Comune di Montesilvano';
+    if (key === 'system.publicUrl') return 'https://comune.montesilvano.pe.it';
+    if (key === 'retention.maxDays') return 180;
+    return null;
+  }) };
 
   function makeAttempt(overrides: Partial<NotificationAttempt> = {}): NotificationAttempt {
     return {
@@ -27,7 +38,7 @@ describe('ProtocollazioneProcessor', () => {
         id: 'r1',
         fullName: 'Mario Rossi',
         codiceFiscale: 'RSSMRA85M01H501Z',
-        campaign: { id: 'camp-1', name: 'TARI', channelConfig: { subject: 'Avviso TARI' } } as unknown as Campaign,
+        campaign: { id: 'camp-1', name: 'TARI', channelType: 'SEND', channelConfig: { subject: 'Avviso TARI' } } as unknown as Campaign,
       } as unknown as Recipient,
       ...overrides,
     } as NotificationAttempt;
@@ -49,6 +60,9 @@ describe('ProtocollazioneProcessor', () => {
         { provide: ProtocolloService, useValue: mockProtocollo },
         { provide: AttachmentService, useValue: mockAttachments },
         { provide: CampaignCompletionService, useValue: mockCompletion },
+        { provide: NotificationQueuesService, useValue: mockQueues },
+        { provide: ConfigService, useValue: mockConfig },
+        { provide: AppSettingsService, useValue: mockSettings },
       ],
     }).compile();
     processor = module.get(ProtocollazioneProcessor);
@@ -66,6 +80,33 @@ describe('ProtocollazioneProcessor', () => {
       protocolledAt: expect.any(Date),
     });
     expect(mockCompletion.checkAndComplete).not.toHaveBeenCalled();
+  });
+
+  it('protocolla con successo per canale PEC e accoda il job sul canale PEC', async () => {
+    const pecAttempt = makeAttempt();
+    pecAttempt.recipient.campaign.channelType = 'PEC';
+    mockAttemptRepo.findOne.mockResolvedValueOnce(pecAttempt);
+    mockProtocollo.protocolla.mockResolvedValueOnce({ numeroProtocollo: 123, annoProtocollo: 2026 });
+
+    await processor.process(mockJob());
+
+    expect(mockAttemptRepo.update).toHaveBeenCalledWith('att-1', {
+      protocolNumber: 123,
+      protocolYear: 2026,
+      protocolledAt: expect.any(Date),
+    });
+    expect(mockQueues.addBulk).toHaveBeenCalledWith('PEC', [
+      {
+        name: 'send',
+        data: {
+          campaignId: 'camp-1',
+          recipientId: 'r1',
+          attemptId: 'att-1',
+          channel: 'PEC',
+        },
+        opts: { jobId: 'att-1' },
+      },
+    ]);
   });
 
   it('su fallimento marca attempt/recipient FAILED, chiama checkAndComplete, poi rilancia', async () => {

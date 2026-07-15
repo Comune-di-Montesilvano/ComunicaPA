@@ -348,7 +348,7 @@ export class CampaignsService {
     // (sempre richiesta per SEND, enforced sopra) sì: motore dedicato con
     // coda/UI/log come gli altri canali.
     const JOB_CHUNK = 1000;
-    const engineName = campaign.channelType === 'SEND' ? 'PROTOCOLLAZIONE' : campaign.channelType;
+    const engineName = (campaign.channelType === 'SEND' || campaign.channelConfig?.['protocolla'] === true) ? 'PROTOCOLLAZIONE' : campaign.channelType;
     for (let i = 0; i < recipients.length; i += JOB_CHUNK) {
       const chunk = recipients.slice(i, i + JOB_CHUNK);
       await this.notificationQueues.addBulk(
@@ -888,7 +888,7 @@ export class CampaignsService {
     // nuova protocollazione. Riprotocolla da zero solo se l'ultimo tentativo
     // non era mai arrivato a protocollare (protocolledAt ancora null).
     const inheritedProtocol =
-      campaign.channelType === 'SEND' && lastAttempt?.protocolledAt
+      (campaign.channelType === 'SEND' || campaign.channelConfig?.['protocolla'] === true) && lastAttempt?.protocolledAt
         ? {
             protocolNumber: lastAttempt.protocolNumber,
             protocolYear: lastAttempt.protocolYear,
@@ -924,14 +924,17 @@ export class CampaignsService {
     await this.recipientRepo.update({ id: recipientId }, { status: RecipientStatus.QUEUED });
     await this.campaignRepo.decrement({ id: campaignId }, 'failedCount', 1);
 
-    if (campaign.channelType !== 'SEND') {
+    const needsProtocolla = campaign.channelConfig?.['protocolla'] === true;
+    if (campaign.channelType !== 'SEND' && !needsProtocolla) {
+      await this.notificationQueues.addBulk(campaign.channelType as Exclude<typeof campaign.channelType, 'SEND'>, [
+        { name: NOTIFICATION_JOB_SEND, data: { campaignId, recipientId, attemptId, channel: campaign.channelType }, opts: { jobId: attemptId } },
+      ]);
+    } else if (campaign.channelType !== 'SEND' && needsProtocolla && inheritedProtocol.protocolledAt) {
       await this.notificationQueues.addBulk(campaign.channelType as Exclude<typeof campaign.channelType, 'SEND'>, [
         { name: NOTIFICATION_JOB_SEND, data: { campaignId, recipientId, attemptId, channel: campaign.channelType }, opts: { jobId: attemptId } },
       ]);
     } else if (!inheritedProtocol.protocolledAt) {
-      // Non eredita un protocollo già fatto: va (ri)protocollato dal motore
-      // dedicato. Se invece eredita (branch inheritedProtocol sopra), l'attempt
-      // è già pronto per SendDispatchService, nessuna coda da toccare.
+      // Non eredita un protocollo già fatto: va (ri)protocollato dal motore dedicato.
       await this.notificationQueues.addBulk('PROTOCOLLAZIONE', [
         { name: NOTIFICATION_JOB_SEND, data: { campaignId, recipientId, attemptId, channel: campaign.channelType }, opts: { jobId: attemptId } },
       ]);

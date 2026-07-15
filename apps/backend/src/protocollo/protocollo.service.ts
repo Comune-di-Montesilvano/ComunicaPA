@@ -29,11 +29,18 @@ function extractTag(xml: string, tag: string): string {
   return match ? match[1] : '';
 }
 
+export interface ProtocollaAllegato {
+  buffer: Buffer;
+  filename: string;
+  oggetto: string;
+}
+
 export interface ProtocollaInput {
   oggetto: string;
   destinatario: { codiceFiscale: string; nome: string; cognome: string; denominazione: string };
   documentBuffer: Buffer;
   documentFilename: string;
+  allegati?: ProtocollaAllegato[];
 }
 
 export interface ProtocollaResult {
@@ -131,9 +138,16 @@ export class ProtocolloService {
     return Number(docId);
   }
 
-  private buildSegnatura(config: ProtocolloConfig, input: ProtocollaInput, docId: number): string {
+  private buildSegnatura(config: ProtocolloConfig, input: ProtocollaInput, docId: number, allegatoIds: number[] = []): string {
     const { destinatario } = input;
-    return `<?xml version="1.0" encoding="utf-8"?><Segnatura versione="2001-05-07" xml:lang="it"><Intestazione><Oggetto>${xmlEscape(input.oggetto)}</Oggetto><Identificatore><NumeroRegistrazione>0</NumeroRegistrazione><DataRegistrazione>0</DataRegistrazione><Flusso>U</Flusso></Identificatore><Mittente><Amministrazione><Denominazione>${xmlEscape(config.mittenteDenominazione)}</Denominazione><IndirizzoTelematico tipo="smtp"></IndirizzoTelematico><UnitaOrganizzativa id="${xmlEscape(config.unitaOrganizzativa)}" /></Amministrazione></Mittente><Destinatario><Persona id="${xmlEscape(destinatario.codiceFiscale)}"><Nome>${xmlEscape(destinatario.nome)}</Nome><Cognome>${xmlEscape(destinatario.cognome)}</Cognome><CodiceFiscale>${xmlEscape(destinatario.codiceFiscale)}</CodiceFiscale><Denominazione>${xmlEscape(destinatario.denominazione)}</Denominazione><IndirizzoTelematico tipo="smtp"></IndirizzoTelematico></Persona></Destinatario><Classifica><CodiceAmministrazione>${xmlEscape(config.codiceAmministrazione)}</CodiceAmministrazione><CodiceTitolario>${xmlEscape(config.codiceTitolario)}</CodiceTitolario></Classifica></Intestazione><Descrizione><Documento id="${docId}" nome="${xmlEscape(input.documentFilename)}"><DescrizioneDocumento>${xmlEscape(input.oggetto)}</DescrizioneDocumento></Documento></Descrizione></Segnatura>`;
+    let allegatiXml = '';
+    if (input.allegati && input.allegati.length > 0) {
+      input.allegati.forEach((a, idx) => {
+        const aId = allegatoIds[idx];
+        allegatiXml += `<Allegato id="${aId}" nome="${xmlEscape(a.filename)}"><DescrizioneDocumento>${xmlEscape(a.oggetto)}</DescrizioneDocumento></Allegato>`;
+      });
+    }
+    return `<?xml version="1.0" encoding="utf-8"?><Segnatura versione="2001-05-07" xml:lang="it"><Intestazione><Oggetto>${xmlEscape(input.oggetto)}</Oggetto><Identificatore><NumeroRegistrazione>0</NumeroRegistrazione><DataRegistrazione>0</DataRegistrazione><Flusso>U</Flusso></Identificatore><Mittente><Amministrazione><Denominazione>${xmlEscape(config.mittenteDenominazione)}</Denominazione><IndirizzoTelematico tipo="smtp"></IndirizzoTelematico><UnitaOrganizzativa id="${xmlEscape(config.unitaOrganizzativa)}" /></Amministrazione></Mittente><Destinatario><Persona id="${xmlEscape(destinatario.codiceFiscale)}"><Nome>${xmlEscape(destinatario.nome)}</Nome><Cognome>${xmlEscape(destinatario.cognome)}</Cognome><CodiceFiscale>${xmlEscape(destinatario.codiceFiscale)}</CodiceFiscale><Denominazione>${xmlEscape(destinatario.denominazione)}</Denominazione><IndirizzoTelematico tipo="smtp"></IndirizzoTelematico></Persona></Destinatario><Classifica><CodiceAmministrazione>${xmlEscape(config.codiceAmministrazione)}</CodiceAmministrazione><CodiceTitolario>${xmlEscape(config.codiceTitolario)}</CodiceTitolario></Classifica></Intestazione><Descrizione><Documento id="${docId}" nome="${xmlEscape(input.documentFilename)}"><DescrizioneDocumento>${xmlEscape(input.oggetto)}</DescrizioneDocumento></Documento>${allegatiXml}</Descrizione></Segnatura>`;
   }
 
   private async protocollazione(config: ProtocolloConfig, dst: string, segnaturaXml: string): Promise<ProtocollaResult> {
@@ -158,7 +172,16 @@ export class ProtocolloService {
     const config = await this.getConfig();
     const dst = await this.login();
     const docId = await this.inserimento(config, dst, input.documentBuffer);
-    const segnaturaXml = this.buildSegnatura(config, input, docId);
+    
+    const allegatoIds: number[] = [];
+    if (input.allegati && input.allegati.length > 0) {
+      for (const a of input.allegati) {
+        const aId = await this.inserimento(config, dst, a.buffer);
+        allegatoIds.push(aId);
+      }
+    }
+
+    const segnaturaXml = this.buildSegnatura(config, input, docId, allegatoIds);
     const result = await this.protocollazione(config, dst, segnaturaXml);
     this.logger.log(`Protocollazione OK: ${result.numeroProtocollo}/${result.annoProtocollo}`);
     return result;

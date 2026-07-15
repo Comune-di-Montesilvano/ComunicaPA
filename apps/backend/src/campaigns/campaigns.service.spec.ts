@@ -504,8 +504,9 @@ describe('CampaignsService', () => {
 
       expect(result.uploaded).toBe(1);
       expect(result.discarded).toBe(0);
-      expect(fs.existsSync(join(tmpDir, 'ok_file.PDF'))).toBe(false);
-      expect(fs.existsSync(join(tmpDir, 'ok_file.pdf'))).toBe(true);
+      const files = fs.readdirSync(tmpDir);
+      expect(files.includes('ok_file.PDF')).toBe(false);
+      expect(files.includes('ok_file.pdf')).toBe(true);
     });
   });
 

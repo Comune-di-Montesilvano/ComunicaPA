@@ -130,6 +130,57 @@ describe('ProtocolloService', () => {
     expect(segnaturaXml).toContain('id="999"');
   });
 
+  it('esegue Inserimento del documento principale e degli allegati + Protocollazione', async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(soapEnvelope(
+          '<LoginResponse><return><strDST>dst-abc</strDST><IngErrNumber>0</IngErrNumber><strErrString></strErrString></return></LoginResponse>',
+        )),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(soapEnvelope(
+          '<InserimentoResponse><return><IngDocID>999</IngDocID><IngErrNumber>0</IngErrNumber><strErrString></strErrString></return></InserimentoResponse>',
+        )),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(soapEnvelope(
+          '<InserimentoResponse><return><IngDocID>888</IngDocID><IngErrNumber>0</IngErrNumber><strErrString></strErrString></return></InserimentoResponse>',
+        )),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(soapEnvelope(
+          '<ProtocollazioneResponse><return><IngNumPG>4321</IngNumPG><IngAnnoPG>2026</IngAnnoPG><StrDataPG>13/07/2026</StrDataPG><IngErrNumber>0</IngErrNumber><strErrString></strErrString></return></ProtocollazioneResponse>',
+        )),
+      });
+
+    const result = await service.protocolla({
+      oggetto: 'Avviso TARI 2026',
+      destinatario: { codiceFiscale: 'RSSMRA85M01H501Z', nome: 'Mario', cognome: 'Rossi', denominazione: 'Mario Rossi' },
+      documentBuffer: Buffer.from('%PDF-1.4 test'),
+      documentFilename: 'avviso.pdf',
+      allegati: [
+        {
+          buffer: Buffer.from('eml test'),
+          filename: 'messaggio.eml',
+          oggetto: 'Corpo PEC',
+        },
+      ],
+    });
+
+    expect(result).toEqual({ numeroProtocollo: 4321, annoProtocollo: 2026, dataProtocollazione: '13/07/2026' });
+    expect(mockFetch).toHaveBeenCalledTimes(4);
+
+    const protocollazioneBody = mockFetch.mock.calls[3][1].body as string;
+    const fileXmlMatch = protocollazioneBody.match(/<FileXML>([\s\S]*?)<\/FileXML>/);
+    const segnaturaXml = Buffer.from(fileXmlMatch![1], 'base64').toString('utf-8');
+    expect(segnaturaXml).toContain('id="999"');
+    expect(segnaturaXml).toContain('<Allegato id="888" nome="messaggio.eml"><DescrizioneDocumento>Corpo PEC</DescrizioneDocumento></Allegato>');
+  });
+
   it('lancia errore leggibile se Protocollazione fallisce', async () => {
     mockFetch
       .mockResolvedValueOnce({
