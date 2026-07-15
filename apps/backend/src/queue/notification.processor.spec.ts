@@ -52,7 +52,11 @@ const mockStrategy = {
   send: jest.fn(),
 };
 
-const mockStrategies = new Map([['EMAIL', mockStrategy]]);
+const mockPostalStrategy = {
+  send: jest.fn(),
+};
+
+const mockStrategies = new Map([['EMAIL', mockStrategy], ['POSTAL', mockPostalStrategy]]);
 
 const mockConfig = {
   get: (key: string) => {
@@ -203,9 +207,9 @@ describe('NotificationProcessor', () => {
   });
 
   it('process() lancia Error se nessuna strategy per channel', async () => {
-    const data: NotificationJobData = { ...baseData, channel: 'POSTAL' };
+    const data: NotificationJobData = { ...baseData, channel: 'SEND' };
 
-    await expect(processor.process(mockJob(data))).rejects.toThrow('Nessuna strategy per channel POSTAL');
+    await expect(processor.process(mockJob(data))).rejects.toThrow('Nessuna strategy per channel SEND');
   });
 
   it('rimanda il job con DelayedError quando il batch è pieno', async () => {
@@ -285,6 +289,67 @@ describe('NotificationProcessor', () => {
       await processor.process(mockJob(baseData));
 
       expect(mockStrategy.send).toHaveBeenCalled();
+    });
+  });
+
+  describe('POSTAL: persistenza postalTrackingId e piggyback attemptNumber', () => {
+    const postalData: NotificationJobData = { ...baseData, channel: 'POSTAL' };
+    const mockCampaignPostal = { ...mockCampaign, channelType: 'POSTAL' };
+
+    beforeEach(() => {
+      mockCampaignRepo.findOne.mockResolvedValue(mockCampaignPostal);
+      mockPostalStrategy.send.mockResolvedValue({ messageId: 'IDPRO123', responsePayload: { stato: 'Accettato', idPro: 'IDPRO123' } });
+    });
+
+    it('scrive postalTrackingId sulla colonna dedicata subito dopo un invio POSTAL riuscito', async () => {
+      await processor.process(mockJob(postalData));
+
+      expect(mockAttemptRepo.update).toHaveBeenCalledWith('att-1', expect.objectContaining({ postalTrackingId: 'IDPRO123' }));
+    });
+
+    it('NON scrive postalTrackingId per canali diversi da POSTAL', async () => {
+      await processor.process(mockJob(baseData));
+
+      expect(mockAttemptRepo.update).not.toHaveBeenCalledWith('att-1', expect.objectContaining({ postalTrackingId: expect.anything() }));
+    });
+
+    it('non scrive postalTrackingId se il canale primario POSTAL fallisce (nessun messageId)', async () => {
+      mockPostalStrategy.send.mockRejectedValueOnce(new Error('GlobalCom down'));
+
+      await expect(processor.process(mockJob(postalData))).rejects.toThrow('GlobalCom down');
+
+      expect(mockAttemptRepo.update).not.toHaveBeenCalledWith('att-1', expect.objectContaining({ postalTrackingId: expect.anything() }));
+    });
+
+    it('piggyback: imposta recipient.attemptNumber da existingAttempt.attemptNumber prima di chiamare strategy.send()', async () => {
+      mockAttemptRepo.findOne.mockResolvedValueOnce({
+        id: 'att-1',
+        status: AttemptStatus.QUEUED,
+        responsePayload: null,
+        attemptNumber: 3,
+      });
+
+      await processor.process(mockJob(postalData));
+
+      expect(mockPostalStrategy.send).toHaveBeenCalledWith(
+        expect.objectContaining({ attemptNumber: 3 }),
+        expect.anything(), expect.any(Function), 'att-1', 0,
+      );
+    });
+
+    it('piggyback: default attemptNumber=1 quando existingAttempt non ha attemptNumber', async () => {
+      mockAttemptRepo.findOne.mockResolvedValueOnce({
+        id: 'att-1',
+        status: AttemptStatus.QUEUED,
+        responsePayload: null,
+      });
+
+      await processor.process(mockJob(postalData));
+
+      expect(mockPostalStrategy.send).toHaveBeenCalledWith(
+        expect.objectContaining({ attemptNumber: 1 }),
+        expect.anything(), expect.any(Function), 'att-1', 0,
+      );
     });
   });
 

@@ -4203,7 +4203,8 @@ export function App(): React.JSX.Element {
                         !wizName ||
                         ((wizChannel === 'EMAIL' || wizChannel === 'PEC') && !wizMailConfigId) ||
                         ((wizChannel === 'EMAIL' || wizChannel === 'PEC') && wizAppIoMode !== 'none' && !wizAppIoServiceId) ||
-                        (wizChannel === 'APP_IO' && !wizAppIoServiceId)
+                        (wizChannel === 'APP_IO' && !wizAppIoServiceId) ||
+                        (wizChannel === 'POSTAL' && (!wizPostalAddressColumn || !wizPostalMunicipalityColumn))
                       }
                     >
                       Avanti <i className="fas fa-arrow-right ms-1"></i>

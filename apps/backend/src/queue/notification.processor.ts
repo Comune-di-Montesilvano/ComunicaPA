@@ -126,6 +126,7 @@ export class NotificationProcessor extends WorkerHost {
     if (existingAttempt && existingAttempt.protocolNumber) {
       (recipient as any).protocolNumber = `${existingAttempt.protocolNumber}/${existingAttempt.protocolYear}`;
     }
+    (recipient as any).attemptNumber = existingAttempt?.attemptNumber ?? 1;
 
     await this.attemptRepo.update(attemptId, { status: AttemptStatus.PROCESSING });
 
@@ -200,6 +201,9 @@ export class NotificationProcessor extends WorkerHost {
       // PROCESSING con responsePayload vuoto, invisibile alla guardia.
       if (primaryResult) {
         await this.attemptRepo.update(attemptId, { responsePayload });
+        if (channel === 'POSTAL' && primaryResult.messageId) {
+          await this.attemptRepo.update(attemptId, { postalTrackingId: primaryResult.messageId });
+        }
       }
 
       // 2. Co-delivery PARALLELA (comportamento attuale, solo primo tentativo)

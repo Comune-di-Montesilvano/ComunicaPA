@@ -46,7 +46,7 @@ export class PostalStrategy implements IChannelStrategy {
     recipient: Recipient,
     campaign: Campaign,
     onLog?: ChannelLogFn,
-    attemptId?: string,
+    _attemptId?: string,
     attemptsMade?: number,
   ): Promise<ChannelSendResult> {
     const log = (msg: string): void => {
@@ -57,16 +57,24 @@ export class PostalStrategy implements IChannelStrategy {
     const cfg = campaign.channelConfig as Record<string, unknown>;
     const creds = await this.loadCredentials();
 
-    // Dedup: il rischio di doppio invio/doppio addebito esiste solo sui
-    // retry (job.attemptsMade > 0) — al primo tentativo non può esistere
-    // ancora nulla su GlobalCom per questo attempt. Verificato contro il
-    // database di GlobalCom stesso (Note = attemptId), non contro il nostro,
-    // vedi design doc.
-    if (attemptsMade && attemptsMade > 0 && attemptId) {
-      const trovati = await this.globalCom.cercaPerTesto(creds, attemptId);
+    // Dedup: il rischio di doppio invio/doppio addebito esiste sui retry,
+    // sia automatici BullMQ sullo stesso job (attemptsMade > 0) sia manuali
+    // ("Rimetti in coda", che crea un nuovo NotificationAttempt con un nuovo
+    // job/attemptId ma un attemptNumber incrementale piggybackato sul
+    // recipient da notification.processor.ts) — al primo tentativo in
+    // assoluto non può esistere ancora nulla su GlobalCom per questo
+    // destinatario. Chiave di ricerca = recipient.id: stabile su tutti gli
+    // attempt/retry per lo stesso destinatario nella stessa campagna, a
+    // differenza di attemptId che cambia ad ogni retry manuale. Verificato
+    // contro il database di GlobalCom stesso (Note = recipient.id), non
+    // contro il nostro, vedi design doc.
+    const recipientAttemptNumber = (recipient as unknown as { attemptNumber?: number }).attemptNumber;
+    const isRetry = (attemptsMade && attemptsMade > 0) || (recipientAttemptNumber && recipientAttemptNumber > 1);
+    if (isRetry) {
+      const trovati = await this.globalCom.cercaPerTesto(creds, recipient.id);
       const esistente = trovati.find((d) => !NON_TERMINAL_DEDUP_STATI.includes(d.stato));
       if (esistente) {
-        const msg = `Invio già presente su GlobalCom per attempt ${attemptId} (IDPRO=${esistente.idPro}, stato=${esistente.stato}) — salto reinvio duplicato.`;
+        const msg = `Invio già presente su GlobalCom per destinatario ${recipient.id} (IDPRO=${esistente.idPro}, stato=${esistente.stato}) — salto reinvio duplicato.`;
         this.logger.warn(msg);
         log(msg);
         return { messageId: esistente.idPro, responsePayload: { stato: esistente.stato, idPro: esistente.idPro, dedup: true } };
@@ -106,7 +114,7 @@ export class PostalStrategy implements IChannelStrategy {
       ricevutaDiRitorno,
       mittente,
       destinatario,
-      note: attemptId || `${campaign.name}-${recipient.codiceFiscale}`,
+      note: recipient.id,
       protocollo,
       centroDiCosto,
       userData1,

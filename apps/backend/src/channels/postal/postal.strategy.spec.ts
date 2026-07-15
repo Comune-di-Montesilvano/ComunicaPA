@@ -92,7 +92,7 @@ describe('PostalStrategy', () => {
         servizio: 'Raccomandata',
         ricevutaDiRitorno: true,
         mittente: null,
-        note: 'attempt-uuid-1',
+        note: 'recipient-1',
         destinatario: expect.objectContaining({ indirizzo1: 'Via Roma 1', citta: 'Montesilvano', cap: '65015', provincia: 'PE' }),
       }),
     );
@@ -132,10 +132,32 @@ describe('PostalStrategy', () => {
 
     expect(globalCom.cercaPerTesto).toHaveBeenCalledWith(
       expect.objectContaining({ baseUrl: settingsMap['postal.baseUrl'] }),
-      'attempt-uuid-5',
+      'recipient-1',
     );
     expect(globalCom.invioExtSingolo).not.toHaveBeenCalled();
     expect(result.messageId).toBe('IDPRO-ESISTENTE');
+  });
+
+  it('send() su retry manuale (attemptsMade=0 ma recipient.attemptNumber>1) cerca comunque dedup su GlobalCom', async () => {
+    globalCom.cercaPerTesto.mockResolvedValue([{ idPro: 'IDPRO-ESISTENTE', stato: 'Consegnato' }]);
+    const recipienteRetryManuale = { ...baseRecipient, attemptNumber: 2 };
+
+    const result = await strategy.send(recipienteRetryManuale as never, baseCampaign() as never, undefined, 'attempt-uuid-manual-retry', 0);
+
+    expect(globalCom.cercaPerTesto).toHaveBeenCalledWith(
+      expect.objectContaining({ baseUrl: settingsMap['postal.baseUrl'] }),
+      'recipient-1',
+    );
+    expect(globalCom.invioExtSingolo).not.toHaveBeenCalled();
+    expect(result.messageId).toBe('IDPRO-ESISTENTE');
+  });
+
+  it('send() al primo attempt in assoluto (attemptsMade=0, attemptNumber assente) NON cerca dedup su GlobalCom', async () => {
+    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' });
+
+    await strategy.send(baseRecipient as never, baseCampaign() as never, undefined, 'attempt-uuid-first', 0);
+
+    expect(globalCom.cercaPerTesto).not.toHaveBeenCalled();
   });
 
   it('send() su retry con solo esiti Errore/Eliminato precedenti reinvia normalmente', async () => {
