@@ -2488,7 +2488,7 @@ export function App(): React.JSX.Element {
     description: string | null;
     channelType: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL';
     channelConfig: Record<string, any>;
-  }, opts: { isDuplicate: boolean }) => {
+  }, opts: { isDuplicate: boolean; campaignId?: string }) => {
     setWizCampaignId(null);
     setWizName(opts.isDuplicate ? `${source.name} (Copia)` : source.name);
     setWizDesc(source.description || '');
@@ -2528,17 +2528,31 @@ export function App(): React.JSX.Element {
     setWizAppIoSubjectOverride(secondaryAppIo?.subjectOverride || '');
     setWizAppIoBodyOverride(secondaryAppIo?.bodyOverride || '');
     setWizBlockedChannels(source.channelConfig?.blockedChannels || []);
-    // Il CSV NON viene precaricato: l'utente ricarica un file al passo 2. La
-    // mappatura colonna→campo e le colonne allegato vengono però conservate
-    // "in sospeso": se il CSV ricaricato ha le stesse colonne (caso d'uso
-    // tipico: stesso formato riusato), parseCsvFile le riapplica automaticamente.
-    setWizCsvFile(null);
-    setWizCsvHeaders([]);
-    setWizCsvRows([]);
-    setWizValidRows([]);
+    
+    // Il CSV viene recuperato se stiamo riprendendo una bozza e c'è un file salvato
+    if (!opts.isDuplicate && opts.campaignId && source.channelConfig?.wizCsvFilename) {
+      fetch(`${ADMIN_API_BASE}/campaigns/${opts.campaignId}/recipients/draft-csv`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      .then(async res => {
+        if (res.ok) {
+          const blob = await res.blob();
+          const file = new File([blob], source.channelConfig.wizCsvFilename, { type: 'text/csv' });
+          setWizCsvFile(file);
+          parseCsvFile(file, !!source.channelConfig.wizCsvHasHeaders);
+        }
+      })
+      .catch(() => { /* ignore */ });
+    } else {
+      setWizCsvFile(null);
+      setWizCsvHeaders([]);
+      setWizCsvRows([]);
+      setWizValidRows([]);
+    }
+
     setWizPendingMapping(source.channelConfig?.csvMapping || null);
     setWizPendingAttachments(source.channelConfig?.attachments || null);
-    setWizStep(1);
+    setWizStep(opts.isDuplicate ? 1 : (source.channelConfig?.wizStep || 1));
     setView('invio-massivo-wizard');
   };
 
@@ -2563,7 +2577,7 @@ export function App(): React.JSX.Element {
       return;
     }
     const source = await res.json();
-    prefillWizardFrom(source, { isDuplicate: false });
+    prefillWizardFrom(source, { isDuplicate: false, campaignId });
     setWizCampaignId(campaignId);
   };
 
@@ -2583,7 +2597,17 @@ export function App(): React.JSX.Element {
   };
 
   const buildWizChannelConfigDraft = (): Record<string, any> => {
-    const cfg: Record<string, any> = { subject: wizSubject, body: wizBody, mailConfigId: wizMailConfigId, protocolla: wizProtocolla };
+    const cfg: Record<string, any> = {
+      subject: wizSubject,
+      body: wizBody,
+      mailConfigId: wizMailConfigId,
+      protocolla: wizProtocolla,
+      wizStep,
+    };
+    if (wizCsvFile) {
+      cfg.wizCsvFilename = wizCsvFile.name;
+      cfg.wizCsvHasHeaders = wizCsvHasHeaders;
+    }
     if (wizChannel === 'SEND') {
       cfg.taxonomyCode = wizTaxonomyCode;
       cfg.physicalCommunicationType = wizPhysicalCommunicationType;
@@ -2624,6 +2648,7 @@ export function App(): React.JSX.Element {
       return;
     }
     setWizDraftSaving(true);
+    let activeCampaignId = wizCampaignId;
     try {
       if (!wizCampaignId) {
         const res = await apiFetch('/campaigns', {
@@ -2638,6 +2663,7 @@ export function App(): React.JSX.Element {
         });
         if (!res.ok) throw new Error('Errore durante il salvataggio della bozza');
         const created = await res.json();
+        activeCampaignId = created.id;
         setWizCampaignId(created.id);
       } else {
         const res = await apiFetch(`/campaigns/${wizCampaignId}`, {
@@ -2651,6 +2677,18 @@ export function App(): React.JSX.Element {
         });
         if (!res.ok) throw new Error('Errore durante il salvataggio della bozza');
       }
+
+      if (wizCsvFile) {
+        const formData = new FormData();
+        formData.append('file', wizCsvFile);
+        const csvUploadRes = await fetch(`${ADMIN_API_BASE}/campaigns/${activeCampaignId}/recipients/draft-csv`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData,
+        });
+        if (!csvUploadRes.ok) throw new Error('Errore durante il caricamento del file CSV in bozza');
+      }
+
       fetchCampaigns();
       alert('Bozza salvata.');
     } catch (err: any) {

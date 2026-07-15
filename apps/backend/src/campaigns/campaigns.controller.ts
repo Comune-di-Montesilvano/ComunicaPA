@@ -129,6 +129,51 @@ export class CampaignsController {
     return result;
   }
 
+  @Post(':id/recipients/draft-csv')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: (req, _file, cb) => {
+          const dir = getUploadsDir(req.params['id'] as string);
+          fs.mkdirSync(dir, { recursive: true });
+          cb(null, dir);
+        },
+        filename: (_req, _file, cb) => {
+          cb(null, 'draft_recipients.csv');
+        },
+      }),
+      fileFilter: (_req, file, cb) => {
+        const ok = file.mimetype === 'text/csv' || file.originalname.endsWith('.csv');
+        cb(null, ok);
+      },
+      limits: { fileSize: 50 * 1024 * 1024 },
+    }),
+  )
+  async uploadDraftCsv(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException('File CSV richiesto');
+    }
+    await this.campaignsService.assertDraftForAttachments(id);
+    return { ok: true };
+  }
+
+  @Get(':id/recipients/draft-csv')
+  async getDraftCsv(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res() res: Response,
+  ) {
+    const filePath = join(getUploadsDir(id), 'draft_recipients.csv');
+    if (!fs.existsSync(filePath)) {
+      res.status(404).json({ error: 'Nessun file CSV salvato per questa bozza' });
+      return;
+    }
+    res.setHeader('Content-Type', 'text/csv');
+    res.sendFile(filePath);
+  }
+
   // ── Upload CSV destinatari a chunk ──────────────────────────────────────
   // Un reverse proxy esterno davanti al backend in produzione ha un limite di
   // dimensione del body che spezza l'upload in un'unica richiesta per CSV di
