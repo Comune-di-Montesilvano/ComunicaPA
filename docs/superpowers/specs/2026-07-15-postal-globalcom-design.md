@@ -88,6 +88,23 @@ di rete/credenziali).
 | `Files[0]` | PDF via `generatePdfBuffer()`, `MD5` calcolato con `crypto.createHash('md5')` sul buffer, `filetype: 'pdf'` |
 | `CentrodiCosto` | da settings `postal.centroDiCosto`, opzionale |
 | `DaConfermare` | non impostato (default `false`) — vedi nota sotto |
+| `UserData1` | opzionale, da `channelConfig.userDataColumn` — riconciliazione col gestionale tributi, vedi sotto |
+
+### Riconciliazione gestionale tributi (`UserData1`)
+
+Nessun campo dedicato "OCR"/"Maggioli" nell'API — `UserData1`/`UserData2` su
+`InfoGUIDExt` sono testo libero, salvati verbatim nello storico GlobalCom e
+quindi presenti nel tracciato esportabile dal portale, introdotti apposta
+per "customizzazioni specifiche cliente" (manuale §3.5). È il meccanismo
+giusto per portare un riferimento (es. numero avviso/codice pratica) che il
+gestionale tributi (Maggioli o altro) possa poi riassociare importando
+l'export GlobalCom.
+
+Valore per-destinatario, non fisso per campagna: `channelConfig.userDataColumn`
+(nome colonna CSV, risolta via `getColumnValue(recipient, columnName)` —
+stessa utility già usata da `resolvePhysicalAddress`, in
+`payment-config.util.ts`). Campo opzionale nel wizard: se non configurato,
+`UserData1` resta vuoto, nessun impatto sull'invio.
 
 ### Dedup su retry — GlobalCom non ha `IdempotenceToken` su `InfoGUIDExt`
 
@@ -246,6 +263,8 @@ campi SEND-only già esistenti in `App.tsx` da riga 3852):
   4 select già usati per SEND, stesso componente se già estratto in comune,
   altrimenti duplicato (piccola porzione di UI, non giustifica
   un'astrazione prematura se SEND non l'ha già isolata)
+- Select `userDataColumn` (opzionale) — colonna CSV da riportare in
+  `UserData1` per riconciliazione col gestionale tributi
 - Checkbox `protocolla` — già generico, nessuna modifica
 
 ## 7. Frontend — badge stato e dettaglio
