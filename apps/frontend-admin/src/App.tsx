@@ -111,6 +111,39 @@ function PostalStatusBadge({ status }: { status: string | null | undefined }): R
   return <span className={`badge ${meta.badge}`}><i className={`fas ${meta.icon} me-1`}></i>{meta.label}</span>;
 }
 
+// Etichette/descrizioni italiane per i valori ServiceType di GlobalCom
+// (ProdottiDisponibili, scoperti da InformazioniUtenza — non tutti gli enum
+// del manuale sono pertinenti alla postalizzazione PA, solo quelli che
+// possono comparire nell'audit di un'utenza reale). Fallback sul valore
+// grezzo se un valore non mappato dovesse comparire (nuova tipologia
+// abilitata da GlobalCom non ancora vista).
+const POSTAL_SERVICE_TYPE_META: Record<string, { label: string; description: string }> = {
+  Lettera: { label: 'Lettera (posta ordinaria)', description: 'Invio economico via Poste Italiane, senza tracciamento della consegna.' },
+  Raccomandata: { label: 'Raccomandata', description: 'Consegna tracciata via Poste Italiane, con firma del destinatario.' },
+  LetteraP1: { label: 'Lettera Prioritaria', description: 'Posta prioritaria via Poste Italiane, consegna più rapida della lettera ordinaria.' },
+  Raccomandata1: { label: 'Raccomandata 1', description: 'Raccomandata via Poste Italiane, formato/tariffa "1".' },
+  LetteraMLN: { label: 'Lettera Millenium', description: 'Lettera tramite canale Millenium (non Poste Italiane diretta).' },
+  RaccomandataMLN: { label: 'Raccomandata Millenium', description: 'Raccomandata tramite canale Millenium (non Poste Italiane diretta).' },
+  LetteraContest4: { label: 'Lettera Contest 4', description: 'Invio massivo economico tramite canale Postel/Irideos, senza tracciamento consegna. Richiede un codice contratto specifico.' },
+  LetteraContest1: { label: 'Lettera Contest 1', description: 'Come Lettera Contest 4, formato/tariffa "1". Richiede un codice contratto specifico.' },
+  RaccomandataMarket4: { label: 'Raccomandata Market 4', description: 'Raccomandata tracciata tramite canale Postel/Irideos, tariffa dedicata da contratto. Richiede un codice contratto specifico.' },
+  RaccomandataMarket1: { label: 'Raccomandata Market 1', description: 'Come Raccomandata Market 4, formato/tariffa "1". Richiede un codice contratto specifico.' },
+  AgolMarket: { label: 'Atto Giudiziario Online (Market)', description: 'Notifica di atti giudiziari tramite canale Market. Richiede un codice contratto specifico.' },
+  AgolBusiness: { label: 'Atto Giudiziario Online (Business)', description: 'Notifica di atti giudiziari tramite canale Business. Richiede un codice contratto specifico.' },
+  Telegramma: { label: 'Telegramma', description: 'Telegramma postale.' },
+  Camerali: { label: 'Certificati Camerali', description: 'Certificati e visure delle Camere di Commercio.' },
+  InfoCamere: { label: 'Informazioni Camerali', description: 'Richieste informative verso le Camere di Commercio.' },
+  PagoPA: { label: 'Preparazione avviso PagoPA', description: 'Preparazione di avvisi di pagamento PagoPA.' },
+  NotificheDigitali: { label: 'Notifiche Digitali (SEND)', description: 'Piattaforma Notifiche Digitali nazionale — usare il canale SEND, non POSTAL, per questo tipo di invio.' },
+  Sms: { label: 'SMS', description: 'Messaggio SMS.' },
+  Fax: { label: 'Fax', description: 'Invio via fax.' },
+  ProcessoBatch: { label: 'Processo Batch', description: 'Elaborazione batch per uso interno GlobalCom.' },
+};
+
+function postalServiceTypeLabel(value: string): string {
+  return POSTAL_SERVICE_TYPE_META[value]?.label ?? value;
+}
+
 const SEND_LEGAL_FACT_CATEGORY_LABELS: Record<string, string> = {
   SENDER_ACK: 'Presa in carico',
   DIGITAL_DELIVERY: 'Consegna digitale (PEC)',
@@ -4327,7 +4360,7 @@ export function App(): React.JSX.Element {
                       <option value="PEC">PEC (Posta Elettronica Certificata)</option>
                       <option value="APP_IO">APP IO (PagoPA)</option>
                       <option value="SEND">SEND</option>
-                      <option value="POSTAL">POSTAL</option>
+                      <option value="POSTAL">Postalizzazione (Raccomandata/Lettera)</option>
                     </select>
                   </div>
 
@@ -4424,15 +4457,18 @@ export function App(): React.JSX.Element {
                           </div>
                         </div>
                       )}
-                      <div className="col-md-4">
+                      <div className="col-md-6">
                         <label className="form-label small fw-bold">Tipo di invio *</label>
                         <select className="form-select" value={wizPostalServiceType} required disabled={enabledTypes.length === 0}
                           onChange={(e) => { setWizPostalServiceType(e.target.value); setWizPostalCodiceContratto(''); }}>
                           <option value="">Seleziona…</option>
-                          {enabledTypes.map((st) => <option key={st} value={st}>{st}</option>)}
+                          {enabledTypes.map((st) => <option key={st} value={st}>{postalServiceTypeLabel(st)}</option>)}
                         </select>
                         {activeProvider && enabledTypes.length === 0 && (
                           <div className="form-text small text-warning">Nessuna tipologia abilitata — esegui il Test del provider in Impostazioni.</div>
+                        )}
+                        {wizPostalServiceType && POSTAL_SERVICE_TYPE_META[wizPostalServiceType] && (
+                          <div className="form-text small text-muted">{POSTAL_SERVICE_TYPE_META[wizPostalServiceType].description}</div>
                         )}
                       </div>
                       {wizPostalServiceType.startsWith('Raccomandata') && (
