@@ -69,6 +69,18 @@ export class NotificationAttempt {
   @Column({ type: 'jsonb', name: 'uploaded_documents', nullable: true })
   uploadedDocuments!: Array<{ docIdx: number; key: string; versionToken: string; sha256Base64: string }> | null;
 
+  // Tracking consegna GlobalCom (canale POSTAL) — analogo a iun/sendStatus
+  // per SEND, ma qui esiste un'operazione di poll dedicata (dettagli_documento)
+  // verificata sul manuale tecnico ufficiale, vedi PostalStatusSyncService.
+  @Column({ name: 'postal_tracking_id', type: 'varchar', length: 50, nullable: true })
+  postalTrackingId!: string | null;
+
+  @Column({ name: 'postal_status', type: 'varchar', length: 30, nullable: true })
+  postalStatus!: string | null;
+
+  @Column({ name: 'postal_status_updated_at', type: 'timestamptz', nullable: true })
+  postalStatusUpdatedAt!: Date | null;
+
   @Column({ name: 'error_message', type: 'text', nullable: true })
   errorMessage!: string | null;
 
