@@ -225,6 +225,21 @@ quando la coda è condivisa tra più campagne dello stesso canale. Se aggiungi
 un nuovo punto che accoda job (`addBulk`), passa sempre `opts.jobId` con lo
 stesso attemptId, altrimenti quel job diventa invisibile a `cancel()`.
 
+**"Motore" ≠ canale**: `NotificationQueuesService`/`EnginesController` usano
+`EngineName` (`notification-job.types.ts`), non `NotificationChannel` — un
+motore può essere channel-agnostico (es. `PROTOCOLLAZIONE`, usato solo da
+SEND oggi ma non specifico a SEND). Convertire un demone `@Cron` poll-based
+in un motore BullMQ vero (stessa UI pausa/riprendi/job falliti/log degli
+altri) richiede sempre toccare gli stessi 3 punti in `campaigns.service.ts`:
+`launch()` (produzione job in bulk al lancio campagna), `retryRecipient()`
+(produzione condizionale — valuta se serve davvero un nuovo job o se lo
+stato esistente basta), `cancel()` (rimozione best-effort del job pendente,
+oltre all'update di stato). Un fallimento del job deve marcare il record
+terminale (FAILED) PRIMA di rilanciare l'errore — altrimenti BullMQ registra
+il job come fallito ma il destinatario resta bloccato in uno stato intermedio
+per sempre (nessun "Rimetti in coda" possibile, la UI non lo mostra tra i
+falliti).
+
 Quando aggiungi un nuovo stato "terminale" a `CampaignStatus`/`RecipientStatus`
 (es. `CANCELLED`), audit obbligatorio: TUTTI i metodi che mutano quel record
 devono guardare contro il nuovo stato, non solo il metodo che lo introduce.
@@ -232,6 +247,15 @@ Bug reale: `retryRecipient()` non controllava `campaign.status`, quindi un
 destinatario `FAILED` (lasciato intatto da `cancel()` apposta) poteva essere
 rimesso in coda su una campagna già `CANCELLED` — inviando davvero un
 messaggio su una campagna "annullata".
+
+**Se un canale bypassa BullMQ** (demone `@Cron` invece di job, es. SEND dal
+refactor "pipeline a demoni"): il check di completamento campagna
+(`CampaignCompletionService.checkAndComplete()`, estratto da
+`notification.processor.ts`) NON scatta da solo — va chiamato esplicitamente
+dal demone dopo ogni esito terminale (successo/fallimento), esattamente come
+fa il processor per gli altri canali. Bug reale: dimenticarlo lascia la
+campagna bloccata in `QUEUED` per sempre anche a invio terminato per tutti i
+destinatari — nessun errore visibile, solo uno stato mai aggiornato.
 
 ## Migration enum Postgres — ALTER TYPE ADD VALUE
 
@@ -283,10 +307,84 @@ trovato su ANPR/INAD) — errore "PhysicalAddress cannot be null". `group`
 configurabili via Impostazioni → SEND, nessun default hardcoded.
 
 **Verifica spec**: mai fidarsi di un riassunto AI dello spec OpenAPI —
-scaricare il raw YAML (`curl` su `pn-openapi-devportal/docs/openapi/
-api-external-b2b-pa-bundle.yaml`) e grep diretto su `securitySchemes`/
+scaricare il raw YAML (`curl` su `pagopa/pn-delivery`, `docs/openapi/
+api-external-b2b-pa-bundle.yaml` — NON `pn-openapi-devportal`, repo
+inesistente/404) e grep diretto su `securitySchemes`/
 schema dei singoli campi. Un riassunto ha già portato a un fix sbagliato
 una volta in questa stessa giornata di debug.
+
+## SEND — stati notifica PN (sendStatus)
+
+`sendStatus` (colonna `NotificationAttempt`, popolata da
+`SendStatusSyncService` da `GET /delivery/v2.9/notifications/sent/{iun}`)
+usa l'enum `NotificationStatusV26` dello spec ufficiale PN (repo
+`pagopa/pn-delivery`, `docs/openapi/api-external-b2b-pa-bundle.yaml`):
+11 valori — `IN_VALIDATION`, `ACCEPTED`, `REFUSED`, `DELIVERING`,
+`DELIVERED`, `VIEWED`, `EFFECTIVE_DATE`, `PAID` (deprecato), `UNREACHABLE`,
+`CANCELLED`, `RETURNED_TO_SENDER`. Attenzione alla versione:
+`RETURNED_TO_SENDER` esiste solo in V26, non nelle versioni più vecchie
+dello schema `NotificationStatus` — verificare sempre lo spec raw, non un
+riassunto, prima di aggiungere/rimuovere valori da `TERMINAL_STATUSES`
+(`send-status-sync.service.ts`) o da `SEND_STATUS_META` (`App.tsx`).
+
+## POSTAL — GlobalCom SOAP, gotcha critico
+
+Web service ASMX legacy (`node-soap`), non un'API REST moderna — alcune
+convenzioni non sono deducibili dal solo WSDL/manuale, verificate solo
+con credenziali reali (**un riassunto del solo WSDL ha già portato a
+conclusioni sbagliate una volta in questa integrazione**, verificare
+sempre scaricando l'XSD raw o testando dal vivo).
+
+**Campo esito risposta = `<nomeMetodo>Result`, non `Result` generico.**
+Convenzione ASMX standard (`LoginResult`, `invio_ext_singoloResult`,
+`dettagli_documentoResult`...) — leggere `result.Result` è sempre
+`undefined`/falsy, marca FAILED anche un invio realmente ACCETTATO da
+GlobalCom (bug reale: un invio con `Stato=Accettato` e IDPRO assegnato
+registrato come fallito lato nostro — rischio concreto di doppio invio
+su un retry successivo).
+
+**Array (`Destinatari`/`Files`, anche in risposta `ProdottiDisponibili`/
+`ContrattiH2H`) sono tipi WSDL `ArrayOfX`**: l'elemento ripetuto dentro
+il contenitore si chiama come il TIPO dell'item (`InfoIndirizzoExt`,
+`InfoFileExt`, `ServiceType`, `DatiContrattoCOLMOLExt`), non come il
+campo. Un array JS nudo produce un contenitore vuoto/non riconosciuto —
+il server risponde "Il documento inserito deve contenere almeno un
+destinatario" anche con un destinatario effettivamente passato.
+
+**Nomi parametro nel manuale ≠ nomi WSDL reali.** Il manuale usa
+"gruppo" solo nel testo descrittivo italiano e nell'esempio C# (dove il
+nome del parametro posizionale è irrilevante) — il WSDL live usa
+`group` (inglese). Verificare sempre l'XSD scaricato, mai fidarsi del
+nome usato in prosa/esempio.
+
+**Messaggi d'errore Login ambigui**: GlobalCom risponde con lo stesso
+identico testo ("La combinazione di utente e gruppo non è valida") sia
+per username/gruppo sbagliati sia per password errata — non
+distingue le due cause lato loro.
+
+**Mai loggare l'XML di richiesta del Login** (nemmeno a `LOG_LEVEL=debug`):
+contiene la password in chiaro nel body SOAP. Loggare solo la risposta.
+
+**Configurazione**: multi-provider in tabella dedicata
+`postal_provider_configs` (`PostalProvidersService`), stesso pattern di
+`mail_server_configs` per EMAIL/PEC — non chiavi flat in `app_settings`.
+Tipologie di invio abilitate (`ProdottiDisponibili`) e codici contratto
+(`ContrattiH2H`) sono scoperti automaticamente dal tasto "Test"
+(`InformazioniUtenza`, sola lettura), mai configurati a mano — un'utenza
+può essere abilitata solo su varianti "Market"/"Contest" (canale
+Postel/Irideos), mai su Lettera/Raccomandata standard (canale Poste
+diretto), e i Servizio "Market"/"Contest"/Atto Giudiziario richiedono un
+`CodiceContratto` valido specifico per utenza.
+
+## Frontend admin — mai `<form>` annidate
+
+La pagina Impostazioni avvolge tutte le tab in un'unica `<form
+onSubmit={handleSaveSettings}>`. Un pannello di editing dentro una tab
+(es. CRUD provider) non può usare un proprio `<form onSubmit={...}>`:
+HTML non valido, il browser instrada il submit sulla form esterna
+(bug reale: "Salva" su un pannello interno riportava alla home invece
+di salvare). Usare `<div>` + bottone con `onClick` esplicito per
+qualunque pannello di editing dentro una tab di Impostazioni.
 
 ## TypeORM — leftJoinAndSelect + orderBy + take, bug interno
 
