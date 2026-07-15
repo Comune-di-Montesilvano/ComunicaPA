@@ -6,6 +6,7 @@ import { Recipient } from '../entities/recipient.entity';
 import { NotificationAttempt } from '../entities/notification-attempt.entity';
 import { DownloadEvent } from '../entities/download-event.entity';
 import { CampaignsService } from '../campaigns/campaigns.service';
+import { SendLegalFactsService } from '../channels/send/send-legal-facts.service';
 
 describe('NotificationsSearchService.search', () => {
   const qbMock = {
@@ -34,6 +35,7 @@ describe('NotificationsSearchService.search', () => {
         { provide: getRepositoryToken(NotificationAttempt), useValue: { find: jest.fn() } },
         { provide: getRepositoryToken(DownloadEvent), useValue: { find: jest.fn() } },
         { provide: CampaignsService, useValue: { renderMessageForRecipient: jest.fn() } },
+        { provide: SendLegalFactsService, useValue: { listLegalFacts: jest.fn(), downloadLegalFact: jest.fn() } },
       ],
     }).compile();
     service = moduleRef.get(NotificationsSearchService);
@@ -97,6 +99,7 @@ describe('NotificationsSearchService.getDetail', () => {
         { provide: getRepositoryToken(NotificationAttempt), useValue: attemptRepoMock },
         { provide: getRepositoryToken(DownloadEvent), useValue: downloadEventRepoMock },
         { provide: CampaignsService, useValue: campaignsServiceMock },
+        { provide: SendLegalFactsService, useValue: { listLegalFacts: jest.fn(), downloadLegalFact: jest.fn() } },
       ],
     }).compile();
     service = moduleRef.get(NotificationsSearchService);
@@ -254,5 +257,72 @@ describe('NotificationsSearchService.getDetail', () => {
       protocolYear: null,
       protocolledAt: null,
     });
+  });
+});
+
+describe('NotificationsSearchService.getSendLegalFacts / downloadSendLegalFact', () => {
+  const recipientRepoMock = { createQueryBuilder: jest.fn(), findOne: jest.fn() };
+  const attemptRepoMock = { find: jest.fn(), findOne: jest.fn() };
+  const downloadEventRepoMock = { find: jest.fn() };
+  const campaignsServiceMock = { renderMessageForRecipient: jest.fn() };
+  const sendLegalFactsMock = { listLegalFacts: jest.fn(), downloadLegalFact: jest.fn() };
+
+  let service: NotificationsSearchService;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        NotificationsSearchService,
+        { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
+        { provide: getRepositoryToken(NotificationAttempt), useValue: attemptRepoMock },
+        { provide: getRepositoryToken(DownloadEvent), useValue: downloadEventRepoMock },
+        { provide: CampaignsService, useValue: campaignsServiceMock },
+        { provide: SendLegalFactsService, useValue: sendLegalFactsMock },
+      ],
+    }).compile();
+    service = moduleRef.get(NotificationsSearchService);
+  });
+
+  it('getSendLegalFacts: ritorna lista vuota se il destinatario non ha un attempt SEND con iun', async () => {
+    attemptRepoMock.findOne.mockResolvedValueOnce(null);
+
+    const result = await service.getSendLegalFacts('rec-1');
+
+    expect(result).toEqual({ items: [] });
+    expect(sendLegalFactsMock.listLegalFacts).not.toHaveBeenCalled();
+  });
+
+  it('getSendLegalFacts: chiama SendLegalFactsService.listLegalFacts con lo iun più recente', async () => {
+    attemptRepoMock.findOne.mockResolvedValueOnce({ iun: 'IUN-1' });
+    sendLegalFactsMock.listLegalFacts.mockResolvedValueOnce([{ legalFactId: 'key1', category: 'SENDER_ACK' }]);
+
+    const result = await service.getSendLegalFacts('rec-1');
+
+    expect(attemptRepoMock.findOne).toHaveBeenCalledWith({
+      where: { recipientId: 'rec-1', channelType: 'SEND' },
+      order: { createdAt: 'DESC' },
+    });
+    expect(sendLegalFactsMock.listLegalFacts).toHaveBeenCalledWith('IUN-1');
+    expect(result).toEqual({ items: [{ legalFactId: 'key1', category: 'SENDER_ACK' }] });
+  });
+
+  it('downloadSendLegalFact: ritorna errore se il destinatario non ha un attempt SEND con iun', async () => {
+    attemptRepoMock.findOne.mockResolvedValueOnce(null);
+
+    const result = await service.downloadSendLegalFact('rec-1', 'key1');
+
+    expect(result).toEqual({ ready: false, error: 'Nessun IUN disponibile per questo destinatario' });
+    expect(sendLegalFactsMock.downloadLegalFact).not.toHaveBeenCalled();
+  });
+
+  it('downloadSendLegalFact: delega a SendLegalFactsService.downloadLegalFact', async () => {
+    attemptRepoMock.findOne.mockResolvedValueOnce({ iun: 'IUN-1' });
+    sendLegalFactsMock.downloadLegalFact.mockResolvedValueOnce({ ready: true, filename: 'a.pdf', contentType: 'application/pdf', buffer: Buffer.from('x') });
+
+    const result = await service.downloadSendLegalFact('rec-1', 'key1');
+
+    expect(sendLegalFactsMock.downloadLegalFact).toHaveBeenCalledWith('IUN-1', 'key1');
+    expect(result).toEqual({ ready: true, filename: 'a.pdf', contentType: 'application/pdf', buffer: Buffer.from('x') });
   });
 });

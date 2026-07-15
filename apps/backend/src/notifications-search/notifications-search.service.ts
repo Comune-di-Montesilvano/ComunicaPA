@@ -5,6 +5,7 @@ import { Recipient } from '../entities/recipient.entity';
 import { NotificationAttempt } from '../entities/notification-attempt.entity';
 import { DownloadEvent } from '../entities/download-event.entity';
 import { CampaignsService } from '../campaigns/campaigns.service';
+import { SendLegalFactsService, type SendLegalFactItem, type SendLegalFactDownloadResult } from '../channels/send/send-legal-facts.service';
 import type { NotificationDetailDto } from './dto/notification-detail.dto';
 
 export interface SearchFilters {
@@ -39,6 +40,7 @@ export class NotificationsSearchService {
     @InjectRepository(DownloadEvent)
     private readonly downloadEventRepo: Repository<DownloadEvent>,
     private readonly campaignsService: CampaignsService,
+    private readonly sendLegalFacts: SendLegalFactsService,
   ) {}
 
   async search(filters: SearchFilters): Promise<{ rows: SearchRowDto[]; total: number }> {
@@ -146,5 +148,24 @@ export class NotificationsSearchService {
       })),
       preview,
     };
+  }
+
+  async getSendLegalFacts(recipientId: string): Promise<{ items: SendLegalFactItem[] }> {
+    const attempt = await this.attemptRepo.findOne({
+      where: { recipientId, channelType: 'SEND' },
+      order: { createdAt: 'DESC' },
+    });
+    if (!attempt?.iun) return { items: [] };
+    const items = await this.sendLegalFacts.listLegalFacts(attempt.iun);
+    return { items };
+  }
+
+  async downloadSendLegalFact(recipientId: string, legalFactId: string): Promise<SendLegalFactDownloadResult> {
+    const attempt = await this.attemptRepo.findOne({
+      where: { recipientId, channelType: 'SEND' },
+      order: { createdAt: 'DESC' },
+    });
+    if (!attempt?.iun) return { ready: false, error: 'Nessun IUN disponibile per questo destinatario' };
+    return this.sendLegalFacts.downloadLegalFact(attempt.iun, legalFactId);
   }
 }
