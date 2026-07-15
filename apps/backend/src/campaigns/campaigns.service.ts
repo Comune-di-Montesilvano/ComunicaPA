@@ -992,7 +992,7 @@ export class CampaignsService {
     // SEND opzionali qui sotto.
     const items: RecipientStatDto[] = rawItems;
 
-    if (campaign.channelType === 'SEND' && items.length > 0) {
+    if ((campaign.channelType === 'SEND' || campaign.channelConfig?.['protocolla'] === true) && items.length > 0) {
       // Due query separate invece di leftJoinAndSelect: stesso motivo del
       // bug TypeORM documentato in protocollazione-sync.service.ts/
       // send-dispatch.service.ts (leftJoinAndSelect + orderBy + take su
@@ -1002,7 +1002,7 @@ export class CampaignsService {
       // batch piccolo (una pagina di destinatari), nessun impatto pratico.
       const recipientIds = items.map((r) => r.id);
       const attempts = await this.attemptRepo.find({
-        where: { recipientId: In(recipientIds), channelType: 'SEND' },
+        where: { recipientId: In(recipientIds), channelType: campaign.channelType },
       });
       const latestByRecipient = new Map<string, NotificationAttempt>();
       for (const a of attempts) {

@@ -178,7 +178,7 @@ describe('ProtocolloService', () => {
     const fileXmlMatch = protocollazioneBody.match(/<FileXML>([\s\S]*?)<\/FileXML>/);
     const segnaturaXml = Buffer.from(fileXmlMatch![1], 'base64').toString('utf-8');
     expect(segnaturaXml).toContain('id="999"');
-    expect(segnaturaXml).toContain('<Allegato id="888" nome="messaggio.eml"><DescrizioneDocumento>Corpo PEC</DescrizioneDocumento></Allegato>');
+    expect(segnaturaXml).toContain('<Allegati><Documento id="888" nome="messaggio.eml"><DescrizioneDocumento>Corpo PEC</DescrizioneDocumento></Documento></Allegati>');
   });
 
   it('lancia errore leggibile se Protocollazione fallisce', async () => {

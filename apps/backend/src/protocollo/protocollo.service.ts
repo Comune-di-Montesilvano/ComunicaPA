@@ -142,10 +142,12 @@ export class ProtocolloService {
     const { destinatario } = input;
     let allegatiXml = '';
     if (input.allegati && input.allegati.length > 0) {
+      allegatiXml += '<Allegati>';
       input.allegati.forEach((a, idx) => {
         const aId = allegatoIds[idx];
-        allegatiXml += `<Allegato id="${aId}" nome="${xmlEscape(a.filename)}"><DescrizioneDocumento>${xmlEscape(a.oggetto)}</DescrizioneDocumento></Allegato>`;
+        allegatiXml += `<Documento id="${aId}" nome="${xmlEscape(a.filename)}"><DescrizioneDocumento>${xmlEscape(a.oggetto)}</DescrizioneDocumento></Documento>`;
       });
+      allegatiXml += '</Allegati>';
     }
     return `<?xml version="1.0" encoding="utf-8"?><Segnatura versione="2001-05-07" xml:lang="it"><Intestazione><Oggetto>${xmlEscape(input.oggetto)}</Oggetto><Identificatore><NumeroRegistrazione>0</NumeroRegistrazione><DataRegistrazione>0</DataRegistrazione><Flusso>U</Flusso></Identificatore><Mittente><Amministrazione><Denominazione>${xmlEscape(config.mittenteDenominazione)}</Denominazione><IndirizzoTelematico tipo="smtp"></IndirizzoTelematico><UnitaOrganizzativa id="${xmlEscape(config.unitaOrganizzativa)}" /></Amministrazione></Mittente><Destinatario><Persona id="${xmlEscape(destinatario.codiceFiscale)}"><Nome>${xmlEscape(destinatario.nome)}</Nome><Cognome>${xmlEscape(destinatario.cognome)}</Cognome><CodiceFiscale>${xmlEscape(destinatario.codiceFiscale)}</CodiceFiscale><Denominazione>${xmlEscape(destinatario.denominazione)}</Denominazione><IndirizzoTelematico tipo="smtp"></IndirizzoTelematico></Persona></Destinatario><Classifica><CodiceAmministrazione>${xmlEscape(config.codiceAmministrazione)}</CodiceAmministrazione><CodiceTitolario>${xmlEscape(config.codiceTitolario)}</CodiceTitolario></Classifica></Intestazione><Descrizione><Documento id="${docId}" nome="${xmlEscape(input.documentFilename)}"><DescrizioneDocumento>${xmlEscape(input.oggetto)}</DescrizioneDocumento></Documento>${allegatiXml}</Descrizione></Segnatura>`;
   }

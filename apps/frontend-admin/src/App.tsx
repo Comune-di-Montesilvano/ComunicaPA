@@ -6903,14 +6903,31 @@ export function App(): React.JSX.Element {
                             <StatusBadge status={campaign.status} />
                           </div>
                         </div>
-                        {campaign.channelType !== 'SEND' && (
+                        {campaign.channelConfig?.['subject'] && (
+                          <div className="mb-3">
+                            <label className="text-muted small fw-semibold block">Oggetto</label>
+                            <div className="p-2 bg-light border rounded small" style={{ wordBreak: 'break-all' }}>
+                              {campaign.channelConfig['subject']}
+                            </div>
+                          </div>
+                        )}
+                        {campaign.channelConfig?.['body'] ? (
                           <div className="mb-3">
                             <label className="text-muted small fw-semibold block">Testo Messaggio</label>
+                            <div
+                              className="p-2 bg-light border rounded small"
+                              style={{ whiteSpace: 'pre-wrap', maxHeight: '180px', overflowY: 'auto' }}
+                              dangerouslySetInnerHTML={{ __html: campaign.channelConfig['body'] }}
+                            />
+                          </div>
+                        ) : campaign.description ? (
+                          <div className="mb-3">
+                            <label className="text-muted small fw-semibold block">Descrizione Campagna</label>
                             <div className="p-2 bg-light border rounded small" style={{ whiteSpace: 'pre-wrap' }}>
                               {campaign.description}
                             </div>
                           </div>
-                        )}
+                        ) : null}
 
                         {(campaign.status === 'running' || campaign.status === 'completed' || campaign.status === 'queued' || campaign.status === 'cancelled') && (
                           <div className="mt-4 border-top pt-3">
@@ -7125,6 +7142,8 @@ export function App(): React.JSX.Element {
                                     <th>Stato Notifica</th>
                                     {campaign.channelType === 'SEND' ? (
                                       <><th>IUN</th><th>Protocollo</th><th>Stato SEND</th><th>Aggiornato il</th></>
+                                    ) : campaign.channelConfig?.['protocolla'] ? (
+                                      <><th>Protocollo</th><th className="text-center">Download</th></>
                                     ) : (
                                       <th className="text-center">Download</th>
                                     )}
@@ -7148,6 +7167,19 @@ export function App(): React.JSX.Element {
                                           <td className="small">{r.protocolNumber ? `${r.protocolNumber}/${r.protocolYear}` : '—'}</td>
                                           <td className="small"><SendStatusBadge status={r.sendStatus} /></td>
                                           <td className="small text-muted">{r.sendStatusUpdatedAt ? new Date(r.sendStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
+                                        </>
+                                      ) : campaign.channelConfig?.['protocolla'] ? (
+                                        <>
+                                          <td className="small">{r.protocolNumber ? `${r.protocolNumber}/${r.protocolYear}` : '—'}</td>
+                                          <td className="text-center fw-bold">
+                                            {r.downloadCount ? (
+                                              <span className="text-success">
+                                                <i className="fas fa-arrow-down me-1"></i> {r.downloadCount}
+                                              </span>
+                                            ) : (
+                                              <span className="text-muted">—</span>
+                                            )}
+                                          </td>
                                         </>
                                       ) : (
                                         <td className="text-center fw-bold">
