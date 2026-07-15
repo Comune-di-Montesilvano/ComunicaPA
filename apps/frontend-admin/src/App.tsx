@@ -4492,27 +4492,11 @@ export function App(): React.JSX.Element {
                           </select>
                         </div>
                       )}
-                      <div className="col-12"><hr /><span className="small text-muted fw-bold">Indirizzo destinatario (colonne CSV)</span></div>
-                      <div className="col-md-3">
-                        <label className="form-label small">Colonna indirizzo *</label>
-                        <input className="form-control" placeholder="es. indirizzo" value={wizPostalAddressColumn} onChange={(e) => setWizPostalAddressColumn(e.target.value)} />
-                      </div>
-                      <div className="col-md-3">
-                        <label className="form-label small">Colonna città *</label>
-                        <input className="form-control" placeholder="es. comune" value={wizPostalMunicipalityColumn} onChange={(e) => setWizPostalMunicipalityColumn(e.target.value)} />
-                      </div>
-                      <div className="col-md-2">
-                        <label className="form-label small">Colonna CAP</label>
-                        <input className="form-control" placeholder="es. cap" value={wizPostalZipColumn} onChange={(e) => setWizPostalZipColumn(e.target.value)} />
-                      </div>
-                      <div className="col-md-2">
-                        <label className="form-label small">Colonna provincia</label>
-                        <input className="form-control" placeholder="es. prov" value={wizPostalProvinceColumn} onChange={(e) => setWizPostalProvinceColumn(e.target.value)} />
-                      </div>
-                      <div className="col-12"><hr /><span className="small text-muted fw-bold">Riconciliazione gestionale tributi (opzionale)</span></div>
-                      <div className="col-md-4">
-                        <label className="form-label small">Colonna riferimento (UserData1)</label>
-                        <input className="form-control" placeholder="es. numero_avviso" value={wizPostalUserDataColumn} onChange={(e) => setWizPostalUserDataColumn(e.target.value)} />
+                      <div className="col-12">
+                        <div className="form-text small text-muted mb-0">
+                          <i className="fas fa-info-circle me-1"></i>
+                          Il mapping delle colonne CSV per indirizzo destinatario (e il riferimento facoltativo per il gestionale tributi) si configura al Passo 3, dopo il caricamento del file.
+                        </div>
                       </div>
                     </div>
                     );
@@ -4686,7 +4670,7 @@ export function App(): React.JSX.Element {
                         ((wizChannel === 'EMAIL' || wizChannel === 'PEC') && !wizMailConfigId) ||
                         ((wizChannel === 'EMAIL' || wizChannel === 'PEC') && wizAppIoMode !== 'none' && !wizAppIoServiceId) ||
                         (wizChannel === 'APP_IO' && !wizAppIoServiceId) ||
-                        (wizChannel === 'POSTAL' && (!wizPostalServiceType || !wizPostalAddressColumn || !wizPostalMunicipalityColumn))
+                        (wizChannel === 'POSTAL' && !wizPostalServiceType)
                       }
                     >
                       Avanti <i className="fas fa-arrow-right ms-1"></i>
@@ -5008,6 +4992,76 @@ export function App(): React.JSX.Element {
                     </div>
                   )}
 
+                  {wizChannel === 'POSTAL' && (
+                    <div className="card border-light shadow-sm mb-4" style={{ background: '#f8f9fc' }}>
+                      <div className="card-body p-3">
+                        <h6 className="small fw-bold text-dark mb-3">
+                          <i className="fas fa-location-dot me-2 text-primary"></i>Indirizzo Destinatario (Postalizzazione)
+                        </h6>
+                        <div className="row g-2">
+                          <div className="col-md-6">
+                            <label className="form-label small fw-bold">Colonna Indirizzo *</label>
+                            <select
+                              className="form-select form-select-sm"
+                              value={wizPostalAddressColumn}
+                              onChange={e => setWizPostalAddressColumn(e.target.value)}
+                              required
+                            >
+                              <option value="">-- Seleziona Colonna Indirizzo --</option>
+                              {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
+                            </select>
+                          </div>
+                          <div className="col-md-6">
+                            <label className="form-label small fw-bold">Colonna Città *</label>
+                            <select
+                              className="form-select form-select-sm"
+                              value={wizPostalMunicipalityColumn}
+                              onChange={e => setWizPostalMunicipalityColumn(e.target.value)}
+                              required
+                            >
+                              <option value="">-- Seleziona Colonna Città --</option>
+                              {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
+                            </select>
+                          </div>
+                          <div className="col-md-6">
+                            <label className="form-label small">Colonna CAP (Opzionale)</label>
+                            <select
+                              className="form-select form-select-sm"
+                              value={wizPostalZipColumn}
+                              onChange={e => setWizPostalZipColumn(e.target.value)}
+                            >
+                              <option value="">-- Seleziona Colonna CAP --</option>
+                              {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
+                            </select>
+                          </div>
+                          <div className="col-md-6">
+                            <label className="form-label small">Colonna Provincia (Opzionale)</label>
+                            <select
+                              className="form-select form-select-sm"
+                              value={wizPostalProvinceColumn}
+                              onChange={e => setWizPostalProvinceColumn(e.target.value)}
+                            >
+                              <option value="">-- Seleziona Colonna Provincia --</option>
+                              {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
+                            </select>
+                          </div>
+                          <div className="col-md-6">
+                            <label className="form-label small">Colonna riferimento gestionale tributi (Opzionale)</label>
+                            <select
+                              className="form-select form-select-sm"
+                              value={wizPostalUserDataColumn}
+                              onChange={e => setWizPostalUserDataColumn(e.target.value)}
+                            >
+                              <option value="">-- Nessuna --</option>
+                              {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
+                            </select>
+                            <div className="form-text small text-muted">Riportato in UserData1 su GlobalCom per riconciliazione col gestionale tributi (es. Maggioli).</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Validation Panel */}
                   <div className="p-3 border rounded bg-light mb-4">
                     <h5 className="small fw-bold mb-2"><i className="fas fa-check-double text-success me-1"></i>Validazione Formale dei Campi</h5>
@@ -5108,7 +5162,7 @@ export function App(): React.JSX.Element {
                     <button
                       className="btn btn-primary"
                       onClick={() => setWizStep(4)}
-                      disabled={wizValidRows.length === 0}
+                      disabled={wizValidRows.length === 0 || (wizChannel === 'POSTAL' && (!wizPostalAddressColumn || !wizPostalMunicipalityColumn))}
                     >
                       Procedi a Template <i className="fas fa-arrow-right ms-1"></i>
                     </button>
