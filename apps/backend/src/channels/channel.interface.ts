@@ -12,8 +12,12 @@ export interface IChannelStrategy {
    * Usato dalle strategy che espongono un idempotence token verso il provider
    * esterno (es. SEND/PN) per far riconoscere una redelivery dello stesso job
    * come duplicato invece di generare un secondo invio reale.
+   * attemptsMade: numero di tentativi BullMQ già fatti per questo job
+   * (job.attemptsMade). 0 = primo tentativo. Usato da POSTAL per decidere se
+   * verificare un eventuale invio già presente su GlobalCom prima di
+   * reinviare (nessuna ambiguità al primo tentativo, solo sui retry).
    */
-  send(recipient: Recipient, campaign: Campaign, onLog?: ChannelLogFn, attemptId?: string): Promise<ChannelSendResult>;
+  send(recipient: Recipient, campaign: Campaign, onLog?: ChannelLogFn, attemptId?: string, attemptsMade?: number): Promise<ChannelSendResult>;
 }
 
 export const CHANNEL_STRATEGIES = Symbol('CHANNEL_STRATEGIES');

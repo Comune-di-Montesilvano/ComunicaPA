@@ -135,7 +135,7 @@ export class NotificationProcessor extends WorkerHost {
     }
 
     const appIoConfig = resolveSecondaryAppIoConfig(campaign.channelConfig);
-    const isMailChannel = channel === 'EMAIL' || channel === 'PEC';
+    const isMailChannel = channel === 'EMAIL' || channel === 'PEC' || channel === 'POSTAL';
     // Risolve la api key del servizio App IO scelto (o quello predefinito) solo se serve:
     // niente più api key in chiaro dentro channelConfig (cifrata lato server per servizio).
     const appIoResolved = appIoConfig && isMailChannel
@@ -184,7 +184,7 @@ export class NotificationProcessor extends WorkerHost {
     // 1. Invio canale primario (saltato solo in esclusiva riuscita)
     if (!skipPrimary) {
       try {
-        primaryResult = await strategy.send(recipient, campaign, jobLog, attemptId);
+        primaryResult = await strategy.send(recipient, campaign, jobLog, attemptId, job.attemptsMade);
       } catch (err: any) {
         primaryError = err instanceof Error ? err : new Error(String(err));
         jobLog(`Errore canale primario ${channel}: ${primaryError.message}`);

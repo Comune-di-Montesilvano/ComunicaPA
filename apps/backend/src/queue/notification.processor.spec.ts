@@ -169,7 +169,7 @@ describe('NotificationProcessor', () => {
     await processor.process(mockJob(baseData));
 
     expect(mockAttemptRepo.update).toHaveBeenCalledWith('att-1', { status: AttemptStatus.PROCESSING });
-    expect(mockStrategy.send).toHaveBeenCalledWith(mockRecipient, mockCampaign, expect.any(Function), 'att-1');
+    expect(mockStrategy.send).toHaveBeenCalledWith(mockRecipient, mockCampaign, expect.any(Function), 'att-1', 0);
     expect(mockAttemptRepo.update).toHaveBeenCalledWith('att-1', expect.objectContaining({
       status: AttemptStatus.SUCCESS,
       responsePayload: expect.any(Object),
@@ -179,6 +179,14 @@ describe('NotificationProcessor', () => {
       status: RecipientStatus.SENT,
       attachmentExpiresAt: expect.any(Date),
     }));
+  });
+
+  it('passa job.attemptsMade a strategy.send()', async () => {
+    await processor.process(mockJob(baseData, 2));
+
+    expect(mockStrategy.send).toHaveBeenCalledWith(
+      mockRecipient, mockCampaign, expect.any(Function), 'att-1', 2,
+    );
   });
 
   it('process() aggiorna attempt PROCESSING → FAILED e rilancia se strategy lancia', async () => {
