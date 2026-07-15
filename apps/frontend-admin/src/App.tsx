@@ -425,6 +425,10 @@ export function App(): React.JSX.Element {
     setSendLegalFactsLoading(true);
     try {
       const res = await apiFetch(`/notifications-search/${notifDetail.recipient.id}/send-legal-facts`);
+      if (!res.ok) {
+        alert('Impossibile caricare i documenti SEND.');
+        return;
+      }
       const data = await res.json();
       setSendLegalFacts(data.items || []);
     } catch (err) {
@@ -438,6 +442,10 @@ export function App(): React.JSX.Element {
     if (!notifDetail) return;
     try {
       const res = await apiFetch(`/notifications-search/${notifDetail.recipient.id}/send-legal-facts/${encodeURIComponent(legalFactId)}/download`);
+      if (!res.ok) {
+        alert('Errore durante il download del documento.');
+        return;
+      }
       const contentType = res.headers.get('content-type') || '';
       if (contentType.includes('application/json')) {
         const data = await res.json();
