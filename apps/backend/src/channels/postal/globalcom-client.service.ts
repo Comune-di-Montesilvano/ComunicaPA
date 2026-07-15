@@ -69,7 +69,12 @@ function mapDocStatus(raw: any): GbcDocStatus {
 @Injectable()
 export class GlobalComClient {
   private async createSession(creds: GbcCredentials): Promise<soap.Client> {
-    const client = await soap.createClientAsync(`${creds.baseUrl}?wsdl`, { endpoint: creds.baseUrl });
+    // baseUrl configurabile da UI: normalizza un eventuale "?wsdl" già
+    // presente (operatore che ha incollato l'URL così come appare nel
+    // browser durante il test del WSDL) per evitare "...asmx?wsdl?wsdl" e
+    // un endpoint SOAP reale sbagliato per le chiamate successive al Login.
+    const endpoint = creds.baseUrl.replace(/\?wsdl$/i, '');
+    const client = await soap.createClientAsync(`${endpoint}?wsdl`, { endpoint });
     const [loginResult] = await client.LoginAsync({ user: creds.user, password: creds.password, gruppo: creds.group });
     if (!loginResult.LoginResult) {
       throw new Error(`Login GlobalCom fallito: ${loginResult.message || 'credenziali non valide'}`);
