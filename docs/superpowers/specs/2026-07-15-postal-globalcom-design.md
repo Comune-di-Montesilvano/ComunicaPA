@@ -84,10 +84,47 @@ di rete/credenziali).
 | `Mittente` | da settings `postal.mittente.*` se configurato; altrimenti `UsaMittentePredefinito=true` (usa mittente predefinito dell'utenza GlobalCom, feature disponibile dalla v4.0.0.20 del loro servizio) |
 | `Destinatari[0]` | da `resolvePhysicalAddress(recipient, channelConfig.physicalAddressConfig)` — **riuso diretto** dell'utility già scritta per SEND (`apps/backend/src/channels/payment-config.util.ts`), stesso meccanismo di column-mapping CSV via `extraData`, nessuna nuova colonna su `Recipient` |
 | `Protocollo` | `${attempt.protocolNumber}/${attempt.protocolYear}` se protocollazione attiva, altrimenti omesso |
-| `Note` | nome campagna (opzionale, solo tracciabilità lato GlobalCom) |
+| `Note` | `attempt.id` (UUID) — usato come token di dedup, vedi sotto |
 | `Files[0]` | PDF via `generatePdfBuffer()`, `MD5` calcolato con `crypto.createHash('md5')` sul buffer, `filetype: 'pdf'` |
 | `CentrodiCosto` | da settings `postal.centroDiCosto`, opzionale |
 | `DaConfermare` | non impostato (default `false`) — vedi nota sotto |
+
+### Dedup su retry — GlobalCom non ha `IdempotenceToken` su `InfoGUIDExt`
+
+A differenza di PN/SEND (`InfoGUIDPND.IdempotenceToken`, verificato nel
+manuale — quel campo esiste **solo** sulla classe usata da SEND, non su
+`InfoGUIDExt`), l'endpoint Lettera/Raccomandata non ha idempotenza nativa:
+un retry BullMQ dopo un crash "ambiguo" (la richiesta SOAP è partita, ma non
+sappiamo se GlobalCom l'ha accettata prima del crash) rischierebbe un
+doppio invio reale — e quindi un doppio addebito, a differenza di EMAIL/PEC
+dove un reinvio duplicato è solo fastidioso.
+
+Il rischio esiste solo sui **retry**, non al primo tentativo (`job.attemptsMade
+=== 0`): la prima volta non può esserci ambiguità, niente è ancora stato
+tentato. `IChannelStrategy.send()` viene esteso con un parametro opzionale
+`attemptsMade?: number` (passato da `job.attemptsMade` in
+`notification.processor.ts:187`); le altre strategy lo ignorano.
+
+Quando `attemptsMade > 0`, prima di chiamare `invio_ext_singolo`,
+`PostalStrategy` cerca su GlobalCom stesso un invio precedente per questo
+attempt: `lista_documenti(Filtri: { Testo: attempt.id, SoloTesto: true,
+Limite: 1 })` — la ricerca testuale del manuale (§3.6) cerca su
+`PROTOCOLLO`/`LOTTO`/**`NOTE`**, campo dove scriviamo l'`attempt.id`.
+
+- Trovato un risultato con `Stato` diverso da `Errore`/`Eliminato` → **non
+  reinvio**: riuso l'`IDPRO` trovato come `messageId`, log esplicito
+  ("invio già presente su GlobalCom per questo attempt, salto reinvio
+  duplicato").
+- Nessun risultato, o solo risultati `Errore`/`Eliminato` (il tentativo
+  precedente è davvero fallito/rimosso) → procedo con `invio_ext_singolo`
+  normale.
+
+Verifica fatta contro il database di GlobalCom stesso (fonte di verità
+esterna), non contro il nostro DB — più robusto della guardia generica
+anti-redelivery già presente in `notification.processor.ts:93-124`, che
+controlla la chiave `notificationRequestId` nel `responsePayload` (retaggio
+SEND) e quindi non copre POSTAL, il cui `responsePayload` non ha quella
+chiave.
 
 Se `resolvePhysicalAddress` ritorna `null` (colonne indirizzo non mappate o
 vuote per quel destinatario), il job fallisce con errore esplicito
