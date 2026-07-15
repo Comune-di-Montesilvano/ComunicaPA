@@ -137,7 +137,13 @@ export class GlobalComClient {
       const [result] = await (client as any).invio_ext_singoloAsync({ Invio: invio });
       this.logger.debug(`invio_ext_singolo request: ${(client as any).lastRequest}`);
       if (!result.Result) {
-        throw new Error(`invio_ext_singolo fallito: ${result.Messaggio || 'errore sconosciuto'}`);
+        // Il dettaglio utile (CodiceErrore/Descrizione, es. "L'utente non è
+        // autorizzato ad inviare documenti di questo tipo") arriva spesso
+        // dentro Risposta anche quando Result=false, non in Messaggio (che
+        // può restare vuoto) — verificato su un errore reale (0401).
+        const risposta = result.Risposta as { CodiceErrore?: string; Descrizione?: string } | undefined;
+        const dettaglio = result.Messaggio || risposta?.Descrizione || risposta?.CodiceErrore || 'errore sconosciuto';
+        throw new Error(`invio_ext_singolo fallito: ${dettaglio}`);
       }
       return mapDocStatus(result.Risposta);
     } catch (err) {
