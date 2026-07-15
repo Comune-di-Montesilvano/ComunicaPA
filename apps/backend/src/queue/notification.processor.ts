@@ -56,7 +56,15 @@ export class NotificationProcessor extends WorkerHost {
     this.logger.log(`Job ${job.id}: campaign=${campaignId} recipient=${recipientId} channel=${channel}`);
     jobLog(`Job ${job.id}: campaign=${campaignId} recipient=${recipientId} channel=${channel}`);
 
-    const recipient = await this.recipientRepo.findOne({ where: { id: recipientId } });
+    // relations.campaign: AttachmentService.generatePdfBuffer (usato da
+    // PostalStrategy per generare il PDF da spedire) legge
+    // recipient.campaign.name/.channelType — senza questa relazione carica
+    // "undefined" e crasha con "Cannot read properties of undefined
+    // (reading 'name')" PRIMA di qualunque chiamata al provider esterno
+    // (bug reale riscontrato in test con GlobalCom: nessun invio arrivato a
+    // destinazione, fallito prima). Stesso pattern già usato correttamente
+    // in protocollazione.processor.ts (relations: { recipient: { campaign: true } }).
+    const recipient = await this.recipientRepo.findOne({ where: { id: recipientId }, relations: { campaign: true } });
     if (!recipient) {
       throw new Error(`Recipient ${recipientId} not found`);
     }
