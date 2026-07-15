@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import type { NotificationChannel } from '@comunicapa/shared-types';
-import { PdfModule } from '../pdf/pdf.module';
 import { PdndModule } from '../pdnd/pdnd.module';
 import { ProtocolloModule } from '../protocollo/protocollo.module';
 import { AttachmentModule } from '../attachments/attachment.module';
@@ -17,11 +16,11 @@ import { SendAttachmentUploadService } from './send/send-attachment-upload.servi
 import { SendStatusSyncService } from './send/send-status-sync.service';
 import { SendDispatchService } from './send/send-dispatch.service';
 import { PostalStrategy } from './postal/postal.strategy';
+import { GlobalComClient } from './postal/globalcom-client.service';
 import { CampaignCompletionService } from '../campaigns/campaign-completion.service';
 
 @Module({
   imports: [
-    PdfModule,
     PdndModule,
     ProtocolloModule,
     AttachmentModule,
@@ -31,6 +30,7 @@ import { CampaignCompletionService } from '../campaigns/campaign-completion.serv
     EmailStrategy,
     PecStrategy,
     AppIoStrategy,
+    GlobalComClient,
     PostalStrategy,
     SendAttachmentUploadService,
     SendStatusSyncService,
