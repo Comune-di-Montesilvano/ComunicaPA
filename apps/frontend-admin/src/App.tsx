@@ -1990,8 +1990,7 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const handleSavePostalProvider = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSavePostalProvider = async () => {
     if (!editingPostalProvider || !token) return;
     setPostalProviderBusyId(editingPostalProvider.id || 'new');
     setPostalProviderMsg(null);
@@ -2240,7 +2239,12 @@ export function App(): React.JSX.Element {
         )}
 
         {editing && (
-          <form onSubmit={handleSavePostalProvider} className="border rounded bg-white p-4 shadow-sm">
+          // <div>, non <form>: questo pannello vive dentro la <form> generale
+          // di Impostazioni (handleSaveSettings) — una <form> annidata è HTML
+          // non valido e il browser instrada il submit su quella esterna
+          // (bug reale: "Salva" riportava alla home invece di salvare il
+          // provider). Submit gestito esplicitamente sul click del bottone.
+          <div className="border rounded bg-white p-4 shadow-sm">
             <h5 className="text-dark fw-bold mb-4">
               {editing.id ? 'Modifica Provider' : 'Nuovo Provider'}
             </h5>
@@ -2370,14 +2374,19 @@ export function App(): React.JSX.Element {
             </div>
 
             <div className="d-flex gap-2 mt-4 pt-3 border-top">
-              <button type="submit" className="btn btn-primary" disabled={postalProviderBusyId === (editing.id || 'new')}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={postalProviderBusyId === (editing.id || 'new') || !editing.name || !editing.baseUrl || !editing.username}
+                onClick={() => handleSavePostalProvider()}
+              >
                 {postalProviderBusyId === (editing.id || 'new') ? 'Salvataggio…' : 'Salva'}
               </button>
               <button type="button" className="btn btn-outline-secondary" onClick={() => setEditingPostalProvider(null)}>
                 Annulla
               </button>
             </div>
-          </form>
+          </div>
         )}
       </div>
     );
