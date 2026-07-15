@@ -96,6 +96,13 @@ export const SETTING_DEFS = {
   'postal.password': { type: 'string', secret: true, default: '' },
   'postal.group': { type: 'string', default: '' },
   'postal.centroDiCosto': { type: 'string', default: '' },
+  // Obbligatorio per i Servizio "Market"/"Contest" (es. RaccomandataMarket4,
+  // LetteraContest4 — utenze abilitate solo su questi tier via canale
+  // Postel/Irideos invece che Poste H2H dirette): senza CodiceContratto
+  // valorizzato GlobalCom rifiuta l'invio con "È necessario specificare un
+  // contratto <Servizio> valido per questa spedizione" — verificato in test
+  // con credenziali reali. Non richiesto per Lettera/Raccomandata standard.
+  'postal.codiceContratto': { type: 'string', default: '' },
   // Mittente esplicito facoltativo: se denominazione1 è vuoto, si usa il
   // mittente predefinito dell'utenza GlobalCom (UsaMittentePredefinito=true).
   'postal.mittente.denominazione1': { type: 'string', default: '' },

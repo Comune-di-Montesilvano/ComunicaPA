@@ -95,7 +95,7 @@ export class PostalStrategy implements IChannelStrategy {
       provincia: resolvedAddress.province,
     };
 
-    const servizio = ((cfg['postalServiceType'] as string) || 'Raccomandata') as 'Lettera' | 'Raccomandata';
+    const servizio = (cfg['postalServiceType'] as string) || 'Raccomandata';
     const ricevutaDiRitorno = servizio === 'Raccomandata' && !!cfg['postalReturnReceipt'];
 
     const userDataColumn = cfg['userDataColumn'] as string | undefined;
@@ -106,6 +106,7 @@ export class PostalStrategy implements IChannelStrategy {
     const fileBuffer = await this.attachments.generatePdfBuffer(recipient, 0);
     const mittente = await this.loadMittente();
     const centroDiCosto = (await this.settings.get<string>('postal.centroDiCosto')) || undefined;
+    const codiceContratto = (await this.settings.get<string>('postal.codiceContratto')) || undefined;
 
     log(`Invio POSTAL (GlobalCom) a ${recipient.codiceFiscale}: servizio=${servizio}, AR=${ricevutaDiRitorno}`);
 
@@ -117,6 +118,7 @@ export class PostalStrategy implements IChannelStrategy {
       note: recipient.id,
       protocollo,
       centroDiCosto,
+      codiceContratto,
       userData1,
       fileBuffer,
     });

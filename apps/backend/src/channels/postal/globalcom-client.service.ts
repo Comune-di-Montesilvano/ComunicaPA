@@ -20,13 +20,21 @@ export interface GbcCredentials {
 }
 
 export interface GbcInvioParams {
-  servizio: 'Lettera' | 'Raccomandata';
+  // Non ristretto a Lettera/Raccomandata: alcune utenze sono abilitate solo
+  // su varianti "Market"/"Contest" (es. RaccomandataMarket4, LetteraContest4
+  // — canale Postel/Irideos), verificato con l'errore reale "L'utente non è
+  // autorizzato ad inviare documenti di questo tipo" su Lettera/Raccomandata
+  // standard per un'utenza abilitata solo sul tier Market.
+  servizio: string;
   ricevutaDiRitorno: boolean;
   mittente: GbcAddress | null;
   destinatario: GbcAddress;
   note: string;
   protocollo?: string;
   centroDiCosto?: string;
+  // Obbligatorio per i Servizio "Market"/"Contest" (vedi commento su
+  // settings.registry.ts 'postal.codiceContratto').
+  codiceContratto?: string;
   userData1?: string;
   fileBuffer: Buffer;
 }
@@ -140,6 +148,7 @@ export class GlobalComClient {
       ...(params.mittente ? { Mittente: toInfoIndirizzoExt(params.mittente) } : { UsaMittentePredefinito: true }),
       ...(params.protocollo ? { Protocollo: params.protocollo } : {}),
       ...(params.centroDiCosto ? { CentrodiCosto: params.centroDiCosto } : {}),
+      ...(params.codiceContratto ? { CodiceContratto: params.codiceContratto } : {}),
       ...(params.userData1 ? { UserData1: params.userData1 } : {}),
     };
 
