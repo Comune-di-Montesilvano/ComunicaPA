@@ -597,7 +597,7 @@ export function App(): React.JSX.Element {
             email: row[wizMapping.email] || undefined,
             pec: row[wizMapping.pec] || undefined,
             extraData: row,
-            protocolNumber: wizProtocolla ? '44919/2026' : undefined,
+            protocolNumber: wizProtocolla ? '[N. Protocollo]' : undefined,
           },
         }),
       })
