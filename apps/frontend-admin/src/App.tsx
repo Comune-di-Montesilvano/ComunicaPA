@@ -86,6 +86,16 @@ function SendStatusBadge({ status }: { status: string | null | undefined }): Rea
   );
 }
 
+const SEND_LEGAL_FACT_CATEGORY_LABELS: Record<string, string> = {
+  SENDER_ACK: 'Presa in carico',
+  DIGITAL_DELIVERY: 'Consegna digitale (PEC)',
+  ANALOG_DELIVERY: 'Consegna cartacea (cartolina AR)',
+  RECIPIENT_ACCESS: 'Accesso del destinatario',
+  PEC_RECEIPT: 'Ricevuta PEC',
+  ANALOG_FAILURE_DELIVERY: 'Mancata consegna cartacea',
+  NOTIFICATION_CANCELLED: 'Notifica annullata',
+};
+
 function downloadComboLabel(channels: string[]): string {
   if (channels.length === 0) return 'Non scaricato';
   return channels.map((c) => channelLabel(c)).join(' + ');
@@ -359,6 +369,9 @@ export function App(): React.JSX.Element {
     downloads: Array<{ channel: string; attachmentIndex: number; downloadedAt: string }>;
   } | null>(null);
   const [notifDetailLoading, setNotifDetailLoading] = useState(false);
+  const [sendLegalFacts, setSendLegalFacts] = useState<{ legalFactId: string; category: string }[] | null>(null);
+  const [sendLegalFactsLoading, setSendLegalFactsLoading] = useState(false);
+  const [sendLegalFactRetry, setSendLegalFactRetry] = useState<Record<string, { retryAfterSeconds?: number; error?: string }>>({});
 
   const [verificaCf, setVerificaCf] = useState('');
   const [verificaLoading, setVerificaLoading] = useState(false);
@@ -390,6 +403,8 @@ export function App(): React.JSX.Element {
 
   const openNotificationDetail = async (recipientId: string) => {
     setNotifDetail(null);
+    setSendLegalFacts(null);
+    setSendLegalFactRetry({});
     setNotifDetailLoading(true);
     try {
       const res = await fetch(`${ADMIN_API_BASE}/notifications-search/${recipientId}`, {
@@ -402,6 +417,50 @@ export function App(): React.JSX.Element {
       setNotifDetail(await res.json());
     } finally {
       setNotifDetailLoading(false);
+    }
+  };
+
+  const loadSendLegalFacts = async () => {
+    if (!notifDetail) return;
+    setSendLegalFactsLoading(true);
+    try {
+      const res = await apiFetch(`/notifications-search/${notifDetail.recipient.id}/send-legal-facts`);
+      const data = await res.json();
+      setSendLegalFacts(data.items || []);
+    } catch (err) {
+      if (!(err instanceof ApiAuthError)) alert('Impossibile caricare i documenti SEND.');
+    } finally {
+      setSendLegalFactsLoading(false);
+    }
+  };
+
+  const downloadSendLegalFact = async (legalFactId: string) => {
+    if (!notifDetail) return;
+    try {
+      const res = await apiFetch(`/notifications-search/${notifDetail.recipient.id}/send-legal-facts/${encodeURIComponent(legalFactId)}/download`);
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const data = await res.json();
+        setSendLegalFactRetry((prev) => ({ ...prev, [legalFactId]: { retryAfterSeconds: data.retryAfterSeconds, error: data.error } }));
+        return;
+      }
+      setSendLegalFactRetry((prev) => {
+        const next = { ...prev };
+        delete next[legalFactId];
+        return next;
+      });
+      const blob = await res.blob();
+      const disposition = res.headers.get('content-disposition') || '';
+      const match = disposition.match(/filename="?([^"]+)"?/);
+      const filename = match ? match[1] : `documento-${legalFactId}`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      if (!(err instanceof ApiAuthError)) alert('Errore durante il download del documento.');
     }
   };
 
@@ -5018,6 +5077,61 @@ export function App(): React.JSX.Element {
                             </tbody>
                           </table>
                         </div>
+
+                        {notifDetail.campaign.channelType === 'SEND' && (
+                          <>
+                            <h6 className="fw-bold small d-flex align-items-center justify-content-between">
+                              Documenti disponibili (SEND)
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-primary"
+                                onClick={loadSendLegalFacts}
+                                disabled={sendLegalFactsLoading}
+                              >
+                                {sendLegalFactsLoading ? (
+                                  <><i className="fas fa-spinner fa-spin me-1"></i>Caricamento...</>
+                                ) : (
+                                  <><i className="fas fa-rotate me-1"></i>Carica documenti</>
+                                )}
+                              </button>
+                            </h6>
+                            {sendLegalFacts !== null && (
+                              sendLegalFacts.length === 0 ? (
+                                <div className="text-muted small mb-4">Nessun documento disponibile al momento.</div>
+                              ) : (
+                                <div className="table-responsive">
+                                  <table className="table table-sm mb-4">
+                                    <thead><tr><th>Documento</th><th></th></tr></thead>
+                                    <tbody>
+                                      {sendLegalFacts.map((item) => (
+                                        <tr key={item.legalFactId}>
+                                          <td className="small">{SEND_LEGAL_FACT_CATEGORY_LABELS[item.category] ?? item.category}</td>
+                                          <td className="small text-end">
+                                            {sendLegalFactRetry[item.legalFactId] ? (
+                                              <span className="text-muted">
+                                                {sendLegalFactRetry[item.legalFactId].error
+                                                  ? sendLegalFactRetry[item.legalFactId].error
+                                                  : `Non ancora disponibile, riprova tra ${sendLegalFactRetry[item.legalFactId].retryAfterSeconds ?? '?'}s`}
+                                              </span>
+                                            ) : (
+                                              <button
+                                                type="button"
+                                                className="btn btn-sm btn-outline-secondary"
+                                                onClick={() => downloadSendLegalFact(item.legalFactId)}
+                                              >
+                                                <i className="fas fa-download me-1"></i>Scarica
+                                              </button>
+                                            )}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )
+                            )}
+                          </>
+                        )}
 
                         {notifDetail.downloads.length > 0 && (
                           <>
