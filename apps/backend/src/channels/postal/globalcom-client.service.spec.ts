@@ -51,7 +51,7 @@ describe('GlobalComClient', () => {
         RicevutaDiRitorno: true,
         UsaMittentePredefinito: true,
         Note: 'attempt-uuid-123',
-        Destinatari: [expect.objectContaining({ Denominazione1: 'Mario Rossi', Citta: 'Montesilvano' })],
+        Destinatari: { InfoIndirizzoExt: [expect.objectContaining({ Denominazione1: 'Mario Rossi', Citta: 'Montesilvano' })] },
       }),
     }));
     expect(result).toEqual({ idPro: 'IDPRO123', stato: 'Accettato', codiceErrore: '', descrizione: '' });

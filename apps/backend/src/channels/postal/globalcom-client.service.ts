@@ -115,18 +115,28 @@ export class GlobalComClient {
     const client = await this.createSession(creds);
     const md5 = crypto.createHash('md5').update(params.fileBuffer).digest('hex').toUpperCase();
 
+    // Destinatari/Files sono tipi WSDL "ArrayOfX" (ArrayOfInfoIndirizzoExt/
+    // ArrayOfInfoFileExt): l'elemento ripetuto dentro il contenitore si
+    // chiama come il TIPO dell'item (InfoIndirizzoExt/InfoFileExt), non
+    // come il campo array stesso — verificato sull'XSD del WSDL live.
+    // Passare un array JS nudo (senza questo wrapper) fa sì che node-soap
+    // non sappia come nominare l'elemento ripetuto: il server riceve un
+    // <Destinatari> vuoto/non riconosciuto e risponde "Il documento
+    // inserito deve contenere almeno un destinatario" anche quando un
+    // destinatario è stato effettivamente passato (bug reale riscontrato
+    // in test con GlobalCom, indipendente dal Servizio usato).
     const invio: Record<string, unknown> = {
       Servizio: params.servizio,
       RicevutaDiRitorno: params.ricevutaDiRitorno,
-      Destinatari: [toInfoIndirizzoExt(params.destinatario)],
+      Destinatari: { InfoIndirizzoExt: [toInfoIndirizzoExt(params.destinatario)] },
       Note: params.note,
-      Files: [{
+      Files: { InfoFileExt: [{
         file: params.fileBuffer.toString('base64'),
         filetype: 'pdf',
         MD5: md5,
         isreceipt: false,
         issigned: false,
-      }],
+      }] },
       ...(params.mittente ? { Mittente: toInfoIndirizzoExt(params.mittente) } : { UsaMittentePredefinito: true }),
       ...(params.protocollo ? { Protocollo: params.protocollo } : {}),
       ...(params.centroDiCosto ? { CentrodiCosto: params.centroDiCosto } : {}),
