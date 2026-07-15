@@ -155,7 +155,14 @@ export class GlobalComClient {
     try {
       const [result] = await (client as any).invio_ext_singoloAsync({ Invio: invio });
       this.logger.debug(`invio_ext_singolo request: ${(client as any).lastRequest}`);
-      if (!result.Result) {
+      // Convenzione WSDL ASMX: il campo booleano di esito si chiama
+      // "<nomeMetodo>Result" (es. LoginResult per Login), non "Result"
+      // generico — verificato su una risposta reale (invio_ext_singoloResult
+      // true, Stato=Accettato, IDPRO reale assegnato) che il nostro vecchio
+      // controllo "result.Result" leggeva sempre undefined/falsy, marcando
+      // FAILED anche un invio realmente accettato da GlobalCom (bug critico,
+      // rischio di doppio invio su un retry successivo se non corretto).
+      if (!result.invio_ext_singoloResult) {
         // Il dettaglio utile (CodiceErrore/Descrizione, es. "L'utente non è
         // autorizzato ad inviare documenti di questo tipo") arriva spesso
         // dentro Risposta anche quando Result=false, non in Messaggio (che
@@ -192,7 +199,7 @@ export class GlobalComClient {
   async dettagliDocumento(creds: GbcCredentials, idPro: string): Promise<GbcDocStatus | null> {
     const client = await this.createSession(creds);
     const [result] = await (client as any).dettagli_documentoAsync({ IDPRO: idPro });
-    if (!result.Result || !result.Risposta) return null;
+    if (!result.dettagli_documentoResult || !result.Risposta) return null;
     return mapDocStatus(result.Risposta);
   }
 }

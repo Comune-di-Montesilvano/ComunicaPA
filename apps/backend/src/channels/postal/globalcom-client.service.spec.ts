@@ -29,7 +29,7 @@ describe('GlobalComClient', () => {
 
   it('invioExtSingolo effettua login, apre sessione via cookie e invia il documento', async () => {
     mockInvioAsync.mockResolvedValue([{
-      Result: true,
+      invio_ext_singoloResult: true,
       Risposta: { IDPRO: 'IDPRO123', Stato: 'Accettato', CodiceErrore: '', Descrizione: '' },
       Messaggio: '',
     }]);
@@ -70,8 +70,8 @@ describe('GlobalComClient', () => {
     })).rejects.toThrow('Login GlobalCom fallito: credenziali errate');
   });
 
-  it('invioExtSingolo lancia se il risultato non è Result=true', async () => {
-    mockInvioAsync.mockResolvedValue([{ Result: false, Risposta: null, Messaggio: 'errore generico' }]);
+  it('invioExtSingolo lancia se il risultato non è invio_ext_singoloResult=true', async () => {
+    mockInvioAsync.mockResolvedValue([{ invio_ext_singoloResult: false, Risposta: null, Messaggio: 'errore generico' }]);
 
     await expect(client.invioExtSingolo(creds, {
       servizio: 'Lettera',
@@ -98,7 +98,7 @@ describe('GlobalComClient', () => {
   });
 
   it('dettagliDocumento ritorna null se il documento non è trovato', async () => {
-    mockDettagliAsync.mockResolvedValue([{ Result: true, Risposta: null, Messaggio: '' }]);
+    mockDettagliAsync.mockResolvedValue([{ dettagli_documentoResult: true, Risposta: null, Messaggio: '' }]);
 
     const result = await client.dettagliDocumento(creds, 'IDPRO000');
 
@@ -107,7 +107,7 @@ describe('GlobalComClient', () => {
 
   it('dettagliDocumento ritorna lo stato quando il documento esiste', async () => {
     mockDettagliAsync.mockResolvedValue([{
-      Result: true,
+      dettagli_documentoResult: true,
       Risposta: { IDPRO: 'IDPRO000', Stato: 'Consegnato', CodiceErrore: '', Descrizione: '' },
       Messaggio: '',
     }]);
