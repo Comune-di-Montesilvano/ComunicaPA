@@ -576,6 +576,13 @@ export function App(): React.JSX.Element {
   const [wizProtocolla, setWizProtocolla] = useState(false);
   const [wizTaxonomyCode, setWizTaxonomyCode] = useState('');
   const [wizPhysicalCommunicationType, setWizPhysicalCommunicationType] = useState<'AR_REGISTERED_LETTER' | 'REGISTERED_LETTER_890'>('AR_REGISTERED_LETTER');
+  const [wizPostalServiceType, setWizPostalServiceType] = useState<'Raccomandata' | 'Lettera'>('Raccomandata');
+  const [wizPostalReturnReceipt, setWizPostalReturnReceipt] = useState(true);
+  const [wizPostalAddressColumn, setWizPostalAddressColumn] = useState('');
+  const [wizPostalMunicipalityColumn, setWizPostalMunicipalityColumn] = useState('');
+  const [wizPostalZipColumn, setWizPostalZipColumn] = useState('');
+  const [wizPostalProvinceColumn, setWizPostalProvinceColumn] = useState('');
+  const [wizPostalUserDataColumn, setWizPostalUserDataColumn] = useState('');
   const [wizBody, setWizBody] = useState('');
   const subjectInputRef = useRef<HTMLInputElement>(null);
   const [wizLastFocusedField, setWizLastFocusedField] = useState<'subject' | 'body'>('body');
@@ -2596,6 +2603,13 @@ export function App(): React.JSX.Element {
     setWizProtocolla(Boolean(source.channelConfig?.protocolla));
     setWizTaxonomyCode(source.channelConfig?.taxonomyCode || '');
     setWizPhysicalCommunicationType(source.channelConfig?.physicalCommunicationType || 'AR_REGISTERED_LETTER');
+    setWizPostalServiceType(source.channelConfig?.postalServiceType || 'Raccomandata');
+    setWizPostalReturnReceipt(source.channelConfig?.postalReturnReceipt !== undefined ? Boolean(source.channelConfig.postalReturnReceipt) : true);
+    setWizPostalAddressColumn(source.channelConfig?.physicalAddressConfig?.addressColumn || '');
+    setWizPostalMunicipalityColumn(source.channelConfig?.physicalAddressConfig?.municipalityColumn || '');
+    setWizPostalZipColumn(source.channelConfig?.physicalAddressConfig?.zipColumn || '');
+    setWizPostalProvinceColumn(source.channelConfig?.physicalAddressConfig?.provinceColumn || '');
+    setWizPostalUserDataColumn(source.channelConfig?.userDataColumn || '');
     setWizBody(source.channelConfig?.body || '');
     setWizMailConfigId(source.channelConfig?.mailConfigId || '');
 
@@ -2710,6 +2724,20 @@ export function App(): React.JSX.Element {
     if (wizChannel === 'SEND') {
       cfg.taxonomyCode = wizTaxonomyCode;
       cfg.physicalCommunicationType = wizPhysicalCommunicationType;
+    }
+    if (wizChannel === 'POSTAL') {
+      cfg.postalServiceType = wizPostalServiceType;
+      cfg.postalReturnReceipt = wizPostalReturnReceipt;
+      cfg.physicalAddressConfig = {
+        enabled: true,
+        addressColumn: wizPostalAddressColumn,
+        municipalityColumn: wizPostalMunicipalityColumn,
+        zipColumn: wizPostalZipColumn,
+        provinceColumn: wizPostalProvinceColumn,
+      };
+      if (wizPostalUserDataColumn) {
+        cfg.userDataColumn = wizPostalUserDataColumn;
+      }
     }
     if (wizAttachments.length > 0) cfg.attachments = wizAttachments;
     if (wizMapping.codice_fiscale) cfg.csvMapping = wizMapping;
@@ -2844,6 +2872,19 @@ export function App(): React.JSX.Element {
           taxonomyCode: wizTaxonomyCode,
           physicalCommunicationType: wizPhysicalCommunicationType,
         };
+      } else if (wizChannel === 'POSTAL') {
+        channelConfig.postalServiceType = wizPostalServiceType;
+        channelConfig.postalReturnReceipt = wizPostalReturnReceipt;
+        channelConfig.physicalAddressConfig = {
+          enabled: true,
+          addressColumn: wizPostalAddressColumn,
+          municipalityColumn: wizPostalMunicipalityColumn,
+          zipColumn: wizPostalZipColumn,
+          provinceColumn: wizPostalProvinceColumn,
+        };
+        if (wizPostalUserDataColumn) {
+          channelConfig.userDataColumn = wizPostalUserDataColumn;
+        }
       }
 
       if (wizChannel !== 'SEND') {
@@ -3922,6 +3963,50 @@ export function App(): React.JSX.Element {
                         </div>
                       </div>
                     </>
+                  )}
+
+                  {wizChannel === 'POSTAL' && (
+                    <div className="row g-3 mb-3">
+                      <div className="col-md-4">
+                        <label className="form-label small fw-bold">Tipo di invio</label>
+                        <select className="form-select" value={wizPostalServiceType}
+                          onChange={(e) => setWizPostalServiceType(e.target.value as 'Raccomandata' | 'Lettera')}>
+                          <option value="Raccomandata">Raccomandata</option>
+                          <option value="Lettera">Lettera (ordinaria)</option>
+                        </select>
+                      </div>
+                      {wizPostalServiceType === 'Raccomandata' && (
+                        <div className="col-md-4 d-flex align-items-end">
+                          <div className="form-check">
+                            <input className="form-check-input" type="checkbox" id="wizPostalAR"
+                              checked={wizPostalReturnReceipt} onChange={(e) => setWizPostalReturnReceipt(e.target.checked)} />
+                            <label className="form-check-label small" htmlFor="wizPostalAR">Ricevuta di ritorno (AR)</label>
+                          </div>
+                        </div>
+                      )}
+                      <div className="col-12"><hr /><span className="small text-muted fw-bold">Indirizzo destinatario (colonne CSV)</span></div>
+                      <div className="col-md-3">
+                        <label className="form-label small">Colonna indirizzo *</label>
+                        <input className="form-control" placeholder="es. indirizzo" value={wizPostalAddressColumn} onChange={(e) => setWizPostalAddressColumn(e.target.value)} />
+                      </div>
+                      <div className="col-md-3">
+                        <label className="form-label small">Colonna città *</label>
+                        <input className="form-control" placeholder="es. comune" value={wizPostalMunicipalityColumn} onChange={(e) => setWizPostalMunicipalityColumn(e.target.value)} />
+                      </div>
+                      <div className="col-md-2">
+                        <label className="form-label small">Colonna CAP</label>
+                        <input className="form-control" placeholder="es. cap" value={wizPostalZipColumn} onChange={(e) => setWizPostalZipColumn(e.target.value)} />
+                      </div>
+                      <div className="col-md-2">
+                        <label className="form-label small">Colonna provincia</label>
+                        <input className="form-control" placeholder="es. prov" value={wizPostalProvinceColumn} onChange={(e) => setWizPostalProvinceColumn(e.target.value)} />
+                      </div>
+                      <div className="col-12"><hr /><span className="small text-muted fw-bold">Riconciliazione gestionale tributi (opzionale)</span></div>
+                      <div className="col-md-4">
+                        <label className="form-label small">Colonna riferimento (UserData1)</label>
+                        <input className="form-control" placeholder="es. numero_avviso" value={wizPostalUserDataColumn} onChange={(e) => setWizPostalUserDataColumn(e.target.value)} />
+                      </div>
+                    </div>
                   )}
 
                   {(wizChannel === 'EMAIL' || wizChannel === 'PEC') && (
