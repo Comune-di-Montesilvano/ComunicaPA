@@ -992,7 +992,7 @@ export class CampaignsService {
     // SEND opzionali qui sotto.
     const items: RecipientStatDto[] = rawItems;
 
-    if ((campaign.channelType === 'SEND' || campaign.channelConfig?.['protocolla'] === true) && items.length > 0) {
+    if ((campaign.channelType === 'SEND' || campaign.channelType === 'POSTAL' || campaign.channelConfig?.['protocolla'] === true) && items.length > 0) {
       // Due query separate invece di leftJoinAndSelect: stesso motivo del
       // bug TypeORM documentato in protocollazione-sync.service.ts/
       // send-dispatch.service.ts (leftJoinAndSelect + orderBy + take su
@@ -1019,6 +1019,9 @@ export class CampaignsService {
           item.sendStatusUpdatedAt = latest.sendStatusUpdatedAt;
           item.protocolNumber = latest.protocolNumber;
           item.protocolYear = latest.protocolYear;
+          item.postalTrackingId = latest.postalTrackingId;
+          item.postalStatus = latest.postalStatus;
+          item.postalStatusUpdatedAt = latest.postalStatusUpdatedAt;
         }
       }
     }

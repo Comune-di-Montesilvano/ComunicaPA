@@ -136,6 +136,9 @@ describe('NotificationsSearchService.getDetail', () => {
         protocolNumber: null,
         protocolYear: null,
         protocolledAt: null,
+        postalTrackingId: null,
+        postalStatus: null,
+        postalStatusUpdatedAt: null,
       },
     ]);
     campaignsServiceMock.renderMessageForRecipient.mockResolvedValueOnce({ subject: 'Ciao Mario', bodyHtml: '<p>Corpo</p>' });
@@ -169,6 +172,9 @@ describe('NotificationsSearchService.getDetail', () => {
         protocolNumber: null,
         protocolYear: null,
         protocolledAt: null,
+        postalTrackingId: null,
+        postalStatus: null,
+        postalStatusUpdatedAt: null,
       }],
       downloads: [{ channel: 'EMAIL', attachmentIndex: 0, downloadedAt: '2026-07-02T08:00:00.000Z' }],
       preview: { subject: 'Ciao Mario', bodyHtml: '<p>Corpo</p>' },

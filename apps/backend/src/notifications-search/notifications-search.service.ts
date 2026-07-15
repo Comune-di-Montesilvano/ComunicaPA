@@ -139,6 +139,9 @@ export class NotificationsSearchService {
           protocolNumber: a.protocolNumber,
           protocolYear: a.protocolYear,
           protocolledAt: a.protocolledAt ? a.protocolledAt.toISOString() : null,
+          postalTrackingId: a.postalTrackingId,
+          postalStatus: a.postalStatus,
+          postalStatusUpdatedAt: a.postalStatusUpdatedAt ? a.postalStatusUpdatedAt.toISOString() : null,
         };
       }),
       downloads: downloads.map((d) => ({

@@ -14,6 +14,9 @@ export interface AttemptDetailDto {
   protocolNumber: number | null;
   protocolYear: number | null;
   protocolledAt: string | null;
+  postalTrackingId: string | null;
+  postalStatus: string | null;
+  postalStatusUpdatedAt: string | null;
 }
 
 export interface NotificationDetailDto {

@@ -18,12 +18,15 @@ export interface RecipientStatDto {
   firstDownloadedAt: Date | null;
   lastDownloadedAt: Date | null;
   attachmentDeletedAt: Date | null;
-  /** Presenti solo per campagne SEND (join su ultimo NotificationAttempt). */
+  /** Presenti solo per campagne SEND o POSTAL (join su ultimo NotificationAttempt). */
   iun?: string | null;
   sendStatus?: string | null;
   sendStatusUpdatedAt?: Date | null;
   protocolNumber?: number | null;
   protocolYear?: number | null;
+  postalTrackingId?: string | null;
+  postalStatus?: string | null;
+  postalStatusUpdatedAt?: Date | null;
 }
 
 export interface RecipientStatsPageDto {
