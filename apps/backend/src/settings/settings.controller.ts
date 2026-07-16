@@ -19,6 +19,7 @@ import { AppSettingsService } from './app-settings.service';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { isSettingKey, type SettingKey } from './settings.registry';
 import { PdndAuthService } from '../pdnd/pdnd-auth.service';
+import { InadService } from '../channels/inad/inad.service';
 
 class TestConnectionDto {
   host!: string;
@@ -37,6 +38,7 @@ export class SettingsController {
   constructor(
     private readonly appSettings: AppSettingsService,
     private readonly pdndAuth: PdndAuthService,
+    private readonly inadService: InadService,
   ) {}
 
   @Post('test-email')
@@ -242,6 +244,20 @@ export class SettingsController {
   @HttpCode(HttpStatus.OK)
   async testInadConnection(@Param('env') env: string) {
     return this.testServicePurposeConnection(env, 'inad');
+  }
+
+  @Post('inad/prod/extract')
+  @HttpCode(HttpStatus.OK)
+  async extractInadDigitalAddress(@Body() body: { codiceFiscale?: string }) {
+    if (!body.codiceFiscale) {
+      throw new BadRequestException('codiceFiscale obbligatorio');
+    }
+    try {
+      const result = await this.inadService.extractDigitalAddress(body.codiceFiscale);
+      return { success: true, found: result.found, data: result.data };
+    } catch (error: any) {
+      return { success: false, message: error.message || 'Errore sconosciuto durante l\'interrogazione INAD.' };
+    }
   }
 
   @Post('inipec/:env/test-connection')
