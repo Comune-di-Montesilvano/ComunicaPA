@@ -86,7 +86,9 @@ function SendStatusBadge({ status }: { status: string | null | undefined }): Rea
   );
 }
 
-function SendStatusBar({ breakdown }: { breakdown: Array<{ status: string | null; count: number }> }): React.JSX.Element {
+type StatusMeta = { label: string; badge: string; icon: string };
+
+function ChannelStatusBar({ breakdown, meta, pendingLabel }: { breakdown: Array<{ status: string | null; count: number }>; meta: Record<string, StatusMeta>; pendingLabel: string }): React.JSX.Element {
   const total = breakdown.reduce((sum, b) => sum + b.count, 0);
   if (total === 0) {
     return <div className="text-muted small">Nessun destinatario ancora processato.</div>;
@@ -95,26 +97,26 @@ function SendStatusBar({ breakdown }: { breakdown: Array<{ status: string | null
     <div>
       <div className="d-flex rounded overflow-hidden" style={{ height: '20px' }}>
         {breakdown.map((b) => {
-          const meta = b.status ? SEND_STATUS_META[b.status] : null;
+          const m = b.status ? meta[b.status] : null;
           const pct = (b.count / total) * 100;
-          const bgClass = (meta ? meta.badge.split(' ')[0] : 'bg-secondary');
+          const bgClass = (m ? m.badge.split(' ')[0] : 'bg-secondary');
           return (
             <div
               key={b.status ?? 'pending'}
               className={bgClass}
               style={{ width: `${pct}%` }}
-              title={`${meta ? meta.label : 'In attesa'}: ${b.count} (${pct.toFixed(0)}%)`}
+              title={`${m ? m.label : pendingLabel}: ${b.count} (${pct.toFixed(0)}%)`}
             ></div>
           );
         })}
       </div>
       <div className="d-flex flex-wrap gap-2 mt-2 small">
         {breakdown.map((b) => {
-          const meta = b.status ? SEND_STATUS_META[b.status] : null;
+          const m = b.status ? meta[b.status] : null;
           return (
             <span key={b.status ?? 'pending'} className="text-muted">
-              <i className={`fas ${meta ? meta.icon : 'fa-hourglass-half'} me-1`}></i>
-              {meta ? meta.label : 'In attesa'}: <strong>{b.count}</strong>
+              <i className={`fas ${m ? m.icon : 'fa-hourglass-half'} me-1`}></i>
+              {m ? m.label : pendingLabel}: <strong>{b.count}</strong>
             </span>
           );
         })}
@@ -971,6 +973,7 @@ export function App(): React.JSX.Element {
   const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number } | null>(null);
   const [campaignSendStageCounts, setCampaignSendStageCounts] = useState<{ queued: number; protocollato: number; inviato: number; fallito: number } | null>(null);
   const [sendStatusBreakdown, setSendStatusBreakdown] = useState<Array<{ status: string | null; count: number }> | null>(null);
+  const [postalStatusBreakdown, setPostalStatusBreakdown] = useState<Array<{ status: string | null; count: number }> | null>(null);
   const [downloadCombinations, setDownloadCombinations] = useState<Array<{ channels: string[]; count: number; sentSuccessfully: boolean }> | null>(null);
   const [statsDateFrom, setStatsDateFrom] = useState(() => {
     const d = new Date();
@@ -3601,6 +3604,7 @@ export function App(): React.JSX.Element {
     setChannelBreakdown(null);
     setCampaignSendStageCounts(null);
     setSendStatusBreakdown(null);
+    setPostalStatusBreakdown(null);
     setDownloadCombinations(null);
     setRecipientsPage(null);
     setRecipientsSearch('');
@@ -3610,6 +3614,7 @@ export function App(): React.JSX.Element {
     fetchChannelBreakdown(id);
     fetchCampaignSendStageCounts(id);
     fetchSendStatusBreakdown(id);
+    fetchPostalStatusBreakdown(id);
     fetchDownloadCombinationStats(id);
   };
 
@@ -3639,6 +3644,16 @@ export function App(): React.JSX.Element {
       const res = await apiFetch(`/campaigns/${id}/send-status-breakdown`);
       if (!res.ok) return;
       setSendStatusBreakdown(await res.json());
+    } catch {
+      // Non bloccante: il dettaglio campagna resta usabile senza la barra.
+    }
+  };
+
+  const fetchPostalStatusBreakdown = async (id: string) => {
+    try {
+      const res = await apiFetch(`/campaigns/${id}/postal-status-breakdown`);
+      if (!res.ok) return;
+      setPostalStatusBreakdown(await res.json());
     } catch {
       // Non bloccante: il dettaglio campagna resta usabile senza la barra.
     }
@@ -7940,7 +7955,7 @@ export function App(): React.JSX.Element {
                             <h4 className="small fw-bold mb-2">
                               <i className="fas fa-chart-bar me-1 text-primary"></i>Andamento Invio SEND
                             </h4>
-                            <SendStatusBar breakdown={sendStatusBreakdown} />
+                            <ChannelStatusBar breakdown={sendStatusBreakdown} meta={SEND_STATUS_META} pendingLabel="In attesa" />
                           </div>
                         )}
 
@@ -7967,6 +7982,15 @@ export function App(): React.JSX.Element {
                                 <div className="text-muted" style={{ fontSize: '0.7rem' }}>Fallito</div>
                               </div>
                             </div>
+                          </div>
+                        )}
+
+                        {campaign.channelType === 'POSTAL' && postalStatusBreakdown && (
+                          <div className="mt-4 border-top pt-3">
+                            <h4 className="small fw-bold mb-2">
+                              <i className="fas fa-chart-bar me-1 text-primary"></i>Andamento Invio POSTAL
+                            </h4>
+                            <ChannelStatusBar breakdown={postalStatusBreakdown} meta={POSTAL_STATUS_META} pendingLabel="In corso" />
                           </div>
                         )}
 
