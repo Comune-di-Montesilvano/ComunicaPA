@@ -205,8 +205,8 @@ describe('CampaignsService', () => {
 
   it('launch NON accoda job sui motori canale per campagne SEND, ma accoda PROTOCOLLAZIONE (demoni pollano lo stato QUEUED)', async () => {
     mockCampaignQb.execute.mockResolvedValueOnce({ affected: 1 });
-    mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'SEND', channelConfig: { protocolla: true } });
-    mockRecipientRepo.find.mockResolvedValueOnce([{ id: 'r1' }]);
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'SEND', channelConfig: { protocolla: true, attachments: [{ key: 'doc', label: 'Documento' }] } });
+    mockRecipientRepo.find.mockResolvedValue([{ id: 'r1' }]);
     mockAttemptRepo.createQueryBuilder.mockReturnValue({
       insert: jest.fn().mockReturnThis(),
       into: jest.fn().mockReturnThis(),
@@ -227,8 +227,8 @@ describe('CampaignsService', () => {
 
   it('launch accoda un job PROTOCOLLAZIONE per attempt con jobId=attemptId per campagne SEND', async () => {
     mockCampaignQb.execute.mockResolvedValueOnce({ affected: 1 });
-    mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'SEND', channelConfig: { protocolla: true } });
-    mockRecipientRepo.find.mockResolvedValueOnce([{ id: 'r1' }, { id: 'r2' }]);
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'SEND', channelConfig: { protocolla: true, attachments: [{ key: 'doc', label: 'Documento' }] } });
+    mockRecipientRepo.find.mockResolvedValue([{ id: 'r1' }, { id: 'r2' }]);
     mockAttemptRepo.createQueryBuilder.mockReturnValue({
       insert: jest.fn().mockReturnThis(),
       into: jest.fn().mockReturnThis(),

@@ -9,6 +9,10 @@ export class PreviewAttachmentDto {
 
   @IsString()
   label!: string;
+
+  @IsString()
+  @IsOptional()
+  labelColumn?: string;
 }
 
 export class PreviewRecipientDto {

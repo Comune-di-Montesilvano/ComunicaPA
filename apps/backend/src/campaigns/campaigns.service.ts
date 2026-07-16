@@ -14,7 +14,7 @@ import { AppSettingsService } from '../settings/app-settings.service';
 import { processTemplate, wrapInHtmlLayout } from '../channels/template.helper';
 import { getEffectiveRetentionDays } from './retention.util';
 import { getUploadsDir } from '../attachments/attachment-paths';
-import { resolveAttachmentsConfig, resolveCustomAttachmentFilename } from '../attachments/attachment.service';
+import { resolveAttachmentsConfig, resolveAttachmentLabel, resolveCustomAttachmentFilename } from '../attachments/attachment.service';
 import { resolveSubjectTemplate } from '../channels/subject-mapping.util';
 import { Campaign, CampaignStatus } from '../entities/campaign.entity';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity';
@@ -107,7 +107,7 @@ export class CampaignsService {
       protocolNumber: dto.recipient.protocolNumber ?? null,
     } as unknown as Recipient;
 
-    const attachmentLabels = (dto.attachments ?? []).map((a) => a.label);
+    const attachmentLabels = (dto.attachments ?? []).map((a) => resolveAttachmentLabel(a, previewRecipient));
     return this.renderMessage(dto.channelType, dto.subject, dto.body, attachmentLabels, previewRecipient, dto.format);
   }
 
@@ -129,9 +129,33 @@ export class CampaignsService {
     const campaign = recipient.campaign;
     const subjectTemplate = resolveSubjectTemplate(campaign, recipient);
     const bodyTemplate = (campaign.channelConfig?.['body'] as string) || '';
-    const attachmentLabels = resolveAttachmentsConfig(campaign.channelConfig).map((a) => a.label);
+    const attachmentLabels = resolveAttachmentsConfig(campaign.channelConfig).map((a) => resolveAttachmentLabel(a, recipient));
 
     return this.renderMessage(campaign.channelType, subjectTemplate, bodyTemplate, attachmentLabels, recipient, undefined, linkChannelTag, preview);
+  }
+
+  /**
+   * Rende il messaggio App IO di co-consegna realmente configurato per un
+   * destinatario (subjectOverride/bodyOverride di `secondaryChannels`), non
+   * il body del canale primario — usato dal dettaglio notifica per mostrare
+   * cosa è arrivato su App IO quando la co-consegna è andata a buon fine,
+   * distinto dal contenuto (lettera POSTAL, PEC, ecc.) del canale primario.
+   */
+  async renderAppIoCoDeliveryPreview(recipientId: string): Promise<PreviewMessageResult | null> {
+    const recipient = await this.recipientRepo.findOne({ where: { id: recipientId }, relations: ['campaign'] });
+    if (!recipient) throw new NotFoundException(`Recipient ${recipientId} not found`);
+
+    const campaign = recipient.campaign;
+    const appIoConfig = resolveSecondaryAppIoConfig(campaign.channelConfig) as
+      | { subjectOverride?: string; bodyOverride?: string }
+      | undefined;
+    if (!appIoConfig) return null;
+
+    const subjectTemplate = appIoConfig.subjectOverride || (campaign.channelConfig?.['subject'] as string) || campaign.name;
+    const bodyTemplate = appIoConfig.bodyOverride || (campaign.channelConfig?.['body'] as string) || '';
+    const attachmentLabels = resolveAttachmentsConfig(campaign.channelConfig).map((a) => resolveAttachmentLabel(a, recipient));
+
+    return this.renderMessage('APP_IO', subjectTemplate, bodyTemplate, attachmentLabels, recipient, 'markdown', undefined, true);
   }
 
   private async renderMessage(
@@ -285,6 +309,19 @@ export class CampaignsService {
     if (campaign.channelType === 'SEND' && campaign.channelConfig?.['protocolla'] !== true) {
       await this.campaignRepo.update({ id: campaignId }, { status: CampaignStatus.DRAFT });
       throw new BadRequestException('Protocollazione obbligatoria per SEND: channelConfig.protocolla deve essere true');
+    }
+
+    // SEND (atto legale) e POSTAL (lettera cartacea) senza nessun allegato
+    // configurato invierebbero un PDF segnaposto generico come unico
+    // documento notificato — non un caso d'uso reale, blocca a monte.
+    if ((campaign.channelType === 'SEND' || campaign.channelType === 'POSTAL') && resolveAttachmentsConfig(campaign.channelConfig).length === 0) {
+      await this.campaignRepo.update({ id: campaignId }, { status: CampaignStatus.DRAFT });
+      return {
+        launched: 0,
+        campaignId,
+        blocked: true,
+        message: `Impossibile avviare: allegato obbligatorio per il canale ${campaign.channelType}. Configuralo al Passo 3 prima di rilanciare.`,
+      };
     }
 
     const missingAttachments = await this.findMissingAttachments(campaign);

@@ -7,7 +7,7 @@ import type { Campaign } from '../../entities/campaign.entity';
 import { IoServicesService } from '../../io-services/io-services.service';
 import { AppSettingsService } from '../../settings/app-settings.service';
 import { processTemplate } from '../template.helper';
-import { resolveAttachmentsConfig } from '../../attachments/attachment.service';
+import { resolveAttachmentsConfig, resolveAttachmentLabel } from '../../attachments/attachment.service';
 import { getEffectiveRetentionDays } from '../../campaigns/retention.util';
 import { resolvePaymentData } from '../payment-config.util';
 
@@ -66,7 +66,7 @@ export class AppIoStrategy implements IChannelStrategy {
     const retentionMaxDays = await this.settings.get<number>('retention.maxDays');
     const retentionDays = getEffectiveRetentionDays(campaign, retentionMaxDays);
     const expiresAtUnix = Math.floor(Date.now() / 1000) + retentionDays * 86400;
-    const attachmentLabels = resolveAttachmentsConfig(campaign.channelConfig).map((a) => a.label);
+    const attachmentLabels = resolveAttachmentsConfig(campaign.channelConfig).map((a) => resolveAttachmentLabel(a, recipient));
 
     const subjectTemplate = cfg['subject'] || campaign.name;
     const bodyTemplate = cfg['body'] || '';

@@ -86,7 +86,7 @@ describe('NotificationsSearchService.getDetail', () => {
   };
   const attemptRepoMock = { find: jest.fn() };
   const downloadEventRepoMock = { find: jest.fn() };
-  const campaignsServiceMock = { renderMessageForRecipient: jest.fn() };
+  const campaignsServiceMock = { renderMessageForRecipient: jest.fn(), renderAppIoCoDeliveryPreview: jest.fn() };
 
   let service: NotificationsSearchService;
 
@@ -142,6 +142,7 @@ describe('NotificationsSearchService.getDetail', () => {
       },
     ]);
     campaignsServiceMock.renderMessageForRecipient.mockResolvedValueOnce({ subject: 'Ciao Mario', bodyHtml: '<p>Corpo</p>' });
+    campaignsServiceMock.renderAppIoCoDeliveryPreview.mockResolvedValueOnce({ subject: 'Ciao Mario IO', bodyMarkdown: 'Corpo IO' });
     downloadEventRepoMock.find.mockResolvedValueOnce([
       { channel: 'EMAIL', attachmentIndex: 0, downloadedAt: new Date('2026-07-02T08:00:00Z') },
     ]);
@@ -178,6 +179,7 @@ describe('NotificationsSearchService.getDetail', () => {
       }],
       downloads: [{ channel: 'EMAIL', attachmentIndex: 0, downloadedAt: '2026-07-02T08:00:00.000Z' }],
       preview: { subject: 'Ciao Mario', bodyHtml: '<p>Corpo</p>' },
+      appIoPreview: { subject: 'Ciao Mario IO', bodyMarkdown: 'Corpo IO' },
     });
   });
 

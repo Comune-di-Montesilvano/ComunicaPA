@@ -106,6 +106,8 @@ export class NotificationsSearchService {
     });
 
     const preview = await this.campaignsService.renderMessageForRecipient(recipientId);
+    const appIoDelivered = attempts.some((a) => (a.responsePayload?.['appIo'] as { success?: boolean } | undefined)?.success);
+    const appIoPreview = appIoDelivered ? await this.campaignsService.renderAppIoCoDeliveryPreview(recipientId) : null;
 
     return {
       recipient: {
@@ -150,6 +152,7 @@ export class NotificationsSearchService {
         downloadedAt: d.downloadedAt.toISOString(),
       })),
       preview,
+      appIoPreview,
     };
   }
 

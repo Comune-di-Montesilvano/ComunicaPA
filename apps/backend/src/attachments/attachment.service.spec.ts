@@ -72,7 +72,7 @@ describe('AttachmentService.generatePdfBuffer', () => {
     service = new AttachmentService();
   });
 
-  it('genera un buffer PDF quando non c\'è allegato personalizzato per l\'indice richiesto', async () => {
+  it('lancia NotFoundException quando non c\'è allegato personalizzato per l\'indice richiesto (nessun fallback segnaposto)', async () => {
     const recipient = {
       id: 'r-1',
       campaignId: 'c-1',
@@ -85,7 +85,6 @@ describe('AttachmentService.generatePdfBuffer', () => {
       campaign: { name: 'TARI 2026', description: 'Acconto', channelType: 'EMAIL', channelConfig: {} },
     } as unknown as Recipient;
 
-    const buffer = await service.generatePdfBuffer(recipient);
-    expect(buffer.subarray(0, 4).toString()).toBe('%PDF');
+    await expect(service.generatePdfBuffer(recipient)).rejects.toThrow('Nessun allegato configurato');
   });
 });

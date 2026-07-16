@@ -386,6 +386,52 @@ HTML non valido, il browser instrada il submit sulla form esterna
 di salvare). Usare `<div>` + bottone con `onClick` esplicito per
 qualunque pannello di editing dentro una tab di Impostazioni.
 
+## Allegati e co-consegna App IO — gotcha
+
+**Wizard: due punti separati costruiscono `channelConfig`, vanno tenuti allineati.**
+`buildWizChannelConfigDraft()` (bozza) è già channel-agnostic per `secondaryChannels`;
+`handleWizLaunch()` (lancio reale) costruisce `channelConfig` per-branch,
+un ramo per canale. Bug reale: aggiungendo co-consegna App IO a POSTAL, la
+bozza la salvava correttamente ma `handleWizLaunch()` non la scriveva affatto
+per quel canale (il blocco `secondaryChannels` viveva solo dentro il ramo
+`EMAIL`/`PEC`) — la campagna partiva senza App IO nonostante la UI la
+mostrasse configurata. Ogni nuovo campo channel-agnostic in `buildWiz...Draft`
+va replicato anche in `handleWizLaunch`, non solo nell'uno o nell'altro.
+
+**POSTAL: `channelConfig.body`/`subject` NON sono il contenuto reale inviato.**
+La lettera cartacea viene generata dagli allegati (PDF), non da un body HTML
+come per EMAIL/PEC — `PostalStrategy.send()` non legge mai `channelConfig.body`.
+Di conseguenza la co-consegna App IO su POSTAL non può fare fallback al body
+del canale primario (sarebbe vuoto/non pertinente): la differenziazione
+oggetto/testo App IO è forzata sempre per POSTAL (checkbox "Differenzia"
+nascosta, campi sempre obbligatori nel wizard).
+
+**Etichetta allegato dinamica per destinatario.** `AttachmentConfigEntry` ha
+un campo opzionale `labelColumn`: se impostato, l'etichetta effettiva va letta
+riga per riga da `recipient.extraData[labelColumn]` tramite
+`resolveAttachmentLabel(entry, recipient)` (`attachment.service.ts`), MAI
+leggendo `.label` direttamente — sono ~8 punti diversi (email/pec/app-io
+strategy, notification.processor, protocollazione.processor, citizen.service,
+campaigns.service preview/dettaglio) che costruiscono `attachmentLabels`: un
+nuovo punto che dimentica di passare il `recipient` specifico produce
+un'etichetta sempre fissa, ignorando silenziosamente la colonna scelta.
+
+**Allegato obbligatorio per SEND e POSTAL — bloccato in UI e backend.**
+Per questi due canali l'allegato È il contenuto notificato (atto legale /
+lettera), non un corredo opzionale al body come per EMAIL/PEC/APP_IO. Il
+wizard blocca "Procedi" allo Step3 senza almeno un allegato mappato;
+`CampaignsService.launch()` ripete lo stesso controllo lato server (pattern
+200 + `{blocked:true}`, vedi gotcha proxy sopra — mai eccezione non-2xx qui).
+
+**`AttachmentService.generatePdfBuffer` non genera più un PDF segnaposto.**
+Se nessun file custom risolve per l'indice richiesto (config assente o file
+mancante su disco), lancia `NotFoundException` — niente più fallback silenzioso
+con logo/dati generici che mascherava configurazioni rotte. Impatta anche
+`public-download.controller.ts` (propaga come 404 al citizen) e i job
+(`postal.strategy.ts`, `send-dispatch.service.ts`, `protocollazione.processor.ts`)
+dove ora un allegato mancante fa fallire esplicitamente l'attempt invece di
+spedire un documento fittizio.
+
 ## TypeORM — leftJoinAndSelect + orderBy + take, bug interno
 
 TypeORM 0.3.30 lancia `Cannot read properties of undefined (reading

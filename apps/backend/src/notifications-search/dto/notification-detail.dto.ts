@@ -36,4 +36,5 @@ export interface NotificationDetailDto {
   attempts: AttemptDetailDto[];
   downloads: Array<{ channel: string; attachmentIndex: number; downloadedAt: string }>;
   preview: PreviewMessageResult;
+  appIoPreview: PreviewMessageResult | null;
 }

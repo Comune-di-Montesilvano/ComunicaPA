@@ -452,6 +452,7 @@ export function App(): React.JSX.Element {
     campaign: { id: string; name: string; channelType: string };
     attempts: Array<{ attemptNumber: number; status: string; channelType: string; errorMessage: string | null; sentAt: string | null; createdAt: string; appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null }; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; protocolNumber?: number | null; protocolYear?: number | null; protocolledAt?: string | null }>;
     preview: { subject: string; bodyHtml?: string; bodyMarkdown?: string };
+    appIoPreview: { subject: string; bodyHtml?: string; bodyMarkdown?: string } | null;
     downloads: Array<{ channel: string; attachmentIndex: number; downloadedAt: string }>;
   } | null>(null);
   const [notifDetailLoading, setNotifDetailLoading] = useState(false);
@@ -648,7 +649,7 @@ export function App(): React.JSX.Element {
     pec: '',
     subject: '',
   });
-  const [wizAttachments, setWizAttachments] = useState<Array<{ key: string; label: string }>>([]);
+  const [wizAttachments, setWizAttachments] = useState<Array<{ key: string; label: string; labelColumn?: string }>>([]);
   // Mappatura colonna→campo e colonne allegato salvate su una campagna sorgente
   // (duplica/riprendi bozza), da riapplicare al prossimo CSV caricato SOLO se le
   // stesse colonne sono presenti nell'intestazione (stesso formato CSV riusato,
@@ -780,6 +781,15 @@ export function App(): React.JSX.Element {
   // caratteri (altrimenti PagoPA rifiuta con HTTP 400 "Invalid message
   // structure"). Vale sia per il canale App IO diretto sia per il testo
   // (eventualmente differenziato) usato in co-consegna con EMAIL/PEC.
+  // POSTAL non ha un body "riusabile" per App IO (è html da stampa, non testo
+  // per notifica push): niente fallback silenzioso al corpo della lettera,
+  // il campo differenziato è sempre attivo per questo canale (checkbox nascosta).
+  useEffect(() => {
+    if (wizChannel === 'POSTAL' && wizAppIoMode !== 'none' && !wizAppIoDifferentiate) {
+      setWizAppIoDifferentiate(true);
+    }
+  }, [wizChannel, wizAppIoMode, wizAppIoDifferentiate]);
+
   const wizAppIoInvolved = wizChannel === 'APP_IO' || wizAppIoMode !== 'none';
   const wizAppIoBodyText = wizChannel === 'APP_IO'
     ? wizBody
@@ -3328,18 +3338,6 @@ export function App(): React.JSX.Element {
           mailConfigId: wizMailConfigId,
           from: activeCfg?.fromAddress || '',
         };
-
-        if (wizAppIoMode !== 'none') {
-          const defaultSvc = ioServices.find(s => s.id === wizAppIoServiceId) || ioServices.find(s => s.isDefault) || ioServices[0];
-          if (defaultSvc) {
-            channelConfig.secondaryChannels = [{
-              channel: 'APP_IO',
-              mode: wizAppIoMode,
-              ioServiceId: defaultSvc.id,
-              ...(wizAppIoDifferentiate ? { subjectOverride: wizAppIoSubjectOverride, bodyOverride: wizAppIoBodyOverride } : {}),
-            }];
-          }
-        }
       } else if (wizChannel === 'SEND') {
         channelConfig = {
           subject: wizSubject,
@@ -3363,6 +3361,18 @@ export function App(): React.JSX.Element {
         };
         if (wizPostalUserDataColumn) {
           channelConfig.userDataColumn = wizPostalUserDataColumn;
+        }
+      }
+
+      if ((wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && wizAppIoMode !== 'none') {
+        const defaultSvc = ioServices.find(s => s.id === wizAppIoServiceId) || ioServices.find(s => s.isDefault) || ioServices[0];
+        if (defaultSvc) {
+          channelConfig.secondaryChannels = [{
+            channel: 'APP_IO',
+            mode: wizAppIoMode,
+            ioServiceId: defaultSvc.id,
+            ...(wizAppIoDifferentiate ? { subjectOverride: wizAppIoSubjectOverride, bodyOverride: wizAppIoBodyOverride } : {}),
+          }];
         }
       }
 
@@ -3859,7 +3869,7 @@ export function App(): React.JSX.Element {
 
         <div className="bo-sidebar-meta mt-auto">
           <span className="bo-sidebar-status-dot active"></span>
-          <span>Online (Dev Mode)</span>
+          <span>Online{import.meta.env.DEV ? ' (Dev Mode)' : ''}</span>
           {appVersion && (
             <span className="bo-sidebar-version" title="Versione applicazione">
               <i className="fas fa-tag me-1"></i>{appVersion}
@@ -4528,7 +4538,7 @@ export function App(): React.JSX.Element {
                     </div>
                   )}
 
-                  {(wizChannel === 'EMAIL' || wizChannel === 'PEC') && (
+                  {(wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && (
                     <div className="card mb-3 border-light shadow-sm" style={{ background: '#f8f9fc' }}>
                       <div className="card-body p-3">
                         <h6 className="small fw-bold text-dark mb-3"><i className="fas fa-mobile-screen me-2 text-primary"></i>Co-consegna su App IO</h6>
@@ -4539,9 +4549,9 @@ export function App(): React.JSX.Element {
                             value={wizAppIoMode}
                             onChange={e => setWizAppIoMode(e.target.value as any)}
                           >
-                            <option value="none">Disabilitata (Invia solo via {wizChannel})</option>
-                            <option value="parallel">Parallela (Invia sia via {wizChannel} che via App IO)</option>
-                            <option value="exclusive">Esclusiva (Invia su App IO se il cittadino è registrato, altrimenti ripiega su {wizChannel})</option>
+                            <option value="none">Disabilitata (Invia solo via {channelLabel(wizChannel)})</option>
+                            <option value="parallel">Parallela (Invia sia via {channelLabel(wizChannel)} che via App IO)</option>
+                            <option value="exclusive">Esclusiva (Invia su App IO se il cittadino è registrato, altrimenti ripiega su {channelLabel(wizChannel)})</option>
                           </select>
                         </div>
                         {wizAppIoMode !== 'none' && (
@@ -4560,48 +4570,6 @@ export function App(): React.JSX.Element {
                                 </option>
                               ))}
                             </select>
-                          </div>
-                        )}
-                        {wizAppIoMode !== 'none' && (
-                          <div className="mt-3 pt-3 border-top">
-                            <div className="form-check mb-2">
-                              <input
-                                type="checkbox"
-                                className="form-check-input"
-                                id="wiz-appio-differentiate"
-                                checked={wizAppIoDifferentiate}
-                                onChange={e => setWizAppIoDifferentiate(e.target.checked)}
-                              />
-                              <label className="form-check-label small" htmlFor="wiz-appio-differentiate">
-                                Differenzia oggetto e testo per App IO (altrimenti usa lo stesso di {wizChannel})
-                              </label>
-                            </div>
-                            {wizAppIoDifferentiate && (
-                              <>
-                                <div className="mb-2">
-                                  <label className="form-label small fw-bold">Oggetto App IO *</label>
-                                  <input
-                                    type="text"
-                                    className="form-control form-control-sm"
-                                    value={wizAppIoSubjectOverride}
-                                    onChange={e => setWizAppIoSubjectOverride(e.target.value)}
-                                    placeholder="Es: Avviso TARI - %%nominativo%%"
-                                    required
-                                  />
-                                </div>
-                                <div className="mb-0">
-                                  <label className="form-label small fw-bold">Testo App IO * (markdown)</label>
-                                  <textarea
-                                    className="form-control form-control-sm"
-                                    rows={3}
-                                    value={wizAppIoBodyOverride}
-                                    onChange={e => setWizAppIoBodyOverride(e.target.value)}
-                                    placeholder="Testo dedicato per il messaggio App IO..."
-                                    required
-                                  />
-                                </div>
-                              </>
-                            )}
                           </div>
                         )}
                       </div>
@@ -4668,7 +4636,7 @@ export function App(): React.JSX.Element {
                       disabled={
                         !wizName ||
                         ((wizChannel === 'EMAIL' || wizChannel === 'PEC') && !wizMailConfigId) ||
-                        ((wizChannel === 'EMAIL' || wizChannel === 'PEC') && wizAppIoMode !== 'none' && !wizAppIoServiceId) ||
+                        ((wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && wizAppIoMode !== 'none' && !wizAppIoServiceId) ||
                         (wizChannel === 'APP_IO' && !wizAppIoServiceId) ||
                         (wizChannel === 'POSTAL' && !wizPostalServiceType)
                       }
@@ -4798,31 +4766,35 @@ export function App(): React.JSX.Element {
                       </select>
                     </div>
 
-                    <div className="col-md-6">
-                      <label className="form-label small fw-bold">Indirizzo E-mail { wizChannel === 'EMAIL' ? '*' : '(Opzionale)' }</label>
-                      <select
-                        className="form-select form-select-sm"
-                        value={wizMapping.email}
-                        onChange={e => handleWizMappingChange('email', e.target.value)}
-                        required={wizChannel === 'EMAIL'}
-                      >
-                        <option value="">-- Seleziona Colonna Email --</option>
-                        {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
-                      </select>
-                    </div>
+                    {wizChannel === 'EMAIL' && (
+                      <div className="col-md-6">
+                        <label className="form-label small fw-bold">Indirizzo E-mail *</label>
+                        <select
+                          className="form-select form-select-sm"
+                          value={wizMapping.email}
+                          onChange={e => handleWizMappingChange('email', e.target.value)}
+                          required
+                        >
+                          <option value="">-- Seleziona Colonna Email --</option>
+                          {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
+                        </select>
+                      </div>
+                    )}
 
-                    <div className="col-md-6">
-                      <label className="form-label small fw-bold">Indirizzo PEC { wizChannel === 'PEC' ? '*' : '(Opzionale)' }</label>
-                      <select
-                        className="form-select form-select-sm"
-                        value={wizMapping.pec}
-                        onChange={e => handleWizMappingChange('pec', e.target.value)}
-                        required={wizChannel === 'PEC'}
-                      >
-                        <option value="">-- Seleziona Colonna PEC --</option>
-                        {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
-                      </select>
-                    </div>
+                    {wizChannel === 'PEC' && (
+                      <div className="col-md-6">
+                        <label className="form-label small fw-bold">Indirizzo PEC *</label>
+                        <select
+                          className="form-select form-select-sm"
+                          value={wizMapping.pec}
+                          onChange={e => handleWizMappingChange('pec', e.target.value)}
+                          required
+                        >
+                          <option value="">-- Seleziona Colonna PEC --</option>
+                          {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
+                        </select>
+                      </div>
+                    )}
 
                     {wizChannel === 'SEND' && (
                       <div className="col-md-6">
@@ -4840,50 +4812,108 @@ export function App(): React.JSX.Element {
                     )}
 
                     <div className="col-12">
-                      <label className="form-label small fw-semibold text-muted">Colonne Allegato (una o più, con etichetta)</label>
-                      <div className="border rounded p-2" style={{ maxHeight: '220px', overflowY: 'auto' }}>
-                        {wizCsvHeaders.map(h => {
-                          const existingIndex = wizAttachments.findIndex(a => a.key === h);
-                          const isSelected = existingIndex !== -1;
-                          return (
-                            <div key={h} className="d-flex align-items-center gap-2 mb-1">
-                              <div className="form-check mb-0">
-                                <input
-                                  type="checkbox"
-                                  className="form-check-input"
-                                  id={`wiz-attach-${h}`}
-                                  checked={isSelected}
+                      <label className="form-label small fw-semibold text-muted">
+                        Allegati (uno o più, con etichetta){(wizChannel === 'SEND' || wizChannel === 'POSTAL') ? ' *' : ''}
+                      </label>
+                      {(wizChannel === 'SEND' || wizChannel === 'POSTAL') && wizAttachments.filter(a => a.key).length === 0 && (
+                        <div className="alert alert-warning py-2 small mb-2">
+                          <i className="fas fa-exclamation-triangle me-1"></i>
+                          Almeno un allegato è obbligatorio per {channelLabel(wizChannel)}: senza non si può proseguire.
+                        </div>
+                      )}
+                      {wizAttachments.map((a, idx) => {
+                        const usedElsewhere = wizAttachments.filter((_, i) => i !== idx).map(x => x.key);
+                        const availableKeys = wizCsvHeaders.filter(h => h === a.key || !usedElsewhere.includes(h));
+                        return (
+                          <div key={idx} className="border rounded p-2 mb-2" style={{ background: '#fafbfc' }}>
+                            <div className="d-flex align-items-start gap-2">
+                              <div className="flex-grow-1">
+                                <label className="form-label small mb-1">Allegato {idx + 1}: colonna file (%%allegato{idx + 1}%%)</label>
+                                <select
+                                  className="form-select form-select-sm"
+                                  value={a.key}
                                   onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setWizAttachments(prev => [...prev, { key: h, label: '' }]);
-                                    } else {
-                                      setWizAttachments(prev => prev.filter(a => a.key !== h));
-                                    }
+                                    const key = e.target.value;
+                                    setWizAttachments(prev => prev.map((x, i) => (i === idx ? { ...x, key } : x)));
                                   }}
-                                />
-                                <label htmlFor={`wiz-attach-${h}`} className="form-check-label small" style={{ cursor: 'pointer' }}>
-                                  {wizColumnOptionLabel(h)}
-                                </label>
+                                >
+                                  <option value="">-- Seleziona Colonna Allegato --</option>
+                                  {availableKeys.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
+                                </select>
                               </div>
-                              {isSelected && (
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-danger mt-4"
+                                title="Rimuovi allegato"
+                                onClick={() => setWizAttachments(prev => prev.filter((_, i) => i !== idx))}
+                              >
+                                <i className="fas fa-times"></i>
+                              </button>
+                            </div>
+
+                            <div className="mt-2">
+                              <label className="form-label small mb-1">Etichetta</label>
+                              <div className="d-flex gap-2 mb-2">
+                                <div className="form-check form-check-inline mb-0">
+                                  <input
+                                    type="radio"
+                                    className="form-check-input"
+                                    id={`wiz-attach-label-fixed-${idx}`}
+                                    name={`wiz-attach-label-type-${idx}`}
+                                    checked={!a.labelColumn}
+                                    onChange={() => setWizAttachments(prev => prev.map((x, i) => (i === idx ? { ...x, labelColumn: undefined } : x)))}
+                                  />
+                                  <label className="form-check-label small" htmlFor={`wiz-attach-label-fixed-${idx}`}>Testo fisso</label>
+                                </div>
+                                <div className="form-check form-check-inline mb-0">
+                                  <input
+                                    type="radio"
+                                    className="form-check-input"
+                                    id={`wiz-attach-label-column-${idx}`}
+                                    name={`wiz-attach-label-type-${idx}`}
+                                    checked={!!a.labelColumn}
+                                    onChange={() => setWizAttachments(prev => prev.map((x, i) => (i === idx ? { ...x, labelColumn: x.labelColumn || wizCsvHeaders[0] || '' } : x)))}
+                                  />
+                                  <label className="form-check-label small" htmlFor={`wiz-attach-label-column-${idx}`}>Da colonna CSV (varia per destinatario)</label>
+                                </div>
+                              </div>
+                              {a.labelColumn ? (
+                                <select
+                                  className="form-select form-select-sm"
+                                  value={a.labelColumn}
+                                  onChange={(e) => {
+                                    const labelColumn = e.target.value;
+                                    setWizAttachments(prev => prev.map((x, i) => (i === idx ? { ...x, labelColumn } : x)));
+                                  }}
+                                >
+                                  <option value="">-- Seleziona Colonna Etichetta --</option>
+                                  {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
+                                </select>
+                              ) : (
                                 <input
                                   type="text"
                                   className="form-control form-control-sm"
-                                  style={{ maxWidth: '220px' }}
                                   placeholder="Etichetta (es: Tassa, Ruolo)"
-                                  value={wizAttachments[existingIndex].label}
+                                  value={a.label}
                                   onChange={(e) => {
                                     const label = e.target.value;
-                                    setWizAttachments(prev => prev.map(a => (a.key === h ? { ...a, label } : a)));
+                                    setWizAttachments(prev => prev.map((x, i) => (i === idx ? { ...x, label } : x)));
                                   }}
                                 />
                               )}
                             </div>
-                          );
-                        })}
-                      </div>
-                      <div className="form-text small text-muted">
-                        Ordine di selezione = %%allegato1%%, %%allegato2%%, ... nel template. Etichetta obbligatoria per usare il blocco "Elenco Allegati".
+                          </div>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-primary"
+                        onClick={() => setWizAttachments(prev => [...prev, { key: '', label: '' }])}
+                      >
+                        <i className="fas fa-plus me-1"></i>Aggiungi allegato
+                      </button>
+                      <div className="form-text small text-muted mt-1">
+                        Ordine di aggiunta = %%allegato1%%, %%allegato2%%, ... nel template. Etichetta obbligatoria per usare il blocco "Elenco Allegati".
                       </div>
                     </div>
                   </div>
@@ -5162,7 +5192,11 @@ export function App(): React.JSX.Element {
                     <button
                       className="btn btn-primary"
                       onClick={() => setWizStep(4)}
-                      disabled={wizValidRows.length === 0 || (wizChannel === 'POSTAL' && (!wizPostalAddressColumn || !wizPostalMunicipalityColumn))}
+                      disabled={
+                        wizValidRows.length === 0
+                        || (wizChannel === 'POSTAL' && (!wizPostalAddressColumn || !wizPostalMunicipalityColumn))
+                        || ((wizChannel === 'SEND' || wizChannel === 'POSTAL') && wizAttachments.filter(a => a.key).length === 0)
+                      }
                     >
                       Procedi a Template <i className="fas fa-arrow-right ms-1"></i>
                     </button>
@@ -5199,7 +5233,7 @@ export function App(): React.JSX.Element {
                             onChange={setWizBody}
                             systemPlaceholders={[
                               ...(wizAttachments.length > 0 ? [{ label: 'Elenco Allegati', token: '%%elenco_allegati%%' }] : []),
-                              ...wizAttachments.map((a, idx) => ({ label: `Link: ${a.label || `Allegato ${idx + 1}`}`, token: `%%allegato${idx + 1}%%` })),
+                              ...wizAttachments.map((a, idx) => ({ label: `Link: ${a.label || (a.labelColumn ? `da colonna ${a.labelColumn}` : `Allegato ${idx + 1}`)}`, token: `%%allegato${idx + 1}%%` })),
                               { label: 'Nominativo', token: '%%nominativo%%' },
                               { label: 'Codice Fiscale', token: '%%codice_fiscale%%' },
                               ...(wizProtocolla ? [{ label: 'Numero di Protocollo', token: '%%numero_protocollo%%' }] : []),
@@ -5244,6 +5278,79 @@ export function App(): React.JSX.Element {
                       </>
                     )}
 
+                    {(wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && wizAppIoMode !== 'none' && (
+                      <div className="card mt-3 border-light shadow-sm" style={{ background: '#f8f9fc' }}>
+                        <div className="card-body p-3">
+                          <h6 className="small fw-bold text-dark mb-3"><i className="fas fa-mobile-screen me-2 text-primary"></i>Co-consegna su App IO</h6>
+                          {wizChannel === 'POSTAL' ? (
+                            <div className="form-text small text-muted mb-2">
+                              La lettera cartacea non ha un formato riutilizzabile per una notifica push: oggetto e testo App IO vanno definiti a parte.
+                            </div>
+                          ) : (
+                            <div className="form-check mb-2">
+                              <input
+                                type="checkbox"
+                                className="form-check-input"
+                                id="wiz-appio-differentiate"
+                                checked={wizAppIoDifferentiate}
+                                onChange={e => setWizAppIoDifferentiate(e.target.checked)}
+                              />
+                              <label className="form-check-label small" htmlFor="wiz-appio-differentiate">
+                                Differenzia oggetto e testo per App IO (altrimenti usa lo stesso di {channelLabel(wizChannel)})
+                              </label>
+                            </div>
+                          )}
+                          {wizAppIoDifferentiate && (
+                            <>
+                              {templates.filter(t => t.type === 'APP_IO').length > 0 && (
+                                <div className="mb-2">
+                                  <label className="form-label small">Carica da template</label>
+                                  <select
+                                    className="form-select form-select-sm"
+                                    value=""
+                                    onChange={e => {
+                                      const t = templates.find(x => x.id === e.target.value);
+                                      if (t) {
+                                        setWizAppIoSubjectOverride(t.subject);
+                                        setWizAppIoBodyOverride(t.bodyMarkdown);
+                                      }
+                                    }}
+                                  >
+                                    <option value="">-- Seleziona template App IO --</option>
+                                    {templates.filter(t => t.type === 'APP_IO').map(t => (
+                                      <option key={t.id} value={t.id}>{t.name}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
+                              <div className="mb-2">
+                                <label className="form-label small fw-bold">Oggetto App IO *</label>
+                                <input
+                                  type="text"
+                                  className="form-control form-control-sm"
+                                  value={wizAppIoSubjectOverride}
+                                  onChange={e => setWizAppIoSubjectOverride(e.target.value)}
+                                  placeholder="Es: Avviso TARI - %%nominativo%%"
+                                  required
+                                />
+                              </div>
+                              <div className="mb-0">
+                                <label className="form-label small fw-bold">Testo App IO * (markdown)</label>
+                                <textarea
+                                  className="form-control form-control-sm"
+                                  rows={3}
+                                  value={wizAppIoBodyOverride}
+                                  onChange={e => setWizAppIoBodyOverride(e.target.value)}
+                                  placeholder="Testo dedicato per il messaggio App IO..."
+                                  required
+                                />
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="mt-4 pt-3 border-top d-flex justify-content-between">
                       <button className="btn btn-outline-secondary" onClick={() => setWizStep(3)}>
                         <i className="fas fa-arrow-left me-1"></i> Indietro
@@ -5251,7 +5358,11 @@ export function App(): React.JSX.Element {
                       <button
                         className="btn btn-primary"
                         onClick={() => setWizStep(5)}
-                        disabled={!wizSubject || (wizChannel !== 'SEND' && (isWizBodyEmpty(wizBody) || wizAppIoBodyLenInvalid))}
+                        disabled={
+                          !wizSubject ||
+                          (wizChannel !== 'SEND' && (isWizBodyEmpty(wizBody) || wizAppIoBodyLenInvalid)) ||
+                          ((wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && wizAppIoMode !== 'none' && wizAppIoDifferentiate && (!wizAppIoSubjectOverride || !wizAppIoBodyOverride))
+                        }
                       >
                         Riepilogo <i className="fas fa-arrow-right ms-1"></i>
                       </button>
@@ -5857,18 +5968,34 @@ export function App(): React.JSX.Element {
                           </>
                         )}
 
-                        <h6 className="fw-bold small">{notifDetail.campaign.channelType === 'SEND' ? 'Oggetto Inviato' : 'Anteprima Messaggio Inviato'}</h6>
-                        <div className="mb-2 small text-muted"><strong>Oggetto:</strong> {notifDetail.preview.subject}</div>
-                        {notifDetail.campaign.channelType !== 'SEND' && (
-                          notifDetail.preview.bodyHtml ? (
-                            <div className="bg-white border rounded overflow-hidden" style={{ padding: '4px' }} dangerouslySetInnerHTML={{ __html: notifDetail.preview.bodyHtml }} />
-                          ) : notifDetail.preview.bodyMarkdown ? (
+                        {(() => {
+                          const isLetterlessChannel = notifDetail.campaign.channelType === 'SEND' || notifDetail.campaign.channelType === 'POSTAL';
+                          return (
+                            <>
+                              <h6 className="fw-bold small">{isLetterlessChannel ? 'Oggetto Inviato' : 'Anteprima Messaggio Inviato'}</h6>
+                              <div className="mb-2 small text-muted"><strong>Oggetto:</strong> {notifDetail.preview.subject}</div>
+                              {!isLetterlessChannel && (
+                                notifDetail.preview.bodyHtml ? (
+                                  <div className="bg-white border rounded overflow-hidden" style={{ padding: '4px' }} dangerouslySetInnerHTML={{ __html: notifDetail.preview.bodyHtml }} />
+                                ) : notifDetail.preview.bodyMarkdown ? (
+                                  <div className="bg-white border rounded p-3" data-color-mode="light">
+                                    <MDEditor.Markdown source={notifDetail.preview.bodyMarkdown} />
+                                  </div>
+                                ) : (
+                                  <div className="text-muted small">Nessuna anteprima disponibile.</div>
+                                )
+                              )}
+                            </>
+                          );
+                        })()}
+                        {notifDetail.appIoPreview && (
+                          <>
+                            <h6 className="fw-bold small mt-3"><i className="fas fa-mobile-screen me-2 text-primary"></i>Messaggio App IO Inviato</h6>
+                            <div className="mb-2 small text-muted"><strong>Oggetto:</strong> {notifDetail.appIoPreview.subject}</div>
                             <div className="bg-white border rounded p-3" data-color-mode="light">
-                              <MDEditor.Markdown source={notifDetail.preview.bodyMarkdown} />
+                              <MDEditor.Markdown source={notifDetail.appIoPreview.bodyMarkdown ?? ''} />
                             </div>
-                          ) : (
-                            <div className="text-muted small">Nessuna anteprima disponibile.</div>
-                          )
+                          </>
                         )}
                       </>
                     )}

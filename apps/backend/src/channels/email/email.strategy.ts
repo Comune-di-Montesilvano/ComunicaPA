@@ -7,7 +7,7 @@ import type { Campaign } from '../../entities/campaign.entity';
 import * as nodemailer from 'nodemailer';
 import type { AppConfiguration } from '../../config/configuration';
 import { processTemplate, wrapInHtmlLayout } from '../template.helper';
-import { resolveAttachmentsConfig } from '../../attachments/attachment.service';
+import { resolveAttachmentsConfig, resolveAttachmentLabel } from '../../attachments/attachment.service';
 import { getEffectiveRetentionDays } from '../../campaigns/retention.util';
 import { AppSettingsService } from '../../settings/app-settings.service';
 import { MailConfigsService } from '../../mail-configs/mail-configs.service';
@@ -50,7 +50,7 @@ export class EmailStrategy implements IChannelStrategy {
 
     const subjectTemplate = (campaign.channelConfig?.['subject'] as string) || 'Notifica ComunicaPA';
     const bodyTemplate = (campaign.channelConfig?.['body'] as string) || 'Hai ricevuto una nuova notifica.';
-    const attachmentLabels = resolveAttachmentsConfig(campaign.channelConfig).map((a) => a.label);
+    const attachmentLabels = resolveAttachmentsConfig(campaign.channelConfig).map((a) => resolveAttachmentLabel(a, recipient));
 
     // Process templates
     const subject = processTemplate(subjectTemplate, recipient, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, 'html', 'EMAIL');

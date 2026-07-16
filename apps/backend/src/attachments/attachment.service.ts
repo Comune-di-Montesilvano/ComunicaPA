@@ -1,5 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import * as fs from 'fs';
 import { join } from 'path';
 import type { Recipient } from '../entities/recipient.entity';
@@ -11,16 +10,41 @@ import { getUploadsDir } from './attachment-paths';
  * allegato dal vecchio `allegatoKey` per retrocompatibilità con campagne
  * create prima del supporto multi-allegato.
  */
+export interface AttachmentConfigEntry {
+  key: string;
+  label: string;
+  /** Se impostata, l'etichetta effettiva (vedi `resolveAttachmentLabel`) è letta
+   * riga per riga da questa colonna del CSV invece del testo fisso `label`. */
+  labelColumn?: string;
+}
+
 export function resolveAttachmentsConfig(
   channelConfig: Record<string, unknown> | undefined,
-): Array<{ key: string; label: string }> {
-  const configured = channelConfig?.['attachments'] as Array<{ key: string; label: string }> | undefined;
+): AttachmentConfigEntry[] {
+  const configured = channelConfig?.['attachments'] as AttachmentConfigEntry[] | undefined;
   if (configured && configured.length > 0) return configured;
 
   const legacyKey = channelConfig?.['allegatoKey'] as string | undefined;
   if (legacyKey) return [{ key: legacyKey, label: 'Allegato 1' }];
 
   return [];
+}
+
+/**
+ * Risolve l'etichetta effettiva di un allegato per un destinatario: se
+ * `labelColumn` è impostata legge il valore da `recipient.extraData` (varia
+ * riga per riga), altrimenti usa il testo fisso `label` — con fallback a
+ * `label` anche quando la colonna è vuota per quella riga, per non produrre
+ * un link "Scarica" senza etichetta.
+ */
+export function resolveAttachmentLabel(entry: AttachmentConfigEntry, recipient: Pick<Recipient, 'extraData'>): string {
+  if (entry.labelColumn) {
+    const value = recipient.extraData?.[entry.labelColumn];
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      return String(value);
+    }
+  }
+  return entry.label;
 }
 
 /**
@@ -58,45 +82,24 @@ export function resolveCustomAttachmentFilename(recipient: Recipient, index = 0)
 export class AttachmentService {
   private readonly logger = new Logger(AttachmentService.name);
 
+  /**
+   * Nessun fallback: se non risulta un file custom risolvibile su disco,
+   * errore esplicito invece di un PDF segnaposto generico — un allegato
+   * mancante è una configurazione rotta (mapping CSV/colonna sbagliata,
+   * upload non completato), non un caso da coprire silenziosamente.
+   */
   async generatePdfBuffer(recipient: Recipient, index = 0): Promise<Buffer> {
     const customFilename = resolveCustomAttachmentFilename(recipient, index);
-
-    if (customFilename) {
-      const filePath = join(getUploadsDir(recipient.campaignId), customFilename);
-      if (fs.existsSync(filePath)) {
-        this.logger.log(`Serving custom uploaded PDF attachment: ${filePath}`);
-        return fs.readFileSync(filePath);
-      }
+    if (!customFilename) {
+      throw new NotFoundException(`Nessun allegato configurato all'indice ${index} per il destinatario ${recipient.id}`);
     }
 
-    const pdfDoc = await PDFDocument.create();
-    const page = pdfDoc.addPage();
-    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-    const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
-
-    page.drawText('COMUNE DI MONTESILVANO', { x: 50, y: 750, size: 16, font: fontBold, color: rgb(0, 0.2, 0.4) });
-    page.drawText('ComunicaPA — Hub di Trasmissione Comunicazioni', { x: 50, y: 730, size: 10, font: fontRegular, color: rgb(0.5, 0.5, 0.5) });
-    page.drawLine({ start: { x: 50, y: 715 }, end: { x: 550, y: 715 }, thickness: 1, color: rgb(0.8, 0.8, 0.8) });
-    page.drawText(`Destinatario: ${recipient.fullName || 'N/D'}`, { x: 50, y: 680, size: 11, font: fontBold });
-    page.drawText(`Codice Fiscale: ${recipient.codiceFiscale}`, { x: 50, y: 660, size: 11, font: fontRegular });
-    if (recipient.email) {
-      page.drawText(`Email: ${recipient.email}`, { x: 50, y: 645, size: 11, font: fontRegular });
+    const filePath = join(getUploadsDir(recipient.campaignId), customFilename);
+    if (!fs.existsSync(filePath)) {
+      throw new NotFoundException(`File allegato "${customFilename}" non trovato per il destinatario ${recipient.id}`);
     }
-    if (recipient.pec) {
-      page.drawText(`PEC: ${recipient.pec}`, { x: 50, y: 630, size: 11, font: fontRegular });
-    }
-    page.drawText("Oggetto dell'avviso:", { x: 50, y: 580, size: 11, font: fontBold, color: rgb(0, 0.2, 0.4) });
-    page.drawText(recipient.campaign.name, { x: 50, y: 560, size: 12, font: fontBold });
-    page.drawText('Dettaglio comunicazione:', { x: 50, y: 520, size: 11, font: fontBold });
-    const description = recipient.campaign.description || 'Nessuna descrizione specificata.';
-    page.drawText(description, { x: 50, y: 500, size: 11, font: fontRegular, maxWidth: 500, lineHeight: 14 });
-    page.drawText(`PROTOCOLLO GENERALE - N. COM_${recipient.id.slice(0, 8).toUpperCase()}`, { x: 310, y: 750, size: 8, font: fontBold, color: rgb(0.8, 0.1, 0.1) });
-    page.drawLine({ start: { x: 50, y: 150 }, end: { x: 550, y: 150 }, thickness: 1, color: rgb(0.8, 0.8, 0.8) });
-    page.drawText(`Identificativo notifica: ${recipient.id}`, { x: 50, y: 130, size: 9, font: fontRegular, color: rgb(0.5, 0.5, 0.5) });
-    page.drawText(`Data invio: ${recipient.createdAt.toLocaleDateString('it-IT')}`, { x: 50, y: 115, size: 9, font: fontRegular, color: rgb(0.5, 0.5, 0.5) });
-    page.drawText(`Canale di trasmissione: ${recipient.campaign.channelType}`, { x: 50, y: 100, size: 9, font: fontRegular, color: rgb(0.5, 0.5, 0.5) });
 
-    const pdfBytes = await pdfDoc.save();
-    return Buffer.from(pdfBytes);
+    this.logger.log(`Serving custom uploaded PDF attachment: ${filePath}`);
+    return fs.readFileSync(filePath);
   }
 }

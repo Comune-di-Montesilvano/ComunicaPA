@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Recipient } from '../entities/recipient.entity';
 import { DownloadEvent } from '../entities/download-event.entity';
-import { AttachmentService, resolveAttachmentsConfig } from '../attachments/attachment.service';
+import { AttachmentService, resolveAttachmentsConfig, resolveAttachmentLabel } from '../attachments/attachment.service';
 import { CampaignsService } from '../campaigns/campaigns.service';
 
 export interface CitizenAttachmentDto {
@@ -44,7 +44,7 @@ export class CitizenService {
     // preview=false: questo è il link REALE mostrato al cittadino nel suo portale,
     // non un'anteprima backoffice — il click deve continuare a contare come download.
     const preview = await this.campaignsService.renderMessageForRecipient(recipient.id, 'CITIZEN_PORTAL', false);
-    const attachments = resolveAttachmentsConfig(recipient.campaign.channelConfig).map((a, index) => ({ index, label: a.label }));
+    const attachments = resolveAttachmentsConfig(recipient.campaign.channelConfig).map((a, index) => ({ index, label: resolveAttachmentLabel(a, recipient) }));
     return {
       id: recipient.id,
       codiceFiscale: recipient.codiceFiscale,

@@ -26,6 +26,7 @@ import { AddProtocolColumns1783800000000 } from './migrations/1783800000000-AddP
 import { AddUploadedDocumentsColumn1784100000000 } from './migrations/1784100000000-AddUploadedDocumentsColumn';
 import { AddPostalStatusColumns1784200000000 } from './migrations/1784200000000-AddPostalStatusColumns';
 import { CreatePostalProviderConfigs1784300000000 } from './migrations/1784300000000-CreatePostalProviderConfigs';
+import { SeedStandardTemplates1784400000000 } from './migrations/1784400000000-SeedStandardTemplates';
 import type { AppConfiguration } from '../config/configuration';
 
 @Module({
@@ -39,7 +40,7 @@ import type { AppConfiguration } from '../config/configuration';
         entities: [Campaign, Recipient, NotificationAttempt, AppSetting, MailServerConfig, IoServiceConfig, Template, DownloadEvent, AuditLog, PostalProviderConfig],
         // Dev: schema allineato da synchronize. Prod: migrations eseguite all'avvio.
         synchronize: config.get('nodeEnv', { infer: true }) === 'development',
-        migrations: [InitialSchema1783023440824, AddMailServerConfigs1783071728873, AddIoServiceConfigs1783092759564, AddTemplates1783109448492, FixRecipientCampaignJoin1783148719725, AddDownloadEvents1783200000000, FixRecipientAttemptJoin1783358259000, AddCancelledStatus1783426587867, CreateAuditLogs1783500000000, RenamePdndSettingsKeys1783600000000, AddSendStatusColumns1783700000000, AddProtocolColumns1783800000000, AddUploadedDocumentsColumn1784100000000, AddPostalStatusColumns1784200000000, CreatePostalProviderConfigs1784300000000],
+        migrations: [InitialSchema1783023440824, AddMailServerConfigs1783071728873, AddIoServiceConfigs1783092759564, AddTemplates1783109448492, FixRecipientCampaignJoin1783148719725, AddDownloadEvents1783200000000, FixRecipientAttemptJoin1783358259000, AddCancelledStatus1783426587867, CreateAuditLogs1783500000000, RenamePdndSettingsKeys1783600000000, AddSendStatusColumns1783700000000, AddProtocolColumns1783800000000, AddUploadedDocumentsColumn1784100000000, AddPostalStatusColumns1784200000000, CreatePostalProviderConfigs1784300000000, SeedStandardTemplates1784400000000],
         migrationsRun: config.get('nodeEnv', { infer: true }) !== 'development',
         logging: config.get('nodeEnv', { infer: true }) === 'development',
       }),
