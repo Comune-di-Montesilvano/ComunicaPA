@@ -97,10 +97,22 @@ export class IoServicesService {
     return this.toMasked(saved);
   }
 
-  async verifyProfile(codiceFiscale: string): Promise<{ success: boolean; active: boolean; message: string }> {
+  async verifyProfile(codiceFiscale: string, ioServiceId?: string): Promise<{ success: boolean; active: boolean; message: string }> {
     if (!codiceFiscale) throw new BadRequestException('Codice fiscale richiesto');
 
-    const resolved = await this.resolveApiKey();
+    // Con ioServiceId esplicito (verifica bulk: la scelta del servizio è
+    // deliberata, sender_allowed è per-servizio) NIENTE fallback al default —
+    // un id non trovato deve fallire esplicitamente, non invalidare
+    // silenziosamente il risultato verificando con un servizio diverso.
+    let resolved: { apiKey: string; idService: string } | null;
+    if (ioServiceId) {
+      const entity = await this.repo.findOneBy({ id: ioServiceId });
+      resolved = entity && entity.apiKeyPrimariaEnc
+        ? { apiKey: decryptValue(entity.apiKeyPrimariaEnc, this.cryptoKey), idService: entity.idService }
+        : null;
+    } else {
+      resolved = await this.resolveApiKey();
+    }
     if (!resolved) {
       throw new BadRequestException('Nessun servizio App IO configurato o abilitato come predefinito');
     }

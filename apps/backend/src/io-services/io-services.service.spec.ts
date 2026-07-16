@@ -128,5 +128,33 @@ describe('IoServicesService', () => {
       expect(result.active).toBe(true);
       expect(result.message).toContain('disabilitati');
     });
+
+    it('con ioServiceId esplicito non trovato NON ripiega sul servizio predefinito', async () => {
+      repoMock.findOneBy.mockResolvedValue(null);
+      const resolveSpy = jest.spyOn(service, 'resolveApiKey');
+
+      await expect(service.verifyProfile('RSSMRA85M01H501Z', 'id-inesistente')).rejects.toThrow(
+        'Nessun servizio App IO configurato o abilitato come predefinito',
+      );
+      expect(resolveSpy).not.toHaveBeenCalled();
+    });
+
+    it('con ioServiceId esplicito esistente usa la chiave di quel servizio', async () => {
+      const created = await service.create({
+        nome: 'TARI', idService: 'SVC-BULK', apiKeyPrimaria: 'chiave-bulk',
+      } as any);
+      repoMock.findOneBy.mockResolvedValue({
+        id: created.id,
+        idService: 'SVC-BULK',
+        apiKeyPrimariaEnc: repoMock.create.mock.calls[repoMock.create.mock.calls.length - 1][0].apiKeyPrimariaEnc,
+      });
+      const fetchMock = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ sender_allowed: true }) });
+      global.fetch = fetchMock;
+
+      const result = await service.verifyProfile('RSSMRA85M01H501Z', created.id);
+
+      expect(result.active).toBe(true);
+      expect(repoMock.findOneBy).toHaveBeenCalledWith({ id: created.id });
+    });
   });
 });
