@@ -53,6 +53,10 @@ export class PostalStatusSyncService {
         if (stato && stato.stato !== attempt.postalStatus) {
           attempt.postalStatus = stato.stato;
           attempt.postalStatusUpdatedAt = new Date();
+          attempt.postalStatusHistory = [
+            ...(attempt.postalStatusHistory ?? []),
+            { stato: stato.stato, rilevatoIl: new Date().toISOString() },
+          ];
           await this.attemptRepo.save(attempt);
         }
       } catch (err: any) {

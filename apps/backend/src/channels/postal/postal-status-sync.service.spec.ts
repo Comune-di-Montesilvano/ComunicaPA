@@ -67,8 +67,8 @@ describe('PostalStatusSyncService', () => {
     expect(globalCom.dettagliDocumento).not.toHaveBeenCalled();
   });
 
-  it('aggiorna postalStatus quando lo stato è cambiato', async () => {
-    const attempt = { id: 'a1', postalTrackingId: 'IDPRO1', postalStatus: 'Accettato', postalStatusUpdatedAt: null };
+  it('aggiorna postalStatus e appende a postalStatusHistory quando lo stato è cambiato', async () => {
+    const attempt = { id: 'a1', postalTrackingId: 'IDPRO1', postalStatus: 'Accettato', postalStatusUpdatedAt: null, postalStatusHistory: [{ stato: 'Accettato', rilevatoIl: '2026-01-10T10:00:00.000Z' }] };
     attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
     globalCom.dettagliDocumento.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Consegnato' });
 
@@ -78,7 +78,38 @@ describe('PostalStatusSyncService', () => {
       expect.objectContaining({ baseUrl: activeProvider.creds.baseUrl }),
       'IDPRO1',
     );
-    expect(attemptRepo.save).toHaveBeenCalledWith(expect.objectContaining({ id: 'a1', postalStatus: 'Consegnato' }));
+    expect(attemptRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'a1',
+      postalStatus: 'Consegnato',
+      postalStatusHistory: [
+        { stato: 'Accettato', rilevatoIl: '2026-01-10T10:00:00.000Z' },
+        { stato: 'Consegnato', rilevatoIl: expect.any(String) },
+      ],
+    }));
+  });
+
+  it('non duplica un elemento in postalStatusHistory se lo stato non è cambiato', async () => {
+    const attempt = { id: 'a1', postalTrackingId: 'IDPRO1', postalStatus: 'Inviato', postalStatusUpdatedAt: null, postalStatusHistory: [{ stato: 'Inviato', rilevatoIl: '2026-01-10T10:00:00.000Z' }] };
+    attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
+    globalCom.dettagliDocumento.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Inviato' });
+
+    await service.handleCron();
+
+    expect(attemptRepo.save).not.toHaveBeenCalled();
+    expect(attempt.postalStatusHistory).toEqual([{ stato: 'Inviato', rilevatoIl: '2026-01-10T10:00:00.000Z' }]);
+  });
+
+  it('gestisce postalStatusHistory assente (null) su un attempt esistente senza storico pregresso', async () => {
+    const attempt = { id: 'a1', postalTrackingId: 'IDPRO1', postalStatus: 'Inviato', postalStatusUpdatedAt: null, postalStatusHistory: null };
+    attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
+    globalCom.dettagliDocumento.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Consegnato' });
+
+    await service.handleCron();
+
+    expect(attemptRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'a1',
+      postalStatusHistory: [{ stato: 'Consegnato', rilevatoIl: expect.any(String) }],
+    }));
   });
 
   it('non salva se lo stato non è cambiato', async () => {
