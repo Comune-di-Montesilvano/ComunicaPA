@@ -52,6 +52,12 @@ export class NotificationAttempt {
   @Column({ name: 'send_status_updated_at', type: 'timestamptz', nullable: true })
   sendStatusUpdatedAt!: Date | null;
 
+  @Column({ type: 'jsonb', name: 'send_status_history', nullable: true })
+  sendStatusHistory!: Array<{ status: string; activeFrom: string }> | null;
+
+  @Column({ type: 'jsonb', name: 'send_digital_domicile', nullable: true })
+  sendDigitalDomicile!: { type: string; address: string | null; source: string } | null;
+
   @Column({ type: 'int', name: 'protocol_number', nullable: true })
   protocolNumber!: number | null;
 
