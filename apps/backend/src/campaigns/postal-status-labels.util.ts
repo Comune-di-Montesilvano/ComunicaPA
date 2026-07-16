@@ -3,6 +3,7 @@
  * (apps/frontend-admin/src/App.tsx) — stesse 14 chiavi dell'enum GBCStatus.
  */
 const POSTAL_STATUS_LABELS: Record<string, string> = {
+  FAILED: 'Fallito',
   Accettato: 'Accettato',
   Sospeso: 'Sospeso',
   Verificato: 'Verificato',

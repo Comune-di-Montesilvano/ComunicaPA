@@ -10,6 +10,9 @@ describe('sendStatusLabel', () => {
   it('ritorna il valore grezzo per uno stato non mappato', () => {
     expect(sendStatusLabel('NUOVO_STATO_MAI_VISTO')).toBe('NUOVO_STATO_MAI_VISTO');
   });
+  it('traduce lo stato sintetico FAILED (attempt fallito prima di raggiungere SEND)', () => {
+    expect(sendStatusLabel('FAILED')).toBe('Fallito');
+  });
 });
 
 describe('digitalDomicileTypeLabel', () => {

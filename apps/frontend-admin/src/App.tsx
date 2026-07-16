@@ -63,6 +63,7 @@ function StatusBadge({ status }: { status: string }): React.JSX.Element {
 // Fonte: NotificationStatusV26 nello spec ufficiale PN (pn-delivery,
 // api-external-b2b-pa-bundle.yaml), 11 valori, verificato 2026-07-14.
 const SEND_STATUS_META: Record<string, { label: string; badge: string; icon: string }> = {
+  FAILED: { label: 'Fallito', badge: 'bg-danger', icon: 'fa-times' },
   IN_VALIDATION: { label: 'In validazione', badge: 'bg-secondary', icon: 'fa-hourglass-half' },
   ACCEPTED: { label: 'Accettata da SEND', badge: 'bg-info', icon: 'fa-inbox' },
   REFUSED: { label: 'Rifiutata', badge: 'bg-danger', icon: 'fa-ban' },
@@ -128,6 +129,7 @@ function ChannelStatusBar({ breakdown, meta, pendingLabel }: { breakdown: Array<
 // Stati POSTAL (campo postalStatus, popolato da PostalStatusSyncService da
 // GlobalCom) — 14 valori dell'enum GBCStatus.
 const POSTAL_STATUS_META: Record<string, { label: string; badge: string; icon: string }> = {
+  FAILED: { label: 'Fallito', badge: 'bg-danger', icon: 'fa-times' },
   Accettato: { label: 'Accettato', badge: 'bg-secondary-subtle text-secondary-emphasis border', icon: 'fa-inbox' },
   Sospeso: { label: 'Sospeso', badge: 'bg-secondary-subtle text-secondary-emphasis border', icon: 'fa-pause' },
   Verificato: { label: 'Verificato', badge: 'bg-info-subtle text-info-emphasis border', icon: 'fa-check' },

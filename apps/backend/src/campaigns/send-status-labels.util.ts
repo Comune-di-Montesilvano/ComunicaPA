@@ -4,6 +4,7 @@
  * deprecato in NotificationStatusV26).
  */
 const SEND_STATUS_LABELS: Record<string, string> = {
+  FAILED: 'Fallito',
   IN_VALIDATION: 'In validazione',
   ACCEPTED: 'Accettata da SEND',
   REFUSED: 'Rifiutata',

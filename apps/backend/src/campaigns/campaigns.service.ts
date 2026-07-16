@@ -1096,7 +1096,7 @@ export class CampaignsService {
     // stringa), riduzione "ultimo attempt per destinatario" in JS.
     const attempts = await this.attemptRepo.find({
       where: { recipientId: In(recipientIds), channelType: 'SEND' },
-      select: ['recipientId', 'attemptNumber', 'sendStatus'],
+      select: ['recipientId', 'attemptNumber', 'sendStatus', 'status'],
     });
 
     const latestByRecipient = new Map<string, NotificationAttempt>();
@@ -1107,7 +1107,8 @@ export class CampaignsService {
 
     const counts = new Map<string | null, number>();
     for (const a of latestByRecipient.values()) {
-      counts.set(a.sendStatus, (counts.get(a.sendStatus) ?? 0) + 1);
+      const key = a.status === AttemptStatus.FAILED ? 'FAILED' : a.sendStatus;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
     }
 
     return Array.from(counts.entries()).map(([status, count]) => ({ status, count }));
@@ -1154,7 +1155,7 @@ export class CampaignsService {
         iun: latest?.iun ?? null,
         digitalDomicileType: latest?.sendDigitalDomicile?.type ?? null,
         digitalDomicileAddress: latest?.sendDigitalDomicile?.address ?? null,
-        sendStatus: latest?.sendStatus ?? null,
+        sendStatus: latest?.status === AttemptStatus.FAILED ? 'FAILED' : (latest?.sendStatus ?? null),
         sendStatusHistory: latest?.sendStatusHistory ?? [],
         appIoOutcome: appIo ? { success: !!appIo.success, error: appIo.error ?? null } : null,
       };
@@ -1172,7 +1173,7 @@ export class CampaignsService {
 
     const attempts = await this.attemptRepo.find({
       where: { recipientId: In(recipientIds), channelType: 'POSTAL' },
-      select: ['recipientId', 'attemptNumber', 'postalStatus'],
+      select: ['recipientId', 'attemptNumber', 'postalStatus', 'status'],
     });
 
     const latestByRecipient = new Map<string, NotificationAttempt>();
@@ -1183,7 +1184,8 @@ export class CampaignsService {
 
     const counts = new Map<string | null, number>();
     for (const a of latestByRecipient.values()) {
-      counts.set(a.postalStatus, (counts.get(a.postalStatus) ?? 0) + 1);
+      const key = a.status === AttemptStatus.FAILED ? 'FAILED' : a.postalStatus;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
     }
 
     return Array.from(counts.entries()).map(([status, count]) => ({ status, count }));
@@ -1229,7 +1231,7 @@ export class CampaignsService {
         codiceFiscale: r.codiceFiscale,
         fullName: r.fullName,
         postalTrackingId: latest?.postalTrackingId ?? null,
-        postalStatus: latest?.postalStatus ?? null,
+        postalStatus: latest?.status === AttemptStatus.FAILED ? 'FAILED' : (latest?.postalStatus ?? null),
         postalStatusHistory: latest?.postalStatusHistory ?? [],
         codiceErrore: (latestPayload?.['codiceErrore'] as string | undefined) ?? null,
         descrizioneErrore: (latestPayload?.['descrizione'] as string | undefined) ?? null,

@@ -11,6 +11,9 @@ describe('postalStatusLabel', () => {
   it('ritorna il valore grezzo per uno stato non mappato', () => {
     expect(postalStatusLabel('NUOVO_STATO_MAI_VISTO')).toBe('NUOVO_STATO_MAI_VISTO');
   });
+  it('traduce lo stato sintetico FAILED (attempt fallito prima di raggiungere GlobalCom)', () => {
+    expect(postalStatusLabel('FAILED')).toBe('Fallito');
+  });
 });
 
 describe('POSTAL_STATUS_HISTORY_COLUMNS', () => {

@@ -1754,6 +1754,21 @@ describe('CampaignsService.getSendStatusBreakdown / getSendReportRows', () => {
       expect(result).toHaveLength(1);
     });
 
+    it('conta un attempt FAILED (mai arrivato al provider, sendStatus null) come \'FAILED\', non null', async () => {
+      campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'SEND' });
+      recipientRepoMock.find.mockResolvedValue([{ id: 'r1' }]);
+      attemptRepoMock.find.mockResolvedValue([
+        { recipientId: 'r1', attemptNumber: 1, sendStatus: null, status: AttemptStatus.FAILED },
+      ]);
+
+      const moduleRef = await buildModule();
+      const service = moduleRef.get(CampaignsService);
+
+      const result = await service.getSendStatusBreakdown('c1');
+
+      expect(result).toEqual([{ status: 'FAILED', count: 1 }]);
+    });
+
     it('lancia NotFoundException se la campagna non esiste', async () => {
       campaignRepoMock.findOneBy.mockResolvedValue(null);
 
@@ -1814,6 +1829,24 @@ describe('CampaignsService.getSendStatusBreakdown / getSendReportRows', () => {
       expect(result.hasAppIoCoDelivery).toBe(true);
       expect(result.rows[0].appIoOutcome).toEqual({ success: true, error: null });
     });
+
+    it('riporta sendStatus \'FAILED\' per un attempt FAILED senza sendStatus mai assegnato', async () => {
+      campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'SEND', channelConfig: {} });
+      recipientRepoMock.find.mockResolvedValue([{ id: 'r1', codiceFiscale: 'RSSMRA80A01H501U', fullName: 'Mario Rossi' }]);
+      attemptRepoMock.find.mockResolvedValue([
+        {
+          recipientId: 'r1', attemptNumber: 1, iun: null, sendStatus: null, status: AttemptStatus.FAILED,
+          sendStatusHistory: [], sendDigitalDomicile: null, responsePayload: {},
+        },
+      ]);
+
+      const moduleRef = await buildModule();
+      const service = moduleRef.get(CampaignsService);
+
+      const result = await service.getSendReportRows('c1');
+
+      expect(result.rows[0].sendStatus).toBe('FAILED');
+    });
   });
 });
 
@@ -1857,6 +1890,21 @@ describe('CampaignsService.getPostalStatusBreakdown / getPostalReportRows', () =
 
       expect(result).toEqual(expect.arrayContaining([{ status: 'Consegnato', count: 2 }]));
       expect(result).toHaveLength(1);
+    });
+
+    it('conta un attempt FAILED (mai arrivato al provider, postalStatus null) come \'FAILED\', non null', async () => {
+      campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'POSTAL' });
+      recipientRepoMock.find.mockResolvedValue([{ id: 'r1' }]);
+      attemptRepoMock.find.mockResolvedValue([
+        { recipientId: 'r1', attemptNumber: 1, postalStatus: null, status: AttemptStatus.FAILED },
+      ]);
+
+      const moduleRef = await buildModule();
+      const service = moduleRef.get(CampaignsService);
+
+      const result = await service.getPostalStatusBreakdown('c1');
+
+      expect(result).toEqual([{ status: 'FAILED', count: 1 }]);
     });
 
     it('lancia NotFoundException se la campagna non esiste', async () => {
@@ -1916,6 +1964,24 @@ describe('CampaignsService.getPostalStatusBreakdown / getPostalReportRows', () =
 
       expect(result.hasAppIoCoDelivery).toBe(true);
       expect(result.rows[0].appIoOutcome).toEqual({ success: true, error: null });
+    });
+
+    it('riporta postalStatus \'FAILED\' per un attempt FAILED senza postalStatus mai assegnato', async () => {
+      campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'POSTAL', channelConfig: {} });
+      recipientRepoMock.find.mockResolvedValue([{ id: 'r1', codiceFiscale: 'RSSMRA80A01H501U', fullName: 'Mario Rossi' }]);
+      attemptRepoMock.find.mockResolvedValue([
+        {
+          recipientId: 'r1', attemptNumber: 1, postalTrackingId: null, postalStatus: null, status: AttemptStatus.FAILED,
+          postalStatusHistory: [], responsePayload: {},
+        },
+      ]);
+
+      const moduleRef = await buildModule();
+      const service = moduleRef.get(CampaignsService);
+
+      const result = await service.getPostalReportRows('c1');
+
+      expect(result.rows[0].postalStatus).toBe('FAILED');
     });
   });
 });
