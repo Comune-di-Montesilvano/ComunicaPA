@@ -1,11 +1,16 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Put, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { IoServicesService } from './io-services.service';
-import { CreateIoServiceDto, UpdateIoServiceDto, TestIoServiceDto } from './dto/io-service.dto';
+import { AppIoVerifyBulkService } from './app-io-verify-bulk.service';
+import { CreateIoServiceDto, UpdateIoServiceDto, TestIoServiceDto, VerifyBulkDto } from './dto/io-service.dto';
 
 @Controller('admin/io-services')
 export class IoServicesController {
-  constructor(private readonly svc: IoServicesService) {}
+  constructor(
+    private readonly svc: IoServicesService,
+    private readonly bulkSvc: AppIoVerifyBulkService,
+  ) {}
 
   @Get()
   @Roles('user', 'admin')
@@ -50,5 +55,36 @@ export class IoServicesController {
   @HttpCode(HttpStatus.OK)
   verifyProfile(@Body() body: { codiceFiscale: string }) {
     return this.svc.verifyProfile(body.codiceFiscale);
+  }
+
+  @Post('verify-bulk')
+  @Roles('user', 'admin')
+  @HttpCode(HttpStatus.OK)
+  createVerifyBulk(@Body() body: VerifyBulkDto) {
+    return this.bulkSvc.createJob(body);
+  }
+
+  @Get('verify-bulk/:id')
+  @Roles('user', 'admin')
+  getVerifyBulkStatus(@Param('id', ParseUUIDPipe) id: string) {
+    return this.bulkSvc.getStatus(id);
+  }
+
+  @Get('verify-bulk/:id/present.csv')
+  @Roles('user', 'admin')
+  async downloadVerifyBulkPresent(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response): Promise<void> {
+    const content = await this.bulkSvc.getResultCsv(id, 'present');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="verifica_appio_presenti_${id.slice(0, 8)}.csv"`);
+    res.send(content);
+  }
+
+  @Get('verify-bulk/:id/absent.csv')
+  @Roles('user', 'admin')
+  async downloadVerifyBulkAbsent(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response): Promise<void> {
+    const content = await this.bulkSvc.getResultCsv(id, 'absent');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="verifica_appio_assenti_${id.slice(0, 8)}.csv"`);
+    res.send(content);
   }
 }

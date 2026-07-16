@@ -1,4 +1,4 @@
-import { IsBoolean, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 
 export class CreateIoServiceDto {
   @IsString() @MinLength(1) @MaxLength(128)
@@ -58,4 +58,18 @@ export interface IoServiceMaskedDto {
 export class TestIoServiceDto {
   @IsString() @MinLength(1)
   codiceFiscale!: string;
+}
+
+export class VerifyBulkDto {
+  @IsString() @MinLength(1)
+  csvContent!: string;
+
+  @IsBoolean()
+  hasHeaders!: boolean;
+
+  @IsString() @MinLength(1)
+  cfColumn!: string;
+
+  @IsUUID()
+  ioServiceId!: string;
 }
