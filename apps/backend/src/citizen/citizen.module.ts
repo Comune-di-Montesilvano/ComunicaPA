@@ -9,6 +9,7 @@ import { CitizenService } from './citizen.service';
 import { AuthModule } from '../auth/auth.module';
 import { AttachmentModule } from '../attachments/attachment.module';
 import { CampaignsModule } from '../campaigns/campaigns.module';
+import { SendLegalFactsModule } from '../channels/send/send-legal-facts.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { CampaignsModule } from '../campaigns/campaigns.module';
     AuthModule,
     AttachmentModule,
     CampaignsModule,
+    SendLegalFactsModule,
   ],
   controllers: [CitizenController],
   providers: [CitizenService],

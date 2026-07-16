@@ -10,6 +10,7 @@ import type { NotificationDetailDto } from './dto/notification-detail.dto';
 
 export interface SearchFilters {
   codiceFiscale?: string;
+  query?: string;
   campaignId?: string;
   channelType?: string;
   status?: string;
@@ -48,8 +49,13 @@ export class NotificationsSearchService {
       .createQueryBuilder('recipient')
       .leftJoinAndSelect('recipient.campaign', 'campaign');
 
-    if (filters.codiceFiscale) {
-      qb.andWhere('recipient.codiceFiscale = :cf', { cf: filters.codiceFiscale.toUpperCase().trim() });
+    const searchText = filters.query || filters.codiceFiscale;
+    if (searchText) {
+      const q = `%${searchText.trim()}%`;
+      qb.andWhere(
+        '(LOWER(recipient.codiceFiscale) LIKE LOWER(:q) OR LOWER(recipient.fullName) LIKE LOWER(:q) OR LOWER(recipient.email) LIKE LOWER(:q) OR LOWER(recipient.pec) LIKE LOWER(:q) OR EXISTS (SELECT 1 FROM notification_attempts a WHERE a.recipient_id = recipient.id AND LOWER(a.iun) LIKE LOWER(:q)))',
+        { q },
+      );
     }
     if (filters.campaignId) {
       qb.andWhere('recipient.campaignId = :campaignId', { campaignId: filters.campaignId });

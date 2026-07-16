@@ -1,9 +1,10 @@
-import { Controller, Get, HttpCode, HttpStatus, Param, ParseIntPipe, ParseUUIDPipe, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Controller, Get, HttpCode, HttpStatus, NotFoundException, Param, ParseIntPipe, ParseUUIDPipe, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import type { CitizenTokenClaims } from '@comunicapa/shared-types';
 import { OidcAuthGuard } from '../auth/guards/oidc-auth.guard';
 import { Public } from '../auth/decorators/public.decorator';
 import { CitizenService } from './citizen.service';
+import { SendLegalFactsService } from '../channels/send/send-legal-facts.service';
 
 // @Public() esclude questo controller dal JwtAuthGuard globale (pensato per
 // gli operatori, verifica JWT HS256/JWT_SECRET): i token cittadino OIDC reali
@@ -15,7 +16,10 @@ import { CitizenService } from './citizen.service';
 @Public()
 @UseGuards(OidcAuthGuard)
 export class CitizenController {
-  constructor(private readonly citizenService: CitizenService) {}
+  constructor(
+    private readonly citizenService: CitizenService,
+    private readonly sendLegalFactsService: SendLegalFactsService,
+  ) {}
 
   @Get('notifications')
   findAll(@Req() req: { user: CitizenTokenClaims }) {
@@ -58,4 +62,58 @@ export class CitizenController {
     res.setHeader('Content-Length', pdfBuffer.length);
     res.end(pdfBuffer);
   }
+
+  /**
+   * Elenco dei documenti legali (attestazioni opponibili a terzi) disponibili
+   * sulla piattaforma SEND per la notifica indicata. Usato dal frontend
+   * per mostrare i link di download corretti nella timeline.
+   */
+  @Get('notifications/:id/send-legal-facts')
+  async listSendLegalFacts(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: { user: CitizenTokenClaims },
+  ) {
+    const notif = await this.citizenService.findOneForCitizen(id, req.user.codiceFiscale);
+    if (!notif.iun) return [];
+    return this.sendLegalFactsService.listLegalFacts(notif.iun);
+  }
+
+  /**
+   * Download di un documento legale (attestazione opponibile a terzi) direttamente
+   * dalla piattaforma SEND tramite il legalFactId. Usato nel dettaglio della notifica
+   * SEND per scaricare le attestazioni della timeline.
+   */
+  @Get('notifications/:id/send-document')
+  async downloadSendDocument(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('iun') iun: string,
+    @Query('legalFactId') legalFactId: string,
+    @Req() req: { user: CitizenTokenClaims },
+    @Res() res: Response,
+  ) {
+    if (!iun || !legalFactId) {
+      throw new NotFoundException('Parametri IUN o legalFactId mancanti');
+    }
+
+    // Verifica che il recipient appartiene al cittadino autenticato
+    await this.citizenService.findOneForCitizen(id, req.user.codiceFiscale);
+
+    // Registra il download
+    await this.citizenService.markAsDownloaded(id, req.user.codiceFiscale, 0);
+
+    // Scarica il documento legale da SEND
+    const result = await this.sendLegalFactsService.downloadLegalFact(iun, legalFactId);
+
+    if (!result.ready) {
+      const msg = result.error ?? 'Documento non ancora disponibile, riprovare tra qualche istante.';
+      res.status(503).json({ message: msg });
+      return;
+    }
+
+    res.setHeader('Content-Type', result.contentType);
+    res.setHeader('Content-Disposition', `inline; filename="${result.filename}"`);
+    res.setHeader('Content-Length', result.buffer.length);
+    res.end(result.buffer);
+  }
 }
+

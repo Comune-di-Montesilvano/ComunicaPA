@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Recipient } from '../entities/recipient.entity';
 import { DownloadEvent } from '../entities/download-event.entity';
-import { AttachmentService, resolveAttachmentsConfig, resolveAttachmentLabel } from '../attachments/attachment.service';
+import { AttachmentService, resolveAttachmentsConfig, resolveAttachmentLabel, resolveCustomAttachmentFilename } from '../attachments/attachment.service';
 import { CampaignsService } from '../campaigns/campaigns.service';
 
 export interface CitizenAttachmentDto {
@@ -25,6 +25,10 @@ export interface CitizenNotificationDto {
   bodyHtml?: string;
   bodyMarkdown?: string;
   attachments: CitizenAttachmentDto[];
+  iun?: string | null;
+  sendStatus?: string | null;
+  sendStatusHistory?: any[] | null;
+  sendDigitalDomicile?: any | null;
 }
 
 @Injectable()
@@ -44,7 +48,14 @@ export class CitizenService {
     // preview=false: questo è il link REALE mostrato al cittadino nel suo portale,
     // non un'anteprima backoffice — il click deve continuare a contare come download.
     const preview = await this.campaignsService.renderMessageForRecipient(recipient.id, 'CITIZEN_PORTAL', false);
-    const attachments = resolveAttachmentsConfig(recipient.campaign.channelConfig).map((a, index) => ({ index, label: resolveAttachmentLabel(a, recipient) }));
+    let attachments = resolveAttachmentsConfig(recipient.campaign.channelConfig).map((a, index) => ({ index, label: resolveAttachmentLabel(a, recipient) }));
+    if (attachments.length === 0) {
+      const legacyFile = resolveCustomAttachmentFilename(recipient, 0);
+      if (legacyFile) {
+        attachments = [{ index: 0, label: 'Documento principale.pdf' }];
+      }
+    }
+    const sendAttempt = recipient.attempts?.find(a => a.channelType === 'SEND' && a.status === 'success');
     return {
       id: recipient.id,
       codiceFiscale: recipient.codiceFiscale,
@@ -59,6 +70,10 @@ export class CitizenService {
       bodyHtml: preview.bodyHtml,
       bodyMarkdown: preview.bodyMarkdown,
       attachments,
+      iun: sendAttempt?.iun || null,
+      sendStatus: sendAttempt?.sendStatus || null,
+      sendStatusHistory: sendAttempt?.sendStatusHistory || null,
+      sendDigitalDomicile: sendAttempt?.sendDigitalDomicile || null,
     };
   }
 

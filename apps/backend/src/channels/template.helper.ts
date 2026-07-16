@@ -1,5 +1,6 @@
 import type { Recipient } from '../entities/recipient.entity';
 import { signDownloadLink } from './download-link.util';
+import { resolveCustomAttachmentFilename } from '../attachments/attachment.service';
 
 /**
  * Replaces fixed placeholders (%%allegato1%%, %%allegato2%%, ...), the standard
@@ -34,21 +35,29 @@ export function processTemplate(
     return `${publicApiUrl}/public/download/${recipient.id}/${index}?exp=${expiresAtUnix}&sig=${sig}${chParam}${previewParam}`;
   };
 
+  let resolvedLabels = attachmentLabels;
+  if (resolvedLabels.length === 0) {
+    const legacyFile = resolveCustomAttachmentFilename(recipient, 0);
+    if (legacyFile) {
+      resolvedLabels = ['Documento principale.pdf'];
+    }
+  }
+
   // 1. Placeholder individuali %%allegato1%%, %%allegato2%%, ... (uno per etichetta configurata)
-  attachmentLabels.forEach((_, index) => {
+  resolvedLabels.forEach((_, index) => {
     const placeholder = new RegExp(`%%allegato${index + 1}%%`, 'g');
     content = content.replace(placeholder, buildDownloadUrl(index));
   });
 
   // 2. Macro %%elenco_allegati%%: blocco con etichetta+link per ogni allegato
   if (content.includes('%%elenco_allegati%%')) {
-    const block = attachmentLabels.length === 0
+    const block = resolvedLabels.length === 0
       ? ''
       : format === 'markdown'
-        ? attachmentLabels
+        ? resolvedLabels
             .map((label, index) => `- **${label}**: [Scarica](${buildDownloadUrl(index)})`)
             .join('\n') + '\n\n'
-        : attachmentLabels
+        : resolvedLabels
             .map(
               (label, index) =>
                 `<table style="width:100%; border-collapse: collapse; margin: 0 0 12px 0; background-color: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px;"><tr>` +

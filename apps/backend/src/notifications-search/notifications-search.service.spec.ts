@@ -41,11 +41,24 @@ describe('NotificationsSearchService.search', () => {
     service = moduleRef.get(NotificationsSearchService);
   });
 
-  it('applica il filtro codiceFiscale quando presente', async () => {
+  it('applica la condizione di ricerca campo libero su codiceFiscale quando presente', async () => {
     qbMock.getManyAndCount.mockResolvedValue([[], 0]);
     await service.search({ codiceFiscale: 'rssmra80a01h501x', page: 1, pageSize: 20 });
 
-    expect(qbMock.andWhere).toHaveBeenCalledWith('recipient.codiceFiscale = :cf', { cf: 'RSSMRA80A01H501X' });
+    expect(qbMock.andWhere).toHaveBeenCalledWith(
+      '(LOWER(recipient.codiceFiscale) LIKE LOWER(:q) OR LOWER(recipient.fullName) LIKE LOWER(:q) OR LOWER(recipient.email) LIKE LOWER(:q) OR LOWER(recipient.pec) LIKE LOWER(:q) OR EXISTS (SELECT 1 FROM notification_attempts a WHERE a.recipient_id = recipient.id AND LOWER(a.iun) LIKE LOWER(:q)))',
+      { q: '%rssmra80a01h501x%' },
+    );
+  });
+
+  it('applica la condizione di ricerca campo libero su query quando presente', async () => {
+    qbMock.getManyAndCount.mockResolvedValue([[], 0]);
+    await service.search({ query: 'mario', page: 1, pageSize: 20 });
+
+    expect(qbMock.andWhere).toHaveBeenCalledWith(
+      '(LOWER(recipient.codiceFiscale) LIKE LOWER(:q) OR LOWER(recipient.fullName) LIKE LOWER(:q) OR LOWER(recipient.email) LIKE LOWER(:q) OR LOWER(recipient.pec) LIKE LOWER(:q) OR EXISTS (SELECT 1 FROM notification_attempts a WHERE a.recipient_id = recipient.id AND LOWER(a.iun) LIKE LOWER(:q)))',
+      { q: '%mario%' },
+    );
   });
 
   it('mappa i risultati nel formato atteso', async () => {

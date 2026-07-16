@@ -126,6 +126,54 @@ function decodeJwtClaims(token: string): { cf: string; name: string; provider?: 
   }
 }
 
+function getTextSnippet(content: string): string {
+  if (!content) return '';
+  // Rimuovi tag HTML semplici
+  let plain = content.replace(/<[^>]*>/g, ' ');
+  // Rimuovi link markdown [testo](url) -> testo
+  plain = plain.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1');
+  // Rimuovi stili grassetto/corsivo markdown
+  plain = plain.replace(/\*\*([^*]+)\*\*/g, '$1');
+  plain = plain.replace(/\*([^*]+)\*/g, '$1');
+  // Rimuovi liste e caratteri speciali
+  plain = plain.replace(/^\s*-\s+/gm, '');
+  // Normalizza gli spazi bianchi e a capo
+  plain = plain.replace(/\s+/g, ' ').trim();
+  
+  if (plain.length > 85) {
+    return plain.slice(0, 82) + '...';
+  }
+  return plain;
+}
+
+function findPhysicalAddress(extraData: Record<string, any> | undefined): string | null {
+  if (!extraData) return null;
+  const keys = Object.keys(extraData);
+  const addressKey = keys.find(k => /^(indirizzo|address|via|piazza|strada|viale|corso)$/i.test(k));
+  const cityKey = keys.find(k => /^(citta|comune|municipality|localita)$/i.test(k));
+  const capKey = keys.find(k => /^(cap|zip|codice_postale|zip_code)$/i.test(k));
+  const provKey = keys.find(k => /^(provincia|prov|sigla)$/i.test(k));
+  const civicoKey = keys.find(k => /^(civico|numero_civico|n_civico|n)$/i.test(k));
+
+  if (addressKey && extraData[addressKey]) {
+    let addr = String(extraData[addressKey]);
+    if (civicoKey && extraData[civicoKey]) {
+      addr += `, ${extraData[civicoKey]}`;
+    }
+    const city = cityKey && extraData[cityKey] ? String(extraData[cityKey]) : '';
+    const cap = capKey && extraData[capKey] ? String(extraData[capKey]) : '';
+    const prov = provKey && extraData[provKey] ? String(extraData[provKey]) : '';
+
+    let location = '';
+    if (cap) location += cap + ' ';
+    if (city) location += city;
+    if (prov) location += ` (${prov.toUpperCase()})`;
+
+    return location ? `${addr} - ${location}` : addr;
+  }
+  return null;
+}
+
 interface Notification {
   id: string;
   codiceFiscale: string;
@@ -140,12 +188,43 @@ interface Notification {
   bodyHtml?: string;
   bodyMarkdown?: string;
   attachments: Array<{ index: number; label: string }>;
+  iun?: string | null;
+  sendStatus?: string | null;
+  sendStatusHistory?: Array<{ status: string; activeFrom: string }> | null;
+  sendDigitalDomicile?: { type: string; address: string | null; source: string } | null;
 }
 
 function statusBadge(status: Notification['status']): { cls: string; label: string } {
   if (status === 'sent') return { cls: 'status-notif-received', label: 'Ricevuta' };
   if (status === 'failed' || status === 'skipped') return { cls: 'status-notif-failed', label: 'Non recapitata' };
   return { cls: 'status-notif-pending', label: 'In corso' };
+}
+
+function getSendStatusMeta(status: string): { label: string; cls: string; desc: string } {
+  switch (status) {
+    case 'VALIDATING':
+      return { label: 'In validazione', cls: 'status-validating', desc: 'La piattaforma SEND verifica la conformità dei documenti caricati.' };
+    case 'ACCEPTED':
+      return { label: 'Depositata', cls: 'status-accepted', desc: 'L\'ente ha depositato la notifica in piattaforma.' };
+    case 'DELIVERING':
+      return { label: 'Invio in corso', cls: 'status-delivering', desc: 'L\'invio della notifica tramite canali digitali o analogici è in corso.' };
+    case 'DELIVERED':
+      return { label: 'Consegnata', cls: 'status-delivered', desc: 'L\'invio della notifica è terminato in quanto almeno un recapito digitale è valido.' };
+    case 'VIEWED':
+      return { label: 'Avvenuto accesso', cls: 'status-viewed', desc: 'Il destinatario ha letto la notifica.' };
+    case 'EFFECTIVE_DATE':
+      return { label: 'Perfezionata per decorrenza termini', cls: 'status-effective-date', desc: 'Notifica legalmente perfezionata per decorrenza dei termini di legge.' };
+    case 'UNREACHABLE':
+      return { label: 'Irreperibile', cls: 'status-unreachable', desc: 'Tutti i tentativi di consegna digitali e analogici sono falliti.' };
+    case 'CANCELLED':
+      return { label: 'Annullata', cls: 'status-cancelled', desc: 'La notifica è stata annullata dall\'ente emittente.' };
+    case 'RETURNED_TO_SENDER':
+      return { label: 'Restituita al mittente', cls: 'status-returned-to-sender', desc: 'Gli atti sono stati restituiti al mittente per compiuta giacenza cartacea.' };
+    case 'REFUSED':
+      return { label: 'Rifiutata', cls: 'status-refused', desc: 'La notifica è stata rifiutata in fase di accettazione da parte della piattaforma.' };
+    default:
+      return { label: status, cls: 'status-unknown', desc: 'Stato non codificato.' };
+  }
 }
 
 const CHANNEL_META: Record<string, { label: string; icon: string; cls: string; logo?: string }> = {
@@ -159,13 +238,32 @@ const CHANNEL_META: Record<string, { label: string; icon: string; cls: string; l
 
 function ChannelBadge({ channel }: { channel: string }): React.JSX.Element {
   const meta = CHANNEL_META[channel] ?? { label: channel || '—', icon: 'fa-paper-plane', cls: 'channel-generic' };
+  
+  if (channel === 'APP_IO') {
+    return (
+      <span className="channel-badge channel-appio">
+        <span className="f-partner-chip" style={{ width: 16, height: 16, borderRadius: 4, marginRight: 6, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#fff', padding: 2 }}>
+          <img src="https://ioapp.it/assets/IO_84d780c485.svg" alt="" width={12} height={12} style={{ display: 'block' }} />
+        </span>
+        App IO
+      </span>
+    );
+  }
+
+  if (channel === 'SEND') {
+    return (
+      <span className="channel-badge channel-send">
+        <span className="f-partner-chip" style={{ width: 16, height: 16, borderRadius: 4, marginRight: 6, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#fff', padding: 2 }}>
+          <img src="https://notifichedigitali.it/assets/logo_d7df1d4592.svg" alt="" width={12} height={12} style={{ display: 'block' }} />
+        </span>
+        SEND
+      </span>
+    );
+  }
+
   return (
     <span className={`channel-badge ${meta.cls}`}>
-      {meta.logo ? (
-        <img src={meta.logo} alt="" width={14} height={14} aria-hidden="true" />
-      ) : (
-        <i className={`fas ${meta.icon}`} aria-hidden="true"></i>
-      )}
+      <i className={`fas ${meta.icon}`} aria-hidden="true" style={{ marginRight: 6 }}></i>
       {meta.label}
     </span>
   );
@@ -199,6 +297,8 @@ export function App(): React.JSX.Element {
   const [loadingNotifications, setLoadingNotifications] = useState(false);
   const [errorNotifications, setErrorNotifications] = useState<string | null>(null);
   const [selectedNotif, setSelectedNotif] = useState<Notification | null>(null);
+  const [sendLegalFacts, setSendLegalFacts] = useState<Array<{ legalFactId: string; category: string }>>([]);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
   // Filtri pannello ricerca (client-side, nessuna nuova chiamata di rete)
   const [searchText, setSearchText] = useState('');
@@ -243,13 +343,20 @@ export function App(): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<'notifications' | 'profile'>('notifications');
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
-  // Chiudi il menu utente cliccando fuori
+  // Chiudi i menu cliccando fuori
   useEffect(() => {
-    if (!userMenuOpen) return;
-    const close = () => setUserMenuOpen(false);
-    document.addEventListener('click', close);
-    return () => document.removeEventListener('click', close);
-  }, [userMenuOpen]);
+    const handleDocumentClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (userMenuOpen && !target.closest('.fo-user-menu')) {
+        setUserMenuOpen(false);
+      }
+      if (showAdvancedFilters && !target.closest('.search-bar-wrap')) {
+        setShowAdvancedFilters(false);
+      }
+    };
+    document.addEventListener('click', handleDocumentClick);
+    return () => document.removeEventListener('click', handleDocumentClick);
+  }, [userMenuOpen, showAdvancedFilters]);
 
   // Simulated test citizens
   const testCitizens = [
@@ -351,9 +458,30 @@ export function App(): React.JSX.Element {
       const found = notifications.find(n => n.id === notifId);
       if (found) {
         setSelectedNotif(found);
+        return;
+      }
+    }
+    if (selectedNotif) {
+      const updated = notifications.find(n => n.id === selectedNotif.id);
+      if (updated && JSON.stringify(updated) !== JSON.stringify(selectedNotif)) {
+        setSelectedNotif(updated);
       }
     }
   }, [notifications]);
+
+  // Carica i documenti legali SEND quando si apre una notifica SEND con IUN
+  useEffect(() => {
+    if (!selectedNotif || selectedNotif.channelType !== 'SEND' || !selectedNotif.iun || !token) {
+      setSendLegalFacts([]);
+      return;
+    }
+    fetch(`${API_BASE}/citizen/notifications/${selectedNotif.id}/send-legal-facts`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    })
+      .then(r => r.ok ? r.json() : [])
+      .then((data: Array<{ legalFactId: string; category: string }>) => setSendLegalFacts(data))
+      .catch(() => setSendLegalFacts([]));
+  }, [selectedNotif?.id, selectedNotif?.channelType]);
 
   const handleLogout = (clientSideOnly = false) => {
     const currentToken = token;
@@ -514,6 +642,39 @@ export function App(): React.JSX.Element {
           setSelectedNotif(updatedData);
         }
       }
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  /**
+   * Scarica un documento legale (attestazione) dalla piattaforma SEND.
+   * Cerca prima il legalFact per categoria fra quelli caricati; se assente scarica il primo disponibile.
+   */
+  const handleDownloadSendDocument = async (notifId: string, iun: string, category?: string) => {
+    try {
+      const facts = sendLegalFacts.length > 0 ? sendLegalFacts : [];
+      const fact = category ? facts.find(f => f.category === category) ?? facts[0] : facts[0];
+      if (!fact) {
+        alert('Nessun documento legale disponibile dalla piattaforma SEND per questa notifica.');
+        return;
+      }
+      const url = `${API_BASE}/citizen/notifications/${notifId}/send-document?iun=${encodeURIComponent(iun)}&legalFactId=${encodeURIComponent(fact.legalFactId)}`;
+      const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+      if (res.status === 401) { handleLogout(true); return; }
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ message: 'Download fallito.' }));
+        throw new Error(body.message ?? 'Download fallito.');
+      }
+      const blob = await res.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = fact.legalFactId.split('/').pop() ?? `attestazione_${notifId.slice(0, 8)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(objectUrl);
     } catch (err: any) {
       alert(err.message);
     }
@@ -837,244 +998,541 @@ export function App(): React.JSX.Element {
       </nav>
 
       {/* Content Main */}
-      <main className="container py-4 flex-grow-1" style={{ backgroundColor: 'var(--bg-1)' }}>
+      <main className="container py-4" style={{ backgroundColor: 'var(--bg-1)' }}>
         
         {activeTab === 'notifications' && (
-          <div className={`notif-layout ${selectedNotif ? 'has-detail' : ''}`}>
+          <div className={`webmail-layout ${selectedNotif ? 'has-detail' : ''}`}>
 
-            {/* List of notifications (Left column) */}
-            <div className="notif-list-col">
-              <div className="card" style={{ height: '100%' }}>
-                <div className="card-pad" style={{ borderBottom: '1px solid var(--border-1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--sp-3)' }}>
-                  <h3 className="ms-h3" style={{ margin: 0 }}>
-                    <i className="far fa-envelope" style={{ color: 'var(--bi-primary)', marginRight: 8 }} aria-hidden="true"></i>
-                    Comunicazioni Ricevute
-                  </h3>
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={fetchNotifications} title="Aggiorna elenco">
-                    <i className="fas fa-sync-alt" aria-hidden="true"></i>
-                  </button>
-                </div>
-                <div className="card-pad" style={{ borderBottom: '1px solid var(--border-1)' }}>
-                  <div className="filters-grid">
-                    <div className="field">
-                      <label htmlFor="search-text">Cerca</label>
-                      <input
-                        id="search-text"
-                        type="text"
-                        className="input"
-                        placeholder="Nome o descrizione comunicazione"
-                        value={searchText}
-                        onChange={(e) => setSearchText(e.target.value)}
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="search-status">Stato</label>
-                      <select
-                        id="search-status"
-                        className="select"
-                        value={filterStatus}
-                        onChange={(e) => setFilterStatus(e.target.value as 'all' | 'sent' | 'pending' | 'failed')}
-                      >
-                        <option value="all">Tutti</option>
-                        <option value="sent">Ricevute</option>
-                        <option value="pending">In corso</option>
-                        <option value="failed">Non recapitate</option>
-                      </select>
-                    </div>
-                    <div className="field">
-                      <label htmlFor="search-channel">Canale</label>
-                      <select
-                        id="search-channel"
-                        className="select"
-                        value={filterChannel}
-                        onChange={(e) => setFilterChannel(e.target.value)}
-                      >
-                        <option value="all">Tutti</option>
-                        {availableChannels.map((c) => (
-                          <option key={c} value={c}>{CHANNEL_META[c]?.label ?? c}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="field">
-                      <label htmlFor="search-date-from">Dal</label>
-                      <input
-                        id="search-date-from"
-                        type="date"
-                        className="input"
-                        value={filterDateFrom}
-                        onChange={(e) => setFilterDateFrom(e.target.value)}
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="search-date-to">Al</label>
-                      <input
-                        id="search-date-to"
-                        type="date"
-                        className="input"
-                        value={filterDateTo}
-                        onChange={(e) => setFilterDateTo(e.target.value)}
-                      />
-                    </div>
-                    {hasActiveFilters && (
-                      <button type="button" className="btn btn-outline btn-sm" onClick={resetFilters}>
-                        <i className="fas fa-times" aria-hidden="true"></i> Azzera
-                      </button>
-                    )}
+            {/* List Pane (Left Column) */}
+            <div className="webmail-list-pane">
+              
+              {/* List Header: Search Bar & Refresh Button */}
+              <div className="webmail-list-title-bar">
+                <div className="search-bar-wrap" style={{ flex: 1 }}>
+                  <div className="search-input-container">
+                    <i className="fas fa-search search-icon" aria-hidden="true"></i>
+                    <input
+                      type="text"
+                      className="input search-input"
+                      placeholder="Cerca comunicazioni..."
+                      value={searchText}
+                      onChange={(e) => setSearchText(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className={`btn-filter-toggle ${hasActiveFilters ? 'active' : ''}`}
+                      onClick={() => setShowAdvancedFilters((o) => !o)}
+                      title="Filtri avanzati"
+                    >
+                      <i className="fas fa-sliders-h" aria-hidden="true"></i>
+                    </button>
                   </div>
-                </div>
-                <div className="card-body p-0">
-                  {errorNotifications && (
-                    <div className="alert alert-danger" style={{ margin: 'var(--sp-4)' }}>
-                      <i className="fas fa-exclamation-triangle alert-icon" aria-hidden="true"></i>
-                      <span>{errorNotifications}</span>
+
+                  {/* Advanced Filters Popover */}
+                  {showAdvancedFilters && (
+                    <div className="advanced-filters-popover card">
+                      <div className="card-pad vstack" style={{ gap: 'var(--sp-3)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <strong style={{ fontSize: '13px', color: 'var(--bi-navy)' }}>Filtri Avanzati</strong>
+                          {hasActiveFilters && (
+                            <button type="button" className="btn-link-reset" onClick={resetFilters} style={{ background: 'none', border: 'none', color: 'var(--bi-primary)', fontSize: '12px', cursor: 'pointer', fontWeight: 600 }}>
+                              Azzera filtri
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="field">
+                          <label htmlFor="search-status">Stato</label>
+                          <select
+                            id="search-status"
+                            className="select select-sm"
+                            value={filterStatus}
+                            onChange={(e) => setFilterStatus(e.target.value as 'all' | 'sent' | 'pending' | 'failed')}
+                          >
+                            <option value="all">Tutti gli stati</option>
+                            <option value="sent">Ricevuta / Scaricato</option>
+                            <option value="pending">In corso</option>
+                            <option value="failed">Non recapitata</option>
+                          </select>
+                        </div>
+
+                        <div className="field">
+                          <label htmlFor="search-channel">Canale</label>
+                          <select
+                            id="search-channel"
+                            className="select select-sm"
+                            value={filterChannel}
+                            onChange={(e) => setFilterChannel(e.target.value)}
+                          >
+                            <option value="all">Tutti i canali</option>
+                            {availableChannels.map((c) => (
+                              <option key={c} value={c}>{CHANNEL_META[c]?.label ?? c}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="field">
+                          <label htmlFor="search-date-from">Dal</label>
+                          <input
+                            id="search-date-from"
+                            type="date"
+                            className="input input-sm"
+                            value={filterDateFrom}
+                            onChange={(e) => setFilterDateFrom(e.target.value)}
+                          />
+                        </div>
+
+                        <div className="field">
+                          <label htmlFor="search-date-to">Al</label>
+                          <input
+                            id="search-date-to"
+                            type="date"
+                            className="input input-sm"
+                            value={filterDateTo}
+                            onChange={(e) => setFilterDateTo(e.target.value)}
+                          />
+                        </div>
+                      </div>
                     </div>
                   )}
+                </div>
 
-                  {loadingNotifications && notifications.length === 0 ? (
-                    <div className="notif-empty">
-                      <i className="fas fa-spinner fa-spin" aria-hidden="true"></i>
-                      <div>Caricamento comunicazioni...</div>
-                    </div>
-                  ) : notifications.length === 0 ? (
-                    <div className="notif-empty">
-                      <i className="far fa-folder-open" aria-hidden="true"></i>
-                      <p style={{ margin: 0 }}>Non ci sono comunicazioni per questo codice fiscale.</p>
-                    </div>
-                  ) : filteredNotifications.length === 0 ? (
-                    <div className="notif-empty">
-                      <i className="fas fa-filter-circle-xmark" aria-hidden="true"></i>
-                      <p style={{ margin: '0 0 var(--sp-3)' }}>Nessuna comunicazione corrisponde ai filtri.</p>
-                      <button type="button" className="btn btn-outline btn-sm" onClick={resetFilters}>Azzera filtri</button>
-                    </div>
-                  ) : (
-                    <div className="notif-list">
-                      {filteredNotifications.map((n) => {
-                        const isDownloaded = !!n.extraData?.['download_count'];
-                        const badge = statusBadge(n.status);
-                        return (
-                          <button
-                            key={n.id}
-                            className={`notif-list-item ${selectedNotif?.id === n.id ? 'selected' : ''}`}
-                            onClick={() => setSelectedNotif(n)}
-                          >
-                            <div className="notif-list-item-top">
-                              <span className="notif-date">
-                                <i className="far fa-calendar-alt" aria-hidden="true"></i> {new Date(n.createdAt).toLocaleDateString('it-IT')}
-                              </span>
-                              <span className={`status ${badge.cls}`}>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={fetchNotifications}
+                  title="Aggiorna elenco"
+                  style={{ padding: '8px', marginLeft: 8 }}
+                >
+                  <i className="fas fa-sync-alt" aria-hidden="true"></i>
+                </button>
+              </div>
+
+              {/* List Scroll Container */}
+              <div className="webmail-list-scroll">
+                {errorNotifications && (
+                  <div className="alert alert-danger" style={{ margin: 'var(--sp-3)' }}>
+                    <i className="fas fa-exclamation-triangle alert-icon" aria-hidden="true"></i>
+                    <span>{errorNotifications}</span>
+                  </div>
+                )}
+
+                {loadingNotifications && notifications.length === 0 ? (
+                  <div className="notif-empty">
+                    <i className="fas fa-spinner fa-spin" aria-hidden="true" style={{ fontSize: '1.2rem', marginBottom: 'var(--sp-2)' }}></i>
+                    <div>Caricamento...</div>
+                  </div>
+                ) : notifications.length === 0 ? (
+                  <div className="notif-empty">
+                    <i className="far fa-folder-open" aria-hidden="true" style={{ fontSize: '1.5rem', marginBottom: 'var(--sp-2)', color: 'var(--border-2)' }}></i>
+                    <p style={{ margin: 0 }}>Nessuna comunicazione.</p>
+                  </div>
+                ) : filteredNotifications.length === 0 ? (
+                  <div className="notif-empty">
+                    <i className="fas fa-filter" aria-hidden="true" style={{ fontSize: '1.5rem', marginBottom: 'var(--sp-2)', color: 'var(--border-2)' }}></i>
+                    <p style={{ margin: '0 0 var(--sp-2)' }}>Nessun risultato.</p>
+                    <button type="button" className="btn btn-outline btn-xs" onClick={resetFilters}>Azzera filtri</button>
+                  </div>
+                ) : (
+                  <div className="notif-list">
+                    {filteredNotifications.map((n) => {
+                      const isDownloaded = !!n.extraData?.['download_count'];
+                      const badge = statusBadge(n.status);
+                      const snippet = getTextSnippet(n.bodyHtml || n.bodyMarkdown || '');
+                      return (
+                        <button
+                          key={n.id}
+                          className={`notif-list-item ${selectedNotif?.id === n.id ? 'selected' : ''}`}
+                          onClick={() => setSelectedNotif(n)}
+                        >
+                          <div className="notif-list-item-top">
+                            <span className="notif-sender">Comune di Montesilvano</span>
+                            <span className="notif-date">
+                              {new Date(n.createdAt).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' })}
+                            </span>
+                          </div>
+                          <h4 className="notif-list-item-title">{n.subject || '—'}</h4>
+                          {snippet && <div className="notif-list-item-desc">{snippet}</div>}
+                          <div className="notif-list-item-meta">
+                            <ChannelBadge channel={n.channelType} />
+                            <div style={{ display: 'flex', gap: 'var(--sp-1)' }}>
+                              <span className={`status ${badge.cls}`} title={badge.label}>
                                 <span className="dot"></span>{badge.label}
                               </span>
-                            </div>
-                            <h4 className="notif-list-item-title">{n.subject || '—'}</h4>
-                            <div className="notif-list-item-meta">
-                              <ChannelBadge channel={n.channelType} />
                               {isDownloaded && (
-                                <span className="status status-notif-received">
-                                  <span className="dot"></span>Scaricato
+                                <span className="status status-notif-received" title="Scaricato">
+                                  <span className="dot" style={{ backgroundColor: 'var(--ms-info)' }}></span>Scaricato
                                 </span>
                               )}
                             </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Notification Detail (Right column, appears only if selected) */}
-            {selectedNotif && (
-              <div className="notif-detail-col">
-                <div className="avviso-card">
-                  <div className="avviso-header">
-                    <div>
-                      <span className="from">Mittente</span>
-                      <strong>{entityName}</strong>
-                    </div>
-                    <div className="notif-detail-actions">
+            {/* Detail Pane (Right Column) */}
+            <div className="webmail-detail-pane">
+              {selectedNotif ? (() => {
+                const physicalAddress = findPhysicalAddress(selectedNotif.extraData);
+                const isAnalogOrLegal = selectedNotif.channelType === 'POSTAL' || selectedNotif.channelType === 'SEND';
+                return (
+                  <div className="webmail-detail-container" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                    
+                    {/* Detail Header: Subject & Back button */}
+                    <div className="webmail-detail-header">
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm notif-back-btn"
                         onClick={() => setSelectedNotif(null)}
                       >
-                        <i className="fas fa-arrow-left" aria-hidden="true"></i> Torna alle comunicazioni
+                        <i className="fas fa-arrow-left" aria-hidden="true" style={{ marginRight: 6 }}></i> Indietro
                       </button>
+                      <div className="spacer"></div>
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm notif-close-btn"
                         onClick={() => setSelectedNotif(null)}
-                        title="Chiudi dettaglio"
+                        title="Chiudi messaggio"
                       >
                         <i className="fas fa-times" aria-hidden="true"></i>
                       </button>
                     </div>
-                  </div>
-                  <div className="avviso-body">
-                    <h3 className="ms-h3" style={{ marginBottom: 'var(--sp-3)' }}>{selectedNotif.subject || '—'}</h3>
-                    {selectedNotif.bodyHtml ? (
-                      <div
-                        style={{ color: 'var(--fg-2)', marginBottom: 'var(--sp-4)' }}
-                        dangerouslySetInnerHTML={{ __html: selectedNotif.bodyHtml }}
-                      />
-                    ) : (
-                      <div
-                        style={{ color: 'var(--fg-2)', marginBottom: 'var(--sp-4)' }}
-                        dangerouslySetInnerHTML={{ __html: renderAppIoMarkdown(selectedNotif.bodyMarkdown || '') }}
-                      />
-                    )}
 
-                    <div className="avviso-row">
-                      <span className="k">Canale di invio</span>
-                      <span className="v"><ChannelBadge channel={selectedNotif.channelType} /></span>
+                    {/* Detail Body Scroll area */}
+                    <div className="webmail-detail-scroll">
+                      <h2 className="webmail-subject">{selectedNotif.subject || '—'}</h2>
+
+                      {selectedNotif.channelType === 'SEND' ? (
+                        /* Modern Split Layout for SEND matching official portal */
+                        <div className="send-detail-grid">
+                          {/* Left Column: Metadata & Documents */}
+                          <div className="send-left-column">
+                            {/* Scheda di Spedizione Card */}
+                            <div className="send-card">
+                              <div className="send-card-header">
+                                <i className="fas fa-file-invoice" aria-hidden="true" style={{ marginRight: 8, color: 'var(--bi-navy)' }}></i>
+                                <strong>Dati di Spedizione Ufficiali</strong>
+                              </div>
+                              <div className="send-card-body">
+                                <div className="send-meta-row">
+                                  <span className="lbl">Mittente</span>
+                                  <span className="val">Comune di Montesilvano</span>
+                                </div>
+                                <div className="send-meta-row">
+                                  <span className="lbl">Destinatario</span>
+                                  <span className="val">{selectedNotif.fullName || name}</span>
+                                </div>
+                                <div className="send-meta-row">
+                                  <span className="lbl">Data di invio</span>
+                                  <span className="val">{new Date(selectedNotif.createdAt).toLocaleDateString('it-IT')}</span>
+                                </div>
+                                {selectedNotif.iun && (
+                                  <div className="send-meta-row">
+                                    <span className="lbl">Codice IUN</span>
+                                    <span className="val iun-code">{selectedNotif.iun}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Informational Recommendation Box */}
+                            <div className="send-banner-small">
+                              <i className="fas fa-info-circle" aria-hidden="true" style={{ marginRight: 8, color: '#0066cc', fontSize: '1.1rem', marginTop: 1 }}></i>
+                              <p style={{ margin: 0, fontSize: '0.85rem', lineHeight: '1.4', color: '#4a5568' }}>
+                                Questa comunicazione è stata notificata formalmente tramite la piattaforma nazionale <strong>SEND</strong>. Si raccomanda di accedere alla piattaforma ufficiale <a href="https://notifichedigitali.it/" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline', color: '#0066cc', fontWeight: 600 }}>SEND (https://notifichedigitali.it/)</a> per scaricare ufficialmente la notifica ed i relativi atti con pieno valore legale.
+                              </p>
+                            </div>
+
+                            {/* Documenti Allegati Card */}
+                            {selectedNotif.attachments && selectedNotif.attachments.length > 0 && (
+                              <div className="send-card">
+                                <div className="send-card-header">
+                                  <i className="fas fa-paperclip" aria-hidden="true" style={{ marginRight: 8, color: 'var(--bi-navy)' }}></i>
+                                  <strong>Documenti allegati</strong>
+                                </div>
+                                <div className="send-card-body">
+                                  <p className="send-card-note">I documenti sono disponibili online per 120 giorni dal perfezionamento della notifica.</p>
+                                  {selectedNotif.attachments.map((att) => (
+                                    <div key={att.index} className="send-attachment-link">
+                                      <i className="fas fa-file-pdf" style={{ color: '#e53e3e', marginRight: 8 }}></i>
+                                      <a
+                                        href="#"
+                                        onClick={(e) => { e.preventDefault(); handleDownloadAttachment(selectedNotif.id, att.index); }}
+                                        className="send-att-link-btn"
+                                      >
+                                        {att.label}
+                                      </a>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Avviso di Avvenuta Ricezione Card */}
+                            <div className="send-card">
+                              <div className="send-card-header">
+                                <i className="fas fa-stamp" aria-hidden="true" style={{ marginRight: 8, color: 'var(--bi-navy)' }}></i>
+                                <strong>Avviso di avvenuta ricezione</strong>
+                              </div>
+                              <div className="send-card-body">
+                                <p className="send-card-note">L'avviso di avvenuta ricezione è disponibile online per 10 anni dal perfezionamento della notifica.</p>
+                                <div className="send-attachment-link">
+                                  <i className="fas fa-file-signature" style={{ color: '#4a5568', marginRight: 8 }}></i>
+                                  <a
+                                    href="#"
+                                    onClick={(e) => { e.preventDefault(); handleDownloadSendDocument(selectedNotif.id, selectedNotif.iun!, 'ANALOG_DELIVERY_WORKFLOW'); }}
+                                    className="send-att-link-btn"
+                                  >
+                                    Avviso di avvenuta ricezione
+                                  </a>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Right Column: Timeline (Stato della Notifica) */}
+                          <div className="send-right-column">
+                            <h4 className="send-timeline-title">STATO DELLA NOTIFICA</h4>
+                            {selectedNotif.sendStatusHistory && selectedNotif.sendStatusHistory.length > 0 ? (
+                              <div className="send-timeline">
+                                {selectedNotif.sendStatusHistory
+                                  .slice()
+                                  .reverse()
+                                  .map((hist, index) => {
+                                    const dateObj = new Date(hist.activeFrom);
+                                    const timeStr = dateObj.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+                                    const monthStr = dateObj.toLocaleDateString('it-IT', { month: 'short' }).toUpperCase().replace('.', '');
+                                    const dayStr = dateObj.toLocaleDateString('it-IT', { day: 'numeric' });
+                                    const meta = getSendStatusMeta(hist.status);
+                                    return (
+                                      <div key={index} className="timeline-item">
+                                        <div className="timeline-date">
+                                          <span className="day">{dayStr}</span>
+                                          <span className="month">{monthStr}</span>
+                                        </div>
+                                        <div className="timeline-node-container">
+                                          <div className="timeline-line"></div>
+                                          <div className={`timeline-node ${hist.status === selectedNotif.sendStatus ? 'active' : ''}`}></div>
+                                        </div>
+                                        <div className="timeline-content">
+                                          <div className="timeline-time">{timeStr}</div>
+                                          <div className="timeline-badge-row">
+                                            <span className={`timeline-badge ${meta.cls}`}>
+                                              {meta.label}
+                                            </span>
+                                          </div>
+                                          <div className="timeline-desc">{meta.desc}</div>
+                                          {hist.status === 'VIEWED' && sendLegalFacts.length > 0 && (
+                                            <div className="timeline-attestation">
+                                              <i className="fas fa-paperclip" style={{ fontSize: '0.8rem', marginRight: 6, color: '#0066cc' }}></i>
+                                              <a href="#" onClick={(e) => { e.preventDefault(); handleDownloadSendDocument(selectedNotif.id, selectedNotif.iun!, 'NOTIFICATION_VIEWED'); }} className="att-link">
+                                                Attestazione opponibile a terzi: avvenuto accesso
+                                              </a>
+                                            </div>
+                                          )}
+                                          {hist.status === 'DELIVERED' && sendLegalFacts.length > 0 && (
+                                            <div className="timeline-attestation">
+                                              <i className="fas fa-paperclip" style={{ fontSize: '0.8rem', marginRight: 6, color: '#0066cc' }}></i>
+                                              <a href="#" onClick={(e) => { e.preventDefault(); handleDownloadSendDocument(selectedNotif.id, selectedNotif.iun!, 'DIGITAL_DELIVERY'); }} className="att-link">
+                                                Attestazione opponibile a terzi: notifica digitale
+                                              </a>
+                                            </div>
+                                          )}
+                                          {hist.status === 'ACCEPTED' && sendLegalFacts.length > 0 && (
+                                            <div className="timeline-attestation">
+                                              <i className="fas fa-paperclip" style={{ fontSize: '0.8rem', marginRight: 6, color: '#0066cc' }}></i>
+                                              <a href="#" onClick={(e) => { e.preventDefault(); handleDownloadSendDocument(selectedNotif.id, selectedNotif.iun!, 'SENDER_ACK'); }} className="att-link">
+                                                Attestazione opponibile a terzi: notifica presa in carico
+                                              </a>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                              </div>
+                            ) : (
+                              <div className="send-timeline-empty">
+                                <i className="fas fa-clock" style={{ fontSize: '1.5rem', color: '#cbd5e0', marginBottom: 8 }}></i>
+                                <p>Stato non ancora sincronizzato con la piattaforma SEND.</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        /* Standard Layout for POSTAL, EMAIL, PEC, APP_IO */
+                        <>
+                          {isAnalogOrLegal ? (
+                            /* Formal Notification Sheet for POSTAL */
+                            <div className="webmail-notification-sheet">
+                              <div className="sheet-header">
+                                <i className="fas fa-file-invoice" aria-hidden="true" style={{ color: 'var(--bi-navy)', marginRight: 8 }}></i>
+                                <strong>Scheda di Spedizione Ufficiale</strong>
+                              </div>
+                              <div className="sheet-body">
+                                <div className="sheet-row">
+                                  <span className="lbl">Mittente:</span>
+                                  <span className="val"><strong>{entityName}</strong></span>
+                                </div>
+                                <div className="sheet-row">
+                                  <span className="lbl">Destinatario:</span>
+                                  <span className="val">{selectedNotif.fullName || name} (Codice Fiscale: <code className="ms-mono">{selectedNotif.codiceFiscale || cf}</code>)</span>
+                                </div>
+                                {physicalAddress && (
+                                  <div className="sheet-row">
+                                    <span className="lbl">Indirizzo di recapito:</span>
+                                    <span className="val">{physicalAddress}</span>
+                                  </div>
+                                )}
+                                <div className="sheet-row">
+                                  <span className="lbl">Data Spedizione:</span>
+                                  <span className="val">{new Date(selectedNotif.createdAt).toLocaleString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                </div>
+                                <div className="sheet-row">
+                                  <span className="lbl">Canale di invio:</span>
+                                  <span className="val"><ChannelBadge channel={selectedNotif.channelType} /></span>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            /* Email Headers Card for EMAIL / PEC / APP_IO */
+                            <div className="webmail-envelope-meta">
+                              <div className="envelope-avatar">
+                                <i className={selectedNotif.channelType === 'APP_IO' ? 'fas fa-mobile-alt' : 'fas fa-envelope'} aria-hidden="true"></i>
+                              </div>
+                              <div className="envelope-fields">
+                                <div className="field-row">
+                                  <span className="label">Da:</span>
+                                  <span className="val"><strong>{entityName}</strong></span>
+                                </div>
+                                <div className="field-row">
+                                  <span className="label">A:</span>
+                                  <span className="val">
+                                    {selectedNotif.fullName || name}
+                                    {(selectedNotif.email || selectedNotif.pec) && ` <${selectedNotif.email || selectedNotif.pec}>`}
+                                    {` (Codice Fiscale: `}
+                                    <code className="ms-mono">{selectedNotif.codiceFiscale || cf}</code>
+                                    {`)`}
+                                  </span>
+                                </div>
+                                <div className="field-row">
+                                  <span className="label">Data:</span>
+                                  <span className="val">{new Date(selectedNotif.createdAt).toLocaleString('it-IT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                </div>
+                                <div className="field-row">
+                                  <span className="label">Canale:</span>
+                                  <span className="val"><ChannelBadge channel={selectedNotif.channelType} /></span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {isAnalogOrLegal ? (
+                            /* Informational notice for POSTAL / SEND */
+                            <div className="webmail-info-banner">
+                              <i className="fas fa-info-circle info-icon" aria-hidden="true" style={{ marginRight: 8 }}></i>
+                              <div className="info-text">
+                                {selectedNotif.channelType === 'SEND' ? (
+                                  <p style={{ margin: 0 }}>
+                                    Questa comunicazione è stata notificata formalmente tramite la piattaforma nazionale <strong>SEND (Piattaforma Notifiche Digitali)</strong> di pagoPA.
+                                    Si raccomanda di accedere alla piattaforma ufficiale <a href="https://notifichedigitali.it/" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline', color: 'inherit', fontWeight: 600 }}>SEND (https://notifichedigitali.it/)</a> per scaricare ufficialmente la notifica ed i relativi atti con pieno valore legale. I file ed allegati di cortesia sono comunque disponibili per il download anche tramite la sezione sottostante.
+                                  </p>
+                                ) : (
+                                  <p style={{ margin: 0 }}>
+                                    Questa comunicazione è stata spedita in formato cartaceo all'indirizzo fisico registrato del destinatario.
+                                    La copia informatica conforme del documento e gli allegati associati sono scaricabili tramite la sezione sottostante.
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            /* Message Body Content Card for EMAIL / PEC / APP_IO */
+                            <div className="webmail-body-card">
+                              {selectedNotif.bodyHtml ? (
+                                <div
+                                  className="webmail-body-content"
+                                  dangerouslySetInnerHTML={{ __html: selectedNotif.bodyHtml }}
+                                />
+                              ) : (
+                                <div
+                                  className="webmail-body-content"
+                                  dangerouslySetInnerHTML={{ __html: renderAppIoMarkdown(selectedNotif.bodyMarkdown || '') }}
+                                />
+                              )}
+                            </div>
+                          )}
+
+                          {/* Metadata summary (State and downloads) */}
+                          <div className="webmail-detail-status-bar">
+                            <div className="status-item">
+                              <span className="lbl">Stato Spedizione:</span>
+                              <span className={`status ${statusBadge(selectedNotif.status).cls}`}>
+                                <span className="dot"></span>{statusBadge(selectedNotif.status).label}
+                              </span>
+                            </div>
+                            {!!selectedNotif.extraData?.['download_count'] && (
+                              <div className="status-item">
+                                <span className="lbl">Download:</span>
+                                <span>
+                                  Scaricato {selectedNotif.extraData['download_count']} volte (ultimo il{' '}
+                                  {new Date(selectedNotif.extraData['downloaded_at']).toLocaleString('it-IT')})
+                                </span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Attachments Section */}
+                          {selectedNotif.attachments && selectedNotif.attachments.length > 0 && (
+                            <div className="webmail-attachments-section">
+                              <h4 className="attachments-title">
+                                <i className="fas fa-paperclip" aria-hidden="true" style={{ marginRight: 6 }}></i>
+                                Allegati ({selectedNotif.attachments.length})
+                              </h4>
+                              <div className="attachments-grid">
+                                {selectedNotif.attachments.map((att) => (
+                                  <div className="attachment-tile" key={att.index}>
+                                    <div className="tile-icon">
+                                      <i className="fas fa-file-pdf text-danger" aria-hidden="true"></i>
+                                    </div>
+                                    <div className="tile-info">
+                                      <span className="tile-name" title={att.label}>{att.label}</span>
+                                      <span className="tile-size">Allegato {att.index + 1}</span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className="btn btn-primary btn-sm tile-btn"
+                                      onClick={() => handleDownloadAttachment(selectedNotif.id, att.index)}
+                                    >
+                                      <i className="fas fa-download" aria-hidden="true"></i> Scarica
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
+
                     </div>
-                    <div className="avviso-row">
-                      <span className="k">Stato spedizione</span>
-                      <span className="v">
-                        <span className={`status ${statusBadge(selectedNotif.status).cls}`}>
-                          <span className="dot"></span>{statusBadge(selectedNotif.status).label}
-                        </span>
-                      </span>
-                    </div>
-                    <div className="avviso-row">
-                      <span className="k">Data generazione</span>
-                      <span className="v">{new Date(selectedNotif.createdAt).toLocaleString('it-IT')}</span>
-                    </div>
-                    {!!selectedNotif.extraData?.['download_count'] && (
-                      <div className="avviso-row">
-                        <span className="k">Download</span>
-                        <span className="v">
-                          {selectedNotif.extraData['download_count']} volte — ultimo il{' '}
-                          {new Date(selectedNotif.extraData['downloaded_at']).toLocaleString('it-IT')}
-                        </span>
-                      </div>
-                    )}
                   </div>
-                  <div className="avviso-actions">
-                    {selectedNotif.attachments.length === 0 ? (
-                      <button
-                        type="button"
-                        className="btn btn-primary"
-                        onClick={() => handleDownloadAttachment(selectedNotif.id, 0)}
-                      >
-                        <i className="fas fa-file-pdf" aria-hidden="true"></i> Scarica documento
-                      </button>
-                    ) : (
-                      selectedNotif.attachments.map((att) => (
-                        <button
-                          key={att.index}
-                          type="button"
-                          className="btn btn-primary"
-                          onClick={() => handleDownloadAttachment(selectedNotif.id, att.index)}
-                        >
-                          <i className="fas fa-file-pdf" aria-hidden="true"></i> Scarica allegato {att.index + 1}: {att.label}
-                        </button>
-                      ))
-                    )}
+                );
+              })() : (
+                /* Empty state / placeholder when no communication is selected */
+                <div className="webmail-placeholder">
+                  <div className="placeholder-content">
+                    <div className="placeholder-icon-circle">
+                      <i className="far fa-envelope-open" aria-hidden="true"></i>
+                    </div>
+                    <h3>Seleziona una comunicazione</h3>
+                    <p>Scegli una voce dall'elenco a sinistra per visualizzarne i dettagli, leggere il contenuto e scaricare gli allegati ufficiali.</p>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
           </div>
         )}

@@ -11,51 +11,45 @@ export function Footer({ entityName, logoUrl, version }: FooterProps): React.JSX
   return (
     <footer className="site-footer mt-auto">
       <div className="container">
-        <div className="f-top">
-          <div className="f-ident">
+        <div className="f-compact-row">
+          <div className="f-left">
             {logoUrl ? (
               <img src={logoUrl} alt={entityName} className="stemma" />
             ) : (
-              <i className="fas fa-landmark stemma" style={{ fontSize: '2.2rem', color: '#94a3b8' }} aria-hidden="true"></i>
+              <i className="fas fa-landmark stemma" style={{ fontSize: '1.6rem', color: '#94a3b8' }} aria-hidden="true"></i>
             )}
-            <div>
-              <div className="title">{entityName}</div>
+            <div className="f-info">
+              <div className="title">{entityName} <span style={{ color: '#64748b', fontWeight: 'normal', marginLeft: 4 }}>— ComunicaPA</span></div>
               <div className="sub">
-                ComunicaPA — Notifiche e comunicazioni istituzionali ai cittadini
+                © {new Date().getFullYear()} Tutti i diritti riservati{version ? ` (${version})` : ''}
               </div>
             </div>
           </div>
-          <div className="f-help">
-            <span className="f-help-lbl">Accesso</span>
-            <span>Area riservata con identità digitale <strong style={{ color: '#fff' }}>SPID / CIE</strong></span>
+
+          <div className="f-center">
+            <span className="lbl">Servizi collegati</span>
+            <div className="chips">
+              <a href="https://ioapp.it" target="_blank" rel="noopener noreferrer" className="f-partner-link">
+                <span className="f-partner-chip"><img src="https://ioapp.it/assets/IO_84d780c485.svg" alt="" width={12} height={12} /></span>
+                App IO
+              </a>
+              <a href="https://www.notifichedigitali.it" target="_blank" rel="noopener noreferrer" className="f-partner-link">
+                <span className="f-partner-chip"><img src="https://notifichedigitali.it/assets/logo_d7df1d4592.svg" alt="" width={12} height={12} /></span>
+                SEND
+              </a>
+              <a href="https://www.pagopa.it" target="_blank" rel="noopener noreferrer" className="f-partner-link">
+                <img src="https://www.pagopa.gov.it/assets/images/logo-pagopa-bianco.svg" alt="PagoPA" height={12} style={{ marginLeft: 4 }} />
+              </a>
+            </div>
           </div>
-        </div>
-      </div>
-      <div className="f-partners">
-        <div className="container">
-          <span className="f-partners-lbl">Servizi collegati</span>
-          <a href="https://ioapp.it" target="_blank" rel="noopener noreferrer" className="f-partner-link">
-            <span className="f-partner-chip"><img src="https://ioapp.it/assets/IO_84d780c485.svg" alt="" width={16} height={16} /></span>
-            App IO
-          </a>
-          <a href="https://www.notifichedigitali.it" target="_blank" rel="noopener noreferrer" className="f-partner-link">
-            <span className="f-partner-chip"><img src="https://notifichedigitali.it/assets/logo_d7df1d4592.svg" alt="" width={16} height={16} /></span>
-            SEND — Notifiche Digitali
-          </a>
-          <a href="https://www.pagopa.it" target="_blank" rel="noopener noreferrer" className="f-partner-link">
-            <img src="https://www.pagopa.gov.it/assets/images/logo-pagopa-bianco.svg" alt="PagoPA" height={16} />
-          </a>
-        </div>
-      </div>
-      <div className="f-bottom">
-        <div className="container">
-          <div>
-            © {new Date().getFullYear()} {entityName} — ComunicaPA
-            {version ? ` (${version})` : ''}
-          </div>
-          <div className="f-legal">
-            <a href="https://www.spid.gov.it" target="_blank" rel="noopener noreferrer">Cos'è SPID</a>
-            <a href="https://www.cartaidentita.interno.gov.it" target="_blank" rel="noopener noreferrer">Cos'è CIE</a>
+
+          <div className="f-right">
+            <span className="lbl">Identità Digitale</span>
+            <div className="links">
+              <a href="https://www.spid.gov.it" target="_blank" rel="noopener noreferrer">Cos'è SPID</a>
+              <span className="dot-sep">•</span>
+              <a href="https://www.cartaidentita.interno.gov.it" target="_blank" rel="noopener noreferrer">Cos'è CIE</a>
+            </div>
           </div>
         </div>
       </div>

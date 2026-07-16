@@ -10,6 +10,7 @@ export class NotificationsSearchController {
 
   @Get()
   search(
+    @Query('query') query?: string,
     @Query('codiceFiscale') codiceFiscale?: string,
     @Query('campaignId') campaignId?: string,
     @Query('channelType') channelType?: string,
@@ -20,6 +21,7 @@ export class NotificationsSearchController {
     @Query('pageSize') pageSize = '50',
   ) {
     return this.svc.search({
+      query,
       codiceFiscale,
       campaignId,
       channelType,
