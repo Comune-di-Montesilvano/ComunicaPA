@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import type { Job } from 'bullmq';
 import { AppIoVerificationJob, AppIoVerificationJobStatus } from '../entities/app-io-verification-job.entity';
+import { IoServiceConfig } from '../entities/io-service-config.entity';
 import { IoServicesService } from './io-services.service';
 import { parseCsvContent, buildCsvContent } from './csv.util';
 import { APP_IO_VERIFY_BULK_QUEUE, AppIoVerifyBulkJobData } from './app-io-verify-bulk-job.types';
@@ -26,6 +27,8 @@ export class AppIoVerifyBulkProcessor extends WorkerHost {
   constructor(
     @InjectRepository(AppIoVerificationJob)
     private readonly jobRepo: Repository<AppIoVerificationJob>,
+    @InjectRepository(IoServiceConfig)
+    private readonly ioServiceRepo: Repository<IoServiceConfig>,
     private readonly ioServices: IoServicesService,
   ) {
     super();
@@ -42,6 +45,11 @@ export class AppIoVerifyBulkProcessor extends WorkerHost {
     await this.jobRepo.update(jobId, { status: AppIoVerificationJobStatus.PROCESSING });
 
     try {
+      const service = await this.ioServiceRepo.findOneBy({ id: record.ioServiceId });
+      if (!service || !service.apiKeyPrimariaEnc) {
+        throw new Error(`Servizio App IO selezionato (${record.ioServiceId}) non trovato o senza chiave API configurata`);
+      }
+
       const parsed = parseCsvContent(record.sourceCsv, record.hasHeaders);
       const presentRows: Record<string, string>[] = [];
       const absentRows: Record<string, string>[] = [];

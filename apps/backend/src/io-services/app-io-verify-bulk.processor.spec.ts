@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { AppIoVerifyBulkProcessor, isPresentResult } from './app-io-verify-bulk.processor';
 import { AppIoVerificationJob, AppIoVerificationJobStatus } from '../entities/app-io-verification-job.entity';
+import { IoServiceConfig } from '../entities/io-service-config.entity';
 import { IoServicesService } from './io-services.service';
 
 describe('isPresentResult', () => {
@@ -16,6 +17,7 @@ describe('isPresentResult', () => {
 describe('AppIoVerifyBulkProcessor', () => {
   let processor: AppIoVerifyBulkProcessor;
   const jobRepoMock = { findOneBy: jest.fn(), update: jest.fn() };
+  const ioServiceRepoMock = { findOneBy: jest.fn() };
   const ioServicesMock = { verifyProfile: jest.fn() };
 
   beforeEach(async () => {
@@ -24,6 +26,7 @@ describe('AppIoVerifyBulkProcessor', () => {
       providers: [
         AppIoVerifyBulkProcessor,
         { provide: getRepositoryToken(AppIoVerificationJob), useValue: jobRepoMock },
+        { provide: getRepositoryToken(IoServiceConfig), useValue: ioServiceRepoMock },
         { provide: IoServicesService, useValue: ioServicesMock },
       ],
     }).compile();
@@ -38,6 +41,7 @@ describe('AppIoVerifyBulkProcessor', () => {
       cfColumn: 'cf',
       ioServiceId: 'svc-1',
     });
+    ioServiceRepoMock.findOneBy.mockResolvedValue({ id: 'svc-1', apiKeyPrimariaEnc: 'enc:v1:xxx' });
     ioServicesMock.verifyProfile.mockImplementation(async (cf: string) => {
       if (cf === 'RSSMRA85M01H501Z') return { success: true, active: true, message: 'Iscritto ad App IO e messaggi abilitati' };
       return { success: true, active: false, message: 'Cittadino non iscritto ad App IO' };
@@ -59,7 +63,7 @@ describe('AppIoVerifyBulkProcessor', () => {
     expect(patch.resultAbsentCsv).toContain('VRDLGI80A01H501W');
   });
 
-  it('marca FAILED se verifyProfile lancia un errore non gestito (es. servizio cancellato a metà job)', async () => {
+  it('marca FAILED se il servizio App IO scelto non esiste più o non ha una chiave configurata (check pre-loop, nessuna riga processata)', async () => {
     jobRepoMock.findOneBy.mockResolvedValue({
       id: 'job-2',
       sourceCsv: 'cf\nRSSMRA85M01H501Z',
@@ -67,15 +71,13 @@ describe('AppIoVerifyBulkProcessor', () => {
       cfColumn: 'cf',
       ioServiceId: 'svc-deleted',
     });
-    ioServicesMock.verifyProfile.mockRejectedValue(new Error('boom'));
+    ioServiceRepoMock.findOneBy.mockResolvedValue(null);
 
     await processor.process({ data: { jobId: 'job-2' } } as any);
 
-    // Un errore per-riga viene assorbito come "assente" (stesso trattamento
-    // degli errori di rete già gestiti dentro verifyProfile), il job non va
-    // in FAILED per un singolo fallimento di riga.
-    const doneCall = jobRepoMock.update.mock.calls.find(([, patch]) => patch.status === AppIoVerificationJobStatus.DONE);
-    expect(doneCall).toBeDefined();
-    expect(doneCall[1].absentCount).toBe(1);
+    expect(ioServicesMock.verifyProfile).not.toHaveBeenCalled();
+    const failedCall = jobRepoMock.update.mock.calls.find(([, patch]) => patch.status === AppIoVerificationJobStatus.FAILED);
+    expect(failedCall).toBeDefined();
+    expect(failedCall[1].errorMessage).toContain('svc-deleted');
   });
 });
