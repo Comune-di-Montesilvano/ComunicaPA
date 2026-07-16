@@ -16,6 +16,8 @@ describe('CampaignsController', () => {
     getDownloadReportRows: jest.fn(),
     getSendStatusBreakdown: jest.fn(),
     getSendReportRows: jest.fn(),
+    getPostalStatusBreakdown: jest.fn(),
+    getPostalReportRows: jest.fn(),
     findOne: jest.fn().mockResolvedValue({ id: 'uuid-1', name: 'Test Campaign' }),
   };
 
@@ -208,6 +210,32 @@ describe('CampaignsController', () => {
       await controller.exportSendReportStorico('c1', res);
       expect(res.setHeader).toHaveBeenCalledWith('Content-Disposition', expect.stringContaining('report_send_storico_campagna_c1'));
       expect(res.send).toHaveBeenCalledWith(expect.stringContaining('Data Accettazione'));
+    });
+  });
+
+  describe('postal status endpoints', () => {
+    it('getPostalStatusBreakdown delega al service', async () => {
+      mockService.getPostalStatusBreakdown = jest.fn().mockResolvedValue([{ status: 'Consegnato', count: 3 }]);
+      const result = await controller.getPostalStatusBreakdown('c1');
+      expect(mockService.getPostalStatusBreakdown).toHaveBeenCalledWith('c1');
+      expect(result).toEqual([{ status: 'Consegnato', count: 3 }]);
+    });
+
+    it('exportPostalReportAttuale scrive CSV con header e content-disposition corretti', async () => {
+      mockService.getPostalReportRows = jest.fn().mockResolvedValue({ hasAppIoCoDelivery: false, rows: [] });
+      const res: any = { setHeader: jest.fn(), send: jest.fn() };
+      await controller.exportPostalReportAttuale('c1', res);
+      expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/csv; charset=utf-8');
+      expect(res.setHeader).toHaveBeenCalledWith('Content-Disposition', expect.stringContaining('report_postal_attuale_campagna_c1'));
+      expect(res.send).toHaveBeenCalledWith(expect.stringContaining('Codice Fiscale'));
+    });
+
+    it('exportPostalReportStorico scrive CSV con header e content-disposition corretti', async () => {
+      mockService.getPostalReportRows = jest.fn().mockResolvedValue({ hasAppIoCoDelivery: false, rows: [] });
+      const res: any = { setHeader: jest.fn(), send: jest.fn() };
+      await controller.exportPostalReportStorico('c1', res);
+      expect(res.setHeader).toHaveBeenCalledWith('Content-Disposition', expect.stringContaining('report_postal_storico_campagna_c1'));
+      expect(res.send).toHaveBeenCalledWith(expect.stringContaining('Data Accettato'));
     });
   });
 });

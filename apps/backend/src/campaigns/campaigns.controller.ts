@@ -32,6 +32,7 @@ import { getUploadsDir } from '../attachments/attachment-paths';
 import { buildNeverDownloadedCsv } from './never-downloaded-csv.util';
 import { buildDownloadReportCsv } from './download-report-csv.util';
 import { buildSendReportAttualeCsv, buildSendReportStoricoCsv } from './send-report-csv.util';
+import { buildPostalReportAttualeCsv, buildPostalReportStoricoCsv } from './postal-report-csv.util';
 import {
   assembleChunkedUpload,
   chunkUploadDir,
@@ -563,6 +564,27 @@ export class CampaignsController {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="report_send_storico_campagna_${id.slice(0, 8)}.csv"`);
     res.send(buildSendReportStoricoCsv(report));
+  }
+
+  @Get(':id/postal-status-breakdown')
+  getPostalStatusBreakdown(@Param('id', ParseUUIDPipe) id: string) {
+    return this.campaignsService.getPostalStatusBreakdown(id);
+  }
+
+  @Get(':id/export-postal-report-attuale.csv')
+  async exportPostalReportAttuale(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response): Promise<void> {
+    const report = await this.campaignsService.getPostalReportRows(id);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="report_postal_attuale_campagna_${id.slice(0, 8)}.csv"`);
+    res.send(buildPostalReportAttualeCsv(report));
+  }
+
+  @Get(':id/export-postal-report-storico.csv')
+  async exportPostalReportStorico(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response): Promise<void> {
+    const report = await this.campaignsService.getPostalReportRows(id);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="report_postal_storico_campagna_${id.slice(0, 8)}.csv"`);
+    res.send(buildPostalReportStoricoCsv(report));
   }
 
   @Delete(':id')
