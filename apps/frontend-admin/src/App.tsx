@@ -504,6 +504,23 @@ export function App(): React.JSX.Element {
   const [verificaCf, setVerificaCf] = useState('');
   const [verificaLoading, setVerificaLoading] = useState(false);
   const [verificaResult, setVerificaResult] = useState<{ success: boolean; active: boolean; message: string } | null>(null);
+  const [verificaTab, setVerificaTab] = useState<'singola' | 'massiva'>('singola');
+  const [verificaBulkFile, setVerificaBulkFile] = useState<File | null>(null);
+  const [verificaBulkHasHeaders, setVerificaBulkHasHeaders] = useState(true);
+  const [verificaBulkHeaders, setVerificaBulkHeaders] = useState<string[]>([]);
+  const [verificaBulkCfColumn, setVerificaBulkCfColumn] = useState('');
+  const [verificaBulkServiceId, setVerificaBulkServiceId] = useState('');
+  const [verificaBulkJobId, setVerificaBulkJobId] = useState<string | null>(null);
+  const [verificaBulkStatus, setVerificaBulkStatus] = useState<{
+    status: 'queued' | 'processing' | 'done' | 'failed';
+    totalRows: number;
+    processedRows: number;
+    presentCount: number;
+    absentCount: number;
+    errorMessage: string | null;
+  } | null>(null);
+  const [verificaBulkSubmitting, setVerificaBulkSubmitting] = useState(false);
+  const [verificaBulkSubmitError, setVerificaBulkSubmitError] = useState<string | null>(null);
 
   const runNotificationSearch = async (page = searchPage) => {
     setSearchLoading(true);
@@ -1267,6 +1284,124 @@ export function App(): React.JSX.Element {
     } finally {
       setVerificaLoading(false);
     }
+  };
+
+  useEffect(() => {
+    const def = ioServices.find(s => s.isDefault);
+    if (def) setVerificaBulkServiceId(def.id);
+    else if (ioServices.length > 0) setVerificaBulkServiceId(ioServices[0].id);
+  }, [ioServices]);
+
+  const parseVerificaBulkHeaders = (file: File, hasHeaders: boolean) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      if (!text) return;
+      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+      if (lines.length === 0) { setVerificaBulkHeaders([]); return; }
+      const parseCsvLineLocal = (line: string) => {
+        const result: string[] = [];
+        let current = '';
+        let inQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i];
+          if (char === '"') inQuotes = !inQuotes;
+          else if ((char === ',' || char === ';') && !inQuotes) { result.push(current.trim()); current = ''; }
+          else current += char;
+        }
+        result.push(current.trim());
+        return result.map(col => col.replace(/^"(.*)"$/, '$1'));
+      };
+      const firstLineCols = parseCsvLineLocal(lines[0]);
+      const headers = hasHeaders ? firstLineCols : firstLineCols.map((_, idx) => `Colonna ${idx + 1}`);
+      setVerificaBulkHeaders(headers);
+      const guessed = headers.find(h => ['codicefiscale', 'cf'].includes(h.toLowerCase().replace(/[\s_-]/g, '')));
+      setVerificaBulkCfColumn(guessed || '');
+    };
+    reader.readAsText(file);
+  };
+
+  const handleVerificaBulkFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setVerificaBulkFile(file);
+    setVerificaBulkJobId(null);
+    setVerificaBulkStatus(null);
+    setVerificaBulkSubmitError(null);
+    parseVerificaBulkHeaders(file, verificaBulkHasHeaders);
+  };
+
+  const handleVerificaBulkSubmit = async () => {
+    if (!verificaBulkFile || !verificaBulkCfColumn || !verificaBulkServiceId) return;
+    setVerificaBulkSubmitting(true);
+    setVerificaBulkSubmitError(null);
+    try {
+      const csvContent = await verificaBulkFile.text();
+      const res = await apiFetch('/io-services/verify-bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          csvContent,
+          hasHeaders: verificaBulkHasHeaders,
+          cfColumn: verificaBulkCfColumn,
+          ioServiceId: verificaBulkServiceId,
+        }),
+      });
+      const data = await res.json();
+      if (data.blocked) {
+        setVerificaBulkSubmitError(data.message || 'Richiesta bloccata');
+        return;
+      }
+      setVerificaBulkJobId(data.jobId);
+      setVerificaBulkStatus({ status: 'queued', totalRows: 0, processedRows: 0, presentCount: 0, absentCount: 0, errorMessage: null });
+    } catch (err: any) {
+      setVerificaBulkSubmitError(err.message || 'Errore di connessione');
+    } finally {
+      setVerificaBulkSubmitting(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!verificaBulkJobId) return;
+    if (verificaBulkStatus?.status === 'done' || verificaBulkStatus?.status === 'failed') return;
+    const timer = setInterval(async () => {
+      try {
+        const res = await apiFetch(`/io-services/verify-bulk/${verificaBulkJobId}`);
+        const data = await res.json();
+        setVerificaBulkStatus(data);
+      } catch {
+        // errore transitorio di polling: riprova al giro successivo
+      }
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [verificaBulkJobId, verificaBulkStatus?.status]);
+
+  const handleVerificaBulkDownload = async (variant: 'present' | 'absent') => {
+    if (!verificaBulkJobId) return;
+    try {
+      const res = await apiFetch(`/io-services/verify-bulk/${verificaBulkJobId}/${variant}.csv`);
+      if (!res.ok) { alert('Errore durante il download'); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `verifica_appio_${variant === 'present' ? 'presenti' : 'assenti'}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Errore durante il download');
+    }
+  };
+
+  const handleVerificaBulkReset = () => {
+    setVerificaBulkFile(null);
+    setVerificaBulkHeaders([]);
+    setVerificaBulkCfColumn('');
+    setVerificaBulkJobId(null);
+    setVerificaBulkStatus(null);
+    setVerificaBulkSubmitError(null);
   };
 
   const fetchCampaigns = async () => {
@@ -6122,79 +6257,210 @@ export function App(): React.JSX.Element {
           )}
 
           {view === 'verifica-appio' && (
-            <div style={{ maxWidth: '600px', margin: '0 auto' }}>
+            <div style={{ maxWidth: '700px', margin: '0 auto' }}>
               <h3 className="h5 fw-bold text-dark mb-3">
                 <i className="fas fa-user-check me-2"></i>Verifica Stato App IO
               </h3>
-              <p className="small text-muted mb-4">
-                Inserisci il codice fiscale di un cittadino per verificare in tempo reale se ha installato App IO, se è attivo sul canale ed eventualmente se ha abilitato i messaggi inviati dall'Ente. Utile ad esempio per la ricerca degli irreperibili.
-              </p>
 
-              <div className="card shadow-sm p-4 mb-4">
-                <div className="mb-3">
-                  <label className="form-label small fw-bold">Codice Fiscale</label>
-                  <div className="input-group input-group-sm">
-                    <span className="input-group-text"><i className="fas fa-id-card"></i></span>
-                    <input
-                      type="text"
-                      className="form-control"
-                      placeholder="Inserisci il codice fiscale (16 caratteri)"
-                      maxLength={16}
-                      value={verificaCf}
-                      onChange={e => setVerificaCf(e.target.value.toUpperCase().trim())}
-                      onKeyDown={e => { if (e.key === 'Enter') runVerificaAppIo(); }}
-                    />
-                    <button
-                      className="btn btn-primary"
-                      type="button"
-                      onClick={runVerificaAppIo}
-                      disabled={verificaLoading || !verificaCf.trim()}
-                    >
-                      {verificaLoading ? (
-                        <>
-                          <i className="fas fa-spinner fa-spin me-1"></i>Verifica...
-                        </>
-                      ) : (
-                        <>
-                          <i className="fas fa-search me-1"></i>Verifica
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
+              <ul className="nav nav-tabs mb-4">
+                <li className="nav-item">
+                  <button className={`nav-link ${verificaTab === 'singola' ? 'active' : ''}`} onClick={() => setVerificaTab('singola')}>
+                    Verifica singola
+                  </button>
+                </li>
+                <li className="nav-item">
+                  <button className={`nav-link ${verificaTab === 'massiva' ? 'active' : ''}`} onClick={() => setVerificaTab('massiva')}>
+                    Verifica massiva CSV
+                  </button>
+                </li>
+              </ul>
 
-                {verificaResult && (
-                  <div className={`mt-3 p-3 border rounded ${
-                    !verificaResult.success ? 'border-danger bg-light' : 
-                    !verificaResult.active ? 'border-secondary bg-light' : 
-                    verificaResult.message.includes('disabilitati') ? 'border-warning bg-light' : 
-                    'border-success bg-light'
-                  }`}>
-                    <div className="d-flex align-items-start gap-3">
-                      <div style={{ fontSize: '1.8rem' }}>
-                        {!verificaResult.success ? (
-                          <i className="fas fa-circle-exclamation text-danger"></i>
-                        ) : !verificaResult.active ? (
-                          <i className="fas fa-circle-xmark text-secondary"></i>
-                        ) : verificaResult.message.includes('disabilitati') ? (
-                          <i className="fas fa-circle-exclamation text-warning"></i>
-                        ) : (
-                          <i className="fas fa-circle-check text-success"></i>
-                        )}
-                      </div>
-                      <div>
-                        <h6 className="fw-bold mb-1">
-                          {!verificaResult.success ? 'Errore di sistema' : 
-                           !verificaResult.active ? 'Cittadino non attivo' : 
-                           verificaResult.message.includes('disabilitati') ? 'Attivo con restrizioni' : 
-                           'Cittadino attivo su App IO'}
-                        </h6>
-                        <p className="small text-muted mb-0">{verificaResult.message}</p>
+              {verificaTab === 'singola' && (
+                <>
+                  <p className="small text-muted mb-4">
+                    Inserisci il codice fiscale di un cittadino per verificare in tempo reale se ha installato App IO, se è attivo sul canale ed eventualmente se ha abilitato i messaggi inviati dall'Ente. Utile ad esempio per la ricerca degli irreperibili.
+                  </p>
+
+                  <div className="card shadow-sm p-4 mb-4">
+                    <div className="mb-3">
+                      <label className="form-label small fw-bold">Codice Fiscale</label>
+                      <div className="input-group input-group-sm">
+                        <span className="input-group-text"><i className="fas fa-id-card"></i></span>
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="Inserisci il codice fiscale (16 caratteri)"
+                          maxLength={16}
+                          value={verificaCf}
+                          onChange={e => setVerificaCf(e.target.value.toUpperCase().trim())}
+                          onKeyDown={e => { if (e.key === 'Enter') runVerificaAppIo(); }}
+                        />
+                        <button
+                          className="btn btn-primary"
+                          type="button"
+                          onClick={runVerificaAppIo}
+                          disabled={verificaLoading || !verificaCf.trim()}
+                        >
+                          {verificaLoading ? (
+                            <>
+                              <i className="fas fa-spinner fa-spin me-1"></i>Verifica...
+                            </>
+                          ) : (
+                            <>
+                              <i className="fas fa-search me-1"></i>Verifica
+                            </>
+                          )}
+                        </button>
                       </div>
                     </div>
+
+                    {verificaResult && (
+                      <div className={`mt-3 p-3 border rounded ${
+                        !verificaResult.success ? 'border-danger bg-light' :
+                        !verificaResult.active ? 'border-secondary bg-light' :
+                        verificaResult.message.includes('disabilitati') ? 'border-warning bg-light' :
+                        'border-success bg-light'
+                      }`}>
+                        <div className="d-flex align-items-start gap-3">
+                          <div style={{ fontSize: '1.8rem' }}>
+                            {!verificaResult.success ? (
+                              <i className="fas fa-circle-exclamation text-danger"></i>
+                            ) : !verificaResult.active ? (
+                              <i className="fas fa-circle-xmark text-secondary"></i>
+                            ) : verificaResult.message.includes('disabilitati') ? (
+                              <i className="fas fa-circle-exclamation text-warning"></i>
+                            ) : (
+                              <i className="fas fa-circle-check text-success"></i>
+                            )}
+                          </div>
+                          <div>
+                            <h6 className="fw-bold mb-1">
+                              {!verificaResult.success ? 'Errore di sistema' :
+                               !verificaResult.active ? 'Cittadino non attivo' :
+                               verificaResult.message.includes('disabilitati') ? 'Attivo con restrizioni' :
+                               'Cittadino attivo su App IO'}
+                            </h6>
+                            <p className="small text-muted mb-0">{verificaResult.message}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                </>
+              )}
+
+              {verificaTab === 'massiva' && (
+                <div className="card shadow-sm p-4 mb-4">
+                  <p className="small text-muted mb-3">
+                    Carica un CSV con un elenco di codici fiscali: la verifica gira in background (può richiedere alcuni minuti su elenchi ampi) e produce due CSV scaricabili, con le stesse colonne del file originale — destinatari raggiungibili su App IO e tutti gli altri.
+                  </p>
+
+                  {!verificaBulkJobId && (
+                    <>
+                      <div className="mb-3">
+                        <label className="form-label small fw-bold">Servizio App IO da usare per la verifica</label>
+                        <select className="form-select form-select-sm" value={verificaBulkServiceId} onChange={e => setVerificaBulkServiceId(e.target.value)}>
+                          {ioServices.map(s => (
+                            <option key={s.id} value={s.id}>{s.nome}{s.isDefault ? ' (predefinito)' : ''}</option>
+                          ))}
+                        </select>
+                        <div className="form-text small text-muted">
+                          I messaggi abilitati/disabilitati sono specifici per servizio: usa lo stesso servizio che userai per l'invio reale, altrimenti il risultato non è affidabile.
+                        </div>
+                      </div>
+
+                      <div className="mb-3">
+                        <div className="form-check form-check-inline">
+                          <input className="form-check-input" type="checkbox" id="verificaBulkHasHeaders" checked={verificaBulkHasHeaders}
+                            onChange={e => {
+                              setVerificaBulkHasHeaders(e.target.checked);
+                              if (verificaBulkFile) parseVerificaBulkHeaders(verificaBulkFile, e.target.checked);
+                            }} />
+                          <label className="form-check-label small" htmlFor="verificaBulkHasHeaders">Il file ha una riga di intestazione</label>
+                        </div>
+                      </div>
+
+                      <div className="mb-3">
+                        <label className="form-label small fw-bold">File CSV</label>
+                        <input type="file" accept=".csv" className="form-control form-control-sm" onChange={handleVerificaBulkFileChange} />
+                      </div>
+
+                      {verificaBulkHeaders.length > 0 && (
+                        <div className="mb-3">
+                          <label className="form-label small fw-bold">Colonna Codice Fiscale</label>
+                          <select className="form-select form-select-sm" value={verificaBulkCfColumn} onChange={e => setVerificaBulkCfColumn(e.target.value)}>
+                            <option value="">— seleziona —</option>
+                            {verificaBulkHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                          </select>
+                        </div>
+                      )}
+
+                      {verificaBulkSubmitError && (
+                        <div className="alert alert-danger small">{verificaBulkSubmitError}</div>
+                      )}
+
+                      <button
+                        className="btn btn-primary btn-sm"
+                        type="button"
+                        onClick={handleVerificaBulkSubmit}
+                        disabled={verificaBulkSubmitting || !verificaBulkFile || !verificaBulkCfColumn || !verificaBulkServiceId}
+                      >
+                        {verificaBulkSubmitting ? (
+                          <><i className="fas fa-spinner fa-spin me-1"></i>Avvio...</>
+                        ) : (
+                          <><i className="fas fa-play me-1"></i>Avvia verifica</>
+                        )}
+                      </button>
+                    </>
+                  )}
+
+                  {verificaBulkJobId && verificaBulkStatus && (
+                    <div>
+                      {(verificaBulkStatus.status === 'queued' || verificaBulkStatus.status === 'processing') && (
+                        <>
+                          <p className="small text-muted mb-2">
+                            Verifica in corso: {verificaBulkStatus.processedRows} / {verificaBulkStatus.totalRows || '…'} righe processate.
+                          </p>
+                          <div className="progress" style={{ height: '8px' }}>
+                            <div
+                              className="progress-bar"
+                              style={{ width: verificaBulkStatus.totalRows > 0 ? `${Math.round((verificaBulkStatus.processedRows / verificaBulkStatus.totalRows) * 100)}%` : '5%' }}
+                            />
+                          </div>
+                        </>
+                      )}
+
+                      {verificaBulkStatus.status === 'done' && (
+                        <>
+                          <div className="alert alert-success small">
+                            Verifica completata: <strong>{verificaBulkStatus.presentCount}</strong> presenti, <strong>{verificaBulkStatus.absentCount}</strong> assenti.
+                          </div>
+                          <div className="d-flex gap-2 mb-3">
+                            <button className="btn btn-sm btn-outline-success" onClick={() => handleVerificaBulkDownload('present')}>
+                              <i className="fas fa-file-csv me-1"></i>Scarica presenti
+                            </button>
+                            <button className="btn btn-sm btn-outline-secondary" onClick={() => handleVerificaBulkDownload('absent')}>
+                              <i className="fas fa-file-csv me-1"></i>Scarica assenti
+                            </button>
+                          </div>
+                        </>
+                      )}
+
+                      {verificaBulkStatus.status === 'failed' && (
+                        <div className="alert alert-danger small">
+                          Verifica fallita: {verificaBulkStatus.errorMessage || 'errore sconosciuto'}
+                        </div>
+                      )}
+
+                      {(verificaBulkStatus.status === 'done' || verificaBulkStatus.status === 'failed') && (
+                        <button className="btn btn-sm btn-outline-primary" onClick={handleVerificaBulkReset}>
+                          <i className="fas fa-rotate-left me-1"></i>Nuova verifica
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
