@@ -210,7 +210,14 @@ export class NotificationProcessor extends WorkerHost {
       if (primaryResult) {
         await this.attemptRepo.update(attemptId, { responsePayload });
         if (channel === 'POSTAL' && primaryResult.messageId) {
-          await this.attemptRepo.update(attemptId, { postalTrackingId: primaryResult.messageId });
+          const statoIniziale = (primaryResult.responsePayload as Record<string, unknown> | undefined)?.['stato'] as string | undefined;
+          await this.attemptRepo.update(attemptId, {
+            postalTrackingId: primaryResult.messageId,
+            ...(statoIniziale ? {
+              postalStatus: statoIniziale,
+              postalStatusHistory: [{ stato: statoIniziale, rilevatoIl: new Date().toISOString() }],
+            } : {}),
+          });
         }
       }
 

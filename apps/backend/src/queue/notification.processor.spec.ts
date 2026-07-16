@@ -307,6 +307,26 @@ describe('NotificationProcessor', () => {
       expect(mockAttemptRepo.update).toHaveBeenCalledWith('att-1', expect.objectContaining({ postalTrackingId: 'IDPRO123' }));
     });
 
+    it('scrive subito postalStatus="Accettato" e il primo elemento di postalStatusHistory dopo un invio POSTAL riuscito', async () => {
+      await processor.process(mockJob(postalData));
+
+      expect(mockAttemptRepo.update).toHaveBeenCalledWith('att-1', expect.objectContaining({
+        postalStatus: 'Accettato',
+        postalStatusHistory: [{ stato: 'Accettato', rilevatoIl: expect.any(String) }],
+      }));
+    });
+
+    it('usa lo stato reale da responsePayload.stato invece di un valore fisso "Accettato"', async () => {
+      mockPostalStrategy.send.mockResolvedValue({ messageId: 'IDPRO123', responsePayload: { stato: 'Sospeso', idPro: 'IDPRO123' } });
+
+      await processor.process(mockJob(postalData));
+
+      expect(mockAttemptRepo.update).toHaveBeenCalledWith('att-1', expect.objectContaining({
+        postalStatus: 'Sospeso',
+        postalStatusHistory: [{ stato: 'Sospeso', rilevatoIl: expect.any(String) }],
+      }));
+    });
+
     it('NON scrive postalTrackingId per canali diversi da POSTAL', async () => {
       await processor.process(mockJob(baseData));
 
