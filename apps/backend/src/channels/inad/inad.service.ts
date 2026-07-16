@@ -3,11 +3,24 @@ import { AppSettingsService } from '../../settings/app-settings.service';
 import type { SettingKey } from '../../settings/settings.registry';
 import { PdndAuthService, type PdndEnvironment } from '../../pdnd/pdnd-auth.service';
 
+const INAD_BASE_URL = 'https://api.inad.gov.it/rest/inad/v1/domiciliodigitale';
+const PRACTICAL_REFERENCE = 'comunicapa-verifica-domicilio';
+
+export interface InadDigitalAddressElement {
+  digitalAddress: string;
+  practicedProfession?: string;
+  usageInfo: { motivation: 'CESSAZIONE_UFFICIO' | 'CESSAZIONE_VOLONTARIA'; dateEndValidity: string };
+}
+
+export interface InadExtractResult {
+  found: boolean;
+  data?: { codiceFiscale: string; since: string; digitalAddress: InadDigitalAddressElement[] };
+}
+
 /**
- * Scaffolding per l'integrazione INAD (Indice Nazionale Domicili Digitali).
- * TODO: logica di integrazione da implementare quando saranno disponibili le
- * specifiche INAD e sarà approvata la finalità PDND corrispondente. Non è
- * ancora un canale di invio notifiche — non registrato in CHANNEL_STRATEGIES.
+ * Integrazione INAD (Indice Nazionale Domicili Digitali). Solo interrogazione
+ * singola per ora (GET /extract/{cf}), sempre in prod, nessuna persistenza —
+ * la logica "domicilio eletto = canale unico" è fase successiva.
  */
 @Injectable()
 export class InadService {
@@ -22,5 +35,21 @@ export class InadService {
       throw new Error(`Configurazione INAD (${env}) incompleta: purposeId non impostato`);
     }
     return this.pdndAuth.getVoucher(env, purposeId);
+  }
+
+  async extractDigitalAddress(codiceFiscale: string): Promise<InadExtractResult> {
+    const voucher = await this.getVoucher('prod');
+    const url = `${INAD_BASE_URL}/extract/${codiceFiscale}?practicalReference=${PRACTICAL_REFERENCE}`;
+    const response = await fetch(url, { headers: { Authorization: `Bearer ${voucher}` } });
+
+    if (response.status === 404) {
+      return { found: false };
+    }
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`INAD extract fallito: HTTP ${response.status} — ${text.slice(0, 500)}`);
+    }
+    const data = JSON.parse(text) as InadExtractResult['data'];
+    return { found: true, data };
   }
 }
