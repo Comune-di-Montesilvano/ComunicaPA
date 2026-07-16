@@ -6,6 +6,7 @@ import { NotificationAttempt } from '../../entities/notification-attempt.entity'
 import { AppSettingsService } from '../../settings/app-settings.service';
 import type { SettingKey } from '../../settings/settings.registry';
 import { PdndAuthService } from '../../pdnd/pdnd-auth.service';
+import { extractSendStatusHistory, extractSendDigitalDomicile } from './send-status-history.util';
 
 const BATCH_SIZE = 200;
 const TERMINAL_STATUSES = ['VIEWED', 'EFFECTIVE_DATE', 'UNREACHABLE', 'CANCELLED', 'RETURNED_TO_SENDER', 'REFUSED'];
@@ -119,6 +120,8 @@ export class SendStatusSyncService {
         if (data.notificationStatus && data.notificationStatus !== attempt.sendStatus) {
           attempt.sendStatus = data.notificationStatus;
           attempt.sendStatusUpdatedAt = new Date();
+          attempt.sendStatusHistory = extractSendStatusHistory(data);
+          attempt.sendDigitalDomicile = extractSendDigitalDomicile(data);
           await this.attemptRepo.save(attempt);
         }
       } catch (err: any) {

@@ -112,13 +112,22 @@ describe('SendStatusSyncService', () => {
     expect(mockRepo.save).toHaveBeenCalledWith(attempt);
   });
 
-  it('updateStatuses: aggiorna sendStatus da GET notifications/sent/{iun}', async () => {
+  it('updateStatuses: aggiorna sendStatus, storico e domicilio digitale da GET notifications/sent/{iun}', async () => {
     const attempt: any = { id: 'a1', iun: 'IUN-123', sendStatus: 'ACCEPTED' };
     const qb = makeQueryBuilder([attempt]);
     mockRepo.createQueryBuilder.mockReturnValue(qb);
     mockFetch.mockResolvedValue({
       ok: true,
-      text: () => Promise.resolve(JSON.stringify({ notificationStatus: 'DELIVERED' })),
+      text: () => Promise.resolve(JSON.stringify({
+        notificationStatus: 'DELIVERED',
+        notificationStatusHistory: [
+          { status: 'ACCEPTED', activeFrom: '2026-01-10T10:00:00Z' },
+          { status: 'DELIVERED', activeFrom: '2026-01-12T09:00:00Z' },
+        ],
+        timeline: [
+          { category: 'SEND_DIGITAL_DOMICILE', details: { digitalAddress: { type: 'PEC', address: 'x@pec.it' }, digitalAddressSource: 'PLATFORM' } },
+        ],
+      })),
     });
 
     await service.updateStatuses();
@@ -128,6 +137,11 @@ describe('SendStatusSyncService', () => {
       expect.objectContaining({ headers: { 'x-api-key': 'apikey-abc', Authorization: 'Bearer voucher-abc' } }),
     );
     expect(attempt.sendStatus).toBe('DELIVERED');
+    expect(attempt.sendStatusHistory).toEqual([
+      { status: 'ACCEPTED', activeFrom: '2026-01-10T10:00:00Z' },
+      { status: 'DELIVERED', activeFrom: '2026-01-12T09:00:00Z' },
+    ]);
+    expect(attempt.sendDigitalDomicile).toEqual({ type: 'PEC', address: 'x@pec.it', source: 'PLATFORM' });
     expect(mockRepo.save).toHaveBeenCalledWith(attempt);
     expect(qb.orderBy).toHaveBeenCalledWith('attempt.created_at', 'ASC');
   });
