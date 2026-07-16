@@ -87,6 +87,9 @@ export class NotificationAttempt {
   @Column({ name: 'postal_status_updated_at', type: 'timestamptz', nullable: true })
   postalStatusUpdatedAt!: Date | null;
 
+  @Column({ type: 'jsonb', name: 'postal_status_history', nullable: true })
+  postalStatusHistory!: Array<{ stato: string; rilevatoIl: string }> | null;
+
   @Column({ name: 'error_message', type: 'text', nullable: true })
   errorMessage!: string | null;
 
