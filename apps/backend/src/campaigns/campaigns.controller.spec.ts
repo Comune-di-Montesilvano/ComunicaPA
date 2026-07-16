@@ -14,6 +14,8 @@ describe('CampaignsController', () => {
     getFailuresByReason: jest.fn(),
     retryRecipientsBulk: jest.fn(),
     getDownloadReportRows: jest.fn(),
+    getSendStatusBreakdown: jest.fn(),
+    getSendReportRows: jest.fn(),
     findOne: jest.fn().mockResolvedValue({ id: 'uuid-1', name: 'Test Campaign' }),
   };
 
@@ -180,6 +182,32 @@ describe('CampaignsController', () => {
       expect(mockService.getDownloadReportRows).toHaveBeenCalledWith('uuid-1');
       expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/csv; charset=utf-8');
       expect(res.send).toHaveBeenCalledWith(expect.stringContaining('AAA1'));
+    });
+  });
+
+  describe('send status endpoints', () => {
+    it('getSendStatusBreakdown delega al service', async () => {
+      mockService.getSendStatusBreakdown = jest.fn().mockResolvedValue([{ status: 'DELIVERED', count: 3 }]);
+      const result = await controller.getSendStatusBreakdown('c1');
+      expect(mockService.getSendStatusBreakdown).toHaveBeenCalledWith('c1');
+      expect(result).toEqual([{ status: 'DELIVERED', count: 3 }]);
+    });
+
+    it('exportSendReportAttuale scrive CSV con header e content-disposition corretti', async () => {
+      mockService.getSendReportRows = jest.fn().mockResolvedValue({ hasAppIoCoDelivery: false, rows: [] });
+      const res: any = { setHeader: jest.fn(), send: jest.fn() };
+      await controller.exportSendReportAttuale('c1', res);
+      expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/csv; charset=utf-8');
+      expect(res.setHeader).toHaveBeenCalledWith('Content-Disposition', expect.stringContaining('report_send_attuale_campagna_c1'));
+      expect(res.send).toHaveBeenCalledWith(expect.stringContaining('Codice Fiscale'));
+    });
+
+    it('exportSendReportStorico scrive CSV con header e content-disposition corretti', async () => {
+      mockService.getSendReportRows = jest.fn().mockResolvedValue({ hasAppIoCoDelivery: false, rows: [] });
+      const res: any = { setHeader: jest.fn(), send: jest.fn() };
+      await controller.exportSendReportStorico('c1', res);
+      expect(res.setHeader).toHaveBeenCalledWith('Content-Disposition', expect.stringContaining('report_send_storico_campagna_c1'));
+      expect(res.send).toHaveBeenCalledWith(expect.stringContaining('Data Accettazione'));
     });
   });
 });

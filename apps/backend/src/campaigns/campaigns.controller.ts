@@ -31,6 +31,7 @@ import { PreviewMessageDto } from './dto/preview-message.dto';
 import { getUploadsDir } from '../attachments/attachment-paths';
 import { buildNeverDownloadedCsv } from './never-downloaded-csv.util';
 import { buildDownloadReportCsv } from './download-report-csv.util';
+import { buildSendReportAttualeCsv, buildSendReportStoricoCsv } from './send-report-csv.util';
 import {
   assembleChunkedUpload,
   chunkUploadDir,
@@ -541,6 +542,27 @@ export class CampaignsController {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="report_download_campagna_${id.slice(0, 8)}.csv"`);
     res.send(buildDownloadReportCsv(rows));
+  }
+
+  @Get(':id/send-status-breakdown')
+  getSendStatusBreakdown(@Param('id', ParseUUIDPipe) id: string) {
+    return this.campaignsService.getSendStatusBreakdown(id);
+  }
+
+  @Get(':id/export-send-report-attuale.csv')
+  async exportSendReportAttuale(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response): Promise<void> {
+    const report = await this.campaignsService.getSendReportRows(id);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="report_send_attuale_campagna_${id.slice(0, 8)}.csv"`);
+    res.send(buildSendReportAttualeCsv(report));
+  }
+
+  @Get(':id/export-send-report-storico.csv')
+  async exportSendReportStorico(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response): Promise<void> {
+    const report = await this.campaignsService.getSendReportRows(id);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="report_send_storico_campagna_${id.slice(0, 8)}.csv"`);
+    res.send(buildSendReportStoricoCsv(report));
   }
 
   @Delete(':id')
