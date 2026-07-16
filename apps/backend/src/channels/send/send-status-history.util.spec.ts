@@ -17,6 +17,10 @@ describe('extractSendStatusHistory', () => {
   it('ritorna array vuoto se notificationStatusHistory è assente', () => {
     expect(extractSendStatusHistory({})).toEqual([]);
   });
+
+  it('non lancia se un elemento di notificationStatusHistory è null', () => {
+    expect(() => extractSendStatusHistory({ notificationStatusHistory: [null, { status: 'ACCEPTED', activeFrom: '2026-01-10T10:00:00Z' }] })).not.toThrow();
+  });
 });
 
 describe('extractSendDigitalDomicile', () => {

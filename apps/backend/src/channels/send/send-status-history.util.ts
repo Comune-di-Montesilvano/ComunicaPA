@@ -17,7 +17,7 @@ export interface SendDigitalDomicile {
 export function extractSendStatusHistory(data: unknown): SendStatusHistoryEntry[] {
   const history = (data as { notificationStatusHistory?: unknown })?.notificationStatusHistory;
   if (!Array.isArray(history)) return [];
-  return history.map((h: any) => ({ status: h.status, activeFrom: h.activeFrom }));
+  return history.map((h: any) => ({ status: h?.status, activeFrom: h?.activeFrom }));
 }
 
 /**
