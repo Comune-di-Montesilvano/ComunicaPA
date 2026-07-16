@@ -1,4 +1,4 @@
-# Tracking avanzamento SEND: barra stato + report CSV dedicato
+# Tracking avanzamento SEND: barra stato + report CSV dedicati (attuale/storico)
 
 ## Contesto
 
@@ -67,61 +67,82 @@ Segmento aggiuntivo grigio "In attesa" per `status === null`.
 Fetch on mount/refresh insieme agli altri dati campagna (stesso pattern
 di `fetchChannelBreakdown`).
 
-## Backend — CSV export dedicato
+## Backend — CSV export dedicato (2 varianti)
 
-Nuovo endpoint `GET /admin/campaigns/:id/export-send-report.csv`,
-sostituisce (solo per campagne SEND) l'endpoint generico nel bottone
-frontend — `handleExportDownloadReport` sceglie l'URL in base a
-`campaign.channelType`.
+Il vecchio `export-download-report.csv` generico sparisce per le campagne
+SEND (il conteggio download non è un dato significativo qui: l'accesso
+del cittadino è già tracciato meglio dallo stato `VIEWED`). Due nuovi
+endpoint sostituiscono il bottone unico nel dettaglio campagna:
 
-Query: tutti i recipient della campagna con ultimo `NotificationAttempt`
-(stesso pattern `getRecipientStats`/`getDownloadReportRows` già in
-`campaigns.service.ts`), proiettando anche `sendStatusHistory` e
-`sendDigitalDomicile`.
+- `GET /admin/campaigns/:id/export-send-report-attuale.csv` — foto
+  istantanea, un solo stato+data per destinatario.
+- `GET /admin/campaigns/:id/export-send-report-storico.csv` — tutte le
+  date per tutti gli stati attraversati.
 
-Colonne CSV (`;`-separated, stesso stile `download-report-csv.util.ts`),
-tutte con intestazione italiana:
+`handleExportDownloadReport` sceglie l'URL in base a
+`campaign.channelType`; per SEND diventa un menu/dropdown a due voci
+("Esporta Attuale" / "Esporta Storico") invece di un bottone singolo.
+
+Query comune: tutti i recipient della campagna con ultimo
+`NotificationAttempt` (stesso pattern `getRecipientStats`/
+`getDownloadReportRows` già in `campaigns.service.ts`), proiettando anche
+`sendStatusHistory`, `sendDigitalDomicile` e — se la campagna ha
+co-consegna App IO configurata (`resolveSecondaryAppIoConfig`, stesso
+helper di `getChannelBreakdown()`) — `responsePayload.appIo` del primo
+attempt (`attemptNumber = 1`, stesso vincolo già documentato in
+`getChannelBreakdown()`: il segnale App IO esiste solo lì, mai sui retry).
+
+### CSV "Attuale"
+
+Colonne (`;`-separated, stesso stile `download-report-csv.util.ts`):
 
 | Colonna | Fonte |
 |---|---|
 | Codice Fiscale | recipient |
 | Nominativo | recipient |
 | IUN | attempt.iun |
-| Stato Attuale | label italiana da mapping stati (vedi sotto), non stato grezzo PN |
 | Tipo Domicilio Digitale | `send_digital_domicile.type`, italianizzato (PEC / SERCQ / App IO / SMS / Email / Raccomandata cartacea) |
 | Indirizzo Domicilio | `send_digital_domicile.address` |
-| Data In Validazione | history → `activeFrom` per status `IN_VALIDATION` |
-| Data Accettazione | history → `ACCEPTED` |
-| Data Rifiuto | history → `REFUSED` |
-| Data In Consegna | history → `DELIVERING` |
-| Data Consegna | history → `DELIVERED` |
-| Data Visualizzazione | history → `VIEWED` |
-| Data Perfezionamento | history → `EFFECTIVE_DATE` |
-| Data Irreperibilità | history → `UNREACHABLE` |
-| Data Annullamento | history → `CANCELLED` |
-| Data Restituzione al Mittente | history → `RETURNED_TO_SENDER` |
+| Stato | label italiana da mapping stati (vedi sotto), non stato grezzo PN |
+| Data Stato | `activeFrom` dell'ultima voce di `send_status_history` (= stato corrente) |
+| Esito App IO | solo se co-consegna configurata sulla campagna: "Consegnato"/"Fallito: \<errore\>"/vuoto se non ancora tentato; colonna assente (non solo vuota) se la campagna non ha co-consegna App IO |
 
-`PAID` escluso (deprecato in V26, mai valorizzato per notifiche nuove).
-Colonne data vuote se lo stato non è presente in `send_status_history`
-(mai raggiunto). Date formattate `it-IT`/`Europe/Rome` come CSV esistente.
+### CSV "Storico"
 
-Mapping stati italiano per "Stato Attuale": riutilizza le stesse label di
-`SEND_STATUS_META` (già italiane) — da centralizzare in un util condiviso
-backend (nuovo `send-status-labels.util.ts`, mirror del mapping frontend)
-per evitare hardcoding duplicato nel CSV builder.
+Stesse colonne identificative (CF, Nominativo, IUN, Tipo/Indirizzo
+Domicilio, Esito App IO se applicabile) + una colonna data fissa per
+ciascuno dei 10 stati (PAID escluso, deprecato in V26):
+
+Data In Validazione, Data Accettazione, Data Rifiuto, Data In Consegna,
+Data Consegna, Data Visualizzazione, Data Perfezionamento, Data
+Irreperibilità, Data Annullamento, Data Restituzione al Mittente —
+ciascuna da `send_status_history` → `activeFrom` per quello stato,
+vuota se mai raggiunto.
+
+Date formattate `it-IT`/`Europe/Rome` come CSV esistente in entrambe le
+varianti.
+
+Mapping stati italiano per "Stato"/"Stato Attuale": riutilizza le stesse
+label di `SEND_STATUS_META` (già italiane) — da centralizzare in un util
+condiviso backend (nuovo `send-status-labels.util.ts`, mirror del
+mapping frontend) per evitare hardcoding duplicato nei due CSV builder.
 
 ## Edge case
 
-- Attempt senza IUN risolto (`iun IS NULL`): CSV mostra "In attesa
-  accettazione" come Stato Attuale, tutte le colonne data vuote.
+- Attempt senza IUN risolto (`iun IS NULL`): CSV "Attuale" mostra "In
+  attesa accettazione" come Stato, Data Stato vuota; CSV "Storico" tutte
+  le colonne data vuote.
 - Attempt `REFUSED` prima di ottenere IUN (via `resolveMissingIun`, righe
   82-87 di `send-status-sync.service.ts`): non ha `notificationStatusHistory`
   da PN (mai stato accettato) — colonna "Data Rifiuto" resta vuota anche se
-  `sendStatus = REFUSED`; solo "Stato Attuale" riporta il rifiuto. Nota
-  esplicita nel CSV non necessaria (comportamento coerente con "mai
+  `sendStatus = REFUSED`; solo "Stato"/"Stato Attuale" riporta il rifiuto.
+  Nota esplicita nel CSV non necessaria (comportamento coerente con "mai
   raggiunto quello stato via history ufficiale").
-- Campagna con 0 attempt SEND ancora processati: barra vuota / CSV con
-  sole righe "In attesa".
+- Campagna con 0 attempt SEND ancora processati: barra vuota / entrambi i
+  CSV con sole righe "In attesa".
+- Campagna senza co-consegna App IO: colonna "Esito App IO" omessa da
+  entrambi i CSV (non generata vuota) — evita colonne fantasma su
+  campagne che non hanno mai configurato la co-consegna.
 
 ## Testing
 
@@ -130,7 +151,9 @@ per evitare hardcoding duplicato nel CSV builder.
   `sendDigitalDomicile` da una risposta mock con `timeline`/
   `notificationStatusHistory` realistici (fixture basata su esempio
   spec PN).
-- Nuovo `send-report-csv.util.spec.ts`: verifica colonne data vuote per
-  stati non raggiunti, mapping italiano stati/domicilio, escaping CSV.
-- `campaigns.controller.spec.ts`: nuovo endpoint breakdown + export,
-  verifica 403/404 se campagna non SEND o non trovata.
+- Nuovo `send-report-csv.util.spec.ts`: verifica per entrambe le varianti
+  (attuale/storico) colonne data vuote per stati non raggiunti, mapping
+  italiano stati/domicilio, colonna Esito App IO presente solo se
+  co-consegna configurata, escaping CSV.
+- `campaigns.controller.spec.ts`: nuovi endpoint breakdown + export
+  (attuale/storico), verifica 403/404 se campagna non SEND o non trovata.
