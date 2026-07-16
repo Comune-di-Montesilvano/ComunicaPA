@@ -60,10 +60,7 @@ export class TestIoServiceDto {
   codiceFiscale!: string;
 }
 
-export class VerifyBulkDto {
-  @IsString() @MinLength(1)
-  csvContent!: string;
-
+export class VerifyBulkCompleteDto {
   @IsBoolean()
   hasHeaders!: boolean;
 

@@ -281,6 +281,7 @@ async function uploadFileInChunks(
   filename: string,
   onProgress: (loadedBytes: number) => void,
   onCompleteStart?: () => void,
+  completeBody?: Record<string, unknown>,
 ): Promise<any> {
   const totalChunks = Math.max(1, Math.ceil(file.size / UPLOAD_CHUNK_SIZE));
 
@@ -311,7 +312,10 @@ async function uploadFileInChunks(
 
   const completeRes = await fetch(`${baseUrl}/complete/${uploadId}`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
+    headers: completeBody
+      ? { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+      : { Authorization: `Bearer ${token}` },
+    body: completeBody ? JSON.stringify(completeBody) : undefined,
   });
   if (!completeRes.ok) {
     const errBody = await completeRes.json().catch(() => null);
@@ -1336,18 +1340,19 @@ export function App(): React.JSX.Element {
     setVerificaBulkSubmitting(true);
     setVerificaBulkSubmitError(null);
     try {
-      const csvContent = await verificaBulkFile.text();
-      const res = await apiFetch('/io-services/verify-bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          csvContent,
+      const data = await uploadFileInChunks(
+        `${ADMIN_API_BASE}/io-services/verify-bulk/upload`,
+        token!,
+        verificaBulkFile,
+        verificaBulkFile.name,
+        () => {},
+        undefined,
+        {
           hasHeaders: verificaBulkHasHeaders,
           cfColumn: verificaBulkCfColumn,
           ioServiceId: verificaBulkServiceId,
-        }),
-      });
-      const data = await res.json();
+        },
+      );
       if (data.blocked) {
         setVerificaBulkSubmitError(data.message || 'Richiesta bloccata');
         return;

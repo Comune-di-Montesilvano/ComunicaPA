@@ -1,9 +1,13 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Put, Res } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Put, Res, UseInterceptors } from '@nestjs/common';
 import type { Response } from 'express';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import * as fs from 'fs';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { IoServicesService } from './io-services.service';
 import { AppIoVerifyBulkService } from './app-io-verify-bulk.service';
-import { CreateIoServiceDto, UpdateIoServiceDto, TestIoServiceDto, VerifyBulkDto } from './dto/io-service.dto';
+import { CreateIoServiceDto, UpdateIoServiceDto, TestIoServiceDto, VerifyBulkCompleteDto } from './dto/io-service.dto';
+import { initChunkedUpload, chunkUploadDir, assembleChunkedUpload, cleanupChunkedUpload, MAX_CHUNK_SIZE_BYTES } from '../campaigns/chunked-upload.util';
 
 @Controller('admin/io-services')
 export class IoServicesController {
@@ -57,11 +61,62 @@ export class IoServicesController {
     return this.svc.verifyProfile(body.codiceFiscale);
   }
 
-  @Post('verify-bulk')
+  @Post('verify-bulk/upload/init')
+  @Roles('user', 'admin')
+  initVerifyBulkUpload(@Body() body: { filename?: string; totalChunks?: number }): { uploadId: string } {
+    const filename = body.filename?.trim();
+    const totalChunks = Number(body.totalChunks);
+    if (!filename || !Number.isInteger(totalChunks) || totalChunks < 1) {
+      throw new BadRequestException('filename e totalChunks (intero >= 1) richiesti');
+    }
+    return { uploadId: initChunkedUpload(filename, totalChunks) };
+  }
+
+  @Post('verify-bulk/upload/chunk/:uploadId/:index')
+  @Roles('user', 'admin')
+  @UseInterceptors(
+    FileInterceptor('chunk', {
+      storage: diskStorage({
+        destination: (req, _file, cb) => {
+          const dir = chunkUploadDir(req.params['uploadId'] as string);
+          if (!fs.existsSync(dir)) {
+            cb(new BadRequestException('Sessione di upload non trovata o scaduta'), '');
+            return;
+          }
+          cb(null, dir);
+        },
+        filename: (req, _file, cb) => {
+          cb(null, `${req.params['index']}.part`);
+        },
+      }),
+      limits: { fileSize: MAX_CHUNK_SIZE_BYTES },
+    }),
+  )
+  uploadVerifyBulkChunk(): { ok: true } {
+    return { ok: true };
+  }
+
+  @Post('verify-bulk/upload/complete/:uploadId')
   @Roles('user', 'admin')
   @HttpCode(HttpStatus.OK)
-  createVerifyBulk(@Body() body: VerifyBulkDto) {
-    return this.bulkSvc.createJob(body);
+  async completeVerifyBulkUpload(
+    @Param('uploadId') uploadId: string,
+    @Body() body: VerifyBulkCompleteDto,
+  ) {
+    try {
+      const { path } = await assembleChunkedUpload(uploadId);
+      const csvContent = await fs.promises.readFile(path, 'utf-8');
+      return await this.bulkSvc.createJob({
+        csvContent,
+        hasHeaders: body.hasHeaders,
+        cfColumn: body.cfColumn,
+        ioServiceId: body.ioServiceId,
+      });
+    } catch (err: any) {
+      return { blocked: true, message: err?.message ?? 'Errore durante il riassemblaggio del CSV' };
+    } finally {
+      cleanupChunkedUpload(uploadId);
+    }
   }
 
   @Get('verify-bulk/:id')
