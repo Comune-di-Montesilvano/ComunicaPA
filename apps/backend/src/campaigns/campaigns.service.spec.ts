@@ -1817,3 +1817,106 @@ describe('CampaignsService.getSendStatusBreakdown / getSendReportRows', () => {
   });
 });
 
+describe('CampaignsService.getPostalStatusBreakdown / getPostalReportRows', () => {
+  const campaignRepoMock = { findOneBy: jest.fn() };
+  const recipientRepoMock = { find: jest.fn() };
+  const attemptRepoMock = { find: jest.fn() };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  const buildModule = () =>
+    Test.createTestingModule({
+      providers: [
+        CampaignsService,
+        { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
+        { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
+        { provide: getRepositoryToken(NotificationAttempt), useValue: attemptRepoMock },
+        { provide: getRepositoryToken(DownloadEvent), useValue: {} },
+        { provide: NotificationQueuesService, useValue: {} },
+        { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
+        { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
+      ],
+    }).compile();
+
+  describe('getPostalStatusBreakdown', () => {
+    it('conta i destinatari per ultimo postalStatus rilevato, un solo conteggio per destinatario', async () => {
+      campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'POSTAL' });
+      recipientRepoMock.find.mockResolvedValue([{ id: 'r1' }, { id: 'r2' }]);
+      attemptRepoMock.find.mockResolvedValue([
+        { recipientId: 'r1', attemptNumber: 1, postalStatus: 'Accettato' },
+        { recipientId: 'r1', attemptNumber: 2, postalStatus: 'Consegnato' },
+        { recipientId: 'r2', attemptNumber: 1, postalStatus: 'Consegnato' },
+      ]);
+
+      const moduleRef = await buildModule();
+      const service = moduleRef.get(CampaignsService);
+
+      const result = await service.getPostalStatusBreakdown('c1');
+
+      expect(result).toEqual(expect.arrayContaining([{ status: 'Consegnato', count: 2 }]));
+      expect(result).toHaveLength(1);
+    });
+
+    it('lancia NotFoundException se la campagna non esiste', async () => {
+      campaignRepoMock.findOneBy.mockResolvedValue(null);
+
+      const moduleRef = await buildModule();
+      const service = moduleRef.get(CampaignsService);
+
+      await expect(service.getPostalStatusBreakdown('missing')).rejects.toThrow('Campaign missing not found');
+    });
+  });
+
+  describe('getPostalReportRows', () => {
+    it('proietta IDPRO, storico ed errore dall\'ultimo attempt per destinatario', async () => {
+      campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'POSTAL', channelConfig: {} });
+      recipientRepoMock.find.mockResolvedValue([{ id: 'r1', codiceFiscale: 'RSSMRA80A01H501U', fullName: 'Mario Rossi' }]);
+      attemptRepoMock.find.mockResolvedValue([
+        {
+          recipientId: 'r1', attemptNumber: 1, postalTrackingId: 'IDPRO1', postalStatus: 'Consegnato',
+          postalStatusHistory: [{ stato: 'Accettato', rilevatoIl: '2026-01-10T10:00:00.000Z' }],
+          responsePayload: { codiceErrore: '', descrizione: '' },
+        },
+      ]);
+
+      const moduleRef = await buildModule();
+      const service = moduleRef.get(CampaignsService);
+
+      const result = await service.getPostalReportRows('c1');
+
+      expect(result.hasAppIoCoDelivery).toBe(false);
+      expect(result.rows).toEqual([{
+        codiceFiscale: 'RSSMRA80A01H501U',
+        fullName: 'Mario Rossi',
+        postalTrackingId: 'IDPRO1',
+        postalStatus: 'Consegnato',
+        postalStatusHistory: [{ stato: 'Accettato', rilevatoIl: '2026-01-10T10:00:00.000Z' }],
+        codiceErrore: '',
+        descrizioneErrore: '',
+        appIoOutcome: null,
+      }]);
+    });
+
+    it('include appIoOutcome solo se la campagna ha co-consegna App IO configurata', async () => {
+      campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'POSTAL', channelConfig: { secondaryChannels: [{ channel: 'APP_IO', mode: 'parallel' }] } });
+      recipientRepoMock.find.mockResolvedValue([{ id: 'r1', codiceFiscale: 'RSSMRA80A01H501U', fullName: 'Mario Rossi' }]);
+      attemptRepoMock.find.mockResolvedValue([
+        {
+          recipientId: 'r1', attemptNumber: 1, postalTrackingId: 'IDPRO1', postalStatus: 'Consegnato',
+          postalStatusHistory: [], responsePayload: { appIo: { success: true } },
+        },
+      ]);
+
+      const moduleRef = await buildModule();
+      const service = moduleRef.get(CampaignsService);
+
+      const result = await service.getPostalReportRows('c1');
+
+      expect(result.hasAppIoCoDelivery).toBe(true);
+      expect(result.rows[0].appIoOutcome).toEqual({ success: true, error: null });
+    });
+  });
+});
+
