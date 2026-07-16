@@ -2821,6 +2821,28 @@ export function App(): React.JSX.Element {
     }
   };
 
+  const handleExportPostalReport = async (variant: 'attuale' | 'storico') => {
+    if (!campaign) return;
+    try {
+      const res = await apiFetch(`/campaigns/${campaign.id}/export-postal-report-${variant}.csv`);
+      if (!res.ok) {
+        alert('Errore durante il download del report');
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `report_postal_${variant}_campagna_${campaign.id.slice(0, 8)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Errore durante il download del report');
+    }
+  };
+
   const parseCsvFile = (file: File, hasHeaders: boolean) => {
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -8134,7 +8156,7 @@ export function App(): React.JSX.Element {
                             value={recipientsSearch}
                             onChange={(e) => { setRecipientsSearch(e.target.value); setRecipientsPageNum(1); }}
                           />
-                          {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType !== 'SEND' && (
+                          {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType !== 'SEND' && campaign.channelType !== 'POSTAL' && (
                             <button className="btn btn-sm btn-outline-primary py-1" onClick={handleExportDownloadReport} title="Esporta Report CSV">
                               <i className="fas fa-file-excel me-1"></i> Esporta Report Download
                             </button>
@@ -8145,6 +8167,16 @@ export function App(): React.JSX.Element {
                                 <i className="fas fa-file-excel me-1"></i> Attuale
                               </button>
                               <button className="btn btn-sm btn-outline-primary py-1" onClick={() => handleExportSendReport('storico')} title="Esporta storico completo">
+                                <i className="fas fa-clock-rotate-left me-1"></i> Storico
+                              </button>
+                            </div>
+                          )}
+                          {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType === 'POSTAL' && (
+                            <div className="btn-group" role="group">
+                              <button className="btn btn-sm btn-outline-primary py-1" onClick={() => handleExportPostalReport('attuale')} title="Esporta stato attuale">
+                                <i className="fas fa-file-excel me-1"></i> Attuale
+                              </button>
+                              <button className="btn btn-sm btn-outline-primary py-1" onClick={() => handleExportPostalReport('storico')} title="Esporta storico completo">
                                 <i className="fas fa-clock-rotate-left me-1"></i> Storico
                               </button>
                             </div>
