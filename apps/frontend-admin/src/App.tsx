@@ -86,6 +86,43 @@ function SendStatusBadge({ status }: { status: string | null | undefined }): Rea
   );
 }
 
+function SendStatusBar({ breakdown }: { breakdown: Array<{ status: string | null; count: number }> }): React.JSX.Element {
+  const total = breakdown.reduce((sum, b) => sum + b.count, 0);
+  if (total === 0) {
+    return <div className="text-muted small">Nessun destinatario ancora processato.</div>;
+  }
+  return (
+    <div>
+      <div className="d-flex rounded overflow-hidden" style={{ height: '20px' }}>
+        {breakdown.map((b) => {
+          const meta = b.status ? SEND_STATUS_META[b.status] : null;
+          const pct = (b.count / total) * 100;
+          const bgClass = (meta ? meta.badge.split(' ')[0] : 'bg-secondary');
+          return (
+            <div
+              key={b.status ?? 'pending'}
+              className={bgClass}
+              style={{ width: `${pct}%` }}
+              title={`${meta ? meta.label : 'In attesa'}: ${b.count} (${pct.toFixed(0)}%)`}
+            ></div>
+          );
+        })}
+      </div>
+      <div className="d-flex flex-wrap gap-2 mt-2 small">
+        {breakdown.map((b) => {
+          const meta = b.status ? SEND_STATUS_META[b.status] : null;
+          return (
+            <span key={b.status ?? 'pending'} className="text-muted">
+              <i className={`fas ${meta ? meta.icon : 'fa-hourglass-half'} me-1`}></i>
+              {meta ? meta.label : 'In attesa'}: <strong>{b.count}</strong>
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // Stati POSTAL (campo postalStatus, popolato da PostalStatusSyncService da
 // GlobalCom) — 14 valori dell'enum GBCStatus.
 const POSTAL_STATUS_META: Record<string, { label: string; badge: string; icon: string }> = {
@@ -933,6 +970,7 @@ export function App(): React.JSX.Element {
   const [recipientsPageNum, setRecipientsPageNum] = useState(1);
   const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number } | null>(null);
   const [campaignSendStageCounts, setCampaignSendStageCounts] = useState<{ queued: number; protocollato: number; inviato: number; fallito: number } | null>(null);
+  const [sendStatusBreakdown, setSendStatusBreakdown] = useState<Array<{ status: string | null; count: number }> | null>(null);
   const [downloadCombinations, setDownloadCombinations] = useState<Array<{ channels: string[]; count: number; sentSuccessfully: boolean }> | null>(null);
   const [statsDateFrom, setStatsDateFrom] = useState(() => {
     const d = new Date();
@@ -3540,6 +3578,7 @@ export function App(): React.JSX.Element {
     setFailureGroups([]);
     setChannelBreakdown(null);
     setCampaignSendStageCounts(null);
+    setSendStatusBreakdown(null);
     setDownloadCombinations(null);
     setRecipientsPage(null);
     setRecipientsSearch('');
@@ -3548,6 +3587,7 @@ export function App(): React.JSX.Element {
     fetchFailureGroups(id);
     fetchChannelBreakdown(id);
     fetchCampaignSendStageCounts(id);
+    fetchSendStatusBreakdown(id);
     fetchDownloadCombinationStats(id);
   };
 
@@ -3569,6 +3609,16 @@ export function App(): React.JSX.Element {
       setCampaignSendStageCounts(await res.json());
     } catch {
       // Non bloccante: il dettaglio campagna resta usabile senza la barra a stadi.
+    }
+  };
+
+  const fetchSendStatusBreakdown = async (id: string) => {
+    try {
+      const res = await apiFetch(`/campaigns/${id}/send-status-breakdown`);
+      if (!res.ok) return;
+      setSendStatusBreakdown(await res.json());
+    } catch {
+      // Non bloccante: il dettaglio campagna resta usabile senza la barra.
     }
   };
 
@@ -7858,11 +7908,19 @@ export function App(): React.JSX.Element {
                           </div>
                         )}
 
-                        {(campaign.channelType === 'SEND' || campaign.channelConfig?.['protocolla'] === true) && campaignSendStageCounts && (
+                        {campaign.channelType === 'SEND' && sendStatusBreakdown && (
                           <div className="mt-4 border-top pt-3">
                             <h4 className="small fw-bold mb-2">
-                              <i className="fas fa-stamp me-1 text-primary"></i>
-                              {campaign.channelType === 'SEND' ? 'Progressione SEND' : 'Stato Protocollazione'}
+                              <i className="fas fa-chart-bar me-1 text-primary"></i>Andamento Invio SEND
+                            </h4>
+                            <SendStatusBar breakdown={sendStatusBreakdown} />
+                          </div>
+                        )}
+
+                        {campaign.channelType !== 'SEND' && campaign.channelConfig?.['protocolla'] === true && campaignSendStageCounts && (
+                          <div className="mt-4 border-top pt-3">
+                            <h4 className="small fw-bold mb-2">
+                              <i className="fas fa-stamp me-1 text-primary"></i>Stato Protocollazione
                             </h4>
                             <div className="d-flex gap-3 text-center small">
                               <div>
