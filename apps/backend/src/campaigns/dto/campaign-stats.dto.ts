@@ -120,3 +120,27 @@ export interface SendReportDto {
   hasAppIoCoDelivery: boolean;
   rows: SendReportRowDto[];
 }
+
+export interface PostalStatusBreakdownDto {
+  /** null = attempt non ancora sincronizzato ("In corso"). */
+  status: string | null;
+  count: number;
+}
+
+export interface PostalReportRowDto {
+  codiceFiscale: string;
+  fullName: string | null;
+  postalTrackingId: string | null;
+  postalStatus: string | null;
+  postalStatusHistory: Array<{ stato: string; rilevatoIl: string }>;
+  codiceErrore: string | null;
+  descrizioneErrore: string | null;
+  /** null se la campagna non ha co-consegna App IO configurata. */
+  appIoOutcome: { success: boolean; error: string | null } | null;
+}
+
+export interface PostalReportDto {
+  /** Determina se i CSV builder devono includere la colonna "Esito App IO". */
+  hasAppIoCoDelivery: boolean;
+  rows: PostalReportRowDto[];
+}
