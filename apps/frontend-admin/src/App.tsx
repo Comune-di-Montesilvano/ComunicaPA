@@ -473,7 +473,7 @@ export function App(): React.JSX.Element {
   const [auditSearch, setAuditSearch] = useState('');
   const [auditLoading, setAuditLoading] = useState(false);
 
-  const [searchCf, setSearchCf] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [searchCampaignId, setSearchCampaignId] = useState('');
   const [searchChannel, setSearchChannel] = useState('');
   const [searchStatus, setSearchStatus] = useState('');
@@ -505,7 +505,7 @@ export function App(): React.JSX.Element {
     setSearchLoading(true);
     try {
       const params = new URLSearchParams();
-      if (searchCf) params.set('codiceFiscale', searchCf);
+      if (searchQuery) params.set('query', searchQuery);
       if (searchCampaignId) params.set('campaignId', searchCampaignId);
       if (searchChannel) params.set('channelType', searchChannel);
       if (searchStatus) params.set('status', searchStatus);
@@ -5799,14 +5799,14 @@ export function App(): React.JSX.Element {
             <div>
               <h3 className="h5 fw-bold text-dark mb-3"><i className="fas fa-magnifying-glass me-2"></i>Ricerca Notifiche</h3>
               <div className="card shadow-sm p-3 mb-3">
-                <div className="row g-2">
-                  <div className="col-md-3">
-                    <input className="form-control form-control-sm" placeholder="Codice Fiscale" value={searchCf} onChange={e => setSearchCf(e.target.value)} />
+                <div className="row g-2 mb-2">
+                  <div className="col-md-4">
+                    <input className="form-control form-control-sm" placeholder="Cerca (CF, Nome, Email, PEC, IUN...)" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
                   </div>
                   <div className="col-md-2">
                     <input className="form-control form-control-sm" placeholder="ID Campagna" value={searchCampaignId} onChange={e => setSearchCampaignId(e.target.value)} />
                   </div>
-                  <div className="col-md-2">
+                  <div className="col-md-3">
                     <select className="form-select form-select-sm" value={searchChannel} onChange={e => setSearchChannel(e.target.value)}>
                       <option value="">Tutti i canali</option>
                       <option value="EMAIL">EMAIL</option>
@@ -5826,12 +5826,15 @@ export function App(): React.JSX.Element {
                       <option value="skipped">Saltato</option>
                     </select>
                   </div>
-                  <div className="col-md-2">
+                </div>
+                <div className="row g-2">
+                  <div className="col-md-3">
                     <input type="date" className="form-control form-control-sm" value={searchDateFrom} onChange={e => setSearchDateFrom(e.target.value)} title="Data da" />
                   </div>
-                  <div className="col-md-2">
+                  <div className="col-md-3">
                     <input type="date" className="form-control form-control-sm" value={searchDateTo} onChange={e => setSearchDateTo(e.target.value)} title="Data a" />
                   </div>
+                  <div className="col-md-4"></div>
                   <div className="col-md-2">
                     <button className="btn btn-primary btn-sm w-100" onClick={() => runNotificationSearch(1)} disabled={searchLoading}>
                       <i className="fas fa-search me-1"></i>Cerca
@@ -5892,6 +5895,8 @@ export function App(): React.JSX.Element {
                       <>
                         <div className="mb-3">
                           <div><strong>Destinatario:</strong> {notifDetail.recipient.fullName || notifDetail.recipient.codiceFiscale} ({notifDetail.recipient.codiceFiscale})</div>
+                          {notifDetail.recipient.email && <div><strong>Email:</strong> {notifDetail.recipient.email}</div>}
+                          {notifDetail.recipient.pec && <div><strong>PEC:</strong> {notifDetail.recipient.pec}</div>}
                           <div><strong>Campagna:</strong> {notifDetail.campaign.name} <span className="ms-1"><ChannelBadge channel={notifDetail.campaign.channelType} /></span></div>
                         </div>
 
@@ -8229,7 +8234,7 @@ export function App(): React.JSX.Element {
                     </div>
 
                     <div className="row g-4 mt-0">
-                      <div className="col-md-6">
+                      <div className={['EMAIL', 'PEC', 'APP_IO'].includes(campaign.channelType) ? 'col-md-6' : 'col-12'}>
                         <div className="card shadow-sm h-100">
                           <div className="card-header bg-white py-3 border-bottom">
                             <h3 className="h6 mb-0 fw-bold text-dark">
@@ -8263,6 +8268,7 @@ export function App(): React.JSX.Element {
                         </div>
                       </div>
 
+                      {['EMAIL', 'PEC', 'APP_IO'].includes(campaign.channelType) && (
                       <div className="col-md-6">
                         <div className="card shadow-sm h-100">
                           <div className="card-header bg-white py-3 border-bottom">
@@ -8352,6 +8358,7 @@ export function App(): React.JSX.Element {
                           </div>
                         </div>
                       </div>
+                      )}
                     </div>
                   </div>
                 </div>
