@@ -9,17 +9,18 @@ function parseCsvLine(line: string): string[] {
   let inQuotes = false;
   for (let i = 0; i < line.length; i++) {
     const char = line[i];
-    if (char === '"') {
-      inQuotes = !inQuotes;
-    } else if ((char === ',' || char === ';') && !inQuotes) {
+    if ((char === ',' || char === ';') && !inQuotes) {
       result.push(current.trim());
       current = '';
     } else {
       current += char;
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      }
     }
   }
   result.push(current.trim());
-  return result.map((col) => col.replace(/^"(.*)"$/, '$1'));
+  return result.map((col) => col.replace(/^"(.*)"$/, '$1').replace(/""/g, '"'));
 }
 
 export function parseCsvContent(content: string, hasHeaders: boolean): ParsedCsv {

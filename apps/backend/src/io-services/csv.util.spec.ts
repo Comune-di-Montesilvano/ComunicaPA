@@ -29,6 +29,13 @@ describe('csv.util', () => {
       expect(parseCsvContent('', true)).toEqual({ headers: [], rows: [] });
       expect(parseCsvContent('cf\n\n\n', true)).toEqual({ headers: ['cf'], rows: [] });
     });
+
+    it('round-trip: de-escapa le virgolette doppie RFC 4180', () => {
+      const csv = buildCsvContent(['cf', 'nome'], [{ cf: 'RSSMRA85M01H501Z', nome: 'Rossi "Il Grande"' }]);
+      const content = csv.replace(/^﻿/, '');
+      const result = parseCsvContent(content, true);
+      expect(result.rows[0].nome).toBe('Rossi "Il Grande"');
+    });
   });
 
   describe('buildCsvContent', () => {
