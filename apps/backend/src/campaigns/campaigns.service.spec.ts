@@ -1712,3 +1712,108 @@ describe('CampaignsService.previewMessage', () => {
   });
 });
 
+describe('CampaignsService.getSendStatusBreakdown / getSendReportRows', () => {
+  const campaignRepoMock = { findOneBy: jest.fn() };
+  const recipientRepoMock = { find: jest.fn() };
+  const attemptRepoMock = { find: jest.fn() };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  const buildModule = () =>
+    Test.createTestingModule({
+      providers: [
+        CampaignsService,
+        { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
+        { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
+        { provide: getRepositoryToken(NotificationAttempt), useValue: attemptRepoMock },
+        { provide: getRepositoryToken(DownloadEvent), useValue: {} },
+        { provide: NotificationQueuesService, useValue: {} },
+        { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
+        { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
+      ],
+    }).compile();
+
+  describe('getSendStatusBreakdown', () => {
+    it('conta i destinatari per ultimo sendStatus rilevato, un solo conteggio per destinatario', async () => {
+      campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'SEND' });
+      recipientRepoMock.find.mockResolvedValue([{ id: 'r1' }, { id: 'r2' }]);
+      attemptRepoMock.find.mockResolvedValue([
+        { recipientId: 'r1', attemptNumber: 1, sendStatus: 'ACCEPTED' },
+        { recipientId: 'r1', attemptNumber: 2, sendStatus: 'DELIVERED' },
+        { recipientId: 'r2', attemptNumber: 1, sendStatus: 'DELIVERED' },
+      ]);
+
+      const moduleRef = await buildModule();
+      const service = moduleRef.get(CampaignsService);
+
+      const result = await service.getSendStatusBreakdown('c1');
+
+      expect(result).toEqual(expect.arrayContaining([{ status: 'DELIVERED', count: 2 }]));
+      expect(result).toHaveLength(1);
+    });
+
+    it('lancia NotFoundException se la campagna non esiste', async () => {
+      campaignRepoMock.findOneBy.mockResolvedValue(null);
+
+      const moduleRef = await buildModule();
+      const service = moduleRef.get(CampaignsService);
+
+      await expect(service.getSendStatusBreakdown('missing')).rejects.toThrow('Campaign missing not found');
+    });
+  });
+
+  describe('getSendReportRows', () => {
+    it('proietta IUN, domicilio digitale e storico dall\'ultimo attempt per destinatario', async () => {
+      campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'SEND', channelConfig: {} });
+      recipientRepoMock.find.mockResolvedValue([{ id: 'r1', codiceFiscale: 'RSSMRA80A01H501U', fullName: 'Mario Rossi' }]);
+      attemptRepoMock.find.mockResolvedValue([
+        {
+          recipientId: 'r1', attemptNumber: 1, iun: 'IUN-1', sendStatus: 'DELIVERED',
+          sendStatusHistory: [{ status: 'ACCEPTED', activeFrom: '2026-01-10T10:00:00Z' }],
+          sendDigitalDomicile: { type: 'PEC', address: 'x@pec.it', source: 'PLATFORM' },
+          responsePayload: {},
+        },
+      ]);
+
+      const moduleRef = await buildModule();
+      const service = moduleRef.get(CampaignsService);
+
+      const result = await service.getSendReportRows('c1');
+
+      expect(result.hasAppIoCoDelivery).toBe(false);
+      expect(result.rows).toEqual([{
+        codiceFiscale: 'RSSMRA80A01H501U',
+        fullName: 'Mario Rossi',
+        iun: 'IUN-1',
+        digitalDomicileType: 'PEC',
+        digitalDomicileAddress: 'x@pec.it',
+        sendStatus: 'DELIVERED',
+        sendStatusHistory: [{ status: 'ACCEPTED', activeFrom: '2026-01-10T10:00:00Z' }],
+        appIoOutcome: null,
+      }]);
+    });
+
+    it('include appIoOutcome solo se la campagna ha co-consegna App IO configurata', async () => {
+      campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'SEND', channelConfig: { secondaryChannels: [{ channel: 'APP_IO', mode: 'parallel' }] } });
+      recipientRepoMock.find.mockResolvedValue([{ id: 'r1', codiceFiscale: 'RSSMRA80A01H501U', fullName: 'Mario Rossi' }]);
+      attemptRepoMock.find.mockResolvedValue([
+        {
+          recipientId: 'r1', attemptNumber: 1, iun: 'IUN-1', sendStatus: 'DELIVERED',
+          sendStatusHistory: [], sendDigitalDomicile: null,
+          responsePayload: { appIo: { success: true } },
+        },
+      ]);
+
+      const moduleRef = await buildModule();
+      const service = moduleRef.get(CampaignsService);
+
+      const result = await service.getSendReportRows('c1');
+
+      expect(result.hasAppIoCoDelivery).toBe(true);
+      expect(result.rows[0].appIoOutcome).toEqual({ success: true, error: null });
+    });
+  });
+});
+

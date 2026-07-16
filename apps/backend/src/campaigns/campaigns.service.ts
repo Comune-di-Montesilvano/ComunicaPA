@@ -25,7 +25,7 @@ import { NotificationQueuesService } from '../queue/notification-queues.service'
 import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util';
 import type { CreateCampaignDto } from './dto/create-campaign.dto';
 import type { UpdateCampaignDto } from './dto/update-campaign.dto';
-import type { CampaignStatsDto, RecipientStatDto, RecipientStatsPageDto, ChannelBreakdownDto, DownloadCombinationDto, DownloadCombinationStatsDto, FailureRowDto, FailureGroupDto, RetryBulkResultDto, DownloadReportRowDto } from './dto/campaign-stats.dto';
+import type { CampaignStatsDto, RecipientStatDto, RecipientStatsPageDto, ChannelBreakdownDto, DownloadCombinationDto, DownloadCombinationStatsDto, FailureRowDto, FailureGroupDto, RetryBulkResultDto, DownloadReportRowDto, SendStatusBreakdownDto, SendReportDto, SendReportRowDto } from './dto/campaign-stats.dto';
 import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.dto';
 import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util';
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto';
@@ -1082,6 +1082,85 @@ export class CampaignsService {
       downloadCount: r.downloadCount,
       lastDownloadedAt: r.lastDownloadedAt ? r.lastDownloadedAt.toISOString() : null,
     }));
+  }
+
+  async getSendStatusBreakdown(campaignId: string): Promise<SendStatusBreakdownDto[]> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+
+    const recipientIds = (await this.recipientRepo.find({ where: { campaignId }, select: ['id'] })).map((r) => r.id);
+    if (recipientIds.length === 0) return [];
+
+    // Stesso pattern di getRecipientStats: due query separate invece di
+    // leftJoinAndSelect (bug TypeORM con orderBy+take su relazione per
+    // stringa), riduzione "ultimo attempt per destinatario" in JS.
+    const attempts = await this.attemptRepo.find({
+      where: { recipientId: In(recipientIds), channelType: 'SEND' },
+      select: ['recipientId', 'attemptNumber', 'sendStatus'],
+    });
+
+    const latestByRecipient = new Map<string, NotificationAttempt>();
+    for (const a of attempts) {
+      const current = latestByRecipient.get(a.recipientId);
+      if (!current || a.attemptNumber > current.attemptNumber) latestByRecipient.set(a.recipientId, a);
+    }
+
+    const counts = new Map<string | null, number>();
+    for (const a of latestByRecipient.values()) {
+      counts.set(a.sendStatus, (counts.get(a.sendStatus) ?? 0) + 1);
+    }
+
+    return Array.from(counts.entries()).map(([status, count]) => ({ status, count }));
+  }
+
+  async getSendReportRows(campaignId: string): Promise<SendReportDto> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+
+    const recipients = await this.recipientRepo.find({
+      where: { campaignId },
+      select: ['id', 'codiceFiscale', 'fullName'],
+      order: { createdAt: 'ASC' },
+    });
+    if (recipients.length === 0) return { hasAppIoCoDelivery: false, rows: [] };
+
+    const recipientIds = recipients.map((r) => r.id);
+    const attempts = await this.attemptRepo.find({
+      where: { recipientId: In(recipientIds), channelType: 'SEND' },
+    });
+
+    const latestByRecipient = new Map<string, NotificationAttempt>();
+    const firstByRecipient = new Map<string, NotificationAttempt>();
+    for (const a of attempts) {
+      const current = latestByRecipient.get(a.recipientId);
+      if (!current || a.attemptNumber > current.attemptNumber) latestByRecipient.set(a.recipientId, a);
+      // Segnale App IO esiste solo sul primo tentativo (mai ritentato),
+      // stesso vincolo già documentato in getChannelBreakdown().
+      if (a.attemptNumber === 1) firstByRecipient.set(a.recipientId, a);
+    }
+
+    const hasAppIoCoDelivery = !!resolveSecondaryAppIoConfig(campaign.channelConfig);
+
+    const rows: SendReportRowDto[] = recipients.map((r) => {
+      const latest = latestByRecipient.get(r.id);
+      const first = firstByRecipient.get(r.id);
+      const appIo = hasAppIoCoDelivery
+        ? ((first?.responsePayload as Record<string, unknown> | undefined)?.['appIo'] as { success?: boolean; error?: string } | undefined)
+        : undefined;
+
+      return {
+        codiceFiscale: r.codiceFiscale,
+        fullName: r.fullName,
+        iun: latest?.iun ?? null,
+        digitalDomicileType: latest?.sendDigitalDomicile?.type ?? null,
+        digitalDomicileAddress: latest?.sendDigitalDomicile?.address ?? null,
+        sendStatus: latest?.sendStatus ?? null,
+        sendStatusHistory: latest?.sendStatusHistory ?? [],
+        appIoOutcome: appIo ? { success: !!appIo.success, error: appIo.error ?? null } : null,
+      };
+    });
+
+    return { hasAppIoCoDelivery, rows };
   }
 
   async assertDraftForAttachments(campaignId: string): Promise<void> {
