@@ -96,3 +96,27 @@ export interface DownloadReportRowDto {
   downloadCount: number;
   lastDownloadedAt: string | null;
 }
+
+export interface SendStatusBreakdownDto {
+  /** null = attempt non ancora sincronizzato/IUN non risolto ("In attesa"). */
+  status: string | null;
+  count: number;
+}
+
+export interface SendReportRowDto {
+  codiceFiscale: string;
+  fullName: string | null;
+  iun: string | null;
+  digitalDomicileType: string | null;
+  digitalDomicileAddress: string | null;
+  sendStatus: string | null;
+  sendStatusHistory: Array<{ status: string; activeFrom: string }>;
+  /** null se la campagna non ha co-consegna App IO configurata. */
+  appIoOutcome: { success: boolean; error: string | null } | null;
+}
+
+export interface SendReportDto {
+  /** Determina se i CSV builder devono includere la colonna "Esito App IO". */
+  hasAppIoCoDelivery: boolean;
+  rows: SendReportRowDto[];
+}
