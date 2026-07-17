@@ -142,4 +142,19 @@ export class EnrichmentController {
   deleteJob(@Param('id', ParseUUIDPipe) id: string) {
     return this.svc.deleteJob(id);
   }
+
+  @Post('jobs/:id/create-campaign')
+  @Roles('user', 'admin')
+  @HttpCode(HttpStatus.OK)
+  createCampaign(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { name?: string; channelType?: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL' },
+    @Req() req: Request & { user: JwtOperatorPayload },
+  ) {
+    const name = body.name?.trim();
+    if (!name || !body.channelType) {
+      return { blocked: true, message: 'Nome campagna e canale richiesti' };
+    }
+    return this.svc.createCampaignFromJob(id, { name, channelType: body.channelType }, req.user.username);
+  }
 }

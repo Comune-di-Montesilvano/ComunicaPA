@@ -8,11 +8,13 @@ import { PdfExtractorClient } from './pdf-extractor.client';
 import { EnrichmentProcessor } from './enrichment.processor';
 import { EnrichmentRetentionService } from './enrichment-retention.service';
 import { ENRICHMENT_QUEUE } from './enrichment-job.types';
+import { CampaignsModule } from '../campaigns/campaigns.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([EnrichmentJob]),
     BullModule.registerQueue({ name: ENRICHMENT_QUEUE }),
+    CampaignsModule,
   ],
   controllers: [EnrichmentController],
   providers: [EnrichmentService, PdfExtractorClient, EnrichmentProcessor, EnrichmentRetentionService],

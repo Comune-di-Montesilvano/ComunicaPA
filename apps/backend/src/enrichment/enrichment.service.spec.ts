@@ -32,9 +32,10 @@ describe('EnrichmentService', () => {
       find: jest.fn(async () => []),
       findOneBy: jest.fn(async () => null),
       delete: jest.fn(async () => undefined),
+      update: jest.fn(async () => undefined),
     };
     queue = { add: jest.fn(async () => undefined) };
-    service = new EnrichmentService(repo, queue);
+    service = new EnrichmentService(repo, queue, { create: jest.fn() } as any);
   });
 
   afterEach(() => {
@@ -108,5 +109,55 @@ describe('EnrichmentService', () => {
     const out = new AdmZip(buf);
     expect(out.getEntry('arricchito.csv')).toBeTruthy();
     expect(out.getEntry('PROVV_1.pdf')).toBeTruthy();
+  });
+
+  describe('createCampaignFromJob', () => {
+    let campaignsService: any;
+
+    beforeEach(() => {
+      campaignsService = { create: jest.fn(async () => ({ id: 'camp-1' })) };
+      service = new EnrichmentService(repo, queue, campaignsService);
+    });
+
+    function setupDoneJob(): void {
+      repo.findOneBy.mockResolvedValue({ id: 'job-uuid-1', status: EnrichmentJobStatus.DONE, campaignId: null });
+      const dir = join(tmpDir, 'attachments', 'enrichment', 'job-uuid-1');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.copyFileSync(makeZipFile(tmpDir), join(dir, 'source.zip'));
+      fs.writeFileSync(join(dir, 'result.csv'), '"codice_fiscale"\n"RSSMRA80A01H501U"');
+    }
+
+    it('crea bozza: CSV come draft_recipients.csv, PDF copiati, job marcato, file eliminati', async () => {
+      setupDoneJob();
+      const result = await service.createCampaignFromJob('job-uuid-1', { name: 'Campagna X', channelType: 'PEC' }, 'op');
+
+      expect(result.campaignId).toBe('camp-1');
+      expect(campaignsService.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'Campagna X',
+          channelType: 'PEC',
+          channelConfig: expect.objectContaining({ wizCsvFilename: 'arricchito.csv', wizCsvHasHeaders: true }),
+        }),
+        'op',
+      );
+      const uploadsDir = join(tmpDir, 'attachments', 'uploads', 'camp-1');
+      expect(fs.existsSync(join(uploadsDir, 'draft_recipients.csv'))).toBe(true);
+      expect(fs.existsSync(join(uploadsDir, 'PROVV_1.pdf'))).toBe(true);
+      expect(repo.update).toHaveBeenCalledWith('job-uuid-1', { campaignId: 'camp-1' });
+      // File del job eliminati dopo la conversione
+      expect(fs.existsSync(join(tmpDir, 'attachments', 'enrichment', 'job-uuid-1'))).toBe(false);
+    });
+
+    it('job non DONE → blocked', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.PROCESSING, campaignId: null });
+      const result = await service.createCampaignFromJob('j1', { name: 'X', channelType: 'PEC' }, 'op');
+      expect(result.blocked).toBe(true);
+    });
+
+    it('job già convertito → blocked', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.DONE, campaignId: 'camp-old' });
+      const result = await service.createCampaignFromJob('j1', { name: 'X', channelType: 'PEC' }, 'op');
+      expect(result.blocked).toBe(true);
+    });
   });
 });
