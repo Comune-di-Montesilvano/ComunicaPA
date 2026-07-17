@@ -43,7 +43,12 @@ export interface ChannelBreakdownDto {
   appIoOnly: number;
   appIoDespitePrimaryFail: number;
   neither: number;
+  /** Destinatari con un dirottamento INAD reale (indirizzo trovato diverso da quello configurato). */
+  inadDiverted: number;
 }
+
+/** Conteggio destinatari SENT per canale effettivo di consegna (chiavi = NotificationChannel osservati). */
+export type EffectiveChannelBreakdownDto = Record<string, number>;
 
 export interface DownloadCombinationDto {
   /** Canali da cui il destinatario ha scaricato (ordinati); [] = nessun download. */

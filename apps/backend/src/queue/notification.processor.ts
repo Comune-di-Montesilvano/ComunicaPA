@@ -156,8 +156,16 @@ export class NotificationProcessor extends WorkerHost {
       );
     }
     // Retrocompat: config appIo presente senza mode = parallel
-    const appIoMode: 'none' | 'parallel' | 'exclusive' =
+    const configuredAppIoMode: 'none' | 'parallel' | 'exclusive' =
       appIoResolved ? (appIoConfig!.mode ?? 'parallel') : 'none';
+    // INAD è fonte di verità assoluta sul domicilio digitale: per un
+    // destinatario dirottato (recipient.inadCheck.diverted) il canale
+    // primario (già impostato su PEC in attempt.channelType) deve arrivare
+    // sempre, non può essere saltato da un'esclusiva App IO — declassata a
+    // "parallela" solo per QUESTO destinatario, non per l'intera campagna:
+    // se il cittadino ha anche App IO lo riceve in aggiunta, mai al posto di.
+    const appIoMode: 'none' | 'parallel' | 'exclusive' =
+      configuredAppIoMode === 'exclusive' && recipient.inadCheck?.diverted ? 'parallel' : configuredAppIoMode;
 
     const responsePayload: Record<string, any> = {};
     let appIoLinkDelivered = false;

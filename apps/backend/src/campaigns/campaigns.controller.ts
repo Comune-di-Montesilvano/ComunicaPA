@@ -469,6 +469,11 @@ export class CampaignsController {
     return this.campaignsService.getChannelBreakdown(id).then((breakdown) => ({ campaignId: id, breakdown }));
   }
 
+  @Get(':id/effective-channel-stats')
+  getEffectiveChannelBreakdown(@Param('id', ParseUUIDPipe) id: string) {
+    return this.campaignsService.getEffectiveChannelBreakdown(id).then((breakdown) => ({ campaignId: id, breakdown }));
+  }
+
   @Get(':id/download-combination-stats')
   async getDownloadCombinationStats(@Param('id', ParseUUIDPipe) id: string) {
     return this.campaignsService.getDownloadCombinationStats(id);

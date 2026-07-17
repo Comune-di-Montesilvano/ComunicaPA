@@ -43,7 +43,14 @@ export class Recipient {
   extraData!: Record<string, unknown>;
 
   @Column({ type: 'jsonb', name: 'inad_check', nullable: true })
-  inadCheck!: { found: boolean; originalChannel: string | null; originalAddress: string | null; checkedAt: string } | null;
+  inadCheck!: {
+    found: boolean;
+    /** true solo se found e l'indirizzo trovato differisce da quello già configurato (vero dirottamento, non un domicilio PEC coincidente). */
+    diverted: boolean;
+    originalChannel: string | null;
+    originalAddress: string | null;
+    checkedAt: string;
+  } | null;
 
   @Column({
     type: 'enum',

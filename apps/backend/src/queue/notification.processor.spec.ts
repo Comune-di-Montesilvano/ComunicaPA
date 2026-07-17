@@ -483,6 +483,27 @@ describe('NotificationProcessor', () => {
       }));
     });
 
+    it('exclusive: per un destinatario dirottato da INAD (inadCheck.diverted) invia SEMPRE il canale primario, App IO al massimo in aggiunta', async () => {
+      mockCampaignRepo.findOne.mockResolvedValueOnce({
+        ...mockCampaignWithAppIo,
+        channelConfig: { appIo: { mode: 'exclusive', ioServiceId: 'svc-1' } },
+      });
+      mockRecipientRepo.findOne.mockResolvedValueOnce({ ...mockRecipient, inadCheck: { found: true, diverted: true } });
+      (global as any).fetch = jest.fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ sender_allowed: true }) }) // checkAppIoProfile (parallelo)
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'io-1' }) }); // send message
+      mockStrategy.send.mockResolvedValueOnce({ messageId: 'msg-primary', responsePayload: {} });
+
+      await processor.process(mockJob(baseData));
+
+      // Il canale primario NON deve mai essere saltato per un destinatario
+      // dirottato da INAD, anche se la campagna ha App IO in modalità esclusiva.
+      expect(mockStrategy.send).toHaveBeenCalled();
+      expect(mockAttemptRepo.update).toHaveBeenCalledWith('att-1', expect.objectContaining({
+        status: AttemptStatus.SUCCESS,
+      }));
+    });
+
     it('exclusive: se il CF NON ha App IO usa il canale primario', async () => {
       mockCampaignRepo.findOne.mockResolvedValueOnce({
         ...mockCampaignWithAppIo,

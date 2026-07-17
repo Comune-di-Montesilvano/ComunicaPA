@@ -880,27 +880,29 @@ describe('CampaignsService', () => {
   });
 
   describe('getChannelBreakdown', () => {
-    it('ritorna null se la campagna non ha co-consegna App IO configurata', async () => {
+    it('ritorna null se la campagna non ha né co-consegna App IO né destinatari con inadCheck', async () => {
       mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelConfig: {} });
+      mockRecipientRepo.find.mockResolvedValueOnce([
+        { id: 'r1', status: RecipientStatus.SENT, inadCheck: null },
+      ]);
 
       const result = await service.getChannelBreakdown('uuid-1');
 
       expect(result).toBeNull();
-      expect(mockRecipientRepo.find).not.toHaveBeenCalled();
     });
 
-    it('classifica correttamente le 5 categorie di consegna', async () => {
+    it('classifica correttamente le 5 categorie di consegna e il conteggio inadDiverted', async () => {
       mockCampaignRepo.findOneBy.mockResolvedValueOnce({
         ...mockCampaign,
         channelConfig: { appIo: { mode: 'parallel', ioServiceId: 'svc-1' } },
       });
       mockRecipientRepo.find.mockResolvedValueOnce([
-        { id: 'r-primary-only', status: RecipientStatus.SENT },
-        { id: 'r-both', status: RecipientStatus.SENT },
-        { id: 'r-appio-only', status: RecipientStatus.SENT },
-        { id: 'r-appio-despite-fail', status: RecipientStatus.FAILED },
-        { id: 'r-neither', status: RecipientStatus.FAILED },
-        { id: 'r-pending', status: RecipientStatus.PENDING },
+        { id: 'r-primary-only', status: RecipientStatus.SENT, inadCheck: null },
+        { id: 'r-both', status: RecipientStatus.SENT, inadCheck: { found: true, diverted: true } },
+        { id: 'r-appio-only', status: RecipientStatus.SENT, inadCheck: { found: true, diverted: false } },
+        { id: 'r-appio-despite-fail', status: RecipientStatus.FAILED, inadCheck: null },
+        { id: 'r-neither', status: RecipientStatus.FAILED, inadCheck: null },
+        { id: 'r-pending', status: RecipientStatus.PENDING, inadCheck: { found: true, diverted: true } },
       ]);
       mockAttemptRepo.find.mockResolvedValueOnce([
         { recipientId: 'r-primary-only', responsePayload: {} },
@@ -912,13 +914,70 @@ describe('CampaignsService', () => {
 
       const result = await service.getChannelBreakdown('uuid-1');
 
+      // inadDiverted conta SOLO diverted:true, su TUTTI i destinatari (anche
+      // PENDING/non ancora inviati) — non solo SENT/FAILED come le altre
+      // categorie, perché descrive una decisione di instradamento presa al
+      // lancio, non un esito di invio. r-both e r-pending hanno diverted:true,
+      // r-appio-only ha found:true ma diverted:false (indirizzo INAD coincideva
+      // con quello già configurato) e non va contato.
       expect(result).toEqual({
         primaryOnly: 1,
         both: 1,
         appIoOnly: 1,
         appIoDespitePrimaryFail: 1,
         neither: 1,
+        inadDiverted: 2,
       });
+    });
+
+    it('ritorna un breakdown (non null) con solo inadDiverted valorizzato se non c\'è App IO ma c\'è INAD', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelConfig: {} });
+      mockRecipientRepo.find.mockResolvedValueOnce([
+        { id: 'r1', status: RecipientStatus.SENT, inadCheck: { found: true, diverted: true } },
+      ]);
+      mockAttemptRepo.find.mockResolvedValueOnce([]);
+
+      const result = await service.getChannelBreakdown('uuid-1');
+
+      expect(result).toEqual({
+        primaryOnly: 1,
+        both: 0,
+        appIoOnly: 0,
+        appIoDespitePrimaryFail: 0,
+        neither: 0,
+        inadDiverted: 1,
+      });
+    });
+  });
+
+  describe('getEffectiveChannelBreakdown', () => {
+    it('bucketizza i destinatari SENT per canale effettivo (deliveredVia APP_IO > attempt.channelType)', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'POSTAL' });
+      mockRecipientRepo.find.mockResolvedValueOnce([
+        { id: 'r-postal', status: RecipientStatus.SENT },
+        { id: 'r-appio', status: RecipientStatus.SENT },
+        { id: 'r-pec-inad', status: RecipientStatus.SENT },
+        { id: 'r-failed', status: RecipientStatus.FAILED },
+      ]);
+      mockAttemptRepo.find.mockResolvedValueOnce([
+        { recipientId: 'r-postal', channelType: 'POSTAL', responsePayload: {} },
+        { recipientId: 'r-appio', channelType: 'POSTAL', responsePayload: { deliveredVia: 'APP_IO' } },
+        { recipientId: 'r-pec-inad', channelType: 'PEC', responsePayload: {} },
+      ]);
+
+      const result = await service.getEffectiveChannelBreakdown('uuid-1');
+
+      expect(result).toEqual({ POSTAL: 1, APP_IO: 1, PEC: 1 });
+    });
+
+    it('ritorna oggetto vuoto se nessun destinatario è SENT', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'EMAIL' });
+      mockRecipientRepo.find.mockResolvedValueOnce([]);
+
+      const result = await service.getEffectiveChannelBreakdown('uuid-1');
+
+      expect(result).toEqual({});
+      expect(mockAttemptRepo.find).not.toHaveBeenCalled();
     });
   });
 

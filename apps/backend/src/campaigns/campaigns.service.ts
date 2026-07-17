@@ -25,7 +25,7 @@ import { NotificationQueuesService } from '../queue/notification-queues.service'
 import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util';
 import type { CreateCampaignDto } from './dto/create-campaign.dto';
 import type { UpdateCampaignDto } from './dto/update-campaign.dto';
-import type { CampaignStatsDto, RecipientStatDto, RecipientStatsPageDto, ChannelBreakdownDto, DownloadCombinationDto, DownloadCombinationStatsDto, FailureRowDto, FailureGroupDto, RetryBulkResultDto, DownloadReportRowDto, SendStatusBreakdownDto, SendReportDto, SendReportRowDto, PostalStatusBreakdownDto, PostalReportDto, PostalReportRowDto } from './dto/campaign-stats.dto';
+import type { CampaignStatsDto, RecipientStatDto, RecipientStatsPageDto, ChannelBreakdownDto, EffectiveChannelBreakdownDto, DownloadCombinationDto, DownloadCombinationStatsDto, FailureRowDto, FailureGroupDto, RetryBulkResultDto, DownloadReportRowDto, SendStatusBreakdownDto, SendReportDto, SendReportRowDto, PostalStatusBreakdownDto, PostalReportDto, PostalReportRowDto } from './dto/campaign-stats.dto';
 import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.dto';
 import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util';
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto';
@@ -401,19 +401,21 @@ export class CampaignsService {
           }
           const found = result.found && (result.data?.digitalAddress?.length ?? 0) > 0;
           const inadAddress = found ? result.data!.digitalAddress[0].digitalAddress : null;
+          const diverted = found && inadAddress !== recipient.pec;
           await this.recipientRepo.update(
             { id: recipient.id },
             {
               inadCheck: {
                 found,
+                diverted,
                 originalChannel: campaign.channelType,
                 originalAddress: campaign.channelType === 'PEC' ? recipient.pec : recipient.email,
                 checkedAt: new Date().toISOString(),
               },
-              ...(found && inadAddress !== recipient.pec ? { pec: inadAddress } : {}),
+              ...(diverted ? { pec: inadAddress } : {}),
             },
           );
-          if (found && inadAddress !== recipient.pec) {
+          if (diverted) {
             channelOverrides.set(recipient.id, 'PEC');
           }
         }),
@@ -515,16 +517,18 @@ export class CampaignsService {
         const match = recipient.codiceFiscale ? resultByCf.get(recipient.codiceFiscale) : undefined;
         const found = !!match?.digitalAddress?.length;
         const inadAddress = found ? match!.digitalAddress![0].digitalAddress : null;
+        const diverted = found && inadAddress !== recipient.pec;
         await this.recipientRepo.update(
           { id: recipient.id },
           {
             inadCheck: {
               found,
+              diverted,
               originalChannel: campaign.channelType,
               originalAddress: campaign.channelType === 'PEC' ? recipient.pec : recipient.email,
               checkedAt: new Date().toISOString(),
             },
-            ...(found && inadAddress !== recipient.pec ? { pec: inadAddress } : {}),
+            ...(diverted ? { pec: inadAddress } : {}),
           },
         );
       }
@@ -559,7 +563,7 @@ export class CampaignsService {
       });
       const channelOverrides = new Map<string, NotificationChannel>();
       for (const r of overriddenRecipients) {
-        if (r.inadCheck?.found && campaign.channelType !== 'PEC') {
+        if (r.inadCheck?.diverted && campaign.channelType !== 'PEC') {
           channelOverrides.set(r.id, 'PEC');
         }
       }
@@ -837,14 +841,20 @@ export class CampaignsService {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
-    if (!resolveSecondaryAppIoConfig(campaign.channelConfig)) return null;
-
     const recipients = await this.recipientRepo.find({
       where: { campaignId },
-      select: ['id', 'status'],
+      select: ['id', 'status', 'inadCheck'],
     });
 
-    const breakdown: ChannelBreakdownDto = { primaryOnly: 0, both: 0, appIoOnly: 0, appIoDespitePrimaryFail: 0, neither: 0 };
+    const hasAppIo = !!resolveSecondaryAppIoConfig(campaign.channelConfig);
+    // inadDiverted conta TUTTI i destinatari con un dirottamento INAD reale
+    // (diverted:true), indipendentemente dallo stato — descrive una decisione
+    // di instradamento presa al lancio, non un esito di invio, quindi include
+    // anche i destinatari ancora PENDING (check bulk non ancora finalizzato).
+    const inadDiverted = recipients.filter((r) => r.inadCheck?.diverted).length;
+    if (!hasAppIo && inadDiverted === 0) return null;
+
+    const breakdown: ChannelBreakdownDto = { primaryOnly: 0, both: 0, appIoOnly: 0, appIoDespitePrimaryFail: 0, neither: 0, inadDiverted };
     const toClassify = recipients.filter(
       (r) => r.status === RecipientStatus.SENT || r.status === RecipientStatus.FAILED,
     );
@@ -868,6 +878,40 @@ export class CampaignsService {
       else if (deliveredViaAppIo && appIoSucceeded) breakdown.appIoOnly++;
       else if (r.status === RecipientStatus.FAILED && appIoSucceeded) breakdown.appIoDespitePrimaryFail++;
       else breakdown.neither++;
+    }
+    return breakdown;
+  }
+
+  /**
+   * Canale effettivo di consegna per i destinatari notificati con successo
+   * (SENT), a prescindere dal canale di campagna: unifica i due meccanismi
+   * di dirottamento esistenti (App IO esclusiva a runtime via
+   * responsePayload.deliveredVia, override INAD già scritto in
+   * attempt.channelType al momento della creazione dell'attempt) in un'unica
+   * vista "chi ha ricevuto cosa dove". Bucket mutuamente esclusivi: se App IO
+   * ha consegnato in esclusiva vince APP_IO, altrimenti il canale è quello
+   * dell'attempt (che è già PEC se INAD ha dirottato quel destinatario).
+   */
+  async getEffectiveChannelBreakdown(campaignId: string): Promise<EffectiveChannelBreakdownDto> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+
+    const sentRecipients = await this.recipientRepo.find({
+      where: { campaignId, status: RecipientStatus.SENT },
+      select: ['id'],
+    });
+    if (sentRecipients.length === 0) return {};
+
+    const firstAttempts = await this.attemptRepo.find({
+      where: { recipientId: In(sentRecipients.map((r) => r.id)), attemptNumber: 1 },
+      select: ['recipientId', 'channelType', 'responsePayload'],
+    });
+
+    const breakdown: Record<string, number> = {};
+    for (const attempt of firstAttempts) {
+      const deliveredViaAppIo = attempt.responsePayload?.['deliveredVia'] === 'APP_IO';
+      const effectiveChannel = deliveredViaAppIo ? 'APP_IO' : attempt.channelType;
+      breakdown[effectiveChannel] = (breakdown[effectiveChannel] ?? 0) + 1;
     }
     return breakdown;
   }
