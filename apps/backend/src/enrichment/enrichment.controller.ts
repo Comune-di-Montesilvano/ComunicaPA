@@ -117,7 +117,9 @@ export class EnrichmentController {
     await this.svc.getJob(id);
     const path = getEnrichmentResultCsv(id);
     if (!fs.existsSync(path)) {
-      res.status(404).json({ error: 'Risultato non disponibile' });
+      // 200 + blocked, mai non-2xx: il proxy esterno sostituisce il body
+      // delle risposte non-2xx con una pagina HTML propria (vedi CLAUDE.md).
+      res.status(200).json({ blocked: true, message: 'Risultato non disponibile' });
       return;
     }
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
