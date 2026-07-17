@@ -19,6 +19,8 @@ describe('CampaignsController', () => {
     getPostalStatusBreakdown: jest.fn(),
     getPostalReportRows: jest.fn(),
     findOne: jest.fn().mockResolvedValue({ id: 'uuid-1', name: 'Test Campaign' }),
+    finalizeInadCheck: jest.fn().mockResolvedValue(undefined),
+    skipInadCheck: jest.fn().mockResolvedValue({ launched: 3, campaignId: 'uuid-1' }),
   };
 
   const mockAuditLogsService = {
@@ -236,6 +238,21 @@ describe('CampaignsController', () => {
       await controller.exportPostalReportStorico('c1', res);
       expect(res.setHeader).toHaveBeenCalledWith('Content-Disposition', expect.stringContaining('report_postal_storico_campagna_c1'));
       expect(res.send).toHaveBeenCalledWith(expect.stringContaining('Data Accettato'));
+    });
+  });
+
+  describe('inad-check retry/skip', () => {
+    it('retryInadCheck chiama finalizeInadCheck e logga audit', async () => {
+      await controller.retryInadCheck('uuid-1', mockReq);
+      expect(mockService.finalizeInadCheck).toHaveBeenCalledWith('uuid-1');
+      expect(mockAuditLogsService.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'INAD_CHECK_RETRY', campaignId: 'uuid-1' }));
+    });
+
+    it('skipInadCheck chiama il servizio e logga audit', async () => {
+      const result = await controller.skipInadCheck('uuid-1', mockReq);
+      expect(result.launched).toBe(3);
+      expect(mockService.skipInadCheck).toHaveBeenCalledWith('uuid-1');
+      expect(mockAuditLogsService.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'INAD_CHECK_SKIP', campaignId: 'uuid-1' }));
     });
   });
 });

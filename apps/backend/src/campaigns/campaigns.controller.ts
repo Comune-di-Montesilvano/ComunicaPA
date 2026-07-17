@@ -422,6 +422,38 @@ export class CampaignsController {
     return result;
   }
 
+  @Post(':id/inad-check/retry')
+  async retryInadCheck(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request & { user: JwtOperatorPayload },
+  ): Promise<{ ok: true }> {
+    await this.campaignsService.finalizeInadCheck(id);
+    await this.auditLogsService.log({
+      campaignId: id,
+      campaignName: (await this.campaignsService.findOne(id).catch(() => null))?.name ?? null,
+      operator: req.user.username,
+      action: 'INAD_CHECK_RETRY',
+      details: {},
+    });
+    return { ok: true };
+  }
+
+  @Post(':id/inad-check/skip')
+  async skipInadCheck(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request & { user: JwtOperatorPayload },
+  ): Promise<{ launched: number; campaignId: string }> {
+    const result = await this.campaignsService.skipInadCheck(id);
+    await this.auditLogsService.log({
+      campaignId: id,
+      campaignName: (await this.campaignsService.findOne(id).catch(() => null))?.name ?? null,
+      operator: req.user.username,
+      action: 'INAD_CHECK_SKIP',
+      details: { launched: result.launched },
+    });
+    return result;
+  }
+
   @Get(':id/duplicate-source')
   getDuplicateSource(@Param('id', ParseUUIDPipe) id: string) {
     return this.campaignsService.getDuplicateSource(id);
