@@ -844,6 +844,39 @@ describe('CampaignsService', () => {
       expect(mockAttemptRepo.createQueryBuilder).not.toHaveBeenCalled();
       expect(mockCampaignRepo.save).not.toHaveBeenCalled();
     });
+
+    it('con più batch pending, non processa nessun batch (nemmeno quelli già pronti) se anche uno solo non è DISPONIBILE', async () => {
+      const campaignChecking = {
+        ...mockCampaign,
+        id: 'c-bulk-multi-notready',
+        channelType: 'EMAIL',
+        status: CampaignStatus.CHECKING_INAD,
+        channelConfig: {
+          inadCheck: {
+            mechanism: 'bulk',
+            batches: [
+              { id: 'batch-ready', recipientIds: ['r1', 'r2'], done: false },
+              { id: 'batch-notready', recipientIds: ['r3', 'r4'], done: false },
+            ],
+            requestedAt: '2026-01-01T00:00:00Z',
+          },
+        },
+      };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaignChecking);
+      mockInadService.getBulkState.mockImplementation((id: string) =>
+        Promise.resolve(id === 'batch-ready' ? 'DISPONIBILE' : 'IN_ELABORAZIONE'),
+      );
+
+      await expect(service.finalizeInadCheck('c-bulk-multi-notready')).resolves.not.toThrow();
+
+      expect(mockInadService.getBulkState).toHaveBeenCalledWith('batch-ready');
+      expect(mockInadService.getBulkState).toHaveBeenCalledWith('batch-notready');
+      expect(mockInadService.getBulkResult).not.toHaveBeenCalled();
+      expect(mockRecipientRepo.update).not.toHaveBeenCalled();
+      expect(mockAttemptRepo.createQueryBuilder).not.toHaveBeenCalled();
+      expect(mockCampaignRepo.save).not.toHaveBeenCalled();
+      expect(mockCampaignQb.set).not.toHaveBeenCalledWith({ status: CampaignStatus.QUEUED });
+    });
   });
 
   describe('getChannelBreakdown', () => {

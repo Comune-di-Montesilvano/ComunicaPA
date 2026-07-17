@@ -481,19 +481,30 @@ export class CampaignsService {
     if (!inadCheck) return;
 
     const pendingBatches = inadCheck.batches.filter((b) => !b.done);
+
+    // Self-difesa: il chiamante "canonico" (demone Task 8) verifica già lo
+    // stato DISPONIBILE prima di invocare questo metodo, ma il retry
+    // manuale (`campaigns.controller.ts` `retryInadCheck`) chiama
+    // finalizeInadCheck direttamente senza alcun pre-check — se un batch
+    // non è ancora pronto, getBulkResult probabilmente lancia (4xx/dati
+    // incompleti), che diventerebbe una pagina HTML illeggibile dietro il
+    // reverse proxy di produzione. Fase 1: verifica lo stato di TUTTI i
+    // batch pending PRIMA di processarne uno — se anche un solo batch non è
+    // ancora pronto, abortisci senza alcun side-effect (niente getBulkResult,
+    // niente scritture su recipient/batch/campagna). In caso contrario un
+    // batch già pronto verrebbe processato e marcato `done` senza che il
+    // save che persiste quel flag venga mai raggiunto (return anticipato su
+    // un batch successivo non pronto), causando riprocessamenti ridondanti
+    // ad ogni chiamata successiva.
     for (const batch of pendingBatches) {
-      // Self-difesa: il chiamante "canonico" (demone Task 8) verifica già lo
-      // stato DISPONIBILE prima di invocare questo metodo, ma il retry
-      // manuale (`campaigns.controller.ts` `retryInadCheck`) chiama
-      // finalizeInadCheck direttamente senza alcun pre-check — se un batch
-      // non è ancora pronto, getBulkResult probabilmente lancia (4xx/dati
-      // incompleti), che diventerebbe una pagina HTML illeggibile dietro il
-      // reverse proxy di produzione. Riverifica qui e abortisci in modo
-      // silenzioso se non è ancora pronto.
       const state = await this.inadService.getBulkState(batch.id);
       if (state !== 'DISPONIBILE') {
         return;
       }
+    }
+
+    // Fase 2: tutti i batch pending sono DISPONIBILE — procedi a processarli.
+    for (const batch of pendingBatches) {
       const result = await this.inadService.getBulkResult(batch.id);
       const resultByCf = new Map(result.map((r) => [r.codiceFiscale, r]));
       const batchRecipients = await this.recipientRepo.find({
