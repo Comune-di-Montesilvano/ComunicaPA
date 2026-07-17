@@ -628,11 +628,18 @@ export function App(): React.JSX.Element {
       const match = disposition.match(/filename="?([^"]+)"?/);
       const filename = match ? match[1] : `documento-${legalFactId}`;
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
+      const isPdf = /\.pdf$/i.test(filename);
+      if (isPdf) {
+        window.open(url, '_blank');
+      } else {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
     } catch (err) {
       if (!(err instanceof ApiAuthError)) alert('Errore durante il download del documento.');
     }

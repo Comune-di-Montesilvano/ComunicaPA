@@ -111,7 +111,9 @@ export class CitizenController {
     }
 
     res.setHeader('Content-Type', result.contentType);
-    res.setHeader('Content-Disposition', `inline; filename="${result.filename}"`);
+    const isInline = /\.(pdf|png|jpe?g|gif)$/i.test(result.filename);
+    const dispositionMode = isInline ? 'inline' : 'attachment';
+    res.setHeader('Content-Disposition', `${dispositionMode}; filename="${result.filename}"`);
     res.setHeader('Content-Length', result.buffer.length);
     res.end(result.buffer);
   }

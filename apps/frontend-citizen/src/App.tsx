@@ -627,13 +627,7 @@ export function App(): React.JSX.Element {
 
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `avviso_comune_${notifId.slice(0, 8)}_${attachmentIndex + 1}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
+      window.open(url, '_blank');
 
       // Refresh list to show updated download count
       fetchNotifications();
@@ -677,13 +671,19 @@ export function App(): React.JSX.Element {
       }
       const blob = await res.blob();
       const objectUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = objectUrl;
-      a.download = fact.legalFactId.split('/').pop() ?? `attestazione_${notifId.slice(0, 8)}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(objectUrl);
+      const filename = fact.legalFactId.split('/').pop() ?? `attestazione_${notifId.slice(0, 8)}.pdf`;
+      const isPdf = /\.pdf$/i.test(filename);
+      if (isPdf) {
+        window.open(objectUrl, '_blank');
+      } else {
+        const a = document.createElement('a');
+        a.href = objectUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(objectUrl);
+      }
     } catch (err: any) {
       alert(err.message);
     }
