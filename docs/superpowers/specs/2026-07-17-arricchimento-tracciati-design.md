@@ -84,10 +84,15 @@ supera facilmente il limite ~1MB del reverse proxy esterno: si riusa
 (chunk client-side 512KB), MAI un upload single-shot. Il `complete` crea
 l'`EnrichmentJob` e accoda il job BullMQ.
 
-**Motore BullMQ `ENRICHMENT`** (nuovo `EngineName` in
-`notification-job.types.ts`):
+**Coda BullMQ dedicata `enrichment-jobs`** (pattern esistente
+`app-io-verify-bulk`, NON un nuovo `EngineName` in `ENGINE_QUEUES` —
+deciso in fase piano: il meccanismo Motori espone i job con
+`campaignId/recipientId/attemptId` che qui non esistono, e aggiungere un
+engine forza la modifica del costruttore di `NotificationQueuesService`,
+gotcha audit spec. Lo stato del job vive nell'entity e la dashboard lo
+mostra via polling — stesso modello della verifica bulk App IO):
 - `opts.jobId = enrichmentJob.id` (pattern jobId = id record, lookup diretto).
-- UI Motori esistente gratis: pausa/riprendi, job falliti, `job.log()`.
+- Progresso/warnings su entity DB + `job.log()` BullMQ.
 - Worker: legge ZIP da disco, parsa il tracciato, itera i record; per ogni
   PDF chiama `POST /extract` del servizio Python; logga progresso con
   `job.log()`; aggiorna contatori su `EnrichmentJob`; a fine corsa scrive
