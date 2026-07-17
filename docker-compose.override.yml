@@ -35,6 +35,14 @@ services:
       - ./packages/shared-types/src:/app/packages/shared-types/src:delegated
       - backend_node_modules:/app/node_modules
 
+  pdf-extractor:
+    image: comunicapa/pdf-extractor:dev
+    build:
+      context: .
+      dockerfile: services/pdf-extractor/Dockerfile.dev
+    volumes:
+      - ./services/pdf-extractor/app:/svc/app:delegated
+
   frontend-admin:
     image: comunicapa/frontend-admin:dev
     build:

@@ -15,7 +15,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: [backend, frontend-admin, frontend-citizen]
+        include:
+          - app: backend
+            dockerfile: apps/backend/Dockerfile
+          - app: frontend-admin
+            dockerfile: apps/frontend-admin/Dockerfile
+          - app: frontend-citizen
+            dockerfile: apps/frontend-citizen/Dockerfile
+          - app: pdf-extractor
+            dockerfile: services/pdf-extractor/Dockerfile
     steps:
       - uses: actions/checkout@v5
 
@@ -39,7 +47,7 @@ jobs:
       - uses: docker/build-push-action@v7
         with:
           context: .
-          file: apps/${{ matrix.app }}/Dockerfile
+          file: ${{ matrix.dockerfile }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
