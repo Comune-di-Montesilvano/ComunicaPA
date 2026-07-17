@@ -3237,6 +3237,21 @@ export function App(): React.JSX.Element {
         isRowValid = false;
       }
 
+      // Validate indirizzo/città per POSTAL — la sola presenza della mappatura
+      // colonna (controllata al gate del Passo 3) non garantisce che ogni riga
+      // abbia valore non vuoto: senza questo controllo una riga con via/città
+      // mancante viene inclusa e fallisce solo alla spedizione reale.
+      if (wizChannel === 'POSTAL') {
+        if (wizPostalAddressColumn && !row[wizPostalAddressColumn]?.trim()) {
+          errors.push({ row: rowNum, field: 'Indirizzo', val: '', err: 'Indirizzo mancante (obbligatorio per Postalizzazione)' });
+          isRowValid = false;
+        }
+        if (wizPostalMunicipalityColumn && !row[wizPostalMunicipalityColumn]?.trim()) {
+          errors.push({ row: rowNum, field: 'Città', val: '', err: 'Città mancante (obbligatoria per Postalizzazione)' });
+          isRowValid = false;
+        }
+      }
+
       if (isRowValid) {
         valid.push(row);
       }
@@ -3311,6 +3326,7 @@ export function App(): React.JSX.Element {
     setWizValidationWarnings([]);
     setWizValidRows([]);
     setWizMailConfigId('');
+    setWizPecReserveMailConfigId('');
     setWizAppIoMode('parallel');
     setWizAppIoDifferentiate(false);
     setWizAppIoSubjectOverride('');
@@ -3352,6 +3368,7 @@ export function App(): React.JSX.Element {
     setWizPostalUserDataColumn(source.channelConfig?.userDataColumn || '');
     setWizBody(source.channelConfig?.body || '');
     setWizMailConfigId(source.channelConfig?.mailConfigId || '');
+    setWizPecReserveMailConfigId(source.channelConfig?.pecReserveMailConfigId || '');
 
     const paymentConfig = source.channelConfig?.paymentConfig;
     setWizPaymentEnabled(!!paymentConfig?.enabled);
@@ -4645,6 +4662,23 @@ export function App(): React.JSX.Element {
               {wizStep === 1 && (
                 <div style={{ maxWidth: '600px', margin: '0 auto' }}>
                   <h4 className="h6 fw-bold text-dark mb-3">Passo 1: Dettagli della Campagna & Canale Principale</h4>
+
+                  <div className="mb-4 pb-3 border-bottom d-flex justify-content-end">
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => setWizStep(2)}
+                      disabled={
+                        !wizName ||
+                        ((wizChannel === 'EMAIL' || wizChannel === 'PEC') && !wizMailConfigId) ||
+                        ((wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && wizAppIoMode !== 'none' && !wizAppIoServiceId) ||
+                        (wizChannel === 'APP_IO' && !wizAppIoServiceId) ||
+                        (wizChannel === 'POSTAL' && !wizPostalServiceType)
+                      }
+                    >
+                      Avanti <i className="fas fa-arrow-right ms-1"></i>
+                    </button>
+                  </div>
+
                   <div className="mb-3">
                     <label className="form-label small fw-bold">Nome della Campagna *</label>
                     <input
@@ -4988,6 +5022,20 @@ export function App(): React.JSX.Element {
               {wizStep === 2 && (
                 <div style={{ maxWidth: '600px', margin: '0 auto' }}>
                   <h4 className="h6 fw-bold text-dark mb-3">Passo 2: Caricamento File Destinatari (CSV)</h4>
+
+                  <div className="mb-4 pb-3 border-bottom d-flex justify-content-between">
+                    <button className="btn btn-outline-secondary" onClick={() => setWizStep(1)}>
+                      <i className="fas fa-arrow-left me-1"></i> Indietro
+                    </button>
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => setWizStep(3)}
+                      disabled={!wizCsvFile}
+                    >
+                      Avanti <i className="fas fa-arrow-right ms-1"></i>
+                    </button>
+                  </div>
+
                   <div className="p-4 border rounded bg-light text-center mb-4">
                     <i className="fas fa-file-csv fa-3x text-muted mb-3"></i>
                     <p className="small text-muted mb-3">Seleziona il file CSV contenente l'elenco dei destinatari della TARI.</p>
@@ -5061,9 +5109,26 @@ export function App(): React.JSX.Element {
 
               {/* STEP 3: MAPPATURA & VALIDAZIONE */}
               {wizStep === 3 && (
-                <div style={{ maxWidth: '700px', margin: '0 auto' }}>
+                <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
                   <h4 className="h6 fw-bold text-dark mb-3">Passo 3: Associazione Colonne CSV & Validazione Formale</h4>
-                  
+
+                  <div className="mb-4 pb-3 border-bottom d-flex justify-content-between">
+                    <button className="btn btn-outline-secondary" onClick={() => setWizStep(2)}>
+                      <i className="fas fa-arrow-left me-1"></i> Indietro
+                    </button>
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => setWizStep(4)}
+                      disabled={
+                        wizValidRows.length === 0
+                        || (wizChannel === 'POSTAL' && (!wizPostalAddressColumn || !wizPostalMunicipalityColumn))
+                        || ((wizChannel === 'SEND' || wizChannel === 'POSTAL') && wizAttachments.filter(a => a.key).length === 0)
+                      }
+                    >
+                      Procedi a Template <i className="fas fa-arrow-right ms-1"></i>
+                    </button>
+                  </div>
+
                   <div className="row g-3 mb-4">
                     <div className="col-md-6">
                       <label className="form-label small fw-bold">Codice Fiscale { (wizChannel === 'APP_IO' || wizChannel === 'SEND') ? '*' : '(Consigliato)' }</label>
@@ -5255,14 +5320,14 @@ export function App(): React.JSX.Element {
                     </div>
                   </div>
 
-                  {(wizChannel === 'APP_IO' || wizChannel === 'SEND' || (wizAppIoMode && wizAppIoMode !== 'none')) && (
+                  {wizPaymentEnabled && (wizChannel === 'APP_IO' || wizChannel === 'SEND' || (wizAppIoMode && wizAppIoMode !== 'none')) && (
                     <div className="card border-light shadow-sm mb-4" style={{ background: '#f8f9fc' }}>
                       <div className="card-body p-3">
                         <h6 className="small fw-bold text-dark mb-3">
                           <i className="fas fa-credit-card me-2 text-primary"></i>Integrazione Pagamenti pagoPA (Opzionale)
                         </h6>
 
-                        {wizPaymentEnabled && (
+                        {
                           <div className="row g-2">
                             <div className="col-md-6">
                               <label className="form-label small fw-bold">Colonna Importo *</label>
@@ -5354,7 +5419,7 @@ export function App(): React.JSX.Element {
                               )}
                             </div>
                           </div>
-                        )}
+                        }
                       </div>
                     </div>
                   )}
@@ -5543,9 +5608,53 @@ export function App(): React.JSX.Element {
 
               {/* STEP 4: TEMPLATE & ANTEPRIMA */}
               {wizStep === 4 && (
+                <>
+                  <div className="mb-3 pb-3 border-bottom d-flex justify-content-between">
+                    <button className="btn btn-outline-secondary" onClick={() => setWizStep(3)}>
+                      <i className="fas fa-arrow-left me-1"></i> Indietro
+                    </button>
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => setWizStep(5)}
+                      disabled={
+                        wizChannel === 'POSTAL' && wizAppIoMode === 'none' && !settInadCheckEnabled
+                          ? false
+                          : (
+                              !wizSubject ||
+                              ((wizChannel !== 'SEND' && (wizChannel !== 'POSTAL' || settInadCheckEnabled)) && isWizBodyEmpty(wizBody)) ||
+                              wizAppIoBodyLenInvalid ||
+                              ((wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && wizAppIoMode !== 'none' && wizAppIoDifferentiate && (!wizAppIoSubjectOverride || !wizAppIoBodyOverride))
+                            )
+                      }
+                    >
+                      Riepilogo <i className="fas fa-arrow-right ms-1"></i>
+                    </button>
+                  </div>
                 <div className="row g-4">
                   <div className="col-lg-6 border-end">
                     <h4 className="h6 fw-bold text-dark mb-3">{wizChannel === 'SEND' ? 'Passo 4: Oggetto della Comunicazione' : 'Passo 4: Scrittura Template & Jolly Fields'}</h4>
+
+                    {(wizChannel === 'EMAIL' || wizChannel === 'PEC' || (wizChannel === 'POSTAL' && settInadCheckEnabled)) && templates.filter(t => t.type === 'MAIL').length > 0 && (
+                      <div className="mb-3">
+                        <label className="form-label small">Carica da template</label>
+                        <select
+                          className="form-select form-select-sm"
+                          value=""
+                          onChange={e => {
+                            const t = templates.find(x => x.id === e.target.value);
+                            if (t) {
+                              setWizSubject(t.subject);
+                              setWizBody(t.bodyHtml);
+                            }
+                          }}
+                        >
+                          <option value="">-- Seleziona template Mail/PEC --</option>
+                          {templates.filter(t => t.type === 'MAIL').map(t => (
+                            <option key={t.id} value={t.id}>{t.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
 
                     <div className="mb-3">
                       <label className="form-label small fw-bold">Oggetto della Comunicazione (Template)</label>
@@ -5561,7 +5670,7 @@ export function App(): React.JSX.Element {
                       />
                     </div>
 
-                    {wizChannel !== 'SEND' && (
+                    {wizChannel !== 'SEND' && (wizChannel !== 'POSTAL' || settInadCheckEnabled) && (
                       <>
                         <div className="mb-3">
                           <label className="form-label small fw-bold">Corpo del Messaggio (Template)</label>
@@ -5696,9 +5805,14 @@ export function App(): React.JSX.Element {
                         className="btn btn-primary"
                         onClick={() => setWizStep(5)}
                         disabled={
-                          !wizSubject ||
-                          (wizChannel !== 'SEND' && (isWizBodyEmpty(wizBody) || wizAppIoBodyLenInvalid)) ||
-                          ((wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && wizAppIoMode !== 'none' && wizAppIoDifferentiate && (!wizAppIoSubjectOverride || !wizAppIoBodyOverride))
+                          wizChannel === 'POSTAL' && wizAppIoMode === 'none' && !settInadCheckEnabled
+                            ? false
+                            : (
+                                !wizSubject ||
+                                ((wizChannel !== 'SEND' && (wizChannel !== 'POSTAL' || settInadCheckEnabled)) && isWizBodyEmpty(wizBody)) ||
+                                wizAppIoBodyLenInvalid ||
+                                ((wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && wizAppIoMode !== 'none' && wizAppIoDifferentiate && (!wizAppIoSubjectOverride || !wizAppIoBodyOverride))
+                              )
                         }
                       >
                         Riepilogo <i className="fas fa-arrow-right ms-1"></i>
@@ -5784,13 +5898,38 @@ export function App(): React.JSX.Element {
                     )}
                   </div>
                 </div>
+                </>
               )}
 
               {/* STEP 5: RIEPILOGO & SPEDIZIONE */}
               {wizStep === 5 && (
                 <div style={{ maxWidth: '600px', margin: '0 auto' }}>
                   <h4 className="h6 fw-bold text-dark mb-3"><i className="fas fa-check-circle text-success me-2"></i>Passo 5: Riepilogo & Messa in Coda</h4>
-                  
+
+                  <div className="mb-4 pb-3 border-bottom d-flex justify-content-between">
+                    <button
+                      className="btn btn-outline-secondary"
+                      onClick={() => setWizStep(4)}
+                      disabled={wizSending}
+                    >
+                      <i className="fas fa-arrow-left me-1"></i> Indietro
+                    </button>
+                    <button
+                      className="btn btn-success"
+                      onClick={handleWizLaunch}
+                      disabled={wizSending}
+                    >
+                      {wizSending ? (
+                        <>
+                          <i className="fas fa-spinner fa-spin me-1"></i>
+                          {wizUploadProgress ? `${wizUploadProgress.label}...` : 'Spedizione in corso...'}
+                        </>
+                      ) : (
+                        <><i className="fas fa-paper-plane me-1"></i>Conferma ed Avvia Campagna</>
+                      )}
+                    </button>
+                  </div>
+
                   <div className="border rounded bg-light p-4 mb-4" style={{ fontSize: '0.9rem' }}>
                     <div className="mb-2"><strong>Nome Campagna:</strong> {wizName}</div>
                     <div className="mb-2"><strong>Canale di Trasmissione:</strong> {wizChannel}</div>
