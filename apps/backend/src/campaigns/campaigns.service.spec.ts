@@ -746,9 +746,46 @@ describe('CampaignsService', () => {
         { id: 'r1' },
         expect.objectContaining({ pec: 'trovato@pec.it' }),
       );
-      expect(mockCampaignRepo.save).toHaveBeenCalledWith(
-        expect.objectContaining({ status: CampaignStatus.QUEUED }),
-      );
+      expect(mockCampaignQb.set).toHaveBeenCalledWith({ status: CampaignStatus.QUEUED });
+      expect(mockCampaignQb.where).toHaveBeenCalledWith('id = :id AND status = :checking', {
+        id: 'c-bulk-2',
+        checking: CampaignStatus.CHECKING_INAD,
+      });
+      expect(mockAttemptRepo.createQueryBuilder).toHaveBeenCalled();
+    });
+
+    it('finalizeInadCheck non ricrea gli attempt se un altro invocatore ha già vinto la transizione a QUEUED (race)', async () => {
+      const campaignChecking = {
+        ...mockCampaign,
+        id: 'c-bulk-race',
+        channelType: 'EMAIL',
+        status: CampaignStatus.CHECKING_INAD,
+        channelConfig: {
+          inadCheck: {
+            mechanism: 'bulk',
+            batches: [{ id: 'batch-race', recipientIds: ['r1', 'r2'], done: false }],
+            requestedAt: '2026-01-01T00:00:00Z',
+          },
+        },
+      };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaignChecking);
+      mockRecipientRepo.find.mockResolvedValue([
+        { id: 'r1', codiceFiscale: 'CF1', pec: null, email: 'e1@x.it' },
+        { id: 'r2', codiceFiscale: 'CF2', pec: null, email: 'e2@x.it' },
+      ]);
+      mockInadService.getBulkResult.mockResolvedValue([
+        { codiceFiscale: 'CF1', since: '2026-01-01', digitalAddress: [{ digitalAddress: 'trovato@pec.it' }] },
+        { codiceFiscale: 'CF2', since: '2026-01-01' },
+      ]);
+      // Simula un'altra invocazione concorrente che ha già vinto la
+      // transizione CHECKING_INAD -> QUEUED su questo campaignId.
+      mockCampaignQb.execute.mockResolvedValueOnce({ affected: 0 });
+
+      await service.finalizeInadCheck('c-bulk-race');
+
+      expect(mockCampaignQb.set).toHaveBeenCalledWith({ status: CampaignStatus.QUEUED });
+      expect(mockAttemptRepo.createQueryBuilder).not.toHaveBeenCalled();
+      expect(mockQueue.addBulk).not.toHaveBeenCalled();
     });
   });
 

@@ -498,6 +498,24 @@ export class CampaignsService {
     await this.campaignRepo.save(campaign);
 
     if (inadCheck.batches.every((b) => b.done)) {
+      // Guardia atomica: solo il chiamante che riesce a far avanzare lo stato
+      // CHECKING_INAD -> QUEUED procede a creare gli attempt. Previene doppie
+      // invocazioni concorrenti (es. cron overlap + retry manuale) dal creare
+      // entrambe NotificationAttempt duplicati per gli stessi destinatari —
+      // stesso idioma di `launch()`.
+      const finalizeResult = await this.campaignRepo
+        .createQueryBuilder()
+        .update()
+        .set({ status: CampaignStatus.QUEUED })
+        .where('id = :id AND status = :checking', { id: campaignId, checking: CampaignStatus.CHECKING_INAD })
+        .execute();
+
+      if (finalizeResult.affected === 0) {
+        // Un'altra invocazione concorrente ha già vinto la transizione: non
+        // ricreare gli attempt.
+        return;
+      }
+
       const overriddenRecipients = await this.recipientRepo.find({
         where: { id: In(inadCheck.batches.flatMap((b) => b.recipientIds)), status: RecipientStatus.PENDING },
         select: ['id', 'pec', 'inadCheck'],
@@ -513,8 +531,6 @@ export class CampaignsService {
         select: ['id'],
       });
       await this.createAttemptsAndEnqueue(campaign, allRecipients, channelOverrides);
-      campaign.status = CampaignStatus.QUEUED;
-      await this.campaignRepo.save(campaign);
     }
   }
 
