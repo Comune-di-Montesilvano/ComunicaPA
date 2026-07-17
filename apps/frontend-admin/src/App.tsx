@@ -6998,7 +6998,7 @@ export function App(): React.JSX.Element {
                             { label: 'Elenco Allegati', token: '%%elenco_allegati%%' },
                           ]}
                           csvPlaceholders={[]}
-                          wizLastFocusedField={tmplLastFocusedField}
+                          wizLastFocusedField={tmplLastFocusedField === 'subject' ? 'subject' : 'body'}
                           onInsertSubjectToken={insertTokenIntoTmplSubject}
                           onFocusEditor={() => setTmplLastFocusedField('body')}
                         />
