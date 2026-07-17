@@ -19,11 +19,14 @@ scope — verrà aggiunto in una fase successiva con lo stesso pattern.
 - `GET /extract/{cf}` (query singola, già in produzione da fase 1): **~0.5s**
   di latenza, risposta sincrona.
 - `POST /listDigitalAddress` + polling `state` (bulk, fino a 1000 CF per
-  richiesta): **~5m50s** per un batch di 3 CF, stato `IN_ELABORAZIONE` per
-  tutto il periodo, poi `303` con risultato disponibile. L'elaborazione è
-  quasi certamente a batch periodici lato INAD, non realtime — il costo è
-  presumibilmente fisso indipendentemente dal numero di CF nel batch (fino
-  al limite di 1000), non lineare.
+  richiesta): **~5m53s per un batch di 3 CF, ~6m09s per un batch di 50 CF**
+  (secondo test dal vivo, stesse credenziali) — differenza trascurabile
+  nonostante 16x più CF, stato `IN_ELABORAZIONE` per tutto il periodo, poi
+  `303` con risultato disponibile. Confermato: l'elaborazione è a batch
+  periodici lato INAD, non realtime, con **costo fisso non lineare**
+  rispetto al numero di CF nel batch (fino al limite di 1000) — non solo
+  un'ipotesi da un singolo campione, verificato su due dimensioni di
+  batch diverse.
 - `/extract` ha un limite di quota **giornaliero condiviso** (1000-2000
   richieste/giorno secondo indicazione dell'utente, non nello spec OpenAPI)
   — va usato con parsimonia sulle campagne grandi.
@@ -74,12 +77,33 @@ scope — verrà aggiunto in una fase successiva con lo stesso pattern.
   in `CHECKING_INAD` — **nessun fail-open automatico**. L'operatore deve
   intervenire dalla UI (bottone "Riprova verifica INAD" / "Salta verifica e
   procedi con canale configurato") per sbloccarla esplicitamente.
-- Ogni nuovo stato terminale/intermedio introdotto qui va verificato contro
-  tutti i metodi che mutano `Campaign`/`Recipient` esistenti (`cancel()`,
-  `retryRecipient()`, ecc.) — pattern già noto in questo repo (vedi
-  CLAUDE.md, sezione "Job BullMQ e stato campagna/destinatario"): un nuovo
-  stato terminale richiede audit di TUTTI i metodi che mutano quel record,
-  non solo quello che lo introduce.
+- **Audit completo di tutti i metodi che mutano `CampaignStatus`** in
+  `campaigns.service.ts` (pattern noto in questo repo, vedi CLAUDE.md
+  "Job BullMQ e stato campagna/destinatario" — un nuovo stato richiede
+  verificare TUTTI i metodi che mutano il record, non solo quello che lo
+  introduce), verificato riga per riga in fase di brainstorming:
+  - `updateDraft()` (guard `status !== DRAFT`) — invariato, `CHECKING_INAD`
+    non è mai `DRAFT`.
+  - `launch()` — modificato per introdurre lo stato (vedi sopra).
+  - `cancel()` (guard oggi `status !== QUEUED`) — **esteso** per accettare
+    anche `CHECKING_INAD`: una campagna bloccata in `CHECKING_INAD` deve
+    essere annullabile dall'operatore. In quello stato non esistono ancora
+    attempt/job BullMQ (vengono creati solo alla transizione a `QUEUED`),
+    quindi annullare da `CHECKING_INAD` è un semplice update di stato a
+    `CANCELLED`, senza rimozione job.
+  - `retryRecipient()` (guard oggi `status === CANCELLED` bloccante,
+    più `recipient.status !== FAILED`) — **nessuna modifica necessaria**:
+    durante `CHECKING_INAD` i destinatari sono ancora `PENDING` (nessun
+    attempt creato), quindi non possono mai essere `FAILED` e il guard
+    esistente sul recipient li esclude già implicitamente.
+  - `retryRecipientsBulk()` — chiama `retryRecipient()` internamente,
+    eredita la stessa esclusione implicita, nessuna modifica.
+  - `CampaignCompletionService.checkAndComplete()` (transizione
+    `QUEUED → COMPLETED`) — invariato: opera solo su campagne già
+    `QUEUED`, mai raggiungibile da `CHECKING_INAD` direttamente.
+  - Frontend-citizen (`apps/frontend-citizen/src/App.tsx`) verificato: non
+    referenzia mai lo stato campagna (solo stato destinatario/attempt),
+    nessun impatto.
 
 ## Override canale/indirizzo e persistenza
 
@@ -110,16 +134,26 @@ scope — verrà aggiunto in una fase successiva con lo stesso pattern.
   invariate — l'override avviene scrivendo sul recipient prima che la
   strategy venga invocata, non nella strategy stessa.
 
-## Wizard — step PEC sempre presente per campagne non-SEND
+## Wizard — blocco PEC di riserva dentro gli step esistenti
 
-Per ogni campagna non-SEND con canale diverso da PEC, il wizard mostra
-sempre uno step aggiuntivo obbligatorio: mittente PEC da usare + template
-email/PEC da applicare agli eventuali destinatari con override INAD attivo.
-Mostrato incondizionatamente (anche se poi nessun destinatario di quella
-campagna avrà un domicilio INAD attivo) per non introdurre un'ulteriore
-toggle di attivazione per-campagna — coerente con la decisione già presa in
-fase 1 di preferire "template a volte inutilizzati" a "complessità
-aggiuntiva nel software".
+Il wizard ha 5 step fissi numerati (nessun array dinamico per canale,
+`wizStep` hardcoded in tutto `App.tsx`) — non si introduce un 6° step.
+Per ogni campagna non-SEND con canale diverso da PEC, si aggiungono due
+blocchi condizionali (`wizChannel !== 'SEND' && wizChannel !== 'PEC'`),
+stesso pattern già usato per la co-consegna App IO
+(`buildWizChannelConfigDraft`/`handleWizLaunch`, guardia duplicata in
+entrambi i punti — vedi CLAUDE.md "Allegati e co-consegna App IO"):
+- **Step 1 (Dettagli & Canale)**: selezione del mittente PEC da usare per
+  gli eventuali destinatari con override INAD.
+- **Step 4 (Template & Anteprima)**: template email/PEC da applicare a
+  quei destinatari, anche se non previsto normalmente per il canale della
+  campagna (es. POSTAL/APP_IO non hanno mai avuto un template email).
+Mostrati incondizionatamente (anche se poi nessun destinatario avrà un
+domicilio INAD attivo) per non introdurre un'ulteriore toggle di
+attivazione per-campagna — coerente con la decisione già presa in fase 1
+di preferire "template a volte inutilizzati" a "complessità aggiuntiva nel
+software". Salvati in `channelConfig.pecReserve = { mailConfigId, subject,
+body }`.
 
 ## Fuori scope (questa fase)
 
