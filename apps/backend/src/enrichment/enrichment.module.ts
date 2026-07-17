@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
 import { EnrichmentJob } from '../entities/enrichment-job.entity';
 import { EnrichmentService } from './enrichment.service';
+import { EnrichmentController } from './enrichment.controller';
 import { PdfExtractorClient } from './pdf-extractor.client';
 import { EnrichmentProcessor } from './enrichment.processor';
 import { ENRICHMENT_QUEUE } from './enrichment-job.types';
@@ -12,6 +13,7 @@ import { ENRICHMENT_QUEUE } from './enrichment-job.types';
     TypeOrmModule.forFeature([EnrichmentJob]),
     BullModule.registerQueue({ name: ENRICHMENT_QUEUE }),
   ],
+  controllers: [EnrichmentController],
   providers: [EnrichmentService, PdfExtractorClient, EnrichmentProcessor],
   exports: [EnrichmentService],
 })
