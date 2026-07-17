@@ -7,7 +7,7 @@ import type { AppConfiguration } from '../config/configuration';
 import { Public } from '../auth/decorators/public.decorator';
 import { Recipient } from '../entities/recipient.entity';
 import { DownloadEvent } from '../entities/download-event.entity';
-import { AttachmentService } from '../attachments/attachment.service';
+import { AttachmentService, resolveCustomAttachmentFilename } from '../attachments/attachment.service';
 import { verifyDownloadLink } from '../channels/download-link.util';
 
 @Controller('public/download')
@@ -82,8 +82,13 @@ export class PublicDownloadController {
       }
     }
 
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="avviso_${recipientId.slice(0, 8)}_${index + 1}.pdf"`);
+    const customFilename = resolveCustomAttachmentFilename(recipient, index) || `avviso_${recipientId.slice(0, 8)}_${index + 1}.pdf`;
+    const isPdf = customFilename.toLowerCase().endsWith('.pdf');
+    const contentType = isPdf ? 'application/pdf' : 'application/octet-stream';
+    const dispositionMode = isPdf ? 'inline' : 'attachment';
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `${dispositionMode}; filename="${customFilename}"`);
     res.end(pdfBuffer);
   }
 }
