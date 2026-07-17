@@ -20,6 +20,19 @@ function setupJobDir(jobId: string): void {
   zip.writeZip(getEnrichmentSourceZip(jobId));
 }
 
+const PAG_INDICE = [
+  "'nome file;'destinatario;'cod. fisc. dest;'indirizzo;'indirizzo parte 2;'localita;'comune;'stato estero;'Ocr int;'Ocr rid;'Num. provv;'Data emissione",
+  "'PROVV_1.pdf;'VERDI LUIGI;'VRDLGU70A01H501X;'VIA MILANO 5;';'00067 MORLUPO RM;';';'301000000000000099;'RAV999;'99;'01/02/2026",
+].join('\n');
+
+function setupJobDirPagIndice(jobId: string): void {
+  const zip = new AdmZip();
+  zip.addFile('pag_indice.csv', Buffer.from(PAG_INDICE, 'utf-8'));
+  zip.addFile('allegati/PROVV_1.pdf', Buffer.from('%PDF-1'));
+  fs.mkdirSync(getEnrichmentDir(jobId), { recursive: true });
+  zip.writeZip(getEnrichmentSourceZip(jobId));
+}
+
 describe('EnrichmentProcessor', () => {
   let tmpDir: string;
   let repo: any;
@@ -100,5 +113,34 @@ describe('EnrichmentProcessor', () => {
   it('record DB assente → return senza errori', async () => {
     repo.findOneBy.mockResolvedValue(null);
     await expect(processor.process(fakeJob)).resolves.toBeUndefined();
+  });
+
+  it('indirizzo e numero avviso da pag_indice.csv vincono sui dati estratti dal PDF', async () => {
+    fs.rmSync(getEnrichmentDir('j1'), { recursive: true, force: true });
+    setupJobDirPagIndice('j1');
+    // Il PDF restituisce un indirizzo/numero avviso DIVERSI da quelli già nel CSV:
+    // la riga finale deve mantenere i valori del CSV, non quelli del PDF.
+    client.extract.mockResolvedValue({
+      address: { indirizzo: 'VIA PDF ESTRATTA 99', cap: '99999', comune: 'ALTROVE', provincia: 'XX', stato_estero: '' },
+      payment: { numero_avviso: '999999999999999999', numero_avviso_alternativo: 'PDF-ALT', cf_ente: '000', importo: '10,00', scadenza: '01/01/2027' },
+      warnings: [],
+    });
+
+    await processor.process(fakeJob);
+
+    const csv = fs.readFileSync(getEnrichmentResultCsv('j1'), 'utf-8');
+    const lines = csv.split('\n');
+    expect(lines).toHaveLength(2); // header + 1 riga
+    // Indirizzo: vince pag_indice.csv, non il PDF
+    expect(lines[1]).toContain('"VIA MILANO 5"');
+    expect(lines[1]).toContain('"00067"');
+    expect(lines[1]).toContain('"MORLUPO"');
+    expect(lines[1]).not.toContain('VIA PDF ESTRATTA 99');
+    // Numero avviso: vince pag_indice.csv (Ocr int/rid), non il PDF
+    expect(lines[1]).toContain('"301000000000000099"');
+    expect(lines[1]).toContain('"RAV999"');
+    expect(lines[1]).not.toContain('999999999999999999');
+    // Importo/scadenza: sempre dal PDF (non presenti nel CSV sorgente)
+    expect(lines[1]).toContain('"10,00"');
   });
 });

@@ -39,9 +39,9 @@ export class EnrichmentProcessor extends WorkerHost {
       return;
     }
 
-    await this.jobRepo.update(jobId, { status: EnrichmentJobStatus.PROCESSING });
-
     try {
+      await this.jobRepo.update(jobId, { status: EnrichmentJobStatus.PROCESSING });
+
       const zip = new AdmZip(getEnrichmentSourceZip(jobId));
       const { records } = parseMaggioliZip(zip);
       const warnings: EnrichmentWarning[] = [];
