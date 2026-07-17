@@ -479,6 +479,12 @@ export function App(): React.JSX.Element {
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [templates, setTemplates] = useState<TemplateItem[]>([]);
   const [editingTemplate, setEditingTemplate] = useState<Partial<TemplateItem> & { type: 'MAIL' | 'APP_IO' } | null>(null);
+  const [tmplLastFocusedField, setTmplLastFocusedField] = useState<'subject' | 'body' | 'appio-subject' | 'appio-body'>('body');
+  const tmplSubjectInputRef = useRef<HTMLInputElement>(null);
+  const [tmplCreateAppIoPair, setTmplCreateAppIoPair] = useState<boolean>(true);
+  const [tmplDifferentiateAppIo, setTmplDifferentiateAppIo] = useState<boolean>(false);
+  const [tmplAppIoSubject, setTmplAppIoSubject] = useState<string>('');
+  const [tmplAppIoBody, setTmplAppIoBody] = useState<string>('');
   const [appVersion, setAppVersion] = useState<string>('');
   const [isLdapMock, setIsLdapMock] = useState<boolean>(false);
   const [brandLogoUrl, setBrandLogoUrl] = useState<string | null>(null);
@@ -775,7 +781,6 @@ export function App(): React.JSX.Element {
   const [wizAppIoDifferentiate, setWizAppIoDifferentiate] = useState(false);
   const [wizAppIoSubjectOverride, setWizAppIoSubjectOverride] = useState('');
   const [wizAppIoBodyOverride, setWizAppIoBodyOverride] = useState('');
-  const [wizBlockedChannels, setWizBlockedChannels] = useState<string[]>([]);
   const [wizCampaignId, setWizCampaignId] = useState<string | null>(null);
   const [wizDraftSaving, setWizDraftSaving] = useState(false);
 
@@ -2063,23 +2068,224 @@ export function App(): React.JSX.Element {
     setTemplates(data.templates || []);
   };
 
+  const convertHtmlToMarkdown = (html: string): string => {
+    if (!html) return '';
+    let md = html;
+    // Sostituisce <br> e <br />
+    md = md.replace(/<br\s*\/?>/gi, '\n');
+    // Sostituisce i paragrafi
+    md = md.replace(/<\/p>/gi, '\n\n');
+    md = md.replace(/<p[^>]*>/gi, '');
+    // Sostituisce strong/bold
+    md = md.replace(/<(strong|b)[^>]*>(.*?)<\/\1>/gi, '**$2**');
+    // Sostituisce em/italic
+    md = md.replace(/<(em|i)[^>]*>(.*?)<\/\1>/gi, '*$2*');
+    // Sostituisce i link: <a href="url">label</a> in [label](url)
+    md = md.replace(/<a\s+(?:[^>]*?\s+)?href="([^"]*)"[^>]*>(.*?)<\/a>/gi, '[$2]($1)');
+    // Sostituisce i list items
+    md = md.replace(/<li>(.*?)<\/li>/gi, '- $1\n');
+    md = md.replace(/<\/?[ou]l[^>]*>/gi, '\n');
+    // Rimuove qualsiasi tag HTML residuo
+    md = md.replace(/<[^>]*>/g, '');
+    // Pulisce ritorni a capo consecutivi
+    md = md.replace(/\n{3,}/g, '\n\n');
+    return md.trim();
+  };
+
   const handleSaveTemplate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTemplate) return;
-    const method = editingTemplate.id ? 'PUT' : 'POST';
-    const url = editingTemplate.id ? `${ADMIN_API_BASE}/templates/${editingTemplate.id}` : `${ADMIN_API_BASE}/templates`;
-    const res = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify(editingTemplate),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => null);
-      alert(body?.message || 'Errore durante il salvataggio del template');
-      return;
+
+    try {
+      const isNewMailTemplate = !editingTemplate.id && editingTemplate.type === 'MAIL';
+
+      if (isNewMailTemplate && tmplCreateAppIoPair) {
+        // Step 1: Crea prima il template gemello App IO (senza accoppiamento)
+        const appIoSubject = tmplDifferentiateAppIo ? tmplAppIoSubject : (editingTemplate.subject || '');
+        const appIoBody = tmplDifferentiateAppIo ? tmplAppIoBody : convertHtmlToMarkdown(editingTemplate.bodyHtml || '');
+
+        const appIoRes = await fetch(`${ADMIN_API_BASE}/templates`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            type: 'APP_IO',
+            name: `${editingTemplate.name || ''} (App IO)`,
+            subject: appIoSubject,
+            bodyHtml: '',
+            bodyMarkdown: appIoBody,
+            pairedTemplateId: null,
+          }),
+        });
+        if (!appIoRes.ok) {
+          throw new Error('Errore durante la creazione automatica del template gemello App IO');
+        }
+        const appIoCopy = await appIoRes.json();
+
+        // Step 2: Crea il template Mail principale accoppiato al gemello
+        const mailRes = await fetch(`${ADMIN_API_BASE}/templates`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            ...editingTemplate,
+            pairedTemplateId: appIoCopy.id,
+          }),
+        });
+        if (!mailRes.ok) {
+          throw new Error('Errore durante la creazione del template Mail/PEC');
+        }
+        const mailCopy = await mailRes.json();
+
+        // Step 3: Collega il gemello App IO alla Mail per stabilire la relazione mutua
+        const linkRes = await fetch(`${ADMIN_API_BASE}/templates/${appIoCopy.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            pairedTemplateId: mailCopy.id,
+          }),
+        });
+        if (!linkRes.ok) {
+          throw new Error('Errore durante il collegamento dei template Mail/PEC e App IO');
+        }
+      } else {
+        // Salvataggio standard (singolo o modifica)
+        const method = editingTemplate.id ? 'PUT' : 'POST';
+        const url = editingTemplate.id ? `${ADMIN_API_BASE}/templates/${editingTemplate.id}` : `${ADMIN_API_BASE}/templates`;
+        const res = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify(editingTemplate),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          throw new Error(body?.message || 'Errore durante il salvataggio del template');
+        }
+      }
+
+      setEditingTemplate(null);
+      fetchTemplates();
+    } catch (err: any) {
+      alert(err.message || 'Errore durante il salvataggio');
     }
-    setEditingTemplate(null);
-    fetchTemplates();
+  };
+
+  const insertTokenIntoTmplSubject = (token: string) => {
+    const input = tmplSubjectInputRef.current;
+    if (!input || !editingTemplate) return;
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? input.value.length;
+    const value = input.value;
+    const newValue = value.substring(0, start) + ` ${token} ` + value.substring(end);
+    setEditingTemplate({
+      ...editingTemplate,
+      subject: newValue
+    });
+    setTimeout(() => {
+      input.focus();
+      const newCursorPos = start + token.length + 2; // +2 per gli spazi circostanti
+      input.setSelectionRange(newCursorPos, newCursorPos);
+    }, 0);
+  };
+
+  const getGroupedTemplates = () => {
+    const list: TemplateItem[] = [];
+    const visited = new Set<string>();
+    for (const t of templates) {
+      if (visited.has(t.id)) continue;
+      const pairedId = t.pairedTemplateId;
+      const paired = pairedId ? templates.find(x => x.id === pairedId) : null;
+      if (paired && !visited.has(paired.id)) {
+        const mailTmpl = t.type === 'MAIL' ? t : paired;
+        const ioTmpl = t.type === 'APP_IO' ? t : paired;
+        visited.add(mailTmpl.id);
+        visited.add(ioTmpl.id);
+        list.push(mailTmpl, ioTmpl);
+      } else {
+        visited.add(t.id);
+        list.push(t);
+      }
+    }
+    return list;
+  };
+
+  const handleDuplicateTemplate = async (id: string) => {
+    const t = templates.find(x => x.id === id);
+    if (!t) return;
+
+    try {
+      const pairedId = t.pairedTemplateId;
+      const paired = pairedId ? templates.find(x => x.id === pairedId) : null;
+
+      if (paired) {
+        // Step 1: Duplica prima il template gemello (senza collegarlo ancora)
+        const pairedRes = await fetch(`${ADMIN_API_BASE}/templates`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            type: paired.type,
+            name: `${paired.name} (Copia)`,
+            subject: paired.subject,
+            bodyHtml: paired.bodyHtml,
+            bodyMarkdown: paired.bodyMarkdown,
+            pairedTemplateId: null,
+          }),
+        });
+        if (!pairedRes.ok) {
+          throw new Error('Errore durante la duplicazione del template gemello');
+        }
+        const pairedCopy = await pairedRes.json();
+
+        // Step 2: Duplica il template principale e collegalo alla copia appena creata
+        const targetRes = await fetch(`${ADMIN_API_BASE}/templates`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            type: t.type,
+            name: `${t.name} (Copia)`,
+            subject: t.subject,
+            bodyHtml: t.bodyHtml,
+            bodyMarkdown: t.bodyMarkdown,
+            pairedTemplateId: pairedCopy.id,
+          }),
+        });
+        if (!targetRes.ok) {
+          throw new Error('Errore durante la duplicazione del template principale');
+        }
+        const targetCopy = await targetRes.json();
+
+        // Step 3: Collega la copia gemella alla copia del principale per stabilire il link bidirezionale/mutuo
+        const linkRes = await fetch(`${ADMIN_API_BASE}/templates/${pairedCopy.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            pairedTemplateId: targetCopy.id,
+          }),
+        });
+        if (!linkRes.ok) {
+          throw new Error('Errore durante il collegamento reciproco dei template copiati');
+        }
+      } else {
+        // Duplicazione singola (senza template gemello accoppiato)
+        const res = await fetch(`${ADMIN_API_BASE}/templates`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            type: t.type,
+            name: `${t.name} (Copia)`,
+            subject: t.subject,
+            bodyHtml: t.bodyHtml,
+            bodyMarkdown: t.bodyMarkdown,
+            pairedTemplateId: null,
+          }),
+        });
+        if (!res.ok) {
+          throw new Error('Errore durante la duplicazione del template');
+        }
+      }
+
+      fetchTemplates();
+    } catch (err: any) {
+      alert(err.message || 'Errore durante la duplicazione del template');
+    }
   };
 
   const handleDeleteTemplate = async (id: string) => {
@@ -3342,7 +3548,6 @@ export function App(): React.JSX.Element {
     setWizAppIoDifferentiate(false);
     setWizAppIoSubjectOverride('');
     setWizAppIoBodyOverride('');
-    setWizBlockedChannels([]);
 
     // Clear payment states
     setWizPaymentEnabled(false);
@@ -3408,7 +3613,6 @@ export function App(): React.JSX.Element {
     setWizAppIoDifferentiate(!!secondaryAppIo?.subjectOverride || !!secondaryAppIo?.bodyOverride);
     setWizAppIoSubjectOverride(secondaryAppIo?.subjectOverride || '');
     setWizAppIoBodyOverride(secondaryAppIo?.bodyOverride || '');
-    setWizBlockedChannels(source.channelConfig?.blockedChannels || []);
     
     // Il CSV viene recuperato se stiamo riprendendo una bozza e c'è un file salvato
     if (!opts.isDuplicate && opts.campaignId && source.channelConfig?.wizCsvFilename) {
@@ -3523,7 +3727,6 @@ export function App(): React.JSX.Element {
         ...(wizAppIoDifferentiate ? { subjectOverride: wizAppIoSubjectOverride, bodyOverride: wizAppIoBodyOverride } : {}),
       }];
     }
-    if (wizBlockedChannels.length > 0) cfg.blockedChannels = wizBlockedChannels;
     if (wizPecReserveMailConfigId) cfg.pecReserveMailConfigId = wizPecReserveMailConfigId;
 
     if (wizPaymentEnabled) {
@@ -3679,9 +3882,6 @@ export function App(): React.JSX.Element {
         };
       }
 
-      if (wizBlockedChannels.length > 0) {
-        channelConfig.blockedChannels = wizBlockedChannels;
-      }
       if (wizPecReserveMailConfigId) {
         channelConfig.pecReserveMailConfigId = wizPecReserveMailConfigId;
       }
@@ -4734,7 +4934,6 @@ export function App(): React.JSX.Element {
                         setWizChannel(newChan);
                         const activeCfg = mailConfigs.find(c => c.type === newChan && c.active);
                         setWizMailConfigId(activeCfg?.id || '');
-                        setWizBlockedChannels(prev => prev.filter(x => x !== newChan));
                         if (newChan === 'SEND') setWizProtocolla(true);
                       }}
                     >
@@ -4989,40 +5188,6 @@ export function App(): React.JSX.Element {
                       </select>
                     </div>
                   )}
-
-                  <div className="card mb-3 border-light shadow-sm">
-                    <div className="card-body p-3">
-                      <h6 className="small fw-bold text-dark mb-2"><i className="fas fa-ban me-2 text-danger"></i>Canali di Spedizione Bloccati</h6>
-                      <p className="small text-muted mb-3">Seleziona i canali alternativi o primari che non devono ricevere l'invio (utile ad esempio per bloccare l'invio postale cartaceo).</p>
-                      <div className="d-flex gap-3 flex-wrap">
-                        {['EMAIL', 'PEC', 'APP_IO', 'SEND', 'POSTAL'].map(c => {
-                          const isPrimary = wizChannel === c;
-                          const isBlocked = wizBlockedChannels.includes(c);
-                          return (
-                            <div key={c} className="form-check">
-                              <input
-                                type="checkbox"
-                                className="form-check-input"
-                                id={`chk_block_${c}`}
-                                checked={isBlocked}
-                                disabled={isPrimary}
-                                onChange={e => {
-                                  if (e.target.checked) {
-                                    setWizBlockedChannels([...wizBlockedChannels, c]);
-                                  } else {
-                                    setWizBlockedChannels(wizBlockedChannels.filter(x => x !== c));
-                                  }
-                                }}
-                              />
-                              <label className={`form-check-label small ${isPrimary ? 'text-muted' : ''}`} htmlFor={`chk_block_${c}`}>
-                                {c} {isPrimary && '(Primario)'}
-                              </label>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
 
                   <div className="mt-4 pt-3 border-top d-flex justify-content-end">
                     <button
@@ -6724,10 +6889,20 @@ export function App(): React.JSX.Element {
                 <h3 className="h5 fw-bold text-dark"><i className="fas fa-file-lines me-2"></i>Template</h3>
                 {!editingTemplate && (
                   <div className="btn-group">
-                    <button className="btn btn-sm btn-primary" onClick={() => setEditingTemplate({ type: 'MAIL', name: '', subject: '', bodyHtml: '', bodyMarkdown: '', pairedTemplateId: null })}>
+                    <button className="btn btn-sm btn-primary" onClick={() => {
+                      setEditingTemplate({ type: 'MAIL', name: '', subject: '', bodyHtml: '', bodyMarkdown: '', pairedTemplateId: null });
+                      setTmplLastFocusedField('body');
+                      setTmplCreateAppIoPair(true);
+                      setTmplDifferentiateAppIo(false);
+                      setTmplAppIoSubject('');
+                      setTmplAppIoBody('');
+                    }}>
                       <i className="fas fa-plus me-1"></i>Nuovo Template Mail/PEC
                     </button>
-                    <button className="btn btn-sm btn-outline-primary" onClick={() => setEditingTemplate({ type: 'APP_IO', name: '', subject: '', bodyHtml: '', bodyMarkdown: '', pairedTemplateId: null })}>
+                    <button className="btn btn-sm btn-outline-primary" onClick={() => {
+                      setEditingTemplate({ type: 'APP_IO', name: '', subject: '', bodyHtml: '', bodyMarkdown: '', pairedTemplateId: null });
+                      setTmplLastFocusedField('body');
+                    }}>
                       <i className="fas fa-plus me-1"></i>Nuovo Template App IO
                     </button>
                   </div>
@@ -6737,21 +6912,55 @@ export function App(): React.JSX.Element {
               {!editingTemplate ? (
                 <div className="card shadow-sm">
                   <table className="table table-sm mb-0">
-                    <thead><tr><th>Nome</th><th>Tipo</th><th>Oggetto</th><th>Gemello</th><th className="text-end">Azioni</th></tr></thead>
+                    <thead><tr><th>Nome</th><th>Tipo</th><th>Oggetto</th><th className="text-end">Azioni</th></tr></thead>
                     <tbody>
-                      {templates.map(t => (
-                        <tr key={t.id}>
-                          <td>{t.name}</td>
-                          <td><ChannelBadge channel={t.type} /></td>
-                          <td className="small text-muted">{t.subject}</td>
-                          <td className="small">{t.pairedTemplateId ? templates.find(x => x.id === t.pairedTemplateId)?.name || '—' : '—'}</td>
-                          <td className="text-end">
-                            <button className="btn btn-sm btn-outline-primary me-1" onClick={() => setEditingTemplate(t)}><i className="fas fa-edit"></i></button>
-                            <button className="btn btn-sm btn-outline-danger" onClick={() => handleDeleteTemplate(t.id)}><i className="fas fa-trash"></i></button>
-                          </td>
-                        </tr>
-                      ))}
-                      {templates.length === 0 && <tr><td colSpan={5} className="text-center text-muted py-3">Nessun template creato</td></tr>}
+                      {getGroupedTemplates().map(t => {
+                        const pairedId = t.pairedTemplateId;
+                        const paired = pairedId ? templates.find(x => x.id === pairedId) : null;
+                        const isPaired = !!paired;
+                        const isFirstOfPair = isPaired && t.type === 'MAIL';
+                        const isSecondOfPair = isPaired && t.type === 'APP_IO';
+                        
+                        const rowStyle: React.CSSProperties = isPaired ? {
+                          backgroundColor: '#f4f7fc',
+                        } : {};
+
+                        const borderLeftStyle = isPaired ? '3px solid var(--bs-primary, #0066cc)' : undefined;
+
+                        return (
+                          <tr key={t.id} style={rowStyle}>
+                            <td style={{
+                              borderLeft: borderLeftStyle,
+                              borderBottom: isFirstOfPair ? 'none' : undefined,
+                              borderTop: isSecondOfPair ? 'none' : undefined,
+                              paddingLeft: isSecondOfPair ? '1.5rem' : undefined,
+                            }}>
+                              {isFirstOfPair && <i className="fas fa-link text-primary me-2" title="Coppia di template collegati"></i>}
+                              {isSecondOfPair && <i className="fas fa-reply fa-rotate-180 text-muted me-2" style={{ transform: 'scaleX(-1)', opacity: 0.6 }} title="Gemello App IO"></i>}
+                              {t.name}
+                            </td>
+                            <td style={{
+                              borderBottom: isFirstOfPair ? 'none' : undefined,
+                              borderTop: isSecondOfPair ? 'none' : undefined,
+                            }}>
+                              <ChannelBadge channel={t.type} />
+                            </td>
+                            <td className="small text-muted" style={{
+                              borderBottom: isFirstOfPair ? 'none' : undefined,
+                              borderTop: isSecondOfPair ? 'none' : undefined,
+                            }}>{t.subject}</td>
+                            <td className="text-end" style={{
+                              borderBottom: isFirstOfPair ? 'none' : undefined,
+                              borderTop: isSecondOfPair ? 'none' : undefined,
+                            }}>
+                              <button className="btn btn-sm btn-outline-primary me-1" title="Modifica" onClick={() => { setEditingTemplate(t); setTmplLastFocusedField('body'); }}><i className="fas fa-edit"></i></button>
+                              <button className="btn btn-sm btn-outline-secondary me-1" title="Duplica" onClick={() => handleDuplicateTemplate(t.id)}><i className="fas fa-copy"></i></button>
+                              <button className="btn btn-sm btn-outline-danger" title="Elimina" onClick={() => handleDeleteTemplate(t.id)}><i className="fas fa-trash"></i></button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {templates.length === 0 && <tr><td colSpan={4} className="text-center text-muted py-3">Nessun template creato</td></tr>}
                     </tbody>
                   </table>
                 </div>
@@ -6764,24 +6973,209 @@ export function App(): React.JSX.Element {
                   </div>
                   <div className="mb-3">
                     <label className="form-label small fw-bold">Oggetto</label>
-                    <input className="form-control form-control-sm" required value={editingTemplate.subject || ''} onChange={e => setEditingTemplate({ ...editingTemplate, subject: e.target.value })} />
+                    <input
+                      ref={tmplSubjectInputRef}
+                      className="form-control form-control-sm"
+                      required
+                      value={editingTemplate.subject || ''}
+                      onChange={e => setEditingTemplate({ ...editingTemplate, subject: e.target.value })}
+                      onFocus={() => setTmplLastFocusedField('subject')}
+                    />
                   </div>
                   {editingTemplate.type === 'MAIL' ? (
-                    <div className="mb-3">
-                      <label className="form-label small fw-bold">Corpo (HTML)</label>
-                      <TemplateEditor
-                        value={editingTemplate.bodyHtml || ''}
-                        onChange={(v) => setEditingTemplate({ ...editingTemplate, bodyHtml: v })}
-                        systemPlaceholders={[
-                          { label: 'Nominativo', token: '%%nominativo%%' },
-                          { label: 'Codice Fiscale', token: '%%codice_fiscale%%' },
-                        ]}
-                        csvPlaceholders={[]}
-                      />
-                    </div>
+                    <>
+                      <div className="mb-3">
+                        <label className="form-label small fw-bold">Corpo (HTML)</label>
+                        <TemplateEditor
+                          value={editingTemplate.bodyHtml || ''}
+                          onChange={(v) => setEditingTemplate({ ...editingTemplate, bodyHtml: v })}
+                          systemPlaceholders={[
+                            { label: 'Nominativo', token: '%%nominativo%%' },
+                            { label: 'Codice Fiscale', token: '%%codice_fiscale%%' },
+                            { label: 'Numero di Protocollo', token: '%%numero_protocollo%%' },
+                            { label: 'Email', token: '%%email%%' },
+                            { label: 'PEC', token: '%%pec%%' },
+                            { label: 'Elenco Allegati', token: '%%elenco_allegati%%' },
+                          ]}
+                          csvPlaceholders={[]}
+                          wizLastFocusedField={tmplLastFocusedField}
+                          onInsertSubjectToken={insertTokenIntoTmplSubject}
+                          onFocusEditor={() => setTmplLastFocusedField('body')}
+                        />
+                      </div>
+
+                      {!editingTemplate.id && (
+                        <>
+                          <div className="form-check mb-2">
+                            <input
+                              type="checkbox"
+                              className="form-check-input"
+                              id="tmpl_create_appio_pair"
+                              checked={tmplCreateAppIoPair}
+                              onChange={e => setTmplCreateAppIoPair(e.target.checked)}
+                            />
+                            <label className="form-check-label small fw-bold text-dark" htmlFor="tmpl_create_appio_pair">
+                              Crea automaticamente il template gemello per App IO
+                            </label>
+                          </div>
+
+                          {tmplCreateAppIoPair && (
+                            <>
+                              <div className="form-check mb-3 ms-4">
+                                <input
+                                  type="checkbox"
+                                  className="form-check-input"
+                                  id="tmpl_differentiate_appio"
+                                  checked={tmplDifferentiateAppIo}
+                                  onChange={e => {
+                                    const checked = e.target.checked;
+                                    setTmplDifferentiateAppIo(checked);
+                                    if (checked) {
+                                      setTmplAppIoSubject(editingTemplate.subject || '');
+                                      setTmplAppIoBody(convertHtmlToMarkdown(editingTemplate.bodyHtml || ''));
+                                    }
+                                  }}
+                                />
+                                <label className="form-check-label small text-muted" htmlFor="tmpl_differentiate_appio">
+                                  Differenzia oggetto e corpo per App IO (altrimenti usa lo stesso di Mail/PEC)
+                                </label>
+                              </div>
+
+                              {tmplDifferentiateAppIo && (
+                                <div className="card mb-3 ms-4 border-light shadow-sm" style={{ background: '#f8f9fc' }}>
+                                  <div className="card-body p-3">
+                                    <h6 className="small fw-bold text-dark mb-3">
+                                      <i className="fas fa-mobile-screen me-2 text-primary"></i>Configurazione App IO Gemello
+                                    </h6>
+                                    <div className="mb-3">
+                                      <label className="form-label small fw-bold">Oggetto App IO *</label>
+                                      <input
+                                        type="text"
+                                        id="tmpl_appio_subject"
+                                        className="form-control form-control-sm"
+                                        value={tmplAppIoSubject}
+                                        onChange={e => setTmplAppIoSubject(e.target.value)}
+                                        placeholder="Es: Avviso TARI - %%nominativo%%"
+                                        required={tmplCreateAppIoPair && tmplDifferentiateAppIo}
+                                        onFocus={() => setTmplLastFocusedField('appio-subject')}
+                                      />
+                                    </div>
+                                    <div className="mb-0">
+                                      <label className="form-label small fw-bold">Corpo App IO * (Markdown)</label>
+                                      <div className="p-3 border rounded bg-white mb-2">
+                                        <strong className="small text-dark d-block mb-3">
+                                          <i className="fas fa-keyboard me-1 text-primary"></i>Clicca per aggiungere il parametro di sistema al testo ({tmplLastFocusedField === 'appio-subject' ? 'Oggetto' : 'Corpo'}):
+                                        </strong>
+                                        <div className="d-flex flex-wrap gap-1">
+                                          {[
+                                            { label: 'Nominativo', token: '%%nominativo%%' },
+                                            { label: 'Codice Fiscale', token: '%%codice_fiscale%%' },
+                                            { label: 'Numero di Protocollo', token: '%%numero_protocollo%%' },
+                                            { label: 'Email', token: '%%email%%' },
+                                            { label: 'PEC', token: '%%pec%%' },
+                                            { label: 'Elenco Allegati', token: '%%elenco_allegati%%' },
+                                          ].map(p => (
+                                            <button
+                                              key={p.token}
+                                              type="button"
+                                              className="btn btn-xs btn-outline-primary fw-semibold"
+                                              style={{ fontSize: '0.72rem', padding: '3px 8px' }}
+                                              onClick={() => {
+                                                if (tmplLastFocusedField === 'appio-subject') {
+                                                  const input = document.getElementById('tmpl_appio_subject') as HTMLInputElement;
+                                                  if (input) {
+                                                    const start = input.selectionStart ?? input.value.length;
+                                                    const end = input.selectionEnd ?? input.value.length;
+                                                    const val = input.value;
+                                                    const newVal = val.substring(0, start) + ` ${p.token} ` + val.substring(end);
+                                                    setTmplAppIoSubject(newVal);
+                                                    setTimeout(() => {
+                                                      input.focus();
+                                                      const newPos = start + p.token.length + 2;
+                                                      input.setSelectionRange(newPos, newPos);
+                                                    }, 0);
+                                                  }
+                                                } else {
+                                                  const input = document.getElementById('tmpl_appio_body') as HTMLTextAreaElement;
+                                                  if (input) {
+                                                    const start = input.selectionStart ?? input.value.length;
+                                                    const end = input.selectionEnd ?? input.value.length;
+                                                    const val = input.value;
+                                                    const newVal = val.substring(0, start) + ` ${p.token} ` + val.substring(end);
+                                                    setTmplAppIoBody(newVal);
+                                                    setTimeout(() => {
+                                                      input.focus();
+                                                      const newPos = start + p.token.length + 2;
+                                                      input.setSelectionRange(newPos, newPos);
+                                                    }, 0);
+                                                  } else {
+                                                    setTmplAppIoBody(prev => prev + (prev ? ' ' : '') + p.token);
+                                                  }
+                                                }
+                                              }}
+                                            >
+                                              {p.label}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </div>
+                                      <textarea
+                                        id="tmpl_appio_body"
+                                        className="form-control form-control-sm"
+                                        rows={4}
+                                        value={tmplAppIoBody}
+                                        onChange={e => setTmplAppIoBody(e.target.value)}
+                                        placeholder="Testo in formato markdown per App IO..."
+                                        required={tmplCreateAppIoPair && tmplDifferentiateAppIo}
+                                        onFocus={() => setTmplLastFocusedField('appio-body')}
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </>
+                      )}
+                    </>
                   ) : (
                     <div className="mb-3" data-color-mode="light">
                       <label className="form-label small fw-bold">Corpo (Markdown App IO)</label>
+                      <div className="p-3 border rounded bg-light mb-3" style={{ borderLeft: '4px solid var(--bo-accent, #0066cc)' }}>
+                        <strong className="small text-dark d-block mb-3">
+                          <i className="fas fa-keyboard me-1 text-primary"></i>Clicca per aggiungere il parametro di sistema al testo ({tmplLastFocusedField === 'subject' ? 'Oggetto' : 'Corpo'}):
+                        </strong>
+                        <div className="d-flex flex-wrap gap-1">
+                          {[
+                            { label: 'Nominativo', token: '%%nominativo%%' },
+                            { label: 'Codice Fiscale', token: '%%codice_fiscale%%' },
+                            { label: 'Numero di Protocollo', token: '%%numero_protocollo%%' },
+                            { label: 'Email', token: '%%email%%' },
+                            { label: 'PEC', token: '%%pec%%' },
+                            { label: 'Elenco Allegati', token: '%%elenco_allegati%%' },
+                          ].map(p => (
+                            <button
+                              key={p.token}
+                              type="button"
+                              className="btn btn-xs btn-outline-primary fw-semibold"
+                              style={{ fontSize: '0.72rem', padding: '3px 8px' }}
+                              onClick={() => {
+                                if (tmplLastFocusedField === 'subject') {
+                                  insertTokenIntoTmplSubject(p.token);
+                                } else {
+                                  const currentBody = editingTemplate.bodyMarkdown || '';
+                                  setEditingTemplate({
+                                    ...editingTemplate,
+                                    bodyMarkdown: currentBody + (currentBody ? ' ' : '') + p.token
+                                  });
+                                }
+                              }}
+                            >
+                              {p.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                       <MDEditor
                         value={editingTemplate.bodyMarkdown || ''}
                         onChange={(v) => setEditingTemplate({ ...editingTemplate, bodyMarkdown: v || '' })}
@@ -6792,15 +7186,17 @@ export function App(): React.JSX.Element {
                       </div>
                     </div>
                   )}
-                  <div className="mb-3">
-                    <label className="form-label small fw-bold">Template gemello (invio combinato)</label>
-                    <select className="form-select form-select-sm" value={editingTemplate.pairedTemplateId || ''} onChange={e => setEditingTemplate({ ...editingTemplate, pairedTemplateId: e.target.value || null })}>
-                      <option value="">Nessuno</option>
-                      {templates.filter(t => t.type !== editingTemplate.type).map(t => (
-                        <option key={t.id} value={t.id}>{t.name} ({t.type})</option>
-                      ))}
-                    </select>
-                  </div>
+                  {(editingTemplate.type !== 'MAIL' || !!editingTemplate.id || !tmplCreateAppIoPair) && (
+                    <div className="mb-3">
+                      <label className="form-label small fw-bold">Template gemello (invio combinato)</label>
+                      <select className="form-select form-select-sm" value={editingTemplate.pairedTemplateId || ''} onChange={e => setEditingTemplate({ ...editingTemplate, pairedTemplateId: e.target.value || null })}>
+                        <option value="">Nessuno</option>
+                        {templates.filter(t => t.type !== editingTemplate.type).map(t => (
+                          <option key={t.id} value={t.id}>{t.name} ({t.type})</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <div className="d-flex justify-content-end gap-2">
                     <button type="button" className="btn btn-outline-secondary" onClick={() => setEditingTemplate(null)}>Annulla</button>
                     <button type="submit" className="btn btn-primary">Salva Template</button>

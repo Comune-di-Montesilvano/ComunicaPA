@@ -1,7 +1,7 @@
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 interface TemplateEditorProps {
   value: string;
@@ -30,6 +30,13 @@ export function TemplateEditor({
     onUpdate: ({ editor }) => onChange(editor.getHTML()),
     onFocus: () => onFocusEditor?.(),
   });
+
+  // Sincronizza il valore esterno con il contenuto di Tiptap (es. quando si carica un template nel wizard)
+  useEffect(() => {
+    if (editor && value !== editor.getHTML()) {
+      editor.commands.setContent(value);
+    }
+  }, [value, editor]);
 
   if (!editor) return null;
 
