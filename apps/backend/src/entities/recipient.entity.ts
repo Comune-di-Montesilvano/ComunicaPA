@@ -42,6 +42,9 @@ export class Recipient {
   @Column({ type: 'jsonb', name: 'extra_data', default: {} })
   extraData!: Record<string, unknown>;
 
+  @Column({ type: 'jsonb', name: 'inad_check', nullable: true })
+  inadCheck!: { found: boolean; originalChannel: string | null; originalAddress: string | null; checkedAt: string } | null;
+
   @Column({
     type: 'enum',
     enum: RecipientStatus,

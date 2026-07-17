@@ -73,6 +73,7 @@ export const SETTING_DEFS = {
   // Se in futuro serve un baseUrl API dedicato, aggiungere qui
   // 'inad.{test,prod}.baseUrl' / 'inipec.{test,prod}.baseUrl' — non anticipato
   // ora perché endpoint non ancora noti.
+  'inad.checkEnabled': { type: 'boolean', default: false },
   'inad.test.purposeId': { type: 'string', default: '' },
   'inad.prod.purposeId': { type: 'string', default: '' },
   'inipec.test.purposeId': { type: 'string', default: '' },

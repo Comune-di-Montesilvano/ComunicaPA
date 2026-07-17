@@ -11,6 +11,7 @@ import type { Recipient } from './recipient.entity';
 
 export enum CampaignStatus {
   DRAFT = 'draft',
+  CHECKING_INAD = 'checking_inad',
   QUEUED = 'queued',
   RUNNING = 'running',
   COMPLETED = 'completed',
