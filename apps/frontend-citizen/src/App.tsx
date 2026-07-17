@@ -306,6 +306,8 @@ export function App(): React.JSX.Element {
   const [filterChannel, setFilterChannel] = useState('all');
   const [filterDateFrom, setFilterDateFrom] = useState('');
   const [filterDateTo, setFilterDateTo] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   const resetFilters = () => {
     setSearchText('');
@@ -313,6 +315,7 @@ export function App(): React.JSX.Element {
     setFilterChannel('all');
     setFilterDateFrom('');
     setFilterDateTo('');
+    setCurrentPage(1);
   };
 
   const hasActiveFilters = !!(searchText || filterStatus !== 'all' || filterChannel !== 'all' || filterDateFrom || filterDateTo);
@@ -339,6 +342,9 @@ export function App(): React.JSX.Element {
     }
     return true;
   });
+
+  const totalPages = Math.max(1, Math.ceil(filteredNotifications.length / PAGE_SIZE));
+  const pagedNotifications = filteredNotifications.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   const [activeTab, setActiveTab] = useState<'notifications' | 'profile'>('notifications');
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -482,6 +488,9 @@ export function App(): React.JSX.Element {
       .then((data: Array<{ legalFactId: string; category: string }>) => setSendLegalFacts(data))
       .catch(() => setSendLegalFacts([]));
   }, [selectedNotif?.id, selectedNotif?.channelType]);
+
+  // Reset pagina quando cambiano i filtri
+  useEffect(() => { setCurrentPage(1); }, [searchText, filterStatus, filterChannel, filterDateFrom, filterDateTo]);
 
   const handleLogout = (clientSideOnly = false) => {
     const currentToken = token;
@@ -1135,7 +1144,7 @@ export function App(): React.JSX.Element {
                   </div>
                 ) : (
                   <div className="notif-list">
-                    {filteredNotifications.map((n) => {
+                    {pagedNotifications.map((n) => {
                       const isDownloaded = !!n.extraData?.['download_count'];
                       const badge = statusBadge(n.status);
                       const snippet = getTextSnippet(n.bodyHtml || n.bodyMarkdown || '');
@@ -1172,6 +1181,28 @@ export function App(): React.JSX.Element {
                   </div>
                 )}
               </div>
+              {/* Paginazione */}
+              {totalPages > 1 && (
+                <div className="notif-pagination">
+                  <button
+                    className="pag-btn"
+                    disabled={currentPage === 1}
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    aria-label="Pagina precedente"
+                  >
+                    <i className="fas fa-chevron-left" aria-hidden="true"></i>
+                  </button>
+                  <span className="pag-info">{currentPage} / {totalPages}</span>
+                  <button
+                    className="pag-btn"
+                    disabled={currentPage === totalPages}
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    aria-label="Pagina successiva"
+                  >
+                    <i className="fas fa-chevron-right" aria-hidden="true"></i>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Detail Pane (Right Column) */}

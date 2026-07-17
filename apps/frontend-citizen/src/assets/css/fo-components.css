@@ -215,7 +215,7 @@ button { font-family: inherit; }
 /* ============================================================================
    HERO
    ============================================================================ */
-.hero { position: relative; background: var(--bi-navy); color: #fff; overflow: hidden; }
+.hero { position: relative; background: var(--bi-navy); color: #fff; display: flex; flex-direction: column; }
 .hero::before {
   content:""; position:absolute; inset: 0; pointer-events: none;
   background:
@@ -1384,8 +1384,8 @@ html {
 @media (min-width: 921px) {
   .webmail-layout {
     grid-template-columns: 380px minmax(0, 1fr);
-    height: calc(100vh - 260px);
-    min-height: 580px;
+    height: calc(100vh - 320px);
+    min-height: 520px;
     width: 100%;
     max-width: 100%;
   }
@@ -1420,6 +1420,53 @@ html {
   overflow: hidden;
   height: 100%;
 }
+
+/* Paginazione lista notifiche */
+.notif-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  border-top: 1px solid var(--border-1);
+  background: var(--bg-0);
+  flex-shrink: 0;
+}
+
+.pag-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-1);
+  border-radius: var(--r-sm);
+  background: var(--bg-0);
+  color: var(--fg-2);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+
+.pag-btn:hover:not(:disabled) {
+  background: var(--bg-2);
+  color: var(--bi-navy);
+  border-color: var(--bi-navy);
+}
+
+.pag-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.pag-info {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-3);
+  min-width: 48px;
+  text-align: center;
+}
+
 
 .webmail-list-title-bar,
 .webmail-detail-header {
