@@ -1086,9 +1086,9 @@ describe('CampaignsService', () => {
       await expect(service.cancel('missing')).rejects.toThrow('Campaign missing not found');
     });
 
-    it('lancia BadRequestException se la campagna non e QUEUED', async () => {
+    it('lancia BadRequestException se la campagna non e QUEUED ne CHECKING_INAD', async () => {
       mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, status: CampaignStatus.DRAFT });
-      await expect(service.cancel('c1')).rejects.toThrow('Solo campagne in corso possono essere annullate');
+      await expect(service.cancel('c1')).rejects.toThrow('Solo campagne in corso o in verifica INAD possono essere annullate');
     });
 
     it('rimuove i job in coda, marca CANCELLED recipient/attempt/campagna, salta i job gia attivi', async () => {
@@ -1208,6 +1208,69 @@ describe('CampaignsService', () => {
       expect(mockRecipientRepo.update).toHaveBeenCalledWith({ id: In(['r1']) }, { status: RecipientStatus.CANCELLED });
       expect(mockRecipientRepo.update).not.toHaveBeenCalledWith({ id: In(['r1', 'r2']) }, expect.anything());
       expect(result).toEqual({ cancelled: 1, campaignId: 'c1' });
+    });
+  });
+
+  describe('cancel — da CHECKING_INAD', () => {
+    it('permette annullamento da CHECKING_INAD senza toccare job/attempt', async () => {
+      const campaignChecking = { ...mockCampaign, id: 'c-cancel-inad', status: CampaignStatus.CHECKING_INAD };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaignChecking);
+      mockRecipientRepo.find.mockResolvedValue([]);
+      mockCampaignQb.execute.mockResolvedValue({ affected: 1 });
+
+      const result = await service.cancel('c-cancel-inad');
+
+      expect(result.campaignId).toBe('c-cancel-inad');
+      expect(mockCampaignQb.set).toHaveBeenCalledWith(expect.objectContaining({ status: CampaignStatus.CANCELLED }));
+    });
+  });
+
+  describe('skipInadCheck', () => {
+    it('salta la verifica INAD e lancia con i canali originali', async () => {
+      const campaignChecking = {
+        ...mockCampaign,
+        id: 'c-skip-1',
+        channelType: 'EMAIL',
+        status: CampaignStatus.CHECKING_INAD,
+        channelConfig: {},
+      };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaignChecking);
+      mockRecipientRepo.find.mockResolvedValue([{ id: 'r1' }]);
+      mockAttemptRepo.createQueryBuilder.mockReturnValue({
+        insert: jest.fn().mockReturnThis(),
+        into: jest.fn().mockReturnThis(),
+        values: jest.fn().mockReturnThis(),
+        returning: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ raw: [{ id: 'att-1' }] }),
+      });
+
+      const result = await service.skipInadCheck('c-skip-1');
+
+      expect(result.launched).toBe(1);
+      expect(mockCampaignRepo.save).toHaveBeenCalledWith(expect.objectContaining({ status: CampaignStatus.QUEUED }));
+    });
+
+    it('rifiuta se la campagna non è in CHECKING_INAD', async () => {
+      const campaignQueued = { ...mockCampaign, id: 'c-skip-2', status: CampaignStatus.QUEUED };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaignQueued);
+      await expect(service.skipInadCheck('c-skip-2')).rejects.toThrow(BadRequestException);
+    });
+
+    it('non ricrea gli attempt se un\'altra invocazione concorrente ha già vinto la transizione', async () => {
+      const campaignChecking = {
+        ...mockCampaign,
+        id: 'c-skip-race',
+        channelType: 'EMAIL',
+        status: CampaignStatus.CHECKING_INAD,
+        channelConfig: {},
+      };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaignChecking);
+      mockCampaignQb.execute.mockResolvedValueOnce({ affected: 0 });
+
+      const result = await service.skipInadCheck('c-skip-race');
+
+      expect(result).toEqual({ launched: 0, campaignId: 'c-skip-race' });
+      expect(mockRecipientRepo.find).not.toHaveBeenCalled();
     });
   });
 

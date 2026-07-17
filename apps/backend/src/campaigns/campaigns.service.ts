@@ -595,8 +595,8 @@ export class CampaignsService {
   async cancel(campaignId: string): Promise<{ cancelled: number; campaignId: string }> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
-    if (campaign.status !== CampaignStatus.QUEUED) {
-      throw new BadRequestException('Solo campagne in corso possono essere annullate');
+    if (campaign.status !== CampaignStatus.QUEUED && campaign.status !== CampaignStatus.CHECKING_INAD) {
+      throw new BadRequestException('Solo campagne in corso o in verifica INAD possono essere annullate');
     }
 
     const queuedRecipients = await this.recipientRepo.find({
@@ -712,10 +712,52 @@ export class CampaignsService {
       .createQueryBuilder()
       .update()
       .set({ status: CampaignStatus.CANCELLED, completedAt: new Date() })
-      .where('id = :id AND status = :queued', { id: campaignId, queued: CampaignStatus.QUEUED })
+      .where('id = :id AND status IN (:...statuses)', {
+        id: campaignId,
+        statuses: [CampaignStatus.QUEUED, CampaignStatus.CHECKING_INAD],
+      })
       .execute();
 
     return { cancelled, campaignId };
+  }
+
+  /**
+   * Sblocco manuale (Task 9, bottone "Salta verifica") per una campagna
+   * bloccata in CHECKING_INAD — lancia con i canali ORIGINALI di campagna,
+   * nessun override PEC (a differenza di `finalizeInadCheck`, qui il check
+   * INAD non viene mai completato). Usa la stessa guardia atomica di
+   * `finalizeInadCheck` (Task 6) sulla transizione CHECKING_INAD -> QUEUED
+   * per restare sicuro anche in caso di race con `finalizeInadCheck` o con
+   * un'altra chiamata concorrente a `skipInadCheck` sulla stessa campagna.
+   */
+  async skipInadCheck(campaignId: string): Promise<{ launched: number; campaignId: string }> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+    if (campaign.status !== CampaignStatus.CHECKING_INAD) {
+      throw new BadRequestException('Solo le campagne in verifica INAD possono saltare il controllo');
+    }
+
+    const skipResult = await this.campaignRepo
+      .createQueryBuilder()
+      .update()
+      .set({ status: CampaignStatus.QUEUED })
+      .where('id = :id AND status = :checking', { id: campaignId, checking: CampaignStatus.CHECKING_INAD })
+      .execute();
+
+    if (skipResult.affected === 0) {
+      // Un'altra invocazione concorrente ha già vinto la transizione (es.
+      // finalizeInadCheck o un altro skipInadCheck): non ricreare gli attempt.
+      return { launched: 0, campaignId };
+    }
+
+    const recipients = await this.recipientRepo.find({
+      where: { campaignId, status: RecipientStatus.PENDING },
+      select: ['id'],
+    });
+    const { launched } = await this.createAttemptsAndEnqueue(campaign, recipients);
+    campaign.status = CampaignStatus.QUEUED;
+    await this.campaignRepo.save(campaign);
+    return { launched, campaignId };
   }
 
   async getStats(campaignId: string): Promise<CampaignStatsDto> {
