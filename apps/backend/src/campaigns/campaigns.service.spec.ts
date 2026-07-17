@@ -92,6 +92,7 @@ describe('CampaignsService', () => {
   const mockInadService = {
     extractDigitalAddress: jest.fn(),
     startBulkExtraction: jest.fn(),
+    getBulkResult: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -673,6 +674,81 @@ describe('CampaignsService', () => {
       } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
       }
+    });
+  });
+
+  describe('launch — check INAD bulk (sopra soglia)', () => {
+    beforeEach(() => {
+      mockCampaignQb.execute.mockResolvedValue({ affected: 1 });
+      mockCampaignRepo.createQueryBuilder.mockReturnValue(mockCampaignQb);
+      mockInadService.startBulkExtraction.mockReset();
+      mockInadService.getBulkResult.mockReset();
+    });
+
+    it('avvia il bulk e porta la campagna a CHECKING_INAD senza creare attempt', async () => {
+      mockSettings.get.mockImplementation(async (key?: string) => (key === 'inad.checkEnabled' ? true : null));
+      const campaignEmail = { ...mockCampaign, id: 'c-bulk-1', channelType: 'EMAIL', channelConfig: {} };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaignEmail);
+      const manyRecipients = Array.from({ length: 150 }, (_, i) => ({ id: `r${i}`, codiceFiscale: `CF${i}` }));
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: string[] }) => {
+        if (select?.includes('extraData')) return Promise.resolve([]);
+        return Promise.resolve(manyRecipients);
+      });
+      mockInadService.startBulkExtraction.mockResolvedValue({ id: 'batch-1' });
+
+      const result = await service.launch('c-bulk-1');
+
+      expect(result.launched).toBe(0);
+      expect(mockInadService.startBulkExtraction).toHaveBeenCalledTimes(1);
+      const [cfList] = mockInadService.startBulkExtraction.mock.calls[0];
+      expect(cfList).toHaveLength(150);
+      expect(mockCampaignRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ status: CampaignStatus.CHECKING_INAD }),
+      );
+      expect(mockAttemptRepo.createQueryBuilder).not.toHaveBeenCalled();
+    });
+
+    it('finalizeInadCheck applica i risultati e lancia createAttemptsAndEnqueue', async () => {
+      const campaignChecking = {
+        ...mockCampaign,
+        id: 'c-bulk-2',
+        channelType: 'EMAIL',
+        status: CampaignStatus.CHECKING_INAD,
+        channelConfig: {
+          inadCheck: {
+            mechanism: 'bulk',
+            batches: [{ id: 'batch-2', recipientIds: ['r1', 'r2'], done: false }],
+            requestedAt: '2026-01-01T00:00:00Z',
+          },
+        },
+      };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaignChecking);
+      mockRecipientRepo.find.mockResolvedValue([
+        { id: 'r1', codiceFiscale: 'CF1', pec: null, email: 'e1@x.it' },
+        { id: 'r2', codiceFiscale: 'CF2', pec: null, email: 'e2@x.it' },
+      ]);
+      mockInadService.getBulkResult.mockResolvedValue([
+        { codiceFiscale: 'CF1', since: '2026-01-01', digitalAddress: [{ digitalAddress: 'trovato@pec.it' }] },
+        { codiceFiscale: 'CF2', since: '2026-01-01' },
+      ]);
+      mockAttemptRepo.createQueryBuilder.mockReturnValue({
+        insert: jest.fn().mockReturnThis(),
+        into: jest.fn().mockReturnThis(),
+        values: jest.fn().mockReturnThis(),
+        returning: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ raw: [{ id: 'att-1' }, { id: 'att-2' }] }),
+      });
+
+      await service.finalizeInadCheck('c-bulk-2');
+
+      expect(mockInadService.getBulkResult).toHaveBeenCalledWith('batch-2');
+      expect(mockRecipientRepo.update).toHaveBeenCalledWith(
+        { id: 'r1' },
+        expect.objectContaining({ pec: 'trovato@pec.it' }),
+      );
+      expect(mockCampaignRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ status: CampaignStatus.QUEUED }),
+      );
     });
   });
 

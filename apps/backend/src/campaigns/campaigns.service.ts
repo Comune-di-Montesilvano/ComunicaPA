@@ -422,8 +422,100 @@ export class CampaignsService {
     return channelOverrides;
   }
 
-  private async startInadBulkCheck(_campaign: Campaign, _recipients: Array<{ id: string }>): Promise<void> {
-    throw new Error('startInadBulkCheck non ancora implementato (Task 6)');
+  private async startInadBulkCheck(campaign: Campaign, recipients: Array<{ id: string }>): Promise<void> {
+    const fullRecipients = await this.recipientRepo.find({
+      where: { id: In(recipients.map((r) => r.id)) },
+      select: ['id', 'codiceFiscale'],
+    });
+    const withCf = fullRecipients.filter((r) => r.codiceFiscale);
+
+    const BATCH = 1000;
+    const batches: Array<{ id: string; recipientIds: string[]; done: boolean }> = [];
+    for (let i = 0; i < withCf.length; i += BATCH) {
+      const chunk = withCf.slice(i, i + BATCH);
+      const { id } = await this.inadService.startBulkExtraction(
+        chunk.map((r) => r.codiceFiscale!),
+        `comunicapa-campagna-${campaign.id}`,
+      );
+      batches.push({ id, recipientIds: chunk.map((r) => r.id), done: false });
+    }
+
+    campaign.status = CampaignStatus.CHECKING_INAD;
+    campaign.channelConfig = {
+      ...campaign.channelConfig,
+      inadCheck: { mechanism: 'bulk', batches, requestedAt: new Date().toISOString() },
+    };
+    await this.campaignRepo.save(campaign);
+  }
+
+  /**
+   * Applica i risultati di un check INAD bulk (Task 6) a una campagna in
+   * CHECKING_INAD. Il chiamante (demone Task 8) deve aver già verificato che
+   * i batch passati siano DISPONIBILE prima di invocare questo metodo — qui
+   * si assume che `getBulkResult` per ogni batch non ancora `done` ritorni
+   * risultati pronti. Riusa lo stesso audit `recipient.inadCheck` e la stessa
+   * logica di override verso PEC di `runInadExtractLoop` (Task 5) — vedi
+   * commento lì per il razionale found/address-diff.
+   */
+  async finalizeInadCheck(campaignId: string): Promise<void> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign || campaign.status !== CampaignStatus.CHECKING_INAD) return;
+
+    const inadCheck = campaign.channelConfig?.['inadCheck'] as
+      | { mechanism: 'bulk'; batches: Array<{ id: string; recipientIds: string[]; done: boolean }>; requestedAt: string }
+      | undefined;
+    if (!inadCheck) return;
+
+    const pendingBatches = inadCheck.batches.filter((b) => !b.done);
+    for (const batch of pendingBatches) {
+      const result = await this.inadService.getBulkResult(batch.id);
+      const resultByCf = new Map(result.map((r) => [r.codiceFiscale, r]));
+      const batchRecipients = await this.recipientRepo.find({
+        where: { id: In(batch.recipientIds) },
+        select: ['id', 'codiceFiscale', 'pec', 'email'],
+      });
+      for (const recipient of batchRecipients) {
+        const match = recipient.codiceFiscale ? resultByCf.get(recipient.codiceFiscale) : undefined;
+        const found = !!match?.digitalAddress?.length;
+        const inadAddress = found ? match!.digitalAddress![0].digitalAddress : null;
+        await this.recipientRepo.update(
+          { id: recipient.id },
+          {
+            inadCheck: {
+              found,
+              originalChannel: campaign.channelType,
+              originalAddress: campaign.channelType === 'PEC' ? recipient.pec : recipient.email,
+              checkedAt: new Date().toISOString(),
+            },
+            ...(found && inadAddress !== recipient.pec ? { pec: inadAddress } : {}),
+          },
+        );
+      }
+      batch.done = true;
+    }
+
+    campaign.channelConfig = { ...campaign.channelConfig, inadCheck };
+    await this.campaignRepo.save(campaign);
+
+    if (inadCheck.batches.every((b) => b.done)) {
+      const overriddenRecipients = await this.recipientRepo.find({
+        where: { id: In(inadCheck.batches.flatMap((b) => b.recipientIds)), status: RecipientStatus.PENDING },
+        select: ['id', 'pec', 'inadCheck'],
+      });
+      const channelOverrides = new Map<string, NotificationChannel>();
+      for (const r of overriddenRecipients) {
+        if (r.inadCheck?.found && campaign.channelType !== 'PEC') {
+          channelOverrides.set(r.id, 'PEC');
+        }
+      }
+      const allRecipients = await this.recipientRepo.find({
+        where: { campaignId: campaign.id, status: RecipientStatus.PENDING },
+        select: ['id'],
+      });
+      await this.createAttemptsAndEnqueue(campaign, allRecipients, channelOverrides);
+      campaign.status = CampaignStatus.QUEUED;
+      await this.campaignRepo.save(campaign);
+    }
   }
 
   private async createAttemptsAndEnqueue(
