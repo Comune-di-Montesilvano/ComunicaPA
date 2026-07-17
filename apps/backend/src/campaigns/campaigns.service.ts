@@ -29,6 +29,7 @@ import type { CampaignStatsDto, RecipientStatDto, RecipientStatsPageDto, Channel
 import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.dto';
 import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util';
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto';
+import type { NotificationChannel } from '@comunicapa/shared-types';
 
 const MAX_BULK_RETRY_SIZE = 500;
 
@@ -358,6 +359,15 @@ export class CampaignsService {
       throw new BadRequestException('No pending recipients — upload a CSV first');
     }
 
+    const { launched } = await this.createAttemptsAndEnqueue(campaign, recipients);
+    return { launched, campaignId };
+  }
+
+  private async createAttemptsAndEnqueue(
+    campaign: Campaign,
+    recipients: Array<{ id: string }>,
+    channelOverrides?: Map<string, NotificationChannel>,
+  ): Promise<{ launched: number }> {
     // Bulk insert NotificationAttempts in chunks di 500
     const CHUNK = 500;
     const attemptIds: string[] = [];
@@ -370,7 +380,7 @@ export class CampaignsService {
         .values(
           chunk.map((r) => ({
             recipientId: r.id,
-            channelType: campaign.channelType,
+            channelType: channelOverrides?.get(r.id) ?? campaign.channelType,
             status: AttemptStatus.QUEUED,
           })),
         )
@@ -393,10 +403,10 @@ export class CampaignsService {
         chunk.map((r, idx) => ({
           name: NOTIFICATION_JOB_SEND,
           data: {
-            campaignId,
+            campaignId: campaign.id,
             recipientId: r.id,
             attemptId: attemptIds[i + idx],
-            channel: campaign.channelType,
+            channel: channelOverrides?.get(r.id) ?? campaign.channelType,
           },
           opts: { jobId: attemptIds[i + idx] },
         })),
@@ -404,11 +414,11 @@ export class CampaignsService {
     }
 
     await this.recipientRepo.update(
-      { campaignId, status: RecipientStatus.PENDING },
+      { campaignId: campaign.id, status: RecipientStatus.PENDING },
       { status: RecipientStatus.QUEUED },
     );
 
-    return { launched: recipients.length, campaignId };
+    return { launched: recipients.length };
   }
 
   async cancel(campaignId: string): Promise<{ cancelled: number; campaignId: string }> {
