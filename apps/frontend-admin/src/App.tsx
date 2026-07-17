@@ -3432,20 +3432,30 @@ export function App(): React.JSX.Element {
         const valClean = row[cfField].trim().replace(/\s/g, '');
         const isCf = cfRegex.test(valClean);
         const isPiva = pivaRegex.test(valClean);
-        if (wizAppIoInvolved && !cfAppIoRegex.test(valClean)) {
-          // App IO accetta solo CF di persona fisica: una P.IVA (o qualunque
-          // valore fuori pattern) qui va scartata subito, altrimenti l'errore
-          // emerge solo alla spedizione reale (HTTP 400 da PagoPA) dopo aver
-          // già consumato un tentativo.
-          errors.push({ row: rowNum, field: 'Codice Fiscale (App IO)', val: row[cfField], err: 'Codice Fiscale non valido per App IO: richiesto un CF di persona fisica, non una Partita IVA o un valore fuori formato' });
-          isRowValid = false;
+        const isAppIoCompatible = cfAppIoRegex.test(valClean);
+        if (wizAppIoInvolved && !isAppIoCompatible) {
+          if (wizChannel === 'APP_IO') {
+            // App IO è il canale primario: il CF deve essere strettamente compatibile
+            errors.push({ row: rowNum, field: 'Codice Fiscale (App IO)', val: row[cfField], err: 'Codice Fiscale non valido per App IO: richiesto un CF di persona fisica, non una Partita IVA o un valore fuori formato' });
+            isRowValid = false;
+          } else {
+            // App IO è secondario (co-consegna): se è valido per il canale primario (CF generico o P.IVA), mettiamo solo un warning
+            if (isCf || isPiva) {
+              warnings.push({ row: rowNum, field: 'Codice Fiscale (App IO)', val: row[cfField], warn: 'Codice Fiscale non idoneo per App IO: richiesto un CF di persona fisica. La notifica App IO verrà saltata, ma il record sarà inviato tramite il canale primario.' });
+            } else {
+              if (isCfMandatory) {
+                errors.push({ row: rowNum, field: 'Codice Fiscale / P.IVA', val: row[cfField], err: 'Codice Fiscale (16 caratteri) o P.IVA (11 cifre) non valida' });
+                isRowValid = false;
+              } else {
+                warnings.push({ row: rowNum, field: 'Codice Fiscale / P.IVA', val: row[cfField], warn: 'Formato non standard (atteso CF a 16 caratteri o P.IVA a 11 cifre) — il record verrà incluso' });
+              }
+            }
+          }
         } else if (!isCf && !isPiva) {
           if (isCfMandatory) {
-            // Only block when CF/P.IVA is strictly required (App IO, SEND)
             errors.push({ row: rowNum, field: 'Codice Fiscale / P.IVA', val: row[cfField], err: 'Codice Fiscale (16 caratteri) o P.IVA (11 cifre) non valida' });
             isRowValid = false;
           } else {
-            // Warn only — include the row anyway
             warnings.push({ row: rowNum, field: 'Codice Fiscale / P.IVA', val: row[cfField], warn: 'Formato non standard (atteso CF a 16 caratteri o P.IVA a 11 cifre) — il record verrà incluso' });
           }
         }
