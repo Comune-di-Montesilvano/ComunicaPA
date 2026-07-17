@@ -475,7 +475,7 @@ export function App(): React.JSX.Element {
   const [token, setToken] = useState<string | null>(localStorage.getItem('comunicapa_token'));
   const [username, setUsername] = useState<string | null>(localStorage.getItem('comunicapa_username'));
   const [role, setRole] = useState<string | null>(localStorage.getItem('comunicapa_role'));
-  const [view, setView] = useState<'dashboard' | 'invio-singolo' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'notifiche-ricerca' | 'verifica-appio' | 'template-dashboard' | 'impostazioni' | 'campaign-detail' | 'audit-logs'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'invio-singolo' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'notifiche-ricerca' | 'verifica-appio' | 'template-dashboard' | 'impostazioni' | 'campaign-detail' | 'audit-logs' | 'arricchimento'>('dashboard');
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [templates, setTemplates] = useState<TemplateItem[]>([]);
   const [editingTemplate, setEditingTemplate] = useState<Partial<TemplateItem> & { type: 'MAIL' | 'APP_IO' } | null>(null);
@@ -542,6 +542,32 @@ export function App(): React.JSX.Element {
   } | null>(null);
   const [verificaBulkSubmitting, setVerificaBulkSubmitting] = useState(false);
   const [verificaBulkSubmitError, setVerificaBulkSubmitError] = useState<string | null>(null);
+
+  // ── Arricchimento tracciati ──
+  interface EnrichmentJobItem {
+    id: string;
+    status: 'queued' | 'processing' | 'done' | 'failed';
+    traceFormat: string;
+    sourceFilename: string;
+    totalRecords: number;
+    processedRecords: number;
+    warningCount: number;
+    warnings: Array<{ row: number; pdf: string; message: string }>;
+    errorMessage: string | null;
+    campaignId: string | null;
+    createdAt: string;
+  }
+  const [enrichJobs, setEnrichJobs] = useState<EnrichmentJobItem[]>([]);
+  const [enrichFile, setEnrichFile] = useState<File | null>(null);
+  const [enrichUploading, setEnrichUploading] = useState(false);
+  const [enrichUploadProgress, setEnrichUploadProgress] = useState(0);
+  const [enrichError, setEnrichError] = useState<string | null>(null);
+  const [enrichDetailJobId, setEnrichDetailJobId] = useState<string | null>(null);
+  const [enrichCreateCampaignJobId, setEnrichCreateCampaignJobId] = useState<string | null>(null);
+  const [enrichCampaignName, setEnrichCampaignName] = useState('');
+  const [enrichCampaignChannel, setEnrichCampaignChannel] = useState<'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL'>('PEC');
+  const [enrichCampaignSubmitting, setEnrichCampaignSubmitting] = useState(false);
+  const [enrichCampaignError, setEnrichCampaignError] = useState<string | null>(null);
 
   const runNotificationSearch = async (page = searchPage) => {
     setSearchLoading(true);
@@ -1441,6 +1467,129 @@ export function App(): React.JSX.Element {
     setVerificaBulkJobId(null);
     setVerificaBulkStatus(null);
     setVerificaBulkSubmitError(null);
+  };
+
+  const fetchEnrichJobs = async () => {
+    if (!token) return;
+    try {
+      const res = await apiFetch('/enrichment/jobs');
+      if (res.ok) {
+        const body = await res.json();
+        setEnrichJobs(body.jobs || []);
+      }
+    } catch {
+      // errore transitorio di polling: riprova al giro successivo
+    }
+  };
+
+  useEffect(() => {
+    if (view !== 'arricchimento' || !token) return;
+    fetchEnrichJobs();
+    const interval = setInterval(() => {
+      // Poll solo se c'è un job non terminale
+      setEnrichJobs((prev) => {
+        if (prev.some((j) => j.status === 'queued' || j.status === 'processing')) fetchEnrichJobs();
+        return prev;
+      });
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [view, token]);
+
+  const handleEnrichUpload = async () => {
+    if (!enrichFile || !token) return;
+    setEnrichUploading(true);
+    setEnrichError(null);
+    setEnrichUploadProgress(0);
+    try {
+      const result = await uploadFileInChunks(
+        `${ADMIN_API_BASE}/enrichment/upload`,
+        token,
+        enrichFile,
+        enrichFile.name,
+        (loaded) => setEnrichUploadProgress(Math.round((loaded / enrichFile.size) * 100)),
+        undefined,
+        { traceFormat: 'MAGGIOLI' },
+      );
+      if (result.blocked) {
+        setEnrichError(result.message || 'Tracciato non valido');
+      } else {
+        setEnrichFile(null);
+        await fetchEnrichJobs();
+      }
+    } catch (err: any) {
+      setEnrichError(err.message || 'Errore durante il caricamento');
+    } finally {
+      setEnrichUploading(false);
+    }
+  };
+
+  const downloadEnrichResult = async (jobId: string, kind: 'csv' | 'zip') => {
+    if (!token) return;
+    try {
+      const res = await apiFetch(`/enrichment/jobs/${jobId}/result.${kind}`);
+      if (!res.ok) { alert('Download non disponibile'); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `arricchito_${jobId.slice(0, 8)}.${kind}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Errore durante il download');
+    }
+  };
+
+  const handleEnrichDelete = async (jobId: string) => {
+    if (!token || !confirm('Eliminare il job e i suoi file? Azione irreversibile.')) return;
+    try {
+      const res = await apiFetch(`/enrichment/jobs/${jobId}`, { method: 'DELETE' });
+      const body = await res.json().catch(() => ({}));
+      if (body.blocked) { alert(body.message); return; }
+      fetchEnrichJobs();
+    } catch {
+      alert('Errore durante l\'eliminazione');
+    }
+  };
+
+  const handleEnrichCreateCampaignOpen = (job: EnrichmentJobItem) => {
+    setEnrichCreateCampaignJobId(job.id);
+    setEnrichCampaignName(job.sourceFilename.replace(/\.zip$/i, ''));
+    setEnrichCampaignChannel('PEC');
+    setEnrichCampaignError(null);
+  };
+
+  const handleEnrichCreateCampaignCancel = () => {
+    setEnrichCreateCampaignJobId(null);
+    setEnrichCampaignError(null);
+  };
+
+  const handleEnrichCreateCampaignConfirm = async () => {
+    if (!token || !enrichCreateCampaignJobId || !enrichCampaignName.trim()) return;
+    setEnrichCampaignSubmitting(true);
+    setEnrichCampaignError(null);
+    try {
+      const res = await apiFetch(`/enrichment/jobs/${enrichCreateCampaignJobId}/create-campaign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: enrichCampaignName.trim(), channelType: enrichCampaignChannel }),
+      });
+      const body = await res.json();
+      if (body.blocked) {
+        setEnrichCampaignError(body.message || 'Richiesta bloccata');
+        return;
+      }
+      setEnrichCreateCampaignJobId(null);
+      // Instrada nel wizard esistente: il CSV passa da parseCsvFile con le
+      // validazioni wizard (nessun importer parallelo)
+      await handleResumeDraft(body.campaignId);
+    } catch (err: any) {
+      setEnrichCampaignError(err.message || 'Errore durante la creazione della campagna');
+    } finally {
+      setEnrichCampaignSubmitting(false);
+    }
   };
 
   const fetchCampaigns = async () => {
@@ -4409,6 +4558,14 @@ export function App(): React.JSX.Element {
             <i className="fas fa-file-lines"></i>
             <span>Template</span>
           </a>
+          <a
+            className={`bo-nav-item ${view === 'arricchimento' ? 'is-active' : ''}`}
+            href="#"
+            onClick={(e) => { e.preventDefault(); setView('arricchimento'); }}
+          >
+            <i className="fas fa-wand-magic-sparkles"></i>
+            <span>Arricchimento Tracciati</span>
+          </a>
 
           <div className="bo-nav-section-title">Sistema</div>
           {role === 'admin' && (
@@ -4469,6 +4626,7 @@ export function App(): React.JSX.Element {
           {view === 'statistiche' && 'Statistiche e Andamento'}
           {view === 'notifiche-ricerca' && 'Ricerca Notifiche'}
           {view === 'template-dashboard' && 'Template'}
+          {view === 'arricchimento' && 'Arricchimento Tracciati'}
           {view === 'impostazioni' && 'Impostazioni di Sistema'}
           {view === 'audit-logs' && 'Registro Attività'}
           {view === 'campaign-detail' && `Dettaglio Campagna / ${campaign?.name || '...'}`}
@@ -6889,6 +7047,160 @@ export function App(): React.JSX.Element {
                   )}
                 </div>
               )}
+            </div>
+          )}
+
+          {view === 'arricchimento' && (
+            <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+              <h3 className="h5 fw-bold text-dark mb-3">
+                <i className="fas fa-wand-magic-sparkles me-2"></i>Arricchimento Tracciati
+              </h3>
+              <p className="small text-muted mb-4">
+                Carica lo ZIP di postalizzazione (formato Maggioli: rubrica.csv o
+                pag_indice.csv + cartella allegati/). I PDF vengono analizzati per
+                estrarre indirizzi e dati PagoPA; al termine puoi scaricare il CSV
+                arricchito o avviare direttamente una bozza di campagna nel wizard.
+              </p>
+
+              <div className="card shadow-sm p-4 mb-4">
+                <h6 className="fw-bold mb-3">Nuovo arricchimento</h6>
+                <div className="mb-3">
+                  <label className="form-label small fw-bold">Formato tracciato</label>
+                  <select className="form-select form-select-sm" value="MAGGIOLI" disabled>
+                    <option value="MAGGIOLI">Tracciato Maggioli (ZIP)</option>
+                  </select>
+                </div>
+                <div className="mb-3">
+                  <label className="form-label small fw-bold">File ZIP</label>
+                  <input
+                    type="file"
+                    accept=".zip"
+                    className="form-control form-control-sm"
+                    onChange={(e) => setEnrichFile(e.target.files?.[0] || null)}
+                  />
+                </div>
+                {enrichError && <div className="alert alert-danger small">{enrichError}</div>}
+                <button
+                  className="btn btn-primary btn-sm"
+                  type="button"
+                  disabled={!enrichFile || enrichUploading}
+                  onClick={handleEnrichUpload}
+                >
+                  {enrichUploading ? (
+                    <><i className="fas fa-spinner fa-spin me-1"></i>Caricamento {enrichUploadProgress}%...</>
+                  ) : (
+                    <><i className="fas fa-play me-1"></i>Avvia arricchimento</>
+                  )}
+                </button>
+              </div>
+
+              <div className="card shadow-sm p-4 mb-4">
+                <h6 className="fw-bold mb-3">Job di arricchimento</h6>
+                {enrichJobs.length === 0 && <p className="small text-muted mb-0">Nessun job presente.</p>}
+                {enrichJobs.map((job) => (
+                  <div key={job.id} className="border-bottom pb-2 mb-2">
+                    <div className="d-flex align-items-center gap-3 flex-wrap">
+                      <strong>{job.sourceFilename}</strong>
+                      <span className="small text-muted">{new Date(job.createdAt).toLocaleString('it-IT')}</span>
+                      <span className="small">
+                        {job.status === 'queued' && 'In coda'}
+                        {job.status === 'processing' && `Elaborazione ${job.processedRecords}/${job.totalRecords}`}
+                        {job.status === 'done' && `Completato (${job.totalRecords} righe${job.warningCount ? `, ${job.warningCount} avvisi` : ''})`}
+                        {job.status === 'failed' && `Fallito: ${job.errorMessage}`}
+                      </span>
+                      {job.campaignId && <span className="badge bg-success-subtle text-success-emphasis border">Campagna creata</span>}
+                    </div>
+                    <div className="d-flex gap-2 mt-2 flex-wrap">
+                      {job.status === 'done' && !job.campaignId && (
+                        <>
+                          <button className="btn btn-sm btn-outline-secondary" type="button" onClick={() => downloadEnrichResult(job.id, 'csv')}>
+                            <i className="fas fa-file-csv me-1"></i>Scarica CSV
+                          </button>
+                          <button className="btn btn-sm btn-outline-secondary" type="button" onClick={() => downloadEnrichResult(job.id, 'zip')}>
+                            <i className="fas fa-file-zipper me-1"></i>Scarica ZIP
+                          </button>
+                          <button className="btn btn-sm btn-outline-primary" type="button" onClick={() => handleEnrichCreateCampaignOpen(job)}>
+                            <i className="fas fa-plus me-1"></i>Crea bozza campagna
+                          </button>
+                        </>
+                      )}
+                      {job.warningCount > 0 && (
+                        <button
+                          className="btn btn-sm btn-outline-warning"
+                          type="button"
+                          onClick={() => setEnrichDetailJobId(enrichDetailJobId === job.id ? null : job.id)}
+                        >
+                          {enrichDetailJobId === job.id ? 'Nascondi avvisi' : `Avvisi (${job.warningCount})`}
+                        </button>
+                      )}
+                      {job.status !== 'processing' && role === 'admin' && (
+                        <button className="btn btn-sm btn-outline-danger" type="button" onClick={() => handleEnrichDelete(job.id)}>
+                          <i className="fas fa-trash me-1"></i>Elimina
+                        </button>
+                      )}
+                    </div>
+
+                    {enrichDetailJobId === job.id && (
+                      <ul className="small text-muted mt-2 mb-0">
+                        {job.warnings.map((w, i) => (
+                          <li key={i}>Riga {w.row} — {w.pdf}: {w.message}</li>
+                        ))}
+                      </ul>
+                    )}
+
+                    {enrichCreateCampaignJobId === job.id && (
+                      <div className="border rounded p-3 mt-2 bg-light">
+                        <div className="mb-2">
+                          <label className="form-label small fw-bold">Nome campagna</label>
+                          <input
+                            type="text"
+                            className="form-control form-control-sm"
+                            value={enrichCampaignName}
+                            onChange={(e) => setEnrichCampaignName(e.target.value)}
+                          />
+                        </div>
+                        <div className="mb-2">
+                          <label className="form-label small fw-bold">Canale</label>
+                          <select
+                            className="form-select form-select-sm"
+                            value={enrichCampaignChannel}
+                            onChange={(e: any) => setEnrichCampaignChannel(e.target.value)}
+                          >
+                            <option value="EMAIL">EMAIL</option>
+                            <option value="PEC">PEC (Posta Elettronica Certificata)</option>
+                            <option value="APP_IO">APP IO (PagoPA)</option>
+                            <option value="SEND">SEND (Notifiche Digitali)</option>
+                            <option value="POSTAL">POSTAL (Cartaceo)</option>
+                          </select>
+                        </div>
+                        {enrichCampaignError && <div className="alert alert-danger small">{enrichCampaignError}</div>}
+                        <div className="d-flex gap-2">
+                          <button
+                            className="btn btn-sm btn-primary"
+                            type="button"
+                            disabled={!enrichCampaignName.trim() || enrichCampaignSubmitting}
+                            onClick={handleEnrichCreateCampaignConfirm}
+                          >
+                            {enrichCampaignSubmitting ? (
+                              <><i className="fas fa-spinner fa-spin me-1"></i>Creazione...</>
+                            ) : (
+                              'Crea bozza'
+                            )}
+                          </button>
+                          <button
+                            className="btn btn-sm btn-outline-secondary"
+                            type="button"
+                            onClick={handleEnrichCreateCampaignCancel}
+                            disabled={enrichCampaignSubmitting}
+                          >
+                            Annulla
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
