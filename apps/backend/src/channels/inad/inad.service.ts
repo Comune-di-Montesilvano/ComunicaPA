@@ -39,7 +39,7 @@ export class InadService {
 
   async extractDigitalAddress(codiceFiscale: string): Promise<InadExtractResult> {
     const voucher = await this.getVoucher('prod');
-    const url = `${INAD_BASE_URL}/extract/${codiceFiscale}?practicalReference=${PRACTICAL_REFERENCE}`;
+    const url = `${INAD_BASE_URL}/extract/${encodeURIComponent(codiceFiscale)}?practicalReference=${PRACTICAL_REFERENCE}`;
     const response = await fetch(url, { headers: { Authorization: `Bearer ${voucher}` } });
 
     if (response.status === 404) {
@@ -49,7 +49,12 @@ export class InadService {
     if (!response.ok) {
       throw new Error(`INAD extract fallito: HTTP ${response.status} — ${text.slice(0, 500)}`);
     }
-    const data = JSON.parse(text) as InadExtractResult['data'];
+    let data: InadExtractResult['data'];
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(`Risposta INAD non valida (non JSON): ${text.slice(0, 200)}`);
+    }
     return { found: true, data };
   }
 }
