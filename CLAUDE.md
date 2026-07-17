@@ -529,3 +529,28 @@ digitale, non bypassabile da un'esclusiva App IO (`notification.processor.ts`).
 una campagna PEC con indirizzo INAD coincidente, `found:true` ma
 `diverted:false`, non è un vero dirottamento). Le decisioni di
 instradamento/reporting vanno sempre su `diverted`, mai su `found` da solo.
+
+## Matrice comportamenti campagne per canale — fonte di verità
+
+Riferimento completo, verificato contro il codice (non contro il manuale):
+[`docs/superpowers/specs/2026-07-17-matrice-comportamenti-campagne-design.md`](docs/superpowers/specs/2026-07-17-matrice-comportamenti-campagne-design.md).
+Consultare PRIMA di modificare comportamento canale/INAD/App IO
+secondaria/protocollo/allegato — evita di reintrodurre un caso già
+verificato o di romperne uno esistente.
+
+Riassunto (dettaglio riga-per-riga nel file linkato):
+
+| Canale | App IO secondaria | INAD | Protocollo | Allegato |
+|---|---|---|---|---|
+| EMAIL | none/parallela/esclusiva¹ | sì → `channelType`=PEC + `recipient.pec`=indirizzo INAD | opzionale | opzionale |
+| PEC | none/parallela/esclusiva¹ | sì, se PEC INAD diversa → solo `recipient.pec` sovrascritto (stesso canale) | opzionale | opzionale |
+| POSTAL | none/parallela/esclusiva¹ | sì → `channelType`=PEC + `recipient.pec`=indirizzo INAD (skip stampa) | opzionale | **obbligatorio** |
+| APP_IO | n/a | sì → `channelType`=PEC (skip invio App IO) | opzionale | opzionale |
+| SEND | n/a (`isMailChannel` esclude SEND) | n/a (PN risolve da sé) | **obbligatorio** | **obbligatorio** |
+
+¹ esclusiva → declassata a parallela per singolo destinatario se `diverted:true` (INAD vince sempre).
+
+Se aggiungi un nuovo canale, un nuovo asse (es. verifica toponomastica
+POSTAL, oggi non implementata) o cambi una di queste regole: aggiorna
+PRIMA il file linkato, poi il codice — è la fonte di verità che evita di
+dover rileggere 5 file diversi per capire "cosa succede se combino X con Y".

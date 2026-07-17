@@ -26,6 +26,23 @@ ComunicaPA consente agli enti pubblici di inviare comunicazioni di massa (TARI, 
 
 Ogni canale integra opzionalmente **pagoPA** (avvisi di pagamento) e la **protocollazione** automatica delle comunicazioni inviate.
 
+### Comportamenti per canale
+
+| Canale primario | App IO co-consegna | Dirottamento INAD¹ | Protocollazione | Allegato |
+|---|:---:|---|:---:|:---:|
+| **PEC** | parallela / esclusiva | trova PEC più recente → aggiorna indirizzo, stesso canale | opzionale | opzionale |
+| **Email** | parallela / esclusiva | trova domicilio digitale → dirotta a PEC | opzionale | opzionale |
+| **Postalizzazione** | parallela / esclusiva | trova domicilio digitale → dirotta a PEC (niente stampa/spedizione) | opzionale | **obbligatorio** |
+| **App IO** | — (è già il canale) | trova domicilio digitale → dirotta a PEC | opzionale | opzionale |
+| **SEND** | — (pipeline propria) | — (PN risolve da sé via ANPR/INAD) | **obbligatoria** | **obbligatorio** |
+
+¹ INAD = Indice Nazionale dei Domicili Digitali. Se un destinatario ha un
+co-consegna App IO **esclusiva** configurata e viene dirottato da INAD, la
+co-consegna si declassa automaticamente a **parallela** per quel destinatario:
+il canale legalmente valido (PEC) è sempre garantito.
+
+Dettaglio completo delle combinazioni: [`docs/superpowers/specs/2026-07-17-matrice-comportamenti-campagne-design.md`](docs/superpowers/specs/2026-07-17-matrice-comportamenti-campagne-design.md).
+
 ## Stack tecnologico
 
 - **Backend:** NestJS 10 + TypeScript (porta 8080) — API REST + worker asincroni BullMQ
