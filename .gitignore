@@ -16,3 +16,13 @@ Thumbs.db
 
 # Documentazione vendor di riferimento (non fa parte del codice app)
 /tinn/
+
+# Python build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
