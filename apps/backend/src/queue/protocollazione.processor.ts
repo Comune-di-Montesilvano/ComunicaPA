@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import type { Job } from 'bullmq';
-import type { NotificationJobData } from '@comunicapa/shared-types';
+import type { NotificationChannel, NotificationJobData } from '@comunicapa/shared-types';
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity';
 import { Campaign } from '../entities/campaign.entity';
@@ -11,7 +11,7 @@ import { ProtocolloService } from '../protocollo/protocollo.service';
 import { AttachmentService } from '../attachments/attachment.service';
 import { CampaignCompletionService } from '../campaigns/campaign-completion.service';
 import { splitFullName } from '../channels/send/name.util';
-import { PROTOCOLLAZIONE_QUEUE, NOTIFICATION_JOB_SEND, type EngineName } from './notification-job.types';
+import { PROTOCOLLAZIONE_QUEUE, NOTIFICATION_JOB_SEND } from './notification-job.types';
 import { NotificationQueuesService } from './notification-queues.service';
 import { ConfigService } from '@nestjs/config';
 import { processTemplate, wrapInHtmlLayout } from '../channels/template.helper';
@@ -145,21 +145,27 @@ export class ProtocollazioneProcessor extends WorkerHost {
       this.logger.log(msg);
       jobLog(msg);
 
-      if (campaign.channelType !== 'SEND') {
-        const primaryChannel = campaign.channelType;
-        await this.notificationQueues.addBulk(primaryChannel as EngineName, [
+      // attempt.channelType (non campaign.channelType) è il canale effettivo del
+      // destinatario: può divergere dal canale di campagna se un override INAD
+      // ha dirottato questo destinatario su PEC (campagna EMAIL/POSTAL/APP_IO) —
+      // bug reale osservato in produzione: usare campaign.channelType qui
+      // faceva ripartire l'invio sul canale originale, vanificando l'override
+      // già applicato correttamente al momento della creazione dell'attempt.
+      const effectiveChannel = attempt.channelType as NotificationChannel;
+      if (effectiveChannel !== 'SEND') {
+        await this.notificationQueues.addBulk(effectiveChannel as Exclude<NotificationChannel, 'SEND'>, [
           {
             name: NOTIFICATION_JOB_SEND,
             data: {
               campaignId,
               recipientId,
               attemptId,
-              channel: primaryChannel,
+              channel: effectiveChannel,
             },
             opts: { jobId: attemptId },
           },
         ]);
-        const dispatchMsg = `Attempt ${attemptId} accodato sul canale primario ${primaryChannel} dopo protocollazione`;
+        const dispatchMsg = `Attempt ${attemptId} accodato sul canale ${effectiveChannel} dopo protocollazione`;
         this.logger.log(dispatchMsg);
         jobLog(dispatchMsg);
       }

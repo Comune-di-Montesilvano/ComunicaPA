@@ -1388,6 +1388,23 @@ describe('CampaignsService', () => {
       mockCampaignRepo.findOneBy.mockResolvedValueOnce(null);
       await expect(service.getSendStageCounts('camp-inesistente')).rejects.toThrow(NotFoundException);
     });
+
+    it('non filtra per channel_type — include anche i destinatari overridden da INAD (canale diverso da quello di campagna)', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ id: 'camp-1', channelType: 'EMAIL' });
+      const andWhereCalls: any[] = [];
+      const mockQb = {
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockImplementation((...args) => { andWhereCalls.push(args); return mockQb; }),
+        getCount: jest.fn().mockResolvedValue(0),
+      };
+      mockAttemptRepo.createQueryBuilder.mockReturnValue(mockQb);
+
+      await service.getSendStageCounts('camp-1');
+
+      const filtersOnChannelType = andWhereCalls.some(([sql]) => typeof sql === 'string' && sql.includes('channel_type'));
+      expect(filtersOnChannelType).toBe(false);
+    });
   });
 });
 
@@ -1596,6 +1613,28 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
       { name: 'send', data: { campaignId: 'c1', recipientId: 'r1', attemptId: 'attempt-2', channel: 'EMAIL' }, opts: { jobId: 'attempt-2' } },
     ]);
     expect(result).toEqual({ requeued: true, attemptId: 'attempt-2' });
+  });
+
+  it('retryRecipient preserva il canale overridden da INAD (PEC) invece del canale di campagna (EMAIL)', async () => {
+    campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'EMAIL', channelConfig: {} });
+    recipientRepoMock.findOne = jest.fn().mockResolvedValue({ id: 'r1', campaignId: 'c1', status: RecipientStatus.FAILED });
+    attemptRepoMock.findOne = jest.fn().mockResolvedValue({ attemptNumber: 1, channelType: 'PEC' });
+    const insertExec = jest.fn().mockResolvedValue({ raw: [{ id: 'attempt-2' }] });
+    let insertedValues: any;
+    attemptRepoMock.createQueryBuilder.mockReturnValue({
+      insert: () => ({ into: () => ({ values: (v: any) => { insertedValues = v; return { returning: () => ({ execute: insertExec }) }; } }) }),
+    });
+    recipientRepoMock.update.mockResolvedValue({ affected: 1 });
+
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    await service.retryRecipient('c1', 'r1');
+
+    expect(insertedValues.channelType).toBe('PEC');
+    expect(queuesMock.addBulk).toHaveBeenCalledWith('PEC', [
+      { name: 'send', data: { campaignId: 'c1', recipientId: 'r1', attemptId: 'attempt-2', channel: 'PEC' }, opts: { jobId: 'attempt-2' } },
+    ]);
   });
 
   it('retryRecipient NON riaccoda job sul motore canale per campagne SEND (accoda invece PROTOCOLLAZIONE)', async () => {

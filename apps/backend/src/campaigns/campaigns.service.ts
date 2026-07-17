@@ -882,12 +882,16 @@ export class CampaignsService {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
+    // Nessun filtro su attempt.channel_type: un destinatario overridden da
+    // INAD ha channel_type diverso da campaign.channelType (es. PEC su
+    // campagna EMAIL) — filtrare per campaign.channelType lo escludeva
+    // silenziosamente da questo widget, facendolo sembrare "mai protocollato"
+    // anche quando lo era davvero (bug reale osservato in produzione).
     const baseQb = () =>
       this.attemptRepo
         .createQueryBuilder('attempt')
         .innerJoin('attempt.recipient', 'recipient')
-        .where('recipient.campaignId = :campaignId', { campaignId })
-        .andWhere('attempt.channel_type = :ch', { ch: campaign.channelType });
+        .where('recipient.campaignId = :campaignId', { campaignId });
 
     const [queued, protocollato, inviato, fallito] = await Promise.all([
       baseQb().andWhere('attempt.status = :status', { status: AttemptStatus.QUEUED }).andWhere('attempt.protocolled_at IS NULL').getCount(),
@@ -1202,13 +1206,20 @@ export class CampaignsService {
         ? { uploadedDocuments: lastAttempt.uploadedDocuments }
         : {};
 
+    // Il canale effettivo del destinatario può divergere da campaign.channelType
+    // se l'ultimo tentativo era stato overridden (es. domicilio INAD trovato →
+    // PEC su una campagna EMAIL) — il retry deve rispettare quel canale, non
+    // tornare silenziosamente al canale di campagna (bug reale: un retry
+    // ripristinava EMAIL su un destinatario che INAD aveva dirottato su PEC).
+    const effectiveChannel = (lastAttempt?.channelType as NotificationChannel | undefined) ?? campaign.channelType;
+
     const result = await this.attemptRepo
       .createQueryBuilder()
       .insert()
       .into(NotificationAttempt)
       .values({
         recipientId,
-        channelType: campaign.channelType,
+        channelType: effectiveChannel,
         status: AttemptStatus.QUEUED,
         attemptNumber: nextAttemptNumber,
         ...inheritedProtocol,
@@ -1222,18 +1233,18 @@ export class CampaignsService {
     await this.campaignRepo.decrement({ id: campaignId }, 'failedCount', 1);
 
     const needsProtocolla = campaign.channelConfig?.['protocolla'] === true;
-    if (campaign.channelType !== 'SEND' && !needsProtocolla) {
-      await this.notificationQueues.addBulk(campaign.channelType as Exclude<typeof campaign.channelType, 'SEND'>, [
-        { name: NOTIFICATION_JOB_SEND, data: { campaignId, recipientId, attemptId, channel: campaign.channelType }, opts: { jobId: attemptId } },
+    if (effectiveChannel !== 'SEND' && !needsProtocolla) {
+      await this.notificationQueues.addBulk(effectiveChannel as Exclude<NotificationChannel, 'SEND'>, [
+        { name: NOTIFICATION_JOB_SEND, data: { campaignId, recipientId, attemptId, channel: effectiveChannel }, opts: { jobId: attemptId } },
       ]);
-    } else if (campaign.channelType !== 'SEND' && needsProtocolla && inheritedProtocol.protocolledAt) {
-      await this.notificationQueues.addBulk(campaign.channelType as Exclude<typeof campaign.channelType, 'SEND'>, [
-        { name: NOTIFICATION_JOB_SEND, data: { campaignId, recipientId, attemptId, channel: campaign.channelType }, opts: { jobId: attemptId } },
+    } else if (effectiveChannel !== 'SEND' && needsProtocolla && inheritedProtocol.protocolledAt) {
+      await this.notificationQueues.addBulk(effectiveChannel as Exclude<NotificationChannel, 'SEND'>, [
+        { name: NOTIFICATION_JOB_SEND, data: { campaignId, recipientId, attemptId, channel: effectiveChannel }, opts: { jobId: attemptId } },
       ]);
     } else if (!inheritedProtocol.protocolledAt) {
       // Non eredita un protocollo già fatto: va (ri)protocollato dal motore dedicato.
       await this.notificationQueues.addBulk('PROTOCOLLAZIONE', [
-        { name: NOTIFICATION_JOB_SEND, data: { campaignId, recipientId, attemptId, channel: campaign.channelType }, opts: { jobId: attemptId } },
+        { name: NOTIFICATION_JOB_SEND, data: { campaignId, recipientId, attemptId, channel: effectiveChannel }, opts: { jobId: attemptId } },
       ]);
     }
 

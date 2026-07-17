@@ -34,6 +34,7 @@ describe('ProtocollazioneProcessor', () => {
       id: 'att-1',
       status: AttemptStatus.QUEUED,
       recipientId: 'r1',
+      channelType: 'SEND',
       recipient: {
         id: 'r1',
         fullName: 'Mario Rossi',
@@ -83,7 +84,7 @@ describe('ProtocollazioneProcessor', () => {
   });
 
   it('protocolla con successo per canale PEC e accoda il job sul canale PEC', async () => {
-    const pecAttempt = makeAttempt();
+    const pecAttempt = makeAttempt({ channelType: 'PEC' });
     pecAttempt.recipient.campaign.channelType = 'PEC';
     mockAttemptRepo.findOne.mockResolvedValueOnce(pecAttempt);
     mockProtocollo.protocolla.mockResolvedValueOnce({ numeroProtocollo: 123, annoProtocollo: 2026 });
@@ -107,6 +108,29 @@ describe('ProtocollazioneProcessor', () => {
         opts: { jobId: 'att-1' },
       },
     ]);
+  });
+
+  it('destinatario overridden da INAD (attempt.channelType=PEC su campagna EMAIL): riaccoda su PEC, non sul canale di campagna', async () => {
+    const overriddenAttempt = makeAttempt({ channelType: 'PEC' });
+    overriddenAttempt.recipient.campaign.channelType = 'EMAIL';
+    mockAttemptRepo.findOne.mockResolvedValueOnce(overriddenAttempt);
+    mockProtocollo.protocolla.mockResolvedValueOnce({ numeroProtocollo: 456, annoProtocollo: 2026 });
+
+    await processor.process(mockJob());
+
+    expect(mockQueues.addBulk).toHaveBeenCalledWith('PEC', [
+      {
+        name: 'send',
+        data: {
+          campaignId: 'camp-1',
+          recipientId: 'r1',
+          attemptId: 'att-1',
+          channel: 'PEC',
+        },
+        opts: { jobId: 'att-1' },
+      },
+    ]);
+    expect(mockQueues.addBulk).not.toHaveBeenCalledWith('EMAIL', expect.anything());
   });
 
   it('su fallimento marca attempt/recipient FAILED, chiama checkAndComplete, poi rilancia', async () => {
