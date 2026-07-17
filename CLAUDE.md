@@ -554,3 +554,42 @@ Se aggiungi un nuovo canale, un nuovo asse (es. verifica toponomastica
 POSTAL, oggi non implementata) o cambi una di queste regole: aggiorna
 PRIMA il file linkato, poi il codice — è la fonte di verità che evita di
 dover rileggere 5 file diversi per capire "cosa succede se combino X con Y".
+
+## Arricchimento tracciati
+
+Feature `apps/backend/src/enrichment/` (+ vista admin "Arricchimento
+Tracciati"): carica uno ZIP formato Maggioli (`rubrica.csv`/`pag_indice.csv`
++ `allegati/`), estrae indirizzo postale e dati PagoPA dai PDF via il
+microservizio Python `services/pdf-extractor/` (FastAPI + PyMuPDF/pyzbar,
+containerizzato, **raggiungibile solo sulla rete interna Docker**
+`http://pdf-extractor:8000` — nessuna porta pubblicata verso l'host, non
+esposto dal reverse proxy), produce un CSV arricchito scaricabile.
+
+**Coda dedicata, non il meccanismo `EngineName`/`ENGINE_QUEUES`.** A
+differenza dei motori di invio (PEC/Email/SEND/...), l'arricchimento usa una
+propria coda BullMQ (`ENRICHMENT_QUEUE`, `enrichment-job.types.ts`) con
+proprio processor (`enrichment.processor.ts`) — non è un canale di notifica
+né un "motore" nel senso di `EnginesController`, quindi non compare nella UI
+Motori e non partecipa a pausa/riprendi condivisi. Riusa comunque lo stesso
+pattern verificato altrove: stato terminale (`DONE`/`FAILED`) scritto
+PRIMA di uscire dal job, mai un job che finisce silenziosamente in stato
+intermedio.
+
+**Upload sempre chunked**, mai un multipart diretto — stesso vincolo del
+proxy esterno ~1MB descritto sopra: `POST
+/admin/enrichment/jobs/upload/{init,chunk,complete}`, chunk client-side,
+riassemblati lato server prima di processare lo ZIP.
+
+**Retention**: `enrichment.retentionDays` (default 30, chiave in
+`settings.registry.ts`) — job e file (ZIP sorgente, CSV/ZIP risultato)
+più vecchi vengono ripuliti da `EnrichmentRetentionService`, stesso
+pattern di retention già usato per le campagne.
+
+**"Crea bozza campagna" non è un importer parallelo.** Il pulsante sul job
+completato scrive il CSV arricchito su disco come `draft_recipients.csv` e
+imposta `wizCsvFilename` sulla campagna bozza creata — il wizard (`view
+=== 'invio-massivo-wizard'`) lo rileva e precarica quel file allo Step 2
+esattamente come una ripresa bozza normale (`handleResumeDraft`),
+riusando le stesse validazioni CF/email/mappatura colonne del percorso
+wizard standard. Nessun bypass di quelle validazioni, coerente con la
+regola "creazione campagne — un solo percorso" sopra.
