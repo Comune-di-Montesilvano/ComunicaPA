@@ -10,6 +10,7 @@ import { NotificationAttempt, AttemptStatus } from '../entities/notification-att
 import { DownloadEvent } from '../entities/download-event.entity';
 import { NotificationQueuesService } from '../queue/notification-queues.service';
 import { AppSettingsService } from '../settings/app-settings.service';
+import { InadService } from '../channels/inad/inad.service';
 import * as fs from 'fs';
 import { join } from 'path';
 import * as os from 'os';
@@ -83,10 +84,14 @@ describe('CampaignsService', () => {
   const mockDownloadEventRepo = { createQueryBuilder: jest.fn() };
   const mockQueue = { addBulk: jest.fn().mockResolvedValue(undefined), getJob: jest.fn() };
   const mockSettings = {
-    get: jest.fn(async () => null),
+    get: jest.fn(async (_key?: string): Promise<any> => null),
   };
   const mockConfig = {
     get: jest.fn(() => 'test-secret'),
+  };
+  const mockInadService = {
+    extractDigitalAddress: jest.fn(),
+    startBulkExtraction: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -100,6 +105,7 @@ describe('CampaignsService', () => {
         { provide: NotificationQueuesService, useValue: mockQueue },
         { provide: AppSettingsService, useValue: mockSettings },
         { provide: ConfigService, useValue: mockConfig },
+        { provide: InadService, useValue: mockInadService },
       ],
     }).compile();
     service = module.get<CampaignsService>(CampaignsService);
@@ -587,6 +593,89 @@ describe('CampaignsService', () => {
     });
   });
 
+  describe('launch — check INAD extract-loop (sotto soglia)', () => {
+    beforeEach(() => {
+      mockCampaignQb.execute.mockResolvedValue({ affected: 1 });
+      mockCampaignRepo.createQueryBuilder.mockReturnValue(mockCampaignQb);
+      mockAttemptRepo.createQueryBuilder.mockReturnValue({
+        insert: jest.fn().mockReturnThis(),
+        into: jest.fn().mockReturnThis(),
+        values: jest.fn().mockReturnThis(),
+        returning: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ raw: [{ id: 'att-1' }, { id: 'att-2' }] }),
+      });
+      mockInadService.extractDigitalAddress.mockReset();
+      mockInadService.startBulkExtraction.mockReset();
+    });
+
+    it('override verso PEC un destinatario EMAIL con domicilio INAD trovato, sotto soglia', async () => {
+      mockSettings.get.mockImplementation(async (key?: string) => (key === 'inad.checkEnabled' ? true : null));
+      const campaignEmail = { ...mockCampaign, id: 'c-inad-1', channelType: 'EMAIL', channelConfig: {} };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaignEmail);
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: string[] }) => {
+        if (select?.includes('extraData')) return Promise.resolve([]);
+        return Promise.resolve([
+          { id: 'r1', codiceFiscale: 'CF1', pec: null },
+          { id: 'r2', codiceFiscale: 'CF2', pec: null },
+        ]);
+      });
+      mockInadService.extractDigitalAddress.mockImplementation(async (cf: string) => {
+        if (cf === 'CF1') return { found: true, data: { codiceFiscale: 'CF1', since: '2026-01-01', digitalAddress: [{ digitalAddress: 'trovato@pec.it', usageInfo: { motivation: 'CESSAZIONE_VOLONTARIA', dateEndValidity: '2020-01-01' } }] } };
+        return { found: false };
+      });
+
+      const result = await service.launch('c-inad-1');
+
+      expect(result.launched).toBe(2);
+      expect(mockInadService.extractDigitalAddress).toHaveBeenCalledWith('CF1');
+      expect(mockInadService.extractDigitalAddress).toHaveBeenCalledWith('CF2');
+      expect(mockRecipientRepo.update).toHaveBeenCalledWith(
+        { id: 'r1' },
+        expect.objectContaining({ pec: 'trovato@pec.it', inadCheck: expect.objectContaining({ found: true }) }),
+      );
+      expect(mockRecipientRepo.update).toHaveBeenCalledWith(
+        { id: 'r2' },
+        expect.objectContaining({ inadCheck: expect.objectContaining({ found: false }) }),
+      );
+      expect(mockInadService.startBulkExtraction).not.toHaveBeenCalled();
+    });
+
+    it('non fa alcun check INAD se il toggle è disattivato', async () => {
+      mockSettings.get.mockImplementation(async () => false);
+      const campaignEmail = { ...mockCampaign, id: 'c-inad-2', channelType: 'EMAIL', channelConfig: {} };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaignEmail);
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: string[] }) => {
+        if (select?.includes('extraData')) return Promise.resolve([]);
+        return Promise.resolve([{ id: 'r1' }]);
+      });
+
+      await service.launch('c-inad-2');
+
+      expect(mockInadService.extractDigitalAddress).not.toHaveBeenCalled();
+    });
+
+    it('non fa alcun check INAD per campagne SEND anche col toggle attivo', async () => {
+      const tmpDir = fs.mkdtempSync(join(os.tmpdir(), 'comunicapa-launch-inad-'));
+      tmpDirRef.dir = tmpDir;
+      try {
+        fs.writeFileSync(join(tmpDir, 'x.pdf'), '%PDF');
+        mockSettings.get.mockImplementation(async (key?: string) => (key === 'inad.checkEnabled' ? true : (key === 'send.environment' ? undefined : null)));
+        const campaignSend = { ...mockCampaign, id: 'c-inad-3', channelType: 'SEND', channelConfig: { protocolla: true, attachments: [{ key: 'a', label: 'A' }] } };
+        mockCampaignRepo.findOneBy.mockResolvedValue(campaignSend);
+        mockRecipientRepo.find.mockImplementation(({ select }: { select: string[] }) => {
+          if (select?.includes('extraData')) return Promise.resolve([{ id: 'r1', codiceFiscale: 'CF1', extraData: { a: 'x.pdf' } }]);
+          return Promise.resolve([{ id: 'r1' }]);
+        });
+
+        await service.launch('c-inad-3');
+
+        expect(mockInadService.extractDigitalAddress).not.toHaveBeenCalled();
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe('getChannelBreakdown', () => {
     it('ritorna null se la campagna non ha co-consegna App IO configurata', async () => {
       mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelConfig: {} });
@@ -1056,6 +1145,7 @@ describe('CampaignsService.getDuplicateSource', () => {
         { provide: NotificationQueuesService, useValue: {} },
         { provide: AppSettingsService, useValue: mockSettings },
         { provide: ConfigService, useValue: mockConfig },
+        { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
       ],
     }).compile();
 
@@ -1121,6 +1211,7 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
         { provide: NotificationQueuesService, useValue: queuesMock },
         { provide: AppSettingsService, useValue: mockSettings },
         { provide: ConfigService, useValue: mockConfig },
+        { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
       ],
     }).compile();
 
@@ -1452,6 +1543,7 @@ describe('CampaignsService.getFailuresByReason', () => {
         { provide: NotificationQueuesService, useValue: {} },
         { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
         { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
+        { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
       ],
     }).compile();
     const service = moduleRef.get(CampaignsService);
@@ -1485,6 +1577,7 @@ describe('CampaignsService.retryRecipientsBulk', () => {
         { provide: NotificationQueuesService, useValue: {} },
         { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
         { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
+        { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
       ],
     }).compile();
     const service = moduleRef.get(CampaignsService);
@@ -1514,6 +1607,7 @@ describe('CampaignsService.retryRecipientsBulk', () => {
         { provide: NotificationQueuesService, useValue: {} },
         { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
         { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
+        { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
       ],
     }).compile();
     const service = moduleRef.get(CampaignsService);
@@ -1539,6 +1633,7 @@ describe('CampaignsService.getDownloadReportRows', () => {
         { provide: NotificationQueuesService, useValue: {} },
         { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
         { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
+        { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
       ],
     }).compile();
     const service = moduleRef.get(CampaignsService);
@@ -1590,6 +1685,7 @@ describe('CampaignsService.updateDraft', () => {
         { provide: NotificationQueuesService, useValue: {} },
         { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
         { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
+        { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
       ],
     }).compile();
 
@@ -1645,6 +1741,7 @@ describe('CampaignsService.previewMessage', () => {
         { provide: NotificationQueuesService, useValue: queuesMock },
         { provide: AppSettingsService, useValue: mockSettings },
         { provide: ConfigService, useValue: mockConfig },
+        { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
       ],
     }).compile();
 
@@ -1732,6 +1829,7 @@ describe('CampaignsService.getSendStatusBreakdown / getSendReportRows', () => {
         { provide: NotificationQueuesService, useValue: {} },
         { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
         { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
+        { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
       ],
     }).compile();
 
@@ -1870,6 +1968,7 @@ describe('CampaignsService.getPostalStatusBreakdown / getPostalReportRows', () =
         { provide: NotificationQueuesService, useValue: {} },
         { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
         { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
+        { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
       ],
     }).compile();
 

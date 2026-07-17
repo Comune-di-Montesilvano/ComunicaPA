@@ -6,6 +6,7 @@ import { NotificationAttempt } from '../entities/notification-attempt.entity';
 import { DownloadEvent } from '../entities/download-event.entity';
 import { QueueModule } from '../queue/queue.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { InadModule } from '../channels/inad/inad.module';
 import { CampaignsService } from './campaigns.service';
 import { CampaignsController } from './campaigns.controller';
 import { RetentionCleanupService } from './retention-cleanup.service';
@@ -15,6 +16,7 @@ import { RetentionCleanupService } from './retention-cleanup.service';
     TypeOrmModule.forFeature([Campaign, Recipient, NotificationAttempt, DownloadEvent]),
     QueueModule,
     AuditLogsModule,
+    InadModule,
   ],
   providers: [CampaignsService, RetentionCleanupService],
   controllers: [CampaignsController],

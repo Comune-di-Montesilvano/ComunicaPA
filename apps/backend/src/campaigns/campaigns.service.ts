@@ -30,8 +30,10 @@ import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.d
 import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util';
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto';
 import type { NotificationChannel } from '@comunicapa/shared-types';
+import { InadService } from '../channels/inad/inad.service';
 
 const MAX_BULK_RETRY_SIZE = 500;
+const INAD_BULK_THRESHOLD = 100;
 
 @Injectable()
 export class CampaignsService {
@@ -49,6 +51,7 @@ export class CampaignsService {
     private readonly notificationQueues: NotificationQueuesService,
     private readonly settings: AppSettingsService,
     private readonly config: ConfigService<AppConfiguration, true>,
+    private readonly inadService: InadService,
   ) {}
 
   findAll(): Promise<Campaign[]> {
@@ -359,8 +362,68 @@ export class CampaignsService {
       throw new BadRequestException('No pending recipients — upload a CSV first');
     }
 
-    const { launched } = await this.createAttemptsAndEnqueue(campaign, recipients);
+    let channelOverrides: Map<string, NotificationChannel> | undefined;
+    const inadCheckEnabled = campaign.channelType !== 'SEND' && (await this.settings.get<boolean>('inad.checkEnabled'));
+    if (inadCheckEnabled) {
+      if (recipients.length < INAD_BULK_THRESHOLD) {
+        channelOverrides = await this.runInadExtractLoop(campaign, recipients);
+      } else {
+        await this.startInadBulkCheck(campaign, recipients);
+        return { launched: 0, campaignId };
+      }
+    }
+
+    const { launched } = await this.createAttemptsAndEnqueue(campaign, recipients, channelOverrides);
     return { launched, campaignId };
+  }
+
+  private async runInadExtractLoop(
+    campaign: Campaign,
+    recipients: Array<{ id: string }>,
+  ): Promise<Map<string, NotificationChannel>> {
+    const fullRecipients = await this.recipientRepo.find({
+      where: { id: In(recipients.map((r) => r.id)) },
+      select: ['id', 'codiceFiscale', 'pec', 'email'],
+    });
+    const channelOverrides = new Map<string, NotificationChannel>();
+    const CONCURRENCY = 5;
+    for (let i = 0; i < fullRecipients.length; i += CONCURRENCY) {
+      const batch = fullRecipients.slice(i, i + CONCURRENCY);
+      await Promise.all(
+        batch.map(async (recipient) => {
+          if (!recipient.codiceFiscale) return;
+          let result: { found: boolean; data?: { digitalAddress: Array<{ digitalAddress: string }> } };
+          try {
+            result = await this.inadService.extractDigitalAddress(recipient.codiceFiscale);
+          } catch (err) {
+            this.logger.warn(`Check INAD fallito per destinatario ${recipient.id} (CF ${recipient.codiceFiscale}): ${err instanceof Error ? err.message : err}`);
+            return;
+          }
+          const found = result.found && (result.data?.digitalAddress?.length ?? 0) > 0;
+          const inadAddress = found ? result.data!.digitalAddress[0].digitalAddress : null;
+          await this.recipientRepo.update(
+            { id: recipient.id },
+            {
+              inadCheck: {
+                found,
+                originalChannel: campaign.channelType,
+                originalAddress: campaign.channelType === 'PEC' ? recipient.pec : recipient.email,
+                checkedAt: new Date().toISOString(),
+              },
+              ...(found && inadAddress !== recipient.pec ? { pec: inadAddress } : {}),
+            },
+          );
+          if (found && inadAddress !== recipient.pec) {
+            channelOverrides.set(recipient.id, 'PEC');
+          }
+        }),
+      );
+    }
+    return channelOverrides;
+  }
+
+  private async startInadBulkCheck(_campaign: Campaign, _recipients: Array<{ id: string }>): Promise<void> {
+    throw new Error('startInadBulkCheck non ancora implementato (Task 6)');
   }
 
   private async createAttemptsAndEnqueue(
