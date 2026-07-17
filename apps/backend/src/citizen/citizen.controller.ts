@@ -110,7 +110,11 @@ export class CitizenController {
       return;
     }
 
-    res.setHeader('Content-Type', result.contentType);
+    let contentType = result.contentType;
+    if (result.filename.toLowerCase().endsWith('.p7m')) {
+      contentType = 'application/pkcs7-mime';
+    }
+    res.setHeader('Content-Type', contentType);
     const isInline = /\.(pdf|png|jpe?g|gif)$/i.test(result.filename);
     const dispositionMode = isInline ? 'inline' : 'attachment';
     res.setHeader('Content-Disposition', `${dispositionMode}; filename="${result.filename}"`);

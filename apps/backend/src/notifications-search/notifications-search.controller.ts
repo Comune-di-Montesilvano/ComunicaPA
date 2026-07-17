@@ -54,7 +54,11 @@ export class NotificationsSearchController {
       res.status(200).json({ ready: false, retryAfterSeconds: result.retryAfterSeconds, error: result.error });
       return;
     }
-    res.setHeader('Content-Type', result.contentType);
+    let contentType = result.contentType;
+    if (result.filename.toLowerCase().endsWith('.p7m')) {
+      contentType = 'application/pkcs7-mime';
+    }
+    res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `attachment; filename="${result.filename.replace(/"/g, '')}"`);
     res.end(result.buffer);
   }
