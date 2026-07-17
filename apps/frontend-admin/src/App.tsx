@@ -939,6 +939,11 @@ export function App(): React.JSX.Element {
   const [settInadProdPurposeId, setSettInadProdPurposeId] = useState('');
   const [settInadTesting, setSettInadTesting] = useState<'test' | 'prod' | null>(null);
   const [settInadTestResult, setSettInadTestResult] = useState<{ env: 'test' | 'prod'; ok: boolean; message: string } | null>(null);
+  const [settInadExtractCf, setSettInadExtractCf] = useState('');
+  const [settInadExtracting, setSettInadExtracting] = useState(false);
+  const [settInadExtractResult, setSettInadExtractResult] = useState<
+    { success: boolean; found?: boolean; data?: { codiceFiscale: string; since: string; digitalAddress: Array<{ digitalAddress: string; practicedProfession?: string; usageInfo: { motivation: string; dateEndValidity: string } }> }; message?: string } | null
+  >(null);
   const [settInipecTestPurposeId, setSettInipecTestPurposeId] = useState('');
   const [settInipecProdPurposeId, setSettInipecProdPurposeId] = useState('');
   const [settInipecTesting, setSettInipecTesting] = useState<'test' | 'prod' | null>(null);
@@ -1907,6 +1912,26 @@ export function App(): React.JSX.Element {
 
   const handleTestInadConnection = (env: 'test' | 'prod') =>
     runPdndTest(`/settings/inad/${env}/test-connection`, env, setSettInadTesting, setSettInadTestResult);
+
+  const handleExtractInad = async () => {
+    if (!settInadExtractCf.trim()) return;
+    setSettInadExtracting(true);
+    setSettInadExtractResult(null);
+    try {
+      const res = await apiFetch('/settings/inad/prod/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codiceFiscale: settInadExtractCf.trim() }),
+      });
+      const data = await res.json();
+      setSettInadExtractResult(data);
+    } catch (error: any) {
+      if (error instanceof ApiAuthError) return;
+      setSettInadExtractResult({ success: false, message: error.message || 'Errore di rete' });
+    } finally {
+      setSettInadExtracting(false);
+    }
+  };
 
   const handleTestInipecConnection = (env: 'test' | 'prod') =>
     runPdndTest(`/settings/inipec/${env}/test-connection`, env, setSettInipecTesting, setSettInipecTestResult);
@@ -7137,8 +7162,9 @@ export function App(): React.JSX.Element {
                         {activeSettingsTab === 'inad' && (
                           <div>
                             <div className="alert alert-warning small mb-3">
-                              Integrazione INAD in attesa di approvazione PDND: le specifiche non sono
-                              ancora definite. Solo il Purpose ID è configurabile per ora.
+                              Interrogazione singola disponibile (solo ambiente Produzione). La logica
+                              di scelta canale in base al domicilio digitale eletto non è ancora
+                              implementata.
                             </div>
                             {([
                               { label: 'Collaudo (UAT)', prefix: 'test' as const,
@@ -7172,6 +7198,44 @@ export function App(): React.JSX.Element {
                                   <div className={`alert ${settInadTestResult.ok ? 'alert-success' : 'alert-danger'} mt-2 mb-0 small`} style={{ wordBreak: 'break-word' }}>
                                     {settInadTestResult.message}
                                   </div>
+                                )}
+                                {e.prefix === 'prod' && (
+                                  <>
+                                    <hr className="my-3" />
+                                    <label className="form-label small fw-semibold text-muted" htmlFor="inad_extract_cf">Codice Fiscale</label>
+                                    <input
+                                      type="text"
+                                      id="inad_extract_cf"
+                                      className="form-control form-control-sm mb-2"
+                                      value={settInadExtractCf}
+                                      onChange={(ev) => setSettInadExtractCf(ev.target.value.toUpperCase())}
+                                      placeholder="RSSMRA80A01H501U"
+                                    />
+                                    <button
+                                      type="button"
+                                      className="btn btn-outline-primary btn-sm"
+                                      disabled={settInadExtracting || !settInadExtractCf.trim()}
+                                      onClick={handleExtractInad}
+                                    >
+                                      {settInadExtracting ? 'Interrogazione in corso…' : 'Interroga domicilio digitale'}
+                                    </button>
+                                    {settInadExtractResult && (
+                                      <div className={`alert ${settInadExtractResult.success ? 'alert-success' : 'alert-danger'} mt-2 mb-0 small`} style={{ wordBreak: 'break-word' }}>
+                                        {!settInadExtractResult.success && (settInadExtractResult.message || 'Errore sconosciuto')}
+                                        {settInadExtractResult.success && settInadExtractResult.found === false && 'Nessun domicilio digitale associato a questo Codice Fiscale.'}
+                                        {settInadExtractResult.success && settInadExtractResult.found && settInadExtractResult.data && (
+                                          <ul className="mb-0 ps-3">
+                                            {settInadExtractResult.data.digitalAddress.map((d, i) => (
+                                              <li key={i}>
+                                                {d.digitalAddress}
+                                                {d.practicedProfession ? ` (${d.practicedProfession})` : ''}
+                                              </li>
+                                            ))}
+                                          </ul>
+                                        )}
+                                      </div>
+                                    )}
+                                  </>
                                 )}
                               </fieldset>
                             ))}
