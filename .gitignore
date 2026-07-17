@@ -13,3 +13,6 @@ Thumbs.db
 
 # Superpowers scratch (progress ledger, not project docs)
 .superpowers/
+
+# Documentazione vendor di riferimento (non fa parte del codice app)
+/tinn/
