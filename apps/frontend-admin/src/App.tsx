@@ -1528,6 +1528,14 @@ export function App(): React.JSX.Element {
     try {
       const res = await apiFetch(`/enrichment/jobs/${jobId}/result.${kind}`);
       if (!res.ok) { alert('Download non disponibile'); return; }
+      // Il backend risponde 200 + {blocked:true} (mai un errore HTTP) se il
+      // risultato non è (più) disponibile: senza questo controllo il JSON
+      // verrebbe salvato come se fosse il file richiesto.
+      if ((res.headers.get('Content-Type') || '').includes('application/json')) {
+        const body = await res.json().catch(() => ({}));
+        alert(body.message || 'Download non disponibile');
+        return;
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');

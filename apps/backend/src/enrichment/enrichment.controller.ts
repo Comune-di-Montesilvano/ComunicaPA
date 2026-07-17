@@ -131,6 +131,12 @@ export class EnrichmentController {
   @Roles('user', 'admin')
   async downloadZip(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response): Promise<void> {
     const buf = await this.svc.buildResultZip(id);
+    if (!buf) {
+      // 200 + blocked, mai non-2xx: il proxy esterno sostituisce il body
+      // delle risposte non-2xx con una pagina HTML propria (vedi CLAUDE.md).
+      res.status(200).json({ blocked: true, message: 'Risultato non disponibile' });
+      return;
+    }
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="arricchito_${id.slice(0, 8)}.zip"`);
     res.send(buf);

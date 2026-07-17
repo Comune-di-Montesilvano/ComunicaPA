@@ -4,7 +4,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { Repository } from 'typeorm';
 import * as fs from 'fs';
-import { join } from 'path';
+import { basename, join } from 'path';
 import AdmZip from 'adm-zip';
 import {
   EnrichmentJob,
@@ -80,28 +80,41 @@ export class EnrichmentService {
     return job;
   }
 
+  /**
+   * Nessun blocco su PROCESSING: un job rimasto bloccato in quello stato
+   * (es. backend riavviato a metà elaborazione) non ha altrimenti alcuna
+   * via d'uscita da UI — né retention (lo esclude sempre) né riconversione.
+   * Endpoint già admin-only, eliminazione forzata è la valvola di sfogo.
+   */
   async deleteJob(id: string): Promise<{ blocked?: boolean; message?: string }> {
-    const job = await this.getJob(id);
-    if (job.status === EnrichmentJobStatus.PROCESSING) {
-      return { blocked: true, message: 'Job in elaborazione: attendere il completamento prima di eliminarlo' };
-    }
+    await this.getJob(id);
     fs.rmSync(getEnrichmentDir(id), { recursive: true, force: true });
     await this.jobRepo.delete(id);
     return {};
   }
 
-  /** ZIP risultato costruito on-the-fly: arricchito.csv + PDF dal source.zip. */
-  async buildResultZip(id: string): Promise<Buffer> {
+  /**
+   * ZIP risultato costruito on-the-fly: arricchito.csv + PDF dal source.zip.
+   * Ritorna null (mai un'eccezione non-2xx) se il job non è ancora pronto o
+   * il file è già stato rimosso (race con retention) — il chiamante HTTP
+   * deve rispondere 200+blocked, mai un errore che il proxy esterno
+   * sostituirebbe con la sua pagina HTML.
+   */
+  async buildResultZip(id: string): Promise<Buffer | null> {
     const job = await this.getJob(id);
     if (job.status !== EnrichmentJobStatus.DONE) {
-      throw new NotFoundException('Risultato non ancora disponibile');
+      return null;
+    }
+    const csvPath = getEnrichmentResultCsv(id);
+    if (!fs.existsSync(csvPath)) {
+      return null;
     }
     const out = new AdmZip();
-    out.addFile('arricchito.csv', fs.readFileSync(getEnrichmentResultCsv(id)));
+    out.addFile('arricchito.csv', fs.readFileSync(csvPath));
     const source = new AdmZip(getEnrichmentSourceZip(id));
     for (const entry of source.getEntries()) {
       if (entry.entryName.startsWith('allegati/') && entry.entryName.toLowerCase().endsWith('.pdf')) {
-        out.addFile(entry.entryName.replace(/^allegati\//, ''), entry.getData());
+        out.addFile(basename(entry.entryName), entry.getData());
       }
     }
     return out.toBuffer();
@@ -145,7 +158,10 @@ export class EnrichmentService {
     const source = new AdmZip(getEnrichmentSourceZip(jobId));
     for (const entry of source.getEntries()) {
       if (entry.entryName.startsWith('allegati/') && entry.entryName.toLowerCase().endsWith('.pdf')) {
-        fs.writeFileSync(join(uploadsDir, entry.entryName.replace(/^allegati\//, '')), entry.getData());
+        // basename(): il nome file nello ZIP è dato attaccante-influenzabile
+        // (operatore autenticato), mai usarlo per costruire un path senza
+        // sanitizzazione — previene un entry "allegati/../../altra/x.pdf".
+        fs.writeFileSync(join(uploadsDir, basename(entry.entryName)), entry.getData());
       }
     }
 

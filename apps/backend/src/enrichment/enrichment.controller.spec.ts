@@ -34,4 +34,20 @@ describe('EnrichmentController', () => {
   it('list ritorna {jobs}', async () => {
     await expect(controller.listJobs()).resolves.toEqual({ jobs: [] });
   });
+
+  it('downloadZip: risultato non disponibile → 200 + blocked (mai un 404/500 grezzo)', async () => {
+    svc.buildResultZip = jest.fn(async () => null);
+    const res: any = { status: jest.fn().mockReturnThis(), json: jest.fn(), setHeader: jest.fn(), send: jest.fn() };
+    await controller.downloadZip('j1', res);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ blocked: true }));
+    expect(res.send).not.toHaveBeenCalled();
+  });
+
+  it('downloadZip: risultato disponibile → invia il buffer', async () => {
+    const res: any = { status: jest.fn().mockReturnThis(), json: jest.fn(), setHeader: jest.fn(), send: jest.fn() };
+    await controller.downloadZip('j1', res);
+    expect(res.send).toHaveBeenCalledWith(Buffer.from('zip'));
+    expect(res.status).not.toHaveBeenCalled();
+  });
 });

@@ -81,11 +81,14 @@ describe('EnrichmentService', () => {
     expect(result.blocked).toBe(true);
   });
 
-  it('deleteJob: PROCESSING → blocked', async () => {
-    repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.PROCESSING });
-    const result = await service.deleteJob('j1');
-    expect(result.blocked).toBe(true);
-    expect(repo.delete).not.toHaveBeenCalled();
+  it('deleteJob: PROCESSING → eliminazione forzata comunque permessa (endpoint admin-only, unica via d\'uscita per un job bloccato)', async () => {
+    repo.findOneBy.mockResolvedValue({ id: 'job-uuid-1', status: EnrichmentJobStatus.PROCESSING });
+    const dir = join(tmpDir, 'attachments', 'enrichment', 'job-uuid-1');
+    fs.mkdirSync(dir, { recursive: true });
+    const result = await service.deleteJob('job-uuid-1');
+    expect(result.blocked).toBeUndefined();
+    expect(repo.delete).toHaveBeenCalledWith('job-uuid-1');
+    expect(fs.existsSync(dir)).toBe(false);
   });
 
   it('deleteJob: DONE → elimina record e cartella', async () => {
@@ -106,9 +109,39 @@ describe('EnrichmentService', () => {
     fs.writeFileSync(join(dir, 'result.csv'), '"a"');
 
     const buf = await service.buildResultZip('job-uuid-1');
-    const out = new AdmZip(buf);
+    expect(buf).not.toBeNull();
+    const out = new AdmZip(buf as Buffer);
     expect(out.getEntry('arricchito.csv')).toBeTruthy();
     expect(out.getEntry('PROVV_1.pdf')).toBeTruthy();
+  });
+
+  it('buildResultZip: job non DONE → null (mai eccezione, il chiamante HTTP deve rispondere 200+blocked)', async () => {
+    repo.findOneBy.mockResolvedValue({ id: 'job-uuid-1', status: EnrichmentJobStatus.PROCESSING });
+    const buf = await service.buildResultZip('job-uuid-1');
+    expect(buf).toBeNull();
+  });
+
+  it('buildResultZip: result.csv assente nonostante status DONE (race con retention) → null', async () => {
+    repo.findOneBy.mockResolvedValue({ id: 'job-uuid-1', status: EnrichmentJobStatus.DONE });
+    const buf = await service.buildResultZip('job-uuid-1');
+    expect(buf).toBeNull();
+  });
+
+  it('buildResultZip: nomi file annidati in sottocartelle vengono appiattiti con basename (difesa da entry name inatteso)', async () => {
+    repo.findOneBy.mockResolvedValue({ id: 'job-uuid-1', status: EnrichmentJobStatus.DONE });
+    const dir = join(tmpDir, 'attachments', 'enrichment', 'job-uuid-1');
+    fs.mkdirSync(dir, { recursive: true });
+    const zip = new AdmZip();
+    zip.addFile('rubrica.csv', Buffer.from(RUBRICA_ROW, 'utf-8'));
+    zip.addFile('allegati/sub/nested.pdf', Buffer.from('%PDF-nested'));
+    zip.writeZip(join(dir, 'source.zip'));
+    fs.writeFileSync(join(dir, 'result.csv'), '"a"');
+
+    const buf = await service.buildResultZip('job-uuid-1');
+    const out = new AdmZip(buf as Buffer);
+    // basename() appiattisce sub/nested.pdf -> nested.pdf, non replica la sottocartella
+    expect(out.getEntry('nested.pdf')).toBeTruthy();
+    expect(out.getEntries().every((e) => !e.entryName.includes('/'))).toBe(true);
   });
 
   describe('createCampaignFromJob', () => {
@@ -158,6 +191,23 @@ describe('EnrichmentService', () => {
       repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.DONE, campaignId: 'camp-old' });
       const result = await service.createCampaignFromJob('j1', { name: 'X', channelType: 'PEC' }, 'op');
       expect(result.blocked).toBe(true);
+    });
+
+    it('nomi file annidati in sottocartelle vengono appiattiti con basename dentro uploadsDir', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 'job-uuid-1', status: EnrichmentJobStatus.DONE, campaignId: null });
+      const dir = join(tmpDir, 'attachments', 'enrichment', 'job-uuid-1');
+      fs.mkdirSync(dir, { recursive: true });
+      const zip = new AdmZip();
+      zip.addFile('rubrica.csv', Buffer.from(RUBRICA_ROW, 'utf-8'));
+      zip.addFile('allegati/sub/nested.pdf', Buffer.from('%PDF-nested'));
+      zip.writeZip(join(dir, 'source.zip'));
+      fs.writeFileSync(join(dir, 'result.csv'), '"codice_fiscale"\n"RSSMRA80A01H501U"');
+
+      await service.createCampaignFromJob('job-uuid-1', { name: 'X', channelType: 'PEC' }, 'op');
+
+      const uploadsDir = join(tmpDir, 'attachments', 'uploads', 'camp-1');
+      expect(fs.existsSync(join(uploadsDir, 'nested.pdf'))).toBe(true);
+      expect(fs.existsSync(join(uploadsDir, 'sub'))).toBe(false);
     });
   });
 });
