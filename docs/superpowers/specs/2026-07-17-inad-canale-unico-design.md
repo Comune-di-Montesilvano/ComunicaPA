@@ -121,7 +121,12 @@ scope — verrà aggiunto in una fase successiva con lo stesso pattern.
     produzione dell'attempt (`launch()` in `campaigns.service.ts`), si
     sceglie `channelType = 'PEC'` per quel destinatario invece del canale
     di campagna. `recipient.pec` viene valorizzato con l'indirizzo INAD
-    trovato (per questi canali il campo era tipicamente vuoto).
+    trovato (per questi canali il campo era tipicamente vuoto). Il
+    mittente PEC usato è `campaign.channelConfig.pecReserveMailConfigId`
+    (EMAIL/POSTAL/APP_IO) o il mittente PEC già configurato dalla campagna
+    stessa (canale PEC); il contenuto è `campaign.channelConfig.subject`/
+    `body` già esistenti (vedi sezione Wizard sotto — nessun campo
+    contenuto separato).
   - Se INAD non trova nulla per un destinatario (`found: false`), nessun
     override: procede con il canale/indirizzo configurato in campagna,
     come oggi.
@@ -137,26 +142,45 @@ scope — verrà aggiunto in una fase successiva con lo stesso pattern.
   invariate — l'override avviene scrivendo sul recipient prima che la
   strategy venga invocata, non nella strategy stessa.
 
-## Wizard — blocco PEC di riserva dentro gli step esistenti
+## Wizard — riuso del template esistente, non un editor duplicato
 
 Il wizard ha 5 step fissi numerati (nessun array dinamico per canale,
-`wizStep` hardcoded in tutto `App.tsx`) — non si introduce un 6° step.
-Per ogni campagna non-SEND con canale diverso da PEC, si aggiungono due
-blocchi condizionali (`wizChannel !== 'SEND' && wizChannel !== 'PEC'`),
-stesso pattern già usato per la co-consegna App IO
-(`buildWizChannelConfigDraft`/`handleWizLaunch`, guardia duplicata in
-entrambi i punti — vedi CLAUDE.md "Allegati e co-consegna App IO"):
-- **Step 1 (Dettagli & Canale)**: selezione del mittente PEC da usare per
-  gli eventuali destinatari con override INAD.
-- **Step 4 (Template & Anteprima)**: template email/PEC da applicare a
-  quei destinatari, anche se non previsto normalmente per il canale della
-  campagna (es. POSTAL/APP_IO non hanno mai avuto un template email).
-Mostrati incondizionatamente (anche se poi nessun destinatario avrà un
-domicilio INAD attivo) per non introdurre un'ulteriore toggle di
-attivazione per-campagna — coerente con la decisione già presa in fase 1
-di preferire "template a volte inutilizzati" a "complessità aggiuntiva nel
-software". Salvati in `channelConfig.pecReserve = { mailConfigId, subject,
-body }`.
+`wizStep` hardcoded in tutto `App.tsx`) — non si introduce un 6° step, e
+non si duplica l'editor ricco di oggetto/corpo (toolbar placeholder
+inclusa) già esistente per lo step 4: si riusa quello.
+
+- **EMAIL / APP_IO**: hanno già `wizSubject`/`wizBody` obbligatori e
+  validati come contenuto principale del canale — questo stesso testo
+  viene riusato tale e quale come contenuto dell'invio PEC quando scatta
+  l'override INAD. Nessuna UI nuova.
+- **PEC**: il canale è già PEC, l'override cambia solo l'indirizzo di un
+  singolo destinatario (vedi sezione sopra), non il contenuto. Nessuna UI
+  nuova.
+- **POSTAL**: unico caso che oggi non richiede/mostra un body testuale
+  (il contenuto reale è il PDF allegato, `channelConfig.body` non è mai
+  letto da `PostalStrategy.send()` — vedi CLAUDE.md "POSTAL: channelConfig
+  non è il contenuto reale"). Per questo canale si allarga la condizione
+  di visualizzazione/obbligatorietà del blocco oggetto+corpo già esistente
+  allo step 4 (oggi mostrato solo per `EMAIL`/`PEC`) per includere anche
+  `POSTAL`, così l'operatore compila lo stesso identico editor già
+  presente — il testo verrà usato solo se un destinatario POSTAL riceve
+  un override INAD.
+- **SEND**: escluso, nessun check INAD, nessuna UI.
+
+**Unica UI davvero nuova**: un selettore "Mittente PEC di riserva" nello
+step 1 (accanto al selettore mittente esistente), filtrato su
+`mailConfigs.filter(c => c.type === 'PEC' && c.active)`, mostrato per
+`wizChannel === 'EMAIL' || wizChannel === 'POSTAL' || wizChannel === 'APP_IO'`
+(per questi tre canali il mittente configurato — SMTP o nessuno — non è
+utilizzabile per un invio PEC). Nuovo stato `wizPecReserveMailConfigId`,
+salvato in `channelConfig.pecReserveMailConfigId`, scritto in entrambi
+`buildWizChannelConfigDraft` e `handleWizLaunch` (stesso pattern-gotcha
+della co-consegna App IO: due punti separati, vanno tenuti allineati).
+Mostrato incondizionatamente (anche se poi nessun destinatario avrà un
+domicilio INAD attivo) per non introdurre un'ulteriore toggle
+di attivazione per-campagna — coerente con la decisione già presa in fase
+1 di preferire "un campo a volte inutilizzato" a "complessità aggiuntiva
+nel software".
 
 ## Fuori scope (questa fase)
 
