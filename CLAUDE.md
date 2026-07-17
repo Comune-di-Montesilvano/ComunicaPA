@@ -109,7 +109,7 @@ docker compose exec frontend-citizen node_modules/.bin/tsc -p tsconfig.app.json 
 docker compose exec backend node -e "const jwt=require('/app/node_modules/.pnpm/node_modules/jsonwebtoken');console.log(jwt.sign({sub:'debug',username:'debug',role:'admin',type:'operator'},process.env.JWT_SECRET,{expiresIn:'10m'}))"
 ```
 
-**Baseline:** suite pulita, nessun fallimento noto. Il criterio per una modifica resta "failure set identico" al prima — se emerge un nuovo fallimento, è una regressione, non baseline nota.
+**Baseline:** 1 fallimento noto pre-esistente (`app.controller.spec.ts`, `isLdapMock` — artefatto di `LDAP_HOST=mock` in dev), il resto della suite pulito. Il criterio per una modifica resta "failure set identico" al prima — se emerge un nuovo fallimento oltre a questo, è una regressione, non baseline nota.
 
 ## Configurazione runtime (settings in DB)
 
@@ -327,6 +327,17 @@ dello schema `NotificationStatus` — verificare sempre lo spec raw, non un
 riassunto, prima di aggiungere/rimuovere valori da `TERMINAL_STATUSES`
 (`send-status-sync.service.ts`) o da `SEND_STATUS_META` (`App.tsx`).
 
+## INAD — Indice Nazionale Domicili Digitali, dati verificati dal vivo
+
+`GET /extract/{cf}` (query singola): **~0.5s**, sincrona. `POST
+/listDigitalAddress` (bulk, fino a 1000 CF): **5-10 minuti**, elaborazione a
+batch periodici lato INAD non realtime — costo prevalentemente fisso, non
+lineare (3 CF: 5m53s; 50 CF: 6m09s-10m04s su due run separate). Non
+verificato oltre 50 CF: se emerge crescita marcata su batch da centinaia,
+va rivista qualunque soglia extract/bulk basata su questi numeri.
+`/extract` ha limite **giornaliero condiviso** (1000-2000 richieste/die,
+non nello spec OpenAPI) — non usare in loop su campagne grandi.
+
 ## POSTAL — GlobalCom SOAP, gotcha critico
 
 Web service ASMX legacy (`node-soap`), non un'API REST moderna — alcune
@@ -398,6 +409,13 @@ per quel canale (il blocco `secondaryChannels` viveva solo dentro il ramo
 mostrasse configurata. Ogni nuovo campo channel-agnostic in `buildWiz...Draft`
 va replicato anche in `handleWizLaunch`, non solo nell'uno o nell'altro.
 
+**Terzo punto di sync, oltre ai due sopra: il lifecycle del wizard stesso.**
+Un nuovo stato `wiz*` legato a `channelConfig` (es. `wizPecReserveMailConfigId`)
+va anche azzerato in `resetWizard()` e ripristinato in `prefillWizardFrom()`
+— altrimenti il valore di una campagna trapela silenziosamente sulla
+successiva (mai azzerato) o si perde riprendendo una bozza/duplicando
+(mai ripristinato dal `channelConfig` salvato).
+
 **POSTAL: `channelConfig.body`/`subject` NON sono il contenuto reale inviato.**
 La lettera cartacea viene generata dagli allegati (PDF), non da un body HTML
 come per EMAIL/PEC — `PostalStrategy.send()` non legge mai `channelConfig.body`.
@@ -432,6 +450,19 @@ con logo/dati generici che mascherava configurazioni rotte. Impatta anche
 dove ora un allegato mancante fa fallire esplicitamente l'attempt invece di
 spedire un documento fittizio.
 
+## Nuova dependency in un costruttore — audit spec esistenti
+
+Aggiungere un parametro al costruttore di un Controller/Service rompe
+silenziosamente ogni spec file che lo istanzia manualmente con `new X(a,
+b)` altrove nel repo — TypeScript lo segnala solo se quello spec file
+viene compilato, e `jest <pattern-mirato>` non tocca spec non correlati.
+Bug reale: fase INAD aggiunge `InadService` al costruttore di
+`SettingsController`, `settings.controller.spec.ts` (3 istanziazioni
+dirette) resta rotto per settimane — scoperto solo eseguendo la suite
+COMPLETA (`jest --maxWorkers=2`, non un pattern) durante un task
+successivo non correlato. Dopo ogni modifica a una firma di costruttore,
+lanciare la suite intera prima di dichiarare la baseline pulita.
+
 ## TypeORM — leftJoinAndSelect + orderBy + take, bug interno
 
 TypeORM 0.3.30 lancia `Cannot read properties of undefined (reading
@@ -446,3 +477,55 @@ senza errori visibili all'avvio. Workaround: due query separate — la prima
 carica le relazioni via `Repository.find({ where: { id: In(ids) },
 relations })`, senza `orderBy`/`take`. Vedi `protocollazione-sync.service.ts`
 e `send-dispatch.service.ts`.
+
+## Side-effect su NotificationAttempt dopo l'invio — solo in notification.processor.ts
+
+Le `*Strategy.send()` (`postal.strategy.ts`, `send-dispatch.service.ts`...)
+ritornano solo un `ChannelSendResult`, nessun accesso ad `attemptRepo` —
+qualunque scrittura sull'attempt subito dopo un invio riuscito (es.
+`postalTrackingId`, stato iniziale) va fatta in `notification.processor.ts`,
+l'unico layer che chiama `attemptRepo.update()` dopo aver ricevuto il
+risultato della strategy. Un design doc ha assunto una volta che questo
+andasse nella strategy stessa — sbagliato, verificato solo leggendo il
+codice reale, non lo spec di progettazione.
+
+## Stato business null vs attempt fallito pre-provider — gotcha
+
+Per i canali con stato business esterno (`sendStatus`/`postalStatus`, SEND
+via PN, POSTAL via GlobalCom), un attempt fallito PRIMA di raggiungere il
+provider (`AttemptStatus.FAILED`, mai un IUN/IDPRO assegnato) lascia quel
+campo a `null` per sempre — indistinguibile da "non ancora processato" in
+barre di stato e CSV export, a meno di controllare esplicitamente
+`attempt.status === AttemptStatus.FAILED` e sovrascrivere con un valore
+sentinella (es. `'FAILED'`) prima di passare il valore a label/breakdown.
+Bug reale corretto su `getSendStatusBreakdown`/`getSendReportRows`/
+`getPostalStatusBreakdown`/`getPostalReportRows` (`campaigns.service.ts`) —
+replicare lo stesso controllo per ogni nuovo canale che aggiunge un
+breakdown/report basato sullo stato esterno.
+
+## INAD — override canale per-recipient, gotcha critico
+
+`NotificationAttempt.channelType` è la fonte di verità sul canale REALE di
+un destinatario, non `campaign.channelType` — un override INAD (domicilio
+digitale trovato) lo dirotta a PEC anche se la campagna è EMAIL/POSTAL/
+APP_IO, scrivendolo sull'attempt al momento della creazione. Qualunque
+punto che re-instrada/riprova/riporta "per canale" deve leggere
+`attempt.channelType` (o l'ultimo attempt del destinatario), MAI
+`campaign.channelType` — 3 bug reali corretti nella stessa giornata per
+questo esatto errore: `protocollazione.processor.ts` (re-accodava sul
+canale di campagna dopo la protocollazione, vanificando il dirottamento),
+`retryRecipient()` (stesso errore su un retry manuale), `getSendStageCounts()`
+(filtrava `attempt.channel_type = campaign.channelType`, escludendo i
+dirottati dal widget "Stato Protocollazione" — sembravano mai protocollati
+anche quando lo erano).
+
+**Priorità tra override**: se un destinatario è dirottato da INAD, l'App IO
+esclusiva (che salterebbe il canale primario) viene declassata a parallela
+SOLO per quel destinatario — INAD è fonte di verità assoluta sul domicilio
+digitale, non bypassabile da un'esclusiva App IO (`notification.processor.ts`).
+
+`Recipient.inadCheck.found` (INAD ha trovato un domicilio) ≠ `.diverted`
+(l'indirizzo trovato è REALMENTE diverso da quello già configurato — per
+una campagna PEC con indirizzo INAD coincidente, `found:true` ma
+`diverted:false`, non è un vero dirottamento). Le decisioni di
+instradamento/reporting vanno sempre su `diverted`, mai su `found` da solo.
