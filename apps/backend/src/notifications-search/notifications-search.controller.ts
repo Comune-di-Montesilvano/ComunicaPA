@@ -54,10 +54,8 @@ export class NotificationsSearchController {
       res.status(200).json({ ready: false, retryAfterSeconds: result.retryAfterSeconds, error: result.error });
       return;
     }
-    let contentType = result.contentType;
-    if (result.filename.toLowerCase().endsWith('.p7m')) {
-      contentType = 'application/pkcs7-mime';
-    }
+    const isPdf = result.filename.toLowerCase().endsWith('.pdf');
+    const contentType = isPdf ? 'application/pdf' : 'application/octet-stream';
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `attachment; filename="${result.filename.replace(/"/g, '')}"`);
     res.end(result.buffer);
