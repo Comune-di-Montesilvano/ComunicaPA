@@ -10,6 +10,7 @@ import { InadModule } from '../channels/inad/inad.module';
 import { CampaignsService } from './campaigns.service';
 import { CampaignsController } from './campaigns.controller';
 import { RetentionCleanupService } from './retention-cleanup.service';
+import { InadCheckSyncService } from './inad-check-sync.service';
 
 @Module({
   imports: [
@@ -18,7 +19,7 @@ import { RetentionCleanupService } from './retention-cleanup.service';
     AuditLogsModule,
     InadModule,
   ],
-  providers: [CampaignsService, RetentionCleanupService],
+  providers: [CampaignsService, RetentionCleanupService, InadCheckSyncService],
   controllers: [CampaignsController],
   exports: [CampaignsService],
 })
