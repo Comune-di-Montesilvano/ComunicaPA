@@ -17,6 +17,14 @@ export interface InadExtractResult {
   data?: { codiceFiscale: string; since: string; digitalAddress: InadDigitalAddressElement[] };
 }
 
+export type InadBulkState = 'PRESA_IN_CARICO' | 'IN_ELABORAZIONE' | 'DISPONIBILE';
+
+export interface InadBulkResultItem {
+  codiceFiscale: string;
+  since: string;
+  digitalAddress?: InadDigitalAddressElement[];
+}
+
 /**
  * Integrazione INAD (Indice Nazionale Domicili Digitali). Solo interrogazione
  * singola per ora (GET /extract/{cf}), sempre in prod, nessuna persistenza —
@@ -56,5 +64,61 @@ export class InadService {
       throw new Error(`Risposta INAD non valida (non JSON): ${text.slice(0, 200)}`);
     }
     return { found: true, data };
+  }
+
+  async startBulkExtraction(codiciFiscali: string[], practicalReference: string): Promise<{ id: string }> {
+    const voucher = await this.getVoucher('prod');
+    const response = await fetch(`${INAD_BASE_URL}/listDigitalAddress`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${voucher}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ codiciFiscali, praticalReference: practicalReference }),
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`INAD bulk fallito: HTTP ${response.status} — ${text.slice(0, 500)}`);
+    }
+    const location = response.headers.get('location');
+    if (!location) {
+      throw new Error(`INAD bulk fallito: nessun header Location nella risposta — ${text.slice(0, 200)}`);
+    }
+    const id = location.split('/').pop()!;
+    return { id };
+  }
+
+  async getBulkState(id: string): Promise<InadBulkState> {
+    const voucher = await this.getVoucher('prod');
+    const response = await fetch(`${INAD_BASE_URL}/listDigitalAddress/state/${encodeURIComponent(id)}`, {
+      headers: { Authorization: `Bearer ${voucher}` },
+      redirect: 'manual',
+    });
+    const text = await response.text();
+    if (!response.ok && response.status !== 303) {
+      throw new Error(`INAD bulk state fallito: HTTP ${response.status} — ${text.slice(0, 500)}`);
+    }
+    let data: { state: InadBulkState };
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(`Risposta INAD bulk state non valida (non JSON): ${text.slice(0, 200)}`);
+    }
+    return data.state;
+  }
+
+  async getBulkResult(id: string): Promise<InadBulkResultItem[]> {
+    const voucher = await this.getVoucher('prod');
+    const response = await fetch(`${INAD_BASE_URL}/listDigitalAddress/response/${encodeURIComponent(id)}`, {
+      headers: { Authorization: `Bearer ${voucher}` },
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`INAD bulk result fallito: HTTP ${response.status} — ${text.slice(0, 500)}`);
+    }
+    let data: { list: InadBulkResultItem[] };
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(`Risposta INAD bulk result non valida (non JSON): ${text.slice(0, 200)}`);
+    }
+    return data.list;
   }
 }
