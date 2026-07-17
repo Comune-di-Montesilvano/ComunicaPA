@@ -25,6 +25,9 @@ export interface AppConfiguration {
   downloadLink: {
     secret: string;
   };
+  pdfExtractor: {
+    url: string;
+  };
 }
 
 export default (): AppConfiguration => ({
@@ -53,5 +56,8 @@ export default (): AppConfiguration => ({
   },
   downloadLink: {
     secret: process.env['DOWNLOAD_LINK_SECRET'] ?? 'change-me-in-production',
+  },
+  pdfExtractor: {
+    url: process.env['PDF_EXTRACTOR_URL'] ?? 'http://pdf-extractor:8000',
   },
 });
