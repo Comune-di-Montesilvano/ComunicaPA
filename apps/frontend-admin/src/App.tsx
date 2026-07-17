@@ -44,6 +44,7 @@ const STATUS_META: Record<string, { label: string; badge: string }> = {
   queued: { label: 'In coda', badge: 'bg-info' },
   processing: { label: 'In elaborazione', badge: 'bg-info' },
   running: { label: 'In corso', badge: 'bg-warning text-dark' },
+  checking_inad: { label: 'Verifica INAD', badge: 'bg-info' },
   sent: { label: 'Inviato', badge: 'bg-success' },
   success: { label: 'Riuscito', badge: 'bg-success' },
   completed: { label: 'Completata', badge: 'bg-success' },
@@ -358,7 +359,7 @@ interface Campaign {
   id: string;
   name: string;
   description: string | null;
-  status: 'draft' | 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+  status: 'draft' | 'queued' | 'checking_inad' | 'running' | 'completed' | 'failed' | 'cancelled';
   channelType: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL';
   channelConfig: Record<string, any>;
   createdBy: string;
@@ -759,6 +760,7 @@ export function App(): React.JSX.Element {
   const [wizSending, setWizSending] = useState(false);
   const [wizUploadProgress, setWizUploadProgress] = useState<{ label: string; loaded: number; total: number } | null>(null);
   const [wizMailConfigId, setWizMailConfigId] = useState('');
+  const [wizPecReserveMailConfigId, setWizPecReserveMailConfigId] = useState('');
   const [wizAppIoMode, setWizAppIoMode] = useState<'none' | 'parallel' | 'exclusive'>('parallel');
   const [wizAppIoDifferentiate, setWizAppIoDifferentiate] = useState(false);
   const [wizAppIoSubjectOverride, setWizAppIoSubjectOverride] = useState('');
@@ -935,6 +937,7 @@ export function App(): React.JSX.Element {
   const [settPdndTesting, setSettPdndTesting] = useState<'test' | 'prod' | null>(null);
   const [settPdndTestResult, setSettPdndTestResult] = useState<{ env: 'test' | 'prod'; ok: boolean; message: string } | null>(null);
 
+  const [settInadCheckEnabled, setSettInadCheckEnabled] = useState(false);
   const [settInadTestPurposeId, setSettInadTestPurposeId] = useState('');
   const [settInadProdPurposeId, setSettInadProdPurposeId] = useState('');
   const [settInadTesting, setSettInadTesting] = useState<'test' | 'prod' | null>(null);
@@ -1034,7 +1037,7 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     let timer: any;
     if (view === 'campaign-detail' && selectedCampaignId && campaign) {
-      if (campaign.status === 'queued' || campaign.status === 'running') {
+      if (campaign.status === 'queued' || campaign.status === 'checking_inad' || campaign.status === 'running') {
         timer = setInterval(() => {
           fetchCampaignDetail(selectedCampaignId);
         }, 3000);
@@ -1120,6 +1123,7 @@ export function App(): React.JSX.Element {
         setSettPdndProdClientId(String(s['pdnd.prod.clientId'] ?? ''));
         setSettPdndProdKid(String(s['pdnd.prod.kid'] ?? ''));
         setSettPdndProdPrivateKey(String(s['pdnd.prod.privateKey'] ?? ''));
+        setSettInadCheckEnabled(Boolean(s['inad.checkEnabled']));
         setSettInadTestPurposeId(String(s['inad.test.purposeId'] ?? ''));
         setSettInadProdPurposeId(String(s['inad.prod.purposeId'] ?? ''));
         setSettInipecTestPurposeId(String(s['inipec.test.purposeId'] ?? ''));
@@ -1802,6 +1806,7 @@ export function App(): React.JSX.Element {
     'pdnd.prod.clientId': settPdndProdClientId,
     'pdnd.prod.kid': settPdndProdKid,
     'pdnd.prod.privateKey': settPdndProdPrivateKey,
+    'inad.checkEnabled': settInadCheckEnabled,
     'inad.test.purposeId': settInadTestPurposeId,
     'inad.prod.purposeId': settInadProdPurposeId,
     'inipec.test.purposeId': settInipecTestPurposeId,
@@ -3491,6 +3496,7 @@ export function App(): React.JSX.Element {
       }];
     }
     if (wizBlockedChannels.length > 0) cfg.blockedChannels = wizBlockedChannels;
+    if (wizPecReserveMailConfigId) cfg.pecReserveMailConfigId = wizPecReserveMailConfigId;
 
     if (wizPaymentEnabled) {
       cfg.paymentConfig = {
@@ -3647,6 +3653,9 @@ export function App(): React.JSX.Element {
 
       if (wizBlockedChannels.length > 0) {
         channelConfig.blockedChannels = wizBlockedChannels;
+      }
+      if (wizPecReserveMailConfigId) {
+        channelConfig.pecReserveMailConfigId = wizPecReserveMailConfigId;
       }
       if (wizMapping.codice_fiscale) {
         channelConfig.csvMapping = wizMapping;
@@ -3932,6 +3941,35 @@ export function App(): React.JSX.Element {
       alert(err.message);
     } finally {
       setLaunching(false);
+    }
+  };
+
+  const handleRetryInadCheck = async (campaignId: string) => {
+    try {
+      const res = await apiFetch(`/campaigns/${campaignId}/inad-check/retry`, { method: 'POST' });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || 'Errore durante il riavvio della verifica INAD');
+      }
+      await fetchCampaignDetail(campaignId);
+    } catch (err: any) {
+      if (err instanceof ApiAuthError) return;
+      alert(err.message);
+    }
+  };
+
+  const handleSkipInadCheck = async (campaignId: string) => {
+    if (!confirm('Saltare la verifica INAD e procedere con i canali configurati?')) return;
+    try {
+      const res = await apiFetch(`/campaigns/${campaignId}/inad-check/skip`, { method: 'POST' });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || 'Errore durante il salto della verifica INAD');
+      }
+      await fetchCampaignDetail(campaignId);
+    } catch (err: any) {
+      if (err instanceof ApiAuthError) return;
+      alert(err.message);
     }
   };
 
@@ -4811,6 +4849,29 @@ export function App(): React.JSX.Element {
                           Attenzione: non ci sono configurazioni attive per il canale {wizChannel}. Creane una nelle impostazioni.
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {(wizChannel === 'EMAIL' || wizChannel === 'POSTAL' || wizChannel === 'APP_IO') && (
+                    <div className="mb-3">
+                      <label className="form-label small fw-bold">Mittente PEC di riserva (verifica INAD)</label>
+                      <select
+                        className="form-select form-select-sm"
+                        value={wizPecReserveMailConfigId}
+                        onChange={e => setWizPecReserveMailConfigId(e.target.value)}
+                      >
+                        <option value="">-- Nessuno --</option>
+                        {mailConfigs
+                          .filter(c => c.type === 'PEC' && c.active)
+                          .map(c => (
+                            <option key={c.id} value={c.id}>
+                              {c.name} ({c.fromAddress})
+                            </option>
+                          ))}
+                      </select>
+                      <div className="form-text small text-muted">
+                        Usato solo se un destinatario risulta avere un domicilio digitale INAD attivo: l'invio a quel destinatario passa automaticamente su PEC.
+                      </div>
                     </div>
                   )}
 
@@ -7166,6 +7227,19 @@ export function App(): React.JSX.Element {
                               di scelta canale in base al domicilio digitale eletto non è ancora
                               implementata.
                             </div>
+                            <div className="form-check form-switch mb-3">
+                              <input
+                                className="form-check-input"
+                                type="checkbox"
+                                role="switch"
+                                id="inad_check_enabled"
+                                checked={settInadCheckEnabled}
+                                onChange={(e) => setSettInadCheckEnabled(e.target.checked)}
+                              />
+                              <label className="form-check-label small fw-semibold" htmlFor="inad_check_enabled">
+                                Attiva verifica domicilio digitale INAD per le campagne (tranne SEND)
+                              </label>
+                            </div>
                             {([
                               { label: 'Collaudo (UAT)', prefix: 'test' as const,
                                 purposeId: settInadTestPurposeId, setPurposeId: setSettInadTestPurposeId },
@@ -8441,6 +8515,22 @@ export function App(): React.JSX.Element {
                                 <><i className="fas fa-ban me-2"></i>Annulla Campagna</>
                               )}
                             </button>
+                          )}
+                          {campaign.status === 'checking_inad' && (
+                            <div className="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-2">
+                              <span><i className="fas fa-spinner fa-spin me-2"></i>Verifica domicilio digitale INAD in corso…</span>
+                              <div>
+                                <button className="btn btn-sm btn-outline-secondary me-2" onClick={() => handleRetryInadCheck(campaign.id)}>
+                                  Riprova verifica
+                                </button>
+                                <button className="btn btn-sm btn-outline-warning me-2" onClick={() => handleSkipInadCheck(campaign.id)}>
+                                  Salta verifica e procedi
+                                </button>
+                                <button className="btn btn-sm btn-outline-danger" disabled={cancelling} onClick={handleCancelCampaign}>
+                                  Annulla campagna
+                                </button>
+                              </div>
+                            </div>
                           )}
                           {campaign.totalRecipients === 0 && campaign.status === 'draft' && (
                             <div className="alert alert-warning small p-2 mt-2 mb-0">
