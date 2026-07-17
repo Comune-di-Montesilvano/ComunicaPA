@@ -6,6 +6,7 @@ import { EnrichmentService } from './enrichment.service';
 import { EnrichmentController } from './enrichment.controller';
 import { PdfExtractorClient } from './pdf-extractor.client';
 import { EnrichmentProcessor } from './enrichment.processor';
+import { EnrichmentRetentionService } from './enrichment-retention.service';
 import { ENRICHMENT_QUEUE } from './enrichment-job.types';
 
 @Module({
@@ -14,7 +15,7 @@ import { ENRICHMENT_QUEUE } from './enrichment-job.types';
     BullModule.registerQueue({ name: ENRICHMENT_QUEUE }),
   ],
   controllers: [EnrichmentController],
-  providers: [EnrichmentService, PdfExtractorClient, EnrichmentProcessor],
+  providers: [EnrichmentService, PdfExtractorClient, EnrichmentProcessor, EnrichmentRetentionService],
   exports: [EnrichmentService],
 })
 export class EnrichmentModule {}

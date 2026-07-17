@@ -974,6 +974,7 @@ export function App(): React.JSX.Element {
   const [settInipecTesting, setSettInipecTesting] = useState<'test' | 'prod' | null>(null);
   const [settInipecTestResult, setSettInipecTestResult] = useState<{ env: 'test' | 'prod'; ok: boolean; message: string } | null>(null);
   const [settRetentionDays, setSettRetentionDays] = useState('90');
+  const [settEnrichmentRetentionDays, setSettEnrichmentRetentionDays] = useState('30');
 
   const [settOidcIssuer, setSettOidcIssuer] = useState('');
   const [settOidcAudience, setSettOidcAudience] = useState('');
@@ -1161,6 +1162,7 @@ export function App(): React.JSX.Element {
         setSettProtoUnitaOrganizzativa(String(s['protocollo.unitaOrganizzativa'] ?? '1'));
         setSettProtoMittenteDenominazione(String(s['protocollo.mittenteDenominazione'] ?? ''));
         setSettRetentionDays(String(s['retention.maxDays'] ?? '90'));
+        setSettEnrichmentRetentionDays(String(s['enrichment.retentionDays'] ?? '30'));
         setSettOidcIssuer(String(s['oidc.issuer'] ?? ''));
         setSettOidcAudience(String(s['oidc.audience'] ?? ''));
         setSettOidcJwksUri(String(s['oidc.jwksUri'] ?? ''));
@@ -1844,6 +1846,7 @@ export function App(): React.JSX.Element {
     'protocollo.unitaOrganizzativa': settProtoUnitaOrganizzativa,
     'protocollo.mittenteDenominazione': settProtoMittenteDenominazione,
     'retention.maxDays': Number(settRetentionDays) || 90,
+    'enrichment.retentionDays': Number(settEnrichmentRetentionDays) || 30,
     'oidc.issuer': settOidcIssuer,
     'oidc.audience': settOidcAudience,
     'oidc.jwksUri': settOidcJwksUri,
@@ -7398,6 +7401,11 @@ export function App(): React.JSX.Element {
                               <label className="form-label">Conservazione allegati (giorni)</label>
                               <input type="number" min={1} className="form-control" value={settRetentionDays}
                                 onChange={(e) => setSettRetentionDays(e.target.value)} />
+                            </div>
+                            <div className="mb-3">
+                              <label className="form-label">Retention job arricchimento (giorni)</label>
+                              <input type="number" min={1} className="form-control" value={settEnrichmentRetentionDays}
+                                onChange={(e) => setSettEnrichmentRetentionDays(e.target.value)} />
                             </div>
                           </div>
                         )}

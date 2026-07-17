@@ -20,6 +20,7 @@ export const SETTING_DEFS = {
   'brand.logo': { env: 'BRAND_LOGO', type: 'string', default: '' },
   'brand.favicon': { type: 'string', default: '' },
   'retention.maxDays': { env: 'RETENTION_MAX_DAYS', type: 'number', default: 90 },
+  'enrichment.retentionDays': { type: 'number', default: 30 },
   'smtp.host': { env: 'SMTP_HOST', type: 'string', default: 'localhost' },
   'smtp.port': { env: 'SMTP_PORT', type: 'number', default: 587 },
   'smtp.secure': { env: 'SMTP_SECURE', type: 'boolean', default: false },
