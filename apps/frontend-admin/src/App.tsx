@@ -3356,18 +3356,17 @@ export function App(): React.JSX.Element {
     setWizMapping(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleWizValidation = () => {
-    const errors: Array<{ row: number; field: string; val: string; err: string }> = [];
-    const warnings: Array<{ row: number; field: string; val: string; warn: string }> = [];
-    const valid: Record<string, string>[] = [];
+  useEffect(() => {
+    if (wizCsvRows.length === 0) {
+      setWizValidationErrors([]);
+      setWizValidationWarnings([]);
+      setWizValidRows([]);
+      return;
+    }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const cfRegex = /^[A-Z0-9]{16}$/i;
     const pivaRegex = /^\d{11}$/;
-    // Pattern reale del Codice Fiscale (non un generico alfanumerico a 16
-    // caratteri): App IO/PagoPA rifiuta con HTTP 400 qualunque valore che non
-    // rispetti questo formato, incluse le Partite IVA — che il controllo
-    // generico sotto accetta come alternativa valida per gli altri canali.
     const cfAppIoRegex = /^[A-Z]{6}[0-9LMNPQRSTUV]{2}[ABCDEHLMPRST][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]$/i;
 
     const cfField = wizMapping.codice_fiscale;
@@ -3376,25 +3375,21 @@ export function App(): React.JSX.Element {
 
     const isEmailMandatory = wizChannel === 'EMAIL';
     const isPecMandatory = wizChannel === 'PEC';
-    // Anche quando App IO è co-consegna secondaria (non canale primario) il CF
-    // deve rispettare il formato stretto: PagoPA rifiuta l'invio con HTTP 400
-    // se il CF non è valido, e senza questo controllo l'errore emerge solo al
-    // momento della spedizione invece che in fase di validazione import.
     const isCfMandatory = wizChannel === 'APP_IO' || wizChannel === 'SEND' || wizAppIoInvolved;
+
+    const errors: Array<{ row: number; field: string; val: string; err: string }> = [];
+    const warnings: Array<{ row: number; field: string; val: string; warn: string }> = [];
+    const valid: Record<string, string>[] = [];
 
     wizCsvRows.forEach((row, idx) => {
       let isRowValid = true;
       const rowNum = idx + 1;
 
-      // Riga con numero di colonne diverso dall'intestazione (es. virgola non
-      // quotata nel nominativo che shifta tutti i campi successivi): segnala
-      // subito la causa reale invece di errori fuorvianti sui campi shiftati.
       if (row.__colMismatch) {
         errors.push({ row: rowNum, field: 'Struttura riga', val: '', err: row.__colMismatch });
         isRowValid = false;
       }
 
-      // Validate email
       if (isEmailMandatory && !emailField) {
         errors.push({ row: rowNum, field: 'Mappatura', val: '', err: 'La colonna Email deve essere mappata per il canale EMAIL' });
         isRowValid = false;
@@ -3409,7 +3404,6 @@ export function App(): React.JSX.Element {
         isRowValid = false;
       }
 
-      // Validate PEC
       if (isPecMandatory && !pecField) {
         errors.push({ row: rowNum, field: 'Mappatura', val: '', err: 'La colonna PEC deve essere mappata per il canale PEC' });
         isRowValid = false;
@@ -3424,7 +3418,6 @@ export function App(): React.JSX.Element {
         isRowValid = false;
       }
 
-      // Validate Codice Fiscale / Partita IVA
       if (isCfMandatory && !cfField) {
         errors.push({ row: rowNum, field: 'Mappatura', val: '', err: 'La colonna Codice Fiscale / P.IVA deve essere mappata' });
         isRowValid = false;
@@ -3435,11 +3428,9 @@ export function App(): React.JSX.Element {
         const isAppIoCompatible = cfAppIoRegex.test(valClean);
         if (wizAppIoInvolved && !isAppIoCompatible) {
           if (wizChannel === 'APP_IO') {
-            // App IO è il canale primario: il CF deve essere strettamente compatibile
             errors.push({ row: rowNum, field: 'Codice Fiscale (App IO)', val: row[cfField], err: 'Codice Fiscale non valido per App IO: richiesto un CF di persona fisica, non una Partita IVA o un valore fuori formato' });
             isRowValid = false;
           } else {
-            // App IO è secondario (co-consegna): se è valido per il canale primario (CF generico o P.IVA), mettiamo solo un warning
             if (isCf || isPiva) {
               warnings.push({ row: rowNum, field: 'Codice Fiscale (App IO)', val: row[cfField], warn: 'Codice Fiscale non idoneo per App IO: richiesto un CF di persona fisica. La notifica App IO verrà saltata, ma il record sarà inviato tramite il canale primario.' });
             } else {
@@ -3464,10 +3455,6 @@ export function App(): React.JSX.Element {
         isRowValid = false;
       }
 
-      // Validate indirizzo/città per POSTAL — la sola presenza della mappatura
-      // colonna (controllata al gate del Passo 3) non garantisce che ogni riga
-      // abbia valore non vuoto: senza questo controllo una riga con via/città
-      // mancante viene inclusa e fallisce solo alla spedizione reale.
       if (wizChannel === 'POSTAL') {
         if (wizPostalAddressColumn && !row[wizPostalAddressColumn]?.trim()) {
           errors.push({ row: rowNum, field: 'Indirizzo', val: '', err: 'Indirizzo mancante (obbligatorio per Postalizzazione)' });
@@ -3487,9 +3474,11 @@ export function App(): React.JSX.Element {
     setWizValidationErrors(errors);
     setWizValidationWarnings(warnings);
     setWizValidRows(valid);
-    setWizPreviewIndex(0);
+  }, [wizCsvRows, wizMapping, wizChannel, wizAppIoInvolved, wizPostalAddressColumn, wizPostalMunicipalityColumn]);
 
-    if (errors.length === 0) {
+  const handleWizValidation = () => {
+    setWizPreviewIndex(0);
+    if (wizValidationErrors.length === 0) {
       setWizStep(4);
     }
   };
@@ -3576,7 +3565,7 @@ export function App(): React.JSX.Element {
     channelType: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL';
     channelConfig: Record<string, any>;
   }, opts: { isDuplicate: boolean; campaignId?: string }) => {
-    setWizCampaignId(null);
+    setWizCampaignId(opts.isDuplicate ? null : (opts.campaignId || null));
     setWizName(opts.isDuplicate ? `${source.name} (Copia)` : source.name);
     setWizDesc(source.description || '');
     setWizChannel(source.channelType);
