@@ -138,6 +138,12 @@ personalizzazione futura non richiede di rifare il core):
   `numero_avviso`, `importo`, `scadenza`, `numero_provvedimento`,
   `data_emissione`, `oggetto`.
 - Encoding UTF-8, delimitatore compatibile con l'import wizard esistente.
+- **Quoting: tutte le colonne racchiuse tra virgolette doppie** (`QUOTE_ALL`).
+  Il vecchio convertitore usava `QUOTE_MINIMAL` (nessuna virgoletta) perché
+  richiesto dal portale SEND/EasyNotification — requisito del vecchio target,
+  non nostro. Virgolettare tutto protegge campi con `;`, a capo o virgolette
+  interne (escape raddoppiando `"`) e massimizza la compatibilità con il
+  parser CSV del wizard ComunicaPA.
 - Sanitizzazione accenti NON applicata di default (era requisito SEND del
   vecchio target, non del wizard) — i dati passano com'estratti.
 
