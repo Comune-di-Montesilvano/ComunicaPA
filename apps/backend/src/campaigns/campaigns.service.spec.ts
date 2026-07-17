@@ -92,6 +92,7 @@ describe('CampaignsService', () => {
   const mockInadService = {
     extractDigitalAddress: jest.fn(),
     startBulkExtraction: jest.fn(),
+    getBulkState: jest.fn(),
     getBulkResult: jest.fn(),
   };
 
@@ -124,6 +125,8 @@ describe('CampaignsService', () => {
     mockCampaignRepo.createQueryBuilder.mockReturnValue(mockCampaignQb);
     mockRecipientRepo.find.mockResolvedValue([]);
     mockAttemptRepo.find.mockReset();
+    mockInadService.getBulkState.mockReset();
+    mockInadService.getBulkState.mockResolvedValue('DISPONIBILE');
   });
 
   it('findAll returns array', async () => {
@@ -786,6 +789,60 @@ describe('CampaignsService', () => {
       expect(mockCampaignQb.set).toHaveBeenCalledWith({ status: CampaignStatus.QUEUED });
       expect(mockAttemptRepo.createQueryBuilder).not.toHaveBeenCalled();
       expect(mockQueue.addBulk).not.toHaveBeenCalled();
+    });
+
+    it('nessun destinatario con CF (bulk path, tutti privi): salta CHECKING_INAD e lancia direttamente', async () => {
+      mockSettings.get.mockImplementation(async (key?: string) => (key === 'inad.checkEnabled' ? true : null));
+      const campaignEmail = { ...mockCampaign, id: 'c-bulk-nocf', channelType: 'EMAIL', channelConfig: {} };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaignEmail);
+      const manyRecipientsNoCf = Array.from({ length: 150 }, (_, i) => ({ id: `r${i}`, codiceFiscale: null }));
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: string[] }) => {
+        if (select?.includes('extraData')) return Promise.resolve([]);
+        return Promise.resolve(manyRecipientsNoCf);
+      });
+      mockAttemptRepo.createQueryBuilder.mockReturnValue({
+        insert: jest.fn().mockReturnThis(),
+        into: jest.fn().mockReturnThis(),
+        values: jest.fn().mockReturnThis(),
+        returning: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ raw: manyRecipientsNoCf.map((r) => ({ id: `att-${r.id}` })) }),
+      });
+
+      const result = await service.launch('c-bulk-nocf');
+
+      expect(result.launched).toBe(150);
+      expect(mockInadService.startBulkExtraction).not.toHaveBeenCalled();
+      expect(mockCampaignRepo.save).not.toHaveBeenCalled();
+      // Lo stato QUEUED è già stato impostato dall'update atomico iniziale di
+      // launch(): non deve mai passare da CHECKING_INAD in questo caso.
+      expect(mockCampaignQb.set).not.toHaveBeenCalledWith({ status: CampaignStatus.CHECKING_INAD });
+    });
+  });
+
+  describe('finalizeInadCheck — batch non ancora pronto (retry manuale)', () => {
+    it('non chiama getBulkResult né crea attempt se un batch pending è ancora IN_ELABORAZIONE', async () => {
+      const campaignChecking = {
+        ...mockCampaign,
+        id: 'c-bulk-notready',
+        channelType: 'EMAIL',
+        status: CampaignStatus.CHECKING_INAD,
+        channelConfig: {
+          inadCheck: {
+            mechanism: 'bulk',
+            batches: [{ id: 'batch-notready', recipientIds: ['r1', 'r2'], done: false }],
+            requestedAt: '2026-01-01T00:00:00Z',
+          },
+        },
+      };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaignChecking);
+      mockInadService.getBulkState.mockResolvedValue('IN_ELABORAZIONE');
+
+      await expect(service.finalizeInadCheck('c-bulk-notready')).resolves.not.toThrow();
+
+      expect(mockInadService.getBulkState).toHaveBeenCalledWith('batch-notready');
+      expect(mockInadService.getBulkResult).not.toHaveBeenCalled();
+      expect(mockAttemptRepo.createQueryBuilder).not.toHaveBeenCalled();
+      expect(mockCampaignRepo.save).not.toHaveBeenCalled();
     });
   });
 

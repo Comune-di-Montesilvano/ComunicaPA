@@ -33,7 +33,11 @@ export class PecStrategy implements IChannelStrategy {
       throw new BadRequestException('Recipient non ha indirizzo PEC');
     }
 
-    const mailConfigId = campaign.channelConfig?.['mailConfigId'] as string | undefined;
+    const mailConfigId = (
+      campaign.channelType === 'PEC'
+        ? campaign.channelConfig?.['mailConfigId']
+        : campaign.channelConfig?.['pecReserveMailConfigId']
+    ) as string | undefined;
     const smtp = await this.mailConfigs.resolveForSend('PEC', mailConfigId);
     const brandName = (await this.settings.get<string>('brand.name')) || 'Comune di Montesilvano';
     const publicApiUrl = await this.settings.get<string>('system.publicUrl');

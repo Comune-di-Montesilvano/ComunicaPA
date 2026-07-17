@@ -105,4 +105,32 @@ describe('PecStrategy', () => {
       'PEC connection refused',
     );
   });
+
+  it('send() su campagna EMAIL con override INAD usa pecReserveMailConfigId, non mailConfigId', async () => {
+    const resolveForSend = (strategy as any).mailConfigs.resolveForSend as jest.Mock;
+    const recipient = { pec: 'luca@pec.it', email: null, fullName: 'Luca', codiceFiscale: 'CF1' };
+    const campaign = {
+      name: 'T',
+      channelType: 'EMAIL',
+      channelConfig: { mailConfigId: 'some-email-config', pecReserveMailConfigId: 'reserve-pec-config' },
+    };
+
+    await strategy.send(recipient as never, campaign as never);
+
+    expect(resolveForSend).toHaveBeenCalledWith('PEC', 'reserve-pec-config');
+  });
+
+  it('send() su campagna PEC usa mailConfigId (comportamento invariato)', async () => {
+    const resolveForSend = (strategy as any).mailConfigs.resolveForSend as jest.Mock;
+    const recipient = { pec: 'luca@pec.it', email: null, fullName: 'Luca', codiceFiscale: 'CF1' };
+    const campaign = {
+      name: 'T',
+      channelType: 'PEC',
+      channelConfig: { mailConfigId: 'pec-config-id', pecReserveMailConfigId: 'reserve-pec-config' },
+    };
+
+    await strategy.send(recipient as never, campaign as never);
+
+    expect(resolveForSend).toHaveBeenCalledWith('PEC', 'pec-config-id');
+  });
 });

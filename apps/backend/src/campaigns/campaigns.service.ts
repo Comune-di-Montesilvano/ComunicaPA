@@ -368,8 +368,8 @@ export class CampaignsService {
       if (recipients.length < INAD_BULK_THRESHOLD) {
         channelOverrides = await this.runInadExtractLoop(campaign, recipients);
       } else {
-        await this.startInadBulkCheck(campaign, recipients);
-        return { launched: 0, campaignId };
+        const { launched } = await this.startInadBulkCheck(campaign, recipients);
+        return { launched, campaignId };
       }
     }
 
@@ -422,7 +422,10 @@ export class CampaignsService {
     return channelOverrides;
   }
 
-  private async startInadBulkCheck(campaign: Campaign, recipients: Array<{ id: string }>): Promise<void> {
+  private async startInadBulkCheck(
+    campaign: Campaign,
+    recipients: Array<{ id: string }>,
+  ): Promise<{ launched: number }> {
     const fullRecipients = await this.recipientRepo.find({
       where: { id: In(recipients.map((r) => r.id)) },
       select: ['id', 'codiceFiscale'],
@@ -440,12 +443,23 @@ export class CampaignsService {
       batches.push({ id, recipientIds: chunk.map((r) => r.id), done: false });
     }
 
+    if (batches.length === 0) {
+      // Nessun destinatario ha un CF valorizzato (caso valido per EMAIL): non
+      // c'è nulla da controllare su INAD. Entrare comunque in CHECKING_INAD
+      // bloccherebbe la campagna per sempre — il demone (InadCheckSyncService)
+      // salta le campagne con `pendingBatches.length === 0`, quindi
+      // finalizeInadCheck non verrebbe mai chiamato automaticamente. Procedi
+      // come se il check INAD fosse disabilitato per questa campagna.
+      return this.createAttemptsAndEnqueue(campaign, recipients);
+    }
+
     campaign.status = CampaignStatus.CHECKING_INAD;
     campaign.channelConfig = {
       ...campaign.channelConfig,
       inadCheck: { mechanism: 'bulk', batches, requestedAt: new Date().toISOString() },
     };
     await this.campaignRepo.save(campaign);
+    return { launched: 0 };
   }
 
   /**
@@ -468,6 +482,18 @@ export class CampaignsService {
 
     const pendingBatches = inadCheck.batches.filter((b) => !b.done);
     for (const batch of pendingBatches) {
+      // Self-difesa: il chiamante "canonico" (demone Task 8) verifica già lo
+      // stato DISPONIBILE prima di invocare questo metodo, ma il retry
+      // manuale (`campaigns.controller.ts` `retryInadCheck`) chiama
+      // finalizeInadCheck direttamente senza alcun pre-check — se un batch
+      // non è ancora pronto, getBulkResult probabilmente lancia (4xx/dati
+      // incompleti), che diventerebbe una pagina HTML illeggibile dietro il
+      // reverse proxy di produzione. Riverifica qui e abortisci in modo
+      // silenzioso se non è ancora pronto.
+      const state = await this.inadService.getBulkState(batch.id);
+      if (state !== 'DISPONIBILE') {
+        return;
+      }
       const result = await this.inadService.getBulkResult(batch.id);
       const resultByCf = new Map(result.map((r) => [r.codiceFiscale, r]));
       const batchRecipients = await this.recipientRepo.find({
