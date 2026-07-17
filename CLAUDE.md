@@ -577,7 +577,7 @@ intermedio.
 
 **Upload sempre chunked**, mai un multipart diretto — stesso vincolo del
 proxy esterno ~1MB descritto sopra: `POST
-/admin/enrichment/jobs/upload/{init,chunk,complete}`, chunk client-side,
+/admin/enrichment/upload/{init,chunk,complete}`, chunk client-side,
 riassemblati lato server prima di processare lo ZIP.
 
 **Retention**: `enrichment.retentionDays` (default 30, chiave in
