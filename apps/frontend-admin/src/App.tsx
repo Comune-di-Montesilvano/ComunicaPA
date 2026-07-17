@@ -53,6 +53,16 @@ const STATUS_META: Record<string, { label: string; badge: string }> = {
   cancelled: { label: 'Annullato', badge: 'bg-dark' },
 };
 
+// Palette per il grafico "Canale Effettivo": colore fisso per canale, stesso
+// significato ovunque compaia (coerenza con STATUS_META sopra).
+const EFFECTIVE_CHANNEL_COLORS: Record<string, string> = {
+  EMAIL: 'var(--bi-info, #0dcaf0)',
+  PEC: 'var(--bi-primary, #0d6efd)',
+  APP_IO: 'var(--bi-success, #198754)',
+  POSTAL: 'var(--bi-warning, #ffc107)',
+  SEND: 'var(--bi-dark, #212529)',
+};
+
 function StatusBadge({ status }: { status: string }): React.JSX.Element {
   const meta = STATUS_META[status] ?? { label: status, badge: 'bg-light text-dark border' };
   return <span className={`badge ${meta.badge}`}>{meta.label}</span>;
@@ -1001,7 +1011,8 @@ export function App(): React.JSX.Element {
   const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; protocolNumber?: number | null; protocolYear?: number | null }> } | null>(null);
   const [recipientsSearch, setRecipientsSearch] = useState('');
   const [recipientsPageNum, setRecipientsPageNum] = useState(1);
-  const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number } | null>(null);
+  const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number; inadDiverted: number } | null>(null);
+  const [effectiveChannelBreakdown, setEffectiveChannelBreakdown] = useState<Record<string, number> | null>(null);
   const [campaignSendStageCounts, setCampaignSendStageCounts] = useState<{ queued: number; protocollato: number; inviato: number; fallito: number } | null>(null);
   const [sendStatusBreakdown, setSendStatusBreakdown] = useState<Array<{ status: string | null; count: number }> | null>(null);
   const [postalStatusBreakdown, setPostalStatusBreakdown] = useState<Array<{ status: string | null; count: number }> | null>(null);
@@ -3817,6 +3828,7 @@ export function App(): React.JSX.Element {
     setCampaign(null);
     setFailureGroups([]);
     setChannelBreakdown(null);
+    setEffectiveChannelBreakdown(null);
     setCampaignSendStageCounts(null);
     setSendStatusBreakdown(null);
     setPostalStatusBreakdown(null);
@@ -3827,6 +3839,7 @@ export function App(): React.JSX.Element {
     fetchCampaignDetail(id);
     fetchFailureGroups(id);
     fetchChannelBreakdown(id);
+    fetchEffectiveChannelBreakdown(id);
     fetchCampaignSendStageCounts(id);
     fetchSendStatusBreakdown(id);
     fetchPostalStatusBreakdown(id);
@@ -3839,6 +3852,17 @@ export function App(): React.JSX.Element {
       if (!res.ok) return;
       const data = await res.json();
       setChannelBreakdown(data.breakdown);
+    } catch {
+      // Non bloccante: la pagina dettaglio resta usabile senza il breakdown.
+    }
+  };
+
+  const fetchEffectiveChannelBreakdown = async (id: string) => {
+    try {
+      const res = await apiFetch(`/campaigns/${id}/effective-channel-stats`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setEffectiveChannelBreakdown(data.breakdown);
     } catch {
       // Non bloccante: la pagina dettaglio resta usabile senza il breakdown.
     }
@@ -8588,9 +8612,13 @@ export function App(): React.JSX.Element {
                                 <span><i className="fas fa-triangle-exclamation text-warning me-1"></i>App IO riuscito, primario fallito</span>
                                 <span className="fw-bold">{channelBreakdown.appIoDespitePrimaryFail}</span>
                               </div>
-                              <div className="d-flex justify-content-between">
+                              <div className="d-flex justify-content-between mb-1">
                                 <span><i className="fas fa-times text-danger me-1"></i>Nessuno dei due (fallito)</span>
                                 <span className="fw-bold">{channelBreakdown.neither}</span>
+                              </div>
+                              <div className="d-flex justify-content-between">
+                                <span><i className="fas fa-shield-halved text-primary me-1"></i>Dirottato su PEC (INAD)</span>
+                                <span className="fw-bold">{channelBreakdown.inadDiverted}</span>
                               </div>
                             </div>
                           </div>
@@ -8889,6 +8917,40 @@ export function App(): React.JSX.Element {
                           </div>
                         </div>
                       </div>
+
+                      {effectiveChannelBreakdown && Object.keys(effectiveChannelBreakdown).length > 0 && (
+                      <div className="col-md-6">
+                        <div className="card shadow-sm h-100">
+                          <div className="card-header bg-white py-3 border-bottom">
+                            <h3 className="h6 mb-0 fw-bold text-dark">
+                              <i className="fas fa-chart-pie me-2 text-primary"></i>Canale Effettivo
+                            </h3>
+                          </div>
+                          <div className="card-body">
+                            <ResponsiveContainer width="100%" height={220}>
+                              <PieChart>
+                                <Pie
+                                  data={Object.entries(effectiveChannelBreakdown).map(([label, value]) => ({ label, value }))}
+                                  dataKey="value"
+                                  nameKey="label"
+                                  cx="50%"
+                                  cy="50%"
+                                  outerRadius={80}
+                                  label={renderPiePercentLabel}
+                                  labelLine={false}
+                                >
+                                  {Object.keys(effectiveChannelBreakdown).map((label) => (
+                                    <Cell key={label} fill={EFFECTIVE_CHANNEL_COLORS[label] ?? 'var(--bi-secondary, #6c757d)'} />
+                                  ))}
+                                </Pie>
+                                <Tooltip />
+                                <Legend />
+                              </PieChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+                      </div>
+                      )}
 
                       {['EMAIL', 'PEC', 'APP_IO'].includes(campaign.channelType) && (
                       <div className="col-md-6">
