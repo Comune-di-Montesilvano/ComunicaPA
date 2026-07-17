@@ -19,14 +19,17 @@ scope — verrà aggiunto in una fase successiva con lo stesso pattern.
 - `GET /extract/{cf}` (query singola, già in produzione da fase 1): **~0.5s**
   di latenza, risposta sincrona.
 - `POST /listDigitalAddress` + polling `state` (bulk, fino a 1000 CF per
-  richiesta): **~5m53s per un batch di 3 CF, ~6m09s per un batch di 50 CF**
-  (secondo test dal vivo, stesse credenziali) — differenza trascurabile
-  nonostante 16x più CF, stato `IN_ELABORAZIONE` per tutto il periodo, poi
-  `303` con risultato disponibile. Confermato: l'elaborazione è a batch
-  periodici lato INAD, non realtime, con **costo fisso non lineare**
-  rispetto al numero di CF nel batch (fino al limite di 1000) — non solo
-  un'ipotesi da un singolo campione, verificato su due dimensioni di
-  batch diverse.
+  richiesta): **~5m53s per un batch di 3 CF, ~10m04s per un batch di 50 CF**
+  (due test dal vivo, stesse credenziali) — 16x più CF produce solo ~1.7x
+  più tempo, non 16x: conferma che il costo è **prevalentemente fisso, non
+  lineare**, anche se non perfettamente piatto (c'è una componente di
+  crescita più lenta della dimensione del batch). Stato `IN_ELABORAZIONE`
+  per tutto il periodo, poi `303` con risultato disponibile — elaborazione
+  quasi certamente a batch periodici lato INAD, non realtime. Non
+  verificato a 600-1000 CF (soglia scelta sotto): la stima resta "ordine
+  di grandezza minuti, non ore" ma va monitorata su campagne reali grandi
+  — se emergesse una crescita più marcata a batch da centinaia di CF, va
+  rivista la soglia di 100 (vedi sezione "Fuori scope").
 - `/extract` ha un limite di quota **giornaliero condiviso** (1000-2000
   richieste/giorno secondo indicazione dell'utente, non nello spec OpenAPI)
   — va usato con parsimonia sulle campagne grandi.
