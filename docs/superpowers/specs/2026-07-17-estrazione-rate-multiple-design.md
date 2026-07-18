@@ -1,6 +1,6 @@
 # Estrazione rate multiple PagoPA — Design
 
-Data: 2026-07-17
+Data: 2026-07-17 (rivisto 2026-07-18: classificazione via etichetta, non ordine pagina)
 Stato: approvato (brainstorming con Mirko)
 
 ## Contesto
@@ -25,14 +25,40 @@ Estrarre TUTTE le pagine di pagamento presenti nel PDF, non solo la prima,
 distinguendo il totale (rata unica) dalle singole rate, con un controllo
 di coerenza automatico.
 
-## Struttura del PDF (confermata da Mirko, non assunta)
+## Struttura del PDF (corretta da Mirko dopo prima bozza — l'ordine pagina
+## da solo NON è affidabile, va letta l'etichetta testuale)
 
-- La **prima** pagina con QR/dicitura `CBILL` trovata scorrendo il
-  documento dall'inizio è sempre il **totale** (rata unica).
-- Ogni pagina `CBILL` **successiva** è una **rata**, in ordine di
-  apparizione nel documento (1ª, 2ª, 3ª...). Nessuna etichetta testuale da
-  riconoscere — l'ordine di pagina è sufficiente e già verificato sui
-  fixture originali del tool sendcsv.
+Non tutti i documenti hanno una pagina "rata unica": alcuni hanno solo le
+rate, altri solo la rata unica, altri entrambe le opzioni (pagamento in
+un'unica soluzione O a rate, stesso importo totale). L'ordine delle pagine
+non basta per distinguerle — va letta l'etichetta testuale su ciascuna
+pagina con QR:
+
+- **"RATA UNICA"** → pagina del totale.
+- **"N° RATA"** / **"N RATA"** (numero + parola RATA, es. "1° RATA",
+  "2 RATA") → pagina della rata numero N. Il numero nell'etichetta,
+  NON la posizione della pagina nel documento, determina l'indice
+  (`rataN_*`) — pagine potrebbero non essere in ordine stretto, l'etichetta
+  è la fonte di verità.
+- Una pagina `CBILL` che non matcha nessuno dei due pattern: trattata come
+  rata non classificabile, va comunque in `rate` con un indice progressivo
+  interno e un warning "etichetta rata non riconosciuta" (dato comunque
+  preservato, mai scartato silenziosamente).
+
+### Controlli di coerenza (warning, mai bloccanti)
+
+1. **Somma**: `somma(rata.importo)` vs `totale.importo` (se entrambi
+   presenti). Diversi → warning.
+2. **Scadenze consecutive**: le scadenze delle rate, ordinate per indice,
+   dovrebbero essere temporalmente consecutive (crescenti, tipicamente a
+   cadenza mensile/bimestrale — nessun vincolo rigido sull'intervallo
+   esatto, solo che siano in ordine crescente senza N° rata fuori
+   sequenza). Se non lo sono → warning.
+3. **Scadenza unica ≈ prima rata**: se sia `totale` che `rate[1]` sono
+   presenti, la scadenza del totale coincide di norma con quella della
+   prima rata (stesso termine di pagamento, sono due modalità alternative
+   dello stesso obbligo). Se diverse → warning (non necessariamente un
+   errore, ma un'anomalia da segnalare).
 
 ## Modifiche
 
@@ -40,18 +66,25 @@ di coerenza automatico.
 
 `pdf_extractor.py`:
 - `_find_payment_pages` (o suo sostituto) scansiona l'INTERO documento per
-  tutte le pagine `CBILL`, non solo la prima. Ritorna la lista ordinata di
-  indici pagina.
+  tutte le pagine `CBILL`, non solo la prima. Ritorna la lista di indici
+  pagina (ordine di apparizione, non usato per classificare).
+- Nuova funzione di classificazione per pagina: regex case-insensitive
+  `RATA\s+UNICA` → totale; `(\d+)\s*°?\s*RATA` → rata, cattura il numero
+  come indice. Applicata al testo estratto della pagina (`page.get_text()`,
+  stesso meccanismo già usato per gli altri pattern in questo file).
+  Nessun match → rata non classificabile, indice progressivo interno
+  (partendo da `max(indici_riconosciuti) + 1` o da 1 se nessuno
+  riconosciuto), warning "etichetta rata non riconosciuta a pagina N".
 - `extract_payment()` cambia firma: rimuove il parametro `mode` (morto,
-  comportamento ora sempre "trova tutto"). Estrae il QR/testo da OGNI
-  pagina trovata: prima pagina → `totale: PaymentData | None`; pagine
-  successive → `rate: list[PaymentData]` in ordine.
-- Nuovo controllo di coerenza: `somma(rata.importo per rata in rate)` vs
-  `totale.importo`. Se diverso (o se `totale` è `None` ma `rate` non è
-  vuoto, o viceversa), warning esplicito nel risultato — non blocca
-  l'estrazione, i dati trovati vengono comunque restituiti.
-- Import da parsing prezzo: riuso di `_parse_pagopa_qr`/regex esistenti,
-  applicati a ciascuna pagina invece che a una sola.
+  comportamento ora sempre "trova tutto e classifica"). Estrae il QR/testo
+  da OGNI pagina `CBILL` trovata, la classifica, popola `totale:
+  PaymentData | None` e `rate: list[PaymentData]` (ordinate per indice
+  rata riconosciuto, non per posizione pagina).
+- Controlli di coerenza (vedi sezione sopra) implementati come confronti
+  post-estrazione, ognuno produce un warning indipendente se fallisce —
+  mai bloccanti, i dati estratti vengono comunque restituiti.
+- Riuso di `_parse_pagopa_qr`/regex import esistenti, applicati a ciascuna
+  pagina invece che a una sola.
 
 ### 2. Contratto `/extract` (main.py) — cambia forma
 
@@ -120,10 +153,17 @@ nuovo schema).
 
 ## Test
 
-- Python: fixture con 3 pagine CBILL (1 totale + 2 rate) via QR sintetici,
-  verificare `totale`/`rate` popolati correttamente in ordine; fixture con
-  somma rate ≠ totale → warning; fixture con 1 sola pagina CBILL → `rate`
-  vuoto, nessun warning di coerenza.
+- Python: fixture con 3 pagine CBILL etichettate ("RATA UNICA", "1° RATA",
+  "2 RATA") via QR sintetici + testo pagina, verificare `totale`/`rate`
+  popolati correttamente secondo l'etichetta (non l'ordine pagina — es.
+  fixture con pagine in ordine "2° RATA" poi "1° RATA" deve comunque
+  produrre `rate[0]` = prima rata); fixture con etichetta rata assente
+  (solo dicitura CBILL generica) → rata non classificabile, warning
+  specifico, dato comunque incluso; fixture con somma rate ≠ totale →
+  warning; fixture con scadenze rata non consecutive → warning; fixture
+  con scadenza unica ≠ scadenza prima rata → warning; fixture con 1 sola
+  pagina "RATA UNICA" (nessuna rata) → `rate` vuoto, nessun warning di
+  coerenza (niente da confrontare).
 - Client TS: parsing della nuova forma di risposta.
 - CSV util: header dinamico per `maxRate` diversi (0, 1, 3), colonne vuote
   per righe con meno rate del massimo del job.
@@ -133,8 +173,10 @@ nuovo schema).
 
 ## Fuori scope
 
-- Nessuna etichetta testuale da riconoscere sulle pagine rata (l'ordine
-  basta, confermato).
 - Nessun tetto massimo colonne rata.
 - Nessuna modifica alla UI di upload (nessun selettore modalità pagamento
-  da riattivare — la scansione è sempre completa, automatica).
+  da riattivare — la scansione è sempre completa, automatica, guidata
+  dalle etichette lette sulle pagine).
+- Nessuna tolleranza configurabile sulla cadenza attesa tra rate (il
+  controllo "consecutive" verifica solo l'ordine crescente delle
+  scadenze, non un intervallo esatto in giorni).
