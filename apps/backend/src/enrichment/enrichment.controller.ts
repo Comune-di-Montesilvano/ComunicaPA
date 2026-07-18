@@ -21,6 +21,7 @@ import type { JwtOperatorPayload } from '@comunicapa/shared-types';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { TraceFormat } from '../entities/enrichment-job.entity';
 import { EnrichmentService } from './enrichment.service';
+import { EnrichmentEventsService } from './enrichment-events.service';
 import {
   MAX_CHUNK_SIZE_BYTES,
   assembleChunkedUpload,
@@ -32,7 +33,10 @@ import { getEnrichmentResultCsv } from './enrichment-paths';
 
 @Controller('admin/enrichment')
 export class EnrichmentController {
-  constructor(private readonly svc: EnrichmentService) {}
+  constructor(
+    private readonly svc: EnrichmentService,
+    private readonly events: EnrichmentEventsService,
+  ) {}
 
   // ── Upload ZIP SEMPRE a chunk (limite ~1MB reverse proxy esterno) ────────
 
@@ -109,6 +113,41 @@ export class EnrichmentController {
   @Roles('user', 'admin')
   getJob(@Param('id', ParseUUIDPipe) id: string) {
     return this.svc.getJob(id);
+  }
+
+  @Get('jobs/:id/stream')
+  @Roles('user', 'admin')
+  async streamJob(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    const job = await this.svc.getJob(id);
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    if (job.status === 'done' || job.status === 'failed') {
+      res.write(`data: ${JSON.stringify({ type: job.status === 'done' ? 'done' : 'error', message: job.errorMessage ?? undefined })}\n\n`);
+      res.end();
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      const unsubscribe = this.events.subscribe(id, (event) => {
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
+        if (event.type === 'done' || event.type === 'error') {
+          unsubscribe();
+          res.end();
+          resolve();
+        }
+      });
+      req.on('close', () => {
+        unsubscribe();
+        resolve();
+      });
+    });
   }
 
   @Get('jobs/:id/result.csv')
