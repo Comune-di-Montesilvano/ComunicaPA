@@ -7141,9 +7141,10 @@ export function App(): React.JSX.Element {
                           {enrichDetailJobId === job.id ? 'Nascondi avvisi' : `Avvisi (${job.warningCount})`}
                         </button>
                       )}
-                      {job.status !== 'processing' && role === 'admin' && (
+                      {role === 'admin' && (
                         <button className="btn btn-sm btn-outline-danger" type="button" onClick={() => handleEnrichDelete(job.id)}>
-                          <i className="fas fa-trash me-1"></i>Elimina
+                          <i className="fas fa-trash me-1"></i>
+                          {job.status === 'processing' ? 'Elimina (forza)' : 'Elimina'}
                         </button>
                       )}
                     </div>
