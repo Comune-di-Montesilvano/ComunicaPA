@@ -82,3 +82,40 @@ def test_extract_payment_etichetta_non_riconosciuta_warning(pdf_rata_senza_etich
     assert len(rate) == 1
     assert rate[0].numero_avviso == "301000000000000000"
     assert any("etichetta rata non riconosciuta" in w for w in warnings)
+
+
+def test_extract_payment_etichetta_non_riconosciuta_non_sovrascrive_rata_numerata(
+    pdf_rata_senza_etichetta_e_prima_rata,
+):
+    """Regressione: una pagina non classificabile NON deve mai far perdere
+    una rata numerata reale (né viceversa) per collisione d'indice."""
+    totale, rate, warnings = PdfExtractor(pdf_rata_senza_etichetta_e_prima_rata).extract_payment()
+    assert totale is None
+    assert len(rate) == 2
+    numeri_avviso = {r.numero_avviso for r in rate}
+    assert numeri_avviso == {"301000000000000099", "301000000000000001"}
+    assert any("etichetta rata non riconosciuta" in w for w in warnings)
+    # Effetto collaterale atteso (non un difetto della fix collisione): la
+    # pagina non classificabile è sempre accodata in FONDO a `rate` (per
+    # indice, non per data), quindi qui finisce dopo la 1° RATA pur avendo
+    # scadenza cronologicamente precedente — il check "ordine crescente"
+    # scatta correttamente su questo scostamento.
+    assert any("non in ordine crescente" in w for w in warnings)
+
+
+def test_extract_payment_unica_scadenza_diversa_da_prima_rata_warning(
+    pdf_unica_scadenza_diversa_da_prima_rata,
+):
+    totale, rate, warnings = PdfExtractor(pdf_unica_scadenza_diversa_da_prima_rata).extract_payment()
+    assert totale is not None
+    assert len(rate) == 1
+    assert any("diversa dalla scadenza della prima rata" in w for w in warnings)
+    # Importi identici: la somma torna, isolando il warning di scadenza.
+    assert not any("diversa dal totale" in w for w in warnings)
+
+
+def test_extract_payment_rate_scadenze_non_ordinate_warning(pdf_rate_scadenze_non_ordinate):
+    totale, rate, warnings = PdfExtractor(pdf_rate_scadenze_non_ordinate).extract_payment()
+    assert totale is None
+    assert len(rate) == 2
+    assert any("non in ordine crescente" in w for w in warnings)

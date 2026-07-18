@@ -263,7 +263,7 @@ class PdfExtractor:
         warnings: list[str] = []
         totale: Optional[PaymentData] = None
         rate_by_index: dict[int, PaymentData] = {}
-        unknown_counter = 0
+        unknown_rate: list[PaymentData] = []
 
         try:
             import fitz
@@ -281,19 +281,29 @@ class PdfExtractor:
                     warnings.extend(page_warnings)
                     if payment is None:
                         continue
+                    if not payment.scadenza:
+                        # Il QR PagoPA non porta la scadenza: recuperata dal
+                        # testo della STESSA pagina (non dal testo globale,
+                        # che confonderebbe le scadenze di rate diverse).
+                        m_sc = self._RE_SCADENZA.search(text)
+                        if m_sc:
+                            payment.scadenza = m_sc.group(1)
                     if kind == "unica":
                         totale = payment
                     elif kind == "rata" and n is not None:
                         rate_by_index[n] = payment
                     else:
-                        unknown_counter += 1
-                        idx = max(rate_by_index.keys(), default=0) + unknown_counter
-                        rate_by_index[idx] = payment
-                        warnings.append(f"Pagina {page_idx}: etichetta rata non riconosciuta, assegnata come rata {idx}")
+                        # Indice non numerabile in modo affidabile (nessuna
+                        # etichetta "N RATA"): tenuta in una lista separata,
+                        # sempre accodata in fondo a `rate` — non può mai
+                        # collidere con l'indice di una rata numerata reale
+                        # trovata prima o dopo nel loop.
+                        unknown_rate.append(payment)
+                        warnings.append(f"Pagina {page_idx}: etichetta rata non riconosciuta, aggiunta in coda a rate")
         except Exception as e:
             warnings.append(f"Estrazione QR fallita: {e}")
 
-        rate = [rate_by_index[k] for k in sorted(rate_by_index.keys())]
+        rate = [rate_by_index[k] for k in sorted(rate_by_index.keys())] + unknown_rate
 
         text_fallback = self._extract_payment_from_text()
         if totale is None and not rate and text_fallback:
