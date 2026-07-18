@@ -568,6 +568,14 @@ export function App(): React.JSX.Element {
   const [enrichCampaignChannel, setEnrichCampaignChannel] = useState<'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL'>('PEC');
   const [enrichCampaignSubmitting, setEnrichCampaignSubmitting] = useState(false);
   const [enrichCampaignError, setEnrichCampaignError] = useState<string | null>(null);
+  interface EnrichLogEntry {
+    row: number;
+    pdf: string;
+    detail: 'full' | 'summary';
+    payload: Record<string, unknown>;
+  }
+  const [enrichLiveLogs, setEnrichLiveLogs] = useState<Record<string, EnrichLogEntry[]>>({});
+  const [enrichStreamingJobId, setEnrichStreamingJobId] = useState<string | null>(null);
 
   const runNotificationSearch = async (page = searchPage) => {
     setSearchLoading(true);
@@ -1480,11 +1488,53 @@ export function App(): React.JSX.Element {
     } catch {
       // errore transitorio di polling: riprova al giro successivo
     }
+    return;
+  };
+
+  const streamEnrichJobLog = async (jobId: string) => {
+    setEnrichStreamingJobId(jobId);
+    setEnrichLiveLogs((prev) => ({ ...prev, [jobId]: [] }));
+    try {
+      const res = await apiFetch(`/enrichment/jobs/${jobId}/stream`);
+      if (!res.body) return;
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() ?? '';
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith('data:')) continue;
+          const json = JSON.parse(line.slice('data:'.length).trim());
+          if (json.type === 'done' || json.type === 'error') {
+            setEnrichStreamingJobId(null);
+            await fetchEnrichJobs();
+            return;
+          }
+          setEnrichLiveLogs((prev) => ({
+            ...prev,
+            [jobId]: [...(prev[jobId] || []), json as EnrichLogEntry],
+          }));
+        }
+      }
+    } catch {
+      setEnrichStreamingJobId(null);
+    }
   };
 
   useEffect(() => {
     if (view !== 'arricchimento' || !token) return;
-    fetchEnrichJobs();
+    fetchEnrichJobs().then(() => {
+      setEnrichJobs((current) => {
+        const inProgress = current.find((j) => j.status === 'queued' || j.status === 'processing');
+        if (inProgress && !enrichStreamingJobId) streamEnrichJobLog(inProgress.id);
+        return current;
+      });
+    });
     const interval = setInterval(() => {
       // Poll solo se c'è un job non terminale
       setEnrichJobs((prev) => {
@@ -1493,6 +1543,7 @@ export function App(): React.JSX.Element {
       });
     }, 3000);
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, token]);
 
   const handleEnrichUpload = async () => {
@@ -1515,6 +1566,7 @@ export function App(): React.JSX.Element {
       } else {
         setEnrichFile(null);
         await fetchEnrichJobs();
+        if (result.jobId) streamEnrichJobLog(result.jobId);
       }
     } catch (err: any) {
       setEnrichError(err.message || 'Errore durante il caricamento');
@@ -7155,6 +7207,28 @@ export function App(): React.JSX.Element {
                           <li key={i}>Riga {w.row} — {w.pdf}: {w.message}</li>
                         ))}
                       </ul>
+                    )}
+
+                    {enrichLiveLogs[job.id]?.length > 0 && (
+                      <div className="border rounded p-3 mt-2 bg-light">
+                        <h6 className="small fw-bold mb-2">
+                          Log elaborazione {enrichStreamingJobId === job.id && <span className="badge bg-info-subtle text-info-emphasis ms-1">live</span>}
+                        </h6>
+                        {enrichLiveLogs[job.id].map((entry, i) =>
+                          entry.detail === 'full' ? (
+                            <div key={i} className="border rounded p-2 mb-2 bg-white">
+                              <strong className="small">Riga {entry.row} — {entry.pdf}</strong>
+                              <pre className="small mb-0 mt-1" style={{ whiteSpace: 'pre-wrap' }}>
+                                {JSON.stringify(entry.payload, null, 2)}
+                              </pre>
+                            </div>
+                          ) : (
+                            <div key={i} className="small text-muted">
+                              Riga {entry.row} — {entry.pdf}: {JSON.stringify(entry.payload)}
+                            </div>
+                          ),
+                        )}
+                      </div>
                     )}
 
                     {enrichCreateCampaignJobId === job.id && (
