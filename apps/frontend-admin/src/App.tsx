@@ -1509,7 +1509,15 @@ export function App(): React.JSX.Element {
         for (const part of parts) {
           const line = part.trim();
           if (!line.startsWith('data:')) continue;
-          const json = JSON.parse(line.slice('data:'.length).trim());
+          let json: any;
+          try {
+            json = JSON.parse(line.slice('data:'.length).trim());
+          } catch {
+            // Riga malformata/troncata: la si scarta, il log continua a
+            // ricevere gli eventi successivi invece di terminare l'intero
+            // stream su un singolo evento non parsabile.
+            continue;
+          }
           if (json.type === 'done' || json.type === 'error') {
             setEnrichStreamingJobId(null);
             await fetchEnrichJobs();
