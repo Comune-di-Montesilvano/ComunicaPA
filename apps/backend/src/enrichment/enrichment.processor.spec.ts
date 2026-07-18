@@ -159,7 +159,7 @@ describe('EnrichmentProcessor', () => {
         totale: { numero_avviso: '301000000000000000', numero_avviso_alternativo: '', cf_ente: '000', importo: '761,00', scadenza: '31/12/2026' },
         rate: [
           { numero_avviso: '301000000000000001', numero_avviso_alternativo: '', cf_ente: '000', importo: '380,50', scadenza: '31/01/2027' },
-          { numero_avviso: '301000000000000002', numero_avviso_alternativo: '', cf_ente: '000', importo: '380,50', scadenza: '28/02/2027' },
+          { numero_avviso: '301000000000000002', numero_avviso_alternativo: '', cf_ente: '000', importo: '190,25', scadenza: '28/02/2027' },
         ],
       },
       warnings: [],
@@ -170,12 +170,27 @@ describe('EnrichmentProcessor', () => {
 
     const csv = fs.readFileSync(getEnrichmentResultCsv('j1'), 'utf-8');
     const lines = csv.split('\n');
-    expect(lines[0]).toContain('"rata1_importo"');
-    expect(lines[0]).toContain('"rata2_importo"');
-    expect(lines[1]).toContain('"380,50"'); // rata1 e rata2 hanno lo stesso importo in questo fixture
-    const cells2 = lines[2].split(';');
-    const rata1Idx = lines[0].split(';').indexOf('"rata1_importo"');
-    expect(cells2[rata1Idx]).toBe('""'); // riga 2 senza PDF: nessuna rata
+    const headerCells = lines[0].split(';');
+    const rata1NumeroIdx = headerCells.indexOf('"rata1_numero_avviso"');
+    const rata1ImportoIdx = headerCells.indexOf('"rata1_importo"');
+    const rata1ScadenzaIdx = headerCells.indexOf('"rata1_scadenza"');
+    const rata2NumeroIdx = headerCells.indexOf('"rata2_numero_avviso"');
+    const rata2ImportoIdx = headerCells.indexOf('"rata2_importo"');
+    const rata2ScadenzaIdx = headerCells.indexOf('"rata2_scadenza"');
+
+    const row1Cells = lines[1].split(';');
+    // rata1 e rata2 hanno valori DISTINTI: verifica che ciascuna colonna
+    // contenga esattamente la propria rata, non uno scambio o un duplicato.
+    expect(row1Cells[rata1NumeroIdx]).toBe('"301000000000000001"');
+    expect(row1Cells[rata1ImportoIdx]).toBe('"380,50"');
+    expect(row1Cells[rata1ScadenzaIdx]).toBe('"31/01/2027"');
+    expect(row1Cells[rata2NumeroIdx]).toBe('"301000000000000002"');
+    expect(row1Cells[rata2ImportoIdx]).toBe('"190,25"');
+    expect(row1Cells[rata2ScadenzaIdx]).toBe('"28/02/2027"');
+
+    const row2Cells = lines[2].split(';');
+    expect(row2Cells[rata1ImportoIdx]).toBe('""'); // riga 2 senza PDF: nessuna rata
+    expect(row2Cells[rata2ImportoIdx]).toBe('""');
   });
 
   it('emette evento log full per la riga 1, summary per le successive, terminale done a fine job', async () => {
