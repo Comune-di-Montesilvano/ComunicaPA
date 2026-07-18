@@ -45,6 +45,10 @@ class PdfExtractor:
         re.IGNORECASE,
     )
 
+    # Regex per classificazione pagina pagamento
+    _RE_RATA_UNICA = re.compile(r"RATA\s+UNICA", re.IGNORECASE)
+    _RE_RATA_N = re.compile(r"(\d+)\s*°?\s*RATA", re.IGNORECASE)
+
     def __init__(self, pdf_bytes: bytes):
         self._pdf_bytes = pdf_bytes
 
@@ -114,38 +118,45 @@ class PdfExtractor:
         return PaymentData(numero_avviso=parts[2], cf_ente=parts[3], importo=importo)
 
     @staticmethod
-    def _find_pagopa_pages(doc) -> list[int]:
-        """Trova le pagine PagoPA cercando dal fondo (dove di solito si trova)."""
-        keywords = ("PAGOPA", "PAGO PA", "CBILL", "AVVISO DI PAGAMENTO")
+    def _classify_payment_page(text: str) -> tuple[str, Optional[int]]:
+        """Ritorna ('unica', None) | ('rata', N) | ('unknown', None) in base
+        all'etichetta testuale della pagina. MAI l'ordine di pagina: alcuni
+        documenti hanno solo rate, altri solo rata unica, altri entrambe le
+        opzioni (stesso importo, due modalità di pagamento alternative)."""
+        if PdfExtractor._RE_RATA_UNICA.search(text):
+            return "unica", None
+        m = PdfExtractor._RE_RATA_N.search(text)
+        if m:
+            return "rata", int(m.group(1))
+        return "unknown", None
+
+    @staticmethod
+    def _find_cbill_pages(doc) -> list[int]:
+        """Tutte le pagine con dicitura CBILL (QR pagamento reale), in ordine
+        di apparizione nel documento — non ci si ferma più alla prima."""
         pages = []
-        for i in range(len(doc) - 1, -1, -1):
-            text = (doc[i].get_text() or "").upper()
-            if any(kw in text for kw in keywords):
-                pages.append(i)
-        return pages
-
-    @classmethod
-    def _find_payment_pages(cls, doc, mode: str) -> list[int]:
-        """
-        Individua la pagina da usare per il pagamento. Il CSV SEND ha un solo
-        campo importo: si vuole sempre il totale (rata unica), mai una singola
-        rata parziale.
-
-        Si cerca dall'inizio del documento la prima pagina con un QR di
-        pagamento reale (dicitura "CBILL", presente solo sulle pagine con QR,
-        mai nel riepilogo testuale iniziale). Questa pagina è sempre quella
-        del totale, anche quando seguono una o più pagine con le rate — a
-        prescindere da quante siano ("mode" non incide sulla ricerca: la
-        regola vale sia per i PDF a rata unica che per quelli con anche le
-        rate). In assenza di match si torna al comportamento storico
-        (ricerca per keyword generiche a partire dal fondo).
-        """
         for i in range(len(doc)):
             text = (doc[i].get_text() or "").upper()
             if "CBILL" in text:
-                return [i]
+                pages.append(i)
+        return pages
 
-        return cls._find_pagopa_pages(doc)
+    @staticmethod
+    def _importo_to_cents(importo: str) -> Optional[int]:
+        try:
+            euro, _, cents = importo.partition(",")
+            cents = (cents + "00")[:2]
+            return int(euro) * 100 + int(cents)
+        except (ValueError, AttributeError):
+            return None
+
+    @staticmethod
+    def _parse_scadenza(s: str):
+        from datetime import datetime
+        try:
+            return datetime.strptime(s, "%d/%m/%Y").date()
+        except (ValueError, TypeError):
+            return None
 
     @staticmethod
     def _decode_qr(img: "Image.Image"):
@@ -159,68 +170,51 @@ class PdfExtractor:
             codes = qr_decode(img)
         return codes
 
-    def _extract_payment_from_qr(self, mode: str = "unica") -> tuple[Optional[PaymentData], list[str]]:
-        """
-        1. Individua la pagina QR in base alla modalità (unica/multirata).
-        2. Prova le immagini embedded (veloce).
-        3. Rendering pagina a 3x poi 4x (cattura QR vettoriali).
-        Ritorna (payment, warnings): mai eccezioni silenziate senza traccia.
-        """
+    def _extract_payment_from_page_qr(self, doc, page_idx: int) -> tuple[Optional[PaymentData], list[str]]:
+        """QR di UNA pagina specifica: immagini embedded poi rendering 3x/4x."""
+        from PIL import Image
+        import fitz
+
         warnings: list[str] = []
+        page = doc[page_idx]
+
+        images = page.get_images(full=True)
         try:
-            import fitz  # PyMuPDF
-            from PIL import Image
+            images = sorted(
+                images,
+                key=lambda info: (
+                    round(page.get_image_bbox(info).y0),
+                    round(page.get_image_bbox(info).x0),
+                ),
+            )
+        except Exception:
+            warnings.append(f"Pagina {page_idx}: ordinamento immagini per bbox fallito, uso ordine nativo")
 
-            doc = fitz.open(stream=self._pdf_bytes, filetype="pdf")
+        for img_info in images:
+            try:
+                base = doc.extract_image(img_info[0])
+                img = Image.open(io.BytesIO(base["image"]))
+                if img.width < 50 or img.height < 50:
+                    continue
+                for code in self._decode_qr(img):
+                    result = self._parse_pagopa_qr(code.data.decode("utf-8"))
+                    if result:
+                        return result, warnings
+            except Exception:
+                continue
 
-            target_pages = self._find_payment_pages(doc, mode)
-            if not target_pages:
-                warnings.append("Nessuna pagina PagoPA individuata: uso l'ultima pagina")
-                target_pages = [len(doc) - 1]
+        for zoom in (3, 4):
+            try:
+                pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                for code in self._decode_qr(img):
+                    result = self._parse_pagopa_qr(code.data.decode("utf-8"))
+                    if result:
+                        return result, warnings
+            except Exception as e:
+                warnings.append(f"Pagina {page_idx}: rendering {zoom}x fallito — {e}")
 
-            for page_idx in target_pages:
-                page = doc[page_idx]
-
-                images = page.get_images(full=True)
-                try:
-                    images = sorted(
-                        images,
-                        key=lambda info: (
-                            round(page.get_image_bbox(info).y0),
-                            round(page.get_image_bbox(info).x0),
-                        ),
-                    )
-                except Exception:
-                    warnings.append(f"Pagina {page_idx}: ordinamento immagini per bbox fallito, uso ordine nativo")
-
-                for img_info in images:
-                    try:
-                        base = doc.extract_image(img_info[0])
-                        img = Image.open(io.BytesIO(base["image"]))
-                        if img.width < 50 or img.height < 50:
-                            continue
-                        for code in self._decode_qr(img):
-                            result = self._parse_pagopa_qr(code.data.decode("utf-8"))
-                            if result:
-                                return result, warnings
-                    except Exception:
-                        continue
-
-                for zoom in (3, 4):
-                    try:
-                        pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
-                        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-                        for code in self._decode_qr(img):
-                            result = self._parse_pagopa_qr(code.data.decode("utf-8"))
-                            if result:
-                                return result, warnings
-                    except Exception as e:
-                        warnings.append(f"Pagina {page_idx}: rendering {zoom}x fallito — {e}")
-                        continue
-
-            warnings.append("QR PagoPA non decodificato in nessuna pagina candidata")
-        except Exception as e:
-            warnings.append(f"Estrazione QR fallita: {e}")
+        warnings.append(f"Pagina {page_idx}: QR PagoPA non decodificato")
         return None, warnings
 
     def _extract_payment_from_text(self) -> Optional[PaymentData]:
@@ -256,22 +250,72 @@ class PdfExtractor:
             scadenza=scadenza,
         )
 
-    def extract_payment(self, mode: str = "unica") -> tuple[Optional[PaymentData], list[str]]:
+    def extract_payment(self) -> tuple[Optional[PaymentData], list[PaymentData], list[str]]:
         """
-        QR code ha precedenza (numero avviso e importo certi).
-        Il testo viene usato sempre per la scadenza, e come fallback completo
-        se il QR non è leggibile.
-        Ritorna (payment | None, warnings).
+        Scansiona TUTTO il documento per pagine CBILL (non più solo la
+        prima), classifica ciascuna via etichetta testuale ("RATA UNICA" ->
+        totale, "N RATA" -> rata N — il numero nell'etichetta determina
+        l'indice, non la posizione pagina), estrae il QR di ciascuna.
+        Ritorna (totale, rate, warnings): rate ordinate per indice
+        riconosciuto. Controlli di coerenza (somma, scadenze consecutive,
+        unica~=prima rata) producono warning, mai bloccanti.
         """
-        qr, warnings = self._extract_payment_from_qr(mode)
-        text = self._extract_payment_from_text()
+        warnings: list[str] = []
+        totale: Optional[PaymentData] = None
+        rate_by_index: dict[int, PaymentData] = {}
+        unknown_counter = 0
 
-        if qr is None and text is None:
-            return None, warnings
-        if qr is None:
+        try:
+            import fitz
+
+            doc = fitz.open(stream=self._pdf_bytes, filetype="pdf")
+            cbill_pages = self._find_cbill_pages(doc)
+
+            if not cbill_pages:
+                warnings.append("Nessuna pagina PagoPA (CBILL) individuata")
+            else:
+                for page_idx in cbill_pages:
+                    text = doc[page_idx].get_text() or ""
+                    kind, n = self._classify_payment_page(text)
+                    payment, page_warnings = self._extract_payment_from_page_qr(doc, page_idx)
+                    warnings.extend(page_warnings)
+                    if payment is None:
+                        continue
+                    if kind == "unica":
+                        totale = payment
+                    elif kind == "rata" and n is not None:
+                        rate_by_index[n] = payment
+                    else:
+                        unknown_counter += 1
+                        idx = max(rate_by_index.keys(), default=0) + unknown_counter
+                        rate_by_index[idx] = payment
+                        warnings.append(f"Pagina {page_idx}: etichetta rata non riconosciuta, assegnata come rata {idx}")
+        except Exception as e:
+            warnings.append(f"Estrazione QR fallita: {e}")
+
+        rate = [rate_by_index[k] for k in sorted(rate_by_index.keys())]
+
+        text_fallback = self._extract_payment_from_text()
+        if totale is None and not rate and text_fallback:
             warnings.append("QR non leggibile: dati PagoPA estratti dal testo (fallback)")
-            return text, warnings
+            totale = text_fallback
+        elif totale and text_fallback and text_fallback.scadenza and not totale.scadenza:
+            totale.scadenza = text_fallback.scadenza
 
-        if text and text.scadenza:
-            qr.scadenza = text.scadenza
-        return qr, warnings
+        if totale and rate:
+            totale_cents = self._importo_to_cents(totale.importo)
+            rate_cents_list = [self._importo_to_cents(r.importo) for r in rate]
+            if totale_cents is not None and all(c is not None for c in rate_cents_list):
+                if totale_cents != sum(rate_cents_list):
+                    warnings.append(
+                        f"Somma rate ({sum(rate_cents_list) / 100:.2f}) diversa dal totale ({totale_cents / 100:.2f})"
+                    )
+            if totale.scadenza and rate[0].scadenza and totale.scadenza != rate[0].scadenza:
+                warnings.append("Scadenza rata unica diversa dalla scadenza della prima rata")
+
+        if len(rate) > 1:
+            date_objs = [self._parse_scadenza(r.scadenza) for r in rate]
+            if all(d is not None for d in date_objs) and date_objs != sorted(date_objs):
+                warnings.append("Scadenze delle rate non in ordine crescente")
+
+        return totale, rate, warnings

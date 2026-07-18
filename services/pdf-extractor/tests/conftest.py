@@ -40,11 +40,109 @@ def pdf_no_address() -> bytes:
 
 @pytest.fixture
 def pdf_with_qr() -> bytes:
-    # Pagina 1: lettera con indirizzo; pagina 2: avviso con QR + testo CBILL
+    # Pagina 1: lettera con indirizzo; pagina 2: avviso con QR + testo CBILL (RATA UNICA)
     return _make_pdf(
         [
             "Residente in:VIA ROMA 1 - 00100 ROMA RM\n",
-            "AVVISO DI PAGAMENTO\nCBILL 301000000000000000 00123456789\nentro il 31/12/2026\n",
+            "AVVISO DI PAGAMENTO\nCBILL 301000000000000000 00123456789\nRATA UNICA\nentro il 31/12/2026\n",
         ],
         qr_payload="PAGOPA|002|301000000000000000|00123456789|76100",
     )
+
+
+def _rata_page_text(label: str, extra: str = "") -> str:
+    return f"AVVISO DI PAGAMENTO\nCBILL 301000000000000000 00123456789\n{label}\nentro il 31/12/2026\n{extra}"
+
+
+@pytest.fixture
+def pdf_unica_e_due_rate() -> bytes:
+    """3 pagine pagamento: RATA UNICA (761,00) + 1° RATA (380,50) + 2° RATA (380,50).
+    Ordine pagina deliberatamente 2°rata-1°rata-unica per verificare che la
+    classificazione usi l'etichetta, non la posizione."""
+    doc = fitz.open()
+    pages_spec = [
+        ("2° RATA", "PAGOPA|002|301000000000000002|00123456789|38050", "entro il 28/02/2027"),
+        ("1° RATA", "PAGOPA|002|301000000000000001|00123456789|38050", "entro il 31/01/2027"),
+        ("RATA UNICA", "PAGOPA|002|301000000000000000|00123456789|76100", "entro il 31/12/2026"),
+    ]
+    for label, qr_payload, scadenza_text in pages_spec:
+        page = doc.new_page()
+        page.insert_textbox(
+            fitz.Rect(50, 50, 550, 130),
+            f"AVVISO DI PAGAMENTO\nCBILL\n{label}\n{scadenza_text}\n",
+            fontsize=11,
+        )
+        img = qrcode.make(qr_payload)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        page.insert_image(fitz.Rect(50, 150, 250, 350), stream=buf.getvalue())
+    out = doc.tobytes()
+    doc.close()
+    return out
+
+
+@pytest.fixture
+def pdf_solo_rate_senza_unica() -> bytes:
+    """Nessuna pagina RATA UNICA, solo 2 rate — verifica che 'totale' resti None."""
+    doc = fitz.open()
+    pages_spec = [
+        ("1° RATA", "PAGOPA|002|301000000000000001|00123456789|38050", "entro il 31/01/2027"),
+        ("2° RATA", "PAGOPA|002|301000000000000002|00123456789|38050", "entro il 28/02/2027"),
+    ]
+    for label, qr_payload, scadenza_text in pages_spec:
+        page = doc.new_page()
+        page.insert_textbox(
+            fitz.Rect(50, 50, 550, 130),
+            f"AVVISO DI PAGAMENTO\nCBILL\n{label}\n{scadenza_text}\n",
+            fontsize=11,
+        )
+        img = qrcode.make(qr_payload)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        page.insert_image(fitz.Rect(50, 150, 250, 350), stream=buf.getvalue())
+    out = doc.tobytes()
+    doc.close()
+    return out
+
+
+@pytest.fixture
+def pdf_rata_somma_diversa() -> bytes:
+    """RATA UNICA (761,00) + 1 sola rata (100,00) dichiarata — somma non torna."""
+    doc = fitz.open()
+    pages_spec = [
+        ("RATA UNICA", "PAGOPA|002|301000000000000000|00123456789|76100", "entro il 31/12/2026"),
+        ("1° RATA", "PAGOPA|002|301000000000000001|00123456789|10000", "entro il 31/01/2027"),
+    ]
+    for label, qr_payload, scadenza_text in pages_spec:
+        page = doc.new_page()
+        page.insert_textbox(
+            fitz.Rect(50, 50, 550, 130),
+            f"AVVISO DI PAGAMENTO\nCBILL\n{label}\n{scadenza_text}\n",
+            fontsize=11,
+        )
+        img = qrcode.make(qr_payload)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        page.insert_image(fitz.Rect(50, 150, 250, 350), stream=buf.getvalue())
+    out = doc.tobytes()
+    doc.close()
+    return out
+
+
+@pytest.fixture
+def pdf_rata_senza_etichetta() -> bytes:
+    """1 pagina CBILL senza 'RATA UNICA' né 'N RATA' — rata non classificabile."""
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_textbox(
+        fitz.Rect(50, 50, 550, 130),
+        "AVVISO DI PAGAMENTO\nCBILL\nentro il 31/12/2026\n",
+        fontsize=11,
+    )
+    img = qrcode.make("PAGOPA|002|301000000000000000|00123456789|76100")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    page.insert_image(fitz.Rect(50, 150, 250, 350), stream=buf.getvalue())
+    out = doc.tobytes()
+    doc.close()
+    return out
