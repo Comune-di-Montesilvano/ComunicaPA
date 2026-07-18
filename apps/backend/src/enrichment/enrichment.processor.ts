@@ -13,8 +13,9 @@ import {
 import { ENRICHMENT_QUEUE, EnrichmentQueueJobData } from './enrichment-job.types';
 import { getEnrichmentResultCsv, getEnrichmentSourceZip } from './enrichment-paths';
 import { parseMaggioliZip, type MaggioliRecord } from './maggioli-parser';
-import { buildEnrichedCsv, type EnrichedRow } from './enriched-csv.util';
-import { PdfExtractorClient } from './pdf-extractor.client';
+import { buildEnrichedCsv, buildEnrichedCsvHeaders, type EnrichedRow } from './enriched-csv.util';
+import { PdfExtractorClient, type ExtractedPaymentDetail } from './pdf-extractor.client';
+import { EnrichmentEventsService } from './enrichment-events.service';
 
 const PROGRESS_UPDATE_EVERY = 10;
 
@@ -27,6 +28,7 @@ export class EnrichmentProcessor extends WorkerHost {
     @InjectRepository(EnrichmentJob)
     private readonly jobRepo: Repository<EnrichmentJob>,
     private readonly extractor: PdfExtractorClient,
+    private readonly events: EnrichmentEventsService,
   ) {
     super();
   }
@@ -46,19 +48,27 @@ export class EnrichmentProcessor extends WorkerHost {
       const { records } = parseMaggioliZip(zip);
       const warnings: EnrichmentWarning[] = [];
       const rows: EnrichedRow[] = [];
+      let maxRate = 0;
 
       for (let i = 0; i < records.length; i++) {
         const rec = records[i];
         const rowNum = i + 1;
         const row = this.baseRow(rec);
+        let rateCount = 0;
 
         const entry = rec.pdfFilename ? zip.getEntry(`allegati/${rec.pdfFilename}`) : null;
         if (!entry) {
           warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: 'PDF non trovato nel ZIP' });
           await job.log(`Riga ${rowNum}: PDF "${rec.pdfFilename}" non trovato nel ZIP`);
+          this.events.emitLog(jobId, {
+            row: rowNum,
+            pdf: rec.pdfFilename,
+            detail: rowNum === 1 ? 'full' : 'summary',
+            payload: { errore: 'PDF non trovato nel ZIP' },
+          });
         } else {
           try {
-            const result = await this.extractor.extract(entry.getData(), rec.pdfFilename, 'unica');
+            const result = await this.extractor.extract(entry.getData(), rec.pdfFilename);
             for (const w of result.warnings) {
               warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: w });
             }
@@ -69,15 +79,50 @@ export class EnrichmentProcessor extends WorkerHost {
               row.provincia = result.address.provincia;
               row.stato_estero = result.address.stato_estero;
             }
-            if (result.payment) {
-              row.numero_avviso = rec.csvNumeroAvviso || result.payment.numero_avviso;
-              row.numero_avviso_alternativo = rec.csvNumeroAvvisoAlt || result.payment.numero_avviso_alternativo;
-              row.importo = result.payment.importo;
-              row.scadenza = result.payment.scadenza;
+            if (result.payment?.totale) {
+              row.numero_avviso = rec.csvNumeroAvviso || result.payment.totale.numero_avviso;
+              row.numero_avviso_alternativo = rec.csvNumeroAvvisoAlt || result.payment.totale.numero_avviso_alternativo;
+              row.importo = result.payment.totale.importo;
+              row.scadenza = result.payment.totale.scadenza;
             }
+            if (result.payment?.rate?.length) {
+              rateCount = result.payment.rate.length;
+              maxRate = Math.max(maxRate, rateCount);
+              result.payment.rate.forEach((rata: ExtractedPaymentDetail, idx: number) => {
+                const n = idx + 1;
+                row[`rata${n}_numero_avviso`] = rata.numero_avviso;
+                row[`rata${n}_importo`] = rata.importo;
+                row[`rata${n}_scadenza`] = rata.scadenza;
+              });
+            }
+
+            this.events.emitLog(jobId, {
+              row: rowNum,
+              pdf: rec.pdfFilename,
+              detail: rowNum === 1 ? 'full' : 'summary',
+              payload: rowNum === 1
+                ? {
+                    indirizzo: result.address,
+                    pagamentoTotale: result.payment?.totale ?? null,
+                    rate: result.payment?.rate ?? [],
+                    warnings: result.warnings,
+                  }
+                : {
+                    indirizzoTrovato: Boolean(result.address || rec.csvAddress),
+                    pagamentoTotaleTrovato: Boolean(result.payment?.totale),
+                    numeroRate: rateCount,
+                    warningCount: result.warnings.length,
+                  },
+            });
           } catch (err: any) {
             warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: `Estrazione fallita: ${err.message}` });
             await job.log(`Riga ${rowNum}: estrazione fallita — ${err.message}`);
+            this.events.emitLog(jobId, {
+              row: rowNum,
+              pdf: rec.pdfFilename,
+              detail: rowNum === 1 ? 'full' : 'summary',
+              payload: { errore: `Estrazione fallita: ${err.message}` },
+            });
           }
         }
 
@@ -88,7 +133,8 @@ export class EnrichmentProcessor extends WorkerHost {
         }
       }
 
-      fs.writeFileSync(getEnrichmentResultCsv(jobId), buildEnrichedCsv(rows), 'utf-8');
+      const headers = buildEnrichedCsvHeaders(maxRate);
+      fs.writeFileSync(getEnrichmentResultCsv(jobId), buildEnrichedCsv(headers, rows), 'utf-8');
 
       await this.jobRepo.update(jobId, {
         status: EnrichmentJobStatus.DONE,
@@ -97,6 +143,7 @@ export class EnrichmentProcessor extends WorkerHost {
         warnings,
         completedAt: new Date(),
       });
+      this.events.emitTerminal(jobId, { type: 'done' });
       this.logger.log(`EnrichmentJob ${jobId} completato: ${records.length} righe, ${warnings.length} warning`);
     } catch (err: any) {
       // Stato terminale PRIMA di uscire: mai lasciare il record in PROCESSING
@@ -106,6 +153,7 @@ export class EnrichmentProcessor extends WorkerHost {
         errorMessage: err.message,
         completedAt: new Date(),
       });
+      this.events.emitTerminal(jobId, { type: 'error', message: err.message });
     }
   }
 

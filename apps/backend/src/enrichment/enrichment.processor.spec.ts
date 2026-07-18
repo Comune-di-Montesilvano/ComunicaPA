@@ -37,6 +37,7 @@ describe('EnrichmentProcessor', () => {
   let tmpDir: string;
   let repo: any;
   let client: any;
+  let events: any;
   let processor: EnrichmentProcessor;
   const record = {
     id: 'j1',
@@ -56,11 +57,15 @@ describe('EnrichmentProcessor', () => {
     client = {
       extract: jest.fn(async () => ({
         address: { indirizzo: 'VIA ROMA 1', cap: '00100', comune: 'ROMA', provincia: 'RM', stato_estero: '' },
-        payment: { numero_avviso: '301000000000000001', numero_avviso_alternativo: '', cf_ente: '000', importo: '761,00', scadenza: '31/12/2026' },
+        payment: {
+          totale: { numero_avviso: '301000000000000001', numero_avviso_alternativo: '', cf_ente: '000', importo: '761,00', scadenza: '31/12/2026' },
+          rate: [],
+        },
         warnings: [],
       })),
     };
-    processor = new EnrichmentProcessor(repo, client);
+    events = { emitLog: jest.fn(), emitTerminal: jest.fn() };
+    processor = new EnrichmentProcessor(repo, client, events);
   });
 
   afterEach(() => {
@@ -122,7 +127,10 @@ describe('EnrichmentProcessor', () => {
     // la riga finale deve mantenere i valori del CSV, non quelli del PDF.
     client.extract.mockResolvedValue({
       address: { indirizzo: 'VIA PDF ESTRATTA 99', cap: '99999', comune: 'ALTROVE', provincia: 'XX', stato_estero: '' },
-      payment: { numero_avviso: '999999999999999999', numero_avviso_alternativo: 'PDF-ALT', cf_ente: '000', importo: '10,00', scadenza: '01/01/2027' },
+      payment: {
+        totale: { numero_avviso: '999999999999999999', numero_avviso_alternativo: 'PDF-ALT', cf_ente: '000', importo: '10,00', scadenza: '01/01/2027' },
+        rate: [],
+      },
       warnings: [],
     });
 
@@ -142,5 +150,46 @@ describe('EnrichmentProcessor', () => {
     expect(lines[1]).not.toContain('999999999999999999');
     // Importo/scadenza: sempre dal PDF (non presenti nel CSV sorgente)
     expect(lines[1]).toContain('"10,00"');
+  });
+
+  it('rate multiple: header CSV con colonne rataN_*, riga con meno rate lascia colonne vuote', async () => {
+    client.extract.mockResolvedValueOnce({
+      address: { indirizzo: 'VIA ROMA 1', cap: '00100', comune: 'ROMA', provincia: 'RM', stato_estero: '' },
+      payment: {
+        totale: { numero_avviso: '301000000000000000', numero_avviso_alternativo: '', cf_ente: '000', importo: '761,00', scadenza: '31/12/2026' },
+        rate: [
+          { numero_avviso: '301000000000000001', numero_avviso_alternativo: '', cf_ente: '000', importo: '380,50', scadenza: '31/01/2027' },
+          { numero_avviso: '301000000000000002', numero_avviso_alternativo: '', cf_ente: '000', importo: '380,50', scadenza: '28/02/2027' },
+        ],
+      },
+      warnings: [],
+    });
+    // Riga 2 (PDF mancante nello ZIP): nessuna rata, colonne rataN_* vuote
+
+    await processor.process(fakeJob);
+
+    const csv = fs.readFileSync(getEnrichmentResultCsv('j1'), 'utf-8');
+    const lines = csv.split('\n');
+    expect(lines[0]).toContain('"rata1_importo"');
+    expect(lines[0]).toContain('"rata2_importo"');
+    expect(lines[1]).toContain('"380,50"'); // rata1 e rata2 hanno lo stesso importo in questo fixture
+    const cells2 = lines[2].split(';');
+    const rata1Idx = lines[0].split(';').indexOf('"rata1_importo"');
+    expect(cells2[rata1Idx]).toBe('""'); // riga 2 senza PDF: nessuna rata
+  });
+
+  it('emette evento log full per la riga 1, summary per le successive, terminale done a fine job', async () => {
+    await processor.process(fakeJob);
+
+    expect(events.emitLog).toHaveBeenCalledWith('j1', expect.objectContaining({ row: 1, detail: 'full' }));
+    expect(events.emitLog).toHaveBeenCalledWith('j1', expect.objectContaining({ row: 2, detail: 'summary' }));
+    expect(events.emitTerminal).toHaveBeenCalledWith('j1', { type: 'done' });
+  });
+
+  it('errore fatale: emette evento terminale error invece di done', async () => {
+    fs.rmSync(getEnrichmentSourceZip('j1'));
+    await processor.process(fakeJob);
+    expect(events.emitTerminal).toHaveBeenCalledWith('j1', expect.objectContaining({ type: 'error' }));
+    expect(events.emitTerminal).not.toHaveBeenCalledWith('j1', { type: 'done' });
   });
 });
