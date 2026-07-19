@@ -64,6 +64,7 @@ describe('CampaignsService', () => {
   };
   const mockRecipientRepo = {
     find: jest.fn().mockResolvedValue([]),
+    create: jest.fn(),
     save: jest.fn().mockResolvedValue(undefined),
     update: jest.fn().mockResolvedValue(undefined),
     delete: jest.fn().mockResolvedValue(undefined),
@@ -72,7 +73,9 @@ describe('CampaignsService', () => {
   };
   const mockAttemptRepo = {
     find: jest.fn(),
+    findOne: jest.fn(),
     update: jest.fn().mockResolvedValue(undefined),
+    delete: jest.fn().mockResolvedValue(undefined),
     createQueryBuilder: jest.fn().mockReturnValue({
       insert: jest.fn().mockReturnThis(),
       into: jest.fn().mockReturnThis(),
@@ -1156,6 +1159,70 @@ describe('CampaignsService', () => {
       expect(result.monthlyTrend).toEqual([]);
       expect(result.campaignLeaderboard).toEqual([]);
     });
+
+    it('esclude sempre le campagne isTest=true da ognuna delle 8 query aggregate', async () => {
+      const createdQbs: any[] = [];
+      const trackedMakeQb = (terminal: { rawOne?: any; rawMany?: any[]; count?: number }) => {
+        const qb = makeQb(terminal);
+        createdQbs.push(qb);
+        return qb;
+      };
+
+      mockCampaignRepo.createQueryBuilder = jest
+        .fn()
+        .mockImplementationOnce(() => trackedMakeQb({ rawOne: { totalRecipients: '0', totalSent: '0', totalFailed: '0' } })) // totalsRow
+        .mockImplementationOnce(() => trackedMakeQb({ rawMany: [] })) // sentTrendRows
+        .mockImplementationOnce(() => trackedMakeQb({ rawMany: [] })) // channelRows
+        .mockImplementationOnce(() => trackedMakeQb({ rawMany: [] })); // leaderboardRows
+
+      mockRecipientRepo.createQueryBuilder = jest
+        .fn()
+        .mockImplementationOnce(() => trackedMakeQb({ count: 0 })) // totalDownloaded
+        .mockImplementationOnce(() => trackedMakeQb({ rawMany: [] })) // downloadedTrendRows
+        .mockImplementationOnce(() => trackedMakeQb({ count: 0 })); // neverDownloadedCount
+
+      mockDownloadEventRepo.createQueryBuilder = jest
+        .fn()
+        .mockImplementationOnce(() => trackedMakeQb({ rawMany: [] })); // downloadChannelRows
+
+      await service.getGlobalStats();
+
+      expect(createdQbs).toHaveLength(8);
+      // createdQbs e' popolato in ordine cronologico REALE di invocazione (l'ordine dei
+      // vari `await` sequenziali dentro getGlobalStats()), non raggruppato per repository.
+      const [
+        totalsRowQb,
+        totalDownloadedQb,
+        sentTrendQb,
+        downloadedTrendQb,
+        channelQb,
+        downloadChannelQb,
+        leaderboardQb,
+        neverDownloadedQb,
+      ] = createdQbs;
+
+      const names = [
+        ['totalsRow', totalsRowQb],
+        ['totalDownloaded', totalDownloadedQb],
+        ['sentTrendRows', sentTrendQb],
+        ['downloadedTrendRows', downloadedTrendQb],
+        ['channelRows', channelQb],
+        ['downloadChannelRows', downloadChannelQb],
+        ['leaderboardRows', leaderboardQb],
+        ['neverDownloadedCount', neverDownloadedQb],
+      ] as const;
+
+      for (const [name, qb] of names) {
+        const andWhereCalls = qb.andWhere.mock.calls.map((c: unknown[]) => c[0]);
+        // Il nome della query builder e' incluso nell'oggetto confrontato (non solo in un
+        // commento) cosi' un fallimento futuro riporta ESPLICITAMENTE quale dei query
+        // builder manca del filtro, invece di un generico "expected array to contain".
+        expect({ queryBuilder: name, hasIsTestFilter: andWhereCalls.includes('c.isTest = false') }).toEqual({
+          queryBuilder: name,
+          hasIsTestFilter: true,
+        });
+      }
+    });
   });
 
   describe('getNeverDownloadedRecipients', () => {
@@ -1211,6 +1278,41 @@ describe('CampaignsService', () => {
       expect(rmSpy).toHaveBeenCalledWith('/tmp/comunicapa-uploads/c-del', { recursive: true, force: true });
       expect(mockCampaignRepo.delete).toHaveBeenCalledWith('c-del');
       expect(result).toEqual({ deleted: true });
+
+      rmSpy.mockRestore();
+    });
+  });
+
+  describe('remove — cascata su campagna test collegata', () => {
+    it('cancella anche la campagna test figlia quando esiste', async () => {
+      mockCampaignRepo.existsBy.mockResolvedValueOnce(true);
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ id: 'child-1', parentCampaignId: 'parent-1', isTest: true });
+      mockRecipientRepo.find.mockResolvedValueOnce([{ id: 'r1' }]);
+      const rmSpy = jest.spyOn(fs.promises, 'rm').mockResolvedValue(undefined);
+
+      await service.remove('parent-1');
+
+      expect(mockCampaignRepo.findOneBy).toHaveBeenCalledWith({ parentCampaignId: 'parent-1', isTest: true });
+      expect(mockAttemptRepo.delete).toHaveBeenCalledWith({ recipientId: In(['r1']) });
+      expect(mockRecipientRepo.delete).toHaveBeenCalledWith({ id: In(['r1']) });
+      expect(mockCampaignRepo.delete).toHaveBeenCalledWith('child-1');
+      expect(mockCampaignRepo.delete).toHaveBeenCalledWith('parent-1');
+
+      rmSpy.mockRestore();
+    });
+
+    it('nessuna campagna test collegata: cancella solo la campagna madre, nessuna chiamata extra', async () => {
+      mockCampaignRepo.existsBy.mockResolvedValueOnce(true);
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce(null);
+      const rmSpy = jest.spyOn(fs.promises, 'rm').mockResolvedValue(undefined);
+
+      await service.remove('parent-2');
+
+      expect(mockCampaignRepo.findOneBy).toHaveBeenCalledWith({ parentCampaignId: 'parent-2', isTest: true });
+      expect(mockAttemptRepo.delete).not.toHaveBeenCalled();
+      expect(mockRecipientRepo.delete).not.toHaveBeenCalled();
+      expect(mockCampaignRepo.delete).toHaveBeenCalledTimes(1);
+      expect(mockCampaignRepo.delete).toHaveBeenCalledWith('parent-2');
 
       rmSpy.mockRestore();
     });
@@ -1463,6 +1565,184 @@ describe('CampaignsService', () => {
 
       const filtersOnChannelType = andWhereCalls.some(([sql]) => typeof sql === 'string' && sql.includes('channel_type'));
       expect(filtersOnChannelType).toBe(false);
+    });
+  });
+
+  describe('launchTestSend', () => {
+    it('crea una campagna figlia isTest=true al primo invio di prova', async () => {
+      const parent = {
+        id: 'parent-1',
+        name: 'Campagna TARI 2026',
+        channelType: 'EMAIL',
+        channelConfig: { subject: 'Avviso', body: 'Corpo' },
+        createdBy: 'operator1',
+      };
+      mockCampaignRepo.findOneBy
+        .mockResolvedValueOnce(parent) // findOneBy({id: parentCampaignId})
+        .mockResolvedValueOnce(null); // findOneBy({parentCampaignId, isTest: true}) -> nessun child esistente
+      mockCampaignRepo.create.mockReturnValue({ ...parent, id: 'child-1', isTest: true, parentCampaignId: 'parent-1' });
+      mockCampaignRepo.save.mockResolvedValue({ ...parent, id: 'child-1', isTest: true, parentCampaignId: 'parent-1' });
+      mockRecipientRepo.create.mockReturnValue({ id: 'recipient-1' });
+      mockRecipientRepo.save.mockResolvedValue({ id: 'recipient-1' });
+
+      const insertResult = { raw: [{ id: 'attempt-1' }] };
+      mockAttemptRepo.createQueryBuilder.mockReturnValue({
+        insert: jest.fn().mockReturnThis(),
+        into: jest.fn().mockReturnThis(),
+        values: jest.fn().mockReturnThis(),
+        returning: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue(insertResult),
+      });
+      mockRecipientRepo.update.mockResolvedValue(undefined);
+      mockAttemptRepo.findOne.mockResolvedValue({ id: 'attempt-1' });
+      mockQueue.addBulk.mockResolvedValue(undefined);
+
+      const dto = { codiceFiscale: 'RSSMRA80A01H501U', email: 'test@example.com', extraData: { full_name: 'Mario Rossi' } };
+      const result = await service.launchTestSend('parent-1', dto);
+
+      expect(result.testCampaignId).toBe('child-1');
+      expect(result.attemptId).toBeTruthy();
+      expect(mockCampaignRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ isTest: true, parentCampaignId: 'parent-1', name: '[TEST] Campagna TARI 2026' }),
+      );
+    });
+
+    it('riusa la campagna figlia esistente al secondo invio di prova, aggiornando channelConfig', async () => {
+      const parent = {
+        id: 'parent-1',
+        name: 'Campagna TARI 2026',
+        channelType: 'EMAIL',
+        channelConfig: { subject: 'Nuovo oggetto' },
+        createdBy: 'operator1',
+      };
+      const existingChild = { id: 'child-1', isTest: true, parentCampaignId: 'parent-1', channelType: 'EMAIL', channelConfig: {} };
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce(parent).mockResolvedValueOnce(existingChild);
+      mockCampaignRepo.update.mockResolvedValue(undefined);
+      mockRecipientRepo.create.mockReturnValue({ id: 'recipient-2' });
+      mockRecipientRepo.save.mockResolvedValue({ id: 'recipient-2' });
+
+      const insertResult = { raw: [{ id: 'attempt-2' }] };
+      mockAttemptRepo.createQueryBuilder.mockReturnValue({
+        insert: jest.fn().mockReturnThis(),
+        into: jest.fn().mockReturnThis(),
+        values: jest.fn().mockReturnThis(),
+        returning: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue(insertResult),
+      });
+      mockRecipientRepo.update.mockResolvedValue(undefined);
+      mockAttemptRepo.findOne.mockResolvedValue({ id: 'attempt-2' });
+      mockQueue.addBulk.mockResolvedValue(undefined);
+
+      const dto = { codiceFiscale: 'VRDLGU85B02H501X', extraData: {} };
+      const result = await service.launchTestSend('parent-1', dto);
+
+      expect(result.testCampaignId).toBe('child-1');
+      expect(mockCampaignRepo.create).not.toHaveBeenCalled();
+      expect(mockCampaignRepo.update).toHaveBeenCalledWith({ id: 'child-1' }, { channelConfig: parent.channelConfig });
+    });
+
+    it('SEND senza protocolla lancia BadRequestException, nessuna campagna figlia creata', async () => {
+      const parent = { id: 'parent-1', name: 'Campagna SEND', channelType: 'SEND', channelConfig: {}, createdBy: 'operator1' };
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce(parent);
+
+      await expect(service.launchTestSend('parent-1', { codiceFiscale: 'RSSMRA80A01H501U', extraData: {} }))
+        .rejects.toThrow('Protocollazione obbligatoria per SEND');
+      expect(mockCampaignRepo.create).not.toHaveBeenCalled();
+    });
+
+    describe('con cartelle upload reali su disco', () => {
+      let parentDir: string;
+      let childDir: string;
+
+      beforeEach(() => {
+        parentDir = fs.mkdtempSync(join(os.tmpdir(), 'comunicapa-testsend-parent-'));
+        childDir = fs.mkdtempSync(join(os.tmpdir(), 'comunicapa-testsend-child-'));
+        (getUploadsDir as jest.Mock).mockImplementation((id: string) => (id === 'parent-1' ? parentDir : childDir));
+      });
+
+      afterEach(() => {
+        fs.rmSync(parentDir, { recursive: true, force: true });
+        fs.rmSync(childDir, { recursive: true, force: true });
+      });
+
+      it('copia fisicamente gli allegati dalla cartella upload della madre a quella della figlia, svuotandola prima', async () => {
+        const parent = { id: 'parent-1', name: 'Campagna TARI 2026', channelType: 'EMAIL', channelConfig: {}, createdBy: 'operator1' };
+        mockCampaignRepo.findOneBy
+          .mockResolvedValueOnce(parent) // findOneBy({id: parentCampaignId})
+          .mockResolvedValueOnce(null); // nessun child esistente
+        mockCampaignRepo.create.mockReturnValue({ ...parent, id: 'child-1', isTest: true, parentCampaignId: 'parent-1' });
+        mockCampaignRepo.save.mockResolvedValue({ ...parent, id: 'child-1', isTest: true, parentCampaignId: 'parent-1' });
+        mockRecipientRepo.create.mockReturnValue({ id: 'recipient-1' });
+        mockRecipientRepo.save.mockResolvedValue({ id: 'recipient-1' });
+        mockAttemptRepo.createQueryBuilder.mockReturnValue({
+          insert: jest.fn().mockReturnThis(),
+          into: jest.fn().mockReturnThis(),
+          values: jest.fn().mockReturnThis(),
+          returning: jest.fn().mockReturnThis(),
+          execute: jest.fn().mockResolvedValue({ raw: [{ id: 'attempt-1' }] }),
+        });
+        mockAttemptRepo.findOne.mockResolvedValue({ id: 'attempt-1' });
+        mockQueue.addBulk.mockResolvedValue(undefined);
+
+        // Cartella madre con un allegato reale; cartella figlia con un file
+        // stantio da una precedente prova, deve essere svuotata prima della copia.
+        fs.writeFileSync(join(parentDir, 'avviso.pdf'), '%PDF');
+        fs.writeFileSync(join(childDir, 'vecchio.pdf'), 'stale');
+
+        await service.launchTestSend('parent-1', { codiceFiscale: 'RSSMRA80A01H501U', extraData: {} });
+
+        expect(fs.existsSync(join(childDir, 'vecchio.pdf'))).toBe(false);
+        expect(fs.existsSync(join(childDir, 'avviso.pdf'))).toBe(true);
+        expect(fs.readFileSync(join(childDir, 'avviso.pdf'), 'utf8')).toBe('%PDF');
+      });
+
+      it("SEND: blocca il test-send se manca l'allegato mappato per il destinatario di prova appena creato — verifica il riordino (recipient creato prima del check allegati)", async () => {
+        const parent = {
+          id: 'parent-1',
+          name: 'Campagna SEND',
+          channelType: 'SEND',
+          channelConfig: { protocolla: true, attachments: [{ key: 'file', label: 'Avviso' }] },
+          createdBy: 'operator1',
+        };
+        const existingChild = {
+          id: 'child-1',
+          isTest: true,
+          parentCampaignId: 'parent-1',
+          channelType: 'SEND',
+          channelConfig: {},
+        };
+        mockCampaignRepo.findOneBy.mockResolvedValueOnce(parent).mockResolvedValueOnce(existingChild);
+        mockCampaignRepo.update.mockResolvedValue(undefined);
+
+        const testRecipient = { id: 'recipient-test', campaignId: 'child-1', codiceFiscale: 'RSSMRA80A01H501U', extraData: { file: 'xyz.pdf' } };
+        mockRecipientRepo.create.mockReturnValue(testRecipient);
+        mockRecipientRepo.save.mockResolvedValue(testRecipient);
+        // findMissingAttachments interroga i recipient PENDING della figlia: deve
+        // vedere ESATTAMENTE il destinatario appena creato (non uno vuoto, non uno
+        // stantio) — se il riordino del fix venisse invertito, questo mock non
+        // verrebbe nemmeno raggiunto prima del check, e il blocco non scatterebbe
+        // mai (nessun PENDING trovato), facendo fallire questo test.
+        mockRecipientRepo.find.mockResolvedValueOnce([
+          { id: 'recipient-test', codiceFiscale: 'RSSMRA80A01H501U', extraData: { file: 'xyz.pdf' } },
+        ]);
+
+        // Nessun file nella cartella madre/figlia: 'xyz.pdf' atteso dal CF di
+        // prova non è presente -> findMissingAttachments deve segnalarlo.
+
+        const result = await service.launchTestSend('parent-1', {
+          codiceFiscale: 'RSSMRA80A01H501U',
+          extraData: { file: 'xyz.pdf' },
+        });
+
+        expect(result.blocked).toBe(true);
+        expect(result.message).toContain('Impossibile avviare');
+        // Il recipient di prova È stato creato (prerequisito del fix — riordino),
+        // ma viene ripulito perché il blocco è scattato.
+        expect(mockRecipientRepo.save).toHaveBeenCalled();
+        expect(mockRecipientRepo.delete).toHaveBeenCalledWith({ id: 'recipient-test' });
+        // Nessun invio reale: createAttemptsAndEnqueue non deve mai essere raggiunto.
+        expect(mockQueue.addBulk).not.toHaveBeenCalled();
+      });
     });
   });
 });

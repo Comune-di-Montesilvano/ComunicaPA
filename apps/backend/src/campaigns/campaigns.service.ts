@@ -25,6 +25,7 @@ import { NotificationQueuesService } from '../queue/notification-queues.service'
 import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util';
 import type { CreateCampaignDto } from './dto/create-campaign.dto';
 import type { UpdateCampaignDto } from './dto/update-campaign.dto';
+import type { TestSendDto } from './dto/test-send.dto';
 import type { CampaignStatsDto, RecipientStatDto, RecipientStatsPageDto, ChannelBreakdownDto, EffectiveChannelBreakdownDto, DownloadCombinationDto, DownloadCombinationStatsDto, FailureRowDto, FailureGroupDto, RetryBulkResultDto, DownloadReportRowDto, SendStatusBreakdownDto, SendReportDto, SendReportRowDto, PostalStatusBreakdownDto, PostalReportDto, PostalReportRowDto } from './dto/campaign-stats.dto';
 import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.dto';
 import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util';
@@ -286,6 +287,55 @@ export class CampaignsService {
     return { imported, campaignId };
   }
 
+  private assertSendProtocolConfigured(campaign: Campaign): void {
+    if (campaign.channelType === 'SEND' && campaign.channelConfig?.['protocolla'] !== true) {
+      throw new BadRequestException(
+        'Protocollazione obbligatoria per SEND: channelConfig.protocolla deve essere true',
+      );
+    }
+  }
+
+  private async checkAttachmentsBlocking(campaign: Campaign): Promise<{ blocked: true; message: string } | null> {
+    // SEND (atto legale) e POSTAL (lettera cartacea) senza nessun allegato
+    // configurato invierebbero un PDF segnaposto generico come unico
+    // documento notificato — non un caso d'uso reale, blocca a monte.
+    if (
+      (campaign.channelType === 'SEND' || campaign.channelType === 'POSTAL') &&
+      resolveAttachmentsConfig(campaign.channelConfig).length === 0
+    ) {
+      return {
+        blocked: true,
+        message: `Impossibile avviare: allegato obbligatorio per il canale ${campaign.channelType}. Configuralo al Passo 3 prima di rilanciare.`,
+      };
+    }
+
+    const missingAttachments = await this.findMissingAttachments(campaign);
+    if (missingAttachments.length > 0) {
+      const sample = missingAttachments
+        .slice(0, 5)
+        .map((m) => `${m.expectedFilename} (CF ${m.codiceFiscale})`)
+        .join(', ');
+      const more = missingAttachments.length > 5 ? ', …' : '';
+
+      const dir = getUploadsDir(campaign.id);
+      const presentFiles = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+      const presentList =
+        presentFiles.length > 0
+          ? presentFiles.slice(0, 10).join(', ') + (presentFiles.length > 10 ? '...' : '')
+          : 'nessuno';
+
+      // Risposta 200 (non BadRequestException): il reverse proxy di produzione
+      // intercetta le risposte non-2xx e ne sostituisce il body con una pagina
+      // HTML propria, rendendo illeggibile il messaggio lato frontend — stesso
+      // problema già risolto altrove (vedi io-services.service.ts `test()`).
+      return {
+        blocked: true,
+        message: `Impossibile avviare: ${missingAttachments.length} allegato/i mancante/i rispetto alla mappatura configurata — es. ${sample}${more}. Carica i file mancanti prima di rilanciare. (Presenti in cartella: ${presentList})`,
+      };
+    }
+    return null;
+  }
+
   async launch(
     campaignId: string,
   ): Promise<{ launched: number; campaignId: string; blocked?: boolean; message?: string }> {
@@ -310,47 +360,17 @@ export class CampaignsService {
     // pesca solo attempt già protocollati) — se il wizard non l'ha impostato,
     // una campagna SEND resterebbe QUEUED per sempre senza errore visibile.
     // Fail fast qui, come faceva SendStrategy.send() prima della migrazione ai demoni.
-    if (campaign.channelType === 'SEND' && campaign.channelConfig?.['protocolla'] !== true) {
+    try {
+      this.assertSendProtocolConfigured(campaign);
+    } catch (err) {
       await this.campaignRepo.update({ id: campaignId }, { status: CampaignStatus.DRAFT });
-      throw new BadRequestException('Protocollazione obbligatoria per SEND: channelConfig.protocolla deve essere true');
+      throw err;
     }
 
-    // SEND (atto legale) e POSTAL (lettera cartacea) senza nessun allegato
-    // configurato invierebbero un PDF segnaposto generico come unico
-    // documento notificato — non un caso d'uso reale, blocca a monte.
-    if ((campaign.channelType === 'SEND' || campaign.channelType === 'POSTAL') && resolveAttachmentsConfig(campaign.channelConfig).length === 0) {
+    const attachmentsBlock = await this.checkAttachmentsBlocking(campaign);
+    if (attachmentsBlock) {
       await this.campaignRepo.update({ id: campaignId }, { status: CampaignStatus.DRAFT });
-      return {
-        launched: 0,
-        campaignId,
-        blocked: true,
-        message: `Impossibile avviare: allegato obbligatorio per il canale ${campaign.channelType}. Configuralo al Passo 3 prima di rilanciare.`,
-      };
-    }
-
-    const missingAttachments = await this.findMissingAttachments(campaign);
-    if (missingAttachments.length > 0) {
-      await this.campaignRepo.update({ id: campaignId }, { status: CampaignStatus.DRAFT });
-      const sample = missingAttachments
-        .slice(0, 5)
-        .map((m) => `${m.expectedFilename} (CF ${m.codiceFiscale})`)
-        .join(', ');
-      const more = missingAttachments.length > 5 ? ', …' : '';
-      
-      const dir = getUploadsDir(campaignId);
-      const presentFiles = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
-      const presentList = presentFiles.length > 0 ? presentFiles.slice(0, 10).join(', ') + (presentFiles.length > 10 ? '...' : '') : 'nessuno';
-
-      // Risposta 200 (non BadRequestException): il reverse proxy di produzione
-      // intercetta le risposte non-2xx e ne sostituisce il body con una pagina
-      // HTML propria, rendendo illeggibile il messaggio lato frontend — stesso
-      // problema già risolto altrove (vedi io-services.service.ts `test()`).
-      return {
-        launched: 0,
-        campaignId,
-        blocked: true,
-        message: `Impossibile avviare: ${missingAttachments.length} allegato/i mancante/i rispetto alla mappatura configurata — es. ${sample}${more}. Carica i file mancanti prima di rilanciare. (Presenti in cartella: ${presentList})`,
-      };
+      return { launched: 0, campaignId, ...attachmentsBlock };
     }
 
     const recipients = await this.recipientRepo.find({
@@ -375,6 +395,86 @@ export class CampaignsService {
 
     const { launched } = await this.createAttemptsAndEnqueue(campaign, recipients, channelOverrides);
     return { launched, campaignId };
+  }
+
+  async launchTestSend(
+    parentCampaignId: string,
+    dto: TestSendDto,
+  ): Promise<{ attemptId: string; testCampaignId: string; blocked?: boolean; message?: string }> {
+    const parent = await this.campaignRepo.findOneBy({ id: parentCampaignId });
+    if (!parent) throw new NotFoundException(`Campaign ${parentCampaignId} not found`);
+
+    this.assertSendProtocolConfigured(parent);
+
+    let child = await this.campaignRepo.findOneBy({ parentCampaignId, isTest: true });
+    if (!child) {
+      const created = this.campaignRepo.create({
+        name: `[TEST] ${parent.name}`,
+        channelType: parent.channelType,
+        channelConfig: parent.channelConfig,
+        status: CampaignStatus.QUEUED,
+        createdBy: parent.createdBy,
+        isTest: true,
+        parentCampaignId,
+      });
+      child = await this.campaignRepo.save(created);
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- _QueryDeepPartialEntity non gestisce bene un
+      // index signature generico (Record<string, unknown>) su colonna jsonb, stesso limite noto di TypeORM 0.3.x.
+      await this.campaignRepo.update({ id: child.id }, { channelConfig: parent.channelConfig as any });
+      child = { ...child, channelConfig: parent.channelConfig };
+    }
+
+    // Copia fisica isolata: la campagna test non deve mai riferire i file
+    // della madre, altrimenti la sua retention/cancellazione rischierebbe
+    // di cancellare allegati ancora necessari alla bozza madre non lanciata.
+    const parentDir = getUploadsDir(parentCampaignId);
+    const childDir = getUploadsDir(child.id);
+    if (fs.existsSync(parentDir)) {
+      fs.rmSync(childDir, { recursive: true, force: true });
+      fs.mkdirSync(childDir, { recursive: true });
+      fs.cpSync(parentDir, childDir, { recursive: true });
+    }
+
+    // Il destinatario di prova va creato PRIMA del controllo allegati:
+    // findMissingAttachments() pesca solo i recipient PENDING della campagna
+    // figlia — al primo invio di prova non ce n'è ancora nessuno (il check
+    // sarebbe sempre no-op), ai successivi l'unico eventuale PENDING è
+    // proprio quello appena creato (i precedenti sono già QUEUED dopo
+    // createAttemptsAndEnqueue). Creandolo prima, il check valida
+    // esattamente il file atteso per QUESTO CF di test.
+    const recipient = this.recipientRepo.create({
+      campaignId: child.id,
+      codiceFiscale: dto.codiceFiscale,
+      email: dto.email ?? null,
+      pec: dto.pec ?? null,
+      fullName: dto.extraData['full_name'] ?? null,
+      extraData: dto.extraData,
+      status: RecipientStatus.PENDING,
+    });
+    const savedRecipient = await this.recipientRepo.save(recipient);
+
+    const attachmentsBlock = await this.checkAttachmentsBlocking(child);
+    if (attachmentsBlock) {
+      // Elimina il recipient appena creato: coerente col pattern di `launch()`
+      // (che riporta la campagna a DRAFT su blocco) — nessuna riga PENDING
+      // orfana che non verrà mai processata, la campagna figlia resta pulita
+      // per un successivo tentativo di test-send.
+      await this.recipientRepo.delete({ id: savedRecipient.id });
+      return { attemptId: '', testCampaignId: child.id, ...attachmentsBlock };
+    }
+
+    const { launched } = await this.createAttemptsAndEnqueue(child, [{ id: savedRecipient.id }]);
+    if (launched === 0) {
+      throw new BadRequestException('Invio di prova non accodato');
+    }
+
+    const attempt = await this.attemptRepo.findOne({
+      where: { recipientId: savedRecipient.id },
+      order: { createdAt: 'DESC' },
+    });
+
+    return { attemptId: attempt!.id, testCampaignId: child.id };
   }
 
   private async runInadExtractLoop(
@@ -1035,6 +1135,7 @@ export class CampaignsService {
       .addSelect('COALESCE(SUM(c.sentCount), 0)', 'totalSent')
       .addSelect('COALESCE(SUM(c.failedCount), 0)', 'totalFailed')
       .where(range.sql, range.params)
+      .andWhere('c.isTest = false')
       .getRawOne<{ totalRecipients: string; totalSent: string; totalFailed: string }>();
 
     const totalDownloaded = await this.recipientRepo
@@ -1042,6 +1143,7 @@ export class CampaignsService {
       .innerJoin('r.campaign', 'c')
       .where('r.downloadCount > 0')
       .andWhere(range.sql, range.params)
+      .andWhere('c.isTest = false')
       .getCount();
 
     const sentTrendRows = await this.campaignRepo
@@ -1049,6 +1151,7 @@ export class CampaignsService {
       .select("to_char(date_trunc('month', c.createdAt), 'YYYY-MM')", 'month')
       .addSelect('COALESCE(SUM(c.sentCount), 0)', 'sent')
       .where(range.sql, range.params)
+      .andWhere('c.isTest = false')
       .groupBy("date_trunc('month', c.createdAt)")
       .orderBy("date_trunc('month', c.createdAt)", 'ASC')
       .getRawMany<{ month: string; sent: string }>();
@@ -1059,6 +1162,7 @@ export class CampaignsService {
       .select("to_char(date_trunc('month', c.createdAt), 'YYYY-MM')", 'month')
       .addSelect('COUNT(*) FILTER (WHERE r.downloadCount > 0)', 'downloaded')
       .where(range.sql, range.params)
+      .andWhere('c.isTest = false')
       .groupBy("date_trunc('month', c.createdAt)")
       .getRawMany<{ month: string; downloaded: string }>();
 
@@ -1067,6 +1171,7 @@ export class CampaignsService {
       .select('c.channelType', 'channel')
       .addSelect('COALESCE(SUM(c.sentCount), 0)', 'sent')
       .where(range.sql, range.params)
+      .andWhere('c.isTest = false')
       .groupBy('c.channelType')
       .getRawMany<{ channel: string; sent: string }>();
 
@@ -1077,6 +1182,7 @@ export class CampaignsService {
       .select('de.channel', 'channel')
       .addSelect('COUNT(*)', 'count')
       .where(range.sql, range.params)
+      .andWhere('c.isTest = false')
       .groupBy('de.channel')
       .getRawMany<{ channel: string; count: string }>();
 
@@ -1089,6 +1195,7 @@ export class CampaignsService {
       .addSelect('COUNT(*) FILTER (WHERE r.downloadCount > 0)', 'downloadedCount')
       .where('c.totalRecipients > 0')
       .andWhere(range.sql, range.params)
+      .andWhere('c.isTest = false')
       .groupBy('c.id')
       .getRawMany<{ campaignId: string; campaignName: string; totalRecipients: string; downloadedCount: string }>();
 
@@ -1098,6 +1205,7 @@ export class CampaignsService {
       .where('r.downloadCount = 0')
       .andWhere('r.status = :status', { status: RecipientStatus.SENT })
       .andWhere(range.sql, range.params)
+      .andWhere('c.isTest = false')
       .getCount();
 
     const totalRecipients = Number(totalsRow?.totalRecipients ?? 0);
@@ -1671,6 +1779,18 @@ export class CampaignsService {
   async remove(campaignId: string): Promise<{ deleted: true }> {
     const exists = await this.campaignRepo.existsBy({ id: campaignId });
     if (!exists) throw new NotFoundException(`Campaign ${campaignId} not found`);
+
+    const linkedTestCampaign = await this.campaignRepo.findOneBy({ parentCampaignId: campaignId, isTest: true });
+    if (linkedTestCampaign) {
+      const testRecipients = await this.recipientRepo.find({ where: { campaignId: linkedTestCampaign.id }, select: ['id'] });
+      const testRecipientIds = testRecipients.map((r) => r.id);
+      if (testRecipientIds.length > 0) {
+        await this.attemptRepo.delete({ recipientId: In(testRecipientIds) });
+        await this.recipientRepo.delete({ id: In(testRecipientIds) });
+      }
+      await this.campaignRepo.delete(linkedTestCampaign.id);
+      await fs.promises.rm(getUploadsDir(linkedTestCampaign.id), { recursive: true, force: true });
+    }
 
     await fs.promises.rm(getUploadsDir(campaignId), { recursive: true, force: true });
     await this.campaignRepo.delete(campaignId);
