@@ -378,6 +378,8 @@ interface Campaign {
   failedCount: number;
   createdAt: string;
   updatedAt: string;
+  isTest: boolean;
+  parentCampaignId: string | null;
   recipients?: Recipient[];
 }
 
@@ -5150,7 +5152,23 @@ export function App(): React.JSX.Element {
                           <tbody>
                             {campaigns.map((c) => (
                               <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => handleCampaignClick(c.id)}>
-                                <td className="fw-bold text-primary">{c.name}</td>
+                                <td className="fw-bold text-primary">
+                                  {c.name}
+                                  {c.isTest && (
+                                    <span className="badge bg-warning text-dark ms-2" title="Campagna di prova, collegata a una bozza">
+                                      TEST
+                                    </span>
+                                  )}
+                                  {c.isTest && c.parentCampaignId && (
+                                    <button
+                                      type="button"
+                                      className="btn btn-link btn-sm p-0 ms-2"
+                                      onClick={(e) => { e.stopPropagation(); handleCampaignClick(c.parentCampaignId!); }}
+                                    >
+                                      Vedi bozza madre
+                                    </button>
+                                  )}
+                                </td>
                                 <td>
                                   <ChannelBadge channel={c.channelType} extra={c.channelConfig?.['serviceName'] as string | undefined} />
                                 </td>
