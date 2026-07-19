@@ -35,6 +35,7 @@ import { CreateAppIoVerificationJobs1784700000000 } from './migrations/178470000
 import { AddCheckingInadStatus1784800000000 } from './migrations/1784800000000-AddCheckingInadStatus';
 import { AddInadCheckColumn1784800000001 } from './migrations/1784800000001-AddInadCheckColumn';
 import { CreateEnrichmentJobs1784900000000 } from './migrations/1784900000000-CreateEnrichmentJobs';
+import { AddTestCampaignColumns1785000000000 } from './migrations/1785000000000-AddTestCampaignColumns';
 import type { AppConfiguration } from '../config/configuration';
 
 @Module({
@@ -48,7 +49,7 @@ import type { AppConfiguration } from '../config/configuration';
         entities: [Campaign, Recipient, NotificationAttempt, AppSetting, MailServerConfig, IoServiceConfig, Template, DownloadEvent, AuditLog, PostalProviderConfig, AppIoVerificationJob, EnrichmentJob],
         // Dev: schema allineato da synchronize. Prod: migrations eseguite all'avvio.
         synchronize: config.get('nodeEnv', { infer: true }) === 'development',
-        migrations: [InitialSchema1783023440824, AddMailServerConfigs1783071728873, AddIoServiceConfigs1783092759564, AddTemplates1783109448492, FixRecipientCampaignJoin1783148719725, AddDownloadEvents1783200000000, FixRecipientAttemptJoin1783358259000, AddCancelledStatus1783426587867, CreateAuditLogs1783500000000, RenamePdndSettingsKeys1783600000000, AddSendStatusColumns1783700000000, AddProtocolColumns1783800000000, AddUploadedDocumentsColumn1784100000000, AddPostalStatusColumns1784200000000, CreatePostalProviderConfigs1784300000000, SeedStandardTemplates1784400000000, AddSendStatusHistoryColumns1784500000000, AddPostalStatusHistoryColumn1784600000000, CreateAppIoVerificationJobs1784700000000, AddCheckingInadStatus1784800000000, AddInadCheckColumn1784800000001, CreateEnrichmentJobs1784900000000],
+        migrations: [InitialSchema1783023440824, AddMailServerConfigs1783071728873, AddIoServiceConfigs1783092759564, AddTemplates1783109448492, FixRecipientCampaignJoin1783148719725, AddDownloadEvents1783200000000, FixRecipientAttemptJoin1783358259000, AddCancelledStatus1783426587867, CreateAuditLogs1783500000000, RenamePdndSettingsKeys1783600000000, AddSendStatusColumns1783700000000, AddProtocolColumns1783800000000, AddUploadedDocumentsColumn1784100000000, AddPostalStatusColumns1784200000000, CreatePostalProviderConfigs1784300000000, SeedStandardTemplates1784400000000, AddSendStatusHistoryColumns1784500000000, AddPostalStatusHistoryColumn1784600000000, CreateAppIoVerificationJobs1784700000000, AddCheckingInadStatus1784800000000, AddInadCheckColumn1784800000001, CreateEnrichmentJobs1784900000000, AddTestCampaignColumns1785000000000],
         migrationsRun: config.get('nodeEnv', { infer: true }) !== 'development',
         logging: config.get('nodeEnv', { infer: true }) === 'development',
       }),
