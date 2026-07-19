@@ -1160,7 +1160,7 @@ describe('CampaignsService', () => {
       expect(result.campaignLeaderboard).toEqual([]);
     });
 
-    it('esclude sempre le campagne isTest=true da ognuna delle 7 query aggregate', async () => {
+    it('esclude sempre le campagne isTest=true da ognuna delle 8 query aggregate', async () => {
       const createdQbs: any[] = [];
       const trackedMakeQb = (terminal: { rawOne?: any; rawMany?: any[]; count?: number }) => {
         const qb = makeQb(terminal);

@@ -52,6 +52,17 @@ describe('CampaignCompletionService', () => {
     );
   });
 
+  it('la query di UPDATE esclude sempre le campagne test (is_test = false), anche a zero destinatari residui', async () => {
+    mockRecipientRepo.count.mockResolvedValueOnce(0);
+
+    await service.checkAndComplete('camp-test-1');
+
+    expect(mockQb.where).toHaveBeenCalledWith(
+      expect.stringContaining('is_test'),
+      expect.objectContaining({ id: 'camp-test-1', queued: CampaignStatus.QUEUED, isTest: false }),
+    );
+  });
+
   it('NON marca la campagna se restano destinatari da processare', async () => {
     mockRecipientRepo.count.mockResolvedValueOnce(3);
 

@@ -40,7 +40,11 @@ export class CampaignCompletionService {
       .createQueryBuilder()
       .update()
       .set({ status: CampaignStatus.COMPLETED, completedAt: new Date() })
-      .where('id = :id AND status = :queued', { id: campaignId, queued: CampaignStatus.QUEUED })
+      .where('id = :id AND status = :queued AND is_test = :isTest', {
+        id: campaignId,
+        queued: CampaignStatus.QUEUED,
+        isTest: false,
+      })
       .execute();
 
     if (result.affected && result.affected > 0) {
