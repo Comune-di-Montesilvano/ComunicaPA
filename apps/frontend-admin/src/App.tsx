@@ -825,6 +825,20 @@ export function App(): React.JSX.Element {
   const [wizCampaignId, setWizCampaignId] = useState<string | null>(null);
   const [wizDraftSaving, setWizDraftSaving] = useState(false);
 
+  // Step 7 — invio di prova
+  const [wizTestForm, setWizTestForm] = useState<{
+    codiceFiscale: string;
+    email: string;
+    pec: string;
+    postalAddress: string;
+    postalMunicipality: string;
+    postalZip: string;
+    postalProvince: string;
+  }>({ codiceFiscale: '', email: '', pec: '', postalAddress: '', postalMunicipality: '', postalZip: '', postalProvince: '' });
+  const [wizTestHistory, setWizTestHistory] = useState<Array<{ attemptId: string; codiceFiscale: string; sentAt: string }>>([]);
+  const [wizTestSubmitting, setWizTestSubmitting] = useState(false);
+  const [wizTestError, setWizTestError] = useState<string | null>(null);
+
   const [wizPaymentEnabled, setWizPaymentEnabled] = useState(false);
   const [wizPaymentAmountCol, setWizPaymentAmountCol] = useState('');
   const [wizPaymentAmountType, setWizPaymentAmountType] = useState<'cents' | 'euro'>('euro');
@@ -896,6 +910,25 @@ export function App(): React.JSX.Element {
       controller.abort();
     };
   }, [wizStep, wizPreviewIndex, wizSubject, wizBody, wizChannel, wizAttachments, wizValidRows, wizMapping, token, wizPreviewChannelTab, wizAppIoDifferentiate, wizAppIoSubjectOverride, wizAppIoBodyOverride, wizProtocolla]);
+
+  // Step 7: precompila il form di test dal primo record CSV valido, usando
+  // la stessa mappatura colonne del canale corrente (CF/email/pec/indirizzo
+  // POSTAL). Solo all'ingresso nello step, non a ogni digitazione del form.
+  useEffect(() => {
+    if (wizStep !== 7 || wizValidRows.length === 0) return;
+    const first = wizValidRows[0];
+    setWizTestForm((prev) => ({
+      ...prev,
+      codiceFiscale: first[wizMapping.codice_fiscale] ?? '',
+      email: first[wizMapping.email] ?? '',
+      pec: first[wizMapping.pec] ?? '',
+      postalAddress: wizPostalAddressColumn ? (first[wizPostalAddressColumn] ?? '') : '',
+      postalMunicipality: wizPostalMunicipalityColumn ? (first[wizPostalMunicipalityColumn] ?? '') : '',
+      postalZip: wizPostalZipColumn ? (first[wizPostalZipColumn] ?? '') : '',
+      postalProvince: wizPostalProvinceColumn ? (first[wizPostalProvinceColumn] ?? '') : '',
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wizStep]);
 
   // App IO impone al campo content.markdown una lunghezza >= 80 e < 10001
   // caratteri (altrimenti PagoPA rifiuta con HTTP 400 "Invalid message
@@ -3787,6 +3820,12 @@ export function App(): React.JSX.Element {
     setWizPaymentPayeeType('static');
     setWizPaymentPayeeStatic('');
     setWizPaymentPayeeCol('');
+
+    // Storico invii di prova legato alla sessione wizard corrente: azzerato
+    // per non far trapelare invii di prova di una campagna sulla successiva.
+    setWizTestForm({ codiceFiscale: '', email: '', pec: '', postalAddress: '', postalMunicipality: '', postalZip: '', postalProvince: '' });
+    setWizTestHistory([]);
+    setWizTestError(null);
   };
 
   const prefillWizardFrom = (source: {
@@ -4279,6 +4318,63 @@ export function App(): React.JSX.Element {
     } finally {
       setWizSending(false);
       setWizUploadProgress(null);
+    }
+  };
+
+  // Step 7: invio di un singolo destinatario di prova su una campagna già
+  // creata (bozza patchata almeno fino allo step Upload Allegati, quindi
+  // wizCampaignId è già valorizzato — vedi disabled del pulsante "Avvia Test").
+  // extraData riusa l'intera prima riga CSV, sovrascrivendo solo le chiavi
+  // colonna reali (wizMapping/wizPostal*Column) con i valori del form, così i
+  // placeholder %%...%% del template restano coerenti con l'anteprima.
+  const handleWizTestSend = async (): Promise<void> => {
+    setWizTestError(null);
+    setWizTestSubmitting(true);
+    try {
+      if (!wizCampaignId) throw new Error('Campagna non ancora salvata.');
+      if (!wizTestForm.codiceFiscale.trim()) throw new Error('Codice Fiscale obbligatorio.');
+
+      const first = wizValidRows[0] ?? {};
+      const extraData: Record<string, string> = { ...first };
+      if (wizMapping.codice_fiscale) extraData[wizMapping.codice_fiscale] = wizTestForm.codiceFiscale;
+      if (wizChannel === 'EMAIL' && wizMapping.email) extraData[wizMapping.email] = wizTestForm.email;
+      if (wizChannel === 'PEC' && wizMapping.pec) extraData[wizMapping.pec] = wizTestForm.pec;
+      if (wizChannel === 'POSTAL') {
+        if (!wizTestForm.postalAddress.trim() || !wizTestForm.postalMunicipality.trim() || !wizTestForm.postalZip.trim() || !wizTestForm.postalProvince.trim()) {
+          throw new Error('Indirizzo, comune, CAP e provincia sono tutti obbligatori per il test POSTAL.');
+        }
+        if (wizPostalAddressColumn) extraData[wizPostalAddressColumn] = wizTestForm.postalAddress;
+        if (wizPostalMunicipalityColumn) extraData[wizPostalMunicipalityColumn] = wizTestForm.postalMunicipality;
+        if (wizPostalZipColumn) extraData[wizPostalZipColumn] = wizTestForm.postalZip;
+        if (wizPostalProvinceColumn) extraData[wizPostalProvinceColumn] = wizTestForm.postalProvince;
+      }
+
+      const res = await fetch(`${ADMIN_API_BASE}/campaigns/${wizCampaignId}/test-send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          codiceFiscale: wizTestForm.codiceFiscale,
+          email: wizChannel === 'EMAIL' ? wizTestForm.email : undefined,
+          pec: wizChannel === 'PEC' ? wizTestForm.pec : undefined,
+          extraData,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data?.blocked) {
+        throw new Error(data.message || 'Invio di prova bloccato.');
+      }
+      if (!res.ok) {
+        throw new Error(data?.message || 'Errore durante l\'invio di prova.');
+      }
+
+      setWizTestHistory((prev) => [
+        { attemptId: data.attemptId, codiceFiscale: wizTestForm.codiceFiscale, sentAt: new Date().toISOString() },
+        ...prev,
+      ]);
+    } catch (err) {
+      setWizTestError(err instanceof Error ? err.message : 'Errore durante l\'invio di prova.');
+    } finally {
+      setWizTestSubmitting(false);
     }
   };
 
@@ -6573,6 +6669,135 @@ export function App(): React.JSX.Element {
                       </button>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {wizStep === 7 && (
+                <div style={{ maxWidth: '600px', margin: '0 auto' }}>
+                  <h4 className="h6 fw-bold text-dark mb-3"><i className="fas fa-vial text-primary me-2"></i>Invio di prova</h4>
+                  <p className="small text-muted mb-4">
+                    Modifica Codice Fiscale{(wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') ? ' e destinazione' : ''} per
+                    verificare l'esito reale dell'invio prima di lanciare la campagna. L'invio di prova usa il primo record
+                    del CSV caricato come base, sovrascrivendo solo i campi qui sotto.
+                  </p>
+
+                  <div className="row g-3 mb-3">
+                    <div className="col-md-6">
+                      <label className="form-label small fw-bold">Codice Fiscale *</label>
+                      <input
+                        type="text"
+                        className="form-control form-control-sm"
+                        value={wizTestForm.codiceFiscale}
+                        onChange={(e) => setWizTestForm((prev) => ({ ...prev, codiceFiscale: e.target.value.toUpperCase() }))}
+                      />
+                    </div>
+
+                    {wizChannel === 'EMAIL' && (
+                      <div className="col-md-6">
+                        <label className="form-label small fw-bold">Indirizzo E-mail *</label>
+                        <input
+                          type="email"
+                          className="form-control form-control-sm"
+                          value={wizTestForm.email}
+                          onChange={(e) => setWizTestForm((prev) => ({ ...prev, email: e.target.value }))}
+                        />
+                      </div>
+                    )}
+
+                    {wizChannel === 'PEC' && (
+                      <div className="col-md-6">
+                        <label className="form-label small fw-bold">Indirizzo PEC *</label>
+                        <input
+                          type="email"
+                          className="form-control form-control-sm"
+                          value={wizTestForm.pec}
+                          onChange={(e) => setWizTestForm((prev) => ({ ...prev, pec: e.target.value }))}
+                        />
+                      </div>
+                    )}
+
+                    {wizChannel === 'POSTAL' && (
+                      <>
+                        <div className="col-md-6">
+                          <label className="form-label small fw-bold">Indirizzo *</label>
+                          <input
+                            type="text"
+                            className="form-control form-control-sm"
+                            value={wizTestForm.postalAddress}
+                            onChange={(e) => setWizTestForm((prev) => ({ ...prev, postalAddress: e.target.value }))}
+                          />
+                        </div>
+                        <div className="col-md-6">
+                          <label className="form-label small fw-bold">Comune *</label>
+                          <input
+                            type="text"
+                            className="form-control form-control-sm"
+                            value={wizTestForm.postalMunicipality}
+                            onChange={(e) => setWizTestForm((prev) => ({ ...prev, postalMunicipality: e.target.value }))}
+                          />
+                        </div>
+                        <div className="col-md-6">
+                          <label className="form-label small fw-bold">CAP *</label>
+                          <input
+                            type="text"
+                            className="form-control form-control-sm"
+                            value={wizTestForm.postalZip}
+                            onChange={(e) => setWizTestForm((prev) => ({ ...prev, postalZip: e.target.value }))}
+                          />
+                        </div>
+                        <div className="col-md-6">
+                          <label className="form-label small fw-bold">Provincia *</label>
+                          <input
+                            type="text"
+                            className="form-control form-control-sm"
+                            value={wizTestForm.postalProvince}
+                            onChange={(e) => setWizTestForm((prev) => ({ ...prev, postalProvince: e.target.value }))}
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {wizTestError && (
+                    <div className="alert alert-danger py-2 small">{wizTestError}</div>
+                  )}
+
+                  <div className="mt-4 pt-3 border-top d-flex justify-content-between">
+                    <button
+                      type="button"
+                      className="btn btn-outline-secondary"
+                      onClick={() => setWizStep(6)}
+                      disabled={wizTestSubmitting}
+                    >
+                      <i className="fas fa-arrow-left me-1"></i> Indietro
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={handleWizTestSend}
+                      disabled={wizTestSubmitting || !wizTestForm.codiceFiscale.trim()}
+                    >
+                      {wizTestSubmitting ? (
+                        <><i className="fas fa-spinner fa-spin me-1"></i>Invio...</>
+                      ) : (
+                        <><i className="fas fa-paper-plane me-1"></i>Invia</>
+                      )}
+                    </button>
+                  </div>
+
+                  {wizTestHistory.length > 0 && (
+                    <div className="mt-4 pt-3 border-top">
+                      <h6 className="small fw-bold text-dark mb-2">Invii di prova in questa sessione</h6>
+                      <ul className="list-unstyled small mb-0">
+                        {wizTestHistory.map((h) => (
+                          <li key={h.attemptId} className="mb-1">
+                            <i className="fas fa-check-circle text-success me-1"></i>
+                            <strong>{h.codiceFiscale}</strong> — {new Date(h.sentAt).toLocaleString('it-IT')}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
