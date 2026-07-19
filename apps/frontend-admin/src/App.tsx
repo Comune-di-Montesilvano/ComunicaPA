@@ -3973,10 +3973,10 @@ export function App(): React.JSX.Element {
     return cfg;
   };
 
-  const handleSaveWizardDraft = async () => {
+  const handleSaveWizardDraft = async (): Promise<string | null> => {
     if (!wizName) {
       alert('Inserisci almeno il nome della campagna prima di salvare la bozza.');
-      return;
+      return null;
     }
     setWizDraftSaving(true);
     let activeCampaignId = wizCampaignId;
@@ -4022,11 +4022,71 @@ export function App(): React.JSX.Element {
 
       fetchCampaigns();
       alert('Bozza salvata.');
+      return activeCampaignId ?? null;
     } catch (err: any) {
-      if (err instanceof ApiAuthError) return;
+      if (err instanceof ApiAuthError) return null;
       alert(err.message);
+      return null;
     } finally {
       setWizDraftSaving(false);
+    }
+  };
+
+  const handleWizUploadAttachments = async (): Promise<void> => {
+    setWizSending(true);
+    try {
+      let campaignId = wizCampaignId;
+      if (!campaignId) {
+        campaignId = await handleSaveWizardDraft();
+        if (!campaignId) {
+          // handleSaveWizardDraft ha già mostrato l'errore (nome mancante o fetch fallita).
+          return;
+        }
+      }
+
+      // Stesso pattern di upload chunked usato in precedenza da handleWizLaunch per
+      // gli allegati (chunk client-side, sotto il limite del reverse proxy esterno
+      // ~1MB) — spostato qui perché ora è un passo esplicito del wizard invece che
+      // parte del lancio finale, in modo che gli allegati siano già sul server
+      // quando serve un "Avvia Test" (Task 10).
+      if (wizPdfFiles && wizPdfFiles.length > 0) {
+        const totalBytes = wizPdfFiles.reduce((sum, f) => sum + f.size, 0);
+        setWizUploadProgress({ label: 'Caricamento allegati', loaded: 0, total: totalBytes });
+        let cumulativeBefore = 0;
+        let lastAttachData: { uploaded: number; discarded?: number; blocked?: boolean; message?: string } | null = null;
+        for (const file of wizPdfFiles) {
+          const base = cumulativeBefore;
+          const isZip = file.name.toLowerCase().endsWith('.zip');
+          lastAttachData = await uploadFileInChunks(
+            `${ADMIN_API_BASE}/campaigns/${campaignId}/attachments/upload`,
+            token!,
+            file,
+            file.name,
+            (loaded) => setWizUploadProgress(p => (p ? { ...p, loaded: base + loaded } : p)),
+            () => setWizUploadProgress({
+              label: isZip ? 'Estrazione allegati in corso' : 'Salvataggio allegato in corso',
+              loaded: base + file.size,
+              total: totalBytes,
+            }),
+          );
+          cumulativeBefore += file.size;
+        }
+        setWizUploadProgress(null);
+        if (lastAttachData?.blocked) {
+          throw new Error(lastAttachData.message || 'Errore durante la finalizzazione degli allegati.');
+        }
+        const discardCount = lastAttachData?.discarded || 0;
+        if (discardCount > 0) {
+          alert(`Allegati caricati con successo.\nNota: ${discardCount} file non referenziati da alcun cittadino sono stati scartati.`);
+        }
+      }
+
+      setWizStep(6);
+    } catch (err: any) {
+      alert(err.message || 'Errore durante il caricamento degli allegati.');
+    } finally {
+      setWizSending(false);
+      setWizUploadProgress(null);
     }
   };
 
@@ -4184,36 +4244,10 @@ export function App(): React.JSX.Element {
         throw new Error(uploadData.message || 'Errore durante il caricamento dei destinatari.');
       }
 
-      // Caricamento allegati PDF/ZIP personalizzati
-      let discardCount = 0;
-      if (wizPdfFiles && wizPdfFiles.length > 0) {
-        const totalBytes = wizPdfFiles.reduce((sum, f) => sum + f.size, 0);
-        setWizUploadProgress({ label: 'Caricamento allegati', loaded: 0, total: totalBytes });
-        let cumulativeBefore = 0;
-        let lastAttachData: { uploaded: number; discarded?: number; blocked?: boolean; message?: string } | null = null;
-        for (const file of wizPdfFiles) {
-          const base = cumulativeBefore;
-          const isZip = file.name.toLowerCase().endsWith('.zip');
-          lastAttachData = await uploadFileInChunks(
-            `${ADMIN_API_BASE}/campaigns/${campaignObj.id}/attachments/upload`,
-            token!,
-            file,
-            file.name,
-            (loaded) => setWizUploadProgress(p => (p ? { ...p, loaded: base + loaded } : p)),
-            () => setWizUploadProgress({
-              label: isZip ? 'Estrazione allegati in corso' : 'Salvataggio allegato in corso',
-              loaded: base + file.size,
-              total: totalBytes
-            }),
-          );
-          cumulativeBefore += file.size;
-        }
-        setWizUploadProgress(null);
-        if (lastAttachData?.blocked) {
-          throw new Error(lastAttachData.message || 'Errore durante la finalizzazione degli allegati.');
-        }
-        discardCount = lastAttachData?.discarded || 0;
-      }
+      // Nota: l'upload degli allegati PDF/ZIP personalizzati NON avviene più qui —
+      // è stato spostato al passo dedicato del wizard (Step 5 "Upload Allegati",
+      // handleWizUploadAttachments) che gira PRIMA di arrivare a questo riepilogo,
+      // in modo che gli allegati siano già sul server quando serve un "Avvia Test".
 
       const launchRes = await fetch(`${ADMIN_API_BASE}/campaigns/${campaignObj.id}/launch`, {
         method: 'POST',
@@ -4238,11 +4272,8 @@ export function App(): React.JSX.Element {
 
       fetchCampaigns();
       setView('dashboard');
-      
-      const successMsg = discardCount > 0
-        ? `Campagna creata e avviata con successo! I messaggi sono in coda.\nNota: ${discardCount} file non referenziati da alcun cittadino sono stati scartati.`
-        : 'Campagna creata e avviata con successo! I messaggi sono in coda.';
-      alert(successMsg);
+
+      alert('Campagna creata e avviata con successo! I messaggi sono in coda.');
     } catch (err: any) {
       alert(err.message || 'Errore durante l\'invio della campagna.');
     } finally {
@@ -5099,7 +5130,8 @@ export function App(): React.JSX.Element {
                   { n: 2, label: '2. Caricamento File' },
                   { n: 3, label: '3. Mappatura & Validazione' },
                   { n: 4, label: '4. Template & Anteprima' },
-                  { n: 5, label: '5. Riepilogo & Invio' },
+                  { n: 5, label: '5. Upload Allegati' },
+                  { n: 6, label: '6. Riepilogo & Invio' },
                 ].map(({ n, label }) => (
                   <div
                     key={n}
@@ -6328,10 +6360,10 @@ export function App(): React.JSX.Element {
                 </>
               )}
 
-              {/* STEP 5: RIEPILOGO & SPEDIZIONE */}
+              {/* STEP 5: UPLOAD ALLEGATI */}
               {wizStep === 5 && (
                 <div style={{ maxWidth: '600px', margin: '0 auto' }}>
-                  <h4 className="h6 fw-bold text-dark mb-3"><i className="fas fa-check-circle text-success me-2"></i>Passo 5: Riepilogo & Messa in Coda</h4>
+                  <h4 className="h6 fw-bold text-dark mb-3"><i className="fas fa-paperclip text-warning me-2"></i>Passo 5: Upload Allegati</h4>
 
                   <div className="mb-4 pb-3 border-bottom d-flex justify-content-between">
                     <button
@@ -6342,52 +6374,25 @@ export function App(): React.JSX.Element {
                       <i className="fas fa-arrow-left me-1"></i> Indietro
                     </button>
                     <button
-                      className="btn btn-success"
-                      onClick={handleWizLaunch}
+                      className="btn btn-primary"
+                      onClick={handleWizUploadAttachments}
                       disabled={wizSending}
                     >
                       {wizSending ? (
                         <>
                           <i className="fas fa-spinner fa-spin me-1"></i>
-                          {wizUploadProgress ? `${wizUploadProgress.label}...` : 'Spedizione in corso...'}
+                          {wizUploadProgress ? `${wizUploadProgress.label}...` : 'Caricamento...'}
                         </>
                       ) : (
-                        <><i className="fas fa-paper-plane me-1"></i>Conferma ed Avvia Campagna</>
+                        <>Carica allegati e continua <i className="fas fa-arrow-right ms-1"></i></>
                       )}
                     </button>
                   </div>
 
-                  <div className="border rounded bg-light p-4 mb-4" style={{ fontSize: '0.9rem' }}>
-                    <div className="mb-2"><strong>Nome Campagna:</strong> {wizName}</div>
-                    <div className="mb-2"><strong>Canale di Trasmissione:</strong> {wizChannel}</div>
-                    <div className="mb-2"><strong>File Destinatari:</strong> {wizCsvFile?.name} (<strong>{wizValidRows.length}</strong> record pronti per l'invio)</div>
-                    {wizValidationErrors.length > 0 && (
-                      <div className="mb-2 text-warning">
-                        <i className="fas fa-exclamation-triangle me-1"></i> {wizValidationErrors.length} righe verranno escluse perché non hanno superato i controlli formali.
-                      </div>
-                    )}
-                    {wizPdfFiles.length > 0 && (
-                      <div className="mb-2 text-primary">
-                        <i className="fas fa-paperclip me-1"></i> Allegati PDF caricati: <strong>{wizPdfFiles.length} file</strong>
-                      </div>
-                    )}
-                    {wizMapping.codice_fiscale && (
-                      <div className="mb-2 text-success">
-                        <i className="fas fa-mobile-alt me-1"></i> Co-delivery App IO configurata (invio parallelo per utenti abilitati)
-                      </div>
-                    )}
-                    <div className="mt-3 pt-3 border-top">
-                      <strong>Anteprima Oggetto (Record 1):</strong>
-                      <div className="p-2 border bg-white rounded mt-1 small text-muted">
-                        {wizSubject.replace(/%([^%()]+)%/gi, (match, key) => {
-                          const k = key.toLowerCase().trim();
-                          if (k === 'nominativo' || k === 'full_name') return getWizRowFullName(wizValidRows[0]);
-                          if (k === 'codice_fiscale' || k === 'cf') return wizValidRows[0]?.[wizMapping.codice_fiscale] || '';
-                          return wizValidRows[0]?.[key] || match;
-                        })}
-                      </div>
-                    </div>
-                  </div>
+                  <p className="small text-muted mb-3">
+                    Carica gli allegati configurati al Passo 3 sul server prima di procedere al riepilogo.
+                    Necessario anche per poter usare "Avvia Test" al passo successivo.
+                  </p>
 
                   <div className="card shadow-sm border-warning mb-4">
                     <div className="card-header bg-warning-subtle py-2">
@@ -6440,6 +6445,93 @@ export function App(): React.JSX.Element {
                     <button
                       className="btn btn-outline-secondary"
                       onClick={() => setWizStep(4)}
+                      disabled={wizSending}
+                    >
+                      <i className="fas fa-arrow-left me-1"></i> Indietro
+                    </button>
+                    <button
+                      className="btn btn-primary"
+                      onClick={handleWizUploadAttachments}
+                      disabled={wizSending}
+                    >
+                      {wizSending ? (
+                        <>
+                          <i className="fas fa-spinner fa-spin me-1"></i>
+                          {wizUploadProgress ? `${wizUploadProgress.label}...` : 'Caricamento...'}
+                        </>
+                      ) : (
+                        <>Carica allegati e continua <i className="fas fa-arrow-right ms-1"></i></>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 6: RIEPILOGO & SPEDIZIONE */}
+              {wizStep === 6 && (
+                <div style={{ maxWidth: '600px', margin: '0 auto' }}>
+                  <h4 className="h6 fw-bold text-dark mb-3"><i className="fas fa-check-circle text-success me-2"></i>Passo 6: Riepilogo & Messa in Coda</h4>
+
+                  <div className="mb-4 pb-3 border-bottom d-flex justify-content-between">
+                    <button
+                      className="btn btn-outline-secondary"
+                      onClick={() => setWizStep(5)}
+                      disabled={wizSending}
+                    >
+                      <i className="fas fa-arrow-left me-1"></i> Indietro
+                    </button>
+                    <button
+                      className="btn btn-success"
+                      onClick={handleWizLaunch}
+                      disabled={wizSending}
+                    >
+                      {wizSending ? (
+                        <>
+                          <i className="fas fa-spinner fa-spin me-1"></i>
+                          {wizUploadProgress ? `${wizUploadProgress.label}...` : 'Spedizione in corso...'}
+                        </>
+                      ) : (
+                        <><i className="fas fa-paper-plane me-1"></i>Conferma ed Avvia Campagna</>
+                      )}
+                    </button>
+                  </div>
+
+                  <div className="border rounded bg-light p-4 mb-4" style={{ fontSize: '0.9rem' }}>
+                    <div className="mb-2"><strong>Nome Campagna:</strong> {wizName}</div>
+                    <div className="mb-2"><strong>Canale di Trasmissione:</strong> {wizChannel}</div>
+                    <div className="mb-2"><strong>File Destinatari:</strong> {wizCsvFile?.name} (<strong>{wizValidRows.length}</strong> record pronti per l'invio)</div>
+                    {wizValidationErrors.length > 0 && (
+                      <div className="mb-2 text-warning">
+                        <i className="fas fa-exclamation-triangle me-1"></i> {wizValidationErrors.length} righe verranno escluse perché non hanno superato i controlli formali.
+                      </div>
+                    )}
+                    {wizPdfFiles.length > 0 && (
+                      <div className="mb-2 text-primary">
+                        <i className="fas fa-paperclip me-1"></i> Allegati PDF caricati: <strong>{wizPdfFiles.length} file</strong>
+                      </div>
+                    )}
+                    {wizMapping.codice_fiscale && (
+                      <div className="mb-2 text-success">
+                        <i className="fas fa-mobile-alt me-1"></i> Co-delivery App IO configurata (invio parallelo per utenti abilitati)
+                      </div>
+                    )}
+                    <div className="mt-3 pt-3 border-top">
+                      <strong>Anteprima Oggetto (Record 1):</strong>
+                      <div className="p-2 border bg-white rounded mt-1 small text-muted">
+                        {wizSubject.replace(/%([^%()]+)%/gi, (match, key) => {
+                          const k = key.toLowerCase().trim();
+                          if (k === 'nominativo' || k === 'full_name') return getWizRowFullName(wizValidRows[0]);
+                          if (k === 'codice_fiscale' || k === 'cf') return wizValidRows[0]?.[wizMapping.codice_fiscale] || '';
+                          return wizValidRows[0]?.[key] || match;
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 pt-3 border-top d-flex justify-content-between">
+                    <button
+                      className="btn btn-outline-secondary"
+                      onClick={() => setWizStep(5)}
                       disabled={wizSending}
                     >
                       <i className="fas fa-arrow-left me-1"></i> Indietro
