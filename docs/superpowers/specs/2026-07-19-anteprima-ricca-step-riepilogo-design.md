@@ -43,6 +43,33 @@ condiviso — nessuna duplicazione di fetch.
 Step6 monta `<WizRecipientPreviewPanel .../>` al posto del riepilogo
 statico attuale, quando `wizChannel` è `EMAIL`, `PEC` o `APP_IO`.
 
+**Allegato inline anche su questi canali.** Se la campagna ha allegati
+configurati (`resolveAttachmentsConfig(channelConfig).length > 0` —
+per EMAIL/PEC/APP_IO l'allegato è opzionale, non obbligatorio come per
+SEND/POSTAL, ma se presente va comunque mostrato), il pannello include
+sotto il corpo renderizzato lo stesso blocco `<embed>` PDF inline
+descritto per SEND/POSTAL sotto — stesso endpoint, stessa logica di
+risoluzione filename dal record corrente. Se la campagna non ha
+allegati configurati, il blocco semplicemente non compare (nessun
+placeholder vuoto).
+
+## Componente condiviso — anteprima allegato inline
+
+Terzo componente, `WizAttachmentInlinePreview`, usato sia dal pannello
+EMAIL/PEC/APP_IO sia da quello SEND/POSTAL (sotto): riceve il record
+corrente (`wizValidRows[wizPreviewIndex]`) e la config allegati della
+campagna, calcola il filename atteso.
+
+- Se la campagna non ha allegati configurati: non renderizza nulla
+  (nessun placeholder).
+- Se il filename atteso termina in `.pdf` (case-insensitive): monta
+  `<embed type="application/pdf" src=".../preview-file?filename=...">`
+  + link "Scarica" esplicito sotto.
+- Se il filename atteso ha un'altra estensione (es. allegati non-PDF
+  estratti da uno ZIP): mostra solo il link "Scarica" (stesso
+  endpoint), nessun `<embed>` — un browser non garantisce un
+  visualizzatore inline affidabile per tipi arbitrari.
+
 ## Pannello SEND/POSTAL — indirizzo + download allegato
 
 Nuovo componente `WizAddressAttachmentPreviewPanel`, montato in step6
@@ -56,23 +83,15 @@ mostra:
   sia per POSTAL sia per SEND, nessun fallback "risolto da PN": la
   validazione già esistente al passo 3 garantisce che siano sempre
   mappati e non vuoti per ogni riga valida).
-- Anteprima PDF inline: calcola il filename atteso per il record
-  corrente come già fa la config allegati esistente
-  (`wizValidRows[wizPreviewIndex][attachmentEntry.key]`, stessa colonna
-  usata per il mapping allegato configurato al passo 3), poi monta
-  `<embed type="application/pdf" src=".../preview-file?filename=...">`
-  puntato su `GET /admin/campaigns/:id/attachments/preview-file?filename=<nome>`
-  (vedi sotto) — il PDF reale già presente in `uploads/<campaignId>/`
-  (caricato al passo 5) si vede direttamente nel pannello, senza dover
-  scaricare un file per aprirlo. Il token di auth va passato come query
-  param (`?token=...`) dato che `<embed src>` non può impostare header
-  `Authorization` — stesso pattern già usato altrove nel repo per
-  risorse protette caricate da tag HTML nativi (verificare in fase di
-  piano se esiste già un meccanismo equivalente, es. short-lived
-  download token, da riusare invece di esporre il JWT operatore in
-  chiaro nell'URL). Sotto l'embed resta comunque un link "Apri in nuova
-  scheda / Scarica" (stessa URL, per chi preferisce il visualizzatore
-  nativo del browser o vuole salvare il file).
+- Anteprima PDF inline: monta `<WizAttachmentInlinePreview .../>`
+  (componente condiviso, vedi sopra) per il record corrente — per
+  SEND/POSTAL l'allegato è sempre presente (obbligatorio), quindi il
+  componente renderizza sempre qualcosa qui (mai il caso "nessun
+  allegato configurato").
+
+Il token di auth per `<embed src>` va passato come query param
+(`?token=...`) dato che il tag HTML nativo non può impostare header
+`Authorization` — vedi dettaglio nella sezione endpoint sotto.
 
 ## Backend — nuovo endpoint download allegato bozza
 
@@ -128,7 +147,6 @@ condizione già esistente `!wizCampaignId`.
 - Nessuna modifica alla logica di risoluzione allegato esistente
   (`resolveCustomAttachmentFilename`) — il nuovo endpoint non la
   invoca, serve il file per nome esatto già noto lato client.
-- EMAIL/PEC con allegato configurato ma canale primario testuale: la
-  feature non aggiunge un pannello download separato per questi canali
-  in questa iterazione — solo SEND/POSTAL (canali dove l'allegato È il
-  contenuto notificato, non un corredo al body).
+(nessuna esclusione per canale sull'anteprima allegato inline — vedi
+sopra, si applica a tutti e cinque i canali quando l'allegato è
+configurato).
