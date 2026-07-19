@@ -286,6 +286,48 @@ export class CampaignsService {
     return { imported, campaignId };
   }
 
+  private assertSendProtocolConfigured(campaign: Campaign): void {
+    if (campaign.channelType === 'SEND' && campaign.channelConfig?.['protocolla'] !== true) {
+      throw new BadRequestException(
+        'Protocollazione obbligatoria per SEND: channelConfig.protocolla deve essere true',
+      );
+    }
+  }
+
+  private async checkAttachmentsBlocking(campaign: Campaign): Promise<{ blocked: true; message: string } | null> {
+    if (
+      (campaign.channelType === 'SEND' || campaign.channelType === 'POSTAL') &&
+      resolveAttachmentsConfig(campaign.channelConfig).length === 0
+    ) {
+      return {
+        blocked: true,
+        message: `Impossibile avviare: allegato obbligatorio per il canale ${campaign.channelType}. Configuralo al Passo 3 prima di rilanciare.`,
+      };
+    }
+
+    const missingAttachments = await this.findMissingAttachments(campaign);
+    if (missingAttachments.length > 0) {
+      const sample = missingAttachments
+        .slice(0, 5)
+        .map((m) => `${m.expectedFilename} (CF ${m.codiceFiscale})`)
+        .join(', ');
+      const more = missingAttachments.length > 5 ? ', …' : '';
+
+      const dir = getUploadsDir(campaign.id);
+      const presentFiles = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+      const presentList =
+        presentFiles.length > 0
+          ? presentFiles.slice(0, 10).join(', ') + (presentFiles.length > 10 ? '...' : '')
+          : 'nessuno';
+
+      return {
+        blocked: true,
+        message: `Impossibile avviare: ${missingAttachments.length} allegato/i mancante/i rispetto alla mappatura configurata — es. ${sample}${more}. Carica i file mancanti prima di rilanciare. (Presenti in cartella: ${presentList})`,
+      };
+    }
+    return null;
+  }
+
   async launch(
     campaignId: string,
   ): Promise<{ launched: number; campaignId: string; blocked?: boolean; message?: string }> {
@@ -310,47 +352,21 @@ export class CampaignsService {
     // pesca solo attempt già protocollati) — se il wizard non l'ha impostato,
     // una campagna SEND resterebbe QUEUED per sempre senza errore visibile.
     // Fail fast qui, come faceva SendStrategy.send() prima della migrazione ai demoni.
-    if (campaign.channelType === 'SEND' && campaign.channelConfig?.['protocolla'] !== true) {
+    try {
+      this.assertSendProtocolConfigured(campaign);
+    } catch (err) {
       await this.campaignRepo.update({ id: campaignId }, { status: CampaignStatus.DRAFT });
-      throw new BadRequestException('Protocollazione obbligatoria per SEND: channelConfig.protocolla deve essere true');
+      throw err;
     }
 
-    // SEND (atto legale) e POSTAL (lettera cartacea) senza nessun allegato
-    // configurato invierebbero un PDF segnaposto generico come unico
-    // documento notificato — non un caso d'uso reale, blocca a monte.
-    if ((campaign.channelType === 'SEND' || campaign.channelType === 'POSTAL') && resolveAttachmentsConfig(campaign.channelConfig).length === 0) {
+    // Risposta 200 (non BadRequestException): il reverse proxy di produzione
+    // intercetta le risposte non-2xx e ne sostituisce il body con una pagina
+    // HTML propria, rendendo illeggibile il messaggio lato frontend — stesso
+    // problema già risolto altrove (vedi io-services.service.ts `test()`).
+    const attachmentsBlock = await this.checkAttachmentsBlocking(campaign);
+    if (attachmentsBlock) {
       await this.campaignRepo.update({ id: campaignId }, { status: CampaignStatus.DRAFT });
-      return {
-        launched: 0,
-        campaignId,
-        blocked: true,
-        message: `Impossibile avviare: allegato obbligatorio per il canale ${campaign.channelType}. Configuralo al Passo 3 prima di rilanciare.`,
-      };
-    }
-
-    const missingAttachments = await this.findMissingAttachments(campaign);
-    if (missingAttachments.length > 0) {
-      await this.campaignRepo.update({ id: campaignId }, { status: CampaignStatus.DRAFT });
-      const sample = missingAttachments
-        .slice(0, 5)
-        .map((m) => `${m.expectedFilename} (CF ${m.codiceFiscale})`)
-        .join(', ');
-      const more = missingAttachments.length > 5 ? ', …' : '';
-      
-      const dir = getUploadsDir(campaignId);
-      const presentFiles = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
-      const presentList = presentFiles.length > 0 ? presentFiles.slice(0, 10).join(', ') + (presentFiles.length > 10 ? '...' : '') : 'nessuno';
-
-      // Risposta 200 (non BadRequestException): il reverse proxy di produzione
-      // intercetta le risposte non-2xx e ne sostituisce il body con una pagina
-      // HTML propria, rendendo illeggibile il messaggio lato frontend — stesso
-      // problema già risolto altrove (vedi io-services.service.ts `test()`).
-      return {
-        launched: 0,
-        campaignId,
-        blocked: true,
-        message: `Impossibile avviare: ${missingAttachments.length} allegato/i mancante/i rispetto alla mappatura configurata — es. ${sample}${more}. Carica i file mancanti prima di rilanciare. (Presenti in cartella: ${presentList})`,
-      };
+      return { launched: 0, campaignId, ...attachmentsBlock };
     }
 
     const recipients = await this.recipientRepo.find({
