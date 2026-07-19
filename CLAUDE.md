@@ -197,6 +197,22 @@ numero di elementi per chiamata (validato sia server-side con
 sprecare la chiamata) — vedi `retryRecipientsBulk`/`MAX_BULK_RETRY_SIZE` in
 `campaigns.service.ts` (limite 500).
 
+**`assembleChunkedUpload` — attendere sempre l'evento `finish` prima di
+ritornare.** Bug reale trovato durante verifica E2E: la funzione chiamava
+`out.end()` senza attenderne il completamento — `WriteStream.end()` non
+garantisce che l'ultimo chunk sia stato effettivamente flushato su disco,
+solo che è stato accodato al buffer interno. Il chiamante poteva quindi
+leggere il file assemblato (es. `new AdmZip(path)`) prima del flush,
+ottenendo un file troncato (`ADM-ZIP: Invalid filename` su central
+directory incompleta) — race intermittente, più probabile su file grandi
+(più tempo di flush). Fix: avvolgere `out.end()` in una Promise che
+risolve su `finish`/rigetta su `error`, dentro il blocco `finally` prima
+del `return`. Questa funzione è condivisa da 4 percorsi upload (campagne
+CSV destinatari, campagne allegati, arricchimento tracciati, io-services
+verify-bulk) — qualunque modifica a `chunked-upload.util.ts` va verificata
+con lo stesso rigore su tutti e quattro, non solo sul percorso che si sta
+toccando.
+
 ## Log debug/verbose — gotcha
 
 Il logger NestJS di default (`NestFactory.create`) esclude i livelli
@@ -574,6 +590,14 @@ Motori e non partecipa a pausa/riprendi condivisi. Riusa comunque lo stesso
 pattern verificato altrove: stato terminale (`DONE`/`FAILED`) scritto
 PRIMA di uscire dal job, mai un job che finisce silenziosamente in stato
 intermedio.
+
+**`deleteJob` NON blocca su stato `PROCESSING`** (deviazione deliberata dal
+pattern altrove in questo repo, dove un blocco su stato intermedio è la
+norma). Un job rimasto bloccato in `PROCESSING` (es. backend riavviato a
+metà job) non ha altrimenti alcuna via d'uscita da UI: retention lo
+esclude sempre, e non può essere riconvertito in bozza campagna. Endpoint
+già `@Roles('admin')`-only — l'eliminazione forzata è la valvola di sfogo,
+non un bug.
 
 **Upload sempre chunked**, mai un multipart diretto — stesso vincolo del
 proxy esterno ~1MB descritto sopra: `POST
