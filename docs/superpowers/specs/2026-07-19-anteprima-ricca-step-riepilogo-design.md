@@ -56,13 +56,23 @@ mostra:
   sia per POSTAL sia per SEND, nessun fallback "risolto da PN": la
   validazione già esistente al passo 3 garantisce che siano sempre
   mappati e non vuoti per ogni riga valida).
-- Bottone "Scarica allegato": calcola il filename atteso per il record
+- Anteprima PDF inline: calcola il filename atteso per il record
   corrente come già fa la config allegati esistente
   (`wizValidRows[wizPreviewIndex][attachmentEntry.key]`, stessa colonna
-  usata per il mapping allegato configurato al passo 3), poi
-  `GET /admin/campaigns/:id/attachments/preview-file?filename=<nome>`
-  (vedi sotto) per scaricare il PDF reale già presente in
-  `uploads/<campaignId>/` (caricato al passo 5).
+  usata per il mapping allegato configurato al passo 3), poi monta
+  `<embed type="application/pdf" src=".../preview-file?filename=...">`
+  puntato su `GET /admin/campaigns/:id/attachments/preview-file?filename=<nome>`
+  (vedi sotto) — il PDF reale già presente in `uploads/<campaignId>/`
+  (caricato al passo 5) si vede direttamente nel pannello, senza dover
+  scaricare un file per aprirlo. Il token di auth va passato come query
+  param (`?token=...`) dato che `<embed src>` non può impostare header
+  `Authorization` — stesso pattern già usato altrove nel repo per
+  risorse protette caricate da tag HTML nativi (verificare in fase di
+  piano se esiste già un meccanismo equivalente, es. short-lived
+  download token, da riusare invece di esporre il JWT operatore in
+  chiaro nell'URL). Sotto l'embed resta comunque un link "Apri in nuova
+  scheda / Scarica" (stessa URL, per chi preferisce il visualizzatore
+  nativo del browser o vuole salvare il file).
 
 ## Backend — nuovo endpoint download allegato bozza
 
@@ -82,7 +92,22 @@ richiesto — la bozza wizard non ha ancora `Recipient` reali in DB
 3. Se non presente: 404 con messaggio `"Allegato non trovato — verifica
    il Passo 5"` (frontend lo mostra così, non un errore generico).
 4. Se presente: stream del file (`Content-Type: application/pdf`,
-   `Content-Disposition: attachment`).
+   `Content-Disposition: inline` — deve aprirsi nel browser dentro
+   `<embed>`, non forzare download; il link "Scarica" esplicito in UI
+   può comunque ottenere il salvataggio tramite l'attributo `download`
+   sul tag `<a>`, che funziona indipendentemente dal `Content-Disposition`
+   della risposta).
+
+**Autenticazione per `<embed src>`:** il tag HTML nativo non può
+impostare l'header `Authorization: Bearer <token>` usato da tutte le
+altre chiamate autenticate del wizard (`apiFetch`). In fase di piano,
+verificare se esiste già nel repo un meccanismo di download-link
+autenticato via query param per risorse servite da tag HTML nativi
+(es. `DOWNLOAD_LINK_SECRET` già citato in CLAUDE.md per link
+email/PEC cittadino) da riusare — altrimenti l'endpoint accetta
+`?token=<jwt operatore>` in query oltre che in header, stessa verifica
+del guard esistente, scelta minima che non introduce un nuovo sistema
+di firma.
 
 ## Gate aggiuntivo su step7 "Avvia Test"
 
