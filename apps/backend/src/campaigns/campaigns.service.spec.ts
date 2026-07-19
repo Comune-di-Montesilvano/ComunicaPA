@@ -1549,6 +1549,101 @@ describe('CampaignsService', () => {
         .rejects.toThrow('Protocollazione obbligatoria per SEND');
       expect(mockCampaignRepo.create).not.toHaveBeenCalled();
     });
+
+    describe('con cartelle upload reali su disco', () => {
+      let parentDir: string;
+      let childDir: string;
+
+      beforeEach(() => {
+        parentDir = fs.mkdtempSync(join(os.tmpdir(), 'comunicapa-testsend-parent-'));
+        childDir = fs.mkdtempSync(join(os.tmpdir(), 'comunicapa-testsend-child-'));
+        (getUploadsDir as jest.Mock).mockImplementation((id: string) => (id === 'parent-1' ? parentDir : childDir));
+      });
+
+      afterEach(() => {
+        fs.rmSync(parentDir, { recursive: true, force: true });
+        fs.rmSync(childDir, { recursive: true, force: true });
+      });
+
+      it('copia fisicamente gli allegati dalla cartella upload della madre a quella della figlia, svuotandola prima', async () => {
+        const parent = { id: 'parent-1', name: 'Campagna TARI 2026', channelType: 'EMAIL', channelConfig: {}, createdBy: 'operator1' };
+        mockCampaignRepo.findOneBy
+          .mockResolvedValueOnce(parent) // findOneBy({id: parentCampaignId})
+          .mockResolvedValueOnce(null); // nessun child esistente
+        mockCampaignRepo.create.mockReturnValue({ ...parent, id: 'child-1', isTest: true, parentCampaignId: 'parent-1' });
+        mockCampaignRepo.save.mockResolvedValue({ ...parent, id: 'child-1', isTest: true, parentCampaignId: 'parent-1' });
+        mockRecipientRepo.create.mockReturnValue({ id: 'recipient-1' });
+        mockRecipientRepo.save.mockResolvedValue({ id: 'recipient-1' });
+        mockAttemptRepo.createQueryBuilder.mockReturnValue({
+          insert: jest.fn().mockReturnThis(),
+          into: jest.fn().mockReturnThis(),
+          values: jest.fn().mockReturnThis(),
+          returning: jest.fn().mockReturnThis(),
+          execute: jest.fn().mockResolvedValue({ raw: [{ id: 'attempt-1' }] }),
+        });
+        mockAttemptRepo.findOne.mockResolvedValue({ id: 'attempt-1' });
+        mockQueue.addBulk.mockResolvedValue(undefined);
+
+        // Cartella madre con un allegato reale; cartella figlia con un file
+        // stantio da una precedente prova, deve essere svuotata prima della copia.
+        fs.writeFileSync(join(parentDir, 'avviso.pdf'), '%PDF');
+        fs.writeFileSync(join(childDir, 'vecchio.pdf'), 'stale');
+
+        await service.launchTestSend('parent-1', { codiceFiscale: 'RSSMRA80A01H501U', extraData: {} });
+
+        expect(fs.existsSync(join(childDir, 'vecchio.pdf'))).toBe(false);
+        expect(fs.existsSync(join(childDir, 'avviso.pdf'))).toBe(true);
+        expect(fs.readFileSync(join(childDir, 'avviso.pdf'), 'utf8')).toBe('%PDF');
+      });
+
+      it("SEND: blocca il test-send se manca l'allegato mappato per il destinatario di prova appena creato — verifica il riordino (recipient creato prima del check allegati)", async () => {
+        const parent = {
+          id: 'parent-1',
+          name: 'Campagna SEND',
+          channelType: 'SEND',
+          channelConfig: { protocolla: true, attachments: [{ key: 'file', label: 'Avviso' }] },
+          createdBy: 'operator1',
+        };
+        const existingChild = {
+          id: 'child-1',
+          isTest: true,
+          parentCampaignId: 'parent-1',
+          channelType: 'SEND',
+          channelConfig: {},
+        };
+        mockCampaignRepo.findOneBy.mockResolvedValueOnce(parent).mockResolvedValueOnce(existingChild);
+        mockCampaignRepo.update.mockResolvedValue(undefined);
+
+        const testRecipient = { id: 'recipient-test', campaignId: 'child-1', codiceFiscale: 'RSSMRA80A01H501U', extraData: { file: 'xyz.pdf' } };
+        mockRecipientRepo.create.mockReturnValue(testRecipient);
+        mockRecipientRepo.save.mockResolvedValue(testRecipient);
+        // findMissingAttachments interroga i recipient PENDING della figlia: deve
+        // vedere ESATTAMENTE il destinatario appena creato (non uno vuoto, non uno
+        // stantio) — se il riordino del fix venisse invertito, questo mock non
+        // verrebbe nemmeno raggiunto prima del check, e il blocco non scatterebbe
+        // mai (nessun PENDING trovato), facendo fallire questo test.
+        mockRecipientRepo.find.mockResolvedValueOnce([
+          { id: 'recipient-test', codiceFiscale: 'RSSMRA80A01H501U', extraData: { file: 'xyz.pdf' } },
+        ]);
+
+        // Nessun file nella cartella madre/figlia: 'xyz.pdf' atteso dal CF di
+        // prova non è presente -> findMissingAttachments deve segnalarlo.
+
+        const result = await service.launchTestSend('parent-1', {
+          codiceFiscale: 'RSSMRA80A01H501U',
+          extraData: { file: 'xyz.pdf' },
+        });
+
+        expect(result.blocked).toBe(true);
+        expect(result.message).toContain('Impossibile avviare');
+        // Il recipient di prova È stato creato (prerequisito del fix — riordino),
+        // ma viene ripulito perché il blocco è scattato.
+        expect(mockRecipientRepo.save).toHaveBeenCalled();
+        expect(mockRecipientRepo.delete).toHaveBeenCalledWith({ id: 'recipient-test' });
+        // Nessun invio reale: createAttemptsAndEnqueue non deve mai essere raggiunto.
+        expect(mockQueue.addBulk).not.toHaveBeenCalled();
+      });
+    });
   });
 });
 

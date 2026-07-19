@@ -436,11 +436,13 @@ export class CampaignsService {
       fs.cpSync(parentDir, childDir, { recursive: true });
     }
 
-    const attachmentsBlock = await this.checkAttachmentsBlocking(child);
-    if (attachmentsBlock) {
-      return { attemptId: '', testCampaignId: child.id, ...attachmentsBlock };
-    }
-
+    // Il destinatario di prova va creato PRIMA del controllo allegati:
+    // findMissingAttachments() pesca solo i recipient PENDING della campagna
+    // figlia — al primo invio di prova non ce n'è ancora nessuno (il check
+    // sarebbe sempre no-op), ai successivi l'unico eventuale PENDING è
+    // proprio quello appena creato (i precedenti sono già QUEUED dopo
+    // createAttemptsAndEnqueue). Creandolo prima, il check valida
+    // esattamente il file atteso per QUESTO CF di test.
     const recipient = this.recipientRepo.create({
       campaignId: child.id,
       codiceFiscale: dto.codiceFiscale,
@@ -451,6 +453,16 @@ export class CampaignsService {
       status: RecipientStatus.PENDING,
     });
     const savedRecipient = await this.recipientRepo.save(recipient);
+
+    const attachmentsBlock = await this.checkAttachmentsBlocking(child);
+    if (attachmentsBlock) {
+      // Elimina il recipient appena creato: coerente col pattern di `launch()`
+      // (che riporta la campagna a DRAFT su blocco) — nessuna riga PENDING
+      // orfana che non verrà mai processata, la campagna figlia resta pulita
+      // per un successivo tentativo di test-send.
+      await this.recipientRepo.delete({ id: savedRecipient.id });
+      return { attemptId: '', testCampaignId: child.id, ...attachmentsBlock };
+    }
 
     const { launched } = await this.createAttemptsAndEnqueue(child, [{ id: savedRecipient.id }]);
     if (launched === 0) {
