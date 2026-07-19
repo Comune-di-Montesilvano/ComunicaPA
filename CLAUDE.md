@@ -593,3 +593,28 @@ esattamente come una ripresa bozza normale (`handleResumeDraft`),
 riusando le stesse validazioni CF/email/mappatura colonne del percorso
 wizard standard. Nessun bypass di quelle validazioni, coerente con la
 regola "creazione campagne — un solo percorso" sopra.
+
+**Rate multiple PagoPA — classificazione via etichetta, mai ordine pagina.**
+`pdf_extractor.py` scansiona TUTTE le pagine con QR pagamento (non solo la
+prima) e classifica ciascuna leggendo il testo: `RATA UNICA` → totale,
+`N° RATA` → rata N (il numero nell'etichetta determina l'indice, non la
+posizione — alcuni documenti non hanno la pagina "rata unica", altri hanno
+solo quella). Il CSV di output ha quindi un header dinamico per job:
+colonne `rataN_numero_avviso/importo/scadenza` quante ne servono (max
+trovato tra i record del job), calcolate da `buildEnrichedCsvHeaders()`
+(`enriched-csv.util.ts`) — non più una costante fissa. Controlli di
+coerenza (somma rate vs totale, scadenze consecutive, unica≈prima rata)
+producono warning, mai bloccanti.
+
+**Log live job (SSE) — bridge in-memory, valido a singola istanza.**
+`GET admin/enrichment/jobs/:id/stream` inoltra in tempo reale gli eventi
+che `EnrichmentProcessor` emette via `EnrichmentEventsService`
+(`EventEmitter` per jobId) man mano che elabora ogni riga — funziona solo
+perché worker BullMQ e HTTP server girano nello stesso processo Node
+(un solo servizio `backend`, nessun worker separato). Se il backend scala
+a più repliche in futuro, va sostituito con Redis pub/sub — non fatto ora
+(YAGNI). Il frontend NON usa `EventSource` nativo (non supporta header
+`Authorization`): legge lo stream via `fetch()` +
+`response.body.getReader()`, parsing manuale delle righe `data: ...\n\n`.
+Nessuna persistenza lato backend — è un log live, non uno storico (i
+warning finali restano su `EnrichmentJob.warnings` come sempre).
