@@ -62,13 +62,32 @@ campagna, calcola il filename atteso.
 
 - Se la campagna non ha allegati configurati: non renderizza nulla
   (nessun placeholder).
-- Se il filename atteso termina in `.pdf` (case-insensitive): monta
-  `<embed type="application/pdf" src=".../preview-file?filename=...">`
-  + link "Scarica" esplicito sotto.
+- Se il filename atteso termina in `.pdf` (case-insensitive): fa
+  `fetch()` autenticato standard (stesso `Authorization: Bearer`
+  pattern già usato ovunque nel wizard — nessun meccanismo nuovo)
+  verso l'endpoint sotto, ottiene il `Blob`, crea un Object URL
+  (`URL.createObjectURL(blob)`) e lo monta come
+  `<embed type="application/pdf" src={objectUrl}>`. L'Object URL va
+  revocato (`URL.revokeObjectURL`) al cambio di record/smontaggio per
+  non accumulare memoria durante una sfoglia lunga.
 - Se il filename atteso ha un'altra estensione (es. allegati non-PDF
-  estratti da uno ZIP): mostra solo il link "Scarica" (stesso
-  endpoint), nessun `<embed>` — un browser non garantisce un
+  estratti da uno ZIP): mostra solo un link "Scarica" che innesca lo
+  stesso fetch-poi-blob e lo salva via `<a href={objectUrl} download>`
+  sintetico — nessun `<embed>`, un browser non garantisce un
   visualizzatore inline affidabile per tipi arbitrari.
+- Errore fetch (404 "allegato non trovato" o altro): messaggio inline
+  nel pannello, nessun crash.
+
+**Niente token in query string.** L'endpoint sotto resta protetto dal
+normale guard JWT (`@Roles`, header `Authorization`) come tutti gli
+altri endpoint di `admin/campaigns` — il fetch autenticato standard
+(stesso `apiFetch`/`fetch`+header già usato ovunque nel wizard) prende
+i byte e li trasforma in Object URL locale al browser, quindi
+`<embed src>` non deve mai autenticarsi da solo. Nessun meccanismo di
+firma nuovo, nessun riuso del sistema `DOWNLOAD_LINK_SECRET` (quello è
+per link pubblici cittadino via `PublicDownloadController`, dominio
+diverso — verificato che il frontend admin non lo usa mai, sempre
+Bearer header).
 
 ## Pannello SEND/POSTAL — indirizzo + download allegato
 
@@ -89,17 +108,14 @@ mostra:
   componente renderizza sempre qualcosa qui (mai il caso "nessun
   allegato configurato").
 
-Il token di auth per `<embed src>` va passato come query param
-(`?token=...`) dato che il tag HTML nativo non può impostare header
-`Authorization` — vedi dettaglio nella sezione endpoint sotto.
-
 ## Backend — nuovo endpoint download allegato bozza
 
 `GET /admin/campaigns/:id/attachments/preview-file?filename=<nome>`
 in `campaigns.controller.ts`, stesso guard di classe
-(`@Roles('user','admin')`) degli altri endpoint. Nessun `Recipient`
-richiesto — la bozza wizard non ha ancora `Recipient` reali in DB
-(si creano solo al lancio effettivo tramite upload CSV). Validazione:
+(`@Roles('user','admin')`, header `Authorization` standard — nessuna
+eccezione). Nessun `Recipient` richiesto — la bozza wizard non ha
+ancora `Recipient` reali in DB (si creano solo al lancio effettivo
+tramite upload CSV). Validazione:
 
 1. Campagna `:id` esiste (altrimenti 404).
 2. `filename` deve comparire esattamente in
@@ -110,23 +126,10 @@ richiesto — la bozza wizard non ha ancora `Recipient` reali in DB
    costruzione di percorso).
 3. Se non presente: 404 con messaggio `"Allegato non trovato — verifica
    il Passo 5"` (frontend lo mostra così, non un errore generico).
-4. Se presente: stream del file (`Content-Type: application/pdf`,
-   `Content-Disposition: inline` — deve aprirsi nel browser dentro
-   `<embed>`, non forzare download; il link "Scarica" esplicito in UI
-   può comunque ottenere il salvataggio tramite l'attributo `download`
-   sul tag `<a>`, che funziona indipendentemente dal `Content-Disposition`
-   della risposta).
-
-**Autenticazione per `<embed src>`:** il tag HTML nativo non può
-impostare l'header `Authorization: Bearer <token>` usato da tutte le
-altre chiamate autenticate del wizard (`apiFetch`). In fase di piano,
-verificare se esiste già nel repo un meccanismo di download-link
-autenticato via query param per risorse servite da tag HTML nativi
-(es. `DOWNLOAD_LINK_SECRET` già citato in CLAUDE.md per link
-email/PEC cittadino) da riusare — altrimenti l'endpoint accetta
-`?token=<jwt operatore>` in query oltre che in header, stessa verifica
-del guard esistente, scelta minima che non introduce un nuovo sistema
-di firma.
+4. Se presente: risposta binaria (`Content-Type: application/pdf` o
+   `application/octet-stream` per non-PDF, `Content-Disposition: inline`)
+   — il frontend la consuma come `Blob` via `fetch()` autenticato
+   standard, non come URL diretto in un tag HTML (vedi sopra).
 
 ## Gate aggiuntivo su step7 "Avvia Test"
 
