@@ -1188,23 +1188,39 @@ describe('CampaignsService', () => {
       await service.getGlobalStats();
 
       expect(createdQbs).toHaveLength(8);
-      const [totalsRowQb, sentTrendQb, channelQb, leaderboardQb, totalDownloadedQb, downloadedTrendQb, neverDownloadedQb, downloadChannelQb] =
-        createdQbs;
+      // createdQbs e' popolato in ordine cronologico REALE di invocazione (l'ordine dei
+      // vari `await` sequenziali dentro getGlobalStats()), non raggruppato per repository.
+      const [
+        totalsRowQb,
+        totalDownloadedQb,
+        sentTrendQb,
+        downloadedTrendQb,
+        channelQb,
+        downloadChannelQb,
+        leaderboardQb,
+        neverDownloadedQb,
+      ] = createdQbs;
 
       const names = [
         ['totalsRow', totalsRowQb],
-        ['sentTrendRows', sentTrendQb],
-        ['channelRows', channelQb],
-        ['leaderboardRows', leaderboardQb],
         ['totalDownloaded', totalDownloadedQb],
+        ['sentTrendRows', sentTrendQb],
         ['downloadedTrendRows', downloadedTrendQb],
-        ['neverDownloadedCount', neverDownloadedQb],
+        ['channelRows', channelQb],
         ['downloadChannelRows', downloadChannelQb],
+        ['leaderboardRows', leaderboardQb],
+        ['neverDownloadedCount', neverDownloadedQb],
       ] as const;
 
-      for (const [, qb] of names) {
+      for (const [name, qb] of names) {
         const andWhereCalls = qb.andWhere.mock.calls.map((c: unknown[]) => c[0]);
-        expect(andWhereCalls).toContain('c.isTest = false');
+        // Il nome della query builder e' incluso nell'oggetto confrontato (non solo in un
+        // commento) cosi' un fallimento futuro riporta ESPLICITAMENTE quale dei query
+        // builder manca del filtro, invece di un generico "expected array to contain".
+        expect({ queryBuilder: name, hasIsTestFilter: andWhereCalls.includes('c.isTest = false') }).toEqual({
+          queryBuilder: name,
+          hasIsTestFilter: true,
+        });
       }
     });
   });
