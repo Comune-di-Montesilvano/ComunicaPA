@@ -295,6 +295,9 @@ export class CampaignsService {
   }
 
   private async checkAttachmentsBlocking(campaign: Campaign): Promise<{ blocked: true; message: string } | null> {
+    // SEND (atto legale) e POSTAL (lettera cartacea) senza nessun allegato
+    // configurato invierebbero un PDF segnaposto generico come unico
+    // documento notificato — non un caso d'uso reale, blocca a monte.
     if (
       (campaign.channelType === 'SEND' || campaign.channelType === 'POSTAL') &&
       resolveAttachmentsConfig(campaign.channelConfig).length === 0
@@ -320,6 +323,10 @@ export class CampaignsService {
           ? presentFiles.slice(0, 10).join(', ') + (presentFiles.length > 10 ? '...' : '')
           : 'nessuno';
 
+      // Risposta 200 (non BadRequestException): il reverse proxy di produzione
+      // intercetta le risposte non-2xx e ne sostituisce il body con una pagina
+      // HTML propria, rendendo illeggibile il messaggio lato frontend — stesso
+      // problema già risolto altrove (vedi io-services.service.ts `test()`).
       return {
         blocked: true,
         message: `Impossibile avviare: ${missingAttachments.length} allegato/i mancante/i rispetto alla mappatura configurata — es. ${sample}${more}. Carica i file mancanti prima di rilanciare. (Presenti in cartella: ${presentList})`,
@@ -359,10 +366,6 @@ export class CampaignsService {
       throw err;
     }
 
-    // Risposta 200 (non BadRequestException): il reverse proxy di produzione
-    // intercetta le risposte non-2xx e ne sostituisce il body con una pagina
-    // HTML propria, rendendo illeggibile il messaggio lato frontend — stesso
-    // problema già risolto altrove (vedi io-services.service.ts `test()`).
     const attachmentsBlock = await this.checkAttachmentsBlocking(campaign);
     if (attachmentsBlock) {
       await this.campaignRepo.update({ id: campaignId }, { status: CampaignStatus.DRAFT });
