@@ -73,7 +73,15 @@ export async function assembleChunkedUpload(uploadId: string): Promise<{ path: s
       });
     }
   } finally {
-    out.end();
+    // `out.end()` è asincrono: senza attendere l'evento 'finish' il chiamante
+    // può leggere il file assemblato prima che l'ultimo chunk sia stato
+    // effettivamente flushato su disco (race — file troncato, ZIP corrotto
+    // per adm-zip con "Invalid filename" su central directory incompleta).
+    await new Promise<void>((resolve, reject) => {
+      out.on('finish', resolve);
+      out.on('error', reject);
+      out.end();
+    });
   }
 
   return { path: assembledPath, filename: meta.filename };
