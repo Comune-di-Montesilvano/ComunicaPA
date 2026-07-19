@@ -1135,6 +1135,7 @@ export class CampaignsService {
       .addSelect('COALESCE(SUM(c.sentCount), 0)', 'totalSent')
       .addSelect('COALESCE(SUM(c.failedCount), 0)', 'totalFailed')
       .where(range.sql, range.params)
+      .andWhere('c.isTest = false')
       .getRawOne<{ totalRecipients: string; totalSent: string; totalFailed: string }>();
 
     const totalDownloaded = await this.recipientRepo
@@ -1142,6 +1143,7 @@ export class CampaignsService {
       .innerJoin('r.campaign', 'c')
       .where('r.downloadCount > 0')
       .andWhere(range.sql, range.params)
+      .andWhere('c.isTest = false')
       .getCount();
 
     const sentTrendRows = await this.campaignRepo
@@ -1149,6 +1151,7 @@ export class CampaignsService {
       .select("to_char(date_trunc('month', c.createdAt), 'YYYY-MM')", 'month')
       .addSelect('COALESCE(SUM(c.sentCount), 0)', 'sent')
       .where(range.sql, range.params)
+      .andWhere('c.isTest = false')
       .groupBy("date_trunc('month', c.createdAt)")
       .orderBy("date_trunc('month', c.createdAt)", 'ASC')
       .getRawMany<{ month: string; sent: string }>();
@@ -1159,6 +1162,7 @@ export class CampaignsService {
       .select("to_char(date_trunc('month', c.createdAt), 'YYYY-MM')", 'month')
       .addSelect('COUNT(*) FILTER (WHERE r.downloadCount > 0)', 'downloaded')
       .where(range.sql, range.params)
+      .andWhere('c.isTest = false')
       .groupBy("date_trunc('month', c.createdAt)")
       .getRawMany<{ month: string; downloaded: string }>();
 
@@ -1167,6 +1171,7 @@ export class CampaignsService {
       .select('c.channelType', 'channel')
       .addSelect('COALESCE(SUM(c.sentCount), 0)', 'sent')
       .where(range.sql, range.params)
+      .andWhere('c.isTest = false')
       .groupBy('c.channelType')
       .getRawMany<{ channel: string; sent: string }>();
 
@@ -1177,6 +1182,7 @@ export class CampaignsService {
       .select('de.channel', 'channel')
       .addSelect('COUNT(*)', 'count')
       .where(range.sql, range.params)
+      .andWhere('c.isTest = false')
       .groupBy('de.channel')
       .getRawMany<{ channel: string; count: string }>();
 
@@ -1189,6 +1195,7 @@ export class CampaignsService {
       .addSelect('COUNT(*) FILTER (WHERE r.downloadCount > 0)', 'downloadedCount')
       .where('c.totalRecipients > 0')
       .andWhere(range.sql, range.params)
+      .andWhere('c.isTest = false')
       .groupBy('c.id')
       .getRawMany<{ campaignId: string; campaignName: string; totalRecipients: string; downloadedCount: string }>();
 
@@ -1198,6 +1205,7 @@ export class CampaignsService {
       .where('r.downloadCount = 0')
       .andWhere('r.status = :status', { status: RecipientStatus.SENT })
       .andWhere(range.sql, range.params)
+      .andWhere('c.isTest = false')
       .getCount();
 
     const totalRecipients = Number(totalsRow?.totalRecipients ?? 0);

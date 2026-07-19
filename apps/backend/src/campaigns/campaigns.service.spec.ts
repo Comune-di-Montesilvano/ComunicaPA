@@ -1159,6 +1159,54 @@ describe('CampaignsService', () => {
       expect(result.monthlyTrend).toEqual([]);
       expect(result.campaignLeaderboard).toEqual([]);
     });
+
+    it('esclude sempre le campagne isTest=true da ognuna delle 7 query aggregate', async () => {
+      const createdQbs: any[] = [];
+      const trackedMakeQb = (terminal: { rawOne?: any; rawMany?: any[]; count?: number }) => {
+        const qb = makeQb(terminal);
+        createdQbs.push(qb);
+        return qb;
+      };
+
+      mockCampaignRepo.createQueryBuilder = jest
+        .fn()
+        .mockImplementationOnce(() => trackedMakeQb({ rawOne: { totalRecipients: '0', totalSent: '0', totalFailed: '0' } })) // totalsRow
+        .mockImplementationOnce(() => trackedMakeQb({ rawMany: [] })) // sentTrendRows
+        .mockImplementationOnce(() => trackedMakeQb({ rawMany: [] })) // channelRows
+        .mockImplementationOnce(() => trackedMakeQb({ rawMany: [] })); // leaderboardRows
+
+      mockRecipientRepo.createQueryBuilder = jest
+        .fn()
+        .mockImplementationOnce(() => trackedMakeQb({ count: 0 })) // totalDownloaded
+        .mockImplementationOnce(() => trackedMakeQb({ rawMany: [] })) // downloadedTrendRows
+        .mockImplementationOnce(() => trackedMakeQb({ count: 0 })); // neverDownloadedCount
+
+      mockDownloadEventRepo.createQueryBuilder = jest
+        .fn()
+        .mockImplementationOnce(() => trackedMakeQb({ rawMany: [] })); // downloadChannelRows
+
+      await service.getGlobalStats();
+
+      expect(createdQbs).toHaveLength(8);
+      const [totalsRowQb, sentTrendQb, channelQb, leaderboardQb, totalDownloadedQb, downloadedTrendQb, neverDownloadedQb, downloadChannelQb] =
+        createdQbs;
+
+      const names = [
+        ['totalsRow', totalsRowQb],
+        ['sentTrendRows', sentTrendQb],
+        ['channelRows', channelQb],
+        ['leaderboardRows', leaderboardQb],
+        ['totalDownloaded', totalDownloadedQb],
+        ['downloadedTrendRows', downloadedTrendQb],
+        ['neverDownloadedCount', neverDownloadedQb],
+        ['downloadChannelRows', downloadChannelQb],
+      ] as const;
+
+      for (const [, qb] of names) {
+        const andWhereCalls = qb.andWhere.mock.calls.map((c: unknown[]) => c[0]);
+        expect(andWhereCalls).toContain('c.isTest = false');
+      }
+    });
   });
 
   describe('getNeverDownloadedRecipients', () => {
