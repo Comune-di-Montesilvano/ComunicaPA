@@ -597,11 +597,17 @@ regola "creazione campagne — un solo percorso" sopra.
 **Rate multiple PagoPA — classificazione via etichetta, mai ordine pagina.**
 `pdf_extractor.py` scansiona TUTTE le pagine con QR pagamento (non solo la
 prima) e classifica ciascuna leggendo il testo: `RATA UNICA` → totale,
-`N° RATA` → rata N (il numero nell'etichetta determina l'indice, non la
-posizione — alcuni documenti non hanno la pagina "rata unica", altri hanno
-solo quella). Il CSV di output ha quindi un header dinamico per job:
-colonne `rataN_numero_avviso/importo/scadenza` quante ne servono (max
-trovato tra i record del job), calcolate da `buildEnrichedCsvHeaders()`
+`N° RATA` → rata N (il numero nell'etichetta determina l'ORDINAMENTO delle
+rate, non la posizione pagina — alcuni documenti non hanno la pagina "rata
+unica", altri hanno solo quella). **Attenzione**: le rate ordinate vengono
+poi compattate per POSIZIONE nelle colonne CSV `rataN_*`, non per numero-
+etichetta-esatto — un piano con un buco nella numerazione (solo "2° RATA"
+e "3° RATA", manca "1°") produce `rata1_*`=2°rata/`rata2_*`=3°rata, non
+`rata2_*`/`rata3_*` con `rata1_*` vuota. Deviazione nota e accettata (caso
+raro, piani rateali quasi sempre contigui da 1). Il CSV di output ha
+quindi un header dinamico per job: colonne
+`rataN_numero_avviso/importo/scadenza` quante ne servono (max trovato tra
+i record del job), calcolate da `buildEnrichedCsvHeaders()`
 (`enriched-csv.util.ts`) — non più una costante fissa. Controlli di
 coerenza (somma rate vs totale, scadenze consecutive, unica≈prima rata)
 producono warning, mai bloccanti.

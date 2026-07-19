@@ -37,9 +37,19 @@ pagina con QR:
 - **"RATA UNICA"** → pagina del totale.
 - **"N° RATA"** / **"N RATA"** (numero + parola RATA, es. "1° RATA",
   "2 RATA") → pagina della rata numero N. Il numero nell'etichetta,
-  NON la posizione della pagina nel documento, determina l'indice
-  (`rataN_*`) — pagine potrebbero non essere in ordine stretto, l'etichetta
-  è la fonte di verità.
+  NON la posizione della pagina nel documento, determina l'ORDINAMENTO
+  delle rate riconosciute — pagine potrebbero non essere in ordine
+  stretto, l'etichetta è la fonte di verità per l'ordine.
+  **Nota**: le rate vengono poi compattate per POSIZIONE nell'array
+  ordinato (non per numero-etichetta-esatto) quando scritte nelle
+  colonne CSV `rataN_*` — un piano rateale con un buco nella
+  numerazione (es. solo "2° RATA" e "3° RATA", manca "1°") produce
+  comunque `rata1_*`/`rata2_*` compatte (la 2° rata nella colonna
+  `rata1_*`, la 3° in `rata2_*`), non `rata2_*`/`rata3_*` con
+  `rata1_*` vuota. Deviazione accettata deliberatamente (caso raro
+  nella pratica, piani rateali quasi sempre contigui da 1) — vedi
+  decisione in fase di whole-branch review del piano
+  `2026-07-18-rate-multiple-e-log-tempo-reale`.
 - Una pagina `CBILL` che non matcha nessuno dei due pattern: trattata come
   rata non classificabile, va comunque in `rate` con un indice progressivo
   interno e un warning "etichetta rata non riconosciuta" (dato comunque

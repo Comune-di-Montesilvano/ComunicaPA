@@ -1477,18 +1477,20 @@ export function App(): React.JSX.Element {
     setVerificaBulkSubmitError(null);
   };
 
-  const fetchEnrichJobs = async () => {
-    if (!token) return;
+  const fetchEnrichJobs = async (): Promise<EnrichmentJobItem[]> => {
+    if (!token) return [];
     try {
       const res = await apiFetch('/enrichment/jobs');
       if (res.ok) {
         const body = await res.json();
-        setEnrichJobs(body.jobs || []);
+        const jobs: EnrichmentJobItem[] = body.jobs || [];
+        setEnrichJobs(jobs);
+        return jobs;
       }
     } catch {
       // errore transitorio di polling: riprova al giro successivo
     }
-    return;
+    return [];
   };
 
   const streamEnrichJobLog = async (jobId: string) => {
@@ -1536,12 +1538,13 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     if (view !== 'arricchimento' || !token) return;
-    fetchEnrichJobs().then(() => {
-      setEnrichJobs((current) => {
-        const inProgress = current.find((j) => j.status === 'queued' || j.status === 'processing');
-        if (inProgress && !enrichStreamingJobId) streamEnrichJobLog(inProgress.id);
-        return current;
-      });
+    fetchEnrichJobs().then((jobs) => {
+      // Lettura diretta del valore risolto, mai un side-effect dentro
+      // l'updater di setEnrichJobs: un updater impuro viene invocato due
+      // volte in dev (React 19 StrictMode), avviando due connessioni SSE
+      // concorrenti per lo stesso job.
+      const inProgress = jobs.find((j) => j.status === 'queued' || j.status === 'processing');
+      if (inProgress && !enrichStreamingJobId) streamEnrichJobLog(inProgress.id);
     });
     const interval = setInterval(() => {
       // Poll solo se c'è un job non terminale
