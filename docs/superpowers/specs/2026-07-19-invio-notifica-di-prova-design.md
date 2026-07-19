@@ -23,8 +23,14 @@ Il wizard passa da 5 a 7 step:
 5. **Upload Allegati (nuovo)** — step dedicato: gli allegati vengono
    caricati (chunked) verso `/campaigns/:id/attachments/upload`
    **immediatamente in questo step**, non più differiti al lancio finale.
-   Se la campagna non è ancora persistita come DRAFT, viene salvata
-   entrando in questo step (stesso pattern di `handleSaveWizardDraft`).
+   La campagna DRAFT viene salvata (stesso pattern di
+   `handleSaveWizardDraft`) alla transizione step4→step5, **prima** e
+   indipendentemente dall'esito dell'upload allegati — il lavoro fatto
+   fino al template (dettagli, CSV, mappatura, template) non deve
+   rischiare di andare perso se l'operatore abbandona il wizard senza
+   completare gli allegati. Lo step 5 richiede quindi sempre un
+   `campaignId` già esistente, mai un salvataggio condizionale al suo
+   interno.
 6. **Anteprima e Invio (ex step 5 "Riepilogo & Invio")** — anteprima per
    singolo destinatario (riuso componente preview di step 4). Due bottoni:
    - **Avvia Campagna**: comportamento di `handleWizLaunch` invariato,
