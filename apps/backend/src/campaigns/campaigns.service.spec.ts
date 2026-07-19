@@ -64,6 +64,7 @@ describe('CampaignsService', () => {
   };
   const mockRecipientRepo = {
     find: jest.fn().mockResolvedValue([]),
+    create: jest.fn(),
     save: jest.fn().mockResolvedValue(undefined),
     update: jest.fn().mockResolvedValue(undefined),
     delete: jest.fn().mockResolvedValue(undefined),
@@ -72,6 +73,7 @@ describe('CampaignsService', () => {
   };
   const mockAttemptRepo = {
     find: jest.fn(),
+    findOne: jest.fn(),
     update: jest.fn().mockResolvedValue(undefined),
     createQueryBuilder: jest.fn().mockReturnValue({
       insert: jest.fn().mockReturnThis(),
@@ -1463,6 +1465,89 @@ describe('CampaignsService', () => {
 
       const filtersOnChannelType = andWhereCalls.some(([sql]) => typeof sql === 'string' && sql.includes('channel_type'));
       expect(filtersOnChannelType).toBe(false);
+    });
+  });
+
+  describe('launchTestSend', () => {
+    it('crea una campagna figlia isTest=true al primo invio di prova', async () => {
+      const parent = {
+        id: 'parent-1',
+        name: 'Campagna TARI 2026',
+        channelType: 'EMAIL',
+        channelConfig: { subject: 'Avviso', body: 'Corpo' },
+        createdBy: 'operator1',
+      };
+      mockCampaignRepo.findOneBy
+        .mockResolvedValueOnce(parent) // findOneBy({id: parentCampaignId})
+        .mockResolvedValueOnce(null); // findOneBy({parentCampaignId, isTest: true}) -> nessun child esistente
+      mockCampaignRepo.create.mockReturnValue({ ...parent, id: 'child-1', isTest: true, parentCampaignId: 'parent-1' });
+      mockCampaignRepo.save.mockResolvedValue({ ...parent, id: 'child-1', isTest: true, parentCampaignId: 'parent-1' });
+      mockRecipientRepo.create.mockReturnValue({ id: 'recipient-1' });
+      mockRecipientRepo.save.mockResolvedValue({ id: 'recipient-1' });
+
+      const insertResult = { raw: [{ id: 'attempt-1' }] };
+      mockAttemptRepo.createQueryBuilder.mockReturnValue({
+        insert: jest.fn().mockReturnThis(),
+        into: jest.fn().mockReturnThis(),
+        values: jest.fn().mockReturnThis(),
+        returning: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue(insertResult),
+      });
+      mockRecipientRepo.update.mockResolvedValue(undefined);
+      mockAttemptRepo.findOne.mockResolvedValue({ id: 'attempt-1' });
+      mockQueue.addBulk.mockResolvedValue(undefined);
+
+      const dto = { codiceFiscale: 'RSSMRA80A01H501U', email: 'test@example.com', extraData: { full_name: 'Mario Rossi' } };
+      const result = await service.launchTestSend('parent-1', dto);
+
+      expect(result.testCampaignId).toBe('child-1');
+      expect(result.attemptId).toBeTruthy();
+      expect(mockCampaignRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ isTest: true, parentCampaignId: 'parent-1', name: '[TEST] Campagna TARI 2026' }),
+      );
+    });
+
+    it('riusa la campagna figlia esistente al secondo invio di prova, aggiornando channelConfig', async () => {
+      const parent = {
+        id: 'parent-1',
+        name: 'Campagna TARI 2026',
+        channelType: 'EMAIL',
+        channelConfig: { subject: 'Nuovo oggetto' },
+        createdBy: 'operator1',
+      };
+      const existingChild = { id: 'child-1', isTest: true, parentCampaignId: 'parent-1', channelType: 'EMAIL', channelConfig: {} };
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce(parent).mockResolvedValueOnce(existingChild);
+      mockCampaignRepo.update.mockResolvedValue(undefined);
+      mockRecipientRepo.create.mockReturnValue({ id: 'recipient-2' });
+      mockRecipientRepo.save.mockResolvedValue({ id: 'recipient-2' });
+
+      const insertResult = { raw: [{ id: 'attempt-2' }] };
+      mockAttemptRepo.createQueryBuilder.mockReturnValue({
+        insert: jest.fn().mockReturnThis(),
+        into: jest.fn().mockReturnThis(),
+        values: jest.fn().mockReturnThis(),
+        returning: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue(insertResult),
+      });
+      mockRecipientRepo.update.mockResolvedValue(undefined);
+      mockAttemptRepo.findOne.mockResolvedValue({ id: 'attempt-2' });
+      mockQueue.addBulk.mockResolvedValue(undefined);
+
+      const dto = { codiceFiscale: 'VRDLGU85B02H501X', extraData: {} };
+      const result = await service.launchTestSend('parent-1', dto);
+
+      expect(result.testCampaignId).toBe('child-1');
+      expect(mockCampaignRepo.create).not.toHaveBeenCalled();
+      expect(mockCampaignRepo.update).toHaveBeenCalledWith({ id: 'child-1' }, { channelConfig: parent.channelConfig });
+    });
+
+    it('SEND senza protocolla lancia BadRequestException, nessuna campagna figlia creata', async () => {
+      const parent = { id: 'parent-1', name: 'Campagna SEND', channelType: 'SEND', channelConfig: {}, createdBy: 'operator1' };
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce(parent);
+
+      await expect(service.launchTestSend('parent-1', { codiceFiscale: 'RSSMRA80A01H501U', extraData: {} }))
+        .rejects.toThrow('Protocollazione obbligatoria per SEND');
+      expect(mockCampaignRepo.create).not.toHaveBeenCalled();
     });
   });
 });

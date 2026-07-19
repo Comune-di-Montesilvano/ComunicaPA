@@ -25,6 +25,7 @@ import { NotificationQueuesService } from '../queue/notification-queues.service'
 import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util';
 import type { CreateCampaignDto } from './dto/create-campaign.dto';
 import type { UpdateCampaignDto } from './dto/update-campaign.dto';
+import type { TestSendDto } from './dto/test-send.dto';
 import type { CampaignStatsDto, RecipientStatDto, RecipientStatsPageDto, ChannelBreakdownDto, EffectiveChannelBreakdownDto, DownloadCombinationDto, DownloadCombinationStatsDto, FailureRowDto, FailureGroupDto, RetryBulkResultDto, DownloadReportRowDto, SendStatusBreakdownDto, SendReportDto, SendReportRowDto, PostalStatusBreakdownDto, PostalReportDto, PostalReportRowDto } from './dto/campaign-stats.dto';
 import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.dto';
 import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util';
@@ -394,6 +395,74 @@ export class CampaignsService {
 
     const { launched } = await this.createAttemptsAndEnqueue(campaign, recipients, channelOverrides);
     return { launched, campaignId };
+  }
+
+  async launchTestSend(
+    parentCampaignId: string,
+    dto: TestSendDto,
+  ): Promise<{ attemptId: string; testCampaignId: string; blocked?: boolean; message?: string }> {
+    const parent = await this.campaignRepo.findOneBy({ id: parentCampaignId });
+    if (!parent) throw new NotFoundException(`Campaign ${parentCampaignId} not found`);
+
+    this.assertSendProtocolConfigured(parent);
+
+    let child = await this.campaignRepo.findOneBy({ parentCampaignId, isTest: true });
+    if (!child) {
+      const created = this.campaignRepo.create({
+        name: `[TEST] ${parent.name}`,
+        channelType: parent.channelType,
+        channelConfig: parent.channelConfig,
+        status: CampaignStatus.QUEUED,
+        createdBy: parent.createdBy,
+        isTest: true,
+        parentCampaignId,
+      });
+      child = await this.campaignRepo.save(created);
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- _QueryDeepPartialEntity non gestisce bene un
+      // index signature generico (Record<string, unknown>) su colonna jsonb, stesso limite noto di TypeORM 0.3.x.
+      await this.campaignRepo.update({ id: child.id }, { channelConfig: parent.channelConfig as any });
+      child = { ...child, channelConfig: parent.channelConfig };
+    }
+
+    // Copia fisica isolata: la campagna test non deve mai riferire i file
+    // della madre, altrimenti la sua retention/cancellazione rischierebbe
+    // di cancellare allegati ancora necessari alla bozza madre non lanciata.
+    const parentDir = getUploadsDir(parentCampaignId);
+    const childDir = getUploadsDir(child.id);
+    if (fs.existsSync(parentDir)) {
+      fs.rmSync(childDir, { recursive: true, force: true });
+      fs.mkdirSync(childDir, { recursive: true });
+      fs.cpSync(parentDir, childDir, { recursive: true });
+    }
+
+    const attachmentsBlock = await this.checkAttachmentsBlocking(child);
+    if (attachmentsBlock) {
+      return { attemptId: '', testCampaignId: child.id, ...attachmentsBlock };
+    }
+
+    const recipient = this.recipientRepo.create({
+      campaignId: child.id,
+      codiceFiscale: dto.codiceFiscale,
+      email: dto.email ?? null,
+      pec: dto.pec ?? null,
+      fullName: dto.extraData['full_name'] ?? null,
+      extraData: dto.extraData,
+      status: RecipientStatus.PENDING,
+    });
+    const savedRecipient = await this.recipientRepo.save(recipient);
+
+    const { launched } = await this.createAttemptsAndEnqueue(child, [{ id: savedRecipient.id }]);
+    if (launched === 0) {
+      throw new BadRequestException('Invio di prova non accodato');
+    }
+
+    const attempt = await this.attemptRepo.findOne({
+      where: { recipientId: savedRecipient.id },
+      order: { createdAt: 'DESC' },
+    });
+
+    return { attemptId: attempt!.id, testCampaignId: child.id };
   }
 
   private async runInadExtractLoop(

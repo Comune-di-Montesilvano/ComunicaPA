@@ -28,6 +28,7 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { UpdateCampaignDto } from './dto/update-campaign.dto';
 import { PreviewMessageDto } from './dto/preview-message.dto';
+import { TestSendDto } from './dto/test-send.dto';
 import { getUploadsDir } from '../attachments/attachment-paths';
 import { buildNeverDownloadedCsv } from './never-downloaded-csv.util';
 import { buildDownloadReportCsv } from './download-report-csv.util';
@@ -401,6 +402,24 @@ export class CampaignsController {
       operator: req.user.username,
       action: 'LAUNCH',
       details: { launched: result.launched },
+    });
+    return result;
+  }
+
+  @Post(':id/test-send')
+  async testSend(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: TestSendDto,
+    @Req() req: Request & { user: JwtOperatorPayload },
+  ): Promise<{ attemptId: string; testCampaignId: string; blocked?: boolean; message?: string }> {
+    const result = await this.campaignsService.launchTestSend(id, dto);
+    const campaign = await this.campaignsService.findOne(id).catch(() => null);
+    await this.auditLogsService.log({
+      campaignId: id,
+      campaignName: campaign ? campaign.name : null,
+      operator: req.user.username,
+      action: 'TEST_SEND',
+      details: { testCampaignId: result.testCampaignId, codiceFiscale: dto.codiceFiscale },
     });
     return result;
   }
