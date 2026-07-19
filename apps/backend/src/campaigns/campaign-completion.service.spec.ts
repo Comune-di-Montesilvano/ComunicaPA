@@ -97,5 +97,26 @@ describe('CampaignCompletionService', () => {
     await service.checkAndComplete('parent-1');
 
     expect(mockCampaignRepo.delete).not.toHaveBeenCalled();
+    expect(mockAttemptRepo.delete).not.toHaveBeenCalled();
+    expect(mockRecipientRepo.delete).not.toHaveBeenCalled();
+  });
+
+  it('NON cancella la cascata se lo UPDATE non ha modificato righe (campagna già COMPLETED/altro stato)', async () => {
+    mockRecipientRepo.count.mockResolvedValue(0); // nessun PENDING/QUEUED residuo, si supera il primo guard
+    const updateExec = jest.fn().mockResolvedValue({ affected: 0 }); // WHERE status = QUEUED non ha matchato nulla
+    mockCampaignRepo.createQueryBuilder.mockReturnValue({
+      update: jest.fn().mockReturnThis(),
+      set: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      execute: updateExec,
+    });
+
+    await service.checkAndComplete('parent-1');
+
+    expect(mockCampaignRepo.findOneBy).not.toHaveBeenCalled();
+    expect(mockAttemptRepo.delete).not.toHaveBeenCalled();
+    expect(mockRecipientRepo.delete).not.toHaveBeenCalled();
+    expect(mockCampaignRepo.delete).not.toHaveBeenCalled();
   });
 });
