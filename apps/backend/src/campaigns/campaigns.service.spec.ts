@@ -75,6 +75,7 @@ describe('CampaignsService', () => {
     find: jest.fn(),
     findOne: jest.fn(),
     update: jest.fn().mockResolvedValue(undefined),
+    delete: jest.fn().mockResolvedValue(undefined),
     createQueryBuilder: jest.fn().mockReturnValue({
       insert: jest.fn().mockReturnThis(),
       into: jest.fn().mockReturnThis(),
@@ -1213,6 +1214,41 @@ describe('CampaignsService', () => {
       expect(rmSpy).toHaveBeenCalledWith('/tmp/comunicapa-uploads/c-del', { recursive: true, force: true });
       expect(mockCampaignRepo.delete).toHaveBeenCalledWith('c-del');
       expect(result).toEqual({ deleted: true });
+
+      rmSpy.mockRestore();
+    });
+  });
+
+  describe('remove — cascata su campagna test collegata', () => {
+    it('cancella anche la campagna test figlia quando esiste', async () => {
+      mockCampaignRepo.existsBy.mockResolvedValueOnce(true);
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ id: 'child-1', parentCampaignId: 'parent-1', isTest: true });
+      mockRecipientRepo.find.mockResolvedValueOnce([{ id: 'r1' }]);
+      const rmSpy = jest.spyOn(fs.promises, 'rm').mockResolvedValue(undefined);
+
+      await service.remove('parent-1');
+
+      expect(mockCampaignRepo.findOneBy).toHaveBeenCalledWith({ parentCampaignId: 'parent-1', isTest: true });
+      expect(mockAttemptRepo.delete).toHaveBeenCalledWith({ recipientId: In(['r1']) });
+      expect(mockRecipientRepo.delete).toHaveBeenCalledWith({ id: In(['r1']) });
+      expect(mockCampaignRepo.delete).toHaveBeenCalledWith('child-1');
+      expect(mockCampaignRepo.delete).toHaveBeenCalledWith('parent-1');
+
+      rmSpy.mockRestore();
+    });
+
+    it('nessuna campagna test collegata: cancella solo la campagna madre, nessuna chiamata extra', async () => {
+      mockCampaignRepo.existsBy.mockResolvedValueOnce(true);
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce(null);
+      const rmSpy = jest.spyOn(fs.promises, 'rm').mockResolvedValue(undefined);
+
+      await service.remove('parent-2');
+
+      expect(mockCampaignRepo.findOneBy).toHaveBeenCalledWith({ parentCampaignId: 'parent-2', isTest: true });
+      expect(mockAttemptRepo.delete).not.toHaveBeenCalled();
+      expect(mockRecipientRepo.delete).not.toHaveBeenCalled();
+      expect(mockCampaignRepo.delete).toHaveBeenCalledTimes(1);
+      expect(mockCampaignRepo.delete).toHaveBeenCalledWith('parent-2');
 
       rmSpy.mockRestore();
     });

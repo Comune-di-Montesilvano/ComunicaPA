@@ -1772,6 +1772,18 @@ export class CampaignsService {
     const exists = await this.campaignRepo.existsBy({ id: campaignId });
     if (!exists) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
+    const linkedTestCampaign = await this.campaignRepo.findOneBy({ parentCampaignId: campaignId, isTest: true });
+    if (linkedTestCampaign) {
+      const testRecipients = await this.recipientRepo.find({ where: { campaignId: linkedTestCampaign.id }, select: ['id'] });
+      const testRecipientIds = testRecipients.map((r) => r.id);
+      if (testRecipientIds.length > 0) {
+        await this.attemptRepo.delete({ recipientId: In(testRecipientIds) });
+        await this.recipientRepo.delete({ id: In(testRecipientIds) });
+      }
+      await this.campaignRepo.delete(linkedTestCampaign.id);
+      await fs.promises.rm(getUploadsDir(linkedTestCampaign.id), { recursive: true, force: true });
+    }
+
     await fs.promises.rm(getUploadsDir(campaignId), { recursive: true, force: true });
     await this.campaignRepo.delete(campaignId);
 
