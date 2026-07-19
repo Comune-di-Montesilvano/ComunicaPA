@@ -4073,16 +4073,28 @@ export function App(): React.JSX.Element {
     }
   };
 
+  // Salva la bozza alla transizione step4->step5 (non dentro handleWizUploadAttachments):
+  // il lavoro fatto attraverso lo step 4 (Template & Anteprima) non deve rischiare di
+  // andare perso se l'operatore abbandona il wizard fermo sullo step 5 prima di aver
+  // mai cliccato "Carica allegati e continua". Avanza solo se il salvataggio riesce
+  // (stesso pattern di handleWizUploadAttachments: handleSaveWizardDraft mostra già
+  // l'errore ed eventualmente ritorna null).
+  const handleWizAdvanceToStep5 = async (): Promise<void> => {
+    const campaignId = await handleSaveWizardDraft();
+    if (!campaignId) return;
+    setWizStep(5);
+  };
+
   const handleWizUploadAttachments = async (): Promise<void> => {
     setWizSending(true);
     try {
-      let campaignId = wizCampaignId;
+      const campaignId = wizCampaignId;
       if (!campaignId) {
-        campaignId = await handleSaveWizardDraft();
-        if (!campaignId) {
-          // handleSaveWizardDraft ha già mostrato l'errore (nome mancante o fetch fallita).
-          return;
-        }
+        // Non dovrebbe più accadere: la bozza viene salvata alla transizione
+        // step4->step5 (handleWizAdvanceToStep5), prima che questo step sia
+        // raggiungibile. Difesa esplicita invece di procedere silenziosamente.
+        alert('Campagna non ancora salvata. Torna indietro e riprova.');
+        return;
       }
 
       // Stesso pattern di upload chunked usato in precedenza da handleWizLaunch per
@@ -4338,6 +4350,11 @@ export function App(): React.JSX.Element {
 
       const first = wizValidRows[0] ?? {};
       const extraData: Record<string, string> = { ...first };
+      // Normalizza il nominativo con lo stesso helper usato dal lancio reale
+      // (getWizRowFullName), altrimenti extraData['full_name'] resta assente
+      // a meno che il CSV sorgente non abbia letteralmente una colonna
+      // "full_name" — il backend (launchTestSend) legge solo quella chiave.
+      extraData['full_name'] = getWizRowFullName(first);
       if (wizMapping.codice_fiscale) extraData[wizMapping.codice_fiscale] = wizTestForm.codiceFiscale;
       if (wizChannel === 'EMAIL' && wizMapping.email) extraData[wizMapping.email] = wizTestForm.email;
       if (wizChannel === 'PEC' && wizMapping.pec) extraData[wizMapping.pec] = wizTestForm.pec;
@@ -6188,19 +6205,21 @@ export function App(): React.JSX.Element {
                     </button>
                     <button
                       className="btn btn-primary"
-                      onClick={() => setWizStep(5)}
+                      onClick={handleWizAdvanceToStep5}
                       disabled={
-                        wizChannel === 'POSTAL' && wizAppIoMode === 'none' && !settInadCheckEnabled
-                          ? false
-                          : (
-                              !wizSubject ||
-                              ((wizChannel !== 'SEND' && (wizChannel !== 'POSTAL' || settInadCheckEnabled)) && isWizBodyEmpty(wizBody)) ||
-                              wizAppIoBodyLenInvalid ||
-                              ((wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && wizAppIoMode !== 'none' && wizAppIoDifferentiate && (!wizAppIoSubjectOverride || !wizAppIoBodyOverride))
-                            )
+                        wizDraftSaving || (
+                          wizChannel === 'POSTAL' && wizAppIoMode === 'none' && !settInadCheckEnabled
+                            ? false
+                            : (
+                                !wizSubject ||
+                                ((wizChannel !== 'SEND' && (wizChannel !== 'POSTAL' || settInadCheckEnabled)) && isWizBodyEmpty(wizBody)) ||
+                                wizAppIoBodyLenInvalid ||
+                                ((wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && wizAppIoMode !== 'none' && wizAppIoDifferentiate && (!wizAppIoSubjectOverride || !wizAppIoBodyOverride))
+                              )
+                        )
                       }
                     >
-                      Riepilogo <i className="fas fa-arrow-right ms-1"></i>
+                      {wizDraftSaving ? <><i className="fas fa-spinner fa-spin me-1"></i> Salvataggio...</> : <>Riepilogo <i className="fas fa-arrow-right ms-1"></i></>}
                     </button>
                   </div>
                 <div className="row g-4">
@@ -6376,19 +6395,21 @@ export function App(): React.JSX.Element {
                       </button>
                       <button
                         className="btn btn-primary"
-                        onClick={() => setWizStep(5)}
+                        onClick={handleWizAdvanceToStep5}
                         disabled={
-                          wizChannel === 'POSTAL' && wizAppIoMode === 'none' && !settInadCheckEnabled
-                            ? false
-                            : (
-                                !wizSubject ||
-                                ((wizChannel !== 'SEND' && (wizChannel !== 'POSTAL' || settInadCheckEnabled)) && isWizBodyEmpty(wizBody)) ||
-                                wizAppIoBodyLenInvalid ||
-                                ((wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && wizAppIoMode !== 'none' && wizAppIoDifferentiate && (!wizAppIoSubjectOverride || !wizAppIoBodyOverride))
-                              )
+                          wizDraftSaving || (
+                            wizChannel === 'POSTAL' && wizAppIoMode === 'none' && !settInadCheckEnabled
+                              ? false
+                              : (
+                                  !wizSubject ||
+                                  ((wizChannel !== 'SEND' && (wizChannel !== 'POSTAL' || settInadCheckEnabled)) && isWizBodyEmpty(wizBody)) ||
+                                  wizAppIoBodyLenInvalid ||
+                                  ((wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && wizAppIoMode !== 'none' && wizAppIoDifferentiate && (!wizAppIoSubjectOverride || !wizAppIoBodyOverride))
+                                )
+                          )
                         }
                       >
-                        Riepilogo <i className="fas fa-arrow-right ms-1"></i>
+                        {wizDraftSaving ? <><i className="fas fa-spinner fa-spin me-1"></i> Salvataggio...</> : <>Riepilogo <i className="fas fa-arrow-right ms-1"></i></>}
                       </button>
                     </div>
                   </div>
