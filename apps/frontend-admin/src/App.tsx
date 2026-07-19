@@ -5131,7 +5131,7 @@ export function App(): React.JSX.Element {
                   { n: 3, label: '3. Mappatura & Validazione' },
                   { n: 4, label: '4. Template & Anteprima' },
                   { n: 5, label: '5. Upload Allegati' },
-                  { n: 6, label: '6. Riepilogo & Invio' },
+                  { n: 6, label: '6. Anteprima e Invio' },
                 ].map(({ n, label }) => (
                   <div
                     key={n}
@@ -6467,10 +6467,10 @@ export function App(): React.JSX.Element {
                 </div>
               )}
 
-              {/* STEP 6: RIEPILOGO & SPEDIZIONE */}
+              {/* STEP 6: ANTEPRIMA E INVIO */}
               {wizStep === 6 && (
                 <div style={{ maxWidth: '600px', margin: '0 auto' }}>
-                  <h4 className="h6 fw-bold text-dark mb-3"><i className="fas fa-check-circle text-success me-2"></i>Passo 6: Riepilogo & Messa in Coda</h4>
+                  <h4 className="h6 fw-bold text-dark mb-3"><i className="fas fa-check-circle text-success me-2"></i>Passo 6: Anteprima e Invio</h4>
 
                   <div className="mb-4 pb-3 border-bottom d-flex justify-content-between">
                     <button
@@ -6480,20 +6480,31 @@ export function App(): React.JSX.Element {
                     >
                       <i className="fas fa-arrow-left me-1"></i> Indietro
                     </button>
-                    <button
-                      className="btn btn-success"
-                      onClick={handleWizLaunch}
-                      disabled={wizSending}
-                    >
-                      {wizSending ? (
-                        <>
-                          <i className="fas fa-spinner fa-spin me-1"></i>
-                          {wizUploadProgress ? `${wizUploadProgress.label}...` : 'Spedizione in corso...'}
-                        </>
-                      ) : (
-                        <><i className="fas fa-paper-plane me-1"></i>Conferma ed Avvia Campagna</>
-                      )}
-                    </button>
+                    <div className="d-flex gap-2">
+                      <button
+                        type="button"
+                        className="btn btn-outline-primary"
+                        onClick={() => setWizStep(7)}
+                        disabled={wizSending || !wizCampaignId}
+                        title={!wizCampaignId ? 'Completa prima il passo Upload Allegati' : undefined}
+                      >
+                        <i className="fas fa-vial me-1"></i>Avvia Test
+                      </button>
+                      <button
+                        className="btn btn-success"
+                        onClick={handleWizLaunch}
+                        disabled={wizSending}
+                      >
+                        {wizSending ? (
+                          <>
+                            <i className="fas fa-spinner fa-spin me-1"></i>
+                            {wizUploadProgress ? `${wizUploadProgress.label}...` : 'Spedizione in corso...'}
+                          </>
+                        ) : (
+                          <><i className="fas fa-paper-plane me-1"></i>Conferma ed Avvia Campagna</>
+                        )}
+                      </button>
+                    </div>
                   </div>
 
                   <div className="border rounded bg-light p-4 mb-4" style={{ fontSize: '0.9rem' }}>
@@ -6536,20 +6547,31 @@ export function App(): React.JSX.Element {
                     >
                       <i className="fas fa-arrow-left me-1"></i> Indietro
                     </button>
-                    <button
-                      className="btn btn-success"
-                      onClick={handleWizLaunch}
-                      disabled={wizSending}
-                    >
-                      {wizSending ? (
-                        <>
-                          <i className="fas fa-spinner fa-spin me-1"></i>
-                          {wizUploadProgress ? `${wizUploadProgress.label}...` : 'Spedizione in corso...'}
-                        </>
-                      ) : (
-                        <><i className="fas fa-paper-plane me-1"></i>Conferma ed Avvia Campagna</>
-                      )}
-                    </button>
+                    <div className="d-flex gap-2">
+                      <button
+                        type="button"
+                        className="btn btn-outline-primary"
+                        onClick={() => setWizStep(7)}
+                        disabled={wizSending || !wizCampaignId}
+                        title={!wizCampaignId ? 'Completa prima il passo Upload Allegati' : undefined}
+                      >
+                        <i className="fas fa-vial me-1"></i>Avvia Test
+                      </button>
+                      <button
+                        className="btn btn-success"
+                        onClick={handleWizLaunch}
+                        disabled={wizSending}
+                      >
+                        {wizSending ? (
+                          <>
+                            <i className="fas fa-spinner fa-spin me-1"></i>
+                            {wizUploadProgress ? `${wizUploadProgress.label}...` : 'Spedizione in corso...'}
+                          </>
+                        ) : (
+                          <><i className="fas fa-paper-plane me-1"></i>Conferma ed Avvia Campagna</>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
