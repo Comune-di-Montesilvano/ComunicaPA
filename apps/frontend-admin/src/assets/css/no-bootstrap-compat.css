@@ -597,6 +597,10 @@ textarea.form-control:focus {
   to { transform: rotate(360deg); }
 }
 
+.icon-spin {
+  animation: spin 1s linear infinite;
+}
+
 .toast {
   display: none;
   background: #fff;

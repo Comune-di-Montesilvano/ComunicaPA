@@ -3,6 +3,13 @@ import MDEditor from '@uiw/react-md-editor';
 import { TemplateEditor } from './components/TemplateEditor';
 import { SEND_ENTITY_TYPES, SEND_TAXONOMY_CATALOG } from './data/sendTaxonomy';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import {
+  Mail, MailOpen, MailCheck, Mails, Smartphone, Send, Globe, HelpCircle,
+  Hourglass, Truck, Inbox, Ban, Eye, CalendarCheck, Banknote, UserX, X,
+  RotateCcw, ChevronLeft, ChevronRight, Loader2, Download,
+  Pause, Check, MapPin, Settings2, Printer, ThumbsUp, RotateCw,
+  CheckCircle2, XCircle, AlertTriangle, AlertCircle, Trash2,
+} from 'lucide-react';
 
 declare global {
   interface Window {
@@ -13,14 +20,14 @@ declare global {
 const API_BASE = window.__COMUNICAPA_CONFIG__?.apiBase ?? 'http://localhost:8080';
 const ADMIN_API_BASE = `${API_BASE}/admin`;
 
-const CHANNEL_META: Record<string, { label: string; icon: string; badge: string }> = {
-  PEC: { label: 'PEC', icon: 'fa-envelope-open-text', badge: 'bg-info' },
-  EMAIL: { label: 'Email', icon: 'fa-envelope', badge: 'bg-success' },
-  APP_IO: { label: 'AppIO', icon: 'fa-mobile-screen', badge: 'bg-primary' },
-  SEND: { label: 'SEND', icon: 'fa-paper-plane', badge: 'bg-warning text-dark' },
-  POSTAL: { label: 'Postalizzazione', icon: 'fa-envelope-circle-check', badge: 'bg-secondary' },
-  CITIZEN_PORTAL: { label: 'Portale Cittadino', icon: 'fa-globe', badge: 'bg-dark' },
-  UNKNOWN: { label: 'Sconosciuto', icon: 'fa-question', badge: 'bg-secondary' },
+const CHANNEL_META: Record<string, { label: string; icon: React.ComponentType<{ className?: string; size?: number }>; badge: string }> = {
+  PEC: { label: 'PEC', icon: MailOpen, badge: 'bg-info' },
+  EMAIL: { label: 'Email', icon: Mail, badge: 'bg-success' },
+  APP_IO: { label: 'AppIO', icon: Smartphone, badge: 'bg-primary' },
+  SEND: { label: 'SEND', icon: Send, badge: 'bg-warning text-dark' },
+  POSTAL: { label: 'Postalizzazione', icon: MailCheck, badge: 'bg-secondary' },
+  CITIZEN_PORTAL: { label: 'Portale Cittadino', icon: Globe, badge: 'bg-dark' },
+  UNKNOWN: { label: 'Sconosciuto', icon: HelpCircle, badge: 'bg-secondary' },
 };
 
 function channelLabel(channel: string): string {
@@ -28,10 +35,11 @@ function channelLabel(channel: string): string {
 }
 
 function ChannelBadge({ channel, extra }: { channel: string; extra?: string | null }): React.JSX.Element {
-  const meta = CHANNEL_META[channel] ?? { label: channel, icon: 'fa-paper-plane', badge: 'bg-light text-dark border' };
+  const meta = CHANNEL_META[channel] ?? { label: channel, icon: Send, badge: 'bg-light text-dark border' };
+  const Icon = meta.icon;
   return (
     <span className={`badge ${meta.badge}`}>
-      <i className={`fas ${meta.icon} me-1`}></i>{meta.label}{extra ? ` (${extra})` : ''}
+      <Icon className="me-1" size={14} />{meta.label}{extra ? ` (${extra})` : ''}
     </span>
   );
 }
@@ -73,32 +81,33 @@ function StatusBadge({ status }: { status: string }): React.JSX.Element {
 // STATUS_META sopra (quello è per recipient/attempt/campaign interni).
 // Fonte: NotificationStatusV26 nello spec ufficiale PN (pn-delivery,
 // api-external-b2b-pa-bundle.yaml), 11 valori, verificato 2026-07-14.
-const SEND_STATUS_META: Record<string, { label: string; badge: string; icon: string }> = {
-  FAILED: { label: 'Fallito', badge: 'bg-danger', icon: 'fa-times' },
-  IN_VALIDATION: { label: 'In validazione', badge: 'bg-secondary', icon: 'fa-hourglass-half' },
-  ACCEPTED: { label: 'Accettata da SEND', badge: 'bg-info', icon: 'fa-inbox' },
-  REFUSED: { label: 'Rifiutata', badge: 'bg-danger', icon: 'fa-ban' },
-  DELIVERING: { label: 'In consegna', badge: 'bg-warning text-dark', icon: 'fa-truck' },
-  DELIVERED: { label: 'Consegnata', badge: 'bg-primary', icon: 'fa-envelope-circle-check' },
-  VIEWED: { label: 'Letta dal destinatario', badge: 'bg-success', icon: 'fa-eye' },
-  EFFECTIVE_DATE: { label: 'Perfezionata per decorrenza termini', badge: 'bg-success', icon: 'fa-calendar-check' },
-  PAID: { label: 'Pagata (deprecato)', badge: 'bg-secondary', icon: 'fa-money-check-dollar' },
-  UNREACHABLE: { label: 'Destinatario irreperibile', badge: 'bg-danger', icon: 'fa-user-slash' },
-  CANCELLED: { label: 'Annullata', badge: 'bg-dark', icon: 'fa-xmark' },
-  RETURNED_TO_SENDER: { label: 'Restituita al mittente', badge: 'bg-danger', icon: 'fa-rotate-left' },
+const SEND_STATUS_META: Record<string, { label: string; badge: string; icon: React.ComponentType<{ className?: string; size?: number }> }> = {
+  FAILED: { label: 'Fallito', badge: 'bg-danger', icon: X },
+  IN_VALIDATION: { label: 'In validazione', badge: 'bg-secondary', icon: Hourglass },
+  ACCEPTED: { label: 'Accettata da SEND', badge: 'bg-info', icon: Inbox },
+  REFUSED: { label: 'Rifiutata', badge: 'bg-danger', icon: Ban },
+  DELIVERING: { label: 'In consegna', badge: 'bg-warning text-dark', icon: Truck },
+  DELIVERED: { label: 'Consegnata', badge: 'bg-primary', icon: MailCheck },
+  VIEWED: { label: 'Letta dal destinatario', badge: 'bg-success', icon: Eye },
+  EFFECTIVE_DATE: { label: 'Perfezionata per decorrenza termini', badge: 'bg-success', icon: CalendarCheck },
+  PAID: { label: 'Pagata (deprecato)', badge: 'bg-secondary', icon: Banknote },
+  UNREACHABLE: { label: 'Destinatario irreperibile', badge: 'bg-danger', icon: UserX },
+  CANCELLED: { label: 'Annullata', badge: 'bg-dark', icon: X },
+  RETURNED_TO_SENDER: { label: 'Restituita al mittente', badge: 'bg-danger', icon: RotateCcw },
 };
 
 function SendStatusBadge({ status }: { status: string | null | undefined }): React.JSX.Element {
   if (!status) return <span className="text-muted">—</span>;
-  const meta = SEND_STATUS_META[status] ?? { label: status, badge: 'bg-light text-dark border', icon: 'fa-circle-question' };
+  const meta = SEND_STATUS_META[status] ?? { label: status, badge: 'bg-light text-dark border', icon: HelpCircle };
+  const Icon = meta.icon;
   return (
     <span className={`badge ${meta.badge}`}>
-      <i className={`fas ${meta.icon} me-1`}></i>{meta.label}
+      <Icon className="me-1" size={14} />{meta.label}
     </span>
   );
 }
 
-type StatusMeta = { label: string; badge: string; icon: string };
+type StatusMeta = { label: string; badge: string; icon: React.ComponentType<{ className?: string; size?: number }> };
 
 function ChannelStatusBar({ breakdown, meta, pendingLabel }: { breakdown: Array<{ status: string | null; count: number }>; meta: Record<string, StatusMeta>; pendingLabel: string }): React.JSX.Element {
   const total = breakdown.reduce((sum, b) => sum + b.count, 0);
@@ -127,7 +136,7 @@ function ChannelStatusBar({ breakdown, meta, pendingLabel }: { breakdown: Array<
           const m = b.status ? meta[b.status] : null;
           return (
             <span key={b.status ?? 'pending'} className="text-muted">
-              <i className={`fas ${m ? m.icon : 'fa-hourglass-half'} me-1`}></i>
+              {(() => { const Icon = m ? m.icon : Hourglass; return <Icon className="me-1" size={14} />; })()}
               {m ? m.label : pendingLabel}: <strong>{b.count}</strong>
             </span>
           );
@@ -139,28 +148,29 @@ function ChannelStatusBar({ breakdown, meta, pendingLabel }: { breakdown: Array<
 
 // Stati POSTAL (campo postalStatus, popolato da PostalStatusSyncService da
 // GlobalCom) — 14 valori dell'enum GBCStatus.
-const POSTAL_STATUS_META: Record<string, { label: string; badge: string; icon: string }> = {
-  FAILED: { label: 'Fallito', badge: 'bg-danger', icon: 'fa-times' },
-  Accettato: { label: 'Accettato', badge: 'bg-secondary-subtle text-secondary-emphasis border', icon: 'fa-inbox' },
-  Sospeso: { label: 'Sospeso', badge: 'bg-secondary-subtle text-secondary-emphasis border', icon: 'fa-pause' },
-  Verificato: { label: 'Verificato', badge: 'bg-info-subtle text-info-emphasis border', icon: 'fa-check' },
-  Normalizzazione: { label: 'Normalizzazione indirizzo', badge: 'bg-warning-subtle text-warning-emphasis border', icon: 'fa-map-pin' },
-  Inviato: { label: 'Inviato a Poste', badge: 'bg-info-subtle text-info-emphasis border', icon: 'fa-truck' },
-  Elaborato: { label: 'Elaborato', badge: 'bg-info-subtle text-info-emphasis border', icon: 'fa-gears' },
-  AttesaStampa: { label: 'Attesa stampa', badge: 'bg-info-subtle text-info-emphasis border', icon: 'fa-print' },
-  Confermato: { label: 'Confermato', badge: 'bg-primary-subtle text-primary-emphasis border', icon: 'fa-thumbs-up' },
-  Rimandato: { label: 'Rimandato (ritento)', badge: 'bg-warning-subtle text-warning-emphasis border', icon: 'fa-rotate' },
-  Consegnato: { label: 'Consegnato', badge: 'bg-success-subtle text-success-emphasis border', icon: 'fa-circle-check' },
-  NonConsegnato: { label: 'Non consegnato', badge: 'bg-danger-subtle text-danger-emphasis border', icon: 'fa-circle-xmark' },
-  ConsegnaParziale: { label: 'Consegna parziale', badge: 'bg-warning-subtle text-warning-emphasis border', icon: 'fa-triangle-exclamation' },
-  Errore: { label: 'Errore', badge: 'bg-danger-subtle text-danger-emphasis border', icon: 'fa-circle-exclamation' },
-  Eliminato: { label: 'Eliminato', badge: 'bg-light text-dark border', icon: 'fa-trash' },
+const POSTAL_STATUS_META: Record<string, { label: string; badge: string; icon: React.ComponentType<{ className?: string; size?: number }> }> = {
+  FAILED: { label: 'Fallito', badge: 'bg-danger', icon: X },
+  Accettato: { label: 'Accettato', badge: 'bg-secondary-subtle text-secondary-emphasis border', icon: Inbox },
+  Sospeso: { label: 'Sospeso', badge: 'bg-secondary-subtle text-secondary-emphasis border', icon: Pause },
+  Verificato: { label: 'Verificato', badge: 'bg-info-subtle text-info-emphasis border', icon: Check },
+  Normalizzazione: { label: 'Normalizzazione indirizzo', badge: 'bg-warning-subtle text-warning-emphasis border', icon: MapPin },
+  Inviato: { label: 'Inviato a Poste', badge: 'bg-info-subtle text-info-emphasis border', icon: Truck },
+  Elaborato: { label: 'Elaborato', badge: 'bg-info-subtle text-info-emphasis border', icon: Settings2 },
+  AttesaStampa: { label: 'Attesa stampa', badge: 'bg-info-subtle text-info-emphasis border', icon: Printer },
+  Confermato: { label: 'Confermato', badge: 'bg-primary-subtle text-primary-emphasis border', icon: ThumbsUp },
+  Rimandato: { label: 'Rimandato (ritento)', badge: 'bg-warning-subtle text-warning-emphasis border', icon: RotateCw },
+  Consegnato: { label: 'Consegnato', badge: 'bg-success-subtle text-success-emphasis border', icon: CheckCircle2 },
+  NonConsegnato: { label: 'Non consegnato', badge: 'bg-danger-subtle text-danger-emphasis border', icon: XCircle },
+  ConsegnaParziale: { label: 'Consegna parziale', badge: 'bg-warning-subtle text-warning-emphasis border', icon: AlertTriangle },
+  Errore: { label: 'Errore', badge: 'bg-danger-subtle text-danger-emphasis border', icon: AlertCircle },
+  Eliminato: { label: 'Eliminato', badge: 'bg-light text-dark border', icon: Trash2 },
 };
 
 function PostalStatusBadge({ status }: { status: string | null | undefined }): React.JSX.Element {
   if (!status) return <span className="badge bg-light text-dark border">In corso</span>;
-  const meta = POSTAL_STATUS_META[status] ?? { label: status, badge: 'bg-light text-dark border', icon: 'fa-circle-question' };
-  return <span className={`badge ${meta.badge}`}><i className={`fas ${meta.icon} me-1`}></i>{meta.label}</span>;
+  const meta = POSTAL_STATUS_META[status] ?? { label: status, badge: 'bg-light text-dark border', icon: HelpCircle };
+  const Icon = meta.icon;
+  return <span className={`badge ${meta.badge}`}><Icon className="me-1" size={14} />{meta.label}</span>;
 }
 
 // Pannello anteprima live destinatari (canale + tab App IO, paging record CSV,
@@ -207,14 +217,14 @@ function WizRecipientPreviewPanel({
             className={`btn ${wizPreviewChannelTab === 'MAIN' ? 'btn-primary' : 'btn-outline-secondary'}`}
             onClick={() => setWizPreviewChannelTab('MAIN')}
           >
-            <i className="fas fa-envelope me-1"></i> {wizChannel}
+            <Mail className="me-1" size={16} /> {wizChannel}
           </button>
           <button
             type="button"
             className={`btn ${wizPreviewChannelTab === 'APP_IO' ? 'btn-primary' : 'btn-outline-secondary'}`}
             onClick={() => setWizPreviewChannelTab('APP_IO')}
           >
-            <i className="fas fa-mobile-screen me-1"></i> App IO
+            <Smartphone className="me-1" size={16} /> App IO
           </button>
         </div>
       )}
@@ -225,7 +235,7 @@ function WizRecipientPreviewPanel({
           disabled={wizPreviewIndex === 0}
           onClick={() => setWizPreviewIndex(i => Math.max(0, i - 1))}
         >
-          <i className="fas fa-chevron-left"></i> Prec.
+          <ChevronLeft size={16} /> Prec.
         </button>
         <span className="small fw-bold">Record {wizPreviewIndex + 1} di {wizValidRows.length}</span>
         <button
@@ -233,7 +243,7 @@ function WizRecipientPreviewPanel({
           disabled={wizPreviewIndex >= wizValidRows.length - 1}
           onClick={() => setWizPreviewIndex(i => Math.min(wizValidRows.length - 1, i + 1))}
         >
-          Succ. <i className="fas fa-chevron-right"></i>
+          Succ. <ChevronRight size={16} />
         </button>
       </div>
 
@@ -245,7 +255,7 @@ function WizRecipientPreviewPanel({
           </div>
           {wizPreviewLoading ? (
             <div className="text-center text-muted small py-4">
-              <i className="fas fa-spinner fa-spin me-1"></i> Rendering anteprima...
+              <Loader2 className="icon-spin me-1" size={16} /> Rendering anteprima...
             </div>
           ) : wizPreviewChannelTab === 'APP_IO' ? (
             <div className="bg-white border rounded p-3" data-color-mode="light">
@@ -348,7 +358,7 @@ function WizAttachmentInlinePreview({
   return (
     <div className={bordered ? 'mt-3 pt-3 border-top' : ''}>
       <strong className="d-block mb-2">{attachmentEntry.label || 'Allegato'}: {filename}</strong>
-      {loading && <div className="text-center text-muted small py-3"><i className="fas fa-spinner fa-spin me-1"></i> Caricamento allegato...</div>}
+      {loading && <div className="text-center text-muted small py-3"><Loader2 className="icon-spin me-1" size={16} /> Caricamento allegato...</div>}
       {error && <div className="text-danger small">{error}</div>}
       {!loading && !error && objectUrl && isPdf && (
         // Altezza in proporzione A4 (1:1.414) invece di un valore fisso: si
@@ -358,7 +368,7 @@ function WizAttachmentInlinePreview({
       )}
       {!loading && !error && objectUrl && (
         <a href={objectUrl} download={filename} className="btn btn-sm btn-outline-secondary mt-2">
-          <i className="fas fa-download me-1"></i> Scarica
+          <Download className="me-1" size={16} /> Scarica
         </a>
       )}
     </div>
@@ -409,7 +419,7 @@ function WizAddressAttachmentPreviewPanel({
           disabled={wizPreviewIndex === 0}
           onClick={() => setWizPreviewIndex(i => Math.max(0, i - 1))}
         >
-          <i className="fas fa-chevron-left"></i> Prec.
+          <ChevronLeft size={16} /> Prec.
         </button>
         <span className="small fw-bold">Record {wizPreviewIndex + 1} di {wizValidRows.length}</span>
         <button
@@ -417,7 +427,7 @@ function WizAddressAttachmentPreviewPanel({
           disabled={wizPreviewIndex >= wizValidRows.length - 1}
           onClick={() => setWizPreviewIndex(i => Math.min(wizValidRows.length - 1, i + 1))}
         >
-          Succ. <i className="fas fa-chevron-right"></i>
+          Succ. <ChevronRight size={16} />
         </button>
       </div>
 
