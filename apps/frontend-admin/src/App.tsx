@@ -4859,6 +4859,39 @@ export function App(): React.JSX.Element {
     fetchDownloadCombinationStats(id);
   };
 
+  // Affianca ogni campagna di prova (isTest) alla propria bozza madre nell'elenco,
+  // stesso pattern di raggruppamento adiacente usato per i template gemelli
+  // (getGroupedTemplates) — senza questo, una campagna di prova appare come riga
+  // scollegata e indistinguibile altrove nell'elenco, con solo un link testuale
+  // a collegarla alla madre.
+  const getGroupedCampaigns = (): Campaign[] => {
+    const list: Campaign[] = [];
+    const visited = new Set<string>();
+    for (const c of campaigns) {
+      if (visited.has(c.id)) continue;
+      if (c.isTest && c.parentCampaignId) {
+        const parent = campaigns.find(x => x.id === c.parentCampaignId && !visited.has(x.id));
+        if (parent) {
+          visited.add(parent.id);
+          visited.add(c.id);
+          list.push(parent, c);
+          continue;
+        }
+      } else {
+        const child = campaigns.find(x => x.isTest && x.parentCampaignId === c.id && !visited.has(x.id));
+        if (child) {
+          visited.add(c.id);
+          visited.add(child.id);
+          list.push(c, child);
+          continue;
+        }
+      }
+      visited.add(c.id);
+      list.push(c);
+    }
+    return list;
+  };
+
   const fetchChannelBreakdown = async (id: string) => {
     try {
       const res = await apiFetch(`/campaigns/${id}/channel-stats`);
@@ -5612,37 +5645,41 @@ export function App(): React.JSX.Element {
                               <th className="text-center">Destinatari</th>
                               <th className="text-center">Stato</th>
                               <th>Creata il</th>
+                              <th className="text-end">Azioni</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {campaigns.map((c) => (
-                              <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => handleCampaignClick(c.id)}>
-                                <td className="fw-bold text-primary">
-                                  {c.name}
-                                  {c.isTest && (
-                                    <span className="badge bg-warning text-dark ms-2" title="Campagna di prova, collegata a una bozza">
-                                      TEST
-                                    </span>
-                                  )}
-                                  {c.isTest && c.parentCampaignId && (
-                                    <button
-                                      type="button"
-                                      className="btn btn-link btn-sm p-0 ms-2"
-                                      onClick={(e) => { e.stopPropagation(); handleCampaignClick(c.parentCampaignId!); }}
-                                    >
-                                      Vedi bozza madre
-                                    </button>
-                                  )}
-                                </td>
-                                <td>
-                                  <ChannelBadge channel={c.channelType} extra={c.channelConfig?.['serviceName'] as string | undefined} />
-                                </td>
-                                <td className="text-center fw-bold">{c.totalRecipients}</td>
-                                <td className="text-center">
-                                  <StatusBadge status={c.status} />
-                                </td>
-                                <td className="text-muted">{new Date(c.createdAt).toLocaleDateString('it-IT')}</td>
-                                <td className="text-end" onClick={(e) => e.stopPropagation()}>
+                            {getGroupedCampaigns().map((c) => {
+                              const isParentOfPair = !c.isTest && getGroupedCampaigns().some(x => x.isTest && x.parentCampaignId === c.id);
+                              const isChildOfPair = c.isTest && !!c.parentCampaignId && getGroupedCampaigns().some(x => x.id === c.parentCampaignId);
+                              const pairStyle: React.CSSProperties = (isParentOfPair || isChildOfPair) ? { backgroundColor: '#f4f7fc' } : {};
+                              const pairBorderLeft = (isParentOfPair || isChildOfPair) ? '3px solid var(--bs-primary, #0066cc)' : undefined;
+                              const cellStyle: React.CSSProperties = {
+                                borderLeft: pairBorderLeft,
+                                borderBottom: isParentOfPair ? 'none' : undefined,
+                                borderTop: isChildOfPair ? 'none' : undefined,
+                              };
+                              return (
+                                <tr key={c.id} style={{ cursor: 'pointer', ...pairStyle }} onClick={() => handleCampaignClick(c.id)}>
+                                  <td className="fw-bold text-primary" style={{ ...cellStyle, paddingLeft: isChildOfPair ? '1.5rem' : undefined }}>
+                                    {isParentOfPair && <i className="fas fa-link text-primary me-2" title="Collegata a una campagna di prova"></i>}
+                                    {isChildOfPair && <i className="fas fa-reply fa-rotate-180 text-muted me-2" style={{ transform: 'scaleX(-1)', opacity: 0.6 }} title="Campagna di prova"></i>}
+                                    {c.name}
+                                    {c.isTest && (
+                                      <span className="badge bg-warning text-dark ms-2" title="Campagna di prova, collegata a una bozza">
+                                        TEST
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td style={cellStyle}>
+                                    <ChannelBadge channel={c.channelType} extra={c.channelConfig?.['serviceName'] as string | undefined} />
+                                  </td>
+                                  <td className="text-center fw-bold" style={cellStyle}>{c.totalRecipients}</td>
+                                  <td className="text-center" style={cellStyle}>
+                                    <StatusBadge status={c.status} />
+                                  </td>
+                                  <td className="text-muted" style={cellStyle}>{new Date(c.createdAt).toLocaleDateString('it-IT')}</td>
+                                  <td className="text-end" style={cellStyle} onClick={(e) => e.stopPropagation()}>
                                   {c.status === 'draft' && (
                                     <button
                                       type="button"
@@ -5673,7 +5710,8 @@ export function App(): React.JSX.Element {
                                   )}
                                 </td>
                               </tr>
-                            ))}
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
