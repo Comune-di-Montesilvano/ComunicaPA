@@ -230,6 +230,60 @@ Delimitatore `%%chiave%%` (doppio `%`, non singolo) — vedi `template.helper.ts
 tributo") non forma mai un placeholder. Nessuna retrocompatibilità col vecchio
 delimitatore singolo: i template esistenti vanno riscritti.
 
+**Oggetto per-destinatario da colonna CSV.** Se `channelConfig.csvMapping.subject`
+mappa una colonna, `resolveSubjectTemplate()` (`subject-mapping.util.ts`) usa
+il valore di quella cella per il singolo destinatario al posto dell'oggetto
+di campagna — utile per invii con tributi diversi nello stesso lancio (es.
+SEND), ma significa che editare l'"Oggetto" della campagna nel wizard NON
+cambia l'oggetto reale per righe con quella colonna valorizzata. Verificare
+sempre `csvMapping.subject` prima di dare per scontato quale oggetto verrà
+usato per un destinatario specifico.
+
+**App IO — vincolo di lunghezza anche sull'oggetto**, non solo sul body:
+PagoPA rifiuta `content.subject` fuori dal range `[10, 120]` caratteri
+(oltre al vincolo già noto su `content.markdown`, `[80, 10000]`) — HTTP 400
+"not a valid [string of length >= 10 and < 121]". Validazione bloccante
+lato wizard: `wizAppIoSubjectLenInvalid`/`APP_IO_SUBJECT_MIN`/`_MAX`
+(`App.tsx`), stesso pattern del check body esistente
+(`wizAppIoBodyLenInvalid`).
+
+## Wizard campagne — sync bozza/Recipient anticipato ad ogni "avanti"
+
+Dallo step2 in poi, ogni transizione "avanti" (bottoni, tab-click forward,
+"Avvia Test") chiama `syncWizDraftAndRecipients(targetStep)` — salva
+nome/config/CSV grezzo bozza e, se cambiati dall'ultimo sync (impronta
+`wizRecipientsSyncFingerprint`), risincronizza i `Recipient` in DB (via
+`uploadCsv()`, delete+recreate). Questo perché i `Recipient` ora esistono
+già in bozza (non solo al lancio reale) — necessario perché
+`finalizeAttachments()` risolva correttamente gli allegati referenziati a
+step5, prima solo Recipient assenti in bozza causavano lo scarto di ogni
+allegato caricato.
+
+**`targetStep` va sempre passato esplicitamente, mai desunto da `wizStep`
+state.** `buildWizChannelConfigDraft(targetStep)` scrive `wizStep:
+targetStep` nel channelConfig persistito — se un punto di chiamata usasse
+`wizStep` (stato del render corrente) invece del target, salverebbe lo
+step di PARTENZA della transizione, non quello di arrivo (setState non è
+visibile nello stesso render/closure). Bug reale già capitato una volta
+per lo stesso motivo su una diversa funzione in questo file (vedi bug1
+mappatura CSV, stale closure).
+
+**Ogni nuovo bottone/azione che avanza lo step deve chiamare
+`syncWizDraftAndRecipients(targetStep)` prima di `setWizStep`.** Bug reale:
+"Avvia Test" (step6→7) inizialmente non lo faceva — se l'operatore
+modificava oggetto/testo a step4 e tornava a step6 senza mai ripassare da
+un bottone "avanti", il test partiva con `channelConfig` ancora quello
+del salvataggio precedente mentre l'anteprima mostrava già il nuovo
+contenuto in locale — invii "sfalsati" di un edit rispetto alla preview.
+
+**Gating navigazione tab:** `wizMaxReachedStep` (più alto step raggiunto)
++ snapshot `wizLastSyncedHeaders`/`wizLastSyncedMapping` (presi solo al
+sync 3→4, quando la mappatura è confermata) determinano se un tab-step
+oltre lo step 3 è cliccabile in avanti — solo se CSV/mappatura non sono
+cambiati dall'ultimo sync. Il tab bar esistente (`App.tsx` "Steps
+Progress Header") permetteva SOLO click all'indietro prima di questa
+modifica — non dare per scontato che un salto in avanti "funzioni già".
+
 ## Job BullMQ e stato campagna/destinatario — pattern jobId = attemptId
 
 `launch()`, `retryRecipient()` e `cancel()` in `campaigns.service.ts` accodano
@@ -450,6 +504,17 @@ campaigns.service preview/dettaglio) che costruiscono `attachmentLabels`: un
 nuovo punto che dimentica di passare il `recipient` specifico produce
 un'etichetta sempre fissa, ignorando silenziosamente la colonna scelta.
 
+**Fallback legacy senza mappatura allegati esplicita.** Se una campagna non
+ha né `channelConfig.attachments` né `allegatoKey` (campagne vecchie, o mai
+configurate a step3), `resolveCustomAttachmentFilename()`
+(`attachment.service.ts`) scansiona `extraData` e usa il primo valore che
+termina in `.pdf`, con etichetta fissa "Documento principale.pdf"
+(`processTemplate`, `template.helper.ts`). Qualunque UI che mostri "quali
+allegati sono attesi" leggendo solo `channelConfig.attachments` (es.
+`wizAttachments` nel wizard) deve replicare lo stesso fallback, altrimenti
+mostra "nessun allegato" per campagne che in realtà ne inviano uno — bug
+reale corretto nell'anteprima PDF di step6.
+
 **Allegato obbligatorio per SEND e POSTAL — bloccato in UI e backend.**
 Per questi due canali l'allegato È il contenuto notificato (atto legale /
 lettera), non un corredo opzionale al body come per EMAIL/PEC/APP_IO. Il
@@ -648,3 +713,19 @@ a più repliche in futuro, va sostituito con Redis pub/sub — non fatto ora
 `response.body.getReader()`, parsing manuale delle righe `data: ...\n\n`.
 Nessuna persistenza lato backend — è un log live, non uno storico (i
 warning finali restano su `EnrichmentJob.warnings` come sempre).
+
+## Liste e pannelli con stato lato server — nessun refresh automatico globale
+
+Non esiste un meccanismo generale (websocket/SSE) che push-aggiorna la UI
+quando lo stato di una campagna cambia lato server (worker BullMQ) — l'unica
+eccezione è il log live job di Arricchimento Tracciati (SSE dedicato, vedi
+sopra). Qualunque lista/pannello che mostra stato potenzialmente in corso
+deve avere il proprio `useEffect` con `setInterval` — bug reale corretto:
+dashboard "Attività Recenti", elenco "Campagne Massive" e vista Statistiche
+fetchavano una volta sola (al login o all'ingresso vista) e restavano fermi
+su "In coda" anche a campagna completata, finché l'operatore non ricaricava
+la pagina manualmente. Il dettaglio campagna aveva già un polling da 3s ma
+solo per l'oggetto `campaign` principale, non per i pannelli di breakdown/
+statistiche/destinatari (fetchati una sola volta al click) — un nuovo
+pannello nel dettaglio campagna va aggiunto anche al polling esistente, non
+solo al caricamento iniziale.
