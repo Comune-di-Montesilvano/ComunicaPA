@@ -270,6 +270,93 @@ function WizRecipientPreviewPanel({
   );
 }
 
+// Anteprima inline di un allegato per il record CSV corrente nel wizard
+// (Step "Anteprima e Invio"). Fetch autenticato (Bearer, non un <embed src>
+// nudo — l'endpoint richiede il JWT) + conversione Blob -> Object URL,
+// stesso pattern di isolamento locale (nessuno stato esterno) di
+// WizRecipientPreviewPanel sopra. Non montato da nessuna parte in questo
+// task — solo dichiarato.
+function WizAttachmentInlinePreview({
+  campaignId,
+  row,
+  attachmentEntry,
+  token,
+}: {
+  campaignId: string | null;
+  row: Record<string, string>;
+  attachmentEntry: { key: string; label: string; labelColumn?: string };
+  token: string | null;
+}): React.JSX.Element | null {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const filename = row[attachmentEntry.key] || '';
+  const isPdf = filename.toLowerCase().endsWith('.pdf');
+
+  useEffect(() => {
+    setObjectUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    setError(null);
+
+    if (!campaignId || !filename) return;
+
+    let cancelled = false;
+    setLoading(true);
+    fetch(`${ADMIN_API_BASE}/campaigns/${campaignId}/attachments/preview-file?filename=${encodeURIComponent(filename)}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then((res) => (res.ok ? res.blob() : Promise.reject(new Error(res.status === 404 ? 'Allegato non trovato — verifica il Passo 5' : 'Errore caricamento allegato'))))
+      .then((blob) => {
+        if (cancelled) return;
+        setObjectUrl(URL.createObjectURL(blob));
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Errore caricamento allegato');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campaignId, filename]);
+
+  // Cleanup solo allo smontaggio: revoca l'ultimo Object URL vivo tramite
+  // il setter funzionale (non la variabile `objectUrl` catturata alla
+  // creazione dell'effect, che sarebbe sempre null essendo le dipendenze []).
+  useEffect(() => {
+    return () => {
+      setObjectUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+    };
+  }, []);
+
+  if (!filename) return null;
+
+  return (
+    <div className="mt-3 pt-3 border-top">
+      <strong className="d-block mb-2">{attachmentEntry.label || 'Allegato'}: {filename}</strong>
+      {loading && <div className="text-center text-muted small py-3"><i className="fas fa-spinner fa-spin me-1"></i> Caricamento allegato...</div>}
+      {error && <div className="text-danger small">{error}</div>}
+      {!loading && !error && objectUrl && isPdf && (
+        <embed type="application/pdf" src={objectUrl} style={{ width: '100%', height: '400px', border: '1px solid #dee2e6', borderRadius: '4px' }} />
+      )}
+      {!loading && !error && objectUrl && (
+        <a href={objectUrl} download={filename} className="btn btn-sm btn-outline-secondary mt-2">
+          <i className="fas fa-download me-1"></i> Scarica
+        </a>
+      )}
+    </div>
+  );
+}
+
 // Etichette/descrizioni italiane per i valori ServiceType di GlobalCom
 // (ProdottiDisponibili, scoperti da InformazioniUtenza — non tutti gli enum
 // del manuale sono pertinenti alla postalizzazione PA, solo quelli che
