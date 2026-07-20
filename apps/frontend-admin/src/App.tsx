@@ -6714,7 +6714,7 @@ export function App(): React.JSX.Element {
               {wizStep === 4 && (
                 <>
                   <div className="mb-3 pb-3 border-bottom d-flex justify-content-between">
-                    <button className="btn btn-outline-secondary" onClick={() => setWizStep(3)}>
+                    <button className="btn btn-outline-secondary" onClick={() => setWizStep(wizSingleMode ? 2 : 3)}>
                       <i className="fas fa-arrow-left me-1"></i> Indietro
                     </button>
                     <button
@@ -6912,7 +6912,7 @@ export function App(): React.JSX.Element {
                     )}
 
                     <div className="mt-4 pt-3 border-top d-flex justify-content-between">
-                      <button className="btn btn-outline-secondary" onClick={() => setWizStep(3)}>
+                      <button className="btn btn-outline-secondary" onClick={() => setWizStep(wizSingleMode ? 2 : 3)}>
                         <i className="fas fa-arrow-left me-1"></i> Indietro
                       </button>
                       <button
