@@ -16,6 +16,8 @@ import {
   RefreshCw, Tag, UserCheck, Sparkles,
   CheckCheck, Shield, Paperclip, Upload, Filter, Award, ExternalLink, Contact,
   Play, FileArchive, Keyboard, Key, BookUser,
+  Minus, Star, Stamp, Settings, CircleUserRound, BarChart3, ShieldCheck, Rocket, ArrowDown,
+  Users, FolderOpen,
 } from 'lucide-react';
 
 declare global {
@@ -8801,21 +8803,21 @@ export function App(): React.JSX.Element {
                       className={`nav-link border-0 text-start bg-transparent ${activeSettingsTab === 'inipec' ? 'active' : ''}`}
                       onClick={() => setActiveSettingsTab('inipec')}
                     >
-                      <i className="fas fa-address-card me-2"></i>INIPEC
+                      <Contact className="me-2" />INIPEC
                     </button>
                     <button
                       type="button"
                       className={`nav-link border-0 text-start bg-transparent ${activeSettingsTab === 'protocollo' ? 'active' : ''}`}
                       onClick={() => setActiveSettingsTab('protocollo')}
                     >
-                      <i className="fas fa-folder-open me-2"></i>Protocollo
+                      <FolderOpen className="me-2" />Protocollo
                     </button>
                     <button
                       type="button"
                       className={`nav-link border-0 text-start bg-transparent ${activeSettingsTab === 'postalizzazione' ? 'active' : ''}`}
                       onClick={() => setActiveSettingsTab('postalizzazione')}
                     >
-                      <i className="fas fa-mail-bulk me-2"></i>Postalizzazione
+                      <Mails className="me-2" />Postalizzazione
                     </button>
 
                     <span className="imp-section-title">Sicurezza</span>
@@ -8824,7 +8826,7 @@ export function App(): React.JSX.Element {
                       className={`nav-link border-0 text-start bg-transparent ${activeSettingsTab === 'oidc' ? 'active' : ''}`}
                       onClick={() => setActiveSettingsTab('oidc')}
                     >
-                      <i className="fas fa-id-badge me-2"></i>SPID / CIE (OIDC)
+                      <Contact className="me-2" />SPID / CIE (OIDC)
                     </button>
 
                     <span className="imp-section-title">Sistema</span>
@@ -8836,7 +8838,7 @@ export function App(): React.JSX.Element {
                         fetchEngines();
                       }}
                     >
-                      <i className="fas fa-cogs me-2"></i>Motori di Invio
+                      <Settings2 className="me-2" />Motori di Invio
                     </button>
                   </nav>
                 </div>
@@ -9629,7 +9631,7 @@ export function App(): React.JSX.Element {
                             </div>
                             <div className="col-12">
                               <div className="border border-primary rounded p-3 mt-2" style={{background:'#f4f8fd'}}>
-                                <h6 className="small fw-bold text-dark mb-2"><i className="fas fa-info-circle me-1 text-primary"></i>Parametri da configurare nel proxy OIDC</h6>
+                                <h6 className="small fw-bold text-dark mb-2"><Info className="me-1 text-primary" />Parametri da configurare nel proxy OIDC</h6>
                                 <p className="small text-muted mb-2">Usa questi dati per registrare il client nella WebUI del proxy (es. pa-sso-proxy):</p>
                                 <label className="form-label small fw-semibold text-muted mb-1">Redirect URI</label>
                                 <div className="input-group input-group-sm mb-2">
@@ -9653,7 +9655,7 @@ export function App(): React.JSX.Element {
                                       setTimeout(() => setSettingsSavedMessage(null), 3000);
                                     }}
                                   >
-                                    <i className="fas fa-copy"></i>
+                                    <Copy />
                                   </button>
                                 </div>
                                 <div className="small">
@@ -9672,7 +9674,7 @@ export function App(): React.JSX.Element {
                             className="btn btn-primary px-4 py-2"
                             style={{ backgroundColor: 'var(--bi-navy)', border: 'none' }}
                           >
-                            <i className="fas fa-save me-2"></i>Salva Impostazioni
+                            <Save className="me-2" />Salva Impostazioni
                           </button>
                         </div>
 
@@ -9689,13 +9691,13 @@ export function App(): React.JSX.Element {
                         <div>
                           <div className="border rounded bg-light p-3 mb-4">
                             <div className="d-flex justify-content-between align-items-center mb-3">
-                              <h4 className="h6 mb-0 fw-bold text-dark"><i className="fas fa-list me-1 text-primary"></i>Servizi App IO Configurati</h4>
+                              <h4 className="h6 mb-0 fw-bold text-dark"><List className="me-1 text-primary" />Servizi App IO Configurati</h4>
                               <button
                                 type="button"
                                 className="btn btn-sm btn-primary"
                                 onClick={() => setShowNewSvcForm(!showNewSvcForm)}
                               >
-                                <i className={`fas ${showNewSvcForm ? 'fa-minus' : 'fa-plus'} me-1`}></i> Nuovo Servizio
+                                {showNewSvcForm ? <Minus className="me-1" /> : <Plus className="me-1" />} Nuovo Servizio
                               </button>
                             </div>
 
@@ -9894,7 +9896,7 @@ export function App(): React.JSX.Element {
                                                   onClick={() => handleSetDefaultIoService(s.id)}
                                                   title="Imposta come predefinito"
                                                 >
-                                                  <i className="fas fa-star"></i>
+                                                  <Star />
                                                 </button>
                                               )}
                                               <button
@@ -9903,7 +9905,7 @@ export function App(): React.JSX.Element {
                                                 onClick={() => { setEditingIoService(s); setShowNewSvcForm(false); }}
                                                 title="Modifica"
                                               >
-                                                <i className="fas fa-edit"></i>
+                                                <Pencil />
                                               </button>
                                               <button
                                                 type="button"
@@ -9911,7 +9913,7 @@ export function App(): React.JSX.Element {
                                                 onClick={() => handleDeleteIoService(s.id)}
                                                 title="Elimina"
                                               >
-                                                <i className="fas fa-trash"></i>
+                                                <Trash2 />
                                               </button>
                                             </div>
                                           </td>
@@ -9930,7 +9932,7 @@ export function App(): React.JSX.Element {
                                                 style={{ maxWidth: 200 }}
                                               />
                                               <button type="submit" className="btn btn-sm btn-outline-secondary" disabled={ioTestBusyId === s.id}>
-                                                <i className="fas fa-paper-plane"></i> Invia Test
+                                                <Send /> Invia Test
                                               </button>
                                               {ioTestMsg?.id === s.id && (
                                                 <span className={`small ${ioTestMsg.error ? 'text-danger' : 'text-success'}`}>{ioTestMsg.text}</span>
@@ -9959,21 +9961,21 @@ export function App(): React.JSX.Element {
                               onClick={fetchEngines}
                               disabled={loadingEngines}
                             >
-                              <i className={`fas fa-sync-alt ${loadingEngines ? 'fa-spin' : ''}`}></i>
+                              <RefreshCw className={loadingEngines ? 'icon-spin' : ''} />
                               Aggiorna
                             </button>
                           </div>
 
                           {enginesError && (
                             <div className="alert alert-danger d-flex align-items-center gap-2">
-                              <i className="fas fa-triangle-exclamation"></i>
+                              <AlertTriangle />
                               {enginesError}
                             </div>
                           )}
 
                           {loadingEngines && engines.length === 0 ? (
                             <div className="text-center py-5 text-muted">
-                              <i className="fas fa-spinner fa-spin fa-2x mb-3"></i>
+                              <Loader2 className="icon-spin mb-3" size={24} />
                               <div>Caricamento stato motori...</div>
                             </div>
                           ) : (
@@ -9987,13 +9989,13 @@ export function App(): React.JSX.Element {
                                   POSTAL: 'Postale',
                                   PROTOCOLLAZIONE: 'Protocollazione',
                                 };
-                                const channelIcon: Record<string, string> = {
-                                  EMAIL: 'fa-envelope',
-                                  PEC: 'fa-envelope-open-text',
-                                  APP_IO: 'fa-mobile-alt',
-                                  SEND: 'fa-paper-plane',
-                                  POSTAL: 'fa-mail-bulk',
-                                  PROTOCOLLAZIONE: 'fa-stamp',
+                                const channelIcon: Record<string, React.ComponentType<{ className?: string; size?: number }>> = {
+                                  EMAIL: Mail,
+                                  PEC: MailOpen,
+                                  APP_IO: Smartphone,
+                                  SEND: Send,
+                                  POSTAL: Mails,
+                                  PROTOCOLLAZIONE: Stamp,
                                 };
                                 const total = (eng.counts?.waiting ?? 0) + (eng.counts?.active ?? 0) + (eng.counts?.delayed ?? 0);
                                 const failed = eng.counts?.failed ?? 0;
@@ -10005,7 +10007,7 @@ export function App(): React.JSX.Element {
                                       <div className="d-flex justify-content-between align-items-start flex-wrap gap-2">
                                         <div className="d-flex align-items-center gap-3">
                                           <div className={`rounded-circle d-flex align-items-center justify-content-center text-white ${eng.paused ? 'bg-warning' : 'bg-primary'}`} style={{ width: 40, height: 40 }}>
-                                            <i className={`fas ${channelIcon[eng.channel] ?? 'fa-cog'}`}></i>
+                                            {(() => { const Icon = channelIcon[eng.channel] ?? Settings; return <Icon />; })()}
                                           </div>
                                           <div>
                                             <div className="fw-bold text-dark">{channelLabel[eng.channel] ?? eng.channel}</div>
@@ -10040,20 +10042,20 @@ export function App(): React.JSX.Element {
                                           <div>
                                             {eng.paused ? (
                                               <div className="d-flex flex-column align-items-center gap-1">
-                                                <span className="badge bg-warning text-dark mb-1"><i className="fas fa-pause me-1"></i>In Pausa</span>
+                                                <span className="badge bg-warning text-dark mb-1"><Pause className="me-1" />In Pausa</span>
                                                 <button
                                                   type="button"
                                                   className="btn btn-sm btn-success d-flex align-items-center gap-1"
                                                   onClick={() => handleEngineAction(eng.channel, 'resume')}
                                                   disabled={loadingEngines}
                                                 >
-                                                  <i className="fas fa-play"></i> Riprendi
+                                                  <Play /> Riprendi
                                                 </button>
                                               </div>
                                             ) : (
                                               <div className="d-flex flex-column align-items-center gap-1">
                                                 <span className={`badge ${total > 0 ? 'bg-primary' : 'bg-secondary'} mb-1`}>
-                                                  {total > 0 ? <><i className="fas fa-circle-notch fa-spin me-1"></i>Attivo ({total})</> : <><i className="fas fa-check me-1"></i>Idle</>}
+                                                  {total > 0 ? <><Loader2 className="icon-spin me-1" />Attivo ({total})</> : <><Check className="me-1" />Idle</>}
                                                 </span>
                                                 <button
                                                   type="button"
@@ -10061,7 +10063,7 @@ export function App(): React.JSX.Element {
                                                   onClick={() => handleEngineAction(eng.channel, 'pause')}
                                                   disabled={loadingEngines}
                                                 >
-                                                  <i className="fas fa-pause"></i> Pausa
+                                                  <Pause /> Pausa
                                                 </button>
                                               </div>
                                             )}
@@ -10075,7 +10077,7 @@ export function App(): React.JSX.Element {
                                           className="btn btn-sm btn-outline-secondary"
                                           onClick={() => handleViewEngineJobs(eng.channel)}
                                         >
-                                          <i className="fas fa-list me-1"></i>Vedi job falliti
+                                          <List className="me-1" />Vedi job falliti
                                         </button>
                                         {engineJobsChannel === eng.channel && (
                                           <div className="table-responsive">
@@ -10132,7 +10134,7 @@ export function App(): React.JSX.Element {
                                   <div className="card-body p-3">
                                     <div className="d-flex align-items-center gap-3 mb-2">
                                       <div className="rounded-circle d-flex align-items-center justify-content-center text-white bg-primary" style={{ width: 40, height: 40 }}>
-                                        <i className="fas fa-paper-plane"></i>
+                                        <Send />
                                       </div>
                                       <div>
                                         <div className="fw-bold text-dark">SEND</div>
@@ -10180,7 +10182,7 @@ export function App(): React.JSX.Element {
                   <div style={{ maxWidth: '350px', width: '100%' }}>
                     <div className="input-group">
                       <span className="input-group-text bg-light border-end-0 text-muted">
-                        <i className="fas fa-search"></i>
+                        <Search />
                       </span>
                       <input
                         type="text"
@@ -10202,7 +10204,7 @@ export function App(): React.JSX.Element {
                   </div>
                 ) : auditLogs.length === 0 ? (
                   <div className="text-center py-5 text-muted">
-                    <i className="fas fa-history fa-3x mb-3 text-light"></i>
+                    <History className="mb-3 text-light" size={32} />
                     <p className="mb-0">Nessuna attività registrata con i filtri correnti.</p>
                   </div>
                 ) : (
@@ -10288,7 +10290,7 @@ export function App(): React.JSX.Element {
                                   {new Date(log.createdAt).toLocaleString('it-IT')}
                                 </td>
                                 <td className="fw-medium text-dark">
-                                  <i className="fas fa-user-circle me-2 text-muted"></i>
+                                  <CircleUserRound className="me-2 text-muted" />
                                   {log.operator}
                                 </td>
                                 <td>
@@ -10339,7 +10341,7 @@ export function App(): React.JSX.Element {
                                 onClick={() => setAuditPage((p) => Math.max(p - 1, 1))}
                                 disabled={auditPage === 1}
                               >
-                                <i className="fas fa-chevron-left"></i>
+                                <ChevronLeft />
                               </button>
                             </li>
                             {Array.from({ length: Math.ceil(auditTotal / auditPageSize) }, (_, i) => i + 1).map((p) => {
@@ -10364,7 +10366,7 @@ export function App(): React.JSX.Element {
                                 onClick={() => setAuditPage((p) => Math.min(p + 1, Math.ceil(auditTotal / auditPageSize)))}
                                 disabled={auditPage >= Math.ceil(auditTotal / auditPageSize)}
                               >
-                                <i className="fas fa-chevron-right"></i>
+                                <ChevronRight />
                               </button>
                             </li>
                           </ul>
@@ -10385,23 +10387,23 @@ export function App(): React.JSX.Element {
                   className="btn btn-outline-secondary btn-sm px-3 mb-3 border"
                   onClick={() => setView('invio-massivo')}
                 >
-                  <i className="fas fa-arrow-left me-1"></i> Torna a Campagne
+                  <ArrowLeft className="me-1" /> Torna a Campagne
                 </button>
               </div>
 
               {loadingCampaignDetail && !campaign ? (
                 <div className="text-center py-5">
-                  <i className="fas fa-spinner fa-spin fa-2x text-primary mb-2"></i>
+                  <Loader2 className="icon-spin text-primary mb-2" size={24} />
                   <div>Caricamento dati campagna...</div>
                 </div>
               ) : detailError ? (
-                <div className="alert alert-danger"><i className="fas fa-exclamation-triangle"></i> {detailError}</div>
+                <div className="alert alert-danger"><AlertTriangle /> {detailError}</div>
               ) : campaign ? (
                 <div className="row g-4">
                   <div className="col-lg-4">
                     <div className="card shadow-sm mb-4">
                       <div className="card-header bg-white py-3 border-bottom">
-                        <h3 className="h6 mb-0 fw-bold text-dark"><i className="fas fa-info-circle me-2"></i>Metadati Campagna</h3>
+                        <h3 className="h6 mb-0 fw-bold text-dark"><Info className="me-2" />Metadati Campagna</h3>
                       </div>
                       <div className="card-body">
                         <div className="mb-3">
@@ -10482,8 +10484,8 @@ export function App(): React.JSX.Element {
                               ></div>
                             </div>
                             <div className="d-flex justify-content-between small text-muted">
-                              <span><i className="fas fa-check text-success"></i> Successo: {campaign.sentCount}</span>
-                              <span><i className="fas fa-times text-danger"></i> Errori: {campaign.failedCount}</span>
+                              <span><Check className="text-success" /> Successo: {campaign.sentCount}</span>
+                              <span><X className="text-danger" /> Errori: {campaign.failedCount}</span>
                             </div>
                           </div>
                         )}
@@ -10491,7 +10493,7 @@ export function App(): React.JSX.Element {
                         {campaign.channelType === 'SEND' && sendStatusBreakdown && (
                           <div className="mt-4 border-top pt-3">
                             <h4 className="small fw-bold mb-2">
-                              <i className="fas fa-chart-bar me-1 text-primary"></i>Andamento Invio SEND
+                              <BarChart3 className="me-1 text-primary" />Andamento Invio SEND
                             </h4>
                             <ChannelStatusBar breakdown={sendStatusBreakdown} meta={SEND_STATUS_META} pendingLabel="In attesa" />
                           </div>
@@ -10500,7 +10502,7 @@ export function App(): React.JSX.Element {
                         {campaign.channelType !== 'SEND' && campaign.channelConfig?.['protocolla'] === true && campaignSendStageCounts && (
                           <div className="mt-4 border-top pt-3">
                             <h4 className="small fw-bold mb-2">
-                              <i className="fas fa-stamp me-1 text-primary"></i>Stato Protocollazione
+                              <Stamp className="me-1 text-primary" />Stato Protocollazione
                             </h4>
                             <div className="d-flex gap-3 text-center small">
                               <div>
@@ -10526,7 +10528,7 @@ export function App(): React.JSX.Element {
                         {campaign.channelType === 'POSTAL' && postalStatusBreakdown && (
                           <div className="mt-4 border-top pt-3">
                             <h4 className="small fw-bold mb-2">
-                              <i className="fas fa-chart-bar me-1 text-primary"></i>Andamento Invio POSTAL
+                              <BarChart3 className="me-1 text-primary" />Andamento Invio POSTAL
                             </h4>
                             <ChannelStatusBar breakdown={postalStatusBreakdown} meta={POSTAL_STATUS_META} pendingLabel="In corso" />
                           </div>
@@ -10535,31 +10537,31 @@ export function App(): React.JSX.Element {
                         {channelBreakdown && (
                           <div className="mt-4 border-top pt-3">
                             <h4 className="small fw-bold mb-2">
-                              <i className="fas fa-mobile-screen me-1 text-primary"></i>Dettaglio Consegna Multicanale
+                              <Smartphone className="me-1 text-primary" />Dettaglio Consegna Multicanale
                             </h4>
                             <div className="small">
                               <div className="d-flex justify-content-between mb-1">
-                                <span><i className="fas fa-envelope text-muted me-1"></i>Solo canale primario</span>
+                                <span><Mail className="text-muted me-1" />Solo canale primario</span>
                                 <span className="fw-bold">{channelBreakdown.primaryOnly}</span>
                               </div>
                               <div className="d-flex justify-content-between mb-1">
-                                <span><i className="fas fa-check-double text-success me-1"></i>Anche App IO (parallela)</span>
+                                <span><CheckCheck className="text-success me-1" />Anche App IO (parallela)</span>
                                 <span className="fw-bold">{channelBreakdown.both}</span>
                               </div>
                               <div className="d-flex justify-content-between mb-1">
-                                <span><i className="fas fa-mobile-screen text-success me-1"></i>Solo App IO (esclusiva)</span>
+                                <span><Smartphone className="text-success me-1" />Solo App IO (esclusiva)</span>
                                 <span className="fw-bold">{channelBreakdown.appIoOnly}</span>
                               </div>
                               <div className="d-flex justify-content-between mb-1">
-                                <span><i className="fas fa-triangle-exclamation text-warning me-1"></i>App IO riuscito, primario fallito</span>
+                                <span><AlertTriangle className="text-warning me-1" />App IO riuscito, primario fallito</span>
                                 <span className="fw-bold">{channelBreakdown.appIoDespitePrimaryFail}</span>
                               </div>
                               <div className="d-flex justify-content-between mb-1">
-                                <span><i className="fas fa-times text-danger me-1"></i>Nessuno dei due (fallito)</span>
+                                <span><X className="text-danger me-1" />Nessuno dei due (fallito)</span>
                                 <span className="fw-bold">{channelBreakdown.neither}</span>
                               </div>
                               <div className="d-flex justify-content-between">
-                                <span><i className="fas fa-shield-halved text-primary me-1"></i>Dirottato su PEC (INAD)</span>
+                                <span><ShieldCheck className="text-primary me-1" />Dirottato su PEC (INAD)</span>
                                 <span className="fw-bold">{channelBreakdown.inadDiverted}</span>
                               </div>
                             </div>
@@ -10569,7 +10571,7 @@ export function App(): React.JSX.Element {
                         {failureGroups.length > 0 && (
                           <div className="mt-4 border-top pt-3">
                             <h4 className="small fw-bold mb-2 text-danger">
-                              <i className="fas fa-triangle-exclamation me-1"></i>
+                              <AlertTriangle className="me-1" />
                               Destinatari con invio fallito ({failureGroups.reduce((sum, g) => sum + g.count, 0)}) — raggruppati per motivo
                             </h4>
                             <div className="table-responsive" style={{ maxHeight: 300, overflowY: 'auto' }}>
@@ -10586,7 +10588,7 @@ export function App(): React.JSX.Element {
                                           disabled={retryingGroup === g.errorMessage}
                                           onClick={() => handleRetryGroup(g)}
                                         >
-                                          <i className="fas fa-rotate-right me-1"></i>
+                                          <RotateCw className="me-1" />
                                           {retryingGroup === g.errorMessage ? 'Rimetto in coda...' : 'Rimetti in coda tutti'}
                                         </button>
                                       </td>
@@ -10606,9 +10608,9 @@ export function App(): React.JSX.Element {
                               onClick={handleLaunchCampaign}
                             >
                               {launching ? (
-                                <><i className="fas fa-spinner fa-spin me-2"></i>Lancio in corso...</>
+                                <><Loader2 className="icon-spin me-2" />Lancio in corso...</>
                               ) : (
-                                <><i className="fas fa-rocket me-2"></i>Lancia Campagna</>
+                                <><Rocket className="me-2" />Lancia Campagna</>
                               )}
                             </button>
                           )}
@@ -10619,15 +10621,15 @@ export function App(): React.JSX.Element {
                               onClick={handleCancelCampaign}
                             >
                               {cancelling ? (
-                                <><i className="fas fa-spinner fa-spin me-2"></i>Annullamento in corso...</>
+                                <><Loader2 className="icon-spin me-2" />Annullamento in corso...</>
                               ) : (
-                                <><i className="fas fa-ban me-2"></i>Annulla Campagna</>
+                                <><Ban className="me-2" />Annulla Campagna</>
                               )}
                             </button>
                           )}
                           {campaign.status === 'checking_inad' && (
                             <div className="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-2">
-                              <span><i className="fas fa-spinner fa-spin me-2"></i>Verifica domicilio digitale INAD in corso…</span>
+                              <span><Loader2 className="icon-spin me-2" />Verifica domicilio digitale INAD in corso…</span>
                               <div>
                                 <button className="btn btn-sm btn-outline-secondary me-2" onClick={() => handleRetryInadCheck(campaign.id)}>
                                   Riprova verifica
@@ -10643,7 +10645,7 @@ export function App(): React.JSX.Element {
                           )}
                           {campaign.totalRecipients === 0 && campaign.status === 'draft' && (
                             <div className="alert alert-warning small p-2 mt-2 mb-0">
-                              <i className="fas fa-info-circle"></i> Carica un file CSV di destinatari per poter lanciare la campagna.
+                              <Info /> Carica un file CSV di destinatari per poter lanciare la campagna.
                             </div>
                           )}
                           {role === 'admin' && (
@@ -10651,7 +10653,7 @@ export function App(): React.JSX.Element {
                               className="btn btn-outline-danger w-100 py-2 fw-semibold mt-2"
                               onClick={() => handleDeleteCampaign(campaign.id, campaign.name)}
                             >
-                              <i className="fas fa-trash me-2"></i>Elimina Campagna
+                              <Trash2 className="me-2" />Elimina Campagna
                             </button>
                           )}
                         </div>
@@ -10672,7 +10674,7 @@ export function App(): React.JSX.Element {
                             className="btn btn-primary"
                             onClick={() => handleResumeDraft(campaign.id)}
                           >
-                            <i className="fas fa-edit me-1"></i> Riprendi wizard campagna
+                            <Pencil className="me-1" /> Riprendi wizard campagna
                           </button>
                         </div>
                       </div>
@@ -10681,7 +10683,7 @@ export function App(): React.JSX.Element {
                     <div className="card shadow-sm">
                       <div className="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <h3 className="h6 mb-0 fw-bold text-dark">
-                          <i className="fas fa-users me-2"></i>Destinatari Caricati ({recipientsPage?.total ?? campaign.totalRecipients})
+                          <Users className="me-2" />Destinatari Caricati ({recipientsPage?.total ?? campaign.totalRecipients})
                         </h3>
                         <div className="d-flex align-items-center flex-wrap gap-2">
                           <input
@@ -10694,31 +10696,31 @@ export function App(): React.JSX.Element {
                           />
                           {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType !== 'SEND' && campaign.channelType !== 'POSTAL' && (
                             <button className="btn btn-sm btn-outline-primary py-1" onClick={handleExportDownloadReport} title="Esporta Report CSV">
-                              <i className="fas fa-file-excel me-1"></i> Esporta Report Download
+                              <FileSpreadsheet className="me-1" /> Esporta Report Download
                             </button>
                           )}
                           {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType === 'SEND' && (
                             <div className="btn-group" role="group">
                               <button className="btn btn-sm btn-outline-primary py-1" onClick={() => handleExportSendReport('attuale')} title="Esporta stato attuale">
-                                <i className="fas fa-file-excel me-1"></i> Attuale
+                                <FileSpreadsheet className="me-1" /> Attuale
                               </button>
                               <button className="btn btn-sm btn-outline-primary py-1" onClick={() => handleExportSendReport('storico')} title="Esporta storico completo">
-                                <i className="fas fa-clock-rotate-left me-1"></i> Storico
+                                <History className="me-1" /> Storico
                               </button>
                             </div>
                           )}
                           {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType === 'POSTAL' && (
                             <div className="btn-group" role="group">
                               <button className="btn btn-sm btn-outline-primary py-1" onClick={() => handleExportPostalReport('attuale')} title="Esporta stato attuale">
-                                <i className="fas fa-file-excel me-1"></i> Attuale
+                                <FileSpreadsheet className="me-1" /> Attuale
                               </button>
                               <button className="btn btn-sm btn-outline-primary py-1" onClick={() => handleExportPostalReport('storico')} title="Esporta storico completo">
-                                <i className="fas fa-clock-rotate-left me-1"></i> Storico
+                                <History className="me-1" /> Storico
                               </button>
                             </div>
                           )}
                           <button className="btn btn-outline-secondary btn-sm border-0" onClick={() => fetchCampaignDetail(campaign.id)} title="Aggiorna esiti">
-                            <i className="fas fa-sync-alt"></i>
+                            <RefreshCw />
                           </button>
                         </div>
                       </div>
@@ -10757,8 +10759,8 @@ export function App(): React.JSX.Element {
                                       <td>{r.fullName || <span className="text-muted">N/D</span>}</td>
                                       <td>
                                         <div className="small d-flex flex-column gap-1">
-                                          {r.email && <div><i className="far fa-envelope me-1"></i> {r.email}</div>}
-                                          {r.pec && <div className="text-primary"><i className="fas fa-envelope-open-text me-1"></i> {r.pec}</div>}
+                                          {r.email && <div><Mail className="me-1" /> {r.email}</div>}
+                                          {r.pec && <div className="text-primary"><MailOpen className="me-1" /> {r.pec}</div>}
                                         </div>
                                       </td>
                                       <td><StatusBadge status={r.status} /></td>
@@ -10788,7 +10790,7 @@ export function App(): React.JSX.Element {
                                           <td className="text-center fw-bold">
                                             {r.downloadCount ? (
                                               <span className="text-success">
-                                                <i className="fas fa-arrow-down me-1"></i> {r.downloadCount}
+                                                <ArrowDown className="me-1" /> {r.downloadCount}
                                               </span>
                                             ) : (
                                               <span className="text-muted">—</span>
@@ -10799,7 +10801,7 @@ export function App(): React.JSX.Element {
                                         <td className="text-center fw-bold">
                                           {r.downloadCount ? (
                                             <span className="text-success">
-                                              <i className="fas fa-arrow-down me-1"></i> {r.downloadCount}
+                                              <ArrowDown className="me-1" /> {r.downloadCount}
                                             </span>
                                           ) : (
                                             <span className="text-muted">—</span>
@@ -10830,7 +10832,7 @@ export function App(): React.JSX.Element {
                         <div className="card shadow-sm h-100">
                           <div className="card-header bg-white py-3 border-bottom">
                             <h3 className="h6 mb-0 fw-bold text-dark">
-                              <i className="fas fa-chart-pie me-2 text-primary"></i>Esito Invio
+                              <PieChartIcon className="me-2 text-primary" />Esito Invio
                             </h3>
                           </div>
                           <div className="card-body">
@@ -10865,7 +10867,7 @@ export function App(): React.JSX.Element {
                         <div className="card shadow-sm h-100">
                           <div className="card-header bg-white py-3 border-bottom">
                             <h3 className="h6 mb-0 fw-bold text-dark">
-                              <i className="fas fa-chart-pie me-2 text-primary"></i>Canale Effettivo
+                              <PieChartIcon className="me-2 text-primary" />Canale Effettivo
                             </h3>
                           </div>
                           <div className="card-body">
@@ -10899,7 +10901,7 @@ export function App(): React.JSX.Element {
                         <div className="card shadow-sm h-100">
                           <div className="card-header bg-white py-3 border-bottom">
                             <h3 className="h6 mb-0 fw-bold text-dark">
-                              <i className="fas fa-chart-pie me-2 text-primary"></i>Download per Canale
+                              <PieChartIcon className="me-2 text-primary" />Download per Canale
                             </h3>
                           </div>
                           <div className="card-body">
@@ -10967,7 +10969,7 @@ export function App(): React.JSX.Element {
                                   </table>
                                   {anomalyCombos.length > 0 && (
                                     <div className="alert alert-warning small mt-3 mb-0">
-                                      <i className="fas fa-triangle-exclamation me-1"></i>
+                                      <AlertTriangle className="me-1" />
                                       {anomalyCombos.reduce((sum, c) => sum + c.count, 0)} destinatari non notificati con successo hanno comunque scaricato l'allegato (es. link ancora valido da un tentativo precedente):
                                       <ul className="mb-0 mt-1">
                                         {anomalyCombos.map((c) => (
