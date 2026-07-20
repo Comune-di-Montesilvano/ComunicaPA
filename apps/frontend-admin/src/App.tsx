@@ -5188,20 +5188,22 @@ export function App(): React.JSX.Element {
             <span>Invio Massivo</span>
           </a>
           <a
-            className={`bo-nav-item ${view === 'statistiche' ? 'is-active' : ''}`}
-            href="#"
-            onClick={(e) => { e.preventDefault(); setView('statistiche'); }}
-          >
-            <i className="fas fa-chart-pie"></i>
-            <span>Statistiche</span>
-          </a>
-          <a
             className={`bo-nav-item ${view === 'notifiche-ricerca' ? 'is-active' : ''}`}
             href="#"
             onClick={(e) => { e.preventDefault(); setView('notifiche-ricerca'); }}
           >
             <i className="fas fa-magnifying-glass"></i>
             <span>Ricerca Notifiche</span>
+          </a>
+
+          <div className="bo-nav-section-title">Utility</div>
+          <a
+            className={`bo-nav-item ${view === 'statistiche' ? 'is-active' : ''}`}
+            href="#"
+            onClick={(e) => { e.preventDefault(); setView('statistiche'); }}
+          >
+            <i className="fas fa-chart-pie"></i>
+            <span>Statistiche</span>
           </a>
           <a
             className={`bo-nav-item ${view === 'verifica-appio' ? 'is-active' : ''}`}
