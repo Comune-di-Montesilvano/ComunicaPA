@@ -1091,6 +1091,9 @@ export function App(): React.JSX.Element {
   const [wizPreviewChannelTab, setWizPreviewChannelTab] = useState<'MAIN' | 'APP_IO'>('MAIN');
   const [wizSending, setWizSending] = useState(false);
   const [wizUploadProgress, setWizUploadProgress] = useState<{ label: string; loaded: number; total: number } | null>(null);
+  // Elenco file effettivamente presenti sul server dopo l'upload allegati (step5),
+  // usato per capire se "Avvia Test" (SEND/POSTAL) può procedere — vedi Task 7.
+  const [wizUploadedAttachmentFiles, setWizUploadedAttachmentFiles] = useState<string[] | null>(null);
   const [wizMailConfigId, setWizMailConfigId] = useState('');
   const [wizPecReserveMailConfigId, setWizPecReserveMailConfigId] = useState('');
   const [wizAppIoMode, setWizAppIoMode] = useState<'none' | 'parallel' | 'exclusive'>('parallel');
@@ -4066,6 +4069,7 @@ export function App(): React.JSX.Element {
     setWizCsvHeaders([]);
     setWizCsvRows([]);
     setWizPdfFiles([]);
+    setWizUploadedAttachmentFiles(null);
     setWizCsvHasHeaders(true);
     setWizMapping({
       codice_fiscale: '',
@@ -4156,7 +4160,11 @@ export function App(): React.JSX.Element {
     setWizAppIoDifferentiate(!!secondaryAppIo?.subjectOverride || !!secondaryAppIo?.bodyOverride);
     setWizAppIoSubjectOverride(secondaryAppIo?.subjectOverride || '');
     setWizAppIoBodyOverride(secondaryAppIo?.bodyOverride || '');
-    
+    // Non sappiamo quali allegati siano già sul server per una bozza ripresa/duplicata
+    // (nessuna chiamata di verifica lato server, vedi Task 7) — reset conservativo:
+    // "Avvia Test" resta disabilitato per SEND/POSTAL finché non si ripassa dallo step5.
+    setWizUploadedAttachmentFiles(null);
+
     // Il CSV viene recuperato se stiamo riprendendo una bozza e c'è un file salvato
     if (!opts.isDuplicate && opts.campaignId && source.channelConfig?.wizCsvFilename) {
       fetch(`${ADMIN_API_BASE}/campaigns/${opts.campaignId}/recipients/draft-csv`, {
@@ -4407,6 +4415,7 @@ export function App(): React.JSX.Element {
         }
       }
 
+      setWizUploadedAttachmentFiles(wizPdfFiles.map((f) => f.name));
       setWizStep(6);
     } catch (err: any) {
       alert(err.message || 'Errore durante il caricamento degli allegati.');
@@ -4970,6 +4979,16 @@ export function App(): React.JSX.Element {
       </div>
     );
   }
+
+  // Task 7: pronto per "Avvia Test" (step6) — per SEND/POSTAL richiede che l'allegato
+  // atteso per il primo record CSV (quello usato dal test-send) sia tra i file
+  // effettivamente caricati sul server allo step5.
+  const wizTestAttachmentReady = wizChannel !== 'SEND' && wizChannel !== 'POSTAL'
+    ? true
+    : wizAttachments.every((entry) => {
+        const expectedFilename = wizValidRows[0]?.[entry.key];
+        return expectedFilename && (wizUploadedAttachmentFiles?.includes(expectedFilename) ?? false);
+      });
 
   // Render Shell Layout for Authenticated Users
   return (
@@ -6829,8 +6848,8 @@ export function App(): React.JSX.Element {
                         type="button"
                         className="btn btn-outline-primary"
                         onClick={() => setWizStep(7)}
-                        disabled={wizSending || !wizCampaignId}
-                        title={!wizCampaignId ? 'Completa prima il passo Upload Allegati' : undefined}
+                        disabled={wizSending || !wizCampaignId || !wizTestAttachmentReady}
+                        title={!wizCampaignId ? 'Completa prima il passo Upload Allegati' : (!wizTestAttachmentReady ? 'Allegato mancante per il primo destinatario — verifica il Passo 5' : undefined)}
                       >
                         <i className="fas fa-vial me-1"></i>Avvia Test
                       </button>
@@ -6931,8 +6950,8 @@ export function App(): React.JSX.Element {
                         type="button"
                         className="btn btn-outline-primary"
                         onClick={() => setWizStep(7)}
-                        disabled={wizSending || !wizCampaignId}
-                        title={!wizCampaignId ? 'Completa prima il passo Upload Allegati' : undefined}
+                        disabled={wizSending || !wizCampaignId || !wizTestAttachmentReady}
+                        title={!wizCampaignId ? 'Completa prima il passo Upload Allegati' : (!wizTestAttachmentReady ? 'Allegato mancante per il primo destinatario — verifica il Passo 5' : undefined)}
                       >
                         <i className="fas fa-vial me-1"></i>Avvia Test
                       </button>
