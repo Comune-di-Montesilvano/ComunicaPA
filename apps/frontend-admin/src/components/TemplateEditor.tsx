@@ -2,6 +2,7 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import { useState, useEffect } from 'react';
+import { Keyboard, FileSpreadsheet, Bold, Italic, List, Link as LinkIcon, Monitor, Smartphone } from 'lucide-react';
 
 interface TemplateEditorProps {
   value: string;
@@ -52,7 +53,7 @@ export function TemplateEditor({
     <div>
       <div className="p-3 border rounded bg-light mb-3" style={{ borderLeft: '4px solid var(--bo-accent, #0066cc)' }}>
         <strong className="small text-dark d-block mb-3">
-          <i className="fas fa-keyboard me-1 text-primary"></i>Clicca per inserire il parametro nel campo attivo ({wizLastFocusedField === 'subject' ? 'Oggetto' : 'Corpo'}):
+          <Keyboard className="me-1 text-primary" size={14} />Clicca per inserire il parametro nel campo attivo ({wizLastFocusedField === 'subject' ? 'Oggetto' : 'Corpo'}):
         </strong>
 
         {/* Parametri di Sistema */}
@@ -82,7 +83,7 @@ export function TemplateEditor({
         {csvPlaceholders.length > 0 && (
           <details className="mt-3 border-top pt-2" style={{ outline: 'none' }}>
             <summary className="small text-dark fw-bold cursor-pointer select-none" style={{ fontSize: '0.74rem', outline: 'none' }}>
-              <i className="fas fa-file-csv me-1 text-success"></i> Colonne del File CSV ({csvPlaceholders.length})
+              <FileSpreadsheet className="me-1 text-success" size={14} /> Colonne del File CSV ({csvPlaceholders.length})
             </summary>
             <div className="d-flex flex-wrap gap-1 mt-2">
               {csvPlaceholders.map((p) => (
@@ -103,13 +104,13 @@ export function TemplateEditor({
 
       <div className="btn-toolbar mb-2 gap-1" role="toolbar">
         <button type="button" className={`btn btn-sm btn-outline-secondary ${editor.isActive('bold') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleBold().run()}>
-          <i className="fas fa-bold"></i>
+          <Bold size={14} />
         </button>
         <button type="button" className={`btn btn-sm btn-outline-secondary ${editor.isActive('italic') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleItalic().run()}>
-          <i className="fas fa-italic"></i>
+          <Italic size={14} />
         </button>
         <button type="button" className={`btn btn-sm btn-outline-secondary ${editor.isActive('bulletList') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleBulletList().run()}>
-          <i className="fas fa-list-ul"></i>
+          <List size={14} />
         </button>
         <button
           type="button"
@@ -119,7 +120,7 @@ export function TemplateEditor({
             if (url) editor.chain().focus().setLink({ href: url }).run();
           }}
         >
-          <i className="fas fa-link"></i>
+          <LinkIcon size={14} />
         </button>
       </div>
 
@@ -130,10 +131,10 @@ export function TemplateEditor({
       <div className="d-flex align-items-center gap-2 mt-3 mb-2">
         <span className="small fw-bold">Anteprima responsive:</span>
         <button type="button" className={`btn btn-sm ${viewport === 'desktop' ? 'btn-primary' : 'btn-outline-secondary'}`} onClick={() => setViewport('desktop')}>
-          <i className="fas fa-desktop"></i> Desktop
+          <Monitor size={14} /> Desktop
         </button>
         <button type="button" className={`btn btn-sm ${viewport === 'mobile' ? 'btn-primary' : 'btn-outline-secondary'}`} onClick={() => setViewport('mobile')}>
-          <i className="fas fa-mobile-alt"></i> Mobile
+          <Smartphone size={14} /> Mobile
         </button>
       </div>
       <div
