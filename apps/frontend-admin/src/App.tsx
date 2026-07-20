@@ -9,6 +9,7 @@ import {
   RotateCcw, ChevronLeft, ChevronRight, Loader2, Download,
   Pause, Check, MapPin, Settings2, Printer, ThumbsUp, RotateCw,
   CheckCircle2, XCircle, AlertTriangle, AlertCircle, Trash2,
+  Plus, Server, User, TestTube, ToggleRight, ToggleLeft, Pencil, AtSign, Gauge,
 } from 'lucide-react';
 
 declare global {
@@ -3112,7 +3113,7 @@ export function App(): React.JSX.Element {
       <div className="d-flex flex-column gap-4">
         {postalProviderMsg && (
           <div className={`alert ${postalProviderMsg.error ? 'alert-danger' : 'alert-success'} d-flex align-items-center gap-2 mb-0`}>
-            <i className={`fas ${postalProviderMsg.error ? 'fa-triangle-exclamation' : 'fa-check-circle'}`}></i>
+            {postalProviderMsg.error ? <AlertTriangle /> : <CheckCircle2 />}
             <div>{postalProviderMsg.text}</div>
           </div>
         )}
@@ -3128,13 +3129,13 @@ export function App(): React.JSX.Element {
                 className="btn btn-sm btn-primary px-3 d-flex align-items-center gap-1"
                 onClick={() => setEditingPostalProvider({ ...EMPTY_POSTAL_PROVIDER })}
               >
-                <i className="fas fa-plus"></i> Nuovo Provider
+                <Plus /> Nuovo Provider
               </button>
             </div>
 
             {postalProviders.length === 0 ? (
               <div className="text-center py-4 border rounded bg-white text-muted">
-                <i className="fas fa-truck fa-2x mb-2 text-secondary"></i>
+                <Truck size={24} className="mb-2 text-secondary" />
                 <p className="mb-0">Nessun provider di postalizzazione configurato.</p>
               </div>
             ) : (
@@ -3145,7 +3146,7 @@ export function App(): React.JSX.Element {
                       <div className="d-flex justify-content-between align-items-start flex-wrap gap-3">
                         <div className="d-flex align-items-start gap-3 flex-grow-1" style={{ minWidth: 0 }}>
                           <div className={`rounded-circle d-flex align-items-center justify-content-center text-white flex-shrink-0 ${p.active ? 'bg-success' : 'bg-secondary'}`} style={{ width: 40, height: 40 }}>
-                            <i className="fas fa-truck"></i>
+                            <Truck />
                           </div>
                           <div style={{ minWidth: 0 }}>
                             <div className="fw-bold text-dark d-flex align-items-center gap-2">
@@ -3156,15 +3157,15 @@ export function App(): React.JSX.Element {
                               </span>
                             </div>
                             <div className="text-muted small mt-1">
-                              <i className="fas fa-server me-1"></i>
+                              <Server className="me-1" size={14} />
                               <code>{p.baseUrl}</code>
                             </div>
                             <div className="text-muted small mt-1">
-                              <i className="fas fa-user me-1"></i>
+                              <User className="me-1" size={14} />
                               {p.username} / {p.group || '(nessun gruppo)'}
                               {p.testedAt && (
                                 <span className="ms-3 text-success">
-                                  <i className="fas fa-check-circle me-1"></i>
+                                  <CheckCircle2 className="me-1" size={14} />
                                   Testato il {new Date(p.testedAt).toLocaleDateString('it-IT')}
                                 </span>
                               )}
@@ -3202,7 +3203,7 @@ export function App(): React.JSX.Element {
                             onClick={() => handleTestPostalProvider(p.id)}
                             disabled={postalProviderBusyId === p.id}
                           >
-                            <i className="fas fa-vial"></i> {postalProviderBusyId === p.id ? 'Test in corso…' : 'Test'}
+                            <TestTube /> {postalProviderBusyId === p.id ? 'Test in corso…' : 'Test'}
                           </button>
                           <button
                             type="button"
@@ -3211,7 +3212,7 @@ export function App(): React.JSX.Element {
                             disabled={postalProviderBusyId === p.id || (!p.active && !p.testedAt)}
                             title={!p.active && !p.testedAt ? 'Esegui prima il Test' : undefined}
                           >
-                            <i className={`fas fa-toggle-${p.active ? 'on' : 'off'}`}></i>
+                            {p.active ? <ToggleRight /> : <ToggleLeft />}
                             {p.active ? 'Disattiva' : 'Attiva'}
                           </button>
                           <div className="d-flex gap-1">
@@ -3221,7 +3222,7 @@ export function App(): React.JSX.Element {
                               onClick={() => setEditingPostalProvider(p)}
                               title="Modifica"
                             >
-                              <i className="fas fa-edit me-1"></i>Modifica
+                              <Pencil className="me-1" size={14} />Modifica
                             </button>
                             <button
                               type="button"
@@ -3230,7 +3231,7 @@ export function App(): React.JSX.Element {
                               disabled={postalProviderBusyId === p.id}
                               title="Elimina"
                             >
-                              <i className="fas fa-trash"></i>
+                              <Trash2 />
                             </button>
                           </div>
                         </div>
@@ -3406,7 +3407,7 @@ export function App(): React.JSX.Element {
       <div className="d-flex flex-column gap-4">
         {mailConfigMsg && (
           <div className={`alert ${mailConfigMsg.error ? 'alert-danger' : 'alert-success'} d-flex align-items-center gap-2 mb-0`}>
-            <i className={`fas ${mailConfigMsg.error ? 'fa-triangle-exclamation' : 'fa-check-circle'}`}></i>
+            {mailConfigMsg.error ? <AlertTriangle /> : <CheckCircle2 />}
             <div>{mailConfigMsg.text}</div>
           </div>
         )}
@@ -3422,13 +3423,13 @@ export function App(): React.JSX.Element {
                 className="btn btn-sm btn-primary px-3 d-flex align-items-center gap-1"
                 onClick={() => setEditingMailConfig({ ...EMPTY_MAIL_CONFIG, type })}
               >
-                <i className="fas fa-plus"></i> Nuovo Server {label}
+                <Plus /> Nuovo Server {label}
               </button>
             </div>
 
             {list.length === 0 ? (
               <div className="text-center py-4 border rounded bg-white text-muted">
-                <i className="fas fa-server fa-2x mb-2 text-secondary"></i>
+                <Server size={24} className="mb-2 text-secondary" />
                 <p className="mb-0">Nessun server {label} configurato.</p>
               </div>
             ) : (
@@ -3440,7 +3441,7 @@ export function App(): React.JSX.Element {
                         {/* Left: Info */}
                         <div className="d-flex align-items-start gap-3 flex-grow-1" style={{ minWidth: 0 }}>
                           <div className={`rounded-circle d-flex align-items-center justify-content-center text-white flex-shrink-0 ${c.active ? 'bg-success' : 'bg-secondary'}`} style={{ width: 40, height: 40 }}>
-                            <i className={`fas ${type === 'EMAIL' ? 'fa-envelope' : 'fa-envelope-open-text'}`}></i>
+                            {type === 'EMAIL' ? <Mail /> : <MailOpen />}
                           </div>
                           <div style={{ minWidth: 0 }}>
                             <div className="fw-bold text-dark d-flex align-items-center gap-2">
@@ -3451,18 +3452,18 @@ export function App(): React.JSX.Element {
                               </span>
                             </div>
                             <div className="text-muted small mt-1">
-                              <i className="fas fa-server me-1"></i>
+                              <Server className="me-1" size={14} />
                               <code>{c.host}:{c.port}</code>
                               <span className="mx-2">&middot;</span>
-                              <i className="fas fa-at me-1"></i>
+                              <AtSign className="me-1" size={14} />
                               {c.fromAddress}
                             </div>
                             <div className="text-muted small mt-1">
-                              <i className="fas fa-tachometer-alt me-1"></i>
+                              <Gauge className="me-1" size={14} />
                               {c.batchSize} invii / {c.batchIntervalSeconds}s
                               {c.testedAt && (
                                 <span className="ms-3 text-success">
-                                  <i className="fas fa-check-circle me-1"></i>
+                                  <CheckCircle2 className="me-1" size={14} />
                                   Testato il {new Date(c.testedAt).toLocaleDateString('it-IT')}
                                 </span>
                               )}
@@ -3478,7 +3479,7 @@ export function App(): React.JSX.Element {
                             onClick={() => handleToggleMailConfigActive(c.id, c.active)}
                             disabled={mailConfigBusyId === c.id}
                           >
-                            <i className={`fas fa-toggle-${c.active ? 'on' : 'off'}`}></i>
+                            {c.active ? <ToggleRight /> : <ToggleLeft />}
                             {c.active ? 'Disattiva' : 'Attiva'}
                           </button>
                           <div className="d-flex gap-1">
@@ -3488,7 +3489,7 @@ export function App(): React.JSX.Element {
                               onClick={() => setEditingMailConfig(c)}
                               title="Modifica"
                             >
-                              <i className="fas fa-edit me-1"></i>Modifica
+                              <Pencil className="me-1" size={14} />Modifica
                             </button>
                             <button
                               type="button"
@@ -3497,7 +3498,7 @@ export function App(): React.JSX.Element {
                               disabled={mailConfigBusyId === c.id}
                               title="Elimina"
                             >
-                              <i className="fas fa-trash"></i>
+                              <Trash2 />
                             </button>
                           </div>
                         </div>
@@ -3521,7 +3522,7 @@ export function App(): React.JSX.Element {
                             className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1"
                             disabled={mailConfigBusyId === c.id || !mailConfigTestTo}
                           >
-                            <i className="fas fa-paper-plane"></i> Invia Test
+                            <Send /> Invia Test
                           </button>
                         </form>
                       </div>
@@ -3684,7 +3685,7 @@ export function App(): React.JSX.Element {
                   disabled={mailConfigBusyId !== null}
                 >
                   {mailConfigBusyId !== null ? (
-                    <><i className="fas fa-spinner fa-spin me-1"></i>Salvataggio...</>
+                    <><Loader2 className="icon-spin me-1" size={16} />Salvataggio...</>
                   ) : (
                     'Salva'
                   )}
