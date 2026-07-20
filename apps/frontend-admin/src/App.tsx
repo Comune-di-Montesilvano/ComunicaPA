@@ -10,6 +10,10 @@ import {
   Pause, Check, MapPin, Settings2, Printer, ThumbsUp, RotateCw,
   CheckCircle2, XCircle, AlertTriangle, AlertCircle, Trash2,
   Plus, Server, User, TestTube, ToggleRight, ToggleLeft, Pencil, AtSign, Gauge,
+  ArrowLeft, ArrowRight, Menu, Building2, Megaphone, LineChart as LineChartIcon, PieChart as PieChartIcon,
+  Copy, CreditCard, FileSpreadsheet, FileText, Save, History, Info, Link, List,
+  Lock, Wand2, Search, Network, Plug, Reply, LogOut, SlidersHorizontal,
+  RefreshCw, Tag, UserCheck, Sparkles,
 } from 'lucide-react';
 
 declare global {
@@ -5071,7 +5075,7 @@ export function App(): React.JSX.Element {
               {brandLogoUrl ? (
                 <img src={brandLogoUrl} alt={brandName} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
               ) : (
-                <i className="fas fa-building"></i>
+                <Building2 />
               )}
             </div>
             <h1 className="login-title">{brandName}</h1>
@@ -5081,7 +5085,7 @@ export function App(): React.JSX.Element {
             <form onSubmit={handleLogin}>
               {loginError && (
                 <div className="login-error-alert" role="alert">
-                  <i className="fas fa-exclamation-triangle"></i> {loginError}
+                  <AlertTriangle /> {loginError}
                 </div>
               )}
               <div className="login-form-group">
@@ -5096,7 +5100,7 @@ export function App(): React.JSX.Element {
                     onChange={(e) => setLoginUsername(e.target.value)}
                     required
                   />
-                  <span className="login-input-icon"><i className="fas fa-user"></i></span>
+                  <span className="login-input-icon"><User /></span>
                 </div>
               </div>
               <div className="login-form-group">
@@ -5111,7 +5115,7 @@ export function App(): React.JSX.Element {
                     onChange={(e) => setLoginPassword(e.target.value)}
                     required
                   />
-                  <span className="login-input-icon"><i className="fas fa-lock"></i></span>
+                  <span className="login-input-icon"><Lock /></span>
                 </div>
               </div>
               <button
@@ -5121,7 +5125,7 @@ export function App(): React.JSX.Element {
               >
                 {loginLoading ? (
                   <>
-                    <i className="fas fa-spinner fa-spin"></i> Accesso in corso...
+                    <Loader2 className="icon-spin" /> Accesso in corso...
                   </>
                 ) : (
                   <>
@@ -5163,7 +5167,7 @@ export function App(): React.JSX.Element {
             {brandLogoUrl ? (
               <img src={brandLogoUrl} alt={settEntityName} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
             ) : (
-              <i className="fas fa-building bo-brand-logo-fallback text-warning"></i>
+              <Building2 className="bo-brand-logo-fallback text-warning" />
             )}
           </span>
           <span className="bo-sidebar-brand-copy">
@@ -5179,7 +5183,7 @@ export function App(): React.JSX.Element {
             href="#"
             onClick={(e) => { e.preventDefault(); setView('dashboard'); }}
           >
-            <i className="fas fa-chart-line"></i>
+            <LineChartIcon />
             <span>Dashboard</span>
           </a>
           <a
@@ -5187,7 +5191,7 @@ export function App(): React.JSX.Element {
             href="#"
             onClick={(e) => { e.preventDefault(); resetWizard(); setWizSingleMode(true); setView('invio-massivo-wizard'); }}
           >
-            <i className="fas fa-paper-plane"></i>
+            <Send />
             <span>Invio Singolo</span>
           </a>
           <a
@@ -5195,7 +5199,7 @@ export function App(): React.JSX.Element {
             href="#"
             onClick={(e) => { e.preventDefault(); setView('invio-massivo'); }}
           >
-            <i className="fas fa-mail-bulk"></i>
+            <Mails />
             <span>Invio Massivo</span>
           </a>
           <a
@@ -5203,7 +5207,7 @@ export function App(): React.JSX.Element {
             href="#"
             onClick={(e) => { e.preventDefault(); setView('notifiche-ricerca'); }}
           >
-            <i className="fas fa-magnifying-glass"></i>
+            <Search />
             <span>Ricerca Notifiche</span>
           </a>
 
@@ -5213,7 +5217,7 @@ export function App(): React.JSX.Element {
             href="#"
             onClick={(e) => { e.preventDefault(); setView('statistiche'); }}
           >
-            <i className="fas fa-chart-pie"></i>
+            <PieChartIcon />
             <span>Statistiche</span>
           </a>
           <a
@@ -5221,7 +5225,7 @@ export function App(): React.JSX.Element {
             href="#"
             onClick={(e) => { e.preventDefault(); setView('verifica-appio'); setVerificaCf(''); setVerificaResult(null); }}
           >
-            <i className="fas fa-user-check"></i>
+            <UserCheck />
             <span>Verifica App IO</span>
           </a>
           <a
@@ -5229,7 +5233,7 @@ export function App(): React.JSX.Element {
             href="#"
             onClick={(e) => { e.preventDefault(); setView('template-dashboard'); }}
           >
-            <i className="fas fa-file-lines"></i>
+            <FileText />
             <span>Template</span>
           </a>
           <a
@@ -5237,7 +5241,7 @@ export function App(): React.JSX.Element {
             href="#"
             onClick={(e) => { e.preventDefault(); setView('arricchimento'); }}
           >
-            <i className="fas fa-wand-magic-sparkles"></i>
+            <Sparkles />
             <span>Arricchimento Tracciati</span>
           </a>
 
@@ -5248,7 +5252,7 @@ export function App(): React.JSX.Element {
               href="#"
               onClick={(e) => { e.preventDefault(); setView('impostazioni'); }}
             >
-              <i className="fas fa-sliders-h"></i>
+              <SlidersHorizontal />
               <span>Impostazioni</span>
             </a>
           )}
@@ -5257,7 +5261,7 @@ export function App(): React.JSX.Element {
             href="#"
             onClick={(e) => { e.preventDefault(); setView('audit-logs'); setAuditPage(1); }}
           >
-            <i className="fas fa-history"></i>
+            <History />
             <span>Registro Attività</span>
           </a>
         </nav>
@@ -5267,7 +5271,7 @@ export function App(): React.JSX.Element {
           <span>Online{import.meta.env.DEV ? ' (Dev Mode)' : ''}</span>
           {appVersion && (
             <span className="bo-sidebar-version" title="Versione applicazione">
-              <i className="fas fa-tag me-1"></i>{appVersion}
+              <Tag className="me-1" />{appVersion}
             </span>
           )}
         </div>
@@ -5290,7 +5294,7 @@ export function App(): React.JSX.Element {
           aria-expanded={sidebarOpen}
           onClick={() => setSidebarOpen((o) => !o)}
         >
-          <i className="fas fa-bars"></i>
+          <Menu />
         </button>
         <h2 className="h5 mb-0 text-dark fw-bold" style={{ display: 'inline-block' }}>
           {view === 'dashboard' && 'Dashboard'}
@@ -5319,7 +5323,7 @@ export function App(): React.JSX.Element {
             onClick={handleLogout}
             className="btn btn-outline-danger btn-sm border-0 px-2"
           >
-            <i className="fas fa-sign-out-alt"></i> Logout
+            <LogOut /> Logout
           </button>
         </div>
       </header>
@@ -5342,7 +5346,7 @@ export function App(): React.JSX.Element {
                 <div className="col-md-4">
                   <div className="card shadow-sm h-100" style={{ borderLeft: '4px solid var(--bi-primary)' }}>
                     <div className="card-body d-flex align-items-center gap-3">
-                      <div className="bg-light text-primary rounded p-3" style={{ fontSize: '1.4rem' }}><i className="fas fa-bullhorn"></i></div>
+                      <div className="bg-light text-primary rounded p-3" style={{ fontSize: '1.4rem' }}><Megaphone /></div>
                       <div>
                         <span className="text-muted small block">Campagne Create</span>
                         <div className="h4 mb-0 fw-bold">{campaigns.length}</div>
@@ -5353,7 +5357,7 @@ export function App(): React.JSX.Element {
                 <div className="col-md-4">
                   <div className="card shadow-sm h-100" style={{ borderLeft: '4px solid var(--ms-green-600)' }}>
                     <div className="card-body d-flex align-items-center gap-3">
-                      <div className="bg-light text-success rounded p-3" style={{ fontSize: '1.4rem' }}><i className="fas fa-check-circle"></i></div>
+                      <div className="bg-light text-success rounded p-3" style={{ fontSize: '1.4rem' }}><CheckCircle2 /></div>
                       <div>
                         <span className="text-muted small block">Messaggi Inviati</span>
                         <div className="h4 mb-0 fw-bold">{campaigns.reduce((acc, c) => acc + c.sentCount, 0)}</div>
@@ -5364,7 +5368,7 @@ export function App(): React.JSX.Element {
                 <div className="col-md-4">
                   <div className="card shadow-sm h-100" style={{ borderLeft: '4px solid var(--it-red)' }}>
                     <div className="card-body d-flex align-items-center gap-3">
-                      <div className="bg-light text-danger rounded p-3" style={{ fontSize: '1.4rem' }}><i className="fas fa-times-circle"></i></div>
+                      <div className="bg-light text-danger rounded p-3" style={{ fontSize: '1.4rem' }}><XCircle /></div>
                       <div>
                         <span className="text-muted small block">Spedizioni Fallite</span>
                         <div className="h4 mb-0 fw-bold">{campaigns.reduce((acc, c) => acc + c.failedCount, 0)}</div>
@@ -5378,8 +5382,8 @@ export function App(): React.JSX.Element {
                 <div className="col-lg-8">
                   <div className="card shadow-sm h-100">
                     <div className="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
-                      <h3 className="h6 mb-0 fw-bold text-dark"><i className="fas fa-history me-2 text-primary"></i>Attività Recenti</h3>
-                      <button className="btn btn-outline-secondary btn-sm border-0" onClick={fetchCampaigns}><i className="fas fa-sync-alt"></i></button>
+                      <h3 className="h6 mb-0 fw-bold text-dark"><History className="me-2 text-primary" />Attività Recenti</h3>
+                      <button className="btn btn-outline-secondary btn-sm border-0" onClick={fetchCampaigns}><RefreshCw /></button>
                     </div>
                     <div className="card-body p-0">
                       {campaigns.length === 0 ? (
@@ -5415,19 +5419,19 @@ export function App(): React.JSX.Element {
                 <div className="col-lg-4">
                   <div className="card shadow-sm h-100">
                     <div className="card-header bg-white py-3 border-bottom">
-                      <h3 className="h6 mb-0 fw-bold text-dark"><i className="fas fa-network-wired me-2 text-primary"></i>GIL Services Hub</h3>
+                      <h3 className="h6 mb-0 fw-bold text-dark"><Network className="me-2 text-primary" />GIL Services Hub</h3>
                     </div>
                     <div className="card-body">
                       <div className="daemon-service-item mb-3 p-3 bg-light rounded border">
                         <div className="d-flex align-items-center justify-content-between mb-1">
-                          <span className="small fw-bold"><i className="fas fa-envelope-open-text text-primary me-2"></i>Sincronizzatore Mail/PEC</span>
+                          <span className="small fw-bold"><MailOpen className="text-primary me-2" />Sincronizzatore Mail/PEC</span>
                           <span className="badge bg-success">ATTIVO</span>
                         </div>
                         <p className="small text-muted mb-0">Gestisce la ricezione delle ricevute di consegna PEC.</p>
                       </div>
                       <div className="daemon-service-item p-3 bg-light rounded border">
                         <div className="d-flex align-items-center justify-content-between mb-1">
-                          <span className="small fw-bold"><i className="fas fa-plug text-primary me-2"></i>Worker BullMQ</span>
+                          <span className="small fw-bold"><Plug className="text-primary me-2" />Worker BullMQ</span>
                           <span className="badge bg-success">ATTIVO</span>
                         </div>
                         <p className="small text-muted mb-0">Elabora la coda delle notifiche SEND e App IO in background.</p>
@@ -5445,12 +5449,12 @@ export function App(): React.JSX.Element {
               <div className="col-12">
                 <div className="card shadow-sm h-100">
                   <div className="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
-                    <h3 className="h6 mb-0 fw-bold text-dark"><i className="fas fa-list me-2 text-primary"></i>Campagne Massive</h3>
+                    <h3 className="h6 mb-0 fw-bold text-dark"><List className="me-2 text-primary" />Campagne Massive</h3>
                     <div className="d-flex align-items-center gap-2">
                       <button className="btn btn-sm btn-primary" onClick={() => { resetWizard(); setView('invio-massivo-wizard'); }}>
-                        <i className="fas fa-magic me-1"></i> Crea Nuova Campagna (Wizard)
+                        <Wand2 className="me-1" /> Crea Nuova Campagna (Wizard)
                       </button>
-                      <button className="btn btn-outline-secondary btn-sm border-0" onClick={fetchCampaigns}><i className="fas fa-sync-alt"></i></button>
+                      <button className="btn btn-outline-secondary btn-sm border-0" onClick={fetchCampaigns}><RefreshCw /></button>
                     </div>
                   </div>
                   <div className="card-body p-0">
@@ -5459,7 +5463,7 @@ export function App(): React.JSX.Element {
                     )}
                     {loadingCampaigns && campaigns.length === 0 ? (
                       <div className="text-center py-5">
-                        <i className="fas fa-spinner fa-spin fa-2x text-primary mb-2"></i>
+                        <Loader2 className="icon-spin text-primary mb-2" size={32} />
                         <div>Caricamento campagne...</div>
                       </div>
                     ) : campaigns.length === 0 ? (
@@ -5503,7 +5507,7 @@ export function App(): React.JSX.Element {
                                       className="text-primary"
                                       style={{ ...cellStyle, borderLeft: pairBorderLeft, paddingLeft: '1.5rem', paddingTop: '0.4rem', paddingBottom: '0.5rem' }}
                                     >
-                                      <i className="fas fa-reply fa-rotate-180 text-muted me-2" style={{ transform: 'scaleX(-1)', opacity: 0.6 }} title="Campagna di prova"></i>
+                                      <span title="Campagna di prova"><Reply className="text-muted me-2" style={{ transform: 'scaleX(-1)', opacity: 0.6 }} /></span>
                                       <span className="fw-bold">{c.name}</span>
                                       <span className="badge bg-warning text-dark ms-2">TEST</span>
                                       <span className="text-muted small ms-2">— vedi dettaglio test</span>
@@ -5515,7 +5519,7 @@ export function App(): React.JSX.Element {
                               return (
                                 <tr key={c.id} style={{ cursor: 'pointer', ...pairStyle }} onClick={() => handleCampaignClick(c.id)}>
                                   <td className="fw-bold text-primary" style={{ ...cellStyle, borderLeft: pairBorderLeft }}>
-                                    {isParentOfPair && <i className="fas fa-link text-primary me-2" title="Collegata a una campagna di prova"></i>}
+                                    {isParentOfPair && <span title="Collegata a una campagna di prova"><Link className="text-primary me-2" /></span>}
                                     {c.name}
                                     {c.isTest && (
                                       <span className="badge bg-warning text-dark ms-2" title="Campagna di prova, collegata a una bozza">
@@ -5539,7 +5543,7 @@ export function App(): React.JSX.Element {
                                       title="Riprendi wizard campagna"
                                       onClick={() => handleResumeDraft(c.id)}
                                     >
-                                      <i className="fas fa-edit"></i> Riprendi
+                                      <Pencil /> Riprendi
                                     </button>
                                   )}
                                   <button
@@ -5548,7 +5552,7 @@ export function App(): React.JSX.Element {
                                     title="Duplica campagna in un nuovo wizard"
                                     onClick={() => handleDuplicateCampaign(c.id)}
                                   >
-                                    <i className="fas fa-copy"></i> Duplica
+                                    <Copy /> Duplica
                                   </button>
                                   {role === 'admin' && (
                                     <button
@@ -5557,7 +5561,7 @@ export function App(): React.JSX.Element {
                                       title="Elimina campagna definitivamente"
                                       onClick={() => handleDeleteCampaign(c.id, c.name)}
                                     >
-                                      <i className="fas fa-trash"></i> Elimina
+                                      <Trash2 /> Elimina
                                     </button>
                                   )}
                                 </td>
@@ -5580,14 +5584,14 @@ export function App(): React.JSX.Element {
               {/* Step Navigation Indicators */}
               <div className="d-flex justify-content-between align-items-center mb-4 border-bottom pb-3">
                 <div className="d-flex align-items-center gap-2">
-                  <h3 className="h5 mb-0 fw-bold text-dark"><i className="fas fa-magic me-2 text-primary"></i>Procedura Guidata Campagna</h3>
+                  <h3 className="h5 mb-0 fw-bold text-dark"><Wand2 className="me-2 text-primary" />Procedura Guidata Campagna</h3>
                 </div>
                 <div className="d-flex gap-2">
                   <button className="btn btn-outline-primary btn-sm" onClick={handleSaveWizardDraft} disabled={wizDraftSaving}>
-                    <i className="fas fa-floppy-disk me-1"></i>{wizDraftSaving ? 'Salvataggio...' : 'Salva bozza'}
+                    <Save className="me-1" />{wizDraftSaving ? 'Salvataggio...' : 'Salva bozza'}
                   </button>
                   <button className="btn btn-outline-secondary btn-sm" onClick={() => { setWizCampaignId(null); setView('invio-massivo'); }}>
-                    <i className="fas fa-times me-1"></i> Annulla
+                    <X className="me-1" /> Annulla
                   </button>
                 </div>
               </div>
@@ -5657,8 +5661,8 @@ export function App(): React.JSX.Element {
                           : undefined
                       }
                     >
-                      {wizStep !== n && clickable && <i className="fas fa-check me-1" style={{ fontSize: '0.7rem' }}></i>}
-                      {wizStep !== n && n <= wizMaxReachedStep && !clickable && <i className="fas fa-lock me-1" style={{ fontSize: '0.7rem' }}></i>}
+                      {wizStep !== n && clickable && <Check className="me-1" style={{ fontSize: '0.7rem' }} />}
+                      {wizStep !== n && n <= wizMaxReachedStep && !clickable && <Lock className="me-1" style={{ fontSize: '0.7rem' }} />}
                       {label}
                     </div>
                   );
@@ -5682,7 +5686,7 @@ export function App(): React.JSX.Element {
                         (wizChannel === 'POSTAL' && !wizPostalServiceType)
                       }
                     >
-                      Avanti <i className="fas fa-arrow-right ms-1"></i>
+                      Avanti <ArrowRight className="ms-1" />
                     </button>
                   </div>
 
@@ -5858,7 +5862,7 @@ export function App(): React.JSX.Element {
                       )}
                       <div className="col-12">
                         <div className="form-text small text-muted mb-0">
-                          <i className="fas fa-info-circle me-1"></i>
+                          <Info className="me-1" />
                           Il mapping delle colonne CSV per indirizzo destinatario (e il riferimento facoltativo per il gestionale tributi) si configura al Passo 3, dopo il caricamento del file.
                         </div>
                       </div>
@@ -5918,7 +5922,7 @@ export function App(): React.JSX.Element {
                   {(wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && (
                     <div className="card mb-3 border-light shadow-sm" style={{ background: '#f8f9fc' }}>
                       <div className="card-body p-3">
-                        <h6 className="small fw-bold text-dark mb-3"><i className="fas fa-mobile-screen me-2 text-primary"></i>Co-consegna su App IO</h6>
+                        <h6 className="small fw-bold text-dark mb-3"><Smartphone className="me-2 text-primary" />Co-consegna su App IO</h6>
                         <div className="mb-3">
                           <label className="form-label small">Modalità Co-consegna</label>
                           <select
@@ -5984,7 +5988,7 @@ export function App(): React.JSX.Element {
                         (wizChannel === 'POSTAL' && !wizPostalServiceType)
                       }
                     >
-                      Avanti <i className="fas fa-arrow-right ms-1"></i>
+                      Avanti <ArrowRight className="ms-1" />
                     </button>
                   </div>
                 </div>
@@ -5997,7 +6001,7 @@ export function App(): React.JSX.Element {
 
                   <div className="mb-4 pb-3 border-bottom d-flex justify-content-between">
                     <button className="btn btn-outline-secondary" onClick={() => setWizStep(1)}>
-                      <i className="fas fa-arrow-left me-1"></i> Indietro
+                      <ArrowLeft className="me-1" /> Indietro
                     </button>
                     <button
                       className="btn btn-primary"
@@ -6008,14 +6012,14 @@ export function App(): React.JSX.Element {
                       }}
                       disabled={!wizCsvFile}
                     >
-                      Avanti <i className="fas fa-arrow-right ms-1"></i>
+                      Avanti <ArrowRight className="ms-1" />
                     </button>
                   </div>
 
                   {wizCsvFile ? (
                     <div className="p-4 border rounded bg-light text-center mb-4">
                       <div className="badge bg-success p-2 mb-2">
-                        <i className="fas fa-check-circle me-1"></i> Destinatario pronto: {singleCf.toUpperCase()}
+                        <CheckCircle2 className="me-1" /> Destinatario pronto: {singleCf.toUpperCase()}
                       </div>
                       <div>
                         <button
@@ -6028,7 +6032,7 @@ export function App(): React.JSX.Element {
                             setWizMapping({ codice_fiscale: '', full_name: '', full_name_2: '', email: '', pec: '', subject: '' });
                           }}
                         >
-                          <i className="fas fa-pen me-1"></i> Modifica dati
+                          <Pencil className="me-1" /> Modifica dati
                         </button>
                       </div>
                     </div>
@@ -6095,7 +6099,7 @@ export function App(): React.JSX.Element {
                             await parseCsvFile(file, true);
                           }}
                         >
-                          <i className="fas fa-check me-1"></i> Genera destinatario
+                          <Check className="me-1" /> Genera destinatario
                         </button>
                       </div>
                     </div>
@@ -6103,7 +6107,7 @@ export function App(): React.JSX.Element {
 
                   <div className="mt-4 pt-3 border-top d-flex justify-content-between">
                     <button className="btn btn-outline-secondary" onClick={() => setWizStep(1)}>
-                      <i className="fas fa-arrow-left me-1"></i> Indietro
+                      <ArrowLeft className="me-1" /> Indietro
                     </button>
                     <button
                       className="btn btn-primary"
@@ -6114,7 +6118,7 @@ export function App(): React.JSX.Element {
                       }}
                       disabled={!wizCsvFile}
                     >
-                      Avanti <i className="fas fa-arrow-right ms-1"></i>
+                      Avanti <ArrowRight className="ms-1" />
                     </button>
                   </div>
                 </div>
@@ -6126,7 +6130,7 @@ export function App(): React.JSX.Element {
 
                   <div className="mb-4 pb-3 border-bottom d-flex justify-content-between">
                     <button className="btn btn-outline-secondary" onClick={() => setWizStep(1)}>
-                      <i className="fas fa-arrow-left me-1"></i> Indietro
+                      <ArrowLeft className="me-1" /> Indietro
                     </button>
                     <button
                       className="btn btn-primary"
@@ -6137,17 +6141,17 @@ export function App(): React.JSX.Element {
                       }}
                       disabled={!wizCsvFile}
                     >
-                      Avanti <i className="fas fa-arrow-right ms-1"></i>
+                      Avanti <ArrowRight className="ms-1" />
                     </button>
                   </div>
 
                   <div className="p-4 border rounded bg-light text-center mb-4">
-                    <i className="fas fa-file-csv fa-3x text-muted mb-3"></i>
+                    <FileSpreadsheet className="text-muted mb-3" size={32} />
                     <p className="small text-muted mb-3">Seleziona il file CSV contenente l'elenco dei destinatari della TARI.</p>
                     {wizCsvFile ? (
                       <div className="d-flex flex-column align-items-center mt-3">
                         <div className="badge bg-success p-2 mb-2">
-                          <i className="fas fa-check-circle me-1"></i> {wizCsvFile.name} ({wizCsvRows.length} righe rilevate)
+                          <CheckCircle2 className="me-1" /> {wizCsvFile.name} ({wizCsvRows.length} righe rilevate)
                         </div>
                         <button
                           type="button"
@@ -6162,7 +6166,7 @@ export function App(): React.JSX.Element {
                             if (input) input.value = '';
                           }}
                         >
-                          <i className="fas fa-trash me-1"></i> Rimuovi file
+                          <Trash2 className="me-1" /> Rimuovi file
                         </button>
                       </div>
                     ) : (
@@ -6199,7 +6203,7 @@ export function App(): React.JSX.Element {
 
                   <div className="mt-4 pt-3 border-top d-flex justify-content-between">
                     <button className="btn btn-outline-secondary" onClick={() => setWizStep(1)}>
-                      <i className="fas fa-arrow-left me-1"></i> Indietro
+                      <ArrowLeft className="me-1" /> Indietro
                     </button>
                     <button
                       className="btn btn-primary"
@@ -6210,7 +6214,7 @@ export function App(): React.JSX.Element {
                       }}
                       disabled={!wizCsvFile}
                     >
-                      Avanti <i className="fas fa-arrow-right ms-1"></i>
+                      Avanti <ArrowRight className="ms-1" />
                     </button>
                   </div>
                 </div>
@@ -6223,7 +6227,7 @@ export function App(): React.JSX.Element {
 
                   <div className="mb-4 pb-3 border-bottom d-flex justify-content-between">
                     <button className="btn btn-outline-secondary" onClick={() => setWizStep(2)}>
-                      <i className="fas fa-arrow-left me-1"></i> Indietro
+                      <ArrowLeft className="me-1" /> Indietro
                     </button>
                     <button
                       className="btn btn-primary"
@@ -6238,7 +6242,7 @@ export function App(): React.JSX.Element {
                         || ((wizChannel === 'SEND' || wizChannel === 'POSTAL') && wizAttachments.filter(a => a.key).length === 0)
                       }
                     >
-                      Procedi a Template <i className="fas fa-arrow-right ms-1"></i>
+                      Procedi a Template <ArrowRight className="ms-1" />
                     </button>
                   </div>
 
@@ -6332,7 +6336,7 @@ export function App(): React.JSX.Element {
                       </label>
                       {(wizChannel === 'SEND' || wizChannel === 'POSTAL') && wizAttachments.filter(a => a.key).length === 0 && (
                         <div className="alert alert-warning py-2 small mb-2">
-                          <i className="fas fa-exclamation-triangle me-1"></i>
+                          <AlertTriangle className="me-1" />
                           Almeno un allegato è obbligatorio per {channelLabel(wizChannel)}: senza non si può proseguire.
                         </div>
                       )}
@@ -6362,7 +6366,7 @@ export function App(): React.JSX.Element {
                                 title="Rimuovi allegato"
                                 onClick={() => setWizAttachments(prev => prev.filter((_, i) => i !== idx))}
                               >
-                                <i className="fas fa-times"></i>
+                                <X />
                               </button>
                             </div>
 
@@ -6425,7 +6429,7 @@ export function App(): React.JSX.Element {
                         className="btn btn-sm btn-outline-primary"
                         onClick={() => setWizAttachments(prev => [...prev, { key: '', label: '' }])}
                       >
-                        <i className="fas fa-plus me-1"></i>Aggiungi allegato
+                        <Plus className="me-1" />Aggiungi allegato
                       </button>
                       <div className="form-text small text-muted mt-1">
                         Ordine di aggiunta = %%allegato1%%, %%allegato2%%, ... nel template. Etichetta obbligatoria per usare il blocco "Elenco Allegati".
@@ -6437,7 +6441,7 @@ export function App(): React.JSX.Element {
                     <div className="card border-light shadow-sm mb-4" style={{ background: '#f8f9fc' }}>
                       <div className="card-body p-3">
                         <h6 className="small fw-bold text-dark mb-3">
-                          <i className="fas fa-credit-card me-2 text-primary"></i>Integrazione Pagamenti pagoPA (Opzionale)
+                          <CreditCard className="me-2 text-primary" />Integrazione Pagamenti pagoPA (Opzionale)
                         </h6>
 
                         {
@@ -6541,7 +6545,7 @@ export function App(): React.JSX.Element {
                     <div className="card border-light shadow-sm mb-4" style={{ background: '#f8f9fc' }}>
                       <div className="card-body p-3">
                         <h6 className="small fw-bold text-dark mb-3">
-                          <i className="fas fa-location-dot me-2 text-primary"></i>Indirizzo Destinatario (Postalizzazione)
+                          <MapPin className="me-2 text-primary" />Indirizzo Destinatario (Postalizzazione)
                         </h6>
                         <div className="row g-2">
                           <div className="col-md-6">
@@ -6619,7 +6623,7 @@ export function App(): React.JSX.Element {
                       <div className="mt-3">
                         <div className="alert alert-warning py-2 small mb-3 d-flex justify-content-between align-items-center">
                           <div>
-                            <i className="fas fa-exclamation-triangle me-1"></i> Trovati <strong>{wizValidationErrors.length}</strong> errori di validazione formale! I record con errori verranno esclusi dall'invio.
+                            <AlertTriangle className="me-1" /> Trovati <strong>{wizValidationErrors.length}</strong> errori di validazione formale! I record con errori verranno esclusi dall'invio.
                           </div>
                           <button
                             type="button"
@@ -6657,7 +6661,7 @@ export function App(): React.JSX.Element {
 
                     {wizValidRows.length > 0 && wizValidationErrors.length === 0 && wizValidationWarnings.length === 0 && (
                       <div className="alert alert-success py-2 small mt-3 mb-0">
-                        <i className="fas fa-check-circle me-1"></i> Tutti i {wizValidRows.length} record sono formalmente corretti e pronti per il passo successivo!
+                        <CheckCircle2 className="me-1" /> Tutti i {wizValidRows.length} record sono formalmente corretti e pronti per il passo successivo!
                       </div>
                     )}
 
@@ -6695,14 +6699,14 @@ export function App(): React.JSX.Element {
 
                     {wizValidRows.length > 0 && wizValidationErrors.length > 0 && (
                       <div className="alert alert-info py-2 small mt-3 mb-0">
-                        <i className="fas fa-info-circle me-1"></i> Record validi pronti: <strong>{wizValidRows.length}</strong> su {wizCsvRows.length}.
+                        <Info className="me-1" /> Record validi pronti: <strong>{wizValidRows.length}</strong> su {wizCsvRows.length}.
                       </div>
                     )}
                   </div>
 
                   <div className="mt-4 pt-3 border-top d-flex justify-content-between">
                     <button className="btn btn-outline-secondary" onClick={() => setWizStep(2)}>
-                      <i className="fas fa-arrow-left me-1"></i> Indietro
+                      <ArrowLeft className="me-1" /> Indietro
                     </button>
                     <button
                       className="btn btn-primary"
@@ -6717,7 +6721,7 @@ export function App(): React.JSX.Element {
                         || ((wizChannel === 'SEND' || wizChannel === 'POSTAL') && wizAttachments.filter(a => a.key).length === 0)
                       }
                     >
-                      Procedi a Template <i className="fas fa-arrow-right ms-1"></i>
+                      Procedi a Template <ArrowRight className="ms-1" />
                     </button>
                   </div>
                 </div>
@@ -6728,7 +6732,7 @@ export function App(): React.JSX.Element {
                 <>
                   <div className="mb-3 pb-3 border-bottom d-flex justify-content-between">
                     <button className="btn btn-outline-secondary" onClick={() => setWizStep(wizSingleMode ? 2 : 3)}>
-                      <i className="fas fa-arrow-left me-1"></i> Indietro
+                      <ArrowLeft className="me-1" /> Indietro
                     </button>
                     <button
                       className="btn btn-primary"
@@ -6747,7 +6751,7 @@ export function App(): React.JSX.Element {
                         )
                       }
                     >
-                      {wizDraftSaving ? <><i className="fas fa-spinner fa-spin me-1"></i> Salvataggio...</> : <>Riepilogo <i className="fas fa-arrow-right ms-1"></i></>}
+                      {wizDraftSaving ? <><i className="fas fa-spinner fa-spin me-1"></i> Salvataggio...</> : <>Riepilogo <ArrowRight className="ms-1" /></>}
                     </button>
                   </div>
                 <div className="row g-4">
@@ -6836,14 +6840,14 @@ export function App(): React.JSX.Element {
 
                         {wizAppIoSubjectLenInvalid && (
                           <div className="alert alert-warning py-2 small mb-0">
-                            <i className="fas fa-exclamation-triangle me-1"></i>
+                            <AlertTriangle className="me-1" />
                             L'oggetto per App IO deve essere lungo tra {APP_IO_SUBJECT_MIN} e {APP_IO_SUBJECT_MAX} caratteri
                             (attuale: {wizAppIoSubjectLen}). PagoPA rifiuta messaggi più corti o più lunghi.
                           </div>
                         )}
                         {wizAppIoBodyLenInvalid && (
                           <div className="alert alert-warning py-2 small mb-0">
-                            <i className="fas fa-exclamation-triangle me-1"></i>
+                            <AlertTriangle className="me-1" />
                             Il testo per App IO deve essere lungo tra {APP_IO_MARKDOWN_MIN} e {APP_IO_MARKDOWN_MAX} caratteri
                             (attuale: {wizAppIoBodyLen}). PagoPA rifiuta messaggi più corti o più lunghi.
                           </div>
@@ -6854,7 +6858,7 @@ export function App(): React.JSX.Element {
                     {(wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && wizAppIoMode !== 'none' && (
                       <div className="card mt-3 border-light shadow-sm" style={{ background: '#f8f9fc' }}>
                         <div className="card-body p-3">
-                          <h6 className="small fw-bold text-dark mb-3"><i className="fas fa-mobile-screen me-2 text-primary"></i>Co-consegna su App IO</h6>
+                          <h6 className="small fw-bold text-dark mb-3"><Smartphone className="me-2 text-primary" />Co-consegna su App IO</h6>
                           {wizChannel === 'POSTAL' ? (
                             <div className="form-text small text-muted mb-2">
                               La lettera cartacea non ha un formato riutilizzabile per una notifica push: oggetto e testo App IO vanno definiti a parte.
@@ -6926,7 +6930,7 @@ export function App(): React.JSX.Element {
 
                     <div className="mt-4 pt-3 border-top d-flex justify-content-between">
                       <button className="btn btn-outline-secondary" onClick={() => setWizStep(wizSingleMode ? 2 : 3)}>
-                        <i className="fas fa-arrow-left me-1"></i> Indietro
+                        <ArrowLeft className="me-1" /> Indietro
                       </button>
                       <button
                         className="btn btn-primary"
@@ -6945,7 +6949,7 @@ export function App(): React.JSX.Element {
                           )
                         }
                       >
-                        {wizDraftSaving ? <><i className="fas fa-spinner fa-spin me-1"></i> Salvataggio...</> : <>Riepilogo <i className="fas fa-arrow-right ms-1"></i></>}
+                        {wizDraftSaving ? <><i className="fas fa-spinner fa-spin me-1"></i> Salvataggio...</> : <>Riepilogo <ArrowRight className="ms-1" /></>}
                       </button>
                     </div>
                   </div>
@@ -6995,7 +6999,7 @@ export function App(): React.JSX.Element {
                         onClick={() => setWizStep(4)}
                         disabled={wizSending}
                       >
-                        <i className="fas fa-arrow-left me-1"></i> Indietro
+                        <ArrowLeft className="me-1" /> Indietro
                       </button>
                       <div className="d-flex gap-2">
                         <button
@@ -7021,7 +7025,7 @@ export function App(): React.JSX.Element {
                           }}
                           disabled={isAvantiDisabled}
                         >
-                          Avanti <i className="fas fa-arrow-right ms-1"></i>
+                          Avanti <ArrowRight className="ms-1" />
                         </button>
                       </div>
                     </div>
@@ -7160,7 +7164,7 @@ export function App(): React.JSX.Element {
                                   type="button"
                                   onClick={() => setWizAttachmentSearch('')}
                                 >
-                                  <i className="fas fa-times"></i>
+                                  <X />
                                 </button>
                               )}
                             </div>
@@ -7181,11 +7185,11 @@ export function App(): React.JSX.Element {
                                       </span>
                                       {isPresent ? (
                                         <span className="badge bg-success-subtle text-success border border-success">
-                                          <i className="fas fa-check me-1"></i> Caricato
+                                          <Check className="me-1" /> Caricato
                                         </span>
                                       ) : (
                                         <span className="badge bg-danger-subtle text-danger border border-danger">
-                                          <i className="fas fa-times me-1"></i> Mancante
+                                          <X className="me-1" /> Mancante
                                         </span>
                                       )}
                                     </li>
@@ -7209,7 +7213,7 @@ export function App(): React.JSX.Element {
                         onClick={() => setWizStep(4)}
                         disabled={wizSending}
                       >
-                        <i className="fas fa-arrow-left me-1"></i> Indietro
+                        <ArrowLeft className="me-1" /> Indietro
                       </button>
                       <div className="d-flex gap-2">
                         <button
@@ -7235,7 +7239,7 @@ export function App(): React.JSX.Element {
                           }}
                           disabled={isAvantiDisabled}
                         >
-                          Avanti <i className="fas fa-arrow-right ms-1"></i>
+                          Avanti <ArrowRight className="ms-1" />
                         </button>
                       </div>
                     </div>
@@ -7254,7 +7258,7 @@ export function App(): React.JSX.Element {
                       onClick={() => setWizStep(5)}
                       disabled={wizSending}
                     >
-                      <i className="fas fa-arrow-left me-1"></i> Indietro
+                      <ArrowLeft className="me-1" /> Indietro
                     </button>
                     <div className="d-flex gap-2">
                       <button
@@ -7299,7 +7303,7 @@ export function App(): React.JSX.Element {
                     <div className="mb-2"><strong>File Destinatari:</strong> {wizCsvFile?.name} (<strong>{wizValidRows.length}</strong> record pronti per l'invio)</div>
                     {wizValidationErrors.length > 0 && (
                       <div className="mb-2 text-warning">
-                        <i className="fas fa-exclamation-triangle me-1"></i> {wizValidationErrors.length} righe verranno escluse perché non hanno superato i controlli formali.
+                        <AlertTriangle className="me-1" /> {wizValidationErrors.length} righe verranno escluse perché non hanno superato i controlli formali.
                       </div>
                     )}
                     {wizPdfFiles.length > 0 && (
@@ -7384,7 +7388,7 @@ export function App(): React.JSX.Element {
                       onClick={() => setWizStep(5)}
                       disabled={wizSending}
                     >
-                      <i className="fas fa-arrow-left me-1"></i> Indietro
+                      <ArrowLeft className="me-1" /> Indietro
                     </button>
                     <div className="d-flex gap-2">
                       <button
@@ -7522,7 +7526,7 @@ export function App(): React.JSX.Element {
                       onClick={() => setWizStep(6)}
                       disabled={wizTestSubmitting}
                     >
-                      <i className="fas fa-arrow-left me-1"></i> Indietro
+                      <ArrowLeft className="me-1" /> Indietro
                     </button>
                     <button
                       type="button"
@@ -8002,7 +8006,7 @@ export function App(): React.JSX.Element {
                         })()}
                         {notifDetail.appIoPreview && (
                           <>
-                            <h6 className="fw-bold small mt-3"><i className="fas fa-mobile-screen me-2 text-primary"></i>Messaggio App IO Inviato</h6>
+                            <h6 className="fw-bold small mt-3"><Smartphone className="me-2 text-primary" />Messaggio App IO Inviato</h6>
                             <div className="mb-2 small text-muted"><strong>Oggetto:</strong> {notifDetail.appIoPreview.subject}</div>
                             <div className="bg-white border rounded p-3" data-color-mode="light">
                               <MDEditor.Markdown source={notifDetail.appIoPreview.bodyMarkdown ?? ''} />
@@ -8295,7 +8299,7 @@ export function App(): React.JSX.Element {
                             <i className="fas fa-file-zipper me-1"></i>Scarica ZIP
                           </button>
                           <button className="btn btn-sm btn-outline-primary" type="button" onClick={() => handleEnrichCreateCampaignOpen(job)}>
-                            <i className="fas fa-plus me-1"></i>Crea bozza campagna
+                            <Plus className="me-1" />Crea bozza campagna
                           </button>
                         </>
                       )}
@@ -8310,7 +8314,7 @@ export function App(): React.JSX.Element {
                       )}
                       {role === 'admin' && (
                         <button className="btn btn-sm btn-outline-danger" type="button" onClick={() => handleEnrichDelete(job.id)}>
-                          <i className="fas fa-trash me-1"></i>
+                          <Trash2 className="me-1" />
                           {job.status === 'processing' ? 'Elimina (forza)' : 'Elimina'}
                         </button>
                       )}
@@ -8416,13 +8420,13 @@ export function App(): React.JSX.Element {
                       setTmplAppIoSubject('');
                       setTmplAppIoBody('');
                     }}>
-                      <i className="fas fa-plus me-1"></i>Nuovo Template Mail/PEC
+                      <Plus className="me-1" />Nuovo Template Mail/PEC
                     </button>
                     <button className="btn btn-sm btn-outline-primary" onClick={() => {
                       setEditingTemplate({ type: 'APP_IO', name: '', subject: '', bodyHtml: '', bodyMarkdown: '', pairedTemplateId: null });
                       setTmplLastFocusedField('body');
                     }}>
-                      <i className="fas fa-plus me-1"></i>Nuovo Template App IO
+                      <Plus className="me-1" />Nuovo Template App IO
                     </button>
                   </div>
                 )}
@@ -8455,7 +8459,7 @@ export function App(): React.JSX.Element {
                               paddingLeft: isSecondOfPair ? '1.5rem' : undefined,
                             }}>
                               {isFirstOfPair && <i className="fas fa-link text-primary me-2" title="Coppia di template collegati"></i>}
-                              {isSecondOfPair && <i className="fas fa-reply fa-rotate-180 text-muted me-2" style={{ transform: 'scaleX(-1)', opacity: 0.6 }} title="Gemello App IO"></i>}
+                              {isSecondOfPair && <span title="Gemello App IO"><Reply className="text-muted me-2" style={{ transform: 'scaleX(-1)', opacity: 0.6 }} /></span>}
                               {t.name}
                             </td>
                             <td style={{
@@ -8472,9 +8476,9 @@ export function App(): React.JSX.Element {
                               borderBottom: isFirstOfPair ? 'none' : undefined,
                               borderTop: isSecondOfPair ? 'none' : undefined,
                             }}>
-                              <button className="btn btn-sm btn-outline-primary me-1" title="Modifica" onClick={() => { setEditingTemplate(t); setTmplLastFocusedField('body'); }}><i className="fas fa-edit"></i></button>
-                              <button className="btn btn-sm btn-outline-secondary me-1" title="Duplica" onClick={() => handleDuplicateTemplate(t.id)}><i className="fas fa-copy"></i></button>
-                              <button className="btn btn-sm btn-outline-danger" title="Elimina" onClick={() => handleDeleteTemplate(t.id)}><i className="fas fa-trash"></i></button>
+                              <button className="btn btn-sm btn-outline-primary me-1" title="Modifica" onClick={() => { setEditingTemplate(t); setTmplLastFocusedField('body'); }}><Pencil /></button>
+                              <button className="btn btn-sm btn-outline-secondary me-1" title="Duplica" onClick={() => handleDuplicateTemplate(t.id)}><Copy /></button>
+                              <button className="btn btn-sm btn-outline-danger" title="Elimina" onClick={() => handleDeleteTemplate(t.id)}><Trash2 /></button>
                             </td>
                           </tr>
                         );
@@ -8564,7 +8568,7 @@ export function App(): React.JSX.Element {
                                 <div className="card mb-3 ms-4 border-light shadow-sm" style={{ background: '#f8f9fc' }}>
                                   <div className="card-body p-3">
                                     <h6 className="small fw-bold text-dark mb-3">
-                                      <i className="fas fa-mobile-screen me-2 text-primary"></i>Configurazione App IO Gemello
+                                      <Smartphone className="me-2 text-primary" />Configurazione App IO Gemello
                                     </h6>
                                     <div className="mb-3">
                                       <label className="form-label small fw-bold">Oggetto App IO *</label>
@@ -9647,7 +9651,7 @@ export function App(): React.JSX.Element {
                                       setTimeout(() => setSettingsSavedMessage(null), 3000);
                                     }}
                                   >
-                                    <i className="fas fa-copy"></i>
+                                    <Copy />
                                   </button>
                                 </div>
                                 <div className="small">
@@ -9897,7 +9901,7 @@ export function App(): React.JSX.Element {
                                                 onClick={() => { setEditingIoService(s); setShowNewSvcForm(false); }}
                                                 title="Modifica"
                                               >
-                                                <i className="fas fa-edit"></i>
+                                                <Pencil />
                                               </button>
                                               <button
                                                 type="button"
@@ -9905,7 +9909,7 @@ export function App(): React.JSX.Element {
                                                 onClick={() => handleDeleteIoService(s.id)}
                                                 title="Elimina"
                                               >
-                                                <i className="fas fa-trash"></i>
+                                                <Trash2 />
                                               </button>
                                             </div>
                                           </td>
@@ -9924,7 +9928,7 @@ export function App(): React.JSX.Element {
                                                 style={{ maxWidth: 200 }}
                                               />
                                               <button type="submit" className="btn btn-sm btn-outline-secondary" disabled={ioTestBusyId === s.id}>
-                                                <i className="fas fa-paper-plane"></i> Invia Test
+                                                <Send /> Invia Test
                                               </button>
                                               {ioTestMsg?.id === s.id && (
                                                 <span className={`small ${ioTestMsg.error ? 'text-danger' : 'text-success'}`}>{ioTestMsg.text}</span>
@@ -10047,7 +10051,7 @@ export function App(): React.JSX.Element {
                                             ) : (
                                               <div className="d-flex flex-column align-items-center gap-1">
                                                 <span className={`badge ${total > 0 ? 'bg-primary' : 'bg-secondary'} mb-1`}>
-                                                  {total > 0 ? <><i className="fas fa-circle-notch fa-spin me-1"></i>Attivo ({total})</> : <><i className="fas fa-check me-1"></i>Idle</>}
+                                                  {total > 0 ? <><i className="fas fa-circle-notch fa-spin me-1"></i>Attivo ({total})</> : <><Check className="me-1" />Idle</>}
                                                 </span>
                                                 <button
                                                   type="button"
@@ -10126,7 +10130,7 @@ export function App(): React.JSX.Element {
                                   <div className="card-body p-3">
                                     <div className="d-flex align-items-center gap-3 mb-2">
                                       <div className="rounded-circle d-flex align-items-center justify-content-center text-white bg-primary" style={{ width: 40, height: 40 }}>
-                                        <i className="fas fa-paper-plane"></i>
+                                        <Send />
                                       </div>
                                       <div>
                                         <div className="fw-bold text-dark">SEND</div>
@@ -10379,17 +10383,17 @@ export function App(): React.JSX.Element {
                   className="btn btn-outline-secondary btn-sm px-3 mb-3 border"
                   onClick={() => setView('invio-massivo')}
                 >
-                  <i className="fas fa-arrow-left me-1"></i> Torna a Campagne
+                  <ArrowLeft className="me-1" /> Torna a Campagne
                 </button>
               </div>
 
               {loadingCampaignDetail && !campaign ? (
                 <div className="text-center py-5">
-                  <i className="fas fa-spinner fa-spin fa-2x text-primary mb-2"></i>
+                  <Loader2 className="icon-spin text-primary mb-2" size={32} />
                   <div>Caricamento dati campagna...</div>
                 </div>
               ) : detailError ? (
-                <div className="alert alert-danger"><i className="fas fa-exclamation-triangle"></i> {detailError}</div>
+                <div className="alert alert-danger"><AlertTriangle /> {detailError}</div>
               ) : campaign ? (
                 <div className="row g-4">
                   <div className="col-lg-4">
@@ -10637,7 +10641,7 @@ export function App(): React.JSX.Element {
                           )}
                           {campaign.totalRecipients === 0 && campaign.status === 'draft' && (
                             <div className="alert alert-warning small p-2 mt-2 mb-0">
-                              <i className="fas fa-info-circle"></i> Carica un file CSV di destinatari per poter lanciare la campagna.
+                              <Info /> Carica un file CSV di destinatari per poter lanciare la campagna.
                             </div>
                           )}
                           {role === 'admin' && (
@@ -10712,7 +10716,7 @@ export function App(): React.JSX.Element {
                             </div>
                           )}
                           <button className="btn btn-outline-secondary btn-sm border-0" onClick={() => fetchCampaignDetail(campaign.id)} title="Aggiorna esiti">
-                            <i className="fas fa-sync-alt"></i>
+                            <RefreshCw />
                           </button>
                         </div>
                       </div>
@@ -10991,3 +10995,6 @@ export function App(): React.JSX.Element {
     </div>
   );
 }
+
+
+
