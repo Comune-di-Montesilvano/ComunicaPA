@@ -1037,6 +1037,7 @@ export function App(): React.JSX.Element {
 
   // Wizard States
   const [wizStep, setWizStep] = useState(1);
+  const [wizSingleMode, setWizSingleMode] = useState(false);
   const [wizName, setWizName] = useState('');
   const [wizDesc, setWizDesc] = useState('');
   const [wizChannel, setWizChannel] = useState<'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL'>('EMAIL');
@@ -4177,6 +4178,7 @@ export function App(): React.JSX.Element {
   const resetWizard = () => {
     setWizCampaignId(null);
     setWizStep(1);
+    setWizSingleMode(false);
     setWizName('');
     setWizDesc('');
     setWizSubject('');
@@ -4241,6 +4243,7 @@ export function App(): React.JSX.Element {
     channelConfig: Record<string, any>;
   }, opts: { isDuplicate: boolean; campaignId?: string }) => {
     setWizCampaignId(opts.isDuplicate ? null : (opts.campaignId || null));
+    setWizSingleMode(opts.isDuplicate ? false : Boolean(source.channelConfig?.wizSingleMode));
     setWizName(opts.isDuplicate ? `${source.name} (Copia)` : source.name);
     setWizDesc(source.description || '');
     setWizChannel(source.channelType);
@@ -4394,6 +4397,7 @@ export function App(): React.JSX.Element {
       protocolla: wizProtocolla,
       wizStep: targetStep !== undefined ? targetStep : wizStep,
       wizRowCount: wizValidRows.length,
+      wizSingleMode,
     };
     if (wizCsvFile) {
       cfg.wizCsvFilename = wizCsvFile.name;
