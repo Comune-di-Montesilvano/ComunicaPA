@@ -5661,11 +5661,32 @@ export function App(): React.JSX.Element {
                                 borderBottom: isParentOfPair ? 'none' : undefined,
                                 borderTop: isChildOfPair ? 'none' : undefined,
                               };
+
+                              // Riga figlia (campagna di prova): nessuna colonna/azione ha senso
+                              // qui (canale/destinatari/creata il sono già sulla madre, stato non
+                              // riflette l'esito reale dell'invio di prova, destinatari è sempre 1)
+                              // — solo un link minimale al dettaglio del test.
+                              if (isChildOfPair) {
+                                return (
+                                  <tr key={c.id} style={{ cursor: 'pointer', ...pairStyle }} onClick={() => handleCampaignClick(c.id)}>
+                                    <td
+                                      colSpan={6}
+                                      className="text-primary"
+                                      style={{ ...cellStyle, borderLeft: pairBorderLeft, paddingLeft: '1.5rem', paddingTop: '0.4rem', paddingBottom: '0.5rem' }}
+                                    >
+                                      <i className="fas fa-reply fa-rotate-180 text-muted me-2" style={{ transform: 'scaleX(-1)', opacity: 0.6 }} title="Campagna di prova"></i>
+                                      <span className="fw-bold">{c.name}</span>
+                                      <span className="badge bg-warning text-dark ms-2">TEST</span>
+                                      <span className="text-muted small ms-2">— vedi dettaglio test</span>
+                                    </td>
+                                  </tr>
+                                );
+                              }
+
                               return (
                                 <tr key={c.id} style={{ cursor: 'pointer', ...pairStyle }} onClick={() => handleCampaignClick(c.id)}>
-                                  <td className="fw-bold text-primary" style={{ ...cellStyle, borderLeft: pairBorderLeft, paddingLeft: isChildOfPair ? '1.5rem' : undefined }}>
+                                  <td className="fw-bold text-primary" style={{ ...cellStyle, borderLeft: pairBorderLeft }}>
                                     {isParentOfPair && <i className="fas fa-link text-primary me-2" title="Collegata a una campagna di prova"></i>}
-                                    {isChildOfPair && <i className="fas fa-reply fa-rotate-180 text-muted me-2" style={{ transform: 'scaleX(-1)', opacity: 0.6 }} title="Campagna di prova"></i>}
                                     {c.name}
                                     {c.isTest && (
                                       <span className="badge bg-warning text-dark ms-2" title="Campagna di prova, collegata a una bozza">
