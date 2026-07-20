@@ -7256,36 +7256,53 @@ export function App(): React.JSX.Element {
                       </div>
                     )}
                     <div className="mt-3 pt-3 border-top">
-                      {(wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'APP_IO') ? (
-                        <div className="row g-3">
-                          <WizRecipientPreviewPanel
-                            wizValidRows={wizValidRows}
-                            wizPreviewIndex={wizPreviewIndex}
-                            setWizPreviewIndex={setWizPreviewIndex}
-                            wizPreviewResult={wizPreviewResult}
-                            wizPreviewLoading={wizPreviewLoading}
-                            wizPreviewChannelTab={wizPreviewChannelTab}
-                            setWizPreviewChannelTab={setWizPreviewChannelTab}
-                            wizChannel={wizChannel}
-                            wizAppIoMode={wizAppIoMode}
-                            wizMapping={wizMapping}
-                            fullWidth={wizAttachments.length === 0 || !wizValidRows[wizPreviewIndex]}
-                          />
-                          {wizAttachments.length > 0 && wizValidRows[wizPreviewIndex] && (
-                            <div className="col-lg-6">
-                              {wizAttachments.map((entry, idx) => (
-                                <WizAttachmentInlinePreview
-                                  key={entry.key || idx}
-                                  campaignId={wizCampaignId}
-                                  row={wizValidRows[wizPreviewIndex]}
-                                  attachmentEntry={entry}
-                                  token={token}
-                                />
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      ) : (
+                      {(wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'APP_IO') ? (() => {
+                        // Nessun allegato configurato esplicitamente (wizAttachments vuoto):
+                        // stesso fallback legacy del backend (resolveCustomAttachmentFilename,
+                        // attachment.service.ts) — scansiona la riga corrente e usa la prima
+                        // colonna il cui valore termina in .pdf, etichetta fissa allineata al
+                        // testo generato da processTemplate per questo stesso caso.
+                        const currentRow = wizValidRows[wizPreviewIndex];
+                        let effectiveAttachments = wizAttachments;
+                        if (effectiveAttachments.length === 0 && currentRow) {
+                          const legacyKey = Object.keys(currentRow).find(
+                            k => currentRow[k]?.toLowerCase().endsWith('.pdf')
+                          );
+                          if (legacyKey) {
+                            effectiveAttachments = [{ key: legacyKey, label: 'Documento principale.pdf' }];
+                          }
+                        }
+                        return (
+                          <div className="row g-3">
+                            <WizRecipientPreviewPanel
+                              wizValidRows={wizValidRows}
+                              wizPreviewIndex={wizPreviewIndex}
+                              setWizPreviewIndex={setWizPreviewIndex}
+                              wizPreviewResult={wizPreviewResult}
+                              wizPreviewLoading={wizPreviewLoading}
+                              wizPreviewChannelTab={wizPreviewChannelTab}
+                              setWizPreviewChannelTab={setWizPreviewChannelTab}
+                              wizChannel={wizChannel}
+                              wizAppIoMode={wizAppIoMode}
+                              wizMapping={wizMapping}
+                              fullWidth={effectiveAttachments.length === 0 || !currentRow}
+                            />
+                            {effectiveAttachments.length > 0 && currentRow && (
+                              <div className="col-lg-6">
+                                {effectiveAttachments.map((entry, idx) => (
+                                  <WizAttachmentInlinePreview
+                                    key={entry.key || idx}
+                                    campaignId={wizCampaignId}
+                                    row={currentRow}
+                                    attachmentEntry={entry}
+                                    token={token}
+                                  />
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })() : (
                         <WizAddressAttachmentPreviewPanel
                           wizValidRows={wizValidRows}
                           wizPreviewIndex={wizPreviewIndex}
