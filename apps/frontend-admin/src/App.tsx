@@ -976,7 +976,7 @@ export function App(): React.JSX.Element {
   // Anteprima Step 4: chiama l'endpoint reale di rendering (stesso motore
   // usato per l'invio) invece di ricostruire il template a mano nel JSX.
   useEffect(() => {
-    if (wizStep !== 4 || !wizValidRows[wizPreviewIndex]) {
+    if ((wizStep !== 4 && wizStep !== 6) || !wizValidRows[wizPreviewIndex]) {
       return;
     }
     const row = wizValidRows[wizPreviewIndex];
