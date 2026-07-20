@@ -760,7 +760,7 @@ export function App(): React.JSX.Element {
   const [token, setToken] = useState<string | null>(localStorage.getItem('comunicapa_token'));
   const [username, setUsername] = useState<string | null>(localStorage.getItem('comunicapa_username'));
   const [role, setRole] = useState<string | null>(localStorage.getItem('comunicapa_role'));
-  const [view, setView] = useState<'dashboard' | 'invio-singolo' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'notifiche-ricerca' | 'verifica-appio' | 'template-dashboard' | 'impostazioni' | 'campaign-detail' | 'audit-logs' | 'arricchimento'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'notifiche-ricerca' | 'verifica-appio' | 'template-dashboard' | 'impostazioni' | 'campaign-detail' | 'audit-logs' | 'arricchimento'>('dashboard');
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [templates, setTemplates] = useState<TemplateItem[]>([]);
   const [editingTemplate, setEditingTemplate] = useState<Partial<TemplateItem> & { type: 'MAIL' | 'APP_IO' } | null>(null);
@@ -1023,17 +1023,11 @@ export function App(): React.JSX.Element {
   const [loadingCampaigns, setLoadingCampaigns] = useState(false);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
 
-  // Single send form state (in Invio Singolo)
+  // Form destinatario per invio singolo (step 2 fuso del wizard, wizSingleMode)
   const [singleCf, setSingleCf] = useState('');
   const [singleName, setSingleName] = useState('');
   const [singleEmail, setSingleEmail] = useState('');
   const [singlePec, setSinglePec] = useState('');
-  const [singleSubject, setSingleSubject] = useState('');
-  const [singleBody, setSingleBody] = useState('');
-  const [singleChannel, setSingleChannel] = useState<'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL'>('EMAIL');
-  const [singleAppIoServiceId, setSingleAppIoServiceId] = useState('');
-  const [singleSending, setSingleSending] = useState(false);
-  const [singleSuccess, setSingleSuccess] = useState<string | null>(null);
 
   // Wizard States
   const [wizStep, setWizStep] = useState(1);
@@ -1435,16 +1429,6 @@ export function App(): React.JSX.Element {
   } | null>(null);
   const [globalStatsLoading, setGlobalStatsLoading] = useState(false);
 
-
-  // Pre-select default App IO service id for forms
-  useEffect(() => {
-    const def = ioServices.find(s => s.isDefault);
-    if (def) {
-      setSingleAppIoServiceId(def.id);
-    } else if (ioServices.length > 0) {
-      setSingleAppIoServiceId(ioServices[0].id);
-    }
-  }, [ioServices]);
 
   // Auto-refresh campaign detail if running/queued. Aggiorna anche i pannelli
   // di breakdown/statistiche, non solo l'oggetto campaign principale — prima
@@ -2188,93 +2172,6 @@ export function App(): React.JSX.Element {
       return created as Campaign;
     } catch (err: any) {
       throw new Error(err.message || 'Errore di connessione API.');
-    }
-  };
-
-  // Single Send handler
-  const handleSingleSendSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!singleCf) {
-      alert('Il Codice Fiscale è obbligatorio.');
-      return;
-    }
-    if (!isValidCfOrPiva(singleCf)) {
-      alert('Codice Fiscale (16 caratteri) o Partita IVA (11 cifre) non valido.');
-      return;
-    }
-    if (singleChannel === 'APP_IO') {
-      const subjectLen = singleSubject.length;
-      if (subjectLen < APP_IO_SUBJECT_MIN || subjectLen > APP_IO_SUBJECT_MAX) {
-        alert(`L'oggetto per App IO deve essere lungo tra ${APP_IO_SUBJECT_MIN} e ${APP_IO_SUBJECT_MAX} caratteri (attuale: ${subjectLen}). PagoPA rifiuta messaggi più corti o più lunghi.`);
-        return;
-      }
-      const len = wizPlainTextLength(singleBody);
-      if (len < APP_IO_MARKDOWN_MIN || len > APP_IO_MARKDOWN_MAX) {
-        alert(`Il contenuto per App IO deve essere lungo tra ${APP_IO_MARKDOWN_MIN} e ${APP_IO_MARKDOWN_MAX} caratteri (attuale: ${len}). PagoPA rifiuta messaggi più corti o più lunghi.`);
-        return;
-      }
-    }
-    setSingleSending(true);
-    setSingleSuccess(null);
-
-    try {
-      // Create campaign config
-      let customConfig: Record<string, any> | undefined = undefined;
-      if (singleChannel === 'APP_IO') {
-        customConfig = { ioServiceId: singleAppIoServiceId };
-      } else if (singleChannel === 'EMAIL' || singleChannel === 'PEC') {
-        customConfig = {
-          subject: singleSubject,
-          body: singleBody,
-        };
-        // Bundle default App IO service configuration for co-delivery if available
-        const defaultSvc = ioServices.find(s => s.isDefault) || ioServices[0];
-        if (defaultSvc) {
-          customConfig.appIo = { ioServiceId: defaultSvc.id };
-        }
-      }
-
-      const nameVal = `Invio Singolo - ${singleCf.toUpperCase()} - ${new Date().toLocaleTimeString('it-IT')}`;
-      const campaignObj = await handleCreateCampaign(nameVal, singleBody || singleSubject, singleChannel, customConfig);
-
-      // Create CSV content for 1 recipient
-      const csvContent = `codice_fiscale,full_name,email,pec\n"${singleCf.toUpperCase()}","${singleName.replace(/"/g, '""')}","${singleEmail.replace(/"/g, '""')}","${singlePec.replace(/"/g, '""')}"`;
-      
-      const blob = new Blob([csvContent], { type: 'text/csv' });
-      const formData = new FormData();
-      formData.append('file', blob, 'single_recipient.csv');
-
-      const uploadRes = await fetch(`${ADMIN_API_BASE}/campaigns/${campaignObj.id}/recipients/upload`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: formData,
-      });
-
-      if (!uploadRes.ok) {
-        throw new Error('Impossibile associare il destinatario.');
-      }
-
-      const launchRes = await fetch(`${ADMIN_API_BASE}/campaigns/${campaignObj.id}/launch`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-
-      if (!launchRes.ok) {
-        throw new Error('Errore nel lancio della notifica.');
-      }
-
-      setSingleSuccess(campaignObj.id);
-      setSingleCf('');
-      setSingleName('');
-      setSingleEmail('');
-      setSinglePec('');
-      setSingleSubject('');
-      setSingleBody('');
-      fetchCampaigns();
-    } catch (err: any) {
-      alert(err.message || 'Errore durante l\'invio singolo.');
-    } finally {
-      setSingleSending(false);
     }
   };
 
@@ -5275,15 +5172,15 @@ export function App(): React.JSX.Element {
             <span>Dashboard</span>
           </a>
           <a
-            className={`bo-nav-item ${view === 'invio-singolo' ? 'is-active' : ''}`}
+            className={`bo-nav-item ${view === 'invio-massivo-wizard' && wizSingleMode ? 'is-active' : ''}`}
             href="#"
-            onClick={(e) => { e.preventDefault(); setView('invio-singolo'); setSingleSuccess(null); }}
+            onClick={(e) => { e.preventDefault(); resetWizard(); setWizSingleMode(true); setView('invio-massivo-wizard'); }}
           >
             <i className="fas fa-paper-plane"></i>
             <span>Invio Singolo</span>
           </a>
           <a
-            className={`bo-nav-item ${view === 'invio-massivo' || view === 'campaign-detail' || view === 'invio-massivo-wizard' ? 'is-active' : ''}`}
+            className={`bo-nav-item ${(view === 'invio-massivo' || view === 'campaign-detail' || (view === 'invio-massivo-wizard' && !wizSingleMode)) ? 'is-active' : ''}`}
             href="#"
             onClick={(e) => { e.preventDefault(); setView('invio-massivo'); }}
           >
@@ -5384,9 +5281,8 @@ export function App(): React.JSX.Element {
         </button>
         <h2 className="h5 mb-0 text-dark fw-bold" style={{ display: 'inline-block' }}>
           {view === 'dashboard' && 'Dashboard'}
-          {view === 'invio-singolo' && 'Nuova Notifica Singola'}
           {view === 'invio-massivo' && 'Campagne di Invio Massivo'}
-          {view === 'invio-massivo-wizard' && 'Wizard Nuova Campagna Massiva'}
+          {view === 'invio-massivo-wizard' && (wizSingleMode ? 'Wizard Invio Singolo' : 'Wizard Nuova Campagna Massiva')}
           {view === 'statistiche' && 'Statistiche e Andamento'}
           {view === 'notifiche-ricerca' && 'Ricerca Notifiche'}
           {view === 'template-dashboard' && 'Template'}
@@ -5526,152 +5422,6 @@ export function App(): React.JSX.Element {
                     </div>
                   </div>
                 </div>
-              </div>
-            </div>
-          )}
-
-          {/* VIEW: INVIO SINGOLO */}
-          {view === 'invio-singolo' && (
-            <div className="card shadow-sm bg-white mx-auto" style={{ maxWidth: '800px' }}>
-              <div className="card-header bg-white py-3 border-bottom">
-                <h3 className="h6 mb-0 fw-bold text-dark"><i className="fas fa-paper-plane me-2 text-primary"></i>Nuova Notifica Singola</h3>
-              </div>
-              <div className="card-body p-4">
-                {singleSuccess && (
-                  <div className="alert alert-success d-flex align-items-center gap-2 mb-4">
-                    <i className="fas fa-check-circle"></i>
-                    <div>
-                      Notifica singola inviata e accodata con successo! ID Campagna generata: <strong>{singleSuccess}</strong>
-                    </div>
-                  </div>
-                )}
-
-                <form onSubmit={handleSingleSendSubmit}>
-                  <div className="row g-3">
-                    <div className="col-md-6">
-                      <label className="form-label small fw-bold text-dark" htmlFor="s_cf">Codice Fiscale Destinatario <span className="text-danger">*</span></label>
-                      <input
-                        type="text"
-                        id="s_cf"
-                        className="form-control form-control-sm"
-                        placeholder="16 caratteri alfanumerici"
-                        maxLength={16}
-                        value={singleCf}
-                        onChange={(e) => setSingleCf(e.target.value.toUpperCase())}
-                        required
-                      />
-                    </div>
-                    <div className="col-md-6">
-                      <label className="form-label small fw-semibold text-muted" htmlFor="s_name">Nome Completo</label>
-                      <input
-                        type="text"
-                        id="s_name"
-                        className="form-control form-control-sm"
-                        placeholder="Es: Mario Rossi"
-                        value={singleName}
-                        onChange={(e) => setSingleName(e.target.value)}
-                      />
-                    </div>
-                    <div className="col-md-6">
-                      <label className="form-label small fw-semibold text-muted" htmlFor="s_email">Indirizzo Email</label>
-                      <input
-                        type="email"
-                        id="s_email"
-                        className="form-control form-control-sm"
-                        placeholder="mario.rossi@example.com"
-                        value={singleEmail}
-                        onChange={(e) => setSingleEmail(e.target.value)}
-                      />
-                    </div>
-                    <div className="col-md-6">
-                      <label className="form-label small fw-semibold text-muted" htmlFor="s_pec">Indirizzo PEC</label>
-                      <input
-                        type="email"
-                        id="s_pec"
-                        className="form-control form-control-sm"
-                        placeholder="mario.rossi@pec.it"
-                        value={singlePec}
-                        onChange={(e) => setSinglePec(e.target.value)}
-                      />
-                    </div>
-
-                    <div className="col-md-6 border-top pt-3">
-                      <label className="form-label small fw-semibold text-muted" htmlFor="s_channel">Canale di Trasmissione</label>
-                      <select
-                        id="s_channel"
-                        className="form-select form-select-sm"
-                        value={singleChannel}
-                        onChange={(e: any) => setSingleChannel(e.target.value)}
-                      >
-                        <option value="EMAIL">EMAIL</option>
-                        <option value="PEC">PEC (Posta Elettronica Certificata)</option>
-                        <option value="APP_IO">APP IO (PagoPA)</option>
-                        <option value="SEND">SEND (Notifiche Digitali)</option>
-                        <option value="POSTAL">POSTAL (Cartaceo)</option>
-                      </select>
-                    </div>
-
-                    {singleChannel === 'APP_IO' && (
-                      <div className="col-md-6 border-top pt-3">
-                        <label className="form-label small fw-bold text-dark" htmlFor="s_io_svc">Servizio App IO Associato</label>
-                        <select
-                          id="s_io_svc"
-                          className="form-select form-select-sm"
-                          value={singleAppIoServiceId}
-                          onChange={(e) => setSingleAppIoServiceId(e.target.value)}
-                          required
-                        >
-                          {ioServices.map(s => (
-                            <option key={s.id} value={s.id}>
-                              {s.nome} {s.isDefault ? '(Predefinito)' : ''}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-
-                    <div className="col-12">
-                      <label className="form-label small fw-bold text-dark" htmlFor="s_subject">Oggetto dell'Avviso</label>
-                      <input
-                        type="text"
-                        id="s_subject"
-                        className="form-control form-control-sm"
-                        placeholder="Oggetto dell'avviso istituzionale"
-                        value={singleSubject}
-                        onChange={(e) => setSingleSubject(e.target.value)}
-                        required
-                      />
-                    </div>
-
-                    <div className="col-12">
-                      <label className="form-label small fw-bold text-dark" htmlFor="s_body">Contenuto della Comunicazione</label>
-                      <textarea
-                        id="s_body"
-                        className="form-control form-control-sm"
-                        rows={4}
-                        placeholder="Digita qui il testo completo del messaggio..."
-                        value={singleBody}
-                        onChange={(e) => setSingleBody(e.target.value)}
-                        required
-                      ></textarea>
-                    </div>
-
-                    <div className="col-12 mt-4">
-                      <button
-                        type="submit"
-                        className="btn btn-primary w-100 py-2 fw-bold"
-                        style={{ backgroundColor: 'var(--bi-primary)', border: 'none' }}
-                        disabled={singleSending}
-                      >
-                        {singleSending ? (
-                          <><i className="fas fa-spinner fa-spin me-2"></i>Spedizione in corso...</>
-                        ) : (
-                          <><i className="fas fa-paper-plane me-2"></i>Invia Notifica Singola</>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                </form>
               </div>
             </div>
           )}
