@@ -483,6 +483,18 @@ export class CampaignsController {
     return this.campaignsService.getStats(id);
   }
 
+  @Get(':id/attachments/preview-file')
+  async previewAttachmentFile(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('filename') filename: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { path, contentType } = await this.campaignsService.resolveAttachmentPreviewFilePath(id, filename);
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', 'inline');
+    res.sendFile(path);
+  }
+
   @Get(':id/channel-stats')
   getChannelBreakdown(@Param('id', ParseUUIDPipe) id: string) {
     return this.campaignsService.getChannelBreakdown(id).then((breakdown) => ({ campaignId: id, breakdown }));

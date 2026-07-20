@@ -523,6 +523,58 @@ describe('CampaignsService', () => {
     });
   });
 
+  describe('resolveAttachmentPreviewFilePath', () => {
+    // getUploadsDir è mockato globalmente in cima a questo file (vedi
+    // `jest.mock('../attachments/attachment-paths', ...)`) per restituire
+    // sempre `tmpDirRef.dir`, ignorando il campaignId passato — pattern
+    // già usato da `finalizeAttachments` più sopra. Non serve quindi (e
+    // non avrebbe effetto) impostare `process.env['ATTACHMENTS_PATH']`.
+    let tmpDir: string;
+
+    beforeEach(() => {
+      tmpDir = fs.mkdtempSync(join(os.tmpdir(), 'preview-file-'));
+      tmpDirRef.dir = tmpDir;
+    });
+
+    afterEach(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('risolve il path se il file esiste nella cartella upload della campagna', async () => {
+      fs.writeFileSync(join(tmpDir, 'avviso.pdf'), '%PDF-1.4 test');
+      mockCampaignRepo.existsBy.mockResolvedValue(true);
+
+      const result = await service.resolveAttachmentPreviewFilePath('campaign-1', 'avviso.pdf');
+
+      expect(result.path).toBe(join(tmpDir, 'avviso.pdf'));
+      expect(result.contentType).toBe('application/pdf');
+    });
+
+    it('lancia NotFoundException se il filename non è tra i file presenti (whitelist)', async () => {
+      fs.writeFileSync(join(tmpDir, 'reale.pdf'), '%PDF-1.4 test');
+      mockCampaignRepo.existsBy.mockResolvedValue(true);
+
+      await expect(service.resolveAttachmentPreviewFilePath('campaign-2', '../../../etc/passwd'))
+        .rejects.toThrow(NotFoundException);
+      await expect(service.resolveAttachmentPreviewFilePath('campaign-2', 'non-esiste.pdf'))
+        .rejects.toThrow(NotFoundException);
+    });
+
+    it('lancia NotFoundException se la campagna non esiste', async () => {
+      mockCampaignRepo.existsBy.mockResolvedValue(false);
+      await expect(service.resolveAttachmentPreviewFilePath('inesistente', 'x.pdf'))
+        .rejects.toThrow(NotFoundException);
+    });
+
+    it('usa Content-Type octet-stream per estensioni non-pdf', async () => {
+      fs.writeFileSync(join(tmpDir, 'dati.zip'), 'PK...');
+      mockCampaignRepo.existsBy.mockResolvedValue(true);
+
+      const result = await service.resolveAttachmentPreviewFilePath('campaign-3', 'dati.zip');
+      expect(result.contentType).toBe('application/octet-stream');
+    });
+  });
+
   describe('launch — validazione allegati bloccante', () => {
     let tmpDir: string;
 

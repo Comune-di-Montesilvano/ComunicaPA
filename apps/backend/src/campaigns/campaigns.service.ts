@@ -1712,6 +1712,31 @@ export class CampaignsService {
   }
 
   /**
+   * Risolve il path assoluto di un file già caricato nella cartella uploads
+   * di una campagna bozza (usato per l'anteprima allegato dal wizard, prima
+   * che esistano recipient/attempt reali). `filename` arriva da query string
+   * lato utente: mai costruire il path direttamente da input — si valida per
+   * uguaglianza di stringa contro l'elenco reale (whitelist), che previene
+   * path traversal senza bisogno di sanitizzare `filename`.
+   */
+  async resolveAttachmentPreviewFilePath(
+    campaignId: string,
+    filename: string,
+  ): Promise<{ path: string; contentType: string }> {
+    const exists = await this.campaignRepo.existsBy({ id: campaignId });
+    if (!exists) throw new NotFoundException(`Campaign ${campaignId} not found`);
+
+    const dir = getUploadsDir(campaignId);
+    const present = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+    if (!present.includes(filename)) {
+      throw new NotFoundException('Allegato non trovato — verifica il Passo 5');
+    }
+
+    const contentType = filename.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream';
+    return { path: join(dir, filename), contentType };
+  }
+
+  /**
    * Post-processing degli allegati caricati:
    * 1. estrae i PDF dagli eventuali .zip (appiattendo i path) e rimuove gli zip;
    * 2. elimina i PDF non referenziati da alcun destinatario (extraData/allegatoKey).
