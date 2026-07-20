@@ -60,7 +60,21 @@ estrae la logica già scritta in `handleWizLaunch`
 `Blob`. `handleWizLaunch` la usa al posto del blocco inline (nessun cambio
 di comportamento).
 
-**Frontend — nuova funzione `syncWizDraftAndRecipients(): Promise<string | null>`:**
+**Bug di ordinamento scoperto durante l'analisi (rilevante per "resume a
+step6"):** `buildWizChannelConfigDraft()` (`App.tsx:4259-4266`) scrive
+`wizStep` leggendo lo state corrente — ma ogni punto di chiamata oggi fa
+`await handleSaveWizardDraft(); setWizStep(N)`, cioè salva PRIMA di
+avanzare: il valore persistito è sempre lo step di PARTENZA (es. 4), mai
+quello di arrivo (5). Con l'autosave silenzioso esteso a ogni transizione,
+questo bug diventerebbe sistematico e il resume non atterrerebbe mai oltre
+lo step 4 — mai a step6 come richiesto dalla feature di navigazione.
+Fix contestuale: `buildWizChannelConfigDraft(targetStep?: number)` usa
+`wizStep: targetStep ?? wizStep`; ogni chiamante del nuovo
+`syncWizDraftAndRecipients(targetStep)` passa esplicitamente lo step di
+destinazione (mai desunto dallo state, per lo stesso motivo di stale
+closure già risolto nel bug1 mappatura — vedi commit `5d0ef4e`).
+
+**Frontend — nuova funzione `syncWizDraftAndRecipients(targetStep: number): Promise<string | null>`:**
 sostituisce/estende `handleSaveWizardDraft` — stessa logica di creazione/
 patch campagna + salvataggio CSV grezzo bozza (`recipients/draft-csv`,
 `App.tsx:4322-4379`), **più**, se `wizValidRows.length > 0` e la mappatura
@@ -70,26 +84,54 @@ endpoint di `handleWizLaunch`). Nessun `alert()`: gli unici messaggi visibili
 restano gli errori (stesso pattern attuale di `handleSaveWizardDraft`, che già
 usa `alert(err.message)` solo nel catch).
 
-**Punti di chiamata — ogni "avanti" da step2 in poi:**
+**Punti di chiamata — ogni "avanti" da step2 in poi (silenziosi, target
+esplicito):**
 - `setWizStep(3)` (righe 5938, 6007): diventa `onClick` async che chiama
-  `syncWizDraftAndRecipients()` poi `setWizStep(3)` se non fallito.
+  `await syncWizDraftAndRecipients(3)`, poi `setWizStep(3)` se non fallito
+  (`null`).
 - `handleWizAdvanceToStep5` (già async, righe 4387-4391): sostituisce la
-  chiamata a `handleSaveWizardDraft()` con `syncWizDraftAndRecipients()`,
-  rimuove l'alert (già non c'è in questa funzione, il salvataggio è
-  silenzioso qui — solo `handleSaveWizardDraft` diretto, chiamato altrove,
-  mostra l'alert).
+  chiamata a `handleSaveWizardDraft()` con `syncWizDraftAndRecipients(5)`.
 - Step3→4 (riga 6502, "Procedi a Template"): stesso pattern, diventa async
-  con `syncWizDraftAndRecipients()` prima di `setWizStep(4)`. **Questo è il
-  momento in cui lo snapshot di gating (sezione 3 sotto) viene aggiornato.**
-- Ogni altro bottone "avanti" nel wizard da step2 in su segue lo stesso
-  pattern: `await syncWizDraftAndRecipients()` → se non-null, `setWizStep(N)`.
+  con `await syncWizDraftAndRecipients(4)` prima di `setWizStep(4)`.
+  **Questo è il momento in cui lo snapshot di gating (sezione 2 sopra)
+  viene aggiornato.**
+- Step5→6 ("Avanti" dedicato, sezione 3 sotto): stesso pattern,
+  `syncWizDraftAndRecipients(6)` prima di `setWizStep(6)`.
 
-`handleSaveWizardDraft` ha un solo punto di chiamata in tutto il file
-(dentro `handleWizAdvanceToStep5`, riga 4388) — nessun bottone "Salva
-bozza" manuale distinto esiste altrove. Va quindi rimossa e sostituita
-interamente da `syncWizDraftAndRecipients` (che ne assorbe la logica di
-creazione/patch campagna + CSV grezzo, aggiungendo il sync dei Recipient):
-nessun `alert('Bozza salvata.')` sopravvive nel wizard.
+**`handleSaveWizardDraft` resta, ma diventa un wrapper sottile.** Non ha
+un solo punto di chiamata come inizialmente creduto: esiste un bottone
+manuale "Salva bozza" nell'header del wizard (`App.tsx:5564-5566`,
+`onClick={handleSaveWizardDraft}`, unico altro consumatore oltre a
+`handleWizAdvanceToStep5`) che l'operatore può premere in qualunque
+momento — quello sì con `alert('Bozza salvata.')`, azione esplicita che
+merita conferma visibile. Nuova implementazione:
+`handleSaveWizardDraft = async () => { const id =
+await syncWizDraftAndRecipients(wizStep); if (id) alert('Bozza
+salvata.'); return id; }` — usa lo step CORRENTE (non un target di
+transizione, l'operatore sta salvando da dove si trova), riusa la stessa
+logica di sync (inclusi i Recipient, oggi non salvati da questo bottone).
+Tutti gli "avanti" chiamano invece `syncWizDraftAndRecipients(targetStep)`
+direttamente, senza passare da `handleSaveWizardDraft` — restano silenziosi.
+
+**Aggiornamento `wizMaxReachedStep` (sezione 2):** dentro
+`syncWizDraftAndRecipients(targetStep)`, dopo un salvataggio riuscito,
+`setWizMaxReachedStep(m => Math.max(m, targetStep))`. Per il bottone
+manuale "Salva bozza" (`targetStep = wizStep` corrente) l'aggiornamento è
+un no-op innocuo (il current step è già sempre ≤ max raggiunto).
+
+**Evitare risync ridondanti (rilevante per CSV grandi — vedi gotcha proxy
+esterno in CLAUDE.md su operazioni bulk ripetute):** `uploadCsv()` fa
+sempre un `DELETE` + reinsert completo di tutti i `Recipient` della
+campagna — costoso su CSV da migliaia di righe, e con
+`syncWizDraftAndRecipients()` chiamata a OGNI "avanti" verrebbe rieseguito
+più volte anche quando CSV/mappatura non sono cambiati dall'ultimo sync
+riuscito. Nuovo state `wizRecipientsSyncFingerprint: string | null` =
+`JSON.stringify({ headers: wizCsvHeaders, mapping: wizMapping, rowCount:
+wizValidRows.length })` all'ultimo sync riuscito. `syncWizDraftAndRecipients()`
+ricalcola l'impronta corrente e salta la chiamata pesante
+`recipients/upload` se coincide con quella salvata (esegue comunque il
+salvataggio leggero di nome/config/CSV grezzo, così le modifiche a
+oggetto/corpo template restano sempre persistite).
 
 **Effetto collaterale che risolve il bug 1:** quando l'operatore arriva a
 step5, i `Recipient` esistono già (creati al passaggio 3→4). Gli upload di
@@ -99,30 +141,57 @@ cambiamento a `finalizeAttachments()` stessa necessario per questo.
 
 ## 2. Gating navigazione tab su cambio struttura
 
-**Nuovo state:** `wizLastSyncedHeaders: string[] | null` e
-`wizLastSyncedMapping: typeof wizMapping | null` — snapshot presi
-esclusivamente al momento del sync 3→4 (quando la mappatura è confermata),
-non ad ogni sync generico (il sync di step2→3, ad esempio, avviene prima
-che la mappatura sia stata rivista dall'operatore, quindi non è un
-checkpoint valido).
+**Stato reale del meccanismo esistente (verificato in codice,
+`App.tsx:5573-5600`, "Steps Progress Header"):** i tab 1-6 sono cliccabili
+oggi **solo all'indietro** — condizione `wizStep > n`. Non esiste alcun
+salto in avanti: se l'operatore torna allo step 2 (`wizStep` diventa 2), il
+tab "6" smette immediatamente di essere cliccabile (`2 > 6` è falso) e
+resta così finché non si riattraversano gli step intermedi con "avanti".
+La richiesta "se torno sul 2 posso tornare direttamente al 6 se la
+struttura non è cambiata" è quindi una capacità **nuova da aggiungere**,
+non un bug da correggere in un meccanismo di gating preesistente.
 
-**Confronto:** i tab-step diretti per step ≥ 5 (il meccanismo di click
-diretto sui tab già esistente, che oggi permette di saltare liberamente se
-la campagna ha già raggiunto quello step) restano abilitati solo se, al
-momento del render, `wizCsvHeaders` (array, confronto per uguaglianza
-ordinata — stesso ordine di caricamento del CSV) e `wizMapping` (confronto
-per uguaglianza dei 5 campi mappati: `codice_fiscale`, `full_name`,
-`full_name_2`, `email`, `pec`) coincidono esattamente con lo snapshot.
+**Nuovo state:**
+- `wizMaxReachedStep: number` (default 1) — il più alto step mai raggiunto
+  nella sessione/bozza corrente. Aggiornato con
+  `setWizMaxReachedStep(m => Math.max(m, target))` in ogni punto che oggi
+  chiama `setWizStep(target)` per avanzare (i punti elencati in sezione 1).
+  Al resume di una bozza (`prefillWizardFrom`), inizializzato dallo stesso
+  valore già usato per `setWizStep` (`source.channelConfig?.wizStep || 1`).
+- `wizLastSyncedHeaders: string[] | null` e `wizLastSyncedMapping: typeof
+  wizMapping | null` — snapshot presi esclusivamente al sync 3→4 (quando la
+  mappatura è confermata; il sync di step2→3 avviene prima che la
+  mappatura sia stata rivista, non è un checkpoint valido).
 
-**Se non coincidono:** tab 5/6/7 disabilitati (attributo `disabled`),
-tooltip "Le colonne del file sono cambiate — ripassa dalla Mappatura per
-confermare". Il tab 4 (Template) resta sempre navigabile liberamente (non
-dipende dallo snapshot). Passando di nuovo da step 3→4 (che aggiorna lo
-snapshot), i tab si riabilitano.
+**Nuova condizione di click per ogni tab `n` (sostituisce `wizStep > n`
+a riga 5592-5594):**
+```
+const structureUnchanged =
+  wizLastSyncedHeaders !== null &&
+  JSON.stringify(wizCsvHeaders) === JSON.stringify(wizLastSyncedHeaders) &&
+  JSON.stringify(wizMapping) === JSON.stringify(wizLastSyncedMapping);
+const forwardGateApplies = n >= 4; // step 4/5/6 dipendono da mappatura risolta
+const clickable = n < wizStep || (n <= wizMaxReachedStep && (!forwardGateApplies || structureUnchanged));
+```
+- `n < wizStep` (indietro): comportamento invariato, sempre permesso.
+- `n === wizStep` o `n === 3` con `n <= wizMaxReachedStep`: sempre
+  cliccabile in avanti — step 3 (Mappatura) è dove si corregge la
+  struttura, non va mai bloccato.
+- `n ∈ {4,5,6}` con `n <= wizMaxReachedStep` ma struttura cambiata: NON
+  cliccabile.
+- `n > wizMaxReachedStep`: mai cliccabile (comportamento invariato, step
+  non ancora raggiunto).
+
+**Stile visivo:** tre stati distinti oltre a "corrente" (blu, invariato):
+completato e cliccabile (verde, invariato), completato ma bloccato da
+struttura cambiata (grigio/muted con icona lucchetto, cursor
+`not-allowed`), mai raggiunto (muted, invariato). Tooltip sul caso
+bloccato: "Le colonne del file sono cambiate — ripassa dalla Mappatura per
+confermare".
 
 **Modifiche al template (step4) non invalidano nulla:** non toccano
-`wizCsvHeaders`/`wizMapping`, quindi lo snapshot resta valido e i tab 5/6/7
-restano navigabili come oggi.
+`wizCsvHeaders`/`wizMapping`, quindi lo snapshot resta valido e i tab 5/6
+restano cliccabili in avanti fino a `wizMaxReachedStep`.
 
 ## 3. Upload allegati multipli a step5, con barra progresso
 
