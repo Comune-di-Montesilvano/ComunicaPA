@@ -178,6 +178,7 @@ function WizRecipientPreviewPanel({
   wizChannel,
   wizAppIoMode,
   wizMapping,
+  fullWidth,
 }: {
   wizValidRows: Record<string, string>[];
   wizPreviewIndex: number;
@@ -189,9 +190,10 @@ function WizRecipientPreviewPanel({
   wizChannel: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL';
   wizAppIoMode: 'none' | 'parallel' | 'exclusive';
   wizMapping: Record<string, string>;
+  fullWidth?: boolean;
 }): React.JSX.Element {
   return (
-    <div className="col-lg-6">
+    <div className={fullWidth ? 'col-12' : 'col-lg-6'}>
       <h4 className="h6 fw-bold text-dark mb-2">Anteprima Live Destinatari ({wizValidRows.length} totali)</h4>
       <p className="small text-muted mb-3">Sfoglia i record validi del CSV per vedere come verranno risolti i parametri Jolly. Anteprima renderizzata con lo stesso motore usato per l'invio reale (logo, footer e link inclusi).</p>
 
@@ -3773,14 +3775,20 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const parseCsvFile = (file: File, hasHeaders: boolean) => {
+  const parseCsvFile = (
+    file: File,
+    hasHeaders: boolean,
+    pendingMappingOverride?: typeof wizMapping | null,
+    pendingAttachmentsOverride?: Array<{ key: string; label: string }> | null
+  ): Promise<void> => {
+    return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
-      if (!text) return;
+      if (!text) { resolve(); return; }
 
       const lines = text.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
-      if (lines.length === 0) return;
+      if (lines.length === 0) { resolve(); return; }
 
       const parseCsvLine = (line: string) => {
         const result: string[] = [];
@@ -3861,29 +3869,34 @@ export function App(): React.JSX.Element {
       // generica (che potrebbe indovinare male o non indovinare affatto colonne
       // con nomi non standard). Se anche una sola colonna referenziata non è
       // presente nel nuovo CSV, non forziamo nulla: resta l'euristica/vuoto.
-      if (wizPendingMapping) {
+      const effectivePendingMapping = pendingMappingOverride !== undefined ? pendingMappingOverride : wizPendingMapping;
+      if (effectivePendingMapping) {
         const pendingCols = [
-          wizPendingMapping.codice_fiscale,
-          wizPendingMapping.full_name,
-          wizPendingMapping.full_name_2,
-          wizPendingMapping.email,
-          wizPendingMapping.pec,
+          effectivePendingMapping.codice_fiscale,
+          effectivePendingMapping.full_name,
+          effectivePendingMapping.full_name_2,
+          effectivePendingMapping.email,
+          effectivePendingMapping.pec,
         ].filter(Boolean);
         if (pendingCols.every(col => headers.includes(col))) {
-          Object.assign(newMapping, wizPendingMapping);
+          Object.assign(newMapping, effectivePendingMapping);
         }
         setWizPendingMapping(null);
       }
       setWizMapping(newMapping);
 
-      if (wizPendingAttachments && wizPendingAttachments.every(a => headers.includes(a.key))) {
-        setWizAttachments(wizPendingAttachments);
+      const effectivePendingAttachments = pendingAttachmentsOverride !== undefined ? pendingAttachmentsOverride : wizPendingAttachments;
+      if (effectivePendingAttachments && effectivePendingAttachments.every(a => headers.includes(a.key))) {
+        setWizAttachments(effectivePendingAttachments);
       } else {
         setWizAttachments([]);
       }
       setWizPendingAttachments(null);
+      resolve();
     };
+    reader.onerror = () => resolve();
     reader.readAsText(file);
+    });
   };
 
   const handleWizCsvChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -4107,7 +4120,7 @@ export function App(): React.JSX.Element {
     setWizTestError(null);
   };
 
-  const prefillWizardFrom = (source: {
+  const prefillWizardFrom = async (source: {
     name: string;
     description: string | null;
     channelType: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL';
@@ -4165,20 +4178,30 @@ export function App(): React.JSX.Element {
     // "Avvia Test" resta disabilitato per SEND/POSTAL finché non si ripassa dallo step5.
     setWizUploadedAttachmentFiles(null);
 
-    // Il CSV viene recuperato se stiamo riprendendo una bozza e c'è un file salvato
+    // Il CSV viene recuperato se stiamo riprendendo una bozza e c'è un file salvato.
+    // La mappatura/allegati salvati vanno passati come argomento espliciti a
+    // parseCsvFile (non tramite wizPendingMapping/wizPendingAttachments state):
+    // il fetch è async, quindi al momento in cui la callback gira la closure di
+    // parseCsvFile creata in QUESTO render avrebbe comunque letto lo stato "vecchio"
+    // (stale closure), anche se setWizPendingMapping/setWizPendingAttachments fossero
+    // stati chiamati subito dopo — l'update di stato non è visibile nel render corrente.
     if (!opts.isDuplicate && opts.campaignId && source.channelConfig?.wizCsvFilename) {
-      fetch(`${ADMIN_API_BASE}/campaigns/${opts.campaignId}/recipients/draft-csv`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      .then(async res => {
+      try {
+        const res = await fetch(`${ADMIN_API_BASE}/campaigns/${opts.campaignId}/recipients/draft-csv`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
         if (res.ok) {
           const blob = await res.blob();
           const file = new File([blob], source.channelConfig.wizCsvFilename, { type: 'text/csv' });
           setWizCsvFile(file);
-          parseCsvFile(file, !!source.channelConfig.wizCsvHasHeaders);
+          await parseCsvFile(
+            file,
+            !!source.channelConfig.wizCsvHasHeaders,
+            source.channelConfig?.csvMapping || null,
+            source.channelConfig?.attachments || null
+          );
         }
-      })
-      .catch(() => { /* ignore */ });
+      } catch { /* ignore */ }
     } else {
       setWizCsvFile(null);
       setWizCsvHeaders([]);
@@ -4186,8 +4209,9 @@ export function App(): React.JSX.Element {
       setWizValidRows([]);
     }
 
-    setWizPendingMapping(source.channelConfig?.csvMapping || null);
-    setWizPendingAttachments(source.channelConfig?.attachments || null);
+    // Attesa il parse completo (o il fallimento/assenza del fetch) prima di
+    // navigare allo step salvato: evita di montare uno step6 con wizValidRows
+    // ancora vuoto mentre il parse è in corso.
     setWizStep(opts.isDuplicate ? 1 : (source.channelConfig?.wizStep || 1));
     setView('invio-massivo-wizard');
   };
@@ -6904,6 +6928,7 @@ export function App(): React.JSX.Element {
                               wizChannel={wizChannel}
                               wizAppIoMode={wizAppIoMode}
                               wizMapping={wizMapping}
+                              fullWidth
                             />
                           </div>
                         </div>
