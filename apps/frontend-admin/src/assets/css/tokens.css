@@ -56,6 +56,7 @@
 
   /* Institutional navy used in GovPay (.it-title) */
   --bi-navy:        #003366;
+  --bi-navy-h:      #002448;   /* hover, piu' scuro di --bi-navy */
 
   /* ============= COLOR — NEUTRALS ============= */
   --ms-ink:       #17324D;   /* .italia body ink */
@@ -101,7 +102,7 @@
   --border-focus: var(--bi-primary);
 
   /* Brand role tokens — point these at the PA identity */
-  --brand-primary:   var(--bi-primary);   /* institutional blue — CTAs, links, headers */
+  --brand-primary:   var(--bi-navy);      /* navy istituzionale — CTAs, links, headers */
   --brand-secondary: var(--ms-purple-600); /* identity purple from stemma */
   --brand-accent:    var(--ms-gold-500);   /* civic highlight */
 
