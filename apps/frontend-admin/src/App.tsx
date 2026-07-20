@@ -6871,15 +6871,50 @@ export function App(): React.JSX.Element {
                       </div>
                     )}
                     <div className="mt-3 pt-3 border-top">
-                      <strong>Anteprima Oggetto (Record 1):</strong>
-                      <div className="p-2 border bg-white rounded mt-1 small text-muted">
-                        {wizSubject.replace(/%([^%()]+)%/gi, (match, key) => {
-                          const k = key.toLowerCase().trim();
-                          if (k === 'nominativo' || k === 'full_name') return getWizRowFullName(wizValidRows[0]);
-                          if (k === 'codice_fiscale' || k === 'cf') return wizValidRows[0]?.[wizMapping.codice_fiscale] || '';
-                          return wizValidRows[0]?.[key] || match;
-                        })}
-                      </div>
+                      {(wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'APP_IO') ? (
+                        <div className="row">
+                          <div className="col-12">
+                            <WizRecipientPreviewPanel
+                              wizValidRows={wizValidRows}
+                              wizPreviewIndex={wizPreviewIndex}
+                              setWizPreviewIndex={setWizPreviewIndex}
+                              wizPreviewResult={wizPreviewResult}
+                              wizPreviewLoading={wizPreviewLoading}
+                              wizPreviewChannelTab={wizPreviewChannelTab}
+                              setWizPreviewChannelTab={setWizPreviewChannelTab}
+                              wizChannel={wizChannel}
+                              wizAppIoMode={wizAppIoMode}
+                              wizMapping={wizMapping}
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <WizAddressAttachmentPreviewPanel
+                          wizValidRows={wizValidRows}
+                          wizPreviewIndex={wizPreviewIndex}
+                          setWizPreviewIndex={setWizPreviewIndex}
+                          wizPostalAddressColumn={wizPostalAddressColumn}
+                          wizPostalMunicipalityColumn={wizPostalMunicipalityColumn}
+                          wizPostalZipColumn={wizPostalZipColumn}
+                          wizPostalProvinceColumn={wizPostalProvinceColumn}
+                          wizAttachments={wizAttachments}
+                          campaignId={wizCampaignId}
+                          token={token}
+                        />
+                      )}
+                      {(wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'APP_IO') && wizAttachments.length > 0 && wizValidRows[wizPreviewIndex] && (
+                        <>
+                          {wizAttachments.map((entry, idx) => (
+                            <WizAttachmentInlinePreview
+                              key={entry.key || idx}
+                              campaignId={wizCampaignId}
+                              row={wizValidRows[wizPreviewIndex]}
+                              attachmentEntry={entry}
+                              token={token}
+                            />
+                          ))}
+                        </>
+                      )}
                     </div>
                   </div>
 
