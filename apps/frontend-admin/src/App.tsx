@@ -529,6 +529,8 @@ function wizPlainTextLength(html: string): number {
 
 const APP_IO_MARKDOWN_MIN = 80;
 const APP_IO_MARKDOWN_MAX = 10000;
+const APP_IO_SUBJECT_MIN = 10;
+const APP_IO_SUBJECT_MAX = 120;
 
 // Upload a chunk: un reverse proxy esterno davanti al backend in produzione
 // ha un limite di dimensione del body (osservato: 1MB) che spezzava in
@@ -1253,6 +1255,17 @@ export function App(): React.JSX.Element {
   const wizAppIoBodyLen = wizAppIoInvolved ? wizPlainTextLength(wizAppIoBodyText) : 0;
   const wizAppIoBodyLenInvalid = wizAppIoInvolved
     && (wizAppIoBodyLen < APP_IO_MARKDOWN_MIN || wizAppIoBodyLen > APP_IO_MARKDOWN_MAX);
+
+  // Stesso vincolo di PagoPA su content.subject (>= 10 e < 121 caratteri) —
+  // errore reale riscontrato: HTTP 400 "value ... at root.content.subject is
+  // not a valid [string of length >= 10 and < 121]". Nessun check bloccante
+  // esisteva finché l'invio non falliva lato provider.
+  const wizAppIoSubjectText = wizChannel === 'APP_IO'
+    ? wizSubject
+    : (wizAppIoDifferentiate ? wizAppIoSubjectOverride : wizSubject);
+  const wizAppIoSubjectLen = wizAppIoInvolved ? wizAppIoSubjectText.length : 0;
+  const wizAppIoSubjectLenInvalid = wizAppIoInvolved
+    && (wizAppIoSubjectLen < APP_IO_SUBJECT_MIN || wizAppIoSubjectLen > APP_IO_SUBJECT_MAX);
 
   // Settings State (loaded from backend GET /settings; see useEffect below)
   const [settEntityName, setSettEntityName] = useState('Comune di Montesilvano');
@@ -2149,6 +2162,11 @@ export function App(): React.JSX.Element {
       return;
     }
     if (singleChannel === 'APP_IO') {
+      const subjectLen = singleSubject.length;
+      if (subjectLen < APP_IO_SUBJECT_MIN || subjectLen > APP_IO_SUBJECT_MAX) {
+        alert(`L'oggetto per App IO deve essere lungo tra ${APP_IO_SUBJECT_MIN} e ${APP_IO_SUBJECT_MAX} caratteri (attuale: ${subjectLen}). PagoPA rifiuta messaggi più corti o più lunghi.`);
+        return;
+      }
       const len = wizPlainTextLength(singleBody);
       if (len < APP_IO_MARKDOWN_MIN || len > APP_IO_MARKDOWN_MAX) {
         alert(`Il contenuto per App IO deve essere lungo tra ${APP_IO_MARKDOWN_MIN} e ${APP_IO_MARKDOWN_MAX} caratteri (attuale: ${len}). PagoPA rifiuta messaggi più corti o più lunghi.`);
@@ -6774,6 +6792,7 @@ export function App(): React.JSX.Element {
                                 !wizSubject ||
                                 ((wizChannel !== 'SEND' && (wizChannel !== 'POSTAL' || settInadCheckEnabled)) && isWizBodyEmpty(wizBody)) ||
                                 wizAppIoBodyLenInvalid ||
+                                wizAppIoSubjectLenInvalid ||
                                 ((wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && wizAppIoMode !== 'none' && wizAppIoDifferentiate && (!wizAppIoSubjectOverride || !wizAppIoBodyOverride))
                               )
                         )
@@ -6866,6 +6885,13 @@ export function App(): React.JSX.Element {
                           />
                         </div>
 
+                        {wizAppIoSubjectLenInvalid && (
+                          <div className="alert alert-warning py-2 small mb-0">
+                            <i className="fas fa-exclamation-triangle me-1"></i>
+                            L'oggetto per App IO deve essere lungo tra {APP_IO_SUBJECT_MIN} e {APP_IO_SUBJECT_MAX} caratteri
+                            (attuale: {wizAppIoSubjectLen}). PagoPA rifiuta messaggi più corti o più lunghi.
+                          </div>
+                        )}
                         {wizAppIoBodyLenInvalid && (
                           <div className="alert alert-warning py-2 small mb-0">
                             <i className="fas fa-exclamation-triangle me-1"></i>
@@ -6964,6 +6990,7 @@ export function App(): React.JSX.Element {
                                   !wizSubject ||
                                   ((wizChannel !== 'SEND' && (wizChannel !== 'POSTAL' || settInadCheckEnabled)) && isWizBodyEmpty(wizBody)) ||
                                   wizAppIoBodyLenInvalid ||
+                                  wizAppIoSubjectLenInvalid ||
                                   ((wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && wizAppIoMode !== 'none' && wizAppIoDifferentiate && (!wizAppIoSubjectOverride || !wizAppIoBodyOverride))
                                 )
                           )
