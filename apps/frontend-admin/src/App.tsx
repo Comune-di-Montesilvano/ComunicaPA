@@ -7320,7 +7320,17 @@ export function App(): React.JSX.Element {
                       <button
                         type="button"
                         className="btn btn-outline-primary"
-                        onClick={() => setWizStep(7)}
+                        onClick={async () => {
+                          // Unica transizione forward del wizard che non sincronizzava prima di
+                          // navigare: se l'operatore modifica l'oggetto/testo a step4, torna
+                          // indietro da step6 e preme "Avvia Test" senza mai ripassare da un
+                          // bottone "Avanti", il test veniva lanciato con il channelConfig
+                          // ancora persistito (stale) mentre l'anteprima mostrava già il nuovo
+                          // valore in locale — invio disallineato dalla preview.
+                          if (await syncWizDraftAndRecipients(7)) {
+                            setWizStep(7);
+                          }
+                        }}
                         disabled={wizSending || !wizCampaignId || !wizTestAttachmentReady}
                         title={!wizCampaignId ? 'Completa prima il passo Upload Allegati' : (!wizTestAttachmentReady ? 'Allegato mancante per il primo destinatario — verifica il Passo 5' : undefined)}
                       >
@@ -7440,7 +7450,17 @@ export function App(): React.JSX.Element {
                       <button
                         type="button"
                         className="btn btn-outline-primary"
-                        onClick={() => setWizStep(7)}
+                        onClick={async () => {
+                          // Unica transizione forward del wizard che non sincronizzava prima di
+                          // navigare: se l'operatore modifica l'oggetto/testo a step4, torna
+                          // indietro da step6 e preme "Avvia Test" senza mai ripassare da un
+                          // bottone "Avanti", il test veniva lanciato con il channelConfig
+                          // ancora persistito (stale) mentre l'anteprima mostrava già il nuovo
+                          // valore in locale — invio disallineato dalla preview.
+                          if (await syncWizDraftAndRecipients(7)) {
+                            setWizStep(7);
+                          }
+                        }}
                         disabled={wizSending || !wizCampaignId || !wizTestAttachmentReady}
                         title={!wizCampaignId ? 'Completa prima il passo Upload Allegati' : (!wizTestAttachmentReady ? 'Allegato mancante per il primo destinatario — verifica il Passo 5' : undefined)}
                       >
