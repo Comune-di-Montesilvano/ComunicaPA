@@ -1445,18 +1445,53 @@ export function App(): React.JSX.Element {
     }
   }, [ioServices]);
 
-  // Auto-refresh campaign detail if running/queued
+  // Auto-refresh campaign detail if running/queued. Aggiorna anche i pannelli
+  // di breakdown/statistiche, non solo l'oggetto campaign principale — prima
+  // solo lo stato/badge si aggiornava da solo, i grafici e i conteggi per
+  // canale restavano fermi allo snapshot del primo caricamento.
   useEffect(() => {
     let timer: any;
     if (view === 'campaign-detail' && selectedCampaignId && campaign) {
       if (campaign.status === 'queued' || campaign.status === 'checking_inad' || campaign.status === 'running') {
         timer = setInterval(() => {
           fetchCampaignDetail(selectedCampaignId);
+          fetchFailureGroups(selectedCampaignId);
+          fetchChannelBreakdown(selectedCampaignId);
+          fetchEffectiveChannelBreakdown(selectedCampaignId);
+          fetchCampaignSendStageCounts(selectedCampaignId);
+          fetchSendStatusBreakdown(selectedCampaignId);
+          fetchPostalStatusBreakdown(selectedCampaignId);
+          fetchDownloadCombinationStats(selectedCampaignId);
+          fetchRecipientsPage(selectedCampaignId, recipientsPageNum, recipientsSearch);
         }, 3000);
       }
     }
     return () => clearInterval(timer);
-  }, [view, selectedCampaignId, campaign]);
+  }, [view, selectedCampaignId, campaign, recipientsPageNum, recipientsSearch]);
+
+  // Auto-refresh degli elenchi campagne (dashboard "Attività Recenti" e "Campagne
+  // Massive"): fetchCampaigns() girava solo una volta al login ([token]) — una
+  // campagna che passa da "In coda" a "Completata" lato server (worker BullMQ)
+  // non si vedeva mai aggiornata in queste liste senza ricaricare la pagina
+  // (a differenza del dettaglio campagna, che già fa polling quando in corso).
+  useEffect(() => {
+    if (!token || (view !== 'dashboard' && view !== 'invio-massivo')) return;
+    const timer = setInterval(() => {
+      fetchCampaigns();
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [token, view]);
+
+  // Stesso problema per la vista Statistiche: fetchGlobalStats girava solo
+  // all'ingresso nella vista, mai più — restava ferma allo snapshot iniziale
+  // mentre le campagne in corso avanzavano lato server.
+  useEffect(() => {
+    if (!token || view !== 'statistiche') return;
+    const timer = setInterval(() => {
+      fetchGlobalStats();
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [token, view]);
 
   // Ricarica la pagina destinatari su cambio pagina/ricerca (debounce sulla ricerca)
   useEffect(() => {
@@ -5448,7 +5483,7 @@ export function App(): React.JSX.Element {
                               </tr>
                             </thead>
                             <tbody>
-                              {campaigns.slice(0, 5).map((c) => (
+                              {campaigns.filter(c => !c.isTest).slice(0, 5).map((c) => (
                                 <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => handleCampaignClick(c.id)}>
                                   <td className="fw-bold text-primary">{c.name}</td>
                                   <td><ChannelBadge channel={c.channelType} /></td>
