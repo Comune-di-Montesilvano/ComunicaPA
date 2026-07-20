@@ -357,6 +357,85 @@ function WizAttachmentInlinePreview({
   );
 }
 
+// Pannello anteprima SEND/POSTAL: niente template renderizzato (questi canali
+// non hanno un body HTML/markdown risolto come EMAIL/PEC/APP_IO — per POSTAL
+// il body non è mai il contenuto reale inviato, vedi gotcha in CLAUDE.md), solo
+// indirizzo fisico risolto (4 colonne, sempre obbligatorie per questi canali)
+// + un'anteprima inline per ciascun allegato configurato. Stessa barra sfoglia
+// di WizRecipientPreviewPanel sopra, sullo stesso stato condiviso
+// wizPreviewIndex/setWizPreviewIndex (un solo indice, due render a seconda del
+// canale) — nessuno stato interno proprio.
+function WizAddressAttachmentPreviewPanel({
+  wizValidRows,
+  wizPreviewIndex,
+  setWizPreviewIndex,
+  wizPostalAddressColumn,
+  wizPostalMunicipalityColumn,
+  wizPostalZipColumn,
+  wizPostalProvinceColumn,
+  wizAttachments,
+  campaignId,
+  token,
+}: {
+  wizValidRows: Record<string, string>[];
+  wizPreviewIndex: number;
+  setWizPreviewIndex: React.Dispatch<React.SetStateAction<number>>;
+  wizPostalAddressColumn: string;
+  wizPostalMunicipalityColumn: string;
+  wizPostalZipColumn: string;
+  wizPostalProvinceColumn: string;
+  wizAttachments: Array<{ key: string; label: string; labelColumn?: string }>;
+  campaignId: string | null;
+  token: string | null;
+}): React.JSX.Element {
+  const row = wizValidRows[wizPreviewIndex];
+
+  return (
+    <div>
+      <h4 className="h6 fw-bold text-dark mb-2">Anteprima Destinatari ({wizValidRows.length} totali)</h4>
+      <p className="small text-muted mb-3">Sfoglia i record validi del CSV per verificare indirizzo e allegato reale prima dell'invio.</p>
+
+      <div className="d-flex align-items-center justify-content-between p-2 border rounded bg-light mb-3">
+        <button
+          className="btn btn-sm btn-outline-secondary"
+          disabled={wizPreviewIndex === 0}
+          onClick={() => setWizPreviewIndex(i => Math.max(0, i - 1))}
+        >
+          <i className="fas fa-chevron-left"></i> Prec.
+        </button>
+        <span className="small fw-bold">Record {wizPreviewIndex + 1} di {wizValidRows.length}</span>
+        <button
+          className="btn btn-sm btn-outline-secondary"
+          disabled={wizPreviewIndex >= wizValidRows.length - 1}
+          onClick={() => setWizPreviewIndex(i => Math.min(wizValidRows.length - 1, i + 1))}
+        >
+          Succ. <i className="fas fa-chevron-right"></i>
+        </button>
+      </div>
+
+      {row && (
+        <div className="border rounded p-3" style={{ background: '#f8fafc' }}>
+          <div className="mb-2 text-muted" style={{ fontSize: '0.85rem' }}>
+            <strong>Indirizzo:</strong> {row[wizPostalAddressColumn] || 'N/A'}<br />
+            <strong>Comune:</strong> {row[wizPostalMunicipalityColumn] || 'N/A'} &nbsp;
+            <strong>CAP:</strong> {row[wizPostalZipColumn] || 'N/A'} &nbsp;
+            <strong>Provincia:</strong> {row[wizPostalProvinceColumn] || 'N/A'}
+          </div>
+          {wizAttachments.map((entry, idx) => (
+            <WizAttachmentInlinePreview
+              key={entry.key || idx}
+              campaignId={campaignId}
+              row={row}
+              attachmentEntry={entry}
+              token={token}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Etichette/descrizioni italiane per i valori ServiceType di GlobalCom
 // (ProdottiDisponibili, scoperti da InformazioniUtenza — non tutti gli enum
 // del manuale sono pertinenti alla postalizzazione PA, solo quelli che
