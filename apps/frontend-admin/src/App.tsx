@@ -281,11 +281,16 @@ function WizAttachmentInlinePreview({
   row,
   attachmentEntry,
   token,
+  bordered = true,
 }: {
   campaignId: string | null;
   row: Record<string, string>;
   attachmentEntry: { key: string; label: string; labelColumn?: string };
   token: string | null;
+  /** Separatore superiore (margine+bordo): sì quando il pannello è impilato
+   * sotto altro contenuto (es. indirizzo SEND/POSTAL), no quando è l'unico
+   * contenuto della propria colonna (step6 EMAIL/PEC/APP_IO affiancato). */
+  bordered?: boolean;
 }): React.JSX.Element | null {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -341,12 +346,15 @@ function WizAttachmentInlinePreview({
   if (!filename) return null;
 
   return (
-    <div className="mt-3 pt-3 border-top">
+    <div className={bordered ? 'mt-3 pt-3 border-top' : ''}>
       <strong className="d-block mb-2">{attachmentEntry.label || 'Allegato'}: {filename}</strong>
       {loading && <div className="text-center text-muted small py-3"><i className="fas fa-spinner fa-spin me-1"></i> Caricamento allegato...</div>}
       {error && <div className="text-danger small">{error}</div>}
       {!loading && !error && objectUrl && isPdf && (
-        <embed type="application/pdf" src={objectUrl} style={{ width: '100%', height: '80vh', border: '1px solid #dee2e6', borderRadius: '4px' }} />
+        // Altezza in proporzione A4 (1:1.414) invece di un valore fisso: si
+        // adatta alla larghezza reale della colonna invece di un'altezza
+        // arbitraria scollegata dalla larghezza disponibile.
+        <embed type="application/pdf" src={objectUrl} style={{ width: '100%', aspectRatio: '1 / 1.414', border: '1px solid #dee2e6', borderRadius: '4px' }} />
       )}
       {!loading && !error && objectUrl && (
         <a href={objectUrl} download={filename} className="btn btn-sm btn-outline-secondary mt-2">
@@ -7299,6 +7307,7 @@ export function App(): React.JSX.Element {
                                     row={currentRow}
                                     attachmentEntry={entry}
                                     token={token}
+                                    bordered={false}
                                   />
                                 ))}
                               </div>
