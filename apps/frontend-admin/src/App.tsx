@@ -5654,14 +5654,16 @@ export function App(): React.JSX.Element {
                               const isChildOfPair = c.isTest && !!c.parentCampaignId && getGroupedCampaigns().some(x => x.id === c.parentCampaignId);
                               const pairStyle: React.CSSProperties = (isParentOfPair || isChildOfPair) ? { backgroundColor: '#f4f7fc' } : {};
                               const pairBorderLeft = (isParentOfPair || isChildOfPair) ? '3px solid var(--bs-primary, #0066cc)' : undefined;
+                              // Il bordo sinistro va solo sulla prima cella (Nome) — segna il
+                              // bordo dell'intera riga senza creare una "gabbia" ripetuta su
+                              // ogni colonna.
                               const cellStyle: React.CSSProperties = {
-                                borderLeft: pairBorderLeft,
                                 borderBottom: isParentOfPair ? 'none' : undefined,
                                 borderTop: isChildOfPair ? 'none' : undefined,
                               };
                               return (
                                 <tr key={c.id} style={{ cursor: 'pointer', ...pairStyle }} onClick={() => handleCampaignClick(c.id)}>
-                                  <td className="fw-bold text-primary" style={{ ...cellStyle, paddingLeft: isChildOfPair ? '1.5rem' : undefined }}>
+                                  <td className="fw-bold text-primary" style={{ ...cellStyle, borderLeft: pairBorderLeft, paddingLeft: isChildOfPair ? '1.5rem' : undefined }}>
                                     {isParentOfPair && <i className="fas fa-link text-primary me-2" title="Collegata a una campagna di prova"></i>}
                                     {isChildOfPair && <i className="fas fa-reply fa-rotate-180 text-muted me-2" style={{ transform: 'scaleX(-1)', opacity: 0.6 }} title="Campagna di prova"></i>}
                                     {c.name}
