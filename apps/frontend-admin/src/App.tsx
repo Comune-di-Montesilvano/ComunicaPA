@@ -163,6 +163,113 @@ function PostalStatusBadge({ status }: { status: string | null | undefined }): R
   return <span className={`badge ${meta.badge}`}><i className={`fas ${meta.icon} me-1`}></i>{meta.label}</span>;
 }
 
+// Pannello anteprima live destinatari (canale + tab App IO, paging record CSV,
+// rendering oggetto/corpo). Estratto da wizStep === 4 ("Template & Anteprima")
+// per essere riusato invariato anche da wizStep === 6 ("Anteprima e Invio").
+// Nessuno stato interno: riceve tutto da props, comportamento identico all'originale.
+function WizRecipientPreviewPanel({
+  wizValidRows,
+  wizPreviewIndex,
+  setWizPreviewIndex,
+  wizPreviewResult,
+  wizPreviewLoading,
+  wizPreviewChannelTab,
+  setWizPreviewChannelTab,
+  wizChannel,
+  wizAppIoMode,
+  wizMapping,
+}: {
+  wizValidRows: Record<string, string>[];
+  wizPreviewIndex: number;
+  setWizPreviewIndex: React.Dispatch<React.SetStateAction<number>>;
+  wizPreviewResult: { subject: string; bodyHtml?: string; bodyMarkdown?: string } | null;
+  wizPreviewLoading: boolean;
+  wizPreviewChannelTab: 'MAIN' | 'APP_IO';
+  setWizPreviewChannelTab: (tab: 'MAIN' | 'APP_IO') => void;
+  wizChannel: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL';
+  wizAppIoMode: 'none' | 'parallel' | 'exclusive';
+  wizMapping: Record<string, string>;
+}): React.JSX.Element {
+  return (
+    <div className="col-lg-6">
+      <h4 className="h6 fw-bold text-dark mb-2">Anteprima Live Destinatari ({wizValidRows.length} totali)</h4>
+      <p className="small text-muted mb-3">Sfoglia i record validi del CSV per vedere come verranno risolti i parametri Jolly. Anteprima renderizzata con lo stesso motore usato per l'invio reale (logo, footer e link inclusi).</p>
+
+      {(wizChannel === 'EMAIL' || wizChannel === 'PEC') && wizAppIoMode !== 'none' && (
+        <div className="btn-group btn-group-sm mb-3" role="group">
+          <button
+            type="button"
+            className={`btn ${wizPreviewChannelTab === 'MAIN' ? 'btn-primary' : 'btn-outline-secondary'}`}
+            onClick={() => setWizPreviewChannelTab('MAIN')}
+          >
+            <i className="fas fa-envelope me-1"></i> {wizChannel}
+          </button>
+          <button
+            type="button"
+            className={`btn ${wizPreviewChannelTab === 'APP_IO' ? 'btn-primary' : 'btn-outline-secondary'}`}
+            onClick={() => setWizPreviewChannelTab('APP_IO')}
+          >
+            <i className="fas fa-mobile-screen me-1"></i> App IO
+          </button>
+        </div>
+      )}
+
+      <div className="d-flex align-items-center justify-content-between p-2 border rounded bg-light mb-3">
+        <button
+          className="btn btn-sm btn-outline-secondary"
+          disabled={wizPreviewIndex === 0}
+          onClick={() => setWizPreviewIndex(i => Math.max(0, i - 1))}
+        >
+          <i className="fas fa-chevron-left"></i> Prec.
+        </button>
+        <span className="small fw-bold">Record {wizPreviewIndex + 1} di {wizValidRows.length}</span>
+        <button
+          className="btn btn-sm btn-outline-secondary"
+          disabled={wizPreviewIndex >= wizValidRows.length - 1}
+          onClick={() => setWizPreviewIndex(i => Math.min(wizValidRows.length - 1, i + 1))}
+        >
+          Succ. <i className="fas fa-chevron-right"></i>
+        </button>
+      </div>
+
+      {wizValidRows[wizPreviewIndex] && (
+        <div className="border rounded p-3" style={{ background: '#f8fafc' }}>
+          <div className="mb-2 text-muted" style={{ fontSize: '0.8rem' }}>
+            <strong>A:</strong> {wizValidRows[wizPreviewIndex][wizMapping.email || ''] || wizValidRows[wizPreviewIndex][wizMapping.pec || ''] || 'N/A'}<br />
+            <strong>Oggetto:</strong> {wizPreviewLoading ? '...' : (wizPreviewResult?.subject ?? '')}
+          </div>
+          {wizPreviewLoading && !wizPreviewResult ? (
+            <div className="text-center text-muted small py-4">
+              <i className="fas fa-spinner fa-spin me-1"></i> Rendering anteprima...
+            </div>
+          ) : wizPreviewChannelTab === 'APP_IO' ? (
+            <div className="bg-white border rounded p-3" data-color-mode="light">
+              <MDEditor.Markdown source={wizPreviewResult?.bodyMarkdown ?? ''} />
+            </div>
+          ) : wizPreviewResult?.bodyHtml ? (
+            <div
+              className="bg-white border rounded overflow-hidden"
+              style={{ padding: '4px' }}
+              dangerouslySetInnerHTML={{ __html: wizPreviewResult.bodyHtml }}
+            />
+          ) : wizPreviewResult?.bodyMarkdown ? (
+            // Copre wizChannel === 'APP_IO' diretto (senza co-consegna, tab mai mostrate).
+            // Nota: renderizza col motore %placeholder%/processTemplate del backend, non
+            // rappresentativo del canale App IO diretto reale, che invia via AppIoStrategy
+            // con sintassi {{mustache}} diversa — gap noto, vedi Global Constraints del
+            // piano "Fix Anteprima Email/PEC".
+            <div className="bg-white border rounded p-3" data-color-mode="light">
+              <MDEditor.Markdown source={wizPreviewResult.bodyMarkdown} />
+            </div>
+          ) : (
+            <div className="text-center text-muted small py-4">Nessuna anteprima disponibile per questo canale.</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Etichette/descrizioni italiane per i valori ServiceType di GlobalCom
 // (ProdottiDisponibili, scoperti da InformazioniUtenza — non tutti gli enum
 // del manuale sono pertinenti alla postalizzazione PA, solo quelli che
@@ -6415,82 +6522,18 @@ export function App(): React.JSX.Element {
                   </div>
 
                   {/* Right Column: Live Preview with Paging */}
-                  <div className="col-lg-6">
-                    <h4 className="h6 fw-bold text-dark mb-2">Anteprima Live Destinatari ({wizValidRows.length} totali)</h4>
-                    <p className="small text-muted mb-3">Sfoglia i record validi del CSV per vedere come verranno risolti i parametri Jolly. Anteprima renderizzata con lo stesso motore usato per l'invio reale (logo, footer e link inclusi).</p>
-
-                    {(wizChannel === 'EMAIL' || wizChannel === 'PEC') && wizAppIoMode !== 'none' && (
-                      <div className="btn-group btn-group-sm mb-3" role="group">
-                        <button
-                          type="button"
-                          className={`btn ${wizPreviewChannelTab === 'MAIN' ? 'btn-primary' : 'btn-outline-secondary'}`}
-                          onClick={() => setWizPreviewChannelTab('MAIN')}
-                        >
-                          <i className="fas fa-envelope me-1"></i> {wizChannel}
-                        </button>
-                        <button
-                          type="button"
-                          className={`btn ${wizPreviewChannelTab === 'APP_IO' ? 'btn-primary' : 'btn-outline-secondary'}`}
-                          onClick={() => setWizPreviewChannelTab('APP_IO')}
-                        >
-                          <i className="fas fa-mobile-screen me-1"></i> App IO
-                        </button>
-                      </div>
-                    )}
-
-                    <div className="d-flex align-items-center justify-content-between p-2 border rounded bg-light mb-3">
-                      <button
-                        className="btn btn-sm btn-outline-secondary"
-                        disabled={wizPreviewIndex === 0}
-                        onClick={() => setWizPreviewIndex(i => Math.max(0, i - 1))}
-                      >
-                        <i className="fas fa-chevron-left"></i> Prec.
-                      </button>
-                      <span className="small fw-bold">Record {wizPreviewIndex + 1} di {wizValidRows.length}</span>
-                      <button
-                        className="btn btn-sm btn-outline-secondary"
-                        disabled={wizPreviewIndex >= wizValidRows.length - 1}
-                        onClick={() => setWizPreviewIndex(i => Math.min(wizValidRows.length - 1, i + 1))}
-                      >
-                        Succ. <i className="fas fa-chevron-right"></i>
-                      </button>
-                    </div>
-
-                    {wizValidRows[wizPreviewIndex] && (
-                      <div className="border rounded p-3" style={{ background: '#f8fafc' }}>
-                        <div className="mb-2 text-muted" style={{ fontSize: '0.8rem' }}>
-                          <strong>A:</strong> {wizValidRows[wizPreviewIndex][wizMapping.email || ''] || wizValidRows[wizPreviewIndex][wizMapping.pec || ''] || 'N/A'}<br />
-                          <strong>Oggetto:</strong> {wizPreviewLoading ? '...' : (wizPreviewResult?.subject ?? '')}
-                        </div>
-                        {wizPreviewLoading && !wizPreviewResult ? (
-                          <div className="text-center text-muted small py-4">
-                            <i className="fas fa-spinner fa-spin me-1"></i> Rendering anteprima...
-                          </div>
-                        ) : wizPreviewChannelTab === 'APP_IO' ? (
-                          <div className="bg-white border rounded p-3" data-color-mode="light">
-                            <MDEditor.Markdown source={wizPreviewResult?.bodyMarkdown ?? ''} />
-                          </div>
-                        ) : wizPreviewResult?.bodyHtml ? (
-                          <div
-                            className="bg-white border rounded overflow-hidden"
-                            style={{ padding: '4px' }}
-                            dangerouslySetInnerHTML={{ __html: wizPreviewResult.bodyHtml }}
-                          />
-                        ) : wizPreviewResult?.bodyMarkdown ? (
-                          // Copre wizChannel === 'APP_IO' diretto (senza co-consegna, tab mai mostrate).
-                          // Nota: renderizza col motore %placeholder%/processTemplate del backend, non
-                          // rappresentativo del canale App IO diretto reale, che invia via AppIoStrategy
-                          // con sintassi {{mustache}} diversa — gap noto, vedi Global Constraints del
-                          // piano "Fix Anteprima Email/PEC".
-                          <div className="bg-white border rounded p-3" data-color-mode="light">
-                            <MDEditor.Markdown source={wizPreviewResult.bodyMarkdown} />
-                          </div>
-                        ) : (
-                          <div className="text-center text-muted small py-4">Nessuna anteprima disponibile per questo canale.</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                  <WizRecipientPreviewPanel
+                    wizValidRows={wizValidRows}
+                    wizPreviewIndex={wizPreviewIndex}
+                    setWizPreviewIndex={setWizPreviewIndex}
+                    wizPreviewResult={wizPreviewResult}
+                    wizPreviewLoading={wizPreviewLoading}
+                    wizPreviewChannelTab={wizPreviewChannelTab}
+                    setWizPreviewChannelTab={setWizPreviewChannelTab}
+                    wizChannel={wizChannel}
+                    wizAppIoMode={wizAppIoMode}
+                    wizMapping={wizMapping}
+                  />
                 </div>
                 </>
               )}
