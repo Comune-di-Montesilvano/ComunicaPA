@@ -754,7 +754,7 @@ const EMPTY_POSTAL_PROVIDER: Omit<PostalProviderItem, 'id' | 'testedAt' | 'activ
   mittenteCitta: '', mittenteProvincia: '',
 };
 
-const PIE_COLORS = ['var(--bi-primary)', 'var(--ms-purple-600)', 'var(--ms-gold-500)', 'var(--ms-green-600)', 'var(--ms-blue-600)'];
+const PIE_COLORS = ['var(--bi-navy)', 'var(--ms-purple-600)', 'var(--ms-gold-500)', 'var(--ms-green-600)', 'var(--bi-primary)'];
 
 export function App(): React.JSX.Element {
   const [token, setToken] = useState<string | null>(localStorage.getItem('comunicapa_token'));
@@ -9653,7 +9653,7 @@ export function App(): React.JSX.Element {
                           <button
                             type="submit"
                             className="btn btn-primary px-4 py-2"
-                            style={{ backgroundColor: 'var(--bi-primary)', border: 'none' }}
+                            style={{ backgroundColor: 'var(--bi-navy)', border: 'none' }}
                           >
                             <i className="fas fa-save me-2"></i>Salva Impostazioni
                           </button>
