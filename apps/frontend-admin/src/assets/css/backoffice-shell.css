@@ -12,16 +12,16 @@
   --bo-ink-3: #6b7a90;
   --bo-border: #e2e7ee;
   --bo-border-strong: #c9d1dc;
-  --bo-accent: #0066cc;
-  --bo-accent-hover: #004c99;
-  --bo-sidebar-bg: #0f1f36;
+  --bo-accent: var(--bi-navy);
+  --bo-accent-hover: var(--bi-navy-h);
+  --bo-sidebar-bg: var(--bi-navy);
   --bo-sidebar-text: #d5dce5;
   --bo-sidebar-muted: #8ea0b8;
-  --bo-sidebar-active: #16365f;
-  --bo-sidebar-accent: #4fa3ff;
+  --bo-sidebar-active: var(--bi-navy-h);
+  --bo-sidebar-accent: var(--bi-primary);
   --bo-radius-sm: 4px;
-  --bo-radius: 6px;
-  --bo-radius-lg: 10px;
+  --bo-radius: 4px;    /* flat: stesso valore di sm, era 6px */
+  --bo-radius-lg: 8px; /* ridotto da 10px */
 }
 
 html,
@@ -977,8 +977,8 @@ mark.imp-mark {
 }
 
 .card-wizard {
-  border: 0;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--border-1);
+  box-shadow: var(--shadow-1);
 }
 
 .field-help {
@@ -1527,8 +1527,8 @@ body.bo-sidebar-collapsed .bo-topbar {
 }
 
 .bo-hero-card:hover {
-  transform: translateY(-3px) !important;
-  box-shadow: 0 8px 24px rgba(23, 50, 77, 0.12) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: var(--shadow-2) !important;
 }
 
 .bo-hero-card .card-body {
@@ -1752,8 +1752,8 @@ body.bo-sidebar-collapsed .bo-topbar {
 
 /* Premium Litepicker CSS Overrides */
 :root {
-  --lp-primary-color: #0066cc;
-  --lp-primary-color-hover: #004c99;
+  --lp-primary-color: var(--bi-navy);
+  --lp-primary-color-hover: var(--bi-navy-h);
   --lp-bg-color: #ffffff;
   --lp-text-color: #283545;
   --lp-border-color: #cbd5e1;
@@ -1765,7 +1765,7 @@ body.bo-sidebar-collapsed .bo-topbar {
   background-color: var(--lp-bg-color) !important;
   border: 1px solid var(--lp-border-color) !important;
   border-radius: 12px !important;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 16px -6px rgba(0, 0, 0, 0.04) !important;
+  box-shadow: var(--shadow-2) !important;
   padding: 12px !important;
   z-index: 9999 !important;
 }
@@ -1860,7 +1860,7 @@ body.bo-sidebar-collapsed .bo-topbar {
   background-color: var(--lp-primary-color) !important;
   color: #ffffff !important;
   font-weight: 700 !important;
-  box-shadow: 0 4px 6px -1px rgba(0, 102, 204, 0.2) !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 51, 102, 0.2) !important;
 }
 
 .litepicker .container__footer {
