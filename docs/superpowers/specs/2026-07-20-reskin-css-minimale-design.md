@@ -33,12 +33,32 @@ al posto di ombre pesanti, molto whitespace, tipografia come elemento
 dominante (i token in `tokens.css` già supportano questo: scala
 tipografica 1.125, spaziatura 8px-based).
 
+### `tokens.css` — un solo aggiunta
+
+Decisione confermata: il colore primario passa dal blu istituzionale
+`--bi-primary` (`#0066CC`, uguale al valore oggi hardcoded altrove — non
+avrebbe cambiato nulla) al navy scuro `--bi-navy` (`#003366`, stessa
+famiglia Bootstrap Italia/conforme AGID, ma visivamente distinto dal blu
+generico che usa qualunque altro gestionale Bootstrap). Manca un hover
+per il navy (oggi esiste solo `--bi-primary-h: #004080` per il blu) —
+aggiungere subito dopo `--bi-navy: #003366;` (riga 58):
+
+```css
+--bi-navy-h: #002448;   /* hover, piu' scuro di --bi-navy */
+```
+
+Poi ripuntare il ruolo semantico (riga 104):
+
+```css
+--brand-primary: var(--bi-navy);   /* era var(--bi-primary), blu generico */
+```
+
 ### `no-bootstrap-compat.css`
 
 Sostituire le variabili hardcoded con riferimenti a `tokens.css`:
 
 ```css
---primary: var(--brand-primary);   /* era #0066cc, ora navy/viola civico */
+--primary: var(--brand-primary);   /* ora risolve a --bi-navy, non piu' blu generico */
 --danger:  var(--ms-danger);
 --success: var(--ms-success);
 --warning: var(--ms-warning);
@@ -70,11 +90,15 @@ parte dell'identità visiva propria.
 --bo-radius-lg: var(--r-md);   /* era 10px, ridotto */
 ```
 
-Sidebar (`--bo-sidebar-bg`, `--bo-sidebar-active`, `--bo-sidebar-accent`):
-sostituire con toni derivati da `--ms-purple-900`/`--ms-purple-700`
-(identità viola dello stemma) invece del navy blu scollegato attuale —
-mantiene comunque un fondo scuro per la sidebar (leggibilità invariata),
-ma lega il colore all'identità civica invece che a una scelta arbitraria.
+Sidebar (`--bo-sidebar-bg: #0f1f36`, `--bo-sidebar-active: #16365f`,
+`--bo-sidebar-accent: #4fa3ff`): il fondo scuro attuale è già
+concettualmente vicino al navy scelto (`--bi-navy #003366`) — sostituire
+con `var(--bi-navy)` per `--bo-sidebar-bg` (era `#0f1f36`, leggermente
+diverso ma stesso registro cromatico), `var(--bi-navy-h)` per
+`--bo-sidebar-active` (stato attivo più scuro), e `var(--bi-primary)`
+(blu istituzionale più chiaro, non il navy) per `--bo-sidebar-accent` —
+mantiene un accento leggibile su fondo scuro senza introdurre un terzo
+colore scollegato.
 
 Ricerca ombre: ogni `box-shadow` con blur >8px o multipli layer va
 ridotta a `var(--shadow-1)` (bordo sottile + ombra minima) — grep
