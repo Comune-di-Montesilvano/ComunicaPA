@@ -1133,6 +1133,11 @@ export function App(): React.JSX.Element {
   const [wizTestHistory, setWizTestHistory] = useState<Array<{ attemptId: string; codiceFiscale: string; sentAt: string }>>([]);
   const [wizTestSubmitting, setWizTestSubmitting] = useState(false);
   const [wizTestError, setWizTestError] = useState<string | null>(null);
+  // Campagna di prova (isTest, riusata invariata da launchTestSend tra invii
+  // successivi): wizTestHistory è solo lo storico client-side della sessione
+  // corrente, non riflette invii di prova fatti in sessioni precedenti — il
+  // bottone verso il dettaglio reale compare appena conosciamo l'id.
+  const [wizTestCampaignId, setWizTestCampaignId] = useState<string | null>(null);
 
   const [wizPaymentEnabled, setWizPaymentEnabled] = useState(false);
   const [wizPaymentAmountCol, setWizPaymentAmountCol] = useState('');
@@ -4191,6 +4196,7 @@ export function App(): React.JSX.Element {
     setWizTestForm({ codiceFiscale: '', email: '', pec: '', postalAddress: '', postalMunicipality: '', postalZip: '', postalProvince: '' });
     setWizTestHistory([]);
     setWizTestError(null);
+    setWizTestCampaignId(null);
   };
 
   const prefillWizardFrom = async (source: {
@@ -4846,6 +4852,9 @@ export function App(): React.JSX.Element {
         { attemptId: data.attemptId, codiceFiscale: wizTestForm.codiceFiscale, sentAt: new Date().toISOString() },
         ...prev,
       ]);
+      if (data.testCampaignId) {
+        setWizTestCampaignId(data.testCampaignId);
+      }
     } catch (err) {
       setWizTestError(err instanceof Error ? err.message : 'Errore durante l\'invio di prova.');
     } finally {
@@ -7571,7 +7580,19 @@ export function App(): React.JSX.Element {
 
                   {wizTestHistory.length > 0 && (
                     <div className="mt-4 pt-3 border-top">
-                      <h6 className="small fw-bold text-dark mb-2">Invii di prova in questa sessione</h6>
+                      <div className="d-flex justify-content-between align-items-center mb-2">
+                        <h6 className="small fw-bold text-dark mb-0">Invii di prova in questa sessione</h6>
+                        {wizTestCampaignId && (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-primary"
+                            onClick={() => handleCampaignClick(wizTestCampaignId)}
+                            title="La campagna di prova riusa lo stesso destinatario tra invii successivi: qui vedi lo storico completo, non solo quello di questa sessione"
+                          >
+                            <i className="fas fa-external-link-alt me-1"></i>Vedi dettaglio test
+                          </button>
+                        )}
+                      </div>
                       <ul className="list-unstyled small mb-0">
                         {wizTestHistory.map((h) => (
                           <li key={h.attemptId} className="mb-1">
