@@ -179,6 +179,7 @@ function WizRecipientPreviewPanel({
   wizAppIoMode,
   wizMapping,
   fullWidth,
+  widthClass,
 }: {
   wizValidRows: Record<string, string>[];
   wizPreviewIndex: number;
@@ -191,9 +192,11 @@ function WizRecipientPreviewPanel({
   wizAppIoMode: 'none' | 'parallel' | 'exclusive';
   wizMapping: Record<string, string>;
   fullWidth?: boolean;
+  /** Classe colonna Bootstrap quando non fullWidth (default 'col-lg-6'). */
+  widthClass?: string;
 }): React.JSX.Element {
   return (
-    <div className={fullWidth ? 'col-12' : 'col-lg-6'}>
+    <div className={fullWidth ? 'col-12' : (widthClass || 'col-lg-6')}>
       <h4 className="h6 fw-bold text-dark mb-2">Anteprima Live Destinatari ({wizValidRows.length} totali)</h4>
       <p className="small text-muted mb-3">Sfoglia i record validi del CSV per vedere come verranno risolti i parametri Jolly. Anteprima renderizzata con lo stesso motore usato per l'invio reale (logo, footer e link inclusi).</p>
 
@@ -343,7 +346,7 @@ function WizAttachmentInlinePreview({
       {loading && <div className="text-center text-muted small py-3"><i className="fas fa-spinner fa-spin me-1"></i> Caricamento allegato...</div>}
       {error && <div className="text-danger small">{error}</div>}
       {!loading && !error && objectUrl && isPdf && (
-        <embed type="application/pdf" src={objectUrl} style={{ width: '100%', height: '400px', border: '1px solid #dee2e6', borderRadius: '4px' }} />
+        <embed type="application/pdf" src={objectUrl} style={{ width: '100%', height: '80vh', border: '1px solid #dee2e6', borderRadius: '4px' }} />
       )}
       {!loading && !error && objectUrl && (
         <a href={objectUrl} download={filename} className="btn btn-sm btn-outline-secondary mt-2">
@@ -3879,27 +3882,26 @@ export function App(): React.JSX.Element {
       // Se stiamo duplicando/riprendendo una campagna e il CSV ricaricato ha le
       // stesse colonne, riapplica la mappatura salvata invece dell'euristica
       // generica (che potrebbe indovinare male o non indovinare affatto colonne
-      // con nomi non standard). Se anche una sola colonna referenziata non è
-      // presente nel nuovo CSV, non forziamo nulla: resta l'euristica/vuoto.
+      // con nomi non standard). Applicazione CAMPO PER CAMPO, non tutto-o-niente:
+      // se anche una sola colonna referenziata manca nel nuovo CSV, solo quel
+      // campo resta all'euristica/vuoto — gli altri campi già validi (es. email/pec
+      // mappate correttamente) non vanno persi solo perché una colonna diversa
+      // (es. un allegato) è stata rinominata o rimossa.
       const effectivePendingMapping = pendingMappingOverride !== undefined ? pendingMappingOverride : wizPendingMapping;
       if (effectivePendingMapping) {
-        const pendingCols = [
-          effectivePendingMapping.codice_fiscale,
-          effectivePendingMapping.full_name,
-          effectivePendingMapping.full_name_2,
-          effectivePendingMapping.email,
-          effectivePendingMapping.pec,
-        ].filter(Boolean);
-        if (pendingCols.every(col => headers.includes(col))) {
-          Object.assign(newMapping, effectivePendingMapping);
-        }
+        (Object.keys(effectivePendingMapping) as Array<keyof typeof effectivePendingMapping>).forEach((field) => {
+          const col = effectivePendingMapping[field];
+          if (col && headers.includes(col)) {
+            newMapping[field] = col;
+          }
+        });
         setWizPendingMapping(null);
       }
       setWizMapping(newMapping);
 
       const effectivePendingAttachments = pendingAttachmentsOverride !== undefined ? pendingAttachmentsOverride : wizPendingAttachments;
-      if (effectivePendingAttachments && effectivePendingAttachments.every(a => headers.includes(a.key))) {
-        setWizAttachments(effectivePendingAttachments);
+      if (effectivePendingAttachments) {
+        setWizAttachments(effectivePendingAttachments.filter(a => headers.includes(a.key)));
       } else {
         setWizAttachments([]);
       }
@@ -7286,9 +7288,10 @@ export function App(): React.JSX.Element {
                               wizAppIoMode={wizAppIoMode}
                               wizMapping={wizMapping}
                               fullWidth={effectiveAttachments.length === 0 || !currentRow}
+                              widthClass="col-lg-5"
                             />
                             {effectiveAttachments.length > 0 && currentRow && (
-                              <div className="col-lg-6">
+                              <div className="col-lg-7">
                                 {effectiveAttachments.map((entry, idx) => (
                                   <WizAttachmentInlinePreview
                                     key={entry.key || idx}
