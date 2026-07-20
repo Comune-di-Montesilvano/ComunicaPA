@@ -5581,14 +5581,23 @@ export function App(): React.JSX.Element {
 
               {/* Steps Progress Header — clickable when already visited */}
               <div className="d-flex justify-content-between mb-4 text-center" style={{ fontSize: '0.82rem' }}>
-                {[
-                  { n: 1, label: '1. Dettagli & Canale' },
-                  { n: 2, label: '2. Caricamento File' },
-                  { n: 3, label: '3. Mappatura & Validazione' },
-                  { n: 4, label: '4. Template & Anteprima' },
-                  { n: 5, label: '5. Upload Allegati' },
-                  { n: 6, label: '6. Anteprima e Invio' },
-                ].map(({ n, label }) => {
+                {(wizSingleMode
+                  ? [
+                      { n: 1, label: '1. Dettagli & Canale' },
+                      { n: 2, label: '2. Destinatario' },
+                      { n: 4, label: '3. Template & Anteprima' },
+                      { n: 5, label: '4. Upload Allegati' },
+                      { n: 6, label: '5. Anteprima e Invio' },
+                    ]
+                  : [
+                      { n: 1, label: '1. Dettagli & Canale' },
+                      { n: 2, label: '2. Caricamento File' },
+                      { n: 3, label: '3. Mappatura & Validazione' },
+                      { n: 4, label: '4. Template & Anteprima' },
+                      { n: 5, label: '5. Upload Allegati' },
+                      { n: 6, label: '6. Anteprima e Invio' },
+                    ]
+                ).map(({ n, label }) => {
                   const isBackward = n < wizStep;
                   const isMaxReached = n <= wizMaxReachedStep;
                   const forwardGateApplies = n >= 4;
@@ -5968,8 +5977,137 @@ export function App(): React.JSX.Element {
                 </div>
               )}
 
-              {/* STEP 2: CARICAMENTO FILE */}
-              {wizStep === 2 && (
+              {/* STEP 2: CARICAMENTO FILE (o DESTINATARIO in wizSingleMode) */}
+              {wizStep === 2 && wizSingleMode && (
+                <div style={{ maxWidth: '600px', margin: '0 auto' }}>
+                  <h4 className="h6 fw-bold text-dark mb-3">Passo 2: Dati Destinatario</h4>
+
+                  <div className="mb-4 pb-3 border-bottom d-flex justify-content-between">
+                    <button className="btn btn-outline-secondary" onClick={() => setWizStep(1)}>
+                      <i className="fas fa-arrow-left me-1"></i> Indietro
+                    </button>
+                    <button
+                      className="btn btn-primary"
+                      onClick={async () => {
+                        if (await syncWizDraftAndRecipients(4)) {
+                          setWizStep(4);
+                        }
+                      }}
+                      disabled={!wizCsvFile}
+                    >
+                      Avanti <i className="fas fa-arrow-right ms-1"></i>
+                    </button>
+                  </div>
+
+                  {wizCsvFile ? (
+                    <div className="p-4 border rounded bg-light text-center mb-4">
+                      <div className="badge bg-success p-2 mb-2">
+                        <i className="fas fa-check-circle me-1"></i> Destinatario pronto: {singleCf.toUpperCase()}
+                      </div>
+                      <div>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-secondary px-2"
+                          onClick={() => {
+                            setWizCsvFile(null);
+                            setWizCsvHeaders([]);
+                            setWizCsvRows([]);
+                            setWizMapping({ codice_fiscale: '', full_name: '', full_name_2: '', email: '', pec: '', subject: '' });
+                          }}
+                        >
+                          <i className="fas fa-pen me-1"></i> Modifica dati
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="row g-3 mb-4">
+                      <div className="col-md-6">
+                        <label className="form-label small fw-bold text-dark" htmlFor="s_cf">Codice Fiscale/P.IVA Destinatario <span className="text-danger">*</span></label>
+                        <input
+                          type="text"
+                          id="s_cf"
+                          className="form-control form-control-sm"
+                          placeholder="16 caratteri alfanumerici o 11 cifre"
+                          maxLength={16}
+                          value={singleCf}
+                          onChange={(e) => setSingleCf(e.target.value.toUpperCase())}
+                        />
+                      </div>
+                      <div className="col-md-6">
+                        <label className="form-label small fw-semibold text-muted" htmlFor="s_name">Nome Completo</label>
+                        <input
+                          type="text"
+                          id="s_name"
+                          className="form-control form-control-sm"
+                          placeholder="Es: Mario Rossi"
+                          value={singleName}
+                          onChange={(e) => setSingleName(e.target.value)}
+                        />
+                      </div>
+                      <div className="col-md-6">
+                        <label className="form-label small fw-semibold text-muted" htmlFor="s_email">Indirizzo Email</label>
+                        <input
+                          type="email"
+                          id="s_email"
+                          className="form-control form-control-sm"
+                          placeholder="mario.rossi@example.com"
+                          value={singleEmail}
+                          onChange={(e) => setSingleEmail(e.target.value)}
+                        />
+                      </div>
+                      <div className="col-md-6">
+                        <label className="form-label small fw-semibold text-muted" htmlFor="s_pec">Indirizzo PEC</label>
+                        <input
+                          type="email"
+                          id="s_pec"
+                          className="form-control form-control-sm"
+                          placeholder="mario.rossi@pec.it"
+                          value={singlePec}
+                          onChange={(e) => setSinglePec(e.target.value)}
+                        />
+                      </div>
+                      <div className="col-12">
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          disabled={!singleCf}
+                          onClick={async () => {
+                            if (!isValidCfOrPiva(singleCf)) {
+                              alert('Codice Fiscale/P.IVA non valido: 16 caratteri alfanumerici o 11 cifre.');
+                              return;
+                            }
+                            const csvContent = `codice_fiscale,full_name,email,pec\n"${singleCf.toUpperCase()}","${singleName.replace(/"/g, '""')}","${singleEmail.replace(/"/g, '""')}","${singlePec.replace(/"/g, '""')}"`;
+                            const file = new File([csvContent], 'destinatario.csv', { type: 'text/csv' });
+                            setWizCsvFile(file);
+                            await parseCsvFile(file, true);
+                          }}
+                        >
+                          <i className="fas fa-check me-1"></i> Genera destinatario
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-4 pt-3 border-top d-flex justify-content-between">
+                    <button className="btn btn-outline-secondary" onClick={() => setWizStep(1)}>
+                      <i className="fas fa-arrow-left me-1"></i> Indietro
+                    </button>
+                    <button
+                      className="btn btn-primary"
+                      onClick={async () => {
+                        if (await syncWizDraftAndRecipients(4)) {
+                          setWizStep(4);
+                        }
+                      }}
+                      disabled={!wizCsvFile}
+                    >
+                      Avanti <i className="fas fa-arrow-right ms-1"></i>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {wizStep === 2 && !wizSingleMode && (
                 <div style={{ maxWidth: '600px', margin: '0 auto' }}>
                   <h4 className="h6 fw-bold text-dark mb-3">Passo 2: Caricamento File Destinatari (CSV)</h4>
 
