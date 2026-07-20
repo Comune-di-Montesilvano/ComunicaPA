@@ -1,14 +1,15 @@
 import { Type } from 'class-transformer';
-import { IsEnum, IsIn, IsNotEmpty, IsObject, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { IsEnum, IsIn, IsObject, IsOptional, IsString, ValidateNested } from 'class-validator';
 import type { NotificationChannel } from '@comunicapa/shared-types';
 
 export class PreviewAttachmentDto {
   @IsString()
-  @IsNotEmpty()
-  key!: string;
+  @IsOptional()
+  key?: string;
 
   @IsString()
-  label!: string;
+  @IsOptional()
+  label?: string;
 
   @IsString()
   @IsOptional()
@@ -17,8 +18,8 @@ export class PreviewAttachmentDto {
 
 export class PreviewRecipientDto {
   @IsString()
-  @IsNotEmpty()
-  codiceFiscale!: string;
+  @IsOptional()
+  codiceFiscale?: string;
 
   @IsString()
   @IsOptional()
@@ -63,6 +64,10 @@ export class PreviewMessageDto {
   @IsIn(['html', 'markdown'])
   @IsOptional()
   format?: 'html' | 'markdown';
+
+  @IsString()
+  @IsOptional()
+  campaignId?: string;
 }
 
 export interface PreviewMessageResult {

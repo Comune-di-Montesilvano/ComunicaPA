@@ -294,6 +294,9 @@ export class CampaignsController {
     return {
       uploaded: result.uploaded,
       discarded: result.discarded,
+      attachmentsExpected: result.attachmentsExpected,
+      attachmentsPresent: result.attachmentsPresent,
+      filenames: result.filenames,
       campaignId: id,
     };
   }
@@ -343,12 +346,12 @@ export class CampaignsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Param('uploadId') uploadId: string,
     @Req() req: Request & { user: JwtOperatorPayload },
-  ): Promise<{ uploaded: number; discarded: number; campaignId: string; blocked?: boolean; message?: string }> {
+  ): Promise<{ uploaded: number; discarded: number; attachmentsExpected: number; attachmentsPresent: number; filenames: string[]; campaignId: string; blocked?: boolean; message?: string }> {
     try {
       await this.campaignsService.assertDraftForAttachments(id);
       const { path, filename } = await assembleChunkedUpload(uploadId);
 
-      let result: { uploaded: number; discarded: number };
+      let result: { uploaded: number; discarded: number; attachmentsExpected: number; attachmentsPresent: number; filenames: string[] };
       if (filename.toLowerCase().endsWith('.zip')) {
         const fakeFile = { path, originalname: filename } as Express.Multer.File;
         result = await this.campaignsService.finalizeAttachments(id, [fakeFile]);
@@ -375,11 +378,21 @@ export class CampaignsController {
         action: 'UPLOAD_ATTACHMENTS',
         details: { uploaded: result.uploaded, discarded: result.discarded, filename },
       });
-      return { uploaded: result.uploaded, discarded: result.discarded, campaignId: id };
+      return {
+        uploaded: result.uploaded,
+        discarded: result.discarded,
+        attachmentsExpected: result.attachmentsExpected,
+        attachmentsPresent: result.attachmentsPresent,
+        filenames: result.filenames,
+        campaignId: id,
+      };
     } catch (err: any) {
       return {
         uploaded: 0,
         discarded: 0,
+        attachmentsExpected: 0,
+        attachmentsPresent: 0,
+        filenames: [],
         campaignId: id,
         blocked: true,
         message: err?.message ?? 'Errore durante la finalizzazione degli allegati',
@@ -481,6 +494,11 @@ export class CampaignsController {
   @Get(':id/stats')
   getStats(@Param('id', ParseUUIDPipe) id: string) {
     return this.campaignsService.getStats(id);
+  }
+
+  @Get(':id/attachments/progress')
+  async getAttachmentsProgress(@Param('id', ParseUUIDPipe) id: string) {
+    return this.campaignsService.getAttachmentsProgress(id);
   }
 
   @Get(':id/attachments/preview-file')

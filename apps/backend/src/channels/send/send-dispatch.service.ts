@@ -160,11 +160,23 @@ export class SendDispatchService {
       });
     }
 
+    const senderTaxId = await this.settings.get<string>('send.senderTaxId' as SettingKey);
+    const senderDenomination = await this.settings.get<string>('brand.name' as SettingKey);
+    const taxonomyCode = cfg['taxonomyCode'] as string;
+    const physicalCommunicationType = (cfg['physicalCommunicationType'] as string) || 'AR_REGISTERED_LETTER';
+    const group = await this.settings.get<string>(`${prefix}.group` as SettingKey);
+
     const paymentConfig = cfg['paymentConfig'] as Record<string, unknown> | undefined;
     const resolvedPayment = resolvePaymentData(recipient, paymentConfig);
     const payments =
       resolvedPayment?.noticeCode && resolvedPayment.amountCents != null
-        ? [{ pagoPa: { noticeCode: resolvedPayment.noticeCode, creditorTaxId: resolvedPayment.creditorTaxId, applyCost: true } }]
+        ? [{
+            pagoPa: {
+              noticeCode: resolvedPayment.noticeCode,
+              creditorTaxId: resolvedPayment.creditorTaxId || senderTaxId || '',
+              applyCost: true
+            }
+          }]
         : undefined;
 
     // PN richiede physicalAddress quando non risolve un domicilio digitale
@@ -173,12 +185,6 @@ export class SendDispatchService {
     // per campagna (colonne CSV), analogo a paymentConfig.
     const physicalAddressConfig = cfg['physicalAddressConfig'] as Record<string, unknown> | undefined;
     const physicalAddress = resolvePhysicalAddress(recipient, physicalAddressConfig);
-
-    const senderTaxId = await this.settings.get<string>('send.senderTaxId' as SettingKey);
-    const senderDenomination = await this.settings.get<string>('brand.name' as SettingKey);
-    const taxonomyCode = cfg['taxonomyCode'] as string;
-    const physicalCommunicationType = (cfg['physicalCommunicationType'] as string) || 'AR_REGISTERED_LETTER';
-    const group = await this.settings.get<string>(`${prefix}.group` as SettingKey);
 
     const payload: Record<string, unknown> = {
       // Deterministico sull'attemptId: un retry del demone (crash, errore rete)

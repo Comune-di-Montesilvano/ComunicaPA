@@ -521,6 +521,23 @@ describe('CampaignsService', () => {
       expect(files.includes('ok_file.PDF')).toBe(false);
       expect(files.includes('ok_file.pdf')).toBe(true);
     });
+
+    it('non cancella e non scarta il file draft_recipients.csv', async () => {
+      fs.writeFileSync(join(tmpDir, 'draft_recipients.csv'), 'headers,data');
+      fs.writeFileSync(join(tmpDir, 'ok_file.pdf'), '%PDF');
+      mockCampaignRepo.findOneBy.mockResolvedValue({ id: 'c1', channelConfig: { allegatoKey: 'allegato' } });
+      mockRecipientRepo.find.mockResolvedValue([
+        { extraData: { allegato: 'ok_file.pdf' } },
+      ]);
+
+      const result = await service.finalizeAttachments('c1', []);
+
+      expect(result.uploaded).toBe(1);
+      expect(result.discarded).toBe(0);
+      const files = fs.readdirSync(tmpDir);
+      expect(files.includes('draft_recipients.csv')).toBe(true);
+      expect(files.includes('ok_file.pdf')).toBe(true);
+    });
   });
 
   describe('resolveAttachmentPreviewFilePath', () => {

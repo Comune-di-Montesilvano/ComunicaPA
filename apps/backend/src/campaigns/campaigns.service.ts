@@ -102,18 +102,40 @@ export class CampaignsService {
    * quell'id in DB). Usata dal wizard per l'anteprima live.
    */
   async previewMessage(dto: PreviewMessageDto): Promise<PreviewMessageResult> {
+    let previewRecipientId: string = randomUUID();
+    if (dto.campaignId && dto.recipient?.codiceFiscale) {
+      const realRecipient = await this.recipientRepo.findOne({
+        where: {
+          campaignId: dto.campaignId,
+          codiceFiscale: dto.recipient.codiceFiscale.toUpperCase().trim(),
+        },
+      });
+      if (realRecipient) {
+        previewRecipientId = realRecipient.id;
+      }
+    }
+
     const previewRecipient = {
-      id: randomUUID(),
-      codiceFiscale: dto.recipient.codiceFiscale,
-      fullName: dto.recipient.fullName ?? null,
-      email: dto.recipient.email ?? null,
-      pec: dto.recipient.pec ?? null,
-      extraData: dto.recipient.extraData ?? {},
-      protocolNumber: dto.recipient.protocolNumber ?? null,
+      id: previewRecipientId,
+      codiceFiscale: dto.recipient?.codiceFiscale?.trim() || 'TSTMRA80A01H501U',
+      fullName: dto.recipient?.fullName ?? null,
+      email: dto.recipient?.email ?? null,
+      pec: dto.recipient?.pec ?? null,
+      extraData: dto.recipient?.extraData ?? {},
+      protocolNumber: dto.recipient?.protocolNumber ?? null,
     } as unknown as Recipient;
 
-    const attachmentLabels = (dto.attachments ?? []).map((a) => resolveAttachmentLabel(a, previewRecipient));
-    return this.renderMessage(dto.channelType, dto.subject, dto.body, attachmentLabels, previewRecipient, dto.format);
+    const attachmentLabels = (dto.attachments ?? []).map((a) => resolveAttachmentLabel({ key: a.key ?? '', label: a.label ?? '', labelColumn: a.labelColumn }, previewRecipient));
+    return this.renderMessage(
+      dto.channelType,
+      dto.subject,
+      dto.body,
+      attachmentLabels,
+      previewRecipient,
+      dto.format,
+      undefined,
+      true,
+    );
   }
 
   /**
@@ -1743,25 +1765,9 @@ export class CampaignsService {
    * Safety: se NESSUN destinatario referenzia un allegato, non scarta nulla
    * (evita di svuotare la cartella in flussi senza mappatura allegato).
    */
-  async finalizeAttachments(
-    campaignId: string,
-    files: Express.Multer.File[],
-  ): Promise<{ uploaded: number; discarded: number }> {
-    const dir = getUploadsDir(campaignId);
-    fs.mkdirSync(dir, { recursive: true });
-
-    // 1. Estrazione ZIP
-    for (const file of files) {
-      if (!file.originalname.toLowerCase().endsWith('.zip')) continue;
-      await extractZipWithYauzl(file.path, dir);
-      fs.unlinkSync(file.path);
-    }
-
-    // 2. Set dei filename referenziati dai destinatari
-    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
-    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+  async getReferencedAttachments(campaign: Campaign): Promise<Set<string>> {
     const recipients = await this.recipientRepo.find({
-      where: { campaignId },
+      where: { campaignId: campaign.id },
       select: ['extraData'],
     });
     const attachmentsConfig = resolveAttachmentsConfig(campaign.channelConfig);
@@ -1776,6 +1782,54 @@ export class CampaignsService {
         if (filename) referenced.add(filename);
       }
     }
+    return referenced;
+  }
+
+  async getAttachmentsProgress(
+    campaignId: string,
+  ): Promise<{ attachmentsExpected: number; attachmentsPresent: number; filenames: string[] }> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+
+    const referenced = await this.getReferencedAttachments(campaign);
+    const dir = getUploadsDir(campaignId);
+    const currentFiles = fs.existsSync(dir)
+      ? fs.readdirSync(dir).filter((f) => f !== 'draft_recipients.csv')
+      : [];
+    const attachmentsPresent = currentFiles.filter((f) => referenced.has(f)).length;
+
+    return {
+      attachmentsExpected: referenced.size,
+      attachmentsPresent,
+      filenames: currentFiles,
+    };
+  }
+
+  /**
+   * Post-processing degli allegati caricati:
+   * 1. estrae i PDF dagli eventuali .zip (appiattendo i path) e rimuove gli zip;
+   * 2. elimina i PDF non referenziati da alcun destinatario (extraData/allegatoKey).
+   * Safety: se NESSUN destinatario referenzia un allegato, non scarta nulla
+   * (evita di svuotare la cartella in flussi senza mappatura allegato).
+   */
+  async finalizeAttachments(
+    campaignId: string,
+    files: Express.Multer.File[],
+  ): Promise<{ uploaded: number; discarded: number; attachmentsExpected: number; attachmentsPresent: number; filenames: string[] }> {
+    const dir = getUploadsDir(campaignId);
+    fs.mkdirSync(dir, { recursive: true });
+
+    // 1. Estrazione ZIP
+    for (const file of files) {
+      if (!file.originalname.toLowerCase().endsWith('.zip')) continue;
+      await extractZipWithYauzl(file.path, dir);
+      fs.unlinkSync(file.path);
+    }
+
+    // 2. Set dei filename referenziati dai destinatari
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+    const referenced = await this.getReferencedAttachments(campaign);
 
     // 3. Ridenominazione per case-insensitivity e scarto dei non referenziati
     const referencedLowerMap = new Map<string, string>();
@@ -1786,6 +1840,7 @@ export class CampaignsService {
     let discarded = 0;
     const present = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
     for (const f of present) {
+      if (f === 'draft_recipients.csv') continue;
       const expectedName = referencedLowerMap.get(f.toLowerCase());
       if (expectedName) {
         if (f !== expectedName) {
@@ -1797,8 +1852,19 @@ export class CampaignsService {
       }
     }
 
-    const uploaded = fs.existsSync(dir) ? fs.readdirSync(dir).length : 0;
-    return { uploaded, discarded };
+    const finalFiles = fs.existsSync(dir)
+      ? fs.readdirSync(dir).filter((f) => f !== 'draft_recipients.csv')
+      : [];
+    const uploaded = finalFiles.length;
+    const attachmentsPresent = finalFiles.filter((f) => referenced.has(f)).length;
+
+    return {
+      uploaded,
+      discarded,
+      attachmentsExpected: referenced.size,
+      attachmentsPresent,
+      filenames: finalFiles,
+    };
   }
 
   async remove(campaignId: string): Promise<{ deleted: true }> {

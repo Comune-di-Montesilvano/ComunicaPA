@@ -240,7 +240,7 @@ function WizRecipientPreviewPanel({
             <strong>A:</strong> {wizValidRows[wizPreviewIndex][wizMapping.email || ''] || wizValidRows[wizPreviewIndex][wizMapping.pec || ''] || 'N/A'}<br />
             <strong>Oggetto:</strong> {wizPreviewLoading ? '...' : (wizPreviewResult?.subject ?? '')}
           </div>
-          {wizPreviewLoading && !wizPreviewResult ? (
+          {wizPreviewLoading ? (
             <div className="text-center text-muted small py-4">
               <i className="fas fa-spinner fa-spin me-1"></i> Rendering anteprima...
             </div>
@@ -255,11 +255,6 @@ function WizRecipientPreviewPanel({
               dangerouslySetInnerHTML={{ __html: wizPreviewResult.bodyHtml }}
             />
           ) : wizPreviewResult?.bodyMarkdown ? (
-            // Copre wizChannel === 'APP_IO' diretto (senza co-consegna, tab mai mostrate).
-            // Nota: renderizza col motore %placeholder%/processTemplate del backend, non
-            // rappresentativo del canale App IO diretto reale, che invia via AppIoStrategy
-            // con sintassi {{mustache}} diversa — gap noto, vedi Global Constraints del
-            // piano "Fix Anteprima Email/PEC".
             <div className="bg-white border rounded p-3" data-color-mode="light">
               <MDEditor.Markdown source={wizPreviewResult.bodyMarkdown} />
             </div>
@@ -1104,6 +1099,13 @@ export function App(): React.JSX.Element {
   const [wizAppIoBodyOverride, setWizAppIoBodyOverride] = useState('');
   const [wizCampaignId, setWizCampaignId] = useState<string | null>(null);
   const [wizDraftSaving, setWizDraftSaving] = useState(false);
+  const [wizMaxReachedStep, setWizMaxReachedStep] = useState(1);
+  const [wizLastSyncedHeaders, setWizLastSyncedHeaders] = useState<string[] | null>(null);
+  const [wizLastSyncedMapping, setWizLastSyncedMapping] = useState<typeof wizMapping | null>(null);
+  const [wizRecipientsSyncFingerprint, setWizRecipientsSyncFingerprint] = useState<string | null>(null);
+  const [wizAttachmentProgress, setWizAttachmentProgress] = useState<{ expected: number; present: number } | null>(null);
+  const [wizAttachmentSearch, setWizAttachmentSearch] = useState('');
+  const [wizAttachmentFilter, setWizAttachmentFilter] = useState<'all' | 'present' | 'missing'>('all');
 
   // Step 7 — invio di prova
   const [wizTestForm, setWizTestForm] = useState<{
@@ -1159,28 +1161,38 @@ export function App(): React.JSX.Element {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         signal: controller.signal,
         body: JSON.stringify({
+          campaignId: wizCampaignId || undefined,
           channelType: wizPreviewChannelTab === 'APP_IO' ? 'APP_IO' : wizChannel,
           subject: wizPreviewChannelTab === 'APP_IO'
             ? (wizAppIoDifferentiate ? wizAppIoSubjectOverride : wizSubject)
-            : ((wizMapping.subject && row[wizMapping.subject]?.trim()) || wizSubject),
+            : ((wizMapping.subject && row[wizMapping.subject]?.trim()) || wizSubject || 'Oggetto della comunicazione'),
           body: wizPreviewChannelTab === 'APP_IO'
             ? (wizAppIoDifferentiate ? wizAppIoBodyOverride : wizBody)
-            : wizBody,
-          attachments: wizAttachments,
+            : (wizBody || ''),
+          attachments: (wizAttachments || [])
+            .filter(a => a && (a.key || a.label || a.labelColumn))
+            .map((a, i) => ({
+              key: a.key || `key_${i + 1}`,
+              label: a.label || a.key || (a.labelColumn ? `Da colonna ${a.labelColumn}` : `Allegato ${i + 1}`),
+              labelColumn: a.labelColumn,
+            })),
           recipient: {
-            codiceFiscale: row[wizMapping.codice_fiscale] || '',
-            fullName: getWizRowFullName(row),
-            email: row[wizMapping.email] || undefined,
-            pec: row[wizMapping.pec] || undefined,
-            extraData: row,
+            codiceFiscale: (wizMapping.codice_fiscale && row[wizMapping.codice_fiscale]) || 'TSTMRA80A01H501U',
+            fullName: getWizRowFullName(row) || 'Destinatario di prova',
+            email: (wizMapping.email && row[wizMapping.email]) || undefined,
+            pec: (wizMapping.pec && row[wizMapping.pec]) || undefined,
+            extraData: row || {},
             protocolNumber: wizProtocolla ? '[N. Protocollo]' : undefined,
           },
         }),
       })
-        .then((res) => (res.ok ? res.json() : Promise.reject(new Error('preview failed'))))
+        .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`preview failed ${res.status}`))))
         .then((data) => setWizPreviewResult(data))
         .catch((err) => {
-          if (err.name !== 'AbortError') setWizPreviewResult(null);
+          if (err.name !== 'AbortError') {
+            console.error('Preview fetch error:', err);
+            setWizPreviewResult(null);
+          }
         })
         .finally(() => setWizPreviewLoading(false));
     }, 300);
@@ -3780,15 +3792,15 @@ export function App(): React.JSX.Element {
     hasHeaders: boolean,
     pendingMappingOverride?: typeof wizMapping | null,
     pendingAttachmentsOverride?: Array<{ key: string; label: string }> | null
-  ): Promise<void> => {
+  ): Promise<string[]> => {
     return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
-      if (!text) { resolve(); return; }
+      if (!text) { resolve([]); return; }
 
       const lines = text.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
-      if (lines.length === 0) { resolve(); return; }
+      if (lines.length === 0) { resolve([]); return; }
 
       const parseCsvLine = (line: string) => {
         const result: string[] = [];
@@ -3892,9 +3904,9 @@ export function App(): React.JSX.Element {
         setWizAttachments([]);
       }
       setWizPendingAttachments(null);
-      resolve();
+      resolve(headers);
     };
-    reader.onerror = () => resolve();
+    reader.onerror = () => resolve([]);
     reader.readAsText(file);
     });
   };
@@ -4030,10 +4042,36 @@ export function App(): React.JSX.Element {
     setWizValidRows(valid);
   }, [wizCsvRows, wizMapping, wizChannel, wizAppIoInvolved, wizPostalAddressColumn, wizPostalMunicipalityColumn]);
 
-  const handleWizValidation = () => {
+  useEffect(() => {
+    if (wizStep === 5 && wizCampaignId) {
+      fetch(`${ADMIN_API_BASE}/campaigns/${wizCampaignId}/attachments/progress`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then(res => {
+          if (res.ok) return res.json();
+          throw new Error();
+        })
+        .then(data => {
+          setWizAttachmentProgress({
+            expected: data.attachmentsExpected,
+            present: data.attachmentsPresent
+          });
+          if (data.filenames) {
+            setWizUploadedAttachmentFiles(data.filenames);
+          }
+        })
+        .catch(() => {
+          setWizAttachmentProgress(null);
+        });
+    }
+  }, [wizStep, wizCampaignId, token]);
+
+  const handleWizValidation = async () => {
     setWizPreviewIndex(0);
     if (wizValidationErrors.length === 0) {
-      setWizStep(4);
+      if (await syncWizDraftAndRecipients(4)) {
+        setWizStep(4);
+      }
     }
   };
 
@@ -4102,6 +4140,13 @@ export function App(): React.JSX.Element {
     setWizAppIoDifferentiate(false);
     setWizAppIoSubjectOverride('');
     setWizAppIoBodyOverride('');
+    setWizMaxReachedStep(1);
+    setWizLastSyncedHeaders(null);
+    setWizLastSyncedMapping(null);
+    setWizRecipientsSyncFingerprint(null);
+    setWizAttachmentProgress(null);
+    setWizAttachmentSearch('');
+    setWizAttachmentFilter('all');
 
     // Clear payment states
     setWizPaymentEnabled(false);
@@ -4177,6 +4222,13 @@ export function App(): React.JSX.Element {
     // (nessuna chiamata di verifica lato server, vedi Task 7) — reset conservativo:
     // "Avvia Test" resta disabilitato per SEND/POSTAL finché non si ripassa dallo step5.
     setWizUploadedAttachmentFiles(null);
+    setWizRecipientsSyncFingerprint(null);
+    setWizAttachmentProgress(null);
+    setWizAttachmentSearch('');
+    setWizAttachmentFilter('all');
+
+    const initialStep = opts.isDuplicate ? 1 : (source.channelConfig?.wizStep || 1);
+    setWizMaxReachedStep(initialStep);
 
     // Il CSV viene recuperato se stiamo riprendendo una bozza e c'è un file salvato.
     // La mappatura/allegati salvati vanno passati come argomento espliciti a
@@ -4194,12 +4246,19 @@ export function App(): React.JSX.Element {
           const blob = await res.blob();
           const file = new File([blob], source.channelConfig.wizCsvFilename, { type: 'text/csv' });
           setWizCsvFile(file);
-          await parseCsvFile(
+          const parsedHeaders = await parseCsvFile(
             file,
             !!source.channelConfig.wizCsvHasHeaders,
             source.channelConfig?.csvMapping || null,
             source.channelConfig?.attachments || null
           );
+          if (source.channelConfig?.csvMapping) {
+            setWizLastSyncedHeaders(parsedHeaders);
+            setWizLastSyncedMapping(source.channelConfig.csvMapping);
+          } else {
+            setWizLastSyncedHeaders(null);
+            setWizLastSyncedMapping(null);
+          }
         }
       } catch { /* ignore */ }
     } else {
@@ -4207,12 +4266,14 @@ export function App(): React.JSX.Element {
       setWizCsvHeaders([]);
       setWizCsvRows([]);
       setWizValidRows([]);
+      setWizLastSyncedHeaders(null);
+      setWizLastSyncedMapping(null);
     }
 
     // Attesa il parse completo (o il fallimento/assenza del fetch) prima di
     // navigare allo step salvato: evita di montare uno step6 con wizValidRows
     // ancora vuoto mentre il parse è in corso.
-    setWizStep(opts.isDuplicate ? 1 : (source.channelConfig?.wizStep || 1));
+    setWizStep(initialStep);
     setView('invio-massivo-wizard');
   };
 
@@ -4256,13 +4317,14 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const buildWizChannelConfigDraft = (): Record<string, any> => {
+  const buildWizChannelConfigDraft = (targetStep?: number): Record<string, any> => {
     const cfg: Record<string, any> = {
       subject: wizSubject,
       body: wizBody,
       mailConfigId: wizMailConfigId,
       protocolla: wizProtocolla,
-      wizStep,
+      wizStep: targetStep !== undefined ? targetStep : wizStep,
+      wizRowCount: wizValidRows.length,
     };
     if (wizCsvFile) {
       cfg.wizCsvFilename = wizCsvFile.name;
@@ -4319,7 +4381,34 @@ export function App(): React.JSX.Element {
     return cfg;
   };
 
-  const handleSaveWizardDraft = async (): Promise<string | null> => {
+  const buildNormalizedRecipientsCsvBlob = (): Blob => {
+    const extraHeaders = wizCsvHeaders.filter(h => 
+      h !== wizMapping.codice_fiscale && 
+      h !== wizMapping.full_name && 
+      h !== wizMapping.full_name_2 && 
+      h !== wizMapping.email && 
+      h !== wizMapping.pec
+    );
+
+    const headerLine = ['codice_fiscale', 'full_name', 'email', 'pec', ...extraHeaders].join(',');
+    const rowLines = wizValidRows.map(row => {
+      const cf = row[wizMapping.codice_fiscale] || '';
+      
+      const fn1 = row[wizMapping.full_name] || '';
+      const fn2 = wizMapping.full_name_2 ? (row[wizMapping.full_name_2] || '') : '';
+      const fn = [fn1, fn2].filter(Boolean).join(' ');
+
+      const email = row[wizMapping.email] || '';
+      const pec = row[wizMapping.pec] || '';
+      const extra = extraHeaders.map(h => row[h] || '');
+      return [cf, fn, email, pec, ...extra].map(val => `"${String(val).replace(/"/g, '""')}"`).join(',');
+    });
+
+    const csvContent = [headerLine, ...rowLines].join('\n');
+    return new Blob([csvContent], { type: 'text/csv' });
+  };
+
+  const syncWizDraftAndRecipients = async (targetStep: number): Promise<string | null> => {
     if (!wizName) {
       alert('Inserisci almeno il nome della campagna prima di salvare la bozza.');
       return null;
@@ -4327,6 +4416,7 @@ export function App(): React.JSX.Element {
     setWizDraftSaving(true);
     let activeCampaignId = wizCampaignId;
     try {
+      const channelConfig = buildWizChannelConfigDraft(targetStep);
       if (!wizCampaignId) {
         const res = await apiFetch('/campaigns', {
           method: 'POST',
@@ -4335,7 +4425,7 @@ export function App(): React.JSX.Element {
             name: wizName,
             description: wizDesc,
             channelType: wizChannel,
-            channelConfig: buildWizChannelConfigDraft(),
+            channelConfig,
           }),
         });
         if (!res.ok) throw new Error('Errore durante il salvataggio della bozza');
@@ -4349,7 +4439,7 @@ export function App(): React.JSX.Element {
           body: JSON.stringify({
             name: wizName,
             description: wizDesc,
-            channelConfig: buildWizChannelConfigDraft(),
+            channelConfig,
           }),
         });
         if (!res.ok) throw new Error('Errore durante il salvataggio della bozza');
@@ -4366,8 +4456,38 @@ export function App(): React.JSX.Element {
         if (!csvUploadRes.ok) throw new Error('Errore durante il caricamento del file CSV in bozza');
       }
 
+      if (wizValidRows.length > 0 && wizMapping.codice_fiscale) {
+        const currentFingerprint = JSON.stringify({
+          headers: wizCsvHeaders,
+          mapping: wizMapping,
+          rowCount: wizValidRows.length,
+        });
+        if (currentFingerprint !== wizRecipientsSyncFingerprint) {
+          const blob = buildNormalizedRecipientsCsvBlob();
+          setWizUploadProgress({ label: 'Caricamento destinatari', loaded: 0, total: blob.size });
+          const uploadData = await uploadFileInChunks(
+            `${ADMIN_API_BASE}/campaigns/${activeCampaignId}/recipients/upload`,
+            token!,
+            blob,
+            'normalized_recipients.csv',
+            (loaded) => setWizUploadProgress(p => (p ? { ...p, loaded } : p)),
+            () => setWizUploadProgress({ label: 'Elaborazione destinatari in corso', loaded: blob.size, total: blob.size }),
+          );
+          setWizUploadProgress(null);
+          if (uploadData?.blocked) {
+            throw new Error(uploadData.message || 'Errore durante il caricamento dei destinatari.');
+          }
+          setWizRecipientsSyncFingerprint(currentFingerprint);
+        }
+      }
+
+      if (targetStep === 4) {
+        setWizLastSyncedHeaders([...wizCsvHeaders]);
+        setWizLastSyncedMapping({ ...wizMapping });
+      }
+
+      setWizMaxReachedStep(m => Math.max(m, targetStep));
       fetchCampaigns();
-      alert('Bozza salvata.');
       return activeCampaignId ?? null;
     } catch (err: any) {
       if (err instanceof ApiAuthError) return null;
@@ -4375,7 +4495,16 @@ export function App(): React.JSX.Element {
       return null;
     } finally {
       setWizDraftSaving(false);
+      setWizUploadProgress(null);
     }
+  };
+
+  const handleSaveWizardDraft = async (): Promise<string | null> => {
+    const id = await syncWizDraftAndRecipients(wizStep);
+    if (id) {
+      alert('Bozza salvata.');
+    }
+    return id;
   };
 
   // Salva la bozza alla transizione step4->step5 (non dentro handleWizUploadAttachments):
@@ -4385,7 +4514,7 @@ export function App(): React.JSX.Element {
   // (stesso pattern di handleWizUploadAttachments: handleSaveWizardDraft mostra già
   // l'errore ed eventualmente ritorna null).
   const handleWizAdvanceToStep5 = async (): Promise<void> => {
-    const campaignId = await handleSaveWizardDraft();
+    const campaignId = await syncWizDraftAndRecipients(5);
     if (!campaignId) return;
     setWizStep(5);
   };
@@ -4411,7 +4540,7 @@ export function App(): React.JSX.Element {
         const totalBytes = wizPdfFiles.reduce((sum, f) => sum + f.size, 0);
         setWizUploadProgress({ label: 'Caricamento allegati', loaded: 0, total: totalBytes });
         let cumulativeBefore = 0;
-        let lastAttachData: { uploaded: number; discarded?: number; blocked?: boolean; message?: string } | null = null;
+        let lastAttachData: { uploaded: number; discarded?: number; attachmentsExpected?: number; attachmentsPresent?: number; filenames?: string[]; blocked?: boolean; message?: string } | null = null;
         for (const file of wizPdfFiles) {
           const base = cumulativeBefore;
           const isZip = file.name.toLowerCase().endsWith('.zip');
@@ -4433,14 +4562,30 @@ export function App(): React.JSX.Element {
         if (lastAttachData?.blocked) {
           throw new Error(lastAttachData.message || 'Errore durante la finalizzazione degli allegati.');
         }
+
+        if (lastAttachData) {
+          setWizAttachmentProgress({
+            expected: lastAttachData.attachmentsExpected ?? 0,
+            present: lastAttachData.attachmentsPresent ?? 0
+          });
+          if (lastAttachData.filenames) {
+            setWizUploadedAttachmentFiles(lastAttachData.filenames);
+          }
+        }
+
         const discardCount = lastAttachData?.discarded || 0;
         if (discardCount > 0) {
           alert(`Allegati caricati con successo.\nNota: ${discardCount} file non referenziati da alcun cittadino sono stati scartati.`);
+        } else {
+          alert('Allegati caricati con successo.');
+        }
+
+        setWizPdfFiles([]);
+        const input = document.getElementById('wiz_pdf_input') as HTMLInputElement;
+        if (input) {
+          input.value = '';
         }
       }
-
-      setWizUploadedAttachmentFiles(wizPdfFiles.map((f) => f.name));
-      setWizStep(6);
     } catch (err: any) {
       alert(err.message || 'Errore durante il caricamento degli allegati.');
     } finally {
@@ -4564,30 +4709,7 @@ export function App(): React.JSX.Element {
         campaignObj = await res.json();
       }
 
-      const extraHeaders = wizCsvHeaders.filter(h => 
-        h !== wizMapping.codice_fiscale && 
-        h !== wizMapping.full_name && 
-        h !== wizMapping.full_name_2 && 
-        h !== wizMapping.email && 
-        h !== wizMapping.pec
-      );
-
-      const headerLine = ['codice_fiscale', 'full_name', 'email', 'pec', ...extraHeaders].join(',');
-      const rowLines = wizValidRows.map(row => {
-        const cf = row[wizMapping.codice_fiscale] || '';
-        
-        const fn1 = row[wizMapping.full_name] || '';
-        const fn2 = wizMapping.full_name_2 ? (row[wizMapping.full_name_2] || '') : '';
-        const fn = [fn1, fn2].filter(Boolean).join(' ');
-
-        const email = row[wizMapping.email] || '';
-        const pec = row[wizMapping.pec] || '';
-        const extra = extraHeaders.map(h => row[h] || '');
-        return [cf, fn, email, pec, ...extra].map(val => `"${String(val).replace(/"/g, '""')}"`).join(',');
-      });
-
-      const csvContent = [headerLine, ...rowLines].join('\n');
-      const blob = new Blob([csvContent], { type: 'text/csv' });
+      const blob = buildNormalizedRecipientsCsvBlob();
 
       setWizUploadProgress({ label: 'Caricamento destinatari', loaded: 0, total: blob.size });
       const uploadData = await uploadFileInChunks(
@@ -5579,24 +5701,59 @@ export function App(): React.JSX.Element {
                   { n: 4, label: '4. Template & Anteprima' },
                   { n: 5, label: '5. Upload Allegati' },
                   { n: 6, label: '6. Anteprima e Invio' },
-                ].map(({ n, label }) => (
-                  <div
-                    key={n}
-                    className={`col pb-2 border-bottom-2 ${
-                      wizStep === n
-                        ? 'border-primary fw-bold text-primary border-bottom'
-                        : wizStep > n
-                        ? 'border-success text-success fw-semibold border-bottom'
-                        : 'text-muted'
-                    }`}
-                    style={{ cursor: wizStep > n ? 'pointer' : 'default', userSelect: 'none', transition: 'color 0.15s' }}
-                    onClick={() => { if (wizStep > n) setWizStep(n); }}
-                    title={wizStep > n ? `Torna al passo ${n}` : undefined}
-                  >
-                    {wizStep > n && <i className="fas fa-check me-1" style={{ fontSize: '0.7rem' }}></i>}
-                    {label}
-                  </div>
-                ))}
+                ].map(({ n, label }) => {
+                  const isBackward = n < wizStep;
+                  const isMaxReached = n <= wizMaxReachedStep;
+                  const forwardGateApplies = n >= 4;
+                  const structureUnchanged =
+                    wizLastSyncedHeaders !== null &&
+                    JSON.stringify(wizCsvHeaders) === JSON.stringify(wizLastSyncedHeaders) &&
+                    JSON.stringify(wizMapping) === JSON.stringify(wizLastSyncedMapping);
+
+                  const clickable = isBackward || (isMaxReached && (!forwardGateApplies || structureUnchanged));
+
+                  return (
+                    <div
+                      key={n}
+                      className={`col pb-2 border-bottom-2 ${
+                        wizStep === n
+                          ? 'border-primary fw-bold text-primary border-bottom'
+                          : clickable
+                          ? 'border-success text-success fw-semibold border-bottom'
+                          : n <= wizMaxReachedStep
+                          ? 'border-secondary text-muted border-bottom opacity-75'
+                          : 'text-muted'
+                      }`}
+                      style={{
+                        cursor: clickable ? 'pointer' : n <= wizMaxReachedStep ? 'not-allowed' : 'default',
+                        userSelect: 'none',
+                        transition: 'color 0.15s'
+                      }}
+                      onClick={async () => {
+                        if (n < wizStep) {
+                          setWizStep(n);
+                        } else if (clickable) {
+                          if (await syncWizDraftAndRecipients(n)) {
+                            setWizStep(n);
+                          }
+                        }
+                      }}
+                      title={
+                        wizStep === n
+                          ? undefined
+                          : clickable
+                          ? `Vai al passo ${n}`
+                          : n <= wizMaxReachedStep
+                          ? 'Le colonne del file sono cambiate — ripassa dalla Mappatura per confermare'
+                          : undefined
+                      }
+                    >
+                      {wizStep !== n && clickable && <i className="fas fa-check me-1" style={{ fontSize: '0.7rem' }}></i>}
+                      {wizStep !== n && n <= wizMaxReachedStep && !clickable && <i className="fas fa-lock me-1" style={{ fontSize: '0.7rem' }}></i>}
+                      {label}
+                    </div>
+                  );
+                })}
               </div>
 
               {/* STEP 1: DETTAGLI & CANALE */}
@@ -5935,7 +6092,11 @@ export function App(): React.JSX.Element {
                     </button>
                     <button
                       className="btn btn-primary"
-                      onClick={() => setWizStep(3)}
+                      onClick={async () => {
+                        if (await syncWizDraftAndRecipients(3)) {
+                          setWizStep(3);
+                        }
+                      }}
                       disabled={!wizCsvFile}
                     >
                       Avanti <i className="fas fa-arrow-right ms-1"></i>
@@ -6004,7 +6165,11 @@ export function App(): React.JSX.Element {
                     </button>
                     <button
                       className="btn btn-primary"
-                      onClick={() => setWizStep(3)}
+                      onClick={async () => {
+                        if (await syncWizDraftAndRecipients(3)) {
+                          setWizStep(3);
+                        }
+                      }}
                       disabled={!wizCsvFile}
                     >
                       Avanti <i className="fas fa-arrow-right ms-1"></i>
@@ -6024,7 +6189,11 @@ export function App(): React.JSX.Element {
                     </button>
                     <button
                       className="btn btn-primary"
-                      onClick={() => setWizStep(4)}
+                      onClick={async () => {
+                        if (await syncWizDraftAndRecipients(4)) {
+                          setWizStep(4);
+                        }
+                      }}
                       disabled={
                         wizValidRows.length === 0
                         || (wizChannel === 'POSTAL' && (!wizPostalAddressColumn || !wizPostalMunicipalityColumn))
@@ -6299,15 +6468,15 @@ export function App(): React.JSX.Element {
                             <div className="col-md-6">
                               {wizPaymentPayeeType === 'static' ? (
                                 <>
-                                  <label className="form-label small fw-bold">Codice Fiscale Ente Creditore *</label>
+                                  <label className="form-label small fw-bold">Codice Fiscale Ente Creditore</label>
                                   <input
                                     type="text"
                                     className="form-control form-control-sm"
                                     placeholder="Codice Fiscale Ente (es: 00223344556)"
                                     value={wizPaymentPayeeStatic}
                                     onChange={e => setWizPaymentPayeeStatic(e.target.value)}
-                                    required
                                   />
+                                  <div className="form-text small text-muted">Lascia vuoto se l'Ente Creditore è lo stesso Ente che invia questa comunicazione.</div>
                                 </>
                               ) : (
                                 <>
@@ -6499,7 +6668,11 @@ export function App(): React.JSX.Element {
                     </button>
                     <button
                       className="btn btn-primary"
-                      onClick={() => setWizStep(4)}
+                      onClick={async () => {
+                        if (await syncWizDraftAndRecipients(4)) {
+                          setWizStep(4);
+                        }
+                      }}
                       disabled={
                         wizValidRows.length === 0
                         || (wizChannel === 'POSTAL' && (!wizPostalAddressColumn || !wizPostalMunicipalityColumn))
@@ -6748,115 +6921,284 @@ export function App(): React.JSX.Element {
               )}
 
               {/* STEP 5: UPLOAD ALLEGATI */}
-              {wizStep === 5 && (
-                <div style={{ maxWidth: '600px', margin: '0 auto' }}>
-                  <h4 className="h6 fw-bold text-dark mb-3"><i className="fas fa-paperclip text-warning me-2"></i>Passo 5: Upload Allegati</h4>
+              {wizStep === 5 && (() => {
+                const expectedSet = new Set<string>();
+                wizValidRows.forEach(row => {
+                  wizAttachments.forEach(entry => {
+                    const val = row[entry.key];
+                    if (val) {
+                      expectedSet.add(val);
+                    }
+                  });
+                });
 
-                  <div className="mb-4 pb-3 border-bottom d-flex justify-content-between">
-                    <button
-                      className="btn btn-outline-secondary"
-                      onClick={() => setWizStep(4)}
-                      disabled={wizSending}
-                    >
-                      <i className="fas fa-arrow-left me-1"></i> Indietro
-                    </button>
-                    <button
-                      className="btn btn-primary"
-                      onClick={handleWizUploadAttachments}
-                      disabled={wizSending}
-                    >
-                      {wizSending ? (
-                        <>
-                          <i className="fas fa-spinner fa-spin me-1"></i>
-                          {wizUploadProgress ? `${wizUploadProgress.label}...` : 'Caricamento...'}
-                        </>
-                      ) : (
-                        <>Carica allegati e continua <i className="fas fa-arrow-right ms-1"></i></>
-                      )}
-                    </button>
-                  </div>
+                const isAvantiDisabled = wizSending || (
+                  wizAttachmentProgress !== null &&
+                  wizAttachmentProgress.expected > 0 &&
+                  wizAttachmentProgress.present < wizAttachmentProgress.expected
+                );
 
-                  <p className="small text-muted mb-3">
-                    Carica gli allegati configurati al Passo 3 sul server prima di procedere al riepilogo.
-                    Necessario anche per poter usare "Avvia Test" al passo successivo.
-                  </p>
+                return (
+                  <div style={{ maxWidth: '600px', margin: '0 auto' }}>
+                    <h4 className="h6 fw-bold text-dark mb-3"><i className="fas fa-paperclip text-warning me-2"></i>Passo 5: Upload Allegati</h4>
 
-                  <div className="card shadow-sm border-warning mb-4">
-                    <div className="card-header bg-warning-subtle py-2">
-                      <h5 className="card-title small fw-bold mb-0 text-warning-emphasis">
-                        <i className="fas fa-paperclip me-1"></i> Carica gli Allegati PDF per questa Spedizione
-                      </h5>
-                    </div>
-                    <div className="card-body p-3">
-                      <p className="small text-muted mb-2">
-                        Seleziona o trascina qui i file PDF degli avvisi individuali (es. estratti dal desktop) oppure
-                        un unico file ZIP che li contiene tutti (consigliato per molti destinatari).
-                        Il nome del file PDF deve corrispondere a quello indicato nella colonna mappata del CSV.
-                      </p>
-                      <input
-                        type="file"
-                        accept=".pdf,.zip"
-                        multiple
-                        className="form-control form-control-sm"
-                        onChange={e => setWizPdfFiles(Array.from(e.target.files || []))}
-                      />
-                      <div className="form-text small text-muted">Puoi selezionare e caricare più file PDF o uno ZIP contemporaneamente.</div>
-                      {wizPdfFiles.length > 0 && (
-                        <div className="badge bg-primary mt-2 p-2 w-100 text-start">
-                          <i className="fas fa-file-pdf me-1"></i> {wizPdfFiles.length} allegati pronti per il caricamento
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {wizUploadProgress && (
-                    <div className="mb-3">
-                      <div className="d-flex justify-content-between small text-muted mb-1">
-                        <span>{wizUploadProgress.label}...</span>
-                        <span>
-                          {(wizUploadProgress.loaded / (1024 * 1024)).toFixed(1)} / {(wizUploadProgress.total / (1024 * 1024)).toFixed(1)} MB
-                          {' '}({wizUploadProgress.total > 0 ? Math.round((wizUploadProgress.loaded / wizUploadProgress.total) * 100) : 0}%)
-                        </span>
+                    <div className="mb-4 pb-3 border-bottom d-flex justify-content-between">
+                      <button
+                        className="btn btn-outline-secondary"
+                        onClick={() => setWizStep(4)}
+                        disabled={wizSending}
+                      >
+                        <i className="fas fa-arrow-left me-1"></i> Indietro
+                      </button>
+                      <div className="d-flex gap-2">
+                        <button
+                          className="btn btn-outline-warning"
+                          onClick={handleWizUploadAttachments}
+                          disabled={wizSending || wizPdfFiles.length === 0}
+                        >
+                          {wizSending ? (
+                            <>
+                              <i className="fas fa-spinner fa-spin me-1"></i>
+                              {wizUploadProgress ? `${wizUploadProgress.label}...` : 'Caricamento...'}
+                            </>
+                          ) : (
+                            <><i className="fas fa-upload me-1"></i> Carica Allegati</>
+                          )}
+                        </button>
+                        <button
+                          className="btn btn-primary"
+                          onClick={async () => {
+                            if (await syncWizDraftAndRecipients(6)) {
+                              setWizStep(6);
+                            }
+                          }}
+                          disabled={isAvantiDisabled}
+                        >
+                          Avanti <i className="fas fa-arrow-right ms-1"></i>
+                        </button>
                       </div>
-                      <div className="progress" style={{ height: '8px' }}>
-                        <div
-                          className="progress-bar"
-                          role="progressbar"
-                          style={{ width: `${wizUploadProgress.total > 0 ? Math.min(100, (wizUploadProgress.loaded / wizUploadProgress.total) * 100) : 0}%` }}
+                    </div>
+
+                    <p className="small text-muted mb-3">
+                      Carica gli allegati configurati al Passo 3 sul server prima di procedere al riepilogo.
+                      Necessario anche per poter usare "Avvia Test" al passo successivo.
+                    </p>
+
+                    <div className="card shadow-sm border-warning mb-4">
+                      <div className="card-header bg-warning-subtle py-2">
+                        <h5 className="card-title small fw-bold mb-0 text-warning-emphasis">
+                          <i className="fas fa-paperclip me-1"></i> Carica gli Allegati PDF per questa Spedizione
+                        </h5>
+                      </div>
+                      <div className="card-body p-3">
+                        <p className="small text-muted mb-2">
+                          Seleziona o trascina qui i file PDF degli avvisi individuali (es. estratti dal desktop) oppure
+                          un unico file ZIP che li contiene tutti (consigliato per molti destinatari).
+                          Il nome del file PDF deve corrispondere a quello indicato nella colonna mappata del CSV.
+                        </p>
+                        <input
+                          id="wiz_pdf_input"
+                          type="file"
+                          accept=".pdf,.zip"
+                          multiple
+                          className="form-control form-control-sm"
+                          onChange={e => setWizPdfFiles(Array.from(e.target.files || []))}
                         />
+                        <div className="form-text small text-muted">Puoi selezionare e caricare più file PDF o uno ZIP contemporaneamente.</div>
+                        {wizPdfFiles.length > 0 && (
+                          <div className="badge bg-primary mt-2 p-2 w-100 text-start">
+                            <i className="fas fa-file-pdf me-1"></i> {wizPdfFiles.length} allegati pronti per il caricamento
+                          </div>
+                        )}
                       </div>
                     </div>
-                  )}
 
-                  <div className="mt-4 pt-3 border-top d-flex justify-content-between">
-                    <button
-                      className="btn btn-outline-secondary"
-                      onClick={() => setWizStep(4)}
-                      disabled={wizSending}
-                    >
-                      <i className="fas fa-arrow-left me-1"></i> Indietro
-                    </button>
-                    <button
-                      className="btn btn-primary"
-                      onClick={handleWizUploadAttachments}
-                      disabled={wizSending}
-                    >
-                      {wizSending ? (
-                        <>
-                          <i className="fas fa-spinner fa-spin me-1"></i>
-                          {wizUploadProgress ? `${wizUploadProgress.label}...` : 'Caricamento...'}
-                        </>
-                      ) : (
-                        <>Carica allegati e continua <i className="fas fa-arrow-right ms-1"></i></>
-                      )}
-                    </button>
+                    {wizUploadProgress && (
+                      <div className="mb-3">
+                        <div className="d-flex justify-content-between small text-muted mb-1">
+                          <span>{wizUploadProgress.label}...</span>
+                          <span>
+                            {(wizUploadProgress.loaded / (1024 * 1024)).toFixed(1)} / {(wizUploadProgress.total / (1024 * 1024)).toFixed(1)} MB
+                            {' '}({wizUploadProgress.total > 0 ? Math.round((wizUploadProgress.loaded / wizUploadProgress.total) * 100) : 0}%)
+                          </span>
+                        </div>
+                        <div className="progress" style={{ height: '8px' }}>
+                          <div
+                            className="progress-bar"
+                            role="progressbar"
+                            style={{ width: `${wizUploadProgress.total > 0 ? Math.min(100, (wizUploadProgress.loaded / wizUploadProgress.total) * 100) : 0}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {wizAttachmentProgress && wizAttachmentProgress.expected > 0 && (
+                      <div className="mb-3">
+                        <div className="d-flex justify-content-between small text-muted mb-1">
+                          <span>Allegati: {wizAttachmentProgress.present} di {wizAttachmentProgress.expected} presenti</span>
+                          <span>
+                            {wizAttachmentProgress.expected > 0 ? Math.round((wizAttachmentProgress.present / wizAttachmentProgress.expected) * 100) : 0}%
+                          </span>
+                        </div>
+                        <div className="progress" style={{ height: '8px' }}>
+                          <div
+                            className="progress-bar bg-success"
+                            role="progressbar"
+                            style={{ width: `${wizAttachmentProgress.expected > 0 ? Math.min(100, (wizAttachmentProgress.present / wizAttachmentProgress.expected) * 100) : 0}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {expectedSet.size > 0 && (() => {
+                      const expectedList = Array.from(expectedSet);
+                      const filteredList = expectedList.filter(filename => {
+                        const isPresent = wizUploadedAttachmentFiles?.includes(filename) ?? false;
+                        const matchesSearch = filename.toLowerCase().includes(wizAttachmentSearch.toLowerCase());
+                        if (wizAttachmentFilter === 'present') return isPresent && matchesSearch;
+                        if (wizAttachmentFilter === 'missing') return !isPresent && matchesSearch;
+                        return matchesSearch;
+                      });
+
+                      const totalPresent = expectedList.filter(f => wizUploadedAttachmentFiles?.includes(f)).length;
+                      const totalMissing = expectedList.length - totalPresent;
+
+                      return (
+                        <div className="card shadow-sm mt-3 mb-4">
+                          <div className="card-header bg-light py-2 d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2">
+                            <h6 className="card-title small fw-bold mb-0 text-dark">
+                              <i className="fas fa-list me-1 text-primary"></i> Verifica Allegati Richiesti ({expectedList.length})
+                            </h6>
+                            <div className="d-flex gap-2">
+                              <div className="btn-group btn-group-xs" style={{ fontSize: '0.75rem' }}>
+                                <button
+                                  type="button"
+                                  className={`btn btn-xs btn-outline-secondary py-0 px-2 ${wizAttachmentFilter === 'all' ? 'active' : ''}`}
+                                  onClick={() => setWizAttachmentFilter('all')}
+                                >
+                                  Tutti
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`btn btn-xs btn-outline-success py-0 px-2 ${wizAttachmentFilter === 'present' ? 'active' : ''}`}
+                                  onClick={() => setWizAttachmentFilter('present')}
+                                >
+                                  Caricati ({totalPresent})
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`btn btn-xs btn-outline-danger py-0 px-2 ${wizAttachmentFilter === 'missing' ? 'active' : ''}`}
+                                  onClick={() => setWizAttachmentFilter('missing')}
+                                >
+                                  Mancanti ({totalMissing})
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="p-2 border-bottom bg-light">
+                            <div className="input-group input-group-sm">
+                              <span className="input-group-text bg-white border-end-0">
+                                <i className="fas fa-search text-muted"></i>
+                              </span>
+                              <input
+                                type="text"
+                                placeholder="Cerca file per nome..."
+                                className="form-control border-start-0"
+                                value={wizAttachmentSearch}
+                                onChange={e => setWizAttachmentSearch(e.target.value)}
+                              />
+                              {wizAttachmentSearch && (
+                                <button
+                                  className="btn btn-outline-secondary"
+                                  type="button"
+                                  onClick={() => setWizAttachmentSearch('')}
+                                >
+                                  <i className="fas fa-times"></i>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          <div className="card-body p-0" style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                            <ul className="list-group list-group-flush small">
+                              {filteredList.length === 0 ? (
+                                <li className="list-group-item text-center text-muted py-3">
+                                  Nessun allegato corrisponde ai criteri di ricerca.
+                                </li>
+                              ) : (
+                                filteredList.slice(0, 50).map(filename => {
+                                  const isPresent = wizUploadedAttachmentFiles?.includes(filename) ?? false;
+                                  return (
+                                    <li key={filename} className="list-group-item d-flex justify-content-between align-items-center py-2">
+                                      <span className="text-truncate" style={{ maxWidth: '80%' }}>
+                                        <i className="fas fa-file-pdf me-2 text-danger"></i> {filename}
+                                      </span>
+                                      {isPresent ? (
+                                        <span className="badge bg-success-subtle text-success border border-success">
+                                          <i className="fas fa-check me-1"></i> Caricato
+                                        </span>
+                                      ) : (
+                                        <span className="badge bg-danger-subtle text-danger border border-danger">
+                                          <i className="fas fa-times me-1"></i> Mancante
+                                        </span>
+                                      )}
+                                    </li>
+                                  );
+                                })
+                              )}
+                            </ul>
+                          </div>
+                          {filteredList.length > 50 && (
+                            <div className="card-footer bg-light text-center text-muted small py-1 border-top">
+                              Mostrati i primi 50 di {filteredList.length} allegati filtrati. Usa la ricerca per raffinare.
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
+                    <div className="mt-4 pt-3 border-top d-flex justify-content-between">
+                      <button
+                        className="btn btn-outline-secondary"
+                        onClick={() => setWizStep(4)}
+                        disabled={wizSending}
+                      >
+                        <i className="fas fa-arrow-left me-1"></i> Indietro
+                      </button>
+                      <div className="d-flex gap-2">
+                        <button
+                          className="btn btn-outline-warning"
+                          onClick={handleWizUploadAttachments}
+                          disabled={wizSending || wizPdfFiles.length === 0}
+                        >
+                          {wizSending ? (
+                            <>
+                              <i className="fas fa-spinner fa-spin me-1"></i>
+                              {wizUploadProgress ? `${wizUploadProgress.label}...` : 'Caricamento...'}
+                            </>
+                          ) : (
+                            <><i className="fas fa-upload me-1"></i> Carica Allegati</>
+                          )}
+                        </button>
+                        <button
+                          className="btn btn-primary"
+                          onClick={async () => {
+                            if (await syncWizDraftAndRecipients(6)) {
+                              setWizStep(6);
+                            }
+                          }}
+                          disabled={isAvantiDisabled}
+                        >
+                          Avanti <i className="fas fa-arrow-right ms-1"></i>
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* STEP 6: ANTEPRIMA E INVIO */}
               {wizStep === 6 && (
-                <div style={{ maxWidth: '600px', margin: '0 auto' }}>
+                <div>
                   <h4 className="h6 fw-bold text-dark mb-3"><i className="fas fa-check-circle text-success me-2"></i>Passo 6: Anteprima e Invio</h4>
 
                   <div className="mb-4 pb-3 border-bottom d-flex justify-content-between">
@@ -6915,22 +7257,33 @@ export function App(): React.JSX.Element {
                     )}
                     <div className="mt-3 pt-3 border-top">
                       {(wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'APP_IO') ? (
-                        <div className="row">
-                          <div className="col-12">
-                            <WizRecipientPreviewPanel
-                              wizValidRows={wizValidRows}
-                              wizPreviewIndex={wizPreviewIndex}
-                              setWizPreviewIndex={setWizPreviewIndex}
-                              wizPreviewResult={wizPreviewResult}
-                              wizPreviewLoading={wizPreviewLoading}
-                              wizPreviewChannelTab={wizPreviewChannelTab}
-                              setWizPreviewChannelTab={setWizPreviewChannelTab}
-                              wizChannel={wizChannel}
-                              wizAppIoMode={wizAppIoMode}
-                              wizMapping={wizMapping}
-                              fullWidth
-                            />
-                          </div>
+                        <div className="row g-3">
+                          <WizRecipientPreviewPanel
+                            wizValidRows={wizValidRows}
+                            wizPreviewIndex={wizPreviewIndex}
+                            setWizPreviewIndex={setWizPreviewIndex}
+                            wizPreviewResult={wizPreviewResult}
+                            wizPreviewLoading={wizPreviewLoading}
+                            wizPreviewChannelTab={wizPreviewChannelTab}
+                            setWizPreviewChannelTab={setWizPreviewChannelTab}
+                            wizChannel={wizChannel}
+                            wizAppIoMode={wizAppIoMode}
+                            wizMapping={wizMapping}
+                            fullWidth={wizAttachments.length === 0 || !wizValidRows[wizPreviewIndex]}
+                          />
+                          {wizAttachments.length > 0 && wizValidRows[wizPreviewIndex] && (
+                            <div className="col-lg-6">
+                              {wizAttachments.map((entry, idx) => (
+                                <WizAttachmentInlinePreview
+                                  key={entry.key || idx}
+                                  campaignId={wizCampaignId}
+                                  row={wizValidRows[wizPreviewIndex]}
+                                  attachmentEntry={entry}
+                                  token={token}
+                                />
+                              ))}
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <WizAddressAttachmentPreviewPanel
@@ -6945,19 +7298,6 @@ export function App(): React.JSX.Element {
                           campaignId={wizCampaignId}
                           token={token}
                         />
-                      )}
-                      {(wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'APP_IO') && wizAttachments.length > 0 && wizValidRows[wizPreviewIndex] && (
-                        <>
-                          {wizAttachments.map((entry, idx) => (
-                            <WizAttachmentInlinePreview
-                              key={entry.key || idx}
-                              campaignId={wizCampaignId}
-                              row={wizValidRows[wizPreviewIndex]}
-                              attachmentEntry={entry}
-                              token={token}
-                            />
-                          ))}
-                        </>
                       )}
                     </div>
                   </div>
@@ -9966,7 +10306,23 @@ export function App(): React.JSX.Element {
                         </div>
                         <div className="mb-3">
                           <label className="text-muted small fw-semibold block">Nome</label>
-                          <div className="fw-bold">{campaign.name}</div>
+                          <div className="fw-bold">
+                            {campaign.name}
+                            {campaign.isTest && (
+                              <span className="badge bg-warning text-dark ms-2" title="Campagna di prova, collegata a una bozza">
+                                TEST
+                              </span>
+                            )}
+                            {campaign.isTest && campaign.parentCampaignId && (
+                              <button
+                                type="button"
+                                className="btn btn-link btn-sm p-0 ms-2"
+                                onClick={() => handleCampaignClick(campaign.parentCampaignId!)}
+                              >
+                                Vedi bozza madre
+                              </button>
+                            )}
+                          </div>
                         </div>
                         <div className="mb-3">
                           <label className="text-muted small fw-semibold block">Canale</label>
