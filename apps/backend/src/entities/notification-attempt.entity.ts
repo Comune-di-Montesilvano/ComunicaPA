@@ -90,6 +90,15 @@ export class NotificationAttempt {
   @Column({ type: 'jsonb', name: 'postal_status_history', nullable: true })
   postalStatusHistory!: Array<{ stato: string; rilevatoIl: string }> | null;
 
+  @Column({ type: 'int', name: 'cost_cents', nullable: true })
+  costCents!: number | null;
+
+  @Column({ name: 'cost_calculated_at', type: 'timestamptz', nullable: true })
+  costCalculatedAt!: Date | null;
+
+  @Column({ type: 'jsonb', name: 'cost_breakdown', nullable: true })
+  costBreakdown!: Record<string, unknown> | null;
+
   @Column({ name: 'error_message', type: 'text', nullable: true })
   errorMessage!: string | null;
 
