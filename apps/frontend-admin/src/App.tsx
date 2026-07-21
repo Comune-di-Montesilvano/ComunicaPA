@@ -5375,7 +5375,7 @@ export function App(): React.JSX.Element {
               </div>
 
               <div className="row g-3 mb-4">
-                <div className="col-md-4">
+                <div className="col-md-3">
                   <div className="card shadow-sm h-100" style={{ borderLeft: '4px solid var(--bi-primary)' }}>
                     <div className="card-body d-flex align-items-center gap-3">
                       <div className="bg-light text-primary rounded p-3" style={{ fontSize: '1.4rem' }}><Megaphone /></div>
@@ -5386,7 +5386,7 @@ export function App(): React.JSX.Element {
                     </div>
                   </div>
                 </div>
-                <div className="col-md-4">
+                <div className="col-md-3">
                   <div className="card shadow-sm h-100" style={{ borderLeft: '4px solid var(--ms-green-600)' }}>
                     <div className="card-body d-flex align-items-center gap-3">
                       <div className="bg-light text-success rounded p-3" style={{ fontSize: '1.4rem' }}><CheckCircle2 /></div>
@@ -5397,13 +5397,24 @@ export function App(): React.JSX.Element {
                     </div>
                   </div>
                 </div>
-                <div className="col-md-4">
+                <div className="col-md-3">
                   <div className="card shadow-sm h-100" style={{ borderLeft: '4px solid var(--it-red)' }}>
                     <div className="card-body d-flex align-items-center gap-3">
                       <div className="bg-light text-danger rounded p-3" style={{ fontSize: '1.4rem' }}><XCircle /></div>
                       <div>
                         <span className="text-muted small block">Spedizioni Fallite</span>
                         <div className="h4 mb-0 fw-bold">{campaigns.reduce((acc, c) => acc + c.failedCount, 0)}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="col-md-3">
+                  <div className="card shadow-sm h-100" style={{ borderLeft: '4px solid var(--ms-purple-600)' }}>
+                    <div className="card-body d-flex align-items-center gap-3">
+                      <div className="bg-light text-primary rounded p-3" style={{ fontSize: '1.4rem' }}><Euro /></div>
+                      <div>
+                        <span className="text-muted small block">Costo Totale</span>
+                        <div className="h4 mb-0 fw-bold">{globalStats ? `${(globalStats.totals.totalCostCents / 100).toFixed(2)} €` : '…'}</div>
                       </div>
                     </div>
                   </div>
@@ -7652,6 +7663,21 @@ export function App(): React.JSX.Element {
                       <div className="card shadow-sm text-center p-3">
                         <span className="text-muted small">% Download</span>
                         <h3 className="h2 mb-0 fw-bold text-warning">{globalStats.totals.downloadPercentage}%</h3>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="row g-3 mb-4">
+                    <div className="col-md-6">
+                      <div className="card shadow-sm text-center p-3">
+                        <span className="text-muted small">Costo Totale (SEND + POSTAL)</span>
+                        <h3 className="h2 mb-0 fw-bold text-primary">{(globalStats.totals.totalCostCents / 100).toFixed(2)} €</h3>
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="card shadow-sm text-center p-3">
+                        <span className="text-muted small">Risparmio da Dirottamento (stimato)</span>
+                        <h3 className="h2 mb-0 fw-bold text-success">{(globalStats.totals.totalSavingCents / 100).toFixed(2)} €</h3>
                       </div>
                     </div>
                   </div>
