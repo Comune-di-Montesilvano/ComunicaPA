@@ -5599,12 +5599,14 @@ export function App(): React.JSX.Element {
   // Task 7: pronto per "Avvia Test" (step6) — per SEND/POSTAL richiede che l'allegato
   // atteso per il primo record CSV (quello usato dal test-send) sia tra i file
   // effettivamente caricati sul server allo step5.
-  const wizTestAttachmentReady = wizChannel !== 'SEND' && wizChannel !== 'POSTAL'
+  const wizTestAttachmentReady = wizSingleMode
     ? true
-    : wizAttachments.every((entry) => {
-        const expectedFilename = wizValidRows[0]?.[entry.key];
-        return expectedFilename && (wizUploadedAttachmentFiles?.includes(expectedFilename) ?? false);
-      });
+    : (wizChannel !== 'SEND' && wizChannel !== 'POSTAL'
+      ? true
+      : wizAttachments.every((entry) => {
+          const expectedFilename = wizValidRows[0]?.[entry.key];
+          return expectedFilename && (wizUploadedAttachmentFiles?.includes(expectedFilename) ?? false);
+        }));
 
   // Render Shell Layout for Authenticated Users
   return (
@@ -6357,11 +6359,9 @@ export function App(): React.JSX.Element {
               <div className="d-flex justify-content-between mb-4 text-center" style={{ fontSize: '0.82rem' }}>
                 {(wizSingleMode
                   ? [
-                      { n: 1, label: '1. Dettagli & Canale' },
-                      { n: 2, label: '2. Destinatario' },
-                      { n: 4, label: '3. Template & Anteprima' },
-                      { n: 5, label: '4. Upload Allegati' },
-                      { n: 6, label: '5. Anteprima e Invio' },
+                      { n: 1, label: '1. Dettagli & Destinatario' },
+                      { n: 4, label: '2. Template & Anteprima' },
+                      { n: 6, label: '3. Anteprima e Invio' },
                     ]
                   : [
                       { n: 1, label: '1. Dettagli & Canale' },
@@ -7842,7 +7842,7 @@ export function App(): React.JSX.Element {
               {wizStep === 4 && (
                 <>
                   <div className="mb-3 pb-3 border-bottom d-flex justify-content-between">
-                    <button className="btn btn-outline-secondary" onClick={() => setWizStep(wizSingleMode ? 2 : 3)}>
+                    <button className="btn btn-outline-secondary" onClick={() => setWizStep(wizSingleMode ? 1 : 3)}>
                       <ArrowLeft className="me-1" size={16} /> Indietro
                     </button>
                     <button
@@ -8040,7 +8040,7 @@ export function App(): React.JSX.Element {
                     )}
 
                     <div className="mt-4 pt-3 border-top d-flex justify-content-between">
-                      <button className="btn btn-outline-secondary" onClick={() => setWizStep(wizSingleMode ? 2 : 3)}>
+                      <button className="btn btn-outline-secondary" onClick={() => setWizStep(wizSingleMode ? 1 : 3)}>
                         <ArrowLeft className="me-1" size={16} /> Indietro
                       </button>
                       <button
