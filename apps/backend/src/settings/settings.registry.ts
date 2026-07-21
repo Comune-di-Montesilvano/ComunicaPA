@@ -57,6 +57,12 @@ export const SETTING_DEFS = {
   'send.senderTaxId': { type: 'string', default: '' },
   'send.entityType': { type: 'string', default: '' },
   'send.enabledTaxonomyCodes': { type: 'string', default: '[]' },
+  // Costo base "gestione piattaforma" per ogni notifica SEND digitale
+  // (~1€ nel contratto tipo, vedi gara nazionale PN) — fallback quando
+  // GET price/{paTaxId}/{noticeCode} non è disponibile (nessun notice
+  // pagoPA associato alla notifica, o chiamata fallita). Vedi
+  // docs/superpowers/specs/2026-07-21-costo-notifiche-design.md.
+  'send.digitalBaseFeeCents': { type: 'number', default: 0 },
 
   'pdnd.test.tokenUrl': { type: 'string', default: 'https://auth.uat.interop.pagopa.it/token.oauth2' },
   'pdnd.test.audience': { type: 'string', default: 'auth.uat.interop.pagopa.it/client-assertion' },
