@@ -5429,11 +5429,121 @@ export function App(): React.JSX.Element {
           {/* VIEW: DASHBOARD */}
           {view === 'dashboard' && (
             <div>
-              <div className="bo-home-welcome mb-4 p-4 rounded shadow-sm" style={{ background: 'linear-gradient(135deg, var(--ms-purple-900), var(--ms-purple-600))', color: '#fff' }}>
-                <h1 className="h4 text-white mb-2">Ciao, {username}! 👋</h1>
-                <p className="mb-0 text-white-50 small">
-                  Benvenuto nell'hub ComunicaPA del <strong>{settEntityName}</strong>. Qui puoi gestire gli invii e le impostazioni dei connettori.
-                </p>
+              <div className="card shadow-sm border-0 mb-4 overflow-hidden" style={{ background: 'linear-gradient(180deg, #F8FAFC 0%, #FFFFFF 100%)', border: '1px solid var(--ms-slate-200)' }}>
+                <div style={{ height: '4px', background: 'linear-gradient(90deg, #0066CC 0%, #003366 100%)' }} />
+                <div className="card-body p-4">
+                  <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-3">
+                    <div className="d-flex align-items-center gap-3">
+                      <div className="rounded-circle p-3 d-flex align-items-center justify-content-center" style={{ backgroundColor: 'rgba(0, 102, 204, 0.1)', color: 'var(--bi-primary)' }}>
+                        <Building2 size={28} />
+                      </div>
+                      <div>
+                        <div className="d-flex align-items-center gap-2 mb-1">
+                          <h1 className="h4 mb-0 fw-bold text-dark">Ciao, {username}! 👋</h1>
+                          <span className="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1 small d-inline-flex align-items-center gap-1">
+                            <span className="spinner-grow spinner-grow-sm text-success" style={{ width: '6px', height: '6px' }} /> Operativo
+                          </span>
+                        </div>
+                        <p className="mb-0 text-muted small">
+                          Hub Comunicazioni — <strong>{settEntityName}</strong>
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="d-flex align-items-center gap-2 flex-wrap">
+                      <button
+                        className="btn btn-primary d-inline-flex align-items-center gap-2 px-3 py-2 shadow-sm fw-semibold"
+                        onClick={() => setView('invio-massivo-wizard')}
+                      >
+                        <Plus size={18} />
+                        Nuova Campagna
+                      </button>
+                      <button
+                        className="btn btn-outline-secondary d-inline-flex align-items-center gap-2 px-3 py-2 fw-medium"
+                        onClick={() => setView('notifiche-ricerca')}
+                      >
+                        <Search size={18} />
+                        Cerca Notifiche
+                      </button>
+                    </div>
+                  </div>
+
+                  <hr className="my-3 text-muted opacity-25" />
+
+                  <div className="row g-3 pt-1">
+                    <div className="col-12 col-sm-6 col-lg-3">
+                      <div className="d-flex align-items-center gap-2 text-dark small fw-medium mb-1">
+                        <Server size={16} className="text-primary" />
+                        <span>Stato Connettori</span>
+                      </div>
+                      <div className="d-flex align-items-center justify-content-between">
+                        <span className="text-muted small">
+                          {engines.filter((e) => !e.paused).length} su {engines.length} motori attivi
+                        </span>
+                        <button
+                          className="btn btn-link btn-sm p-0 text-decoration-none small fw-semibold"
+                          onClick={() => {
+                            setView('impostazioni');
+                            setActiveSettingsTab('motori');
+                            fetchEngines();
+                          }}
+                        >
+                          Gestisci &rarr;
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="col-12 col-sm-6 col-lg-3">
+                      <div className="d-flex align-items-center gap-2 text-dark small fw-medium mb-1">
+                        <Megaphone size={16} className="text-primary" />
+                        <span>Attività Campagne</span>
+                      </div>
+                      <div className="d-flex align-items-center justify-content-between">
+                        <span className="text-muted small">
+                          {campaigns.filter((c) => !c.isTest).length} campagne totali
+                        </span>
+                        <span className="badge bg-light text-dark border">
+                          {dashboardStats ? `${dashboardStats.totals.totalSent.toLocaleString('it-IT')} invii (30gg)` : '…'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="col-12 col-sm-6 col-lg-3">
+                      <div className="d-flex align-items-center gap-2 text-dark small fw-medium mb-1">
+                        <ShieldCheck size={16} className="text-success" />
+                        <span>Affidabilità Consegna</span>
+                      </div>
+                      <div className="d-flex align-items-center justify-content-between">
+                        <span className="text-muted small">
+                          Tasso di successo:
+                        </span>
+                        <strong className="text-success small fw-bold">
+                          {dashboardStats && dashboardStats.totals.totalSent > 0
+                            ? `${(
+                                (1 - dashboardStats.totals.totalFailed / dashboardStats.totals.totalSent) *
+                                100
+                              ).toFixed(1)}%`
+                            : '100%'}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <div className="col-12 col-sm-6 col-lg-3">
+                      <div className="d-flex align-items-center gap-2 text-dark small fw-medium mb-1">
+                        <Download size={16} className="text-info" />
+                        <span>Download Digitale</span>
+                      </div>
+                      <div className="d-flex align-items-center justify-content-between">
+                        <span className="text-muted small" title="Solo per campagne digitali (App IO, PEC, Mail) negli ultimi 30 giorni">
+                          App IO, PEC, Mail (30gg)
+                        </span>
+                        <strong className="text-info small fw-bold">
+                          {dashboardStats ? `${dashboardStats.totals.downloadPercentage}%` : '…'}
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {(() => {
