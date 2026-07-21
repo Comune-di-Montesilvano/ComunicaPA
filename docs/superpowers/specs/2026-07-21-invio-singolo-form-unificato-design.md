@@ -43,15 +43,24 @@ resta sempre editabile — l'utente può sovrascriverlo in ogni momento.
   - precompila indirizzo fisico (via, comune, cap, provincia) da
     `anpr.residenza`/luogo di residenza, restano editabili (es. domicilio
     diverso da residenza)
-  - se `inad.found`: badge informativo verde vicino all'opzione PEC nel
-    select canale, con l'indirizzo trovato mostrato come hint
-  - se `appIo.active`: badge informativo verde vicino all'opzione APP_IO
-  - **nessuna preselezione automatica di canale** — l'utente sceglie sempre
-    esplicitamente nel select. Questi badge sono solo un aiuto visivo in
-    fase di scelta, non sostituiscono né anticipano l'enforcement backend
-    (vedi sezione successiva).
-  - Se l'utente non clicca il bottone (o CF non trovato in ANPR), il form
-    resta compilabile a mano com'è oggi — nessun blocco.
+  - **se `inad.found`: canale primario forzato a PEC.** A differenza del
+    percorso bulk (dove l'esito INAD si scopre solo a lancio avvenuto),
+    qui la verifica INAD è già sincrona nella stessa chiamata ANPR — quindi
+    la UI applica subito la stessa regola che il backend applicherebbe
+    comunque al lancio (CLAUDE.md "INAD — override canale per-recipient"),
+    evitando un giro a vuoto. Effetto pratico: select canale si blocca su
+    PEC (disabilitato, non editabile finché INAD resta `found` per questo
+    destinatario), campo PEC precompilato con l'indirizzo trovato (anch'esso
+    non editabile in questo stato). Se l'operatore aveva già scelto un altro
+    canale (es. POSTAL) prima di cliccare "Carica dati ANPR", lo switch a
+    PEC avviene automaticamente alla risposta, senza conferma. Riguarda solo
+    il canale primario — App IO come co-consegna resta scelta separata e
+    facoltativa (parallela/esclusiva), non toccata da questa forzatura.
+  - se `appIo.active`: badge informativo verde vicino all'opzione App IO
+    (co-consegna) — resta solo hint, nessuna forzatura.
+  - se `inad.found` è `false` (o l'operatore non clicca il bottone / CF non
+    trovato in ANPR): nessun blocco, select canale libero come oggi, form
+    compilabile a mano su qualunque canale.
 
 ### Enforcement INAD reale — invariato, non toccato da questo spec
 
@@ -71,6 +80,13 @@ la campagna prosegue senza divert, silenziosamente (comportamento
 pre-esistente, non modificato). Invio singolo eredita questo comportamento
 automaticamente perché passa dallo stesso `launch()` di ogni altra
 campagna — nessuna modifica di codice necessaria qui.
+
+Nota: se l'operatore ha usato "Carica dati ANPR" e la UI ha già forzato PEC
+(sezione precedente), l'enforcement backend a `launch()` ritrova lo stesso
+esito (nessun secondo divert, il destinatario è già su PEC) — resta comunque
+attivo come rete di sicurezza per il caso in cui l'operatore NON abbia
+cliccato ANPR: anche partendo da EMAIL/PEC/POSTAL scelto a mano, il check
+automatico di `launch()` può ancora forzare il divert a lancio avvenuto.
 
 ### Canale — campi destinatario richiesti in base alla scelta
 
