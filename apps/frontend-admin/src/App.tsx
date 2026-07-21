@@ -4179,7 +4179,10 @@ export function App(): React.JSX.Element {
       const g = data?.anpr?.generalita;
       if (data?.anpr?.success && data?.anpr?.found && g) {
         const nomeCompleto = [g.cognome, g.nome].filter(Boolean).join(' ');
-        if (nomeCompleto) setSingleName(nomeCompleto);
+        if (nomeCompleto) {
+          setSingleName(nomeCompleto);
+          setWizName(`Invio singolo a ${nomeCompleto}`);
+        }
       }
 
       const residenza = data?.anpr?.residenza?.[0];
@@ -6435,19 +6438,6 @@ export function App(): React.JSX.Element {
                     </button>
                   </div>
 
-                  <div className="mb-3">
-                    <label className="form-label small fw-bold">Nome Campagna</label>
-                    <input
-                      type="text"
-                      className="form-control form-control-sm"
-                      value={wizName}
-                      onChange={e => setWizName(e.target.value)}
-                    />
-                    <div className="form-text small text-muted">
-                      Precompilato da CF/Nome, modificabile in ogni momento.
-                    </div>
-                  </div>
-
                   <div className="row g-3 mb-3">
                     <div className="col-md-6">
                       <label className="form-label small fw-bold text-dark" htmlFor="s_cf">
@@ -6463,6 +6453,7 @@ export function App(): React.JSX.Element {
                           onChange={(e) => {
                             const v = e.target.value.toUpperCase();
                             setSingleCf(v);
+                            setWizName(singleName.trim() ? `Invio singolo a ${singleName.trim()}` : (v ? `Invio singolo a ${v}` : ''));
                             if (v !== singleAnprCheckedCf) {
                               setSingleInadForced(false);
                               setSingleInadAddress('');
@@ -6490,7 +6481,11 @@ export function App(): React.JSX.Element {
                         id="s_name"
                         className="form-control form-control-sm"
                         value={singleName}
-                        onChange={(e) => setSingleName(e.target.value)}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setSingleName(v);
+                          setWizName(v.trim() ? `Invio singolo a ${v.trim()}` : (singleCf ? `Invio singolo a ${singleCf}` : ''));
+                        }}
                       />
                     </div>
                   </div>
