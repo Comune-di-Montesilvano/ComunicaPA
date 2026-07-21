@@ -27,14 +27,23 @@ describe('DomicilioService.cercaDomicilio', () => {
   it('combina i tre esiti quando tutte e tre le fonti rispondono correttamente', async () => {
     mockInad.extractDigitalAddress.mockResolvedValue({ found: true, data: { codiceFiscale: 'CF1', since: '2020', digitalAddress: [] } });
     mockIoServices.verifyProfile.mockResolvedValue({ success: true, active: true, message: 'ok' });
-    mockAnpr.getResidenza.mockResolvedValue({ found: true, data: { generalita: { cognome: 'Rossi' }, residenza: [] } });
+    mockAnpr.getResidenza.mockResolvedValue({
+      found: true,
+      data: { generalita: { cognome: 'Rossi' }, residenza: [], infoSoggettoEnte: [{ chiave: 'ESISTENZA_IN_VITA', valore: 'S' }] },
+    });
 
     const result = await service.cercaDomicilio('CF1', 'mario.rossi');
 
     expect(result.codiceFiscale).toBe('CF1');
     expect(result.inad).toEqual({ success: true, found: true, digitalAddress: [] });
     expect(result.appIo).toEqual({ success: true, active: true, message: 'ok' });
-    expect(result.anpr).toEqual({ success: true, found: true, generalita: { cognome: 'Rossi' }, residenza: [] });
+    expect(result.anpr).toEqual({
+      success: true,
+      found: true,
+      generalita: { cognome: 'Rossi' },
+      residenza: [],
+      infoSoggettoEnte: [{ chiave: 'ESISTENZA_IN_VITA', valore: 'S' }],
+    });
     expect(mockAnpr.getResidenza).toHaveBeenCalledWith('CF1', 'mario.rossi');
   });
 

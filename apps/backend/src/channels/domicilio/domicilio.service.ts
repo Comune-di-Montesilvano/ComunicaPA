@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InadService, InadDigitalAddressElement } from '../inad/inad.service';
 import { IoServicesService } from '../../io-services/io-services.service';
 import { AnprService } from '../anpr/anpr.service';
-import type { AnprGeneralita, AnprResidenza } from '../anpr/anpr.types';
+import type { AnprGeneralita, AnprResidenza, AnprInfoSoggettoEnte } from '../anpr/anpr.types';
 
 export interface DomicilioInadResult {
   success: boolean;
@@ -20,8 +20,10 @@ export interface DomicilioAppIoResult {
 export interface DomicilioAnprResult {
   success: boolean;
   found: boolean;
+  idANPR?: string;
   generalita?: AnprGeneralita;
   residenza?: AnprResidenza[];
+  infoSoggettoEnte?: AnprInfoSoggettoEnte[];
   message?: string;
 }
 
@@ -65,7 +67,14 @@ export class DomicilioService {
           : { success: false, active: false, message: appIo.reason?.message ?? 'Errore sconosciuto' },
       anpr:
         anpr.status === 'fulfilled'
-          ? { success: true, found: anpr.value.found, generalita: anpr.value.data?.generalita, residenza: anpr.value.data?.residenza }
+          ? {
+              success: true,
+              found: anpr.value.found,
+              idANPR: anpr.value.data?.idANPR,
+              generalita: anpr.value.data?.generalita,
+              residenza: anpr.value.data?.residenza,
+              infoSoggettoEnte: anpr.value.data?.infoSoggettoEnte,
+            }
           : { success: false, found: false, message: anpr.reason?.message ?? 'Errore sconosciuto' },
     };
   }

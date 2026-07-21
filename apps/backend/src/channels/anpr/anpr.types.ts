@@ -31,10 +31,27 @@ export interface AnprResidenza {
 }
 
 export interface AnprGeneralita {
-  codiceFiscale?: { codFiscale?: string };
+  codiceFiscale?: { codFiscale?: string; validitaCF?: string };
   cognome?: string;
+  senzaCognome?: string;
   nome?: string;
+  senzaNome?: string;
+  sesso?: string;
   dataNascita?: string;
+  senzaGiorno?: string;
+  senzaGiornoMese?: string;
+  luogoNascita?: { comune?: AnprComune; localita?: { descrizioneLocalita?: string; descrizioneStato?: string } };
+  soggettoAIRE?: string;
+  annoEspatrio?: string;
+}
+
+/** Coppia chiave/valore generica usata da ANPR C002 per dati non modellati come campo dedicato (es. esistenza in vita, domicilio digitale). */
+export interface AnprInfoSoggettoEnte {
+  chiave?: string;
+  valore?: 'A' | 'N' | 'S';
+  valoreTesto?: string;
+  valoreData?: string;
+  dettaglio?: string;
 }
 
 export interface AnprResidenzaResult {
@@ -43,5 +60,6 @@ export interface AnprResidenzaResult {
     idANPR?: string;
     generalita: AnprGeneralita;
     residenza: AnprResidenza[];
+    infoSoggettoEnte: AnprInfoSoggettoEnte[];
   };
 }

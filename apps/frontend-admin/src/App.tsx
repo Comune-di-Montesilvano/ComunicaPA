@@ -57,7 +57,7 @@ const SETTINGS_NAV: Array<SettingsNavSection | SettingsNavItem> = [
   { tab: 'pdnd',             icon: Key,                    label: 'Client PDND' },
   { tab: 'send',             channelKey: 'SEND',           logoSrc: EMBEDDED_LOGOS.SEND,    label: _sm('SEND').label,     logoHeight: 12 },
   { tab: 'inad',             channelKey: 'INAD',           logoSrc: EMBEDDED_LOGOS.INAD,    label: _sm('INAD').label,     logoHeight: 16 },
-  { tab: 'anpr',             icon: MapPin,                 label: 'ANPR (residenza)' },
+  { tab: 'anpr',             icon: MapPin,                 label: 'ANPR (C002)' },
   { tab: 'inipec',           icon: Contact,                label: 'INIPEC' },
   { tab: 'protocollo',       channelKey: 'PROTOCOLLAZIONE', icon: _sm('PROTOCOLLAZIONE').icon, label: _sm('PROTOCOLLAZIONE').label },
   { tab: 'postalizzazione',  channelKey: 'POSTAL',          icon: _sm('POSTAL').icon,          label: _sm('POSTAL').label },
@@ -892,7 +892,20 @@ export function App(): React.JSX.Element {
     codiceFiscale: string;
     inad: { success: boolean; found: boolean; digitalAddress?: Array<{ digitalAddress: string; practicedProfession?: string }>; message?: string };
     appIo: { success: boolean; active: boolean; message: string };
-    anpr: { success: boolean; found: boolean; generalita?: { cognome?: string; nome?: string; dataNascita?: string }; residenza?: Array<{ dataDecorrenzaResidenza?: string; indirizzo?: { cap?: string; comune?: { nomeComune?: string }; toponimo?: { specie?: string; denominazioneToponimo?: string }; numeroCivico?: { numero?: string } } }>; message?: string };
+    anpr: {
+      success: boolean;
+      found: boolean;
+      generalita?: {
+        cognome?: string; nome?: string; sesso?: string; dataNascita?: string;
+        codiceFiscale?: { codFiscale?: string; validitaCF?: string };
+        luogoNascita?: { comune?: { nomeComune?: string; siglaProvinciaIstat?: string }; localita?: { descrizioneLocalita?: string; descrizioneStato?: string } };
+        soggettoAIRE?: string;
+      };
+      idANPR?: string;
+      residenza?: Array<{ dataDecorrenzaResidenza?: string; indirizzo?: { cap?: string; comune?: { nomeComune?: string }; toponimo?: { specie?: string; denominazioneToponimo?: string }; numeroCivico?: { numero?: string } } }>;
+      infoSoggettoEnte?: Array<{ chiave?: string; valore?: string; valoreTesto?: string; valoreData?: string; dettaglio?: string }>;
+      message?: string;
+    };
   } | null>(null);
   const [verificaInadBulkFile, setVerificaInadBulkFile] = useState<File | null>(null);
   const [verificaInadBulkHasHeaders, setVerificaInadBulkHasHeaders] = useState(true);
@@ -8898,7 +8911,7 @@ export function App(): React.JSX.Element {
               </h3>
               <p className="small text-muted mb-4">
                 Inserisci il codice fiscale di un cittadino per interrogare insieme INAD (domicilio digitale eletto),
-                App IO (stato di attivazione) e ANPR (residenza anagrafica) e vedere la scheda completa.
+                App IO (stato di attivazione) e ANPR (generalità, esistenza in vita, residenza anagrafica) e vedere la scheda completa.
               </p>
 
               <div className="card shadow-sm p-4 mb-4">
@@ -8982,18 +8995,47 @@ export function App(): React.JSX.Element {
                         {!domicilioResult.anpr.success ? <AlertCircle className="text-danger" size={16} /> :
                          !domicilioResult.anpr.found ? <XCircle className="text-secondary" size={16} /> :
                          <CheckCircle2 className="text-success" size={16} />}
-                        ANPR (residenza)
+                        ANPR
                       </h6>
                       {!domicilioResult.anpr.success && <p className="small text-danger mb-0">{domicilioResult.anpr.message}</p>}
-                      {domicilioResult.anpr.success && !domicilioResult.anpr.found && <p className="small text-muted mb-0">Nessuna residenza trovata in ANPR</p>}
-                      {domicilioResult.anpr.success && domicilioResult.anpr.found && domicilioResult.anpr.residenza?.[0] && (
-                        <p className="small mb-0">
-                          {domicilioResult.anpr.residenza[0].indirizzo?.toponimo?.specie} {domicilioResult.anpr.residenza[0].indirizzo?.toponimo?.denominazioneToponimo}
-                          {domicilioResult.anpr.residenza[0].indirizzo?.numeroCivico?.numero ? `, ${domicilioResult.anpr.residenza[0].indirizzo.numeroCivico.numero}` : ''}
-                          <br />
-                          {domicilioResult.anpr.residenza[0].indirizzo?.cap} {domicilioResult.anpr.residenza[0].indirizzo?.comune?.nomeComune}
-                        </p>
-                      )}
+                      {domicilioResult.anpr.success && !domicilioResult.anpr.found && <p className="small text-muted mb-0">Nessun dato trovato in ANPR</p>}
+                      {domicilioResult.anpr.success && domicilioResult.anpr.found && (() => {
+                        const g = domicilioResult.anpr.generalita;
+                        const vitaInfo = domicilioResult.anpr.infoSoggettoEnte?.find(i => (i.chiave ?? '').toLowerCase().includes('vita'));
+                        const altreInfo = (domicilioResult.anpr.infoSoggettoEnte ?? []).filter(i => i !== vitaInfo);
+                        const luogoNascita = g?.luogoNascita?.comune?.nomeComune ?? g?.luogoNascita?.localita?.descrizioneStato ?? g?.luogoNascita?.localita?.descrizioneLocalita;
+                        return (
+                          <>
+                            <p className="fw-bold mb-1">{g?.cognome} {g?.nome}</p>
+                            {vitaInfo && (
+                              <span className={`badge mb-2 ${vitaInfo.valore === 'S' ? 'bg-success' : vitaInfo.valore === 'N' ? 'bg-danger' : 'bg-secondary'}`}>
+                                {vitaInfo.valore === 'S' ? 'In vita' : vitaInfo.valore === 'N' ? 'Deceduto' : 'Non specificato'}
+                                {vitaInfo.valore === 'N' && vitaInfo.valoreData ? ` il ${vitaInfo.valoreData}` : ''}
+                              </span>
+                            )}
+                            <p className="small text-muted mb-1">
+                              CF: {g?.codiceFiscale?.codFiscale}{g?.codiceFiscale?.validitaCF === '1' ? ' (validato)' : ''}
+                              <br />
+                              Nato il {g?.dataNascita} a {luogoNascita} ({g?.sesso})
+                              {g?.soggettoAIRE === 'S' ? ' — iscritto AIRE' : ''}
+                            </p>
+                            {domicilioResult.anpr.idANPR && <p className="small text-muted mb-1">idANPR: {domicilioResult.anpr.idANPR}</p>}
+                            {domicilioResult.anpr.residenza?.[0] && (
+                              <p className="small mb-1">
+                                {domicilioResult.anpr.residenza[0].indirizzo?.toponimo?.specie} {domicilioResult.anpr.residenza[0].indirizzo?.toponimo?.denominazioneToponimo}
+                                {domicilioResult.anpr.residenza[0].indirizzo?.numeroCivico?.numero ? `, ${domicilioResult.anpr.residenza[0].indirizzo.numeroCivico.numero}` : ''}
+                                <br />
+                                {domicilioResult.anpr.residenza[0].indirizzo?.cap} {domicilioResult.anpr.residenza[0].indirizzo?.comune?.nomeComune}
+                              </p>
+                            )}
+                            {altreInfo.map((info, i) => (
+                              <p key={i} className="small text-muted mb-0">
+                                {info.chiave}: {info.valore ?? info.valoreTesto ?? info.valoreData}
+                              </p>
+                            ))}
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -9566,7 +9608,7 @@ export function App(): React.JSX.Element {
                         {activeSettingsTab === 'pdnd' && 'Client PDND (Piattaforma Digitale Nazionale Dati)'}
                         {activeSettingsTab === 'send' && 'Integrazione SEND (Digital Delivery)'}
                         {activeSettingsTab === 'inad' && 'Integrazione INAD (Indice Nazionale Domicili Digitali)'}
-                        {activeSettingsTab === 'anpr' && 'Integrazione ANPR (Servizio C020 - Accertamento Residenza)'}
+                        {activeSettingsTab === 'anpr' && 'Integrazione ANPR (Servizio C002 - Servizio di Comunicazione)'}
                         {activeSettingsTab === 'inipec' && 'Integrazione INIPEC'}
                         {activeSettingsTab === 'protocollo' && 'Connettore Protocollo Informatico'}
                         {activeSettingsTab === 'postalizzazione' && 'Postalizzazione Cartacea Istituzionale'}

@@ -358,22 +358,29 @@ e hanno già causato invii falliti in produzione (CF troncato, markdown vuoto
 per App IO). Per riprendere una bozza: bottone "Riprendi wizard"
 (`handleResumeDraft`), non un importer dedicato.
 
-## ANPR C020 — pattern di sicurezza reale (verificato con dati veri, funzionante)
+## ANPR C002 — pattern di sicurezza reale (verificato con dati veri, funzionante)
 
-Il servizio C020 "Accertamento residenza" (`AnprService`,
+Il servizio C002 "Servizio di comunicazione" (`AnprService`,
 `channels/anpr/anpr.service.ts`) usa **bearer voucher standard** (non
 DPoP — ipotesi provata dal vivo e scartata: cambiava l'esito del 400 ma
-per un motivo diverso, vedi sotto). La configurazione corretta, verificata
-byte-per-byte contro un client Java ufficiale allegato dal supporto ANPR
-(github.com/italia/anpr/issues/3964 — **non fidarsi di un riassunto, solo
-di esempi reali con token catturati**, un riassunto ha già portato su
-strade sbagliate — es. certificato X.509 mancante, poi DPoP — in questa
-stessa integrazione):
+per un motivo diverso, vedi sotto). Sostituisce C020 "Servizio di
+accertamento residenza" (stesso schema/pattern di sicurezza, path e
+`casoUso` diversi) perché C002 è un superset: oltre a generalità e
+residenza restituisce anche esistenza in vita ed eventuale domicilio
+digitale, tramite `infoSoggettoEnte` (coppie chiave/valore generiche —
+osservato dal vivo: `{chiave:"Verifica esistenza in vita", valore:"S"}`,
+nessun'altra chiave documentata nello yaml, se un domicilio digitale è
+presente compare come voce aggiuntiva nello stesso array). La
+configurazione corretta, verificata byte-per-byte contro un client Java
+ufficiale allegato dal supporto ANPR (github.com/italia/anpr/issues/3964
+— **non fidarsi di un riassunto, solo di esempi reali con token
+catturati**, un riassunto ha già portato su strade sbagliate — es.
+certificato X.509 mancante, poi DPoP — in questa stessa integrazione):
 
 1. **`aud` di `Agid-JWT-Signature`/`Agid-JWT-TrackingEvidence` è l'URL
    SENZA `-PDND` e SENZA il segmento operazione finale**
-   (`ANPR_C020_AUD` = `.../MinInternoPortaANPR/C020-servizioAccertamentoResidenza/v1`)
-   — diverso dall'URL di invocazione reale (`ANPR_C020_ENDPOINT`, CON
+   (`ANPR_C002_AUD` = `.../MinInternoPortaANPR/C002-servizioComunicazione/v1`)
+   — diverso dall'URL di invocazione reale (`ANPR_C002_ENDPOINT`, CON
    `-PDND` e CON `/anpr-service-e002` in coda). Un `aud` sbagliato (uno dei
    due dettagli scambiato) è la causa più comune di
    `InteroperabilityInvalidRequest` (HTTP 400) in tutto quel thread.
