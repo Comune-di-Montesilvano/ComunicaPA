@@ -70,7 +70,7 @@ describe('PostalStatusSyncService', () => {
   it('aggiorna postalStatus e appende a postalStatusHistory quando lo stato è cambiato', async () => {
     const attempt = { id: 'a1', postalTrackingId: 'IDPRO1', postalStatus: 'Accettato', postalStatusUpdatedAt: null, postalStatusHistory: [{ stato: 'Accettato', rilevatoIl: '2026-01-10T10:00:00.000Z' }] };
     attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
-    globalCom.dettagliDocumento.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Consegnato' });
+    globalCom.dettagliDocumento.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Consegnato' } as any);
 
     await service.handleCron();
 
@@ -91,7 +91,7 @@ describe('PostalStatusSyncService', () => {
   it('non duplica un elemento in postalStatusHistory se lo stato non è cambiato', async () => {
     const attempt = { id: 'a1', postalTrackingId: 'IDPRO1', postalStatus: 'Inviato', postalStatusUpdatedAt: null, postalStatusHistory: [{ stato: 'Inviato', rilevatoIl: '2026-01-10T10:00:00.000Z' }] };
     attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
-    globalCom.dettagliDocumento.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Inviato' });
+    globalCom.dettagliDocumento.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Inviato' } as any);
 
     await service.handleCron();
 
@@ -102,7 +102,7 @@ describe('PostalStatusSyncService', () => {
   it('gestisce postalStatusHistory assente (null) su un attempt esistente senza storico pregresso', async () => {
     const attempt = { id: 'a1', postalTrackingId: 'IDPRO1', postalStatus: 'Inviato', postalStatusUpdatedAt: null, postalStatusHistory: null };
     attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
-    globalCom.dettagliDocumento.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Consegnato' });
+    globalCom.dettagliDocumento.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Consegnato' } as any);
 
     await service.handleCron();
 
@@ -115,7 +115,7 @@ describe('PostalStatusSyncService', () => {
   it('non salva se lo stato non è cambiato', async () => {
     const attempt = { id: 'a1', postalTrackingId: 'IDPRO1', postalStatus: 'Inviato', postalStatusUpdatedAt: null };
     attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
-    globalCom.dettagliDocumento.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Inviato' });
+    globalCom.dettagliDocumento.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Inviato' } as any);
 
     await service.handleCron();
 
@@ -128,11 +128,66 @@ describe('PostalStatusSyncService', () => {
     attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt1, attempt2]));
     globalCom.dettagliDocumento
       .mockRejectedValueOnce(new Error('timeout SOAP'))
-      .mockResolvedValueOnce({ idPro: 'IDPRO2', stato: 'Consegnato' });
+      .mockResolvedValueOnce({ idPro: 'IDPRO2', stato: 'Consegnato' } as any);
 
     await service.handleCron();
 
     expect(attemptRepo.save).toHaveBeenCalledTimes(1);
     expect(attemptRepo.save).toHaveBeenCalledWith(expect.objectContaining({ id: 'a2', postalStatus: 'Consegnato' }));
+  });
+
+  it('salva cost_cents e cost_breakdown quando dettagliDocumento ritorna Costo', async () => {
+    const attempt = { id: 'a1', postalTrackingId: 'IDPRO1', postalStatus: 'Confermato', postalStatusUpdatedAt: null, postalStatusHistory: null, costCents: null };
+    attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
+    globalCom.dettagliDocumento.mockResolvedValue({
+      idPro: 'IDPRO1',
+      stato: 'Confermato',
+      costoNetto: 4.31,
+      numeroPagine: 2,
+      nazionale: true,
+      importoPostaleNetto: 4.03,
+      importoStampaNetto: 0.28,
+      importoARNetto: 0,
+      tipoDocumento: 'RaccomandataMarket4',
+      codiceContratto: '40009679559',
+    });
+
+    await service.handleCron();
+
+    expect(attemptRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'a1',
+      costCents: 431,
+      costCalculatedAt: expect.any(Date),
+      costBreakdown: {
+        costoNetto: 4.31,
+        numeroPagine: 2,
+        nazionale: true,
+        importoPostaleNetto: 4.03,
+        importoStampaNetto: 0.28,
+        importoARNetto: 0,
+        tipoDocumento: 'RaccomandataMarket4',
+        codiceContratto: '40009679559',
+      },
+    }));
+  });
+
+  it('include nella query gli attempt già terminali ma senza costo ancora calcolato', async () => {
+    const qb = makeQueryBuilder([]);
+    attemptRepo.createQueryBuilder.mockReturnValue(qb);
+
+    await service.handleCron();
+
+    const includesCostNull = qb.andWhere.mock.calls.some(([sql]: [string]) => /cost_cents/i.test(sql));
+    expect(includesCostNull).toBe(true);
+  });
+
+  it('non ricalcola il costo se cost_cents è già valorizzato e lo stato non cambia', async () => {
+    const attempt = { id: 'a1', postalTrackingId: 'IDPRO1', postalStatus: 'Confermato', postalStatusUpdatedAt: null, costCents: 431 };
+    attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
+    globalCom.dettagliDocumento.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Confermato', costoNetto: 4.31 } as any);
+
+    await service.handleCron();
+
+    expect(attemptRepo.save).not.toHaveBeenCalled();
   });
 });

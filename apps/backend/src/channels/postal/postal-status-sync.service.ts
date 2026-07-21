@@ -17,6 +17,11 @@ const TERMINAL_STATUSES = ['Consegnato', 'NonConsegnato', 'ConsegnaParziale', 'E
  * è già deciso a livello di submission dal NotificationProcessor BullMQ
  * standard (PostalStrategy resta su BullMQ, a differenza di SEND). Qui si
  * aggiorna solo lo stato di consegna downstream, puramente informativo.
+ *
+ * Legge anche il costo reale (Valori.Costo) dalla stessa risposta
+ * dettagli_documento — un attempt resta candidato al poll anche a stato
+ * terminale finché cost_cents non è stato calcolato almeno una volta (vedi
+ * docs/superpowers/specs/2026-07-21-costo-notifiche-design.md).
  */
 @Injectable()
 export class PostalStatusSyncService {
@@ -36,7 +41,7 @@ export class PostalStatusSyncService {
       .where('attempt.channel_type = :ch', { ch: 'POSTAL' })
       .andWhere('attempt.status = :status', { status: AttemptStatus.SUCCESS })
       .andWhere('attempt.postal_tracking_id IS NOT NULL')
-      .andWhere('(attempt.postal_status IS NULL OR attempt.postal_status NOT IN (:...terminal))', { terminal: TERMINAL_STATUSES })
+      .andWhere('((attempt.postal_status IS NULL OR attempt.postal_status NOT IN (:...terminal)) OR attempt.cost_cents IS NULL)', { terminal: TERMINAL_STATUSES })
       .orderBy('attempt.created_at', 'ASC')
       .take(BATCH_SIZE)
       .getMany();
@@ -50,15 +55,34 @@ export class PostalStatusSyncService {
     for (const attempt of attempts) {
       try {
         const stato = await this.globalCom.dettagliDocumento(creds, attempt.postalTrackingId!);
-        if (stato && stato.stato !== attempt.postalStatus) {
+        if (!stato) continue;
+
+        let changed = false;
+        if (stato.stato !== attempt.postalStatus) {
           attempt.postalStatus = stato.stato;
           attempt.postalStatusUpdatedAt = new Date();
           attempt.postalStatusHistory = [
             ...(attempt.postalStatusHistory ?? []),
             { stato: stato.stato, rilevatoIl: new Date().toISOString() },
           ];
-          await this.attemptRepo.save(attempt);
+          changed = true;
         }
+        if (attempt.costCents === null && stato.costoNetto !== null && stato.costoNetto !== undefined) {
+          attempt.costCents = Math.round(stato.costoNetto * 100);
+          attempt.costCalculatedAt = new Date();
+          attempt.costBreakdown = {
+            costoNetto: stato.costoNetto,
+            numeroPagine: stato.numeroPagine ?? null,
+            nazionale: stato.nazionale ?? null,
+            importoPostaleNetto: stato.importoPostaleNetto ?? null,
+            importoStampaNetto: stato.importoStampaNetto ?? null,
+            importoARNetto: stato.importoARNetto ?? null,
+            tipoDocumento: stato.tipoDocumento ?? null,
+            codiceContratto: stato.codiceContratto ?? null,
+          };
+          changed = true;
+        }
+        if (changed) await this.attemptRepo.save(attempt);
       } catch (err: any) {
         this.logger.warn(`Errore aggiornamento stato POSTAL per attempt ${attempt.id} (IDPRO=${attempt.postalTrackingId}): ${err.message}`);
       }
