@@ -12,21 +12,29 @@ residenza"**, esposto su PDND dal Ministero dell'Interno — che restituisce la
 residenza anagrafica reale (indirizzo completo) di un cittadino dato il
 codice fiscale.
 
-Contestualmente, centralizziamo le tre interrogazioni in un'unica funzione
-"**Cerca Domicilio**": una pagina che, dato un CF, interroga in parallelo
-INAD + App IO + ANPR e mostra una scheda completa del cittadino (domicilio
-digitale eletto, stato App IO, residenza anagrafica). Le vecchie pagine
-"Verifica INAD" e "Verifica App IO" perdono la tab "Verifica singola"
-(sostituita da questa pagina) ma mantengono la tab "Verifica massiva CSV"
-per-canale, che resta invariata: la nuova pagina "Cerca Domicilio" aggiunge
-la propria verifica massiva combinata, non tocca quelle esistenti.
+Centralizziamo le tre interrogazioni in un'unica funzione "**Cerca
+Domicilio**": una pagina che, dato un CF, interroga sempre insieme tutti i
+canali abilitati su quell'istanza (INAD + App IO + ANPR) e mostra una
+scheda completa del cittadino (domicilio digitale eletto, stato App IO,
+residenza anagrafica strutturata).
+
+**Questo documento copre SOLO la verifica puntuale (singolo CF).** La
+verifica massiva unificata è un'estensione più complessa (job ibrido
+BullMQ+cron, merge di più fonti asincrone) e la forma esatta della risposta
+ANPR reale non è ancora stata osservata con dati veri — il design dettagliato
+è quindi scritto a parte, come spec separata, e non pianificato/implementato
+in questa fase: `2026-07-21-cerca-domicilio-massiva-design.md`.
+
+Conseguenza per questa fase: le pagine standalone "Verifica INAD" e
+"Verifica App IO" perdono **solo** la tab "Verifica singola" (sostituita
+dalla nuova pagina unificata) — la tab "Verifica massiva CSV" di entrambe
+resta **invariata** per ora, verrà rimossa solo quando la massiva unificata
+(spec separata) sarà implementata e prenderà il suo posto.
 
 **Fuori scope per questa fase** (esplicitamente deferito):
+- Verifica massiva unificata (spec separata, non pianificata ora).
 - Invio massivo/singolo di comunicazioni usando i dati di residenza trovati
   su ANPR (fase successiva, da disegnare separatamente).
-- Un'API bulk nativa per ANPR C020 (non esiste — C020 è solo interrogazione
-  puntuale per CF; la "massiva" qui è un loop per-riga, non una vera bulk API
-  come INAD `/listDigitalAddress`).
 - Persistenza dei risultati di "Cerca Domicilio" — è una query live ogni
   volta, nessuna tabella storica (come INAD singola oggi).
 
@@ -147,90 +155,23 @@ mai eccezione non-2xx per un errore "previsto", vedi CLAUDE.md). Risposta:
 }
 ```
 
-Gli endpoint esistenti (`inad-verify/verify-single`,
-`io-services/verify-profile`) restano — non li tocchiamo lato backend,
-servono ancora ai rispettivi flussi di verifica massiva. Cambia solo cosa
-chiama il frontend per la ricerca singola.
+Endpoint esistenti `inad-verify/verify-single` e `io-services/verify-profile`:
+restano per ora (non ancora rimossi — la loro rimozione è legata alla
+massiva unificata, spec separata). Il frontend smette semplicemente di
+chiamarli per la ricerca singola, usando solo il nuovo endpoint unificato.
 
-### F. Frontend — pagina unificata
+### F. Frontend — pagina unificata (solo singola)
 
-Nuova voce menu **"Cerca Domicilio"**, view `'cerca-domicilio'`, due tab
-(stesso layout di "Verifica INAD" oggi: `nav nav-tabs`):
+Nuova voce menu **"Cerca Domicilio"**, view `'cerca-domicilio'`: campo CF +
+bottone "Cerca" → `POST admin/domicilio/cerca` → 3 card di esito (INAD /
+App IO / ANPR), stesso stile border success/secondary/danger di
+`verifica-inad` esistente. Nessuna tab (una sola modalità per ora).
 
-- **Verifica singola**: campo CF + bottone "Cerca" → `POST
-  admin/domicilio/cerca` → 3 card di esito (INAD / App IO / ANPR), stesso
-  stile border success/secondary/danger di `verifica-inad` esistente.
-- **Verifica massiva CSV**: vedi sezione G.
-
-Le pagine `view==='verifica-inad'` e `view==='verifica-appio'` perdono la
-tab "Verifica singola" (resta solo "Verifica massiva CSV" — se resta un
-solo tab, si rimuove anche la tab-nav, mostrando il contenuto direttamente).
-Lo state legato alla verifica singola INAD (`verificaInadCf`,
-`verificaInadResult`, `runVerificaInad`) viene rimosso da lì e ricreato
-pulito, con nomi propri, nella nuova pagina — nessuna duplicazione tra le
-due.
-
-### G. Verifica massiva "Cerca Domicilio"
-
-**Vincolo che guida il design**: INAD `/extract` (singola per-CF) ha una
-quota giornaliera condivisa con il resto del sistema (1000-2000
-richieste/die, non documentata nello spec ma nota da verifica diretta —
-vedi CLAUDE.md sezione INAD). Chiamarla in loop per-riga su un CSV grande
-la esaurirebbe rapidamente. Va quindi riusata l'API bulk nativa INAD
-(`/listDigitalAddress`, batch 1000, come fa già `InadVerifyBulkService`),
-mentre App IO e ANPR (chiamate sync per-CF senza quota nota) vanno in loop
-BullMQ per-riga come già fa `AppIoVerifyBulkProcessor`. Il job risultante è
-quindi ibrido: due sotto-processi che convergono in un risultato finale.
-
-Nuova entity `DomicilioVerificationJob`:
-
-```ts
-status: QUEUED | PROCESSING | DONE | FAILED
-totalRows: number
-processedRows: number          // avanzamento ramo App IO + ANPR
-inadBatches: InadVerificationBatch[]   // riuso tipo esistente da inad-verification-job.entity.ts
-inadDone: boolean
-inadAddresses: Record<string, string>  // cf -> indirizzi digitali INAD, jsonb
-appioAnprDone: boolean
-partialResults: Record<string, { appIoAttivo: string; anprIndirizzo: string }>  // jsonb
-sourceCsv: string
-csvHeaders: string[]
-cfColumn: string
-resultCsv: string | null      // CSV unico, non split found/notfound
-errorMessage: string | null
-completedAt: Date | null
-```
-
-Flusso:
-
-1. `DomicilioVerifyBulkService.createJob` — parse CSV, CF univoci validi
-   (16 caratteri), submit batch INAD nativo (`inadService.startBulkExtraction`,
-   fino a 1000 CF a chiamata) → salva `inadBatches`, poi accoda un job
-   BullMQ per il ramo App IO + ANPR.
-2. `DomicilioVerifyBulkProcessor` (BullMQ, concurrency 5, pattern identico
-   ad `AppIoVerifyBulkProcessor`) — per ogni riga: `verifyProfile(cf)` +
-   `anprService.getResidenza(cf, operatorUsername)` in parallelo, esito
-   scritto in `partialResults[cf]`. A fine loop: `appioAnprDone = true`,
-   poi chiama `tryComplete(jobId)`.
-3. `DomicilioVerifyBulkSyncService` (Cron `*/5 * * * *`, pattern identico a
-   `InadVerifyBulkSyncService`) — poll dei batch INAD; quando tutti
-   `DISPONIBILE`: fetch risultati in `inadAddresses`, `inadDone = true`,
-   chiama `tryComplete(jobId)`.
-4. `tryComplete(jobId)` — metodo condiviso (in `DomicilioVerifyBulkService`,
-   chiamato sia dal processor sia dal cron): se `inadDone && appioAnprDone`,
-   fa il merge — CSV con colonne originali + 3 colonne aggiuntive:
-   - `domicilio_digitale_inad` (indirizzi digitali o vuoto)
-   - `app_io_attivo` (`si` / `no` / `errore: <msg>`)
-   - `anpr_indirizzo_residenza` (indirizzo formattato o `non trovato` /
-     `errore: <msg>`)
-
-   e marca `status = DONE`. Se una delle due condizioni non è ancora vera,
-   non fa nulla (l'altro ramo, quando finisce, richiamerà `tryComplete`).
-
-UI: dentro "Cerca Domicilio" → tab "Verifica massiva CSV", stesso layout
-upload/poll/download della tab INAD massiva odierna, un solo bottone
-"Scarica CSV risultato" (nessuno split trovati/non trovati: ogni riga ha
-sempre le 3 colonne di esito, qualunque sia il risultato).
+Nelle view esistenti `view==='verifica-inad'` e `view==='verifica-appio'`
+si rimuove **solo** la tab "Verifica singola" (e lo state dedicato:
+`verificaInadCf`, `verificaInadResult`, `runVerificaInad`, equivalenti App
+IO) — la tab "Verifica massiva CSV" di entrambe resta intatta, invariata,
+finché non sarà sostituita dalla massiva unificata (spec separata).
 
 ## Testing
 
@@ -242,8 +183,6 @@ sempre le 3 colonne di esito, qualunque sia il risultato).
 - Unit test `DomicilioService.cercaDomicilio`: un fallimento di una delle
   tre fonti (mock `Promise.allSettled` con un rejected) non deve impedire
   la risposta delle altre due.
-- Unit test `DomicilioVerifyBulkService.tryComplete`: merge scatta solo a
-  entrambi i flag true, non prima; CSV risultato ha le 3 colonne attese.
 - Nessun test E2E contro ANPR reale (richiede credenziali PDND vere,
   fuori dalla suite CI) — verifica manuale in collaudo prima del rilascio,
   stesso approccio già usato per SEND.
