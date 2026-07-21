@@ -45,6 +45,15 @@ function channelLabel(channel: string): string {
   return CHANNEL_META[normKey]?.label ?? channel;
 }
 
+const ENGINE_LABELS: Record<string, string> = {
+  EMAIL: 'Mail (SMTP)',
+  PEC: 'PEC',
+  APP_IO: 'App IO',
+  SEND: 'SEND',
+  POSTAL: 'Postale',
+  PROTOCOLLAZIONE: 'Protocollazione',
+};
+
 function ChannelBadge({ channel, extra }: { channel: string; extra?: string | null }): React.JSX.Element {
   const normKey = (channel || '').toUpperCase();
   const meta = CHANNEL_META[normKey] ?? { label: channel, icon: Send, badge: 'bg-primary text-white' };
@@ -5441,10 +5450,6 @@ export function App(): React.JSX.Element {
                 const hasAlerts = failingCampaigns.length > 0 || pausedEngines.length > 0 || failingEngines.length > 0;
                 if (!hasAlerts) return null;
 
-                const engineLabel: Record<string, string> = {
-                  EMAIL: 'Mail (SMTP)', PEC: 'PEC', APP_IO: 'App IO', SEND: 'SEND', POSTAL: 'Postale', PROTOCOLLAZIONE: 'Protocollazione',
-                };
-
                 return (
                   <div className="card shadow-sm mb-4 border-warning">
                     <div className="card-header bg-white py-3 border-bottom d-flex align-items-center gap-2">
@@ -5461,13 +5466,13 @@ export function App(): React.JSX.Element {
                         ))}
                         {pausedEngines.map((e) => (
                           <li key={`paused-${e.channel}`} className="list-group-item d-flex justify-content-between align-items-center" style={{ cursor: 'pointer' }} onClick={() => { setView('impostazioni'); setActiveSettingsTab('motori'); fetchEngines(); }}>
-                            <span>Motore <strong>{engineLabel[e.channel] ?? e.channel}</strong> in pausa</span>
+                            <span>Motore <strong>{ENGINE_LABELS[e.channel] ?? e.channel}</strong> in pausa</span>
                             <ArrowRight size={16} className="text-muted" />
                           </li>
                         ))}
                         {failingEngines.map((e) => (
                           <li key={`failed-${e.channel}`} className="list-group-item d-flex justify-content-between align-items-center" style={{ cursor: 'pointer' }} onClick={() => { setView('impostazioni'); setActiveSettingsTab('motori'); fetchEngines(); }}>
-                            <span>Motore <strong>{engineLabel[e.channel] ?? e.channel}</strong> — {e.counts?.failed} job falliti</span>
+                            <span>Motore <strong>{ENGINE_LABELS[e.channel] ?? e.channel}</strong> — {e.counts?.failed} job falliti</span>
                             <ArrowRight size={16} className="text-muted" />
                           </li>
                         ))}
@@ -5605,13 +5610,10 @@ export function App(): React.JSX.Element {
                         <div className="text-center py-3 text-muted small">Caricamento...</div>
                       ) : (
                         engines.map((eng) => {
-                          const engineLabel: Record<string, string> = {
-                            EMAIL: 'Mail (SMTP)', PEC: 'PEC', APP_IO: 'App IO', SEND: 'SEND', POSTAL: 'Postale', PROTOCOLLAZIONE: 'Protocollazione',
-                          };
                           const failed = eng.counts?.failed ?? 0;
                           return (
                             <div key={eng.channel} className="d-flex align-items-center justify-content-between mb-2 pb-2 border-bottom">
-                              <span className="small fw-bold">{engineLabel[eng.channel] ?? eng.channel}</span>
+                              <span className="small fw-bold">{ENGINE_LABELS[eng.channel] ?? eng.channel}</span>
                               {eng.paused ? (
                                 <span className="badge bg-warning text-dark">IN PAUSA</span>
                               ) : failed > 0 ? (
@@ -10206,14 +10208,6 @@ export function App(): React.JSX.Element {
                           ) : (
                             <div className="d-flex flex-column gap-3">
                               {engines.map((eng) => {
-                                const channelLabel: Record<string, string> = {
-                                  EMAIL: 'Mail (SMTP)',
-                                  PEC: 'PEC',
-                                  APP_IO: 'App IO',
-                                  SEND: 'SEND',
-                                  POSTAL: 'Postale',
-                                  PROTOCOLLAZIONE: 'Protocollazione',
-                                };
                                 const channelIcon: Record<string, React.ComponentType<{ className?: string; size?: number }>> = {
                                   EMAIL: Mail,
                                   PEC: MailOpen,
@@ -10235,7 +10229,7 @@ export function App(): React.JSX.Element {
                                             {(() => { const Icon = channelIcon[eng.channel] ?? Settings; return <Icon />; })()}
                                           </div>
                                           <div>
-                                            <div className="fw-bold text-dark">{channelLabel[eng.channel] ?? eng.channel}</div>
+                                            <div className="fw-bold text-dark">{ENGINE_LABELS[eng.channel] ?? eng.channel}</div>
                                             <div className="text-muted small">{eng.queueName}</div>
                                           </div>
                                         </div>
