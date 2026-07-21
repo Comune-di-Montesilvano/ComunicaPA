@@ -1126,6 +1126,8 @@ export function App(): React.JSX.Element {
   // Form destinatario per invio singolo (step 2 fuso del wizard, wizSingleMode)
   const [singleCf, setSingleCf] = useState('');
   const [singleName, setSingleName] = useState('');
+  const [singleSurname, setSingleSurname] = useState('');
+  const [singleFirstName, setSingleFirstName] = useState('');
   const [singleEmail, setSingleEmail] = useState('');
   const [singlePec, setSinglePec] = useState('');
   const [singleAddress, setSingleAddress] = useState('');
@@ -4178,11 +4180,10 @@ export function App(): React.JSX.Element {
 
       const g = data?.anpr?.generalita;
       if (data?.anpr?.success && data?.anpr?.found && g) {
+        if (g.cognome) setSingleSurname(g.cognome);
+        if (g.nome) setSingleFirstName(g.nome);
         const nomeCompleto = [g.cognome, g.nome].filter(Boolean).join(' ');
-        if (nomeCompleto) {
-          setSingleName(nomeCompleto);
-          setWizName(`Invio singolo a ${nomeCompleto}`);
-        }
+        if (nomeCompleto) setWizName(`Invio singolo a ${nomeCompleto}`);
       }
 
       const residenza = data?.anpr?.residenza?.[0];
@@ -4220,13 +4221,14 @@ export function App(): React.JSX.Element {
       alert('Codice Fiscale/P.IVA non valido: 16 caratteri alfanumerici o 11 cifre.');
       return;
     }
-    if (!singleName.trim()) {
-      alert('Nome/Cognome (o Ragione Sociale) obbligatorio.');
+    if (!singleSurname.trim()) {
+      alert('Cognome/Ragione Sociale obbligatorio.');
       return;
     }
 
+    const fullName = [singleSurname.trim(), singleFirstName.trim()].filter(Boolean).join(' ');
     const cols: string[] = ['codice_fiscale', 'full_name', 'email', 'pec'];
-    const vals: string[] = [singleCf.toUpperCase(), singleName, singleEmail, singlePec];
+    const vals: string[] = [singleCf.toUpperCase(), fullName, singleEmail, singlePec];
 
     if (needsWizSinglePhysicalAddress) {
       cols.push('sd_indirizzo', 'sd_comune', 'sd_cap', 'sd_provincia');
@@ -4272,7 +4274,7 @@ export function App(): React.JSX.Element {
 
   const wizSingleSubmitDisabled =
     !singleCf.trim() ||
-    !singleName.trim() ||
+    !singleSurname.trim() ||
     (wizChannel === 'EMAIL' && !singleEmail.trim()) ||
     (wizChannel === 'PEC' && !singlePec.trim()) ||
     (needsWizSinglePhysicalAddress && (!singleAddress.trim() || !singleMunicipality.trim() || !singleZip.trim() || !singleProvince.trim())) ||
@@ -6453,7 +6455,8 @@ export function App(): React.JSX.Element {
                           onChange={(e) => {
                             const v = e.target.value.toUpperCase();
                             setSingleCf(v);
-                            setWizName(singleName.trim() ? `Invio singolo a ${singleName.trim()}` : (v ? `Invio singolo a ${v}` : ''));
+                            const fullName = [singleSurname.trim(), singleFirstName.trim()].filter(Boolean).join(' ');
+                            setWizName(fullName ? `Invio singolo a ${fullName}` : (v ? `Invio singolo a ${v}` : ''));
                             if (v !== singleAnprCheckedCf) {
                               setSingleInadForced(false);
                               setSingleInadAddress('');
@@ -6472,19 +6475,37 @@ export function App(): React.JSX.Element {
                         </button>
                       </div>
                     </div>
-                    <div className="col-md-6">
-                      <label className="form-label small fw-bold" htmlFor="s_name">
-                        Nome/Cognome (o Ragione Sociale) <span className="text-danger">*</span>
+                    <div className="col-md-3">
+                      <label className="form-label small fw-bold" htmlFor="s_surname">
+                        Cognome / Ragione Sociale <span className="text-danger">*</span>
                       </label>
                       <input
                         type="text"
-                        id="s_name"
+                        id="s_surname"
                         className="form-control form-control-sm"
-                        value={singleName}
+                        value={singleSurname}
                         onChange={(e) => {
                           const v = e.target.value;
-                          setSingleName(v);
-                          setWizName(v.trim() ? `Invio singolo a ${v.trim()}` : (singleCf ? `Invio singolo a ${singleCf}` : ''));
+                          setSingleSurname(v);
+                          const fullName = [v.trim(), singleFirstName.trim()].filter(Boolean).join(' ');
+                          setWizName(fullName ? `Invio singolo a ${fullName}` : (singleCf ? `Invio singolo a ${singleCf}` : ''));
+                        }}
+                      />
+                    </div>
+                    <div className="col-md-3">
+                      <label className="form-label small fw-semibold text-muted" htmlFor="s_firstname">
+                        Nome
+                      </label>
+                      <input
+                        type="text"
+                        id="s_firstname"
+                        className="form-control form-control-sm"
+                        value={singleFirstName}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setSingleFirstName(v);
+                          const fullName = [singleSurname.trim(), v.trim()].filter(Boolean).join(' ');
+                          setWizName(fullName ? `Invio singolo a ${fullName}` : (singleCf ? `Invio singolo a ${singleCf}` : ''));
                         }}
                       />
                     </div>
