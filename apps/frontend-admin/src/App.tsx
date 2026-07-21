@@ -809,7 +809,7 @@ export function App(): React.JSX.Element {
   const [token, setToken] = useState<string | null>(localStorage.getItem('comunicapa_token'));
   const [username, setUsername] = useState<string | null>(localStorage.getItem('comunicapa_username'));
   const [role, setRole] = useState<string | null>(localStorage.getItem('comunicapa_role'));
-  const [view, setView] = useState<'dashboard' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'notifiche-ricerca' | 'verifica-appio' | 'template-dashboard' | 'impostazioni' | 'campaign-detail' | 'audit-logs' | 'arricchimento'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'notifiche-ricerca' | 'verifica-appio' | 'verifica-inad' | 'template-dashboard' | 'impostazioni' | 'campaign-detail' | 'audit-logs' | 'arricchimento'>('dashboard');
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [templates, setTemplates] = useState<TemplateItem[]>([]);
   const [editingTemplate, setEditingTemplate] = useState<Partial<TemplateItem> & { type: 'MAIL' | 'APP_IO' } | null>(null);
@@ -887,6 +887,28 @@ export function App(): React.JSX.Element {
   } | null>(null);
   const [verificaBulkSubmitting, setVerificaBulkSubmitting] = useState(false);
   const [verificaBulkSubmitError, setVerificaBulkSubmitError] = useState<string | null>(null);
+
+  // ── Verifica INAD (duplicato di Verifica App IO, ma su domicilio digitale INAD) ──
+  const [verificaInadCf, setVerificaInadCf] = useState('');
+  const [verificaInadLoading, setVerificaInadLoading] = useState(false);
+  const [verificaInadResult, setVerificaInadResult] = useState<{ success: boolean; found: boolean; message: string } | null>(null);
+  const [verificaInadTab, setVerificaInadTab] = useState<'singola' | 'massiva'>('singola');
+  const [verificaInadBulkFile, setVerificaInadBulkFile] = useState<File | null>(null);
+  const [verificaInadBulkHasHeaders, setVerificaInadBulkHasHeaders] = useState(true);
+  const [verificaInadBulkHeaders, setVerificaInadBulkHeaders] = useState<string[]>([]);
+  const [verificaInadBulkCfColumn, setVerificaInadBulkCfColumn] = useState('');
+  const [verificaInadBulkJobId, setVerificaInadBulkJobId] = useState<string | null>(null);
+  const [verificaInadBulkStatus, setVerificaInadBulkStatus] = useState<{
+    status: 'queued' | 'processing' | 'done' | 'failed';
+    totalRows: number;
+    batchesTotal: number;
+    batchesDone: number;
+    foundCount: number;
+    notFoundCount: number;
+    errorMessage: string | null;
+  } | null>(null);
+  const [verificaInadBulkSubmitting, setVerificaInadBulkSubmitting] = useState(false);
+  const [verificaInadBulkSubmitError, setVerificaInadBulkSubmitError] = useState<string | null>(null);
 
   // ── Arricchimento tracciati ──
   interface EnrichmentJobItem {
@@ -1935,6 +1957,137 @@ export function App(): React.JSX.Element {
     setVerificaBulkJobId(null);
     setVerificaBulkStatus(null);
     setVerificaBulkSubmitError(null);
+  };
+
+  const runVerificaInad = async () => {
+    if (!verificaInadCf.trim()) return;
+    setVerificaInadLoading(true);
+    setVerificaInadResult(null);
+    try {
+      const res = await apiFetch('/inad-verify/verify-single', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codiceFiscale: verificaInadCf }),
+      });
+      const data = await res.json();
+      setVerificaInadResult(data);
+    } catch (err: any) {
+      setVerificaInadResult({ success: false, found: false, message: err.message || 'Errore di connessione' });
+    } finally {
+      setVerificaInadLoading(false);
+    }
+  };
+
+  const parseVerificaInadBulkHeaders = (file: File, hasHeaders: boolean) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      if (!text) return;
+      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+      if (lines.length === 0) { setVerificaInadBulkHeaders([]); return; }
+      const parseCsvLineLocal = (line: string) => {
+        const result: string[] = [];
+        let current = '';
+        let inQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i];
+          if (char === '"') inQuotes = !inQuotes;
+          else if ((char === ',' || char === ';') && !inQuotes) { result.push(current.trim()); current = ''; }
+          else current += char;
+        }
+        result.push(current.trim());
+        return result.map(col => col.replace(/^"(.*)"$/, '$1'));
+      };
+      const firstLineCols = parseCsvLineLocal(lines[0]);
+      const headers = hasHeaders ? firstLineCols : firstLineCols.map((_, idx) => `Colonna ${idx + 1}`);
+      setVerificaInadBulkHeaders(headers);
+      const guessed = headers.find(h => ['codicefiscale', 'cf'].includes(h.toLowerCase().replace(/[\s_-]/g, '')));
+      setVerificaInadBulkCfColumn(guessed || '');
+    };
+    reader.readAsText(file);
+  };
+
+  const handleVerificaInadBulkFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setVerificaInadBulkFile(file);
+    setVerificaInadBulkJobId(null);
+    setVerificaInadBulkStatus(null);
+    setVerificaInadBulkSubmitError(null);
+    parseVerificaInadBulkHeaders(file, verificaInadBulkHasHeaders);
+  };
+
+  const handleVerificaInadBulkSubmit = async () => {
+    if (!verificaInadBulkFile || !verificaInadBulkCfColumn) return;
+    setVerificaInadBulkSubmitting(true);
+    setVerificaInadBulkSubmitError(null);
+    try {
+      const data = await uploadFileInChunks(
+        `${ADMIN_API_BASE}/inad-verify/verify-bulk/upload`,
+        token!,
+        verificaInadBulkFile,
+        verificaInadBulkFile.name,
+        () => {},
+        undefined,
+        {
+          hasHeaders: verificaInadBulkHasHeaders,
+          cfColumn: verificaInadBulkCfColumn,
+        },
+      );
+      if (data.blocked) {
+        setVerificaInadBulkSubmitError(data.message || 'Richiesta bloccata');
+        return;
+      }
+      setVerificaInadBulkJobId(data.jobId);
+      setVerificaInadBulkStatus({ status: 'queued', totalRows: 0, batchesTotal: 0, batchesDone: 0, foundCount: 0, notFoundCount: 0, errorMessage: null });
+    } catch (err: any) {
+      setVerificaInadBulkSubmitError(err.message || 'Errore di connessione');
+    } finally {
+      setVerificaInadBulkSubmitting(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!verificaInadBulkJobId) return;
+    if (verificaInadBulkStatus?.status === 'done' || verificaInadBulkStatus?.status === 'failed') return;
+    const timer = setInterval(async () => {
+      try {
+        const res = await apiFetch(`/inad-verify/verify-bulk/${verificaInadBulkJobId}`);
+        const data = await res.json();
+        setVerificaInadBulkStatus(data);
+      } catch {
+        // errore transitorio di polling: riprova al giro successivo
+      }
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [verificaInadBulkJobId, verificaInadBulkStatus?.status]);
+
+  const handleVerificaInadBulkDownload = async (variant: 'found' | 'notfound') => {
+    if (!verificaInadBulkJobId) return;
+    try {
+      const res = await apiFetch(`/inad-verify/verify-bulk/${verificaInadBulkJobId}/${variant}.csv`);
+      if (!res.ok) { alert('Errore durante il download'); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `verifica_inad_${variant === 'found' ? 'trovati' : 'non_trovati'}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Errore durante il download');
+    }
+  };
+
+  const handleVerificaInadBulkReset = () => {
+    setVerificaInadBulkFile(null);
+    setVerificaInadBulkHeaders([]);
+    setVerificaInadBulkCfColumn('');
+    setVerificaInadBulkJobId(null);
+    setVerificaInadBulkStatus(null);
+    setVerificaInadBulkSubmitError(null);
   };
 
   const fetchEnrichJobs = async (): Promise<EnrichmentJobItem[]> => {
@@ -5341,6 +5494,14 @@ export function App(): React.JSX.Element {
             <span>Verifica App IO</span>
           </a>
           <a
+            className={`bo-nav-item ${view === 'verifica-inad' ? 'is-active' : ''}`}
+            href="#"
+            onClick={(e) => { e.preventDefault(); setView('verifica-inad'); setVerificaInadCf(''); setVerificaInadResult(null); }}
+          >
+            <Contact />
+            <span>Verifica INAD</span>
+          </a>
+          <a
             className={`bo-nav-item ${view === 'template-dashboard' ? 'is-active' : ''}`}
             href="#"
             onClick={(e) => { e.preventDefault(); setView('template-dashboard'); }}
@@ -8661,6 +8822,198 @@ export function App(): React.JSX.Element {
 
                       {(verificaBulkStatus.status === 'done' || verificaBulkStatus.status === 'failed') && (
                         <button className="btn btn-sm btn-outline-primary" onClick={handleVerificaBulkReset}>
+                          <RotateCcw className="me-1" size={16} />Nuova verifica
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {view === 'verifica-inad' && (
+            <div style={{ maxWidth: '700px', margin: '0 auto' }}>
+              <h3 className="h5 fw-bold text-dark mb-3">
+                <Contact className="me-2" size={16} />Verifica Domicilio Digitale INAD
+              </h3>
+
+              <ul className="nav nav-tabs mb-4">
+                <li className="nav-item">
+                  <button className={`nav-link ${verificaInadTab === 'singola' ? 'active' : ''}`} onClick={() => setVerificaInadTab('singola')}>
+                    Verifica singola
+                  </button>
+                </li>
+                <li className="nav-item">
+                  <button className={`nav-link ${verificaInadTab === 'massiva' ? 'active' : ''}`} onClick={() => setVerificaInadTab('massiva')}>
+                    Verifica massiva CSV
+                  </button>
+                </li>
+              </ul>
+
+              {verificaInadTab === 'singola' && (
+                <>
+                  <p className="small text-muted mb-4">
+                    Inserisci il codice fiscale di un cittadino per verificare in tempo reale se ha un domicilio digitale eletto su INAD (Indice Nazionale Domicili Digitali). Nota: l'endpoint /extract ha un limite giornaliero condiviso con il resto del sistema — non usare su elenchi grandi (usa la verifica massiva).
+                  </p>
+
+                  <div className="card shadow-sm p-4 mb-4">
+                    <div className="mb-3">
+                      <label className="form-label small fw-bold">Codice Fiscale</label>
+                      <div className="input-group input-group-sm">
+                        <span className="input-group-text"><Contact size={16} /></span>
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="Inserisci il codice fiscale (16 caratteri)"
+                          maxLength={16}
+                          value={verificaInadCf}
+                          onChange={e => setVerificaInadCf(e.target.value.toUpperCase().trim())}
+                          onKeyDown={e => { if (e.key === 'Enter') runVerificaInad(); }}
+                        />
+                        <button
+                          className="btn btn-primary"
+                          type="button"
+                          onClick={runVerificaInad}
+                          disabled={verificaInadLoading || !verificaInadCf.trim()}
+                        >
+                          {verificaInadLoading ? (
+                            <>
+                              <Loader2 className="icon-spin me-1" size={16} />Verifica...
+                            </>
+                          ) : (
+                            <>
+                              <Search className="me-1" size={16} />Verifica
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {verificaInadResult && (
+                      <div className={`mt-3 p-3 border rounded ${
+                        !verificaInadResult.success ? 'border-danger bg-light' :
+                        !verificaInadResult.found ? 'border-secondary bg-light' :
+                        'border-success bg-light'
+                      }`}>
+                        <div className="d-flex align-items-start gap-3">
+                          <div style={{ fontSize: '1.8rem' }}>
+                            {!verificaInadResult.success ? (
+                              <AlertCircle className="text-danger" size={16} />
+                            ) : !verificaInadResult.found ? (
+                              <XCircle className="text-secondary" size={16} />
+                            ) : (
+                              <CheckCircle2 className="text-success" size={16} />
+                            )}
+                          </div>
+                          <div>
+                            <h6 className="fw-bold mb-1">
+                              {!verificaInadResult.success ? 'Errore di sistema' :
+                               !verificaInadResult.found ? 'Nessun domicilio digitale' :
+                               'Domicilio digitale trovato'}
+                            </h6>
+                            <p className="small text-muted mb-0">{verificaInadResult.message}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {verificaInadTab === 'massiva' && (
+                <div className="card shadow-sm p-4 mb-4">
+                  <p className="small text-muted mb-3">
+                    Carica un CSV con un elenco di codici fiscali: la verifica gira in background su INAD (batch fino a 1000 CF, 5-10 minuti per elaborazione) e produce due CSV scaricabili, con le stesse colonne del file originale — destinatari con domicilio digitale trovato e tutti gli altri.
+                  </p>
+
+                  {!verificaInadBulkJobId && (
+                    <>
+                      <div className="mb-3">
+                        <div className="form-check form-check-inline">
+                          <input className="form-check-input" type="checkbox" id="verificaInadBulkHasHeaders" checked={verificaInadBulkHasHeaders}
+                            onChange={e => {
+                              setVerificaInadBulkHasHeaders(e.target.checked);
+                              if (verificaInadBulkFile) parseVerificaInadBulkHeaders(verificaInadBulkFile, e.target.checked);
+                            }} />
+                          <label className="form-check-label small" htmlFor="verificaInadBulkHasHeaders">Il file ha una riga di intestazione</label>
+                        </div>
+                      </div>
+
+                      <div className="mb-3">
+                        <label className="form-label small fw-bold">File CSV</label>
+                        <input type="file" accept=".csv" className="form-control form-control-sm" onChange={handleVerificaInadBulkFileChange} />
+                      </div>
+
+                      {verificaInadBulkHeaders.length > 0 && (
+                        <div className="mb-3">
+                          <label className="form-label small fw-bold">Colonna Codice Fiscale</label>
+                          <select className="form-select form-select-sm" value={verificaInadBulkCfColumn} onChange={e => setVerificaInadBulkCfColumn(e.target.value)}>
+                            <option value="">— seleziona —</option>
+                            {verificaInadBulkHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                          </select>
+                        </div>
+                      )}
+
+                      {verificaInadBulkSubmitError && (
+                        <div className="alert alert-danger small">{verificaInadBulkSubmitError}</div>
+                      )}
+
+                      <button
+                        className="btn btn-primary btn-sm"
+                        type="button"
+                        onClick={handleVerificaInadBulkSubmit}
+                        disabled={verificaInadBulkSubmitting || !verificaInadBulkFile || !verificaInadBulkCfColumn}
+                      >
+                        {verificaInadBulkSubmitting ? (
+                          <><Loader2 className="icon-spin me-1" size={16} />Avvio...</>
+                        ) : (
+                          <><Play className="me-1" size={16} />Avvia verifica</>
+                        )}
+                      </button>
+                    </>
+                  )}
+
+                  {verificaInadBulkJobId && verificaInadBulkStatus && (
+                    <div>
+                      {(verificaInadBulkStatus.status === 'queued' || verificaInadBulkStatus.status === 'processing') && (
+                        <>
+                          <p className="small text-muted mb-2">
+                            Verifica in corso: {verificaInadBulkStatus.batchesDone} / {verificaInadBulkStatus.batchesTotal || '…'} batch completati ({verificaInadBulkStatus.totalRows} righe totali).
+                          </p>
+                          <div className="progress" style={{ height: '8px' }}>
+                            <div
+                              className="progress-bar"
+                              style={{ width: verificaInadBulkStatus.batchesTotal > 0 ? `${Math.round((verificaInadBulkStatus.batchesDone / verificaInadBulkStatus.batchesTotal) * 100)}%` : '5%' }}
+                            />
+                          </div>
+                        </>
+                      )}
+
+                      {verificaInadBulkStatus.status === 'done' && (
+                        <>
+                          <div className="alert alert-success small">
+                            Verifica completata: <strong>{verificaInadBulkStatus.foundCount}</strong> trovati, <strong>{verificaInadBulkStatus.notFoundCount}</strong> non trovati.
+                          </div>
+                          <div className="d-flex gap-2 mb-3">
+                            <button className="btn btn-sm btn-outline-success" onClick={() => handleVerificaInadBulkDownload('found')}>
+                              <FileSpreadsheet className="me-1" size={16} />Scarica trovati
+                            </button>
+                            <button className="btn btn-sm btn-outline-secondary" onClick={() => handleVerificaInadBulkDownload('notfound')}>
+                              <FileSpreadsheet className="me-1" size={16} />Scarica non trovati
+                            </button>
+                          </div>
+                        </>
+                      )}
+
+                      {verificaInadBulkStatus.status === 'failed' && (
+                        <div className="alert alert-danger small">
+                          Verifica fallita: {verificaInadBulkStatus.errorMessage || 'errore sconosciuto'}
+                        </div>
+                      )}
+
+                      {(verificaInadBulkStatus.status === 'done' || verificaInadBulkStatus.status === 'failed') && (
+                        <button className="btn btn-sm btn-outline-primary" onClick={handleVerificaInadBulkReset}>
                           <RotateCcw className="me-1" size={16} />Nuova verifica
                         </button>
                       )}

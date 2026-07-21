@@ -1,0 +1,73 @@
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
+
+export enum InadVerificationJobStatus {
+  QUEUED = 'queued',
+  PROCESSING = 'processing',
+  DONE = 'done',
+  FAILED = 'failed',
+}
+
+export interface InadVerificationBatch {
+  id: string;
+  size: number;
+  done: boolean;
+}
+
+@Entity('inad_verification_jobs')
+export class InadVerificationJob {
+  @PrimaryGeneratedColumn('uuid')
+  id!: string;
+
+  @Column({
+    type: 'enum',
+    enum: InadVerificationJobStatus,
+    default: InadVerificationJobStatus.QUEUED,
+  })
+  status!: InadVerificationJobStatus;
+
+  @Column({ name: 'total_rows', type: 'int', default: 0 })
+  totalRows!: number;
+
+  /** Un elemento per ogni chiamata POST /listDigitalAddress (max 1000 CF ciascuna). */
+  @Column({ name: 'batches', type: 'jsonb' })
+  batches!: InadVerificationBatch[];
+
+  @Column({ name: 'found_count', type: 'int', default: 0 })
+  foundCount!: number;
+
+  @Column({ name: 'not_found_count', type: 'int', default: 0 })
+  notFoundCount!: number;
+
+  /** Contenuto raw del CSV caricato, riparsato al completamento per costruire i CSV di risultato. */
+  @Column({ name: 'source_csv', type: 'text' })
+  sourceCsv!: string;
+
+  @Column({ name: 'csv_headers', type: 'jsonb' })
+  csvHeaders!: string[];
+
+  @Column({ name: 'cf_column', type: 'varchar', length: 256 })
+  cfColumn!: string;
+
+  @Column({ name: 'has_headers', type: 'boolean', default: true })
+  hasHeaders!: boolean;
+
+  @Column({ name: 'result_found_csv', type: 'text', nullable: true })
+  resultFoundCsv!: string | null;
+
+  @Column({ name: 'result_not_found_csv', type: 'text', nullable: true })
+  resultNotFoundCsv!: string | null;
+
+  @Column({ name: 'error_message', type: 'text', nullable: true })
+  errorMessage!: string | null;
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt!: Date;
+
+  @Column({ name: 'completed_at', type: 'timestamptz', nullable: true })
+  completedAt!: Date | null;
+}
