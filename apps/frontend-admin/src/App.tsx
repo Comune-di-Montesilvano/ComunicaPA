@@ -6462,6 +6462,7 @@ export function App(): React.JSX.Element {
                               setSingleInadForced(false);
                               setSingleInadAddress('');
                               setSingleAppIoActive(false);
+                              setWizAppIoMode('none');
                             }
                           }}
                         />
@@ -6747,32 +6748,30 @@ export function App(): React.JSX.Element {
                     </div>
                   )}
 
-                  {(wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && (
+                  {(wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && singleAppIoActive && (
                     <div className="card mb-3 border-light shadow-sm" style={{ background: '#f8f9fc' }}>
                       <div className="card-body p-3">
                         <h6 className="small fw-bold text-dark mb-3"><Smartphone className="me-2 text-primary" />Co-consegna su App IO</h6>
-                        <div className="mb-3">
-                          <label className="form-label small">Modalità Co-consegna</label>
-                          <select
-                            className="form-select form-select-sm"
-                            value={wizAppIoMode}
-                            onChange={e => {
-                              const newMode = e.target.value as any;
-                              setWizAppIoMode(newMode);
-                              if (newMode === 'none') setWizPaymentEnabled(false);
-                            }}
-                          >
-                            <option value="none">Disabilitata (Invia solo via {channelLabel(wizChannel)})</option>
-                            <option value="parallel">Parallela (Invia sia via {channelLabel(wizChannel)} che via App IO)</option>
-                            <option value="exclusive">Esclusiva (Invia su App IO se il cittadino è registrato, altrimenti ripiega su {channelLabel(wizChannel)})</option>
-                          </select>
-                          {singleAppIoActive && wizAppIoMode === 'none' && (
-                            <div className="form-text small text-success">
-                              Servizio App IO attivo per questo destinatario: disponibile come co-consegna.
-                            </div>
-                          )}
+                        <div className="form-text small text-success mb-2">
+                          Servizio App IO attivo per questo destinatario.
                         </div>
-                        {wizAppIoMode !== 'none' && (
+                        <div className="form-check mb-3">
+                          <input
+                            type="checkbox"
+                            className="form-check-input"
+                            id="wiz_single_appio_parallel"
+                            checked={wizAppIoMode === 'parallel'}
+                            onChange={e => {
+                              const checked = e.target.checked;
+                              setWizAppIoMode(checked ? 'parallel' : 'none');
+                              if (!checked) setWizPaymentEnabled(false);
+                            }}
+                          />
+                          <label className="form-check-label small" htmlFor="wiz_single_appio_parallel">
+                            Invia anche via App IO (co-consegna parallela, oltre a {channelLabel(wizChannel)})
+                          </label>
+                        </div>
+                        {wizAppIoMode === 'parallel' && (
                           <div className="mb-0">
                             <label className="form-label small fw-bold">Servizio App IO *</label>
                             <select
