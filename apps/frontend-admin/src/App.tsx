@@ -4526,6 +4526,27 @@ export function App(): React.JSX.Element {
     setWizTestHistory([]);
     setWizTestError(null);
     setWizTestCampaignId(null);
+
+    // Stato destinatario invio singolo (Task 1): azzerato per non far
+    // trapelare i dati di un destinatario su una campagna successiva.
+    setSingleCf('');
+    setSingleSurname('');
+    setSingleFirstName('');
+    setSingleEmail('');
+    setSinglePec('');
+    setSingleAddress('');
+    setSingleMunicipality('');
+    setSingleZip('');
+    setSingleProvince('');
+    setSinglePaymentIuv('');
+    setSinglePaymentImporto('');
+    setSinglePaymentScadenza('');
+    setWizSingleAttachmentSlots([]);
+    setSingleAnprLoading(false);
+    setSingleAnprCheckedCf(null);
+    setSingleInadForced(false);
+    setSingleInadAddress('');
+    setSingleAppIoActive(false);
   };
 
   const prefillWizardFrom = async (source: {
@@ -4622,6 +4643,54 @@ export function App(): React.JSX.Element {
           } else {
             setWizLastSyncedHeaders(null);
             setWizLastSyncedMapping(null);
+          }
+
+          if (Boolean(source.channelConfig?.wizSingleMode)) {
+            // wizCsvRows non è ancora aggiornato in questo punto della stessa closure
+            // (setState non è visibile nel render corrente) — rileggiamo la singola riga
+            // direttamente dal CSV appena fetchato via un secondo parse locale, sola lettura.
+            const text = await file.text();
+            const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+            if (lines.length >= 2) {
+              const parseLine = (line: string) => {
+                const result: string[] = [];
+                let current = '';
+                let inQuotes = false;
+                for (let i = 0; i < line.length; i++) {
+                  const ch = line[i];
+                  if (ch === '"') inQuotes = !inQuotes;
+                  else if (ch === ',' && !inQuotes) { result.push(current); current = ''; }
+                  else current += ch;
+                }
+                result.push(current);
+                return result.map(v => v.replace(/^"(.*)"$/, '$1').replace(/""/g, '"'));
+              };
+              const headerCols = parseLine(lines[0]);
+              const rowVals = parseLine(lines[1]);
+              const row: Record<string, string> = {};
+              headerCols.forEach((h, i) => { row[h] = rowVals[i] || ''; });
+              setSingleCf(row['codice_fiscale'] || '');
+              // full_name è la sola colonna disponibile (cols/vals in
+              // handleWizSingleSubmit uniscono cognome+nome con un solo spazio,
+              // nessuna colonna separata) — non è possibile invertire lo split in
+              // modo affidabile (nomi con più parole). Ripristino conservativo:
+              // l'intero valore va in singleSurname, singleFirstName resta vuoto.
+              setSingleSurname(row['full_name'] || '');
+              setSingleFirstName('');
+              setSingleEmail(row['email'] || '');
+              setSinglePec(row['pec'] || '');
+              setSingleAddress(row['sd_indirizzo'] || '');
+              setSingleMunicipality(row['sd_comune'] || '');
+              setSingleZip(row['sd_cap'] || '');
+              setSingleProvince(row['sd_provincia'] || '');
+              setSinglePaymentIuv(row['sd_iuv'] || '');
+              setSinglePaymentImporto(row['sd_importo'] || '');
+              setSinglePaymentScadenza(row['sd_scadenza'] || '');
+              const attachmentEntries = (source.channelConfig?.attachments || []) as Array<{ key: string; label: string }>;
+              setWizSingleAttachmentSlots(
+                attachmentEntries.map((a, i) => ({ id: `slot-resume-${i}`, label: a.label || `Allegato ${i + 1}`, file: null })),
+              );
+            }
           }
         }
       } catch { /* ignore */ }
