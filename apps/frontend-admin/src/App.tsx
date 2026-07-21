@@ -30,21 +30,24 @@ const API_BASE = window.__COMUNICAPA_CONFIG__?.apiBase ?? 'http://localhost:8080
 const ADMIN_API_BASE = `${API_BASE}/admin`;
 
 const CHANNEL_META: Record<string, { label: string; icon: React.ComponentType<{ className?: string; size?: number }>; badge: string }> = {
-  PEC: { label: 'PEC', icon: MailOpen, badge: 'bg-info' },
-  EMAIL: { label: 'Email', icon: Mail, badge: 'bg-success' },
-  APP_IO: { label: 'AppIO', icon: Smartphone, badge: 'bg-primary' },
+  PEC: { label: 'PEC', icon: MailOpen, badge: 'bg-info text-dark' },
+  EMAIL: { label: 'Email', icon: Mail, badge: 'bg-success text-white' },
+  APP_IO: { label: 'AppIO', icon: Smartphone, badge: 'bg-primary text-white' },
   SEND: { label: 'SEND', icon: Send, badge: 'bg-warning text-dark' },
-  POSTAL: { label: 'Postalizzazione', icon: MailCheck, badge: 'bg-secondary' },
-  CITIZEN_PORTAL: { label: 'Portale Cittadino', icon: Globe, badge: 'bg-dark' },
-  UNKNOWN: { label: 'Sconosciuto', icon: HelpCircle, badge: 'bg-secondary' },
+  POSTAL: { label: 'Postalizzazione', icon: MailCheck, badge: 'bg-secondary text-white' },
+  CITIZEN_PORTAL: { label: 'Portale Cittadino', icon: Globe, badge: 'bg-primary text-white' },
+  PORTALE_CITTADINO: { label: 'Portale Cittadino', icon: Globe, badge: 'bg-primary text-white' },
+  UNKNOWN: { label: 'Sconosciuto', icon: HelpCircle, badge: 'bg-secondary text-white' },
 };
 
 function channelLabel(channel: string): string {
-  return CHANNEL_META[channel]?.label ?? channel;
+  const normKey = (channel || '').toUpperCase();
+  return CHANNEL_META[normKey]?.label ?? channel;
 }
 
 function ChannelBadge({ channel, extra }: { channel: string; extra?: string | null }): React.JSX.Element {
-  const meta = CHANNEL_META[channel] ?? { label: channel, icon: Send, badge: 'bg-light text-dark border' };
+  const normKey = (channel || '').toUpperCase();
+  const meta = CHANNEL_META[normKey] ?? { label: channel, icon: Send, badge: 'bg-primary text-white' };
   const Icon = meta.icon;
   return (
     <span className={`badge ${meta.badge}`}>
