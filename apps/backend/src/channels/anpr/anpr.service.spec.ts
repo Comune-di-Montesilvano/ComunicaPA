@@ -13,7 +13,8 @@ const settingsValues: Record<string, unknown> = {
 };
 const mockSettings = { get: jest.fn(async (key: string) => settingsValues[key]) };
 const mockPdndAuth = {
-  getVoucher: jest.fn(async () => 'voucher-abc'),
+  getVoucherDpop: jest.fn(async () => 'voucher-abc'),
+  buildResourceDpopProof: jest.fn(async () => 'dpop-proof-token'),
   signAgidJwt: jest.fn(async (_env: string, _aud: string, _extraClaims: Record<string, unknown>) => 'jws-token'),
 };
 
@@ -22,7 +23,8 @@ describe('AnprService.getResidenza', () => {
 
   beforeEach(async () => {
     mockFetch.mockClear();
-    mockPdndAuth.getVoucher.mockClear();
+    mockPdndAuth.getVoucherDpop.mockClear();
+    mockPdndAuth.buildResourceDpopProof.mockClear();
     mockPdndAuth.signAgidJwt.mockClear();
     const module = await Test.createTestingModule({
       providers: [
@@ -56,7 +58,13 @@ describe('AnprService.getResidenza', () => {
     expect(result.data?.generalita.cognome).toBe('Rossi');
     expect(result.data?.residenza[0].indirizzo?.comune?.nomeComune).toBe('Montesilvano');
 
-    expect(mockPdndAuth.getVoucher).toHaveBeenCalledWith('prod', 'purpose-anpr-prod');
+    expect(mockPdndAuth.getVoucherDpop).toHaveBeenCalledWith('prod', 'purpose-anpr-prod');
+    expect(mockPdndAuth.buildResourceDpopProof).toHaveBeenCalledWith(
+      'prod',
+      'POST',
+      'https://modipa.anpr.interno.it/govway/rest/in/MinInternoPortaANPR-PDND/C020-servizioAccertamentoResidenza/v1/anpr-service-e002',
+      'voucher-abc',
+    );
     expect(mockPdndAuth.signAgidJwt).toHaveBeenCalledTimes(2);
 
     const [url, init] = mockFetch.mock.calls[0];
@@ -64,7 +72,8 @@ describe('AnprService.getResidenza', () => {
       'https://modipa.anpr.interno.it/govway/rest/in/MinInternoPortaANPR-PDND/C020-servizioAccertamentoResidenza/v1/anpr-service-e002',
     );
     expect(init.method).toBe('POST');
-    expect(init.headers.Authorization).toBe('Bearer voucher-abc');
+    expect(init.headers.Authorization).toBe('DPoP voucher-abc');
+    expect(init.headers.DPoP).toBe('dpop-proof-token');
     expect(init.headers['Agid-JWT-Signature']).toBe('jws-token');
     expect(init.headers['Agid-JWT-TrackingEvidence']).toBe('jws-token');
     expect(init.headers.Digest).toMatch(/^SHA-256=/);

@@ -187,14 +187,42 @@ finché non sarà sostituita dalla massiva unificata (spec separata).
   fuori dalla suite CI) — verifica manuale in collaudo prima del rilascio,
   stesso approccio già usato per SEND.
 
-## Rischi noti / verifiche da fare in collaudo (non bloccanti per il design)
+## Rischi noti — verificati dal vivo, risolti
 
-- Formato esatto di `Agid-JWT-TrackingEvidence` (claim `userID`/
-  `userLocation`/`LoA`) non è confermato da uno spec ufficiale con esempio
-  completo — solo da issue GitHub parziali. Primo test reale in collaudo
-  può richiedere aggiustamento dei nomi/valori claim.
-- `x5c`/certificato X.509 nel JOSE header di `Agid-JWT-Signature`: lo spec
-  ufficiale lo cita come opzione (alternativa a un kid già noto
-  all'erogatore), l'integrazione reale osservata (issue `italia/anpr#4706`)
-  ha usato solo `kid` — assumiamo che basti perché il kid è già registrato
-  su PDND per lo stesso client, ma va confermato al primo test reale.
+- **DPoP obbligatorio, non bearer standard** (risolto): il primo test reale
+  con credenziali PDND vere ha restituito `HTTP 400
+  InteroperabilityInvalidRequest` dal gateway GovWay usando un bearer
+  voucher standard. Causa reale: questa finalità richiede un voucher **DPoP**
+  (RFC 9449) — scelta del fruitore in fase di richiesta voucher, non
+  dichiarata né nello yaml/OpenAPI dell'erogatore né nel portale self-care
+  PDND. Aggiunto `PdndAuthService.getVoucherDpop`/`buildResourceDpopProof`;
+  `AnprService` ora invia `Authorization: DPoP <voucher>` + header `DPoP`
+  (seconda proof con claim `ath`), oltre ai soliti
+  `Digest`/`Agid-JWT-Signature`/`Agid-JWT-TrackingEvidence`. Verificato dal
+  vivo: la risposta 400 `InteroperabilityInvalidRequest` sparisce con
+  questo fix (nessun errore di validazione del protocollo). Vedi gotcha
+  dedicato in CLAUDE.md.
+- **`x5c`/certificato X.509**: non necessario. Una volta passati a DPoP, il
+  solo `kid` nel JOSE header di `Agid-JWT-Signature`/`Agid-JWT-TrackingEvidence`
+  è sufficiente — confermato dal vivo (nessun errore di certificato/firma
+  dopo il fix DPoP).
+- **Formato di `Agid-JWT-TrackingEvidence`** (claim `userID`/`userLocation`/
+  `LoA`): i valori di default usati (vedi tab Impostazioni ANPR) sono stati
+  accettati dal gateway nella chiamata reale — nessun errore di validazione
+  su questi claim osservato dopo il fix DPoP.
+
+## Rischio aperto — bloccante, NON di codice (infrastruttura esterna)
+
+Dopo il fix DPoP, ogni chiamata (inclusa una `GET /status` non
+autenticata, su entrambi i path `MinInternoPortaANPR`/
+`MinInternoPortaANPR-PDND`) riceve HTTP 404
+`{"detail":"Unknown API Request","Error Message":"Rejected by
+policy.","Error Code":"0x00d30003"}` con header
+`x-backside-transport: FAIL FAIL` — firma nota di IBM DataPower Gateway
+che significa "gateway irraggiungibile verso il proprio backend", non un
+rigetto applicativo. Stesso esito identico su operazione autenticata (POST
+reale) e non (`/status`), su entrambe le varianti di path — esclude
+firma/DPoP/body/path come causa: è un guasto o mancata attivazione
+end-to-end del backend ANPR reale lato Ministero Interno/Sogei. Non
+risolvibile lato codice. Verificare con Sogei/PDND lo stato del servizio
+prima di ritentare in collaudo.

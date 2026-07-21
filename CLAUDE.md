@@ -358,6 +358,47 @@ e hanno già causato invii falliti in produzione (CF troncato, markdown vuoto
 per App IO). Per riprendere una bozza: bottone "Riprendi wizard"
 (`handleResumeDraft`), non un importer dedicato.
 
+## ANPR C020 — voucher DPoP obbligatorio, non bearer standard
+
+Il servizio C020 "Accertamento residenza" (`AnprService`,
+`channels/anpr/anpr.service.ts`) richiede un voucher PDND in modalità
+**DPoP** (RFC 9449, `PdndAuthService.getVoucherDpop`/
+`buildResourceDpopProof`), non il bearer voucher standard già usato da
+SEND/INAD (`PdndAuthService.getVoucher`). Un tentativo con voucher Bearer
++ soli header `Agid-JWT-Signature`/`Agid-JWT-TrackingEvidence` (pattern
+INTEGRITY_REST_02/AUDIT_REST_02, comunque necessari anche con DPoP) veniva
+rigettato dal gateway GovWay con `InteroperabilityInvalidRequest` (HTTP
+400) — un errore generico, senza indicazione che la causa fosse
+DPoP-vs-Bearer. **La scelta DPoP è del fruitore in fase di richiesta
+voucher**, non dichiarata né nello yaml/OpenAPI dell'erogatore (che elenca
+solo `bearerAuth` genericamente) né nel portale self-care PDND per questo
+client — nessuno dei due posti la segnala come obbligatoria. Scoperto solo
+testando dal vivo con credenziali PDND reali. Se un altro servizio PDND
+futuro risponde con lo stesso errore generico nonostante header/firma
+apparentemente corretti, provare DPoP prima di altre ipotesi (es.
+certificato X.509 mancante — esclusa in questo caso: il kid da solo basta
+una volta passati a DPoP, nessun x5c necessario).
+
+Header risultanti sulla chiamata risorsa: `Authorization: DPoP <voucher>`
+(non `Bearer`) + `DPoP: <proof2>` (seconda DPoP proof, con claim `ath` =
+hash del voucher) — oltre ai soliti `Digest`/`Agid-JWT-Signature`/
+`Agid-JWT-TrackingEvidence`. La DPoP proof riusa la stessa chiave RSA/kid
+del client PDND (nessuna chiave separata da generare), ma il suo JOSE
+header porta `jwk` (chiave pubblica inline), mai `kid`.
+
+**Blocco successivo (non di codice, infrastrutturale)**: dopo il fix DPoP,
+ogni chiamata — incluso un `GET /status` non autenticato — riceve HTTP 404
+`{"detail":"Unknown API Request","Error Message":"Rejected by
+policy.","Error Code":"0x00d30003"}` con header
+`x-backside-transport: FAIL FAIL`. Quest'ultimo è una firma specifica di
+IBM DataPower Gateway che significa "il gateway non riesce a raggiungere
+il proprio backend" — un guasto/mancata attivazione del backend reale
+lato Ministero Interno/Sogei, indipendente da qualunque cosa mandiamo
+(stesso esito su path con/senza `-PDND`, su operazione autenticata e non).
+Non un problema risolvibile lato nostro codice — verificare lo stato del
+servizio con Sogei/PDND prima di ritentare, non continuare a modificare
+`AnprService` per questo specifico errore.
+
 ## SEND — autenticazione reale verso PN, gotcha critico
 
 PN (`api.notifichedigitali.it`/`api.uat.notifichedigitali.it`) richiede
