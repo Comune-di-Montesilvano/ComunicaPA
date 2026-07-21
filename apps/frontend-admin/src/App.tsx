@@ -5560,33 +5560,104 @@ export function App(): React.JSX.Element {
                 const hasAlerts = failingCampaigns.length > 0 || pausedEngines.length > 0 || failingEngines.length > 0;
                 if (!hasAlerts) return null;
 
+                const totalAlerts = failingCampaigns.length + pausedEngines.length + failingEngines.length;
+
                 return (
-                  <div className="card shadow-sm mb-4 border-warning">
-                    <div className="card-header bg-white py-3 border-bottom d-flex align-items-center gap-2">
-                      <AlertTriangle className="text-warning" />
-                      <h3 className="h6 mb-0 fw-bold text-dark">Da attenzionare</h3>
+                  <div className="card shadow-sm border-0 mb-3 overflow-hidden" style={{ borderLeft: '4px solid #f59e0b' }}>
+                    <div className="card-header border-0 py-2 px-3 d-flex align-items-center justify-content-between" style={{ backgroundColor: '#fffbe6' }}>
+                      <div className="d-flex align-items-center gap-2">
+                        <AlertTriangle size={16} className="text-warning" />
+                        <h3 className="h6 mb-0 fw-bold text-dark small">Da attenzionare</h3>
+                      </div>
+                      <span className="badge bg-warning text-dark px-2 py-0.5 rounded-pill small fw-semibold" style={{ fontSize: '0.75rem' }}>
+                        {totalAlerts} {totalAlerts === 1 ? 'avviso' : 'avvisi'}
+                      </span>
                     </div>
                     <div className="card-body p-0">
-                      <ul className="list-group list-group-flush">
+                      <div className="list-group list-group-flush">
                         {failingCampaigns.map((c) => (
-                          <li key={c.id} className="list-group-item d-flex justify-content-between align-items-center" style={{ cursor: 'pointer' }} onClick={() => handleCampaignClick(c.id)}>
-                            <span>Campagna <strong className="text-primary">{c.name}</strong> — {Math.round((c.failedCount / c.totalRecipients) * 100)}% falliti</span>
-                            <ArrowRight size={16} className="text-muted" />
-                          </li>
+                          <div
+                            key={c.id}
+                            className="list-group-item list-group-item-action d-flex align-items-center justify-content-between py-2 px-3"
+                            style={{ cursor: 'pointer', transition: 'all 0.15s ease-in-out' }}
+                            onClick={() => handleCampaignClick(c.id)}
+                          >
+                            <div className="d-flex align-items-center gap-2 small">
+                              <span className="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-0.5 fw-semibold" style={{ fontSize: '0.7rem' }}>
+                                Campagna
+                              </span>
+                              <span className="text-dark fw-medium">
+                                <strong className="text-primary">{c.name}</strong>
+                              </span>
+                              <span className="text-muted">—</span>
+                              <span className="badge bg-danger text-white rounded-pill px-2 py-0.5" style={{ fontSize: '0.7rem' }}>
+                                {Math.round((c.failedCount / c.totalRecipients) * 100)}% falliti
+                              </span>
+                            </div>
+                            <span className="btn btn-sm btn-light border text-dark d-inline-flex align-items-center gap-1 rounded-pill px-2.5 py-0.5 fw-semibold small shadow-2xs" style={{ fontSize: '0.75rem' }}>
+                              Vedi <ChevronRight size={13} className="text-secondary" />
+                            </span>
+                          </div>
                         ))}
+
                         {pausedEngines.map((e) => (
-                          <li key={`paused-${e.channel}`} className="list-group-item d-flex justify-content-between align-items-center" style={{ cursor: 'pointer' }} onClick={() => { setView('impostazioni'); setActiveSettingsTab('motori'); fetchEngines(); }}>
-                            <span>Motore <strong>{ENGINE_LABELS[e.channel] ?? e.channel}</strong> in pausa</span>
-                            <ArrowRight size={16} className="text-muted" />
-                          </li>
+                          <div
+                            key={`paused-${e.channel}`}
+                            className="list-group-item list-group-item-action d-flex align-items-center justify-content-between py-2 px-3"
+                            style={{ cursor: 'pointer', transition: 'all 0.15s ease-in-out' }}
+                            onClick={() => {
+                              setView('impostazioni');
+                              setActiveSettingsTab('motori');
+                              fetchEngines();
+                            }}
+                          >
+                            <div className="d-flex align-items-center gap-2 small">
+                              <span className="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill px-2 py-0.5 fw-semibold" style={{ fontSize: '0.7rem' }}>
+                                Motore
+                              </span>
+                              <span className="text-dark fw-medium">
+                                <strong>{ENGINE_LABELS[e.channel] ?? e.channel}</strong>
+                              </span>
+                              <span className="text-muted">—</span>
+                              <span className="badge bg-warning text-dark rounded-pill px-2 py-0.5" style={{ fontSize: '0.7rem' }}>
+                                In pausa
+                              </span>
+                            </div>
+                            <span className="btn btn-sm btn-light border text-dark d-inline-flex align-items-center gap-1 rounded-pill px-2.5 py-0.5 fw-semibold small shadow-2xs" style={{ fontSize: '0.75rem' }}>
+                              Riattiva <ChevronRight size={13} className="text-secondary" />
+                            </span>
+                          </div>
                         ))}
+
                         {failingEngines.map((e) => (
-                          <li key={`failed-${e.channel}`} className="list-group-item d-flex justify-content-between align-items-center" style={{ cursor: 'pointer' }} onClick={() => { setView('impostazioni'); setActiveSettingsTab('motori'); fetchEngines(); }}>
-                            <span>Motore <strong>{ENGINE_LABELS[e.channel] ?? e.channel}</strong> — {e.counts?.failed} job falliti</span>
-                            <ArrowRight size={16} className="text-muted" />
-                          </li>
+                          <div
+                            key={`failed-${e.channel}`}
+                            className="list-group-item list-group-item-action d-flex align-items-center justify-content-between py-2 px-3"
+                            style={{ cursor: 'pointer', transition: 'all 0.15s ease-in-out' }}
+                            onClick={() => {
+                              setView('impostazioni');
+                              setActiveSettingsTab('motori');
+                              fetchEngines();
+                            }}
+                          >
+                            <div className="d-flex align-items-center gap-2 small">
+                              <span className="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-0.5 fw-semibold" style={{ fontSize: '0.7rem' }}>
+                                Motore
+                              </span>
+                              <span className="text-dark fw-medium">
+                                <strong>{ENGINE_LABELS[e.channel] ?? e.channel}</strong>
+                              </span>
+                              <span className="text-muted">—</span>
+                              <span className="badge bg-danger text-white rounded-pill px-2 py-0.5" style={{ fontSize: '0.7rem' }}>
+                                {e.counts?.failed} job falliti
+                              </span>
+                            </div>
+                            <span className="btn btn-sm btn-light border text-dark d-inline-flex align-items-center gap-1 rounded-pill px-2.5 py-0.5 fw-semibold small shadow-2xs" style={{ fontSize: '0.75rem' }}>
+                              Risolvi <ChevronRight size={13} className="text-secondary" />
+                            </span>
+                          </div>
                         ))}
-                      </ul>
+                      </div>
                     </div>
                   </div>
                 );
