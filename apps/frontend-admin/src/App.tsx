@@ -898,11 +898,11 @@ export function App(): React.JSX.Element {
       generalita?: {
         cognome?: string; nome?: string; sesso?: string; dataNascita?: string;
         codiceFiscale?: { codFiscale?: string; validitaCF?: string };
-        luogoNascita?: { comune?: { nomeComune?: string; siglaProvinciaIstat?: string }; localita?: { descrizioneLocalita?: string; descrizioneStato?: string } };
+        luogoNascita?: { comune?: { nomeComune?: string; siglaProvinciaIstat?: string; siglaProvincia?: string; provincia?: string }; localita?: { descrizioneLocalita?: string; descrizioneStato?: string } };
         soggettoAIRE?: string;
       };
       idANPR?: string;
-      residenza?: Array<{ dataDecorrenzaResidenza?: string; indirizzo?: { cap?: string; comune?: { nomeComune?: string }; toponimo?: { specie?: string; denominazioneToponimo?: string }; numeroCivico?: { numero?: string; lettera?: string } } }>;
+      residenza?: Array<{ dataDecorrenzaResidenza?: string; indirizzo?: { cap?: string; comune?: { nomeComune?: string; siglaProvinciaIstat?: string; siglaProvincia?: string; provincia?: string }; toponimo?: { specie?: string; denominazioneToponimo?: string }; numeroCivico?: { numero?: string; lettera?: string } } }>;
       infoSoggettoEnte?: Array<{ chiave?: string; valore?: string; valoreTesto?: string; valoreData?: string; dettaglio?: string }>;
       message?: string;
     };
@@ -8955,7 +8955,11 @@ export function App(): React.JSX.Element {
                 const g = anpr.generalita;
                 const vitaInfo = anpr.infoSoggettoEnte?.find(i => (i.chiave ?? '').toLowerCase().includes('vita'));
                 const altreInfo = (anpr.infoSoggettoEnte ?? []).filter(i => i !== vitaInfo);
-                const luogoNascita = g?.luogoNascita?.comune?.nomeComune ?? g?.luogoNascita?.localita?.descrizioneStato ?? g?.luogoNascita?.localita?.descrizioneLocalita;
+                const comuneNascita = g?.luogoNascita?.comune?.nomeComune;
+                const provNascita = g?.luogoNascita?.comune?.siglaProvinciaIstat ?? (g?.luogoNascita?.comune as any)?.siglaProvincia ?? (g?.luogoNascita?.comune as any)?.provincia;
+                const luogoNascitaStr = comuneNascita
+                  ? `${comuneNascita}${provNascita ? ` (${provNascita})` : ''}`
+                  : (g?.luogoNascita?.localita?.descrizioneLocalita ?? g?.luogoNascita?.localita?.descrizioneStato);
                 const fmtDate = (d?: string) => d ? new Date(d).toLocaleDateString('it-IT') : d;
 
                 return (
@@ -9007,9 +9011,20 @@ export function App(): React.JSX.Element {
 
                             <div className="col-md-4">
                               <div className="text-muted small text-uppercase fw-semibold mb-1">Dati Anagrafici</div>
-                              <div className="small text-dark fw-medium">
-                                {g?.dataNascita ? `Nato il ${fmtDate(g.dataNascita)}` : ''} {luogoNascita ? `a ${luogoNascita}` : ''} {g?.sesso ? `(${g.sesso})` : ''}
+                              <div className="small text-dark fw-medium mb-1">
+                                {g?.dataNascita ? `${g.sesso === 'F' ? 'Nata' : 'Nato'} il ${fmtDate(g.dataNascita)}` : ''} {luogoNascitaStr ? `a ${luogoNascitaStr}` : ''}
                               </div>
+                              {g?.sesso && (
+                                <div className="mt-1">
+                                  <span className={`badge rounded-pill ${
+                                    g.sesso === 'F' ? 'bg-danger-subtle text-danger border border-danger-subtle' :
+                                    g.sesso === 'M' ? 'bg-primary-subtle text-primary border border-primary-subtle' :
+                                    'bg-secondary-subtle text-secondary'
+                                  }`}>
+                                    Sesso: {g.sesso}
+                                  </span>
+                                </div>
+                              )}
                               {altreInfo.length > 0 && (
                                 <div className="mt-2 pt-2 border-top">
                                   {altreInfo.map((info, i) => (
@@ -9043,17 +9058,21 @@ export function App(): React.JSX.Element {
                           <div className="card-body p-3 bg-white flex-grow-1">
                             {!anpr.success && <p className="small text-danger mb-0">{anpr.message}</p>}
                             {anpr.success && !anpr.found && <p className="small text-muted mb-0">Nessun dato trovato in ANPR</p>}
-                            {anpr.success && anpr.found && anpr.residenza?.[0] && (
-                              <div className="small">
-                                <div className="fw-bold text-dark mb-1">
-                                  {anpr.residenza[0].indirizzo?.toponimo?.specie} {anpr.residenza[0].indirizzo?.toponimo?.denominazioneToponimo}
-                                  {anpr.residenza[0].indirizzo?.numeroCivico?.numero ? `, ${anpr.residenza[0].indirizzo.numeroCivico.numero}${anpr.residenza[0].indirizzo.numeroCivico.lettera ?? ''}` : ''}
+                            {anpr.success && anpr.found && anpr.residenza?.[0] && (() => {
+                              const resComune = anpr.residenza[0].indirizzo?.comune;
+                              const resProv = resComune?.siglaProvinciaIstat ?? (resComune as any)?.siglaProvincia ?? (resComune as any)?.provincia;
+                              return (
+                                <div className="small">
+                                  <div className="fw-bold text-dark mb-1">
+                                    {anpr.residenza[0].indirizzo?.toponimo?.specie} {anpr.residenza[0].indirizzo?.toponimo?.denominazioneToponimo}
+                                    {anpr.residenza[0].indirizzo?.numeroCivico?.numero ? `, ${anpr.residenza[0].indirizzo.numeroCivico.numero}${anpr.residenza[0].indirizzo.numeroCivico.lettera ?? ''}` : ''}
+                                  </div>
+                                  <div className="text-muted">
+                                    {anpr.residenza[0].indirizzo?.cap} {resComune?.nomeComune} {resProv ? `(${resProv})` : ''}
+                                  </div>
                                 </div>
-                                <div className="text-muted">
-                                  {anpr.residenza[0].indirizzo?.cap} {anpr.residenza[0].indirizzo?.comune?.nomeComune}
-                                </div>
-                              </div>
-                            )}
+                              );
+                            })()}
                             {anpr.success && anpr.found && !anpr.residenza?.[0] && <p className="small text-muted mb-0">Nessun indirizzo di residenza registrato</p>}
                           </div>
                         </div>
