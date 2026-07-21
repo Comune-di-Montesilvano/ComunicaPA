@@ -17,6 +17,9 @@ export interface AttemptDetailDto {
   postalTrackingId: string | null;
   postalStatus: string | null;
   postalStatusUpdatedAt: string | null;
+  costCents?: number | null;
+  costCalculatedAt?: string | null;
+  costBreakdown?: Record<string, unknown> | null;
 }
 
 export interface NotificationDetailDto {
@@ -37,4 +40,5 @@ export interface NotificationDetailDto {
   downloads: Array<{ channel: string; attachmentIndex: number; downloadedAt: string }>;
   preview: PreviewMessageResult;
   appIoPreview: PreviewMessageResult | null;
+  totalCostCents?: number | null;
 }

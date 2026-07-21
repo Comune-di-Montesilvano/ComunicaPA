@@ -816,10 +816,11 @@ export function App(): React.JSX.Element {
   const [notifDetail, setNotifDetail] = useState<{
     recipient: { id: string; codiceFiscale: string; fullName: string | null; email: string | null; pec: string | null; status: string };
     campaign: { id: string; name: string; channelType: string };
-    attempts: Array<{ attemptNumber: number; status: string; channelType: string; errorMessage: string | null; sentAt: string | null; createdAt: string; appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null }; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; protocolNumber?: number | null; protocolYear?: number | null; protocolledAt?: string | null }>;
+    attempts: Array<{ attemptNumber: number; status: string; channelType: string; errorMessage: string | null; sentAt: string | null; createdAt: string; appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null }; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; protocolNumber?: number | null; protocolYear?: number | null; protocolledAt?: string | null; costCents?: number | null; costCalculatedAt?: string | null; costBreakdown?: Record<string, unknown> | null }>;
     preview: { subject: string; bodyHtml?: string; bodyMarkdown?: string };
     appIoPreview: { subject: string; bodyHtml?: string; bodyMarkdown?: string } | null;
     downloads: Array<{ channel: string; attachmentIndex: number; downloadedAt: string }>;
+    totalCostCents?: number | null;
   } | null>(null);
   const [notifDetailLoading, setNotifDetailLoading] = useState(false);
   const [sendLegalFacts, setSendLegalFacts] = useState<{ legalFactId: string; category: string }[] | null>(null);
@@ -7881,8 +7882,26 @@ export function App(): React.JSX.Element {
             <div className="modal fade show d-block" style={{ background: 'rgba(0,0,0,0.5)' }} tabIndex={-1}>
               <div className="modal-dialog modal-lg modal-dialog-scrollable">
                 <div className="modal-content">
-                  <div className="modal-header">
-                    <h5 className="modal-title">Dettaglio Notifica</h5>
+                  <div className="modal-header align-items-center">
+                    <h5 className="modal-title mb-0">Dettaglio Notifica</h5>
+                    {notifDetail && (
+                      <div className="ms-auto me-3">
+                        {notifDetail.totalCostCents !== undefined && notifDetail.totalCostCents !== null ? (
+                          <span className="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 fs-6 fw-semibold d-inline-flex align-items-center">
+                            <Euro size={16} className="me-1" />
+                            Costo: {(notifDetail.totalCostCents / 100).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €
+                          </span>
+                        ) : (notifDetail.campaign.channelType === 'SEND' || notifDetail.campaign.channelType === 'POSTAL') ? (
+                          <span className="badge bg-warning-subtle text-warning border border-warning-subtle px-3 py-2 fs-6 fw-semibold">
+                            Costo: Non calcolato
+                          </span>
+                        ) : (
+                          <span className="badge bg-light text-muted border px-3 py-2 fs-6 fw-semibold">
+                            Costo: 0,00 €
+                          </span>
+                        )}
+                      </div>
+                    )}
                     <button type="button" className="btn-close" onClick={() => setNotifDetail(null)}></button>
                   </div>
                   <div className="modal-body">

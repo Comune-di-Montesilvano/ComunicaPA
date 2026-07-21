@@ -115,6 +115,14 @@ export class NotificationsSearchService {
     const appIoDelivered = attempts.some((a) => (a.responsePayload?.['appIo'] as { success?: boolean } | undefined)?.success);
     const appIoPreview = appIoDelivered ? await this.campaignsService.renderAppIoCoDeliveryPreview(recipientId) : null;
 
+    const isBillableChannel = recipient.campaign.channelType === 'SEND' || recipient.campaign.channelType === 'POSTAL';
+    const calculatedAttempts = attempts.filter((a) => a.costCents !== null);
+    const totalCostCents = isBillableChannel
+      ? calculatedAttempts.length > 0
+        ? calculatedAttempts.reduce((sum, a) => sum + (a.costCents ?? 0), 0)
+        : null
+      : 0;
+
     return {
       recipient: {
         id: recipient.id,
@@ -150,6 +158,9 @@ export class NotificationsSearchService {
           postalTrackingId: a.postalTrackingId,
           postalStatus: a.postalStatus,
           postalStatusUpdatedAt: a.postalStatusUpdatedAt ? a.postalStatusUpdatedAt.toISOString() : null,
+          costCents: a.costCents ?? null,
+          costCalculatedAt: a.costCalculatedAt ? a.costCalculatedAt.toISOString() : null,
+          costBreakdown: a.costBreakdown ?? null,
         };
       }),
       downloads: downloads.map((d) => ({
@@ -159,6 +170,7 @@ export class NotificationsSearchService {
       })),
       preview,
       appIoPreview,
+      totalCostCents,
     };
   }
 

@@ -189,10 +189,14 @@ describe('NotificationsSearchService.getDetail', () => {
         postalTrackingId: null,
         postalStatus: null,
         postalStatusUpdatedAt: null,
+        costCents: null,
+        costCalculatedAt: null,
+        costBreakdown: null,
       }],
       downloads: [{ channel: 'EMAIL', attachmentIndex: 0, downloadedAt: '2026-07-02T08:00:00.000Z' }],
       preview: { subject: 'Ciao Mario', bodyHtml: '<p>Corpo</p>' },
       appIoPreview: { subject: 'Ciao Mario IO', bodyMarkdown: 'Corpo IO' },
+      totalCostCents: 0,
     });
   });
 
