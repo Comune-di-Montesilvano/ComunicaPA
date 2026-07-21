@@ -6522,7 +6522,7 @@ export function App(): React.JSX.Element {
               </div>
 
               {wizStep === 1 && wizSingleMode && (
-                <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+                <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
                   <div className="d-flex align-items-center justify-content-between mb-4 pb-3 border-bottom">
                     <div>
                       <h4 className="h5 fw-bold text-dark mb-1">Passo 1: Dettagli & Destinatario</h4>
@@ -6537,498 +6537,506 @@ export function App(): React.JSX.Element {
                     </button>
                   </div>
 
-                  {/* SEZIONE 1: Dati Destinatario */}
-                  <div className="card shadow-sm border-0 rounded-3 p-4 mb-4 bg-white">
-                    <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-3">Dati Destinatario</h5>
-                    <div className="row g-3 align-items-end">
-                      <div className="col-md-6">
-                        <label className="form-label small fw-bold text-dark mb-1" htmlFor="s_cf">
-                          Codice Fiscale / P.IVA <span className="text-danger">*</span>
-                        </label>
-                        <div className="input-group">
-                          <span className="input-group-text bg-light border-end-0"><Contact size={16} className="text-muted" /></span>
-                          <input
-                            type="text"
-                            id="s_cf"
-                            className="form-control border-start-0 ps-0 fw-semibold"
-                            placeholder="Inserisci CF o P.IVA"
-                            maxLength={16}
-                            style={{ letterSpacing: '0.5px' }}
-                            value={singleCf}
-                            onChange={(e) => {
-                              const v = e.target.value.toUpperCase();
-                              setSingleCf(v);
-                              const fullName = [singleSurname.trim(), singleFirstName.trim()].filter(Boolean).join(' ');
-                              setWizName(fullName ? `Invio singolo a ${fullName}` : (v ? `Invio singolo a ${v}` : ''));
-                              if (v !== singleAnprCheckedCf) {
-                                setSingleInadForced(false);
-                                setSingleInadAddress('');
-                                setSingleAppIoActive(false);
-                                setWizAppIoMode('none');
+                  <div className="row g-4">
+                    {/* COLONNA SINISTRA: Anagrafica e Canale */}
+                    <div className="col-lg-7">
+                      {/* SEZIONE 1: Dati Destinatario */}
+                      <div className="card shadow-sm border-0 rounded-3 p-4 mb-4 bg-white">
+                        <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-3">Dati Destinatario</h5>
+                        <div className="row g-3 align-items-end">
+                          <div className="col-md-6">
+                            <label className="form-label small fw-bold text-dark mb-1" htmlFor="s_cf">
+                              Codice Fiscale / P.IVA <span className="text-danger">*</span>
+                            </label>
+                            <div className="input-group">
+                              <span className="input-group-text bg-light border-end-0"><Contact size={16} className="text-muted" /></span>
+                              <input
+                                type="text"
+                                id="s_cf"
+                                className="form-control border-start-0 ps-0 fw-semibold"
+                                placeholder="Inserisci CF o P.IVA"
+                                maxLength={16}
+                                style={{ letterSpacing: '0.5px' }}
+                                value={singleCf}
+                                onChange={(e) => {
+                                  const v = e.target.value.toUpperCase();
+                                  setSingleCf(v);
+                                  const fullName = [singleSurname.trim(), singleFirstName.trim()].filter(Boolean).join(' ');
+                                  setWizName(fullName ? `Invio singolo a ${fullName}` : (v ? `Invio singolo a ${v}` : ''));
+                                  if (v !== singleAnprCheckedCf) {
+                                    setSingleInadForced(false);
+                                    setSingleInadAddress('');
+                                    setSingleAppIoActive(false);
+                                    setWizAppIoMode('none');
+                                  }
+                                }}
+                              />
+                              <button
+                                className="btn btn-outline-primary fw-medium"
+                                type="button"
+                                disabled={!isValidCfOrPiva(singleCf) || singleAnprLoading}
+                                onClick={runWizAnprCheck}
+                              >
+                                {singleAnprLoading ? <Loader2 className="icon-spin me-1" size={16} /> : null}
+                                Carica dati ANPR
+                              </button>
+                            </div>
+                          </div>
+                          <div className="col-md-3">
+                            <label className="form-label small fw-bold text-dark mb-1" htmlFor="s_surname">
+                              Cognome / Ragione Sociale <span className="text-danger">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              id="s_surname"
+                              className="form-control"
+                              placeholder="Cognome o Società"
+                              value={singleSurname}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setSingleSurname(v);
+                                const fullName = [v.trim(), singleFirstName.trim()].filter(Boolean).join(' ');
+                                setWizName(fullName ? `Invio singolo a ${fullName}` : (singleCf ? `Invio singolo a ${singleCf}` : ''));
+                              }}
+                            />
+                          </div>
+                          <div className="col-md-3">
+                            <label className="form-label small fw-bold text-dark mb-1" htmlFor="s_firstname">
+                              Nome
+                            </label>
+                            <input
+                              type="text"
+                              id="s_firstname"
+                              className="form-control"
+                              placeholder="Nome"
+                              value={singleFirstName}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setSingleFirstName(v);
+                                const fullName = [singleSurname.trim(), v.trim()].filter(Boolean).join(' ');
+                                setWizName(fullName ? `Invio singolo a ${fullName}` : (singleCf ? `Invio singolo a ${singleCf}` : ''));
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* SEZIONE 2: Canale e Configurazione di Invio */}
+                      <div className="card shadow-sm border-0 rounded-3 p-4 mb-4 bg-white">
+                        <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-3">Canale di Invio e Configurazione</h5>
+                        
+                        <div className="mb-3">
+                          <label className="form-label small fw-bold text-dark mb-1">Canale di Invio Principale *</label>
+                          <select
+                            className="form-select"
+                            value={wizChannel}
+                            disabled={singleInadForced}
+                            onChange={(e: any) => {
+                              const newChan = e.target.value as any;
+                              setWizChannel(newChan);
+                              const activeCfg = mailConfigs.find(c => c.type === newChan && c.active);
+                              setWizMailConfigId(activeCfg?.id || '');
+                              if (newChan === 'SEND') setWizProtocolla(true);
+                              if (newChan !== 'SEND' && newChan !== 'APP_IO' && wizAppIoMode === 'none') {
+                                setWizPaymentEnabled(false);
                               }
                             }}
-                          />
-                          <button
-                            className="btn btn-outline-primary fw-medium"
-                            type="button"
-                            disabled={!isValidCfOrPiva(singleCf) || singleAnprLoading}
-                            onClick={runWizAnprCheck}
                           >
-                            {singleAnprLoading ? <Loader2 className="icon-spin me-1" size={16} /> : null}
-                            Carica dati ANPR
-                          </button>
-                        </div>
-                      </div>
-                      <div className="col-md-3">
-                        <label className="form-label small fw-bold text-dark mb-1" htmlFor="s_surname">
-                          Cognome / Ragione Sociale <span className="text-danger">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          id="s_surname"
-                          className="form-control"
-                          placeholder="Cognome o Società"
-                          value={singleSurname}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            setSingleSurname(v);
-                            const fullName = [v.trim(), singleFirstName.trim()].filter(Boolean).join(' ');
-                            setWizName(fullName ? `Invio singolo a ${fullName}` : (singleCf ? `Invio singolo a ${singleCf}` : ''));
-                          }}
-                        />
-                      </div>
-                      <div className="col-md-3">
-                        <label className="form-label small fw-bold text-dark mb-1" htmlFor="s_firstname">
-                          Nome
-                        </label>
-                        <input
-                          type="text"
-                          id="s_firstname"
-                          className="form-control"
-                          placeholder="Nome"
-                          value={singleFirstName}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            setSingleFirstName(v);
-                            const fullName = [singleSurname.trim(), v.trim()].filter(Boolean).join(' ');
-                            setWizName(fullName ? `Invio singolo a ${fullName}` : (singleCf ? `Invio singolo a ${singleCf}` : ''));
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* SEZIONE 2: Canale e Configurazione di Invio */}
-                  <div className="card shadow-sm border-0 rounded-3 p-4 mb-4 bg-white">
-                    <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-3">Canale di Invio e Configurazione</h5>
-                    
-                    <div className="mb-3">
-                      <label className="form-label small fw-bold text-dark mb-1">Canale di Invio Principale *</label>
-                      <select
-                        className="form-select"
-                        value={wizChannel}
-                        disabled={singleInadForced}
-                        onChange={(e: any) => {
-                          const newChan = e.target.value as any;
-                          setWizChannel(newChan);
-                          const activeCfg = mailConfigs.find(c => c.type === newChan && c.active);
-                          setWizMailConfigId(activeCfg?.id || '');
-                          if (newChan === 'SEND') setWizProtocolla(true);
-                          if (newChan !== 'SEND' && newChan !== 'APP_IO' && wizAppIoMode === 'none') {
-                            setWizPaymentEnabled(false);
-                          }
-                        }}
-                      >
-                        {(['EMAIL', 'PEC', 'APP_IO', 'SEND', 'POSTAL'] as const).map(key => (
-                          <option key={key} value={key}>{getChannelMeta(key).label}</option>
-                        ))}
-                      </select>
-                      {singleInadForced && (
-                        <div className="alert alert-success border-0 bg-success-subtle text-success py-2 px-3 small d-flex align-items-center gap-2 mt-2 mb-0">
-                          <CheckCircle2 size={16} />
-                          <span>Domicilio digitale INAD trovato ({singleInadAddress}): canale forzato a PEC.</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {wizChannel === 'EMAIL' && (
-                      <div className="mb-3">
-                        <label className="form-label small fw-bold text-dark mb-1" htmlFor="s_email">
-                          Indirizzo Email <span className="text-danger">*</span>
-                        </label>
-                        <input
-                          type="email"
-                          id="s_email"
-                          className="form-control"
-                          placeholder="esempio@dominio.it"
-                          value={singleEmail}
-                          onChange={(e) => setSingleEmail(e.target.value)}
-                        />
-                      </div>
-                    )}
-                    {wizChannel === 'PEC' && (
-                      <div className="mb-3">
-                        <label className="form-label small fw-bold text-dark mb-1" htmlFor="s_pec">
-                          Indirizzo PEC <span className="text-danger">*</span>
-                        </label>
-                        <input
-                          type="email"
-                          id="s_pec"
-                          className="form-control"
-                          placeholder="esempio@pec.it"
-                          value={singlePec}
-                          disabled={singleInadForced}
-                          onChange={(e) => setSinglePec(e.target.value)}
-                        />
-                      </div>
-                    )}
-
-                    {(wizChannel === 'EMAIL' || wizChannel === 'PEC') && (
-                      <div className="mb-3">
-                        <label className="form-label small fw-bold text-dark mb-1">Server di Invio / Mittente *</label>
-                        <select
-                          className="form-select"
-                          value={wizMailConfigId}
-                          onChange={e => setWizMailConfigId(e.target.value)}
-                          required
-                        >
-                          <option value="">-- Seleziona Configurazione Mittente --</option>
-                          {mailConfigs
-                            .filter(c => c.type === wizChannel && c.active)
-                            .map(c => (
-                              <option key={c.id} value={c.id}>
-                                {c.name} ({c.fromAddress})
-                              </option>
+                            {(['EMAIL', 'PEC', 'APP_IO', 'SEND', 'POSTAL'] as const).map(key => (
+                              <option key={key} value={key}>{getChannelMeta(key).label}</option>
                             ))}
-                        </select>
-                        {mailConfigs.filter(c => c.type === wizChannel && c.active).length === 0 && (
-                          <div className="form-text text-danger small mt-1">
-                            Attenzione: non ci sono configurazioni attive per il canale {wizChannel}. Creane una nelle impostazioni.
+                          </select>
+                          {singleInadForced && (
+                            <div className="alert alert-success border-0 bg-success-subtle text-success py-2 px-3 small d-flex align-items-center gap-2 mt-2 mb-0">
+                              <CheckCircle2 size={16} />
+                              <span>Domicilio digitale INAD trovato ({singleInadAddress}): canale forzato a PEC.</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {wizChannel === 'EMAIL' && (
+                          <div className="mb-3">
+                            <label className="form-label small fw-bold text-dark mb-1" htmlFor="s_email">
+                              Indirizzo Email <span className="text-danger">*</span>
+                            </label>
+                            <input
+                              type="email"
+                              id="s_email"
+                              className="form-control"
+                              placeholder="esempio@dominio.it"
+                              value={singleEmail}
+                              onChange={(e) => setSingleEmail(e.target.value)}
+                            />
+                          </div>
+                        )}
+                        {wizChannel === 'PEC' && (
+                          <div className="mb-3">
+                            <label className="form-label small fw-bold text-dark mb-1" htmlFor="s_pec">
+                              Indirizzo PEC <span className="text-danger">*</span>
+                            </label>
+                            <input
+                              type="email"
+                              id="s_pec"
+                              className="form-control"
+                              placeholder="esempio@pec.it"
+                              value={singlePec}
+                              disabled={singleInadForced}
+                              onChange={(e) => setSinglePec(e.target.value)}
+                            />
+                          </div>
+                        )}
+
+                        {(wizChannel === 'EMAIL' || wizChannel === 'PEC') && (
+                          <div className="mb-3">
+                            <label className="form-label small fw-bold text-dark mb-1">Server di Invio / Mittente *</label>
+                            <select
+                              className="form-select"
+                              value={wizMailConfigId}
+                              onChange={e => setWizMailConfigId(e.target.value)}
+                              required
+                            >
+                              <option value="">-- Seleziona Configurazione Mittente --</option>
+                              {mailConfigs
+                                .filter(c => c.type === wizChannel && c.active)
+                                .map(c => (
+                                  <option key={c.id} value={c.id}>
+                                    {c.name} ({c.fromAddress})
+                                  </option>
+                                ))}
+                            </select>
+                            {mailConfigs.filter(c => c.type === wizChannel && c.active).length === 0 && (
+                              <div className="form-text text-danger small mt-1">
+                                Attenzione: non ci sono configurazioni attive per il canale {wizChannel}. Creane una nelle impostazioni.
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {wizChannel === 'APP_IO' && (
+                          <div className="mb-3">
+                            <label className="form-label small fw-bold text-dark mb-1">Servizio App IO Associato *</label>
+                            <select
+                              className="form-select"
+                              value={wizAppIoServiceId}
+                              onChange={e => setWizAppIoServiceId(e.target.value)}
+                              required
+                            >
+                              <option value="">-- Seleziona Servizio App IO --</option>
+                              {ioServices.map(s => (
+                                <option key={s.id} value={s.id}>
+                                  {s.nome} {s.isDefault ? '(Predefinito)' : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+
+                        {wizChannel === 'SEND' && (
+                          <div className="d-flex flex-column gap-3">
+                            <div>
+                              <label className="form-label small fw-bold text-dark mb-1">Tassonomia SEND *</label>
+                              <select
+                                className="form-select"
+                                value={wizTaxonomyCode}
+                                onChange={e => setWizTaxonomyCode(e.target.value)}
+                                required
+                              >
+                                <option value="">-- Seleziona tassonomia --</option>
+                                {settSendTaxonomies
+                                  .filter(t => t.code.endsWith(wizPaymentEnabled ? 'P' : 'N'))
+                                  .map(t => (
+                                    <option key={t.code} value={t.code}>{t.code} — {t.label}</option>
+                                  ))}
+                              </select>
+                              {settSendTaxonomies.filter(t => t.code.endsWith(wizPaymentEnabled ? 'P' : 'N')).length === 0 && (
+                                <div className="form-text text-danger small mt-1">
+                                  Nessuna tassonomia {wizPaymentEnabled ? 'con pagamento (P)' : 'senza pagamento (N)'} abilitata. Configurale in Impostazioni → SEND.
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <label className="form-label small fw-bold text-dark mb-1">Tipo comunicazione fisica (fallback se la consegna digitale fallisce)</label>
+                              <select
+                                className="form-select"
+                                value={wizPhysicalCommunicationType}
+                                onChange={e => setWizPhysicalCommunicationType(e.target.value as any)}
+                              >
+                                <option value="AR_REGISTERED_LETTER">Raccomandata A/R</option>
+                                <option value="REGISTERED_LETTER_890">Notifica ex L.890/1982</option>
+                              </select>
+                            </div>
+                          </div>
+                        )}
+
+                        {wizChannel === 'POSTAL' && (() => {
+                          const activeProvider = postalProviders.find((p) => p.active);
+                          const enabledTypes = activeProvider?.enabledServiceTypes ?? [];
+                          const contrattiPerTipo = activeProvider?.contratti.filter((c) => wizPostalServiceType.startsWith(c.tipologia)) ?? [];
+                          return (
+                            <div className="row g-3">
+                              {!activeProvider && (
+                                <div className="col-12">
+                                  <div className="alert alert-warning small mb-0">
+                                    Nessun provider di postalizzazione attivo — configuralo e testalo in Impostazioni → Postalizzazione prima di lanciare questa campagna.
+                                  </div>
+                                </div>
+                              )}
+                              <div className="col-md-6">
+                                <label className="form-label small fw-bold text-dark mb-1">Tipo di invio *</label>
+                                <select className="form-select" value={wizPostalServiceType} required disabled={enabledTypes.length === 0}
+                                  onChange={(e) => { setWizPostalServiceType(e.target.value); setWizPostalCodiceContratto(''); }}>
+                                  <option value="">Seleziona…</option>
+                                  {enabledTypes.map((st) => <option key={st} value={st}>{postalServiceTypeLabel(st)}</option>)}
+                                </select>
+                                {activeProvider && enabledTypes.length === 0 && (
+                                  <div className="form-text small text-warning mt-1">Nessuna tipologia abilitata — esegui il Test del provider in Impostazioni.</div>
+                                )}
+                                {wizPostalServiceType && POSTAL_SERVICE_TYPE_META[wizPostalServiceType] && (
+                                  <div className="form-text small text-muted mt-1">{POSTAL_SERVICE_TYPE_META[wizPostalServiceType].description}</div>
+                                )}
+                              </div>
+                              {wizPostalServiceType.startsWith('Raccomandata') && (
+                                <div className="col-md-3 d-flex align-items-end pb-2">
+                                  <div className="form-check">
+                                    <input className="form-check-input" type="checkbox" id="wizSinglePostalAR"
+                                      checked={wizPostalReturnReceipt} onChange={(e) => setWizPostalReturnReceipt(e.target.checked)} />
+                                    <label className="form-check-label small fw-medium" htmlFor="wizSinglePostalAR">Ricevuta di ritorno (AR)</label>
+                                  </div>
+                                </div>
+                              )}
+                              {contrattiPerTipo.length > 0 && (
+                                <div className="col-md-3">
+                                  <label className="form-label small fw-bold text-dark mb-1">Contratto {contrattiPerTipo.length > 1 ? '*' : ''}</label>
+                                  <select className="form-select" value={wizPostalCodiceContratto} required={contrattiPerTipo.length > 1}
+                                    onChange={(e) => setWizPostalCodiceContratto(e.target.value)}>
+                                    {contrattiPerTipo.length > 1 && <option value="">Seleziona…</option>}
+                                    {contrattiPerTipo.map((c) => (
+                                      <option key={c.codiceContratto} value={c.codiceContratto}>{c.descrizione} ({c.codiceContratto})</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {needsWizSinglePhysicalAddress && (
+                          <div className="row g-3 mt-2">
+                            <div className="col-md-6">
+                              <label className="form-label small fw-bold text-dark mb-1">Indirizzo (via e civico) *</label>
+                              <input
+                                type="text"
+                                className="form-control"
+                                placeholder="Es: Via Roma 12"
+                                value={singleAddress}
+                                onChange={(e) => setSingleAddress(e.target.value)}
+                              />
+                            </div>
+                            <div className="col-md-3">
+                              <label className="form-label small fw-bold text-dark mb-1">Comune *</label>
+                              <input
+                                type="text"
+                                className="form-control"
+                                placeholder="Comune"
+                                value={singleMunicipality}
+                                onChange={(e) => setSingleMunicipality(e.target.value)}
+                              />
+                            </div>
+                            <div className="col-md-1">
+                              <label className="form-label small fw-bold text-dark mb-1">CAP *</label>
+                              <input
+                                type="text"
+                                className="form-control text-center"
+                                placeholder="CAP"
+                                maxLength={5}
+                                value={singleZip}
+                                onChange={(e) => setSingleZip(e.target.value)}
+                              />
+                            </div>
+                            <div className="col-md-2">
+                              <label className="form-label small fw-bold text-dark mb-1">Provincia *</label>
+                              <input
+                                type="text"
+                                className="form-control text-center"
+                                placeholder="Prov"
+                                maxLength={2}
+                                value={singleProvince}
+                                onChange={(e) => setSingleProvince(e.target.value.toUpperCase())}
+                              />
+                            </div>
                           </div>
                         )}
                       </div>
-                    )}
+                    </div>
 
-                    {wizChannel === 'APP_IO' && (
-                      <div className="mb-3">
-                        <label className="form-label small fw-bold text-dark mb-1">Servizio App IO Associato *</label>
-                        <select
-                          className="form-select"
-                          value={wizAppIoServiceId}
-                          onChange={e => setWizAppIoServiceId(e.target.value)}
-                          required
-                        >
-                          <option value="">-- Seleziona Servizio App IO --</option>
-                          {ioServices.map(s => (
-                            <option key={s.id} value={s.id}>
-                              {s.nome} {s.isDefault ? '(Predefinito)' : ''}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
+                    {/* COLONNA DESTRA: Opzioni e Allegati */}
+                    <div className="col-lg-5">
+                      {/* SEZIONE 3: Co-consegna App IO e Opzioni Avanzate */}
+                      <div className="card shadow-sm border-0 rounded-3 p-4 mb-4 bg-white">
+                        <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-3">Opzioni di Invio</h5>
 
-                    {wizChannel === 'SEND' && (
-                      <div className="d-flex flex-column gap-3">
-                        <div>
-                          <label className="form-label small fw-bold text-dark mb-1">Tassonomia SEND *</label>
-                          <select
-                            className="form-select"
-                            value={wizTaxonomyCode}
-                            onChange={e => setWizTaxonomyCode(e.target.value)}
-                            required
-                          >
-                            <option value="">-- Seleziona tassonomia --</option>
-                            {settSendTaxonomies
-                              .filter(t => t.code.endsWith(wizPaymentEnabled ? 'P' : 'N'))
-                              .map(t => (
-                                <option key={t.code} value={t.code}>{t.code} — {t.label}</option>
-                              ))}
-                          </select>
-                          {settSendTaxonomies.filter(t => t.code.endsWith(wizPaymentEnabled ? 'P' : 'N')).length === 0 && (
-                            <div className="form-text text-danger small mt-1">
-                              Nessuna tassonomia {wizPaymentEnabled ? 'con pagamento (P)' : 'senza pagamento (N)'} abilitata. Configurale in Impostazioni → SEND.
-                            </div>
-                          )}
-                        </div>
-                        <div>
-                          <label className="form-label small fw-bold text-dark mb-1">Tipo comunicazione fisica (fallback se la consegna digitale fallisce)</label>
-                          <select
-                            className="form-select"
-                            value={wizPhysicalCommunicationType}
-                            onChange={e => setWizPhysicalCommunicationType(e.target.value as any)}
-                          >
-                            <option value="AR_REGISTERED_LETTER">Raccomandata A/R</option>
-                            <option value="REGISTERED_LETTER_890">Notifica ex L.890/1982</option>
-                          </select>
-                        </div>
-                      </div>
-                    )}
-
-                    {wizChannel === 'POSTAL' && (() => {
-                      const activeProvider = postalProviders.find((p) => p.active);
-                      const enabledTypes = activeProvider?.enabledServiceTypes ?? [];
-                      const contrattiPerTipo = activeProvider?.contratti.filter((c) => wizPostalServiceType.startsWith(c.tipologia)) ?? [];
-                      return (
-                        <div className="row g-3">
-                          {!activeProvider && (
-                            <div className="col-12">
-                              <div className="alert alert-warning small mb-0">
-                                Nessun provider di postalizzazione attivo — configuralo e testalo in Impostazioni → Postalizzazione prima di lanciare questa campagna.
+                        {(wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && singleAppIoActive && (
+                          <div className="card border-0 rounded-3 mb-3 shadow-sm" style={{ background: '#f8f9fc' }}>
+                            <div className="card-body p-3">
+                              <div className="d-flex align-items-center gap-2 mb-3">
+                                <Smartphone className="text-primary" size={18} />
+                                <h6 className="fw-bold text-dark mb-0 small">Co-consegna su App IO</h6>
                               </div>
-                            </div>
-                          )}
-                          <div className="col-md-6">
-                            <label className="form-label small fw-bold text-dark mb-1">Tipo di invio *</label>
-                            <select className="form-select" value={wizPostalServiceType} required disabled={enabledTypes.length === 0}
-                              onChange={(e) => { setWizPostalServiceType(e.target.value); setWizPostalCodiceContratto(''); }}>
-                              <option value="">Seleziona…</option>
-                              {enabledTypes.map((st) => <option key={st} value={st}>{postalServiceTypeLabel(st)}</option>)}
-                            </select>
-                            {activeProvider && enabledTypes.length === 0 && (
-                              <div className="form-text small text-warning mt-1">Nessuna tipologia abilitata — esegui il Test del provider in Impostazioni.</div>
-                            )}
-                            {wizPostalServiceType && POSTAL_SERVICE_TYPE_META[wizPostalServiceType] && (
-                              <div className="form-text small text-muted mt-1">{POSTAL_SERVICE_TYPE_META[wizPostalServiceType].description}</div>
-                            )}
-                          </div>
-                          {wizPostalServiceType.startsWith('Raccomandata') && (
-                            <div className="col-md-3 d-flex align-items-end pb-2">
-                              <div className="form-check">
-                                <input className="form-check-input" type="checkbox" id="wizSinglePostalAR"
-                                  checked={wizPostalReturnReceipt} onChange={(e) => setWizPostalReturnReceipt(e.target.checked)} />
-                                <label className="form-check-label small fw-medium" htmlFor="wizSinglePostalAR">Ricevuta di ritorno (AR)</label>
+                              <div className="alert alert-success border-0 bg-success-subtle text-success py-2 px-3 small d-flex align-items-center gap-2 mb-3">
+                                <CheckCircle2 size={16} />
+                                <span>Servizio App IO attivo per questo destinatario.</span>
                               </div>
+                              <div className="form-check mb-0">
+                                <input
+                                  type="checkbox"
+                                  className="form-check-input"
+                                  id="wiz_single_appio_parallel"
+                                  checked={wizAppIoMode === 'parallel'}
+                                  onChange={e => {
+                                    const checked = e.target.checked;
+                                    setWizAppIoMode(checked ? 'parallel' : 'none');
+                                    if (!checked) setWizPaymentEnabled(false);
+                                  }}
+                                />
+                                <label className="form-check-label small fw-medium" htmlFor="wiz_single_appio_parallel">
+                                  Invia anche via App IO (co-consegna parallela, oltre a {channelLabel(wizChannel)})
+                                </label>
+                              </div>
+                              {wizAppIoMode === 'parallel' && (
+                                <div className="mt-3">
+                                  <label className="form-label small fw-bold text-dark mb-1">Servizio App IO *</label>
+                                  <select
+                                    className="form-select"
+                                    value={wizAppIoServiceId}
+                                    onChange={e => setWizAppIoServiceId(e.target.value)}
+                                    required
+                                  >
+                                    <option value="">-- Seleziona Servizio App IO --</option>
+                                    {ioServices.map(s => (
+                                      <option key={s.id} value={s.id}>
+                                        {s.nome} {s.isDefault ? '(Predefinito)' : ''}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
                             </div>
-                          )}
-                          {contrattiPerTipo.length > 0 && (
-                            <div className="col-md-3">
-                              <label className="form-label small fw-bold text-dark mb-1">Contratto {contrattiPerTipo.length > 1 ? '*' : ''}</label>
-                              <select className="form-select" value={wizPostalCodiceContratto} required={contrattiPerTipo.length > 1}
-                                onChange={(e) => setWizPostalCodiceContratto(e.target.value)}>
-                                {contrattiPerTipo.length > 1 && <option value="">Seleziona…</option>}
-                                {contrattiPerTipo.map((c) => (
-                                  <option key={c.codiceContratto} value={c.codiceContratto}>{c.descrizione} ({c.codiceContratto})</option>
-                                ))}
-                              </select>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
-
-                    {needsWizSinglePhysicalAddress && (
-                      <div className="row g-3 mt-2">
-                        <div className="col-md-6">
-                          <label className="form-label small fw-bold text-dark mb-1">Indirizzo (via e civico) *</label>
-                          <input
-                            type="text"
-                            className="form-control"
-                            placeholder="Es: Via Roma 12"
-                            value={singleAddress}
-                            onChange={(e) => setSingleAddress(e.target.value)}
-                          />
-                        </div>
-                        <div className="col-md-3">
-                          <label className="form-label small fw-bold text-dark mb-1">Comune *</label>
-                          <input
-                            type="text"
-                            className="form-control"
-                            placeholder="Comune"
-                            value={singleMunicipality}
-                            onChange={(e) => setSingleMunicipality(e.target.value)}
-                          />
-                        </div>
-                        <div className="col-md-1">
-                          <label className="form-label small fw-bold text-dark mb-1">CAP *</label>
-                          <input
-                            type="text"
-                            className="form-control text-center"
-                            placeholder="CAP"
-                            maxLength={5}
-                            value={singleZip}
-                            onChange={(e) => setSingleZip(e.target.value)}
-                          />
-                        </div>
-                        <div className="col-md-2">
-                          <label className="form-label small fw-bold text-dark mb-1">Provincia *</label>
-                          <input
-                            type="text"
-                            className="form-control text-center"
-                            placeholder="Prov"
-                            maxLength={2}
-                            value={singleProvince}
-                            onChange={(e) => setSingleProvince(e.target.value.toUpperCase())}
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* SEZIONE 3: Co-consegna App IO e Opzioni Avanzate */}
-                  <div className="card shadow-sm border-0 rounded-3 p-4 mb-4 bg-white">
-                    <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-3">Opzioni di Invio</h5>
-
-                    {(wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && singleAppIoActive && (
-                      <div className="card border-0 rounded-3 mb-3 shadow-sm" style={{ background: '#f8f9fc' }}>
-                        <div className="card-body p-3">
-                          <div className="d-flex align-items-center gap-2 mb-3">
-                            <Smartphone className="text-primary" size={18} />
-                            <h6 className="fw-bold text-dark mb-0 small">Co-consegna su App IO</h6>
                           </div>
-                          <div className="alert alert-success border-0 bg-success-subtle text-success py-2 px-3 small d-flex align-items-center gap-2 mb-3">
-                            <CheckCircle2 size={16} />
-                            <span>Servizio App IO attivo per questo destinatario.</span>
-                          </div>
-                          <div className="form-check mb-0">
+                        )}
+
+                        <div className="form-check mb-3">
+                          <input
+                            type="checkbox"
+                            className="form-check-input"
+                            id="wiz_single_protocolla"
+                            checked={wizProtocolla}
+                            disabled={wizChannel === 'SEND'}
+                            onChange={(e) => setWizProtocolla(e.target.checked)}
+                          />
+                          <label className="form-check-label small fw-medium text-dark" htmlFor="wiz_single_protocolla">
+                            Protocolla questo invio
+                            {wizChannel === 'SEND' && (
+                              <span className="text-muted"> (obbligatorio per SEND)</span>
+                            )}
+                          </label>
+                        </div>
+
+                        {(wizChannel === 'SEND' || wizChannel === 'APP_IO' || wizAppIoMode !== 'none') && (
+                          <div className="form-check mb-3">
                             <input
                               type="checkbox"
                               className="form-check-input"
-                              id="wiz_single_appio_parallel"
-                              checked={wizAppIoMode === 'parallel'}
-                              onChange={e => {
-                                const checked = e.target.checked;
-                                setWizAppIoMode(checked ? 'parallel' : 'none');
-                                if (!checked) setWizPaymentEnabled(false);
-                              }}
+                              id="wiz_single_payment_enabled"
+                              checked={wizPaymentEnabled}
+                              onChange={e => setWizPaymentEnabled(e.target.checked)}
                             />
-                            <label className="form-check-label small fw-medium" htmlFor="wiz_single_appio_parallel">
-                              Invia anche via App IO (co-consegna parallela, oltre a {channelLabel(wizChannel)})
+                            <label className="form-check-label small fw-bold text-dark" htmlFor="wiz_single_payment_enabled">
+                              Integrazione pagamenti pagoPA
                             </label>
                           </div>
-                          {wizAppIoMode === 'parallel' && (
-                            <div className="mt-3">
-                              <label className="form-label small fw-bold text-dark mb-1">Servizio App IO *</label>
-                              <select
-                                className="form-select"
-                                value={wizAppIoServiceId}
-                                onChange={e => setWizAppIoServiceId(e.target.value)}
-                                required
-                              >
-                                <option value="">-- Seleziona Servizio App IO --</option>
-                                {ioServices.map(s => (
-                                  <option key={s.id} value={s.id}>
-                                    {s.nome} {s.isDefault ? '(Predefinito)' : ''}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="form-check mb-3">
-                      <input
-                        type="checkbox"
-                        className="form-check-input"
-                        id="wiz_single_protocolla"
-                        checked={wizProtocolla}
-                        disabled={wizChannel === 'SEND'}
-                        onChange={(e) => setWizProtocolla(e.target.checked)}
-                      />
-                      <label className="form-check-label small fw-medium text-dark" htmlFor="wiz_single_protocolla">
-                        Protocolla questo invio
-                        {wizChannel === 'SEND' && (
-                          <span className="text-muted"> (obbligatorio per SEND)</span>
                         )}
-                      </label>
-                    </div>
 
-                    {(wizChannel === 'SEND' || wizChannel === 'APP_IO' || wizAppIoMode !== 'none') && (
-                      <div className="form-check mb-3">
-                        <input
-                          type="checkbox"
-                          className="form-check-input"
-                          id="wiz_single_payment_enabled"
-                          checked={wizPaymentEnabled}
-                          onChange={e => setWizPaymentEnabled(e.target.checked)}
-                        />
-                        <label className="form-check-label small fw-bold text-dark" htmlFor="wiz_single_payment_enabled">
-                          Integrazione pagamenti pagoPA
-                        </label>
+                        {wizPaymentEnabled && (wizChannel === 'SEND' || wizChannel === 'APP_IO' || wizAppIoMode !== 'none') && (
+                          <div className="row g-3 mb-2 ps-3 border-start border-3 border-light">
+                            <div className="col-md-4">
+                              <label className="form-label small fw-bold text-dark mb-1">IUV</label>
+                              <input
+                                type="text"
+                                className="form-control"
+                                placeholder="Codice Avviso"
+                                value={singlePaymentIuv}
+                                onChange={(e) => setSinglePaymentIuv(e.target.value)}
+                              />
+                            </div>
+                            <div className="col-md-4">
+                              <label className="form-label small fw-bold text-dark mb-1">Importo (€)</label>
+                              <input
+                                type="text"
+                                className="form-control"
+                                placeholder="Es: 15.00"
+                                value={singlePaymentImporto}
+                                onChange={(e) => setSinglePaymentImporto(e.target.value)}
+                              />
+                            </div>
+                            <div className="col-md-4">
+                              <label className="form-label small fw-bold text-dark mb-1">Scadenza</label>
+                              <input
+                                type="date"
+                                className="form-control"
+                                value={singlePaymentScadenza}
+                                onChange={(e) => setSinglePaymentScadenza(e.target.value)}
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    )}
 
-                    {wizPaymentEnabled && (wizChannel === 'SEND' || wizChannel === 'APP_IO' || wizAppIoMode !== 'none') && (
-                      <div className="row g-3 mb-2 ps-3 border-start border-3 border-light">
-                        <div className="col-md-4">
-                          <label className="form-label small fw-bold text-dark mb-1">IUV / Codice Avviso</label>
-                          <input
-                            type="text"
-                            className="form-control"
-                            placeholder="Codice Avviso pagoPA"
-                            value={singlePaymentIuv}
-                            onChange={(e) => setSinglePaymentIuv(e.target.value)}
-                          />
-                        </div>
-                        <div className="col-md-4">
-                          <label className="form-label small fw-bold text-dark mb-1">Importo (€)</label>
-                          <input
-                            type="text"
-                            className="form-control"
-                            placeholder="Es: 15.00"
-                            value={singlePaymentImporto}
-                            onChange={(e) => setSinglePaymentImporto(e.target.value)}
-                          />
-                        </div>
-                        <div className="col-md-4">
-                          <label className="form-label small fw-bold text-dark mb-1">Scadenza (opzionale)</label>
-                          <input
-                            type="date"
-                            className="form-control"
-                            value={singlePaymentScadenza}
-                            onChange={(e) => setSinglePaymentScadenza(e.target.value)}
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* SEZIONE 4: Allegati */}
-                  <div className="card shadow-sm border-0 rounded-3 p-4 mb-4 bg-white">
-                    <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-3">
-                      Allegati
-                      {(wizChannel === 'SEND' || wizChannel === 'POSTAL') && <span className="text-danger"> *</span>}
-                    </h5>
-                    
-                    {wizSingleAttachmentSlots.map((slot, idx) => (
-                      <div className="row g-2 mb-2 align-items-center" key={slot.id}>
-                        <div className="col-md-4">
-                          <input
-                            type="text"
-                            className="form-control form-control-sm"
-                            placeholder={`Nome allegato ${idx + 1}`}
-                            value={slot.label}
-                            onChange={(e) => updateWizSingleAttachmentSlot(slot.id, { label: e.target.value })}
-                          />
-                        </div>
-                        <div className="col-md-6">
-                          <input
-                            type="file"
-                            accept=".pdf"
-                            className="form-control form-control-sm"
-                            onChange={(e) => updateWizSingleAttachmentSlot(slot.id, { file: e.target.files?.[0] || null })}
-                          />
-                        </div>
-                        <div className="col-md-2 text-end">
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-outline-danger"
-                            onClick={() => removeWizSingleAttachmentSlot(slot.id)}
-                          >
-                            <Trash2 size={14} />
+                      {/* SEZIONE 4: Allegati */}
+                      <div className="card shadow-sm border-0 rounded-3 p-4 mb-4 bg-white">
+                        <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-3">
+                          Allegati
+                          {(wizChannel === 'SEND' || wizChannel === 'POSTAL') && <span className="text-danger"> *</span>}
+                        </h5>
+                        
+                        {wizSingleAttachmentSlots.map((slot, idx) => (
+                          <div className="row g-2 mb-2 align-items-center" key={slot.id}>
+                            <div className="col-md-4">
+                              <input
+                                type="text"
+                                className="form-control form-control-sm"
+                                placeholder={`Nome allegato ${idx + 1}`}
+                                value={slot.label}
+                                onChange={(e) => updateWizSingleAttachmentSlot(slot.id, { label: e.target.value })}
+                              />
+                            </div>
+                            <div className="col-md-6">
+                              <input
+                                type="file"
+                                accept=".pdf"
+                                className="form-control form-control-sm"
+                                onChange={(e) => updateWizSingleAttachmentSlot(slot.id, { file: e.target.files?.[0] || null })}
+                              />
+                            </div>
+                            <div className="col-md-2 text-end">
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-danger"
+                                onClick={() => removeWizSingleAttachmentSlot(slot.id)}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                        
+                        <div className="mt-3">
+                          <button type="button" className="btn btn-sm btn-outline-primary px-3" onClick={addWizSingleAttachmentSlot}>
+                            + Aggiungi allegato
                           </button>
+                          <div className="form-text small text-muted mt-2">
+                            Il caricamento effettivo dei file avviene al momento dell'invio o del test.
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                    
-                    <div className="mt-3">
-                      <button type="button" className="btn btn-sm btn-outline-primary px-3" onClick={addWizSingleAttachmentSlot}>
-                        + Aggiungi allegato
-                      </button>
-                      <div className="form-text small text-muted mt-2">
-                        Il caricamento effettivo dei file avviene al momento dell'invio o del test.
                       </div>
                     </div>
                   </div>
