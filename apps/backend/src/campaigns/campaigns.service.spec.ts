@@ -1175,11 +1175,16 @@ describe('CampaignsService', () => {
         .fn()
         .mockReturnValueOnce(makeQb({ count: 60 }))
         .mockReturnValueOnce(makeQb({ rawMany: [{ month: '2026-06', downloaded: '30' }] }))
-        .mockReturnValueOnce(makeQb({ count: 15 }));
+        .mockReturnValueOnce(makeQb({ count: 15 }))
+        .mockReturnValueOnce(makeQb({ rawMany: [] }));
 
       mockDownloadEventRepo.createQueryBuilder = jest
         .fn()
         .mockReturnValueOnce(makeQb({ rawMany: [{ channel: 'EMAIL', count: '55' }] }));
+
+      mockAttemptRepo.createQueryBuilder = jest
+        .fn()
+        .mockReturnValueOnce(makeQb({ rawOne: { totalCostCents: '2431' } }));
 
       const result = await service.getGlobalStats('2026-06-01', '2026-07-08');
 
@@ -1189,6 +1194,8 @@ describe('CampaignsService', () => {
         totalFailed: 10,
         totalDownloaded: 60,
         downloadPercentage: 60,
+        totalCostCents: 2431,
+        totalSavingCents: 0,
       });
       expect(result.monthlyTrend).toEqual([
         { month: '2026-06', sent: 50, downloaded: 30 },
@@ -1213,8 +1220,10 @@ describe('CampaignsService', () => {
         .fn()
         .mockReturnValueOnce(makeQb({ count: 0 }))
         .mockReturnValueOnce(makeQb({ rawMany: [] }))
-        .mockReturnValueOnce(makeQb({ count: 0 }));
+        .mockReturnValueOnce(makeQb({ count: 0 }))
+        .mockReturnValueOnce(makeQb({ rawMany: [] }));
       mockDownloadEventRepo.createQueryBuilder = jest.fn().mockReturnValueOnce(makeQb({ rawMany: [] }));
+      mockAttemptRepo.createQueryBuilder = jest.fn().mockReturnValueOnce(makeQb({ rawOne: undefined }));
 
       const result = await service.getGlobalStats();
 
@@ -1224,12 +1233,14 @@ describe('CampaignsService', () => {
         totalFailed: 0,
         totalDownloaded: 0,
         downloadPercentage: 0,
+        totalCostCents: 0,
+        totalSavingCents: 0,
       });
       expect(result.monthlyTrend).toEqual([]);
       expect(result.campaignLeaderboard).toEqual([]);
     });
 
-    it('esclude sempre le campagne isTest=true da ognuna delle 8 query aggregate', async () => {
+    it('esclude sempre le campagne isTest=true da ognuna delle 9 query aggregate', async () => {
       const createdQbs: any[] = [];
       const trackedMakeQb = (terminal: { rawOne?: any; rawMany?: any[]; count?: number }) => {
         const qb = makeQb(terminal);
@@ -1248,17 +1259,20 @@ describe('CampaignsService', () => {
         .fn()
         .mockImplementationOnce(() => trackedMakeQb({ count: 0 })) // totalDownloaded
         .mockImplementationOnce(() => trackedMakeQb({ rawMany: [] })) // downloadedTrendRows
-        .mockImplementationOnce(() => trackedMakeQb({ count: 0 })); // neverDownloadedCount
+        .mockImplementationOnce(() => trackedMakeQb({ count: 0 })) // neverDownloadedCount
+        .mockImplementationOnce(() => trackedMakeQb({ rawMany: [] })); // savingRow
 
       mockDownloadEventRepo.createQueryBuilder = jest
         .fn()
         .mockImplementationOnce(() => trackedMakeQb({ rawMany: [] })); // downloadChannelRows
 
+      mockAttemptRepo.createQueryBuilder = jest
+        .fn()
+        .mockImplementationOnce(() => trackedMakeQb({ rawOne: { totalCostCents: '0' } })); // costRow
+
       await service.getGlobalStats();
 
-      expect(createdQbs).toHaveLength(8);
-      // createdQbs e' popolato in ordine cronologico REALE di invocazione (l'ordine dei
-      // vari `await` sequenziali dentro getGlobalStats()), non raggruppato per repository.
+      expect(createdQbs).toHaveLength(9);
       const [
         totalsRowQb,
         totalDownloadedQb,
@@ -1268,6 +1282,7 @@ describe('CampaignsService', () => {
         downloadChannelQb,
         leaderboardQb,
         neverDownloadedQb,
+        costRowQb,
       ] = createdQbs;
 
       const names = [
@@ -1279,13 +1294,11 @@ describe('CampaignsService', () => {
         ['downloadChannelRows', downloadChannelQb],
         ['leaderboardRows', leaderboardQb],
         ['neverDownloadedCount', neverDownloadedQb],
+        ['costRow', costRowQb],
       ] as const;
 
       for (const [name, qb] of names) {
         const andWhereCalls = qb.andWhere.mock.calls.map((c: unknown[]) => c[0]);
-        // Il nome della query builder e' incluso nell'oggetto confrontato (non solo in un
-        // commento) cosi' un fallimento futuro riporta ESPLICITAMENTE quale dei query
-        // builder manca del filtro, invece di un generico "expected array to contain".
         expect({ queryBuilder: name, hasIsTestFilter: andWhereCalls.includes('c.isTest = false') }).toEqual({
           queryBuilder: name,
           hasIsTestFilter: true,
