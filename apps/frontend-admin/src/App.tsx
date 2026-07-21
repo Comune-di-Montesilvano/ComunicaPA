@@ -29,38 +29,60 @@ declare global {
 const API_BASE = window.__COMUNICAPA_CONFIG__?.apiBase ?? 'http://localhost:8080';
 const ADMIN_API_BASE = `${API_BASE}/admin`;
 
-const CHANNEL_META: Record<string, { label: string; icon: React.ComponentType<{ className?: string; size?: number }>; badge: string }> = {
-  PEC: { label: 'PEC', icon: MailOpen, badge: 'bg-info text-dark' },
-  EMAIL: { label: 'Email', icon: Mail, badge: 'bg-success text-white' },
-  APP_IO: { label: 'AppIO', icon: Smartphone, badge: 'bg-primary text-white' },
-  SEND: { label: 'SEND', icon: Send, badge: 'bg-warning text-dark' },
-  POSTAL: { label: 'Postalizzazione', icon: MailCheck, badge: 'bg-secondary text-white' },
-  CITIZEN_PORTAL: { label: 'Portale Cittadino', icon: Globe, badge: 'bg-primary text-white' },
-  PORTALE_CITTADINO: { label: 'Portale Cittadino', icon: Globe, badge: 'bg-primary text-white' },
-  UNKNOWN: { label: 'Sconosciuto', icon: HelpCircle, badge: 'bg-secondary text-white' },
-};
+import { CHANNELS_REGISTRY, EMBEDDED_LOGOS, ENGINE_LABELS, getChannelMeta, channelLabel } from './data/channels';
 
-function channelLabel(channel: string): string {
-  const normKey = (channel || '').toUpperCase();
-  return CHANNEL_META[normKey]?.label ?? channel;
-}
-
-const ENGINE_LABELS: Record<string, string> = {
-  EMAIL: 'Mail (SMTP)',
-  PEC: 'PEC',
-  APP_IO: 'App IO',
-  SEND: 'SEND',
-  POSTAL: 'Postale',
-  PROTOCOLLAZIONE: 'Protocollazione',
+// ---------------------------------------------------------------------------
+// Definizione centralizzata delle voci di navigazione della pagina Impostazioni.
+// Le voci canale leggono icona, logo e label direttamente da CHANNELS_REGISTRY.
+// ---------------------------------------------------------------------------
+type SettingsNavSection = { section: string };
+type SettingsNavItem = {
+  tab: string;
+  channelKey?: string;           // se presente, icona/label/logo vengono dal registry
+  icon?: React.ComponentType<{ className?: string; size?: number }>;
+  label?: string;
+  logoSrc?: string;
+  logoHeight?: number;
+  onClick?: () => void;          // azione extra oltre a setActiveSettingsTab
 };
+const _sm = getChannelMeta;
+const SETTINGS_NAV: Array<SettingsNavSection | SettingsNavItem> = [
+  // ── Server di posta ────────────────────────────────────────────────────
+  { tab: 'smtp',             channelKey: 'EMAIL',          icon: _sm('EMAIL').icon,          label: `${_sm('EMAIL').label} Server` },
+  { tab: 'pec',              channelKey: 'PEC',            icon: _sm('PEC').icon,            label: `${_sm('PEC').label} Server` },
+  // ── Integrazioni API ───────────────────────────────────────────────────
+  { section: 'Integrazioni API' },
+  { tab: 'app-io',           channelKey: 'APP_IO',         logoSrc: EMBEDDED_LOGOS.APP_IO,  label: _sm('APP_IO').label,   logoHeight: 16 },
+  { tab: 'pdnd',             icon: Key,                    label: 'Client PDND' },
+  { tab: 'send',             channelKey: 'SEND',           logoSrc: EMBEDDED_LOGOS.SEND,    label: _sm('SEND').label,     logoHeight: 12 },
+  { tab: 'inad',             channelKey: 'INAD',           logoSrc: EMBEDDED_LOGOS.INAD,    label: _sm('INAD').label,     logoHeight: 16 },
+  { tab: 'inipec',           icon: Contact,                label: 'INIPEC' },
+  { tab: 'protocollo',       channelKey: 'PROTOCOLLAZIONE', icon: _sm('PROTOCOLLAZIONE').icon, label: _sm('PROTOCOLLAZIONE').label },
+  { tab: 'postalizzazione',  channelKey: 'POSTAL',          icon: _sm('POSTAL').icon,          label: _sm('POSTAL').label },
+  // ── Sicurezza ──────────────────────────────────────────────────────────
+  { section: 'Sicurezza' },
+  { tab: 'oidc',             icon: Contact,                label: 'SPID / CIE (OIDC)' },
+  // ── Sistema ────────────────────────────────────────────────────────────
+  { section: 'Sistema' },
+  { tab: 'motori',           icon: Settings2,              label: 'Motori di Invio' },
+];
 
 function ChannelBadge({ channel, extra }: { channel: string; extra?: string | null }): React.JSX.Element {
-  const normKey = (channel || '').toUpperCase();
-  const meta = CHANNEL_META[normKey] ?? { label: channel, icon: Send, badge: 'bg-primary text-white' };
+  const meta = getChannelMeta(channel);
   const Icon = meta.icon;
   return (
-    <span className={`badge ${meta.badge}`}>
-      <Icon className="me-1" size={14} />{meta.label}{extra ? ` (${extra})` : ''}
+    <span className={`badge ${meta.badge} d-inline-flex align-items-center`}>
+      {meta.logoUrl ? (
+        <span
+          className="d-inline-flex align-items-center justify-content-center bg-white rounded-1 me-1.5 px-1.5 py-0.5"
+          style={{ height: 18, minWidth: 18 }}
+        >
+          <img src={meta.logoUrl} alt="" style={{ height: 14, width: 'auto', maxHeight: 14, display: 'block', objectFit: 'contain' }} />
+        </span>
+      ) : (
+        <Icon className="me-1" size={14} />
+      )}
+      {meta.label}{extra ? ` (${extra})` : ''}
     </span>
   );
 }
@@ -82,15 +104,10 @@ const STATUS_META: Record<string, { label: string; badge: string }> = {
   cancelled: { label: 'Annullato', badge: 'bg-dark' },
 };
 
-// Palette per il grafico "Canale Effettivo": colore fisso per canale, stesso
-// significato ovunque compaia (coerenza con STATUS_META sopra).
-const EFFECTIVE_CHANNEL_COLORS: Record<string, string> = {
-  EMAIL: 'var(--bi-info, #0dcaf0)',
-  PEC: 'var(--bi-primary, #0d6efd)',
-  APP_IO: 'var(--bi-success, #198754)',
-  POSTAL: 'var(--bi-warning, #ffc107)',
-  SEND: 'var(--bi-dark, #212529)',
-};
+// Palette per il grafico "Canale Effettivo": derivata dal registro centralizzato.
+const EFFECTIVE_CHANNEL_COLORS: Record<string, string> = Object.fromEntries(
+  Object.entries(CHANNELS_REGISTRY).map(([k, v]) => [k, v.color])
+);
 
 function StatusBadge({ status }: { status: string }): React.JSX.Element {
   const meta = STATUS_META[status] ?? { label: status, badge: 'bg-light text-dark border' };
@@ -238,14 +255,14 @@ function WizRecipientPreviewPanel({
             className={`btn ${wizPreviewChannelTab === 'MAIN' ? 'btn-primary' : 'btn-outline-secondary'}`}
             onClick={() => setWizPreviewChannelTab('MAIN')}
           >
-            <Mail className="me-1" size={16} /> {wizChannel}
+            <ChannelBadge channel={wizChannel} />
           </button>
           <button
             type="button"
             className={`btn ${wizPreviewChannelTab === 'APP_IO' ? 'btn-primary' : 'btn-outline-secondary'}`}
             onClick={() => setWizPreviewChannelTab('APP_IO')}
           >
-            <Smartphone className="me-1" size={16} /> App IO
+            <ChannelBadge channel="APP_IO" />
           </button>
         </div>
       )}
@@ -3457,7 +3474,7 @@ export function App(): React.JSX.Element {
 
   const renderMailConfigTab = (type: 'EMAIL' | 'PEC') => {
     const list = mailConfigs.filter((c) => c.type === type);
-    const label = type === 'EMAIL' ? 'SMTP' : 'PEC';
+    const label = channelLabel(type);
     const editing = editingMailConfig && editingMailConfig.type === type ? editingMailConfig : null;
 
     return (
@@ -5534,8 +5551,8 @@ export function App(): React.JSX.Element {
                         <span>Download Digitale</span>
                       </div>
                       <div className="d-flex align-items-center justify-content-between">
-                        <span className="text-muted small" title="Solo per campagne digitali (App IO, PEC, Mail) negli ultimi 30 giorni">
-                          App IO, PEC, Mail (30gg)
+                        <span className="text-muted small" title={`Solo per campagne digitali (${channelLabel('APP_IO')}, ${channelLabel('PEC')}, ${channelLabel('EMAIL')}) negli ultimi 30 giorni`}>
+                          {channelLabel('APP_IO')}, {channelLabel('PEC')}, {channelLabel('EMAIL')} (30gg)
                         </span>
                         <strong className="text-info small fw-bold">
                           {dashboardStats ? `${dashboardStats.totals.downloadPercentage}%` : '…'}
@@ -5787,25 +5804,41 @@ export function App(): React.JSX.Element {
                       <button className="btn btn-link btn-sm" onClick={() => { setView('impostazioni'); setActiveSettingsTab('motori'); fetchEngines(); }}>Dettaglio</button>
                     </div>
                     <div className="card-body">
-                      {engines.length === 0 ? (
-                        <div className="text-center py-3 text-muted small">Caricamento...</div>
-                      ) : (
-                        engines.map((eng) => {
-                          const failed = eng.counts?.failed ?? 0;
+                      {(() => {
+                        const displayEngines = [...engines];
+                        if (!displayEngines.some((e) => (e.channel || '').toUpperCase() === 'SEND')) {
+                          const sendWaiting = ((sendStageCounts as any)?.inCoda ?? 0) + (sendStageCounts?.protocollato ?? 0);
+                          displayEngines.push({
+                            channel: 'SEND',
+                            paused: false,
+                            counts: {
+                              waiting: sendWaiting,
+                              active: 0,
+                              delayed: 0,
+                              failed: sendStageCounts?.fallito ?? 0,
+                              completed: sendStageCounts?.inviato ?? 0,
+                            },
+                          });
+                        }
+                        if (displayEngines.length === 0) {
+                          return <div className="text-center py-3 text-muted small">Caricamento...</div>;
+                        }
+                        return displayEngines.map((eng) => {
+                          const waiting = (eng.counts?.waiting ?? 0) + (eng.counts?.active ?? 0) + (eng.counts?.delayed ?? 0);
                           return (
                             <div key={eng.channel} className="d-flex align-items-center justify-content-between mb-2 pb-2 border-bottom">
                               <span className="small fw-bold">{ENGINE_LABELS[eng.channel] ?? eng.channel}</span>
                               {eng.paused ? (
                                 <span className="badge bg-warning text-dark">IN PAUSA</span>
-                              ) : failed > 0 ? (
-                                <span className="badge bg-danger">{failed} FALLITI</span>
+                              ) : waiting > 0 ? (
+                                <span className="badge bg-info text-white">ATTIVO ({waiting} in coda)</span>
                               ) : (
                                 <span className="badge bg-success">ATTIVO</span>
                               )}
                             </div>
                           );
-                        })
-                      )}
+                        });
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -6094,11 +6127,9 @@ export function App(): React.JSX.Element {
                         if (newChan === 'SEND') setWizProtocolla(true);
                       }}
                     >
-                      <option value="EMAIL">EMAIL</option>
-                      <option value="PEC">PEC (Posta Elettronica Certificata)</option>
-                      <option value="APP_IO">APP IO (PagoPA)</option>
-                      <option value="SEND">SEND</option>
-                      <option value="POSTAL">Postalizzazione (Raccomandata/Lettera)</option>
+                      {(['EMAIL', 'PEC', 'APP_IO', 'SEND', 'POSTAL'] as const).map(key => (
+                        <option key={key} value={key}>{getChannelMeta(key).label}</option>
+                      ))}
                     </select>
                   </div>
 
@@ -8133,11 +8164,9 @@ export function App(): React.JSX.Element {
                   <div className="col-md-3">
                     <select className="form-select form-select-sm" value={searchChannel} onChange={e => setSearchChannel(e.target.value)}>
                       <option value="">Tutti i canali</option>
-                      <option value="EMAIL">EMAIL</option>
-                      <option value="PEC">PEC</option>
-                      <option value="APP_IO">APP IO</option>
-                      <option value="SEND">SEND</option>
-                      <option value="POSTAL">POSTAL</option>
+                      {(['EMAIL', 'PEC', 'APP_IO', 'SEND', 'POSTAL'] as const).map(k => (
+                        <option key={k} value={k}>{getChannelMeta(k).label}</option>
+                      ))}
                     </select>
                   </div>
                   <div className="col-md-3">
@@ -8780,11 +8809,9 @@ export function App(): React.JSX.Element {
                             value={enrichCampaignChannel}
                             onChange={(e: any) => setEnrichCampaignChannel(e.target.value)}
                           >
-                            <option value="EMAIL">EMAIL</option>
-                            <option value="PEC">PEC (Posta Elettronica Certificata)</option>
-                            <option value="APP_IO">APP IO (PagoPA)</option>
-                            <option value="SEND">SEND (Notifiche Digitali)</option>
-                            <option value="POSTAL">POSTAL (Cartaceo)</option>
+                            {(['EMAIL', 'PEC', 'APP_IO', 'SEND', 'POSTAL'] as const).map(k => (
+                              <option key={k} value={k}>{getChannelMeta(k).label}</option>
+                            ))}
                           </select>
                         </div>
                         {enrichCampaignError && <div className="alert alert-danger small">{enrichCampaignError}</div>}
@@ -9154,101 +9181,47 @@ export function App(): React.JSX.Element {
               <div className="row g-3">
                 <div className="col-lg-3">
                   <nav className="nav imp-nav flex-column border rounded bg-white" aria-label="Sezioni impostazioni">
+                    {/* Personalizzazione — voce fissa non canale */}
                     <span className="imp-section-title">Generale</span>
                     <button
                       type="button"
-                      className={`nav-link border-0 text-start bg-transparent ${activeSettingsTab === 'personalizzazione' ? 'active' : ''}`}
+                      className={`nav-link border-0 text-start bg-transparent d-flex align-items-center gap-2 ${activeSettingsTab === 'personalizzazione' ? 'active' : ''}`}
                       onClick={() => setActiveSettingsTab('personalizzazione')}
                     >
-                      <Building2 className="me-2" size={16} />Personalizzazione
-                    </button>
-                    <button
-                      type="button"
-                      className={`nav-link border-0 text-start bg-transparent ${activeSettingsTab === 'smtp' ? 'active' : ''}`}
-                      onClick={() => { setEditingMailConfig(null); setActiveSettingsTab('smtp'); }}
-                    >
-                      <Mail className="me-2" size={16} />Mail Server (SMTP)
-                    </button>
-                    <button
-                      type="button"
-                      className={`nav-link border-0 text-start bg-transparent ${activeSettingsTab === 'pec' ? 'active' : ''}`}
-                      onClick={() => { setEditingMailConfig(null); setActiveSettingsTab('pec'); }}
-                    >
-                      <MailOpen className="me-2" size={16} />PEC Server
+                      <Building2 size={16} style={{ flexShrink: 0 }} />
+                      <span>Personalizzazione</span>
                     </button>
 
-                    <span className="imp-section-title">Integrazioni API</span>
-                    <button
-                      type="button"
-                      className={`nav-link border-0 text-start bg-transparent ${activeSettingsTab === 'app-io' ? 'active' : ''}`}
-                      onClick={() => setActiveSettingsTab('app-io')}
-                    >
-                      <Smartphone className="me-2" size={16} />App IO (Servizi)
-                    </button>
-                    <button
-                      type="button"
-                      className={`nav-link border-0 text-start bg-transparent ${activeSettingsTab === 'pdnd' ? 'active' : ''}`}
-                      onClick={() => setActiveSettingsTab('pdnd')}
-                    >
-                      <Key className="me-2" size={16} />Client PDND
-                    </button>
-                    <button
-                      type="button"
-                      className={`nav-link border-0 text-start bg-transparent ${activeSettingsTab === 'send' ? 'active' : ''}`}
-                      onClick={() => setActiveSettingsTab('send')}
-                    >
-                      <Send className="me-2" size={16} />SEND (Digitale)
-                    </button>
-                    <button
-                      type="button"
-                      className={`nav-link border-0 text-start bg-transparent ${activeSettingsTab === 'inad' ? 'active' : ''}`}
-                      onClick={() => setActiveSettingsTab('inad')}
-                    >
-                      <BookUser className="me-2" size={16} />INAD
-                    </button>
-                    <button
-                      type="button"
-                      className={`nav-link border-0 text-start bg-transparent ${activeSettingsTab === 'inipec' ? 'active' : ''}`}
-                      onClick={() => setActiveSettingsTab('inipec')}
-                    >
-                      <Contact className="me-2" />INIPEC
-                    </button>
-                    <button
-                      type="button"
-                      className={`nav-link border-0 text-start bg-transparent ${activeSettingsTab === 'protocollo' ? 'active' : ''}`}
-                      onClick={() => setActiveSettingsTab('protocollo')}
-                    >
-                      <FolderOpen className="me-2" />Protocollo
-                    </button>
-                    <button
-                      type="button"
-                      className={`nav-link border-0 text-start bg-transparent ${activeSettingsTab === 'postalizzazione' ? 'active' : ''}`}
-                      onClick={() => setActiveSettingsTab('postalizzazione')}
-                    >
-                      <Mails className="me-2" />Postalizzazione
-                    </button>
-
-                    <span className="imp-section-title">Sicurezza</span>
-                    <button
-                      type="button"
-                      className={`nav-link border-0 text-start bg-transparent ${activeSettingsTab === 'oidc' ? 'active' : ''}`}
-                      onClick={() => setActiveSettingsTab('oidc')}
-                    >
-                      <Contact className="me-2" />SPID / CIE (OIDC)
-                    </button>
-
-                    <span className="imp-section-title">Sistema</span>
-                    <button
-                      type="button"
-                      className={`nav-link border-0 text-start bg-transparent ${activeSettingsTab === 'motori' ? 'active' : ''}`}
-                      onClick={() => {
-                        setActiveSettingsTab('motori');
-                        fetchEngines();
-                      }}
-                    >
-                      <Settings2 className="me-2" />Motori di Invio
-                    </button>
+                    {/* Tutte le altre voci — guidate da SETTINGS_NAV */}
+                    {SETTINGS_NAV.map((item, idx) => {
+                      if ('section' in item) {
+                        return <span key={`sec-${idx}`} className="imp-section-title">{item.section}</span>;
+                      }
+                      const isActive = activeSettingsTab === item.tab;
+                      const handleClick = () => {
+                        if (item.tab === 'smtp' || item.tab === 'pec') setEditingMailConfig(null);
+                        if (item.tab === 'motori') fetchEngines();
+                        setActiveSettingsTab(item.tab);
+                      };
+                      const Icon = item.icon;
+                      return (
+                        <button
+                          key={item.tab}
+                          type="button"
+                          className={`nav-link border-0 text-start bg-transparent d-flex align-items-center gap-2 ${isActive ? 'active' : ''}`}
+                          onClick={handleClick}
+                        >
+                          {item.logoSrc ? (
+                            <img src={item.logoSrc} alt={item.label} style={{ height: item.logoHeight ?? 16, width: 'auto', flexShrink: 0 }} />
+                          ) : Icon ? (
+                            <Icon size={16} style={{ flexShrink: 0 }} />
+                          ) : null}
+                          <span>{item.label}</span>
+                        </button>
+                      );
+                    })}
                   </nav>
+
                 </div>
 
                 <div className="col-lg-9">
@@ -10389,14 +10362,8 @@ export function App(): React.JSX.Element {
                           ) : (
                             <div className="d-flex flex-column gap-3">
                               {engines.map((eng) => {
-                                const channelIcon: Record<string, React.ComponentType<{ className?: string; size?: number }>> = {
-                                  EMAIL: Mail,
-                                  PEC: MailOpen,
-                                  APP_IO: Smartphone,
-                                  SEND: Send,
-                                  POSTAL: Mails,
-                                  PROTOCOLLAZIONE: Stamp,
-                                };
+                                const engMeta = getChannelMeta(eng.channel);
+                                const EngIcon = engMeta.icon;
                                 const total = (eng.counts?.waiting ?? 0) + (eng.counts?.active ?? 0) + (eng.counts?.delayed ?? 0);
                                 const failed = eng.counts?.failed ?? 0;
                                 const completed = eng.counts?.completed ?? 0;
@@ -10406,11 +10373,26 @@ export function App(): React.JSX.Element {
                                     <div className="card-body p-3">
                                       <div className="d-flex justify-content-between align-items-start flex-wrap gap-2">
                                         <div className="d-flex align-items-center gap-3">
-                                          <div className={`rounded-circle d-flex align-items-center justify-content-center text-white ${eng.paused ? 'bg-warning' : 'bg-primary'}`} style={{ width: 40, height: 40 }}>
-                                            {(() => { const Icon = channelIcon[eng.channel] ?? Settings; return <Icon />; })()}
+                                          <div
+                                            className={`d-flex align-items-center justify-content-center rounded ${eng.paused ? 'bg-warning' : ''}`}
+                                            style={{
+                                              width: 44, height: 44, flexShrink: 0,
+                                              background: eng.paused ? undefined : (engMeta.logoUrl ? '#fff' : engMeta.color),
+                                              border: engMeta.logoUrl && !eng.paused ? `2px solid ${engMeta.color}` : undefined,
+                                            }}
+                                          >
+                                            {engMeta.logoUrl ? (
+                                              <img
+                                                src={engMeta.logoUrl}
+                                                alt={engMeta.label}
+                                                style={{ maxWidth: 36, maxHeight: 28, width: 'auto', height: 'auto', objectFit: 'contain', display: 'block' }}
+                                              />
+                                            ) : (
+                                              <EngIcon size={22} className="text-white" />
+                                            )}
                                           </div>
                                           <div>
-                                            <div className="fw-bold text-dark">{ENGINE_LABELS[eng.channel] ?? eng.channel}</div>
+                                            <div className="fw-bold text-dark">{engMeta.label}</div>
                                             <div className="text-muted small">{eng.queueName}</div>
                                           </div>
                                         </div>
@@ -10529,18 +10511,27 @@ export function App(): React.JSX.Element {
                                 );
                               })}
 
-                              {sendStageCounts && (
-                                <div className="card border shadow-sm border-light">
-                                  <div className="card-body p-3">
-                                    <div className="d-flex align-items-center gap-3 mb-2">
-                                      <div className="rounded-circle d-flex align-items-center justify-content-center text-white bg-primary" style={{ width: 40, height: 40 }}>
-                                        <Send />
-                                      </div>
-                                      <div>
-                                        <div className="fw-bold text-dark">SEND</div>
-                                        <div className="text-muted small">Invio (nessuna coda BullMQ, demone schedulato) — la protocollazione ha il suo motore dedicato sopra.</div>
-                                      </div>
-                                    </div>
+                              {sendStageCounts && (() => {
+                                  const sendMeta = getChannelMeta('SEND');
+                                  return (
+                                    <div className="card border shadow-sm border-light">
+                                      <div className="card-body p-3">
+                                        <div className="d-flex align-items-center gap-3 mb-2">
+                                          <div
+                                            className="d-flex align-items-center justify-content-center rounded"
+                                            style={{ width: 44, height: 44, flexShrink: 0, background: '#fff', border: `2px solid ${sendMeta.color}` }}
+                                          >
+                                            <img
+                                              src={sendMeta.logoUrl}
+                                              alt={sendMeta.label}
+                                              style={{ maxWidth: 36, maxHeight: 28, width: 'auto', height: 'auto', objectFit: 'contain', display: 'block' }}
+                                            />
+                                          </div>
+                                          <div>
+                                            <div className="fw-bold text-dark">{sendMeta.label}</div>
+                                            <div className="text-muted small">Trasmissione notifiche alla piattaforma SEND — Notifiche Digitali (demone schedulato)</div>
+                                          </div>
+                                        </div>
                                     <div className="d-flex gap-3 text-center">
                                       <div>
                                         <div className="fw-bold text-info">{sendStageCounts.protocollato}</div>
@@ -10557,7 +10548,8 @@ export function App(): React.JSX.Element {
                                     </div>
                                   </div>
                                 </div>
-                              )}
+                              );
+                            })()}
                             </div>
                           )}
                         </div>

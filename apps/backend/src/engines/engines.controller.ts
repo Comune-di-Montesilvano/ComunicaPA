@@ -35,6 +35,33 @@ export class EnginesController {
         };
       }),
     );
+
+    const [sendQueued, sendFailed, sendSuccess] = await Promise.all([
+      this.attemptRepo.count({
+        where: { channelType: 'SEND', status: AttemptStatus.QUEUED },
+      }),
+      this.attemptRepo.count({
+        where: { channelType: 'SEND', status: AttemptStatus.FAILED },
+      }),
+      this.attemptRepo.count({
+        where: { channelType: 'SEND', status: AttemptStatus.SUCCESS },
+      }),
+    ]);
+
+    engines.push({
+      channel: 'SEND',
+      queueName: 'notifications-send',
+      paused: false,
+      counts: {
+        active: 0,
+        completed: sendSuccess,
+        failed: sendFailed,
+        delayed: 0,
+        waiting: sendQueued,
+        paused: 0,
+      },
+    });
+
     return { engines };
   }
 

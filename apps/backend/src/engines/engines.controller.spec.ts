@@ -35,9 +35,9 @@ describe('EnginesController', () => {
     controller = module.get<EnginesController>(EnginesController);
   });
 
-  it('list() ritorna lo stato di tutti i motori (4 canali + protocollazione)', async () => {
+  it('list() ritorna lo stato di tutti i motori (4 canali + protocollazione + send)', async () => {
     const res = await controller.list();
-    expect(res.engines).toHaveLength(5);
+    expect(res.engines).toHaveLength(6);
     expect(res.engines[0]).toEqual({
       channel: 'EMAIL',
       queueName: 'notifications-email',
@@ -45,6 +45,7 @@ describe('EnginesController', () => {
       counts: { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 },
     });
     expect(res.engines.map((e: any) => e.channel)).toContain('PROTOCOLLAZIONE');
+    expect(res.engines.map((e: any) => e.channel)).toContain('SEND');
   });
 
   it('pause() mette in pausa un canale valido', async () => {

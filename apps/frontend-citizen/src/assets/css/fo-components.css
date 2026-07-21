@@ -209,6 +209,7 @@ button { font-family: inherit; }
 .channel-appio  { background: var(--ms-purple-100); color: var(--ms-purple-700); }
 .channel-send   { background: var(--ms-gold-100);   color: var(--ms-gold-700); }
 .channel-postal { background: var(--bg-2);          color: var(--fg-3); }
+.channel-inad   { background: var(--bi-primary-a8); color: var(--bi-primary); }
 .channel-portal { background: var(--bg-2);          color: var(--fg-3); }
 .channel-generic{ background: var(--bg-2);          color: var(--fg-3); }
 
