@@ -21,7 +21,12 @@ export class EnginesController {
   @Get()
   @Roles('admin', 'user')
   async list() {
-    const engines = await Promise.all(
+    const engines: Array<{
+      channel: EngineName | 'SEND';
+      queueName: string;
+      paused: boolean;
+      counts: Record<string, number>;
+    }> = await Promise.all(
       ENGINE_NAMES.map(async (name) => {
         const [paused, counts] = await Promise.all([
           this.queues.isPaused(name),
