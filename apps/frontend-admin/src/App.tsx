@@ -1010,6 +1010,7 @@ export function App(): React.JSX.Element {
     }
     if (view === 'dashboard' && token) {
       fetchDashboardStats();
+      fetchEngines();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, token]);
@@ -5426,14 +5427,64 @@ export function App(): React.JSX.Element {
                 </p>
               </div>
 
+              {(() => {
+                const thirtyDaysAgo = new Date();
+                thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+                const failingCampaigns = campaigns.filter((c) => {
+                  if (c.isTest) return false;
+                  if (new Date(c.createdAt) < thirtyDaysAgo) return false;
+                  if (c.totalRecipients < 5) return false;
+                  return c.failedCount / c.totalRecipients > 0.1;
+                });
+                const pausedEngines = engines.filter((e) => e.paused);
+                const failingEngines = engines.filter((e) => (e.counts?.failed ?? 0) > 0);
+                const hasAlerts = failingCampaigns.length > 0 || pausedEngines.length > 0 || failingEngines.length > 0;
+                if (!hasAlerts) return null;
+
+                const engineLabel: Record<string, string> = {
+                  EMAIL: 'Mail (SMTP)', PEC: 'PEC', APP_IO: 'App IO', SEND: 'SEND', POSTAL: 'Postale', PROTOCOLLAZIONE: 'Protocollazione',
+                };
+
+                return (
+                  <div className="card shadow-sm mb-4 border-warning">
+                    <div className="card-header bg-white py-3 border-bottom d-flex align-items-center gap-2">
+                      <AlertTriangle className="text-warning" />
+                      <h3 className="h6 mb-0 fw-bold text-dark">Da attenzionare</h3>
+                    </div>
+                    <div className="card-body p-0">
+                      <ul className="list-group list-group-flush">
+                        {failingCampaigns.map((c) => (
+                          <li key={c.id} className="list-group-item d-flex justify-content-between align-items-center" style={{ cursor: 'pointer' }} onClick={() => handleCampaignClick(c.id)}>
+                            <span>Campagna <strong className="text-primary">{c.name}</strong> — {Math.round((c.failedCount / c.totalRecipients) * 100)}% falliti</span>
+                            <ArrowRight size={16} className="text-muted" />
+                          </li>
+                        ))}
+                        {pausedEngines.map((e) => (
+                          <li key={`paused-${e.channel}`} className="list-group-item d-flex justify-content-between align-items-center" style={{ cursor: 'pointer' }} onClick={() => { setView('impostazioni'); setActiveSettingsTab('motori'); fetchEngines(); }}>
+                            <span>Motore <strong>{engineLabel[e.channel] ?? e.channel}</strong> in pausa</span>
+                            <ArrowRight size={16} className="text-muted" />
+                          </li>
+                        ))}
+                        {failingEngines.map((e) => (
+                          <li key={`failed-${e.channel}`} className="list-group-item d-flex justify-content-between align-items-center" style={{ cursor: 'pointer' }} onClick={() => { setView('impostazioni'); setActiveSettingsTab('motori'); fetchEngines(); }}>
+                            <span>Motore <strong>{engineLabel[e.channel] ?? e.channel}</strong> — {e.counts?.failed} job falliti</span>
+                            <ArrowRight size={16} className="text-muted" />
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                );
+              })()}
+
               <div className="row g-3 mb-4">
                 <div className="col-md-3">
                   <div className="card shadow-sm h-100" style={{ borderLeft: '4px solid var(--bi-primary)' }}>
                     <div className="card-body d-flex align-items-center gap-3">
                       <div className="bg-light text-primary rounded p-3" style={{ fontSize: '1.4rem' }}><Megaphone /></div>
                       <div>
-                        <span className="text-muted small block">Campagne Create</span>
-                        <div className="h4 mb-0 fw-bold">{campaigns.length}</div>
+                        <span className="text-muted small block">Messaggi Inviati (30gg)</span>
+                        <div className="h4 mb-0 fw-bold">{dashboardStats ? dashboardStats.totals.totalSent : '…'}</div>
                       </div>
                     </div>
                   </div>
@@ -5443,19 +5494,19 @@ export function App(): React.JSX.Element {
                     <div className="card-body d-flex align-items-center gap-3">
                       <div className="bg-light text-success rounded p-3" style={{ fontSize: '1.4rem' }}><CheckCircle2 /></div>
                       <div>
-                        <span className="text-muted small block">Messaggi Inviati</span>
-                        <div className="h4 mb-0 fw-bold">{campaigns.reduce((acc, c) => acc + c.sentCount, 0)}</div>
+                        <span className="text-muted small block">Destinatari (30gg)</span>
+                        <div className="h4 mb-0 fw-bold">{dashboardStats ? dashboardStats.totals.totalRecipients : '…'}</div>
                       </div>
                     </div>
                   </div>
                 </div>
                 <div className="col-md-3">
-                  <div className="card shadow-sm h-100" style={{ borderLeft: '4px solid var(--it-red)' }}>
+                  <div className={`card shadow-sm h-100 ${dashboardStats && dashboardStats.totals.totalFailed > 0 ? 'border-danger' : ''}`} style={{ borderLeft: '4px solid var(--it-red)' }}>
                     <div className="card-body d-flex align-items-center gap-3">
                       <div className="bg-light text-danger rounded p-3" style={{ fontSize: '1.4rem' }}><XCircle /></div>
                       <div>
-                        <span className="text-muted small block">Spedizioni Fallite</span>
-                        <div className="h4 mb-0 fw-bold">{campaigns.reduce((acc, c) => acc + c.failedCount, 0)}</div>
+                        <span className="text-muted small block">Spedizioni Fallite (30gg)</span>
+                        <div className={`h4 mb-0 fw-bold ${dashboardStats && dashboardStats.totals.totalFailed > 0 ? 'text-danger' : ''}`}>{dashboardStats ? dashboardStats.totals.totalFailed : '…'}</div>
                       </div>
                     </div>
                   </div>
@@ -5465,9 +5516,38 @@ export function App(): React.JSX.Element {
                     <div className="card-body d-flex align-items-center gap-3">
                       <div className="bg-light text-primary rounded p-3" style={{ fontSize: '1.4rem' }}><Euro /></div>
                       <div>
-                        <span className="text-muted small block">Costo Totale</span>
-                        <div className="h4 mb-0 fw-bold">{globalStats ? `${(globalStats.totals.totalCostCents / 100).toFixed(2)} €` : '…'}</div>
+                        <span className="text-muted small block">Costo Totale (30gg)</span>
+                        <div className="h4 mb-0 fw-bold">{dashboardStats ? `${(dashboardStats.totals.totalCostCents / 100).toFixed(2)} €` : '…'}</div>
                       </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="row g-3 mb-4">
+                <div className="col-12">
+                  <div className="card shadow-sm">
+                    <div className="card-header bg-white py-3 border-bottom">
+                      <h3 className="h6 mb-0 fw-bold text-dark"><LineChartIcon className="me-2 text-primary" size={16} />Andamento invii/falliti (ultimi 30gg)</h3>
+                    </div>
+                    <div className="card-body">
+                      {dashboardStatsLoading && !dashboardStats ? (
+                        <div className="text-center py-5 text-muted"><Loader2 className="icon-spin mb-3" size={24} /></div>
+                      ) : dashboardStats && dashboardStats.dailyTrend.length === 0 ? (
+                        <div className="text-center py-5 text-muted">Nessun invio negli ultimi 30 giorni.</div>
+                      ) : (
+                        <ResponsiveContainer width="100%" height={220}>
+                          <LineChart data={dashboardStats?.dailyTrend ?? []}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="date" fontSize={11} />
+                            <YAxis allowDecimals={false} />
+                            <Tooltip />
+                            <Legend />
+                            <Line type="monotone" dataKey="sent" name="Invii" stroke="var(--bi-primary)" strokeWidth={2} />
+                            <Line type="monotone" dataKey="failed" name="Falliti" stroke="var(--it-red)" strokeWidth={2} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -5478,7 +5558,10 @@ export function App(): React.JSX.Element {
                   <div className="card shadow-sm h-100">
                     <div className="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
                       <h3 className="h6 mb-0 fw-bold text-dark"><History className="me-2 text-primary" />Attività Recenti</h3>
-                      <button className="btn btn-outline-secondary btn-sm border-0" onClick={fetchCampaigns}><RefreshCw /></button>
+                      <div className="d-flex align-items-center gap-2">
+                        <button className="btn btn-outline-secondary btn-sm border-0" onClick={fetchCampaigns}><RefreshCw /></button>
+                        <button className="btn btn-link btn-sm" onClick={() => setView('invio-massivo')}>Vedi tutte</button>
+                      </div>
                     </div>
                     <div className="card-body p-0">
                       {campaigns.length === 0 ? (
@@ -5513,24 +5596,33 @@ export function App(): React.JSX.Element {
 
                 <div className="col-lg-4">
                   <div className="card shadow-sm h-100">
-                    <div className="card-header bg-white py-3 border-bottom">
-                      <h3 className="h6 mb-0 fw-bold text-dark"><Network className="me-2 text-primary" />GIL Services Hub</h3>
+                    <div className="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+                      <h3 className="h6 mb-0 fw-bold text-dark"><Network className="me-2 text-primary" />Stato Motori</h3>
+                      <button className="btn btn-link btn-sm" onClick={() => { setView('impostazioni'); setActiveSettingsTab('motori'); fetchEngines(); }}>Dettaglio</button>
                     </div>
                     <div className="card-body">
-                      <div className="daemon-service-item mb-3 p-3 bg-light rounded border">
-                        <div className="d-flex align-items-center justify-content-between mb-1">
-                          <span className="small fw-bold"><MailOpen className="text-primary me-2" />Sincronizzatore Mail/PEC</span>
-                          <span className="badge bg-success">ATTIVO</span>
-                        </div>
-                        <p className="small text-muted mb-0">Gestisce la ricezione delle ricevute di consegna PEC.</p>
-                      </div>
-                      <div className="daemon-service-item p-3 bg-light rounded border">
-                        <div className="d-flex align-items-center justify-content-between mb-1">
-                          <span className="small fw-bold"><Plug className="text-primary me-2" />Worker BullMQ</span>
-                          <span className="badge bg-success">ATTIVO</span>
-                        </div>
-                        <p className="small text-muted mb-0">Elabora la coda delle notifiche SEND e App IO in background.</p>
-                      </div>
+                      {engines.length === 0 ? (
+                        <div className="text-center py-3 text-muted small">Caricamento...</div>
+                      ) : (
+                        engines.map((eng) => {
+                          const engineLabel: Record<string, string> = {
+                            EMAIL: 'Mail (SMTP)', PEC: 'PEC', APP_IO: 'App IO', SEND: 'SEND', POSTAL: 'Postale', PROTOCOLLAZIONE: 'Protocollazione',
+                          };
+                          const failed = eng.counts?.failed ?? 0;
+                          return (
+                            <div key={eng.channel} className="d-flex align-items-center justify-content-between mb-2 pb-2 border-bottom">
+                              <span className="small fw-bold">{engineLabel[eng.channel] ?? eng.channel}</span>
+                              {eng.paused ? (
+                                <span className="badge bg-warning text-dark">IN PAUSA</span>
+                              ) : failed > 0 ? (
+                                <span className="badge bg-danger">{failed} FALLITI</span>
+                              ) : (
+                                <span className="badge bg-success">ATTIVO</span>
+                              )}
+                            </div>
+                          );
+                        })
+                      )}
                     </div>
                   </div>
                 </div>
