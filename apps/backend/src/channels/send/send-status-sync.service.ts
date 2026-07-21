@@ -89,7 +89,7 @@ export class SendStatusSyncService {
       .createQueryBuilder('attempt')
       .where('attempt.channel_type = :ch', { ch: 'SEND' })
       .andWhere('attempt.iun IS NOT NULL')
-      .andWhere('((attempt.send_status IS NULL OR attempt.send_status NOT IN (:...terminal)) OR attempt.cost_cents IS NULL)', { terminal: TERMINAL_STATUSES })
+      .andWhere('(attempt.send_status IS NULL OR attempt.send_status NOT IN (:...terminal) OR attempt.cost_cents IS NULL)', { terminal: TERMINAL_STATUSES })
       .orderBy('attempt.created_at', 'ASC')
       .take(BATCH_SIZE)
       .getMany();
@@ -105,6 +105,13 @@ export class SendStatusSyncService {
         const text = await res.text();
         if (!res.ok) {
           this.logger.warn(`Aggiornamento stato SEND IUN ${attempt.iun} fallito: HTTP ${res.status} — ${text.slice(0, 300)}`);
+          if (attempt.costCents === null) {
+            const baseFeeCents = await this.baseFee.resolve(envKey, baseUrl, apiKey, voucher, null, null);
+            attempt.costCents = baseFeeCents;
+            attempt.costCalculatedAt = new Date();
+            attempt.costBreakdown = { baseFeeCents, analogEvents: [] };
+            await this.attemptRepo.save(attempt);
+          }
           continue;
         }
         const data = JSON.parse(text) as { notificationStatus: string };

@@ -41,7 +41,7 @@ export class PostalStatusSyncService {
       .where('attempt.channel_type = :ch', { ch: 'POSTAL' })
       .andWhere('attempt.status = :status', { status: AttemptStatus.SUCCESS })
       .andWhere('attempt.postal_tracking_id IS NOT NULL')
-      .andWhere('((attempt.postal_status IS NULL OR attempt.postal_status NOT IN (:...terminal)) OR attempt.cost_cents IS NULL)', { terminal: TERMINAL_STATUSES })
+      .andWhere('(attempt.postal_status IS NULL OR attempt.postal_status NOT IN (:...terminal) OR attempt.cost_cents IS NULL)', { terminal: TERMINAL_STATUSES })
       .orderBy('attempt.created_at', 'ASC')
       .take(BATCH_SIZE)
       .getMany();

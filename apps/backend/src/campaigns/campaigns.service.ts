@@ -1678,14 +1678,14 @@ export class CampaignsService {
 
     const attempts = await this.attemptRepo.find({
       where: { recipientId: In(recipientIds), channelType: In(['SEND', 'POSTAL']) },
-      select: ['recipientId', 'channelType', 'costCents'],
+      select: ['recipientId', 'channelType', 'costCents', 'status'],
     });
 
     const byChannelMap = new Map<string, { totalCostCents: number; uncalculatedCount: number }>();
     for (const a of attempts) {
       const entry = byChannelMap.get(a.channelType) ?? { totalCostCents: 0, uncalculatedCount: 0 };
-      if (a.costCents === null) entry.uncalculatedCount += 1;
-      else entry.totalCostCents += a.costCents;
+      if (a.costCents === null && a.status !== AttemptStatus.FAILED) entry.uncalculatedCount += 1;
+      else if (a.costCents !== null) entry.totalCostCents += a.costCents;
       byChannelMap.set(a.channelType, entry);
     }
 
