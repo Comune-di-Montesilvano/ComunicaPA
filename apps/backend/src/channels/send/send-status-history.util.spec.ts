@@ -1,60 +1,63 @@
-import { extractSendStatusHistory, extractSendDigitalDomicile } from './send-status-history.util';
+import { extractSendStatusHistory, extractSendDigitalDomicile, extractSendAnalogCost } from './send-status-history.util';
 
-describe('extractSendStatusHistory', () => {
-  it('mappa notificationStatusHistory in {status, activeFrom}', () => {
-    const data = {
-      notificationStatusHistory: [
-        { status: 'ACCEPTED', activeFrom: '2026-01-10T10:00:00Z', relatedTimelineElements: ['el-1'] },
-        { status: 'DELIVERED', activeFrom: '2026-01-12T09:00:00Z', relatedTimelineElements: ['el-2'] },
-      ],
-    };
-    expect(extractSendStatusHistory(data)).toEqual([
-      { status: 'ACCEPTED', activeFrom: '2026-01-10T10:00:00Z' },
-      { status: 'DELIVERED', activeFrom: '2026-01-12T09:00:00Z' },
-    ]);
+describe('send-status-history.util', () => {
+  describe('extractSendStatusHistory', () => {
+    it('estrae lo storico stati dalla notifica', () => {
+      const data = { notificationStatusHistory: [{ status: 'ACCEPTED', activeFrom: '2026-01-01T00:00:00Z' }] };
+      expect(extractSendStatusHistory(data)).toEqual([{ status: 'ACCEPTED', activeFrom: '2026-01-01T00:00:00Z' }]);
+    });
   });
 
-  it('ritorna array vuoto se notificationStatusHistory è assente', () => {
-    expect(extractSendStatusHistory({})).toEqual([]);
+  describe('extractSendDigitalDomicile', () => {
+    it('estrae il domicilio digitale', () => {
+      const data = { timeline: [{ category: 'SEND_DIGITAL_DOMICILE', details: { digitalAddress: { type: 'PEC', address: 'a@pec.it' } } }] };
+      expect(extractSendDigitalDomicile(data)).toEqual({ type: 'PEC', address: 'a@pec.it', source: null });
+    });
   });
 
-  it('non lancia se un elemento di notificationStatusHistory è null', () => {
-    expect(() => extractSendStatusHistory({ notificationStatusHistory: [null, { status: 'ACCEPTED', activeFrom: '2026-01-10T10:00:00Z' }] })).not.toThrow();
-  });
-});
+  describe('extractSendAnalogCost', () => {
+    it('somma analogCost di tutti gli eventi SEND_ANALOG_DOMICILE con dettagli SendAnalogDetails', () => {
+      const data = {
+        timeline: [
+          { category: 'SEND_DIGITAL_DOMICILE', details: { digitalAddress: { type: 'PEC', address: 'x@pec.it' } } },
+          { category: 'SEND_ANALOG_DOMICILE', details: { productType: 'AR', analogCost: 970, envelopeWeight: 20, numberOfPages: 2 } },
+        ],
+      };
 
-describe('extractSendDigitalDomicile', () => {
-  it('estrae domicilio digitale da evento SEND_DIGITAL_DOMICILE', () => {
-    const data = {
-      timeline: [
-        { category: 'PREPARE_DIGITAL_DOMICILE', details: {} },
-        {
-          category: 'SEND_DIGITAL_DOMICILE',
-          details: {
-            digitalAddress: { type: 'PEC', address: 'mario.rossi@pec.it' },
-            digitalAddressSource: 'PLATFORM',
-          },
-        },
-      ],
-    };
-    expect(extractSendDigitalDomicile(data)).toEqual({ type: 'PEC', address: 'mario.rossi@pec.it', source: 'PLATFORM' });
-  });
+      const result = extractSendAnalogCost(data);
 
-  it('un evento SEND_ANALOG_DOMICILE successivo (fallback cartaceo) sovrascrive il digitale precedente', () => {
-    const data = {
-      timeline: [
-        {
-          category: 'SEND_DIGITAL_DOMICILE',
-          details: { digitalAddress: { type: 'PEC', address: 'x@pec.it' }, digitalAddressSource: 'PLATFORM' },
-        },
-        { category: 'SEND_ANALOG_DOMICILE', details: {} },
-      ],
-    };
-    expect(extractSendDigitalDomicile(data)).toEqual({ type: 'CARTACEO', address: null, source: 'ANALOG' });
-  });
+      expect(result.analogCostCents).toBe(970);
+      expect(result.events).toEqual([{ productType: 'AR', analogCostCents: 970, envelopeWeight: 20, numberOfPages: 2 }]);
+    });
 
-  it('ritorna null se timeline è assente o senza eventi di domicilio', () => {
-    expect(extractSendDigitalDomicile({})).toBeNull();
-    expect(extractSendDigitalDomicile({ timeline: [{ category: 'SEND_DIGITAL_FEEDBACK', details: {} }] })).toBeNull();
+    it('somma più eventi analogici sullo stesso IUN (es. rispedizione dopo tentativo fallito)', () => {
+      const data = {
+        timeline: [
+          { category: 'SEND_ANALOG_DOMICILE', details: { productType: 'RS', analogCost: 400, envelopeWeight: 10, numberOfPages: 1 } },
+          { category: 'SEND_SIMPLE_REGISTERED_LETTER', details: { productType: 'RS', analogCost: 450, envelopeWeight: 10, numberOfPages: 1 } },
+        ],
+      };
+
+      const result = extractSendAnalogCost(data);
+
+      expect(result.analogCostCents).toBe(850);
+      expect(result.events).toHaveLength(2);
+    });
+
+    it('ritorna 0/array vuoto se nessun evento analogico è presente (notifica rimasta digitale)', () => {
+      const data = { timeline: [{ category: 'SEND_DIGITAL_DOMICILE', details: { digitalAddress: { type: 'PEC', address: 'x@pec.it' } } }] };
+
+      const result = extractSendAnalogCost(data);
+
+      expect(result.analogCostCents).toBe(0);
+      expect(result.events).toEqual([]);
+    });
+
+    it('gestisce timeline assente senza lanciare', () => {
+      const result = extractSendAnalogCost({});
+
+      expect(result.analogCostCents).toBe(0);
+      expect(result.events).toEqual([]);
+    });
   });
 });

@@ -44,3 +44,42 @@ export function extractSendDigitalDomicile(data: unknown): SendDigitalDomicile |
   }
   return result;
 }
+
+export interface SendAnalogCostEvent {
+  productType: string | null;
+  analogCostCents: number;
+  envelopeWeight: number | null;
+  numberOfPages: number | null;
+}
+
+export interface SendAnalogCostInfo {
+  analogCostCents: number;
+  events: SendAnalogCostEvent[];
+}
+
+const ANALOG_CATEGORIES_WITH_COST = ['SEND_ANALOG_DOMICILE', 'SEND_SIMPLE_REGISTERED_LETTER'];
+
+/**
+ * Somma analogCost (già in eurocent, campo reale PN) su TUTTI gli eventi
+ * analogici della timeline di un IUN — un IUN può avere più eventi (es.
+ * primo tentativo fallito + rispedizione), ognuno con un costo reale
+ * proprio. Vedi docs/superpowers/specs/2026-07-21-costo-notifiche-design.md.
+ */
+export function extractSendAnalogCost(data: unknown): SendAnalogCostInfo {
+  const timeline = (data as { timeline?: unknown })?.timeline;
+  if (!Array.isArray(timeline)) return { analogCostCents: 0, events: [] };
+
+  const events: SendAnalogCostEvent[] = [];
+  for (const el of timeline as any[]) {
+    if (ANALOG_CATEGORIES_WITH_COST.includes(el?.category) && typeof el?.details?.analogCost === 'number') {
+      events.push({
+        productType: el.details.productType ?? null,
+        analogCostCents: el.details.analogCost,
+        envelopeWeight: el.details.envelopeWeight ?? null,
+        numberOfPages: el.details.numberOfPages ?? null,
+      });
+    }
+  }
+
+  return { analogCostCents: events.reduce((sum, e) => sum + e.analogCostCents, 0), events };
+}
