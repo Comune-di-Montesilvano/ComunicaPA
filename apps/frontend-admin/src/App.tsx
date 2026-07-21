@@ -35,11 +35,12 @@ import { CHANNELS_REGISTRY, EMBEDDED_LOGOS, ENGINE_LABELS, getChannelMeta, chann
 // Definizione centralizzata delle voci di navigazione della pagina Impostazioni.
 // Le voci canale leggono icona, logo e label direttamente da CHANNELS_REGISTRY.
 // ---------------------------------------------------------------------------
+type SettingsTab = 'personalizzazione' | 'smtp' | 'pec' | 'app-io' | 'pdnd' | 'send' | 'inad' | 'inipec' | 'protocollo' | 'postalizzazione' | 'oidc' | 'motori';
 type SettingsNavSection = { section: string };
 type SettingsNavItem = {
-  tab: string;
+  tab: SettingsTab;
   channelKey?: string;           // se presente, icona/label/logo vengono dal registry
-  icon?: React.ComponentType<{ className?: string; size?: number }>;
+  icon?: React.ComponentType<{ className?: string; size?: number; style?: React.CSSProperties }>;
   label?: string;
   logoSrc?: string;
   logoHeight?: number;

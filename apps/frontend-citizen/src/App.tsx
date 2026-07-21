@@ -250,7 +250,7 @@ function ChannelBadge({ channel }: { channel: string }): React.JSX.Element {
   if (meta.logo) {
     return (
       <span className={`channel-badge ${meta.cls}`}>
-        <span className="f-partner-chip" style={{ height: 18, minWidth: 18, borderRadius: 4, marginRight: 6, display: 'inline-flex', alignItems: 'center', justify: 'center', background: '#fff', padding: '2px 5px' }}>
+        <span className="f-partner-chip" style={{ height: 18, minWidth: 18, borderRadius: 4, marginRight: 6, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#fff', padding: '2px 5px' }}>
           <img src={meta.logo} alt="" style={{ height: 14, width: 'auto', maxHeight: 14, display: 'block', objectFit: 'contain' }} />
         </span>
         {meta.label}
