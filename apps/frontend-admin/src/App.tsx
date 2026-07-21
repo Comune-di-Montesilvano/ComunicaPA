@@ -1965,7 +1965,13 @@ export function App(): React.JSX.Element {
       setDomicilioResult(data);
     } catch (err: any) {
       if (err instanceof ApiAuthError) return;
-      alert(err.message || 'Errore di connessione durante la ricerca');
+      const message = err.message || 'Errore di connessione durante la ricerca';
+      setDomicilioResult({
+        codiceFiscale: domicilioCf,
+        inad: { success: false, found: false, message },
+        appIo: { success: false, active: false, message },
+        anpr: { success: false, found: false, message },
+      });
     } finally {
       setDomicilioLoading(false);
     }
