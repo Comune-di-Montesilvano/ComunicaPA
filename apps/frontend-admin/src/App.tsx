@@ -1128,6 +1128,21 @@ export function App(): React.JSX.Element {
   const [singleName, setSingleName] = useState('');
   const [singleEmail, setSingleEmail] = useState('');
   const [singlePec, setSinglePec] = useState('');
+  const [singleAddress, setSingleAddress] = useState('');
+  const [singleMunicipality, setSingleMunicipality] = useState('');
+  const [singleZip, setSingleZip] = useState('');
+  const [singleProvince, setSingleProvince] = useState('');
+  const [singlePaymentIuv, setSinglePaymentIuv] = useState('');
+  const [singlePaymentImporto, setSinglePaymentImporto] = useState('');
+  const [singlePaymentScadenza, setSinglePaymentScadenza] = useState('');
+  const [wizSingleAttachmentSlots, setWizSingleAttachmentSlots] = useState<
+    Array<{ id: string; label: string; file: File | null }>
+  >([]);
+  const [singleAnprLoading, setSingleAnprLoading] = useState(false);
+  const [singleAnprCheckedCf, setSingleAnprCheckedCf] = useState<string | null>(null);
+  const [singleInadForced, setSingleInadForced] = useState(false);
+  const [singleInadAddress, setSingleInadAddress] = useState('');
+  const [singleAppIoActive, setSingleAppIoActive] = useState(false);
 
   // Wizard States
   const [wizStep, setWizStep] = useState(1);
