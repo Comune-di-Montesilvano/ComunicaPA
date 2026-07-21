@@ -902,7 +902,7 @@ export function App(): React.JSX.Element {
         soggettoAIRE?: string;
       };
       idANPR?: string;
-      residenza?: Array<{ dataDecorrenzaResidenza?: string; indirizzo?: { cap?: string; comune?: { nomeComune?: string }; toponimo?: { specie?: string; denominazioneToponimo?: string }; numeroCivico?: { numero?: string } } }>;
+      residenza?: Array<{ dataDecorrenzaResidenza?: string; indirizzo?: { cap?: string; comune?: { nomeComune?: string }; toponimo?: { specie?: string; denominazioneToponimo?: string }; numeroCivico?: { numero?: string; lettera?: string } } }>;
       infoSoggettoEnte?: Array<{ chiave?: string; valore?: string; valoreTesto?: string; valoreData?: string; dettaglio?: string }>;
       message?: string;
     };
@@ -8905,7 +8905,7 @@ export function App(): React.JSX.Element {
           )}
 
           {view === 'cerca-domicilio' && (
-            <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+            <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
               <h3 className="h5 fw-bold text-dark mb-3">
                 <MapPin className="me-2" size={16} />Cerca Domicilio
               </h3>
@@ -8948,98 +8948,114 @@ export function App(): React.JSX.Element {
                 </div>
               </div>
 
-              {domicilioResult && (
-                <div className="row g-3">
-                  <div className="col-md-4">
-                    <div className={`card shadow-sm p-3 h-100 border ${
-                      !domicilioResult.inad.success ? 'border-danger' :
-                      !domicilioResult.inad.found ? 'border-secondary' : 'border-success'
+              {domicilioResult && (() => {
+                const anpr = domicilioResult.anpr;
+                const g = anpr.generalita;
+                const vitaInfo = anpr.infoSoggettoEnte?.find(i => (i.chiave ?? '').toLowerCase().includes('vita'));
+                const altreInfo = (anpr.infoSoggettoEnte ?? []).filter(i => i !== vitaInfo);
+                const luogoNascita = g?.luogoNascita?.comune?.nomeComune ?? g?.luogoNascita?.localita?.descrizioneStato ?? g?.luogoNascita?.localita?.descrizioneLocalita;
+                const fmtDate = (d?: string) => d ? new Date(d).toLocaleDateString('it-IT') : d;
+                return (
+                  <>
+                    <div className={`card shadow-sm p-4 mb-3 border ${
+                      !anpr.success ? 'border-danger' : !anpr.found ? 'border-secondary' : 'border-success'
                     }`}>
-                      <h6 className="fw-bold mb-2 d-flex align-items-center gap-2">
-                        {!domicilioResult.inad.success ? <AlertCircle className="text-danger" size={16} /> :
-                         !domicilioResult.inad.found ? <XCircle className="text-secondary" size={16} /> :
+                      <h6 className="fw-bold mb-3 d-flex align-items-center gap-2">
+                        {!anpr.success ? <AlertCircle className="text-danger" size={16} /> :
+                         !anpr.found ? <XCircle className="text-secondary" size={16} /> :
                          <CheckCircle2 className="text-success" size={16} />}
-                        INAD
+                        Generalità (ANPR)
+                        {anpr.success && anpr.found && vitaInfo && (
+                          <span className={`badge ${vitaInfo.valore === 'S' ? 'bg-success' : vitaInfo.valore === 'N' ? 'bg-danger' : 'bg-secondary'}`}>
+                            {vitaInfo.valore === 'S' ? 'In vita' : vitaInfo.valore === 'N' ? 'Deceduto' : 'Non specificato'}
+                            {vitaInfo.valore === 'N' && vitaInfo.valoreData ? ` il ${fmtDate(vitaInfo.valoreData)}` : ''}
+                          </span>
+                        )}
                       </h6>
-                      {!domicilioResult.inad.success && <p className="small text-danger mb-0">{domicilioResult.inad.message}</p>}
-                      {domicilioResult.inad.success && !domicilioResult.inad.found && <p className="small text-muted mb-0">Nessun domicilio digitale eletto</p>}
-                      {domicilioResult.inad.success && domicilioResult.inad.found && (
-                        <ul className="small mb-0 ps-3">
-                          {(domicilioResult.inad.digitalAddress ?? []).map((a, i) => <li key={i}>{a.digitalAddress}</li>)}
-                        </ul>
+                      {!anpr.success && <p className="small text-danger mb-0">{anpr.message}</p>}
+                      {anpr.success && !anpr.found && <p className="small text-muted mb-0">Nessun dato trovato in ANPR</p>}
+                      {anpr.success && anpr.found && (
+                        <>
+                          <p className="fs-5 fw-bold mb-2">{g?.cognome} {g?.nome}</p>
+                          <p className="small text-muted mb-1">CF: {g?.codiceFiscale?.codFiscale}{g?.codiceFiscale?.validitaCF === '1' ? ' (validato)' : ''}</p>
+                          <p className="small text-muted mb-1">
+                            Nato il {fmtDate(g?.dataNascita)} a {luogoNascita} ({g?.sesso})
+                            {g?.soggettoAIRE === 'S' ? ' — iscritto AIRE' : ''}
+                          </p>
+                          {anpr.idANPR && <p className="small text-muted mb-1">idANPR: {anpr.idANPR}</p>}
+                          {altreInfo.map((info, i) => (
+                            <p key={i} className="small text-muted mb-0">
+                              {info.chiave}: {info.valore ?? info.valoreTesto ?? info.valoreData}
+                            </p>
+                          ))}
+                        </>
                       )}
                     </div>
-                  </div>
 
-                  <div className="col-md-4">
-                    <div className={`card shadow-sm p-3 h-100 border ${
-                      !domicilioResult.appIo.success ? 'border-danger' :
-                      !domicilioResult.appIo.active ? 'border-secondary' : 'border-success'
-                    }`}>
-                      <h6 className="fw-bold mb-2 d-flex align-items-center gap-2">
-                        {!domicilioResult.appIo.success ? <AlertCircle className="text-danger" size={16} /> :
-                         !domicilioResult.appIo.active ? <XCircle className="text-secondary" size={16} /> :
-                         <CheckCircle2 className="text-success" size={16} />}
-                        App IO
-                      </h6>
-                      <p className="small text-muted mb-0">{domicilioResult.appIo.message}</p>
-                    </div>
-                  </div>
-
-                  <div className="col-md-4">
-                    <div className={`card shadow-sm p-3 h-100 border ${
-                      !domicilioResult.anpr.success ? 'border-danger' :
-                      !domicilioResult.anpr.found ? 'border-secondary' : 'border-success'
-                    }`}>
-                      <h6 className="fw-bold mb-2 d-flex align-items-center gap-2">
-                        {!domicilioResult.anpr.success ? <AlertCircle className="text-danger" size={16} /> :
-                         !domicilioResult.anpr.found ? <XCircle className="text-secondary" size={16} /> :
-                         <CheckCircle2 className="text-success" size={16} />}
-                        ANPR
-                      </h6>
-                      {!domicilioResult.anpr.success && <p className="small text-danger mb-0">{domicilioResult.anpr.message}</p>}
-                      {domicilioResult.anpr.success && !domicilioResult.anpr.found && <p className="small text-muted mb-0">Nessun dato trovato in ANPR</p>}
-                      {domicilioResult.anpr.success && domicilioResult.anpr.found && (() => {
-                        const g = domicilioResult.anpr.generalita;
-                        const vitaInfo = domicilioResult.anpr.infoSoggettoEnte?.find(i => (i.chiave ?? '').toLowerCase().includes('vita'));
-                        const altreInfo = (domicilioResult.anpr.infoSoggettoEnte ?? []).filter(i => i !== vitaInfo);
-                        const luogoNascita = g?.luogoNascita?.comune?.nomeComune ?? g?.luogoNascita?.localita?.descrizioneStato ?? g?.luogoNascita?.localita?.descrizioneLocalita;
-                        return (
-                          <>
-                            <p className="fw-bold mb-1">{g?.cognome} {g?.nome}</p>
-                            {vitaInfo && (
-                              <span className={`badge mb-2 ${vitaInfo.valore === 'S' ? 'bg-success' : vitaInfo.valore === 'N' ? 'bg-danger' : 'bg-secondary'}`}>
-                                {vitaInfo.valore === 'S' ? 'In vita' : vitaInfo.valore === 'N' ? 'Deceduto' : 'Non specificato'}
-                                {vitaInfo.valore === 'N' && vitaInfo.valoreData ? ` il ${vitaInfo.valoreData}` : ''}
-                              </span>
-                            )}
-                            <p className="small text-muted mb-1">
-                              CF: {g?.codiceFiscale?.codFiscale}{g?.codiceFiscale?.validitaCF === '1' ? ' (validato)' : ''}
+                    <div className="row g-3">
+                      <div className="col-md-4">
+                        <div className={`card shadow-sm p-3 h-100 border ${
+                          !anpr.success ? 'border-danger' : !anpr.found ? 'border-secondary' : 'border-success'
+                        }`}>
+                          <h6 className="fw-bold mb-2 d-flex align-items-center gap-2">
+                            {!anpr.success ? <AlertCircle className="text-danger" size={16} /> :
+                             !anpr.found ? <XCircle className="text-secondary" size={16} /> :
+                             <CheckCircle2 className="text-success" size={16} />}
+                            Indirizzo Fisico (ANPR)
+                          </h6>
+                          {!anpr.success && <p className="small text-danger mb-0">{anpr.message}</p>}
+                          {anpr.success && !anpr.found && <p className="small text-muted mb-0">Nessun dato trovato in ANPR</p>}
+                          {anpr.success && anpr.found && anpr.residenza?.[0] && (
+                            <p className="small mb-0">
+                              {anpr.residenza[0].indirizzo?.toponimo?.specie} {anpr.residenza[0].indirizzo?.toponimo?.denominazioneToponimo}
+                              {anpr.residenza[0].indirizzo?.numeroCivico?.numero ? `, ${anpr.residenza[0].indirizzo.numeroCivico.numero}${anpr.residenza[0].indirizzo.numeroCivico.lettera ?? ''}` : ''}
                               <br />
-                              Nato il {g?.dataNascita} a {luogoNascita} ({g?.sesso})
-                              {g?.soggettoAIRE === 'S' ? ' — iscritto AIRE' : ''}
+                              {anpr.residenza[0].indirizzo?.cap} {anpr.residenza[0].indirizzo?.comune?.nomeComune}
                             </p>
-                            {domicilioResult.anpr.idANPR && <p className="small text-muted mb-1">idANPR: {domicilioResult.anpr.idANPR}</p>}
-                            {domicilioResult.anpr.residenza?.[0] && (
-                              <p className="small mb-1">
-                                {domicilioResult.anpr.residenza[0].indirizzo?.toponimo?.specie} {domicilioResult.anpr.residenza[0].indirizzo?.toponimo?.denominazioneToponimo}
-                                {domicilioResult.anpr.residenza[0].indirizzo?.numeroCivico?.numero ? `, ${domicilioResult.anpr.residenza[0].indirizzo.numeroCivico.numero}` : ''}
-                                <br />
-                                {domicilioResult.anpr.residenza[0].indirizzo?.cap} {domicilioResult.anpr.residenza[0].indirizzo?.comune?.nomeComune}
-                              </p>
-                            )}
-                            {altreInfo.map((info, i) => (
-                              <p key={i} className="small text-muted mb-0">
-                                {info.chiave}: {info.valore ?? info.valoreTesto ?? info.valoreData}
-                              </p>
-                            ))}
-                          </>
-                        );
-                      })()}
+                          )}
+                          {anpr.success && anpr.found && !anpr.residenza?.[0] && <p className="small text-muted mb-0">Nessun indirizzo di residenza</p>}
+                        </div>
+                      </div>
+
+                      <div className="col-md-4">
+                        <div className={`card shadow-sm p-3 h-100 border ${
+                          !domicilioResult.inad.success ? 'border-danger' :
+                          !domicilioResult.inad.found ? 'border-secondary' : 'border-success'
+                        }`}>
+                          <h6 className="fw-bold mb-2 d-flex align-items-center gap-2">
+                            {!domicilioResult.inad.success ? <AlertCircle className="text-danger" size={16} /> :
+                             !domicilioResult.inad.found ? <XCircle className="text-secondary" size={16} /> :
+                             <CheckCircle2 className="text-success" size={16} />}
+                            INAD
+                          </h6>
+                          {!domicilioResult.inad.success && <p className="small text-danger mb-0">{domicilioResult.inad.message}</p>}
+                          {domicilioResult.inad.success && !domicilioResult.inad.found && <p className="small text-muted mb-0">Nessun domicilio digitale eletto</p>}
+                          {domicilioResult.inad.success && domicilioResult.inad.found && (
+                            <ul className="small mb-0 ps-3">
+                              {(domicilioResult.inad.digitalAddress ?? []).map((a, i) => <li key={i}>{a.digitalAddress}</li>)}
+                            </ul>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="col-md-4">
+                        <div className={`card shadow-sm p-3 h-100 border ${
+                          !domicilioResult.appIo.success ? 'border-danger' :
+                          !domicilioResult.appIo.active ? 'border-secondary' : 'border-success'
+                        }`}>
+                          <h6 className="fw-bold mb-2 d-flex align-items-center gap-2">
+                            {!domicilioResult.appIo.success ? <AlertCircle className="text-danger" size={16} /> :
+                             !domicilioResult.appIo.active ? <XCircle className="text-secondary" size={16} /> :
+                             <CheckCircle2 className="text-success" size={16} />}
+                            App IO
+                          </h6>
+                          <p className="small text-muted mb-0">{domicilioResult.appIo.message}</p>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              )}
+                  </>
+                );
+              })()}
             </div>
           )}
 
