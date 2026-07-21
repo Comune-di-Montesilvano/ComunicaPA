@@ -810,7 +810,7 @@ export function App(): React.JSX.Element {
   const [token, setToken] = useState<string | null>(localStorage.getItem('comunicapa_token'));
   const [username, setUsername] = useState<string | null>(localStorage.getItem('comunicapa_username'));
   const [role, setRole] = useState<string | null>(localStorage.getItem('comunicapa_role'));
-  const [view, setView] = useState<'dashboard' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'notifiche-ricerca' | 'verifica-appio' | 'verifica-inad' | 'template-dashboard' | 'impostazioni' | 'campaign-detail' | 'audit-logs' | 'arricchimento'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'notifiche-ricerca' | 'cerca-domicilio' | 'verifica-appio' | 'verifica-inad' | 'template-dashboard' | 'impostazioni' | 'campaign-detail' | 'audit-logs' | 'arricchimento'>('dashboard');
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [templates, setTemplates] = useState<TemplateItem[]>([]);
   const [editingTemplate, setEditingTemplate] = useState<Partial<TemplateItem> & { type: 'MAIL' | 'APP_IO' } | null>(null);
@@ -868,10 +868,6 @@ export function App(): React.JSX.Element {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [notifDetail, notifDetailLoading]);
 
-  const [verificaCf, setVerificaCf] = useState('');
-  const [verificaLoading, setVerificaLoading] = useState(false);
-  const [verificaResult, setVerificaResult] = useState<{ success: boolean; active: boolean; message: string } | null>(null);
-  const [verificaTab, setVerificaTab] = useState<'singola' | 'massiva'>('singola');
   const [verificaBulkFile, setVerificaBulkFile] = useState<File | null>(null);
   const [verificaBulkHasHeaders, setVerificaBulkHasHeaders] = useState(true);
   const [verificaBulkHeaders, setVerificaBulkHeaders] = useState<string[]>([]);
@@ -890,10 +886,14 @@ export function App(): React.JSX.Element {
   const [verificaBulkSubmitError, setVerificaBulkSubmitError] = useState<string | null>(null);
 
   // ── Verifica INAD (duplicato di Verifica App IO, ma su domicilio digitale INAD) ──
-  const [verificaInadCf, setVerificaInadCf] = useState('');
-  const [verificaInadLoading, setVerificaInadLoading] = useState(false);
-  const [verificaInadResult, setVerificaInadResult] = useState<{ success: boolean; found: boolean; message: string; digitalAddress?: { digitalAddress: string }[] } | null>(null);
-  const [verificaInadTab, setVerificaInadTab] = useState<'singola' | 'massiva'>('singola');
+  const [domicilioCf, setDomicilioCf] = useState('');
+  const [domicilioLoading, setDomicilioLoading] = useState(false);
+  const [domicilioResult, setDomicilioResult] = useState<{
+    codiceFiscale: string;
+    inad: { success: boolean; found: boolean; digitalAddress?: Array<{ digitalAddress: string; practicedProfession?: string }>; message?: string };
+    appIo: { success: boolean; active: boolean; message: string };
+    anpr: { success: boolean; found: boolean; generalita?: { cognome?: string; nome?: string; dataNascita?: string }; residenza?: Array<{ dataDecorrenzaResidenza?: string; indirizzo?: { cap?: string; comune?: { nomeComune?: string }; toponimo?: { specie?: string; denominazioneToponimo?: string }; numeroCivico?: { numero?: string } } }>; message?: string };
+  } | null>(null);
   const [verificaInadBulkFile, setVerificaInadBulkFile] = useState<File | null>(null);
   const [verificaInadBulkHasHeaders, setVerificaInadBulkHasHeaders] = useState(true);
   const [verificaInadBulkHeaders, setVerificaInadBulkHeaders] = useState<string[]>([]);
@@ -1832,25 +1832,6 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const runVerificaAppIo = async () => {
-    if (!verificaCf.trim()) return;
-    setVerificaLoading(true);
-    setVerificaResult(null);
-    try {
-      const res = await apiFetch('/io-services/verify-profile', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ codiceFiscale: verificaCf }),
-      });
-      const data = await res.json();
-      setVerificaResult(data);
-    } catch (err: any) {
-      setVerificaResult({ success: false, active: false, message: err.message || 'Errore di connessione' });
-    } finally {
-      setVerificaLoading(false);
-    }
-  };
-
   useEffect(() => {
     const def = ioServices.find(s => s.isDefault);
     if (def) setVerificaBulkServiceId(def.id);
@@ -1970,22 +1951,23 @@ export function App(): React.JSX.Element {
     setVerificaBulkSubmitError(null);
   };
 
-  const runVerificaInad = async () => {
-    if (!verificaInadCf.trim()) return;
-    setVerificaInadLoading(true);
-    setVerificaInadResult(null);
+  const runCercaDomicilio = async () => {
+    if (!domicilioCf.trim()) return;
+    setDomicilioLoading(true);
+    setDomicilioResult(null);
     try {
-      const res = await apiFetch('/inad-verify/verify-single', {
+      const res = await apiFetch('/domicilio/cerca', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ codiceFiscale: verificaInadCf }),
+        body: JSON.stringify({ codiceFiscale: domicilioCf }),
       });
       const data = await res.json();
-      setVerificaInadResult(data);
+      setDomicilioResult(data);
     } catch (err: any) {
-      setVerificaInadResult({ success: false, found: false, message: err.message || 'Errore di connessione' });
+      if (err instanceof ApiAuthError) return;
+      alert(err.message || 'Errore di connessione durante la ricerca');
     } finally {
-      setVerificaInadLoading(false);
+      setDomicilioLoading(false);
     }
   };
 
@@ -5504,9 +5486,17 @@ export function App(): React.JSX.Element {
             <span>Statistiche</span>
           </a>
           <a
+            className={`bo-nav-item ${view === 'cerca-domicilio' ? 'is-active' : ''}`}
+            href="#"
+            onClick={(e) => { e.preventDefault(); setView('cerca-domicilio'); setDomicilioCf(''); setDomicilioResult(null); }}
+          >
+            <MapPin />
+            <span>Cerca Domicilio</span>
+          </a>
+          <a
             className={`bo-nav-item ${view === 'verifica-appio' ? 'is-active' : ''}`}
             href="#"
-            onClick={(e) => { e.preventDefault(); setView('verifica-appio'); setVerificaCf(''); setVerificaResult(null); }}
+            onClick={(e) => { e.preventDefault(); setView('verifica-appio'); }}
           >
             <UserCheck />
             <span>Verifica App IO</span>
@@ -5514,7 +5504,7 @@ export function App(): React.JSX.Element {
           <a
             className={`bo-nav-item ${view === 'verifica-inad' ? 'is-active' : ''}`}
             href="#"
-            onClick={(e) => { e.preventDefault(); setView('verifica-inad'); setVerificaInadCf(''); setVerificaInadResult(null); }}
+            onClick={(e) => { e.preventDefault(); setView('verifica-inad'); }}
           >
             <img src={EMBEDDED_LOGOS.INAD} alt="" style={{ width: 20, height: 20, objectFit: 'contain' }} />
             <span>Verifica INAD</span>
@@ -8672,101 +8662,13 @@ export function App(): React.JSX.Element {
           {view === 'verifica-appio' && (
             <div style={{ maxWidth: '700px', margin: '0 auto' }}>
               <h3 className="h5 fw-bold text-dark mb-3">
-                <UserCheck className="me-2" size={16} />Verifica Stato App IO
+                <UserCheck className="me-2" size={16} />Verifica massiva App IO
               </h3>
 
-              <ul className="nav nav-tabs mb-4">
-                <li className="nav-item">
-                  <button className={`nav-link ${verificaTab === 'singola' ? 'active' : ''}`} onClick={() => setVerificaTab('singola')}>
-                    Verifica singola
-                  </button>
-                </li>
-                <li className="nav-item">
-                  <button className={`nav-link ${verificaTab === 'massiva' ? 'active' : ''}`} onClick={() => setVerificaTab('massiva')}>
-                    Verifica massiva CSV
-                  </button>
-                </li>
-              </ul>
-
-              {verificaTab === 'singola' && (
-                <>
-                  <p className="small text-muted mb-4">
-                    Inserisci il codice fiscale di un cittadino per verificare in tempo reale se ha installato App IO, se è attivo sul canale ed eventualmente se ha abilitato i messaggi inviati dall'Ente. Utile ad esempio per la ricerca degli irreperibili.
-                  </p>
-
-                  <div className="card shadow-sm p-4 mb-4">
-                    <div className="mb-3">
-                      <label className="form-label small fw-bold">Codice Fiscale</label>
-                      <div className="input-group input-group-sm">
-                        <span className="input-group-text"><Contact size={16} /></span>
-                        <input
-                          type="text"
-                          className="form-control"
-                          placeholder="Inserisci il codice fiscale (16 caratteri)"
-                          maxLength={16}
-                          value={verificaCf}
-                          onChange={e => setVerificaCf(e.target.value.toUpperCase().trim())}
-                          onKeyDown={e => { if (e.key === 'Enter') runVerificaAppIo(); }}
-                        />
-                        <button
-                          className="btn btn-primary"
-                          type="button"
-                          onClick={runVerificaAppIo}
-                          disabled={verificaLoading || !verificaCf.trim()}
-                        >
-                          {verificaLoading ? (
-                            <>
-                              <Loader2 className="icon-spin me-1" size={16} />Verifica...
-                            </>
-                          ) : (
-                            <>
-                              <Search className="me-1" size={16} />Verifica
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    {verificaResult && (
-                      <div className={`mt-3 p-3 border rounded ${
-                        !verificaResult.success ? 'border-danger bg-light' :
-                        !verificaResult.active ? 'border-secondary bg-light' :
-                        verificaResult.message.includes('disabilitati') ? 'border-warning bg-light' :
-                        'border-success bg-light'
-                      }`}>
-                        <div className="d-flex align-items-start gap-3">
-                          <div style={{ fontSize: '1.8rem' }}>
-                            {!verificaResult.success ? (
-                              <AlertCircle className="text-danger" size={16} />
-                            ) : !verificaResult.active ? (
-                              <XCircle className="text-secondary" size={16} />
-                            ) : verificaResult.message.includes('disabilitati') ? (
-                              <AlertCircle className="text-warning" size={16} />
-                            ) : (
-                              <CheckCircle2 className="text-success" size={16} />
-                            )}
-                          </div>
-                          <div>
-                            <h6 className="fw-bold mb-1">
-                              {!verificaResult.success ? 'Errore di sistema' :
-                               !verificaResult.active ? 'Cittadino non attivo' :
-                               verificaResult.message.includes('disabilitati') ? 'Attivo con restrizioni' :
-                               'Cittadino attivo su App IO'}
-                            </h6>
-                            <p className="small text-muted mb-0">{verificaResult.message}</p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-
-              {verificaTab === 'massiva' && (
-                <div className="card shadow-sm p-4 mb-4">
-                  <p className="small text-muted mb-3">
-                    Carica un CSV con un elenco di codici fiscali: la verifica gira in background (può richiedere alcuni minuti su elenchi ampi) e produce due CSV scaricabili, con le stesse colonne del file originale — destinatari raggiungibili su App IO e tutti gli altri.
-                  </p>
+              <div className="card shadow-sm p-4 mb-4">
+                <p className="small text-muted mb-3">
+                  Carica un CSV con un elenco di codici fiscali: la verifica gira in background (può richiedere alcuni minuti su elenchi ampi) e produce due CSV scaricabili, con le stesse colonne del file originale — destinatari raggiungibili su App IO e tutti gli altri. Per una verifica puntuale su un singolo codice fiscale, usa "Cerca Domicilio" nel menu.
+                </p>
 
                   {!verificaBulkJobId && (
                     <>
@@ -8873,111 +8775,19 @@ export function App(): React.JSX.Element {
                     </div>
                   )}
                 </div>
-              )}
             </div>
           )}
 
           {view === 'verifica-inad' && (
             <div style={{ maxWidth: '700px', margin: '0 auto' }}>
               <h3 className="h5 fw-bold text-dark mb-3">
-                <Contact className="me-2" size={16} />Verifica Domicilio Digitale INAD
+                <Contact className="me-2" size={16} />Verifica massiva INAD
               </h3>
 
-              <ul className="nav nav-tabs mb-4">
-                <li className="nav-item">
-                  <button className={`nav-link ${verificaInadTab === 'singola' ? 'active' : ''}`} onClick={() => setVerificaInadTab('singola')}>
-                    Verifica singola
-                  </button>
-                </li>
-                <li className="nav-item">
-                  <button className={`nav-link ${verificaInadTab === 'massiva' ? 'active' : ''}`} onClick={() => setVerificaInadTab('massiva')}>
-                    Verifica massiva CSV
-                  </button>
-                </li>
-              </ul>
-
-              {verificaInadTab === 'singola' && (
-                <>
-                  <p className="small text-muted mb-4">
-                    Inserisci il codice fiscale di un cittadino per verificare in tempo reale se ha un domicilio digitale eletto su INAD (Indice Nazionale Domicili Digitali). Nota: l'endpoint /extract ha un limite giornaliero condiviso con il resto del sistema — non usare su elenchi grandi (usa la verifica massiva).
-                  </p>
-
-                  <div className="card shadow-sm p-4 mb-4">
-                    <div className="mb-3">
-                      <label className="form-label small fw-bold">Codice Fiscale</label>
-                      <div className="input-group input-group-sm">
-                        <span className="input-group-text"><Contact size={16} /></span>
-                        <input
-                          type="text"
-                          className="form-control"
-                          placeholder="Inserisci il codice fiscale (16 caratteri)"
-                          maxLength={16}
-                          value={verificaInadCf}
-                          onChange={e => setVerificaInadCf(e.target.value.toUpperCase().trim())}
-                          onKeyDown={e => { if (e.key === 'Enter') runVerificaInad(); }}
-                        />
-                        <button
-                          className="btn btn-primary"
-                          type="button"
-                          onClick={runVerificaInad}
-                          disabled={verificaInadLoading || !verificaInadCf.trim()}
-                        >
-                          {verificaInadLoading ? (
-                            <>
-                              <Loader2 className="icon-spin me-1" size={16} />Verifica...
-                            </>
-                          ) : (
-                            <>
-                              <Search className="me-1" size={16} />Verifica
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    {verificaInadResult && (
-                      <div className={`mt-3 p-3 border rounded ${
-                        !verificaInadResult.success ? 'border-danger bg-light' :
-                        !verificaInadResult.found ? 'border-secondary bg-light' :
-                        'border-success bg-light'
-                      }`}>
-                        <div className="d-flex align-items-start gap-3">
-                          <div style={{ fontSize: '1.8rem' }}>
-                            {!verificaInadResult.success ? (
-                              <AlertCircle className="text-danger" size={16} />
-                            ) : !verificaInadResult.found ? (
-                              <XCircle className="text-secondary" size={16} />
-                            ) : (
-                              <CheckCircle2 className="text-success" size={16} />
-                            )}
-                          </div>
-                          <div>
-                            <h6 className="fw-bold mb-1">
-                              {!verificaInadResult.success ? 'Errore di sistema' :
-                               !verificaInadResult.found ? 'Nessun domicilio digitale' :
-                               'Domicilio digitale trovato'}
-                            </h6>
-                            <p className="small text-muted mb-0">{verificaInadResult.message}</p>
-                            {verificaInadResult.found && verificaInadResult.digitalAddress && verificaInadResult.digitalAddress.length > 0 && (
-                              <ul className="small mb-0 mt-2 ps-3">
-                                {verificaInadResult.digitalAddress.map((a, idx) => (
-                                  <li key={idx}><strong>{a.digitalAddress}</strong></li>
-                                ))}
-                              </ul>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-
-              {verificaInadTab === 'massiva' && (
-                <div className="card shadow-sm p-4 mb-4">
-                  <p className="small text-muted mb-3">
-                    Carica un CSV con un elenco di codici fiscali: la verifica gira in background su INAD (batch fino a 1000 CF, 5-10 minuti per elaborazione) e produce due CSV scaricabili, con le stesse colonne del file originale — destinatari con domicilio digitale trovato (con colonna aggiuntiva "domicilio_digitale_inad") e tutti gli altri.
-                  </p>
+              <div className="card shadow-sm p-4 mb-4">
+                <p className="small text-muted mb-3">
+                  Carica un CSV con un elenco di codici fiscali: la verifica gira in background su INAD (batch fino a 1000 CF, 5-10 minuti per elaborazione) e produce due CSV scaricabili, con le stesse colonne del file originale — destinatari con domicilio digitale trovato (con colonna aggiuntiva "domicilio_digitale_inad") e tutti gli altri. Per una verifica puntuale su un singolo codice fiscale, usa "Cerca Domicilio" nel menu.
+                </p>
 
                   {!verificaInadBulkJobId && (
                     <>
@@ -9071,6 +8881,115 @@ export function App(): React.JSX.Element {
                       )}
                     </div>
                   )}
+                </div>
+            </div>
+          )}
+
+          {view === 'cerca-domicilio' && (
+            <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+              <h3 className="h5 fw-bold text-dark mb-3">
+                <MapPin className="me-2" size={16} />Cerca Domicilio
+              </h3>
+              <p className="small text-muted mb-4">
+                Inserisci il codice fiscale di un cittadino per interrogare insieme INAD (domicilio digitale eletto),
+                App IO (stato di attivazione) e ANPR (residenza anagrafica) e vedere la scheda completa.
+              </p>
+
+              <div className="card shadow-sm p-4 mb-4">
+                <div className="mb-3">
+                  <label className="form-label small fw-bold">Codice Fiscale</label>
+                  <div className="input-group input-group-sm">
+                    <span className="input-group-text"><Contact size={16} /></span>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Inserisci il codice fiscale (16 caratteri)"
+                      maxLength={16}
+                      value={domicilioCf}
+                      onChange={e => setDomicilioCf(e.target.value.toUpperCase().trim())}
+                      onKeyDown={e => { if (e.key === 'Enter') runCercaDomicilio(); }}
+                    />
+                    <button
+                      className="btn btn-primary"
+                      type="button"
+                      onClick={runCercaDomicilio}
+                      disabled={domicilioLoading || !domicilioCf.trim()}
+                    >
+                      {domicilioLoading ? (
+                        <>
+                          <Loader2 className="icon-spin me-1" size={16} />Ricerca...
+                        </>
+                      ) : (
+                        <>
+                          <Search className="me-1" size={16} />Cerca
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {domicilioResult && (
+                <div className="row g-3">
+                  <div className="col-md-4">
+                    <div className={`card shadow-sm p-3 h-100 border ${
+                      !domicilioResult.inad.success ? 'border-danger' :
+                      !domicilioResult.inad.found ? 'border-secondary' : 'border-success'
+                    }`}>
+                      <h6 className="fw-bold mb-2 d-flex align-items-center gap-2">
+                        {!domicilioResult.inad.success ? <AlertCircle className="text-danger" size={16} /> :
+                         !domicilioResult.inad.found ? <XCircle className="text-secondary" size={16} /> :
+                         <CheckCircle2 className="text-success" size={16} />}
+                        INAD
+                      </h6>
+                      {!domicilioResult.inad.success && <p className="small text-danger mb-0">{domicilioResult.inad.message}</p>}
+                      {domicilioResult.inad.success && !domicilioResult.inad.found && <p className="small text-muted mb-0">Nessun domicilio digitale eletto</p>}
+                      {domicilioResult.inad.success && domicilioResult.inad.found && (
+                        <ul className="small mb-0 ps-3">
+                          {(domicilioResult.inad.digitalAddress ?? []).map((a, i) => <li key={i}>{a.digitalAddress}</li>)}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="col-md-4">
+                    <div className={`card shadow-sm p-3 h-100 border ${
+                      !domicilioResult.appIo.success ? 'border-danger' :
+                      !domicilioResult.appIo.active ? 'border-secondary' : 'border-success'
+                    }`}>
+                      <h6 className="fw-bold mb-2 d-flex align-items-center gap-2">
+                        {!domicilioResult.appIo.success ? <AlertCircle className="text-danger" size={16} /> :
+                         !domicilioResult.appIo.active ? <XCircle className="text-secondary" size={16} /> :
+                         <CheckCircle2 className="text-success" size={16} />}
+                        App IO
+                      </h6>
+                      <p className="small text-muted mb-0">{domicilioResult.appIo.message}</p>
+                    </div>
+                  </div>
+
+                  <div className="col-md-4">
+                    <div className={`card shadow-sm p-3 h-100 border ${
+                      !domicilioResult.anpr.success ? 'border-danger' :
+                      !domicilioResult.anpr.found ? 'border-secondary' : 'border-success'
+                    }`}>
+                      <h6 className="fw-bold mb-2 d-flex align-items-center gap-2">
+                        {!domicilioResult.anpr.success ? <AlertCircle className="text-danger" size={16} /> :
+                         !domicilioResult.anpr.found ? <XCircle className="text-secondary" size={16} /> :
+                         <CheckCircle2 className="text-success" size={16} />}
+                        ANPR (residenza)
+                      </h6>
+                      {!domicilioResult.anpr.success && <p className="small text-danger mb-0">{domicilioResult.anpr.message}</p>}
+                      {domicilioResult.anpr.success && !domicilioResult.anpr.found && <p className="small text-muted mb-0">Nessuna residenza trovata in ANPR</p>}
+                      {domicilioResult.anpr.success && domicilioResult.anpr.found && domicilioResult.anpr.residenza?.[0] && (
+                        <p className="small mb-0">
+                          {domicilioResult.anpr.residenza[0].indirizzo?.toponimo?.specie} {domicilioResult.anpr.residenza[0].indirizzo?.toponimo?.denominazioneToponimo}
+                          {domicilioResult.anpr.residenza[0].indirizzo?.numeroCivico?.numero ? `, ${domicilioResult.anpr.residenza[0].indirizzo.numeroCivico.numero}` : ''}
+                          <br />
+                          {domicilioResult.anpr.residenza[0].indirizzo?.cap} {domicilioResult.anpr.residenza[0].indirizzo?.comune?.nomeComune}
+                        </p>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
