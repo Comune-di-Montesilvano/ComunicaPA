@@ -6204,7 +6204,7 @@ export function App(): React.JSX.Element {
 
                   <div className="p-4 border rounded bg-light text-center mb-4">
                     <FileSpreadsheet className="text-muted mb-3" size={32} />
-                    <p className="small text-muted mb-3">Seleziona il file CSV contenente l'elenco dei destinatari della TARI.</p>
+                    <p className="small text-muted mb-3">Seleziona il file CSV contenente l'elenco dei destinatari della campagna.</p>
                     {wizCsvFile ? (
                       <div className="d-flex flex-column align-items-center mt-3">
                         <div className="badge bg-success p-2 mb-2">
