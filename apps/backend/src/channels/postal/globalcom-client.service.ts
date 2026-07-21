@@ -44,6 +44,16 @@ export interface GbcDocStatus {
   stato: string;
   codiceErrore?: string;
   descrizione?: string;
+  /** Costo netto reale in euro (Risposta.Valori.Costo) — null se Valori assente (es. risposta di errore). */
+  costoNetto: number | null;
+  numeroPagine: number | null;
+  /** true = invio nazionale, false = estero (Risposta.Nazionale). */
+  nazionale: boolean | null;
+  importoPostaleNetto: number | null;
+  importoStampaNetto: number | null;
+  importoARNetto: number | null;
+  tipoDocumento: string | null;
+  codiceContratto: string | null;
 }
 
 export interface GbcContratto {
@@ -74,12 +84,22 @@ function toInfoIndirizzoExt(addr: GbcAddress): Record<string, unknown> {
   };
 }
 
-function mapDocStatus(raw: any): GbcDocStatus {
+export function mapDocStatus(raw: any): GbcDocStatus {
+  const valori = raw.Valori;
+  const billing = valori?.DettaglioBilling;
   return {
     idPro: raw.IDPRO,
     stato: raw.Stato,
     codiceErrore: raw.CodiceErrore,
     descrizione: raw.Descrizione,
+    costoNetto: valori?.Costo ?? null,
+    numeroPagine: valori?.NumeroPagine ?? null,
+    nazionale: raw.Nazionale ?? null,
+    importoPostaleNetto: billing?.ImportoPostaleNetto ?? null,
+    importoStampaNetto: billing?.ImportoStampaNetto ?? null,
+    importoARNetto: billing?.ImportoARNetto ?? null,
+    tipoDocumento: raw.TipoDocumento ?? null,
+    codiceContratto: raw.CodiceContratto ?? null,
   };
 }
 

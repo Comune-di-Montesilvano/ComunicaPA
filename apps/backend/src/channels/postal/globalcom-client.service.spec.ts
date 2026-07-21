@@ -1,4 +1,4 @@
-import { GlobalComClient } from './globalcom-client.service';
+import { GlobalComClient, mapDocStatus } from './globalcom-client.service';
 
 const mockLoginAsync = jest.fn();
 const mockInvioAsync = jest.fn();
@@ -54,7 +54,7 @@ describe('GlobalComClient', () => {
         Destinatari: { InfoIndirizzoExt: [expect.objectContaining({ Denominazione1: 'Mario Rossi', Citta: 'Montesilvano' })] },
       }),
     }));
-    expect(result).toEqual({ idPro: 'IDPRO123', stato: 'Accettato', codiceErrore: '', descrizione: '' });
+    expect(result).toEqual(expect.objectContaining({ idPro: 'IDPRO123', stato: 'Accettato', codiceErrore: '', descrizione: '' }));
   });
 
   it('invioExtSingolo lancia se Login fallisce', async () => {
@@ -94,7 +94,7 @@ describe('GlobalComClient', () => {
     expect(mockListaAsync).toHaveBeenCalledWith({
       Filtri: { Testo: 'attempt-uuid-123', SoloTesto: true, Limite: 1 },
     });
-    expect(result).toEqual([{ idPro: 'IDPRO999', stato: 'Consegnato', codiceErrore: '', descrizione: '' }]);
+    expect(result).toEqual([expect.objectContaining({ idPro: 'IDPRO999', stato: 'Consegnato', codiceErrore: '', descrizione: '' })]);
   });
 
   it('dettagliDocumento ritorna null se il documento non è trovato', async () => {
@@ -114,6 +114,50 @@ describe('GlobalComClient', () => {
 
     const result = await client.dettagliDocumento(creds, 'IDPRO000');
 
-    expect(result).toEqual({ idPro: 'IDPRO000', stato: 'Consegnato', codiceErrore: '', descrizione: '' });
+    expect(result).toEqual(expect.objectContaining({ idPro: 'IDPRO000', stato: 'Consegnato', codiceErrore: '', descrizione: '' }));
+  });
+});
+
+describe('mapDocStatus — campi costo', () => {
+  it('estrae Costo/NumeroPagine/Nazionale/DettaglioBilling dalla risposta Risposta.Valori', () => {
+    const raw = {
+      IDPRO: 'SOA_123',
+      Stato: 'Confermato',
+      CodiceErrore: '0',
+      Descrizione: '',
+      TipoDocumento: 'RaccomandataMarket4',
+      CodiceContratto: '40009679559',
+      Nazionale: true,
+      Valori: {
+        Costo: 4.31,
+        NumeroPagine: 2,
+        DettaglioBilling: {
+          ImportoPostaleNetto: 4.03,
+          ImportoStampaNetto: 0.28,
+          ImportoARNetto: 0,
+        },
+      },
+    };
+
+    const result = mapDocStatus(raw);
+
+    expect(result.costoNetto).toBe(4.31);
+    expect(result.numeroPagine).toBe(2);
+    expect(result.nazionale).toBe(true);
+    expect(result.importoPostaleNetto).toBe(4.03);
+    expect(result.importoStampaNetto).toBe(0.28);
+    expect(result.importoARNetto).toBe(0);
+    expect(result.tipoDocumento).toBe('RaccomandataMarket4');
+    expect(result.codiceContratto).toBe('40009679559');
+  });
+
+  it('gestisce Valori assente (risposta di errore) senza lanciare', () => {
+    const raw = { IDPRO: 'SOA_123', Stato: 'Errore', CodiceErrore: '99', Descrizione: 'fallito' };
+
+    const result = mapDocStatus(raw);
+
+    expect(result.costoNetto).toBeNull();
+    expect(result.numeroPagine).toBeNull();
+    expect(result.nazionale).toBeNull();
   });
 });
