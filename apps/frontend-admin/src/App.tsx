@@ -4197,20 +4197,21 @@ export function App(): React.JSX.Element {
       }
 
       const inadFound = Boolean(data?.inad?.success && data?.inad?.found && (data?.inad?.digitalAddress?.length ?? 0) > 0);
+      const appIoActiveNow = Boolean(data?.appIo?.success && data?.appIo?.active);
       setSingleInadForced(inadFound);
       setSingleInadAddress(inadFound ? data.inad.digitalAddress[0].digitalAddress : '');
       if (inadFound) {
         setWizChannel('PEC');
         setSinglePec(data.inad.digitalAddress[0].digitalAddress);
         // PEC non è mai SEND/APP_IO: replica la stessa condizione di eleggibilità
-        // usata nell'onChange del select canale, che qui bypassiamo forzando il
-        // canale direttamente (vedi finding 2 review finale).
-        if (wizAppIoMode === 'none') {
+        // pagamenti usata altrove (select canale, card Opzioni di Invio), che qui
+        // bypassiamo forzando il canale direttamente (vedi finding 2 review finale).
+        if (!(wizAppIoMode === 'parallel' && appIoActiveNow)) {
           setWizPaymentEnabled(false);
         }
       }
 
-      setSingleAppIoActive(Boolean(data?.appIo?.success && data?.appIo?.active));
+      setSingleAppIoActive(appIoActiveNow);
     } catch (err: any) {
       if (err instanceof ApiAuthError) return;
       alert(err.message || 'Errore di connessione durante la verifica ANPR.');
@@ -4219,7 +4220,7 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const needsWizSinglePhysicalAddress = wizChannel === 'POSTAL';
+  const needsWizSinglePhysicalAddress = wizChannel === 'POSTAL' || wizChannel === 'SEND';
 
   const handleWizSingleSubmit = async (targetStep: number = 4) => {
     if (!isValidCfOrPiva(singleCf)) {
@@ -4773,6 +4774,15 @@ export function App(): React.JSX.Element {
     if (wizChannel === 'SEND') {
       cfg.taxonomyCode = wizTaxonomyCode;
       cfg.physicalCommunicationType = wizPhysicalCommunicationType;
+      if (wizSingleMode) {
+        cfg.physicalAddressConfig = {
+          enabled: true,
+          addressColumn: wizPostalAddressColumn,
+          municipalityColumn: wizPostalMunicipalityColumn,
+          zipColumn: wizPostalZipColumn,
+          provinceColumn: wizPostalProvinceColumn,
+        };
+      }
     }
     if (wizChannel === 'POSTAL') {
       cfg.postalServiceType = wizPostalServiceType;
@@ -5106,6 +5116,15 @@ export function App(): React.JSX.Element {
           taxonomyCode: wizTaxonomyCode,
           physicalCommunicationType: wizPhysicalCommunicationType,
         };
+        if (wizSingleMode) {
+          channelConfig.physicalAddressConfig = {
+            enabled: true,
+            addressColumn: wizPostalAddressColumn,
+            municipalityColumn: wizPostalMunicipalityColumn,
+            zipColumn: wizPostalZipColumn,
+            provinceColumn: wizPostalProvinceColumn,
+          };
+        }
       } else if (wizChannel === 'POSTAL') {
         channelConfig.postalServiceType = wizPostalServiceType;
         channelConfig.postalReturnReceipt = wizPostalReturnReceipt;
@@ -6523,7 +6542,7 @@ export function App(): React.JSX.Element {
 
               {wizStep === 1 && wizSingleMode && (
                 <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-                  <div className="d-flex align-items-center justify-content-between mb-4 pb-3 border-bottom">
+                  <div className="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
                     <div>
                       <h4 className="h5 fw-bold text-dark mb-1">Passo 1: Dettagli & Destinatario</h4>
                       <p className="small text-muted mb-0">Configura i dati anagrafici, il canale di invio e gli allegati per questo specifico destinatario.</p>
@@ -6538,8 +6557,8 @@ export function App(): React.JSX.Element {
                   </div>
 
                   {/* SEZIONE 1: Dati Destinatario (A tutta larghezza) */}
-                  <div className="card shadow-sm border-0 rounded-3 p-4 mb-4 bg-white">
-                    <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-3">Dati Destinatario</h5>
+                  <div className="card shadow-sm border-0 rounded-3 p-3 mb-3 bg-white">
+                    <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-2">Dati Destinatario</h5>
                     <div className="row g-3 align-items-end">
                       <div className="col-md-6">
                         <label className="form-label small fw-bold text-dark mb-1" htmlFor="s_cf">
@@ -6619,11 +6638,11 @@ export function App(): React.JSX.Element {
                   </div>
 
                   {/* Resto delle impostazioni disposto sotto a due colonne */}
-                  <div className="row g-4">
+                  <div className="row g-3">
                     {/* COLONNA SINISTRA: Canale e Configurazione */}
                     <div className="col-lg-7">
-                      <div className="card shadow-sm border-0 rounded-3 p-4 mb-4 bg-white">
-                        <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-3">Canale di Invio e Configurazione</h5>
+                      <div className="card shadow-sm border-0 rounded-3 p-3 mb-3 bg-white">
+                        <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-2">Canale di Invio e Configurazione</h5>
                         
                         <div className="mb-3">
                           <label className="form-label small fw-bold text-dark mb-1">Canale di Invio Principale *</label>
@@ -6637,7 +6656,7 @@ export function App(): React.JSX.Element {
                               const activeCfg = mailConfigs.find(c => c.type === newChan && c.active);
                               setWizMailConfigId(activeCfg?.id || '');
                               if (newChan === 'SEND') setWizProtocolla(true);
-                              if (newChan !== 'SEND' && newChan !== 'APP_IO' && wizAppIoMode === 'none') {
+                              if (newChan !== 'SEND' && newChan !== 'APP_IO' && !(wizAppIoMode === 'parallel' && singleAppIoActive)) {
                                 setWizPaymentEnabled(false);
                               }
                             }}
@@ -6781,7 +6800,7 @@ export function App(): React.JSX.Element {
                                   </div>
                                 </div>
                               )}
-                              <div className="col-md-6">
+                              <div className={contrattiPerTipo.length > 0 ? 'col-md-6' : 'col-md-12'}>
                                 <label className="form-label small fw-bold text-dark mb-1">Tipo di invio *</label>
                                 <select className="form-select" value={wizPostalServiceType} required disabled={enabledTypes.length === 0}
                                   onChange={(e) => { setWizPostalServiceType(e.target.value); setWizPostalCodiceContratto(''); }}>
@@ -6795,17 +6814,8 @@ export function App(): React.JSX.Element {
                                   <div className="form-text small text-muted mt-1">{POSTAL_SERVICE_TYPE_META[wizPostalServiceType].description}</div>
                                 )}
                               </div>
-                              {wizPostalServiceType.startsWith('Raccomandata') && (
-                                <div className="col-md-3 d-flex align-items-end pb-2">
-                                  <div className="form-check">
-                                    <input className="form-check-input" type="checkbox" id="wizSinglePostalAR"
-                                      checked={wizPostalReturnReceipt} onChange={(e) => setWizPostalReturnReceipt(e.target.checked)} />
-                                    <label className="form-check-label small fw-medium" htmlFor="wizSinglePostalAR">Ricevuta di ritorno (AR)</label>
-                                  </div>
-                                </div>
-                              )}
                               {contrattiPerTipo.length > 0 && (
-                                <div className="col-md-3">
+                                <div className="col-md-6">
                                   <label className="form-label small fw-bold text-dark mb-1">Contratto {contrattiPerTipo.length > 1 ? '*' : ''}</label>
                                   <select className="form-select" value={wizPostalCodiceContratto} required={contrattiPerTipo.length > 1}
                                     onChange={(e) => setWizPostalCodiceContratto(e.target.value)}>
@@ -6816,13 +6826,26 @@ export function App(): React.JSX.Element {
                                   </select>
                                 </div>
                               )}
+                              {wizPostalServiceType.startsWith('Raccomandata') && (
+                                <div className="col-12">
+                                  <div className="form-check">
+                                    <input className="form-check-input" type="checkbox" id="wizSinglePostalAR"
+                                      checked={wizPostalReturnReceipt} onChange={(e) => setWizPostalReturnReceipt(e.target.checked)} />
+                                    <label className="form-check-label small fw-medium" htmlFor="wizSinglePostalAR">Ricevuta di ritorno (AR)</label>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           );
                         })()}
 
                         {needsWizSinglePhysicalAddress && (
-                          <div className="row g-3 mt-2">
-                            <div className="col-md-6">
+                          <div className="mt-3 pt-3 border-top">
+                            <label className="form-label small fw-bold text-secondary text-uppercase mb-2 d-block" style={{ fontSize: '0.7rem', letterSpacing: '0.5px' }}>
+                              Indirizzo Fisico{wizChannel === 'SEND' ? ' (fallback consegna digitale)' : ''}
+                            </label>
+                            <div className="row g-2">
+                            <div className="col-md-7">
                               <label className="form-label small fw-bold text-dark mb-1">Indirizzo (via e civico) *</label>
                               <input
                                 type="text"
@@ -6832,7 +6855,7 @@ export function App(): React.JSX.Element {
                                 onChange={(e) => setSingleAddress(e.target.value)}
                               />
                             </div>
-                            <div className="col-md-3">
+                            <div className="col-md-5">
                               <label className="form-label small fw-bold text-dark mb-1">Comune *</label>
                               <input
                                 type="text"
@@ -6842,43 +6865,92 @@ export function App(): React.JSX.Element {
                                 onChange={(e) => setSingleMunicipality(e.target.value)}
                               />
                             </div>
-                            <div className="col-md-1">
+                            <div className="col-md-3">
                               <label className="form-label small fw-bold text-dark mb-1">CAP *</label>
                               <input
                                 type="text"
-                                className="form-control text-center"
-                                placeholder="CAP"
+                                className="form-control"
+                                placeholder="Es: 65015"
                                 maxLength={5}
                                 value={singleZip}
                                 onChange={(e) => setSingleZip(e.target.value)}
                               />
                             </div>
-                            <div className="col-md-2">
+                            <div className="col-md-3">
                               <label className="form-label small fw-bold text-dark mb-1">Provincia *</label>
                               <input
                                 type="text"
-                                className="form-control text-center"
-                                placeholder="Prov"
+                                className="form-control"
+                                placeholder="Es: PE"
                                 maxLength={2}
                                 value={singleProvince}
                                 onChange={(e) => setSingleProvince(e.target.value.toUpperCase())}
                               />
                             </div>
+                            </div>
                           </div>
                         )}
                       </div>
+
+                      {/* Allegati */}
+                      <div className="card shadow-sm border-0 rounded-3 p-3 mb-3 bg-white">
+                        <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-2">
+                          Allegati
+                          {(wizChannel === 'SEND' || wizChannel === 'POSTAL') && <span className="text-danger"> *</span>}
+                        </h5>
+
+                        {wizSingleAttachmentSlots.map((slot, idx) => (
+                          <div className="row g-2 mb-2 align-items-center" key={slot.id}>
+                            <div className="col-md-4">
+                              <input
+                                type="text"
+                                className="form-control form-control-sm"
+                                placeholder={`Nome allegato ${idx + 1}`}
+                                value={slot.label}
+                                onChange={(e) => updateWizSingleAttachmentSlot(slot.id, { label: e.target.value })}
+                              />
+                            </div>
+                            <div className="col-md-6">
+                              <input
+                                type="file"
+                                accept=".pdf"
+                                className="form-control form-control-sm"
+                                onChange={(e) => updateWizSingleAttachmentSlot(slot.id, { file: e.target.files?.[0] || null })}
+                              />
+                            </div>
+                            <div className="col-md-2 text-end">
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-danger"
+                                onClick={() => removeWizSingleAttachmentSlot(slot.id)}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+
+                        <div className="mt-2">
+                          <button type="button" className="btn btn-sm btn-outline-primary px-3" onClick={addWizSingleAttachmentSlot}>
+                            + Aggiungi allegato
+                          </button>
+                          <div className="form-text small text-muted mt-1">
+                            Il caricamento effettivo dei file avviene al momento dell'invio o del test.
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
-                    {/* COLONNA DESTRA: Opzioni e Allegati */}
+                    {/* COLONNA DESTRA: Opzioni di Invio */}
                     <div className="col-lg-5">
                       {/* Opzioni di Invio */}
-                      <div className="card shadow-sm border-0 rounded-3 p-4 mb-4 bg-white">
-                        <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-3">Opzioni di Invio</h5>
+                      <div className="card shadow-sm border-0 rounded-3 p-3 mb-3 bg-white">
+                        <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-2">Opzioni di Invio</h5>
 
                         {(wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && singleAppIoActive && (
-                          <div className="card border-0 rounded-3 mb-3 shadow-sm" style={{ background: '#f8f9fc' }}>
-                            <div className="card-body p-3">
-                              <div className="d-flex align-items-center gap-2 mb-3">
+                          <div className="card border-0 rounded-3 mb-2 shadow-sm" style={{ background: '#f8f9fc' }}>
+                            <div className="card-body p-2">
+                              <div className="d-flex align-items-center gap-2 mb-2">
                                 <img src={EMBEDDED_LOGOS.APP_IO} alt="App IO" style={{ height: '22px', width: 'auto' }} />
                                 <h6 className="fw-bold text-dark mb-0 small">Co-consegna su App IO</h6>
                               </div>
@@ -6924,9 +6996,9 @@ export function App(): React.JSX.Element {
                           </div>
                         )}
 
-                        <div className="card border-0 rounded-3 mb-3 shadow-sm" style={{ background: '#f8f9fc' }}>
-                          <div className="card-body p-3">
-                            <div className="d-flex align-items-center gap-2 mb-3">
+                        <div className="card border-0 rounded-3 mb-2 shadow-sm" style={{ background: '#f8f9fc' }}>
+                          <div className="card-body p-2">
+                            <div className="d-flex align-items-center gap-2 mb-2">
                               <Stamp className="text-secondary" size={18} />
                               <h6 className="fw-bold text-dark mb-0 small">Protocollazione</h6>
                             </div>
@@ -6952,10 +7024,10 @@ export function App(): React.JSX.Element {
                           </div>
                         </div>
 
-                        {(wizChannel === 'SEND' || wizChannel === 'APP_IO' || wizAppIoMode === 'parallel') && (
-                          <div className="card border-0 rounded-3 mb-3 shadow-sm" style={{ background: '#f8f9fc' }}>
-                            <div className="card-body p-3">
-                              <div className="d-flex align-items-center gap-2 mb-3">
+                        {(wizChannel === 'SEND' || wizChannel === 'APP_IO' || (wizAppIoMode === 'parallel' && singleAppIoActive)) && (
+                          <div className="card border-0 rounded-3 mb-2 shadow-sm" style={{ background: '#f8f9fc' }}>
+                            <div className="card-body p-2">
+                              <div className="d-flex align-items-center gap-2 mb-2">
                                 <CreditCard className="text-secondary" size={18} />
                                 <h6 className="fw-bold text-dark mb-0 small">Pagamenti pagoPA</h6>
                               </div>
@@ -6972,8 +7044,8 @@ export function App(): React.JSX.Element {
                                 </label>
                               </div>
                               {wizPaymentEnabled && (
-                                <div className="row g-3 mt-2 ps-2 border-start border-3 border-light">
-                                  <div className="col-md-4">
+                                <div className="mt-2 ps-2 border-start border-3 border-light">
+                                  <div className="mb-2">
                                     <label className="form-label small fw-bold text-dark mb-1">IUV</label>
                                     <input
                                       type="text"
@@ -6983,24 +7055,26 @@ export function App(): React.JSX.Element {
                                       onChange={(e) => setSinglePaymentIuv(e.target.value)}
                                     />
                                   </div>
-                                  <div className="col-md-4">
-                                    <label className="form-label small fw-bold text-dark mb-1">Importo (€)</label>
-                                    <input
-                                      type="text"
-                                      className="form-control"
-                                      placeholder="Es: 15.00"
-                                      value={singlePaymentImporto}
-                                      onChange={(e) => setSinglePaymentImporto(e.target.value)}
-                                    />
-                                  </div>
-                                  <div className="col-md-4">
-                                    <label className="form-label small fw-bold text-dark mb-1">Scadenza</label>
-                                    <input
-                                      type="date"
-                                      className="form-control"
-                                      value={singlePaymentScadenza}
-                                      onChange={(e) => setSinglePaymentScadenza(e.target.value)}
-                                    />
+                                  <div className="row g-2">
+                                    <div className="col-6">
+                                      <label className="form-label small fw-bold text-dark mb-1">Importo (€)</label>
+                                      <input
+                                        type="text"
+                                        className="form-control"
+                                        placeholder="Es: 15.00"
+                                        value={singlePaymentImporto}
+                                        onChange={(e) => setSinglePaymentImporto(e.target.value)}
+                                      />
+                                    </div>
+                                    <div className="col-6">
+                                      <label className="form-label small fw-bold text-dark mb-1">Scadenza</label>
+                                      <input
+                                        type="date"
+                                        className="form-control"
+                                        value={singlePaymentScadenza}
+                                        onChange={(e) => setSinglePaymentScadenza(e.target.value)}
+                                      />
+                                    </div>
                                   </div>
                                 </div>
                               )}
@@ -7008,58 +7082,10 @@ export function App(): React.JSX.Element {
                           </div>
                         )}
                       </div>
-
-                      {/* SEZIONE 4: Allegati */}
-                      <div className="card shadow-sm border-0 rounded-3 p-4 mb-4 bg-white">
-                        <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-3">
-                          Allegati
-                          {(wizChannel === 'SEND' || wizChannel === 'POSTAL') && <span className="text-danger"> *</span>}
-                        </h5>
-                        
-                        {wizSingleAttachmentSlots.map((slot, idx) => (
-                          <div className="row g-2 mb-2 align-items-center" key={slot.id}>
-                            <div className="col-md-4">
-                              <input
-                                type="text"
-                                className="form-control form-control-sm"
-                                placeholder={`Nome allegato ${idx + 1}`}
-                                value={slot.label}
-                                onChange={(e) => updateWizSingleAttachmentSlot(slot.id, { label: e.target.value })}
-                              />
-                            </div>
-                            <div className="col-md-6">
-                              <input
-                                type="file"
-                                accept=".pdf"
-                                className="form-control form-control-sm"
-                                onChange={(e) => updateWizSingleAttachmentSlot(slot.id, { file: e.target.files?.[0] || null })}
-                              />
-                            </div>
-                            <div className="col-md-2 text-end">
-                              <button
-                                type="button"
-                                className="btn btn-sm btn-outline-danger"
-                                onClick={() => removeWizSingleAttachmentSlot(slot.id)}
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                        
-                        <div className="mt-3">
-                          <button type="button" className="btn btn-sm btn-outline-primary px-3" onClick={addWizSingleAttachmentSlot}>
-                            + Aggiungi allegato
-                          </button>
-                          <div className="form-text small text-muted mt-2">
-                            Il caricamento effettivo dei file avviene al momento dell'invio o del test.
-                          </div>
-                        </div>
-                      </div>
                     </div>
                   </div>
 
-                  <div className="mt-4 pt-3 d-flex justify-content-end">
+                  <div className="mt-3 pt-2 d-flex justify-content-end">
                     <button
                       className="btn btn-primary px-4 fw-medium d-flex align-items-center gap-2"
                       onClick={() => handleWizSingleSubmit()}
