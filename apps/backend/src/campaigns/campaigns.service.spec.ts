@@ -1240,7 +1240,7 @@ describe('CampaignsService', () => {
       expect(result.campaignLeaderboard).toEqual([]);
     });
 
-    it('esclude sempre le campagne isTest=true da ognuna delle 9 query aggregate', async () => {
+    it('esclude sempre le campagne isTest=true da ognuna delle 10 query aggregate', async () => {
       const createdQbs: any[] = [];
       const trackedMakeQb = (terminal: { rawOne?: any; rawMany?: any[]; count?: number }) => {
         const qb = makeQb(terminal);
@@ -1272,7 +1272,7 @@ describe('CampaignsService', () => {
 
       await service.getGlobalStats();
 
-      expect(createdQbs).toHaveLength(9);
+      expect(createdQbs).toHaveLength(10);
       const [
         totalsRowQb,
         totalDownloadedQb,
@@ -1283,6 +1283,7 @@ describe('CampaignsService', () => {
         leaderboardQb,
         neverDownloadedQb,
         costRowQb,
+        savingRowQb,
       ] = createdQbs;
 
       const names = [
@@ -1295,6 +1296,7 @@ describe('CampaignsService', () => {
         ['leaderboardRows', leaderboardQb],
         ['neverDownloadedCount', neverDownloadedQb],
         ['costRow', costRowQb],
+        ['savingRow', savingRowQb],
       ] as const;
 
       for (const [name, qb] of names) {
