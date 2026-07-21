@@ -17,7 +17,7 @@ import {
   CheckCheck, Shield, Paperclip, Upload, Filter, Award, ExternalLink, Contact,
   Play, FileArchive, Keyboard, Key, BookUser,
   Minus, Star, Stamp, Settings, CircleUserRound, BarChart3, ShieldCheck, Rocket, ArrowDown,
-  Users, FolderOpen,
+  Users, FolderOpen, Euro,
 } from 'lucide-react';
 
 declare global {
@@ -991,7 +991,7 @@ export function App(): React.JSX.Element {
   }, [view, token]);
 
   useEffect(() => {
-    if (view === 'statistiche' && token) {
+    if ((view === 'statistiche' || view === 'dashboard') && token) {
       fetchGlobalStats();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1431,6 +1431,8 @@ export function App(): React.JSX.Element {
   const [campaignSendStageCounts, setCampaignSendStageCounts] = useState<{ queued: number; protocollato: number; inviato: number; fallito: number } | null>(null);
   const [sendStatusBreakdown, setSendStatusBreakdown] = useState<Array<{ status: string | null; count: number }> | null>(null);
   const [postalStatusBreakdown, setPostalStatusBreakdown] = useState<Array<{ status: string | null; count: number }> | null>(null);
+  const [campaignCost, setCampaignCost] = useState<{ campaignId: string; totalCostCents: number; byChannel: Array<{ channel: string; totalCostCents: number; uncalculatedCount: number }> } | null>(null);
+  const [campaignCostSavings, setCampaignCostSavings] = useState<{ campaignId: string; totalSavingCents: number; postalNotEstimableCount: number } | null>(null);
   const [downloadCombinations, setDownloadCombinations] = useState<Array<{ channels: string[]; count: number; sentSuccessfully: boolean }> | null>(null);
   const [statsDateFrom, setStatsDateFrom] = useState(() => {
     const d = new Date();
@@ -1439,7 +1441,7 @@ export function App(): React.JSX.Element {
   });
   const [statsDateTo, setStatsDateTo] = useState(() => new Date().toISOString().slice(0, 10));
   const [globalStats, setGlobalStats] = useState<{
-    totals: { totalRecipients: number; totalSent: number; totalFailed: number; totalDownloaded: number; downloadPercentage: number };
+    totals: { totalRecipients: number; totalSent: number; totalFailed: number; totalDownloaded: number; downloadPercentage: number; totalCostCents: number; totalSavingCents: number };
     monthlyTrend: Array<{ month: string; sent: number; downloaded: number }>;
     channelTotals: Array<{ channel: string; sent: number }>;
     downloadChannelTotals: Array<{ channel: string; count: number }>;
@@ -1465,6 +1467,8 @@ export function App(): React.JSX.Element {
           fetchCampaignSendStageCounts(selectedCampaignId);
           fetchSendStatusBreakdown(selectedCampaignId);
           fetchPostalStatusBreakdown(selectedCampaignId);
+          fetchCampaignCost(selectedCampaignId);
+          fetchCampaignCostSavings(selectedCampaignId);
           fetchDownloadCombinationStats(selectedCampaignId);
           fetchRecipientsPage(selectedCampaignId, recipientsPageNum, recipientsSearch);
         }, 3000);
@@ -1486,11 +1490,11 @@ export function App(): React.JSX.Element {
     return () => clearInterval(timer);
   }, [token, view]);
 
-  // Stesso problema per la vista Statistiche: fetchGlobalStats girava solo
+  // Stesso problema per la vista Statistiche/Dashboard: fetchGlobalStats girava solo
   // all'ingresso nella vista, mai più — restava ferma allo snapshot iniziale
   // mentre le campagne in corso avanzavano lato server.
   useEffect(() => {
-    if (!token || view !== 'statistiche') return;
+    if (!token || (view !== 'statistiche' && view !== 'dashboard')) return;
     const timer = setInterval(() => {
       fetchGlobalStats();
     }, 5000);
@@ -4827,6 +4831,8 @@ export function App(): React.JSX.Element {
     setCampaignSendStageCounts(null);
     setSendStatusBreakdown(null);
     setPostalStatusBreakdown(null);
+    setCampaignCost(null);
+    setCampaignCostSavings(null);
     setDownloadCombinations(null);
     setRecipientsPage(null);
     setRecipientsSearch('');
@@ -4838,6 +4844,8 @@ export function App(): React.JSX.Element {
     fetchCampaignSendStageCounts(id);
     fetchSendStatusBreakdown(id);
     fetchPostalStatusBreakdown(id);
+    fetchCampaignCost(id);
+    fetchCampaignCostSavings(id);
     fetchDownloadCombinationStats(id);
   };
 
@@ -4923,6 +4931,26 @@ export function App(): React.JSX.Element {
       setPostalStatusBreakdown(await res.json());
     } catch {
       // Non bloccante: il dettaglio campagna resta usabile senza la barra.
+    }
+  };
+
+  const fetchCampaignCost = async (id: string) => {
+    try {
+      const res = await apiFetch(`/campaigns/${id}/cost`);
+      if (!res.ok) return;
+      setCampaignCost(await res.json());
+    } catch {
+      // Non bloccante: il dettaglio campagna resta usabile senza il costo.
+    }
+  };
+
+  const fetchCampaignCostSavings = async (id: string) => {
+    try {
+      const res = await apiFetch(`/campaigns/${id}/cost-savings`);
+      if (!res.ok) return;
+      setCampaignCostSavings(await res.json());
+    } catch {
+      // Non bloccante: il dettaglio campagna resta usabile senza il risparmio.
     }
   };
 
@@ -10891,6 +10919,41 @@ export function App(): React.JSX.Element {
                                 <Legend />
                               </PieChart>
                             </ResponsiveContainer>
+                          </div>
+                        </div>
+                      </div>
+                      )}
+
+                      {campaign && (campaign.channelType === 'SEND' || campaign.channelType === 'POSTAL') && campaignCost && (
+                      <div className="col-md-6">
+                        <div className="card shadow-sm h-100">
+                          <div className="card-header bg-white py-3 border-bottom">
+                            <h3 className="h6 mb-0 fw-bold text-dark"><Euro className="me-2 text-primary" size={16} />Costo Campagna</h3>
+                          </div>
+                          <div className="card-body">
+                            <div className="text-center mb-3">
+                              <span className="text-muted small d-block">Costo Totale</span>
+                              <h3 className="h2 mb-0 fw-bold text-primary">{(campaignCost.totalCostCents / 100).toFixed(2)} €</h3>
+                            </div>
+                            {campaignCost.byChannel.map((c) => (
+                              <div key={c.channel} className="d-flex justify-content-between small mb-1">
+                                <span>{c.channel}</span>
+                                <span>
+                                  {(c.totalCostCents / 100).toFixed(2)} €
+                                  {c.uncalculatedCount > 0 && <span className="text-muted ms-1">({c.uncalculatedCount} non calcolati)</span>}
+                                </span>
+                              </div>
+                            ))}
+                            {campaignCostSavings && campaignCostSavings.totalSavingCents > 0 && (
+                              <div className="alert alert-success small mt-3 mb-0">
+                                Risparmio stimato da dirottamento: <strong>{(campaignCostSavings.totalSavingCents / 100).toFixed(2)} €</strong>
+                              </div>
+                            )}
+                            {campaignCostSavings && campaignCostSavings.postalNotEstimableCount > 0 && (
+                              <p className="text-muted small mt-2 mb-0">
+                                {campaignCostSavings.postalNotEstimableCount} destinatari POSTAL dirottati — risparmio non stimabile (N/D).
+                              </p>
+                            )}
                           </div>
                         </div>
                       </div>
