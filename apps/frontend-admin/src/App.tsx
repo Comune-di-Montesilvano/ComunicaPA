@@ -5754,12 +5754,20 @@ export function App(): React.JSX.Element {
             <span>Invio Singolo</span>
           </a>
           <a
-            className={`bo-nav-item ${(view === 'invio-massivo' || view === 'campaign-detail' || (view === 'invio-massivo-wizard' && !wizSingleMode)) ? 'is-active' : ''}`}
+            className={`bo-nav-item ${view === 'invio-massivo-wizard' && !wizSingleMode ? 'is-active' : ''}`}
             href="#"
-            onClick={(e) => { e.preventDefault(); setView('invio-massivo'); }}
+            onClick={(e) => { e.preventDefault(); resetWizard(); setView('invio-massivo-wizard'); }}
           >
             <Mails />
             <span>Invio Massivo</span>
+          </a>
+          <a
+            className={`bo-nav-item ${(view === 'invio-massivo' || view === 'campaign-detail') ? 'is-active' : ''}`}
+            href="#"
+            onClick={(e) => { e.preventDefault(); setView('invio-massivo'); }}
+          >
+            <List />
+            <span>Lista Campagne</span>
           </a>
           <a
             className={`bo-nav-item ${view === 'notifiche-ricerca' ? 'is-active' : ''}`}
