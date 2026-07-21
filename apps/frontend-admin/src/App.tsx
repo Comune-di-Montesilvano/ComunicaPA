@@ -6537,91 +6537,91 @@ export function App(): React.JSX.Element {
                     </button>
                   </div>
 
-                  <div className="row g-4">
-                    {/* COLONNA SINISTRA: Anagrafica e Canale */}
-                    <div className="col-lg-7">
-                      {/* SEZIONE 1: Dati Destinatario */}
-                      <div className="card shadow-sm border-0 rounded-3 p-4 mb-4 bg-white">
-                        <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-3">Dati Destinatario</h5>
-                        <div className="row g-3 align-items-end">
-                          <div className="col-md-6">
-                            <label className="form-label small fw-bold text-dark mb-1" htmlFor="s_cf">
-                              Codice Fiscale / P.IVA <span className="text-danger">*</span>
-                            </label>
-                            <div className="input-group">
-                              <span className="input-group-text bg-light border-end-0"><Contact size={16} className="text-muted" /></span>
-                              <input
-                                type="text"
-                                id="s_cf"
-                                className="form-control border-start-0 ps-0 fw-semibold"
-                                placeholder="Inserisci CF o P.IVA"
-                                maxLength={16}
-                                style={{ letterSpacing: '0.5px' }}
-                                value={singleCf}
-                                onChange={(e) => {
-                                  const v = e.target.value.toUpperCase();
-                                  setSingleCf(v);
-                                  const fullName = [singleSurname.trim(), singleFirstName.trim()].filter(Boolean).join(' ');
-                                  setWizName(fullName ? `Invio singolo a ${fullName}` : (v ? `Invio singolo a ${v}` : ''));
-                                  if (v !== singleAnprCheckedCf) {
-                                    setSingleInadForced(false);
-                                    setSingleInadAddress('');
-                                    setSingleAppIoActive(false);
-                                    setWizAppIoMode('none');
-                                  }
-                                }}
-                              />
-                              <button
-                                className="btn btn-outline-primary fw-medium"
-                                type="button"
-                                disabled={!isValidCfOrPiva(singleCf) || singleAnprLoading}
-                                onClick={runWizAnprCheck}
-                              >
-                                {singleAnprLoading ? <Loader2 className="icon-spin me-1" size={16} /> : null}
-                                Carica dati ANPR
-                              </button>
-                            </div>
-                          </div>
-                          <div className="col-md-3">
-                            <label className="form-label small fw-bold text-dark mb-1" htmlFor="s_surname">
-                              Cognome / Ragione Sociale <span className="text-danger">*</span>
-                            </label>
-                            <input
-                              type="text"
-                              id="s_surname"
-                              className="form-control"
-                              placeholder="Cognome o Società"
-                              value={singleSurname}
-                              onChange={(e) => {
-                                const v = e.target.value;
-                                setSingleSurname(v);
-                                const fullName = [v.trim(), singleFirstName.trim()].filter(Boolean).join(' ');
-                                setWizName(fullName ? `Invio singolo a ${fullName}` : (singleCf ? `Invio singolo a ${singleCf}` : ''));
-                              }}
-                            />
-                          </div>
-                          <div className="col-md-3">
-                            <label className="form-label small fw-bold text-dark mb-1" htmlFor="s_firstname">
-                              Nome
-                            </label>
-                            <input
-                              type="text"
-                              id="s_firstname"
-                              className="form-control"
-                              placeholder="Nome"
-                              value={singleFirstName}
-                              onChange={(e) => {
-                                const v = e.target.value;
-                                setSingleFirstName(v);
-                                const fullName = [singleSurname.trim(), v.trim()].filter(Boolean).join(' ');
-                                setWizName(fullName ? `Invio singolo a ${fullName}` : (singleCf ? `Invio singolo a ${singleCf}` : ''));
-                              }}
-                            />
-                          </div>
+                  {/* SEZIONE 1: Dati Destinatario (A tutta larghezza) */}
+                  <div className="card shadow-sm border-0 rounded-3 p-4 mb-4 bg-white">
+                    <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-3">Dati Destinatario</h5>
+                    <div className="row g-3 align-items-end">
+                      <div className="col-md-6">
+                        <label className="form-label small fw-bold text-dark mb-1" htmlFor="s_cf">
+                          Codice Fiscale / P.IVA <span className="text-danger">*</span>
+                        </label>
+                        <div className="input-group">
+                          <span className="input-group-text bg-light border-end-0"><Contact size={16} className="text-muted" /></span>
+                          <input
+                            type="text"
+                            id="s_cf"
+                            className="form-control border-start-0 ps-0 fw-semibold"
+                            placeholder="Inserisci CF o P.IVA"
+                            maxLength={16}
+                            style={{ letterSpacing: '0.5px' }}
+                            value={singleCf}
+                            onChange={(e) => {
+                              const v = e.target.value.toUpperCase();
+                              setSingleCf(v);
+                              const fullName = [singleSurname.trim(), singleFirstName.trim()].filter(Boolean).join(' ');
+                              setWizName(fullName ? `Invio singolo a ${fullName}` : (v ? `Invio singolo a ${v}` : ''));
+                              if (v !== singleAnprCheckedCf) {
+                                setSingleInadForced(false);
+                                setSingleInadAddress('');
+                                setSingleAppIoActive(false);
+                                setWizAppIoMode('none');
+                              }
+                            }}
+                          />
+                          <button
+                            className="btn btn-outline-primary fw-medium"
+                            type="button"
+                            disabled={!isValidCfOrPiva(singleCf) || singleAnprLoading}
+                            onClick={runWizAnprCheck}
+                          >
+                            {singleAnprLoading ? <Loader2 className="icon-spin me-1" size={16} /> : null}
+                            Carica dati ANPR
+                          </button>
                         </div>
                       </div>
+                      <div className="col-md-3">
+                        <label className="form-label small fw-bold text-dark mb-1" htmlFor="s_surname">
+                          Cognome / Ragione Sociale <span className="text-danger">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          id="s_surname"
+                          className="form-control"
+                          placeholder="Cognome o Società"
+                          value={singleSurname}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setSingleSurname(v);
+                            const fullName = [v.trim(), singleFirstName.trim()].filter(Boolean).join(' ');
+                            setWizName(fullName ? `Invio singolo a ${fullName}` : (singleCf ? `Invio singolo a ${singleCf}` : ''));
+                          }}
+                        />
+                      </div>
+                      <div className="col-md-3">
+                        <label className="form-label small fw-bold text-dark mb-1" htmlFor="s_firstname">
+                          Nome
+                        </label>
+                        <input
+                          type="text"
+                          id="s_firstname"
+                          className="form-control"
+                          placeholder="Nome"
+                          value={singleFirstName}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setSingleFirstName(v);
+                            const fullName = [singleSurname.trim(), v.trim()].filter(Boolean).join(' ');
+                            setWizName(fullName ? `Invio singolo a ${fullName}` : (singleCf ? `Invio singolo a ${singleCf}` : ''));
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
 
-                      {/* SEZIONE 2: Canale e Configurazione di Invio */}
+                  {/* Resto delle impostazioni disposto sotto a due colonne */}
+                  <div className="row g-4">
+                    {/* COLONNA SINISTRA: Canale e Configurazione */}
+                    <div className="col-lg-7">
                       <div className="card shadow-sm border-0 rounded-3 p-4 mb-4 bg-white">
                         <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-3">Canale di Invio e Configurazione</h5>
                         
@@ -6871,7 +6871,7 @@ export function App(): React.JSX.Element {
 
                     {/* COLONNA DESTRA: Opzioni e Allegati */}
                     <div className="col-lg-5">
-                      {/* SEZIONE 3: Co-consegna App IO e Opzioni Avanzate */}
+                      {/* Opzioni di Invio */}
                       <div className="card shadow-sm border-0 rounded-3 p-4 mb-4 bg-white">
                         <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-3">Opzioni di Invio</h5>
 
@@ -6879,7 +6879,7 @@ export function App(): React.JSX.Element {
                           <div className="card border-0 rounded-3 mb-3 shadow-sm" style={{ background: '#f8f9fc' }}>
                             <div className="card-body p-3">
                               <div className="d-flex align-items-center gap-2 mb-3">
-                                <Smartphone className="text-primary" size={18} />
+                                <img src={EMBEDDED_LOGOS.APP_IO} alt="App IO" style={{ height: '22px', width: 'auto' }} />
                                 <h6 className="fw-bold text-dark mb-0 small">Co-consegna su App IO</h6>
                               </div>
                               <div className="alert alert-success border-0 bg-success-subtle text-success py-2 px-3 small d-flex align-items-center gap-2 mb-3">
@@ -6924,68 +6924,86 @@ export function App(): React.JSX.Element {
                           </div>
                         )}
 
-                        <div className="form-check mb-3">
-                          <input
-                            type="checkbox"
-                            className="form-check-input"
-                            id="wiz_single_protocolla"
-                            checked={wizProtocolla}
-                            disabled={wizChannel === 'SEND'}
-                            onChange={(e) => setWizProtocolla(e.target.checked)}
-                          />
-                          <label className="form-check-label small fw-medium text-dark" htmlFor="wiz_single_protocolla">
-                            Protocolla questo invio
+                        <div className="card border-0 rounded-3 mb-3 shadow-sm" style={{ background: '#f8f9fc' }}>
+                          <div className="card-body p-3">
+                            <div className="d-flex align-items-center gap-2 mb-3">
+                              <Stamp className="text-secondary" size={18} />
+                              <h6 className="fw-bold text-dark mb-0 small">Protocollazione</h6>
+                            </div>
+                            <div className="form-check mb-0">
+                              <input
+                                type="checkbox"
+                                className="form-check-input"
+                                id="wiz_single_protocolla"
+                                checked={wizProtocolla}
+                                disabled={wizChannel === 'SEND'}
+                                onChange={(e) => setWizProtocolla(e.target.checked)}
+                              />
+                              <label className="form-check-label small fw-bold text-dark mb-0" htmlFor="wiz_single_protocolla">
+                                Protocolla questo invio
+                              </label>
+                            </div>
                             {wizChannel === 'SEND' && (
-                              <span className="text-muted"> (obbligatorio per SEND)</span>
+                              <div className="alert alert-info border-0 bg-info-subtle text-info py-2 px-3 small d-flex align-items-center gap-2 mt-2 mb-0">
+                                <Info size={16} />
+                                <span>Obbligatorio per SEND: ogni invio viene registrato sul Protocollo Informatico.</span>
+                              </div>
                             )}
-                          </label>
+                          </div>
                         </div>
 
                         {(wizChannel === 'SEND' || wizChannel === 'APP_IO' || wizAppIoMode !== 'none') && (
-                          <div className="form-check mb-3">
-                            <input
-                              type="checkbox"
-                              className="form-check-input"
-                              id="wiz_single_payment_enabled"
-                              checked={wizPaymentEnabled}
-                              onChange={e => setWizPaymentEnabled(e.target.checked)}
-                            />
-                            <label className="form-check-label small fw-bold text-dark" htmlFor="wiz_single_payment_enabled">
-                              Integrazione pagamenti pagoPA
-                            </label>
-                          </div>
-                        )}
-
-                        {wizPaymentEnabled && (wizChannel === 'SEND' || wizChannel === 'APP_IO' || wizAppIoMode !== 'none') && (
-                          <div className="row g-3 mb-2 ps-3 border-start border-3 border-light">
-                            <div className="col-md-4">
-                              <label className="form-label small fw-bold text-dark mb-1">IUV</label>
-                              <input
-                                type="text"
-                                className="form-control"
-                                placeholder="Codice Avviso"
-                                value={singlePaymentIuv}
-                                onChange={(e) => setSinglePaymentIuv(e.target.value)}
-                              />
-                            </div>
-                            <div className="col-md-4">
-                              <label className="form-label small fw-bold text-dark mb-1">Importo (€)</label>
-                              <input
-                                type="text"
-                                className="form-control"
-                                placeholder="Es: 15.00"
-                                value={singlePaymentImporto}
-                                onChange={(e) => setSinglePaymentImporto(e.target.value)}
-                              />
-                            </div>
-                            <div className="col-md-4">
-                              <label className="form-label small fw-bold text-dark mb-1">Scadenza</label>
-                              <input
-                                type="date"
-                                className="form-control"
-                                value={singlePaymentScadenza}
-                                onChange={(e) => setSinglePaymentScadenza(e.target.value)}
-                              />
+                          <div className="card border-0 rounded-3 mb-3 shadow-sm" style={{ background: '#f8f9fc' }}>
+                            <div className="card-body p-3">
+                              <div className="d-flex align-items-center gap-2 mb-3">
+                                <CreditCard className="text-secondary" size={18} />
+                                <h6 className="fw-bold text-dark mb-0 small">Pagamenti pagoPA</h6>
+                              </div>
+                              <div className="form-check mb-0">
+                                <input
+                                  type="checkbox"
+                                  className="form-check-input"
+                                  id="wiz_single_payment_enabled"
+                                  checked={wizPaymentEnabled}
+                                  onChange={e => setWizPaymentEnabled(e.target.checked)}
+                                />
+                                <label className="form-check-label small fw-bold text-dark mb-0" htmlFor="wiz_single_payment_enabled">
+                                  Integrazione pagamenti pagoPA
+                                </label>
+                              </div>
+                              {wizPaymentEnabled && (
+                                <div className="row g-3 mt-2 ps-2 border-start border-3 border-light">
+                                  <div className="col-md-4">
+                                    <label className="form-label small fw-bold text-dark mb-1">IUV</label>
+                                    <input
+                                      type="text"
+                                      className="form-control"
+                                      placeholder="Codice Avviso"
+                                      value={singlePaymentIuv}
+                                      onChange={(e) => setSinglePaymentIuv(e.target.value)}
+                                    />
+                                  </div>
+                                  <div className="col-md-4">
+                                    <label className="form-label small fw-bold text-dark mb-1">Importo (€)</label>
+                                    <input
+                                      type="text"
+                                      className="form-control"
+                                      placeholder="Es: 15.00"
+                                      value={singlePaymentImporto}
+                                      onChange={(e) => setSinglePaymentImporto(e.target.value)}
+                                    />
+                                  </div>
+                                  <div className="col-md-4">
+                                    <label className="form-label small fw-bold text-dark mb-1">Scadenza</label>
+                                    <input
+                                      type="date"
+                                      className="form-control"
+                                      value={singlePaymentScadenza}
+                                      onChange={(e) => setSinglePaymentScadenza(e.target.value)}
+                                    />
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </div>
                         )}
