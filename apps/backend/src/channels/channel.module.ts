@@ -14,6 +14,7 @@ import { PecStrategy } from './pec/pec.strategy';
 import { AppIoStrategy } from './app-io/app-io.strategy';
 import { SendAttachmentUploadService } from './send/send-attachment-upload.service';
 import { SendStatusSyncService } from './send/send-status-sync.service';
+import { SendBaseFeeService } from './send/send-base-fee.service';
 import { SendDispatchService } from './send/send-dispatch.service';
 import { PostalStrategy } from './postal/postal.strategy';
 import { GlobalComClientModule } from './postal/globalcom-client.module';
@@ -35,6 +36,7 @@ import { CampaignCompletionService } from '../campaigns/campaign-completion.serv
     PostalStrategy,
     SendAttachmentUploadService,
     SendStatusSyncService,
+    SendBaseFeeService,
     SendDispatchService,
     PostalStatusSyncService,
     CampaignCompletionService,
