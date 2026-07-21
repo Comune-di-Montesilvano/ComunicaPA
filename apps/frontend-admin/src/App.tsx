@@ -1005,8 +1005,11 @@ export function App(): React.JSX.Element {
   }, [view, token]);
 
   useEffect(() => {
-    if ((view === 'statistiche' || view === 'dashboard') && token) {
+    if (view === 'statistiche' && token) {
       fetchGlobalStats();
+    }
+    if (view === 'dashboard' && token) {
+      fetchDashboardStats();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, token]);
@@ -1464,6 +1467,15 @@ export function App(): React.JSX.Element {
   } | null>(null);
   const [globalStatsLoading, setGlobalStatsLoading] = useState(false);
 
+  // Dashboard: KPI/trend a finestra fissa 30gg, disaccoppiati dallo state
+  // statsDateFrom/statsDateTo della vista Statistiche (quello è modificabile
+  // dall'operatore e non deve influenzare i numeri mostrati in dashboard).
+  const [dashboardStats, setDashboardStats] = useState<{
+    totals: { totalRecipients: number; totalSent: number; totalFailed: number; totalDownloaded: number; downloadPercentage: number; totalCostCents: number; totalSavingCents: number };
+    dailyTrend: Array<{ date: string; sent: number; failed: number }>;
+  } | null>(null);
+  const [dashboardStatsLoading, setDashboardStatsLoading] = useState(false);
+
 
   // Auto-refresh campaign detail if running/queued. Aggiorna anche i pannelli
   // di breakdown/statistiche, non solo l'oggetto campaign principale — prima
@@ -1508,9 +1520,18 @@ export function App(): React.JSX.Element {
   // all'ingresso nella vista, mai più — restava ferma allo snapshot iniziale
   // mentre le campagne in corso avanzavano lato server.
   useEffect(() => {
-    if (!token || (view !== 'statistiche' && view !== 'dashboard')) return;
+    if (!token || view !== 'statistiche') return;
     const timer = setInterval(() => {
       fetchGlobalStats();
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [token, view]);
+
+  useEffect(() => {
+    if (!token || view !== 'dashboard') return;
+    const timer = setInterval(() => {
+      fetchDashboardStats();
+      fetchEngines();
     }, 5000);
     return () => clearInterval(timer);
   }, [token, view]);
@@ -5006,6 +5027,23 @@ export function App(): React.JSX.Element {
       if (!(err instanceof ApiAuthError)) throw err;
     } finally {
       setGlobalStatsLoading(false);
+    }
+  };
+
+  const fetchDashboardStats = async () => {
+    setDashboardStatsLoading(true);
+    try {
+      const dateFrom = new Date();
+      dateFrom.setDate(dateFrom.getDate() - 30);
+      const params = new URLSearchParams();
+      params.set('dateFrom', dateFrom.toISOString().slice(0, 10));
+      params.set('dateTo', new Date().toISOString().slice(0, 10));
+      const res = await apiFetch(`/campaigns/stats/global?${params.toString()}`);
+      if (res.ok) setDashboardStats(await res.json());
+    } catch (err) {
+      if (!(err instanceof ApiAuthError)) throw err;
+    } finally {
+      setDashboardStatsLoading(false);
     }
   };
 
