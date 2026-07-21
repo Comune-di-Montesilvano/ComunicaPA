@@ -17,6 +17,7 @@ import { MailConfigsModule } from './mail-configs/mail-configs.module';
 import { PostalProvidersModule } from './postal-providers/postal-providers.module';
 import { EnginesModule } from './engines/engines.module';
 import { IoServicesModule } from './io-services/io-services.module';
+import { DomicilioModule } from './channels/domicilio/domicilio.module';
 import { EnrichmentModule } from './enrichment/enrichment.module';
 import { NotificationsSearchModule } from './notifications-search/notifications-search.module';
 import { TemplatesModule } from './templates/templates.module';
@@ -45,6 +46,7 @@ import configuration from './config/configuration';
     PostalProvidersModule,
     EnginesModule,
     IoServicesModule,
+    DomicilioModule,
     EnrichmentModule,
     NotificationsSearchModule,
     TemplatesModule,
