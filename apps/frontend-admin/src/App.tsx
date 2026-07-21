@@ -4811,6 +4811,68 @@ export function App(): React.JSX.Element {
     setWizStep(5);
   };
 
+  // Core condiviso di upload allegati (chunked, stesso pattern usato in precedenza da
+  // handleWizLaunch): estratto da handleWizUploadAttachments per essere riusabile anche
+  // dal flusso di invio singolo (Task 6). Nessun alert/reset qui — solo side-effect di
+  // stato progress/attachment comuni a entrambi i chiamanti; alert e reset dei file
+  // restano responsabilità del chiamante (comportamento pubblico invariato).
+  const uploadAttachmentFilesCore = async (
+    campaignId: string,
+    files: File[],
+  ): Promise<{ uploaded: number; discarded?: number; attachmentsExpected?: number; attachmentsPresent?: number; filenames?: string[]; blocked?: boolean; message?: string } | null> => {
+    if (files.length === 0) return null;
+    const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
+    setWizUploadProgress({ label: 'Caricamento allegati', loaded: 0, total: totalBytes });
+    let cumulativeBefore = 0;
+    let lastAttachData: { uploaded: number; discarded?: number; attachmentsExpected?: number; attachmentsPresent?: number; filenames?: string[]; blocked?: boolean; message?: string } | null = null;
+    for (const file of files) {
+      const base = cumulativeBefore;
+      const isZip = file.name.toLowerCase().endsWith('.zip');
+      lastAttachData = await uploadFileInChunks(
+        `${ADMIN_API_BASE}/campaigns/${campaignId}/attachments/upload`,
+        token!,
+        file,
+        file.name,
+        (loaded) => setWizUploadProgress(p => (p ? { ...p, loaded: base + loaded } : p)),
+        () => setWizUploadProgress({
+          label: isZip ? 'Estrazione allegati in corso' : 'Salvataggio allegato in corso',
+          loaded: base + file.size,
+          total: totalBytes,
+        }),
+      );
+      cumulativeBefore += file.size;
+    }
+    setWizUploadProgress(null);
+    if (lastAttachData?.blocked) {
+      throw new Error(lastAttachData.message || 'Errore durante la finalizzazione degli allegati.');
+    }
+    if (lastAttachData) {
+      setWizAttachmentProgress({
+        expected: lastAttachData.attachmentsExpected ?? 0,
+        present: lastAttachData.attachmentsPresent ?? 0,
+      });
+      if (lastAttachData.filenames) {
+        setWizUploadedAttachmentFiles(lastAttachData.filenames);
+      }
+    }
+    return lastAttachData;
+  };
+
+  const addWizSingleAttachmentSlot = () => {
+    setWizSingleAttachmentSlots(prev => [
+      ...prev,
+      { id: `slot-${Date.now()}-${prev.length}`, label: `Allegato ${prev.length + 1}`, file: null },
+    ]);
+  };
+
+  const removeWizSingleAttachmentSlot = (id: string) => {
+    setWizSingleAttachmentSlots(prev => prev.filter(s => s.id !== id));
+  };
+
+  const updateWizSingleAttachmentSlot = (id: string, patch: Partial<{ label: string; file: File | null }>) => {
+    setWizSingleAttachmentSlots(prev => prev.map(s => (s.id === id ? { ...s, ...patch } : s)));
+  };
+
   const handleWizUploadAttachments = async (): Promise<void> => {
     setWizSending(true);
     try {
@@ -4829,41 +4891,7 @@ export function App(): React.JSX.Element {
       // parte del lancio finale, in modo che gli allegati siano già sul server
       // quando serve un "Avvia Test" (Task 10).
       if (wizPdfFiles && wizPdfFiles.length > 0) {
-        const totalBytes = wizPdfFiles.reduce((sum, f) => sum + f.size, 0);
-        setWizUploadProgress({ label: 'Caricamento allegati', loaded: 0, total: totalBytes });
-        let cumulativeBefore = 0;
-        let lastAttachData: { uploaded: number; discarded?: number; attachmentsExpected?: number; attachmentsPresent?: number; filenames?: string[]; blocked?: boolean; message?: string } | null = null;
-        for (const file of wizPdfFiles) {
-          const base = cumulativeBefore;
-          const isZip = file.name.toLowerCase().endsWith('.zip');
-          lastAttachData = await uploadFileInChunks(
-            `${ADMIN_API_BASE}/campaigns/${campaignId}/attachments/upload`,
-            token!,
-            file,
-            file.name,
-            (loaded) => setWizUploadProgress(p => (p ? { ...p, loaded: base + loaded } : p)),
-            () => setWizUploadProgress({
-              label: isZip ? 'Estrazione allegati in corso' : 'Salvataggio allegato in corso',
-              loaded: base + file.size,
-              total: totalBytes,
-            }),
-          );
-          cumulativeBefore += file.size;
-        }
-        setWizUploadProgress(null);
-        if (lastAttachData?.blocked) {
-          throw new Error(lastAttachData.message || 'Errore durante la finalizzazione degli allegati.');
-        }
-
-        if (lastAttachData) {
-          setWizAttachmentProgress({
-            expected: lastAttachData.attachmentsExpected ?? 0,
-            present: lastAttachData.attachmentsPresent ?? 0
-          });
-          if (lastAttachData.filenames) {
-            setWizUploadedAttachmentFiles(lastAttachData.filenames);
-          }
-        }
+        const lastAttachData = await uploadAttachmentFilesCore(campaignId, wizPdfFiles);
 
         const discardCount = lastAttachData?.discarded || 0;
         if (discardCount > 0) {
