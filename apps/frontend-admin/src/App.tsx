@@ -5034,7 +5034,7 @@ export function App(): React.JSX.Element {
     setDashboardStatsLoading(true);
     try {
       const dateFrom = new Date();
-      dateFrom.setDate(dateFrom.getDate() - 30);
+      dateFrom.setDate(dateFrom.getDate() - 29);
       const params = new URLSearchParams();
       params.set('dateFrom', dateFrom.toISOString().slice(0, 10));
       params.set('dateTo', new Date().toISOString().slice(0, 10));
