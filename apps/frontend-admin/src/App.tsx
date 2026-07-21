@@ -5881,8 +5881,8 @@ export function App(): React.JSX.Element {
         </button>
         <h2 className="h5 mb-0 text-dark fw-bold" style={{ display: 'inline-block' }}>
           {view === 'dashboard' && 'Dashboard'}
-          {view === 'invio-massivo' && 'Campagne di Invio Massivo'}
-          {view === 'invio-massivo-wizard' && (wizSingleMode ? 'Wizard Invio Singolo' : 'Wizard Nuova Campagna Massiva')}
+          {view === 'invio-massivo' && 'Lista Campagne'}
+          {view === 'invio-massivo-wizard' && (wizSingleMode ? 'Wizard Invio Singolo' : 'Wizard Nuova Campagna')}
           {view === 'statistiche' && 'Statistiche e Andamento'}
           {view === 'notifiche-ricerca' && 'Ricerca Notifiche'}
           {view === 'template-dashboard' && 'Template'}
@@ -6324,7 +6324,7 @@ export function App(): React.JSX.Element {
               <div className="col-12">
                 <div className="card shadow-sm h-100">
                   <div className="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
-                    <h3 className="h6 mb-0 fw-bold text-dark"><List className="me-2 text-primary" />Campagne Massive</h3>
+                    <h3 className="h6 mb-0 fw-bold text-dark"><List className="me-2 text-primary" />Lista Campagne</h3>
                     <div className="d-flex align-items-center gap-2">
                       <button className="btn btn-sm btn-primary" onClick={() => { resetWizard(); setView('invio-massivo-wizard'); }}>
                         <Wand2 className="me-1" /> Crea Nuova Campagna (Wizard)
@@ -11835,7 +11835,7 @@ export function App(): React.JSX.Element {
                 <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
                   <div>
                     <h3 className="h5 mb-1 text-dark fw-bold">Registro Attività</h3>
-                    <p className="text-muted small mb-0">Cronologia di tutte le operazioni effettuate sulle campagne di invio massivo</p>
+                    <p className="text-muted small mb-0">Cronologia di tutte le operazioni effettuate sulle campagne</p>
                   </div>
                   <div style={{ maxWidth: '350px', width: '100%' }}>
                     <div className="input-group">
