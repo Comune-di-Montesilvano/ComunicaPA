@@ -4161,6 +4161,55 @@ export function App(): React.JSX.Element {
     setWizMapping(prev => ({ ...prev, [field]: value }));
   };
 
+  const runWizAnprCheck = async () => {
+    if (!isValidCfOrPiva(singleCf)) {
+      alert('Codice Fiscale/P.IVA non valido: 16 caratteri alfanumerici o 11 cifre.');
+      return;
+    }
+    setSingleAnprLoading(true);
+    try {
+      const res = await apiFetch('/domicilio/cerca', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codiceFiscale: singleCf }),
+      });
+      const data = await res.json();
+      setSingleAnprCheckedCf(singleCf);
+
+      const g = data?.anpr?.generalita;
+      if (data?.anpr?.success && data?.anpr?.found && g) {
+        const nomeCompleto = [g.cognome, g.nome].filter(Boolean).join(' ');
+        if (nomeCompleto) setSingleName(nomeCompleto);
+      }
+
+      const residenza = data?.anpr?.residenza?.[0];
+      if (data?.anpr?.success && data?.anpr?.found && residenza?.indirizzo) {
+        const ind = residenza.indirizzo;
+        const via = [ind.toponimo?.specie, ind.toponimo?.denominazioneToponimo].filter(Boolean).join(' ');
+        const civico = [ind.numeroCivico?.numero, ind.numeroCivico?.lettera].filter(Boolean).join('');
+        setSingleAddress([via, civico].filter(Boolean).join(', '));
+        setSingleMunicipality(ind.comune?.nomeComune || '');
+        setSingleZip(ind.cap || '');
+        setSingleProvince(ind.comune?.siglaProvinciaIstat || '');
+      }
+
+      const inadFound = Boolean(data?.inad?.success && data?.inad?.found && (data?.inad?.digitalAddress?.length ?? 0) > 0);
+      setSingleInadForced(inadFound);
+      setSingleInadAddress(inadFound ? data.inad.digitalAddress[0].digitalAddress : '');
+      if (inadFound) {
+        setWizChannel('PEC');
+        setSinglePec(data.inad.digitalAddress[0].digitalAddress);
+      }
+
+      setSingleAppIoActive(Boolean(data?.appIo?.success && data?.appIo?.active));
+    } catch (err: any) {
+      if (err instanceof ApiAuthError) return;
+      alert(err.message || 'Errore di connessione durante la verifica ANPR.');
+    } finally {
+      setSingleAnprLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (wizCsvRows.length === 0) {
       setWizValidationErrors([]);
