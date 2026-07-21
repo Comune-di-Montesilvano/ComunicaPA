@@ -4931,6 +4931,12 @@ export function App(): React.JSX.Element {
     return lastAttachData;
   };
 
+  const ensureWizSingleAttachmentsUploaded = async (campaignId: string) => {
+    if (!wizSingleMode || wizPdfFiles.length === 0) return;
+    await uploadAttachmentFilesCore(campaignId, wizPdfFiles);
+    setWizPdfFiles([]);
+  };
+
   const addWizSingleAttachmentSlot = () => {
     setWizSingleAttachmentSlots(prev => [
       ...prev,
@@ -5102,6 +5108,8 @@ export function App(): React.JSX.Element {
         campaignObj = await res.json();
       }
 
+      await ensureWizSingleAttachmentsUploaded(campaignObj.id);
+
       const blob = buildNormalizedRecipientsCsvBlob();
 
       setWizUploadProgress({ label: 'Caricamento destinatari', loaded: 0, total: blob.size });
@@ -5168,6 +5176,7 @@ export function App(): React.JSX.Element {
     try {
       if (!wizCampaignId) throw new Error('Campagna non ancora salvata.');
       if (!wizTestForm.codiceFiscale.trim()) throw new Error('Codice Fiscale obbligatorio.');
+      await ensureWizSingleAttachmentsUploaded(wizCampaignId);
 
       const first = wizValidRows[0] ?? {};
       const extraData: Record<string, string> = { ...first };
