@@ -1125,7 +1125,6 @@ export function App(): React.JSX.Element {
 
   // Form destinatario per invio singolo (step 2 fuso del wizard, wizSingleMode)
   const [singleCf, setSingleCf] = useState('');
-  const [singleName, setSingleName] = useState('');
   const [singleSurname, setSingleSurname] = useState('');
   const [singleFirstName, setSingleFirstName] = useState('');
   const [singleEmail, setSingleEmail] = useState('');
@@ -6594,29 +6593,6 @@ export function App(): React.JSX.Element {
                           Attenzione: non ci sono configurazioni attive per il canale {wizChannel}. Creane una nelle impostazioni.
                         </div>
                       )}
-                    </div>
-                  )}
-
-                  {(wizChannel === 'EMAIL' || wizChannel === 'POSTAL' || wizChannel === 'APP_IO') && (
-                    <div className="mb-3">
-                      <label className="form-label small fw-bold">Mittente PEC di riserva (verifica INAD)</label>
-                      <select
-                        className="form-select form-select-sm"
-                        value={wizPecReserveMailConfigId}
-                        onChange={e => setWizPecReserveMailConfigId(e.target.value)}
-                      >
-                        <option value="">-- Nessuno --</option>
-                        {mailConfigs
-                          .filter(c => c.type === 'PEC' && c.active)
-                          .map(c => (
-                            <option key={c.id} value={c.id}>
-                              {c.name} ({c.fromAddress})
-                            </option>
-                          ))}
-                      </select>
-                      <div className="form-text small text-muted">
-                        Usato solo se il destinatario risulta avere un domicilio digitale INAD attivo: l'invio passa automaticamente su PEC.
-                      </div>
                     </div>
                   )}
 
