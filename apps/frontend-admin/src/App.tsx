@@ -4288,7 +4288,8 @@ export function App(): React.JSX.Element {
     ((wizChannel === 'EMAIL' || wizChannel === 'PEC') && !wizMailConfigId) ||
     ((wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && wizAppIoMode !== 'none' && !wizAppIoServiceId) ||
     (wizChannel === 'APP_IO' && !wizAppIoServiceId) ||
-    (wizChannel === 'POSTAL' && !wizPostalServiceType);
+    (wizChannel === 'POSTAL' && !wizPostalServiceType) ||
+    (wizPaymentEnabled && (!singlePaymentIuv.trim() || !singlePaymentImporto.trim()));
 
   useEffect(() => {
     if (wizCsvRows.length === 0) {
@@ -7046,7 +7047,7 @@ export function App(): React.JSX.Element {
                               {wizPaymentEnabled && (
                                 <div className="mt-2 ps-2 border-start border-3 border-light">
                                   <div className="mb-2">
-                                    <label className="form-label small fw-bold text-dark mb-1">IUV</label>
+                                    <label className="form-label small fw-bold text-dark mb-1">IUV <span className="text-danger">*</span></label>
                                     <input
                                       type="text"
                                       className="form-control"
@@ -7057,7 +7058,7 @@ export function App(): React.JSX.Element {
                                   </div>
                                   <div className="row g-2">
                                     <div className="col-6">
-                                      <label className="form-label small fw-bold text-dark mb-1">Importo (€)</label>
+                                      <label className="form-label small fw-bold text-dark mb-1">Importo (€) <span className="text-danger">*</span></label>
                                       <input
                                         type="text"
                                         className="form-control"
@@ -7076,6 +7077,11 @@ export function App(): React.JSX.Element {
                                       />
                                     </div>
                                   </div>
+                                  {wizPaymentEnabled && (!singlePaymentIuv.trim() || !singlePaymentImporto.trim()) && (
+                                    <div className="form-text small text-danger mt-1">
+                                      IUV e Importo sono obbligatori: senza entrambi il pagamento pagoPA non viene allegato al messaggio.
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>
