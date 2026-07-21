@@ -358,46 +358,60 @@ e hanno già causato invii falliti in produzione (CF troncato, markdown vuoto
 per App IO). Per riprendere una bozza: bottone "Riprendi wizard"
 (`handleResumeDraft`), non un importer dedicato.
 
-## ANPR C020 — voucher DPoP obbligatorio, non bearer standard
+## ANPR C020 — pattern di sicurezza reale (verificato con dati veri, funzionante)
 
 Il servizio C020 "Accertamento residenza" (`AnprService`,
-`channels/anpr/anpr.service.ts`) richiede un voucher PDND in modalità
-**DPoP** (RFC 9449, `PdndAuthService.getVoucherDpop`/
-`buildResourceDpopProof`), non il bearer voucher standard già usato da
-SEND/INAD (`PdndAuthService.getVoucher`). Un tentativo con voucher Bearer
-+ soli header `Agid-JWT-Signature`/`Agid-JWT-TrackingEvidence` (pattern
-INTEGRITY_REST_02/AUDIT_REST_02, comunque necessari anche con DPoP) veniva
-rigettato dal gateway GovWay con `InteroperabilityInvalidRequest` (HTTP
-400) — un errore generico, senza indicazione che la causa fosse
-DPoP-vs-Bearer. **La scelta DPoP è del fruitore in fase di richiesta
-voucher**, non dichiarata né nello yaml/OpenAPI dell'erogatore (che elenca
-solo `bearerAuth` genericamente) né nel portale self-care PDND per questo
-client — nessuno dei due posti la segnala come obbligatoria. Scoperto solo
-testando dal vivo con credenziali PDND reali. Se un altro servizio PDND
-futuro risponde con lo stesso errore generico nonostante header/firma
-apparentemente corretti, provare DPoP prima di altre ipotesi (es.
-certificato X.509 mancante — esclusa in questo caso: il kid da solo basta
-una volta passati a DPoP, nessun x5c necessario).
+`channels/anpr/anpr.service.ts`) usa **bearer voucher standard** (non
+DPoP — ipotesi provata dal vivo e scartata: cambiava l'esito del 400 ma
+per un motivo diverso, vedi sotto). La configurazione corretta, verificata
+byte-per-byte contro un client Java ufficiale allegato dal supporto ANPR
+(github.com/italia/anpr/issues/3964 — **non fidarsi di un riassunto, solo
+di esempi reali con token catturati**, un riassunto ha già portato su
+strade sbagliate — es. certificato X.509 mancante, poi DPoP — in questa
+stessa integrazione):
 
-Header risultanti sulla chiamata risorsa: `Authorization: DPoP <voucher>`
-(non `Bearer`) + `DPoP: <proof2>` (seconda DPoP proof, con claim `ath` =
-hash del voucher) — oltre ai soliti `Digest`/`Agid-JWT-Signature`/
-`Agid-JWT-TrackingEvidence`. La DPoP proof riusa la stessa chiave RSA/kid
-del client PDND (nessuna chiave separata da generare), ma il suo JOSE
-header porta `jwk` (chiave pubblica inline), mai `kid`.
+1. **`aud` di `Agid-JWT-Signature`/`Agid-JWT-TrackingEvidence` è l'URL
+   SENZA `-PDND` e SENZA il segmento operazione finale**
+   (`ANPR_C020_AUD` = `.../MinInternoPortaANPR/C020-servizioAccertamentoResidenza/v1`)
+   — diverso dall'URL di invocazione reale (`ANPR_C020_ENDPOINT`, CON
+   `-PDND` e CON `/anpr-service-e002` in coda). Un `aud` sbagliato (uno dei
+   due dettagli scambiato) è la causa più comune di
+   `InteroperabilityInvalidRequest` (HTTP 400) in tutto quel thread.
+2. **Il voucher va richiesto con un claim `digest` extra nella client
+   assertion** (pattern AUDIT_REST_02): `{alg:"SHA256", value:<hex>}` dove
+   `value` è lo SHA-256 **esadecimale** (non base64) del JWT
+   `Agid-JWT-TrackingEvidence` — va quindi costruito PRIMA il
+   TrackingEvidence, poi hashato, poi richiesto il voucher
+   (`PdndAuthService.getVoucherWithDigest`, mai cache: il digest cambia a
+   ogni chiamata). Senza questo claim PDND non lo incorpora nel voucher e
+   l'erogatore rigetta con lo stesso 400 generico.
+3. **`signed_headers` in `Agid-JWT-Signature` è un array**, con chiavi che
+   devono combaciare ESATTAMENTE (nome e valore) con gli header HTTP
+   realmente inviati — `Content-Type` con la maiuscola, mai
+   `content-encoding` se quell'header non viene effettivamente mandato.
+4. **Vincoli di lunghezza sui claim di `Agid-JWT-TrackingEvidence`**,
+   scoperti solo dall'errore applicativo reale restituito da ANPR (non
+   documentati nello yaml): `LoA` max 20 caratteri (es. `SpidL2`, mai un
+   URL completo tipo `https://www.spid.gov.it/SpidL2`) — vedi
+   `anpr.trackingLoA` in `settings.registry.ts`. `userLocation`/`userID`
+   probabilmente hanno vincoli simili, non ancora tutti mappati.
+5. **`idOperazioneClient` (corpo della richiesta) max 30 caratteri** — un
+   `randomUUID()` (36 con trattini) viene rifiutato con "Lunghezza del
+   campo idOperazioneClient maggiore del massimo consentito 30".
 
-**Blocco successivo (non di codice, infrastrutturale)**: dopo il fix DPoP,
-ogni chiamata — incluso un `GET /status` non autenticato — riceve HTTP 404
-`{"detail":"Unknown API Request","Error Message":"Rejected by
-policy.","Error Code":"0x00d30003"}` con header
-`x-backside-transport: FAIL FAIL`. Quest'ultimo è una firma specifica di
-IBM DataPower Gateway che significa "il gateway non riesce a raggiungere
-il proprio backend" — un guasto/mancata attivazione del backend reale
-lato Ministero Interno/Sogei, indipendente da qualunque cosa mandiamo
-(stesso esito su path con/senza `-PDND`, su operazione autenticata e non).
-Non un problema risolvibile lato nostro codice — verificare lo stato del
-servizio con Sogei/PDND prima di ritentare, non continuare a modificare
-`AnprService` per questo specifico errore.
+**`x5c`/certificato X.509 non necessario**: il kid da solo basta (verifica
+lato erogatore risolve la chiave pubblica dal kid già noto a PDND per
+quel client) — l'esempio Java ufficiale mette (erroneamente, per quanto
+osservabile) la chiave privata dentro `x5c`, un bug del sample mai
+segnalato come problema dal supporto ANPR nello stesso thread; nella
+nostra implementazione `x5c` è omesso del tutto, funziona.
+
+**Warning non bloccante da tenere presente**: la risposta 200 include
+spesso `listaAnomalie` con un warning (`tipoErroreAnomalia:"W"`) che
+raccomanda l'uso di `idANPR` invece di `codiceFiscale` in
+`criteriRicerca` per conformità al D.M. Interno 3 marzo 2023 — non blocca
+la query attuale (funziona comunque per CF), ma se ANPR in futuro rende
+`idANPR` obbligatorio, serve una fase di risoluzione CF→idANPR a monte.
 
 ## SEND — autenticazione reale verso PN, gotcha critico
 

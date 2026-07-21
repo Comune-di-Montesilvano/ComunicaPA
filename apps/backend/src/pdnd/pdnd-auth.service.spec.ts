@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { createHash, createPublicKey, generateKeyPairSync } from 'node:crypto';
+import { generateKeyPairSync } from 'node:crypto';
 import * as jwt from 'jsonwebtoken';
 import { PdndAuthService } from './pdnd-auth.service';
 import { AppSettingsService } from '../settings/app-settings.service';
@@ -98,51 +98,33 @@ describe('PdndAuthService', () => {
     await expect(service.getVoucher('test', 'purpose-456', true)).rejects.toThrow(/Richiesta voucher PDND fallita: HTTP 400/);
   });
 
-  it('getVoucherDpop invia header DPoP (jwk inline, no kid) e restituisce il token type DPoP', async () => {
+  it('getVoucherWithDigest include il claim digest nella client assertion e nessuna cache', async () => {
     mockFetch.mockResolvedValue({
       ok: true,
-      text: () => Promise.resolve(JSON.stringify({ access_token: 'dpop-voucher-xyz', expires_in: 600, token_type: 'DPoP' })),
+      text: () => Promise.resolve(JSON.stringify({ access_token: 'voucher-with-digest', expires_in: 600 })),
     });
 
-    const voucher = await service.getVoucherDpop('test', 'purpose-456');
-    expect(voucher).toBe('dpop-voucher-xyz');
+    const voucher = await service.getVoucherWithDigest('test', 'purpose-456', 'deadbeef');
+    expect(voucher).toBe('voucher-with-digest');
 
     const [, init] = mockFetch.mock.calls[0];
-    const dpopProof = init.headers.DPoP;
-    expect(dpopProof).toBeDefined();
+    const params = new URLSearchParams(init.body as string);
+    const assertion = params.get('client_assertion')!;
+    const decoded = jwt.verify(assertion, publicKey, { algorithms: ['RS256'] }) as jwt.JwtPayload & {
+      digest: { alg: string; value: string };
+    };
+    expect(decoded.purposeId).toBe('purpose-456');
+    expect(decoded.digest).toEqual({ alg: 'SHA256', value: 'deadbeef' });
 
-    const decoded = jwt.decode(dpopProof, { complete: true })!;
-    expect(decoded.header.typ).toBe('dpop+jwt');
-    expect(decoded.header.alg).toBe('RS256');
-    expect(decoded.header['kid']).toBeUndefined();
-    expect((decoded.header as any).jwk.kty).toBe('RSA');
-    expect((decoded.payload as jwt.JwtPayload).htm).toBe('POST');
-    expect((decoded.payload as jwt.JwtPayload).htu).toBe('https://auth.uat.interop.pagopa.it/token.oauth2');
-
-    // Verificabile con la chiave pubblica embedded nel proof stesso (jwk), non con `publicKey` esterna.
-    const jwkPublicKey = createPublicKey({ key: (decoded.header as any).jwk, format: 'jwk' });
-    expect(() => jwt.verify(dpopProof, jwkPublicKey, { algorithms: ['RS256'] })).not.toThrow();
+    // Nessuna cache: due chiamate consecutive rifanno sempre la richiesta.
+    await service.getVoucherWithDigest('test', 'purpose-456', 'deadbeef');
+    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
-  it('getVoucherDpop riusa la cache separata da getVoucher (chiavi diverse)', async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      text: () => Promise.resolve(JSON.stringify({ access_token: 'dpop-voucher-1', expires_in: 600 })),
-    });
-    await service.getVoucherDpop('test', 'purpose-456');
-    await service.getVoucherDpop('test', 'purpose-456');
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-  });
-
-  it('buildResourceDpopProof include ath (hash del voucher) e htu/htm della risorsa', async () => {
-    const proof = await service.buildResourceDpopProof('test', 'POST', 'https://api.erogatore.example/rest/v1/risorsa', 'voucher-abc');
-
-    const decoded = jwt.decode(proof, { complete: true })!;
-    expect(decoded.header.typ).toBe('dpop+jwt');
-    expect((decoded.payload as jwt.JwtPayload).htm).toBe('POST');
-    expect((decoded.payload as jwt.JwtPayload).htu).toBe('https://api.erogatore.example/rest/v1/risorsa');
-    const expectedAth = createHash('sha256').update('voucher-abc').digest('base64url');
-    expect((decoded.payload as any).ath).toBe(expectedAth);
+  it('getVoucherWithDigest lancia errore leggibile se la configurazione è incompleta', async () => {
+    await expect(service.getVoucherWithDigest('prod', 'purpose-456', 'deadbeef')).rejects.toThrow(
+      /Configurazione PDND \(prod\) incompleta/,
+    );
   });
 
   it('signAgidJwt firma un JWS RS256 con iss/sub/aud/jti/kid ed extraClaims', async () => {

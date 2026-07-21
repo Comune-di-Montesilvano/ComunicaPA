@@ -88,7 +88,7 @@ export const SETTING_DEFS = {
   'anpr.test.purposeId': { type: 'string', default: '' },
   'anpr.prod.purposeId': { type: 'string', default: '' },
   'anpr.trackingUserLocation': { type: 'string', default: 'comunicapa-backend' },
-  'anpr.trackingLoA': { type: 'string', default: 'https://www.spid.gov.it/SpidL2' },
+  'anpr.trackingLoA': { type: 'string', default: 'SpidL2' },
 
   'protocollo.provider': { type: 'string', default: 'tinn' },
   'protocollo.baseUrl': { type: 'string', default: '' },

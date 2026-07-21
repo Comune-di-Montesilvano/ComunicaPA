@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { createHash } from 'node:crypto';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { decode as jwtDecodeComplete } from 'jsonwebtoken';
 import { AppSettingsService } from '../../settings/app-settings.service';
 import type { SettingKey } from '../../settings/settings.registry';
@@ -10,6 +9,13 @@ import type { AnprResidenzaResult, AnprGeneralita, AnprResidenza } from './anpr.
 const ANPR_C020_BASE_URL =
   'https://modipa.anpr.interno.it/govway/rest/in/MinInternoPortaANPR-PDND/C020-servizioAccertamentoResidenza/v1';
 const ANPR_C020_ENDPOINT = `${ANPR_C020_BASE_URL}/anpr-service-e002`;
+
+// aud per Agid-JWT-Signature/Agid-JWT-TrackingEvidence: URL SENZA "-PDND" e
+// SENZA il segmento operazione finale — diverso dall'URL di invocazione
+// reale sopra. Confermato dal supporto ANPR (issue italia/anpr#3964): un aud
+// sbagliato (con -PDND o con /anpr-service-e002 in coda) è la causa più
+// comune di InteroperabilityInvalidRequest in quel thread.
+const ANPR_C020_AUD = 'https://modipa.anpr.interno.it/govway/rest/in/MinInternoPortaANPR/C020-servizioAccertamentoResidenza/v1';
 
 interface RispostaE002OK {
   idOperazioneANPR?: string;
@@ -27,21 +33,16 @@ interface RispostaE002OK {
  * Solo interrogazione puntuale per ora (query sempre su prod, mai test/val —
  * stesso pattern di InadService).
  *
- * Verificato dal vivo: questa finalità richiede voucher **DPoP** (RFC 9449,
- * `PdndAuthService.getVoucherDpop`/`buildResourceDpopProof`), non il bearer
- * voucher standard — un tentativo con voucher Bearer + soli header
- * Agid-JWT-Signature/Agid-JWT-TrackingEvidence (senza DPoP) veniva rigettato
- * dal gateway GovWay con `InteroperabilityInvalidRequest` (HTTP 400) prima
- * ancora di validare la firma. La scelta DPoP-vs-Bearer è del fruitore in
- * fase di richiesta voucher — non deducibile dallo yaml/OpenAPI
- * dell'erogatore (che dichiara solo `bearerAuth` genericamente) né dal
- * portale self-care PDND per questo client. Verificare sempre dal vivo,
- * mai assumere che un securityScheme "bearer" nello yaml escluda DPoP.
- *
- * Oltre al voucher, la chiamata richiede comunque i due header
- * Agid-JWT-Signature/Agid-JWT-TrackingEvidence (pattern PDND
- * INTEGRITY_REST_02/AUDIT_REST_02), firmati con la stessa chiave del client
- * (kid, nessun certificato x5c necessario in pratica).
+ * Pattern di sicurezza verificato contro il supporto ufficiale ANPR (issue
+ * github.com/italia/anpr#3964, non contro un riassunto): voucher **Bearer
+ * standard** (non DPoP — ipotesi provata e scartata, vedi CLAUDE.md), MA la
+ * richiesta voucher a PDND deve includere nella client assertion un claim
+ * extra `digest: {alg:"SHA256", value:<hex>}` = hash esadecimale del JWT
+ * Agid-JWT-TrackingEvidence — pattern AUDIT_REST_02. Va quindi costruito
+ * PRIMA il TrackingEvidence, poi il voucher (che lo referenzia), poi la
+ * richiesta vera e propria. `aud` di entrambi i JWS è `ANPR_C020_AUD`
+ * (senza "-PDND", senza operazione in coda) — diverso dall'URL reale di
+ * invocazione, altra causa comune di errore nello stesso thread.
  */
 @Injectable()
 export class AnprService {
@@ -62,11 +63,28 @@ export class AnprService {
       throw new Error('Configurazione ANPR (prod) incompleta: purposeId non impostato');
     }
 
-    const voucher = await this.pdndAuth.getVoucherDpop('prod', purposeId);
-    const dpopProof = await this.pdndAuth.buildResourceDpopProof('prod', 'POST', ANPR_C020_ENDPOINT, voucher);
+    // 1. Agid-JWT-TrackingEvidence, costruito PRIMA del voucher: PDND deve
+    // incorporarne il digest nel voucher stesso (pattern AUDIT_REST_02).
+    const trackingEvidence = await this.pdndAuth.signAgidJwt('prod', ANPR_C020_AUD, {
+      purposeId,
+      dnonce: Date.now().toString(),
+      userID: operatorUsername,
+      userLocation,
+      LoA: loA,
+    });
+    const trackingDigestHex = createHash('sha256').update(trackingEvidence).digest('hex');
 
+    // 2. Voucher con il digest della tracking evidence nella client assertion.
+    const voucher = await this.pdndAuth.getVoucherWithDigest('prod', purposeId, trackingDigestHex);
+
+    // 3. Corpo della richiesta + Agid-JWT-Signature (digest del body, base64).
+    // idOperazioneClient: max 30 caratteri per ANPR — un randomUUID() (36 con
+    // trattini) viene rifiutato con "Lunghezza del campo ... maggiore del
+    // massimo consentito 30". Timestamp ms (13 cifre) + 6 char random bastano
+    // per un identificativo univoco entro il limite.
+    const idOperazioneClient = `${Date.now()}${randomUUID().replace(/-/g, '').slice(0, 6)}`;
     const body = {
-      idOperazioneClient: randomUUID(),
+      idOperazioneClient,
       criteriRicerca: { codiceFiscale },
       datiRichiesta: {
         dataRiferimentoRichiesta: new Date().toISOString().slice(0, 10),
@@ -77,16 +95,9 @@ export class AnprService {
     const bodyStr = JSON.stringify(body);
     const digest = `SHA-256=${createHash('sha256').update(bodyStr).digest('base64')}`;
 
-    const [signature, trackingEvidence] = await Promise.all([
-      this.pdndAuth.signAgidJwt('prod', ANPR_C020_ENDPOINT, {
-        signed_headers: [{ digest }, { 'content-type': 'application/json' }],
-      }),
-      this.pdndAuth.signAgidJwt('prod', ANPR_C020_ENDPOINT, {
-        userID: operatorUsername,
-        userLocation,
-        LoA: loA,
-      }),
-    ]);
+    const signature = await this.pdndAuth.signAgidJwt('prod', ANPR_C020_AUD, {
+      signed_headers: [{ digest }, { 'Content-Type': 'application/json' }],
+    });
 
     this.logger.debug(`ANPR request body: ${bodyStr}`);
     this.logger.debug(`ANPR Digest: ${digest}`);
@@ -98,8 +109,7 @@ export class AnprService {
     const response = await fetch(ANPR_C020_ENDPOINT, {
       method: 'POST',
       headers: {
-        Authorization: `DPoP ${voucher}`,
-        DPoP: dpopProof,
+        Authorization: `Bearer ${voucher}`,
         Digest: digest,
         'Agid-JWT-Signature': signature,
         'Agid-JWT-TrackingEvidence': trackingEvidence,
@@ -109,6 +119,9 @@ export class AnprService {
     });
 
     const text = await response.text();
+    if (response.headers) {
+      this.logger.debug(`ANPR response headers: ${JSON.stringify(Object.fromEntries(response.headers.entries()))}`);
+    }
     this.logger.debug(`ANPR response HTTP ${response.status}: ${text}`);
     if (response.status === 404) {
       return { found: false };

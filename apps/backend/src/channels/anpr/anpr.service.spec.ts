@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { createHash } from 'node:crypto';
 import { AnprService } from './anpr.service';
 import { AppSettingsService } from '../../settings/app-settings.service';
 import { PdndAuthService } from '../../pdnd/pdnd-auth.service';
@@ -13,9 +14,10 @@ const settingsValues: Record<string, unknown> = {
 };
 const mockSettings = { get: jest.fn(async (key: string) => settingsValues[key]) };
 const mockPdndAuth = {
-  getVoucherDpop: jest.fn(async () => 'voucher-abc'),
-  buildResourceDpopProof: jest.fn(async () => 'dpop-proof-token'),
-  signAgidJwt: jest.fn(async (_env: string, _aud: string, _extraClaims: Record<string, unknown>) => 'jws-token'),
+  getVoucherWithDigest: jest.fn(async () => 'voucher-abc'),
+  signAgidJwt: jest.fn(async (_env: string, _aud: string, extraClaims: Record<string, unknown>) =>
+    extraClaims['userID'] ? 'jws-token-tracking' : 'jws-token-signature',
+  ),
 };
 
 describe('AnprService.getResidenza', () => {
@@ -23,8 +25,7 @@ describe('AnprService.getResidenza', () => {
 
   beforeEach(async () => {
     mockFetch.mockClear();
-    mockPdndAuth.getVoucherDpop.mockClear();
-    mockPdndAuth.buildResourceDpopProof.mockClear();
+    mockPdndAuth.getVoucherWithDigest.mockClear();
     mockPdndAuth.signAgidJwt.mockClear();
     const module = await Test.createTestingModule({
       providers: [
@@ -58,36 +59,43 @@ describe('AnprService.getResidenza', () => {
     expect(result.data?.generalita.cognome).toBe('Rossi');
     expect(result.data?.residenza[0].indirizzo?.comune?.nomeComune).toBe('Montesilvano');
 
-    expect(mockPdndAuth.getVoucherDpop).toHaveBeenCalledWith('prod', 'purpose-anpr-prod');
-    expect(mockPdndAuth.buildResourceDpopProof).toHaveBeenCalledWith(
-      'prod',
-      'POST',
-      'https://modipa.anpr.interno.it/govway/rest/in/MinInternoPortaANPR-PDND/C020-servizioAccertamentoResidenza/v1/anpr-service-e002',
-      'voucher-abc',
-    );
     expect(mockPdndAuth.signAgidJwt).toHaveBeenCalledTimes(2);
+
+    // Ordine: prima la TrackingEvidence (serve il suo digest per il voucher), poi la Signature.
+    const trackingCallArgs = mockPdndAuth.signAgidJwt.mock.calls[0];
+    expect(trackingCallArgs[1]).toBe(
+      'https://modipa.anpr.interno.it/govway/rest/in/MinInternoPortaANPR/C020-servizioAccertamentoResidenza/v1',
+    );
+    expect(trackingCallArgs[2]).toEqual(
+      expect.objectContaining({ userID: 'mario.rossi', userLocation: 'comunicapa-backend', LoA: 'https://www.spid.gov.it/SpidL2' }),
+    );
+
+    const expectedTrackingDigest = createHash('sha256').update('jws-token-tracking').digest('hex');
+    expect(mockPdndAuth.getVoucherWithDigest).toHaveBeenCalledWith('prod', 'purpose-anpr-prod', expectedTrackingDigest);
+
+    const signatureCallArgs = mockPdndAuth.signAgidJwt.mock.calls[1];
+    expect(signatureCallArgs[1]).toBe(
+      'https://modipa.anpr.interno.it/govway/rest/in/MinInternoPortaANPR/C020-servizioAccertamentoResidenza/v1',
+    );
+    expect(signatureCallArgs[2]).toEqual(
+      expect.objectContaining({ signed_headers: [{ digest: expect.stringMatching(/^SHA-256=/) }, { 'Content-Type': 'application/json' }] }),
+    );
 
     const [url, init] = mockFetch.mock.calls[0];
     expect(url).toBe(
       'https://modipa.anpr.interno.it/govway/rest/in/MinInternoPortaANPR-PDND/C020-servizioAccertamentoResidenza/v1/anpr-service-e002',
     );
     expect(init.method).toBe('POST');
-    expect(init.headers.Authorization).toBe('DPoP voucher-abc');
-    expect(init.headers.DPoP).toBe('dpop-proof-token');
-    expect(init.headers['Agid-JWT-Signature']).toBe('jws-token');
-    expect(init.headers['Agid-JWT-TrackingEvidence']).toBe('jws-token');
+    expect(init.headers.Authorization).toBe('Bearer voucher-abc');
+    expect(init.headers.DPoP).toBeUndefined();
+    expect(init.headers['Agid-JWT-Signature']).toBe('jws-token-signature');
+    expect(init.headers['Agid-JWT-TrackingEvidence']).toBe('jws-token-tracking');
     expect(init.headers.Digest).toMatch(/^SHA-256=/);
 
     const sentBody = JSON.parse(init.body);
     expect(sentBody.criteriRicerca).toEqual({ codiceFiscale: 'RRANGL74M28R701V' });
     expect(sentBody.datiRichiesta.casoUso).toBe('C020');
     expect(sentBody.datiRichiesta.motivoRichiesta).toBe('comunicapa-cerca-domicilio');
-
-    // Il secondo argomento della TrackingEvidence deve contenere l'operatore.
-    const trackingCallArgs = mockPdndAuth.signAgidJwt.mock.calls[1];
-    expect(trackingCallArgs[2]).toEqual(
-      expect.objectContaining({ userID: 'mario.rossi', userLocation: 'comunicapa-backend', LoA: 'https://www.spid.gov.it/SpidL2' }),
-    );
   });
 
   it('restituisce found:false quando ANPR risponde 404 (posizione non presente)', async () => {
