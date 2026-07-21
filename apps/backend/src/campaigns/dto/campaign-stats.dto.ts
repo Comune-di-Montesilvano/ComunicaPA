@@ -149,3 +149,24 @@ export interface PostalReportDto {
   hasAppIoCoDelivery: boolean;
   rows: PostalReportRowDto[];
 }
+
+export interface CampaignCostChannelDto {
+  channel: 'SEND' | 'POSTAL';
+  totalCostCents: number;
+  /** Numero di attempt di questo canale con costo ancora non calcolato — esclusi da totalCostCents. */
+  uncalculatedCount: number;
+}
+
+export interface CampaignCostDto {
+  campaignId: string;
+  totalCostCents: number;
+  byChannel: CampaignCostChannelDto[];
+}
+
+export interface CampaignCostSavingsDto {
+  campaignId: string;
+  /** Somma dei risparmi calcolabili (solo destinatari SEND dirottati/skippati) — vedi design doc per il perché POSTAL non è incluso. */
+  totalSavingCents: number;
+  /** Numero di destinatari POSTAL dirottati per cui il risparmio non è stimabile (mostrato N/D in UI). */
+  postalNotEstimableCount: number;
+}

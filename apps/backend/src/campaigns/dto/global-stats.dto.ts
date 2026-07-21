@@ -4,6 +4,8 @@ export interface GlobalStatsTotalsDto {
   totalFailed: number;
   totalDownloaded: number;
   downloadPercentage: number;
+  totalCostCents: number;
+  totalSavingCents: number;
 }
 
 export interface MonthlyTrendPointDto {
