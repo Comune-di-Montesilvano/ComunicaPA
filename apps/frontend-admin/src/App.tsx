@@ -4210,6 +4210,74 @@ export function App(): React.JSX.Element {
     }
   };
 
+  const needsWizSinglePhysicalAddress = wizChannel === 'SEND' || wizChannel === 'POSTAL';
+
+  const handleWizSingleSubmit = async () => {
+    if (!isValidCfOrPiva(singleCf)) {
+      alert('Codice Fiscale/P.IVA non valido: 16 caratteri alfanumerici o 11 cifre.');
+      return;
+    }
+    if (!singleName.trim()) {
+      alert('Nome/Cognome (o Ragione Sociale) obbligatorio.');
+      return;
+    }
+
+    const cols: string[] = ['codice_fiscale', 'full_name', 'email', 'pec'];
+    const vals: string[] = [singleCf.toUpperCase(), singleName, singleEmail, singlePec];
+
+    if (needsWizSinglePhysicalAddress) {
+      cols.push('sd_indirizzo', 'sd_comune', 'sd_cap', 'sd_provincia');
+      vals.push(singleAddress, singleMunicipality, singleZip, singleProvince);
+    }
+    if (wizPaymentEnabled) {
+      cols.push('sd_iuv', 'sd_importo', 'sd_scadenza');
+      vals.push(singlePaymentIuv, singlePaymentImporto, singlePaymentScadenza);
+    }
+    const attachmentSlotsWithFile = wizSingleAttachmentSlots.filter(s => s.file);
+    attachmentSlotsWithFile.forEach((s, i) => {
+      cols.push(`sd_allegato_${i + 1}`);
+      vals.push(s.file!.name);
+    });
+
+    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
+    const csvContent = `${cols.join(',')}\n${vals.map(esc).join(',')}`;
+    const file = new File([csvContent], 'destinatario.csv', { type: 'text/csv' });
+    setWizCsvFile(file);
+    await parseCsvFile(file, true);
+
+    if (needsWizSinglePhysicalAddress) {
+      setWizPostalAddressColumn('sd_indirizzo');
+      setWizPostalMunicipalityColumn('sd_comune');
+      setWizPostalZipColumn('sd_cap');
+      setWizPostalProvinceColumn('sd_provincia');
+    }
+    if (wizPaymentEnabled) {
+      setWizPaymentNoticeCol('sd_iuv');
+      setWizPaymentAmountCol('sd_importo');
+      setWizPaymentAmountType('euro');
+      setWizPaymentDueDateCol('sd_scadenza');
+    }
+    setWizAttachments(
+      attachmentSlotsWithFile.map((s, i) => ({ key: `sd_allegato_${i + 1}`, label: s.label || `Allegato ${i + 1}` })),
+    );
+    setWizPdfFiles(attachmentSlotsWithFile.map(s => s.file!));
+
+    if (await syncWizDraftAndRecipients(4)) {
+      setWizStep(4);
+    }
+  };
+
+  const wizSingleSubmitDisabled =
+    !singleCf.trim() ||
+    !singleName.trim() ||
+    (wizChannel === 'EMAIL' && !singleEmail.trim()) ||
+    (wizChannel === 'PEC' && !singlePec.trim()) ||
+    (needsWizSinglePhysicalAddress && (!singleAddress.trim() || !singleMunicipality.trim() || !singleZip.trim() || !singleProvince.trim())) ||
+    ((wizChannel === 'SEND' || wizChannel === 'POSTAL') && wizSingleAttachmentSlots.filter(s => s.file).length === 0) ||
+    ((wizChannel === 'EMAIL' || wizChannel === 'PEC') && !wizMailConfigId) ||
+    (wizChannel === 'APP_IO' && !wizAppIoServiceId) ||
+    (wizChannel === 'POSTAL' && !wizPostalServiceType);
+
   useEffect(() => {
     if (wizCsvRows.length === 0) {
       setWizValidationErrors([]);
@@ -6353,8 +6421,302 @@ export function App(): React.JSX.Element {
                 })}
               </div>
 
+              {wizStep === 1 && wizSingleMode && (
+                <div style={{ maxWidth: '700px', margin: '0 auto' }}>
+                  <h4 className="h6 fw-bold text-dark mb-3">Passo 1: Dettagli & Destinatario</h4>
+
+                  <div className="mb-4 pb-3 border-bottom d-flex justify-content-end">
+                    <button
+                      className="btn btn-primary"
+                      onClick={handleWizSingleSubmit}
+                      disabled={wizSingleSubmitDisabled}
+                    >
+                      Avanti <ArrowRight className="ms-1" />
+                    </button>
+                  </div>
+
+                  <div className="mb-3">
+                    <label className="form-label small fw-bold">Nome Campagna</label>
+                    <input
+                      type="text"
+                      className="form-control form-control-sm"
+                      value={wizName}
+                      onChange={e => setWizName(e.target.value)}
+                    />
+                    <div className="form-text small text-muted">
+                      Precompilato da CF/Nome, modificabile in ogni momento.
+                    </div>
+                  </div>
+
+                  <div className="row g-3 mb-3">
+                    <div className="col-md-6">
+                      <label className="form-label small fw-bold text-dark" htmlFor="s_cf">
+                        Codice Fiscale/P.IVA Destinatario <span className="text-danger">*</span>
+                      </label>
+                      <div className="input-group input-group-sm">
+                        <input
+                          type="text"
+                          id="s_cf"
+                          className="form-control form-control-sm"
+                          maxLength={16}
+                          value={singleCf}
+                          onChange={(e) => {
+                            const v = e.target.value.toUpperCase();
+                            setSingleCf(v);
+                            if (v !== singleAnprCheckedCf) {
+                              setSingleInadForced(false);
+                              setSingleInadAddress('');
+                              setSingleAppIoActive(false);
+                            }
+                          }}
+                        />
+                        <button
+                          className="btn btn-outline-primary"
+                          type="button"
+                          disabled={!isValidCfOrPiva(singleCf) || singleAnprLoading}
+                          onClick={runWizAnprCheck}
+                        >
+                          {singleAnprLoading ? <Loader2 className="icon-spin me-1" size={16} /> : null}
+                          Carica dati ANPR
+                        </button>
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label small fw-bold" htmlFor="s_name">
+                        Nome/Cognome (o Ragione Sociale) <span className="text-danger">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        id="s_name"
+                        className="form-control form-control-sm"
+                        value={singleName}
+                        onChange={(e) => setSingleName(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mb-3">
+                    <label className="form-label small fw-bold">Canale di Invio Principale *</label>
+                    <select
+                      className="form-select form-select-sm"
+                      value={wizChannel}
+                      disabled={singleInadForced}
+                      onChange={(e: any) => {
+                        const newChan = e.target.value as any;
+                        setWizChannel(newChan);
+                        const activeCfg = mailConfigs.find(c => c.type === newChan && c.active);
+                        setWizMailConfigId(activeCfg?.id || '');
+                        if (newChan === 'SEND') setWizProtocolla(true);
+                      }}
+                    >
+                      {(['EMAIL', 'PEC', 'APP_IO', 'SEND', 'POSTAL'] as const).map(key => (
+                        <option key={key} value={key}>{getChannelMeta(key).label}</option>
+                      ))}
+                    </select>
+                    {singleInadForced && (
+                      <div className="form-text small text-success">
+                        Domicilio digitale INAD trovato ({singleInadAddress}): canale forzato a PEC.
+                      </div>
+                    )}
+                    {!singleInadForced && singleAppIoActive && (
+                      <div className="form-text small text-success">
+                        Servizio App IO attivo per questo destinatario: disponibile come co-consegna.
+                      </div>
+                    )}
+                  </div>
+
+                  {wizChannel === 'EMAIL' && (
+                    <div className="mb-3">
+                      <label className="form-label small fw-semibold text-muted" htmlFor="s_email">
+                        Indirizzo Email <span className="text-danger">*</span>
+                      </label>
+                      <input
+                        type="email"
+                        id="s_email"
+                        className="form-control form-control-sm"
+                        value={singleEmail}
+                        onChange={(e) => setSingleEmail(e.target.value)}
+                      />
+                    </div>
+                  )}
+                  {wizChannel === 'PEC' && (
+                    <div className="mb-3">
+                      <label className="form-label small fw-semibold text-muted" htmlFor="s_pec">
+                        Indirizzo PEC <span className="text-danger">*</span>
+                      </label>
+                      <input
+                        type="email"
+                        id="s_pec"
+                        className="form-control form-control-sm"
+                        value={singlePec}
+                        disabled={singleInadForced}
+                        onChange={(e) => setSinglePec(e.target.value)}
+                      />
+                    </div>
+                  )}
+
+                  {needsWizSinglePhysicalAddress && (
+                    <div className="row g-3 mb-3">
+                      <div className="col-md-6">
+                        <label className="form-label small fw-semibold text-muted">Indirizzo (via e civico) *</label>
+                        <input
+                          type="text"
+                          className="form-control form-control-sm"
+                          placeholder="Es: Via Roma 12"
+                          value={singleAddress}
+                          onChange={(e) => setSingleAddress(e.target.value)}
+                        />
+                      </div>
+                      <div className="col-md-3">
+                        <label className="form-label small fw-semibold text-muted">Comune *</label>
+                        <input
+                          type="text"
+                          className="form-control form-control-sm"
+                          value={singleMunicipality}
+                          onChange={(e) => setSingleMunicipality(e.target.value)}
+                        />
+                      </div>
+                      <div className="col-md-1">
+                        <label className="form-label small fw-semibold text-muted">CAP *</label>
+                        <input
+                          type="text"
+                          className="form-control form-control-sm"
+                          value={singleZip}
+                          onChange={(e) => setSingleZip(e.target.value)}
+                        />
+                      </div>
+                      <div className="col-md-2">
+                        <label className="form-label small fw-semibold text-muted">Provincia *</label>
+                        <input
+                          type="text"
+                          className="form-control form-control-sm"
+                          maxLength={2}
+                          value={singleProvince}
+                          onChange={(e) => setSingleProvince(e.target.value.toUpperCase())}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="form-check mb-3">
+                    <input
+                      type="checkbox"
+                      className="form-check-input"
+                      id="wiz_single_protocolla"
+                      checked={wizProtocolla}
+                      disabled={wizChannel === 'SEND'}
+                      onChange={(e) => setWizProtocolla(e.target.checked)}
+                    />
+                    <label className="form-check-label small" htmlFor="wiz_single_protocolla">
+                      Protocolla questo invio
+                      {wizChannel === 'SEND' && (
+                        <span className="text-muted"> (obbligatorio per SEND)</span>
+                      )}
+                    </label>
+                  </div>
+
+                  <div className="form-check mb-3">
+                    <input
+                      type="checkbox"
+                      className="form-check-input"
+                      id="wiz_single_payment_enabled"
+                      checked={wizPaymentEnabled}
+                      onChange={e => setWizPaymentEnabled(e.target.checked)}
+                    />
+                    <label className="form-check-label small fw-bold" htmlFor="wiz_single_payment_enabled">
+                      Integrazione pagamenti pagoPA
+                    </label>
+                  </div>
+
+                  {wizPaymentEnabled && (
+                    <div className="row g-3 mb-3 ps-3">
+                      <div className="col-md-4">
+                        <label className="form-label small fw-semibold text-muted">IUV / Codice Avviso</label>
+                        <input
+                          type="text"
+                          className="form-control form-control-sm"
+                          value={singlePaymentIuv}
+                          onChange={(e) => setSinglePaymentIuv(e.target.value)}
+                        />
+                      </div>
+                      <div className="col-md-4">
+                        <label className="form-label small fw-semibold text-muted">Importo (€)</label>
+                        <input
+                          type="text"
+                          className="form-control form-control-sm"
+                          value={singlePaymentImporto}
+                          onChange={(e) => setSinglePaymentImporto(e.target.value)}
+                        />
+                      </div>
+                      <div className="col-md-4">
+                        <label className="form-label small fw-semibold text-muted">Scadenza (opzionale)</label>
+                        <input
+                          type="date"
+                          className="form-control form-control-sm"
+                          value={singlePaymentScadenza}
+                          onChange={(e) => setSinglePaymentScadenza(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mb-3">
+                    <label className="form-label small fw-bold d-block">
+                      Allegati
+                      {(wizChannel === 'SEND' || wizChannel === 'POSTAL') && <span className="text-danger"> *</span>}
+                    </label>
+                    {wizSingleAttachmentSlots.map((slot, idx) => (
+                      <div className="row g-2 mb-2 align-items-center" key={slot.id}>
+                        <div className="col-md-4">
+                          <input
+                            type="text"
+                            className="form-control form-control-sm"
+                            placeholder={`Allegato ${idx + 1}`}
+                            value={slot.label}
+                            onChange={(e) => updateWizSingleAttachmentSlot(slot.id, { label: e.target.value })}
+                          />
+                        </div>
+                        <div className="col-md-6">
+                          <input
+                            type="file"
+                            accept=".pdf"
+                            className="form-control form-control-sm"
+                            onChange={(e) => updateWizSingleAttachmentSlot(slot.id, { file: e.target.files?.[0] || null })}
+                          />
+                        </div>
+                        <div className="col-md-2">
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-danger"
+                            onClick={() => removeWizSingleAttachmentSlot(slot.id)}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    <button type="button" className="btn btn-sm btn-outline-secondary" onClick={addWizSingleAttachmentSlot}>
+                      + Aggiungi allegato
+                    </button>
+                    <div className="form-text small text-muted">
+                      Il caricamento effettivo avviene al momento dell'invio/test, non ora.
+                    </div>
+                  </div>
+
+                  <div className="mt-4 pt-3 border-top d-flex justify-content-end">
+                    <button
+                      className="btn btn-primary"
+                      onClick={handleWizSingleSubmit}
+                      disabled={wizSingleSubmitDisabled}
+                    >
+                      Avanti <ArrowRight className="ms-1" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* STEP 1: DETTAGLI & CANALE */}
-              {wizStep === 1 && (
+              {wizStep === 1 && !wizSingleMode && (
                 <div style={{ maxWidth: '600px', margin: '0 auto' }}>
                   <h4 className="h6 fw-bold text-dark mb-3">Passo 1: Dettagli della Campagna & Canale Principale</h4>
 
@@ -6677,135 +7039,6 @@ export function App(): React.JSX.Element {
               )}
 
               {/* STEP 2: CARICAMENTO FILE (o DESTINATARIO in wizSingleMode) */}
-              {wizStep === 2 && wizSingleMode && (
-                <div style={{ maxWidth: '600px', margin: '0 auto' }}>
-                  <h4 className="h6 fw-bold text-dark mb-3">Passo 2: Dati Destinatario</h4>
-
-                  <div className="mb-4 pb-3 border-bottom d-flex justify-content-between">
-                    <button className="btn btn-outline-secondary" onClick={() => setWizStep(1)}>
-                      <ArrowLeft className="me-1" /> Indietro
-                    </button>
-                    <button
-                      className="btn btn-primary"
-                      onClick={async () => {
-                        if (await syncWizDraftAndRecipients(4)) {
-                          setWizStep(4);
-                        }
-                      }}
-                      disabled={!wizCsvFile}
-                    >
-                      Avanti <ArrowRight className="ms-1" />
-                    </button>
-                  </div>
-
-                  {wizCsvFile ? (
-                    <div className="p-4 border rounded bg-light text-center mb-4">
-                      <div className="badge bg-success p-2 mb-2">
-                        <CheckCircle2 className="me-1" /> Destinatario pronto: {singleCf.toUpperCase()}
-                      </div>
-                      <div>
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-outline-secondary px-2"
-                          onClick={() => {
-                            setWizCsvFile(null);
-                            setWizCsvHeaders([]);
-                            setWizCsvRows([]);
-                            setWizMapping({ codice_fiscale: '', full_name: '', full_name_2: '', email: '', pec: '', subject: '' });
-                          }}
-                        >
-                          <Pencil className="me-1" /> Modifica dati
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="row g-3 mb-4">
-                      <div className="col-md-6">
-                        <label className="form-label small fw-bold text-dark" htmlFor="s_cf">Codice Fiscale/P.IVA Destinatario <span className="text-danger">*</span></label>
-                        <input
-                          type="text"
-                          id="s_cf"
-                          className="form-control form-control-sm"
-                          placeholder="16 caratteri alfanumerici o 11 cifre"
-                          maxLength={16}
-                          value={singleCf}
-                          onChange={(e) => setSingleCf(e.target.value.toUpperCase())}
-                        />
-                      </div>
-                      <div className="col-md-6">
-                        <label className="form-label small fw-semibold text-muted" htmlFor="s_name">Nome Completo</label>
-                        <input
-                          type="text"
-                          id="s_name"
-                          className="form-control form-control-sm"
-                          placeholder="Es: Mario Rossi"
-                          value={singleName}
-                          onChange={(e) => setSingleName(e.target.value)}
-                        />
-                      </div>
-                      <div className="col-md-6">
-                        <label className="form-label small fw-semibold text-muted" htmlFor="s_email">Indirizzo Email</label>
-                        <input
-                          type="email"
-                          id="s_email"
-                          className="form-control form-control-sm"
-                          placeholder="mario.rossi@example.com"
-                          value={singleEmail}
-                          onChange={(e) => setSingleEmail(e.target.value)}
-                        />
-                      </div>
-                      <div className="col-md-6">
-                        <label className="form-label small fw-semibold text-muted" htmlFor="s_pec">Indirizzo PEC</label>
-                        <input
-                          type="email"
-                          id="s_pec"
-                          className="form-control form-control-sm"
-                          placeholder="mario.rossi@pec.it"
-                          value={singlePec}
-                          onChange={(e) => setSinglePec(e.target.value)}
-                        />
-                      </div>
-                      <div className="col-12">
-                        <button
-                          type="button"
-                          className="btn btn-primary"
-                          disabled={!singleCf}
-                          onClick={async () => {
-                            if (!isValidCfOrPiva(singleCf)) {
-                              alert('Codice Fiscale/P.IVA non valido: 16 caratteri alfanumerici o 11 cifre.');
-                              return;
-                            }
-                            const csvContent = `codice_fiscale,full_name,email,pec\n"${singleCf.toUpperCase()}","${singleName.replace(/"/g, '""')}","${singleEmail.replace(/"/g, '""')}","${singlePec.replace(/"/g, '""')}"`;
-                            const file = new File([csvContent], 'destinatario.csv', { type: 'text/csv' });
-                            setWizCsvFile(file);
-                            await parseCsvFile(file, true);
-                          }}
-                        >
-                          <Check className="me-1" /> Genera destinatario
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="mt-4 pt-3 border-top d-flex justify-content-between">
-                    <button className="btn btn-outline-secondary" onClick={() => setWizStep(1)}>
-                      <ArrowLeft className="me-1" /> Indietro
-                    </button>
-                    <button
-                      className="btn btn-primary"
-                      onClick={async () => {
-                        if (await syncWizDraftAndRecipients(4)) {
-                          setWizStep(4);
-                        }
-                      }}
-                      disabled={!wizCsvFile}
-                    >
-                      Avanti <ArrowRight className="ms-1" />
-                    </button>
-                  </div>
-                </div>
-              )}
-
               {wizStep === 2 && !wizSingleMode && (
                 <div style={{ maxWidth: '600px', margin: '0 auto' }}>
                   <h4 className="h6 fw-bold text-dark mb-3">Passo 2: Caricamento File Destinatari (CSV)</h4>
