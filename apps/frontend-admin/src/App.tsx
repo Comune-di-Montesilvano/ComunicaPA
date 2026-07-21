@@ -4202,6 +4202,12 @@ export function App(): React.JSX.Element {
       if (inadFound) {
         setWizChannel('PEC');
         setSinglePec(data.inad.digitalAddress[0].digitalAddress);
+        // PEC non è mai SEND/APP_IO: replica la stessa condizione di eleggibilità
+        // usata nell'onChange del select canale, che qui bypassiamo forzando il
+        // canale direttamente (vedi finding 2 review finale).
+        if (wizAppIoMode === 'none') {
+          setWizPaymentEnabled(false);
+        }
       }
 
       setSingleAppIoActive(Boolean(data?.appIo?.success && data?.appIo?.active));
@@ -4213,9 +4219,9 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const needsWizSinglePhysicalAddress = wizChannel === 'SEND' || wizChannel === 'POSTAL';
+  const needsWizSinglePhysicalAddress = wizChannel === 'POSTAL';
 
-  const handleWizSingleSubmit = async () => {
+  const handleWizSingleSubmit = async (targetStep: number = 4) => {
     if (!isValidCfOrPiva(singleCf)) {
       alert('Codice Fiscale/P.IVA non valido: 16 caratteri alfanumerici o 11 cifre.');
       return;
@@ -4266,8 +4272,8 @@ export function App(): React.JSX.Element {
     );
     setWizPdfFiles(attachmentSlotsWithFile.map(s => s.file!));
 
-    if (await syncWizDraftAndRecipients(4)) {
-      setWizStep(4);
+    if (await syncWizDraftAndRecipients(targetStep)) {
+      setWizStep(targetStep);
     }
   };
 
@@ -4948,9 +4954,13 @@ export function App(): React.JSX.Element {
   // (stesso pattern di handleWizUploadAttachments: handleSaveWizardDraft mostra già
   // l'errore ed eventualmente ritorna null).
   const handleWizAdvanceToStep5 = async (): Promise<void> => {
-    const campaignId = await syncWizDraftAndRecipients(5);
+    // In modalità singola lo Step 5 (Upload Allegati) non esiste nella step-bar
+    // ([1,4,6], vedi "Steps Progress Header") — gli allegati sono già raccolti
+    // allo Step 1 dell'invio singolo. Saltare direttamente allo Step 6.
+    const targetStep = wizSingleMode ? 6 : 5;
+    const campaignId = await syncWizDraftAndRecipients(targetStep);
     if (!campaignId) return;
-    setWizStep(5);
+    setWizStep(targetStep);
   };
 
   // Core condiviso di upload allegati (chunked, stesso pattern usato in precedenza da
@@ -6481,7 +6491,14 @@ export function App(): React.JSX.Element {
                         if (n < wizStep) {
                           setWizStep(n);
                         } else if (clickable) {
-                          if (await syncWizDraftAndRecipients(n)) {
+                          if (wizSingleMode && wizStep === 1) {
+                            // In modalità singola solo handleWizSingleSubmit ricostruisce il
+                            // CSV/allegati/mappatura sintetici dai campi del form (Step 1) —
+                            // syncWizDraftAndRecipients da solo non lo fa. Senza passare da qui,
+                            // un click in avanti sulla tab-bar dopo un'edit allo Step 1 perdeva
+                            // silenziosamente la modifica (finding 3 review finale).
+                            await handleWizSingleSubmit(n);
+                          } else if (await syncWizDraftAndRecipients(n)) {
                             setWizStep(n);
                           }
                         }
@@ -6511,7 +6528,7 @@ export function App(): React.JSX.Element {
                   <div className="mb-4 pb-3 border-bottom d-flex justify-content-end">
                     <button
                       className="btn btn-primary"
-                      onClick={handleWizSingleSubmit}
+                      onClick={() => handleWizSingleSubmit()}
                       disabled={wizSingleSubmitDisabled}
                     >
                       Avanti <ArrowRight className="ms-1" />
@@ -6980,7 +6997,7 @@ export function App(): React.JSX.Element {
                   <div className="mt-4 pt-3 border-top d-flex justify-content-end">
                     <button
                       className="btn btn-primary"
-                      onClick={handleWizSingleSubmit}
+                      onClick={() => handleWizSingleSubmit()}
                       disabled={wizSingleSubmitDisabled}
                     >
                       Avanti <ArrowRight className="ms-1" />
@@ -8161,7 +8178,10 @@ export function App(): React.JSX.Element {
               )}
 
               {/* STEP 5: UPLOAD ALLEGATI */}
-              {wizStep === 5 && (() => {
+              {/* Difensivo: in modalità singola questo step non esiste nella step-bar
+                  ([1,4,6]) — irraggiungibile a fix di handleWizAdvanceToStep5 applicato,
+                  ma guardia aggiuntiva per non renderlo mai raggiungibile in futuro. */}
+              {!wizSingleMode && wizStep === 5 && (() => {
                 const expectedSet = new Set<string>();
                 wizValidRows.forEach(row => {
                   wizAttachments.forEach(entry => {
