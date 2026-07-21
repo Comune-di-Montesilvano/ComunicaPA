@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, Raw, Repository } from 'typeorm';
 import { createReadStream } from 'fs';
 import { unlink } from 'fs/promises';
 import { parse } from 'csv-parse';
@@ -26,7 +26,7 @@ import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util
 import type { CreateCampaignDto } from './dto/create-campaign.dto';
 import type { UpdateCampaignDto } from './dto/update-campaign.dto';
 import type { TestSendDto } from './dto/test-send.dto';
-import type { CampaignStatsDto, RecipientStatDto, RecipientStatsPageDto, ChannelBreakdownDto, EffectiveChannelBreakdownDto, DownloadCombinationDto, DownloadCombinationStatsDto, FailureRowDto, FailureGroupDto, RetryBulkResultDto, DownloadReportRowDto, SendStatusBreakdownDto, SendReportDto, SendReportRowDto, PostalStatusBreakdownDto, PostalReportDto, PostalReportRowDto } from './dto/campaign-stats.dto';
+import type { CampaignStatsDto, RecipientStatDto, RecipientStatsPageDto, ChannelBreakdownDto, EffectiveChannelBreakdownDto, DownloadCombinationDto, DownloadCombinationStatsDto, FailureRowDto, FailureGroupDto, RetryBulkResultDto, DownloadReportRowDto, SendStatusBreakdownDto, SendReportDto, SendReportRowDto, PostalStatusBreakdownDto, PostalReportDto, PostalReportRowDto, CampaignCostDto, CampaignCostSavingsDto } from './dto/campaign-stats.dto';
 import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.dto';
 import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util';
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto';
@@ -1230,6 +1230,37 @@ export class CampaignsService {
       .andWhere('c.isTest = false')
       .getCount();
 
+    const costRow = await this.attemptRepo
+      .createQueryBuilder('a')
+      .innerJoin('a.recipient', 'r')
+      .innerJoin('r.campaign', 'c')
+      .select('COALESCE(SUM(a.costCents), 0)', 'totalCostCents')
+      .where('a.channelType IN (:...channels)', { channels: ['SEND', 'POSTAL'] })
+      .andWhere('a.costCents IS NOT NULL')
+      .andWhere(range.sql, range.params)
+      .andWhere('c.isTest = false')
+      .getRawOne<{ totalCostCents: string }>();
+
+    const savingRow = await this.recipientRepo
+      .createQueryBuilder('r')
+      .innerJoin('r.campaign', 'c')
+      .leftJoin('r.attempts', 'a', "a.channel_type = 'SEND'")
+      .select('c.id', 'campaignId')
+      .addSelect('COALESCE(SUM(a.costCents), 0)', 'actualCostCents')
+      .addSelect('COUNT(DISTINCT r.id)', 'recipientCount')
+      .where("c.channelType = 'SEND'")
+      .andWhere(range.sql, range.params)
+      .andWhere('c.isTest = false')
+      .groupBy('c.id')
+      .getRawMany<{ campaignId: string; actualCostCents: string; recipientCount: string }>();
+
+    const nominalBaseFeeCents = await this.settings.get<number>('send.digitalBaseFeeCents');
+    const totalSavingCents = savingRow.reduce((sum, row) => {
+      const nominal = nominalBaseFeeCents * Number(row.recipientCount);
+      const saving = nominal - Number(row.actualCostCents);
+      return saving > 0 ? sum + saving : sum;
+    }, 0);
+
     const totalRecipients = Number(totalsRow?.totalRecipients ?? 0);
     const totalSent = Number(totalsRow?.totalSent ?? 0);
     const totalFailed = Number(totalsRow?.totalFailed ?? 0);
@@ -1241,6 +1272,8 @@ export class CampaignsService {
         totalFailed,
         totalDownloaded,
         downloadPercentage: computeDownloadPercentage(totalDownloaded, totalRecipients),
+        totalCostCents: Number(costRow?.totalCostCents ?? 0),
+        totalSavingCents,
       },
       monthlyTrend: mergeMonthlyTrend(sentTrendRows, downloadedTrendRows),
       channelTotals: channelRows.map((r) => ({ channel: r.channel, sent: Number(r.sent) })),
@@ -1634,6 +1667,76 @@ export class CampaignsService {
     }
 
     return Array.from(counts.entries()).map(([status, count]) => ({ status, count }));
+  }
+
+  async getCampaignCost(campaignId: string): Promise<CampaignCostDto> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+
+    const recipientIds = (await this.recipientRepo.find({ where: { campaignId }, select: ['id'] })).map((r) => r.id);
+    if (recipientIds.length === 0) return { campaignId, totalCostCents: 0, byChannel: [] };
+
+    const attempts = await this.attemptRepo.find({
+      where: { recipientId: In(recipientIds), channelType: In(['SEND', 'POSTAL']) },
+      select: ['recipientId', 'channelType', 'costCents'],
+    });
+
+    const byChannelMap = new Map<string, { totalCostCents: number; uncalculatedCount: number }>();
+    for (const a of attempts) {
+      const entry = byChannelMap.get(a.channelType) ?? { totalCostCents: 0, uncalculatedCount: 0 };
+      if (a.costCents === null) entry.uncalculatedCount += 1;
+      else entry.totalCostCents += a.costCents;
+      byChannelMap.set(a.channelType, entry);
+    }
+
+    const byChannel = Array.from(byChannelMap.entries()).map(([channel, v]) => ({
+      channel: channel as 'SEND' | 'POSTAL',
+      totalCostCents: v.totalCostCents,
+      uncalculatedCount: v.uncalculatedCount,
+    }));
+
+    return {
+      campaignId,
+      totalCostCents: byChannel.reduce((sum, c) => sum + c.totalCostCents, 0),
+      byChannel,
+    };
+  }
+
+  async getCampaignCostSavings(campaignId: string): Promise<CampaignCostSavingsDto> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+
+    if (campaign.channelType === 'POSTAL') {
+      const diverted = await this.recipientRepo.count({ where: { campaignId, inadCheck: Raw((alias) => `${alias}->>'diverted' = 'true'`) } });
+      return { campaignId, totalSavingCents: 0, postalNotEstimableCount: diverted };
+    }
+
+    if (campaign.channelType !== 'SEND') {
+      return { campaignId, totalSavingCents: 0, postalNotEstimableCount: 0 };
+    }
+
+    const recipients = await this.recipientRepo.find({ where: { campaignId }, select: ['id'] });
+    const recipientIds = recipients.map((r) => r.id);
+    if (recipientIds.length === 0) return { campaignId, totalSavingCents: 0, postalNotEstimableCount: 0 };
+
+    const attempts = await this.attemptRepo.find({
+      where: { recipientId: In(recipientIds), channelType: 'SEND' },
+      select: ['recipientId', 'costCents'],
+    });
+    const costByRecipient = new Map<string, number>();
+    for (const a of attempts) {
+      costByRecipient.set(a.recipientId, (costByRecipient.get(a.recipientId) ?? 0) + (a.costCents ?? 0));
+    }
+
+    const nominalBaseFeeCents = await this.settings.get<number>('send.digitalBaseFeeCents');
+    let totalSavingCents = 0;
+    for (const id of recipientIds) {
+      const actual = costByRecipient.get(id) ?? 0;
+      const saving = nominalBaseFeeCents - actual;
+      if (saving > 0) totalSavingCents += saving;
+    }
+
+    return { campaignId, totalSavingCents, postalNotEstimableCount: 0 };
   }
 
   async getPostalReportRows(campaignId: string): Promise<PostalReportDto> {
