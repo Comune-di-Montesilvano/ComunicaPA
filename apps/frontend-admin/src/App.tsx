@@ -5510,7 +5510,7 @@ export function App(): React.JSX.Element {
             onClick={(e) => { e.preventDefault(); setView('cerca-domicilio'); setDomicilioCf(''); setDomicilioResult(null); }}
           >
             <MapPin />
-            <span>Cerca Domicilio</span>
+            <span>Verifica Anagrafica</span>
           </a>
           <a
             className={`bo-nav-item ${view === 'verifica-appio' ? 'is-active' : ''}`}
@@ -8805,7 +8805,7 @@ export function App(): React.JSX.Element {
 
               <div className="card shadow-sm p-4 mb-4">
                 <p className="small text-muted mb-3">
-                  Carica un CSV con un elenco di codici fiscali: la verifica gira in background su INAD (batch fino a 1000 CF, 5-10 minuti per elaborazione) e produce due CSV scaricabili, con le stesse colonne del file originale — destinatari con domicilio digitale trovato (con colonna aggiuntiva "domicilio_digitale_inad") e tutti gli altri. Per una verifica puntuale su un singolo codice fiscale, usa "Cerca Domicilio" nel menu.
+                  Carica un CSV con un elenco di codici fiscali: la verifica gira in background su INAD (batch fino a 1000 CF, 5-10 minuti per elaborazione) e produce due CSV scaricabili, con le stesse colonne del file originale — destinatari con domicilio digitale trovato (con colonna aggiuntiva "domicilio_digitale_inad") e tutti gli altri. Per una verifica puntuale su un singolo codice fiscale, usa "Verifica Anagrafica" nel menu.
                 </p>
 
                   {!verificaInadBulkJobId && (
@@ -8906,45 +8906,47 @@ export function App(): React.JSX.Element {
 
           {view === 'cerca-domicilio' && (
             <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-              <h3 className="h5 fw-bold text-dark mb-3">
-                <MapPin className="me-2" size={16} />Cerca Domicilio
-              </h3>
-              <p className="small text-muted mb-4">
-                Inserisci il codice fiscale di un cittadino per interrogare insieme INAD (domicilio digitale eletto),
-                App IO (stato di attivazione) e ANPR (generalità, esistenza in vita, residenza anagrafica) e vedere la scheda completa.
-              </p>
+              <div className="d-flex align-items-center justify-content-between mb-3">
+                <div>
+                  <h3 className="h5 fw-bold text-dark mb-1 d-flex align-items-center gap-2">
+                    <MapPin className="text-primary" size={20} />Verifica Anagrafica
+                  </h3>
+                  <p className="small text-muted mb-0">
+                    Interrogazione integrata ANPR (generalità e residenza), INAD (domicilio digitale) e App IO (servizi attivi).
+                  </p>
+                </div>
+              </div>
 
-              <div className="card shadow-sm p-4 mb-4">
-                <div className="mb-3">
-                  <label className="form-label small fw-bold">Codice Fiscale</label>
-                  <div className="input-group input-group-sm">
-                    <span className="input-group-text"><Contact size={16} /></span>
-                    <input
-                      type="text"
-                      className="form-control"
-                      placeholder="Inserisci il codice fiscale (16 caratteri)"
-                      maxLength={16}
-                      value={domicilioCf}
-                      onChange={e => setDomicilioCf(e.target.value.toUpperCase().trim())}
-                      onKeyDown={e => { if (e.key === 'Enter') runCercaDomicilio(); }}
-                    />
-                    <button
-                      className="btn btn-primary"
-                      type="button"
-                      onClick={runCercaDomicilio}
-                      disabled={domicilioLoading || !domicilioCf.trim()}
-                    >
-                      {domicilioLoading ? (
-                        <>
-                          <Loader2 className="icon-spin me-1" size={16} />Ricerca...
-                        </>
-                      ) : (
-                        <>
-                          <Search className="me-1" size={16} />Cerca
-                        </>
-                      )}
-                    </button>
-                  </div>
+              <div className="card shadow-sm p-4 mb-4 border-0 bg-white rounded-3">
+                <label className="form-label small fw-bold text-secondary text-uppercase tracking-wider">Codice Fiscale</label>
+                <div className="input-group input-group-sm" style={{ maxWidth: '600px' }}>
+                  <span className="input-group-text bg-light border-end-0"><Contact size={16} className="text-muted" /></span>
+                  <input
+                    type="text"
+                    className="form-control border-start-0 ps-0 fw-semibold"
+                    placeholder="Es. RSSMRA80A01H501U"
+                    maxLength={16}
+                    style={{ letterSpacing: '0.5px' }}
+                    value={domicilioCf}
+                    onChange={e => setDomicilioCf(e.target.value.toUpperCase().trim())}
+                    onKeyDown={e => { if (e.key === 'Enter') runCercaDomicilio(); }}
+                  />
+                  <button
+                    className="btn btn-primary px-4 fw-medium d-flex align-items-center gap-2"
+                    type="button"
+                    onClick={runCercaDomicilio}
+                    disabled={domicilioLoading || !domicilioCf.trim()}
+                  >
+                    {domicilioLoading ? (
+                      <>
+                        <Loader2 className="icon-spin" size={16} />Verifica in corso...
+                      </>
+                    ) : (
+                      <>
+                        <Search size={16} />Cerca
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
 
@@ -8955,105 +8957,167 @@ export function App(): React.JSX.Element {
                 const altreInfo = (anpr.infoSoggettoEnte ?? []).filter(i => i !== vitaInfo);
                 const luogoNascita = g?.luogoNascita?.comune?.nomeComune ?? g?.luogoNascita?.localita?.descrizioneStato ?? g?.luogoNascita?.localita?.descrizioneLocalita;
                 const fmtDate = (d?: string) => d ? new Date(d).toLocaleDateString('it-IT') : d;
+
                 return (
-                  <>
-                    <div className={`card shadow-sm p-4 mb-3 border ${
-                      !anpr.success ? 'border-danger' : !anpr.found ? 'border-secondary' : 'border-success'
+                  <div className="d-flex flex-column gap-3">
+                    {/* Scheda Generalità ANPR */}
+                    <div className={`card shadow-sm border-0 rounded-3 overflow-hidden ${
+                      !anpr.success ? 'border-start border-4 border-danger' : !anpr.found ? 'border-start border-4 border-secondary' : 'border-start border-4 border-success'
                     }`}>
-                      <h6 className="fw-bold mb-3 d-flex align-items-center gap-2">
-                        {!anpr.success ? <AlertCircle className="text-danger" size={16} /> :
-                         !anpr.found ? <XCircle className="text-secondary" size={16} /> :
-                         <CheckCircle2 className="text-success" size={16} />}
-                        Generalità (ANPR)
+                      <div className="card-header bg-light bg-gradient py-3 px-4 d-flex align-items-center justify-content-between border-bottom-0">
+                        <div className="d-flex align-items-center gap-2">
+                          {!anpr.success ? <AlertCircle className="text-danger" size={18} /> :
+                           !anpr.found ? <XCircle className="text-secondary" size={18} /> :
+                           <CheckCircle2 className="text-success" size={18} />}
+                          <h6 className="fw-bold mb-0 text-dark">Generalità (ANPR)</h6>
+                        </div>
                         {anpr.success && anpr.found && vitaInfo && (
-                          <span className={`badge ${vitaInfo.valore === 'S' ? 'bg-success' : vitaInfo.valore === 'N' ? 'bg-danger' : 'bg-secondary'}`}>
+                          <span className={`badge px-3 py-2 rounded-pill ${vitaInfo.valore === 'S' ? 'bg-success-subtle text-success border border-success-subtle' : vitaInfo.valore === 'N' ? 'bg-danger-subtle text-danger border border-danger-subtle' : 'bg-secondary-subtle text-secondary'}`}>
                             {vitaInfo.valore === 'S' ? 'In vita' : vitaInfo.valore === 'N' ? 'Deceduto' : 'Non specificato'}
                             {vitaInfo.valore === 'N' && vitaInfo.valoreData ? ` il ${fmtDate(vitaInfo.valoreData)}` : ''}
                           </span>
                         )}
-                      </h6>
-                      {!anpr.success && <p className="small text-danger mb-0">{anpr.message}</p>}
-                      {anpr.success && !anpr.found && <p className="small text-muted mb-0">Nessun dato trovato in ANPR</p>}
-                      {anpr.success && anpr.found && (
-                        <>
-                          <p className="fs-5 fw-bold mb-2">{g?.cognome} {g?.nome}</p>
-                          <p className="small text-muted mb-1">CF: {g?.codiceFiscale?.codFiscale}{g?.codiceFiscale?.validitaCF === '1' ? ' (validato)' : ''}</p>
-                          <p className="small text-muted mb-1">
-                            Nato il {fmtDate(g?.dataNascita)} a {luogoNascita} ({g?.sesso})
-                            {g?.soggettoAIRE === 'S' ? ' — iscritto AIRE' : ''}
-                          </p>
-                          {anpr.idANPR && <p className="small text-muted mb-1">idANPR: {anpr.idANPR}</p>}
-                          {altreInfo.map((info, i) => (
-                            <p key={i} className="small text-muted mb-0">
-                              {info.chiave}: {info.valore ?? info.valoreTesto ?? info.valoreData}
-                            </p>
-                          ))}
-                        </>
-                      )}
+                      </div>
+
+                      <div className="card-body p-4 bg-white">
+                        {!anpr.success && <div className="alert alert-danger mb-0 py-2 px-3 small">{anpr.message}</div>}
+                        {anpr.success && !anpr.found && <p className="small text-muted mb-0">Nessun dato trovato in ANPR per il Codice Fiscale specificato.</p>}
+                        {anpr.success && anpr.found && (
+                          <div className="row g-4">
+                            <div className="col-md-4">
+                              <div className="text-muted small text-uppercase fw-semibold mb-1">Nominativo</div>
+                              <div className="fs-5 fw-bold text-dark">{g?.cognome} {g?.nome}</div>
+                              {anpr.idANPR && <div className="small text-muted mt-1">ID ANPR: <code className="text-dark bg-light px-2 py-1 rounded">{anpr.idANPR}</code></div>}
+                            </div>
+
+                            <div className="col-md-4">
+                              <div className="text-muted small text-uppercase fw-semibold mb-1">Codice Fiscale</div>
+                              <div className="d-flex align-items-center gap-2">
+                                <span className="fs-6 fw-semibold font-monospace">{g?.codiceFiscale?.codFiscale}</span>
+                                {g?.codiceFiscale?.validitaCF === '1' && (
+                                  <span className="badge bg-success-subtle text-success border border-success-subtle rounded-pill">validato</span>
+                                )}
+                              </div>
+                              {g?.soggettoAIRE === 'S' && (
+                                <div className="mt-2">
+                                  <span className="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">Iscritto AIRE</span>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="col-md-4">
+                              <div className="text-muted small text-uppercase fw-semibold mb-1">Dati Anagrafici</div>
+                              <div className="small text-dark fw-medium">
+                                {g?.dataNascita ? `Nato il ${fmtDate(g.dataNascita)}` : ''} {luogoNascita ? `a ${luogoNascita}` : ''} {g?.sesso ? `(${g.sesso})` : ''}
+                              </div>
+                              {altreInfo.length > 0 && (
+                                <div className="mt-2 pt-2 border-top">
+                                  {altreInfo.map((info, i) => (
+                                    <div key={i} className="small text-muted">
+                                      <span className="fw-semibold">{info.chiave}:</span> {info.valore ?? info.valoreTesto ?? info.valoreData}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
 
+                    {/* Griglia 3 Riquardi: Residenza, INAD, App IO */}
                     <div className="row g-3">
+                      {/* Indirizzo Fisico ANPR */}
                       <div className="col-md-4">
-                        <div className={`card shadow-sm p-3 h-100 border ${
-                          !anpr.success ? 'border-danger' : !anpr.found ? 'border-secondary' : 'border-success'
+                        <div className={`card shadow-sm border-0 rounded-3 h-100 d-flex flex-column ${
+                          !anpr.success ? 'border-start border-4 border-danger' : !anpr.found ? 'border-start border-4 border-secondary' : 'border-start border-4 border-success'
                         }`}>
-                          <h6 className="fw-bold mb-2 d-flex align-items-center gap-2">
-                            {!anpr.success ? <AlertCircle className="text-danger" size={16} /> :
-                             !anpr.found ? <XCircle className="text-secondary" size={16} /> :
-                             <CheckCircle2 className="text-success" size={16} />}
-                            Indirizzo Fisico (ANPR)
-                          </h6>
-                          {!anpr.success && <p className="small text-danger mb-0">{anpr.message}</p>}
-                          {anpr.success && !anpr.found && <p className="small text-muted mb-0">Nessun dato trovato in ANPR</p>}
-                          {anpr.success && anpr.found && anpr.residenza?.[0] && (
-                            <p className="small mb-0">
-                              {anpr.residenza[0].indirizzo?.toponimo?.specie} {anpr.residenza[0].indirizzo?.toponimo?.denominazioneToponimo}
-                              {anpr.residenza[0].indirizzo?.numeroCivico?.numero ? `, ${anpr.residenza[0].indirizzo.numeroCivico.numero}${anpr.residenza[0].indirizzo.numeroCivico.lettera ?? ''}` : ''}
-                              <br />
-                              {anpr.residenza[0].indirizzo?.cap} {anpr.residenza[0].indirizzo?.comune?.nomeComune}
-                            </p>
-                          )}
-                          {anpr.success && anpr.found && !anpr.residenza?.[0] && <p className="small text-muted mb-0">Nessun indirizzo di residenza</p>}
+                          <div className="card-header bg-light bg-gradient py-3 px-3 d-flex align-items-center justify-content-between border-bottom-0">
+                            <div className="d-flex align-items-center gap-2">
+                              {!anpr.success ? <AlertCircle className="text-danger" size={16} /> :
+                               !anpr.found ? <XCircle className="text-secondary" size={16} /> :
+                               <CheckCircle2 className="text-success" size={16} />}
+                              <h6 className="fw-bold mb-0 text-dark small">Indirizzo Fisico (ANPR)</h6>
+                            </div>
+                          </div>
+                          <div className="card-body p-3 bg-white flex-grow-1">
+                            {!anpr.success && <p className="small text-danger mb-0">{anpr.message}</p>}
+                            {anpr.success && !anpr.found && <p className="small text-muted mb-0">Nessun dato trovato in ANPR</p>}
+                            {anpr.success && anpr.found && anpr.residenza?.[0] && (
+                              <div className="small">
+                                <div className="fw-bold text-dark mb-1">
+                                  {anpr.residenza[0].indirizzo?.toponimo?.specie} {anpr.residenza[0].indirizzo?.toponimo?.denominazioneToponimo}
+                                  {anpr.residenza[0].indirizzo?.numeroCivico?.numero ? `, ${anpr.residenza[0].indirizzo.numeroCivico.numero}${anpr.residenza[0].indirizzo.numeroCivico.lettera ?? ''}` : ''}
+                                </div>
+                                <div className="text-muted">
+                                  {anpr.residenza[0].indirizzo?.cap} {anpr.residenza[0].indirizzo?.comune?.nomeComune}
+                                </div>
+                              </div>
+                            )}
+                            {anpr.success && anpr.found && !anpr.residenza?.[0] && <p className="small text-muted mb-0">Nessun indirizzo di residenza registrato</p>}
+                          </div>
                         </div>
                       </div>
 
+                      {/* INAD */}
                       <div className="col-md-4">
-                        <div className={`card shadow-sm p-3 h-100 border ${
-                          !domicilioResult.inad.success ? 'border-danger' :
-                          !domicilioResult.inad.found ? 'border-secondary' : 'border-success'
+                        <div className={`card shadow-sm border-0 rounded-3 h-100 d-flex flex-column ${
+                          !domicilioResult.inad.success ? 'border-start border-4 border-danger' :
+                          !domicilioResult.inad.found ? 'border-start border-4 border-secondary' : 'border-start border-4 border-success'
                         }`}>
-                          <h6 className="fw-bold mb-2 d-flex align-items-center gap-2">
-                            {!domicilioResult.inad.success ? <AlertCircle className="text-danger" size={16} /> :
-                             !domicilioResult.inad.found ? <XCircle className="text-secondary" size={16} /> :
-                             <CheckCircle2 className="text-success" size={16} />}
-                            INAD
-                          </h6>
-                          {!domicilioResult.inad.success && <p className="small text-danger mb-0">{domicilioResult.inad.message}</p>}
-                          {domicilioResult.inad.success && !domicilioResult.inad.found && <p className="small text-muted mb-0">Nessun domicilio digitale eletto</p>}
-                          {domicilioResult.inad.success && domicilioResult.inad.found && (
-                            <ul className="small mb-0 ps-3">
-                              {(domicilioResult.inad.digitalAddress ?? []).map((a, i) => <li key={i}>{a.digitalAddress}</li>)}
-                            </ul>
-                          )}
+                          <div className="card-header bg-light bg-gradient py-3 px-3 d-flex align-items-center justify-content-between border-bottom-0">
+                            <div className="d-flex align-items-center gap-2">
+                              {!domicilioResult.inad.success ? <AlertCircle className="text-danger" size={16} /> :
+                               !domicilioResult.inad.found ? <XCircle className="text-secondary" size={16} /> :
+                               <CheckCircle2 className="text-success" size={16} />}
+                              <h6 className="fw-bold mb-0 text-dark small">INAD</h6>
+                            </div>
+                            {domicilioResult.inad.success && (
+                              <span className={`badge rounded-pill ${domicilioResult.inad.found ? 'bg-success-subtle text-success border border-success-subtle' : 'bg-secondary-subtle text-secondary'}`}>
+                                {domicilioResult.inad.found ? 'Eletto' : 'Non Eletto'}
+                              </span>
+                            )}
+                          </div>
+                          <div className="card-body p-3 bg-white flex-grow-1">
+                            {!domicilioResult.inad.success && <p className="small text-danger mb-0">{domicilioResult.inad.message}</p>}
+                            {domicilioResult.inad.success && !domicilioResult.inad.found && <p className="small text-muted mb-0">Nessun domicilio digitale eletto</p>}
+                            {domicilioResult.inad.success && domicilioResult.inad.found && (
+                              <ul className="small mb-0 ps-3">
+                                {(domicilioResult.inad.digitalAddress ?? []).map((a, i) => (
+                                  <li key={i} className="fw-medium font-monospace text-dark">{a.digitalAddress}</li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
                         </div>
                       </div>
 
+                      {/* App IO */}
                       <div className="col-md-4">
-                        <div className={`card shadow-sm p-3 h-100 border ${
-                          !domicilioResult.appIo.success ? 'border-danger' :
-                          !domicilioResult.appIo.active ? 'border-secondary' : 'border-success'
+                        <div className={`card shadow-sm border-0 rounded-3 h-100 d-flex flex-column ${
+                          !domicilioResult.appIo.success ? 'border-start border-4 border-danger' :
+                          !domicilioResult.appIo.active ? 'border-start border-4 border-secondary' : 'border-start border-4 border-success'
                         }`}>
-                          <h6 className="fw-bold mb-2 d-flex align-items-center gap-2">
-                            {!domicilioResult.appIo.success ? <AlertCircle className="text-danger" size={16} /> :
-                             !domicilioResult.appIo.active ? <XCircle className="text-secondary" size={16} /> :
-                             <CheckCircle2 className="text-success" size={16} />}
-                            App IO
-                          </h6>
-                          <p className="small text-muted mb-0">{domicilioResult.appIo.message}</p>
+                          <div className="card-header bg-light bg-gradient py-3 px-3 d-flex align-items-center justify-content-between border-bottom-0">
+                            <div className="d-flex align-items-center gap-2">
+                              {!domicilioResult.appIo.success ? <AlertCircle className="text-danger" size={16} /> :
+                               !domicilioResult.appIo.active ? <XCircle className="text-secondary" size={16} /> :
+                               <CheckCircle2 className="text-success" size={16} />}
+                              <h6 className="fw-bold mb-0 text-dark small">App IO</h6>
+                            </div>
+                            {domicilioResult.appIo.success && (
+                              <span className={`badge rounded-pill ${domicilioResult.appIo.active ? 'bg-success-subtle text-success border border-success-subtle' : 'bg-secondary-subtle text-secondary'}`}>
+                                {domicilioResult.appIo.active ? 'Iscritto' : 'Non Iscritto'}
+                              </span>
+                            )}
+                          </div>
+                          <div className="card-body p-3 bg-white flex-grow-1">
+                            <p className="small text-muted mb-0">{domicilioResult.appIo.message}</p>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </>
+                  </div>
                 );
               })()}
             </div>
