@@ -74,7 +74,16 @@ export class ProtocollazioneProcessor extends WorkerHost {
 
     try {
       const { nome, cognome } = splitFullName(recipient.fullName);
-      const buffer = await this.attachments.generatePdfBuffer(recipient, 0);
+      // Canali con allegato facoltativo (EMAIL/PEC/APP_IO) e nessun allegato
+      // configurato per questa campagna: non c'è un PDF custom da protocollare
+      // come documento principale — vedi sotto, per EMAIL/PEC il messaggio
+      // stesso (EML) diventa il documento principale, altrimenti (APP_IO) un
+      // testo semplice con oggetto/corpo. SEND/POSTAL hanno sempre un
+      // allegato obbligatorio (bloccato lato UI/backend al lancio), quindi
+      // per quei due canali `generatePdfBuffer` non fallisce mai qui.
+      const hasAttachment = resolveAttachmentsConfig(campaign.channelConfig).length > 0;
+      let buffer: Buffer;
+      let documentFilename: string;
 
       const allegati: ProtocollaAllegato[] = [];
 
@@ -116,12 +125,31 @@ export class ProtocollazioneProcessor extends WorkerHost {
           ``,
           resolvedBodyHtml,
         ].join('\r\n');
-        
-        allegati.push({
-          buffer: Buffer.from(emlContent, 'utf-8'),
-          filename: 'messaggio.eml',
-          oggetto: `Messaggio ${campaign.channelType} trasmesso`,
-        });
+
+        if (hasAttachment) {
+          buffer = await this.attachments.generatePdfBuffer(recipient, 0);
+          documentFilename = `${recipient.codiceFiscale}.pdf`;
+          allegati.push({
+            buffer: Buffer.from(emlContent, 'utf-8'),
+            filename: 'messaggio.eml',
+            oggetto: `Messaggio ${campaign.channelType} trasmesso`,
+          });
+        } else {
+          // Nessun allegato configurato: il messaggio stesso è il documento
+          // principale protocollato, non un allegato aggiuntivo.
+          buffer = Buffer.from(emlContent, 'utf-8');
+          documentFilename = `${recipient.codiceFiscale}.eml`;
+        }
+      } else if (hasAttachment) {
+        buffer = await this.attachments.generatePdfBuffer(recipient, 0);
+        documentFilename = `${recipient.codiceFiscale}.pdf`;
+      } else {
+        // APP_IO (o altro canale con allegato facoltativo) senza allegato
+        // configurato: protocolla un testo semplice con oggetto/corpo come
+        // documento principale, invece di fallire per assenza di un PDF.
+        const bodyText = (cfg['body'] as string) ?? '';
+        buffer = Buffer.from(`${subject}\n\n${bodyText}`, 'utf-8');
+        documentFilename = `${recipient.codiceFiscale}.txt`;
       }
 
       const result = await this.protocollo.protocolla({
@@ -133,7 +161,7 @@ export class ProtocollazioneProcessor extends WorkerHost {
           denominazione: recipient.fullName ?? recipient.codiceFiscale,
         },
         documentBuffer: buffer,
-        documentFilename: `${recipient.codiceFiscale}.pdf`,
+        documentFilename,
         allegati: allegati.length > 0 ? allegati : undefined,
       });
       await this.attemptRepo.update(attemptId, {

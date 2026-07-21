@@ -148,6 +148,41 @@ describe('ProtocollazioneProcessor', () => {
     expect(mockCompletion.checkAndComplete).toHaveBeenCalledWith('camp-1');
   });
 
+  it('canale EMAIL senza allegato configurato: protocolla usando l\'EML come documento, senza chiamare generatePdfBuffer', async () => {
+    const emailAttempt = makeAttempt({ channelType: 'EMAIL' });
+    emailAttempt.recipient.campaign.channelType = 'EMAIL';
+    emailAttempt.recipient.campaign.channelConfig = { subject: 'Avviso', body: 'Corpo del messaggio' };
+    mockAttemptRepo.findOne.mockResolvedValueOnce(emailAttempt);
+    mockProtocollo.protocolla.mockResolvedValueOnce({ numeroProtocollo: 789, annoProtocollo: 2026 });
+
+    await processor.process(mockJob());
+
+    expect(mockAttachments.generatePdfBuffer).not.toHaveBeenCalled();
+    const callArgs = mockProtocollo.protocolla.mock.calls[0][0];
+    expect(callArgs.documentFilename).toBe('RSSMRA85M01H501Z.eml');
+    expect(callArgs.allegati).toBeUndefined();
+    expect(mockAttemptRepo.update).toHaveBeenCalledWith('att-1', {
+      protocolNumber: 789,
+      protocolYear: 2026,
+      protocolledAt: expect.any(Date),
+    });
+  });
+
+  it('canale APP_IO senza allegato configurato: protocolla un testo semplice, senza chiamare generatePdfBuffer', async () => {
+    const appIoAttempt = makeAttempt({ channelType: 'APP_IO' });
+    appIoAttempt.recipient.campaign.channelType = 'APP_IO';
+    appIoAttempt.recipient.campaign.channelConfig = { subject: 'Avviso', body: 'Corpo del messaggio' };
+    mockAttemptRepo.findOne.mockResolvedValueOnce(appIoAttempt);
+    mockProtocollo.protocolla.mockResolvedValueOnce({ numeroProtocollo: 321, annoProtocollo: 2026 });
+
+    await processor.process(mockJob());
+
+    expect(mockAttachments.generatePdfBuffer).not.toHaveBeenCalled();
+    const callArgs = mockProtocollo.protocolla.mock.calls[0][0];
+    expect(callArgs.documentFilename).toBe('RSSMRA85M01H501Z.txt');
+    expect(callArgs.documentBuffer.toString('utf-8')).toContain('Corpo del messaggio');
+  });
+
   it('salta silenziosamente se l\'attempt non è più QUEUED (cancel() concorrente)', async () => {
     mockAttemptRepo.findOne.mockResolvedValueOnce(makeAttempt({ status: AttemptStatus.CANCELLED }));
 
