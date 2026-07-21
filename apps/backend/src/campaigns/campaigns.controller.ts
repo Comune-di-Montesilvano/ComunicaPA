@@ -657,6 +657,16 @@ export class CampaignsController {
     return this.campaignsService.getPostalStatusBreakdown(id);
   }
 
+  @Get(':id/cost')
+  getCampaignCost(@Param('id', ParseUUIDPipe) id: string) {
+    return this.campaignsService.getCampaignCost(id);
+  }
+
+  @Get(':id/cost-savings')
+  getCampaignCostSavings(@Param('id', ParseUUIDPipe) id: string) {
+    return this.campaignsService.getCampaignCostSavings(id);
+  }
+
   @Get(':id/export-postal-report-attuale.csv')
   async exportPostalReportAttuale(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response): Promise<void> {
     const report = await this.campaignsService.getPostalReportRows(id);
