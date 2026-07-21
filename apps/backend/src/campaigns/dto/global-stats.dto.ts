@@ -14,6 +14,12 @@ export interface MonthlyTrendPointDto {
   downloaded: number;
 }
 
+export interface DailyTrendPointDto {
+  date: string;
+  sent: number;
+  failed: number;
+}
+
 export interface ChannelTotalDto {
   channel: string;
   sent: number;
@@ -34,6 +40,7 @@ export interface CampaignLeaderboardEntryDto {
 export interface GlobalStatsDto {
   totals: GlobalStatsTotalsDto;
   monthlyTrend: MonthlyTrendPointDto[];
+  dailyTrend: DailyTrendPointDto[];
   channelTotals: ChannelTotalDto[];
   downloadChannelTotals: DownloadChannelTotalDto[];
   campaignLeaderboard: CampaignLeaderboardEntryDto[];

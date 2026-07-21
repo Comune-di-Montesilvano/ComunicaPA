@@ -1168,6 +1168,7 @@ describe('CampaignsService', () => {
         .fn()
         .mockReturnValueOnce(makeQb({ rawOne: { totalRecipients: '100', totalSent: '90', totalFailed: '10' } }))
         .mockReturnValueOnce(makeQb({ rawMany: [{ month: '2026-06', sent: '50' }, { month: '2026-07', sent: '40' }] }))
+        .mockReturnValueOnce(makeQb({ rawMany: [{ date: '2026-07-05', sent: '12', failed: '2' }] }))
         .mockReturnValueOnce(makeQb({ rawMany: [{ channel: 'EMAIL', sent: '90' }] }))
         .mockReturnValueOnce(makeQb({ rawMany: [{ campaignId: 'c1', campaignName: 'Tari', totalRecipients: '100', downloadedCount: '60' }] }));
 
@@ -1201,6 +1202,9 @@ describe('CampaignsService', () => {
         { month: '2026-06', sent: 50, downloaded: 30 },
         { month: '2026-07', sent: 40, downloaded: 0 },
       ]);
+      expect(result.dailyTrend).toEqual([
+        { date: '2026-07-05', sent: 12, failed: 2 },
+      ]);
       expect(result.channelTotals).toEqual([{ channel: 'EMAIL', sent: 90 }]);
       expect(result.downloadChannelTotals).toEqual([{ channel: 'EMAIL', count: 55 }]);
       expect(result.campaignLeaderboard).toEqual([
@@ -1213,6 +1217,7 @@ describe('CampaignsService', () => {
       mockCampaignRepo.createQueryBuilder = jest
         .fn()
         .mockReturnValueOnce(makeQb({ rawOne: undefined }))
+        .mockReturnValueOnce(makeQb({ rawMany: [] }))
         .mockReturnValueOnce(makeQb({ rawMany: [] }))
         .mockReturnValueOnce(makeQb({ rawMany: [] }))
         .mockReturnValueOnce(makeQb({ rawMany: [] }));
@@ -1237,10 +1242,11 @@ describe('CampaignsService', () => {
         totalSavingCents: 0,
       });
       expect(result.monthlyTrend).toEqual([]);
+      expect(result.dailyTrend).toEqual([]);
       expect(result.campaignLeaderboard).toEqual([]);
     });
 
-    it('esclude sempre le campagne isTest=true da ognuna delle 10 query aggregate', async () => {
+    it('esclude sempre le campagne isTest=true da ognuna delle 11 query aggregate', async () => {
       const createdQbs: any[] = [];
       const trackedMakeQb = (terminal: { rawOne?: any; rawMany?: any[]; count?: number }) => {
         const qb = makeQb(terminal);
@@ -1252,6 +1258,7 @@ describe('CampaignsService', () => {
         .fn()
         .mockImplementationOnce(() => trackedMakeQb({ rawOne: { totalRecipients: '0', totalSent: '0', totalFailed: '0' } })) // totalsRow
         .mockImplementationOnce(() => trackedMakeQb({ rawMany: [] })) // sentTrendRows
+        .mockImplementationOnce(() => trackedMakeQb({ rawMany: [] })) // dailyTrendRows
         .mockImplementationOnce(() => trackedMakeQb({ rawMany: [] })) // channelRows
         .mockImplementationOnce(() => trackedMakeQb({ rawMany: [] })); // leaderboardRows
 
@@ -1272,11 +1279,12 @@ describe('CampaignsService', () => {
 
       await service.getGlobalStats();
 
-      expect(createdQbs).toHaveLength(10);
+      expect(createdQbs).toHaveLength(11);
       const [
         totalsRowQb,
         totalDownloadedQb,
         sentTrendQb,
+        dailyTrendQb,
         downloadedTrendQb,
         channelQb,
         downloadChannelQb,
@@ -1290,6 +1298,7 @@ describe('CampaignsService', () => {
         ['totalsRow', totalsRowQb],
         ['totalDownloaded', totalDownloadedQb],
         ['sentTrendRows', sentTrendQb],
+        ['dailyTrendRows', dailyTrendQb],
         ['downloadedTrendRows', downloadedTrendQb],
         ['channelRows', channelQb],
         ['downloadChannelRows', downloadChannelQb],

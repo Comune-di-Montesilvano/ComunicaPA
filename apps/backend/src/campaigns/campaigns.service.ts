@@ -1178,6 +1178,17 @@ export class CampaignsService {
       .orderBy("date_trunc('month', c.createdAt)", 'ASC')
       .getRawMany<{ month: string; sent: string }>();
 
+    const dailyTrendRows = await this.campaignRepo
+      .createQueryBuilder('c')
+      .select("to_char(date_trunc('day', c.createdAt), 'YYYY-MM-DD')", 'date')
+      .addSelect('COALESCE(SUM(c.sentCount), 0)', 'sent')
+      .addSelect('COALESCE(SUM(c.failedCount), 0)', 'failed')
+      .where(range.sql, range.params)
+      .andWhere('c.isTest = false')
+      .groupBy("date_trunc('day', c.createdAt)")
+      .orderBy("date_trunc('day', c.createdAt)", 'ASC')
+      .getRawMany<{ date: string; sent: string; failed: string }>();
+
     const downloadedTrendRows = await this.recipientRepo
       .createQueryBuilder('r')
       .innerJoin('r.campaign', 'c')
@@ -1276,6 +1287,7 @@ export class CampaignsService {
         totalSavingCents,
       },
       monthlyTrend: mergeMonthlyTrend(sentTrendRows, downloadedTrendRows),
+      dailyTrend: dailyTrendRows.map((r) => ({ date: r.date, sent: Number(r.sent), failed: Number(r.failed) })),
       channelTotals: channelRows.map((r) => ({ channel: r.channel, sent: Number(r.sent) })),
       downloadChannelTotals: downloadChannelRows.map((r) => ({ channel: r.channel, count: Number(r.count) })),
       campaignLeaderboard: leaderboardRows
