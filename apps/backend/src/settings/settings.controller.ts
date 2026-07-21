@@ -266,7 +266,13 @@ export class SettingsController {
     return this.testServicePurposeConnection(env, 'inipec');
   }
 
-  private async testServicePurposeConnection(env: string, service: 'send' | 'inad' | 'inipec') {
+  @Post('anpr/:env/test-connection')
+  @HttpCode(HttpStatus.OK)
+  async testAnprConnection(@Param('env') env: string) {
+    return this.testServicePurposeConnection(env, 'anpr');
+  }
+
+  private async testServicePurposeConnection(env: string, service: 'send' | 'inad' | 'inipec' | 'anpr') {
     if (env !== 'test' && env !== 'prod') {
       throw new BadRequestException('Ambiente non valido: usare "test" o "prod"');
     }
