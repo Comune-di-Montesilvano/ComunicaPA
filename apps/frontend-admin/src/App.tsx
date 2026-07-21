@@ -830,6 +830,16 @@ export function App(): React.JSX.Element {
   const [sendLegalFactsLoading, setSendLegalFactsLoading] = useState(false);
   const [sendLegalFactRetry, setSendLegalFactRetry] = useState<Record<string, { retryAfterSeconds?: number; error?: string }>>({});
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && (notifDetail || notifDetailLoading)) {
+        setNotifDetail(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [notifDetail, notifDetailLoading]);
+
   const [verificaCf, setVerificaCf] = useState('');
   const [verificaLoading, setVerificaLoading] = useState(false);
   const [verificaResult, setVerificaResult] = useState<{ success: boolean; active: boolean; message: string } | null>(null);
@@ -7882,7 +7892,16 @@ export function App(): React.JSX.Element {
           )}
 
           {(notifDetailLoading || notifDetail) && (
-            <div className="modal fade show d-block" style={{ background: 'rgba(0,0,0,0.5)' }} tabIndex={-1}>
+            <div
+              className="modal fade show d-block"
+              style={{ background: 'rgba(0,0,0,0.5)' }}
+              tabIndex={-1}
+              onClick={(e) => {
+                if (e.target === e.currentTarget) {
+                  setNotifDetail(null);
+                }
+              }}
+            >
               <div className="modal-dialog modal-lg modal-dialog-scrollable">
                 <div className="modal-content">
                   <div className="modal-header align-items-center">
