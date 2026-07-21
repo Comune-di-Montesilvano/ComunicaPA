@@ -96,6 +96,34 @@ export class PdndAuthService {
     return data.access_token;
   }
 
+  /**
+   * Firma JWS generica RS256 riusata sia per Agid-JWT-Signature (pattern
+   * INTEGRITY_REST_02) sia per Agid-JWT-TrackingEvidence (pattern
+   * AUDIT_REST_02) — stessa chiave/kid del client PDND, claim extra
+   * (signed_headers, userID/userLocation/LoA...) passati dal chiamante.
+   */
+  async signAgidJwt(env: PdndEnvironment, aud: string, extraClaims: Record<string, unknown>): Promise<string> {
+    const prefix = `pdnd.${env}`;
+    const [clientId, kid, privateKey] = await Promise.all([
+      this.settings.get<string>(`${prefix}.clientId` as SettingKey),
+      this.settings.get<string>(`${prefix}.kid` as SettingKey),
+      this.settings.get<string>(`${prefix}.privateKey` as SettingKey),
+    ]);
+
+    const missing = Object.entries({ clientId, kid, privateKey })
+      .filter(([, v]) => !v)
+      .map(([k]) => k);
+    if (missing.length > 0) {
+      throw new Error(`Configurazione PDND (${env}) incompleta: mancano ${missing.join(', ')}`);
+    }
+
+    return jwt.sign(
+      { iss: clientId, sub: clientId, aud, jti: randomUUID(), ...extraClaims },
+      privateKey!,
+      { algorithm: 'RS256', keyid: kid!, expiresIn: 60, notBefore: 0 },
+    );
+  }
+
   clearCache(env?: PdndEnvironment): void {
     if (env) {
       for (const key of this.cache.keys()) {

@@ -97,4 +97,29 @@ describe('PdndAuthService', () => {
     });
     await expect(service.getVoucher('test', 'purpose-456', true)).rejects.toThrow(/Richiesta voucher PDND fallita: HTTP 400/);
   });
+
+  it('signAgidJwt firma un JWS RS256 con iss/sub/aud/jti/kid ed extraClaims', async () => {
+    settingsValues['pdnd.test.clientId'] = 'client-123';
+
+    const token = await service.signAgidJwt('test', 'https://api.esempio.it/rest/qualcosa', {
+      signed_headers: [{ digest: 'SHA-256=abc' }],
+    });
+
+    const decoded = jwt.verify(token, publicKey, { algorithms: ['RS256'] }) as jwt.JwtPayload & {
+      signed_headers: Array<{ digest: string }>;
+    };
+    expect(decoded.iss).toBe('client-123');
+    expect(decoded.sub).toBe('client-123');
+    expect(decoded.aud).toBe('https://api.esempio.it/rest/qualcosa');
+    expect(decoded.jti).toBeDefined();
+    expect(decoded.signed_headers).toEqual([{ digest: 'SHA-256=abc' }]);
+    expect(jwt.decode(token, { complete: true })?.header.kid).toBe('kid-abc');
+    expect(jwt.decode(token, { complete: true })?.header.alg).toBe('RS256');
+  });
+
+  it('signAgidJwt lancia errore leggibile se la configurazione PDND è incompleta', async () => {
+    await expect(service.signAgidJwt('prod', 'https://api.esempio.it/x', {})).rejects.toThrow(
+      /Configurazione PDND \(prod\) incompleta/,
+    );
+  });
 });
