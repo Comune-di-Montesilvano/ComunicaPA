@@ -157,6 +157,15 @@ CMD ["node_modules/.bin/nest", "start", "--watch"]
 
 Il pacchetto `@comunicapa/shared-types` si importa con `workspace:*` — non pubblicato su npm, risolto internamente da pnpm.
 
+## Label/loghi/badge canali — sempre dal registro centralizzato
+
+Label, colore, badge, logo (Data URI SVG) e icona di ogni canale/tipologia (EMAIL, PEC, APP_IO, SEND, POSTAL, PROTOCOLLAZIONE, INAD...) sono definiti **una sola volta per frontend**, mai duplicati in un punto isolato del JSX:
+
+- `frontend-admin`: `apps/frontend-admin/src/data/channels.ts` (`CHANNELS_REGISTRY`, `EMBEDDED_LOGOS`, `getChannelMeta()`, `channelLabel()`, `ENGINE_LABELS`). Usare sempre `getChannelMeta(channel)` o `EMBEDDED_LOGOS.<CANALE>` — mai un'altra label/colore/logo hardcoded per un canale già presente lì (nav sidebar, badge, intestazioni pagina, select, tabelle). Stesso principio per gli stati condivisi (`STATUS_META`, `SEND_STATUS_META`, `POSTAL_STATUS_META` in `App.tsx`).
+- `frontend-citizen`: `CHANNEL_META`/`EMBEDDED_LOGOS` in cima a `App.tsx` (copia indipendente, non condivisa con l'admin — due bundle separati, ognuno con la propria unica fonte di verità). Usare sempre `CHANNEL_META[canale]`/`ChannelBadge`, mai un'label/logo hardcoded altrove nel file.
+
+Per aggiungere un canale o cambiarne label/colore/logo, modificare solo il registro di quel frontend: si propaga ovunque senza dover cercare copie sparse (vedi commit `e4dc41e` che ha eliminato 3 copie duplicate della stessa mappa in admin). Se un canale esiste in entrambi i frontend, aggiornare entrambi i registri — non sono sincronizzati automaticamente.
+
 ## CSS frontend — gotcha
 
 `frontend-citizen` NON carica Bootstrap: le utility (`d-grid`, `w-100`, `text-center`...) sono no-op. Usare i css custom (`tokens.css`, `fo-components.css`, design system `--ms-*`/`--bi-*`) o stili espliciti. L'admin ha le sue utility custom in `app.css`/`backoffice-shell.css`.

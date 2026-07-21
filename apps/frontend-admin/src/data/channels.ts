@@ -102,15 +102,6 @@ export const CHANNELS_REGISTRY: Record<string, ChannelMetaConfig> = {
     bgLight: '#EBF5FF',
     icon: Globe,
   },
-  PORTALE_CITTADINO: {
-    key: 'PORTALE_CITTADINO',
-    label: 'Portale Cittadino',
-    shortLabel: 'Portale',
-    badge: 'bg-primary text-white',
-    color: '#0066CC',
-    bgLight: '#EBF5FF',
-    icon: Globe,
-  },
   UNKNOWN: {
     key: 'UNKNOWN',
     label: 'Sconosciuto',

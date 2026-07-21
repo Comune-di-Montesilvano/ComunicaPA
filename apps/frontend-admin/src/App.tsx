@@ -891,7 +891,7 @@ export function App(): React.JSX.Element {
   // ── Verifica INAD (duplicato di Verifica App IO, ma su domicilio digitale INAD) ──
   const [verificaInadCf, setVerificaInadCf] = useState('');
   const [verificaInadLoading, setVerificaInadLoading] = useState(false);
-  const [verificaInadResult, setVerificaInadResult] = useState<{ success: boolean; found: boolean; message: string } | null>(null);
+  const [verificaInadResult, setVerificaInadResult] = useState<{ success: boolean; found: boolean; message: string; digitalAddress?: { digitalAddress: string }[] } | null>(null);
   const [verificaInadTab, setVerificaInadTab] = useState<'singola' | 'massiva'>('singola');
   const [verificaInadBulkFile, setVerificaInadBulkFile] = useState<File | null>(null);
   const [verificaInadBulkHasHeaders, setVerificaInadBulkHasHeaders] = useState(true);
@@ -5498,7 +5498,7 @@ export function App(): React.JSX.Element {
             href="#"
             onClick={(e) => { e.preventDefault(); setView('verifica-inad'); setVerificaInadCf(''); setVerificaInadResult(null); }}
           >
-            <Contact />
+            <img src={EMBEDDED_LOGOS.INAD} alt="" style={{ width: 20, height: 20, objectFit: 'contain' }} />
             <span>Verifica INAD</span>
           </a>
           <a
@@ -8307,6 +8307,33 @@ export function App(): React.JSX.Element {
                       </div>
                     </div>
                   </div>
+
+                  <div className="row g-3 mt-1">
+                    <div className="col-md-4">
+                      <div className="card shadow-sm h-100">
+                        <div className="card-header bg-white py-3 border-bottom">
+                          <h3 className="h6 mb-0 fw-bold text-dark"><Download className="me-2 text-primary" size={16} />Download per Canale</h3>
+                        </div>
+                        <div className="card-body">
+                          {globalStats.downloadChannelTotals.length === 0 ? (
+                            <p className="small text-muted mb-0">Nessun download nel periodo selezionato.</p>
+                          ) : (
+                            <ul className="list-unstyled mb-0">
+                              {[...globalStats.downloadChannelTotals].sort((a, b) => b.count - a.count).map((row) => {
+                                const meta = getChannelMeta(row.channel);
+                                return (
+                                  <li key={row.channel} className="d-flex justify-content-between align-items-center mb-2">
+                                    <span className={`badge ${meta.badge}`}>{meta.label}</span>
+                                    <span className="fw-bold">{row.count}</span>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </>
               )}
             </div>
@@ -8913,6 +8940,13 @@ export function App(): React.JSX.Element {
                                'Domicilio digitale trovato'}
                             </h6>
                             <p className="small text-muted mb-0">{verificaInadResult.message}</p>
+                            {verificaInadResult.found && verificaInadResult.digitalAddress && verificaInadResult.digitalAddress.length > 0 && (
+                              <ul className="small mb-0 mt-2 ps-3">
+                                {verificaInadResult.digitalAddress.map((a, idx) => (
+                                  <li key={idx}><strong>{a.digitalAddress}</strong></li>
+                                ))}
+                              </ul>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -8924,7 +8958,7 @@ export function App(): React.JSX.Element {
               {verificaInadTab === 'massiva' && (
                 <div className="card shadow-sm p-4 mb-4">
                   <p className="small text-muted mb-3">
-                    Carica un CSV con un elenco di codici fiscali: la verifica gira in background su INAD (batch fino a 1000 CF, 5-10 minuti per elaborazione) e produce due CSV scaricabili, con le stesse colonne del file originale — destinatari con domicilio digitale trovato e tutti gli altri.
+                    Carica un CSV con un elenco di codici fiscali: la verifica gira in background su INAD (batch fino a 1000 CF, 5-10 minuti per elaborazione) e produce due CSV scaricabili, con le stesse colonne del file originale — destinatari con domicilio digitale trovato (con colonna aggiuntiva "domicilio_digitale_inad") e tutti gli altri.
                   </p>
 
                   {!verificaInadBulkJobId && (

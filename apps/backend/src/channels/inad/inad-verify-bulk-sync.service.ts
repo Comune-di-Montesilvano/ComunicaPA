@@ -44,18 +44,28 @@ export class InadVerifyBulkSyncService {
           continue;
         }
 
-        const foundCfs = new Set<string>();
+        const foundAddresses = new Map<string, string>();
         for (const batch of batches) {
           const items = await this.inadService.getBulkResult(batch.id);
-          items.forEach((item) => foundCfs.add(item.codiceFiscale.toUpperCase()));
+          items.forEach((item) => {
+            const addresses = (item.digitalAddress ?? []).map((a) => a.digitalAddress).join('; ');
+            foundAddresses.set(item.codiceFiscale.toUpperCase(), addresses);
+          });
         }
 
         const parsed = parseCsvContent(job.sourceCsv, job.hasHeaders);
+        const ADDRESS_COLUMN = 'domicilio_digitale_inad';
+        const foundHeaders = [...parsed.headers, ADDRESS_COLUMN];
         const foundRows: Record<string, string>[] = [];
         const notFoundRows: Record<string, string>[] = [];
         for (const row of parsed.rows) {
           const cf = (row[job.cfColumn] || '').trim().toUpperCase();
-          (foundCfs.has(cf) ? foundRows : notFoundRows).push(row);
+          const address = foundAddresses.get(cf);
+          if (address !== undefined) {
+            foundRows.push({ ...row, [ADDRESS_COLUMN]: address });
+          } else {
+            notFoundRows.push(row);
+          }
         }
 
         await this.jobRepo.update(job.id, {
@@ -63,7 +73,7 @@ export class InadVerifyBulkSyncService {
           batches,
           foundCount: foundRows.length,
           notFoundCount: notFoundRows.length,
-          resultFoundCsv: buildCsvContent(parsed.headers, foundRows),
+          resultFoundCsv: buildCsvContent(foundHeaders, foundRows),
           resultNotFoundCsv: buildCsvContent(parsed.headers, notFoundRows),
           completedAt: new Date(),
         });
