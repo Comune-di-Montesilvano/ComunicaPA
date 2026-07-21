@@ -84,7 +84,7 @@ describe('PostalStrategy', () => {
   });
 
   it('send() invia via GlobalCom e ritorna messageId=IDPRO', async () => {
-    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO123', stato: 'Accettato' });
+    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO123', stato: 'Accettato' } as any);
 
     const result = await strategy.send(baseRecipient as never, baseCampaign() as never, undefined, 'attempt-uuid-1', 0);
 
@@ -122,7 +122,7 @@ describe('PostalStrategy', () => {
   });
 
   it('send() lancia se GlobalCom risponde Stato=Errore', async () => {
-    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO999', stato: 'Errore', codiceErrore: 'E01', descrizione: 'CAP non valido' });
+    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO999', stato: 'Errore', codiceErrore: 'E01', descrizione: 'CAP non valido' } as any);
 
     await expect(
       strategy.send(baseRecipient as never, baseCampaign() as never, undefined, 'attempt-uuid-3', 0),
@@ -130,7 +130,7 @@ describe('PostalStrategy', () => {
   });
 
   it('send() al primo tentativo (attemptsMade=0) NON cerca dedup su GlobalCom', async () => {
-    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' });
+    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' } as any);
 
     await strategy.send(baseRecipient as never, baseCampaign() as never, undefined, 'attempt-uuid-4', 0);
 
@@ -138,7 +138,7 @@ describe('PostalStrategy', () => {
   });
 
   it('send() su retry (attemptsMade>0) trova un invio già presente e non reinvia', async () => {
-    globalCom.cercaPerTesto.mockResolvedValue([{ idPro: 'IDPRO-ESISTENTE', stato: 'Consegnato' }]);
+    globalCom.cercaPerTesto.mockResolvedValue([{ idPro: 'IDPRO-ESISTENTE', stato: 'Consegnato' } as any]);
 
     const result = await strategy.send(baseRecipient as never, baseCampaign() as never, undefined, 'attempt-uuid-5', 1);
 
@@ -148,7 +148,7 @@ describe('PostalStrategy', () => {
   });
 
   it('send() su retry manuale (attemptsMade=0 ma recipient.attemptNumber>1) cerca comunque dedup su GlobalCom', async () => {
-    globalCom.cercaPerTesto.mockResolvedValue([{ idPro: 'IDPRO-ESISTENTE', stato: 'Consegnato' }]);
+    globalCom.cercaPerTesto.mockResolvedValue([{ idPro: 'IDPRO-ESISTENTE', stato: 'Consegnato' } as any]);
     const recipienteRetryManuale = { ...baseRecipient, attemptNumber: 2 };
 
     const result = await strategy.send(recipienteRetryManuale as never, baseCampaign() as never, undefined, 'attempt-uuid-manual-retry', 0);
@@ -159,7 +159,7 @@ describe('PostalStrategy', () => {
   });
 
   it('send() al primo attempt in assoluto (attemptsMade=0, attemptNumber assente) NON cerca dedup su GlobalCom', async () => {
-    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' });
+    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' } as any);
 
     await strategy.send(baseRecipient as never, baseCampaign() as never, undefined, 'attempt-uuid-first', 0);
 
@@ -167,8 +167,8 @@ describe('PostalStrategy', () => {
   });
 
   it('send() su retry con solo esiti Errore/Eliminato precedenti reinvia normalmente', async () => {
-    globalCom.cercaPerTesto.mockResolvedValue([{ idPro: 'IDPRO-VECCHIO', stato: 'Errore' }]);
-    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO-NUOVO', stato: 'Accettato' });
+    globalCom.cercaPerTesto.mockResolvedValue([{ idPro: 'IDPRO-VECCHIO', stato: 'Errore' } as any]);
+    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO-NUOVO', stato: 'Accettato' } as any);
 
     const result = await strategy.send(baseRecipient as never, baseCampaign() as never, undefined, 'attempt-uuid-6', 1);
 
@@ -180,7 +180,7 @@ describe('PostalStrategy', () => {
     providers.getActive.mockResolvedValue(baseProvider({
       mittente: { denominazione1: 'Comune di Montesilvano', indirizzo1: 'Via Roma 1', cap: '65016', citta: 'Montesilvano', provincia: 'PE' },
     }));
-    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' });
+    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' } as any);
 
     await strategy.send(baseRecipient as never, baseCampaign() as never, undefined, 'attempt-uuid-7', 0);
 
@@ -191,7 +191,7 @@ describe('PostalStrategy', () => {
   });
 
   it('send() passa UserData1 da userDataColumn quando configurato', async () => {
-    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' });
+    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' } as any);
     const recipientConCodice = { ...baseRecipient, extraData: { ...baseRecipient.extraData, numero_avviso: 'AV-2026-001' } };
 
     await strategy.send(
@@ -207,7 +207,7 @@ describe('PostalStrategy', () => {
   });
 
   it('send() passa Protocollo se protocollazione già avvenuta', async () => {
-    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' });
+    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' } as any);
     const recipientConProtocollo = { ...baseRecipient, protocolNumber: '42/2026' };
 
     await strategy.send(recipientConProtocollo as never, baseCampaign() as never, undefined, 'attempt-uuid-9', 0);
@@ -222,7 +222,7 @@ describe('PostalStrategy', () => {
     providers.getActive.mockResolvedValue(baseProvider({
       contratti: [{ codiceContratto: '40009679559', descrizione: 'Racc. Market 4', tipologia: 'RaccomandataMarket' }],
     }));
-    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' });
+    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' } as any);
 
     await strategy.send(
       baseRecipient as never,
@@ -240,7 +240,7 @@ describe('PostalStrategy', () => {
     providers.getActive.mockResolvedValue(baseProvider({
       contratti: [{ codiceContratto: 'AUTO-123', descrizione: 'Auto', tipologia: 'RaccomandataMarket' }],
     }));
-    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' });
+    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' } as any);
 
     await strategy.send(
       baseRecipient as never,
