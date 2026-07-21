@@ -6,7 +6,8 @@ import { NotificationAttempt } from '../../entities/notification-attempt.entity'
 import { AppSettingsService } from '../../settings/app-settings.service';
 import type { SettingKey } from '../../settings/settings.registry';
 import { PdndAuthService } from '../../pdnd/pdnd-auth.service';
-import { extractSendStatusHistory, extractSendDigitalDomicile } from './send-status-history.util';
+import { extractSendStatusHistory, extractSendDigitalDomicile, extractSendAnalogCost } from './send-status-history.util';
+import { SendBaseFeeService } from './send-base-fee.service';
 
 const BATCH_SIZE = 200;
 const TERMINAL_STATUSES = ['VIEWED', 'EFFECTIVE_DATE', 'UNREACHABLE', 'CANCELLED', 'RETURNED_TO_SENDER', 'REFUSED'];
@@ -20,6 +21,7 @@ export class SendStatusSyncService {
     private readonly attemptRepo: Repository<NotificationAttempt>,
     private readonly settings: AppSettingsService,
     private readonly pdndAuth: PdndAuthService,
+    private readonly baseFee: SendBaseFeeService,
   ) {}
 
   @Cron('*/5 * * * *')
@@ -32,9 +34,6 @@ export class SendStatusSyncService {
     const env = await this.settings.get<string>('send.environment');
     const envKey = env === 'produzione' ? 'prod' : 'test';
     const baseUrl = await this.settings.get<string>(`send.${envKey}.baseUrl` as SettingKey);
-    // PN richiede ENTRAMBI gli header su ogni chiamata: x-api-key (portale
-    // self-care PN) e Authorization: Bearer <voucher PDND> — confermato dalla
-    // documentazione ufficiale developer.pagopa.it (esempio curl verbatim).
     const apiKey = await this.settings.get<string>(`send.${envKey}.apiKey` as SettingKey);
     const purposeId = await this.settings.get<string>(`send.${envKey}.purposeId` as SettingKey);
     return { envKey, baseUrl, apiKey, purposeId };
@@ -47,9 +46,6 @@ export class SendStatusSyncService {
       .where('attempt.channel_type = :ch', { ch: 'SEND' })
       .andWhere('attempt.iun IS NULL')
       .andWhere("attempt.response_payload ->> 'notificationRequestId' IS NOT NULL")
-      // Un attempt REFUSED non avrà mai un IUN: senza questa esclusione resta
-      // candidato per sempre ad ogni run del cron, e con BATCH_SIZE=200 senza
-      // ORDER BY può saturare il batch a scapito di attempt genuinamente nuovi.
       .andWhere("(attempt.send_status IS NULL OR attempt.send_status <> :refused)", { refused: 'REFUSED' })
       .orderBy('attempt.created_at', 'ASC')
       .take(BATCH_SIZE)
@@ -61,11 +57,6 @@ export class SendStatusSyncService {
     for (const attempt of attempts) {
       const requestId = (attempt.responsePayload as Record<string, unknown>)['notificationRequestId'] as string;
       try {
-        // Query param si chiama notificationRequestId, NON requestId (schema
-        // GET /delivery/v2.6/requests, components.parameters.notificationRequestId)
-        // — con il nome sbagliato PN risponde PN_GENERIC_INVALIDPARAMETER_REQUIRED
-        // su paProtocolNumber (nessuno dei parametri riconosciuti risultava
-        // valorizzato, quindi cade sul fallback obbligatorio).
         const res = await fetch(`${baseUrl}/delivery/v2.6/requests?notificationRequestId=${encodeURIComponent(requestId)}`, {
           headers: { 'x-api-key': apiKey, Authorization: `Bearer ${voucher}` },
         });
@@ -98,7 +89,7 @@ export class SendStatusSyncService {
       .createQueryBuilder('attempt')
       .where('attempt.channel_type = :ch', { ch: 'SEND' })
       .andWhere('attempt.iun IS NOT NULL')
-      .andWhere('(attempt.send_status IS NULL OR attempt.send_status NOT IN (:...terminal))', { terminal: TERMINAL_STATUSES })
+      .andWhere('((attempt.send_status IS NULL OR attempt.send_status NOT IN (:...terminal)) OR attempt.cost_cents IS NULL)', { terminal: TERMINAL_STATUSES })
       .orderBy('attempt.created_at', 'ASC')
       .take(BATCH_SIZE)
       .getMany();
@@ -117,13 +108,26 @@ export class SendStatusSyncService {
           continue;
         }
         const data = JSON.parse(text) as { notificationStatus: string };
+
+        let changed = false;
         if (data.notificationStatus && data.notificationStatus !== attempt.sendStatus) {
           attempt.sendStatus = data.notificationStatus;
           attempt.sendStatusUpdatedAt = new Date();
           attempt.sendStatusHistory = extractSendStatusHistory(data);
           attempt.sendDigitalDomicile = extractSendDigitalDomicile(data);
-          await this.attemptRepo.save(attempt);
+          changed = true;
         }
+
+        if (attempt.costCents === null) {
+          const analog = extractSendAnalogCost(data);
+          const baseFeeCents = await this.baseFee.resolve(envKey, baseUrl, apiKey, voucher, null, null);
+          attempt.costCents = baseFeeCents + analog.analogCostCents;
+          attempt.costCalculatedAt = new Date();
+          attempt.costBreakdown = { baseFeeCents, analogEvents: analog.events };
+          changed = true;
+        }
+
+        if (changed) await this.attemptRepo.save(attempt);
       } catch (err: any) {
         this.logger.warn(`Errore aggiornamento stato SEND IUN ${attempt.iun}: ${err.message}`);
       }

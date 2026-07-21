@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { SendStatusSyncService } from './send-status-sync.service';
+import { SendBaseFeeService } from './send-base-fee.service';
 import { AppSettingsService } from '../../settings/app-settings.service';
 import { PdndAuthService } from '../../pdnd/pdnd-auth.service';
 import { NotificationAttempt } from '../../entities/notification-attempt.entity';
@@ -16,6 +17,7 @@ const settingsValues: Record<string, unknown> = {
 };
 const mockSettings = { get: jest.fn(async (key: string) => settingsValues[key]) };
 const mockPdndAuth = { getVoucher: jest.fn(async () => 'voucher-abc') };
+const mockSendBaseFee = { resolve: jest.fn(async () => 100) };
 
 function makeQueryBuilder(results: any[]) {
   const qb: any = {
@@ -42,6 +44,7 @@ describe('SendStatusSyncService', () => {
         { provide: getRepositoryToken(NotificationAttempt), useValue: mockRepo },
         { provide: AppSettingsService, useValue: mockSettings },
         { provide: PdndAuthService, useValue: mockPdndAuth },
+        { provide: SendBaseFeeService, useValue: mockSendBaseFee },
       ],
     }).compile();
 
@@ -73,9 +76,6 @@ describe('SendStatusSyncService', () => {
 
     await service.resolveMissingIun();
 
-    // Deve escludere esplicitamente send_status = REFUSED, altrimenti un attempt
-    // rifiutato da PN (che non avrà mai un IUN) resta candidato in eterno e può
-    // saturare il batch di 200 a scapito di attempt genuinamente nuovi.
     const excludesRefused = qb.andWhere.mock.calls.some(([sql, params]: [string, unknown]) => {
       const sqlHasRefused = /send_status/i.test(sql) && /refused/i.test(sql);
       const paramsHaveRefused = params && JSON.stringify(params).toUpperCase().includes('REFUSED');
@@ -113,7 +113,7 @@ describe('SendStatusSyncService', () => {
   });
 
   it('updateStatuses: aggiorna sendStatus, storico e domicilio digitale da GET notifications/sent/{iun}', async () => {
-    const attempt: any = { id: 'a1', iun: 'IUN-123', sendStatus: 'ACCEPTED' };
+    const attempt: any = { id: 'a1', iun: 'IUN-123', sendStatus: 'ACCEPTED', costCents: 100 };
     const qb = makeQueryBuilder([attempt]);
     mockRepo.createQueryBuilder.mockReturnValue(qb);
     mockFetch.mockResolvedValue({
@@ -146,13 +146,45 @@ describe('SendStatusSyncService', () => {
     expect(qb.orderBy).toHaveBeenCalledWith('attempt.created_at', 'ASC');
   });
 
-  it('updateStatuses: non salva se lo stato non è cambiato', async () => {
-    const attempt: any = { id: 'a1', iun: 'IUN-123', sendStatus: 'DELIVERED' };
-    mockRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
+  it('updateStatuses: calcola e salva cost_cents (base fee + analogico) da timeline PN', async () => {
+    const attempt: any = { id: 'a1', iun: 'IUN-123', sendStatus: 'ACCEPTED', costCents: null };
+    const qb = makeQueryBuilder([attempt]);
+    mockRepo.createQueryBuilder.mockReturnValue(qb);
     mockFetch.mockResolvedValue({
       ok: true,
-      text: () => Promise.resolve(JSON.stringify({ notificationStatus: 'DELIVERED' })),
+      text: () => Promise.resolve(JSON.stringify({
+        notificationStatus: 'DELIVERED',
+        notificationStatusHistory: [{ status: 'DELIVERED', activeFrom: '2026-01-12T09:00:00Z' }],
+        timeline: [
+          { category: 'SEND_ANALOG_DOMICILE', details: { productType: 'AR', analogCost: 970, envelopeWeight: 20, numberOfPages: 2 } },
+        ],
+      })),
     });
+
+    await service.updateStatuses();
+
+    expect(attempt.costCents).toBe(1070); // 100 (fallback base fee mockato) + 970
+    expect(attempt.costBreakdown).toEqual({
+      baseFeeCents: 100,
+      analogEvents: [{ productType: 'AR', analogCostCents: 970, envelopeWeight: 20, numberOfPages: 2 }],
+    });
+    expect(mockRepo.save).toHaveBeenCalledWith(attempt);
+  });
+
+  it('updateStatuses: include nella query gli attempt terminali senza costo ancora calcolato', async () => {
+    const qb = makeQueryBuilder([]);
+    mockRepo.createQueryBuilder.mockReturnValue(qb);
+
+    await service.updateStatuses();
+
+    const includesCostNull = qb.andWhere.mock.calls.some(([sql]: [string]) => /cost_cents/i.test(sql));
+    expect(includesCostNull).toBe(true);
+  });
+
+  it('updateStatuses: non ricalcola il costo se già presente e lo stato non cambia', async () => {
+    const attempt: any = { id: 'a1', iun: 'IUN-123', sendStatus: 'DELIVERED', costCents: 1070 };
+    mockRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
+    mockFetch.mockResolvedValue({ ok: true, text: () => Promise.resolve(JSON.stringify({ notificationStatus: 'DELIVERED' })) });
 
     await service.updateStatuses();
 
