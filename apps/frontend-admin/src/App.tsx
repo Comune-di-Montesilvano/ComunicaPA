@@ -6952,7 +6952,7 @@ export function App(): React.JSX.Element {
                           </div>
                         </div>
 
-                        {(wizChannel === 'SEND' || wizChannel === 'APP_IO' || wizAppIoMode !== 'none') && (
+                        {(wizChannel === 'SEND' || wizChannel === 'APP_IO' || wizAppIoMode === 'parallel') && (
                           <div className="card border-0 rounded-3 mb-3 shadow-sm" style={{ background: '#f8f9fc' }}>
                             <div className="card-body p-3">
                               <div className="d-flex align-items-center gap-2 mb-3">
