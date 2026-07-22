@@ -10903,19 +10903,16 @@ export function App(): React.JSX.Element {
                                 Termina per "P" se prevede pagamento, "N" se no.
                               </div>
                               <div className="d-flex gap-2 mb-3">
-                                <select
+                                <SearchableSelect
                                   className="form-select form-select-sm"
                                   value={wizAddTaxonomyCode}
-                                  onChange={(e) => setWizAddTaxonomyCode(e.target.value)}
-                                >
-                                  <option value="">-- Scegli tassonomia da elenco ufficiale --</option>
-                                  {SEND_TAXONOMY_CATALOG
+                                  onChange={setWizAddTaxonomyCode}
+                                  placeholder="-- Scegli tassonomia da elenco ufficiale --"
+                                  options={SEND_TAXONOMY_CATALOG
                                     .filter(t => !settSendEntityType || t.entityType === settSendEntityType)
                                     .filter(t => !settSendTaxonomies.some(row => row.code === t.code))
-                                    .map(t => (
-                                      <option key={t.code} value={t.code}>{t.code} — {t.title}</option>
-                                    ))}
-                                </select>
+                                    .map(t => ({ value: t.code, label: `${t.title} - ${t.code}` }))}
+                                />
                                 <button
                                   type="button"
                                   className="btn btn-outline-primary btn-sm text-nowrap"
