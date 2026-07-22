@@ -7542,21 +7542,15 @@ export function App(): React.JSX.Element {
                   {(wizChannel === 'EMAIL' || wizChannel === 'PEC') && (
                     <div className="mb-3">
                       <label className="form-label small fw-bold">Server di Invio / Mittente *</label>
-                      <select
+                      <SearchableSelect
                         className="form-select form-select-sm"
                         value={wizMailConfigId}
-                        onChange={e => setWizMailConfigId(e.target.value)}
-                        required
-                      >
-                        <option value="">-- Seleziona Configurazione Mittente --</option>
-                        {mailConfigs
+                        onChange={setWizMailConfigId}
+                        placeholder="-- Seleziona Configurazione Mittente --"
+                        options={mailConfigs
                           .filter(c => c.type === wizChannel && c.active)
-                          .map(c => (
-                            <option key={c.id} value={c.id}>
-                              {c.name} ({c.fromAddress}){c.isDefault ? ' (Predefinito)' : ''}
-                            </option>
-                          ))}
-                      </select>
+                          .map(c => ({ value: c.id, label: `${c.name} (${c.fromAddress})`, isDefault: c.isDefault }))}
+                      />
                       {mailConfigs.filter(c => c.type === wizChannel && c.active).length === 0 && (
                         <div className="form-text text-danger small">
                           Attenzione: non ci sono configurazioni attive per il canale {wizChannel}. Creane una nelle impostazioni.
@@ -7568,20 +7562,15 @@ export function App(): React.JSX.Element {
                   {(wizChannel === 'EMAIL' || wizChannel === 'POSTAL' || wizChannel === 'APP_IO') && (
                     <div className="mb-3">
                       <label className="form-label small fw-bold">Mittente PEC di riserva (verifica INAD)</label>
-                      <select
+                      <SearchableSelect
                         className="form-select form-select-sm"
                         value={wizPecReserveMailConfigId}
-                        onChange={e => setWizPecReserveMailConfigId(e.target.value)}
-                      >
-                        <option value="">-- Nessuno --</option>
-                        {mailConfigs
+                        onChange={setWizPecReserveMailConfigId}
+                        placeholder="-- Nessuno --"
+                        options={mailConfigs
                           .filter(c => c.type === 'PEC' && c.active)
-                          .map(c => (
-                            <option key={c.id} value={c.id}>
-                              {c.name} ({c.fromAddress}){c.isDefault ? ' (Predefinito)' : ''}
-                            </option>
-                          ))}
-                      </select>
+                          .map(c => ({ value: c.id, label: `${c.name} (${c.fromAddress})`, isDefault: c.isDefault }))}
+                      />
                       <div className="form-text small text-muted">
                         Usato solo se un destinatario risulta avere un domicilio digitale INAD attivo: l'invio a quel destinatario passa automaticamente su PEC.
                       </div>
