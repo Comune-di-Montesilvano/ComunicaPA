@@ -87,12 +87,13 @@ export function SearchableSelect({
   };
 
   return (
-    <div className="position-relative" ref={containerRef}>
+    <div style={{ position: 'relative' }} ref={containerRef}>
       <input
         type="text"
         className={className}
         disabled={disabled}
         placeholder={placeholder}
+        style={value && !open ? { paddingRight: 28 } : undefined}
         value={open ? query : (selected?.label ?? '')}
         onFocus={() => { setOpen(true); setQuery(''); }}
         onChange={e => setQuery(e.target.value)}
@@ -101,8 +102,8 @@ export function SearchableSelect({
       {value && !open && (
         <button
           type="button"
-          className="btn btn-sm btn-link position-absolute top-0 end-0 text-secondary p-1"
-          style={{ textDecoration: 'none' }}
+          className="btn btn-sm btn-link text-secondary p-1"
+          style={{ textDecoration: 'none', position: 'absolute', top: 0, right: 0 }}
           tabIndex={-1}
           onClick={() => onChange('')}
           title="Pulisci selezione"
@@ -112,8 +113,8 @@ export function SearchableSelect({
       )}
       {open && (
         <div
-          className="position-absolute w-100 bg-white border rounded shadow-sm mt-1"
-          style={{ zIndex: 1050, maxHeight: 260, overflowY: 'auto' }}
+          className="bg-white border rounded shadow-sm mt-1"
+          style={{ position: 'absolute', left: 0, right: 0, zIndex: 1050, maxHeight: 260, overflowY: 'auto' }}
         >
           {filtered.length === 0 ? (
             <div className="px-3 py-2 text-muted small">Nessun risultato</div>
