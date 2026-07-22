@@ -11,6 +11,7 @@ describe('MailConfigsController', () => {
     remove: jest.fn().mockResolvedValue(undefined),
     test: jest.fn().mockResolvedValue({ success: true, message: 'ok' }),
     setActive: jest.fn().mockResolvedValue({ id: '1', active: false }),
+    setDefault: jest.fn().mockResolvedValue({ id: '1', isDefault: true }),
   };
 
   beforeEach(async () => {
@@ -36,5 +37,11 @@ describe('MailConfigsController', () => {
   it('PATCH /:id/active delega al service', async () => {
     await controller.setActive('abc', { active: false });
     expect(svc.setActive).toHaveBeenCalledWith('abc', false);
+  });
+
+  it('PATCH /:id/default delega al service', async () => {
+    const res = await controller.setDefault('abc');
+    expect(svc.setDefault).toHaveBeenCalledWith('abc');
+    expect(res.isDefault).toBe(true);
   });
 });

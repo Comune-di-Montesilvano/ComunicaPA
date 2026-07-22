@@ -63,4 +63,10 @@ export class MailConfigsController {
   setActive(@Param('id', ParseUUIDPipe) id: string, @Body() body: SetActiveMailConfigDto) {
     return this.svc.setActive(id, body.active);
   }
+
+  @Patch(':id/default')
+  @Roles('admin')
+  setDefault(@Param('id', ParseUUIDPipe) id: string) {
+    return this.svc.setDefault(id);
+  }
 }
