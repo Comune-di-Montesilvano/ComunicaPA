@@ -59,6 +59,7 @@ export class MailConfigsService {
       batchIntervalSeconds: entity.batchIntervalSeconds,
       testedAt: entity.testedAt ? entity.testedAt.toISOString() : null,
       active: entity.active,
+      isDefault: entity.isDefault,
     };
   }
 
@@ -71,6 +72,9 @@ export class MailConfigsService {
   }
 
   async create(dto: CreateMailConfigDto): Promise<MailConfigMaskedDto> {
+    if (dto.isDefault) {
+      await this.repo.update({ type: dto.type, isDefault: true }, { isDefault: false });
+    }
     const entity = this.repo.create({
       type: dto.type,
       name: dto.name,
@@ -85,6 +89,7 @@ export class MailConfigsService {
       batchIntervalSeconds: dto.batchIntervalSeconds,
       testedAt: null,
       active: false,
+      isDefault: dto.isDefault ?? false,
     });
     const saved = await this.repo.save(entity);
     return this.toMasked(saved);
@@ -111,6 +116,13 @@ export class MailConfigsService {
     if (dto.batchSize !== undefined) entity.batchSize = dto.batchSize;
     if (dto.batchIntervalSeconds !== undefined) entity.batchIntervalSeconds = dto.batchIntervalSeconds;
 
+    if (dto.isDefault === true) {
+      await this.repo.update({ type: entity.type, isDefault: true }, { isDefault: false });
+      entity.isDefault = true;
+    } else if (dto.isDefault === false) {
+      entity.isDefault = false;
+    }
+
     if (invalidatesTest) {
       entity.testedAt = null;
       entity.active = false;
@@ -121,8 +133,24 @@ export class MailConfigsService {
   }
 
   async remove(id: string): Promise<void> {
-    const result = await this.repo.delete({ id });
-    if (!result.affected) throw new NotFoundException(`Configurazione ${id} non trovata`);
+    const entity = await this.repo.findOneBy({ id });
+    if (!entity) throw new NotFoundException(`Configurazione ${id} non trovata`);
+    if (entity.isDefault) {
+      const count = await this.repo.count({ where: { type: entity.type } });
+      if (count > 1) {
+        throw new BadRequestException('Imposta un\'altra configurazione come predefinita prima di eliminare questa.');
+      }
+    }
+    await this.repo.delete({ id });
+  }
+
+  async setDefault(id: string): Promise<MailConfigMaskedDto> {
+    const entity = await this.repo.findOneBy({ id });
+    if (!entity) throw new NotFoundException(`Configurazione ${id} non trovata`);
+    await this.repo.update({ type: entity.type, isDefault: true }, { isDefault: false });
+    entity.isDefault = true;
+    const saved = await this.repo.save(entity);
+    return this.toMasked(saved);
   }
 
   async setActive(id: string, active: boolean): Promise<MailConfigMaskedDto> {
@@ -198,7 +226,8 @@ export class MailConfigsService {
       order: { createdAt: 'ASC' },
     });
     if (actives.length > 0) {
-      return this.toResolved(actives[0]);
+      const defaultActive = actives.find((c) => c.isDefault);
+      return this.toResolved(defaultActive ?? actives[0]);
     }
 
     // Fallback legacy: chiavi smtp.*/pec.* dei settings (installazioni pre-migrazione)

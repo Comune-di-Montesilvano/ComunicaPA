@@ -15,6 +15,7 @@ describe('MailConfigsService', () => {
     save: jest.fn((e) => Promise.resolve({ id: 'gen-id', ...e })),
     create: jest.fn((e) => e),
     delete: jest.fn(),
+    update: jest.fn(),
     count: jest.fn().mockResolvedValue(1),
   };
   const appSettings = {
@@ -53,6 +54,97 @@ describe('MailConfigsService', () => {
     expect(result.password).toBe(MASKED_VALUE);
     expect(result.active).toBe(false);
     expect(result.testedAt).toBeNull();
+  });
+
+  it('create con isDefault:true azzera isDefault sulle altre config dello stesso type', async () => {
+    const dto = {
+      type: 'PEC' as const, name: 'PEC 2', host: 'pec2.example.org',
+      port: 465, secure: true, authEnabled: true,
+      username: 'u', password: 'p',
+      fromAddress: 'pec2@example.org', batchSize: 100, batchIntervalSeconds: 60,
+      isDefault: true,
+    };
+    await service.create(dto);
+    expect(repo.update).toHaveBeenCalledWith({ type: 'PEC', isDefault: true }, { isDefault: false });
+    const saved = repo.save.mock.calls[0][0];
+    expect(saved.isDefault).toBe(true);
+  });
+
+  it('create senza isDefault non tocca le altre config', async () => {
+    const dto = {
+      type: 'PEC' as const, name: 'PEC 3', host: 'pec3.example.org',
+      port: 465, secure: true, authEnabled: true,
+      username: 'u', password: 'p',
+      fromAddress: 'pec3@example.org', batchSize: 100, batchIntervalSeconds: 60,
+    };
+    await service.create(dto);
+    expect(repo.update).not.toHaveBeenCalled();
+    const saved = repo.save.mock.calls[0][0];
+    expect(saved.isDefault).toBe(false);
+  });
+
+  it('update con isDefault:true azzera isDefault sulle altre config dello stesso type', async () => {
+    repo.findOneBy.mockResolvedValue({
+      id: 'x', type: 'PEC', name: 'a', host: 'h', port: 465, secure: true,
+      authEnabled: true, username: 'u', passwordEnc: 'E',
+      fromAddress: 'a@b.c', batchSize: 100, batchIntervalSeconds: 60,
+      testedAt: null, active: false, isDefault: false,
+    });
+    await service.update('x', { isDefault: true });
+    expect(repo.update).toHaveBeenCalledWith({ type: 'PEC', isDefault: true }, { isDefault: false });
+    const saved = repo.save.mock.calls[0][0];
+    expect(saved.isDefault).toBe(true);
+  });
+
+  it('setDefault imposta isDefault sulla config richiesta e lo azzera sulle altre dello stesso type', async () => {
+    repo.findOneBy.mockResolvedValue({
+      id: 'x', type: 'EMAIL', name: 'a', host: 'h', port: 587, secure: false,
+      authEnabled: true, username: 'u', passwordEnc: 'E',
+      fromAddress: 'a@b.c', batchSize: 100, batchIntervalSeconds: 60,
+      testedAt: new Date(), active: true, isDefault: false,
+    });
+    const result = await service.setDefault('x');
+    expect(repo.update).toHaveBeenCalledWith({ type: 'EMAIL', isDefault: true }, { isDefault: false });
+    expect(result.isDefault).toBe(true);
+  });
+
+  it('remove blocca se la config è default ed esistono altre config dello stesso type', async () => {
+    repo.findOneBy.mockResolvedValue({ id: 'x', type: 'PEC', active: true, isDefault: true });
+    repo.count.mockResolvedValue(2);
+    await expect(service.remove('x')).rejects.toThrow(BadRequestException);
+    expect(repo.count).toHaveBeenCalledWith({ where: { type: 'PEC' } });
+  });
+
+  it('remove permette eliminazione se è default ma è l\'unica config del suo type', async () => {
+    repo.findOneBy.mockResolvedValue({ id: 'x', type: 'PEC', active: true, isDefault: true });
+    repo.count.mockResolvedValue(1);
+    await service.remove('x');
+    expect(repo.delete).toHaveBeenCalledWith({ id: 'x' });
+  });
+
+  it('remove permette eliminazione se non è default', async () => {
+    repo.findOneBy.mockResolvedValue({ id: 'x', type: 'PEC', active: true, isDefault: false });
+    await service.remove('x');
+    expect(repo.delete).toHaveBeenCalledWith({ id: 'x' });
+  });
+
+  it('resolveForSend senza id preferisce la config default attiva sulla prima attiva', async () => {
+    repo.findOneBy.mockResolvedValue(null);
+    repo.find.mockResolvedValue([
+      {
+        id: 'cfg-old', type: 'PEC', name: 'vecchia', host: 'old.pec', port: 465, secure: true,
+        authEnabled: true, username: 'u', passwordEnc: '', fromAddress: 'old@b.c',
+        batchSize: 100, batchIntervalSeconds: 60, testedAt: new Date(), active: true, isDefault: false,
+      },
+      {
+        id: 'cfg-default', type: 'PEC', name: 'default', host: 'default.pec', port: 465, secure: true,
+        authEnabled: true, username: 'u', passwordEnc: '', fromAddress: 'default@b.c',
+        batchSize: 100, batchIntervalSeconds: 60, testedAt: new Date(), active: true, isDefault: true,
+      },
+    ]);
+    const r = await service.resolveForSend('PEC');
+    expect(r.configId).toBe('cfg-default');
+    expect(r.host).toBe('default.pec');
   });
 
   it('update con password mascherata non tocca quella salvata', async () => {
@@ -114,7 +206,7 @@ describe('MailConfigsService', () => {
     repo.find.mockResolvedValue([{
       id: 'cfg2', type: 'PEC', name: 'a', host: 'pec.x', port: 465, secure: true,
       authEnabled: true, username: 'u', passwordEnc: '', fromAddress: 'p@b.c',
-      batchSize: 100, batchIntervalSeconds: 60, testedAt: new Date(), active: true,
+      batchSize: 100, batchIntervalSeconds: 60, testedAt: new Date(), active: true, isDefault: false,
     }]);
     const r = await service.resolveForSend('PEC');
     expect(r.host).toBe('pec.x');
