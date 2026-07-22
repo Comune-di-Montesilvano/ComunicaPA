@@ -1430,7 +1430,7 @@ export function App(): React.JSX.Element {
   const [settSendTestPurposeId, setSettSendTestPurposeId] = useState('');
   const [settSendTestGroup, setSettSendTestGroup] = useState('');
   const [settSendSenderTaxId, setSettSendSenderTaxId] = useState('');
-  const [settSendTaxonomies, setSettSendTaxonomies] = useState<Array<{ code: string; label: string }>>([]);
+  const [settSendTaxonomies, setSettSendTaxonomies] = useState<Array<{ code: string; label: string; isDefault?: boolean }>>([]);
   const [settSendEntityType, setSettSendEntityType] = useState('');
   const [wizAddTaxonomyCode, setWizAddTaxonomyCode] = useState('');
   const [settSendProdBaseUrl, setSettSendProdBaseUrl] = useState('https://api.notifichedigitali.it');
@@ -10984,7 +10984,7 @@ export function App(): React.JSX.Element {
                                 Codice non in elenco? Compila il <a href="https://tassonomia-send.limesurvey.net/638616?newtest=Y&lang=it" target="_blank" rel="noreferrer">questionario ufficiale</a> e inseriscilo qui sotto a mano.
                               </div>
                               {settSendTaxonomies.map((t, idx) => (
-                                <div key={idx} className="d-flex gap-2 mb-2">
+                                <div key={idx} className="d-flex gap-2 mb-2 align-items-center">
                                   <input
                                     type="text"
                                     className="form-control form-control-sm"
@@ -11001,6 +11001,26 @@ export function App(): React.JSX.Element {
                                     value={t.label}
                                     onChange={(e) => setSettSendTaxonomies(prev => prev.map((row, i) => i === idx ? { ...row, label: e.target.value } : row))}
                                   />
+                                  {!t.isDefault && (
+                                    <button
+                                      type="button"
+                                      className="btn btn-outline-primary btn-sm text-nowrap"
+                                      title="Imposta come predefinita (per il proprio gruppo con/senza pagamento)"
+                                      onClick={() => {
+                                        const suffix = t.code.slice(-1);
+                                        setSettSendTaxonomies(prev => prev.map((row, i) => {
+                                          if (i === idx) return { ...row, isDefault: true };
+                                          if (row.code.slice(-1) === suffix) return { ...row, isDefault: false };
+                                          return row;
+                                        }));
+                                      }}
+                                    >
+                                      <Star size={14} />
+                                    </button>
+                                  )}
+                                  {t.isDefault && (
+                                    <span className="badge bg-primary text-nowrap">Predefinita</span>
+                                  )}
                                   <button
                                     type="button"
                                     className="btn btn-outline-danger btn-sm"
