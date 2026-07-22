@@ -6982,19 +6982,15 @@ export function App(): React.JSX.Element {
                           <div className="d-flex flex-column gap-3">
                             <div>
                               <label className="form-label small fw-bold text-dark mb-1">Tassonomia SEND *</label>
-                              <select
+                              <SearchableSelect
                                 className="form-select"
                                 value={wizTaxonomyCode}
-                                onChange={e => setWizTaxonomyCode(e.target.value)}
-                                required
-                              >
-                                <option value="">-- Seleziona tassonomia --</option>
-                                {settSendTaxonomies
+                                onChange={setWizTaxonomyCode}
+                                placeholder="-- Seleziona tassonomia --"
+                                options={settSendTaxonomies
                                   .filter(t => t.code.endsWith(wizPaymentEnabled ? 'P' : 'N'))
-                                  .map(t => (
-                                    <option key={t.code} value={t.code}>{t.code} — {t.label}</option>
-                                  ))}
-                              </select>
+                                  .map(t => ({ value: t.code, label: `${t.label} - ${t.code}`, isDefault: t.isDefault }))}
+                              />
                               {settSendTaxonomies.filter(t => t.code.endsWith(wizPaymentEnabled ? 'P' : 'N')).length === 0 && (
                                 <div className="form-text text-danger small mt-1">
                                   Nessuna tassonomia {wizPaymentEnabled ? 'con pagamento (P)' : 'senza pagamento (N)'} abilitata. Configurale in Impostazioni → SEND.
@@ -7430,19 +7426,15 @@ export function App(): React.JSX.Element {
                     <>
                       <div className="mb-3">
                         <label className="form-label small fw-bold">Tassonomia SEND *</label>
-                        <select
+                        <SearchableSelect
                           className="form-select form-select-sm"
                           value={wizTaxonomyCode}
-                          onChange={e => setWizTaxonomyCode(e.target.value)}
-                          required
-                        >
-                          <option value="">-- Seleziona tassonomia --</option>
-                          {settSendTaxonomies
+                          onChange={setWizTaxonomyCode}
+                          placeholder="-- Seleziona tassonomia --"
+                          options={settSendTaxonomies
                             .filter(t => t.code.endsWith(wizPaymentEnabled ? 'P' : 'N'))
-                            .map(t => (
-                              <option key={t.code} value={t.code}>{t.code} — {t.label}</option>
-                            ))}
-                        </select>
+                            .map(t => ({ value: t.code, label: `${t.label} - ${t.code}`, isDefault: t.isDefault }))}
+                        />
                         {settSendTaxonomies.filter(t => t.code.endsWith(wizPaymentEnabled ? 'P' : 'N')).length === 0 && (
                           <div className="form-text text-danger small">
                             Nessuna tassonomia {wizPaymentEnabled ? 'con pagamento (P)' : 'senza pagamento (N)'} abilitata. Configurale in Impostazioni → SEND.
