@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import MDEditor from '@uiw/react-md-editor';
 import { TemplateEditor } from './components/TemplateEditor';
+import { SearchableSelect } from './components/SearchableSelect';
 import { SEND_ENTITY_TYPES, SEND_TAXONOMY_CATALOG } from './data/sendTaxonomy';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import {
@@ -6947,21 +6948,15 @@ export function App(): React.JSX.Element {
                         {(wizChannel === 'EMAIL' || wizChannel === 'PEC') && (
                           <div className="mb-3">
                             <label className="form-label small fw-bold text-dark mb-1">Server di Invio / Mittente *</label>
-                            <select
+                            <SearchableSelect
                               className="form-select"
                               value={wizMailConfigId}
-                              onChange={e => setWizMailConfigId(e.target.value)}
-                              required
-                            >
-                              <option value="">-- Seleziona Configurazione Mittente --</option>
-                              {mailConfigs
+                              onChange={setWizMailConfigId}
+                              placeholder="-- Seleziona Configurazione Mittente --"
+                              options={mailConfigs
                                 .filter(c => c.type === wizChannel && c.active)
-                                .map(c => (
-                                  <option key={c.id} value={c.id}>
-                                    {c.name} ({c.fromAddress}){c.isDefault ? ' (Predefinito)' : ''}
-                                  </option>
-                                ))}
-                            </select>
+                                .map(c => ({ value: c.id, label: `${c.name} (${c.fromAddress})`, isDefault: c.isDefault }))}
+                            />
                             {mailConfigs.filter(c => c.type === wizChannel && c.active).length === 0 && (
                               <div className="form-text text-danger small mt-1">
                                 Attenzione: non ci sono configurazioni attive per il canale {wizChannel}. Creane una nelle impostazioni.
@@ -10957,6 +10952,7 @@ export function App(): React.JSX.Element {
                                   <option value="">-- Scegli tassonomia da elenco ufficiale --</option>
                                   {SEND_TAXONOMY_CATALOG
                                     .filter(t => !settSendEntityType || t.entityType === settSendEntityType)
+                                    .filter(t => !settSendTaxonomies.some(row => row.code === t.code))
                                     .map(t => (
                                       <option key={t.code} value={t.code}>{t.code} — {t.title}</option>
                                     ))}
@@ -10968,6 +10964,10 @@ export function App(): React.JSX.Element {
                                   onClick={() => {
                                     const entry = SEND_TAXONOMY_CATALOG.find(t => t.code === wizAddTaxonomyCode);
                                     if (!entry) return;
+                                    if (settSendTaxonomies.some(row => row.code === entry.code)) {
+                                      setWizAddTaxonomyCode('');
+                                      return;
+                                    }
                                     setSettSendTaxonomies(prev => [...prev, { code: entry.code, label: entry.title }]);
                                     setWizAddTaxonomyCode('');
                                   }}
@@ -12249,11 +12249,11 @@ export function App(): React.JSX.Element {
                           <ul className="pagination pagination-sm mb-0">
                             <li className={`page-item ${auditPage === 1 ? 'disabled' : ''}`}>
                               <button
-                                className="page-item page-link border-0 rounded-circle me-1"
+                                className="page-link border-0 rounded-circle me-1"
                                 onClick={() => setAuditPage((p) => Math.max(p - 1, 1))}
                                 disabled={auditPage === 1}
                               >
-                                <ChevronLeft />
+                                <ChevronLeft size={16} />
                               </button>
                             </li>
                             {Array.from({ length: Math.ceil(auditTotal / auditPageSize) }, (_, i) => i + 1).map((p) => {
@@ -12274,11 +12274,11 @@ export function App(): React.JSX.Element {
                             })}
                             <li className={`page-item ${auditPage >= Math.ceil(auditTotal / auditPageSize) ? 'disabled' : ''}`}>
                               <button
-                                className="page-item page-link border-0 rounded-circle ms-1"
+                                className="page-link border-0 rounded-circle ms-1"
                                 onClick={() => setAuditPage((p) => Math.min(p + 1, Math.ceil(auditTotal / auditPageSize)))}
                                 disabled={auditPage >= Math.ceil(auditTotal / auditPageSize)}
                               >
-                                <ChevronRight />
+                                <ChevronRight size={16} />
                               </button>
                             </li>
                           </ul>

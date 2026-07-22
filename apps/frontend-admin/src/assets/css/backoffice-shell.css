@@ -710,19 +710,76 @@ body.bo-shell-guest .bo-footer {
   background: transparent;
 }
 
+/* Styling & Reset for Bootstrap Pagination across the backoffice shell */
+.pagination,
+ul.pagination,
+.bo-content-inner .pagination {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  padding-left: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  list-style: none !important;
+  list-style-type: none !important;
+}
+
+.pagination li,
+.pagination .page-item,
+.bo-content-inner .pagination .page-item {
+  display: inline-flex !important;
+  align-items: center !important;
+  list-style: none !important;
+  list-style-type: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.pagination li::before,
+.pagination li::marker,
+.pagination .page-item::before,
+.pagination .page-item::marker {
+  content: "" !important;
+  display: none !important;
+}
+
+.pagination .page-link,
 .bo-content-inner .pagination .page-link {
-  border-color: var(--bo-border-strong);
-  color: var(--bo-ink-2);
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 50% !important;
+  border: 1px solid var(--bo-border-strong, #cbd5e1);
+  color: var(--bo-ink-2, #475569);
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: all 0.15s ease-in-out;
 }
 
+.pagination .page-link:hover,
 .bo-content-inner .pagination .page-link:hover {
-  color: var(--bo-accent-hover);
+  color: var(--bo-accent-hover, #0052a3);
   background: #f0f6ff;
+  border-color: var(--bo-accent-hover, #0052a3);
 }
 
+.pagination .active .page-link,
 .bo-content-inner .pagination .active .page-link {
-  border-color: var(--bo-accent);
-  background: var(--bo-accent);
+  border-color: var(--bo-accent, #0066cc) !important;
+  background: var(--bo-accent, #0066cc) !important;
+  color: #ffffff !important;
+}
+
+.pagination .disabled .page-link,
+.bo-content-inner .pagination .disabled .page-link {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .bo-content-inner .modal-content {
