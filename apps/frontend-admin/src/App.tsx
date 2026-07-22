@@ -770,12 +770,13 @@ type MailConfigItem = {
   batchIntervalSeconds: number;
   testedAt: string | null;
   active: boolean;
+  isDefault: boolean;
 };
 
 const EMPTY_MAIL_CONFIG: Omit<MailConfigItem, 'id' | 'testedAt' | 'active'> = {
   type: 'EMAIL', name: '', host: '', port: 587, secure: false,
   authEnabled: true, username: '', password: '', fromAddress: '',
-  batchSize: 100, batchIntervalSeconds: 60,
+  batchSize: 100, batchIntervalSeconds: 60, isDefault: false,
 };
 
 type PostalProviderItem = {
@@ -3128,6 +3129,7 @@ export function App(): React.JSX.Element {
       fromAddress: editingMailConfig.fromAddress,
       batchSize: Number(editingMailConfig.batchSize),
       batchIntervalSeconds: Number(editingMailConfig.batchIntervalSeconds),
+      isDefault: editingMailConfig.isDefault ?? false,
     };
 
     try {
@@ -3901,6 +3903,21 @@ export function App(): React.JSX.Element {
                   />
                   <label className="form-check-label small" htmlFor="chkAuth">
                     Abilita Autenticazione
+                  </label>
+                </div>
+              </div>
+
+              <div className="col-md-6">
+                <div className="form-check mt-2">
+                  <input
+                    type="checkbox"
+                    className="form-check-input"
+                    id="chkMailDefault"
+                    checked={editing.isDefault ?? false}
+                    onChange={(e) => setEditingMailConfig({ ...editing, isDefault: e.target.checked })}
+                  />
+                  <label className="form-check-label small" htmlFor="chkMailDefault">
+                    Imposta come predefinito per {label}
                   </label>
                 </div>
               </div>
