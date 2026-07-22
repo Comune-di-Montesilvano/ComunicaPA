@@ -58,7 +58,7 @@ const SETTINGS_NAV: Array<SettingsNavSection | SettingsNavItem> = [
   { tab: 'pdnd',             icon: Key,                    label: 'Client PDND' },
   { tab: 'send',             channelKey: 'SEND',           logoSrc: EMBEDDED_LOGOS.SEND,    label: _sm('SEND').label,     logoHeight: 12 },
   { tab: 'inad',             channelKey: 'INAD',           logoSrc: EMBEDDED_LOGOS.INAD,    label: _sm('INAD').label,     logoHeight: 16 },
-  { tab: 'anpr',             icon: MapPin,                 label: 'ANPR (C002)' },
+  { tab: 'anpr',             icon: MapPin,                 label: 'ANPR (C002/C019)' },
   { tab: 'inipec',           icon: Contact,                label: 'INIPEC' },
   { tab: 'protocollo',       channelKey: 'PROTOCOLLAZIONE', icon: _sm('PROTOCOLLAZIONE').icon, label: _sm('PROTOCOLLAZIONE').label },
   { tab: 'postalizzazione',  channelKey: 'POSTAL',          icon: _sm('POSTAL').icon,          label: _sm('POSTAL').label },
@@ -904,10 +904,18 @@ export function App(): React.JSX.Element {
         soggettoAIRE?: string;
       };
       idANPR?: string;
-      residenza?: Array<{ dataDecorrenzaResidenza?: string; indirizzo?: { cap?: string; comune?: { nomeComune?: string; siglaProvinciaIstat?: string; siglaProvincia?: string; provincia?: string }; toponimo?: { specie?: string; denominazioneToponimo?: string }; numeroCivico?: { numero?: string; lettera?: string } } }>;
+      residenza?: Array<{
+        dataDecorrenzaResidenza?: string;
+        indirizzo?: { cap?: string; comune?: { nomeComune?: string; siglaProvinciaIstat?: string; siglaProvincia?: string; provincia?: string }; toponimo?: { specie?: string; denominazioneToponimo?: string }; numeroCivico?: { numero?: string; lettera?: string } };
+        localitaEstera?: {
+          consolato?: { descrizioneConsolato?: string };
+          indirizzoEstero?: { cap?: string; localita?: { descrizioneLocalita?: string; descrizioneStato?: string }; toponimo?: { denominazione?: string; numeroCivico?: string } };
+        };
+      }>;
       infoSoggettoEnte?: Array<{ chiave?: string; valore?: string; valoreTesto?: string; valoreData?: string; dettaglio?: string }>;
       message?: string;
     };
+    anprEsistenzaInVita?: { success: boolean; dataDecesso?: string; message?: string };
   } | null>(null);
   const [verificaInadBulkFile, setVerificaInadBulkFile] = useState<File | null>(null);
   const [verificaInadBulkHasHeaders, setVerificaInadBulkHasHeaders] = useState(true);
@@ -1479,12 +1487,12 @@ export function App(): React.JSX.Element {
   >(null);
   const [settInipecTestPurposeId, setSettInipecTestPurposeId] = useState('');
   const [settInipecProdPurposeId, setSettInipecProdPurposeId] = useState('');
-  const [settAnprTestPurposeId, setSettAnprTestPurposeId] = useState('');
-  const [settAnprProdPurposeId, setSettAnprProdPurposeId] = useState('');
+  const [settAnprC002PurposeId, setSettAnprC002PurposeId] = useState('');
+  const [settAnprC019PurposeId, setSettAnprC019PurposeId] = useState('');
   const [settAnprTracingUserLocation, setSettAnprTracingUserLocation] = useState('');
   const [settAnprTracingLoA, setSettAnprTracingLoA] = useState('');
-  const [settAnprTesting, setSettAnprTesting] = useState<'test' | 'prod' | null>(null);
-  const [settAnprTestResult, setSettAnprTestResult] = useState<{ env: 'test' | 'prod'; ok: boolean; message: string } | null>(null);
+  const [settAnprTesting, setSettAnprTesting] = useState<'c002' | 'c019' | null>(null);
+  const [settAnprTestResult, setSettAnprTestResult] = useState<{ key: 'c002' | 'c019'; ok: boolean; message: string } | null>(null);
   const [settInipecTesting, setSettInipecTesting] = useState<'test' | 'prod' | null>(null);
   const [settInipecTestResult, setSettInipecTestResult] = useState<{ env: 'test' | 'prod'; ok: boolean; message: string } | null>(null);
   const [settRetentionDays, setSettRetentionDays] = useState('90');
@@ -1713,8 +1721,8 @@ export function App(): React.JSX.Element {
         setSettInadProdPurposeId(String(s['inad.prod.purposeId'] ?? ''));
         setSettInipecTestPurposeId(String(s['inipec.test.purposeId'] ?? ''));
         setSettInipecProdPurposeId(String(s['inipec.prod.purposeId'] ?? ''));
-        setSettAnprTestPurposeId(String(s['anpr.test.purposeId'] ?? ''));
-        setSettAnprProdPurposeId(String(s['anpr.prod.purposeId'] ?? ''));
+        setSettAnprC002PurposeId(String(s['anpr.c002.purposeId'] ?? ''));
+        setSettAnprC019PurposeId(String(s['anpr.c019.purposeId'] ?? ''));
         setSettAnprTracingUserLocation(String(s['anpr.trackingUserLocation'] ?? 'comunicapa-backend'));
         setSettAnprTracingLoA(String(s['anpr.trackingLoA'] ?? 'https://www.spid.gov.it/SpidL2'));
         setSettProtoProvider(String(s['protocollo.provider'] ?? 'tinn'));
@@ -2626,8 +2634,8 @@ export function App(): React.JSX.Element {
     'inad.prod.purposeId': settInadProdPurposeId,
     'inipec.test.purposeId': settInipecTestPurposeId,
     'inipec.prod.purposeId': settInipecProdPurposeId,
-    'anpr.test.purposeId': settAnprTestPurposeId,
-    'anpr.prod.purposeId': settAnprProdPurposeId,
+    'anpr.c002.purposeId': settAnprC002PurposeId,
+    'anpr.c019.purposeId': settAnprC019PurposeId,
     'anpr.trackingUserLocation': settAnprTracingUserLocation,
     'anpr.trackingLoA': settAnprTracingLoA,
     'protocollo.provider': settProtoProvider,
@@ -2738,8 +2746,30 @@ export function App(): React.JSX.Element {
   const handleTestInadConnection = (env: 'test' | 'prod') =>
     runPdndTest(`/settings/inad/${env}/test-connection`, env, setSettInadTesting, setSettInadTestResult);
 
-  const handleTestAnprConnection = (env: 'test' | 'prod') =>
-    runPdndTest(`/settings/anpr/${env}/test-connection`, env, setSettAnprTesting, setSettAnprTestResult);
+  const handleTestAnprConnection = async (key: 'c002' | 'c019') => {
+    setSettAnprTesting(key);
+    setSettAnprTestResult(null);
+    try {
+      const saveRes = await apiFetch('/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: buildSettingsPayload() }),
+      });
+      if (!saveRes.ok) {
+        const err = (await saveRes.json()) as { message?: string };
+        setSettAnprTestResult({ key, ok: false, message: `Errore salvataggio: ${err.message ?? saveRes.status}` });
+        return;
+      }
+      const res = await apiFetch(`/settings/anpr/${key}/test-connection`, { method: 'POST' });
+      const data = (await res.json()) as { success: boolean; message: string };
+      setSettAnprTestResult({ key, ok: data.success, message: data.message });
+    } catch (err: any) {
+      if (err instanceof ApiAuthError) return;
+      setSettAnprTestResult({ key, ok: false, message: err.message || 'Errore di rete durante il test.' });
+    } finally {
+      setSettAnprTesting(null);
+    }
+  };
 
   const handleExtractInad = async () => {
     if (!settInadExtractCf.trim()) return;
@@ -9888,10 +9918,20 @@ export function App(): React.JSX.Element {
                           <h6 className="fw-bold mb-0 text-dark">Generalità (ANPR)</h6>
                         </div>
                         {anpr.success && anpr.found && vitaInfo && (
-                          <span className={`badge px-3 py-2 rounded-pill ${vitaInfo.valore === 'S' ? 'bg-success-subtle text-success border border-success-subtle' : vitaInfo.valore === 'N' ? 'bg-danger-subtle text-danger border border-danger-subtle' : 'bg-secondary-subtle text-secondary'}`}>
-                            {vitaInfo.valore === 'S' ? 'In vita' : vitaInfo.valore === 'N' ? 'Deceduto' : 'Non specificato'}
-                            {vitaInfo.valore === 'N' && vitaInfo.valoreData ? ` il ${fmtDate(vitaInfo.valoreData)}` : ''}
-                          </span>
+                          <div className="d-flex flex-column align-items-end gap-1">
+                            <span className={`badge px-3 py-2 rounded-pill ${vitaInfo.valore === 'S' ? 'bg-success-subtle text-success border border-success-subtle' : vitaInfo.valore === 'N' ? 'bg-danger-subtle text-danger border border-danger-subtle' : 'bg-secondary-subtle text-secondary'}`}>
+                              {vitaInfo.valore === 'S' ? 'In vita' : vitaInfo.valore === 'N' ? 'Deceduto' : 'Non specificato'}
+                            </span>
+                            {vitaInfo.valore === 'N' && domicilioResult.anprEsistenzaInVita?.success && domicilioResult.anprEsistenzaInVita.dataDecesso && (
+                              <span className="small text-muted">Decesso avvenuto il {fmtDate(domicilioResult.anprEsistenzaInVita.dataDecesso)}</span>
+                            )}
+                            {vitaInfo.valore === 'N' && domicilioResult.anprEsistenzaInVita?.success && !domicilioResult.anprEsistenzaInVita.dataDecesso && (
+                              <span className="small text-muted">Data decesso non disponibile in ANPR</span>
+                            )}
+                            {vitaInfo.valore === 'N' && domicilioResult.anprEsistenzaInVita && !domicilioResult.anprEsistenzaInVita.success && (
+                              <span className="small text-warning">Data decesso non disponibile ({domicilioResult.anprEsistenzaInVita.message})</span>
+                            )}
+                          </div>
                         )}
                       </div>
 
@@ -9970,7 +10010,7 @@ export function App(): React.JSX.Element {
                           <div className="card-body p-3 bg-white flex-grow-1">
                             {!anpr.success && <p className="small text-danger mb-0">{anpr.message}</p>}
                             {anpr.success && !anpr.found && <p className="small text-muted mb-0">Nessun dato trovato in ANPR</p>}
-                            {anpr.success && anpr.found && anpr.residenza?.[0] && (() => {
+                            {anpr.success && anpr.found && anpr.residenza?.[0]?.indirizzo && (() => {
                               const resComune = anpr.residenza[0].indirizzo?.comune;
                               const resProv = resComune?.siglaProvinciaIstat ?? (resComune as any)?.siglaProvincia ?? (resComune as any)?.provincia;
                               return (
@@ -9985,7 +10025,23 @@ export function App(): React.JSX.Element {
                                 </div>
                               );
                             })()}
-                            {anpr.success && anpr.found && !anpr.residenza?.[0] && <p className="small text-muted mb-0">Nessun indirizzo di residenza registrato</p>}
+                            {anpr.success && anpr.found && !anpr.residenza?.[0]?.indirizzo && anpr.residenza?.[0]?.localitaEstera && (() => {
+                              const estero = anpr.residenza[0].localitaEstera!;
+                              const ind = estero.indirizzoEstero;
+                              const via = [ind?.toponimo?.denominazione, ind?.toponimo?.numeroCivico].filter(Boolean).join(', ');
+                              const localita = [ind?.cap, ind?.localita?.descrizioneLocalita, ind?.localita?.descrizioneStato ? `(${ind.localita.descrizioneStato})` : ''].filter(Boolean).join(' ');
+                              return (
+                                <div className="small">
+                                  <div className="fw-bold text-dark mb-1">Residente estero (AIRE)</div>
+                                  {via && <div className="text-muted">{via}</div>}
+                                  {localita && <div className="text-muted">{localita}</div>}
+                                  {estero.consolato?.descrizioneConsolato && (
+                                    <div className="text-muted">Consolato: {estero.consolato.descrizioneConsolato}</div>
+                                  )}
+                                </div>
+                              );
+                            })()}
+                            {anpr.success && anpr.found && !anpr.residenza?.[0]?.indirizzo && !anpr.residenza?.[0]?.localitaEstera && <p className="small text-muted mb-0">Nessun indirizzo di residenza registrato</p>}
                           </div>
                         </div>
                       </div>
@@ -10619,7 +10675,7 @@ export function App(): React.JSX.Element {
                         {activeSettingsTab === 'pdnd' && 'Client PDND (Piattaforma Digitale Nazionale Dati)'}
                         {activeSettingsTab === 'send' && 'Integrazione SEND (Digital Delivery)'}
                         {activeSettingsTab === 'inad' && 'Integrazione INAD (Indice Nazionale Domicili Digitali)'}
-                        {activeSettingsTab === 'anpr' && 'Integrazione ANPR (Servizio C002 - Servizio di Comunicazione)'}
+                        {activeSettingsTab === 'anpr' && 'Integrazione ANPR (C002 - Comunicazione, C019 - Esistenza in Vita)'}
                         {activeSettingsTab === 'inipec' && 'Integrazione INIPEC'}
                         {activeSettingsTab === 'protocollo' && 'Connettore Protocollo Informatico'}
                         {activeSettingsTab === 'postalizzazione' && 'Postalizzazione Cartacea Istituzionale'}
@@ -11200,21 +11256,22 @@ export function App(): React.JSX.Element {
                             <div className="alert alert-warning small mb-3">
                               Interrogazione disponibile solo in ambiente Produzione. Richiede lo stesso
                               client PDND già configurato nella tab "Client PDND" (kid/chiave privata) —
-                              qui va impostato solo il Purpose ID specifico per ANPR C020.
+                              qui vanno impostati i due Purpose ID: C002 (Servizio di Comunicazione) e
+                              C019 (Accertamento Esistenza in Vita), finalità PDND distinte.
                             </div>
                             {([
-                              { label: 'Collaudo (UAT)', prefix: 'test' as const,
-                                purposeId: settAnprTestPurposeId, setPurposeId: setSettAnprTestPurposeId },
-                              { label: 'Produzione', prefix: 'prod' as const,
-                                purposeId: settAnprProdPurposeId, setPurposeId: setSettAnprProdPurposeId },
+                              { label: 'C002 - Servizio di Comunicazione', key: 'c002' as const,
+                                purposeId: settAnprC002PurposeId, setPurposeId: setSettAnprC002PurposeId },
+                              { label: 'C019 - Accertamento Esistenza in Vita', key: 'c019' as const,
+                                purposeId: settAnprC019PurposeId, setPurposeId: setSettAnprC019PurposeId },
                             ]).map((e) => (
-                              <fieldset key={e.prefix} className="border rounded p-3 mb-3">
+                              <fieldset key={e.key} className="border rounded p-3 mb-3">
                                 <legend className="float-none w-auto px-2 small fw-bold text-dark">{e.label}</legend>
                                 <div className="mb-1">
-                                  <label className="form-label small fw-semibold text-muted" htmlFor={`anpr_${e.prefix}_purposeid`}>Purpose ID</label>
+                                  <label className="form-label small fw-semibold text-muted" htmlFor={`anpr_${e.key}_purposeid`}>Purpose ID</label>
                                   <input
                                     type="text"
-                                    id={`anpr_${e.prefix}_purposeid`}
+                                    id={`anpr_${e.key}_purposeid`}
                                     className="form-control form-control-sm"
                                     value={e.purposeId}
                                     onChange={(ev) => e.setPurposeId(ev.target.value)}
@@ -11224,13 +11281,13 @@ export function App(): React.JSX.Element {
                                 <button
                                   type="button"
                                   className="btn btn-primary btn-sm"
-                                  disabled={settAnprTesting === e.prefix}
-                                  onClick={() => handleTestAnprConnection(e.prefix)}
+                                  disabled={settAnprTesting === e.key}
+                                  onClick={() => handleTestAnprConnection(e.key)}
                                 >
-                                  {settAnprTesting === e.prefix ? 'Test in corso…' : 'Test connessione (voucher PDND)'}
+                                  {settAnprTesting === e.key ? 'Test in corso…' : 'Test connessione (voucher PDND)'}
                                 </button>
-                                <div className="form-text small text-muted">Salva le impostazioni e prova a ottenere un voucher PDND reale con client PDND + Purpose ID ANPR.</div>
-                                {settAnprTestResult?.env === e.prefix && (
+                                <div className="form-text small text-muted">Salva le impostazioni e prova a ottenere un voucher PDND reale con client PDND + Purpose ID.</div>
+                                {settAnprTestResult?.key === e.key && (
                                   <div className={`alert ${settAnprTestResult.ok ? 'alert-success' : 'alert-danger'} mt-2 mb-0 small`} style={{ wordBreak: 'break-word' }}>
                                     {settAnprTestResult.message}
                                   </div>
@@ -11259,7 +11316,7 @@ export function App(): React.JSX.Element {
                                   onChange={(ev) => setSettAnprTracingLoA(ev.target.value)}
                                 />
                               </div>
-                              <div className="form-text small text-muted">Valori di default non ancora verificati contro un ambiente PDND reale — vedi rischi noti nella spec di design.</div>
+                              <div className="form-text small text-muted">Condiviso tra C002 e C019 (stesso claim Agid-JWT-TrackingEvidence). Valori di default non ancora verificati contro un ambiente PDND reale.</div>
                             </fieldset>
                           </div>
                         )}
