@@ -1124,6 +1124,13 @@ export function App(): React.JSX.Element {
   const [loadingCampaigns, setLoadingCampaigns] = useState(false);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
 
+  // Campaign list filter and pagination state
+  const [campaignSearch, setCampaignSearch] = useState('');
+  const [campaignStartDate, setCampaignStartDate] = useState('');
+  const [campaignEndDate, setCampaignEndDate] = useState('');
+  const [campaignPage, setCampaignPage] = useState(1);
+  const CAMPAIGN_PAGE_SIZE = 10;
+
   // Form destinatario per invio singolo (step 2 fuso del wizard, wizSingleMode)
   const [singleCf, setSingleCf] = useState('');
   const [singleSurname, setSingleSurname] = useState('');
@@ -5410,18 +5417,45 @@ export function App(): React.JSX.Element {
     fetchDownloadCombinationStats(id);
   };
 
+  const getFilteredCampaigns = (): Campaign[] => {
+    let result = campaigns;
+
+    if (campaignSearch.trim()) {
+      const q = campaignSearch.trim().toLowerCase();
+      result = result.filter(c =>
+        c.name.toLowerCase().includes(q) ||
+        (c.description || '').toLowerCase().includes(q) ||
+        c.channelType.toLowerCase().includes(q) ||
+        c.status.toLowerCase().includes(q) ||
+        c.id.toLowerCase().includes(q)
+      );
+    }
+
+    if (campaignStartDate) {
+      const startMs = new Date(`${campaignStartDate}T00:00:00`).getTime();
+      result = result.filter(c => new Date(c.createdAt).getTime() >= startMs);
+    }
+
+    if (campaignEndDate) {
+      const endMs = new Date(`${campaignEndDate}T23:59:59.999`).getTime();
+      result = result.filter(c => new Date(c.createdAt).getTime() <= endMs);
+    }
+
+    return result;
+  };
+
   // Affianca ogni campagna di prova (isTest) alla propria bozza madre nell'elenco,
   // stesso pattern di raggruppamento adiacente usato per i template gemelli
   // (getGroupedTemplates) — senza questo, una campagna di prova appare come riga
   // scollegata e indistinguibile altrove nell'elenco, con solo un link testuale
   // a collegarla alla madre.
-  const getGroupedCampaigns = (): Campaign[] => {
+  const getGroupedCampaigns = (sourceList: Campaign[] = campaigns): Campaign[] => {
     const list: Campaign[] = [];
     const visited = new Set<string>();
-    for (const c of campaigns) {
+    for (const c of sourceList) {
       if (visited.has(c.id)) continue;
       if (c.isTest && c.parentCampaignId) {
-        const parent = campaigns.find(x => x.id === c.parentCampaignId && !visited.has(x.id));
+        const parent = sourceList.find(x => x.id === c.parentCampaignId && !visited.has(x.id));
         if (parent) {
           visited.add(parent.id);
           visited.add(c.id);
@@ -5429,7 +5463,7 @@ export function App(): React.JSX.Element {
           continue;
         }
       } else {
-        const child = campaigns.find(x => x.isTest && x.parentCampaignId === c.id && !visited.has(x.id));
+        const child = sourceList.find(x => x.isTest && x.parentCampaignId === c.id && !visited.has(x.id));
         if (child) {
           visited.add(c.id);
           visited.add(child.id);
@@ -6372,139 +6406,271 @@ export function App(): React.JSX.Element {
           )}
 
               {/* VIEW: INVIO MASSIVO */}
-          {view === 'invio-massivo' && (
-            <div className="row g-4">
-              <div className="col-12">
-                <div className="card shadow-sm h-100">
-                  <div className="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
-                    <h3 className="h6 mb-0 fw-bold text-dark"><List className="me-2 text-primary" />Lista Campagne</h3>
-                    <div className="d-flex align-items-center gap-2">
-                      <button className="btn btn-sm btn-primary" onClick={() => { resetWizard(); setView('invio-massivo-wizard'); }}>
-                        <Wand2 className="me-1" /> Crea Nuova Campagna (Wizard)
-                      </button>
-                      <button className="btn btn-outline-secondary btn-sm border-0" onClick={fetchCampaigns}><RefreshCw /></button>
-                    </div>
-                  </div>
-                  <div className="card-body p-0">
-                    {dashboardError && (
-                      <div className="alert alert-danger m-3">{dashboardError}</div>
-                    )}
-                    {loadingCampaigns && campaigns.length === 0 ? (
-                      <div className="text-center py-5">
-                        <Loader2 className="icon-spin text-primary mb-2" size={32} />
-                        <div>Caricamento campagne...</div>
-                      </div>
-                    ) : campaigns.length === 0 ? (
-                      <div className="text-center py-5 text-muted">Nessuna campagna presente.</div>
-                    ) : (
-                      <div className="table-responsive">
-                        <table className="table table-hover align-middle mb-0" style={{ fontSize: '0.84rem' }}>
-                          <thead className="table-light">
-                            <tr>
-                              <th>Nome</th>
-                              <th>Canale</th>
-                              <th className="text-center">Destinatari</th>
-                              <th className="text-center">Stato</th>
-                              <th>Creata il</th>
-                              <th className="text-end">Azioni</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {getGroupedCampaigns().map((c) => {
-                              const isParentOfPair = !c.isTest && getGroupedCampaigns().some(x => x.isTest && x.parentCampaignId === c.id);
-                              const isChildOfPair = c.isTest && !!c.parentCampaignId && getGroupedCampaigns().some(x => x.id === c.parentCampaignId);
-                              const pairStyle: React.CSSProperties = (isParentOfPair || isChildOfPair) ? { backgroundColor: '#f4f7fc' } : {};
-                              const pairBorderLeft = (isParentOfPair || isChildOfPair) ? '3px solid var(--bs-primary, #0066cc)' : undefined;
-                              // Il bordo sinistro va solo sulla prima cella (Nome) — segna il
-                              // bordo dell'intera riga senza creare una "gabbia" ripetuta su
-                              // ogni colonna.
-                              const cellStyle: React.CSSProperties = {
-                                borderBottom: isParentOfPair ? 'none' : undefined,
-                                borderTop: isChildOfPair ? 'none' : undefined,
-                              };
+          {view === 'invio-massivo' && (() => {
+            const filtered = getFilteredCampaigns();
+            const grouped = getGroupedCampaigns(filtered);
+            const totalItems = grouped.length;
+            const totalPages = Math.ceil(totalItems / CAMPAIGN_PAGE_SIZE) || 1;
+            const currentPage = Math.min(campaignPage, totalPages);
+            const paginated = grouped.slice((currentPage - 1) * CAMPAIGN_PAGE_SIZE, currentPage * CAMPAIGN_PAGE_SIZE);
 
-                              // Riga figlia (campagna di prova): nessuna colonna/azione ha senso
-                              // qui (canale/destinatari/creata il sono già sulla madre, stato non
-                              // riflette l'esito reale dell'invio di prova, destinatari è sempre 1)
-                              // — solo un link minimale al dettaglio del test.
-                              if (isChildOfPair) {
+            return (
+              <div className="row g-4">
+                <div className="col-12">
+                  <div className="card shadow-sm h-100">
+                    <div className="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+                      <h3 className="h6 mb-0 fw-bold text-dark"><List className="me-2 text-primary" />Lista Campagne</h3>
+                      <div className="d-flex align-items-center gap-2">
+                        <button className="btn btn-sm btn-primary" onClick={() => { resetWizard(); setView('invio-massivo-wizard'); }}>
+                          <Wand2 className="me-1" /> Crea Nuova Campagna (Wizard)
+                        </button>
+                        <button className="btn btn-outline-secondary btn-sm border-0" onClick={fetchCampaigns}><RefreshCw /></button>
+                      </div>
+                    </div>
+
+                    {/* Filter Bar: Search and Date Range */}
+                    <div className="p-3 border-bottom bg-light-subtle">
+                      <div className="row g-2 align-items-center">
+                        <div className="col-md-5">
+                          <div className="input-group input-group-sm">
+                            <span className="input-group-text bg-white border-end-0">
+                              <Search size={14} className="text-muted" />
+                            </span>
+                            <input
+                              type="text"
+                              className="form-control border-start-0 ps-0"
+                              placeholder="Cerca per nome, canale, stato..."
+                              value={campaignSearch}
+                              onChange={(e) => {
+                                setCampaignSearch(e.target.value);
+                                setCampaignPage(1);
+                              }}
+                            />
+                            {campaignSearch && (
+                              <button
+                                className="btn btn-outline-secondary border-start-0"
+                                type="button"
+                                onClick={() => {
+                                  setCampaignSearch('');
+                                  setCampaignPage(1);
+                                }}
+                              >
+                                <X size={14} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="col-md-3 col-6">
+                          <div className="input-group input-group-sm">
+                            <span className="input-group-text bg-white small text-muted">Da:</span>
+                            <input
+                              type="date"
+                              className="form-control"
+                              value={campaignStartDate}
+                              onChange={(e) => {
+                                setCampaignStartDate(e.target.value);
+                                setCampaignPage(1);
+                              }}
+                            />
+                          </div>
+                        </div>
+                        <div className="col-md-3 col-6">
+                          <div className="input-group input-group-sm">
+                            <span className="input-group-text bg-white small text-muted">A:</span>
+                            <input
+                              type="date"
+                              className="form-control"
+                              value={campaignEndDate}
+                              onChange={(e) => {
+                                setCampaignEndDate(e.target.value);
+                                setCampaignPage(1);
+                              }}
+                            />
+                          </div>
+                        </div>
+                        {(campaignSearch || campaignStartDate || campaignEndDate) && (
+                          <div className="col-md-1 text-end">
+                            <button
+                              className="btn btn-sm btn-link text-decoration-none text-muted p-0 small"
+                              onClick={() => {
+                                setCampaignSearch('');
+                                setCampaignStartDate('');
+                                setCampaignEndDate('');
+                                setCampaignPage(1);
+                              }}
+                              title="Resetta tutti i filtri"
+                            >
+                              Reset
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="card-body p-0">
+                      {dashboardError && (
+                        <div className="alert alert-danger m-3">{dashboardError}</div>
+                      )}
+                      {loadingCampaigns && campaigns.length === 0 ? (
+                        <div className="text-center py-5">
+                          <Loader2 className="icon-spin text-primary mb-2" size={32} />
+                          <div>Caricamento campagne...</div>
+                        </div>
+                      ) : totalItems === 0 ? (
+                        <div className="text-center py-5 text-muted">
+                          {campaigns.length === 0 ? 'Nessuna campagna presente.' : 'Nessuna campagna corrisponde ai filtri impostati.'}
+                        </div>
+                      ) : (
+                        <div className="table-responsive">
+                          <table className="table table-hover align-middle mb-0" style={{ fontSize: '0.84rem' }}>
+                            <thead className="table-light">
+                              <tr>
+                                <th>Nome</th>
+                                <th>Canale</th>
+                                <th className="text-center">Destinatari</th>
+                                <th className="text-center">Stato</th>
+                                <th>Creata il</th>
+                                <th className="text-end">Azioni</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {paginated.map((c) => {
+                                const isParentOfPair = !c.isTest && grouped.some(x => x.isTest && x.parentCampaignId === c.id);
+                                const isChildOfPair = c.isTest && !!c.parentCampaignId && grouped.some(x => x.id === c.parentCampaignId);
+                                const pairStyle: React.CSSProperties = (isParentOfPair || isChildOfPair) ? { backgroundColor: '#f4f7fc' } : {};
+                                const pairBorderLeft = (isParentOfPair || isChildOfPair) ? '3px solid var(--bs-primary, #0066cc)' : undefined;
+                                const cellStyle: React.CSSProperties = {
+                                  borderBottom: isParentOfPair ? 'none' : undefined,
+                                  borderTop: isChildOfPair ? 'none' : undefined,
+                                };
+
+                                if (isChildOfPair) {
+                                  return (
+                                    <tr key={c.id} style={{ cursor: 'pointer', ...pairStyle }} onClick={() => handleCampaignClick(c.id)}>
+                                      <td
+                                        colSpan={6}
+                                        className="text-primary"
+                                        style={{ ...cellStyle, borderLeft: pairBorderLeft, paddingLeft: '1.5rem', paddingTop: '0.4rem', paddingBottom: '0.5rem' }}
+                                      >
+                                        <span title="Campagna di prova"><Reply className="text-muted me-2" style={{ transform: 'scaleX(-1)', opacity: 0.6 }} /></span>
+                                        <span className="fw-bold">{c.name}</span>
+                                        <span className="badge bg-warning text-dark ms-2">TEST</span>
+                                        <span className="text-muted small ms-2">— vedi dettaglio test</span>
+                                      </td>
+                                    </tr>
+                                  );
+                                }
+
                                 return (
                                   <tr key={c.id} style={{ cursor: 'pointer', ...pairStyle }} onClick={() => handleCampaignClick(c.id)}>
-                                    <td
-                                      colSpan={6}
-                                      className="text-primary"
-                                      style={{ ...cellStyle, borderLeft: pairBorderLeft, paddingLeft: '1.5rem', paddingTop: '0.4rem', paddingBottom: '0.5rem' }}
-                                    >
-                                      <span title="Campagna di prova"><Reply className="text-muted me-2" style={{ transform: 'scaleX(-1)', opacity: 0.6 }} /></span>
-                                      <span className="fw-bold">{c.name}</span>
-                                      <span className="badge bg-warning text-dark ms-2">TEST</span>
-                                      <span className="text-muted small ms-2">— vedi dettaglio test</span>
+                                    <td className="fw-bold text-primary" style={{ ...cellStyle, borderLeft: pairBorderLeft }}>
+                                      {isParentOfPair && <span title="Collegata a una campagna di prova"><Link className="text-primary me-2" /></span>}
+                                      {c.name}
+                                      {c.isTest && (
+                                        <span className="badge bg-warning text-dark ms-2" title="Campagna di prova, collegata a una bozza">
+                                          TEST
+                                        </span>
+                                      )}
                                     </td>
-                                  </tr>
-                                );
-                              }
-
-                              return (
-                                <tr key={c.id} style={{ cursor: 'pointer', ...pairStyle }} onClick={() => handleCampaignClick(c.id)}>
-                                  <td className="fw-bold text-primary" style={{ ...cellStyle, borderLeft: pairBorderLeft }}>
-                                    {isParentOfPair && <span title="Collegata a una campagna di prova"><Link className="text-primary me-2" /></span>}
-                                    {c.name}
-                                    {c.isTest && (
-                                      <span className="badge bg-warning text-dark ms-2" title="Campagna di prova, collegata a una bozza">
-                                        TEST
-                                      </span>
+                                    <td style={cellStyle}>
+                                      <ChannelBadge channel={c.channelType} extra={c.channelConfig?.['serviceName'] as string | undefined} />
+                                    </td>
+                                    <td className="text-center fw-bold" style={cellStyle}>{c.totalRecipients}</td>
+                                    <td className="text-center" style={cellStyle}>
+                                      <StatusBadge status={c.status} />
+                                    </td>
+                                    <td className="text-muted" style={cellStyle}>{new Date(c.createdAt).toLocaleDateString('it-IT')}</td>
+                                    <td className="text-end" style={cellStyle} onClick={(e) => e.stopPropagation()}>
+                                    {c.status === 'draft' && (
+                                      <button
+                                        type="button"
+                                        className="btn btn-sm btn-outline-primary d-flex align-items-center gap-1 mb-1"
+                                        title="Riprendi wizard campagna"
+                                        onClick={() => handleResumeDraft(c.id)}
+                                      >
+                                        <Pencil /> Riprendi
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1"
+                                      title="Duplica campagna in un nuovo wizard"
+                                      onClick={() => handleDuplicateCampaign(c.id)}
+                                    >
+                                      <Copy /> Duplica
+                                    </button>
+                                    {role === 'admin' && (
+                                      <button
+                                        type="button"
+                                        className="btn btn-sm btn-outline-danger d-flex align-items-center gap-1 mt-1"
+                                        title="Elimina campagna definitivamente"
+                                        onClick={() => handleDeleteCampaign(c.id, c.name)}
+                                      >
+                                        <Trash2 /> Elimina
+                                      </button>
                                     )}
                                   </td>
-                                  <td style={cellStyle}>
-                                    <ChannelBadge channel={c.channelType} extra={c.channelConfig?.['serviceName'] as string | undefined} />
-                                  </td>
-                                  <td className="text-center fw-bold" style={cellStyle}>{c.totalRecipients}</td>
-                                  <td className="text-center" style={cellStyle}>
-                                    <StatusBadge status={c.status} />
-                                  </td>
-                                  <td className="text-muted" style={cellStyle}>{new Date(c.createdAt).toLocaleDateString('it-IT')}</td>
-                                  <td className="text-end" style={cellStyle} onClick={(e) => e.stopPropagation()}>
-                                  {c.status === 'draft' && (
-                                    <button
-                                      type="button"
-                                      className="btn btn-sm btn-outline-primary d-flex align-items-center gap-1 mb-1"
-                                      title="Riprendi wizard campagna"
-                                      onClick={() => handleResumeDraft(c.id)}
-                                    >
-                                      <Pencil /> Riprendi
-                                    </button>
-                                  )}
+                                </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Pagination Footer */}
+                    {totalItems > CAMPAIGN_PAGE_SIZE && (
+                      <div className="card-footer bg-white border-top d-flex flex-column flex-md-row justify-content-between align-items-center gap-3 py-3 px-4">
+                        <span className="small text-muted">
+                          Mostrati <strong>{((currentPage - 1) * CAMPAIGN_PAGE_SIZE) + 1}</strong> - <strong>{Math.min(currentPage * CAMPAIGN_PAGE_SIZE, totalItems)}</strong> di <strong>{totalItems}</strong> campagne
+                        </span>
+                        <nav aria-label="Navigazione pagine campagne">
+                          <ul className="pagination pagination-sm mb-0">
+                            <li className={`page-item ${currentPage === 1 ? 'disabled' : ''}`}>
+                              <button
+                                className="page-link border-0 rounded-circle me-1"
+                                onClick={() => setCampaignPage(p => Math.max(p - 1, 1))}
+                                disabled={currentPage === 1}
+                              >
+                                <ChevronLeft size={16} />
+                              </button>
+                            </li>
+                            {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => {
+                              const isNear = Math.abs(p - currentPage) <= 2;
+                              const isEdge = p === 1 || p === totalPages;
+                              if (!isNear && !isEdge) return null;
+                              return (
+                                <li key={p} className={`page-item ${currentPage === p ? 'active' : ''}`}>
                                   <button
-                                    type="button"
-                                    className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1"
-                                    title="Duplica campagna in un nuovo wizard"
-                                    onClick={() => handleDuplicateCampaign(c.id)}
+                                    className={`page-link border-0 rounded-circle mx-1 ${
+                                      currentPage === p ? 'bg-primary text-white' : 'text-dark bg-transparent'
+                                    }`}
+                                    onClick={() => setCampaignPage(p)}
                                   >
-                                    <Copy /> Duplica
+                                    {p}
                                   </button>
-                                  {role === 'admin' && (
-                                    <button
-                                      type="button"
-                                      className="btn btn-sm btn-outline-danger d-flex align-items-center gap-1 mt-1"
-                                      title="Elimina campagna definitivamente"
-                                      onClick={() => handleDeleteCampaign(c.id, c.name)}
-                                    >
-                                      <Trash2 /> Elimina
-                                    </button>
-                                  )}
-                                </td>
-                              </tr>
+                                </li>
                               );
                             })}
-                          </tbody>
-                        </table>
+                            <li className={`page-item ${currentPage >= totalPages ? 'disabled' : ''}`}>
+                              <button
+                                className="page-link border-0 rounded-circle ms-1"
+                                onClick={() => setCampaignPage(p => Math.min(p + 1, totalPages))}
+                                disabled={currentPage >= totalPages}
+                              >
+                                <ChevronRight size={16} />
+                              </button>
+                            </li>
+                          </ul>
+                        </nav>
                       </div>
                     )}
                   </div>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* VIEW: WIZARD INVIO MASSIVO */}
           {view === 'invio-massivo-wizard' && (
@@ -6711,7 +6877,6 @@ export function App(): React.JSX.Element {
                           <select
                             className="form-select"
                             value={wizChannel}
-                            disabled={singleInadForced}
                             onChange={(e: any) => {
                               const newChan = e.target.value as any;
                               setWizChannel(newChan);
@@ -6727,14 +6892,22 @@ export function App(): React.JSX.Element {
                               }
                             }}
                           >
-                            {(['EMAIL', 'PEC', 'APP_IO', 'SEND', 'POSTAL'] as const).map(key => (
-                              <option key={key} value={key}>{getChannelMeta(key).label}</option>
-                            ))}
+                            {(['EMAIL', 'PEC', 'APP_IO', 'SEND', 'POSTAL'] as const)
+                              .filter(key => !singleInadForced || key === 'PEC' || key === 'SEND')
+                              .map(key => (
+                                <option key={key} value={key}>
+                                  {getChannelMeta(key).label}
+                                </option>
+                              ))}
                           </select>
                           {singleInadForced && (
                             <div className="alert alert-success border-0 bg-success-subtle text-success py-2 px-3 small d-flex align-items-center gap-2 mt-2 mb-0">
                               <CheckCircle2 size={16} />
-                              <span>Domicilio digitale INAD trovato ({singleInadAddress}): canale forzato a PEC.</span>
+                              <span>
+                                {wizChannel === 'SEND'
+                                  ? `Domicilio digitale INAD trovato (${singleInadAddress}): invio impostato su SEND.`
+                                  : `Domicilio digitale INAD trovato (${singleInadAddress}): canale limitato a PEC o SEND.`}
+                              </span>
                             </div>
                           )}
                         </div>
