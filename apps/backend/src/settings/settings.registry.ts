@@ -85,8 +85,8 @@ export const SETTING_DEFS = {
   'inad.prod.purposeId': { type: 'string', default: '' },
   'inipec.test.purposeId': { type: 'string', default: '' },
   'inipec.prod.purposeId': { type: 'string', default: '' },
-  'anpr.test.purposeId': { type: 'string', default: '' },
-  'anpr.prod.purposeId': { type: 'string', default: '' },
+  'anpr.c002.purposeId': { type: 'string', default: '' },
+  'anpr.c019.purposeId': { type: 'string', default: '' },
   'anpr.trackingUserLocation': { type: 'string', default: 'comunicapa-backend' },
   'anpr.trackingLoA': { type: 'string', default: 'SpidL2' },
 

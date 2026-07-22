@@ -23,9 +23,19 @@ export interface AnprIndirizzo {
   numeroCivico?: AnprNumeroCivico;
 }
 
+export interface AnprLocalitaEstera {
+  consolato?: { codiceConsolato?: string; descrizioneConsolato?: string };
+  indirizzoEstero?: {
+    cap?: string;
+    localita?: { codiceStato?: string; descrizioneLocalita?: string; descrizioneStato?: string };
+    toponimo?: { denominazione?: string; numeroCivico?: string };
+  };
+}
+
 export interface AnprResidenza {
   tipoIndirizzo?: string;
   indirizzo?: AnprIndirizzo;
+  localitaEstera?: AnprLocalitaEstera;
   dataDecorrenzaResidenza?: string;
   presso?: string;
 }
@@ -61,5 +71,15 @@ export interface AnprResidenzaResult {
     generalita: AnprGeneralita;
     residenza: AnprResidenza[];
     infoSoggettoEnte: AnprInfoSoggettoEnte[];
+  };
+}
+
+export interface AnprEsistenzaInVitaResult {
+  found: boolean;
+  data?: {
+    idANPR?: string;
+    generalita: AnprGeneralita;
+    esistenzaInVita?: 'S' | 'N';
+    dataDecesso?: string;
   };
 }

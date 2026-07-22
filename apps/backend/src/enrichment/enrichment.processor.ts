@@ -12,6 +12,7 @@ import {
 } from '../entities/enrichment-job.entity';
 import { ENRICHMENT_QUEUE, EnrichmentQueueJobData } from './enrichment-job.types';
 import { getEnrichmentResultCsv, getEnrichmentSourceZip } from './enrichment-paths';
+import { readLargeFileSync } from './large-file-read.util';
 import { parseMaggioliZip, type MaggioliRecord } from './maggioli-parser';
 import { buildEnrichedCsv, buildEnrichedCsvHeaders, type EnrichedRow } from './enriched-csv.util';
 import { PdfExtractorClient, type ExtractedPaymentDetail } from './pdf-extractor.client';
@@ -44,7 +45,7 @@ export class EnrichmentProcessor extends WorkerHost {
     try {
       await this.jobRepo.update(jobId, { status: EnrichmentJobStatus.PROCESSING });
 
-      const zip = new AdmZip(getEnrichmentSourceZip(jobId));
+      const zip = new AdmZip(readLargeFileSync(getEnrichmentSourceZip(jobId)));
       const { records } = parseMaggioliZip(zip);
       const warnings: EnrichmentWarning[] = [];
       const rows: EnrichedRow[] = [];

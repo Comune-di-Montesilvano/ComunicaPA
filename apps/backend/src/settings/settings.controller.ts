@@ -266,13 +266,32 @@ export class SettingsController {
     return this.testServicePurposeConnection(env, 'inipec');
   }
 
-  @Post('anpr/:env/test-connection')
+  @Post('anpr/c002/test-connection')
   @HttpCode(HttpStatus.OK)
-  async testAnprConnection(@Param('env') env: string) {
-    return this.testServicePurposeConnection(env, 'anpr');
+  async testAnprC002Connection() {
+    return this.testAnprPurposeConnection('anpr.c002.purposeId');
   }
 
-  private async testServicePurposeConnection(env: string, service: 'send' | 'inad' | 'inipec' | 'anpr') {
+  @Post('anpr/c019/test-connection')
+  @HttpCode(HttpStatus.OK)
+  async testAnprC019Connection() {
+    return this.testAnprPurposeConnection('anpr.c019.purposeId');
+  }
+
+  private async testAnprPurposeConnection(settingKey: SettingKey) {
+    const purposeId = await this.appSettings.get<string>(settingKey);
+    if (!purposeId) {
+      return { success: false, message: `Purpose ID (${settingKey}) non configurato.` };
+    }
+    try {
+      await this.pdndAuth.getVoucher('prod', purposeId, true);
+      return { success: true, message: 'Voucher PDND ottenuto correttamente: client e finalità validi.' };
+    } catch (error: any) {
+      return { success: false, message: error.message || 'Errore sconosciuto durante la richiesta del voucher PDND.' };
+    }
+  }
+
+  private async testServicePurposeConnection(env: string, service: 'send' | 'inad' | 'inipec') {
     if (env !== 'test' && env !== 'prod') {
       throw new BadRequestException('Ambiente non valido: usare "test" o "prod"');
     }

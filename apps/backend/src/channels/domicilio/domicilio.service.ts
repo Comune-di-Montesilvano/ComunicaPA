@@ -27,11 +27,18 @@ export interface DomicilioAnprResult {
   message?: string;
 }
 
+export interface DomicilioEsistenzaInVitaResult {
+  success: boolean;
+  dataDecesso?: string;
+  message?: string;
+}
+
 export interface DomicilioSearchResult {
   codiceFiscale: string;
   inad: DomicilioInadResult;
   appIo: DomicilioAppIoResult;
   anpr: DomicilioAnprResult;
+  anprEsistenzaInVita?: DomicilioEsistenzaInVitaResult;
 }
 
 /**
@@ -39,6 +46,10 @@ export interface DomicilioSearchResult {
  * parallelo per lo stesso CF. Nessuna persistenza — query live ogni volta.
  * Un fallimento di una fonte non deve azzerare le altre due già arrivate,
  * quindi ogni ramo cattura il proprio errore invece di propagarlo.
+ *
+ * ANPR C019 (data decesso) è una finalità PDND separata da C002 — viene
+ * interrogata SOLO se C002 ha già segnalato il soggetto deceduto (mai per
+ * soggetti in vita), per non consumare quota C019 inutilmente.
  */
 @Injectable()
 export class DomicilioService {
@@ -55,7 +66,7 @@ export class DomicilioService {
       this.anprService.getResidenza(codiceFiscale, operatorUsername),
     ]);
 
-    return {
+    const result: DomicilioSearchResult = {
       codiceFiscale,
       inad:
         inad.status === 'fulfilled'
@@ -77,5 +88,22 @@ export class DomicilioService {
             }
           : { success: false, found: false, message: anpr.reason?.message ?? 'Errore sconosciuto' },
     };
+
+    const vitaInfo =
+      anpr.status === 'fulfilled'
+        ? anpr.value.data?.infoSoggettoEnte?.find((i) => (i.chiave ?? '').toLowerCase().includes('vita'))
+        : undefined;
+    const isDeceduto = anpr.status === 'fulfilled' && anpr.value.found && vitaInfo?.valore === 'N';
+
+    if (isDeceduto) {
+      try {
+        const esistenza = await this.anprService.getEsistenzaInVita(codiceFiscale, operatorUsername);
+        result.anprEsistenzaInVita = { success: true, dataDecesso: esistenza.data?.dataDecesso };
+      } catch (error: any) {
+        result.anprEsistenzaInVita = { success: false, message: error?.message ?? 'Errore sconosciuto' };
+      }
+    }
+
+    return result;
   }
 }

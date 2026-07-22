@@ -14,6 +14,7 @@ import {
 import { parseMaggioliZip } from './maggioli-parser';
 import { ENRICHMENT_QUEUE, EnrichmentQueueJobData } from './enrichment-job.types';
 import { getEnrichmentDir, getEnrichmentResultCsv, getEnrichmentSourceZip } from './enrichment-paths';
+import { readLargeFileSync } from './large-file-read.util';
 import { CampaignsService } from '../campaigns/campaigns.service';
 import { getUploadsDir } from '../attachments/attachment-paths';
 
@@ -37,7 +38,7 @@ export class EnrichmentService {
   async createJob(params: CreateEnrichmentJobParams): Promise<{ jobId?: string; blocked?: boolean; message?: string }> {
     let totalRecords: number;
     try {
-      const zip = new AdmZip(params.zipPath);
+      const zip = new AdmZip(readLargeFileSync(params.zipPath));
       const { records } = parseMaggioliZip(zip);
       if (records.length === 0) {
         return { blocked: true, message: 'Il tracciato non contiene righe di dati' };
@@ -111,7 +112,7 @@ export class EnrichmentService {
     }
     const out = new AdmZip();
     out.addFile('arricchito.csv', fs.readFileSync(csvPath));
-    const source = new AdmZip(getEnrichmentSourceZip(id));
+    const source = new AdmZip(readLargeFileSync(getEnrichmentSourceZip(id)));
     for (const entry of source.getEntries()) {
       if (entry.entryName.startsWith('allegati/') && entry.entryName.toLowerCase().endsWith('.pdf')) {
         out.addFile(basename(entry.entryName), entry.getData());
@@ -155,7 +156,7 @@ export class EnrichmentService {
     fs.mkdirSync(uploadsDir, { recursive: true });
     fs.copyFileSync(getEnrichmentResultCsv(jobId), join(uploadsDir, 'draft_recipients.csv'));
 
-    const source = new AdmZip(getEnrichmentSourceZip(jobId));
+    const source = new AdmZip(readLargeFileSync(getEnrichmentSourceZip(jobId)));
     for (const entry of source.getEntries()) {
       if (entry.entryName.startsWith('allegati/') && entry.entryName.toLowerCase().endsWith('.pdf')) {
         // basename(): il nome file nello ZIP è dato attaccante-influenzabile

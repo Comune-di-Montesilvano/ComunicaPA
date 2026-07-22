@@ -4,7 +4,7 @@ import { decode as jwtDecodeComplete } from 'jsonwebtoken';
 import { AppSettingsService } from '../../settings/app-settings.service';
 import type { SettingKey } from '../../settings/settings.registry';
 import { PdndAuthService } from '../../pdnd/pdnd-auth.service';
-import type { AnprResidenzaResult, AnprGeneralita, AnprResidenza, AnprInfoSoggettoEnte } from './anpr.types';
+import type { AnprResidenzaResult, AnprGeneralita, AnprResidenza, AnprInfoSoggettoEnte, AnprEsistenzaInVitaResult } from './anpr.types';
 
 const ANPR_C002_BASE_URL =
   'https://modipa.anpr.interno.it/govway/rest/in/MinInternoPortaANPR-PDND/C002-servizioComunicazione/v1';
@@ -17,12 +17,28 @@ const ANPR_C002_ENDPOINT = `${ANPR_C002_BASE_URL}/anpr-service-e002`;
 // comune di InteroperabilityInvalidRequest in quel thread.
 const ANPR_C002_AUD = 'https://modipa.anpr.interno.it/govway/rest/in/MinInternoPortaANPR/C002-servizioComunicazione/v1';
 
+const ANPR_C019_BASE_URL =
+  'https://modipa.anpr.interno.it/govway/rest/in/MinInternoPortaANPR-PDND/C019-servizioAccertamentoEsistenzaVita/v1';
+const ANPR_C019_ENDPOINT = `${ANPR_C019_BASE_URL}/anpr-service-e002`;
+const ANPR_C019_AUD = 'https://modipa.anpr.interno.it/govway/rest/in/MinInternoPortaANPR/C019-servizioAccertamentoEsistenzaVita/v1';
+
 interface RispostaE002OK {
   idOperazioneANPR?: string;
   listaSoggetti?: {
     datiSoggetto?: Array<{
       generalita: AnprGeneralita;
       residenza?: AnprResidenza[];
+      identificativi?: { idANPR?: string };
+      infoSoggettoEnte?: AnprInfoSoggettoEnte[];
+    }>;
+  };
+}
+
+interface RispostaE019OK {
+  idOperazioneANPR?: string;
+  listaSoggetti?: {
+    datiSoggetto?: Array<{
+      generalita: AnprGeneralita;
       identificativi?: { idANPR?: string };
       infoSoggettoEnte?: AnprInfoSoggettoEnte[];
     }>;
@@ -62,7 +78,7 @@ export class AnprService {
 
   async getResidenza(codiceFiscale: string, operatorUsername: string): Promise<AnprResidenzaResult> {
     const [purposeId, userLocation, loA] = await Promise.all([
-      this.settings.get<string>('anpr.prod.purposeId' as SettingKey),
+      this.settings.get<string>('anpr.c002.purposeId' as SettingKey),
       this.settings.get<string>('anpr.trackingUserLocation' as SettingKey),
       this.settings.get<string>('anpr.trackingLoA' as SettingKey),
     ]);
@@ -155,6 +171,97 @@ export class AnprService {
         generalita: soggetto.generalita,
         residenza: soggetto.residenza ?? [],
         infoSoggettoEnte: soggetto.infoSoggettoEnte ?? [],
+      },
+    };
+  }
+
+  /**
+   * C019 "Servizio di accertamento esistenza in vita" — e-service PDND
+   * distinto da C002 (propria finalità/purposeId). Restituisce in più la
+   * data decesso, non presente in C002 (confermato da doc ufficiale Sogei,
+   * vedi CLAUDE.md). Stesso pattern di sicurezza di getResidenza().
+   */
+  async getEsistenzaInVita(codiceFiscale: string, operatorUsername: string): Promise<AnprEsistenzaInVitaResult> {
+    const [purposeId, userLocation, loA] = await Promise.all([
+      this.settings.get<string>('anpr.c019.purposeId' as SettingKey),
+      this.settings.get<string>('anpr.trackingUserLocation' as SettingKey),
+      this.settings.get<string>('anpr.trackingLoA' as SettingKey),
+    ]);
+    if (!purposeId) {
+      throw new Error('Configurazione ANPR C019 incompleta: purposeId non impostato');
+    }
+
+    const trackingEvidence = await this.pdndAuth.signAgidJwt('prod', ANPR_C019_AUD, {
+      purposeId,
+      dnonce: Date.now().toString(),
+      userID: operatorUsername,
+      userLocation,
+      LoA: loA,
+    });
+    const trackingDigestHex = createHash('sha256').update(trackingEvidence).digest('hex');
+
+    const voucher = await this.pdndAuth.getVoucherWithDigest('prod', purposeId, trackingDigestHex);
+
+    const idOperazioneClient = `${Date.now()}${randomUUID().replace(/-/g, '').slice(0, 6)}`;
+    const body = {
+      idOperazioneClient,
+      criteriRicerca: { codiceFiscale },
+      datiRichiesta: {
+        dataRiferimentoRichiesta: new Date().toISOString().slice(0, 10),
+        motivoRichiesta: 'comunicapa-cerca-domicilio',
+        casoUso: 'C019',
+      },
+    };
+    const bodyStr = JSON.stringify(body);
+    const digest = `SHA-256=${createHash('sha256').update(bodyStr).digest('base64')}`;
+
+    const signature = await this.pdndAuth.signAgidJwt('prod', ANPR_C019_AUD, {
+      signed_headers: [{ digest }, { 'Content-Type': 'application/json' }],
+    });
+
+    this.logger.debug(`ANPR C019 request body: ${bodyStr}`);
+
+    const response = await fetch(ANPR_C019_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${voucher}`,
+        Digest: digest,
+        'Agid-JWT-Signature': signature,
+        'Agid-JWT-TrackingEvidence': trackingEvidence,
+        'Content-Type': 'application/json',
+      },
+      body: bodyStr,
+    });
+
+    const text = await response.text();
+    this.logger.debug(`ANPR C019 response HTTP ${response.status}: ${text}`);
+    if (response.status === 404) {
+      return { found: false };
+    }
+    if (!response.ok) {
+      throw new Error(`ANPR C019 fallito: HTTP ${response.status} — ${text.slice(0, 500)}`);
+    }
+
+    let data: RispostaE019OK;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(`Risposta ANPR C019 non valida (non JSON): ${text.slice(0, 200)}`);
+    }
+
+    const soggetto = data.listaSoggetti?.datiSoggetto?.[0];
+    if (!soggetto) {
+      return { found: false };
+    }
+    const vitaInfo = soggetto.infoSoggettoEnte?.find((i) => (i.chiave ?? '').toLowerCase().includes('vita'));
+    const decessoInfo = soggetto.infoSoggettoEnte?.find((i) => (i.chiave ?? '').toLowerCase().includes('decesso'));
+    return {
+      found: true,
+      data: {
+        idANPR: soggetto.identificativi?.idANPR,
+        generalita: soggetto.generalita,
+        esistenzaInVita: vitaInfo?.valore as 'S' | 'N' | undefined,
+        dataDecesso: decessoInfo?.valoreData,
       },
     };
   }

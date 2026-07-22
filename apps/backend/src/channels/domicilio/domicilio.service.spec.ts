@@ -6,7 +6,7 @@ import { AnprService } from '../anpr/anpr.service';
 
 const mockInad = { extractDigitalAddress: jest.fn() };
 const mockIoServices = { verifyProfile: jest.fn() };
-const mockAnpr = { getResidenza: jest.fn() };
+const mockAnpr = { getResidenza: jest.fn(), getEsistenzaInVita: jest.fn() };
 
 describe('DomicilioService.cercaDomicilio', () => {
   let service: DomicilioService;
@@ -57,5 +57,51 @@ describe('DomicilioService.cercaDomicilio', () => {
     expect(result.inad).toEqual({ success: false, found: false, message: 'INAD giù' });
     expect(result.appIo).toEqual({ success: true, active: false, message: 'non attivo' });
     expect(result.anpr).toEqual({ success: true, found: false });
+  });
+
+  it('chiama C019 e include la data decesso quando C002 segnala il soggetto deceduto', async () => {
+    mockInad.extractDigitalAddress.mockResolvedValue({ found: false });
+    mockIoServices.verifyProfile.mockResolvedValue({ success: true, active: false, message: 'non attivo' });
+    mockAnpr.getResidenza.mockResolvedValue({
+      found: true,
+      data: { generalita: { cognome: 'Bianchi' }, residenza: [], infoSoggettoEnte: [{ chiave: 'Verifica esistenza in vita', valore: 'N' }] },
+    });
+    mockAnpr.getEsistenzaInVita.mockResolvedValue({
+      found: true,
+      data: { generalita: { cognome: 'Bianchi' }, esistenzaInVita: 'N', dataDecesso: '2026-01-15' },
+    });
+
+    const result = await service.cercaDomicilio('CF1', 'mario.rossi');
+
+    expect(mockAnpr.getEsistenzaInVita).toHaveBeenCalledWith('CF1', 'mario.rossi');
+    expect(result.anprEsistenzaInVita).toEqual({ success: true, dataDecesso: '2026-01-15' });
+  });
+
+  it('non chiama C019 quando il soggetto risulta in vita', async () => {
+    mockInad.extractDigitalAddress.mockResolvedValue({ found: false });
+    mockIoServices.verifyProfile.mockResolvedValue({ success: true, active: false, message: 'non attivo' });
+    mockAnpr.getResidenza.mockResolvedValue({
+      found: true,
+      data: { generalita: { cognome: 'Rossi' }, residenza: [], infoSoggettoEnte: [{ chiave: 'Verifica esistenza in vita', valore: 'S' }] },
+    });
+
+    const result = await service.cercaDomicilio('CF1', 'mario.rossi');
+
+    expect(mockAnpr.getEsistenzaInVita).not.toHaveBeenCalled();
+    expect(result.anprEsistenzaInVita).toBeUndefined();
+  });
+
+  it('include un messaggio di errore esplicito se C019 fallisce', async () => {
+    mockInad.extractDigitalAddress.mockResolvedValue({ found: false });
+    mockIoServices.verifyProfile.mockResolvedValue({ success: true, active: false, message: 'non attivo' });
+    mockAnpr.getResidenza.mockResolvedValue({
+      found: true,
+      data: { generalita: { cognome: 'Bianchi' }, residenza: [], infoSoggettoEnte: [{ chiave: 'Verifica esistenza in vita', valore: 'N' }] },
+    });
+    mockAnpr.getEsistenzaInVita.mockRejectedValue(new Error('Configurazione ANPR C019 incompleta: purposeId non impostato'));
+
+    const result = await service.cercaDomicilio('CF1', 'mario.rossi');
+
+    expect(result.anprEsistenzaInVita).toEqual({ success: false, message: 'Configurazione ANPR C019 incompleta: purposeId non impostato' });
   });
 });
