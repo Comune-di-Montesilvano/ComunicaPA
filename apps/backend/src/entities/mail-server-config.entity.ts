@@ -57,6 +57,9 @@ export class MailServerConfig {
   @Column({ type: 'boolean', default: false })
   active!: boolean;
 
+  @Column({ name: 'is_default', type: 'boolean', default: false })
+  isDefault!: boolean;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt!: Date;
 
