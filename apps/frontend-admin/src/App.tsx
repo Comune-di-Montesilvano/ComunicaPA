@@ -3208,6 +3208,28 @@ export function App(): React.JSX.Element {
     }
   };
 
+  const handleSetDefaultMailConfig = async (id: string) => {
+    if (!token) return;
+    setMailConfigBusyId(id);
+    setMailConfigMsg(null);
+    try {
+      const res = await fetch(`${ADMIN_API_BASE}/mail-configs/${id}/default`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || 'Errore impostazione predefinito');
+      }
+      setMailConfigMsg({ text: 'Configurazione impostata come predefinita.', error: false });
+      fetchMailConfigs();
+    } catch (err: any) {
+      setMailConfigMsg({ text: err.message || 'Errore di rete', error: true });
+    } finally {
+      setMailConfigBusyId(null);
+    }
+  };
+
   const handleTestMailConfig = async (e: React.FormEvent, id: string) => {
     e.preventDefault();
     if (!token || !mailConfigTestTo) return;
@@ -3715,6 +3737,7 @@ export function App(): React.JSX.Element {
                               <span className={`badge ${c.active ? 'bg-success' : 'bg-secondary'}`} style={{ fontSize: '0.65rem' }}>
                                 {c.active ? 'Attivo' : 'Inattivo'}
                               </span>
+                              {c.isDefault && <span className="badge bg-primary" style={{ fontSize: '0.65rem' }}>Predefinito</span>}
                             </div>
                             <div className="text-muted small mt-1">
                               <Server className="me-1" size={14} />
@@ -3738,6 +3761,17 @@ export function App(): React.JSX.Element {
 
                         {/* Right: Actions */}
                         <div className="d-flex flex-column gap-2 flex-shrink-0">
+                          {!c.isDefault && (
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-primary d-flex align-items-center gap-1"
+                              onClick={() => handleSetDefaultMailConfig(c.id)}
+                              disabled={mailConfigBusyId === c.id}
+                              title="Imposta come predefinito"
+                            >
+                              <Star size={14} /> Predefinito
+                            </button>
+                          )}
                           <button
                             type="button"
                             className={`btn btn-sm ${c.active ? 'btn-outline-success' : 'btn-outline-secondary'} d-flex align-items-center gap-1`}
