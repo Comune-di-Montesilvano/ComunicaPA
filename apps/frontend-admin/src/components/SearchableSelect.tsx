@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, X } from 'lucide-react';
 
 export interface SearchableSelectOption {
   value: string;
@@ -93,23 +94,33 @@ export function SearchableSelect({
         className={className}
         disabled={disabled}
         placeholder={placeholder}
-        style={value && !open ? { paddingRight: 28 } : undefined}
+        style={{ paddingRight: 30 }}
         value={open ? query : (selected?.label ?? '')}
         onFocus={() => { setOpen(true); setQuery(''); }}
         onChange={e => setQuery(e.target.value)}
         onKeyDown={handleKeyDown}
       />
-      {value && !open && (
+      {value && !open ? (
         <button
           type="button"
-          className="btn btn-sm btn-link text-secondary p-1"
-          style={{ textDecoration: 'none', position: 'absolute', top: 0, right: 0 }}
+          className="text-secondary d-flex align-items-center justify-content-center"
+          style={{
+            position: 'absolute', top: '50%', right: 6, transform: 'translateY(-50%)',
+            width: 22, height: 22, padding: 0, border: 'none', background: 'transparent',
+            borderRadius: '50%', cursor: 'pointer', lineHeight: 0,
+          }}
           tabIndex={-1}
           onClick={() => onChange('')}
           title="Pulisci selezione"
         >
-          ×
+          <X size={14} />
         </button>
+      ) : !disabled && (
+        <ChevronDown
+          size={14}
+          className="text-secondary"
+          style={{ position: 'absolute', top: '50%', right: 10, transform: 'translateY(-50%)', pointerEvents: 'none' }}
+        />
       )}
       {open && (
         <div
