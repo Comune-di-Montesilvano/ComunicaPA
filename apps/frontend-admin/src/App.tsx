@@ -2411,10 +2411,12 @@ export function App(): React.JSX.Element {
       
       if (!configOverrides) {
         if (channelVal === 'EMAIL') {
-          const activeSmtp = mailConfigs.find(c => c.type === 'EMAIL' && c.active);
+          const activeSmtp = mailConfigs.find(c => c.type === 'EMAIL' && c.active && c.isDefault)
+            ?? mailConfigs.find(c => c.type === 'EMAIL' && c.active);
           channelConfig = { from: activeSmtp?.fromAddress || '', mailConfigId: activeSmtp?.id };
         } else if (channelVal === 'PEC') {
-          const activePec = mailConfigs.find(c => c.type === 'PEC' && c.active);
+          const activePec = mailConfigs.find(c => c.type === 'PEC' && c.active && c.isDefault)
+            ?? mailConfigs.find(c => c.type === 'PEC' && c.active);
           channelConfig = { from: activePec?.fromAddress || '', mailConfigId: activePec?.id };
         } else if (channelVal === 'SEND') {
           channelConfig = {};
@@ -6713,8 +6715,12 @@ export function App(): React.JSX.Element {
                             onChange={(e: any) => {
                               const newChan = e.target.value as any;
                               setWizChannel(newChan);
-                              const activeCfg = mailConfigs.find(c => c.type === newChan && c.active);
-                              setWizMailConfigId(activeCfg?.id || '');
+                              setWizMailConfigId(prev => {
+                                if (prev) return prev;
+                                const defaultCfg = mailConfigs.find(c => c.type === newChan && c.active && c.isDefault)
+                                  ?? mailConfigs.find(c => c.type === newChan && c.active);
+                                return defaultCfg?.id || '';
+                              });
                               if (newChan === 'SEND') setWizProtocolla(true);
                               if (newChan !== 'SEND' && newChan !== 'APP_IO' && !(wizAppIoMode === 'parallel' && singleAppIoActive)) {
                                 setWizPaymentEnabled(false);
@@ -6779,7 +6785,7 @@ export function App(): React.JSX.Element {
                                 .filter(c => c.type === wizChannel && c.active)
                                 .map(c => (
                                   <option key={c.id} value={c.id}>
-                                    {c.name} ({c.fromAddress})
+                                    {c.name} ({c.fromAddress}){c.isDefault ? ' (Predefinito)' : ''}
                                   </option>
                                 ))}
                             </select>
@@ -7212,8 +7218,12 @@ export function App(): React.JSX.Element {
                       onChange={(e: any) => {
                         const newChan = e.target.value as any;
                         setWizChannel(newChan);
-                        const activeCfg = mailConfigs.find(c => c.type === newChan && c.active);
-                        setWizMailConfigId(activeCfg?.id || '');
+                        setWizMailConfigId(prev => {
+                          if (prev) return prev;
+                          const defaultCfg = mailConfigs.find(c => c.type === newChan && c.active && c.isDefault)
+                            ?? mailConfigs.find(c => c.type === newChan && c.active);
+                          return defaultCfg?.id || '';
+                        });
                         if (newChan === 'SEND') setWizProtocolla(true);
                       }}
                     >
@@ -7375,7 +7385,7 @@ export function App(): React.JSX.Element {
                           .filter(c => c.type === wizChannel && c.active)
                           .map(c => (
                             <option key={c.id} value={c.id}>
-                              {c.name} ({c.fromAddress})
+                              {c.name} ({c.fromAddress}){c.isDefault ? ' (Predefinito)' : ''}
                             </option>
                           ))}
                       </select>
@@ -7400,7 +7410,7 @@ export function App(): React.JSX.Element {
                           .filter(c => c.type === 'PEC' && c.active)
                           .map(c => (
                             <option key={c.id} value={c.id}>
-                              {c.name} ({c.fromAddress})
+                              {c.name} ({c.fromAddress}){c.isDefault ? ' (Predefinito)' : ''}
                             </option>
                           ))}
                       </select>
