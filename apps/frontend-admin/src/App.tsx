@@ -6968,19 +6968,13 @@ export function App(): React.JSX.Element {
                         {wizChannel === 'APP_IO' && (
                           <div className="mb-3">
                             <label className="form-label small fw-bold text-dark mb-1">Servizio App IO Associato *</label>
-                            <select
+                            <SearchableSelect
                               className="form-select"
                               value={wizAppIoServiceId}
-                              onChange={e => setWizAppIoServiceId(e.target.value)}
-                              required
-                            >
-                              <option value="">-- Seleziona Servizio App IO --</option>
-                              {ioServices.map(s => (
-                                <option key={s.id} value={s.id}>
-                                  {s.nome} {s.isDefault ? '(Predefinito)' : ''}
-                                </option>
-                              ))}
-                            </select>
+                              onChange={setWizAppIoServiceId}
+                              placeholder="-- Seleziona Servizio App IO --"
+                              options={ioServices.map(s => ({ value: s.id, label: s.nome, isDefault: s.isDefault }))}
+                            />
                           </div>
                         )}
 
@@ -7211,19 +7205,13 @@ export function App(): React.JSX.Element {
                               {wizAppIoMode === 'parallel' && (
                                 <div className="mt-3">
                                   <label className="form-label small fw-bold text-dark mb-1">Servizio App IO *</label>
-                                  <select
+                                  <SearchableSelect
                                     className="form-select"
                                     value={wizAppIoServiceId}
-                                    onChange={e => setWizAppIoServiceId(e.target.value)}
-                                    required
-                                  >
-                                    <option value="">-- Seleziona Servizio App IO --</option>
-                                    {ioServices.map(s => (
-                                      <option key={s.id} value={s.id}>
-                                        {s.nome} {s.isDefault ? '(Predefinito)' : ''}
-                                      </option>
-                                    ))}
-                                  </select>
+                                    onChange={setWizAppIoServiceId}
+                                    placeholder="-- Seleziona Servizio App IO --"
+                                    options={ioServices.map(s => ({ value: s.id, label: s.nome, isDefault: s.isDefault }))}
+                                  />
                                 </div>
                               )}
                             </div>
@@ -7596,19 +7584,13 @@ export function App(): React.JSX.Element {
                         {wizAppIoMode !== 'none' && (
                           <div className="mb-0">
                             <label className="form-label small fw-bold">Servizio App IO *</label>
-                            <select
+                            <SearchableSelect
                               className="form-select form-select-sm"
                               value={wizAppIoServiceId}
-                              onChange={e => setWizAppIoServiceId(e.target.value)}
-                              required
-                            >
-                              <option value="">-- Seleziona Servizio App IO --</option>
-                              {ioServices.map(s => (
-                                <option key={s.id} value={s.id}>
-                                  {s.nome} {s.isDefault ? '(Predefinito)' : ''}
-                                </option>
-                              ))}
-                            </select>
+                              onChange={setWizAppIoServiceId}
+                              placeholder="-- Seleziona Servizio App IO --"
+                              options={ioServices.map(s => ({ value: s.id, label: s.nome, isDefault: s.isDefault }))}
+                            />
                           </div>
                         )}
                       </div>
@@ -7618,19 +7600,13 @@ export function App(): React.JSX.Element {
                   {wizChannel === 'APP_IO' && (
                     <div className="mb-4">
                       <label className="form-label small fw-bold text-dark">Servizio App IO Associato *</label>
-                      <select
+                      <SearchableSelect
                         className="form-select form-select-sm"
                         value={wizAppIoServiceId}
-                        onChange={e => setWizAppIoServiceId(e.target.value)}
-                        required
-                      >
-                        <option value="">-- Seleziona Servizio App IO --</option>
-                        {ioServices.map(s => (
-                          <option key={s.id} value={s.id}>
-                            {s.nome} {s.isDefault ? '(Predefinito)' : ''}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={setWizAppIoServiceId}
+                        placeholder="-- Seleziona Servizio App IO --"
+                        options={ioServices.map(s => ({ value: s.id, label: s.nome, isDefault: s.isDefault }))}
+                      />
                     </div>
                   )}
 
@@ -9635,11 +9611,13 @@ export function App(): React.JSX.Element {
                     <>
                       <div className="mb-3">
                         <label className="form-label small fw-bold">Servizio App IO da usare per la verifica</label>
-                        <select className="form-select form-select-sm" value={verificaBulkServiceId} onChange={e => setVerificaBulkServiceId(e.target.value)}>
-                          {ioServices.map(s => (
-                            <option key={s.id} value={s.id}>{s.nome}{s.isDefault ? ' (predefinito)' : ''}</option>
-                          ))}
-                        </select>
+                        <SearchableSelect
+                          className="form-select form-select-sm"
+                          value={verificaBulkServiceId}
+                          onChange={setVerificaBulkServiceId}
+                          placeholder="-- Seleziona Servizio App IO --"
+                          options={ioServices.map(s => ({ value: s.id, label: s.nome, isDefault: s.isDefault }))}
+                        />
                         <div className="form-text small text-muted">
                           I messaggi abilitati/disabilitati sono specifici per servizio: usa lo stesso servizio che userai per l'invio reale, altrimenti il risultato non è affidabile.
                         </div>
