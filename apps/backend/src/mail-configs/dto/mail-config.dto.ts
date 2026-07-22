@@ -34,6 +34,10 @@ export class CreateMailConfigDto {
   @IsBoolean()
   secure!: boolean;
 
+  @IsOptional()
+  @IsBoolean()
+  isDefault?: boolean;
+
   @IsBoolean()
   authEnabled!: boolean;
 
@@ -73,6 +77,9 @@ export class UpdateMailConfigDto {
   secure?: boolean;
 
   @IsOptional() @IsBoolean()
+  isDefault?: boolean;
+
+  @IsOptional() @IsBoolean()
   authEnabled?: boolean;
 
   @IsOptional() @IsString() @MaxLength(255)
@@ -106,6 +113,7 @@ export interface MailConfigMaskedDto {
   batchIntervalSeconds: number;
   testedAt: string | null;
   active: boolean;
+  isDefault: boolean;
 }
 
 export class TestMailConfigDto {
