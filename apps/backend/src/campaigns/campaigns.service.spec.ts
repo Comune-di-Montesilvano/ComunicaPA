@@ -651,7 +651,7 @@ describe('CampaignsService', () => {
       const campaignWithAttachments = {
         ...mockCampaign,
         id: 'c-att-ok',
-        channelConfig: { attachments: [{ key: 'file', label: 'Avviso TARI' }] },
+        channelConfig: { attachments: [{ key: 'file', label: 'Avviso TARI' }], body: '%%elenco_allegati%%' },
       };
       mockCampaignRepo.findOneBy.mockResolvedValue(campaignWithAttachments);
       // Create all needed files
@@ -666,6 +666,133 @@ describe('CampaignsService', () => {
 
       const result = await service.launch('c-att-ok');
       expect(result.launched).toBe(1);
+    });
+
+    it('blocca EMAIL con allegati se il template non contiene alcun placeholder allegato', async () => {
+      const campaign = {
+        ...mockCampaign,
+        id: 'c-no-placeholder',
+        channelType: 'EMAIL',
+        channelConfig: {
+          attachments: [{ key: 'file', label: 'Avviso TARI' }],
+          body: 'Gentile %%nominativo%%, saluti.',
+        },
+      };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaign);
+      fs.writeFileSync(join(tmpDir, 'xxx.pdf'), '%PDF');
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: string[] }) => {
+        if (select.includes('extraData')) {
+          return Promise.resolve([{ id: 'r1', codiceFiscale: 'AAA1', extraData: { file: 'xxx.pdf' } }]);
+        }
+        return Promise.resolve([{ id: 'r1' }]);
+      });
+
+      const result = await service.launch('c-no-placeholder');
+      expect(result.blocked).toBe(true);
+      expect(result.message).toContain('elenco_allegati');
+      expect(result.launched).toBe(0);
+      expect(mockCampaignRepo.update).toHaveBeenCalledWith({ id: 'c-no-placeholder' }, { status: CampaignStatus.DRAFT });
+      expect(mockQueue.addBulk).not.toHaveBeenCalled();
+    });
+
+    it('lancia EMAIL con allegati se il template contiene %%elenco_allegati%%', async () => {
+      const campaign = {
+        ...mockCampaign,
+        id: 'c-elenco-ok',
+        channelType: 'EMAIL',
+        channelConfig: {
+          attachments: [{ key: 'file', label: 'Avviso TARI' }],
+          body: 'Gentile %%nominativo%%, vedi %%elenco_allegati%%.',
+        },
+      };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaign);
+      fs.writeFileSync(join(tmpDir, 'xxx.pdf'), '%PDF');
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: string[] }) => {
+        if (select.includes('extraData')) {
+          return Promise.resolve([{ id: 'r1', codiceFiscale: 'AAA1', extraData: { file: 'xxx.pdf' } }]);
+        }
+        return Promise.resolve([{ id: 'r1' }]);
+      });
+
+      const result = await service.launch('c-elenco-ok');
+      expect(result.launched).toBe(1);
+    });
+
+    it('blocca EMAIL con 2 allegati se manca il link singolo per uno dei due', async () => {
+      const campaign = {
+        ...mockCampaign,
+        id: 'c-parziale',
+        channelType: 'EMAIL',
+        channelConfig: {
+          attachments: [{ key: 'file1', label: 'Avviso' }, { key: 'file2', label: 'Ruolo' }],
+          body: 'Documenti: %%allegato1%%',
+        },
+      };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaign);
+      fs.writeFileSync(join(tmpDir, 'xxx.pdf'), '%PDF');
+      fs.writeFileSync(join(tmpDir, 'yyy.pdf'), '%PDF');
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: string[] }) => {
+        if (select.includes('extraData')) {
+          return Promise.resolve([{ id: 'r1', codiceFiscale: 'AAA1', extraData: { file1: 'xxx.pdf', file2: 'yyy.pdf' } }]);
+        }
+        return Promise.resolve([{ id: 'r1' }]);
+      });
+
+      const result = await service.launch('c-parziale');
+      expect(result.blocked).toBe(true);
+      expect(result.launched).toBe(0);
+    });
+
+    it('NON blocca POSTAL con allegati e body senza placeholder (corpo non è contenuto reale)', async () => {
+      const campaign = {
+        ...mockCampaign,
+        id: 'c-postal',
+        channelType: 'POSTAL',
+        channelConfig: {
+          attachments: [{ key: 'file', label: 'Lettera' }],
+          body: '',
+        },
+      };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaign);
+      fs.writeFileSync(join(tmpDir, 'xxx.pdf'), '%PDF');
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: string[] }) => {
+        if (select.includes('extraData')) {
+          return Promise.resolve([{ id: 'r1', codiceFiscale: 'AAA1', extraData: { file: 'xxx.pdf' } }]);
+        }
+        return Promise.resolve([{ id: 'r1' }]);
+      });
+
+      const result = await service.launch('c-postal');
+      expect(result.blocked).toBeUndefined();
+      expect(result.launched).toBe(1);
+    });
+
+    it('blocca la co-consegna App IO differenziata se bodyOverride non ha placeholder, anche se il corpo primario è ok', async () => {
+      const campaign = {
+        ...mockCampaign,
+        id: 'c-appio-override',
+        channelType: 'EMAIL',
+        channelConfig: {
+          attachments: [{ key: 'file', label: 'Avviso TARI' }],
+          body: 'Corpo primario con %%elenco_allegati%%.',
+          secondaryChannels: [
+            { channel: 'APP_IO', mode: 'parallel', bodyOverride: 'Testo App IO senza placeholder allegati.' },
+          ],
+        },
+      };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaign);
+      fs.writeFileSync(join(tmpDir, 'xxx.pdf'), '%PDF');
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: string[] }) => {
+        if (select.includes('extraData')) {
+          return Promise.resolve([{ id: 'r1', codiceFiscale: 'AAA1', extraData: { file: 'xxx.pdf' } }]);
+        }
+        return Promise.resolve([{ id: 'r1' }]);
+      });
+
+      const result = await service.launch('c-appio-override');
+      expect(result.blocked).toBe(true);
+      expect(result.message).toContain('App IO');
+      expect(result.launched).toBe(0);
     });
   });
 

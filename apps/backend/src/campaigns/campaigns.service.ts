@@ -11,7 +11,7 @@ import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import type { AppConfiguration } from '../config/configuration';
 import { AppSettingsService } from '../settings/app-settings.service';
-import { processTemplate, wrapInHtmlLayout } from '../channels/template.helper';
+import { processTemplate, wrapInHtmlLayout, hasValidAttachmentPlaceholders } from '../channels/template.helper';
 import { getEffectiveRetentionDays } from './retention.util';
 import { getUploadsDir } from '../attachments/attachment-paths';
 import { resolveAttachmentsConfig, resolveAttachmentLabel, resolveCustomAttachmentFilename } from '../attachments/attachment.service';
@@ -355,6 +355,30 @@ export class CampaignsService {
         message: `Impossibile avviare: ${missingAttachments.length} allegato/i mancante/i rispetto alla mappatura configurata — es. ${sample}${more}. Carica i file mancanti prima di rilanciare. (Presenti in cartella: ${presentList})`,
       };
     }
+
+    const attachmentCount = resolveAttachmentsConfig(campaign.channelConfig).length;
+
+    if (
+      ['EMAIL', 'PEC', 'APP_IO'].includes(campaign.channelType) &&
+      !hasValidAttachmentPlaceholders((campaign.channelConfig?.['body'] as string) || '', attachmentCount)
+    ) {
+      return {
+        blocked: true,
+        message: `Impossibile avviare: il template non contiene il blocco "Elenco Allegati" (%%elenco_allegati%%) né tutti i link singoli (%%allegato1%%...%%allegato${attachmentCount}%%) per i ${attachmentCount} allegati configurati. Aggiungi il placeholder al Passo 4 prima di rilanciare.`,
+      };
+    }
+
+    const appIoConfig = resolveSecondaryAppIoConfig(campaign.channelConfig) as { bodyOverride?: string } | undefined;
+    if (
+      appIoConfig?.bodyOverride &&
+      !hasValidAttachmentPlaceholders(appIoConfig.bodyOverride, attachmentCount)
+    ) {
+      return {
+        blocked: true,
+        message: `Impossibile avviare: il testo App IO differenziato non contiene il blocco "Elenco Allegati" né tutti i link singoli per i ${attachmentCount} allegati configurati. Correggilo al Passo 4 prima di rilanciare.`,
+      };
+    }
+
     return null;
   }
 
