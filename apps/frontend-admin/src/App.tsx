@@ -811,6 +811,7 @@ const PIE_COLORS = ['var(--bi-navy)', 'var(--ms-purple-600)', 'var(--ms-gold-500
 export function App(): React.JSX.Element {
   const [token, setToken] = useState<string | null>(localStorage.getItem('comunicapa_token'));
   const [username, setUsername] = useState<string | null>(localStorage.getItem('comunicapa_username'));
+  const [displayName, setDisplayName] = useState<string | null>(localStorage.getItem('comunicapa_display_name'));
   const [role, setRole] = useState<string | null>(localStorage.getItem('comunicapa_role'));
   const [view, setView] = useState<'dashboard' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'notifiche-ricerca' | 'cerca-domicilio' | 'verifica-appio' | 'verifica-inad' | 'template-dashboard' | 'impostazioni' | 'campaign-detail' | 'audit-logs' | 'arricchimento'>('dashboard');
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
@@ -1766,6 +1767,13 @@ export function App(): React.JSX.Element {
       const data = await res.json();
       localStorage.setItem('comunicapa_token', data.access_token);
       localStorage.setItem('comunicapa_username', data.username);
+      if (data.displayName) {
+        localStorage.setItem('comunicapa_display_name', data.displayName);
+        setDisplayName(data.displayName);
+      } else {
+        localStorage.removeItem('comunicapa_display_name');
+        setDisplayName(null);
+      }
       localStorage.setItem('comunicapa_role', data.role);
       
       setToken(data.access_token);
@@ -1782,9 +1790,11 @@ export function App(): React.JSX.Element {
   const handleLogout = () => {
     localStorage.removeItem('comunicapa_token');
     localStorage.removeItem('comunicapa_username');
+    localStorage.removeItem('comunicapa_display_name');
     localStorage.removeItem('comunicapa_role');
     setToken(null);
     setUsername(null);
+    setDisplayName(null);
     setRole(null);
     setView('dashboard');
   };
@@ -6013,10 +6023,10 @@ export function App(): React.JSX.Element {
         <div className="bo-topbar-actions ms-auto d-flex align-items-center gap-3">
           <div className="d-flex align-items-center gap-2">
             <span className="user-initials-avatar" style={{ width: '28px', height: '28px', fontSize: '10px' }}>
-              {username?.slice(0, 2).toUpperCase()}
+              {(displayName || username)?.slice(0, 2).toUpperCase()}
             </span>
             <div className="d-none d-md-block" style={{ lineHeight: 1.1 }}>
-              <div className="small fw-bold text-dark">{username}</div>
+              <div className="small fw-bold text-dark">{displayName || username}</div>
               <div className="small text-muted text-uppercase" style={{ fontSize: '9px' }}>{role}</div>
             </div>
           </div>
@@ -6046,7 +6056,7 @@ export function App(): React.JSX.Element {
                       </div>
                       <div>
                         <div className="d-flex align-items-center gap-2 mb-1">
-                          <h1 className="h4 mb-0 fw-bold text-dark">Ciao, {username}! 👋</h1>
+                          <h1 className="h4 mb-0 fw-bold text-dark">Ciao, {displayName || username}! 👋</h1>
                           <span className="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1 small d-inline-flex align-items-center gap-1">
                             <span className="spinner-grow spinner-grow-sm text-success" style={{ width: '6px', height: '6px' }} /> Operativo
                           </span>

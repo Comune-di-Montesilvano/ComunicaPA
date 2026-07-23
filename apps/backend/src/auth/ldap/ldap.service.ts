@@ -136,9 +136,20 @@ export class LdapService {
 
       const role: OperatorRole = isAdmin ? 'admin' : 'user';
 
+      const givenName = String(entry['givenName'] ?? entry['givenname'] ?? '');
+      const sn = String(entry['sn'] ?? entry['surname'] ?? '');
+      const fullNameFromParts = (givenName && sn) ? `${givenName} ${sn}`.trim() : null;
+
+      const rawDisplayName =
+        entry['displayName'] ??
+        entry['displayname'] ??
+        fullNameFromParts ??
+        entry['cn'] ??
+        opts.username;
+
       return {
         username: opts.username,
-        displayName: String(entry['displayName'] ?? entry['displayname'] ?? opts.username),
+        displayName: String(rawDisplayName),
         role,
       };
     } catch (error) {
@@ -260,7 +271,7 @@ export class LdapService {
         {
           scope: 'sub',
           filter: filter,
-          attributes: ['sAMAccountName', 'displayName', 'mail', 'memberOf'],
+          attributes: ['sAMAccountName', 'displayName', 'cn', 'givenName', 'sn', 'mail', 'memberOf'],
           referrals: false,
         } as any,
         (err: any, res: any) => {

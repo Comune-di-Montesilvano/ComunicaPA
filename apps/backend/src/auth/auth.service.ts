@@ -23,6 +23,7 @@ export class AuthService {
     const payload: Omit<JwtOperatorPayload, 'iat' | 'exp'> = {
       sub: ldapUser.username,
       username: ldapUser.username,
+      displayName: ldapUser.displayName,
       role: ldapUser.role,
       type: 'operator',
     };
@@ -34,6 +35,7 @@ export class AuthService {
       token_type: 'Bearer',
       expires_in: AuthService.EXPIRES_IN_SECONDS,
       username: ldapUser.username,
+      displayName: ldapUser.displayName,
       role: ldapUser.role,
     };
   }

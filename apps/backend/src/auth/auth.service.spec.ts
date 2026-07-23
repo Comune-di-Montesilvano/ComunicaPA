@@ -56,10 +56,12 @@ describe('AuthService', () => {
     expect(result.access_token).toBe('mock.jwt.token');
     expect(result.role).toBe('admin');
     expect(result.username).toBe('mario.rossi');
+    expect(result.displayName).toBe('Mario Rossi');
     expect(result.token_type).toBe('Bearer');
     expect(jwtService.sign).toHaveBeenCalledWith({
       sub: 'mario.rossi',
       username: 'mario.rossi',
+      displayName: 'Mario Rossi',
       role: 'admin',
       type: 'operator',
     });

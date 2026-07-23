@@ -21,6 +21,7 @@ export type OperatorRole = 'admin' | 'user';
 export interface JwtOperatorPayload {
   sub: string;
   username: string;
+  displayName?: string;
   role: OperatorRole;
   type: 'operator';
   iat?: number;

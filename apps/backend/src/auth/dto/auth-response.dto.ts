@@ -5,5 +5,6 @@ export class AuthResponseDto {
   token_type!: 'Bearer';
   expires_in!: number;
   username!: string;
+  displayName?: string;
   role!: OperatorRole;
 }
