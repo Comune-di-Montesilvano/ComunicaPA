@@ -146,6 +146,21 @@ export function processTemplate(
   return content;
 }
 
+/**
+ * Verifica che `body` referenzi correttamente gli allegati configurati:
+ * valido se contiene %%elenco_allegati%% OPPURE tutti gli %%allegatoN%%
+ * da 1 a `count` — un sottoinsieme di singoli non basta. `count === 0`
+ * è sempre valido (nessun allegato, nessun vincolo).
+ */
+export function hasValidAttachmentPlaceholders(body: string, count: number): boolean {
+  if (count === 0) return true;
+  if (body.includes('%%elenco_allegati%%')) return true;
+  for (let i = 1; i <= count; i++) {
+    if (!body.includes(`%%allegato${i}%%`)) return false;
+  }
+  return true;
+}
+
 function htmlToMarkdown(html: string): string {
   let markdown = html;
 

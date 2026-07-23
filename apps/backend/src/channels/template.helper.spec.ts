@@ -1,4 +1,4 @@
-import { processTemplate, wrapInHtmlLayout } from './template.helper';
+import { processTemplate, wrapInHtmlLayout, hasValidAttachmentPlaceholders } from './template.helper';
 import type { Recipient } from '../entities/recipient.entity';
 
 const baseRecipient = {
@@ -158,5 +158,28 @@ describe('processTemplate — html to markdown conversion', () => {
     const htmlBody = '<p>Gentile %%nominativo%%</p><div>test</div><span>altro</span>';
     const result = processTemplate(htmlBody, baseRecipient, 'http://api.test', 'secret', 1893456000, [], 'markdown');
     expect(result).toBe('Gentile Mario Rossi\n\ntestaltro');
+  });
+});
+
+describe('hasValidAttachmentPlaceholders', () => {
+  it('è sempre valido se non ci sono allegati (count 0)', () => {
+    expect(hasValidAttachmentPlaceholders('Nessun placeholder qui', 0)).toBe(true);
+    expect(hasValidAttachmentPlaceholders('', 0)).toBe(true);
+  });
+
+  it('è valido se il body contiene %%elenco_allegati%%', () => {
+    expect(hasValidAttachmentPlaceholders('Vedi %%elenco_allegati%% in fondo', 2)).toBe(true);
+  });
+
+  it('è valido se il body contiene TUTTI i singoli %%allegatoN%% richiesti', () => {
+    expect(hasValidAttachmentPlaceholders('%%allegato1%% e %%allegato2%%', 2)).toBe(true);
+  });
+
+  it('non è valido se manca anche un solo %%allegatoN%% (singoli parziali)', () => {
+    expect(hasValidAttachmentPlaceholders('Solo %%allegato1%%', 2)).toBe(false);
+  });
+
+  it('non è valido se il body non contiene né elenco né singoli', () => {
+    expect(hasValidAttachmentPlaceholders('Gentile %%nominativo%%, saluti.', 1)).toBe(false);
   });
 });
