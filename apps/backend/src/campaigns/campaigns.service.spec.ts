@@ -879,6 +879,20 @@ describe('CampaignsService', () => {
         fs.rmSync(tmpDir, { recursive: true, force: true });
       }
     });
+
+    it('non fa alcun check INAD per campagne wizard singolo (channelConfig.wizSingleMode) anche col toggle attivo', async () => {
+      mockSettings.get.mockImplementation(async (key?: string) => (key === 'inad.checkEnabled' ? true : null));
+      const campaignSingle = { ...mockCampaign, id: 'c-inad-4', channelType: 'EMAIL', channelConfig: { wizSingleMode: true } };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaignSingle);
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: string[] }) => {
+        if (select?.includes('extraData')) return Promise.resolve([]);
+        return Promise.resolve([{ id: 'r1' }]);
+      });
+
+      await service.launch('c-inad-4');
+
+      expect(mockInadService.extractDigitalAddress).not.toHaveBeenCalled();
+    });
   });
 
   describe('launch — check INAD bulk (sopra soglia)', () => {

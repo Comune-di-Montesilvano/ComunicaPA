@@ -442,7 +442,15 @@ export class CampaignsService {
     }
 
     let channelOverrides: Map<string, NotificationChannel> | undefined;
-    const inadCheckEnabled = campaign.channelType !== 'SEND' && (await this.settings.get<boolean>('inad.checkEnabled'));
+    // Wizard singolo: l'operatore verifica il domicilio digitale a mano (step1,
+    // "Carica dati ANPR") e sceglie il canale di conseguenza — nessun check
+    // INAD automatico "a sorpresa" al lancio come per le campagne massive
+    // (channelConfig.wizSingleMode è impostato dal wizard, mai dall'utente CSV).
+    const isWizSingleMode = campaign.channelConfig?.['wizSingleMode'] === true;
+    const inadCheckEnabled =
+      !isWizSingleMode &&
+      campaign.channelType !== 'SEND' &&
+      (await this.settings.get<boolean>('inad.checkEnabled'));
     if (inadCheckEnabled) {
       if (recipients.length < INAD_BULK_THRESHOLD) {
         channelOverrides = await this.runInadExtractLoop(campaign, recipients);

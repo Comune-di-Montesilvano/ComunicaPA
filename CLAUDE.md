@@ -232,6 +232,40 @@ dettaglio dei motori di invio (payload/risposte PEC/Email/App IO/SEND/Postal).
 I job BullMQ salvano inoltre i propri log (`job.log()`), consultabili dalla
 UI admin → Motori → "Vedi log" per singolo job, senza bisogno di accesso SSH.
 
+## Audit log — ogni endpoint che consulta un registro PA esterno deve loggare
+
+`AuditLogsService.log()` non è solo per le azioni su Campaign — qualunque
+controller che interroga un registro esterno con dati personali (ANPR,
+INAD, App IO...) deve loggare operatore + CF cercato, altrimenti non c'è
+modo di ricostruire dopo il fatto "chi ha cercato quale CF". Gap reale
+trovato e corretto: `DomicilioController.cerca()` (orchestratore
+ANPR+INAD+App IO) non aveva alcun logging fino a `06f943e` — verificare
+per ogni nuovo endpoint di ricerca su registro esterno.
+
+## Ownership campagne — cancel()/remove() richiedono requester
+
+`CampaignsService.cancel()`/`remove()` accettano un secondo parametro
+`CampaignRequester {username, role}` e chiamano `assertOwnership()`: un
+'admin' bypassa sempre, un 'user' solo se `campaign.createdBy ===
+requester.username` (altrimenti `ForbiddenException`). Il controller NON
+fa il check — lo fa il service, per restare testabile con lo stesso
+pattern service-layer già usato per `createdBy` (`campaigns.service.spec.ts`).
+Qualunque nuovo metodo mutante su Campaign aggiunto in futuro (oltre a
+cancel/remove) va valutato per lo stesso controllo, non solo quello che
+lo introduce — stesso principio già in uso per gli stati terminali sopra.
+
+## operator_directory — cache display name, si popola solo al login
+
+`OperatorDirectoryService` mappa username → display name (LDAP reale o
+mock), usata da `CampaignsController.findAll()/findOne()` per esporre
+`createdByDisplayName` (fallback a `createdBy` grezzo se assente).
+Aggiornata SOLO in `AuthService.loginWithLdap()` a ogni login riuscito —
+nessun backfill batch, nessuna risoluzione LDAP live per username
+arbitrario (richiederebbe un bind service-account che non esiste in
+questo codebase). Un operatore che ha creato campagne ma non ha mai
+fatto login dopo l'introduzione di questa feature resta con lo username
+grezzo finché non fa login una volta.
+
 ## Placeholder template notifiche
 
 Delimitatore `%%chiave%%` (doppio `%`, non singolo) — vedi `template.helper.ts`

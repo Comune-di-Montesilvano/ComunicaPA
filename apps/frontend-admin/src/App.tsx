@@ -708,6 +708,17 @@ function isValidCfOrPiva(value: string): boolean {
   return /^[A-Z0-9]{16}$/i.test(v) || /^\d{11}$/.test(v);
 }
 
+// Stesso vincolo già applicato riga per riga nella validazione CSV del
+// wizard massivo — qui riusato per i campi diretti del wizard singolo
+// (Email/PEC/CAP non erano validati in formato, solo presenza).
+function isValidEmailFormat(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+function isValidCap(value: string): boolean {
+  return /^\d{5}$/.test(value.trim());
+}
+
 // Escapes HTML-special characters in untrusted values (e.g. CSV cell content)
 // before they are interpolated into a string that will be rendered via
 // dangerouslySetInnerHTML. Must NOT be applied to the operator's own
@@ -1202,6 +1213,12 @@ export function App(): React.JSX.Element {
   const [wizName, setWizName] = useState('');
   const [wizDesc, setWizDesc] = useState('');
   const [wizChannel, setWizChannel] = useState<'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL'>('EMAIL');
+  // Wizard singolo: SEND ha solo Oggetto (nessun body reale, contenuto = allegato)
+  // e POSTAL non mostra mai template in singolo (INAD mai automatico, vedi
+  // gate settInadCheckEnabled && !wizSingleMode) — per questi due canali lo
+  // step "Template" viene saltato del tutto nella step-bar, l'Oggetto si
+  // inserisce direttamente nello step finale "Anteprima e Invio".
+  const wizSingleNeedsTemplateStep = wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'APP_IO';
   const [wizAppIoServiceId, setWizAppIoServiceId] = useState('');
   const [wizCsvFile, setWizCsvFile] = useState<File | null>(null);
   const [wizCsvHeaders, setWizCsvHeaders] = useState<string[]>([]);
@@ -4414,12 +4431,17 @@ export function App(): React.JSX.Element {
       setWizPaymentAmountType('euro');
       setWizPaymentDueDateCol('sd_scadenza');
     }
-    setWizAttachments(
-      attachmentSlotsWithFile.map((s, i) => ({ key: `sd_allegato_${i + 1}`, label: s.label || `Allegato ${i + 1}` })),
-    );
+    const newWizAttachments = attachmentSlotsWithFile.map((s, i) => ({ key: `sd_allegato_${i + 1}`, label: s.label || `Allegato ${i + 1}` }));
+    setWizAttachments(newWizAttachments);
     setWizPdfFiles(attachmentSlotsWithFile.map(s => s.file!));
 
-    const campaignId = await syncWizDraftAndRecipients(targetStep);
+    // csvContent è già nella forma normalizzata attesa da /recipients/upload
+    // (codice_fiscale, full_name, email, pec, ...extra) — passato come override
+    // per non dipendere da wizValidRows, che a questo punto del tick non ha
+    // ancora recepito l'aggiornamento di wizCsvRows (vedi commento su
+    // syncWizDraftAndRecipients).
+    const recipientsCsvBlobOverride = new Blob([csvContent], { type: 'text/csv' });
+    const campaignId = await syncWizDraftAndRecipients(targetStep, newWizAttachments, recipientsCsvBlobOverride);
     if (!campaignId) return;
 
     // Carica subito gli allegati reali sul server (invece di rimandarlo a
@@ -4439,14 +4461,15 @@ export function App(): React.JSX.Element {
   const wizSingleSubmitDisabled =
     !singleCf.trim() ||
     !singleSurname.trim() ||
-    (wizChannel === 'EMAIL' && !singleEmail.trim()) ||
-    (wizChannel === 'PEC' && !singlePec.trim()) ||
-    (needsWizSinglePhysicalAddress && (!singleAddress.trim() || !singleMunicipality.trim() || !singleZip.trim() || !singleProvince.trim())) ||
+    (wizChannel === 'EMAIL' && (!singleEmail.trim() || !isValidEmailFormat(singleEmail))) ||
+    (wizChannel === 'PEC' && (!singlePec.trim() || !isValidEmailFormat(singlePec))) ||
+    (needsWizSinglePhysicalAddress && (!singleAddress.trim() || !singleMunicipality.trim() || !singleZip.trim() || !singleProvince.trim() || !isValidCap(singleZip))) ||
     ((wizChannel === 'SEND' || wizChannel === 'POSTAL') && wizSingleAttachmentSlots.filter(s => s.file).length === 0) ||
     ((wizChannel === 'EMAIL' || wizChannel === 'PEC') && !wizMailConfigId) ||
     ((wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && wizAppIoMode !== 'none' && !wizAppIoServiceId) ||
     (wizChannel === 'APP_IO' && !wizAppIoServiceId) ||
     (wizChannel === 'POSTAL' && !wizPostalServiceType) ||
+    (wizChannel === 'SEND' && !wizTaxonomyCode) ||
     (wizPaymentEnabled && (!singlePaymentIuv.trim() || !singlePaymentImporto.trim()));
 
   useEffect(() => {
@@ -4457,7 +4480,6 @@ export function App(): React.JSX.Element {
       return;
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const cfRegex = /^[A-Z0-9]{16}$/i;
     const pivaRegex = /^\d{11}$/;
     const cfAppIoRegex = /^[A-Z]{6}[0-9LMNPQRSTUV]{2}[ABCDEHLMPRST][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]$/i;
@@ -4488,7 +4510,7 @@ export function App(): React.JSX.Element {
         isRowValid = false;
       } else if (emailField && row[emailField]) {
         const valClean = row[emailField].trim();
-        if (valClean && !emailRegex.test(valClean)) {
+        if (valClean && !isValidEmailFormat(valClean)) {
           errors.push({ row: rowNum, field: 'Email', val: row[emailField], err: 'Formato e-mail non valido' });
           isRowValid = false;
         }
@@ -4502,7 +4524,7 @@ export function App(): React.JSX.Element {
         isRowValid = false;
       } else if (pecField && row[pecField]) {
         const valClean = row[pecField].trim();
-        if (valClean && !emailRegex.test(valClean)) {
+        if (valClean && !isValidEmailFormat(valClean)) {
           errors.push({ row: rowNum, field: 'PEC', val: row[pecField], err: 'Formato PEC non valido' });
           isRowValid = false;
         }
@@ -4557,6 +4579,10 @@ export function App(): React.JSX.Element {
           errors.push({ row: rowNum, field: 'Città', val: '', err: 'Città mancante (obbligatoria per Postalizzazione)' });
           isRowValid = false;
         }
+        if (wizPostalZipColumn && row[wizPostalZipColumn]?.trim() && !isValidCap(row[wizPostalZipColumn])) {
+          errors.push({ row: rowNum, field: 'CAP', val: row[wizPostalZipColumn], err: 'CAP non valido (richieste 5 cifre)' });
+          isRowValid = false;
+        }
       }
 
       if (isRowValid) {
@@ -4567,7 +4593,7 @@ export function App(): React.JSX.Element {
     setWizValidationErrors(errors);
     setWizValidationWarnings(warnings);
     setWizValidRows(valid);
-  }, [wizCsvRows, wizMapping, wizChannel, wizAppIoInvolved, wizPostalAddressColumn, wizPostalMunicipalityColumn]);
+  }, [wizCsvRows, wizMapping, wizChannel, wizAppIoInvolved, wizPostalAddressColumn, wizPostalMunicipalityColumn, wizPostalZipColumn]);
 
   useEffect(() => {
     if (wizStep === 5 && wizCampaignId) {
@@ -4916,7 +4942,17 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const buildWizChannelConfigDraft = (targetStep?: number): Record<string, any> => {
+  const buildWizChannelConfigDraft = (
+    targetStep?: number,
+    // wizAttachments può non essere ancora aggiornato: setWizAttachments()
+    // chiamato subito prima di questa funzione nello stesso tick (es.
+    // handleWizSingleSubmit) non si riflette nella closure corrente — React
+    // applica lo state update solo al render successivo. Passare il valore
+    // appena calcolato qui evita di persistere channelConfig.attachments
+    // stantio (bug reale: wizard singolo, allegato configurato ma mai scritto
+    // in channelConfig al primo "Avanti").
+    attachmentsOverride?: Array<{ key: string; label: string }>,
+  ): Record<string, any> => {
     const cfg: Record<string, any> = {
       subject: wizSubject,
       body: wizBody,
@@ -4960,7 +4996,8 @@ export function App(): React.JSX.Element {
         cfg.userDataColumn = wizPostalUserDataColumn;
       }
     }
-    if (wizAttachments.length > 0) cfg.attachments = wizAttachments;
+    const effectiveAttachmentsForConfig = attachmentsOverride !== undefined ? attachmentsOverride : wizAttachments;
+    if (effectiveAttachmentsForConfig.length > 0) cfg.attachments = effectiveAttachmentsForConfig;
     if (wizMapping.codice_fiscale) cfg.csvMapping = wizMapping;
     if (wizChannel === 'APP_IO') {
       cfg.ioServiceId = wizAppIoServiceId;
@@ -5017,7 +5054,21 @@ export function App(): React.JSX.Element {
     return new Blob([csvContent], { type: 'text/csv' });
   };
 
-  const syncWizDraftAndRecipients = async (targetStep: number): Promise<string | null> => {
+  const syncWizDraftAndRecipients = async (
+    targetStep: number,
+    attachmentsOverride?: Array<{ key: string; label: string }>,
+    // wizValidRows è popolato da un useEffect separato che reagisce a
+    // wizCsvRows — se questa funzione viene chiamata subito dopo
+    // parseCsvFile() nello stesso tick sincrono (handleWizSingleSubmit),
+    // wizValidRows è ancora quello di PRIMA (vuoto al primo invio): il gate
+    // sotto (wizValidRows.length > 0) salta la creazione del recipient, e
+    // l'allegato caricato subito dopo viene scartato da finalizeAttachments
+    // perché nessun recipient lo referenzia ancora. Bug reale: "Allegato non
+    // trovato" al primo giro di wizard singolo, anche senza mai tornare
+    // indietro. Passare qui il blob CSV già pronto bypassa la dipendenza da
+    // wizValidRows per questa chiamata.
+    recipientsCsvBlobOverride?: Blob,
+  ): Promise<string | null> => {
     if (!wizName) {
       alert('Inserisci almeno il nome della campagna prima di salvare la bozza.');
       return null;
@@ -5025,7 +5076,7 @@ export function App(): React.JSX.Element {
     setWizDraftSaving(true);
     let activeCampaignId = wizCampaignId;
     try {
-      const channelConfig = buildWizChannelConfigDraft(targetStep);
+      const channelConfig = buildWizChannelConfigDraft(targetStep, attachmentsOverride);
       if (!wizCampaignId) {
         const res = await apiFetch('/campaigns', {
           method: 'POST',
@@ -5065,14 +5116,16 @@ export function App(): React.JSX.Element {
         if (!csvUploadRes.ok) throw new Error('Errore durante il caricamento del file CSV in bozza');
       }
 
-      if (wizValidRows.length > 0 && wizMapping.codice_fiscale) {
-        const currentFingerprint = JSON.stringify({
-          headers: wizCsvHeaders,
-          mapping: wizMapping,
-          rowCount: wizValidRows.length,
-        });
-        if (currentFingerprint !== wizRecipientsSyncFingerprint) {
-          const blob = buildNormalizedRecipientsCsvBlob();
+      if (recipientsCsvBlobOverride || (wizValidRows.length > 0 && wizMapping.codice_fiscale)) {
+        const currentFingerprint = recipientsCsvBlobOverride
+          ? null
+          : JSON.stringify({
+              headers: wizCsvHeaders,
+              mapping: wizMapping,
+              rowCount: wizValidRows.length,
+            });
+        if (recipientsCsvBlobOverride || currentFingerprint !== wizRecipientsSyncFingerprint) {
+          const blob = recipientsCsvBlobOverride || buildNormalizedRecipientsCsvBlob();
           setWizUploadProgress({ label: 'Caricamento destinatari', loaded: 0, total: blob.size });
           const uploadData = await uploadFileInChunks(
             `${ADMIN_API_BASE}/campaigns/${activeCampaignId}/recipients/upload`,
@@ -5285,6 +5338,7 @@ export function App(): React.JSX.Element {
           };
         }
       } else if (wizChannel === 'POSTAL') {
+        channelConfig.subject = wizSubject;
         channelConfig.postalServiceType = wizPostalServiceType;
         channelConfig.postalReturnReceipt = wizPostalReturnReceipt;
         if (wizPostalCodiceContratto) {
@@ -6798,11 +6852,16 @@ export function App(): React.JSX.Element {
               {/* Steps Progress Header — clickable when already visited */}
               <div className="d-flex justify-content-between mb-4 text-center" style={{ fontSize: '0.82rem' }}>
                 {(wizSingleMode
-                  ? [
-                      { n: 1, label: '1. Dettagli & Destinatario' },
-                      { n: 4, label: '2. Template & Anteprima' },
-                      { n: 6, label: '3. Anteprima e Invio' },
-                    ]
+                  ? (wizSingleNeedsTemplateStep
+                      ? [
+                          { n: 1, label: '1. Dettagli & Destinatario' },
+                          { n: 4, label: '2. Template' },
+                          { n: 6, label: '3. Anteprima e Invio' },
+                        ]
+                      : [
+                          { n: 1, label: '1. Dettagli & Destinatario' },
+                          { n: 6, label: '2. Anteprima e Invio' },
+                        ])
                   : [
                       { n: 1, label: '1. Dettagli & Canale' },
                       { n: 2, label: '2. Caricamento File' },
@@ -6882,7 +6941,7 @@ export function App(): React.JSX.Element {
                     </div>
                     <button
                       className="btn btn-primary px-4 fw-medium d-flex align-items-center gap-2"
-                      onClick={() => handleWizSingleSubmit()}
+                      onClick={() => handleWizSingleSubmit(wizSingleNeedsTemplateStep ? 4 : 6)}
                       disabled={wizSingleSubmitDisabled}
                     >
                       Avanti <ArrowRight size={16} />
@@ -7030,6 +7089,9 @@ export function App(): React.JSX.Element {
                               value={singleEmail}
                               onChange={(e) => setSingleEmail(e.target.value)}
                             />
+                            {singleEmail.trim() && !isValidEmailFormat(singleEmail) && (
+                              <div className="form-text text-danger small mt-1">Formato e-mail non valido.</div>
+                            )}
                           </div>
                         )}
                         {wizChannel === 'PEC' && (
@@ -7046,6 +7108,9 @@ export function App(): React.JSX.Element {
                               disabled={singleInadForced}
                               onChange={(e) => setSinglePec(e.target.value)}
                             />
+                            {singlePec.trim() && !isValidEmailFormat(singlePec) && (
+                              <div className="form-text text-danger small mt-1">Formato PEC non valido.</div>
+                            )}
                           </div>
                         )}
 
@@ -7203,6 +7268,9 @@ export function App(): React.JSX.Element {
                                 value={singleZip}
                                 onChange={(e) => setSingleZip(e.target.value)}
                               />
+                              {singleZip.trim() && !isValidCap(singleZip) && (
+                                <div className="form-text text-danger small mt-1">CAP non valido (5 cifre).</div>
+                              )}
                             </div>
                             <div className="col-md-3">
                               <label className="form-label small fw-bold text-dark mb-1">Provincia *</label>
@@ -7245,6 +7313,17 @@ export function App(): React.JSX.Element {
                                 className="form-control form-control-sm"
                                 onChange={(e) => updateWizSingleAttachmentSlot(slot.id, { file: e.target.files?.[0] || null })}
                               />
+                              {/* <input type="file"> non riflette mai un file preselezionato
+                                  (limite nativo browser) — al remount (navigazione step
+                                  avanti/indietro) torna sempre "Nessun file selezionato"
+                                  anche se slot.file in stato è ancora corretto. Mostriamo
+                                  il nome dallo stato per non dare l'impressione che sia
+                                  andato perso. */}
+                              {slot.file && (
+                                <div className="form-text small text-success mb-0">
+                                  <CheckCircle2 size={12} className="me-1" />{slot.file.name}
+                                </div>
+                              )}
                             </div>
                             <div className="col-md-2 text-end">
                               <button
@@ -7415,7 +7494,7 @@ export function App(): React.JSX.Element {
                   <div className="mt-3 pt-2 d-flex justify-content-end">
                     <button
                       className="btn btn-primary px-4 fw-medium d-flex align-items-center gap-2"
-                      onClick={() => handleWizSingleSubmit()}
+                      onClick={() => handleWizSingleSubmit(wizSingleNeedsTemplateStep ? 4 : 6)}
                       disabled={wizSingleSubmitDisabled}
                     >
                       Avanti <ArrowRight size={16} />
@@ -7438,7 +7517,8 @@ export function App(): React.JSX.Element {
                         ((wizChannel === 'EMAIL' || wizChannel === 'PEC') && !wizMailConfigId) ||
                         ((wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && wizAppIoMode !== 'none' && !wizAppIoServiceId) ||
                         (wizChannel === 'APP_IO' && !wizAppIoServiceId) ||
-                        (wizChannel === 'POSTAL' && !wizPostalServiceType)
+                        (wizChannel === 'POSTAL' && !wizPostalServiceType) ||
+                        (wizChannel === 'SEND' && !wizTaxonomyCode)
                       }
                     >
                       Avanti <ArrowRight className="ms-1" />
@@ -7715,7 +7795,8 @@ export function App(): React.JSX.Element {
                         ((wizChannel === 'EMAIL' || wizChannel === 'PEC') && !wizMailConfigId) ||
                         ((wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && wizAppIoMode !== 'none' && !wizAppIoServiceId) ||
                         (wizChannel === 'APP_IO' && !wizAppIoServiceId) ||
-                        (wizChannel === 'POSTAL' && !wizPostalServiceType)
+                        (wizChannel === 'POSTAL' && !wizPostalServiceType) ||
+                        (wizChannel === 'SEND' && !wizTaxonomyCode)
                       }
                     >
                       Avanti <ArrowRight className="ms-1" />
@@ -8340,11 +8421,11 @@ export function App(): React.JSX.Element {
                       onClick={handleWizAdvanceToStep5}
                       disabled={
                         wizDraftSaving || (
-                          wizChannel === 'POSTAL' && wizAppIoMode === 'none' && !settInadCheckEnabled
+                          wizChannel === 'POSTAL' && wizAppIoMode === 'none' && !(settInadCheckEnabled && !wizSingleMode)
                             ? false
                             : (
                                 !wizSubject ||
-                                ((wizChannel !== 'SEND' && (wizChannel !== 'POSTAL' || settInadCheckEnabled)) && isWizBodyEmpty(wizBody)) ||
+                                ((wizChannel !== 'SEND' && (wizChannel !== 'POSTAL' || (settInadCheckEnabled && !wizSingleMode))) && isWizBodyEmpty(wizBody)) ||
                                 wizAppIoBodyLenInvalid ||
                                 wizAppIoSubjectLenInvalid ||
                                 wizPrimaryBodyMissingAttachmentPlaceholder ||
@@ -8361,7 +8442,7 @@ export function App(): React.JSX.Element {
                   <div className="col-lg-6 border-end">
                     <h4 className="h6 fw-bold text-dark mb-3">{wizChannel === 'SEND' ? `Passo ${wizDisplayStep(4, wizSingleMode)}: Oggetto della Comunicazione` : `Passo ${wizDisplayStep(4, wizSingleMode)}: Scrittura Template & Jolly Fields`}</h4>
 
-                    {(wizChannel === 'EMAIL' || wizChannel === 'PEC' || (wizChannel === 'POSTAL' && settInadCheckEnabled)) && templates.filter(t => t.type === 'MAIL').length > 0 && (
+                    {(wizChannel === 'EMAIL' || wizChannel === 'PEC' || (wizChannel === 'POSTAL' && settInadCheckEnabled && !wizSingleMode)) && templates.filter(t => t.type === 'MAIL').length > 0 && (
                       <div className="mb-3">
                         <label className="form-label small">Carica da template</label>
                         <select
@@ -8397,7 +8478,7 @@ export function App(): React.JSX.Element {
                       />
                     </div>
 
-                    {wizChannel !== 'SEND' && (wizChannel !== 'POSTAL' || settInadCheckEnabled) && (
+                    {wizChannel !== 'SEND' && (wizChannel !== 'POSTAL' || (settInadCheckEnabled && !wizSingleMode)) && (
                       <>
                         <div className="mb-3">
                           <label className="form-label small fw-bold">Corpo del Messaggio (Template)</label>
@@ -8556,13 +8637,15 @@ export function App(): React.JSX.Element {
                         onClick={handleWizAdvanceToStep5}
                         disabled={
                           wizDraftSaving || (
-                            wizChannel === 'POSTAL' && wizAppIoMode === 'none' && !settInadCheckEnabled
+                            wizChannel === 'POSTAL' && wizAppIoMode === 'none' && !(settInadCheckEnabled && !wizSingleMode)
                               ? false
                               : (
                                   !wizSubject ||
-                                  ((wizChannel !== 'SEND' && (wizChannel !== 'POSTAL' || settInadCheckEnabled)) && isWizBodyEmpty(wizBody)) ||
+                                  ((wizChannel !== 'SEND' && (wizChannel !== 'POSTAL' || (settInadCheckEnabled && !wizSingleMode))) && isWizBodyEmpty(wizBody)) ||
                                   wizAppIoBodyLenInvalid ||
                                   wizAppIoSubjectLenInvalid ||
+                                  wizPrimaryBodyMissingAttachmentPlaceholder ||
+                                  wizAppIoBodyMissingAttachmentPlaceholder ||
                                   ((wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && wizAppIoMode !== 'none' && wizAppIoDifferentiate && (!wizAppIoSubjectOverride || !wizAppIoBodyOverride))
                                 )
                           )
@@ -8877,7 +8960,7 @@ export function App(): React.JSX.Element {
                   <div className="mb-4 pb-3 border-bottom d-flex justify-content-between">
                     <button
                       className="btn btn-outline-secondary"
-                      onClick={() => setWizStep(5)}
+                      onClick={() => setWizStep(wizSingleMode ? (wizSingleNeedsTemplateStep ? 4 : 1) : 5)}
                       disabled={wizSending}
                     >
                       <ArrowLeft className="me-1" size={16} /> Indietro
@@ -8897,15 +8980,15 @@ export function App(): React.JSX.Element {
                             setWizStep(7);
                           }
                         }}
-                        disabled={wizSending || !wizCampaignId || !wizTestAttachmentReady}
-                        title={!wizCampaignId ? (wizSingleMode ? 'Completa prima il Passo 1 (Allegati)' : 'Completa prima il passo Upload Allegati') : (!wizTestAttachmentReady ? `Allegato mancante per il primo destinatario — verifica il Passo ${wizSingleMode ? 1 : 5}` : undefined)}
+                        disabled={wizSending || !wizCampaignId || !wizTestAttachmentReady || (wizSingleMode && !wizSingleNeedsTemplateStep && !wizSubject.trim())}
+                        title={!wizCampaignId ? (wizSingleMode ? 'Completa prima il Passo 1 (Allegati)' : 'Completa prima il passo Upload Allegati') : (!wizTestAttachmentReady ? `Allegato mancante per il primo destinatario — verifica il Passo ${wizSingleMode ? 1 : 5}` : (wizSingleMode && !wizSingleNeedsTemplateStep && !wizSubject.trim() ? 'Inserisci l\'Oggetto della comunicazione' : undefined))}
                       >
                         <TestTube className="me-1" size={16} />Avvia Test
                       </button>
                       <button
                         className="btn btn-success"
                         onClick={handleWizLaunch}
-                        disabled={wizSending}
+                        disabled={wizSending || (wizSingleMode && !wizSingleNeedsTemplateStep && !wizSubject.trim())}
                       >
                         {wizSending ? (
                           <>
@@ -8922,6 +9005,22 @@ export function App(): React.JSX.Element {
                   <div className="border rounded bg-light p-4 mb-4" style={{ fontSize: '0.9rem' }}>
                     <div className="mb-2"><strong>Nome Campagna:</strong> {wizName}</div>
                     <div className="mb-2"><strong>Canale di Trasmissione:</strong> {wizChannel}</div>
+                    {wizSingleMode && !wizSingleNeedsTemplateStep && (
+                      <div className="mb-3">
+                        <label className="form-label small fw-bold mb-1" htmlFor="wiz_single_final_subject">
+                          Oggetto della Comunicazione <span className="text-danger">*</span>
+                        </label>
+                        <input
+                          id="wiz_single_final_subject"
+                          type="text"
+                          className="form-control form-control-sm"
+                          style={{ maxWidth: '480px' }}
+                          placeholder="Es: Avviso Scadenza TARI 2026"
+                          value={wizSubject}
+                          onChange={e => setWizSubject(e.target.value)}
+                        />
+                      </div>
+                    )}
                     <div className="mb-2"><strong>File Destinatari:</strong> {wizCsvFile?.name} (<strong>{wizValidRows.length}</strong> record pronti per l'invio)</div>
                     {wizValidationErrors.length > 0 && (
                       <div className="mb-2 text-warning">
@@ -8933,9 +9032,9 @@ export function App(): React.JSX.Element {
                         <Paperclip className="me-1" size={16} /> Allegati PDF caricati: <strong>{wizPdfFiles.length} file</strong>
                       </div>
                     )}
-                    {wizMapping.codice_fiscale && (
+                    {(wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && wizAppIoMode !== 'none' && (
                       <div className="mb-2 text-success">
-                        <Smartphone className="me-1" size={16} /> Co-delivery App IO configurata (invio parallelo per utenti abilitati)
+                        <Smartphone className="me-1" size={16} /> Co-delivery App IO configurata ({wizAppIoMode === 'exclusive' ? 'esclusiva' : 'invio parallelo per utenti abilitati'})
                       </div>
                     )}
                     <div className="mt-3 pt-3 border-top">
@@ -9009,7 +9108,7 @@ export function App(): React.JSX.Element {
                   <div className="mt-4 pt-3 border-top d-flex justify-content-between">
                     <button
                       className="btn btn-outline-secondary"
-                      onClick={() => setWizStep(5)}
+                      onClick={() => setWizStep(wizSingleMode ? (wizSingleNeedsTemplateStep ? 4 : 1) : 5)}
                       disabled={wizSending}
                     >
                       <ArrowLeft className="me-1" size={16} /> Indietro
@@ -9029,15 +9128,15 @@ export function App(): React.JSX.Element {
                             setWizStep(7);
                           }
                         }}
-                        disabled={wizSending || !wizCampaignId || !wizTestAttachmentReady}
-                        title={!wizCampaignId ? (wizSingleMode ? 'Completa prima il Passo 1 (Allegati)' : 'Completa prima il passo Upload Allegati') : (!wizTestAttachmentReady ? `Allegato mancante per il primo destinatario — verifica il Passo ${wizSingleMode ? 1 : 5}` : undefined)}
+                        disabled={wizSending || !wizCampaignId || !wizTestAttachmentReady || (wizSingleMode && !wizSingleNeedsTemplateStep && !wizSubject.trim())}
+                        title={!wizCampaignId ? (wizSingleMode ? 'Completa prima il Passo 1 (Allegati)' : 'Completa prima il passo Upload Allegati') : (!wizTestAttachmentReady ? `Allegato mancante per il primo destinatario — verifica il Passo ${wizSingleMode ? 1 : 5}` : (wizSingleMode && !wizSingleNeedsTemplateStep && !wizSubject.trim() ? 'Inserisci l\'Oggetto della comunicazione' : undefined))}
                       >
                         <TestTube className="me-1" size={16} />Avvia Test
                       </button>
                       <button
                         className="btn btn-success"
                         onClick={handleWizLaunch}
-                        disabled={wizSending}
+                        disabled={wizSending || (wizSingleMode && !wizSingleNeedsTemplateStep && !wizSubject.trim())}
                       >
                         {wizSending ? (
                           <>

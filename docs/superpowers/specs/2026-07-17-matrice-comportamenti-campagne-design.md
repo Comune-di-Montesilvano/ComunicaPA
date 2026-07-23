@@ -29,9 +29,17 @@ quel destinatario (`notification.processor.ts:167`). INAD è fonte di verità
 assoluta sul domicilio digitale, non bypassabile da un'esclusiva App IO.
 
 ### 3. Dirottamento INAD
-Check gira su TUTTI i canali tranne SEND (`campaigns.service.ts:366`:
-`inadCheckEnabled = campaign.channelType !== 'SEND' && settings.inad.checkEnabled`).
+Check gira su TUTTI i canali tranne SEND (`campaigns.service.ts` `launch()`:
+`inadCheckEnabled = !isWizSingleMode && campaign.channelType !== 'SEND' && settings.inad.checkEnabled`).
 SEND escluso perché PN risolve da sé il domicilio digitale (ANPR/INAD interno).
+
+**Wizard singolo escluso a prescindere dal canale** (`channelConfig.wizSingleMode
+=== true`): l'operatore verifica il domicilio digitale a mano in step1 ("Carica
+dati ANPR", che interroga anche INAD e forza il canale a PEC se trovato) — nessun
+check automatico "a sorpresa" al lancio come per le campagne massive, dove
+l'operatore non ha visibilità riga-per-riga prima del lancio. Stessa esclusione
+applicata lato UI wizard (gate template/body per POSTAL a step4 usa
+`settInadCheckEnabled && !wizSingleMode`, non il solo setting globale).
 
 `diverted = found && inadAddress !== recipient.pec` (`campaigns.service.ts:404,520`)
 — confronto sempre contro `recipient.pec` esistente, indipendente dal canale
