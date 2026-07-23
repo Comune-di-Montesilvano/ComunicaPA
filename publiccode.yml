@@ -1,4 +1,4 @@
-publiccodeYmlVersion: "0.4"
+publiccodeYmlVersion: "0"
 
 name: ComunicaPA
 url: "https://github.com/Comune-di-Montesilvano/ComunicaPA.git"
@@ -30,9 +30,9 @@ description:
   it:
     localisedName: ComunicaPA
     shortDescription: >-
-      HUB open-source per la trasmissione asincrona di comunicazioni
-      massive della Pubblica Amministrazione (TARI, avvisi, sanzioni) su
-      canali multipli: PEC, Email, App IO, SEND, Postalizzazione.
+      HUB open-source per l'invio massivo asincrono di comunicazioni
+      della PA (TARI, avvisi, sanzioni) su PEC, Email, App IO, SEND,
+      Postalizzazione.
     longDescription: >-
       ComunicaPA consente agli enti pubblici di inviare comunicazioni di
       massa (TARI, avvisi tributari, sanzioni, notifiche) su canali
@@ -80,7 +80,6 @@ description:
 legal:
   license: EUPL-1.2
   mainCopyrightOwner: Comune di Montesilvano
-  repoOwner: Comune di Montesilvano
 
 maintenance:
   type: internal
@@ -94,7 +93,7 @@ localisation:
   availableLanguages:
     - it
 
-it:
+IT:
   countryExtensionVersion: "1.0"
   piattaforme:
     spid: true
