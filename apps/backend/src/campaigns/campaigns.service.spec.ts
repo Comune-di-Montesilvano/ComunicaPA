@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { In } from 'typeorm';
 import { CampaignsService } from './campaigns.service';
@@ -39,6 +39,8 @@ const mockCampaign: Partial<Campaign> = {
   completedAt: null,
   recipients: [],
 };
+
+const ADMIN_REQUESTER = { username: 'admin', role: 'admin' as const };
 
 describe('CampaignsService', () => {
   let service: CampaignsService;
@@ -1480,19 +1482,27 @@ describe('CampaignsService', () => {
 
   describe('remove', () => {
     it('lancia NotFoundException se la campagna non esiste', async () => {
-      mockCampaignRepo.existsBy.mockResolvedValueOnce(false);
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce(null);
 
-      await expect(service.remove('no-exist')).rejects.toThrow(NotFoundException);
+      await expect(service.remove('no-exist', ADMIN_REQUESTER)).rejects.toThrow(NotFoundException);
+      expect(mockCampaignRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('lancia ForbiddenException se il requester non-admin non è il creatore', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, id: 'c-del', createdBy: 'op1' });
+
+      await expect(service.remove('c-del', { username: 'op2', role: 'user' })).rejects.toThrow(ForbiddenException);
       expect(mockCampaignRepo.delete).not.toHaveBeenCalled();
     });
 
     it('rimuove la cartella allegati su disco e cancella la campagna (cascade DB su recipients/attempts)', async () => {
-      mockCampaignRepo.existsBy.mockResolvedValueOnce(true);
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, id: 'c-del', createdBy: 'op1' });
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce(null);
       mockCampaignRepo.delete = jest.fn().mockResolvedValue(undefined);
       tmpDirRef.dir = '/tmp/comunicapa-uploads/c-del';
       const rmSpy = jest.spyOn(fs.promises, 'rm').mockResolvedValue(undefined);
 
-      const result = await service.remove('c-del');
+      const result = await service.remove('c-del', { username: 'op1', role: 'user' });
 
       expect(getUploadsDir).toHaveBeenCalledWith('c-del');
       expect(rmSpy).toHaveBeenCalledWith('/tmp/comunicapa-uploads/c-del', { recursive: true, force: true });
@@ -1505,12 +1515,12 @@ describe('CampaignsService', () => {
 
   describe('remove — cascata su campagna test collegata', () => {
     it('cancella anche la campagna test figlia quando esiste', async () => {
-      mockCampaignRepo.existsBy.mockResolvedValueOnce(true);
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, id: 'parent-1' });
       mockCampaignRepo.findOneBy.mockResolvedValueOnce({ id: 'child-1', parentCampaignId: 'parent-1', isTest: true });
       mockRecipientRepo.find.mockResolvedValueOnce([{ id: 'r1' }]);
       const rmSpy = jest.spyOn(fs.promises, 'rm').mockResolvedValue(undefined);
 
-      await service.remove('parent-1');
+      await service.remove('parent-1', ADMIN_REQUESTER);
 
       expect(mockCampaignRepo.findOneBy).toHaveBeenCalledWith({ parentCampaignId: 'parent-1', isTest: true });
       expect(mockAttemptRepo.delete).toHaveBeenCalledWith({ recipientId: In(['r1']) });
@@ -1522,11 +1532,11 @@ describe('CampaignsService', () => {
     });
 
     it('nessuna campagna test collegata: cancella solo la campagna madre, nessuna chiamata extra', async () => {
-      mockCampaignRepo.existsBy.mockResolvedValueOnce(true);
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, id: 'parent-2' });
       mockCampaignRepo.findOneBy.mockResolvedValueOnce(null);
       const rmSpy = jest.spyOn(fs.promises, 'rm').mockResolvedValue(undefined);
 
-      await service.remove('parent-2');
+      await service.remove('parent-2', ADMIN_REQUESTER);
 
       expect(mockCampaignRepo.findOneBy).toHaveBeenCalledWith({ parentCampaignId: 'parent-2', isTest: true });
       expect(mockAttemptRepo.delete).not.toHaveBeenCalled();
@@ -1554,12 +1564,17 @@ describe('CampaignsService', () => {
 
     it('lancia NotFoundException se la campagna non esiste', async () => {
       mockCampaignRepo.findOneBy.mockResolvedValueOnce(null);
-      await expect(service.cancel('missing')).rejects.toThrow('Campaign missing not found');
+      await expect(service.cancel('missing', ADMIN_REQUESTER)).rejects.toThrow('Campaign missing not found');
     });
 
     it('lancia BadRequestException se la campagna non e QUEUED ne CHECKING_INAD', async () => {
       mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, status: CampaignStatus.DRAFT });
-      await expect(service.cancel('c1')).rejects.toThrow('Solo campagne in corso o in verifica INAD possono essere annullate');
+      await expect(service.cancel('c1', ADMIN_REQUESTER)).rejects.toThrow('Solo campagne in corso o in verifica INAD possono essere annullate');
+    });
+
+    it('lancia ForbiddenException se il requester non-admin non è il creatore', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, id: 'c1', status: CampaignStatus.QUEUED, createdBy: 'op1' });
+      await expect(service.cancel('c1', { username: 'op2', role: 'user' })).rejects.toThrow(ForbiddenException);
     });
 
     it('rimuove i job in coda, marca CANCELLED recipient/attempt/campagna, salta i job gia attivi', async () => {
@@ -1577,7 +1592,7 @@ describe('CampaignsService', () => {
       mockAttemptRepo.update = jest.fn().mockResolvedValue(undefined);
       mockRecipientRepo.update = jest.fn().mockResolvedValue(undefined);
 
-      const result = await service.cancel('c1');
+      const result = await service.cancel('c1', ADMIN_REQUESTER);
 
       expect(mockQueue.getJob).toHaveBeenNthCalledWith(1, 'EMAIL', 'att-1');
       expect(mockQueue.getJob).toHaveBeenNthCalledWith(2, 'EMAIL', 'att-2');
@@ -1595,7 +1610,7 @@ describe('CampaignsService', () => {
       mockAttemptRepo.update = jest.fn().mockResolvedValue(undefined);
       mockRecipientRepo.update = jest.fn().mockResolvedValue(undefined);
 
-      const result = await service.cancel('c1');
+      const result = await service.cancel('c1', ADMIN_REQUESTER);
 
       expect(mockAttemptRepo.update).not.toHaveBeenCalled();
       expect(mockRecipientRepo.update).not.toHaveBeenCalled();
@@ -1621,7 +1636,7 @@ describe('CampaignsService', () => {
       const removeOk = jest.fn().mockResolvedValue(undefined);
       mockQueue.getJob.mockResolvedValue({ id: 'job', remove: removeOk });
 
-      const result = await service.cancel('c1');
+      const result = await service.cancel('c1', ADMIN_REQUESTER);
 
       expect(updateQb.set).toHaveBeenCalledWith({ status: AttemptStatus.CANCELLED });
       expect(updateQb.where).toHaveBeenCalledWith(
@@ -1652,7 +1667,7 @@ describe('CampaignsService', () => {
       mockRecipientRepo.update = jest.fn().mockResolvedValue(undefined);
       mockQueue.getJob.mockResolvedValueOnce(null);
 
-      await expect(service.cancel('c1')).resolves.toEqual({ cancelled: 1, campaignId: 'c1' });
+      await expect(service.cancel('c1', ADMIN_REQUESTER)).resolves.toEqual({ cancelled: 1, campaignId: 'c1' });
     });
 
     it('per campagne SEND annulla solo i recipient il cui attempt è ancora QUEUED al momento dell\'update (race col demone invio)', async () => {
@@ -1674,7 +1689,7 @@ describe('CampaignsService', () => {
       mockAttemptRepo.createQueryBuilder = jest.fn().mockReturnValue(updateQb);
       mockRecipientRepo.update = jest.fn().mockResolvedValue(undefined);
 
-      const result = await service.cancel('c1');
+      const result = await service.cancel('c1', ADMIN_REQUESTER);
 
       expect(mockRecipientRepo.update).toHaveBeenCalledWith({ id: In(['r1']) }, { status: RecipientStatus.CANCELLED });
       expect(mockRecipientRepo.update).not.toHaveBeenCalledWith({ id: In(['r1', 'r2']) }, expect.anything());
@@ -1689,7 +1704,7 @@ describe('CampaignsService', () => {
       mockRecipientRepo.find.mockResolvedValue([]);
       mockCampaignQb.execute.mockResolvedValue({ affected: 1 });
 
-      const result = await service.cancel('c-cancel-inad');
+      const result = await service.cancel('c-cancel-inad', ADMIN_REQUESTER);
 
       expect(result.campaignId).toBe('c-cancel-inad');
       expect(mockCampaignQb.set).toHaveBeenCalledWith(expect.objectContaining({ status: CampaignStatus.CANCELLED }));

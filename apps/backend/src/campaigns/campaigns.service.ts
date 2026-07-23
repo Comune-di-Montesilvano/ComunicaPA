@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Raw, Repository } from 'typeorm';
 import { createReadStream } from 'fs';
@@ -30,15 +30,28 @@ import type { CampaignStatsDto, RecipientStatDto, RecipientStatsPageDto, Channel
 import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.dto';
 import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util';
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto';
-import type { NotificationChannel } from '@comunicapa/shared-types';
+import type { NotificationChannel, OperatorRole } from '@comunicapa/shared-types';
 import { InadService } from '../channels/inad/inad.service';
 
 const MAX_BULK_RETRY_SIZE = 500;
 const INAD_BULK_THRESHOLD = 100;
 
+export interface CampaignRequester {
+  username: string;
+  role: OperatorRole;
+}
+
 @Injectable()
 export class CampaignsService {
   private readonly logger = new Logger(CampaignsService.name);
+
+  // Admin annulla/elimina qualunque campagna; un 'user' solo le proprie
+  // (Campaign.createdBy) — vedi cancel()/remove().
+  private assertOwnership(campaign: Campaign, requester: CampaignRequester): void {
+    if (requester.role !== 'admin' && campaign.createdBy !== requester.username) {
+      throw new ForbiddenException('Non puoi modificare una campagna creata da un altro operatore');
+    }
+  }
 
   constructor(
     @InjectRepository(Campaign)
@@ -779,9 +792,10 @@ export class CampaignsService {
     return { launched: recipients.length };
   }
 
-  async cancel(campaignId: string): Promise<{ cancelled: number; campaignId: string }> {
+  async cancel(campaignId: string, requester: CampaignRequester): Promise<{ cancelled: number; campaignId: string }> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+    this.assertOwnership(campaign, requester);
     if (campaign.status !== CampaignStatus.QUEUED && campaign.status !== CampaignStatus.CHECKING_INAD) {
       throw new BadRequestException('Solo campagne in corso o in verifica INAD possono essere annullate');
     }
@@ -2006,9 +2020,10 @@ export class CampaignsService {
     };
   }
 
-  async remove(campaignId: string): Promise<{ deleted: true }> {
-    const exists = await this.campaignRepo.existsBy({ id: campaignId });
-    if (!exists) throw new NotFoundException(`Campaign ${campaignId} not found`);
+  async remove(campaignId: string, requester: CampaignRequester): Promise<{ deleted: true }> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+    this.assertOwnership(campaign, requester);
 
     const linkedTestCampaign = await this.campaignRepo.findOneBy({ parentCampaignId: campaignId, isTest: true });
     if (linkedTestCampaign) {

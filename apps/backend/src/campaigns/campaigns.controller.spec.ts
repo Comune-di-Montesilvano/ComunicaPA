@@ -128,7 +128,7 @@ describe('CampaignsController', () => {
   describe('remove', () => {
     it('delega a campaignsService.remove', async () => {
       const result = await controller.remove('uuid-1', mockReq);
-      expect(mockService.remove).toHaveBeenCalledWith('uuid-1');
+      expect(mockService.remove).toHaveBeenCalledWith('uuid-1', { username: 'test-operator', role: 'admin' });
       expect(result).toEqual({ deleted: true });
     });
   });

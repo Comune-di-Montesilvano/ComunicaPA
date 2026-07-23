@@ -442,7 +442,7 @@ export class CampaignsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: Request & { user: JwtOperatorPayload },
   ): Promise<{ cancelled: number; campaignId: string }> {
-    const result = await this.campaignsService.cancel(id);
+    const result = await this.campaignsService.cancel(id, { username: req.user.username, role: req.user.role });
     const campaign = await this.campaignsService.findOne(id).catch(() => null);
     await this.auditLogsService.log({
       campaignId: id,
@@ -684,13 +684,12 @@ export class CampaignsController {
   }
 
   @Delete(':id')
-  @Roles('admin')
   async remove(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: Request & { user: JwtOperatorPayload },
   ): Promise<{ deleted: true }> {
     const campaign = await this.campaignsService.findOne(id).catch(() => null);
-    const result = await this.campaignsService.remove(id);
+    const result = await this.campaignsService.remove(id, { username: req.user.username, role: req.user.role });
     await this.auditLogsService.log({
       campaignId: id,
       campaignName: campaign ? campaign.name : 'Campagna Eliminata',

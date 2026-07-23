@@ -6627,6 +6627,7 @@ export function App(): React.JSX.Element {
                                 <th className="text-center">Destinatari</th>
                                 <th className="text-center">Stato</th>
                                 <th>Creata il</th>
+                                <th>Creata da</th>
                                 <th className="text-end">Azioni</th>
                               </tr>
                             </thead>
@@ -6677,6 +6678,7 @@ export function App(): React.JSX.Element {
                                       <StatusBadge status={c.status} />
                                     </td>
                                     <td className="text-muted" style={cellStyle}>{new Date(c.createdAt).toLocaleDateString('it-IT')}</td>
+                                    <td className="text-muted" style={cellStyle}>{c.createdBy}</td>
                                     <td className="text-end" style={cellStyle} onClick={(e) => e.stopPropagation()}>
                                     {c.status === 'draft' && (
                                       <button
@@ -6696,7 +6698,7 @@ export function App(): React.JSX.Element {
                                     >
                                       <Copy /> Duplica
                                     </button>
-                                    {role === 'admin' && (
+                                    {(role === 'admin' || c.createdBy === username) && (
                                       <button
                                         type="button"
                                         className="btn btn-sm btn-outline-danger d-flex align-items-center gap-1 mt-1"
@@ -12448,6 +12450,10 @@ export function App(): React.JSX.Element {
                           </div>
                         </div>
                         <div className="mb-3">
+                          <label className="text-muted small fw-semibold block">Creata da</label>
+                          <div>{campaign.createdBy}</div>
+                        </div>
+                        <div className="mb-3">
                           <label className="text-muted small fw-semibold block">Stato</label>
                           <div>
                             <StatusBadge status={campaign.status} />
@@ -12625,7 +12631,7 @@ export function App(): React.JSX.Element {
                               )}
                             </button>
                           )}
-                          {campaign.status === 'queued' && (
+                          {campaign.status === 'queued' && (role === 'admin' || campaign.createdBy === username) && (
                             <button
                               className="btn btn-outline-danger w-100 py-2 fw-semibold"
                               disabled={cancelling}
@@ -12648,9 +12654,11 @@ export function App(): React.JSX.Element {
                                 <button className="btn btn-sm btn-outline-warning me-2" onClick={() => handleSkipInadCheck(campaign.id)}>
                                   Salta verifica e procedi
                                 </button>
-                                <button className="btn btn-sm btn-outline-danger" disabled={cancelling} onClick={handleCancelCampaign}>
-                                  Annulla campagna
-                                </button>
+                                {(role === 'admin' || campaign.createdBy === username) && (
+                                  <button className="btn btn-sm btn-outline-danger" disabled={cancelling} onClick={handleCancelCampaign}>
+                                    Annulla campagna
+                                  </button>
+                                )}
                               </div>
                             </div>
                           )}
@@ -12659,7 +12667,7 @@ export function App(): React.JSX.Element {
                               <Info /> Carica un file CSV di destinatari per poter lanciare la campagna.
                             </div>
                           )}
-                          {role === 'admin' && (
+                          {(role === 'admin' || campaign.createdBy === username) && (
                             <button
                               className="btn btn-outline-danger w-100 py-2 fw-semibold mt-2"
                               onClick={() => handleDeleteCampaign(campaign.id, campaign.name)}
