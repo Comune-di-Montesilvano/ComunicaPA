@@ -158,6 +158,7 @@ export class NotificationsSearchService {
           postalTrackingId: a.postalTrackingId,
           postalStatus: a.postalStatus,
           postalStatusUpdatedAt: a.postalStatusUpdatedAt ? a.postalStatusUpdatedAt.toISOString() : null,
+          postalStatusHistory: a.postalStatusHistory ?? null,
           costCents: a.costCents ?? null,
           costCalculatedAt: a.costCalculatedAt ? a.costCalculatedAt.toISOString() : null,
           costBreakdown: a.costBreakdown ?? null,

@@ -63,7 +63,15 @@ export class PostalStatusSyncService {
           attempt.postalStatusUpdatedAt = new Date();
           attempt.postalStatusHistory = [
             ...(attempt.postalStatusHistory ?? []),
-            { stato: stato.stato, rilevatoIl: new Date().toISOString() },
+            {
+              stato: stato.stato,
+              rilevatoIl: new Date().toISOString(),
+              // Codice/descrizione errore GlobalCom (es. "-1"/"numeri
+              // raccomandata non salvati o non disponibili") — prima
+              // visibili solo sul portale GlobalCom, mai persistiti da noi.
+              ...(stato.codiceErrore ? { codiceErrore: stato.codiceErrore } : {}),
+              ...(stato.descrizione ? { descrizione: stato.descrizione } : {}),
+            },
           ];
           changed = true;
         }

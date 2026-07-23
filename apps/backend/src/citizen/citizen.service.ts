@@ -1,7 +1,8 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Not, Repository } from 'typeorm';
 import { Recipient } from '../entities/recipient.entity';
+import { CampaignStatus } from '../entities/campaign.entity';
 import { DownloadEvent } from '../entities/download-event.entity';
 import { AttachmentService, resolveAttachmentsConfig, resolveAttachmentLabel, resolveCustomAttachmentFilename } from '../attachments/attachment.service';
 import { CampaignsService } from '../campaigns/campaigns.service';
@@ -78,8 +79,13 @@ export class CitizenService {
   }
 
   async findAllForCitizen(codiceFiscale: string): Promise<CitizenNotificationDto[]> {
+    // Le bozze (campaign.status=DRAFT) hanno già Recipient in DB — sync
+    // anticipato del wizard ad ogni "avanti" (vedi CLAUDE.md) — ma non sono
+    // mai state lanciate: un cittadino non deve vederle prima dell'invio
+    // reale (bug reale: contenuto ancora in modifica, mai confermato
+    // dall'operatore, visibile in anteprima sul portale cittadino).
     const recipients = await this.recipientRepo.find({
-      where: { codiceFiscale: codiceFiscale.toUpperCase().trim() },
+      where: { codiceFiscale: codiceFiscale.toUpperCase().trim(), campaign: { status: Not(CampaignStatus.DRAFT) } },
       relations: ['campaign', 'attempts'],
       order: { createdAt: 'DESC' },
     });
@@ -91,6 +97,7 @@ export class CitizenService {
       where: {
         id,
         codiceFiscale: codiceFiscale.toUpperCase().trim(),
+        campaign: { status: Not(CampaignStatus.DRAFT) },
       },
       relations: ['campaign', 'attempts'],
     });

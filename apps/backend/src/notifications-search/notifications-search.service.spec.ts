@@ -189,6 +189,7 @@ describe('NotificationsSearchService.getDetail', () => {
         postalTrackingId: null,
         postalStatus: null,
         postalStatusUpdatedAt: null,
+        postalStatusHistory: null,
         costCents: null,
         costCalculatedAt: null,
         costBreakdown: null,

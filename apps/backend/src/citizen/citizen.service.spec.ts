@@ -1,7 +1,9 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { Not } from 'typeorm';
 import { CitizenService } from './citizen.service';
 import { Recipient } from '../entities/recipient.entity';
+import { CampaignStatus } from '../entities/campaign.entity';
 import { DownloadEvent } from '../entities/download-event.entity';
 import { AttachmentService } from '../attachments/attachment.service';
 import { CampaignsService } from '../campaigns/campaigns.service';
@@ -53,5 +55,54 @@ describe('CitizenService.markAsDownloaded', () => {
       expect.objectContaining({ id: 'r-1' }),
     );
     expect(mockRecipientRepo.save).toHaveBeenCalled();
+  });
+});
+
+describe('CitizenService — esclude campagne in bozza', () => {
+  const mockRecipientRepo = {
+    find: jest.fn().mockResolvedValue([]),
+    findOne: jest.fn(),
+  };
+  const mockDownloadEventRepo = { insert: jest.fn() };
+  const mockAttachmentService = { generatePdfBuffer: jest.fn() };
+  const mockCampaignsService = { renderMessageForRecipient: jest.fn() };
+
+  let service: CitizenService;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    mockRecipientRepo.find.mockResolvedValue([]);
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        CitizenService,
+        { provide: getRepositoryToken(Recipient), useValue: mockRecipientRepo },
+        { provide: getRepositoryToken(DownloadEvent), useValue: mockDownloadEventRepo },
+        { provide: AttachmentService, useValue: mockAttachmentService },
+        { provide: CampaignsService, useValue: mockCampaignsService },
+      ],
+    }).compile();
+    service = moduleRef.get(CitizenService);
+  });
+
+  it('findAllForCitizen filtra campaign.status != DRAFT', async () => {
+    await service.findAllForCitizen('RSSMRA80A01H501X');
+
+    expect(mockRecipientRepo.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ campaign: { status: Not(CampaignStatus.DRAFT) } }),
+      }),
+    );
+  });
+
+  it('findOneForCitizen (via download) filtra campaign.status != DRAFT — bozza non trovata', async () => {
+    mockRecipientRepo.findOne.mockResolvedValue(null);
+
+    await expect(service.markAsDownloaded('r-bozza', 'RSSMRA80A01H501X')).rejects.toThrow('non trovata');
+
+    expect(mockRecipientRepo.findOne).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ campaign: { status: Not(CampaignStatus.DRAFT) } }),
+      }),
+    );
   });
 });

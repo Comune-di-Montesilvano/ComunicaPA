@@ -203,7 +203,7 @@ const POSTAL_STATUS_META: Record<string, { label: string; badge: string; icon: R
   Consegnato: { label: 'Consegnato', badge: 'bg-success-subtle text-success-emphasis border', icon: CheckCircle2 },
   NonConsegnato: { label: 'Non consegnato', badge: 'bg-danger-subtle text-danger-emphasis border', icon: XCircle },
   ConsegnaParziale: { label: 'Consegna parziale', badge: 'bg-warning-subtle text-warning-emphasis border', icon: AlertTriangle },
-  Errore: { label: 'Errore', badge: 'bg-danger-subtle text-danger-emphasis border', icon: AlertCircle },
+  Errore: { label: 'Errore', badge: 'bg-danger', icon: AlertCircle },
   Eliminato: { label: 'Eliminato', badge: 'bg-light text-dark border', icon: Trash2 },
 };
 
@@ -894,7 +894,7 @@ export function App(): React.JSX.Element {
   const [notifDetail, setNotifDetail] = useState<{
     recipient: { id: string; codiceFiscale: string; fullName: string | null; email: string | null; pec: string | null; status: string };
     campaign: { id: string; name: string; channelType: string };
-    attempts: Array<{ attemptNumber: number; status: string; channelType: string; errorMessage: string | null; sentAt: string | null; createdAt: string; appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null }; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; protocolNumber?: number | null; protocolYear?: number | null; protocolledAt?: string | null; costCents?: number | null; costCalculatedAt?: string | null; costBreakdown?: Record<string, unknown> | null }>;
+    attempts: Array<{ attemptNumber: number; status: string; channelType: string; errorMessage: string | null; sentAt: string | null; createdAt: string; appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null }; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalStatusHistory?: Array<{ stato: string; rilevatoIl: string; codiceErrore?: string; descrizione?: string }> | null; protocolNumber?: number | null; protocolYear?: number | null; protocolledAt?: string | null; costCents?: number | null; costCalculatedAt?: string | null; costBreakdown?: Record<string, unknown> | null }>;
     preview: { subject: string; bodyHtml?: string; bodyMarkdown?: string };
     appIoPreview: { subject: string; bodyHtml?: string; bodyMarkdown?: string } | null;
     downloads: Array<{ channel: string; attachmentIndex: number; downloadedAt: string }>;
@@ -9735,7 +9735,19 @@ export function App(): React.JSX.Element {
                                         <td className="small text-muted">{a.postalStatusUpdatedAt ? new Date(a.postalStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
                                       </>
                                     )}
-                                    <td className="small text-danger text-break" style={{ maxWidth: '350px' }}>{a.errorMessage || '—'}</td>
+                                    <td className="small text-danger text-break" style={{ maxWidth: '350px' }}>
+                                      {a.errorMessage || (() => {
+                                        // errorMessage copre solo un fallimento lato nostro (invio_ext_singolo
+                                        // rifiutato) — un errore di consegna GlobalCom post-accettazione (es.
+                                        // "-1: numeri raccomandata non salvati o non disponibili") si vede solo
+                                        // nell'ultima entry di postalStatusHistory con codiceErrore, prima
+                                        // leggibile solo sul portale GlobalCom.
+                                        const lastWithError = [...(a.postalStatusHistory || [])].reverse().find((h) => h.codiceErrore || h.descrizione);
+                                        return lastWithError
+                                          ? `GlobalCom ${lastWithError.codiceErrore ? `(${lastWithError.codiceErrore})` : ''}: ${lastWithError.descrizione || ''}`
+                                          : '—';
+                                      })()}
+                                    </td>
                                   </tr>
                                   {/* Co-consegna App IO come tentativo a parte: non ha senso quando
                                       App IO è già il canale primario della campagna. */}
