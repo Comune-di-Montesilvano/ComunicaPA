@@ -333,6 +333,7 @@ function WizAttachmentInlinePreview({
   attachmentEntry,
   token,
   bordered = true,
+  singleMode = false,
 }: {
   campaignId: string | null;
   row: Record<string, string>;
@@ -342,6 +343,8 @@ function WizAttachmentInlinePreview({
    * sotto altro contenuto (es. indirizzo SEND/POSTAL), no quando è l'unico
    * contenuto della propria colonna (step6 EMAIL/PEC/APP_IO affiancato). */
   bordered?: boolean;
+  /** Modalità invio singolo: l'allegato si carica al Passo 1, non a un passo dedicato. */
+  singleMode?: boolean;
 }): React.JSX.Element | null {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -364,7 +367,7 @@ function WizAttachmentInlinePreview({
     fetch(`${ADMIN_API_BASE}/campaigns/${campaignId}/attachments/preview-file?filename=${encodeURIComponent(filename)}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
-      .then((res) => (res.ok ? res.blob() : Promise.reject(new Error(res.status === 404 ? 'Allegato non trovato — verifica il Passo 5' : 'Errore caricamento allegato'))))
+      .then((res) => (res.ok ? res.blob() : Promise.reject(new Error(res.status === 404 ? `Allegato non trovato — verifica il Passo ${singleMode ? 1 : 5}` : 'Errore caricamento allegato'))))
       .then((blob) => {
         if (cancelled) return;
         setObjectUrl(URL.createObjectURL(blob));
@@ -435,6 +438,7 @@ function WizAddressAttachmentPreviewPanel({
   wizAttachments,
   campaignId,
   token,
+  singleMode = false,
 }: {
   wizValidRows: Record<string, string>[];
   wizPreviewIndex: number;
@@ -446,6 +450,7 @@ function WizAddressAttachmentPreviewPanel({
   wizAttachments: Array<{ key: string; label: string; labelColumn?: string }>;
   campaignId: string | null;
   token: string | null;
+  singleMode?: boolean;
 }): React.JSX.Element {
   const row = wizValidRows[wizPreviewIndex];
 
@@ -487,6 +492,7 @@ function WizAddressAttachmentPreviewPanel({
               row={row}
               attachmentEntry={entry}
               token={token}
+              singleMode={singleMode}
             />
           ))}
         </div>
@@ -567,6 +573,19 @@ function renderPiePercentLabel(props: any): React.ReactNode {
 function isWizBodyEmpty(html: string): boolean {
   const text = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' ').trim();
   return text.length === 0;
+}
+
+// La step-bar mostra solo 3 tab in modalità singola ([1,4,6] internamente,
+// vedi "Steps Progress Header"), ma le intestazioni "Passo N" dentro il
+// contenuto di ogni step usavano il numero di step INTERNO (4, 5, 6) invece
+// che quello mostrato nella tab-bar (1, 2, 3) — l'operatore vedeva "Passo 6"
+// sotto la tab "3. Anteprima e Invio". Questa funzione converte lo step
+// interno nel numero da mostrare, coerente con la tab-bar.
+function wizDisplayStep(internalStep: number, singleMode: boolean): number {
+  if (!singleMode) return internalStep;
+  if (internalStep <= 1) return 1;
+  if (internalStep <= 4) return 2;
+  return 3;
 }
 
 // Valido se il body contiene %%elenco_allegati%% OPPURE TUTTI gli %%allegatoN%%
@@ -4399,9 +4418,21 @@ export function App(): React.JSX.Element {
     );
     setWizPdfFiles(attachmentSlotsWithFile.map(s => s.file!));
 
-    if (await syncWizDraftAndRecipients(targetStep)) {
-      setWizStep(targetStep);
+    const campaignId = await syncWizDraftAndRecipients(targetStep);
+    if (!campaignId) return;
+
+    // Carica subito gli allegati reali sul server (invece di rimandarlo a
+    // "Avvia Test"/"Conferma ed Avvia"): senza upload immediato, l'anteprima
+    // allegato allo Step 3 (Anteprima e Invio) cerca il file sul disco del
+    // server prima che sia mai stato caricato — 404 "Allegato non trovato".
+    try {
+      await ensureWizSingleAttachmentsUploaded(campaignId);
+    } catch (err: any) {
+      alert(err.message || 'Errore durante il caricamento degli allegati.');
+      return;
     }
+
+    setWizStep(targetStep);
   };
 
   const wizSingleSubmitDisabled =
@@ -8320,7 +8351,7 @@ export function App(): React.JSX.Element {
                   </div>
                 <div className="row g-4">
                   <div className="col-lg-6 border-end">
-                    <h4 className="h6 fw-bold text-dark mb-3">{wizChannel === 'SEND' ? 'Passo 4: Oggetto della Comunicazione' : 'Passo 4: Scrittura Template & Jolly Fields'}</h4>
+                    <h4 className="h6 fw-bold text-dark mb-3">{wizChannel === 'SEND' ? `Passo ${wizDisplayStep(4, wizSingleMode)}: Oggetto della Comunicazione` : `Passo ${wizDisplayStep(4, wizSingleMode)}: Scrittura Template & Jolly Fields`}</h4>
 
                     {(wizChannel === 'EMAIL' || wizChannel === 'PEC' || (wizChannel === 'POSTAL' && settInadCheckEnabled)) && templates.filter(t => t.type === 'MAIL').length > 0 && (
                       <div className="mb-3">
@@ -8833,7 +8864,7 @@ export function App(): React.JSX.Element {
               {/* STEP 6: ANTEPRIMA E INVIO */}
               {wizStep === 6 && (
                 <div>
-                  <h4 className="h6 fw-bold text-dark mb-3"><CheckCircle2 className="text-success me-2" size={16} />Passo 6: Anteprima e Invio</h4>
+                  <h4 className="h6 fw-bold text-dark mb-3"><CheckCircle2 className="text-success me-2" size={16} />Passo {wizDisplayStep(6, wizSingleMode)}: Anteprima e Invio</h4>
 
                   <div className="mb-4 pb-3 border-bottom d-flex justify-content-between">
                     <button
@@ -8859,7 +8890,7 @@ export function App(): React.JSX.Element {
                           }
                         }}
                         disabled={wizSending || !wizCampaignId || !wizTestAttachmentReady}
-                        title={!wizCampaignId ? 'Completa prima il passo Upload Allegati' : (!wizTestAttachmentReady ? 'Allegato mancante per il primo destinatario — verifica il Passo 5' : undefined)}
+                        title={!wizCampaignId ? (wizSingleMode ? 'Completa prima il Passo 1 (Allegati)' : 'Completa prima il passo Upload Allegati') : (!wizTestAttachmentReady ? `Allegato mancante per il primo destinatario — verifica il Passo ${wizSingleMode ? 1 : 5}` : undefined)}
                       >
                         <TestTube className="me-1" size={16} />Avvia Test
                       </button>
@@ -8942,6 +8973,7 @@ export function App(): React.JSX.Element {
                                     attachmentEntry={entry}
                                     token={token}
                                     bordered={false}
+                                    singleMode={wizSingleMode}
                                   />
                                 ))}
                               </div>
@@ -8960,6 +8992,7 @@ export function App(): React.JSX.Element {
                           wizAttachments={wizAttachments}
                           campaignId={wizCampaignId}
                           token={token}
+                          singleMode={wizSingleMode}
                         />
                       )}
                     </div>
@@ -8989,7 +9022,7 @@ export function App(): React.JSX.Element {
                           }
                         }}
                         disabled={wizSending || !wizCampaignId || !wizTestAttachmentReady}
-                        title={!wizCampaignId ? 'Completa prima il passo Upload Allegati' : (!wizTestAttachmentReady ? 'Allegato mancante per il primo destinatario — verifica il Passo 5' : undefined)}
+                        title={!wizCampaignId ? (wizSingleMode ? 'Completa prima il Passo 1 (Allegati)' : 'Completa prima il passo Upload Allegati') : (!wizTestAttachmentReady ? `Allegato mancante per il primo destinatario — verifica il Passo ${wizSingleMode ? 1 : 5}` : undefined)}
                       >
                         <TestTube className="me-1" size={16} />Avvia Test
                       </button>
