@@ -591,6 +591,22 @@ Postel/Irideos), mai su Lettera/Raccomandata standard (canale Poste
 diretto), e i Servizio "Market"/"Contest"/Atto Giudiziario richiedono un
 `CodiceContratto` valido specifico per utenza.
 
+**`RicevutaDiRitorno=true` richiede anche `Colore`/`FronteRetro` e un
+`Ricevuta` esplicito.** `Colore`/`FronteRetro` (stampa a colori/fronte-retro)
+sono booleani obbligatori nel WSDL (`InfoGUIDExt`, verificato sull'XSD
+live) — vanno sempre inviati, non solo quando true. Con AR attiva serve
+anche il campo `Ricevuta` (`InfoIndirizzoExt`, indirizzo a cui torna la
+cartolina firmata): omesso, GlobalCom risponde "Destinatario ricevuta: I
+campi Denominazione1 e Denominazione2 sono entrambi vuoti".
+`UsaDestinatarioARPredefinito=true` (stesso pattern di
+`UsaMittentePredefinito`) è un fallback che presuppone un indirizzo AR
+predefinito configurato lato GlobalCom sull'utenza — non è il caso
+generale (errore reale: "E' stato richiesto il destinatario AR
+predefinito per questo utente, ma non è presente in archivio"). Soluzione
+adottata: `Ricevuta` = mittente configurato (`postal.strategy.ts`,
+`ricevuta: ricevutaDiRitorno ? provider.mittente : undefined`) — la
+cartolina AR torna al mittente, comportamento standard per raccomandate PA.
+
 ## Frontend admin — mai `<form>` annidate
 
 La pagina Impostazioni avvolge tutte le tab in un'unica `<form
@@ -612,6 +628,27 @@ per quel canale (il blocco `secondaryChannels` viveva solo dentro il ramo
 `EMAIL`/`PEC`) — la campagna partiva senza App IO nonostante la UI la
 mostrasse configurata. Ogni nuovo campo channel-agnostic in `buildWiz...Draft`
 va replicato anche in `handleWizLaunch`, non solo nell'uno o nell'altro.
+
+**Stesso bug, altre due istanze reali: `attachments` e `wizSingleMode`
+mancanti in `handleWizLaunch`.** `campaigns.service.ts` fa **replace
+completo** di `channelConfig` sul PATCH (`if (dto.channelConfig !==
+undefined) campaign.channelConfig = dto.channelConfig`, nessun merge) —
+quindi un ramo di `handleWizLaunch` che dimentica un campo lo CANCELLA
+dalla campagna già sincronizzata in bozza, non lo lascia semplicemente
+invariato. Bug reale #1: i branch POSTAL e SEND non includevano
+`attachments: wizAttachments` (a differenza di EMAIL/PEC/APP_IO che ce
+l'hanno) — l'allegato già sincronizzato in bozza spariva al lancio,
+bloccando con "allegato obbligatorio" nonostante l'anteprima (che legge lo
+stato client `wizAttachments`, non ancora sovrascritto) lo mostrasse
+correttamente. Bug reale #2: nessun branch impostava
+`wizSingleMode` — `campaigns.service.ts` legge
+`isWizSingleMode = channelConfig['wizSingleMode'] === true` per decidere
+se saltare il check INAD bulk (pensato solo per campagne CSV, mai per un
+destinatario singolo); assente, un invio singolo veniva trattato come
+bulk e INAD ha dirottato una raccomandata POSTAL su PEC a sua insaputa.
+Fix: `channelConfig.attachments = wizAttachments` in ogni branch che lo
+richiede, `channelConfig.wizSingleMode = wizSingleMode` sempre,
+incondizionatamente, per qualunque canale.
 
 **Terzo punto di sync, oltre ai due sopra: il lifecycle del wizard stesso.**
 Un nuovo stato `wiz*` legato a `channelConfig` (es. `wizPecReserveMailConfigId`)
@@ -863,3 +900,11 @@ solo per l'oggetto `campaign` principale, non per i pannelli di breakdown/
 statistiche/destinatari (fetchati una sola volta al click) — un nuovo
 pannello nel dettaglio campagna va aggiunto anche al polling esistente, non
 solo al caricamento iniziale.
+
+Stessa istanza trovata anche fuori dal dettaglio campagna: il modale
+"Dettaglio Notifica" (`openNotificationDetail`, apribile dalla ricerca
+notifiche globale) fetchava una volta sola all'apertura — lo stato di un
+singolo tentativo (es. "In corso" → "Consegnato") restava fermo finché non
+si ricaricava tutto il sito. Fix: `useEffect` con `setInterval` (3s) che
+rilegge silenziosamente (nessun reset a `null`/loading, per non far
+sfarfallare/richiudere il modale già aperto) finché resta aperto.

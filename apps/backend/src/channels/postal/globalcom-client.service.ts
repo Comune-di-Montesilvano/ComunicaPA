@@ -27,7 +27,13 @@ export interface GbcInvioParams {
   // standard per un'utenza abilitata solo sul tier Market.
   servizio: string;
   ricevutaDiRitorno: boolean;
+  /** Stampa a colori (InfoGUIDExt.Colore, campo obbligatorio nel WSDL — sempre inviato). */
+  colore: boolean;
+  /** Stampa fronte-retro (InfoGUIDExt.FronteRetro, campo obbligatorio nel WSDL — sempre inviato). */
+  fronteRetro: boolean;
   mittente: GbcAddress | null;
+  /** Destinatario della cartolina AR (InfoIndirizzoExt "Ricevuta") — rilevante solo se ricevutaDiRitorno=true. */
+  ricevuta?: GbcAddress | null;
   destinatario: GbcAddress;
   note: string;
   protocollo?: string;
@@ -179,6 +185,8 @@ export class GlobalComClient {
     const invio: Record<string, unknown> = {
       Servizio: params.servizio,
       RicevutaDiRitorno: params.ricevutaDiRitorno,
+      Colore: params.colore,
+      FronteRetro: params.fronteRetro,
       Destinatari: { InfoIndirizzoExt: [toInfoIndirizzoExt(params.destinatario)] },
       Note: params.note,
       Files: { InfoFileExt: [{
@@ -189,6 +197,21 @@ export class GlobalComClient {
         issigned: false,
       }] },
       ...(params.mittente ? { Mittente: toInfoIndirizzoExt(params.mittente) } : { UsaMittentePredefinito: true }),
+      // Con RicevutaDiRitorno=true, GlobalCom richiede un destinatario esplicito
+      // per la cartolina AR (campo "Ricevuta", InfoIndirizzoExt) — se non
+      // passato, il default WSDL è un indirizzo vuoto, non l'utenza mittente:
+      // rigettato con "Destinatario ricevuta: I campi Denominazione1 e
+      // Denominazione2 sono entrambi vuoti" (errore reale riscontrato in test).
+      // UsaDestinatarioARPredefinito presuppone un indirizzo AR predefinito
+      // configurato lato GlobalCom sull'utenza — non è il caso generale (errore
+      // reale riscontrato: "richiesto il destinatario AR predefinito... ma non
+      // è presente in archivio"), quindi si passa sempre un indirizzo esplicito
+      // quando disponibile (params.ricevuta, tipicamente = mittente configurato:
+      // la cartolina AR torna al mittente), col flag predefinito come ultima
+      // spiaggia solo se non c'è alcun indirizzo noto lato nostro.
+      ...(params.ricevutaDiRitorno
+        ? (params.ricevuta ? { Ricevuta: toInfoIndirizzoExt(params.ricevuta) } : { UsaDestinatarioARPredefinito: true })
+        : {}),
       ...(params.protocollo ? { Protocollo: params.protocollo } : {}),
       ...(params.centroDiCosto ? { CentrodiCosto: params.centroDiCosto } : {}),
       ...(params.codiceContratto ? { CodiceContratto: params.codiceContratto } : {}),

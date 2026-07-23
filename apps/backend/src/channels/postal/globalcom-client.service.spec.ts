@@ -37,6 +37,8 @@ describe('GlobalComClient', () => {
     const result = await client.invioExtSingolo(creds, {
       servizio: 'Raccomandata',
       ricevutaDiRitorno: true,
+      colore: true,
+      fronteRetro: false,
       mittente: null,
       destinatario: { denominazione1: 'Mario Rossi', indirizzo1: 'Via Roma 1', cap: '65015', citta: 'Montesilvano', provincia: 'PE' },
       note: 'attempt-uuid-123',
@@ -49,12 +51,63 @@ describe('GlobalComClient', () => {
       Invio: expect.objectContaining({
         Servizio: 'Raccomandata',
         RicevutaDiRitorno: true,
+        Colore: true,
+        FronteRetro: false,
         UsaMittentePredefinito: true,
+        UsaDestinatarioARPredefinito: true,
         Note: 'attempt-uuid-123',
         Destinatari: { InfoIndirizzoExt: [expect.objectContaining({ Denominazione1: 'Mario Rossi', Citta: 'Montesilvano' })] },
       }),
     }));
     expect(result).toEqual(expect.objectContaining({ idPro: 'IDPRO123', stato: 'Accettato', codiceErrore: '', descrizione: '' }));
+  });
+
+  it('invioExtSingolo invia Ricevuta esplicita se params.ricevuta è impostato (AR), niente UsaDestinatarioARPredefinito', async () => {
+    mockInvioAsync.mockResolvedValue([{
+      invio_ext_singoloResult: true,
+      Risposta: { IDPRO: 'IDPRO789', Stato: 'Accettato', CodiceErrore: '', Descrizione: '' },
+      Messaggio: '',
+    }]);
+
+    await client.invioExtSingolo(creds, {
+      servizio: 'RaccomandataMarket4',
+      ricevutaDiRitorno: true,
+      colore: false,
+      fronteRetro: true,
+      mittente: { denominazione1: 'Comune di Montesilvano', indirizzo1: 'Piazza Diaz 1', cap: '65015', citta: 'Montesilvano', provincia: 'PE' },
+      ricevuta: { denominazione1: 'Comune di Montesilvano', indirizzo1: 'Piazza Diaz 1', cap: '65015', citta: 'Montesilvano', provincia: 'PE' },
+      destinatario: { denominazione1: 'Mario Rossi', indirizzo1: 'Via Roma 1', cap: '65015', citta: 'Montesilvano', provincia: 'PE' },
+      note: 'attempt-uuid-789',
+      fileBuffer: Buffer.from('%PDF-1.4 test'),
+    });
+
+    const invioArg = (mockInvioAsync.mock.calls[0][0] as { Invio: Record<string, unknown> }).Invio;
+    expect(invioArg).toEqual(expect.objectContaining({
+      Ricevuta: expect.objectContaining({ Denominazione1: 'Comune di Montesilvano' }),
+    }));
+    expect(invioArg).not.toHaveProperty('UsaDestinatarioARPredefinito');
+  });
+
+  it('invioExtSingolo NON imposta UsaDestinatarioARPredefinito se ricevutaDiRitorno=false', async () => {
+    mockInvioAsync.mockResolvedValue([{
+      invio_ext_singoloResult: true,
+      Risposta: { IDPRO: 'IDPRO456', Stato: 'Accettato', CodiceErrore: '', Descrizione: '' },
+      Messaggio: '',
+    }]);
+
+    await client.invioExtSingolo(creds, {
+      servizio: 'Raccomandata',
+      ricevutaDiRitorno: false,
+      colore: false,
+      fronteRetro: true,
+      mittente: null,
+      destinatario: { denominazione1: 'Mario Rossi', indirizzo1: 'Via Roma 1', cap: '65015', citta: 'Montesilvano', provincia: 'PE' },
+      note: 'attempt-uuid-456',
+      fileBuffer: Buffer.from('%PDF-1.4 test'),
+    });
+
+    const invioArg = (mockInvioAsync.mock.calls[0][0] as { Invio: Record<string, unknown> }).Invio;
+    expect(invioArg).not.toHaveProperty('UsaDestinatarioARPredefinito');
   });
 
   it('invioExtSingolo lancia se Login fallisce', async () => {
@@ -63,6 +116,8 @@ describe('GlobalComClient', () => {
     await expect(client.invioExtSingolo(creds, {
       servizio: 'Lettera',
       ricevutaDiRitorno: false,
+      colore: false,
+      fronteRetro: true,
       mittente: null,
       destinatario: { denominazione1: 'X', indirizzo1: 'Y', citta: 'Z' },
       note: 'n',
@@ -76,6 +131,8 @@ describe('GlobalComClient', () => {
     await expect(client.invioExtSingolo(creds, {
       servizio: 'Lettera',
       ricevutaDiRitorno: false,
+      colore: false,
+      fronteRetro: true,
       mittente: null,
       destinatario: { denominazione1: 'X', indirizzo1: 'Y', citta: 'Z' },
       note: 'n',

@@ -1249,6 +1249,8 @@ export function App(): React.JSX.Element {
   const [wizPhysicalCommunicationType, setWizPhysicalCommunicationType] = useState<'AR_REGISTERED_LETTER' | 'REGISTERED_LETTER_890'>('AR_REGISTERED_LETTER');
   const [wizPostalServiceType, setWizPostalServiceType] = useState('');
   const [wizPostalReturnReceipt, setWizPostalReturnReceipt] = useState(true);
+  const [wizPostalColorPrint, setWizPostalColorPrint] = useState(false);
+  const [wizPostalDuplex, setWizPostalDuplex] = useState(true);
   const [wizPostalCodiceContratto, setWizPostalCodiceContratto] = useState('');
   const [wizPostalAddressColumn, setWizPostalAddressColumn] = useState('');
   const [wizPostalMunicipalityColumn, setWizPostalMunicipalityColumn] = useState('');
@@ -1701,6 +1703,28 @@ export function App(): React.JSX.Element {
     }, 5000);
     return () => clearInterval(timer);
   }, [token, view]);
+
+  // Stesso problema del dettaglio campagna: il modale "Dettaglio Notifica"
+  // (openNotificationDetail) fetchava una volta sola all'apertura — restava
+  // fermo sullo stato del tentativo (es. "In corso") anche a consegna
+  // avvenuta lato server, finché l'operatore non ricaricava tutto il sito.
+  // Refresh silenzioso (niente reset a null/loading, per non far sfarfallare
+  // il modale aperto).
+  useEffect(() => {
+    if (!token || !notifDetail) return;
+    const recipientId = notifDetail.recipient.id;
+    const timer = setInterval(async () => {
+      try {
+        const res = await fetch(`${ADMIN_API_BASE}/notifications-search/${recipientId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) setNotifDetail(await res.json());
+      } catch {
+        // silenzioso: un errore di rete transitorio non deve chiudere il modale
+      }
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [token, notifDetail?.recipient.id]);
 
   // Ricarica la pagina destinatari su cambio pagina/ricerca (debounce sulla ricerca)
   useEffect(() => {
@@ -4669,6 +4693,8 @@ export function App(): React.JSX.Element {
     setWizProtocolla(false);
     setWizTaxonomyCode('');
     setWizPhysicalCommunicationType('AR_REGISTERED_LETTER');
+    setWizPostalColorPrint(false);
+    setWizPostalDuplex(true);
     setWizBody('');
     setWizCsvFile(null);
     setWizCsvHeaders([]);
@@ -4758,6 +4784,8 @@ export function App(): React.JSX.Element {
     setWizPhysicalCommunicationType(source.channelConfig?.physicalCommunicationType || 'AR_REGISTERED_LETTER');
     setWizPostalServiceType(source.channelConfig?.postalServiceType || '');
     setWizPostalReturnReceipt(source.channelConfig?.postalReturnReceipt !== undefined ? Boolean(source.channelConfig.postalReturnReceipt) : true);
+    setWizPostalColorPrint(Boolean(source.channelConfig?.postalColorPrint));
+    setWizPostalDuplex(source.channelConfig?.postalDuplex !== undefined ? Boolean(source.channelConfig.postalDuplex) : true);
     setWizPostalCodiceContratto(source.channelConfig?.postalCodiceContratto || '');
     setWizPostalAddressColumn(source.channelConfig?.physicalAddressConfig?.addressColumn || '');
     setWizPostalMunicipalityColumn(source.channelConfig?.physicalAddressConfig?.municipalityColumn || '');
@@ -4982,6 +5010,8 @@ export function App(): React.JSX.Element {
     if (wizChannel === 'POSTAL') {
       cfg.postalServiceType = wizPostalServiceType;
       cfg.postalReturnReceipt = wizPostalReturnReceipt;
+      cfg.postalColorPrint = wizPostalColorPrint;
+      cfg.postalDuplex = wizPostalDuplex;
       if (wizPostalCodiceContratto) {
         cfg.postalCodiceContratto = wizPostalCodiceContratto;
       }
@@ -5327,6 +5357,7 @@ export function App(): React.JSX.Element {
           protocolla: true,
           taxonomyCode: wizTaxonomyCode,
           physicalCommunicationType: wizPhysicalCommunicationType,
+          attachments: wizAttachments,
         };
         if (wizSingleMode) {
           channelConfig.physicalAddressConfig = {
@@ -5339,8 +5370,11 @@ export function App(): React.JSX.Element {
         }
       } else if (wizChannel === 'POSTAL') {
         channelConfig.subject = wizSubject;
+        channelConfig.attachments = wizAttachments;
         channelConfig.postalServiceType = wizPostalServiceType;
         channelConfig.postalReturnReceipt = wizPostalReturnReceipt;
+        channelConfig.postalColorPrint = wizPostalColorPrint;
+        channelConfig.postalDuplex = wizPostalDuplex;
         if (wizPostalCodiceContratto) {
           channelConfig.postalCodiceContratto = wizPostalCodiceContratto;
         }
@@ -5371,6 +5405,13 @@ export function App(): React.JSX.Element {
       if (wizChannel !== 'SEND') {
         channelConfig.protocolla = wizProtocolla;
       }
+
+      // Sempre impostato, qualunque canale: backend legge wizSingleMode per
+      // decidere se saltare il check INAD bulk (inadCheckEnabled = !isWizSingleMode
+      // in campaigns.service.ts) — se assente qui, un invio singolo PEC/POSTAL/EMAIL
+      // rilanciato da questa funzione veniva trattato come bulk, con INAD che
+      // dirottava il canale (bug reale: raccomandata AR dirottata su PEC).
+      channelConfig.wizSingleMode = wizSingleMode;
 
       if (wizPaymentEnabled) {
         channelConfig.paymentConfig = {
@@ -7228,6 +7269,20 @@ export function App(): React.JSX.Element {
                                   </div>
                                 </div>
                               )}
+                              <div className="col-6">
+                                <div className="form-check">
+                                  <input className="form-check-input" type="checkbox" id="wizSinglePostalColor"
+                                    checked={wizPostalColorPrint} onChange={(e) => setWizPostalColorPrint(e.target.checked)} />
+                                  <label className="form-check-label small fw-medium" htmlFor="wizSinglePostalColor">Stampa a colori</label>
+                                </div>
+                              </div>
+                              <div className="col-6">
+                                <div className="form-check">
+                                  <input className="form-check-input" type="checkbox" id="wizSinglePostalDuplex"
+                                    checked={wizPostalDuplex} onChange={(e) => setWizPostalDuplex(e.target.checked)} />
+                                  <label className="form-check-label small fw-medium" htmlFor="wizSinglePostalDuplex">Fronte-retro</label>
+                                </div>
+                              </div>
                             </div>
                           );
                         })()}
@@ -7681,6 +7736,20 @@ export function App(): React.JSX.Element {
                           </div>
                         </div>
                       )}
+                      <div className="col-md-4 d-flex align-items-end">
+                        <div className="form-check">
+                          <input className="form-check-input" type="checkbox" id="wizPostalColor"
+                            checked={wizPostalColorPrint} onChange={(e) => setWizPostalColorPrint(e.target.checked)} />
+                          <label className="form-check-label small" htmlFor="wizPostalColor">Stampa a colori</label>
+                        </div>
+                      </div>
+                      <div className="col-md-4 d-flex align-items-end">
+                        <div className="form-check">
+                          <input className="form-check-input" type="checkbox" id="wizPostalDuplex"
+                            checked={wizPostalDuplex} onChange={(e) => setWizPostalDuplex(e.target.checked)} />
+                          <label className="form-check-label small" htmlFor="wizPostalDuplex">Fronte-retro</label>
+                        </div>
+                      </div>
                       {contrattiPerTipo.length > 0 && (
                         <div className="col-md-4">
                           <label className="form-label small fw-bold">Contratto {contrattiPerTipo.length > 1 ? '*' : ''}</label>
@@ -12554,6 +12623,29 @@ export function App(): React.JSX.Element {
                             <ChannelBadge channel={campaign.channelType} extra={campaign.channelConfig?.['serviceName'] as string | undefined} />
                           </div>
                         </div>
+                        {campaign.channelType === 'POSTAL' && (
+                          <div className="mb-3">
+                            <label className="text-muted small fw-semibold block">Opzioni di stampa</label>
+                            <div className="d-flex flex-wrap gap-1">
+                              <span className={`badge ${campaign.channelConfig?.['postalReturnReceipt'] ? 'bg-primary' : 'bg-secondary'}`}>
+                                {campaign.channelConfig?.['postalReturnReceipt'] ? 'Ricevuta di ritorno (AR)' : 'Senza ricevuta di ritorno'}
+                              </span>
+                              <span className={`badge ${campaign.channelConfig?.['postalDuplex'] !== false ? 'bg-primary' : 'bg-secondary'}`}>
+                                {campaign.channelConfig?.['postalDuplex'] !== false ? 'Stampa fronte-retro' : 'Stampa solo fronte'}
+                              </span>
+                              <span
+                                className="badge"
+                                style={
+                                  campaign.channelConfig?.['postalColorPrint']
+                                    ? { background: 'linear-gradient(90deg, #e53935, #fb8c00, #fdd835, #43a047, #1e88e5, #8e24aa)', color: '#fff' }
+                                    : { background: '#6c757d', color: '#fff' }
+                                }
+                              >
+                                {campaign.channelConfig?.['postalColorPrint'] ? 'Stampa a colori' : 'Stampa bianco/nero'}
+                              </span>
+                            </div>
+                          </div>
+                        )}
                         <div className="mb-3">
                           <label className="text-muted small fw-semibold block">Creata da</label>
                           <div>{campaign.createdByDisplayName || campaign.createdBy}</div>

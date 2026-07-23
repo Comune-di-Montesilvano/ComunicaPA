@@ -81,6 +81,8 @@ export class PostalStrategy implements IChannelStrategy {
 
     const servizio = (cfg['postalServiceType'] as string) || provider.enabledServiceTypes[0] || 'Raccomandata';
     const ricevutaDiRitorno = servizio.startsWith('Raccomandata') && !!cfg['postalReturnReceipt'];
+    const colore = !!cfg['postalColorPrint'];
+    const fronteRetro = cfg['postalDuplex'] !== undefined ? !!cfg['postalDuplex'] : true;
 
     const userDataColumn = cfg['userDataColumn'] as string | undefined;
     const userData1 = userDataColumn ? getColumnValue(recipient, userDataColumn) || undefined : undefined;
@@ -101,12 +103,16 @@ export class PostalStrategy implements IChannelStrategy {
       || provider.contratti.find((c) => servizio.startsWith(c.tipologia))?.codiceContratto
       || undefined;
 
-    log(`Invio POSTAL (GlobalCom) a ${recipient.codiceFiscale}: servizio=${servizio}, AR=${ricevutaDiRitorno}, codiceContratto=${codiceContratto || '(nessuno)'}`);
+    log(`Invio POSTAL (GlobalCom) a ${recipient.codiceFiscale}: servizio=${servizio}, AR=${ricevutaDiRitorno}, colore=${colore}, fronteRetro=${fronteRetro}, codiceContratto=${codiceContratto || '(nessuno)'}`);
 
     const risposta = await this.globalCom.invioExtSingolo(creds, {
       servizio,
       ricevutaDiRitorno,
+      colore,
+      fronteRetro,
       mittente: provider.mittente,
+      // AR torna al mittente configurato (nessun indirizzo AR distinto in UI/config).
+      ricevuta: ricevutaDiRitorno ? provider.mittente : undefined,
       destinatario,
       note: recipient.id,
       protocollo,

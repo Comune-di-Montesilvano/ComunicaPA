@@ -103,6 +103,61 @@ describe('PostalStrategy', () => {
     expect(result.responsePayload).toEqual({ stato: 'Accettato', idPro: 'IDPRO123' });
   });
 
+  it('send() invia fronteRetro=true e colore=false di default se non configurati', async () => {
+    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' } as any);
+
+    await strategy.send(baseRecipient as never, baseCampaign() as never, undefined, 'attempt-uuid-1', 0);
+
+    expect(globalCom.invioExtSingolo).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ colore: false, fronteRetro: true }),
+    );
+  });
+
+  it('send() rispetta postalColorPrint/postalDuplex configurati in channelConfig', async () => {
+    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' } as any);
+
+    await strategy.send(
+      baseRecipient as never,
+      baseCampaign({ postalColorPrint: true, postalDuplex: false }) as never,
+      undefined,
+      'attempt-uuid-1',
+      0,
+    );
+
+    expect(globalCom.invioExtSingolo).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ colore: true, fronteRetro: false }),
+    );
+  });
+
+  it('send() passa ricevuta=mittente quando postalReturnReceipt=true, undefined altrimenti', async () => {
+    const mittente = { denominazione1: 'Comune di Montesilvano', indirizzo1: 'Piazza Diaz 1', cap: '65015', citta: 'Montesilvano', provincia: 'PE' };
+    providers.getActive.mockResolvedValue(baseProvider({ mittente }));
+    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' } as any);
+
+    await strategy.send(baseRecipient as never, baseCampaign() as never, undefined, 'attempt-uuid-1', 0);
+
+    expect(globalCom.invioExtSingolo).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ ricevuta: mittente }),
+    );
+
+    globalCom.invioExtSingolo.mockClear();
+    await strategy.send(
+      baseRecipient as never,
+      baseCampaign({ postalReturnReceipt: false }) as never,
+      undefined,
+      'attempt-uuid-1',
+      0,
+    );
+
+    expect(globalCom.invioExtSingolo).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ ricevuta: undefined }),
+    );
+  });
+
   it('send() lancia se nessun provider attivo', async () => {
     providers.getActive.mockResolvedValue(null);
 

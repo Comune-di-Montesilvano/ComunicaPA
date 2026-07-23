@@ -338,9 +338,15 @@ export class CampaignsService {
       (campaign.channelType === 'SEND' || campaign.channelType === 'POSTAL') &&
       resolveAttachmentsConfig(campaign.channelConfig).length === 0
     ) {
+      // Il passo del wizard dove si configurano gli allegati differisce fra
+      // invio massivo (Passo 3, mappatura CSV) e invio singolo (Passo 1,
+      // destinatario+allegato fusi) — channelConfig.wizSingleMode lo indica
+      // (persistito da buildWizChannelConfigDraft). Un messaggio che cita
+      // sempre "Passo 3" è formalmente sbagliato in invio singolo.
+      const step = campaign.channelConfig?.['wizSingleMode'] ? '1' : '3';
       return {
         blocked: true,
-        message: `Impossibile avviare: allegato obbligatorio per il canale ${campaign.channelType}. Configuralo al Passo 3 prima di rilanciare.`,
+        message: `Impossibile avviare: allegato obbligatorio per il canale ${campaign.channelType}. Configuralo al Passo ${step} prima di rilanciare.`,
       };
     }
 
