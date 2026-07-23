@@ -569,6 +569,19 @@ function isWizBodyEmpty(html: string): boolean {
   return text.length === 0;
 }
 
+// Valido se il body contiene %%elenco_allegati%% OPPURE TUTTI gli %%allegatoN%%
+// da 1 a count (un sottoinsieme di singoli non basta) — altrimenti il
+// destinatario non ha modo di scaricare uno o più allegati della campagna.
+// count === 0 (nessun allegato configurato) è sempre valido.
+function hasValidAttachmentPlaceholders(body: string, count: number): boolean {
+  if (count === 0) return true;
+  if (body.includes('%%elenco_allegati%%')) return true;
+  for (let i = 1; i <= count; i++) {
+    if (!body.includes(`%%allegato${i}%%`)) return false;
+  }
+  return true;
+}
+
 // Testo puro (senza tag HTML) del corpo, per validare il vincolo App IO su
 // PagoPA: il campo content.markdown deve avere lunghezza >= 80 e < 10001
 // caratteri, altrimenti l'invio fallisce con HTTP 400 ("Invalid message
@@ -1400,6 +1413,18 @@ export function App(): React.JSX.Element {
   const wizAppIoSubjectLen = wizAppIoInvolved ? wizAppIoSubjectText.length : 0;
   const wizAppIoSubjectLenInvalid = wizAppIoInvolved
     && (wizAppIoSubjectLen < APP_IO_SUBJECT_MIN || wizAppIoSubjectLen > APP_IO_SUBJECT_MAX);
+
+  // Se ci sono allegati configurati, il template deve poterli referenziare
+  // (elenco o tutti i link singoli) — altrimenti il destinatario non ha modo
+  // di scaricarli. POSTAL/SEND esclusi: per loro il body non è mai il
+  // contenuto reale (vedi gotcha CLAUDE.md).
+  const wizAttachmentCount = wizAttachments.filter(a => a.key).length;
+  const wizPrimaryBodyMissingAttachmentPlaceholder =
+    (wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'APP_IO') &&
+    !hasValidAttachmentPlaceholders(wizBody, wizAttachmentCount);
+  const wizAppIoBodyMissingAttachmentPlaceholder =
+    wizAppIoMode !== 'none' && wizAppIoDifferentiate &&
+    !hasValidAttachmentPlaceholders(wizAppIoBodyOverride, wizAttachmentCount);
 
   // Settings State (loaded from backend GET /settings; see useEffect below)
   const [settEntityName, setSettEntityName] = useState('Comune di Montesilvano');
@@ -8283,6 +8308,8 @@ export function App(): React.JSX.Element {
                                 ((wizChannel !== 'SEND' && (wizChannel !== 'POSTAL' || settInadCheckEnabled)) && isWizBodyEmpty(wizBody)) ||
                                 wizAppIoBodyLenInvalid ||
                                 wizAppIoSubjectLenInvalid ||
+                                wizPrimaryBodyMissingAttachmentPlaceholder ||
+                                wizAppIoBodyMissingAttachmentPlaceholder ||
                                 ((wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && wizAppIoMode !== 'none' && wizAppIoDifferentiate && (!wizAppIoSubjectOverride || !wizAppIoBodyOverride))
                               )
                         )
@@ -8389,6 +8416,14 @@ export function App(): React.JSX.Element {
                             (attuale: {wizAppIoBodyLen}). PagoPA rifiuta messaggi più corti o più lunghi.
                           </div>
                         )}
+                        {wizPrimaryBodyMissingAttachmentPlaceholder && (
+                          <div className="alert alert-warning py-2 small mb-0">
+                            <AlertTriangle className="me-1" size={16} />
+                            Ci sono {wizAttachmentCount} allegato/i configurato/i ma il template non contiene
+                            il blocco "Elenco Allegati" né tutti i link singoli corrispondenti — usa i token
+                            nella toolbar sopra per inserirli, altrimenti il destinatario non potrà scaricarli.
+                          </div>
+                        )}
                       </>
                     )}
 
@@ -8459,6 +8494,14 @@ export function App(): React.JSX.Element {
                                   required
                                 />
                               </div>
+                              {wizAppIoBodyMissingAttachmentPlaceholder && (
+                                <div className="alert alert-warning py-2 small mb-0 mt-2">
+                                  <AlertTriangle className="me-1" size={16} />
+                                  Ci sono {wizAttachmentCount} allegato/i configurato/i ma il testo App IO
+                                  differenziato non contiene "Elenco Allegati" né tutti i link singoli —
+                                  il destinatario non potrà scaricarli dalla notifica App IO.
+                                </div>
+                              )}
                             </>
                           )}
                         </div>
