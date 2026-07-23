@@ -1,0 +1,107 @@
+publiccodeYmlVersion: "0.4"
+
+name: ComunicaPA
+url: "https://github.com/Comune-di-Montesilvano/ComunicaPA.git"
+landingURL: "https://github.com/Comune-di-Montesilvano/ComunicaPA"
+softwareVersion: "v1.3.6"
+releaseDate: "2026-07-23"
+
+platforms:
+  - web
+
+categories:
+  - communications
+  - digital-citizenship
+  - taxes-management
+  - document-management
+
+developmentStatus: stable
+
+softwareType: "standalone/web"
+
+intendedAudience:
+  scope:
+    - government
+    - local-authorities
+  countries:
+    - IT
+
+description:
+  it:
+    localisedName: ComunicaPA
+    shortDescription: >-
+      HUB open-source per la trasmissione asincrona di comunicazioni
+      massive della Pubblica Amministrazione (TARI, avvisi, sanzioni) su
+      canali multipli: PEC, Email, App IO, SEND, Postalizzazione.
+    longDescription: >-
+      ComunicaPA consente agli enti pubblici di inviare comunicazioni di
+      massa (TARI, avvisi tributari, sanzioni, notifiche) su canali
+      multipli in modo asincrono, scalabile e conforme alla normativa
+      italiana ed europea. Un operatore carica un CSV di destinatari dal
+      portale admin, sceglie canale e template, e il sistema gestisce
+      invio, retry, tracciamento esiti e download degli allegati — senza
+      intervento manuale per singolo destinatario.
+
+
+      Ogni campagna può usare un canale primario (PEC, Email, SEND,
+      Postalizzazione) e co-consegnare in parallelo su App IO, con
+      contenuto differenziato per canale. Le code BullMQ/Redis gestiscono
+      retry automatico, motori pausabili/riprendibili dalla UI e log per
+      singolo job, senza richieste HTTP bloccanti su migliaia di
+      destinatari.
+
+
+      Il canale SEND (Servizio Notifiche Digitali, D.Lgs. 82/2005) è
+      integrato con protocollazione preventiva obbligatoria e
+      autenticazione PDND. L'accesso cittadini avviene via SPID/CIE
+      (OIDC, Authorization Code + PKCE). Un dirottamento automatico via
+      INAD (Indice Nazionale dei Domicili Digitali) reindirizza le
+      comunicazioni a un domicilio digitale più aggiornato quando
+      disponibile, sempre garantendo il canale legalmente valido.
+
+
+      L'intero stack gira in Docker, senza dipendenze da servizi cloud
+      esterni oltre ai provider dei singoli canali (PEC/SMTP, PagoPA App
+      IO, PN, operatore postale).
+    features:
+      - Invio massivo multicanale (PEC, Email, App IO, SEND, Postalizzazione)
+      - Co-consegna App IO in parallelo o esclusiva sul canale primario
+      - Coda asincrona BullMQ/Redis con retry automatico e motori pausabili
+      - Integrazione SEND (PN) con protocollazione preventiva obbligatoria
+      - Autenticazione cittadini via SPID/CIE (OIDC + PKCE)
+      - Dirottamento automatico su domicilio digitale via INAD
+      - Verifica anagrafica e domicilio digitale via ANPR (PDND)
+      - Integrazione pagoPA per avvisi di pagamento
+      - Postalizzazione cartacea (lettera, raccomandata, raccomandata A/R)
+      - Tracciamento esiti, download allegati con link firmati e retention configurabile
+      - Portale admin con wizard guidato per operatori PA
+      - Configurazione runtime da UI (branding, SMTP/PEC, provider, retention), nessun redeploy
+
+legal:
+  license: EUPL-1.2
+  mainCopyrightOwner: Comune di Montesilvano
+  repoOwner: Comune di Montesilvano
+
+maintenance:
+  type: internal
+  contacts:
+    - name: Comune di Montesilvano — Innovazione Tecnologica
+      email: supporto@comune.montesilvano.pe.it
+      affiliation: Comune di Montesilvano
+
+localisation:
+  localisationReady: false
+  availableLanguages:
+    - it
+
+it:
+  countryExtensionVersion: "1.0"
+  piattaforme:
+    spid: true
+    cie: true
+    anpr: true
+    pagopa: true
+
+organisation:
+  uri: urn:x-italian-pa:c_f646
+  name: Comune di Montesilvano
