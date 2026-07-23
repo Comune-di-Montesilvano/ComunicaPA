@@ -319,6 +319,20 @@ un bottone "avanti", il test partiva con `channelConfig` ancora quello
 del salvataggio precedente mentre l'anteprima mostrava già il nuovo
 contenuto in locale — invii "sfalsati" di un edit rispetto alla preview.
 
+**`handleWizSingleSubmit` — mai leggere `wizValidRows`/`wizAttachments`
+subito dopo averli appena calcolati nello stesso tick.** `wizValidRows` è
+popolato da un `useEffect` separato che reagisce a `wizCsvRows` — se
+`syncWizDraftAndRecipients` viene chiamato subito dopo `parseCsvFile()`
+(stessa esecuzione sincrona di `handleWizSingleSubmit`), legge ancora
+`wizValidRows` di PRIMA (vuoto al primo invio): il gate
+`wizValidRows.length > 0` salta la creazione del `Recipient`, e l'allegato
+caricato subito dopo viene scartato da `finalizeAttachments` perché
+nessun recipient lo referenzia ancora ("Allegato non trovato",
+riproducibile anche in un invio lineare senza mai tornare indietro). Fix
+applicato: `syncWizDraftAndRecipients`/`buildWizChannelConfigDraft`
+accettano un override esplicito (CSV blob + lista allegati) invece di
+affidarsi allo stato asincrono per questa chiamata specifica.
+
 **Gating navigazione tab:** `wizMaxReachedStep` (più alto step raggiunto)
 + snapshot `wizLastSyncedHeaders`/`wizLastSyncedMapping` (presi solo al
 sync 3→4, quando la mappatura è confermata) determinano se un tab-step
@@ -326,6 +340,21 @@ oltre lo step 3 è cliccabile in avanti — solo se CSV/mappatura non sono
 cambiati dall'ultimo sync. Il tab bar esistente (`App.tsx` "Steps
 Progress Header") permetteva SOLO click all'indietro prima di questa
 modifica — non dare per scontato che un salto in avanti "funzioni già".
+
+## Wizard — bottoni "Avanti"/"Indietro" duplicati in cima e in fondo allo step
+
+Molti step del wizard hanno lo stesso bottone (con la stessa condizione
+`disabled`/`onClick`) ripetuto due volte: uno sopra il contenuto dello
+step, uno sotto. Le due copie NON sono un unico source-of-truth — sono
+letteralmente due blocchi JSX separati che vanno tenuti sincronizzati a
+mano. 4 bug reali nella stessa sessione per lo stesso motivo (una copia
+aggiornata, l'altra dimenticata): bottone "Riepilogo" (check placeholder
+allegati mancante in una sola delle due copie), "Indietro" da step6
+(target step corretto in una sola copia), gate tassonomia SEND
+obbligatoria (mancante in 2 copie su 3 incluso `wizSingleSubmitDisabled`).
+Ogni modifica a una condizione disabled/onClick di questi bottoni va
+cercata e applicata a TUTTE le occorrenze (`grep` sul testo della
+condizione, non fidarsi di trovarne una sola).
 
 ## Job BullMQ e stato campagna/destinatario — pattern jobId = attemptId
 
