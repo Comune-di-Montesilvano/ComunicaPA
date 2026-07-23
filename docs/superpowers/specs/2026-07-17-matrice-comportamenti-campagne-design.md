@@ -64,7 +64,17 @@ Opzionale per tutti i canali, nessun impatto su comportamento invio/canale.
 - **SEND, POSTAL**: obbligatorio — è il contenuto stesso della notifica
   (atto legale / lettera cartacea), non un corredo al body. Bloccato sia UI
   wizard che backend (`launch()`).
-- **EMAIL, PEC, APP_IO**: opzionale, corredo al body.
+- **EMAIL, PEC, APP_IO**: opzionale, corredo al body. Se configurato, il
+  template deve poterlo referenziare: `%%elenco_allegati%%` OPPURE tutti gli
+  `%%allegatoN%%` corrispondenti (un sottoinsieme di singoli non basta),
+  altrimenti `launch()` blocca — nessun modo per il destinatario di
+  scaricarlo altrimenti. Stessa regola per il corpo App IO differenziato di
+  co-consegna (`secondaryChannels`/`appIo.bodyOverride`), indipendentemente
+  dal canale primario. Bloccato sia UI wizard (step4) che backend
+  (`checkAttachmentsBlocking`). POSTAL/SEND esclusi da questa regola: per
+  loro il corpo non è mai il contenuto reale (POSTAL) o l'allegato è già
+  l'unico contenuto (SEND). Vedi
+  `docs/superpowers/specs/2026-07-23-blocco-allegati-senza-placeholder-design.md`.
 
 ## Matrice per canale primario
 
