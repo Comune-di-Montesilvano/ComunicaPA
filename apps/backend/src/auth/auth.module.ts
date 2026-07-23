@@ -9,6 +9,7 @@ import { LdapService } from './ldap/ldap.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { OidcCitizenStrategy } from './strategies/oidc-citizen.strategy';
 import { OidcFlowService } from './oidc/oidc-flow.service';
+import { OperatorDirectoryModule } from '../operator-directory/operator-directory.module';
 import type { AppConfiguration } from '../config/configuration';
 
 @Module({
@@ -22,6 +23,7 @@ import type { AppConfiguration } from '../config/configuration';
         signOptions: { expiresIn: config.get('jwt.expiresIn', { infer: true }) },
       }),
     }),
+    OperatorDirectoryModule,
   ],
   providers: [AuthService, LdapService, JwtStrategy, OidcCitizenStrategy, OidcFlowService],
   controllers: [AuthController, CitizenAuthController],

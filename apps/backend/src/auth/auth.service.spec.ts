@@ -4,12 +4,14 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { AuthService } from './auth.service';
 import { LdapService } from './ldap/ldap.service';
+import { OperatorDirectoryService } from '../operator-directory/operator-directory.service';
 import type { LoginDto } from './dto/login.dto';
 
 describe('AuthService', () => {
   let service: AuthService;
   let ldapService: jest.Mocked<LdapService>;
   let jwtService: jest.Mocked<JwtService>;
+  let operatorDirectory: jest.Mocked<OperatorDirectoryService>;
   let ldapHost = 'ldap://ad.example.it:389';
 
   beforeEach(async () => {
@@ -35,12 +37,19 @@ describe('AuthService', () => {
             get: jest.fn((key: string) => (key === 'ldap.host' ? ldapHost : undefined)),
           },
         },
+        {
+          provide: OperatorDirectoryService,
+          useValue: {
+            upsert: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
 
     service = module.get<AuthService>(AuthService);
     ldapService = module.get(LdapService);
     jwtService = module.get(JwtService);
+    operatorDirectory = module.get(OperatorDirectoryService);
   });
 
   it('should return access_token on valid LDAP credentials', async () => {
@@ -58,6 +67,7 @@ describe('AuthService', () => {
     expect(result.username).toBe('mario.rossi');
     expect(result.displayName).toBe('Mario Rossi');
     expect(result.token_type).toBe('Bearer');
+    expect(operatorDirectory.upsert).toHaveBeenCalledWith('mario.rossi', 'Mario Rossi');
     expect(jwtService.sign).toHaveBeenCalledWith({
       sub: 'mario.rossi',
       username: 'mario.rossi',

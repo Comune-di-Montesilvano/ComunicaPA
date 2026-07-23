@@ -739,6 +739,7 @@ interface Campaign {
   channelType: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL';
   channelConfig: Record<string, any>;
   createdBy: string;
+  createdByDisplayName?: string;
   totalRecipients: number;
   sentCount: number;
   failedCount: number;
@@ -6627,7 +6628,6 @@ export function App(): React.JSX.Element {
                                 <th className="text-center">Destinatari</th>
                                 <th className="text-center">Stato</th>
                                 <th>Creata il</th>
-                                <th>Creata da</th>
                                 <th className="text-end">Azioni</th>
                               </tr>
                             </thead>
@@ -6669,6 +6669,11 @@ export function App(): React.JSX.Element {
                                           TEST
                                         </span>
                                       )}
+                                      <div>
+                                        <span className="badge bg-light text-muted border fw-normal mt-1" title="Creata da">
+                                          {c.createdByDisplayName || c.createdBy}
+                                        </span>
+                                      </div>
                                     </td>
                                     <td style={cellStyle}>
                                       <ChannelBadge channel={c.channelType} extra={c.channelConfig?.['serviceName'] as string | undefined} />
@@ -6678,36 +6683,37 @@ export function App(): React.JSX.Element {
                                       <StatusBadge status={c.status} />
                                     </td>
                                     <td className="text-muted" style={cellStyle}>{new Date(c.createdAt).toLocaleDateString('it-IT')}</td>
-                                    <td className="text-muted" style={cellStyle}>{c.createdBy}</td>
                                     <td className="text-end" style={cellStyle} onClick={(e) => e.stopPropagation()}>
-                                    {c.status === 'draft' && (
+                                    <div className="d-flex justify-content-end align-items-center gap-1 flex-nowrap">
+                                      {c.status === 'draft' && (
+                                        <button
+                                          type="button"
+                                          className="btn btn-sm btn-outline-primary d-flex align-items-center gap-1"
+                                          title="Riprendi wizard campagna"
+                                          onClick={() => handleResumeDraft(c.id)}
+                                        >
+                                          <Pencil /> Riprendi
+                                        </button>
+                                      )}
                                       <button
                                         type="button"
-                                        className="btn btn-sm btn-outline-primary d-flex align-items-center gap-1 mb-1"
-                                        title="Riprendi wizard campagna"
-                                        onClick={() => handleResumeDraft(c.id)}
+                                        className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1"
+                                        title="Duplica campagna in un nuovo wizard"
+                                        onClick={() => handleDuplicateCampaign(c.id)}
                                       >
-                                        <Pencil /> Riprendi
+                                        <Copy /> Duplica
                                       </button>
-                                    )}
-                                    <button
-                                      type="button"
-                                      className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1"
-                                      title="Duplica campagna in un nuovo wizard"
-                                      onClick={() => handleDuplicateCampaign(c.id)}
-                                    >
-                                      <Copy /> Duplica
-                                    </button>
-                                    {(role === 'admin' || c.createdBy === username) && (
-                                      <button
-                                        type="button"
-                                        className="btn btn-sm btn-outline-danger d-flex align-items-center gap-1 mt-1"
-                                        title="Elimina campagna definitivamente"
-                                        onClick={() => handleDeleteCampaign(c.id, c.name)}
-                                      >
-                                        <Trash2 /> Elimina
-                                      </button>
-                                    )}
+                                      {(role === 'admin' || c.createdBy === username) && (
+                                        <button
+                                          type="button"
+                                          className="btn btn-sm btn-outline-danger d-flex align-items-center gap-1"
+                                          title="Elimina campagna definitivamente"
+                                          onClick={() => handleDeleteCampaign(c.id, c.name)}
+                                        >
+                                          <Trash2 /> Elimina
+                                        </button>
+                                      )}
+                                    </div>
                                   </td>
                                 </tr>
                                 );
@@ -12451,7 +12457,7 @@ export function App(): React.JSX.Element {
                         </div>
                         <div className="mb-3">
                           <label className="text-muted small fw-semibold block">Creata da</label>
-                          <div>{campaign.createdBy}</div>
+                          <div>{campaign.createdByDisplayName || campaign.createdBy}</div>
                         </div>
                         <div className="mb-3">
                           <label className="text-muted small fw-semibold block">Stato</label>

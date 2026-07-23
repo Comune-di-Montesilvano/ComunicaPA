@@ -27,6 +27,10 @@ describe('CampaignsController', () => {
     log: jest.fn().mockResolvedValue({}),
   };
 
+  const mockOperatorDirectory = {
+    resolveMany: jest.fn().mockResolvedValue({}),
+  };
+
   const mockReq = {
     user: {
       username: 'test-operator',
@@ -40,6 +44,7 @@ describe('CampaignsController', () => {
     controller = new CampaignsController(
       mockService as unknown as CampaignsService,
       mockAuditLogsService as any,
+      mockOperatorDirectory as any,
     );
   });
 

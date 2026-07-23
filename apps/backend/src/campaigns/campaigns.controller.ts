@@ -25,6 +25,7 @@ import type { Campaign } from '../entities/campaign.entity';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CampaignsService } from './campaigns.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { OperatorDirectoryService } from '../operator-directory/operator-directory.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { UpdateCampaignDto } from './dto/update-campaign.dto';
 import { PreviewMessageDto } from './dto/preview-message.dto';
@@ -42,22 +43,29 @@ import {
   MAX_CHUNK_SIZE_BYTES,
 } from './chunked-upload.util';
 
+type CampaignWithOwnerDisplay = Campaign & { createdByDisplayName?: string };
+
 @Controller('admin/campaigns')
 @Roles('user', 'admin')
 export class CampaignsController {
   constructor(
     private readonly campaignsService: CampaignsService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly operatorDirectory: OperatorDirectoryService,
   ) {}
 
   @Get()
-  findAll(): Promise<Campaign[]> {
-    return this.campaignsService.findAll();
+  async findAll(): Promise<CampaignWithOwnerDisplay[]> {
+    const campaigns = await this.campaignsService.findAll();
+    const displayNames = await this.operatorDirectory.resolveMany(campaigns.map((c) => c.createdBy));
+    return campaigns.map((c) => ({ ...c, createdByDisplayName: displayNames[c.createdBy] }));
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseUUIDPipe) id: string): Promise<Campaign> {
-    return this.campaignsService.findOne(id);
+  async findOne(@Param('id', ParseUUIDPipe) id: string): Promise<CampaignWithOwnerDisplay> {
+    const campaign = await this.campaignsService.findOne(id);
+    const displayNames = await this.operatorDirectory.resolveMany([campaign.createdBy]);
+    return { ...campaign, createdByDisplayName: displayNames[campaign.createdBy] };
   }
 
   @Post()

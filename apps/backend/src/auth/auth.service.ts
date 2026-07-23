@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import type { JwtOperatorPayload, CitizenTokenClaims } from '@comunicapa/shared-types';
 import { LdapService } from './ldap/ldap.service';
+import { OperatorDirectoryService } from '../operator-directory/operator-directory.service';
 import type { LoginDto } from './dto/login.dto';
 import type { AuthResponseDto } from './dto/auth-response.dto';
 import type { AppConfiguration } from '../config/configuration';
@@ -15,10 +16,12 @@ export class AuthService {
     private readonly ldapService: LdapService,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService<AppConfiguration, true>,
+    private readonly operatorDirectory: OperatorDirectoryService,
   ) {}
 
   async loginWithLdap(dto: LoginDto): Promise<AuthResponseDto> {
     const ldapUser = await this.ldapService.authenticate(dto.username, dto.password);
+    await this.operatorDirectory.upsert(ldapUser.username, ldapUser.displayName);
 
     const payload: Omit<JwtOperatorPayload, 'iat' | 'exp'> = {
       sub: ldapUser.username,
