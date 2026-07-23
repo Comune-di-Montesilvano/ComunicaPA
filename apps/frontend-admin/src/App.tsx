@@ -534,6 +534,22 @@ function postalServiceTypeLabel(value: string): string {
   return POSTAL_SERVICE_TYPE_META[value]?.label ?? value;
 }
 
+// Etichetta breve per il badge canale nel dettaglio campagna — non la
+// descrizione completa di POSTAL_SERVICE_TYPE_META (troppo lunga per un
+// badge), solo la distinzione che conta all'operatore a colpo d'occhio.
+// fallbackEnabledServiceTypes: stesso fallback usato realmente all'invio
+// (postal.strategy.ts, `cfg.postalServiceType || provider.enabledServiceTypes[0]
+// || 'Raccomandata'`) — una campagna "invio semplice" senza Servizio esplicito
+// in channelConfig non deve mostrare un badge vuoto, ma lo stesso tipo che è
+// stato davvero usato per l'invio.
+function postalBadgeExtra(channelConfig: Record<string, any> | undefined, fallbackEnabledServiceTypes?: string[]): string | undefined {
+  const servizio = (channelConfig?.['postalServiceType'] as string) || fallbackEnabledServiceTypes?.[0] || 'Raccomandata';
+  if (servizio.startsWith('Agol')) return 'Atto giudiziario';
+  if (servizio.startsWith('Raccomandata')) return channelConfig?.['postalReturnReceipt'] ? 'Raccomandata AR' : 'Raccomandata';
+  if (servizio.startsWith('Lettera')) return 'Ordinaria';
+  return postalServiceTypeLabel(servizio);
+}
+
 const SEND_LEGAL_FACT_CATEGORY_LABELS: Record<string, string> = {
   SENDER_ACK: 'Presa in carico',
   DIGITAL_DELIVERY: 'Consegna digitale (PEC)',
@@ -893,7 +909,7 @@ export function App(): React.JSX.Element {
   const [searchLoading, setSearchLoading] = useState(false);
   const [notifDetail, setNotifDetail] = useState<{
     recipient: { id: string; codiceFiscale: string; fullName: string | null; email: string | null; pec: string | null; status: string };
-    campaign: { id: string; name: string; channelType: string };
+    campaign: { id: string; name: string; channelType: string; postalServiceType?: string | null; postalReturnReceipt?: boolean };
     attempts: Array<{ attemptNumber: number; status: string; channelType: string; errorMessage: string | null; sentAt: string | null; createdAt: string; appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null }; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalStatusHistory?: Array<{ stato: string; rilevatoIl: string; codiceErrore?: string; descrizione?: string }> | null; protocolNumber?: number | null; protocolYear?: number | null; protocolledAt?: string | null; costCents?: number | null; costCalculatedAt?: string | null; costBreakdown?: Record<string, unknown> | null }>;
     preview: { subject: string; bodyHtml?: string; bodyMarkdown?: string };
     appIoPreview: { subject: string; bodyHtml?: string; bodyMarkdown?: string } | null;
@@ -1252,6 +1268,17 @@ export function App(): React.JSX.Element {
   const [wizPostalColorPrint, setWizPostalColorPrint] = useState(false);
   const [wizPostalDuplex, setWizPostalDuplex] = useState(true);
   const [wizPostalCodiceContratto, setWizPostalCodiceContratto] = useState('');
+  // Atto Giudiziario (DatiAgol/OpzioniAgol nel WSDL GlobalCom) — senza questi
+  // campi il server risponde con un NullReferenceException generico
+  // ("Riferimento a un oggetto non impostato su un'istanza di oggetto") per
+  // Servizio AgolBusiness/AgolMarket: il loro codice li dereferenzia
+  // incondizionatamente per questo tipo di servizio, vanno sempre inviati
+  // (coi default "non utilizzato"/"non richiesto"), mai omessi.
+  const [wizPostalAgolTipoNotificante, setWizPostalAgolTipoNotificante] = useState<'NonUtilizzato' | 'UfficialeGiudiziario' | 'Procuratore' | 'ParteIstante'>('NonUtilizzato');
+  const [wizPostalAgolSecondoTentativo, setWizPostalAgolSecondoTentativo] = useState<'NonRichiedere' | 'Concordato' | 'Automatico'>('NonRichiedere');
+  const [wizPostalAgolNomeNotificante, setWizPostalAgolNomeNotificante] = useState('');
+  const [wizPostalAgolNumeroCronologico, setWizPostalAgolNumeroCronologico] = useState('');
+  const [wizPostalIdCoverPage, setWizPostalIdCoverPage] = useState('');
   const [wizPostalAddressColumn, setWizPostalAddressColumn] = useState('');
   const [wizPostalMunicipalityColumn, setWizPostalMunicipalityColumn] = useState('');
   const [wizPostalZipColumn, setWizPostalZipColumn] = useState('');
@@ -4473,7 +4500,7 @@ export function App(): React.JSX.Element {
     // allegato allo Step 3 (Anteprima e Invio) cerca il file sul disco del
     // server prima che sia mai stato caricato — 404 "Allegato non trovato".
     try {
-      await ensureWizSingleAttachmentsUploaded(campaignId);
+      await ensureWizSingleAttachmentsUploaded(campaignId, attachmentSlotsWithFile.map(s => s.file!));
     } catch (err: any) {
       alert(err.message || 'Errore durante il caricamento degli allegati.');
       return;
@@ -4695,6 +4722,11 @@ export function App(): React.JSX.Element {
     setWizPhysicalCommunicationType('AR_REGISTERED_LETTER');
     setWizPostalColorPrint(false);
     setWizPostalDuplex(true);
+    setWizPostalAgolTipoNotificante('NonUtilizzato');
+    setWizPostalAgolSecondoTentativo('NonRichiedere');
+    setWizPostalAgolNomeNotificante('');
+    setWizPostalAgolNumeroCronologico('');
+    setWizPostalIdCoverPage('');
     setWizBody('');
     setWizCsvFile(null);
     setWizCsvHeaders([]);
@@ -4786,6 +4818,11 @@ export function App(): React.JSX.Element {
     setWizPostalReturnReceipt(source.channelConfig?.postalReturnReceipt !== undefined ? Boolean(source.channelConfig.postalReturnReceipt) : true);
     setWizPostalColorPrint(Boolean(source.channelConfig?.postalColorPrint));
     setWizPostalDuplex(source.channelConfig?.postalDuplex !== undefined ? Boolean(source.channelConfig.postalDuplex) : true);
+    setWizPostalAgolTipoNotificante(source.channelConfig?.postalAgolTipoNotificante || 'NonUtilizzato');
+    setWizPostalAgolSecondoTentativo(source.channelConfig?.postalAgolSecondoTentativo || 'NonRichiedere');
+    setWizPostalAgolNomeNotificante(source.channelConfig?.postalAgolNomeNotificante || '');
+    setWizPostalAgolNumeroCronologico(source.channelConfig?.postalAgolNumeroCronologico || '');
+    setWizPostalIdCoverPage(source.channelConfig?.postalIdCoverPage || '');
     setWizPostalCodiceContratto(source.channelConfig?.postalCodiceContratto || '');
     setWizPostalAddressColumn(source.channelConfig?.physicalAddressConfig?.addressColumn || '');
     setWizPostalMunicipalityColumn(source.channelConfig?.physicalAddressConfig?.municipalityColumn || '');
@@ -5012,6 +5049,13 @@ export function App(): React.JSX.Element {
       cfg.postalReturnReceipt = wizPostalReturnReceipt;
       cfg.postalColorPrint = wizPostalColorPrint;
       cfg.postalDuplex = wizPostalDuplex;
+      if (wizPostalServiceType.startsWith('Agol')) {
+        cfg.postalAgolTipoNotificante = wizPostalAgolTipoNotificante;
+        cfg.postalAgolSecondoTentativo = wizPostalAgolSecondoTentativo;
+        cfg.postalAgolNomeNotificante = wizPostalAgolNomeNotificante;
+        cfg.postalAgolNumeroCronologico = wizPostalAgolNumeroCronologico;
+        if (wizPostalIdCoverPage) cfg.postalIdCoverPage = wizPostalIdCoverPage;
+      }
       if (wizPostalCodiceContratto) {
         cfg.postalCodiceContratto = wizPostalCodiceContratto;
       }
@@ -5262,9 +5306,16 @@ export function App(): React.JSX.Element {
     return lastAttachData;
   };
 
-  const ensureWizSingleAttachmentsUploaded = async (campaignId: string) => {
-    if (!wizSingleMode || wizPdfFiles.length === 0) return;
-    await uploadAttachmentFilesCore(campaignId, wizPdfFiles);
+  const ensureWizSingleAttachmentsUploaded = async (campaignId: string, filesOverride?: File[]) => {
+    // filesOverride: setWizPdfFiles() è async — un chiamante che l'ha appena
+    // invocato nello stesso tick (handleWizSingleSubmit) leggerebbe qui
+    // wizPdfFiles ancora allo stato PRIMA dell'update (closure stale, stesso
+    // bug già noto per wizValidRows), saltando l'upload al primo invio
+    // ("nessun allegato" finché non si torna indietro e si riavanza, quando
+    // lo state è finalmente committato dal giro precedente).
+    const files = filesOverride !== undefined ? filesOverride : wizPdfFiles;
+    if (!wizSingleMode || files.length === 0) return;
+    await uploadAttachmentFilesCore(campaignId, files);
     setWizPdfFiles([]);
   };
 
@@ -5375,6 +5426,13 @@ export function App(): React.JSX.Element {
         channelConfig.postalReturnReceipt = wizPostalReturnReceipt;
         channelConfig.postalColorPrint = wizPostalColorPrint;
         channelConfig.postalDuplex = wizPostalDuplex;
+        if (wizPostalServiceType.startsWith('Agol')) {
+          channelConfig.postalAgolTipoNotificante = wizPostalAgolTipoNotificante;
+          channelConfig.postalAgolSecondoTentativo = wizPostalAgolSecondoTentativo;
+          channelConfig.postalAgolNomeNotificante = wizPostalAgolNomeNotificante;
+          channelConfig.postalAgolNumeroCronologico = wizPostalAgolNumeroCronologico;
+          if (wizPostalIdCoverPage) channelConfig.postalIdCoverPage = wizPostalIdCoverPage;
+        }
         if (wizPostalCodiceContratto) {
           channelConfig.postalCodiceContratto = wizPostalCodiceContratto;
         }
@@ -7283,6 +7341,42 @@ export function App(): React.JSX.Element {
                                   <label className="form-check-label small fw-medium" htmlFor="wizSinglePostalDuplex">Fronte-retro</label>
                                 </div>
                               </div>
+                              {wizPostalServiceType.startsWith('Agol') && (
+                                <div className="col-12 border-top pt-3 mt-1">
+                                  <label className="form-label small fw-bold text-secondary text-uppercase mb-2 d-block" style={{ fontSize: '0.7rem', letterSpacing: '0.5px' }}>Opzioni Atto Giudiziario</label>
+                                  <div className="row g-2">
+                                    <div className="col-md-6">
+                                      <label className="form-label small fw-bold text-dark mb-1">Tipologia secondo tentativo di recapito</label>
+                                      <select className="form-select" value={wizPostalAgolSecondoTentativo} onChange={(e) => setWizPostalAgolSecondoTentativo(e.target.value as typeof wizPostalAgolSecondoTentativo)}>
+                                        <option value="NonRichiedere">Non utilizzato</option>
+                                        <option value="Concordato">Concordato</option>
+                                        <option value="Automatico">Automatico</option>
+                                      </select>
+                                    </div>
+                                    <div className="col-md-6">
+                                      <label className="form-label small fw-bold text-dark mb-1">Tipologia notificante</label>
+                                      <select className="form-select" value={wizPostalAgolTipoNotificante} onChange={(e) => setWizPostalAgolTipoNotificante(e.target.value as typeof wizPostalAgolTipoNotificante)}>
+                                        <option value="NonUtilizzato">Non utilizzato</option>
+                                        <option value="UfficialeGiudiziario">Ufficiale giudiziario</option>
+                                        <option value="Procuratore">Procuratore</option>
+                                        <option value="ParteIstante">Parte istante</option>
+                                      </select>
+                                    </div>
+                                    <div className="col-md-6">
+                                      <label className="form-label small fw-bold text-dark mb-1">Nome notificante</label>
+                                      <input type="text" className="form-control" value={wizPostalAgolNomeNotificante} onChange={(e) => setWizPostalAgolNomeNotificante(e.target.value)} placeholder="Inserisci qui il nome del notificante" />
+                                    </div>
+                                    <div className="col-md-6">
+                                      <label className="form-label small fw-bold text-dark mb-1">Numero cronologico atto</label>
+                                      <input type="text" className="form-control" value={wizPostalAgolNumeroCronologico} onChange={(e) => setWizPostalAgolNumeroCronologico(e.target.value)} placeholder="Inserisci qui il numero cronologico registrato per questo atto" />
+                                    </div>
+                                    <div className="col-md-6">
+                                      <label className="form-label small fw-bold text-dark mb-1">ID Cover Page</label>
+                                      <input type="text" className="form-control" value={wizPostalIdCoverPage} onChange={(e) => setWizPostalIdCoverPage(e.target.value)} placeholder="ID cover page da portale GlobalCom (opzionale)" />
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           );
                         })()}
@@ -7760,6 +7854,42 @@ export function App(): React.JSX.Element {
                               <option key={c.codiceContratto} value={c.codiceContratto}>{c.descrizione} ({c.codiceContratto})</option>
                             ))}
                           </select>
+                        </div>
+                      )}
+                      {wizPostalServiceType.startsWith('Agol') && (
+                        <div className="col-12 border-top pt-3 mt-1">
+                          <label className="form-label small fw-bold text-secondary text-uppercase mb-2 d-block" style={{ fontSize: '0.7rem', letterSpacing: '0.5px' }}>Opzioni Atto Giudiziario</label>
+                          <div className="row g-2">
+                            <div className="col-md-6">
+                              <label className="form-label small fw-bold">Tipologia secondo tentativo di recapito</label>
+                              <select className="form-select" value={wizPostalAgolSecondoTentativo} onChange={(e) => setWizPostalAgolSecondoTentativo(e.target.value as typeof wizPostalAgolSecondoTentativo)}>
+                                <option value="NonRichiedere">Non utilizzato</option>
+                                <option value="Concordato">Concordato</option>
+                                <option value="Automatico">Automatico</option>
+                              </select>
+                            </div>
+                            <div className="col-md-6">
+                              <label className="form-label small fw-bold">Tipologia notificante</label>
+                              <select className="form-select" value={wizPostalAgolTipoNotificante} onChange={(e) => setWizPostalAgolTipoNotificante(e.target.value as typeof wizPostalAgolTipoNotificante)}>
+                                <option value="NonUtilizzato">Non utilizzato</option>
+                                <option value="UfficialeGiudiziario">Ufficiale giudiziario</option>
+                                <option value="Procuratore">Procuratore</option>
+                                <option value="ParteIstante">Parte istante</option>
+                              </select>
+                            </div>
+                            <div className="col-md-6">
+                              <label className="form-label small fw-bold">Nome notificante</label>
+                              <input type="text" className="form-control" value={wizPostalAgolNomeNotificante} onChange={(e) => setWizPostalAgolNomeNotificante(e.target.value)} placeholder="Inserisci qui il nome del notificante" />
+                            </div>
+                            <div className="col-md-6">
+                              <label className="form-label small fw-bold">Numero cronologico atto</label>
+                              <input type="text" className="form-control" value={wizPostalAgolNumeroCronologico} onChange={(e) => setWizPostalAgolNumeroCronologico(e.target.value)} placeholder="Inserisci qui il numero cronologico registrato per questo atto" />
+                            </div>
+                            <div className="col-md-6">
+                              <label className="form-label small fw-bold">ID Cover Page</label>
+                              <input type="text" className="form-control" value={wizPostalIdCoverPage} onChange={(e) => setWizPostalIdCoverPage(e.target.value)} placeholder="ID cover page da portale GlobalCom (opzionale)" />
+                            </div>
+                          </div>
                         </div>
                       )}
                       <div className="col-12">
@@ -9695,7 +9825,7 @@ export function App(): React.JSX.Element {
                           <div><strong>Destinatario:</strong> {notifDetail.recipient.fullName || notifDetail.recipient.codiceFiscale} ({notifDetail.recipient.codiceFiscale})</div>
                           {notifDetail.recipient.email && <div><strong>Email:</strong> {notifDetail.recipient.email}</div>}
                           {notifDetail.recipient.pec && <div><strong>PEC:</strong> {notifDetail.recipient.pec}</div>}
-                          <div><strong>Campagna:</strong> {notifDetail.campaign.name} <span className="ms-1"><ChannelBadge channel={notifDetail.campaign.channelType} /></span></div>
+                          <div><strong>Campagna:</strong> {notifDetail.campaign.name} <span className="ms-1"><ChannelBadge channel={notifDetail.campaign.channelType} extra={notifDetail.campaign.channelType === 'POSTAL' ? postalBadgeExtra({ postalServiceType: notifDetail.campaign.postalServiceType, postalReturnReceipt: notifDetail.campaign.postalReturnReceipt }, postalProviders.find((p) => p.active)?.enabledServiceTypes) : undefined} /></span></div>
                         </div>
 
                         <h6 className="fw-bold small">Storico Tentativi</h6>
@@ -12632,16 +12762,13 @@ export function App(): React.JSX.Element {
                         <div className="mb-3">
                           <label className="text-muted small fw-semibold block">Canale</label>
                           <div>
-                            <ChannelBadge channel={campaign.channelType} extra={campaign.channelConfig?.['serviceName'] as string | undefined} />
+                            <ChannelBadge channel={campaign.channelType} extra={campaign.channelType === 'POSTAL' ? postalBadgeExtra(campaign.channelConfig, postalProviders.find((p) => p.active)?.enabledServiceTypes) : (campaign.channelConfig?.['serviceName'] as string | undefined)} />
                           </div>
                         </div>
                         {campaign.channelType === 'POSTAL' && (
                           <div className="mb-3">
                             <label className="text-muted small fw-semibold block">Opzioni di stampa</label>
                             <div className="d-flex flex-wrap gap-1">
-                              <span className={`badge ${campaign.channelConfig?.['postalReturnReceipt'] ? 'bg-primary' : 'bg-secondary'}`}>
-                                {campaign.channelConfig?.['postalReturnReceipt'] ? 'Ricevuta di ritorno (AR)' : 'Senza ricevuta di ritorno'}
-                              </span>
                               <span className={`badge ${campaign.channelConfig?.['postalDuplex'] !== false ? 'bg-primary' : 'bg-secondary'}`}>
                                 {campaign.channelConfig?.['postalDuplex'] !== false ? 'Stampa fronte-retro' : 'Stampa solo fronte'}
                               </span>

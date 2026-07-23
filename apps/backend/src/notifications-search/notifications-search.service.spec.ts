@@ -132,7 +132,7 @@ describe('NotificationsSearchService.getDetail', () => {
       email: 'mario@test.it',
       pec: null,
       status: 'sent',
-      campaign: { id: 'c1', name: 'Avviso TARI', channelType: 'EMAIL' },
+      campaign: { id: 'c1', name: 'Avviso TARI', channelType: 'EMAIL', postalServiceType: null, postalReturnReceipt: false },
     });
     attemptRepoMock.find.mockResolvedValueOnce([
       {
@@ -171,7 +171,7 @@ describe('NotificationsSearchService.getDetail', () => {
         pec: null,
         status: 'sent',
       },
-      campaign: { id: 'c1', name: 'Avviso TARI', channelType: 'EMAIL' },
+      campaign: { id: 'c1', name: 'Avviso TARI', channelType: 'EMAIL', postalServiceType: null, postalReturnReceipt: false },
       attempts: [{
         attemptNumber: 1,
         status: 'success',
@@ -251,7 +251,7 @@ describe('NotificationsSearchService.getDetail', () => {
       email: 'mario@test.it',
       pec: null,
       status: 'sent',
-      campaign: { id: 'c1', name: 'Avviso TARI', channelType: 'EMAIL' },
+      campaign: { id: 'c1', name: 'Avviso TARI', channelType: 'EMAIL', postalServiceType: null, postalReturnReceipt: false },
     });
     attemptRepoMock.find.mockResolvedValueOnce([
       {

@@ -36,6 +36,8 @@ export interface NotificationDetailDto {
     id: string;
     name: string;
     channelType: string;
+    postalServiceType: string | null;
+    postalReturnReceipt: boolean;
   };
   attempts: AttemptDetailDto[];
   downloads: Array<{ channel: string; attachmentIndex: number; downloadedAt: string }>;

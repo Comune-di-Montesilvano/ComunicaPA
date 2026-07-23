@@ -71,15 +71,26 @@ export class PostalStrategy implements IChannelStrategy {
       throw new BadRequestException('indirizzo destinatario non risolvibile: verifica mapping colonne CSV in configurazione canale POSTAL');
     }
 
+    const servizio = (cfg['postalServiceType'] as string) || provider.enabledServiceTypes[0] || 'Raccomandata';
+
+    // CF sul destinatario omesso per Servizio Agol* (Atto Giudiziario): errore
+    // reale riscontrato "Ritiro digitale richiesto per almeno uno dei
+    // destinatari" solo quando il CF è presente — ipotesi: GlobalCom lo usa
+    // per verificare un domicilio digitale e proporre il ritiro digitale.
+    // Nessun caso d'uso di questo Comune prevede il ritiro digitale via
+    // GlobalCom per Atto Giudiziario (richiesta esplicita) — CF omesso per
+    // evitare di innescare quel percorso, mantenuto per gli altri Servizio
+    // (Raccomandata/Lettera) dove non risulta causare problemi.
     const destinatario: GbcAddress = {
       denominazione1: recipient.fullName || recipient.codiceFiscale,
       indirizzo1: resolvedAddress.address,
       cap: resolvedAddress.zip,
       citta: resolvedAddress.municipality,
       provincia: resolvedAddress.province,
+      codiceFiscale: servizio.startsWith('Agol') ? undefined : recipient.codiceFiscale,
+      email: recipient.email || undefined,
     };
 
-    const servizio = (cfg['postalServiceType'] as string) || provider.enabledServiceTypes[0] || 'Raccomandata';
     const ricevutaDiRitorno = servizio.startsWith('Raccomandata') && !!cfg['postalReturnReceipt'];
     const colore = !!cfg['postalColorPrint'];
     const fronteRetro = cfg['postalDuplex'] !== undefined ? !!cfg['postalDuplex'] : true;
@@ -103,7 +114,24 @@ export class PostalStrategy implements IChannelStrategy {
       || provider.contratti.find((c) => servizio.startsWith(c.tipologia))?.codiceContratto
       || undefined;
 
-    log(`Invio POSTAL (GlobalCom) a ${recipient.codiceFiscale}: servizio=${servizio}, AR=${ricevutaDiRitorno}, colore=${colore}, fronteRetro=${fronteRetro}, codiceContratto=${codiceContratto || '(nessuno)'}`);
+    // Vedi commento su GbcInvioParams.agol: obbligatorio (mai omesso) per
+    // questo Servizio, pena NullReferenceException generico lato GlobalCom.
+    // avvisoRicevimentoDigitale sempre false: nessun caso d'uso di questo
+    // Comune prevede il ritiro digitale via GlobalCom per Atto Giudiziario
+    // (richiesta esplicita, oltre a essere legato al CodiceFiscale — già
+    // omesso sul destinatario per questo Servizio, vedi sopra).
+    const agol = servizio.startsWith('Agol')
+      ? {
+        tipoNotificante: ((cfg['postalAgolTipoNotificante'] as string) || 'NonUtilizzato') as 'NonUtilizzato' | 'UfficialeGiudiziario' | 'Procuratore' | 'ParteIstante',
+        secondoTentativoRecapito: ((cfg['postalAgolSecondoTentativo'] as string) || 'NonRichiedere') as 'NonRichiedere' | 'Concordato' | 'Automatico',
+        nomeNotificante: (cfg['postalAgolNomeNotificante'] as string) || undefined,
+        numeroCronologico: (cfg['postalAgolNumeroCronologico'] as string) || undefined,
+        avvisoRicevimentoDigitale: false,
+      }
+      : undefined;
+    const idCoverPage = cfg['postalIdCoverPage'] as string | undefined;
+
+    log(`Invio POSTAL (GlobalCom) a ${recipient.codiceFiscale}: servizio=${servizio}, AR=${ricevutaDiRitorno}, colore=${colore}, fronteRetro=${fronteRetro}, codiceContratto=${codiceContratto || '(nessuno)'}${agol ? `, agol=${JSON.stringify(agol)}` : ''}`);
 
     const risposta = await this.globalCom.invioExtSingolo(creds, {
       servizio,
@@ -120,6 +148,8 @@ export class PostalStrategy implements IChannelStrategy {
       codiceContratto,
       userData1,
       fileBuffer,
+      idCoverPage,
+      agol,
     });
 
     if (risposta.stato === 'Errore') {

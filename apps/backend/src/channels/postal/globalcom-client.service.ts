@@ -10,6 +10,20 @@ export interface GbcAddress {
   cap?: string;
   citta: string;
   provincia?: string;
+  /** InfoIndirizzoExt.CodiceFiscale — verificato sull'XSD live, non nel manuale in prosa. */
+  codiceFiscale?: string;
+  /**
+   * InfoIndirizzoExt.Email — ipotesi da verificare dal vivo: con
+   * AvvisoRicevimentoDigitale=true (Servizio Agol*) GlobalCom risponde
+   * NullReferenceException generico, plausibilmente perché manca un
+   * contatto digitale a cui recapitare l'avviso stesso (mai inviato prima
+   * d'ora). Con AvvisoRicevimentoDigitale=false invece rifiuta con "Ritiro
+   * digitale richiesto per almeno uno dei destinatari" — il CF sul
+   * destinatario (aggiunto separatamente) sembra far riconoscere a
+   * GlobalCom un domicilio digitale già noto per quel CF, rendendo il
+   * ritiro digitale non disattivabile.
+   */
+  email?: string;
 }
 
 export interface GbcCredentials {
@@ -43,6 +57,28 @@ export interface GbcInvioParams {
   codiceContratto?: string;
   userData1?: string;
   fileBuffer: Buffer;
+  /** ID cover page GlobalCom (Invio.IDCoverPage) — opaco, da portale GlobalCom, nessuna API di lista. */
+  idCoverPage?: string;
+  /**
+   * Opzioni Atto Giudiziario (InfoGUIDExt.OpzioniAgol / DatiAgol) — obbligatorie
+   * (mai omesse) quando servizio inizia per "Agol" (AgolMarket/AgolBusiness): il server
+   * GlobalCom le dereferenzia incondizionatamente per questo tipo di
+   * servizio, un OpzioniAgol assente causa un NullReferenceException
+   * generico ("Riferimento a un oggetto non impostato su un'istanza di
+   * oggetto") — errore reale riscontrato, non un CodiceErrore applicativo
+   * leggibile.
+   */
+  agol?: {
+    tipoNotificante: 'NonUtilizzato' | 'UfficialeGiudiziario' | 'Procuratore' | 'ParteIstante';
+    secondoTentativoRecapito: 'NonRichiedere' | 'Concordato' | 'Automatico';
+    nomeNotificante?: string;
+    numeroCronologico?: string;
+    // Errore reale riscontrato senza questo campo: "Ritiro digitale richiesto
+    // per almeno uno dei destinatari: in questo caso, Avviso di Ricevimento
+    // digitale è obbligatorio" — DatiAgol.AvvisoRicevimentoDigitale, mai
+    // omesso quando il destinatario è abilitato al ritiro digitale.
+    avvisoRicevimentoDigitale: boolean;
+  };
 }
 
 export interface GbcDocStatus {
@@ -87,6 +123,8 @@ function toInfoIndirizzoExt(addr: GbcAddress): Record<string, unknown> {
     ...(addr.cap ? { CAP: addr.cap } : {}),
     Citta: addr.citta,
     ...(addr.provincia ? { Provincia: addr.provincia } : {}),
+    ...(addr.codiceFiscale ? { CodiceFiscale: addr.codiceFiscale } : {}),
+    ...(addr.email ? { Email: addr.email } : {}),
   };
 }
 
@@ -216,6 +254,16 @@ export class GlobalComClient {
       ...(params.centroDiCosto ? { CentrodiCosto: params.centroDiCosto } : {}),
       ...(params.codiceContratto ? { CodiceContratto: params.codiceContratto } : {}),
       ...(params.userData1 ? { UserData1: params.userData1 } : {}),
+      ...(params.idCoverPage ? { IDCoverPage: params.idCoverPage } : {}),
+      ...(params.agol ? {
+        OpzioniAgol: {
+          TipoNotificante: params.agol.tipoNotificante,
+          SecondoTentativoRecapito: params.agol.secondoTentativoRecapito,
+          AvvisoRicevimentoDigitale: params.agol.avvisoRicevimentoDigitale,
+          ...(params.agol.nomeNotificante ? { NomeNotificante: params.agol.nomeNotificante } : {}),
+          ...(params.agol.numeroCronologico ? { NumeroCronologico: params.agol.numeroCronologico } : {}),
+        },
+      } : {}),
     };
 
     try {

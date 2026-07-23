@@ -136,6 +136,8 @@ export class NotificationsSearchService {
         id: recipient.campaign.id,
         name: recipient.campaign.name,
         channelType: recipient.campaign.channelType,
+        postalServiceType: (recipient.campaign.channelConfig?.['postalServiceType'] as string) || null,
+        postalReturnReceipt: !!recipient.campaign.channelConfig?.['postalReturnReceipt'],
       },
       attempts: attempts.map((a) => {
         const appIoPayload = a.responsePayload?.['appIo'] as { success?: boolean; error?: string } | undefined;

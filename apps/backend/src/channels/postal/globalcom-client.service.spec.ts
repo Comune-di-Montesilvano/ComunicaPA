@@ -40,7 +40,7 @@ describe('GlobalComClient', () => {
       colore: true,
       fronteRetro: false,
       mittente: null,
-      destinatario: { denominazione1: 'Mario Rossi', indirizzo1: 'Via Roma 1', cap: '65015', citta: 'Montesilvano', provincia: 'PE' },
+      destinatario: { denominazione1: 'Mario Rossi', indirizzo1: 'Via Roma 1', cap: '65015', citta: 'Montesilvano', provincia: 'PE', codiceFiscale: 'RSSMRA85M01H501Z' },
       note: 'attempt-uuid-123',
       fileBuffer: Buffer.from('%PDF-1.4 test'),
     });
@@ -56,7 +56,7 @@ describe('GlobalComClient', () => {
         UsaMittentePredefinito: true,
         UsaDestinatarioARPredefinito: true,
         Note: 'attempt-uuid-123',
-        Destinatari: { InfoIndirizzoExt: [expect.objectContaining({ Denominazione1: 'Mario Rossi', Citta: 'Montesilvano' })] },
+        Destinatari: { InfoIndirizzoExt: [expect.objectContaining({ Denominazione1: 'Mario Rossi', Citta: 'Montesilvano', CodiceFiscale: 'RSSMRA85M01H501Z' })] },
       }),
     }));
     expect(result).toEqual(expect.objectContaining({ idPro: 'IDPRO123', stato: 'Accettato', codiceErrore: '', descrizione: '' }));
@@ -86,6 +86,68 @@ describe('GlobalComClient', () => {
       Ricevuta: expect.objectContaining({ Denominazione1: 'Comune di Montesilvano' }),
     }));
     expect(invioArg).not.toHaveProperty('UsaDestinatarioARPredefinito');
+  });
+
+  it('invioExtSingolo invia OpzioniAgol/IDCoverPage per Servizio AttoGiudiziario*', async () => {
+    mockInvioAsync.mockResolvedValue([{
+      invio_ext_singoloResult: true,
+      Risposta: { IDPRO: 'IDPRO-AGOL', Stato: 'Accettato', CodiceErrore: '', Descrizione: '' },
+      Messaggio: '',
+    }]);
+
+    await client.invioExtSingolo(creds, {
+      servizio: 'AgolBusiness',
+      ricevutaDiRitorno: false,
+      colore: false,
+      fronteRetro: true,
+      mittente: null,
+      destinatario: { denominazione1: 'Mario Rossi', indirizzo1: 'Via Roma 1', cap: '65015', citta: 'Montesilvano', provincia: 'PE' },
+      note: 'attempt-uuid-agol',
+      fileBuffer: Buffer.from('%PDF-1.4 test'),
+      idCoverPage: 'COVER123',
+      agol: {
+        tipoNotificante: 'UfficialeGiudiziario',
+        secondoTentativoRecapito: 'Concordato',
+        nomeNotificante: 'Mario Bianchi',
+        numeroCronologico: '123/2026',
+        avvisoRicevimentoDigitale: true,
+      },
+    });
+
+    const invioArg = (mockInvioAsync.mock.calls[0][0] as { Invio: Record<string, unknown> }).Invio;
+    expect(invioArg).toEqual(expect.objectContaining({
+      IDCoverPage: 'COVER123',
+      OpzioniAgol: {
+        TipoNotificante: 'UfficialeGiudiziario',
+        SecondoTentativoRecapito: 'Concordato',
+        AvvisoRicevimentoDigitale: true,
+        NomeNotificante: 'Mario Bianchi',
+        NumeroCronologico: '123/2026',
+      },
+    }));
+  });
+
+  it('invioExtSingolo NON imposta OpzioniAgol se params.agol è assente (Servizio non Atto Giudiziario)', async () => {
+    mockInvioAsync.mockResolvedValue([{
+      invio_ext_singoloResult: true,
+      Risposta: { IDPRO: 'IDPRO-NOAGOL', Stato: 'Accettato', CodiceErrore: '', Descrizione: '' },
+      Messaggio: '',
+    }]);
+
+    await client.invioExtSingolo(creds, {
+      servizio: 'Raccomandata',
+      ricevutaDiRitorno: false,
+      colore: false,
+      fronteRetro: true,
+      mittente: null,
+      destinatario: { denominazione1: 'Mario Rossi', indirizzo1: 'Via Roma 1', cap: '65015', citta: 'Montesilvano', provincia: 'PE' },
+      note: 'attempt-uuid-noagol',
+      fileBuffer: Buffer.from('%PDF-1.4 test'),
+    });
+
+    const invioArg = (mockInvioAsync.mock.calls[0][0] as { Invio: Record<string, unknown> }).Invio;
+    expect(invioArg).not.toHaveProperty('OpzioniAgol');
+    expect(invioArg).not.toHaveProperty('IDCoverPage');
   });
 
   it('invioExtSingolo NON imposta UsaDestinatarioARPredefinito se ricevutaDiRitorno=false', async () => {

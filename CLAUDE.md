@@ -111,6 +111,8 @@ docker compose exec backend node -e "const jwt=require('/app/node_modules/.pnpm/
 
 **Baseline:** 1 fallimento noto pre-esistente (`app.controller.spec.ts`, `isLdapMock` — artefatto di `LDAP_HOST=mock` in dev), il resto della suite pulito. Il criterio per una modifica resta "failure set identico" al prima — se emerge un nuovo fallimento oltre a questo, è una regressione, non baseline nota.
 
+**Test rapido di un endpoint autenticato senza frontend**: nessun `curl` nel container backend — usare `node -e` con `fetch()` verso `http://localhost:8080/...` e il token JWT generato con lo snippet sopra. Utile per lanciare/testare una campagna reale da riga di comando durante il debug.
+
 ## Configurazione runtime (settings in DB)
 
 `.env` contiene SOLO bootstrap (porte, postgres, secret, LDAP, `CITIZEN_ORIGIN`). Da `CITIZEN_ORIGIN` il backend deriva i link email/PEC (`<origine>/api/...`) e la Redirect URI OIDC — chiavi registry `system.*` marcate `bootstrapOnly`: risolte solo env→default, mai DB né UI. Tutto il resto (branding, SMTP, PEC, App IO, SEND, OIDC, retention) vive nella tabella `app_settings` — si configura dalla UI admin (menu Impostazioni). `AppSettingsService.get()` risolve cache→DB→env→default; i secret sono cifrati AES-256-GCM con chiave derivata da `JWT_SECRET` (cambiarlo = reinserire i secret da UI). Chiavi e fallback env: `apps/backend/src/settings/settings.registry.ts`.
@@ -606,6 +608,63 @@ predefinito per questo utente, ma non è presente in archivio"). Soluzione
 adottata: `Ricevuta` = mittente configurato (`postal.strategy.ts`,
 `ricevuta: ricevutaDiRitorno ? provider.mittente : undefined`) — la
 cartolina AR torna al mittente, comportamento standard per raccomandate PA.
+
+**Errore GlobalCom `-1: "numeri raccomandata non salvati o non
+disponibili"` (visibile solo su `postal_status_history`/portale GlobalCom,
+mai in `invio_ext_singolo` — arriva DOPO l'accettazione, `Stato` passa da
+`Accettato` a `Errore` al poll successivo) è confermato lato GlobalCom
+essere un problema dei server Poste Italiane (mancata assegnazione del
+numero identificativo raccomandata a monte), non un bug del nostro payload
+SOAP — verificato XML request/response reale, tutti i campi (`Ricevuta`,
+`Colore`, `FronteRetro`, `CodiceFiscale`) corretti. Nessuna azione
+lato nostro possibile: intermittente, segnalare a supporto GlobalCom con
+l'IDPRO se persiste.**
+
+**Atto Giudiziario (`AgolMarket`/`AgolBusiness`, non `AttoGiudiziario*` —
+nome facilmente sbagliato, verificare sempre l'enum `ServiceType` reale
+sul WSDL, non un riassunto) richiede `OpzioniAgol` (`DatiAgol`) sempre
+popolato, mai omesso**: `TipoNotificante`, `SecondoTentativoRecapito`,
+`AvvisoRicevimentoDigitale` sono dereferenziati incondizionatamente dal
+codice GlobalCom per questo Servizio — omessi, `NullReferenceException`
+generico ("Riferimento a un oggetto non impostato su un'istanza di
+oggetto"), zero informazione diagnostica. `AvvisoRicevimentoDigitale`
+in particolare ha comportamento ancora poco chiaro, verificato solo in
+parte: con CF reale e flag `false` → errore esplicito "Ritiro digitale
+richiesto... Avviso di Ricevimento digitale è obbligatorio"; con flag
+`true` e destinatario senza email in anagrafica → torna comunque
+NullReferenceException generico (ipotesi non confermata: manca un
+contatto digitale — `Email` su `InfoIndirizzoExt`, aggiunta ma non ancora
+testata con un valore reale — a cui recapitare l'avviso). Osservato anche
+che un CF con checksum non valido ("inventato", non solo un CF reale mai
+esistito) sembra produrre lo stesso NullReferenceException indipendentemente
+dal flag `AvvisoRicevimentoDigitale` — ipotesi: GlobalCom valida/processa il
+CF solo per Servizio Agol, un checksum invalido manda in crash quel path
+invece di restituire un errore applicativo.
+
+**Confermato con test reale (invio accettato, Stato=Accettato):** la causa
+di entrambi gli errori era il `CodiceFiscale` sul destinatario — GlobalCom
+lo usa (solo per Servizio Agol) per verificare un domicilio digitale e
+richiedere/proporre il ritiro digitale, che questo Comune non vuole mai
+usare via GlobalCom per Atto Giudiziario (nessun caso d'uso reale).
+`postal.strategy.ts` ora omette `codiceFiscale` sul destinatario quando
+`servizio.startsWith('Agol')`, mantenendolo per gli altri Servizio
+(Raccomandata/Lettera, dove non risulta causare problemi). `Email` su
+`InfoIndirizzoExt` resta comunque valorizzata quando disponibile (innocua,
+non richiesta senza CF).
+
+**WebFetch sul WSDL GlobalCom non è affidabile su nomi enum/campi al primo
+giro** — una query ha restituito `AttoGiudiziarioBusiness`/`AttoGiudiziarioMarket`
+(mai esistiti), il valore reale è `AgolBusiness`/`AgolMarket` (enum
+`ServiceType`). Prima di scrivere codice che dipende da un nome di
+campo/enum, rifare una seconda WebFetch mirata proprio su quell'enum/tipo
+per confermare, non fidarsi del primo riassunto (stesso principio già in
+nota per il manuale POSTAL/SEND sopra).
+
+**Nessuna operazione di annullamento/cancellazione invio nel WSDL
+GlobalCom** — inventario completo delle 61 operazioni verificato
+(`invio_ext_singolo`, `AutorizzaLottoInvio`, `account_*`, ecc.): l'unica
+azione "annulla invio in preparazione" vista sul portale GlobalCom è solo
+UI loro, non esposta via API — non automatizzabile da questo codebase.
 
 ## Frontend admin — mai `<form>` annidate
 

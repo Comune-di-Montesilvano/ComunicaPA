@@ -96,11 +96,30 @@ describe('PostalStrategy', () => {
         ricevutaDiRitorno: true,
         mittente: null,
         note: 'recipient-1',
-        destinatario: expect.objectContaining({ indirizzo1: 'Via Roma 1', citta: 'Montesilvano', cap: '65015', provincia: 'PE' }),
+        destinatario: expect.objectContaining({ indirizzo1: 'Via Roma 1', citta: 'Montesilvano', cap: '65015', provincia: 'PE', codiceFiscale: 'RSSMRA85M01H501Z' }),
       }),
     );
     expect(result.messageId).toBe('IDPRO123');
     expect(result.responsePayload).toEqual({ stato: 'Accettato', idPro: 'IDPRO123' });
+  });
+
+  it('send() passa recipient.email come destinatario.email quando presente', async () => {
+    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO123', stato: 'Accettato' } as any);
+
+    await strategy.send(
+      { ...baseRecipient, email: 'mario.rossi@example.it' } as never,
+      baseCampaign() as never,
+      undefined,
+      'attempt-uuid-1',
+      0,
+    );
+
+    expect(globalCom.invioExtSingolo).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        destinatario: expect.objectContaining({ email: 'mario.rossi@example.it' }),
+      }),
+    );
   });
 
   it('send() invia fronteRetro=true e colore=false di default se non configurati', async () => {
@@ -155,6 +174,93 @@ describe('PostalStrategy', () => {
     expect(globalCom.invioExtSingolo).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ ricevuta: undefined }),
+    );
+  });
+
+  it('send() omette codiceFiscale sul destinatario per Servizio Agol* (nessun ritiro digitale voluto)', async () => {
+    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' } as any);
+
+    await strategy.send(
+      baseRecipient as never,
+      baseCampaign({ postalServiceType: 'AgolBusiness' }) as never,
+      undefined,
+      'attempt-uuid-1',
+      0,
+    );
+
+    const [, params] = globalCom.invioExtSingolo.mock.calls[0];
+    expect(params.destinatario.codiceFiscale).toBeUndefined();
+  });
+
+  it('send() invia comunque codiceFiscale sul destinatario per Servizio non-Agol (Raccomandata)', async () => {
+    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' } as any);
+
+    await strategy.send(baseRecipient as never, baseCampaign() as never, undefined, 'attempt-uuid-1', 0);
+
+    const [, params] = globalCom.invioExtSingolo.mock.calls[0];
+    expect(params.destinatario.codiceFiscale).toBe('RSSMRA85M01H501Z');
+  });
+
+  it('send() invia sempre agol con i default quando Servizio=AttoGiudiziario*, anche senza config esplicita', async () => {
+    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' } as any);
+
+    await strategy.send(
+      baseRecipient as never,
+      baseCampaign({ postalServiceType: 'AgolBusiness' }) as never,
+      undefined,
+      'attempt-uuid-1',
+      0,
+    );
+
+    expect(globalCom.invioExtSingolo).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        agol: expect.objectContaining({ tipoNotificante: 'NonUtilizzato', secondoTentativoRecapito: 'NonRichiedere', avvisoRicevimentoDigitale: false }),
+      }),
+    );
+  });
+
+  it('send() rispetta postalAgol*/postalIdCoverPage configurati in channelConfig (avvisoRicevimentoDigitale resta sempre false)', async () => {
+    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' } as any);
+
+    await strategy.send(
+      baseRecipient as never,
+      baseCampaign({
+        postalServiceType: 'AgolBusiness',
+        postalAgolTipoNotificante: 'Procuratore',
+        postalAgolSecondoTentativo: 'Automatico',
+        postalAgolNomeNotificante: 'Mario Bianchi',
+        postalAgolNumeroCronologico: '123/2026',
+        postalIdCoverPage: 'COVER123',
+      }) as never,
+      undefined,
+      'attempt-uuid-1',
+      0,
+    );
+
+    expect(globalCom.invioExtSingolo).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        idCoverPage: 'COVER123',
+        agol: {
+          tipoNotificante: 'Procuratore',
+          secondoTentativoRecapito: 'Automatico',
+          nomeNotificante: 'Mario Bianchi',
+          numeroCronologico: '123/2026',
+          avvisoRicevimentoDigitale: false,
+        },
+      }),
+    );
+  });
+
+  it('send() NON invia agol per Servizio non Atto Giudiziario', async () => {
+    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' } as any);
+
+    await strategy.send(baseRecipient as never, baseCampaign() as never, undefined, 'attempt-uuid-1', 0);
+
+    expect(globalCom.invioExtSingolo).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ agol: undefined }),
     );
   });
 
