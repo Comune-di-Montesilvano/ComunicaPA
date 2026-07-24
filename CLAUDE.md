@@ -620,6 +620,33 @@ SOAP — verificato XML request/response reale, tutti i campi (`Ricevuta`,
 lato nostro possibile: intermittente, segnalare a supporto GlobalCom con
 l'IDPRO se persiste.**
 
+**`CodiceErrore`/`descrizione` NON sono legati allo `Stato` — mai gatare su
+`stato==='Errore'`.** GlobalCom manda un `CodiceErrore` reale (es. `-2`,
+"Richiesta HTTP vietata con lo schema di autenticazione client 'Basic'")
+anche su stati transitori come `Rimandato` (durante un retry lato loro) —
+gatare la persistenza su `stato==='Errore'` nasconde quell'informazione
+finché non arriva un vero stato terminale (bug reale corretto). Ma manda
+anche un `CodiceErrore` "benigno" (`"0"`) su stati positivi come
+`Confermato` — persisterlo comunque mostra in UI un invio riuscito come se
+fosse un errore (altro bug reale corretto: "GlobalCom (0)" su una
+raccomandata in realtà confermata). Il criterio giusto è il **valore** di
+`CodiceErrore` (`!== '0'`), non lo `stato` associato — vedi
+`postal-status-sync.service.ts`/`App.tsx` (colonna Errore, dettaglio
+notifica).
+
+**Atto Giudiziario richiede sempre `Ricevuta`/AR, indipendente dal
+checkbox "Ricevuta di ritorno" (per Agol resta nascosto/forzato sempre
+attivo).** `ricevutaDiRitorno` era gated solo su
+`servizio.startsWith('Raccomandata')` — per Agol restava sempre `false`,
+GlobalCom accettava l'invio ma falliva dopo, in lavorazione (`Stato:
+Accettato → Errore`, `CodiceErrore -2` "Nessun destinatario ricevuta
+trovato per questa spedizione"): l'AR è obbligatoria per legge sull'Atto
+Giudiziario, non opzionale come per una raccomandata. Riprodotto e
+confermato dal vivo su due campagne reali. Stesso Servizio richiede anche
+sempre protocollazione preventiva (`channelConfig.protocolla`), stesso
+obbligo già in vigore per SEND — vedi
+`assertSendProtocolConfigured`/`isChannelAlwaysLegalValue`.
+
 **Atto Giudiziario (`AgolMarket`/`AgolBusiness`, non `AttoGiudiziario*` —
 nome facilmente sbagliato, verificare sempre l'enum `ServiceType` reale
 sul WSDL, non un riassunto) richiede `OpzioniAgol` (`DatiAgol`) sempre
@@ -967,3 +994,14 @@ singolo tentativo (es. "In corso" → "Consegnato") restava fermo finché non
 si ricaricava tutto il sito. Fix: `useEffect` con `setInterval` (3s) che
 rilegge silenziosamente (nessun reset a `null`/loading, per non far
 sfarfallare/richiudere il modale già aperto) finché resta aperto.
+
+**Il gate sullo `status` campagna può fermare il polling troppo presto per
+canali con tracking di consegna asincrono (SEND/POSTAL).** Il polling del
+dettaglio campagna si fermava non appena `campaign.status` passava a
+`completed` — ma per SEND/POSTAL il completamento è deciso a livello di
+submission (tutti gli attempt hanno un esito terminale), mentre
+`sendStatus`/`postalStatus` (consegna a valle) continuano ad aggiornarsi
+per giorni via demoni separati. Bug reale: l'elenco messaggi restava fermo
+all'ultimo stato di consegna visto al completamento — fix: continuare il
+polling anche a `status==='completed'` quando `channelType` è `SEND` o
+`POSTAL`.
