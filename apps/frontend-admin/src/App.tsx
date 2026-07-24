@@ -8223,7 +8223,7 @@ export function App(): React.JSX.Element {
                       <option value="">-- Nessuna colonna (o auto-rilevata da tracciato arricchito) --</option>
                       {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
                     </select>
-                    <div className="form-text small text-muted">Identificativo custom mostrato negli export (es. OCR notifica). Se il CSV ha una colonna "external_id" viene rilevata automaticamente.</div>
+                    <div className="form-text small text-muted">Identificativo custom mostrato negli export (es. OCR notifica). Se il CSV ha una colonna "external_id" viene rilevata automaticamente. Suggerito: OCR Maggioli o un campo gestionale univoco.</div>
                   </div>
 
                   <div className="row g-3 mb-4">
