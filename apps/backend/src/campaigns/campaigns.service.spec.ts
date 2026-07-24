@@ -238,6 +238,36 @@ describe('CampaignsService', () => {
     expect(mockQb.execute).toHaveBeenCalled();
   });
 
+  it('launch() POSTAL Servizio Agol senza protocolla lancia BadRequestException e riporta la campagna a DRAFT', async () => {
+    mockCampaignQb.execute.mockResolvedValueOnce({ affected: 1 });
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({
+      ...mockCampaign,
+      channelType: 'POSTAL',
+      channelConfig: { postalServiceType: 'AgolMarket', attachments: [{ key: 'doc', label: 'Documento' }] },
+    });
+
+    await expect(service.launch('c1')).rejects.toThrow('Protocollazione obbligatoria per Atto Giudiziario');
+
+    expect(mockCampaignRepo.update).toHaveBeenCalledWith({ id: 'c1' }, { status: CampaignStatus.DRAFT });
+  });
+
+  it('launch() POSTAL Servizio Raccomandata senza protocolla NON blocca per protocollo (protocollo opzionale fuori da Agol)', async () => {
+    mockCampaignQb.execute.mockResolvedValueOnce({ affected: 1 });
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({
+      ...mockCampaign,
+      channelType: 'POSTAL',
+      channelConfig: { postalServiceType: 'RaccomandataMarket4' },
+    });
+
+    // Nessun allegato configurato: blocca comunque (obbligatorio per POSTAL),
+    // ma per un motivo indipendente dal protocollo — prova che il gate
+    // assertSendProtocolConfigured non scatta fuori da SEND/Agol.
+    const result = await service.launch('c1');
+
+    expect(result.blocked).toBe(true);
+    expect(result.message).not.toContain('Protocollazione obbligatoria');
+  });
+
   it('launch accoda i job BullMQ con jobId = attemptId', async () => {
     mockCampaignQb.execute.mockResolvedValueOnce({ affected: 1 });
     mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelConfig: {} });

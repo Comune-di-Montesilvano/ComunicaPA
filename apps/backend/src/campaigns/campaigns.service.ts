@@ -363,9 +363,12 @@ export class CampaignsService {
   }
 
   private assertSendProtocolConfigured(campaign: Campaign): void {
-    if (campaign.channelType === 'SEND' && campaign.channelConfig?.['protocolla'] !== true) {
+    const isAgolPostal = campaign.channelType === 'POSTAL'
+      && String(campaign.channelConfig?.['postalServiceType'] ?? '').startsWith('Agol');
+    if ((campaign.channelType === 'SEND' || isAgolPostal) && campaign.channelConfig?.['protocolla'] !== true) {
+      const label = campaign.channelType === 'SEND' ? 'SEND' : 'Atto Giudiziario (POSTAL Agol*)';
       throw new BadRequestException(
-        'Protocollazione obbligatoria per SEND: channelConfig.protocolla deve essere true',
+        `Protocollazione obbligatoria per ${label}: channelConfig.protocolla deve essere true`,
       );
     }
   }

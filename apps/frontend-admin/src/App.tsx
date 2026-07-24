@@ -4829,13 +4829,18 @@ export function App(): React.JSX.Element {
     setWizDesc(source.description || '');
     setWizChannel(source.channelType);
     setWizSubject(source.channelConfig?.subject || '');
-    setWizProtocolla(Boolean(source.channelConfig?.protocolla));
+    const prefillPostalServiceType = source.channelConfig?.postalServiceType || '';
+    setWizProtocolla(
+      isChannelAlwaysLegalValue(source.channelType, prefillPostalServiceType)
+        ? true
+        : Boolean(source.channelConfig?.protocolla),
+    );
     // Duplicare una campagna non trascina il valore legale (scelta fresca
     // dell'operatore); riprendere una bozza lo ripristina fedelmente.
     setWizIsLegalValue(opts.isDuplicate ? false : Boolean(source.isLegalValue));
     setWizTaxonomyCode(source.channelConfig?.taxonomyCode || '');
     setWizPhysicalCommunicationType(source.channelConfig?.physicalCommunicationType || 'AR_REGISTERED_LETTER');
-    setWizPostalServiceType(source.channelConfig?.postalServiceType || '');
+    setWizPostalServiceType(prefillPostalServiceType);
     setWizPostalReturnReceipt(source.channelConfig?.postalReturnReceipt !== undefined ? Boolean(source.channelConfig.postalReturnReceipt) : true);
     setWizPostalColorPrint(Boolean(source.channelConfig?.postalColorPrint));
     setWizPostalDuplex(source.channelConfig?.postalDuplex !== undefined ? Boolean(source.channelConfig.postalDuplex) : true);
@@ -7331,7 +7336,12 @@ export function App(): React.JSX.Element {
                               <div className={contrattiPerTipo.length > 0 ? 'col-md-6' : 'col-md-12'}>
                                 <label className="form-label small fw-bold text-dark mb-1">Tipo di invio *</label>
                                 <select className="form-select" value={wizPostalServiceType} required disabled={enabledTypes.length === 0}
-                                  onChange={(e) => { setWizPostalServiceType(e.target.value); setWizPostalCodiceContratto(''); }}>
+                                  onChange={(e) => {
+                                    const st = e.target.value;
+                                    setWizPostalServiceType(st);
+                                    setWizPostalCodiceContratto('');
+                                    if (st.startsWith('Agol')) setWizProtocolla(true);
+                                  }}>
                                   <option value="">Seleziona…</option>
                                   {enabledTypes.map((st) => <option key={st} value={st}>{postalServiceTypeLabel(st)}</option>)}
                                 </select>
@@ -7599,17 +7609,21 @@ export function App(): React.JSX.Element {
                                 className="form-check-input"
                                 id="wiz_single_protocolla"
                                 checked={wizProtocolla}
-                                disabled={wizChannel === 'SEND'}
+                                disabled={isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType)}
                                 onChange={(e) => setWizProtocolla(e.target.checked)}
                               />
                               <label className="form-check-label small fw-bold text-dark mb-0" htmlFor="wiz_single_protocolla">
                                 Protocolla questo invio
                               </label>
                             </div>
-                            {wizChannel === 'SEND' && (
+                            {isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType) && (
                               <div className="alert alert-info border-0 bg-info-subtle text-info py-2 px-3 small d-flex align-items-center gap-2 mt-2 mb-0">
                                 <Info size={16} />
-                                <span>Obbligatorio per SEND: ogni invio viene registrato sul Protocollo Informatico.</span>
+                                <span>
+                                  {wizChannel === 'SEND'
+                                    ? 'Obbligatorio per SEND: ogni invio viene registrato sul Protocollo Informatico.'
+                                    : 'Obbligatorio per Atto Giudiziario: ogni invio viene registrato sul Protocollo Informatico.'}
+                                </span>
                               </div>
                             )}
                           </div>
@@ -7795,13 +7809,16 @@ export function App(): React.JSX.Element {
                       className="form-check-input"
                       id="wiz_protocolla"
                       checked={wizProtocolla}
-                      disabled={wizChannel === 'SEND'}
+                      disabled={isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType)}
                       onChange={(e) => setWizProtocolla(e.target.checked)}
                     />
                     <label className="form-check-label small" htmlFor="wiz_protocolla">
                       Protocolla questo invio
                       {wizChannel === 'SEND' && (
                         <span className="text-muted"> (obbligatorio per SEND: ogni invio viene registrato sul Protocollo Informatico prima della trasmissione)</span>
+                      )}
+                      {wizChannel === 'POSTAL' && wizPostalServiceType.startsWith('Agol') && (
+                        <span className="text-muted"> (obbligatorio per Atto Giudiziario: ogni invio viene registrato sul Protocollo Informatico prima della trasmissione)</span>
                       )}
                     </label>
                   </div>
@@ -7899,7 +7916,12 @@ export function App(): React.JSX.Element {
                       <div className="col-md-6">
                         <label className="form-label small fw-bold">Tipo di invio *</label>
                         <select className="form-select" value={wizPostalServiceType} required disabled={enabledTypes.length === 0}
-                          onChange={(e) => { setWizPostalServiceType(e.target.value); setWizPostalCodiceContratto(''); }}>
+                          onChange={(e) => {
+                            const st = e.target.value;
+                            setWizPostalServiceType(st);
+                            setWizPostalCodiceContratto('');
+                            if (st.startsWith('Agol')) setWizProtocolla(true);
+                          }}>
                           <option value="">Seleziona…</option>
                           {enabledTypes.map((st) => <option key={st} value={st}>{postalServiceTypeLabel(st)}</option>)}
                         </select>
