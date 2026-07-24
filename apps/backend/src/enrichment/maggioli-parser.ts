@@ -22,6 +22,7 @@ export interface MaggioliRecord {
   csvAddress: ParsedAddress | null;
   csvNumeroAvviso: string;
   csvNumeroAvvisoAlt: string;
+  ocrNotifica: string;
 }
 
 const RE_LOCALITA = /^(\d{5})\s+(.+?)\s+([A-Z]{2})$/;
@@ -57,6 +58,7 @@ export function parseRubricaPec(text: string): MaggioliRecord[] {
       csvAddress: null,
       csvNumeroAvviso: '',
       csvNumeroAvvisoAlt: '',
+      ocrNotifica: '',
     });
   }
   return records;
@@ -101,6 +103,7 @@ export function parsePagIndice(text: string): MaggioliRecord[] {
       },
       csvNumeroAvviso: (row['Ocr int'] ?? '').trim(),
       csvNumeroAvvisoAlt: (row['Ocr rid'] ?? '').trim(),
+      ocrNotifica: (row['ocr notifica'] ?? '').trim(),
     });
   }
   return records;

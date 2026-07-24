@@ -16,8 +16,13 @@ const RUBRICA_ROW_PG =
 const RUBRICA_ROW_SHORT = 'id;pec@pec.it;;N;C;RSSMRA80A01H501U;;NOME;1;01/01/2026';
 
 const PAG_INDICE = [
-  "'nome file;'destinatario;'cod. fisc. dest;'indirizzo;'indirizzo parte 2;'localita;'comune;'stato estero;'Ocr int;'Ocr rid;'Num. provv;'Data emissione",
-  "'DOC_1.pdf;'VERDI LUIGI;'VRDLGU70A01H501X;'VIA MILANO 5;';'00067 MORLUPO RM;';';'301000000000000001;'RAV123;'99;'01/02/2026",
+  "'nome file;'destinatario;'cod. fisc. dest;'indirizzo;'indirizzo parte 2;'localita;'comune;'stato estero;'Ocr int;'Ocr rid;'Num. provv;'Data emissione;'ocr notifica",
+  "'DOC_1.pdf;'VERDI LUIGI;'VRDLGU70A01H501X;'VIA MILANO 5;';'00067 MORLUPO RM;';';'301000000000000001;'RAV123;'99;'01/02/2026;'5890000000049995",
+].join('\n');
+
+const PAG_INDICE_SENZA_OCR = [
+  "'nome file;'destinatario;'cod. fisc. dest;'indirizzo;'indirizzo parte 2;'localita;'comune;'stato estero;'Num. provv;'Data emissione",
+  "'DOC_2.pdf;'BIANCHI ANNA;'BNCNNA80A01H501Y;'VIA ROMA 1;';'00100 ROMA RM;';';'42;'02/02/2026",
 ].join('\n');
 
 describe('parseLocalita', () => {
@@ -56,6 +61,11 @@ describe('parseRubricaPec', () => {
   it('righe vuote ignorate', () => {
     expect(parseRubricaPec('\n\n')).toHaveLength(0);
   });
+
+  it('ocrNotifica sempre vuota (il formato rubrica PEC non la contiene mai)', () => {
+    const records = parseRubricaPec(RUBRICA_ROW_PF);
+    expect(records[0].ocrNotifica).toBe('');
+  });
 });
 
 describe('parsePagIndice', () => {
@@ -76,6 +86,17 @@ describe('parsePagIndice', () => {
       provincia: 'RM',
       statoEstero: '',
     });
+  });
+
+  it('legge la colonna "ocr notifica" quando presente', () => {
+    const records = parsePagIndice(PAG_INDICE);
+    expect(records[0].ocrNotifica).toBe('5890000000049995');
+  });
+
+  it('ocrNotifica vuota se la colonna non è presente nel tracciato', () => {
+    const records = parsePagIndice(PAG_INDICE_SENZA_OCR);
+    expect(records[0].ocrNotifica).toBe('');
+    expect(records[0].numeroProvvedimento).toBe('42');
   });
 });
 
