@@ -1692,7 +1692,17 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     let timer: any;
     if (view === 'campaign-detail' && selectedCampaignId && campaign) {
-      if (campaign.status === 'queued' || campaign.status === 'checking_inad' || campaign.status === 'running') {
+      // SEND/POSTAL: il completamento campagna e' deciso a livello di
+      // submission (tutti gli attempt hanno un esito terminale), ma lo
+      // stato di consegna a valle (sendStatus/postalStatus, es. Accettato
+      // -> Consegnato/Errore) continua ad aggiornarsi per giorni dopo via
+      // demoni separati (SendStatusSyncService/PostalStatusSyncService) --
+      // una campagna gia' "completed" smetteva di essere ripollata, quindi
+      // l'elenco messaggi restava fermo all'ultimo stato di consegna visto
+      // al completamento, visibile solo ricaricando la pagina.
+      const hasAsyncDeliveryTracking = campaign.channelType === 'SEND' || campaign.channelType === 'POSTAL';
+      const isRunningStatus = campaign.status === 'queued' || campaign.status === 'checking_inad' || campaign.status === 'running';
+      if (isRunningStatus || (hasAsyncDeliveryTracking && campaign.status === 'completed')) {
         timer = setInterval(() => {
           fetchCampaignDetail(selectedCampaignId);
           fetchFailureGroups(selectedCampaignId);
