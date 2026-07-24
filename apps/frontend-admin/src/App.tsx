@@ -9970,7 +9970,7 @@ export function App(): React.JSX.Element {
                                         // "-1: numeri raccomandata non salvati o non disponibili") si vede solo
                                         // nell'ultima entry di postalStatusHistory con codiceErrore, prima
                                         // leggibile solo sul portale GlobalCom.
-                                        const lastWithError = [...(a.postalStatusHistory || [])].reverse().find((h) => h.codiceErrore || h.descrizione);
+                                        const lastWithError = [...(a.postalStatusHistory || [])].reverse().find((h) => h.stato === 'Errore' && (h.codiceErrore || h.descrizione));
                                         return lastWithError
                                           ? `GlobalCom ${lastWithError.codiceErrore ? `(${lastWithError.codiceErrore})` : ''}: ${lastWithError.descrizione || ''}`
                                           : '—';

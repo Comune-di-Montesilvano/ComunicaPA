@@ -112,6 +112,24 @@ describe('PostalStatusSyncService', () => {
     }));
   });
 
+  it('non persiste codiceErrore quando lo stato non è Errore (es. Confermato con codiceErrore benigno "0")', async () => {
+    const attempt = { id: 'a1', postalTrackingId: 'IDPRO1', postalStatus: 'Accettato', postalStatusUpdatedAt: null, postalStatusHistory: [] };
+    attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
+    globalCom.dettagliDocumento.mockResolvedValue({
+      idPro: 'IDPRO1',
+      stato: 'Confermato',
+      codiceErrore: '0',
+    } as any);
+
+    await service.handleCron();
+
+    expect(attemptRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      postalStatusHistory: [
+        { stato: 'Confermato', rilevatoIl: expect.any(String) },
+      ],
+    }));
+  });
+
   it('non duplica un elemento in postalStatusHistory se lo stato non è cambiato', async () => {
     const attempt = { id: 'a1', postalTrackingId: 'IDPRO1', postalStatus: 'Inviato', postalStatusUpdatedAt: null, postalStatusHistory: [{ stato: 'Inviato', rilevatoIl: '2026-01-10T10:00:00.000Z' }] };
     attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
