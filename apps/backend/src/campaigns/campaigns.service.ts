@@ -97,6 +97,23 @@ export class CampaignsService {
     return campaign;
   }
 
+  /**
+   * Data più vicina in cui la retention notturna eliminerà un allegato di
+   * questa campagna (il primo a scadere, tra quelli non ancora eliminati) —
+   * mostrata in dettaglio campagna per le campagne NON a valore legale
+   * (quelle a valore legale non scadono mai, vedi retention-cleanup.service.ts).
+   */
+  async getAttachmentRetentionInfo(campaignId: string): Promise<{ earliestExpiryAt: string | null }> {
+    const result = await this.recipientRepo
+      .createQueryBuilder('r')
+      .select('MIN(r.attachment_expires_at)', 'min')
+      .where('r.campaign_id = :campaignId', { campaignId })
+      .andWhere('r.attachment_deleted_at IS NULL')
+      .andWhere('r.attachment_expires_at IS NOT NULL')
+      .getRawOne();
+    return { earliestExpiryAt: result?.min ? new Date(result.min).toISOString() : null };
+  }
+
   async updateDraft(id: string, dto: UpdateCampaignDto): Promise<Campaign> {
     const campaign = await this.campaignRepo.findOneBy({ id });
     if (!campaign) throw new NotFoundException(`Campaign ${id} not found`);

@@ -151,6 +151,37 @@ describe('CampaignsService', () => {
     await expect(service.findOne('no-exist')).rejects.toThrow(NotFoundException);
   });
 
+  describe('getAttachmentRetentionInfo', () => {
+    it('ritorna la data di scadenza più vicina tra gli allegati non ancora eliminati', async () => {
+      const qb = {
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getRawOne: jest.fn().mockResolvedValue({ min: '2026-08-01T00:00:00.000Z' }),
+      };
+      mockRecipientRepo.createQueryBuilder.mockReturnValueOnce(qb);
+
+      const result = await service.getAttachmentRetentionInfo('c1');
+
+      expect(qb.where).toHaveBeenCalledWith('r.campaign_id = :campaignId', { campaignId: 'c1' });
+      expect(result).toEqual({ earliestExpiryAt: '2026-08-01T00:00:00.000Z' });
+    });
+
+    it('ritorna null se nessun allegato ha una scadenza calcolata', async () => {
+      const qb = {
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getRawOne: jest.fn().mockResolvedValue({ min: null }),
+      };
+      mockRecipientRepo.createQueryBuilder.mockReturnValueOnce(qb);
+
+      const result = await service.getAttachmentRetentionInfo('c1');
+
+      expect(result).toEqual({ earliestExpiryAt: null });
+    });
+  });
+
   it('create saves and returns campaign with createdBy', async () => {
     const dto = { name: 'Test', channelType: 'EMAIL' as const };
     const result = await service.create(dto, 'op1');

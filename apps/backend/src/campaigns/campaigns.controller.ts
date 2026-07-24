@@ -43,7 +43,7 @@ import {
   MAX_CHUNK_SIZE_BYTES,
 } from './chunked-upload.util';
 
-type CampaignWithOwnerDisplay = Campaign & { createdByDisplayName?: string };
+type CampaignWithOwnerDisplay = Campaign & { createdByDisplayName?: string; attachmentExpiresAt?: string | null };
 
 @Controller('admin/campaigns')
 @Roles('user', 'admin')
@@ -65,7 +65,8 @@ export class CampaignsController {
   async findOne(@Param('id', ParseUUIDPipe) id: string): Promise<CampaignWithOwnerDisplay> {
     const campaign = await this.campaignsService.findOne(id);
     const displayNames = await this.operatorDirectory.resolveMany([campaign.createdBy]);
-    return { ...campaign, createdByDisplayName: displayNames[campaign.createdBy] };
+    const { earliestExpiryAt } = await this.campaignsService.getAttachmentRetentionInfo(id);
+    return { ...campaign, createdByDisplayName: displayNames[campaign.createdBy], attachmentExpiresAt: earliestExpiryAt };
   }
 
   @Post()

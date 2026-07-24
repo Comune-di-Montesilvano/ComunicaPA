@@ -782,8 +782,10 @@ interface Campaign {
   createdAt: string;
   updatedAt: string;
   isTest: boolean;
+  isLegalValue?: boolean;
   parentCampaignId: string | null;
   recipients?: Recipient[];
+  attachmentExpiresAt?: string | null;
 }
 
 interface Recipient {
@@ -7608,6 +7610,36 @@ export function App(): React.JSX.Element {
                           </div>
                         </div>
 
+                        <div className="card border-0 rounded-3 mb-2 shadow-sm" style={{ background: '#f8f9fc' }}>
+                          <div className="card-body p-2">
+                            <div className="d-flex align-items-center gap-2 mb-2">
+                              <ShieldCheck className="text-secondary" size={18} />
+                              <h6 className="fw-bold text-dark mb-0 small">Valore legale</h6>
+                            </div>
+                            <div className="form-check mb-0">
+                              <input
+                                type="checkbox"
+                                className="form-check-input"
+                                id="wiz_single_legal_value"
+                                checked={isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType) || wizIsLegalValue}
+                                disabled={isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType)}
+                                onChange={(e) => setWizIsLegalValue(e.target.checked)}
+                              />
+                              <label className="form-check-label small fw-bold text-dark mb-0" htmlFor="wiz_single_legal_value">
+                                Campagna a valore legale
+                              </label>
+                            </div>
+                            {isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType) ? (
+                              <div className="alert alert-info border-0 bg-info-subtle text-info py-2 px-3 small d-flex align-items-center gap-2 mt-2 mb-0">
+                                <Info size={16} />
+                                <span>Sempre attivo per {wizChannel === 'SEND' ? 'SEND' : 'Atto Giudiziario'}: non potrà essere eliminata.</span>
+                              </div>
+                            ) : (
+                              <div className="form-text small text-muted mb-0">Se attiva, la campagna non potrà mai essere eliminata (anche a invio completato).</div>
+                            )}
+                          </div>
+                        </div>
+
                         {(wizChannel === 'SEND' || wizChannel === 'APP_IO' || (wizAppIoMode === 'parallel' && singleAppIoActive)) && (
                           <div className="card border-0 rounded-3 mb-2 shadow-sm" style={{ background: '#f8f9fc' }}>
                             <div className="card-body p-2">
@@ -12859,6 +12891,22 @@ export function App(): React.JSX.Element {
                           <label className="text-muted small fw-semibold block">Stato</label>
                           <div>
                             <StatusBadge status={campaign.status} />
+                          </div>
+                        </div>
+                        <div className="mb-3">
+                          <label className="text-muted small fw-semibold block">Valore legale</label>
+                          <div>
+                            {campaignIsLegalValue(campaign) ? (
+                              <span className="badge bg-primary d-inline-flex align-items-center gap-1">
+                                <ShieldCheck size={14} /> Campagna a valore legale — non eliminabile
+                              </span>
+                            ) : campaign.attachmentExpiresAt ? (
+                              <span className="badge bg-secondary d-inline-flex align-items-center gap-1" title="Data in cui gli allegati verranno eliminati dalla retention automatica">
+                                <Hourglass size={14} /> Allegati in scadenza il {new Date(campaign.attachmentExpiresAt).toLocaleDateString('it-IT')}
+                              </span>
+                            ) : (
+                              <span className="text-muted small">Nessuna scadenza calcolata</span>
+                            )}
                           </div>
                         </div>
                         {campaign.channelConfig?.['subject'] && (
