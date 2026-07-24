@@ -8211,6 +8211,21 @@ export function App(): React.JSX.Element {
                     </button>
                   </div>
 
+                  <div className="border border-primary rounded-3 p-3 mb-4" style={{ background: '#eef6ff', borderWidth: '2px' }}>
+                    <label className="form-label fw-bold text-primary d-flex align-items-center gap-2 mb-1">
+                      <Tag size={16} /> External ID (Opzionale)
+                    </label>
+                    <select
+                      className="form-select form-select-sm"
+                      value={wizMapping.externalId}
+                      onChange={e => handleWizMappingChange('externalId', e.target.value)}
+                    >
+                      <option value="">-- Nessuna colonna (o auto-rilevata da tracciato arricchito) --</option>
+                      {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
+                    </select>
+                    <div className="form-text small text-muted">Identificativo custom mostrato negli export (es. OCR notifica). Se il CSV ha una colonna "external_id" viene rilevata automaticamente.</div>
+                  </div>
+
                   <div className="row g-3 mb-4">
                     <div className="col-md-6">
                       <label className="form-label small fw-bold">Codice Fiscale { (wizChannel === 'APP_IO' || wizChannel === 'SEND') ? '*' : '(Consigliato)' }</label>
@@ -8294,19 +8309,6 @@ export function App(): React.JSX.Element {
                         <div className="form-text small text-muted">Se una riga ha questa colonna vuota, viene usato l'Oggetto generico del Passo 4.</div>
                       </div>
                     )}
-
-                    <div className="col-md-6">
-                      <label className="form-label small fw-semibold text-muted">External ID (Opzionale)</label>
-                      <select
-                        className="form-select form-select-sm"
-                        value={wizMapping.externalId}
-                        onChange={e => handleWizMappingChange('externalId', e.target.value)}
-                      >
-                        <option value="">-- Nessuna colonna (o auto-rilevata da tracciato arricchito) --</option>
-                        {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
-                      </select>
-                      <div className="form-text small text-muted">Identificativo custom mostrato negli export (es. OCR notifica). Se il CSV ha una colonna "external_id" viene rilevata automaticamente.</div>
-                    </div>
 
                     <div className="col-12">
                       <label className="form-label small fw-semibold text-muted">
