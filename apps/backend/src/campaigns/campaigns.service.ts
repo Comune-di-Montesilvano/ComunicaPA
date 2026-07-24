@@ -115,6 +115,7 @@ export class CampaignsService {
     description: string | null;
     channelType: Campaign['channelType'];
     channelConfig: Record<string, unknown>;
+    isLegalValue: boolean;
   }> {
     const campaign = await this.campaignRepo.findOneBy({ id });
     if (!campaign) throw new NotFoundException(`Campaign ${id} not found`);
@@ -123,6 +124,7 @@ export class CampaignsService {
       description: campaign.description,
       channelType: campaign.channelType,
       channelConfig: campaign.channelConfig,
+      isLegalValue: campaign.isLegalValue,
     };
   }
 

@@ -534,6 +534,15 @@ function postalServiceTypeLabel(value: string): string {
   return POSTAL_SERVICE_TYPE_META[value]?.label ?? value;
 }
 
+// Stessa logica di isCampaignLegalValue() in campaigns.service.ts — SEND e
+// POSTAL Servizio Agol (Atto Giudiziario) sono sempre a valore legale, non
+// disattivabile dall'operatore.
+function isChannelAlwaysLegalValue(channelType: string, postalServiceType?: string): boolean {
+  if (channelType === 'SEND') return true;
+  if (channelType === 'POSTAL' && (postalServiceType || '').startsWith('Agol')) return true;
+  return false;
+}
+
 // Etichetta breve per il badge canale nel dettaglio campagna — non la
 // descrizione completa di POSTAL_SERVICE_TYPE_META (troppo lunga per un
 // badge), solo la distinzione che conta all'operatore a colpo d'occhio.
@@ -1262,6 +1271,7 @@ export function App(): React.JSX.Element {
   const [wizValidRows, setWizValidRows] = useState<Record<string, string>[]>([]);
   const [wizSubject, setWizSubject] = useState('');
   const [wizProtocolla, setWizProtocolla] = useState(false);
+  const [wizIsLegalValue, setWizIsLegalValue] = useState(false);
   const [wizTaxonomyCode, setWizTaxonomyCode] = useState('');
   const [wizPhysicalCommunicationType, setWizPhysicalCommunicationType] = useState<'AR_REGISTERED_LETTER' | 'REGISTERED_LETTER_890'>('AR_REGISTERED_LETTER');
   const [wizPostalServiceType, setWizPostalServiceType] = useState('');
@@ -4721,6 +4731,7 @@ export function App(): React.JSX.Element {
     setWizDesc('');
     setWizSubject('');
     setWizProtocolla(false);
+    setWizIsLegalValue(false);
     setWizTaxonomyCode('');
     setWizPhysicalCommunicationType('AR_REGISTERED_LETTER');
     setWizPostalColorPrint(false);
@@ -4808,6 +4819,7 @@ export function App(): React.JSX.Element {
     description: string | null;
     channelType: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL';
     channelConfig: Record<string, any>;
+    isLegalValue?: boolean;
   }, opts: { isDuplicate: boolean; campaignId?: string }) => {
     setWizCampaignId(opts.isDuplicate ? null : (opts.campaignId || null));
     setWizSingleMode(opts.isDuplicate ? false : Boolean(source.channelConfig?.wizSingleMode));
@@ -4816,6 +4828,9 @@ export function App(): React.JSX.Element {
     setWizChannel(source.channelType);
     setWizSubject(source.channelConfig?.subject || '');
     setWizProtocolla(Boolean(source.channelConfig?.protocolla));
+    // Duplicare una campagna non trascina il valore legale (scelta fresca
+    // dell'operatore); riprendere una bozza lo ripristina fedelmente.
+    setWizIsLegalValue(opts.isDuplicate ? false : Boolean(source.isLegalValue));
     setWizTaxonomyCode(source.channelConfig?.taxonomyCode || '');
     setWizPhysicalCommunicationType(source.channelConfig?.physicalCommunicationType || 'AR_REGISTERED_LETTER');
     setWizPostalServiceType(source.channelConfig?.postalServiceType || '');
@@ -4996,13 +5011,19 @@ export function App(): React.JSX.Element {
     setWizCampaignId(campaignId);
   };
 
+  const campaignIsLegalValue = (c: { channelType: string; channelConfig?: Record<string, any>; isLegalValue?: boolean }): boolean => {
+    if (c.isLegalValue) return true;
+    return isChannelAlwaysLegalValue(c.channelType, c.channelConfig?.postalServiceType);
+  };
+
   const handleDeleteCampaign = async (id: string, name: string) => {
     if (!confirm(`Eliminare definitivamente la campagna "${name}"? Verranno cancellati destinatari, tentativi di invio e allegati. Azione irreversibile.`)) {
       return;
     }
     const res = await apiFetch(`/campaigns/${id}`, { method: 'DELETE' });
     if (!res.ok) {
-      alert('Impossibile eliminare la campagna.');
+      const errData = await res.json().catch(() => ({}));
+      alert(errData.message || 'Impossibile eliminare la campagna.');
       return;
     }
     fetchCampaigns();
@@ -5164,6 +5185,7 @@ export function App(): React.JSX.Element {
             description: wizDesc,
             channelType: wizChannel,
             channelConfig,
+            isLegalValue: isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType) || wizIsLegalValue,
           }),
         });
         if (!res.ok) throw new Error('Errore durante il salvataggio della bozza');
@@ -5178,6 +5200,7 @@ export function App(): React.JSX.Element {
             name: wizName,
             description: wizDesc,
             channelConfig,
+            isLegalValue: isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType) || wizIsLegalValue,
           }),
         });
         if (!res.ok) throw new Error('Errore durante il salvataggio della bozza');
@@ -5500,7 +5523,12 @@ export function App(): React.JSX.Element {
         const patchRes = await fetch(`${ADMIN_API_BASE}/campaigns/${wizCampaignId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ name: wizName, description: wizDesc || wizSubject || wizName, channelConfig }),
+          body: JSON.stringify({
+            name: wizName,
+            description: wizDesc || wizSubject || wizName,
+            channelConfig,
+            isLegalValue: isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType) || wizIsLegalValue,
+          }),
         });
         if (!patchRes.ok) throw new Error('Errore durante l\'aggiornamento della bozza');
         campaignObj = { id: wizCampaignId };
@@ -5516,6 +5544,7 @@ export function App(): React.JSX.Element {
             description: wizDesc || wizSubject || wizName,
             channelType: wizChannel,
             channelConfig,
+            isLegalValue: isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType) || wizIsLegalValue,
           }),
         });
         if (!res.ok) throw new Error('Errore durante la creazione della campagna');
@@ -6864,7 +6893,8 @@ export function App(): React.JSX.Element {
                                         <button
                                           type="button"
                                           className="btn btn-sm btn-outline-danger d-flex align-items-center gap-1"
-                                          title="Elimina campagna definitivamente"
+                                          disabled={campaignIsLegalValue(c)}
+                                          title={campaignIsLegalValue(c) ? 'Campagna a valore legale: non eliminabile' : 'Elimina campagna definitivamente'}
                                           onClick={() => handleDeleteCampaign(c.id, c.name)}
                                         >
                                           <Trash2 /> Elimina
@@ -7737,6 +7767,24 @@ export function App(): React.JSX.Element {
                         <span className="text-muted"> (obbligatorio per SEND: ogni invio viene registrato sul Protocollo Informatico prima della trasmissione)</span>
                       )}
                     </label>
+                  </div>
+
+                  <div className="form-check mb-3">
+                    <input
+                      type="checkbox"
+                      className="form-check-input"
+                      id="wiz-legal-value"
+                      checked={isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType) || wizIsLegalValue}
+                      disabled={isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType)}
+                      onChange={(e) => setWizIsLegalValue(e.target.checked)}
+                    />
+                    <label className="form-check-label small fw-bold" htmlFor="wiz-legal-value">
+                      Campagna a valore legale
+                      {isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType) && (
+                        <span className="text-muted"> (sempre attivo per {wizChannel === 'SEND' ? 'SEND' : 'Atto Giudiziario'}: non può essere eliminata)</span>
+                      )}
+                    </label>
+                    <div className="form-text small text-muted">Se attiva, la campagna non potrà mai essere eliminata (anche a invio completato).</div>
                   </div>
 
                   <div className="form-check mb-3">
@@ -13024,6 +13072,8 @@ export function App(): React.JSX.Element {
                           {(role === 'admin' || campaign.createdBy === username) && (
                             <button
                               className="btn btn-outline-danger w-100 py-2 fw-semibold mt-2"
+                              disabled={campaignIsLegalValue(campaign)}
+                              title={campaignIsLegalValue(campaign) ? 'Campagna a valore legale: non eliminabile' : undefined}
                               onClick={() => handleDeleteCampaign(campaign.id, campaign.name)}
                             >
                               <Trash2 className="me-2" />Elimina Campagna

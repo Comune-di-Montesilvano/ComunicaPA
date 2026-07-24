@@ -2076,6 +2076,7 @@ describe('CampaignsService.getDuplicateSource', () => {
       channelType: 'EMAIL',
       channelConfig: { subject: 'Oggetto %nominativo%', body: '<p>Corpo</p>', mailConfigId: 'mc1' },
       status: CampaignStatus.COMPLETED,
+      isLegalValue: false,
     });
     const moduleRef = await buildModule();
     const service = moduleRef.get(CampaignsService);
@@ -2087,6 +2088,7 @@ describe('CampaignsService.getDuplicateSource', () => {
       description: 'Descrizione originale',
       channelType: 'EMAIL',
       channelConfig: { subject: 'Oggetto %nominativo%', body: '<p>Corpo</p>', mailConfigId: 'mc1' },
+      isLegalValue: false,
     });
   });
 });
