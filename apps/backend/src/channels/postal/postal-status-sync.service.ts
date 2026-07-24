@@ -69,13 +69,16 @@ export class PostalStatusSyncService {
               // Codice/descrizione errore GlobalCom (es. "-1"/"numeri
               // raccomandata non salvati o non disponibili") — prima
               // visibili solo sul portale GlobalCom, mai persistiti da noi.
-              // Gate su stato==='Errore': GlobalCom manda un CodiceErrore
-              // "benigno" (es. "0") anche su stati non di errore (es.
-              // "Confermato") — persisterlo comunque farebbe mostrare in UI
-              // un esito positivo come se fosse un errore (bug reale
-              // riscontrato: "GlobalCom (0)" su un invio in realtà confermato).
-              ...(stato.stato === 'Errore' && stato.codiceErrore ? { codiceErrore: stato.codiceErrore } : {}),
-              ...(stato.stato === 'Errore' && stato.descrizione ? { descrizione: stato.descrizione } : {}),
+              // Gate su codiceErrore!=='0', non su stato: GlobalCom manda
+              // codici reali (es. "-2") anche su stati non terminali come
+              // "Rimandato" (bug reale: un gate su stato==='Errore' li
+              // nascondeva) ma manda anche un codice "benigno" ("0") su
+              // stati positivi come "Confermato" — persisterlo avrebbe
+              // mostrato in UI un esito positivo come se fosse un errore
+              // (bug reale riscontrato: "GlobalCom (0)" su un invio in
+              // realtà confermato).
+              ...(stato.codiceErrore && stato.codiceErrore !== '0' ? { codiceErrore: stato.codiceErrore } : {}),
+              ...(stato.descrizione && stato.codiceErrore !== '0' ? { descrizione: stato.descrizione } : {}),
             },
           ];
           changed = true;

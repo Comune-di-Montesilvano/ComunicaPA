@@ -112,7 +112,7 @@ describe('PostalStatusSyncService', () => {
     }));
   });
 
-  it('non persiste codiceErrore quando lo stato non è Errore (es. Confermato con codiceErrore benigno "0")', async () => {
+  it('non persiste codiceErrore benigno "0" (es. su stato Confermato, esito positivo)', async () => {
     const attempt = { id: 'a1', postalTrackingId: 'IDPRO1', postalStatus: 'Accettato', postalStatusUpdatedAt: null, postalStatusHistory: [] };
     attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
     globalCom.dettagliDocumento.mockResolvedValue({
@@ -126,6 +126,30 @@ describe('PostalStatusSyncService', () => {
     expect(attemptRepo.save).toHaveBeenCalledWith(expect.objectContaining({
       postalStatusHistory: [
         { stato: 'Confermato', rilevatoIl: expect.any(String) },
+      ],
+    }));
+  });
+
+  it('persiste codiceErrore/descrizione reali anche su stato non terminale (es. Rimandato, in attesa di retry lato GlobalCom)', async () => {
+    const attempt = { id: 'a1', postalTrackingId: 'IDPRO1', postalStatus: 'Accettato', postalStatusUpdatedAt: null, postalStatusHistory: [] };
+    attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
+    globalCom.dettagliDocumento.mockResolvedValue({
+      idPro: 'IDPRO1',
+      stato: 'Rimandato',
+      codiceErrore: '-2',
+      descrizione: "Richiesta HTTP vietata con lo schema di autenticazione client 'Basic'",
+    } as any);
+
+    await service.handleCron();
+
+    expect(attemptRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      postalStatusHistory: [
+        {
+          stato: 'Rimandato',
+          rilevatoIl: expect.any(String),
+          codiceErrore: '-2',
+          descrizione: "Richiesta HTTP vietata con lo schema di autenticazione client 'Basic'",
+        },
       ],
     }));
   });
