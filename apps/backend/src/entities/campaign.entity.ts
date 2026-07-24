@@ -70,6 +70,9 @@ export class Campaign {
   @Column({ type: 'boolean', name: 'is_test', default: false })
   isTest!: boolean;
 
+  @Column({ type: 'boolean', name: 'is_legal_value', default: false })
+  isLegalValue!: boolean;
+
   @Column({ type: 'uuid', name: 'parent_campaign_id', nullable: true })
   parentCampaignId!: string | null;
 
