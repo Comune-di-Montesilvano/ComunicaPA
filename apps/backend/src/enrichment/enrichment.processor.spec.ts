@@ -33,6 +33,19 @@ function setupJobDirPagIndice(jobId: string): void {
   zip.writeZip(getEnrichmentSourceZip(jobId));
 }
 
+const PAG_INDICE_CON_OCR = [
+  "'nome file;'destinatario;'cod. fisc. dest;'indirizzo;'indirizzo parte 2;'localita;'comune;'stato estero;'Ocr int;'Ocr rid;'Num. provv;'Data emissione;'ocr notifica",
+  "'PROVV_1.pdf;'VERDI LUIGI;'VRDLGU70A01H501X;'VIA MILANO 5;';'00067 MORLUPO RM;';';'301000000000000099;'RAV999;'99;'01/02/2026;'5890000000049995",
+].join('\n');
+
+function setupJobDirPagIndiceConOcr(jobId: string): void {
+  const zip = new AdmZip();
+  zip.addFile('pag_indice.csv', Buffer.from(PAG_INDICE_CON_OCR, 'utf-8'));
+  zip.addFile('allegati/PROVV_1.pdf', Buffer.from('%PDF-1'));
+  fs.mkdirSync(getEnrichmentDir(jobId), { recursive: true });
+  zip.writeZip(getEnrichmentSourceZip(jobId));
+}
+
 describe('EnrichmentProcessor', () => {
   let tmpDir: string;
   let repo: any;
@@ -150,6 +163,28 @@ describe('EnrichmentProcessor', () => {
     expect(lines[1]).not.toContain('999999999999999999');
     // Importo/scadenza: sempre dal PDF (non presenti nel CSV sorgente)
     expect(lines[1]).toContain('"10,00"');
+    // external_id: pag_indice.csv senza colonna 'ocr notifica' → fallback su numero_provvedimento
+    const headerCells = csv.split('\n')[0].split(';');
+    const externalIdIdx = headerCells.indexOf('"external_id"');
+    expect(lines[1].split(';')[externalIdIdx]).toBe('"99"');
+  });
+
+  it('external_id: usa "ocr notifica" quando presente nel tracciato pag_indice', async () => {
+    fs.rmSync(getEnrichmentDir('j1'), { recursive: true, force: true });
+    setupJobDirPagIndiceConOcr('j1');
+    client.extract.mockResolvedValue({
+      address: { indirizzo: 'VIA ROMA 1', cap: '00100', comune: 'ROMA', provincia: 'RM', stato_estero: '' },
+      payment: { totale: { numero_avviso: '1', numero_avviso_alternativo: '', cf_ente: '000', importo: '10,00', scadenza: '01/01/2027' }, rate: [] },
+      warnings: [],
+    });
+
+    await processor.process(fakeJob);
+
+    const csv = fs.readFileSync(getEnrichmentResultCsv('j1'), 'utf-8');
+    const lines = csv.split('\n');
+    const headerCells = lines[0].split(';');
+    const externalIdIdx = headerCells.indexOf('"external_id"');
+    expect(lines[1].split(';')[externalIdIdx]).toBe('"5890000000049995"');
   });
 
   it('rate multiple: header CSV con colonne rataN_*, riga con meno rate lascia colonne vuote', async () => {

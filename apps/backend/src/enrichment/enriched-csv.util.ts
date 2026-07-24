@@ -26,6 +26,7 @@ export const BASE_CSV_HEADERS = [
   'numero_provvedimento',
   'data_emissione',
   'oggetto',
+  'external_id',
 ] as const;
 
 export function buildEnrichedCsvHeaders(maxRate: number): string[] {

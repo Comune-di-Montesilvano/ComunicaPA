@@ -177,6 +177,7 @@ export class EnrichmentProcessor extends WorkerHost {
       numero_provvedimento: rec.numeroProvvedimento,
       data_emissione: rec.dataEmissione,
       oggetto: rec.oggetto,
+      external_id: rec.ocrNotifica || rec.numeroProvvedimento,
     };
   }
 }
