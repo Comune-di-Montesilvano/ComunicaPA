@@ -7363,6 +7363,11 @@ export function App(): React.JSX.Element {
                                   </div>
                                 </div>
                               )}
+                              {wizPostalServiceType.startsWith('Agol') && (
+                                <div className="col-12">
+                                  <div className="form-text small text-muted mb-0">Ricevuta di ritorno (AR) sempre inclusa per Atto Giudiziario: obbligatoria per legge, non disattivabile.</div>
+                                </div>
+                              )}
                               <div className="col-6">
                                 <div className="form-check">
                                   <input className="form-check-input" type="checkbox" id="wizSinglePostalColor"
@@ -7912,6 +7917,11 @@ export function App(): React.JSX.Element {
                               checked={wizPostalReturnReceipt} onChange={(e) => setWizPostalReturnReceipt(e.target.checked)} />
                             <label className="form-check-label small" htmlFor="wizPostalAR">Ricevuta di ritorno (AR)</label>
                           </div>
+                        </div>
+                      )}
+                      {wizPostalServiceType.startsWith('Agol') && (
+                        <div className="col-md-4 d-flex align-items-end">
+                          <div className="form-text small text-muted mb-0">AR sempre inclusa per Atto Giudiziario (obbligatoria per legge).</div>
                         </div>
                       )}
                       <div className="col-md-4 d-flex align-items-end">

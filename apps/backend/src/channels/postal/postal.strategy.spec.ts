@@ -177,6 +177,25 @@ describe('PostalStrategy', () => {
     );
   });
 
+  it('send() forza ricevutaDiRitorno=true e ricevuta=mittente per Servizio Agol*, anche con postalReturnReceipt=false (AR obbligatoria per legge su Atto Giudiziario)', async () => {
+    const mittente = { denominazione1: 'Comune di Montesilvano', indirizzo1: 'Piazza Diaz 1', cap: '65015', citta: 'Montesilvano', provincia: 'PE' };
+    providers.getActive.mockResolvedValue(baseProvider({ mittente }));
+    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' } as any);
+
+    await strategy.send(
+      baseRecipient as never,
+      baseCampaign({ postalServiceType: 'AgolBusiness', postalReturnReceipt: false }) as never,
+      undefined,
+      'attempt-uuid-1',
+      0,
+    );
+
+    expect(globalCom.invioExtSingolo).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ ricevutaDiRitorno: true, ricevuta: mittente }),
+    );
+  });
+
   it('send() omette codiceFiscale sul destinatario per Servizio Agol* (nessun ritiro digitale voluto)', async () => {
     globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' } as any);
 

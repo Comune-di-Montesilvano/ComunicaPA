@@ -91,7 +91,13 @@ export class PostalStrategy implements IChannelStrategy {
       email: recipient.email || undefined,
     };
 
-    const ricevutaDiRitorno = servizio.startsWith('Raccomandata') && !!cfg['postalReturnReceipt'];
+    // Atto Giudiziario (Agol*): AR obbligatoria per legge, non opzionale come
+    // per una raccomandata — la UI nasconde il checkbox "Ricevuta di ritorno"
+    // per questo Servizio (sempre attiva, non configurabile). Senza Ricevuta,
+    // GlobalCom accetta l'invio ma fallisce in lavorazione, dopo l'accettazione
+    // (Stato: Accettato → Errore, CodiceErrore -2 "Nessun destinatario
+    // ricevuta trovato per questa spedizione" — errore reale riscontrato).
+    const ricevutaDiRitorno = servizio.startsWith('Agol') || (servizio.startsWith('Raccomandata') && !!cfg['postalReturnReceipt']);
     const colore = !!cfg['postalColorPrint'];
     const fronteRetro = cfg['postalDuplex'] !== undefined ? !!cfg['postalDuplex'] : true;
 
