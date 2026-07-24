@@ -70,6 +70,13 @@ describe('RetentionCleanupService', () => {
     expect(mockQb.take).toHaveBeenCalledWith(200);
   });
 
+  it('esclude dalla scadenza le campagne a valore legale (SEND, POSTAL Agol, flag manuale)', async () => {
+    await service.runCleanup();
+    expect(mockQb.andWhere).toHaveBeenCalledWith(
+      expect.stringContaining('campaign.is_legal_value = false'),
+    );
+  });
+
   describe('runOrphanCleanup', () => {
     it('elimina le cartelle uploads/<campaignId> senza campagna corrispondente in DB', async () => {
       (fs.readdir as jest.Mock).mockResolvedValueOnce(['c-orfana', 'c-esistente']);

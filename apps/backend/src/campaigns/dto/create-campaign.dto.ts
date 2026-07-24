@@ -1,4 +1,4 @@
-import { IsEnum, IsNotEmpty, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsEnum, IsNotEmpty, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
 import type { NotificationChannel } from '@comunicapa/shared-types';
 
 export class CreateCampaignDto {
@@ -18,4 +18,8 @@ export class CreateCampaignDto {
   @IsObject()
   @IsOptional()
   channelConfig?: Record<string, unknown>;
+
+  @IsBoolean()
+  @IsOptional()
+  isLegalValue?: boolean;
 }

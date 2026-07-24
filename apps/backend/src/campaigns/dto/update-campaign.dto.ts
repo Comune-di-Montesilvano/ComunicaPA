@@ -1,4 +1,4 @@
-import { IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class UpdateCampaignDto {
   @IsOptional() @IsString() @MaxLength(255)
@@ -9,4 +9,7 @@ export class UpdateCampaignDto {
 
   @IsOptional() @IsObject()
   channelConfig?: Record<string, unknown>;
+
+  @IsOptional() @IsBoolean()
+  isLegalValue?: boolean;
 }

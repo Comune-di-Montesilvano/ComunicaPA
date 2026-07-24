@@ -42,6 +42,24 @@ export interface CampaignRequester {
   role: OperatorRole;
 }
 
+/**
+ * SEND e POSTAL Servizio Agol (Atto Giudiziario) sono invii a valore legale:
+ * calcolato a runtime da channelType/channelConfig, non richiede di tenere
+ * isLegalValue sincronizzato ogni volta che channelConfig.postalServiceType
+ * cambia durante il wizard. Blocca solo remove() (l'allegato/record è la
+ * prova dell'invio) — cancel() resta permesso: serve a fermare destinatari
+ * ancora in coda per errore, senza toccare quelli già notificati.
+ */
+export function isCampaignLegalValue(campaign: Pick<Campaign, 'isLegalValue' | 'channelType' | 'channelConfig'>): boolean {
+  if (campaign.isLegalValue) return true;
+  if (campaign.channelType === 'SEND') return true;
+  if (campaign.channelType === 'POSTAL') {
+    const servizio = String(campaign.channelConfig?.['postalServiceType'] ?? '');
+    if (servizio.startsWith('Agol')) return true;
+  }
+  return false;
+}
+
 @Injectable()
 export class CampaignsService {
   private readonly logger = new Logger(CampaignsService.name);
@@ -88,6 +106,7 @@ export class CampaignsService {
     if (dto.name !== undefined) campaign.name = dto.name;
     if (dto.description !== undefined) campaign.description = dto.description;
     if (dto.channelConfig !== undefined) campaign.channelConfig = dto.channelConfig;
+    if (dto.isLegalValue !== undefined) campaign.isLegalValue = dto.isLegalValue;
     return this.campaignRepo.save(campaign);
   }
 
@@ -241,6 +260,7 @@ export class CampaignsService {
       channelConfig: dto.channelConfig ?? {},
       status: CampaignStatus.DRAFT,
       createdBy,
+      isLegalValue: dto.isLegalValue ?? false,
     });
     return this.campaignRepo.save(campaign);
   }
@@ -2047,6 +2067,9 @@ export class CampaignsService {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
     this.assertOwnership(campaign, requester);
+    if (isCampaignLegalValue(campaign)) {
+      throw new BadRequestException('Campagna a valore legale: eliminazione non consentita');
+    }
 
     const linkedTestCampaign = await this.campaignRepo.findOneBy({ parentCampaignId: campaignId, isTest: true });
     if (linkedTestCampaign) {

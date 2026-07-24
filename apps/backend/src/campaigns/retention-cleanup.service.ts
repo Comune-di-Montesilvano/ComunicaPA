@@ -76,6 +76,14 @@ export class RetentionCleanupService {
         .leftJoinAndSelect('recipient.campaign', 'campaign')
         .where('recipient.attachment_expires_at < :now', { now: new Date() })
         .andWhere('recipient.attachment_deleted_at IS NULL')
+        // Campagne a valore legale (SEND, POSTAL Servizio Agol, o flag manuale)
+        // non scadono mai: l'allegato è la prova dell'invio, non va cancellato
+        // automaticamente dalla retention notturna. Esclusione a livello SQL
+        // (non in JS dopo il fetch) per non ripescare all'infinito lo stesso
+        // lotto di righe legal-value mai marcabili come eliminate.
+        .andWhere(
+          `(campaign.is_legal_value = false AND campaign.channel_type != 'SEND' AND NOT (campaign.channel_type = 'POSTAL' AND campaign.channel_config->>'postalServiceType' LIKE 'Agol%'))`,
+        )
         .take(BATCH_SIZE)
         .getMany();
 
