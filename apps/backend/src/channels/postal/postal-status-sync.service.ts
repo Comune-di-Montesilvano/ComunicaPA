@@ -34,7 +34,7 @@ export class PostalStatusSyncService {
     private readonly globalCom: GlobalComClient,
   ) {}
 
-  @Cron('*/5 * * * *')
+  @Cron('*/1 * * * *')
   async handleCron(): Promise<void> {
     const attempts = await this.attemptRepo
       .createQueryBuilder('attempt')
