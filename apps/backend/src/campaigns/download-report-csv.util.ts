@@ -1,13 +1,12 @@
-import type { DownloadReportRowDto } from './dto/campaign-stats.dto';
+import type { DownloadReportDto } from './dto/campaign-stats.dto';
 import { escapeCsvField } from './csv.util';
 
-export function buildDownloadReportCsv(rows: DownloadReportRowDto[]): string {
-  const header = ['Codice Fiscale', 'Nominativo', 'Email', 'PEC', 'Stato Invio', 'Download Effettuati', 'Data Ultimo Download']
-    .map(escapeCsvField)
-    .join(';');
+export function buildDownloadReportCsv(report: DownloadReportDto): string {
+  const headers = ['Codice Fiscale', 'Nominativo', 'Email', 'PEC', 'Stato Invio', 'Download Effettuati', 'Data Ultimo Download'];
+  if (report.hasExternalId) headers.push('External ID');
 
-  const lines = rows.map((r) =>
-    [
+  const lines = report.rows.map((r) => {
+    const fields = [
       r.codiceFiscale,
       r.fullName ?? '',
       r.email ?? '',
@@ -15,10 +14,10 @@ export function buildDownloadReportCsv(rows: DownloadReportRowDto[]): string {
       r.status,
       String(r.downloadCount),
       r.lastDownloadedAt ? new Date(r.lastDownloadedAt).toLocaleString('it-IT', { timeZone: 'Europe/Rome' }) : '',
-    ]
-      .map(escapeCsvField)
-      .join(';'),
-  );
+    ];
+    if (report.hasExternalId) fields.push(r.externalId ?? '');
+    return fields.map(escapeCsvField).join(';');
+  });
 
-  return [header, ...lines].join('\n');
+  return [headers.map(escapeCsvField).join(';'), ...lines].join('\n');
 }

@@ -14,6 +14,7 @@ function appIoOutcomeLabel(outcome: PostalReportRowDto['appIoOutcome']): string 
 export function buildPostalReportAttualeCsv(report: PostalReportDto): string {
   const headers = ['Codice Fiscale', 'Nominativo', 'IDPRO', 'Stato', 'Data Stato', 'Codice Errore', 'Descrizione Errore'];
   if (report.hasAppIoCoDelivery) headers.push('Esito App IO');
+  if (report.hasExternalId) headers.push('External ID');
 
   const lines = report.rows.map((r) => {
     // postalStatusHistory è append-only in ordine cronologico: l'ultimo
@@ -29,6 +30,7 @@ export function buildPostalReportAttualeCsv(report: PostalReportDto): string {
       r.descrizioneErrore ?? '',
     ];
     if (report.hasAppIoCoDelivery) fields.push(appIoOutcomeLabel(r.appIoOutcome));
+    if (report.hasExternalId) fields.push(r.externalId ?? '');
     return fields.map(escapeCsvField).join(';');
   });
 
@@ -41,6 +43,7 @@ export function buildPostalReportStoricoCsv(report: PostalReportDto): string {
     ...POSTAL_STATUS_HISTORY_COLUMNS.map((c) => c.header),
   ];
   if (report.hasAppIoCoDelivery) headers.push('Esito App IO');
+  if (report.hasExternalId) headers.push('External ID');
 
   const lines = report.rows.map((r) => {
     // Prima occorrenza per stato (uno stato transitorio come "Rimandato" può
@@ -58,6 +61,7 @@ export function buildPostalReportStoricoCsv(report: PostalReportDto): string {
       ...POSTAL_STATUS_HISTORY_COLUMNS.map((c) => formatDate(firstOccurrenceByStatus.get(c.status))),
     ];
     if (report.hasAppIoCoDelivery) fields.push(appIoOutcomeLabel(r.appIoOutcome));
+    if (report.hasExternalId) fields.push(r.externalId ?? '');
     return fields.map(escapeCsvField).join(';');
   });
 

@@ -3,6 +3,7 @@ import type { PostalReportDto } from './dto/campaign-stats.dto';
 
 const baseReport: PostalReportDto = {
   hasAppIoCoDelivery: false,
+  hasExternalId: false,
   rows: [{
     codiceFiscale: 'RSSMRA80A01H501U',
     fullName: 'Mario Rossi',
@@ -18,6 +19,7 @@ const baseReport: PostalReportDto = {
     codiceErrore: null,
     descrizioneErrore: null,
     appIoOutcome: null,
+    externalId: null,
   }],
 };
 
@@ -33,12 +35,25 @@ describe('buildPostalReportAttualeCsv', () => {
   it('aggiunge la colonna Esito App IO solo se hasAppIoCoDelivery', () => {
     const report: PostalReportDto = {
       hasAppIoCoDelivery: true,
+      hasExternalId: false,
       rows: [{ ...baseReport.rows[0], appIoOutcome: { success: true, error: null } }],
     };
     const csv = buildPostalReportAttualeCsv(report);
     const lines = csv.split('\n');
     expect(lines[0]).toContain('"Esito App IO"');
     expect(lines[1]).toContain('"Consegnato"');
+  });
+
+  it('aggiunge la colonna External ID quando hasExternalId è true', () => {
+    const report: PostalReportDto = {
+      hasAppIoCoDelivery: false,
+      hasExternalId: true,
+      rows: [{ ...baseReport.rows[0], externalId: '5890000000049995' }],
+    };
+    const csv = buildPostalReportAttualeCsv(report);
+    const lines = csv.split('\n');
+    expect(lines[0]).toContain('"External ID"');
+    expect(lines[1]).toContain('"5890000000049995"');
   });
 });
 

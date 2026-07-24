@@ -181,9 +181,12 @@ describe('CampaignsController', () => {
 
   describe('exportDownloadReportCsv', () => {
     it('imposta gli header CSV e invia il body generato dal service', async () => {
-      mockService.getDownloadReportRows = jest.fn().mockResolvedValue([
-        { codiceFiscale: 'AAA1', fullName: null, email: null, pec: null, status: 'sent', downloadCount: 0, lastDownloadedAt: null },
-      ]);
+      mockService.getDownloadReportRows = jest.fn().mockResolvedValue({
+        hasExternalId: false,
+        rows: [
+          { codiceFiscale: 'AAA1', fullName: null, email: null, pec: null, status: 'sent', downloadCount: 0, lastDownloadedAt: null, externalId: null },
+        ],
+      });
       const res = { setHeader: jest.fn(), send: jest.fn() } as any;
 
       await controller.exportDownloadReportCsv('uuid-1', res);

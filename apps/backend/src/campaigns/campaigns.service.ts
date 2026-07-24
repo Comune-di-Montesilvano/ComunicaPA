@@ -16,6 +16,7 @@ import { getEffectiveRetentionDays } from './retention.util';
 import { getUploadsDir } from '../attachments/attachment-paths';
 import { resolveAttachmentsConfig, resolveAttachmentLabel, resolveCustomAttachmentFilename } from '../attachments/attachment.service';
 import { resolveSubjectTemplate } from '../channels/subject-mapping.util';
+import { resolveExternalId } from '../channels/external-id-mapping.util';
 import { Campaign, CampaignStatus } from '../entities/campaign.entity';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity';
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity';
@@ -26,7 +27,7 @@ import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util
 import type { CreateCampaignDto } from './dto/create-campaign.dto';
 import type { UpdateCampaignDto } from './dto/update-campaign.dto';
 import type { TestSendDto } from './dto/test-send.dto';
-import type { CampaignStatsDto, RecipientStatDto, RecipientStatsPageDto, ChannelBreakdownDto, EffectiveChannelBreakdownDto, DownloadCombinationDto, DownloadCombinationStatsDto, FailureRowDto, FailureGroupDto, RetryBulkResultDto, DownloadReportRowDto, SendStatusBreakdownDto, SendReportDto, SendReportRowDto, PostalStatusBreakdownDto, PostalReportDto, PostalReportRowDto, CampaignCostDto, CampaignCostSavingsDto } from './dto/campaign-stats.dto';
+import type { CampaignStatsDto, RecipientStatDto, RecipientStatsPageDto, ChannelBreakdownDto, EffectiveChannelBreakdownDto, DownloadCombinationDto, DownloadCombinationStatsDto, FailureRowDto, FailureGroupDto, RetryBulkResultDto, DownloadReportDto, SendStatusBreakdownDto, SendReportDto, SendReportRowDto, PostalStatusBreakdownDto, PostalReportDto, PostalReportRowDto, CampaignCostDto, CampaignCostSavingsDto } from './dto/campaign-stats.dto';
 import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.dto';
 import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util';
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto';
@@ -1608,14 +1609,17 @@ export class CampaignsService {
     return { campaignId, page, pageSize, total, items };
   }
 
-  async getDownloadReportRows(campaignId: string): Promise<DownloadReportRowDto[]> {
+  async getDownloadReportRows(campaignId: string): Promise<DownloadReportDto> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+
     const rows = await this.recipientRepo.find({
       where: { campaignId },
-      select: ['codiceFiscale', 'fullName', 'email', 'pec', 'status', 'downloadCount', 'lastDownloadedAt'],
+      select: ['codiceFiscale', 'fullName', 'email', 'pec', 'status', 'downloadCount', 'lastDownloadedAt', 'extraData'],
       order: { createdAt: 'ASC' },
     });
 
-    return rows.map((r) => ({
+    const mapped = rows.map((r) => ({
       codiceFiscale: r.codiceFiscale,
       fullName: r.fullName,
       email: r.email,
@@ -1623,7 +1627,10 @@ export class CampaignsService {
       status: r.status,
       downloadCount: r.downloadCount,
       lastDownloadedAt: r.lastDownloadedAt ? r.lastDownloadedAt.toISOString() : null,
+      externalId: resolveExternalId(campaign, r),
     }));
+
+    return { hasExternalId: mapped.some((r) => r.externalId !== null), rows: mapped };
   }
 
   async getSendStatusBreakdown(campaignId: string): Promise<SendStatusBreakdownDto[]> {
@@ -1662,10 +1669,10 @@ export class CampaignsService {
 
     const recipients = await this.recipientRepo.find({
       where: { campaignId },
-      select: ['id', 'codiceFiscale', 'fullName'],
+      select: ['id', 'codiceFiscale', 'fullName', 'extraData'],
       order: { createdAt: 'ASC' },
     });
-    if (recipients.length === 0) return { hasAppIoCoDelivery: false, rows: [] };
+    if (recipients.length === 0) return { hasAppIoCoDelivery: false, hasExternalId: false, rows: [] };
 
     const recipientIds = recipients.map((r) => r.id);
     const attempts = await this.attemptRepo.find({
@@ -1700,10 +1707,11 @@ export class CampaignsService {
         sendStatus: latest?.status === AttemptStatus.FAILED ? 'FAILED' : (latest?.sendStatus ?? null),
         sendStatusHistory: latest?.sendStatusHistory ?? [],
         appIoOutcome: appIo ? { success: !!appIo.success, error: appIo.error ?? null } : null,
+        externalId: resolveExternalId(campaign, r),
       };
     });
 
-    return { hasAppIoCoDelivery, rows };
+    return { hasAppIoCoDelivery, hasExternalId: rows.some((r) => r.externalId !== null), rows };
   }
 
   async getPostalStatusBreakdown(campaignId: string): Promise<PostalStatusBreakdownDto[]> {
@@ -1809,10 +1817,10 @@ export class CampaignsService {
 
     const recipients = await this.recipientRepo.find({
       where: { campaignId },
-      select: ['id', 'codiceFiscale', 'fullName'],
+      select: ['id', 'codiceFiscale', 'fullName', 'extraData'],
       order: { createdAt: 'ASC' },
     });
-    if (recipients.length === 0) return { hasAppIoCoDelivery: false, rows: [] };
+    if (recipients.length === 0) return { hasAppIoCoDelivery: false, hasExternalId: false, rows: [] };
 
     const recipientIds = recipients.map((r) => r.id);
     const attempts = await this.attemptRepo.find({
@@ -1848,10 +1856,11 @@ export class CampaignsService {
         codiceErrore: (latestPayload?.['codiceErrore'] as string | undefined) ?? null,
         descrizioneErrore: (latestPayload?.['descrizione'] as string | undefined) ?? null,
         appIoOutcome: appIo ? { success: !!appIo.success, error: appIo.error ?? null } : null,
+        externalId: resolveExternalId(campaign, r),
       };
     });
 
-    return { hasAppIoCoDelivery, rows };
+    return { hasAppIoCoDelivery, hasExternalId: rows.some((r) => r.externalId !== null), rows };
   }
 
   async assertDraftForAttachments(campaignId: string): Promise<void> {

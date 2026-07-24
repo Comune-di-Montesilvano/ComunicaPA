@@ -2519,7 +2519,7 @@ describe('CampaignsService.getDownloadReportRows', () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
       providers: [
         CampaignsService,
-        { provide: getRepositoryToken(Campaign), useValue: {} },
+        { provide: getRepositoryToken(Campaign), useValue: { findOneBy: jest.fn().mockResolvedValue({ id: 'c1', channelConfig: {} }) } },
         { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
         { provide: getRepositoryToken(NotificationAttempt), useValue: {} },
         { provide: getRepositoryToken(DownloadEvent), useValue: {} },
@@ -2540,6 +2540,7 @@ describe('CampaignsService.getDownloadReportRows', () => {
         status: RecipientStatus.SENT,
         downloadCount: 1,
         lastDownloadedAt: new Date('2026-07-01T10:00:00Z'),
+        extraData: {},
       },
     ]);
 
@@ -2547,20 +2548,51 @@ describe('CampaignsService.getDownloadReportRows', () => {
 
     expect(recipientRepoMock.find).toHaveBeenCalledWith({
       where: { campaignId: 'c1' },
-      select: ['codiceFiscale', 'fullName', 'email', 'pec', 'status', 'downloadCount', 'lastDownloadedAt'],
+      select: ['codiceFiscale', 'fullName', 'email', 'pec', 'status', 'downloadCount', 'lastDownloadedAt', 'extraData'],
       order: { createdAt: 'ASC' },
     });
-    expect(result).toEqual([
-      {
-        codiceFiscale: 'AAA1',
-        fullName: 'Mario Rossi',
-        email: 'mario@example.com',
-        pec: null,
-        status: 'sent',
-        downloadCount: 1,
-        lastDownloadedAt: '2026-07-01T10:00:00.000Z',
-      },
+    expect(result).toEqual({
+      hasExternalId: false,
+      rows: [
+        {
+          codiceFiscale: 'AAA1',
+          fullName: 'Mario Rossi',
+          email: 'mario@example.com',
+          pec: null,
+          status: 'sent',
+          downloadCount: 1,
+          lastDownloadedAt: '2026-07-01T10:00:00.000Z',
+          externalId: null,
+        },
+      ],
+    });
+  });
+
+  it('espone externalId risolto da resolveExternalId e imposta hasExternalId', async () => {
+    const recipientRepoMock = { find: jest.fn() };
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      providers: [
+        CampaignsService,
+        { provide: getRepositoryToken(Campaign), useValue: { findOneBy: jest.fn().mockResolvedValue({ id: 'c1', channelConfig: { csvMapping: { externalId: 'id_pratica' } } }) } },
+        { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
+        { provide: getRepositoryToken(NotificationAttempt), useValue: {} },
+        { provide: getRepositoryToken(DownloadEvent), useValue: {} },
+        { provide: NotificationQueuesService, useValue: {} },
+        { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
+        { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
+        { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
+      ],
+    }).compile();
+    const service = moduleRef.get(CampaignsService);
+
+    recipientRepoMock.find.mockResolvedValueOnce([
+      { codiceFiscale: 'AAA1', fullName: 'Mario Rossi', email: null, pec: null, status: RecipientStatus.SENT, downloadCount: 0, lastDownloadedAt: null, extraData: { id_pratica: 'X-1' } },
     ]);
+
+    const result = await service.getDownloadReportRows('c1');
+
+    expect(result.hasExternalId).toBe(true);
+    expect(result.rows[0].externalId).toBe('X-1');
   });
 });
 
@@ -2773,7 +2805,7 @@ describe('CampaignsService.getSendStatusBreakdown / getSendReportRows', () => {
   describe('getSendReportRows', () => {
     it('proietta IUN, domicilio digitale e storico dall\'ultimo attempt per destinatario', async () => {
       campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'SEND', channelConfig: {} });
-      recipientRepoMock.find.mockResolvedValue([{ id: 'r1', codiceFiscale: 'RSSMRA80A01H501U', fullName: 'Mario Rossi' }]);
+      recipientRepoMock.find.mockResolvedValue([{ id: 'r1', codiceFiscale: 'RSSMRA80A01H501U', fullName: 'Mario Rossi', extraData: {} }]);
       attemptRepoMock.find.mockResolvedValue([
         {
           recipientId: 'r1', attemptNumber: 1, iun: 'IUN-1', sendStatus: 'DELIVERED',
@@ -2789,6 +2821,7 @@ describe('CampaignsService.getSendStatusBreakdown / getSendReportRows', () => {
       const result = await service.getSendReportRows('c1');
 
       expect(result.hasAppIoCoDelivery).toBe(false);
+      expect(result.hasExternalId).toBe(false);
       expect(result.rows).toEqual([{
         codiceFiscale: 'RSSMRA80A01H501U',
         fullName: 'Mario Rossi',
@@ -2798,7 +2831,22 @@ describe('CampaignsService.getSendStatusBreakdown / getSendReportRows', () => {
         sendStatus: 'DELIVERED',
         sendStatusHistory: [{ status: 'ACCEPTED', activeFrom: '2026-01-10T10:00:00Z' }],
         appIoOutcome: null,
+        externalId: null,
       }]);
+    });
+
+    it('espone externalId risolto da resolveExternalId e imposta hasExternalId', async () => {
+      campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'SEND', channelConfig: { csvMapping: { externalId: 'id_pratica' } } });
+      recipientRepoMock.find.mockResolvedValue([{ id: 'r1', codiceFiscale: 'RSSMRA80A01H501U', fullName: 'Mario Rossi', extraData: { id_pratica: 'X-1' } }]);
+      attemptRepoMock.find.mockResolvedValue([]);
+
+      const moduleRef = await buildModule();
+      const service = moduleRef.get(CampaignsService);
+
+      const result = await service.getSendReportRows('c1');
+
+      expect(result.hasExternalId).toBe(true);
+      expect(result.rows[0].externalId).toBe('X-1');
     });
 
     it('include appIoOutcome solo se la campagna ha co-consegna App IO configurata', async () => {
@@ -2912,7 +2960,7 @@ describe('CampaignsService.getPostalStatusBreakdown / getPostalReportRows', () =
   describe('getPostalReportRows', () => {
     it('proietta IDPRO, storico ed errore dall\'ultimo attempt per destinatario', async () => {
       campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'POSTAL', channelConfig: {} });
-      recipientRepoMock.find.mockResolvedValue([{ id: 'r1', codiceFiscale: 'RSSMRA80A01H501U', fullName: 'Mario Rossi' }]);
+      recipientRepoMock.find.mockResolvedValue([{ id: 'r1', codiceFiscale: 'RSSMRA80A01H501U', fullName: 'Mario Rossi', extraData: {} }]);
       attemptRepoMock.find.mockResolvedValue([
         {
           recipientId: 'r1', attemptNumber: 1, postalTrackingId: 'IDPRO1', postalStatus: 'Consegnato',
@@ -2927,6 +2975,7 @@ describe('CampaignsService.getPostalStatusBreakdown / getPostalReportRows', () =
       const result = await service.getPostalReportRows('c1');
 
       expect(result.hasAppIoCoDelivery).toBe(false);
+      expect(result.hasExternalId).toBe(false);
       expect(result.rows).toEqual([{
         codiceFiscale: 'RSSMRA80A01H501U',
         fullName: 'Mario Rossi',
@@ -2936,7 +2985,22 @@ describe('CampaignsService.getPostalStatusBreakdown / getPostalReportRows', () =
         codiceErrore: '',
         descrizioneErrore: '',
         appIoOutcome: null,
+        externalId: null,
       }]);
+    });
+
+    it('espone externalId risolto da resolveExternalId e imposta hasExternalId', async () => {
+      campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'POSTAL', channelConfig: { csvMapping: { externalId: 'id_pratica' } } });
+      recipientRepoMock.find.mockResolvedValue([{ id: 'r1', codiceFiscale: 'RSSMRA80A01H501U', fullName: 'Mario Rossi', extraData: { id_pratica: 'X-1' } }]);
+      attemptRepoMock.find.mockResolvedValue([]);
+
+      const moduleRef = await buildModule();
+      const service = moduleRef.get(CampaignsService);
+
+      const result = await service.getPostalReportRows('c1');
+
+      expect(result.hasExternalId).toBe(true);
+      expect(result.rows[0].externalId).toBe('X-1');
     });
 
     it('include appIoOutcome solo se la campagna ha co-consegna App IO configurata', async () => {

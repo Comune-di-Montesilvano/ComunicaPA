@@ -100,6 +100,13 @@ export interface DownloadReportRowDto {
   status: string;
   downloadCount: number;
   lastDownloadedAt: string | null;
+  externalId: string | null;
+}
+
+export interface DownloadReportDto {
+  /** Determina se i CSV builder devono includere la colonna "External ID". */
+  hasExternalId: boolean;
+  rows: DownloadReportRowDto[];
 }
 
 export interface SendStatusBreakdownDto {
@@ -118,11 +125,14 @@ export interface SendReportRowDto {
   sendStatusHistory: Array<{ status: string; activeFrom: string }>;
   /** null se la campagna non ha co-consegna App IO configurata. */
   appIoOutcome: { success: boolean; error: string | null } | null;
+  externalId: string | null;
 }
 
 export interface SendReportDto {
   /** Determina se i CSV builder devono includere la colonna "Esito App IO". */
   hasAppIoCoDelivery: boolean;
+  /** Determina se i CSV builder devono includere la colonna "External ID". */
+  hasExternalId: boolean;
   rows: SendReportRowDto[];
 }
 
@@ -142,11 +152,14 @@ export interface PostalReportRowDto {
   descrizioneErrore: string | null;
   /** null se la campagna non ha co-consegna App IO configurata. */
   appIoOutcome: { success: boolean; error: string | null } | null;
+  externalId: string | null;
 }
 
 export interface PostalReportDto {
   /** Determina se i CSV builder devono includere la colonna "Esito App IO". */
   hasAppIoCoDelivery: boolean;
+  /** Determina se i CSV builder devono includere la colonna "External ID". */
+  hasExternalId: boolean;
   rows: PostalReportRowDto[];
 }
 

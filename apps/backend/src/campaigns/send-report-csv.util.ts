@@ -14,6 +14,7 @@ function appIoOutcomeLabel(outcome: SendReportRowDto['appIoOutcome']): string {
 export function buildSendReportAttualeCsv(report: SendReportDto): string {
   const headers = ['Codice Fiscale', 'Nominativo', 'IUN', 'Tipo Domicilio Digitale', 'Indirizzo Domicilio', 'Stato', 'Data Stato'];
   if (report.hasAppIoCoDelivery) headers.push('Esito App IO');
+  if (report.hasExternalId) headers.push('External ID');
 
   const lines = report.rows.map((r) => {
     // sendStatusHistory è ordinato cronologicamente (copia diretta di
@@ -29,6 +30,7 @@ export function buildSendReportAttualeCsv(report: SendReportDto): string {
       formatDate(latestEntry?.activeFrom),
     ];
     if (report.hasAppIoCoDelivery) fields.push(appIoOutcomeLabel(r.appIoOutcome));
+    if (report.hasExternalId) fields.push(r.externalId ?? '');
     return fields.map(escapeCsvField).join(';');
   });
 
@@ -41,6 +43,7 @@ export function buildSendReportStoricoCsv(report: SendReportDto): string {
     ...SEND_STATUS_HISTORY_COLUMNS.map((c) => c.header),
   ];
   if (report.hasAppIoCoDelivery) headers.push('Esito App IO');
+  if (report.hasExternalId) headers.push('External ID');
 
   const lines = report.rows.map((r) => {
     const historyByStatus = new Map(r.sendStatusHistory.map((h) => [h.status, h.activeFrom]));
@@ -53,6 +56,7 @@ export function buildSendReportStoricoCsv(report: SendReportDto): string {
       ...SEND_STATUS_HISTORY_COLUMNS.map((c) => formatDate(historyByStatus.get(c.status))),
     ];
     if (report.hasAppIoCoDelivery) fields.push(appIoOutcomeLabel(r.appIoOutcome));
+    if (report.hasExternalId) fields.push(r.externalId ?? '');
     return fields.map(escapeCsvField).join(';');
   });
 

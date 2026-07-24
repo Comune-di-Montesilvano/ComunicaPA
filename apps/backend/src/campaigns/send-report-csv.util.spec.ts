@@ -3,6 +3,7 @@ import type { SendReportDto } from './dto/campaign-stats.dto';
 
 const baseReport: SendReportDto = {
   hasAppIoCoDelivery: false,
+  hasExternalId: false,
   rows: [{
     codiceFiscale: 'RSSMRA80A01H501U',
     fullName: 'Mario Rossi',
@@ -15,6 +16,7 @@ const baseReport: SendReportDto = {
       { status: 'DELIVERED', activeFrom: '2026-01-12T09:00:00Z' },
     ],
     appIoOutcome: null,
+    externalId: null,
   }],
 };
 
@@ -30,6 +32,7 @@ describe('buildSendReportAttualeCsv', () => {
   it('aggiunge la colonna Esito App IO solo se hasAppIoCoDelivery', () => {
     const report: SendReportDto = {
       hasAppIoCoDelivery: true,
+      hasExternalId: false,
       rows: [{ ...baseReport.rows[0], appIoOutcome: { success: true, error: null } }],
     };
     const csv = buildSendReportAttualeCsv(report);
@@ -41,10 +44,23 @@ describe('buildSendReportAttualeCsv', () => {
   it('mostra "Fallito: <errore>" per esito App IO negativo', () => {
     const report: SendReportDto = {
       hasAppIoCoDelivery: true,
+      hasExternalId: false,
       rows: [{ ...baseReport.rows[0], appIoOutcome: { success: false, error: 'servizio non attivo' } }],
     };
     const csv = buildSendReportAttualeCsv(report);
     expect(csv.split('\n')[1]).toContain('Fallito: servizio non attivo');
+  });
+
+  it('aggiunge la colonna External ID in coda quando hasExternalId è true', () => {
+    const report: SendReportDto = {
+      hasAppIoCoDelivery: false,
+      hasExternalId: true,
+      rows: [{ ...baseReport.rows[0], externalId: '5890000000049995' }],
+    };
+    const csv = buildSendReportAttualeCsv(report);
+    const lines = csv.split('\n');
+    expect(lines[0]).toContain('"External ID"');
+    expect(lines[1]).toContain('"5890000000049995"');
   });
 });
 
