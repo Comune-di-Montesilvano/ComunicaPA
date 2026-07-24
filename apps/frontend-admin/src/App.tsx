@@ -1248,6 +1248,7 @@ export function App(): React.JSX.Element {
     email: '',
     pec: '',
     subject: '',
+    externalId: '',
   });
   const [wizAttachments, setWizAttachments] = useState<Array<{ key: string; label: string; labelColumn?: string }>>([]);
   // Mappatura colonna→campo e colonne allegato salvate su una campagna sorgente
@@ -4316,6 +4317,7 @@ export function App(): React.JSX.Element {
         email: '',
         pec: '',
         subject: '',
+        externalId: '',
       };
       headers.forEach(h => {
         const hLower = h.toLowerCase().replace(/[\s_-]/g, '');
@@ -4329,6 +4331,7 @@ export function App(): React.JSX.Element {
         }
         else if (hLower === 'email' || hLower === 'mail') newMapping.email = h;
         else if (hLower === 'pec') newMapping.pec = h;
+        else if (hLower === 'externalid') newMapping.externalId = h;
       });
 
       // Se stiamo duplicando/riprendendo una campagna e il CSV ricaricato ha le
@@ -4741,6 +4744,7 @@ export function App(): React.JSX.Element {
       email: '',
       pec: '',
       subject: '',
+      externalId: '',
     });
     setWizAttachments([]);
     setWizValidationErrors([]);
@@ -8041,7 +8045,7 @@ export function App(): React.JSX.Element {
                             setWizCsvFile(null);
                             setWizCsvHeaders([]);
                             setWizCsvRows([]);
-                            setWizMapping({ codice_fiscale: '', full_name: '', full_name_2: '', email: '', pec: '', subject: '' });
+                            setWizMapping({ codice_fiscale: '', full_name: '', full_name_2: '', email: '', pec: '', subject: '', externalId: '' });
                             setWizAttachments([]);
                             const input = document.getElementById('wiz_csv_input') as HTMLInputElement;
                             if (input) input.value = '';
@@ -8210,6 +8214,19 @@ export function App(): React.JSX.Element {
                         <div className="form-text small text-muted">Se una riga ha questa colonna vuota, viene usato l'Oggetto generico del Passo 4.</div>
                       </div>
                     )}
+
+                    <div className="col-md-6">
+                      <label className="form-label small fw-semibold text-muted">External ID (Opzionale)</label>
+                      <select
+                        className="form-select form-select-sm"
+                        value={wizMapping.externalId}
+                        onChange={e => handleWizMappingChange('externalId', e.target.value)}
+                      >
+                        <option value="">-- Nessuna colonna (o auto-rilevata da tracciato arricchito) --</option>
+                        {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
+                      </select>
+                      <div className="form-text small text-muted">Identificativo custom mostrato negli export (es. OCR notifica). Se il CSV ha una colonna "external_id" viene rilevata automaticamente.</div>
+                    </div>
 
                     <div className="col-12">
                       <label className="form-label small fw-semibold text-muted">
@@ -8704,6 +8721,7 @@ export function App(): React.JSX.Element {
                                   h === wizMapping.email ||
                                   h === wizMapping.pec ||
                                   h === wizMapping.subject ||
+                                  h === wizMapping.externalId ||
                                   (wizPaymentEnabled && (
                                     h === wizPaymentNoticeCol ||
                                     h === wizPaymentAmountCol ||
