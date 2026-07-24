@@ -133,4 +133,63 @@ describe('PecStrategy', () => {
 
     expect(resolveForSend).toHaveBeenCalledWith('PEC', 'pec-config-id');
   });
+
+  it('send() con protocolla=true rimuove il placeholder %%protocollo%% ridondante dall\'oggetto', async () => {
+    const recipient = {
+      pec: 'luca@pec.it', email: null, fullName: 'Luca', codiceFiscale: 'CF1',
+      protocolNumber: '47509/2026',
+    };
+    const campaign = {
+      name: 'T',
+      channelConfig: { subject: 'Avviso rif. %%protocollo%% per {{fullName}}', body: 'B', protocolla: true },
+    };
+
+    await strategy.send(recipient as never, campaign as never);
+
+    const sentSubject = mockSendMail.mock.calls[0][0].subject;
+    expect(sentSubject).not.toContain('47509/2026');
+    expect(sentSubject).toBe('Avviso rif.  per Luca [Protocollo N.ro 2026-PROT-47509]');
+  });
+
+  it('send() con protocolla=true e protocolNumber appende il tag protocollo in fondo all\'oggetto', async () => {
+    const recipient = {
+      pec: 'luca@pec.it', email: null, fullName: 'Luca', codiceFiscale: 'CF1',
+      protocolNumber: '47509/2026',
+    };
+    const campaign = {
+      name: 'T',
+      channelConfig: { subject: 'Avviso TARI', body: 'B', protocolla: true },
+    };
+
+    await strategy.send(recipient as never, campaign as never);
+
+    expect(mockSendMail).toHaveBeenCalledWith(
+      expect.objectContaining({ subject: 'Avviso TARI [Protocollo N.ro 2026-PROT-47509]' }),
+    );
+  });
+
+  it('send() con protocolla=true ma senza protocolNumber non aggiunge alcun tag e non blocca l\'invio', async () => {
+    const recipient = { pec: 'luca@pec.it', email: null, fullName: 'Luca', codiceFiscale: 'CF1' };
+    const campaign = {
+      name: 'T',
+      channelConfig: { subject: 'Avviso TARI', body: 'B', protocolla: true },
+    };
+
+    const result = await strategy.send(recipient as never, campaign as never);
+
+    expect(mockSendMail).toHaveBeenCalledWith(expect.objectContaining({ subject: 'Avviso TARI' }));
+    expect(result.messageId).toBe('pec-001');
+  });
+
+  it('send() con protocolla assente non aggiunge alcun tag (comportamento invariato)', async () => {
+    const recipient = {
+      pec: 'luca@pec.it', email: null, fullName: 'Luca', codiceFiscale: 'CF1',
+      protocolNumber: '47509/2026',
+    };
+    const campaign = { name: 'T', channelConfig: { subject: 'Avviso TARI', body: 'B' } };
+
+    await strategy.send(recipient as never, campaign as never);
+
+    expect(mockSendMail).toHaveBeenCalledWith(expect.objectContaining({ subject: 'Avviso TARI' }));
+  });
 });

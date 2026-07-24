@@ -52,12 +52,28 @@ export class PecStrategy implements IChannelStrategy {
       : null;
     const portalUrl = (await this.settings.get<string>('system.citizenPublicUrl')) || null;
 
-    const subjectTemplate = (campaign.channelConfig?.['subject'] as string) || 'Notifica PEC ComunicaPA';
+    const protocollaAttiva = campaign.channelConfig?.['protocolla'] === true;
+    let subjectTemplate = (campaign.channelConfig?.['subject'] as string) || 'Notifica PEC ComunicaPA';
+    if (protocollaAttiva) {
+      // Placeholder manuale ridondante: il tag protocollo viene aggiunto
+      // automaticamente in fondo all'oggetto più sotto (dopo processTemplate).
+      subjectTemplate = subjectTemplate.replace(
+        /%%(numero_protocollo|numeroprotocollo|protocollo|protocol_number)%%/gi,
+        '',
+      );
+    }
     const bodyTemplate = (campaign.channelConfig?.['body'] as string) || 'Hai ricevuto una nuova notifica PEC.';
     const attachmentLabels = resolveAttachmentsConfig(campaign.channelConfig).map((a) => resolveAttachmentLabel(a, recipient));
 
     // Process templates
-    const subject = processTemplate(subjectTemplate, recipient, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, 'html', 'PEC');
+    let subject = processTemplate(subjectTemplate, recipient, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, 'html', 'PEC');
+    if (protocollaAttiva) {
+      const protocolNumber = (recipient as any).protocolNumber as string | undefined;
+      if (protocolNumber) {
+        const [numero, anno] = protocolNumber.split('/');
+        subject = `${subject} [Protocollo N.ro ${anno}-PROT-${numero}]`;
+      }
+    }
     const bodyText = processTemplate(bodyTemplate, recipient, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, 'html', 'PEC');
     const bodyHtml = wrapInHtmlLayout(bodyText, brandName, { logoUrl, portalUrl });
 
