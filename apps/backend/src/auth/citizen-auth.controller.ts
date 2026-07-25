@@ -1,5 +1,5 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, Res } from '@nestjs/common';
-import type { Response } from 'express';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, Res } from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { OidcFlowService } from './oidc/oidc-flow.service';
@@ -29,14 +29,41 @@ export class CitizenAuthController {
   @Public()
   @Get('oidc/start')
   async oidcStart(@Res() res: Response): Promise<void> {
-    res.redirect(await this.oidcFlow.buildAuthorizationUrl());
+    const { url, state } = await this.oidcFlow.buildAuthorizationUrl();
+    res.cookie('oidc_state', state, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+      maxAge: 300 * 1000,
+    });
+    res.redirect(url);
   }
 
   @Public()
   @Post('oidc/callback')
   @HttpCode(HttpStatus.OK)
-  oidcCallback(@Body() dto: OidcCallbackDto): Promise<{ access_token: string; claims?: { cf: string; name: string; provider: string } }> {
-    return this.oidcFlow.exchangeCode(dto.code, dto.state);
+  async oidcCallback(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Body() dto: OidcCallbackDto,
+  ): Promise<{ access_token: string; claims?: { cf: string; name: string; provider: string } }> {
+    const cookieState = this.extractCookie(req, 'oidc_state');
+    res.clearCookie('oidc_state', { path: '/' });
+    return this.oidcFlow.exchangeCode(dto.code, dto.state, cookieState);
+  }
+
+  private extractCookie(req: Request, name: string): string | undefined {
+    const header = req.headers.cookie;
+    if (!header) return undefined;
+    const cookies = header.split(';').map((c) => c.trim());
+    for (const c of cookies) {
+      const [key, ...val] = c.split('=');
+      if (key === name) {
+        return decodeURIComponent(val.join('='));
+      }
+    }
+    return undefined;
   }
 
   /** Simulatore dev: attivo SOLO con LDAP_HOST=mock (vedi AuthService). */

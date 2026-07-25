@@ -50,7 +50,8 @@ describe('OidcFlowService', () => {
 
   it('buildAuthorizationUrl: usa la discovery, salva lo state e compone i parametri PKCE', async () => {
     mockDiscoveryOk();
-    const url = new URL(await service.buildAuthorizationUrl());
+    const { url: urlStr, state: returnedState } = await service.buildAuthorizationUrl();
+    const url = new URL(urlStr);
 
     expect(url.origin + url.pathname).toBe('https://sso.ente.it/oidc/auth');
     expect(url.searchParams.get('response_type')).toBe('code');
@@ -60,6 +61,7 @@ describe('OidcFlowService', () => {
     expect(url.searchParams.get('code_challenge')).toBeTruthy();
 
     const state = url.searchParams.get('state');
+    expect(state).toBe(returnedState);
     expect(redisMock.set).toHaveBeenCalledWith(
       `oidc:state:${state}`,
       expect.any(String),
@@ -70,7 +72,8 @@ describe('OidcFlowService', () => {
 
   it('buildAuthorizationUrl: discovery assente → fallback /authorize', async () => {
     fetchMock.mockResolvedValueOnce({ ok: false } as never);
-    const url = new URL(await service.buildAuthorizationUrl());
+    const { url: urlStr } = await service.buildAuthorizationUrl();
+    const url = new URL(urlStr);
     expect(url.pathname).toBe('/authorize');
   });
 
@@ -84,7 +87,7 @@ describe('OidcFlowService', () => {
     await expect(service.buildAuthorizationUrl()).rejects.toThrow(ServiceUnavailableException);
   });
 
-  it('exchangeCode: consuma lo state e restituisce id_token', async () => {
+  it('exchangeCode: consuma lo state e restituisce id_token se il cookie state corrisponde', async () => {
     redisMock.getdel.mockResolvedValueOnce('verifier-123');
     mockDiscoveryOk();
     fetchMock.mockResolvedValueOnce({
@@ -92,7 +95,7 @@ describe('OidcFlowService', () => {
       json: async () => ({ id_token: 'jwt.id.token', access_token: 'jwt.access' }),
     } as never);
 
-    const result = await service.exchangeCode('code-1', 'state-1');
+    const result = await service.exchangeCode('code-1', 'state-1', 'state-1');
     expect(result).toEqual({
       access_token: 'jwt.id.token',
       claims: {
@@ -111,6 +114,15 @@ describe('OidcFlowService', () => {
     expect(body.get('client_secret')).toBeNull();
   });
 
+  it('exchangeCode: 401 per CSRF se il cookie state è mancante o non corrisponde', async () => {
+    await expect(service.exchangeCode('code-1', 'state-1', undefined)).rejects.toThrow(
+      UnauthorizedException,
+    );
+    await expect(service.exchangeCode('code-1', 'state-1', 'different-state')).rejects.toThrow(
+      UnauthorizedException,
+    );
+  });
+
   it('exchangeCode: client_secret_basic quando il secret è configurato', async () => {
     values.set('oidc.clientSecret', 's3gr3t0');
     redisMock.getdel.mockResolvedValueOnce('verifier-123');
@@ -120,7 +132,7 @@ describe('OidcFlowService', () => {
       json: async () => ({ id_token: 'jwt.id.token' }),
     } as never);
 
-    await service.exchangeCode('code-1', 'state-1');
+    await service.exchangeCode('code-1', 'state-1', 'state-1');
     const [, options] = fetchMock.mock.calls[1];
     const body = options.body as URLSearchParams;
     // Secret nell'header Basic (unico metodo che tutti i provider devono supportare), mai nel body
@@ -131,7 +143,9 @@ describe('OidcFlowService', () => {
 
   it('exchangeCode: 401 con state sconosciuto/scaduto', async () => {
     redisMock.getdel.mockResolvedValueOnce(null);
-    await expect(service.exchangeCode('code-1', 'state-x')).rejects.toThrow(UnauthorizedException);
+    await expect(service.exchangeCode('code-1', 'state-x', 'state-x')).rejects.toThrow(
+      UnauthorizedException,
+    );
   });
 
   it('exchangeCode: 502 quando il token endpoint fallisce', async () => {
@@ -143,6 +157,8 @@ describe('OidcFlowService', () => {
       text: async () => 'invalid_grant',
     } as never);
 
-    await expect(service.exchangeCode('code-1', 'state-1')).rejects.toThrow(BadGatewayException);
+    await expect(service.exchangeCode('code-1', 'state-1', 'state-1')).rejects.toThrow(
+      BadGatewayException,
+    );
   });
 });

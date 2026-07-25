@@ -54,8 +54,8 @@ export class OidcFlowService implements OnModuleDestroy {
     await this.redis.quit().catch(() => undefined);
   }
 
-  /** Costruisce l'URL di authorize e registra state+verifier su Redis. */
-  async buildAuthorizationUrl(): Promise<string> {
+  /** Costruisce l'URL di authorize e registra state+verifier su Redis. Restituisce anche lo state per il cookie HTTP-Only anti-CSRF. */
+  async buildAuthorizationUrl(): Promise<{ url: string; state: string }> {
     const { issuer, clientId, redirectUri } = await this.requireConfig();
     const endpoints = await this.discoverEndpoints(issuer);
 
@@ -73,18 +73,25 @@ export class OidcFlowService implements OnModuleDestroy {
     url.searchParams.set('state', state);
     url.searchParams.set('code_challenge', challenge);
     url.searchParams.set('code_challenge_method', 'S256');
-    return url.toString();
+    return { url: url.toString(), state };
   }
 
   async exchangeCode(
     code: string,
     state: string,
+    cookieState?: string,
   ): Promise<{
     access_token: string;
     claims?: { cf: string; name: string; provider: string };
   }> {
     if (!code || !state) {
       throw new UnauthorizedException('code e state richiesti');
+    }
+
+    if (!cookieState || cookieState !== state) {
+      throw new UnauthorizedException(
+        'Sessione di login non valida o CSRF rilevato: lo state non corrisponde al cookie di sessione',
+      );
     }
 
     const verifier = await this.redis.getdel(`oidc:state:${state}`);
