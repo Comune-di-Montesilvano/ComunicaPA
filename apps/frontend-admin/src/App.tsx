@@ -1620,6 +1620,7 @@ export function App(): React.JSX.Element {
   const [settProtoCodiceAmministrazione, setSettProtoCodiceAmministrazione] = useState('1');
   const [settProtoUnitaOrganizzativa, setSettProtoUnitaOrganizzativa] = useState('1');
   const [settProtoMittenteDenominazione, setSettProtoMittenteDenominazione] = useState('');
+  const [settProtoTimeoutMs, setSettProtoTimeoutMs] = useState('120000');
 
 
   const [activeSettingsTab, setActiveSettingsTab] = useState<'personalizzazione' | 'smtp' | 'pec' | 'app-io' | 'pdnd' | 'send' | 'inad' | 'inipec' | 'anpr' | 'protocollo' | 'postalizzazione' | 'oidc' | 'motori'>('personalizzazione');
@@ -1871,6 +1872,7 @@ export function App(): React.JSX.Element {
         setSettProtoCodiceAmministrazione(String(s['protocollo.codiceAmministrazione'] ?? '1'));
         setSettProtoUnitaOrganizzativa(String(s['protocollo.unitaOrganizzativa'] ?? '1'));
         setSettProtoMittenteDenominazione(String(s['protocollo.mittenteDenominazione'] ?? ''));
+        setSettProtoTimeoutMs(String(s['protocollo.timeoutMs'] ?? '120000'));
         setSettRetentionDays(String(s['retention.maxDays'] ?? '90'));
         setSettEnrichmentRetentionDays(String(s['enrichment.retentionDays'] ?? '30'));
         setSettOidcIssuer(String(s['oidc.issuer'] ?? ''));
@@ -2829,6 +2831,7 @@ export function App(): React.JSX.Element {
     'protocollo.codiceAmministrazione': settProtoCodiceAmministrazione,
     'protocollo.unitaOrganizzativa': settProtoUnitaOrganizzativa,
     'protocollo.mittenteDenominazione': settProtoMittenteDenominazione,
+    'protocollo.timeoutMs': Number(settProtoTimeoutMs) || 120000,
     'retention.maxDays': Number(settRetentionDays) || 90,
     'enrichment.retentionDays': Number(settEnrichmentRetentionDays) || 30,
     'oidc.issuer': settOidcIssuer,

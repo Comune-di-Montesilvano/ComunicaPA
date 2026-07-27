@@ -11,6 +11,7 @@ interface ProtocolloConfig {
   codiceAmministrazione: string;
   unitaOrganizzativa: string;
   mittenteDenominazione: string;
+  timeoutMs: number;
 }
 
 function xmlEscape(value: string): string {
@@ -57,7 +58,17 @@ export class ProtocolloService {
   constructor(private readonly settings: AppSettingsService) {}
 
   private async getConfig(): Promise<ProtocolloConfig> {
-    const [baseUrl, codiceEnte, username, password, codiceTitolario, codiceAmministrazione, unitaOrganizzativa, mittenteDenominazione] = await Promise.all([
+    const [
+      baseUrl,
+      codiceEnte,
+      username,
+      password,
+      codiceTitolario,
+      codiceAmministrazione,
+      unitaOrganizzativa,
+      mittenteDenominazione,
+      timeoutSetting,
+    ] = await Promise.all([
       this.settings.get<string>('protocollo.baseUrl' as SettingKey),
       this.settings.get<string>('protocollo.codiceEnte' as SettingKey),
       this.settings.get<string>('protocollo.username' as SettingKey),
@@ -66,6 +77,7 @@ export class ProtocolloService {
       this.settings.get<string>('protocollo.codiceAmministrazione' as SettingKey),
       this.settings.get<string>('protocollo.unitaOrganizzativa' as SettingKey),
       this.settings.get<string>('protocollo.mittenteDenominazione' as SettingKey),
+      this.settings.get<number>('protocollo.timeoutMs' as SettingKey).catch(() => null),
     ]);
     const missing = Object.entries({ baseUrl, codiceEnte, username, password })
       .filter(([, v]) => !v)
@@ -73,7 +85,8 @@ export class ProtocolloService {
     if (missing.length > 0) {
       throw new Error(`Configurazione Protocollo incompleta: mancano ${missing.join(', ')}`);
     }
-    return { baseUrl, codiceEnte, username, password, codiceTitolario, codiceAmministrazione, unitaOrganizzativa, mittenteDenominazione };
+    const timeoutMs = typeof timeoutSetting === 'number' && timeoutSetting > 0 ? timeoutSetting : 120000;
+    return { baseUrl, codiceEnte, username, password, codiceTitolario, codiceAmministrazione, unitaOrganizzativa, mittenteDenominazione, timeoutMs };
   }
 
   /** Il WSDL espone il servizio su /soap/DOCAREAProto: l'utente configura solo l'host. */
@@ -81,21 +94,51 @@ export class ProtocolloService {
     return `${baseUrl.replace(/\/$/, '')}/soap/DOCAREAProto`;
   }
 
-  private async soapCall(baseUrl: string, soapAction: string, body: string): Promise<string> {
+  private async soapCall(baseUrl: string, soapAction: string, body: string, timeoutMs = 120000, maxRetries = 2): Promise<string> {
     const envelope = `<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap:Body>${body}</soap:Body></soap:Envelope>`;
-    const response = await fetch(this.serviceUrl(baseUrl), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'text/xml; charset=utf-8',
-        SOAPAction: `"http://tempuri.org/#${soapAction}"`,
-      },
-      body: envelope,
-    });
-    const text = await response.text();
-    if (!response.ok) {
-      throw new Error(`Chiamata Protocollo (${soapAction}) fallita: HTTP ${response.status} — ${text.slice(0, 500)}`);
+    const url = this.serviceUrl(baseUrl);
+
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      if (attempt > 0) {
+        this.logger.warn(`Tentativo ${attempt}/${maxRetries} per chiamare Protocollo SOAP ${soapAction}...`);
+        await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+      }
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'text/xml; charset=utf-8',
+            SOAPAction: `"http://tempuri.org/#${soapAction}"`,
+          },
+          body: envelope,
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+
+        const text = await response.text();
+        if (!response.ok) {
+          const cleanText = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
+          const err = new Error(`Chiamata Protocollo (${soapAction}) fallita: HTTP ${response.status} — ${cleanText}`);
+          if ([500, 502, 503, 504].includes(response.status) && attempt < maxRetries) {
+            this.logger.warn(`HTTP ${response.status} durante ${soapAction} (proxy/server temporaneamente non disponibile). Eseguo retry...`);
+            lastError = err;
+            continue;
+          }
+          throw err;
+        }
+        return text;
+      } catch (err: any) {
+        const isAbort = err.name === 'TimeoutError' || err.name === 'AbortError' || err.message?.includes('timeout');
+        const isNetworkErr = err.code === 'ECONNRESET' || err.code === 'ETIMEDOUT' || err.code === 'ECONNREFUSED';
+        if ((isAbort || isNetworkErr) && attempt < maxRetries) {
+          this.logger.warn(`Errore di connessione/timeout (${err.message}) durante ${soapAction}. Eseguo retry...`);
+          lastError = err;
+          continue;
+        }
+        throw err;
+      }
     }
-    return text;
+    throw lastError || new Error(`Chiamata Protocollo (${soapAction}) fallita dopo ${maxRetries} tentativi.`);
   }
 
   /** Esegue il login (o riusa il DST in cache) e ritorna il token di sessione. */
@@ -105,7 +148,7 @@ export class ProtocolloService {
     }
     const config = await this.getConfig();
     const body = `<Login xmlns="http://tempuri.org/"><CodiceEnte>${xmlEscape(config.codiceEnte)}</CodiceEnte><Username>${xmlEscape(config.username)}</Username><UserPassword>${xmlEscape(config.password)}</UserPassword></Login>`;
-    const responseXml = await this.soapCall(config.baseUrl, 'Login', body);
+    const responseXml = await this.soapCall(config.baseUrl, 'Login', body, config.timeoutMs);
 
     const errNumber = extractTag(responseXml, 'IngErrNumber');
     const errString = extractTag(responseXml, 'strErrString');
@@ -124,7 +167,7 @@ export class ProtocolloService {
   private async inserimento(config: ProtocolloConfig, dst: string, fileBuffer: Buffer): Promise<number> {
     const base64 = fileBuffer.toString('base64');
     const body = `<Inserimento xmlns="http://tempuri.org/"><Username>${xmlEscape(config.username)}</Username><DSTLogin>${xmlEscape(dst)}</DSTLogin><FileBinario>${base64}</FileBinario></Inserimento>`;
-    const responseXml = await this.soapCall(config.baseUrl, 'Inserimento', body);
+    const responseXml = await this.soapCall(config.baseUrl, 'Inserimento', body, config.timeoutMs);
 
     const errNumber = extractTag(responseXml, 'IngErrNumber');
     const errString = extractTag(responseXml, 'strErrString');
@@ -155,7 +198,7 @@ export class ProtocolloService {
   private async protocollazione(config: ProtocolloConfig, dst: string, segnaturaXml: string): Promise<ProtocollaResult> {
     const base64 = Buffer.from(segnaturaXml, 'utf-8').toString('base64');
     const body = `<Protocollazione xmlns="http://tempuri.org/"><Username>${xmlEscape(config.username)}</Username><DSTLogin>${xmlEscape(dst)}</DSTLogin><FileXML>${base64}</FileXML></Protocollazione>`;
-    const responseXml = await this.soapCall(config.baseUrl, 'Protocollazione', body);
+    const responseXml = await this.soapCall(config.baseUrl, 'Protocollazione', body, config.timeoutMs);
 
     const errNumber = extractTag(responseXml, 'IngErrNumber');
     const errString = extractTag(responseXml, 'strErrString');

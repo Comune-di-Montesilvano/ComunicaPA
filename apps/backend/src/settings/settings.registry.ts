@@ -99,6 +99,7 @@ export const SETTING_DEFS = {
   'protocollo.codiceAmministrazione': { type: 'string', default: '1' },
   'protocollo.unitaOrganizzativa': { type: 'string', default: '1' },
   'protocollo.mittenteDenominazione': { type: 'string', default: '' },
+  'protocollo.timeoutMs': { type: 'number', default: 120000 },
 
   // Postalizzazione (GlobalCom e futuri provider): NON qui — vive nella
   // tabella dedicata postal_provider_configs (multi-provider, come

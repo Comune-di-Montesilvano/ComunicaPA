@@ -209,4 +209,23 @@ describe('ProtocolloService', () => {
       documentFilename: 'x.pdf',
     })).rejects.toThrow(/Protocollazione fallita.*Classifica non valida/);
   });
+
+  it('riprova automaticamente se il proxy restituisce 502 Proxy Error e pulisce i tag HTML', async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 502,
+        text: () => Promise.resolve('<html><head><title>502 Proxy Error</title></head><body><h1>Proxy Error</h1><p>Error reading from remote server</p></body></html>'),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(soapEnvelope(
+          '<LoginResponse><return><strDST>dst-recovered</strDST><IngErrNumber>0</IngErrNumber><strErrString></strErrString></return></LoginResponse>',
+        )),
+      });
+
+    const dst = await service.login();
+    expect(dst).toBe('dst-recovered');
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
 });
