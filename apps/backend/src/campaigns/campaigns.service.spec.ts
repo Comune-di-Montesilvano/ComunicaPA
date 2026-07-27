@@ -1582,22 +1582,32 @@ describe('CampaignsService', () => {
       expect(mockCampaignRepo.delete).not.toHaveBeenCalled();
     });
 
-    it('blocca l\'eliminazione se la campagna è a valore legale (flag esplicito)', async () => {
-      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, id: 'c-legal', createdBy: 'op1', isLegalValue: true });
+    it('blocca l\'eliminazione se la campagna a valore legale è già stata avviata (status queued/completed)', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, id: 'c-legal', createdBy: 'op1', isLegalValue: true, status: CampaignStatus.QUEUED });
       await expect(service.remove('c-legal', ADMIN_REQUESTER)).rejects.toThrow('Campagna a valore legale');
       expect(mockCampaignRepo.delete).not.toHaveBeenCalled();
     });
 
-    it('blocca l\'eliminazione per canale SEND anche senza flag esplicito', async () => {
-      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, id: 'c-send', createdBy: 'op1', channelType: 'SEND' });
+    it('blocca l\'eliminazione per canale SEND se già avviata', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, id: 'c-send', createdBy: 'op1', channelType: 'SEND', status: CampaignStatus.QUEUED });
       await expect(service.remove('c-send', ADMIN_REQUESTER)).rejects.toThrow('Campagna a valore legale');
       expect(mockCampaignRepo.delete).not.toHaveBeenCalled();
     });
 
-    it('blocca l\'eliminazione per POSTAL con Servizio Agol', async () => {
-      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, id: 'c-agol', createdBy: 'op1', channelType: 'POSTAL', channelConfig: { postalServiceType: 'AgolMarket' } });
+    it('blocca l\'eliminazione per POSTAL Agol se già avviata', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, id: 'c-agol', createdBy: 'op1', channelType: 'POSTAL', channelConfig: { postalServiceType: 'AgolMarket' }, status: CampaignStatus.QUEUED });
       await expect(service.remove('c-agol', ADMIN_REQUESTER)).rejects.toThrow('Campagna a valore legale');
       expect(mockCampaignRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('consente l\'eliminazione di una campagna a valore legale se in stato bozza (DRAFT)', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, id: 'c-legal-draft', createdBy: 'op1', isLegalValue: true, status: CampaignStatus.DRAFT });
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce(null);
+      const rmSpy = jest.spyOn(fs.promises, 'rm').mockResolvedValue(undefined);
+
+      await expect(service.remove('c-legal-draft', ADMIN_REQUESTER)).resolves.toEqual({ deleted: true });
+
+      rmSpy.mockRestore();
     });
 
     it('non blocca l\'eliminazione per POSTAL con Servizio non-Agol', async () => {

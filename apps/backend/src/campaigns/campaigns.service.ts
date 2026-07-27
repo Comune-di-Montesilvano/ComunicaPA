@@ -853,88 +853,91 @@ export class CampaignsService {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
     this.assertOwnership(campaign, requester);
-    if (campaign.status !== CampaignStatus.QUEUED && campaign.status !== CampaignStatus.CHECKING_INAD) {
+    if (
+      campaign.status !== CampaignStatus.QUEUED &&
+      campaign.status !== CampaignStatus.CHECKING_INAD &&
+      campaign.status !== CampaignStatus.RUNNING
+    ) {
       throw new BadRequestException('Solo campagne in corso o in verifica INAD possono essere annullate');
     }
 
-    const queuedRecipients = await this.recipientRepo.find({
-      where: { campaignId, status: RecipientStatus.QUEUED },
-      select: ['id', 'extraData'],
+    const cancelableRecipients = await this.recipientRepo.find({
+      where: { campaignId, status: In([RecipientStatus.QUEUED, RecipientStatus.PENDING]) },
+      select: ['id', 'extraData', 'status'],
     });
-    const queuedById = new Map(queuedRecipients.map((r) => [r.id, r]));
+    const cancelableById = new Map(cancelableRecipients.map((r) => [r.id, r]));
 
     let cancelled = 0;
-    if (queuedRecipients.length > 0) {
-      const recipientIds = queuedRecipients.map((r) => r.id);
-      const liveAttempts = await this.attemptRepo.find({
-        where: { recipientId: In(recipientIds), status: AttemptStatus.QUEUED },
-      });
+    if (cancelableRecipients.length > 0) {
+      const queuedRecipients = cancelableRecipients.filter((r) => r.status !== RecipientStatus.PENDING);
+      const pendingRecipients = cancelableRecipients.filter((r) => r.status === RecipientStatus.PENDING);
 
-      let removedAttemptIds: string[];
-      let removedRecipientIds: string[];
+      let removedRecipientIds: string[] = [];
 
-      if (campaign.channelType === 'SEND') {
-        // SEND non passa da BullMQ: annulla tutti gli attempt ancora QUEUED
-        // (non protocollati, o protocollati ma non ancora inviati — in
-        // entrambi i casi lo status resta QUEUED finché SendDispatchService
-        // non lo marca SUCCESS/FAILED) con un update diretto su DB.
-        //
-        // `returning('id')` invece di un update() cieco: SendDispatchService
-        // gira in parallelo (cron) e può aver già marcato un attempt
-        // SUCCESS/FAILED tra la find() sopra e questo update — senza
-        // riportare quali id l'UPDATE ha davvero toccato, il recipient
-        // verrebbe comunque marcato CANCELLED anche se l'attempt è già
-        // stato inviato (recipient CANCELLED ma notifica reale spedita).
-        removedAttemptIds = [];
-        removedRecipientIds = [];
-        const candidateAttemptIds = liveAttempts.map((a) => a.id);
-        if (candidateAttemptIds.length > 0) {
-          const recipientByAttemptId = new Map(liveAttempts.map((a) => [a.id, a.recipientId]));
-          const updateResult = await this.attemptRepo
-            .createQueryBuilder()
-            .update(NotificationAttempt)
-            .set({ status: AttemptStatus.CANCELLED })
-            .where('id IN (:...ids) AND status = :status', {
-              ids: candidateAttemptIds,
-              status: AttemptStatus.QUEUED,
-            })
-            .returning('id')
-            .execute();
-          removedAttemptIds = (updateResult.raw as Array<{ id: string }>).map((row) => row.id);
-          removedRecipientIds = removedAttemptIds.map((id) => recipientByAttemptId.get(id)!);
+      if (queuedRecipients.length > 0) {
+        const queuedRecipientIds = queuedRecipients.map((r) => r.id);
+        const liveAttempts = await this.attemptRepo.find({
+          where: { recipientId: In(queuedRecipientIds), status: AttemptStatus.QUEUED },
+        });
 
-          for (const removedId of removedAttemptIds) {
-            try {
-              const job = await this.notificationQueues.getJob('PROTOCOLLAZIONE', removedId);
-              if (job) await job.remove();
-            } catch (err) {
-              this.logger.warn(`Job protocollazione ${removedId} non rimosso: ${err instanceof Error ? err.message : err}`);
+        if (campaign.channelType === 'SEND') {
+          const candidateAttemptIds = liveAttempts.map((a) => a.id);
+          if (candidateAttemptIds.length > 0) {
+            const recipientByAttemptId = new Map(liveAttempts.map((a) => [a.id, a.recipientId]));
+            const updateResult = await this.attemptRepo
+              .createQueryBuilder()
+              .update(NotificationAttempt)
+              .set({ status: AttemptStatus.CANCELLED })
+              .where('id IN (:...ids) AND status = :status', {
+                ids: candidateAttemptIds,
+                status: AttemptStatus.QUEUED,
+              })
+              .returning('id')
+              .execute();
+            const removedAttemptIds = (updateResult.raw as Array<{ id: string }>).map((row) => row.id);
+            const queuedCancelledRecipientIds = removedAttemptIds.map((id) => recipientByAttemptId.get(id)!);
+            removedRecipientIds.push(...queuedCancelledRecipientIds);
+
+            for (const removedId of removedAttemptIds) {
+              try {
+                const job = await this.notificationQueues.getJob('PROTOCOLLAZIONE', removedId);
+                if (job) await job.remove();
+              } catch (err) {
+                this.logger.warn(`Job protocollazione ${removedId} non rimosso: ${err instanceof Error ? err.message : err}`);
+              }
             }
           }
-        }
-      } else {
-        removedAttemptIds = [];
-        removedRecipientIds = [];
-        for (const attempt of liveAttempts) {
-          const job = await this.notificationQueues.getJob(
-            campaign.channelType as Exclude<typeof campaign.channelType, 'SEND'>,
-            attempt.id,
-          );
-          if (!job) continue;
-          try {
-            await job.remove();
-            removedAttemptIds.push(attempt.id);
-            removedRecipientIds.push(attempt.recipientId);
-          } catch (err) {
-            this.logger.warn(
-              `Job ${attempt.id} non rimosso (probabilmente in elaborazione): ${err instanceof Error ? err.message : err}`,
+        } else {
+          const removedAttemptIds: string[] = [];
+          for (const attempt of liveAttempts) {
+            const job = await this.notificationQueues.getJob(
+              campaign.channelType as Exclude<typeof campaign.channelType, 'SEND'>,
+              attempt.id,
             );
+            if (!job) continue;
+            try {
+              await job.remove();
+              removedAttemptIds.push(attempt.id);
+              removedRecipientIds.push(attempt.recipientId);
+            } catch (err) {
+              this.logger.warn(
+                `Job ${attempt.id} non rimosso (probabilmente in elaborazione): ${err instanceof Error ? err.message : err}`,
+              );
+            }
+          }
+          if (removedAttemptIds.length > 0) {
+            await this.attemptRepo.update({ id: In(removedAttemptIds) }, { status: AttemptStatus.CANCELLED });
           }
         }
-        if (removedAttemptIds.length > 0) {
-          await this.attemptRepo.update({ id: In(removedAttemptIds) }, { status: AttemptStatus.CANCELLED });
-        }
       }
+
+      if (pendingRecipients.length > 0) {
+        const pendingIds = pendingRecipients.map((r) => r.id);
+        removedRecipientIds.push(...pendingIds);
+      }
+
+      // Deduplica gli ID per sicurezza
+      removedRecipientIds = Array.from(new Set(removedRecipientIds));
 
       if (removedRecipientIds.length > 0) {
         await this.recipientRepo.update({ id: In(removedRecipientIds) }, { status: RecipientStatus.CANCELLED });
@@ -946,7 +949,7 @@ export class CampaignsService {
         const totalSlots = Math.max(attachmentsConfig.length, 1);
         const dir = getUploadsDir(campaignId);
         for (const recipientId of removedRecipientIds) {
-          const recipient = queuedById.get(recipientId);
+          const recipient = cancelableById.get(recipientId);
           if (!recipient) continue;
           for (let index = 0; index < totalSlots; index++) {
             const filename = resolveCustomAttachmentFilename(
@@ -972,7 +975,7 @@ export class CampaignsService {
       .set({ status: CampaignStatus.CANCELLED, completedAt: new Date() })
       .where('id = :id AND status IN (:...statuses)', {
         id: campaignId,
-        statuses: [CampaignStatus.QUEUED, CampaignStatus.CHECKING_INAD],
+        statuses: [CampaignStatus.QUEUED, CampaignStatus.CHECKING_INAD, CampaignStatus.RUNNING],
       })
       .execute();
 
@@ -2089,8 +2092,8 @@ export class CampaignsService {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
     this.assertOwnership(campaign, requester);
-    if (isCampaignLegalValue(campaign)) {
-      throw new BadRequestException('Campagna a valore legale: eliminazione non consentita');
+    if (isCampaignLegalValue(campaign) && campaign.status !== CampaignStatus.DRAFT) {
+      throw new BadRequestException('Campagna a valore legale: eliminazione non consentita per campagne avviate');
     }
 
     const linkedTestCampaign = await this.campaignRepo.findOneBy({ parentCampaignId: campaignId, isTest: true });

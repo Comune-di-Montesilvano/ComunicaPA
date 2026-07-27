@@ -6910,8 +6910,8 @@ export function App(): React.JSX.Element {
                                         <button
                                           type="button"
                                           className="btn btn-sm btn-outline-danger d-flex align-items-center gap-1"
-                                          disabled={campaignIsLegalValue(c)}
-                                          title={campaignIsLegalValue(c) ? 'Campagna a valore legale: non eliminabile' : 'Elimina campagna definitivamente'}
+                                          disabled={campaignIsLegalValue(c) && c.status !== 'draft'}
+                                          title={campaignIsLegalValue(c) && c.status !== 'draft' ? 'Campagna a valore legale: non eliminabile dopo l\'avvio' : 'Elimina campagna definitivamente'}
                                           onClick={() => handleDeleteCampaign(c.id, c.name)}
                                         >
                                           <Trash2 /> Elimina
@@ -12942,7 +12942,7 @@ export function App(): React.JSX.Element {
                           <div>
                             {campaignIsLegalValue(campaign) ? (
                               <span className="badge bg-primary d-inline-flex align-items-center gap-1">
-                                <ShieldCheck size={14} /> Campagna a valore legale — non eliminabile
+                                <ShieldCheck size={14} /> {campaign.status === 'draft' ? 'Campagna a valore legale (Bozza)' : 'Campagna a valore legale — non eliminabile'}
                               </span>
                             ) : campaign.attachmentExpiresAt ? (
                               <span className="badge bg-secondary d-inline-flex align-items-center gap-1" title="Data in cui gli allegati verranno eliminati dalla retention automatica">
@@ -13164,8 +13164,8 @@ export function App(): React.JSX.Element {
                           {(role === 'admin' || campaign.createdBy === username) && (
                             <button
                               className="btn btn-outline-danger w-100 py-2 fw-semibold mt-2"
-                              disabled={campaignIsLegalValue(campaign)}
-                              title={campaignIsLegalValue(campaign) ? 'Campagna a valore legale: non eliminabile' : undefined}
+                              disabled={campaignIsLegalValue(campaign) && campaign.status !== 'draft'}
+                              title={campaignIsLegalValue(campaign) && campaign.status !== 'draft' ? 'Campagna a valore legale: non eliminabile dopo l\'avvio' : undefined}
                               onClick={() => handleDeleteCampaign(campaign.id, campaign.name)}
                             >
                               <Trash2 className="me-2" />Elimina Campagna
