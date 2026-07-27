@@ -1202,23 +1202,44 @@ export class CampaignsService {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
-    // Nessun filtro su attempt.channel_type: un destinatario overridden da
-    // INAD ha channel_type diverso da campaign.channelType (es. PEC su
-    // campagna EMAIL) — filtrare per campaign.channelType lo escludeva
-    // silenziosamente da questo widget, facendolo sembrare "mai protocollato"
-    // anche quando lo era davvero (bug reale osservato in produzione).
-    const baseQb = () =>
-      this.attemptRepo
-        .createQueryBuilder('attempt')
-        .innerJoin('attempt.recipient', 'recipient')
-        .where('recipient.campaignId = :campaignId', { campaignId });
+    const recipients = await this.recipientRepo.find({ where: { campaignId }, select: ['id'] });
+    if (recipients.length === 0) {
+      return { queued: 0, protocollato: 0, inviato: 0, fallito: 0 };
+    }
 
-    const [queued, protocollato, inviato, fallito] = await Promise.all([
-      baseQb().andWhere('attempt.status = :status', { status: AttemptStatus.QUEUED }).andWhere('attempt.protocolled_at IS NULL').getCount(),
-      baseQb().andWhere('attempt.status = :status', { status: AttemptStatus.QUEUED }).andWhere('attempt.protocolled_at IS NOT NULL').getCount(),
-      baseQb().andWhere('attempt.status = :status', { status: AttemptStatus.SUCCESS }).getCount(),
-      baseQb().andWhere('attempt.status = :status', { status: AttemptStatus.FAILED }).getCount(),
-    ]);
+    const recipientIds = recipients.map((r) => r.id);
+    const attempts = await this.attemptRepo.find({
+      where: { recipientId: In(recipientIds) },
+      select: ['recipientId', 'attemptNumber', 'status', 'protocolledAt'],
+    });
+
+    const latestByRecipient = new Map<string, NotificationAttempt>();
+    for (const a of attempts) {
+      const current = latestByRecipient.get(a.recipientId);
+      if (!current || a.attemptNumber > current.attemptNumber) {
+        latestByRecipient.set(a.recipientId, a);
+      }
+    }
+
+    let queued = 0;
+    let protocollato = 0;
+    let inviato = 0;
+    let fallito = 0;
+
+    for (const r of recipients) {
+      const latest = latestByRecipient.get(r.id);
+      if (!latest) {
+        queued += 1;
+      } else if (latest.status === AttemptStatus.FAILED) {
+        fallito += 1;
+      } else if (latest.status === AttemptStatus.SUCCESS) {
+        inviato += 1;
+      } else if (latest.status === AttemptStatus.QUEUED && latest.protocolledAt) {
+        protocollato += 1;
+      } else {
+        queued += 1;
+      }
+    }
 
     return { queued, protocollato, inviato, fallito };
   }

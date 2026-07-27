@@ -2578,6 +2578,23 @@ export function App(): React.JSX.Element {
 
   const MAX_BULK_RETRY_SIZE = 500;
 
+  const refreshCampaignAllDetails = async (id: string) => {
+    await Promise.all([
+      fetchCampaignDetail(id),
+      fetchCampaigns(),
+      fetchFailureGroups(id),
+      fetchChannelBreakdown(id),
+      fetchEffectiveChannelBreakdown(id),
+      fetchCampaignSendStageCounts(id),
+      fetchSendStatusBreakdown(id),
+      fetchPostalStatusBreakdown(id),
+      fetchCampaignCost(id),
+      fetchCampaignCostSavings(id),
+      fetchDownloadCombinationStats(id),
+      fetchRecipientsPage(id, recipientsPageNum, recipientsSearch),
+    ]);
+  };
+
   const handleRetryGroup = async (group: { errorMessage: string; recipientIds: string[] }) => {
     if (!selectedCampaignId) return;
     if (group.recipientIds.length > MAX_BULK_RETRY_SIZE) {
@@ -2595,8 +2612,7 @@ export function App(): React.JSX.Element {
       if (!res.ok) throw new Error('Errore durante la rimessa in coda dei destinatari.');
       const result = await res.json();
       alert(`${result.requeued} destinatari rimessi in coda${result.failed.length > 0 ? `, ${result.failed.length} non ritentabili` : ''}`);
-      await fetchFailureGroups(selectedCampaignId);
-      await fetchCampaignDetail(selectedCampaignId);
+      await refreshCampaignAllDetails(selectedCampaignId);
     } catch (err: any) {
       if (err instanceof ApiAuthError) return;
       alert(err.message);

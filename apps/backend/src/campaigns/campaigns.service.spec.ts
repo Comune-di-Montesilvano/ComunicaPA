@@ -1886,45 +1886,25 @@ describe('CampaignsService', () => {
   });
 
   describe('CampaignsService.getSendStageCounts', () => {
-    it('conta gli attempt SEND per stadio, filtrati per campagna', async () => {
+    it('calcola gli stadi basandosi sull\'ultimo attempt per ciascun destinatario', async () => {
       mockCampaignRepo.findOneBy.mockResolvedValueOnce({ id: 'camp-1', channelType: 'SEND' });
-      const mockQb = {
-        innerJoin: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        getCount: jest.fn()
-          .mockResolvedValueOnce(3)  // queued (non protocollato)
-          .mockResolvedValueOnce(2)  // protocollato non inviato
-          .mockResolvedValueOnce(10) // inviato
-          .mockResolvedValueOnce(1), // fallito
-      };
-      mockAttemptRepo.createQueryBuilder.mockReturnValue(mockQb);
+      mockRecipientRepo.find.mockResolvedValueOnce([{ id: 'r1' }, { id: 'r2' }, { id: 'r3' }, { id: 'r4' }]);
+      mockAttemptRepo.find.mockResolvedValueOnce([
+        { recipientId: 'r1', attemptNumber: 1, status: AttemptStatus.FAILED, protocolledAt: null },
+        { recipientId: 'r1', attemptNumber: 2, status: AttemptStatus.FAILED, protocolledAt: null },
+        { recipientId: 'r2', attemptNumber: 1, status: AttemptStatus.QUEUED, protocolledAt: new Date() },
+        { recipientId: 'r3', attemptNumber: 1, status: AttemptStatus.SUCCESS, protocolledAt: new Date() },
+        { recipientId: 'r4', attemptNumber: 1, status: AttemptStatus.QUEUED, protocolledAt: null },
+      ]);
 
       const result = await service.getSendStageCounts('camp-1');
 
-      expect(result).toEqual({ queued: 3, protocollato: 2, inviato: 10, fallito: 1 });
+      expect(result).toEqual({ queued: 1, protocollato: 1, inviato: 1, fallito: 1 });
     });
 
     it('lancia NotFoundException se la campagna non esiste', async () => {
       mockCampaignRepo.findOneBy.mockResolvedValueOnce(null);
       await expect(service.getSendStageCounts('camp-inesistente')).rejects.toThrow(NotFoundException);
-    });
-
-    it('non filtra per channel_type — include anche i destinatari overridden da INAD (canale diverso da quello di campagna)', async () => {
-      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ id: 'camp-1', channelType: 'EMAIL' });
-      const andWhereCalls: any[] = [];
-      const mockQb = {
-        innerJoin: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockImplementation((...args) => { andWhereCalls.push(args); return mockQb; }),
-        getCount: jest.fn().mockResolvedValue(0),
-      };
-      mockAttemptRepo.createQueryBuilder.mockReturnValue(mockQb);
-
-      await service.getSendStageCounts('camp-1');
-
-      const filtersOnChannelType = andWhereCalls.some(([sql]) => typeof sql === 'string' && sql.includes('channel_type'));
-      expect(filtersOnChannelType).toBe(false);
     });
   });
 
