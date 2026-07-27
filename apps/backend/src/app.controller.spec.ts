@@ -9,8 +9,9 @@ describe('AppController — version', () => {
     delete process.env['LDAP_HOST'];
   });
 
-  it('senza APP_VERSION → dev', () => {
-    expect(controller.getVersion()).toEqual({ version: 'dev', isLdapMock: false });
+  it('senza APP_VERSION → versione da publiccode.yml o dev', () => {
+    expect(controller.getVersion().version).toBeTruthy();
+    expect(controller.getVersion().isLdapMock).toBe(false);
   });
 
   it('con APP_VERSION → valore iniettato', () => {
@@ -20,6 +21,6 @@ describe('AppController — version', () => {
 
   it('con LDAP_HOST=mock → isLdapMock: true', () => {
     process.env['LDAP_HOST'] = 'mock';
-    expect(controller.getVersion()).toEqual({ version: 'dev', isLdapMock: true });
+    expect(controller.getVersion().isLdapMock).toBe(true);
   });
 });

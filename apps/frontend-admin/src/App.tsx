@@ -877,7 +877,17 @@ const EMPTY_POSTAL_PROVIDER: Omit<PostalProviderItem, 'id' | 'testedAt' | 'activ
   mittenteCitta: '', mittenteProvincia: '',
 };
 
-const PIE_COLORS = ['var(--bi-navy)', 'var(--ms-purple-600)', 'var(--ms-gold-500)', 'var(--ms-green-600)', 'var(--bi-primary)'];
+function isJwtExpired(tokenStr: string): boolean {
+  try {
+    const payloadBase64 = tokenStr.split('.')[1];
+    if (!payloadBase64) return true;
+    const json = JSON.parse(atob(payloadBase64));
+    if (!json.exp) return false;
+    return Date.now() >= json.exp * 1000;
+  } catch {
+    return true;
+  }
+}
 
 export function App(): React.JSX.Element {
   const [token, setToken] = useState<string | null>(localStorage.getItem('comunicapa_token'));
@@ -1204,6 +1214,9 @@ export function App(): React.JSX.Element {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loadingCampaigns, setLoadingCampaigns] = useState(false);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
+
+  const [initialVersion, setInitialVersion] = useState<string | null>(null);
+  const [newVersionAvailable, setNewVersionAvailable] = useState<string | null>(null);
 
   // Campaign list filter and pagination state
   const [campaignSearch, setCampaignSearch] = useState('');
@@ -1788,12 +1801,44 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     if (token) {
+      if (isJwtExpired(token)) {
+        handleLogout();
+        return;
+      }
       fetchCampaigns();
       fetchMailConfigs();
       fetchPostalProviders();
       fetchIoServices();
     }
   }, [token]);
+
+  useEffect(() => {
+    const checkVersion = async () => {
+      try {
+        const rawBase = (window as any).__COMUNICAPA_CONFIG__?.apiBase || API_BASE || '';
+        const rootBase = rawBase.replace(/\/admin\/?$/, '').replace(/\/api\/?$/, '');
+        const targetUrl = rootBase ? `${rootBase}/version` : '/version';
+        const res = await fetch(targetUrl);
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.version) {
+            setInitialVersion((prev) => {
+              if (!prev) return data.version;
+              if (prev !== data.version) {
+                setNewVersionAvailable(data.version);
+              }
+              return prev;
+            });
+          }
+        }
+      } catch {
+        // ignora errori temporanei
+      }
+    };
+    checkVersion();
+    const timer = setInterval(checkVersion, 60000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => { if (token) fetchTemplates(); }, [token]);
 
@@ -13669,6 +13714,27 @@ export function App(): React.JSX.Element {
 
         </div>
       </main>
+
+      {newVersionAvailable && (
+        <div
+          className="position-fixed bottom-0 end-0 m-3 p-3 bg-dark text-white rounded shadow-lg d-flex align-items-center gap-3"
+          style={{ zIndex: 9999, maxWidth: '440px', border: '1px solid #0d6efd' }}
+        >
+          <div className="small">
+            <div className="fw-bold text-warning d-flex align-items-center gap-1 mb-1">
+              <RefreshCw size={14} className="icon-spin" /> Nuova versione di ComunicaPA ({newVersionAvailable})
+            </div>
+            <div>Lo stack è stato aggiornato. Ricarica la pagina per applicare i nuovi menu e aggiornamenti.</div>
+          </div>
+          <button
+            type="button"
+            className="btn btn-sm btn-primary text-nowrap fw-semibold"
+            onClick={() => window.location.reload()}
+          >
+            Ricarica Ora
+          </button>
+        </div>
+      )}
     </div>
   );
 }
