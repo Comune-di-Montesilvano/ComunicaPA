@@ -791,6 +791,62 @@ export class CampaignsService {
     }
   }
 
+  async getInadCheckStatus(campaignId: string): Promise<{
+    requestedAt: string | null;
+    totalBatches: number;
+    completedBatches: number;
+    batches: Array<{
+      id: string;
+      recipientCount: number;
+      done: boolean;
+      state: string | null;
+      error: string | null;
+    }>;
+  }> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+
+    const inadCheck = campaign.channelConfig?.['inadCheck'] as
+      | { mechanism: 'bulk'; batches: Array<{ id: string; recipientIds: string[]; done: boolean }>; requestedAt?: string }
+      | undefined;
+
+    if (!inadCheck || !Array.isArray(inadCheck.batches)) {
+      return { requestedAt: null, totalBatches: 0, completedBatches: 0, batches: [] };
+    }
+
+    const batchStatuses = await Promise.all(
+      inadCheck.batches.map(async (b) => {
+        let state: string | null = null;
+        let error: string | null = null;
+        if (b.done) {
+          state = 'DISPONIBILE';
+        } else {
+          try {
+            state = await this.inadService.getBulkState(b.id);
+          } catch (err) {
+            error = err instanceof Error ? err.message : String(err);
+          }
+        }
+        return {
+          id: b.id,
+          recipientCount: b.recipientIds?.length ?? 0,
+          done: b.done,
+          state,
+          error,
+        };
+      }),
+    );
+
+    const completedBatches = batchStatuses.filter((b) => b.done || b.state === 'DISPONIBILE').length;
+
+    return {
+      requestedAt: inadCheck.requestedAt ?? null,
+      totalBatches: inadCheck.batches.length,
+      completedBatches,
+      batches: batchStatuses,
+    };
+  }
+
   private async createAttemptsAndEnqueue(
     campaign: Campaign,
     recipients: Array<{ id: string }>,

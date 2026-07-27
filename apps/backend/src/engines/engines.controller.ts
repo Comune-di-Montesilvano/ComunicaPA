@@ -5,6 +5,8 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { NotificationQueuesService } from '../queue/notification-queues.service';
 import { ENGINE_NAMES, type EngineName } from '../queue/notification-job.types';
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity';
+import { Campaign, CampaignStatus } from '../entities/campaign.entity';
+import { Recipient, RecipientStatus } from '../entities/recipient.entity';
 
 function isEngineName(name: string): name is EngineName {
   return (ENGINE_NAMES as readonly string[]).includes(name);
@@ -16,13 +18,17 @@ export class EnginesController {
     private readonly queues: NotificationQueuesService,
     @InjectRepository(NotificationAttempt)
     private readonly attemptRepo: Repository<NotificationAttempt>,
+    @InjectRepository(Campaign)
+    private readonly campaignRepo: Repository<Campaign>,
+    @InjectRepository(Recipient)
+    private readonly recipientRepo: Repository<Recipient>,
   ) {}
 
   @Get()
   @Roles('admin', 'user')
   async list() {
     const engines: Array<{
-      channel: EngineName | 'SEND';
+      channel: EngineName | 'SEND' | 'INAD';
       queueName: string;
       paused: boolean;
       counts: Record<string, number>;
@@ -63,6 +69,26 @@ export class EnginesController {
         failed: sendFailed,
         delayed: 0,
         waiting: sendQueued,
+        paused: 0,
+      },
+    });
+
+    const [inadCheckingCampaigns, inadPendingRecipients, inadTotalCheckedRecipients] = await Promise.all([
+      this.campaignRepo.count({ where: { status: CampaignStatus.CHECKING_INAD } }),
+      this.recipientRepo.count({ where: { status: RecipientStatus.PENDING, campaign: { status: CampaignStatus.CHECKING_INAD } } }),
+      this.recipientRepo.count({ where: { inadCheck: Not(IsNull()) } }),
+    ]);
+
+    engines.push({
+      channel: 'INAD',
+      queueName: 'inad-check-bulk',
+      paused: false,
+      counts: {
+        active: inadPendingRecipients,
+        completed: inadTotalCheckedRecipients,
+        failed: 0,
+        delayed: 0,
+        waiting: inadCheckingCampaigns,
         paused: 0,
       },
     });

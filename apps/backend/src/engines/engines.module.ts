@@ -1,11 +1,13 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { QueueModule } from '../queue/queue.module';
+import { Campaign } from '../entities/campaign.entity';
+import { Recipient } from '../entities/recipient.entity';
 import { NotificationAttempt } from '../entities/notification-attempt.entity';
 import { EnginesController } from './engines.controller';
 
 @Module({
-  imports: [QueueModule, TypeOrmModule.forFeature([NotificationAttempt])],
+  imports: [QueueModule, TypeOrmModule.forFeature([NotificationAttempt, Campaign, Recipient])],
   controllers: [EnginesController],
 })
 export class EnginesModule {}

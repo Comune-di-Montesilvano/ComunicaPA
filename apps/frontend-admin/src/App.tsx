@@ -2520,11 +2520,47 @@ export function App(): React.JSX.Element {
       if (!res.ok) throw new Error('Impossibile caricare il dettaglio della campagna.');
       const data = await res.json();
       setCampaign(data);
+      setCampaigns((prev) => prev.map((c) => (c.id === id ? { ...c, ...data } : c)));
+      if (data.status === 'checking_inad') {
+        fetchInadStatus(id);
+      }
     } catch (err: any) {
       if (err instanceof ApiAuthError) return;
       setDetailError(err.message);
     } finally {
       setLoadingCampaignDetail(false);
+    }
+  };
+
+  interface InadStatusBatch {
+    id: string;
+    recipientCount: number;
+    done: boolean;
+    state: string | null;
+    error: string | null;
+  }
+  interface InadStatusInfo {
+    requestedAt: string | null;
+    totalBatches: number;
+    completedBatches: number;
+    batches: InadStatusBatch[];
+  }
+
+  const [inadStatusInfo, setInadStatusInfo] = useState<InadStatusInfo | null>(null);
+  const [loadingInadStatus, setLoadingInadStatus] = useState<boolean>(false);
+
+  const fetchInadStatus = async (campaignId: string): Promise<InadStatusInfo | null> => {
+    setLoadingInadStatus(true);
+    try {
+      const res = await apiFetch(`/campaigns/${campaignId}/inad-check/status`);
+      if (!res.ok) return null;
+      const data: InadStatusInfo = await res.json();
+      setInadStatusInfo(data);
+      return data;
+    } catch {
+      return null;
+    } finally {
+      setLoadingInadStatus(false);
     }
   };
 
@@ -5946,7 +5982,8 @@ export function App(): React.JSX.Element {
         throw new Error(errData.message || 'Errore durante il lancio della campagna');
       }
       alert('Campagna lanciata con successo!');
-      fetchCampaignDetail(campaign.id);
+      await fetchCampaignDetail(campaign.id);
+      await fetchCampaigns();
     } catch (err: any) {
       alert(err.message);
     } finally {
@@ -5962,6 +5999,11 @@ export function App(): React.JSX.Element {
         throw new Error(errData.message || 'Errore durante il riavvio della verifica INAD');
       }
       await fetchCampaignDetail(campaignId);
+      const statusData = await fetchInadStatus(campaignId);
+      if (statusData && statusData.batches.some((b) => !b.done && b.state !== 'DISPONIBILE')) {
+        const states = statusData.batches.map((b) => b.state || 'IN_ELABORAZIONE').join(', ');
+        alert(`Verifica riprovata. INAD (AgID) sta ancora elaborando la richiesta (${states}). La campagna procederà automaticamente non appena INAD renderà disponibili i dati.`);
+      }
     } catch (err: any) {
       if (err instanceof ApiAuthError) return;
       alert(err.message);
@@ -5977,6 +6019,7 @@ export function App(): React.JSX.Element {
         throw new Error(errData.message || 'Errore durante il salto della verifica INAD');
       }
       await fetchCampaignDetail(campaignId);
+      await fetchCampaigns();
     } catch (err: any) {
       if (err instanceof ApiAuthError) return;
       alert(err.message);
@@ -6000,7 +6043,8 @@ export function App(): React.JSX.Element {
       }
       const data = await res.json();
       alert(`Campagna annullata. Destinatari rimossi dalla coda: ${data.cancelled}.`);
-      fetchCampaignDetail(campaign.id);
+      await fetchCampaignDetail(campaign.id);
+      await fetchCampaigns();
     } catch (err: any) {
       alert(err.message);
     } finally {
@@ -13139,21 +13183,81 @@ export function App(): React.JSX.Element {
                             </button>
                           )}
                           {campaign.status === 'checking_inad' && (
-                            <div className="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-2">
-                              <span><Loader2 className="icon-spin me-2" />Verifica domicilio digitale INAD in corso…</span>
-                              <div>
-                                <button className="btn btn-sm btn-outline-secondary me-2" onClick={() => handleRetryInadCheck(campaign.id)}>
-                                  Riprova verifica
-                                </button>
-                                <button className="btn btn-sm btn-outline-warning me-2" onClick={() => handleSkipInadCheck(campaign.id)}>
-                                  Salta verifica e procedi
-                                </button>
-                                {(role === 'admin' || campaign.createdBy === username) && (
-                                  <button className="btn btn-sm btn-outline-danger" disabled={cancelling} onClick={handleCancelCampaign}>
-                                    Annulla campagna
+                            <div className="alert alert-info border border-info rounded p-3 mb-3">
+                              <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                                <div className="d-flex align-items-center gap-2 fw-semibold text-primary">
+                                  <Loader2 className="icon-spin" size={18} />
+                                  <span>Verifica domicilio digitale INAD (AgID/PDND) in corso…</span>
+                                </div>
+                                <div className="d-flex align-items-center gap-2 flex-wrap">
+                                  <button
+                                    type="button"
+                                    className="btn btn-sm btn-outline-primary d-flex align-items-center gap-1"
+                                    onClick={() => fetchInadStatus(campaign.id)}
+                                    disabled={loadingInadStatus}
+                                  >
+                                    <RefreshCw className={loadingInadStatus ? 'icon-spin' : ''} size={14} />
+                                    Aggiorna stato live
                                   </button>
-                                )}
+                                  <button className="btn btn-sm btn-outline-secondary" onClick={() => handleRetryInadCheck(campaign.id)}>
+                                    Riprova verifica
+                                  </button>
+                                  <button className="btn btn-sm btn-outline-warning" onClick={() => handleSkipInadCheck(campaign.id)}>
+                                    Salta verifica e procedi
+                                  </button>
+                                  {(role === 'admin' || campaign.createdBy === username) && (
+                                    <button className="btn btn-sm btn-outline-danger" disabled={cancelling} onClick={handleCancelCampaign}>
+                                      Annulla campagna
+                                    </button>
+                                  )}
+                                </div>
                               </div>
+
+                              {inadStatusInfo && (
+                                <div className="bg-white rounded border p-3 mt-2 shadow-sm">
+                                  <div className="d-flex justify-content-between align-items-center small text-muted mb-2 pb-2 border-bottom flex-wrap gap-2">
+                                    <span>
+                                      Richiesta inviata il: <strong>{inadStatusInfo.requestedAt ? new Date(inadStatusInfo.requestedAt).toLocaleString('it-IT') : 'Recente'}</strong>
+                                    </span>
+                                    <span>
+                                      Stato Batch INAD: <strong>{inadStatusInfo.completedBatches} su {inadStatusInfo.totalBatches} completati</strong>
+                                    </span>
+                                  </div>
+                                  {inadStatusInfo.batches.length > 0 ? (
+                                    <div className="d-flex flex-column gap-2">
+                                      {inadStatusInfo.batches.map((b, idx) => (
+                                        <div
+                                          key={b.id || idx}
+                                          className="d-flex justify-content-between align-items-center p-2 rounded bg-light border-start border-4"
+                                          style={{ borderColor: b.done || b.state === 'DISPONIBILE' ? '#198754' : b.error ? '#dc3545' : '#ffc107' }}
+                                        >
+                                          <div className="small">
+                                            <span className="fw-bold text-dark">Batch {idx + 1}</span> ({b.recipientCount} destinatari)
+                                            <div className="font-monospace text-muted" style={{ fontSize: '0.75rem' }}>ID Batch INAD: {b.id}</div>
+                                          </div>
+                                          <div>
+                                            {b.done || b.state === 'DISPONIBILE' ? (
+                                              <span className="badge bg-success d-inline-flex align-items-center gap-1">
+                                                <Check size={12} /> DISPONIBILE (Pronto)
+                                              </span>
+                                            ) : b.error ? (
+                                              <span className="badge bg-danger d-inline-flex align-items-center gap-1" title={b.error}>
+                                                <AlertTriangle size={12} /> ERRORE
+                                              </span>
+                                            ) : (
+                                              <span className="badge bg-warning text-dark d-inline-flex align-items-center gap-1">
+                                                <Loader2 className="icon-spin" size={12} /> {b.state || 'IN_ELABORAZIONE'}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div className="small text-muted text-center py-1">Inizializzazione batch INAD in corso...</div>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           )}
                           {campaign.totalRecipients === 0 && campaign.status === 'draft' && (

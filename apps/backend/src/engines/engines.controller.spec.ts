@@ -3,6 +3,8 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { EnginesController } from './engines.controller';
 import { NotificationQueuesService } from '../queue/notification-queues.service';
 import { NotificationAttempt } from '../entities/notification-attempt.entity';
+import { Campaign } from '../entities/campaign.entity';
+import { Recipient } from '../entities/recipient.entity';
 import { BadRequestException } from '@nestjs/common';
 
 describe('EnginesController', () => {
@@ -15,6 +17,8 @@ describe('EnginesController', () => {
     getJobsDetail: jest.fn().mockResolvedValue([{ jobId: 'j1' }]),
   };
   const mockAttemptRepo = { count: jest.fn(), createQueryBuilder: jest.fn() };
+  const mockCampaignRepo = { count: jest.fn().mockResolvedValue(0) };
+  const mockRecipientRepo = { count: jest.fn().mockResolvedValue(0) };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -29,15 +33,23 @@ describe('EnginesController', () => {
           provide: getRepositoryToken(NotificationAttempt),
           useValue: mockAttemptRepo,
         },
+        {
+          provide: getRepositoryToken(Campaign),
+          useValue: mockCampaignRepo,
+        },
+        {
+          provide: getRepositoryToken(Recipient),
+          useValue: mockRecipientRepo,
+        },
       ],
     }).compile();
 
     controller = module.get<EnginesController>(EnginesController);
   });
 
-  it('list() ritorna lo stato di tutti i motori (4 canali + protocollazione + send)', async () => {
+  it('list() ritorna lo stato di tutti i motori (4 canali + protocollazione + send + inad)', async () => {
     const res = await controller.list();
-    expect(res.engines).toHaveLength(6);
+    expect(res.engines).toHaveLength(7);
     expect(res.engines[0]).toEqual({
       channel: 'EMAIL',
       queueName: 'notifications-email',
@@ -46,6 +58,7 @@ describe('EnginesController', () => {
     });
     expect(res.engines.map((e: any) => e.channel)).toContain('PROTOCOLLAZIONE');
     expect(res.engines.map((e: any) => e.channel)).toContain('SEND');
+    expect(res.engines.map((e: any) => e.channel)).toContain('INAD');
   });
 
   it('pause() mette in pausa un canale valido', async () => {

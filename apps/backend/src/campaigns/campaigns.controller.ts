@@ -463,6 +463,11 @@ export class CampaignsController {
     return result;
   }
 
+  @Get(':id/inad-check/status')
+  async getInadCheckStatus(@Param('id', ParseUUIDPipe) id: string) {
+    return this.campaignsService.getInadCheckStatus(id);
+  }
+
   @Post(':id/inad-check/retry')
   async retryInadCheck(
     @Param('id', ParseUUIDPipe) id: string,
