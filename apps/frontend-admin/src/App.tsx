@@ -877,6 +877,8 @@ const EMPTY_POSTAL_PROVIDER: Omit<PostalProviderItem, 'id' | 'testedAt' | 'activ
   mittenteCitta: '', mittenteProvincia: '',
 };
 
+const PIE_COLORS = ['var(--bi-navy)', 'var(--ms-purple-600)', 'var(--ms-gold-500)', 'var(--ms-green-600)', 'var(--bi-primary)'];
+
 function isJwtExpired(tokenStr: string): boolean {
   try {
     const payloadBase64 = tokenStr.split('.')[1];
