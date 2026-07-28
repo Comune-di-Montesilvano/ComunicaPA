@@ -1860,6 +1860,13 @@ export class CampaignsService {
       .select([
         'r.id', 'r.fullName', 'r.codiceFiscale', 'r.email', 'r.pec', 'r.status',
         'r.downloadCount', 'r.firstDownloadedAt', 'r.lastDownloadedAt', 'r.attachmentDeletedAt',
+        // inadCheck.diverted serve al frontend (widget multicanale, bottone
+        // "Rimanda a questi N" su "Dirottato su PEC (INAD)") per filtrare
+        // client-side i destinatari dirottati della pagina corrente — senza
+        // questo campo il filtro `r.inadCheck?.diverted` era sempre vuoto
+        // (bug reale trovato in verifica manuale: il bottone diceva sempre
+        // "Nessun destinatario trovato" anche su una pagina con dirottati).
+        'r.inadCheck',
       ])
       .where('r.campaignId = :campaignId', { campaignId });
 

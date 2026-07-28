@@ -1883,13 +1883,14 @@ export function App(): React.JSX.Element {
   const [cancelling, setCancelling] = useState(false);
   const [failureGroups, setFailureGroups] = useState<Array<{ errorMessage: string; count: number; recipientIds: string[] }>>([]);
   const [retryingGroup, setRetryingGroup] = useState<string | null>(null);
-  const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; protocolNumber?: number | null; protocolYear?: number | null }> } | null>(null);
+  const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; protocolNumber?: number | null; protocolYear?: number | null; inadCheck?: { found: boolean; diverted: boolean } | null }> } | null>(null);
   const [recipientsSearch, setRecipientsSearch] = useState('');
   const [recipientsPageNum, setRecipientsPageNum] = useState(1);
   const [recipientsStatusFilter, setRecipientsStatusFilter] = useState('');
   const [recipientsDeliveryStatusFilter, setRecipientsDeliveryStatusFilter] = useState('');
   const [recipientsFilterOptions, setRecipientsFilterOptions] = useState<{ statuses: string[]; deliveryStatuses: string[] } | null>(null);
   const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number; inadDiverted: number } | null>(null);
+  const [resendingOutcome, setResendingOutcome] = useState<string | null>(null);
   const [effectiveChannelBreakdown, setEffectiveChannelBreakdown] = useState<Record<string, number> | null>(null);
   const [campaignSendStageCounts, setCampaignSendStageCounts] = useState<{ queued: number; protocollato: number; inviato: number; fallito: number } | null>(null);
   const [sendStatusBreakdown, setSendStatusBreakdown] = useState<Array<{ status: string | null; count: number }> | null>(null);
@@ -6546,6 +6547,47 @@ export function App(): React.JSX.Element {
       setContentCorrectionError('Errore di connessione durante il salvataggio');
     } finally {
       setContentCorrectionSaving(false);
+    }
+  };
+
+  const handleResendByOutcome = async (campaignId: string, outcome: 'both' | 'inadDiverted', count: number) => {
+    if (!confirm(`Rimandare il contenuto corretto a ${count} destinatari? Il canale primario POSTAL/SEND non verrà mai ripetuto.`)) return;
+    setResendingOutcome(outcome);
+    try {
+      // 'inadDiverted' non è una categoria di classifyChannelOutcome (è un
+      // flag INAD indipendente, vedi getChannelBreakdown) — per questa
+      // categoria l'elenco destinatari si ottiene filtrando lato client
+      // sui destinatari con inadCheck.diverted true, non dal nuovo endpoint
+      // recipients-by-channel-outcome (che copre solo le 5 categorie
+      // primaryOnly/both/appIoOnly/appIoDespitePrimaryFail/neither).
+      let recipientIds: string[] = [];
+      if (outcome === 'both') {
+        const res = await apiFetch(`/campaigns/${campaignId}/recipients-by-channel-outcome?outcome=both`);
+        const body = await res.json();
+        recipientIds = body.recipientIds || [];
+      } else {
+        recipientIds = (recipientsPage?.items || [])
+          .filter((r: any) => r.inadCheck?.diverted)
+          .map((r: any) => r.id);
+      }
+      if (recipientIds.length === 0) {
+        alert('Nessun destinatario trovato per questa categoria.');
+        return;
+      }
+      const res = await apiFetch(`/campaigns/${campaignId}/resend-content`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipientIds }),
+      });
+      const results = await res.json();
+      const resent = results.filter((r: any) => r.result === 'resent').length;
+      const skipped = results.filter((r: any) => r.result === 'skipped').length;
+      const errored = results.filter((r: any) => r.result === 'error').length;
+      alert(`Rimandati: ${resent}. Saltati: ${skipped}. Errori: ${errored}.`);
+    } catch {
+      alert('Errore durante il resend.');
+    } finally {
+      setResendingOutcome(null);
     }
   };
 
@@ -13897,9 +13939,18 @@ export function App(): React.JSX.Element {
                                 <span><Mail className="text-muted me-1" />Solo canale primario</span>
                                 <span className="fw-bold">{channelBreakdown.primaryOnly}</span>
                               </div>
-                              <div className="d-flex justify-content-between mb-1">
+                              <div className="d-flex justify-content-between align-items-center mb-1">
                                 <span><CheckCheck className="text-success me-1" />Anche App IO (parallela)</span>
-                                <span className="fw-bold">{channelBreakdown.both}</span>
+                                <span className="d-flex align-items-center gap-2">
+                                  <span className="fw-bold">{channelBreakdown.both}</span>
+                                  {channelBreakdown.both > 0 && (
+                                    <button className="btn btn-sm btn-link p-0" type="button"
+                                      disabled={resendingOutcome === 'both'}
+                                      onClick={() => handleResendByOutcome(campaign.id, 'both', channelBreakdown.both)}>
+                                      {resendingOutcome === 'both' ? 'Invio...' : `Rimanda a questi ${channelBreakdown.both}`}
+                                    </button>
+                                  )}
+                                </span>
                               </div>
                               <div className="d-flex justify-content-between mb-1">
                                 <span><Smartphone className="text-success me-1" />Solo App IO (esclusiva)</span>
@@ -13913,9 +13964,18 @@ export function App(): React.JSX.Element {
                                 <span><X className="text-danger me-1" />Nessuno dei due (fallito)</span>
                                 <span className="fw-bold">{channelBreakdown.neither}</span>
                               </div>
-                              <div className="d-flex justify-content-between">
+                              <div className="d-flex justify-content-between align-items-center">
                                 <span><ShieldCheck className="text-primary me-1" />Dirottato su PEC (INAD)</span>
-                                <span className="fw-bold">{channelBreakdown.inadDiverted}</span>
+                                <span className="d-flex align-items-center gap-2">
+                                  <span className="fw-bold">{channelBreakdown.inadDiverted}</span>
+                                  {channelBreakdown.inadDiverted > 0 && (
+                                    <button className="btn btn-sm btn-link p-0" type="button"
+                                      disabled={resendingOutcome === 'inadDiverted'}
+                                      onClick={() => handleResendByOutcome(campaign.id, 'inadDiverted', channelBreakdown.inadDiverted)}>
+                                      {resendingOutcome === 'inadDiverted' ? 'Invio...' : `Rimanda a questi ${channelBreakdown.inadDiverted}`}
+                                    </button>
+                                  )}
+                                </span>
                               </div>
                             </div>
                           </div>
