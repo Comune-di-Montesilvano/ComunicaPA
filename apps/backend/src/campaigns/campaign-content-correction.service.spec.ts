@@ -58,9 +58,15 @@ describe('CampaignContentCorrectionService', () => {
       expect(result).toBe('resent');
       expect(campaignsService.retryRecipient).not.toHaveBeenCalled();
       expect(appIoDelivery.sendMessage).toHaveBeenCalled();
-      // merge, non replace: envelope del canale primario resta
+      // merge, non replace: envelope del canale primario resta, e la firma
+      // contenuto (subject/body correnti campagna, entrambi vuoti nel fixture)
+      // viene apposta nello stesso update, non in una chiamata separata.
       expect(attemptRepo.update).toHaveBeenCalledWith('att-1', {
-        responsePayload: expect.objectContaining({ envelope: { to: ['x'] }, appIo: { success: true, messageId: 'io-2' } }),
+        responsePayload: expect.objectContaining({
+          envelope: { to: ['x'] },
+          appIo: { success: true, messageId: 'io-2' },
+          contentSignature: JSON.stringify(['', '']),
+        }),
       });
     });
 
@@ -101,6 +107,67 @@ describe('CampaignContentCorrectionService', () => {
       attemptRepo.findOne.mockResolvedValue(null);
       const result = await service.resendSafe('camp-1', 'rec-1');
       expect(result).toBe('skipped');
+    });
+
+    describe('idempotenza per firma contenuto (fix doppio invio da categorie sovrapposte)', () => {
+      const currentSignature = JSON.stringify(['', '']); // campaign fixture: subject/body assenti da channelConfig
+
+      it('lastAttempt.responsePayload.contentSignature già uguale alla firma corrente → skipped, nessun branch eseguito', async () => {
+        attemptRepo.findOne.mockResolvedValue({
+          id: 'att-1', channelType: 'PEC', attemptNumber: 1,
+          responsePayload: { contentSignature: currentSignature },
+        });
+
+        const result = await service.resendSafe('camp-1', 'rec-1');
+
+        expect(result).toBe('skipped');
+        expect(campaignsService.retryRecipient).not.toHaveBeenCalled();
+        expect(appIoDelivery.sendMessage).not.toHaveBeenCalled();
+      });
+
+      it('canale sicuro, contentSignature assente/stale: procede al retry e appone la firma sul NUOVO attempt (non su lastAttempt)', async () => {
+        attemptRepo.findOne.mockResolvedValue({
+          id: 'att-1', channelType: 'PEC', attemptNumber: 1,
+          responsePayload: { contentSignature: 'stale-signature' },
+        });
+        campaignsService.retryRecipient.mockResolvedValue({ requeued: true, attemptId: 'att-new' });
+
+        const result = await service.resendSafe('camp-1', 'rec-1');
+
+        expect(result).toBe('resent');
+        expect(campaignsService.retryRecipient).toHaveBeenCalledWith('camp-1', 'rec-1');
+        expect(attemptRepo.update).toHaveBeenCalledWith('att-new', {
+          responsePayload: { contentSignature: currentSignature },
+        });
+        // mai su lastAttempt: quell'attempt è superato dal nuovo creato dal retry
+        expect(attemptRepo.update).not.toHaveBeenCalledWith('att-1', expect.anything());
+      });
+
+      it('scenario reale del bug: due click consecutivi (App IO parallela + Dirottato INAD) sullo stesso destinatario → il secondo si ferma', async () => {
+        // Primo click: nessuna firma pregressa, procede e stampa la firma sul nuovo attempt.
+        attemptRepo.findOne.mockResolvedValueOnce({
+          id: 'att-1', channelType: 'PEC', attemptNumber: 1, responsePayload: {},
+        });
+        campaignsService.retryRecipient.mockResolvedValueOnce({ requeued: true, attemptId: 'att-new' });
+
+        const first = await service.resendSafe('camp-1', 'rec-1');
+        expect(first).toBe('resent');
+        expect(campaignsService.retryRecipient).toHaveBeenCalledTimes(1);
+
+        // Secondo click (altro pulsante, stesso destinatario): l'ultimo attempt
+        // ora è quello appena creato/firmato dal primo click.
+        attemptRepo.findOne.mockResolvedValueOnce({
+          id: 'att-new', channelType: 'PEC', attemptNumber: 2,
+          responsePayload: { contentSignature: currentSignature },
+        });
+
+        const second = await service.resendSafe('camp-1', 'rec-1');
+
+        expect(second).toBe('skipped');
+        // Nessuna seconda chiamata: il conteggio resta fermo a quello del primo click.
+        expect(campaignsService.retryRecipient).toHaveBeenCalledTimes(1);
+        expect(appIoDelivery.sendMessage).not.toHaveBeenCalled();
+      });
     });
   });
 

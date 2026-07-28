@@ -43,6 +43,22 @@ export class CampaignContentCorrectionService {
     });
     if (!lastAttempt) return 'skipped';
 
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+
+    // Guardia di idempotenza per firma contenuto: se l'ultimo tentativo di
+    // questo destinatario riflette già il subject/body CORRENTE della
+    // campagna, un secondo "Rimanda" (es. cliccato dall'altro pulsante di
+    // categoria sovrapposta — "Anche App IO (parallela)" e "Dirottato su PEC
+    // (INAD)" non sono mutuamente esclusivi, uno stesso destinatario può
+    // comparire in entrambi) non deve rimandare una seconda volta.
+    const contentSignature = JSON.stringify([
+      (campaign?.channelConfig?.['subject'] as string) ?? '',
+      (campaign?.channelConfig?.['body'] as string) ?? '',
+    ]);
+    if (lastAttempt.responsePayload?.['contentSignature'] === contentSignature) {
+      return 'skipped';
+    }
+
     if (!UNSAFE_TO_RESEND.includes(lastAttempt.channelType)) {
       // Canale già sicuro (PEC/EMAIL/APP_IO, es. dirottato INAD): stesso
       // pattern di updateRecipientAddressAndRetry, forza FAILED solo se
@@ -51,7 +67,10 @@ export class CampaignContentCorrectionService {
       if (recipient && recipient.status !== RecipientStatus.FAILED) {
         await this.recipientRepo.update(recipientId, { status: RecipientStatus.FAILED });
       }
-      await this.campaignsService.retryRecipient(campaignId, recipientId);
+      const result = await this.campaignsService.retryRecipient(campaignId, recipientId);
+      // Il retry crea un NUOVO NotificationAttempt (lastAttempt è ormai
+      // superato) — la firma va apposta su quello nuovo, non su lastAttempt.
+      await this.attemptRepo.update(result.attemptId, { responsePayload: { contentSignature } });
       return 'resent';
     }
 
@@ -63,7 +82,6 @@ export class CampaignContentCorrectionService {
     const appIoPayload = lastAttempt.responsePayload?.['appIo'] as { success?: boolean } | undefined;
     if (!appIoPayload?.success) return 'skipped';
 
-    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     const recipient = await this.recipientRepo.findOne({ where: { id: recipientId } });
     if (!campaign || !recipient) return 'skipped';
 
@@ -84,7 +102,7 @@ export class CampaignContentCorrectionService {
 
     // Merge, mai replace: envelope/dati del canale primario già scritti restano.
     await this.attemptRepo.update(lastAttempt.id, {
-      responsePayload: { ...lastAttempt.responsePayload, appIo: newAppIoResult },
+      responsePayload: { ...lastAttempt.responsePayload, appIo: newAppIoResult, contentSignature },
     });
     return 'resent';
   }
