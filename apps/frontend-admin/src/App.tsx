@@ -1897,6 +1897,11 @@ export function App(): React.JSX.Element {
   const [campaignCost, setCampaignCost] = useState<{ campaignId: string; totalCostCents: number; byChannel: Array<{ channel: string; totalCostCents: number; uncalculatedCount: number }> } | null>(null);
   const [campaignCostSavings, setCampaignCostSavings] = useState<{ campaignId: string; totalSavingCents: number; postalNotEstimableCount: number } | null>(null);
   const [downloadCombinations, setDownloadCombinations] = useState<Array<{ channels: string[]; count: number; sentSuccessfully: boolean }> | null>(null);
+  const [contentCorrectionOpen, setContentCorrectionOpen] = useState(false);
+  const [contentCorrectionSubject, setContentCorrectionSubject] = useState('');
+  const [contentCorrectionBody, setContentCorrectionBody] = useState('');
+  const [contentCorrectionSaving, setContentCorrectionSaving] = useState(false);
+  const [contentCorrectionError, setContentCorrectionError] = useState<string | null>(null);
   const [statsDateFrom, setStatsDateFrom] = useState(() => {
     const d = new Date();
     d.setMonth(d.getMonth() - 6);
@@ -6511,6 +6516,36 @@ export function App(): React.JSX.Element {
       alert(err.message);
     } finally {
       setCancelling(false);
+    }
+  };
+
+  const openContentCorrection = (campaign: { channelConfig?: Record<string, any> }) => {
+    setContentCorrectionSubject((campaign.channelConfig?.subject as string) || '');
+    setContentCorrectionBody((campaign.channelConfig?.body as string) || '');
+    setContentCorrectionError(null);
+    setContentCorrectionOpen(true);
+  };
+
+  const handleSaveContentCorrection = async (campaignId: string) => {
+    setContentCorrectionSaving(true);
+    setContentCorrectionError(null);
+    try {
+      const res = await apiFetch(`/campaigns/${campaignId}/content`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subject: contentCorrectionSubject, body: contentCorrectionBody }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setContentCorrectionError(body.message || 'Errore durante il salvataggio');
+        return;
+      }
+      setContentCorrectionOpen(false);
+      await fetchCampaignDetail(campaignId);
+    } catch {
+      setContentCorrectionError('Errore di connessione durante il salvataggio');
+    } finally {
+      setContentCorrectionSaving(false);
     }
   };
 
@@ -13793,6 +13828,62 @@ export function App(): React.JSX.Element {
                               <BarChart3 className="me-1 text-primary" />Andamento Invio POSTAL
                             </h4>
                             <ChannelStatusBar breakdown={postalStatusBreakdown} meta={POSTAL_STATUS_META} pendingLabel="In corso" />
+                          </div>
+                        )}
+
+                        {['completed', 'failed', 'cancelled'].includes(campaign.status) && (
+                          <div className="mt-4 border-top pt-3">
+                            <div className="d-flex justify-content-between align-items-center mb-2">
+                              <h4 className="small fw-bold mb-0"><Pencil className="me-1 text-primary" size={16} />Contenuto (Oggetto/Testo)</h4>
+                              {!contentCorrectionOpen && (
+                                <button className="btn btn-sm btn-outline-secondary" type="button" onClick={() => openContentCorrection(campaign)}>
+                                  Correggi
+                                </button>
+                              )}
+                            </div>
+                            {contentCorrectionOpen ? (
+                              <div className="border rounded p-3 bg-light">
+                                <div className="mb-2">
+                                  <label className="form-label small fw-bold">Oggetto</label>
+                                  <input type="text" className="form-control form-control-sm" value={contentCorrectionSubject}
+                                    onChange={(e) => setContentCorrectionSubject(e.target.value)} />
+                                </div>
+                                <div className="mb-2">
+                                  <label className="form-label small fw-bold">Testo</label>
+                                  <textarea className="form-control form-control-sm" rows={4} value={contentCorrectionBody}
+                                    onChange={(e) => setContentCorrectionBody(e.target.value)} />
+                                </div>
+                                {contentCorrectionError && <div className="alert alert-danger small">{contentCorrectionError}</div>}
+                                <div className="d-flex gap-2">
+                                  <button className="btn btn-sm btn-primary" type="button" disabled={contentCorrectionSaving}
+                                    onClick={() => handleSaveContentCorrection(campaign.id)}>
+                                    {contentCorrectionSaving ? <><Loader2 className="icon-spin me-1" size={16} />Salvataggio...</> : 'Salva correzione'}
+                                  </button>
+                                  <button className="btn btn-sm btn-outline-secondary" type="button" disabled={contentCorrectionSaving}
+                                    onClick={() => setContentCorrectionOpen(false)}>
+                                    Annulla
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="small text-muted">
+                                <div><strong>Oggetto:</strong> {(campaign.channelConfig?.subject as string) || <em>vuoto</em>}</div>
+                              </div>
+                            )}
+                            {Array.isArray(campaign.channelConfig?.contentHistory) && campaign.channelConfig.contentHistory.length > 0 && (
+                              <details className="mt-2 small">
+                                <summary className="text-muted" style={{ cursor: 'pointer' }}>Storico contenuto ({campaign.channelConfig.contentHistory.length} versioni precedenti)</summary>
+                                <ul className="list-unstyled mt-2">
+                                  {campaign.channelConfig.contentHistory.map((h: any, i: number) => (
+                                    <li key={i} className="border-bottom pb-1 mb-1">
+                                      <div className="text-muted">{new Date(h.changedAt).toLocaleString('it-IT')} — {h.changedBy}</div>
+                                      <div><strong>Oggetto:</strong> {h.subject || <em>vuoto</em>}</div>
+                                      <div><strong>Testo:</strong> {h.body || <em>vuoto</em>}</div>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </details>
+                            )}
                           </div>
                         )}
 
