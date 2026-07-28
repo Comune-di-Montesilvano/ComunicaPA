@@ -80,6 +80,16 @@ def pdf_foreign_address_extra_segment() -> bytes:
 
 
 @pytest.fixture
+def pdf_domestic_address_malformed_no_province() -> bytes:
+    """Indirizzo domestico malformato: manca la provincia a 2 lettere finale
+    richiesta da _RE_DOMESTIC, quindi il match cade sul fallback
+    _parse_foreign_address. Il segmento finale ('65015 MONTESILVANO') NON è
+    uno stato estero valido — inizia con un CAP — e deve essere rigettato
+    dal sanity check invece di essere interpretato come 'stato_estero'."""
+    return _make_pdf(["Residente in: VIA X 10 - LOC. Y - 65015 MONTESILVANO\n"])
+
+
+@pytest.fixture
 def pdf_with_qr() -> bytes:
     # Pagina 1: lettera con indirizzo; pagina 2: avviso con QR + testo CBILL (RATA UNICA)
     return _make_pdf(

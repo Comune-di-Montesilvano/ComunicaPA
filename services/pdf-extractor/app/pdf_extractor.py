@@ -128,6 +128,17 @@ class PdfExtractor:
         capcomune = parts[-2]
         indirizzo_raw = " - ".join(parts[:-2])
 
+        # Sanity check: uno "stato" che inizia con un CAP (3-6 cifre seguite
+        # da spazio) non è un nome di stato estero ma un frammento "CAP
+        # comune" — sintomo di un indirizzo domestico malformato (es. manca
+        # la provincia a 2 lettere richiesta da _RE_DOMESTIC) che senza
+        # questo controllo verrebbe silenziosamente interpretato come
+        # estero, perdendo il CAP e producendo un indirizzo bogus. Meglio
+        # fallire rumorosamente (fallback a _RE_RESIDENZA_LABEL o
+        # AddressExtractionError) che un dato sbagliato.
+        if re.match(r"^\d{3,6}\s", stato):
+            return None
+
         cap_match = re.search(r"CAP\.?\s*(\w+)", indirizzo_raw, re.IGNORECASE)
         cap_explicit = cap_match.group(1) if cap_match else None
         if cap_explicit:

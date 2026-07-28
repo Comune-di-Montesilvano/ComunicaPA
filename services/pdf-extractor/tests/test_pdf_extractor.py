@@ -74,6 +74,16 @@ def test_extract_address_foreign_extra_segment(pdf_foreign_address_extra_segment
     assert addr.stato_estero == "Belgio"
 
 
+def test_extract_address_domestic_malformed_no_province_raises(pdf_domestic_address_malformed_no_province):
+    """Regressione: un indirizzo domestico malformato (manca la provincia a
+    2 lettere) non deve essere silenziosamente interpretato come estero da
+    _parse_foreign_address solo perché ha >=3 segmenti ' - '-separati — il
+    segmento finale '65015 MONTESILVANO' non è un nome di stato valido
+    (inizia con un CAP), quindi deve fallire rumorosamente."""
+    with pytest.raises(AddressExtractionError):
+        PdfExtractor(pdf_domestic_address_malformed_no_province).extract_address()
+
+
 def test_extract_payment_from_qr(pdf_with_qr):
     totale, rate, warnings = PdfExtractor(pdf_with_qr).extract_payment()
     assert totale is not None
