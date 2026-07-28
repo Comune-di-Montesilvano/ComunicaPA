@@ -10818,7 +10818,12 @@ export function App(): React.JSX.Element {
                                         <>
                                           <td className="small">
                                             <PostalStatusBadge status={a.postalStatus} />
-                                            {a.status === 'success' && !a.postalTrackingId && (
+                                            {!a.postalTrackingId && (
+                                              // Anche un attempt FAILED lato nostro (es. eccezione lanciata
+                                              // dopo che la chiamata SOAP era già passata, invio_ext_singolo
+                                              // rifiutato per un motivo non bloccante) può essere comunque
+                                              // arrivato a GlobalCom — l'operatore verifica sul portale e
+                                              // aggancia qui, indipendentemente dal nostro status locale.
                                               <button
                                                 type="button"
                                                 className="btn btn-sm btn-link p-0 ms-1"

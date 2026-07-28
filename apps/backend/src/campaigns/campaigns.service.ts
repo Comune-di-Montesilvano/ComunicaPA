@@ -1883,7 +1883,26 @@ export class CampaignsService {
     }
 
     await this.attemptRepo.update(attempt.id, { postalTrackingId: trimmed });
-    return this.postalStatusSync.refreshOne(attempt.id);
+    const result = await this.postalStatusSync.refreshOne(attempt.id);
+
+    // L'IDPRO è stato validato da GlobalCom (refreshOne non ha lanciato) — se
+    // l'attempt era FAILED lato nostro (es. eccezione dopo una chiamata SOAP
+    // che in realtà era passata), non è più un fallimento: era solo il nostro
+    // stato locale a non saperlo. Promuove a SUCCESS e allinea recipient/
+    // contatori campagna, stesso pattern (invertito) di updateRecipientAddressAndRetry.
+    // Senza questo, il destinatario resta FAILED in ogni report/breakdown pur
+    // avendo un invio reale accettato, e retryRecipient() (gate su FAILED)
+    // permetterebbe un secondo invio reale — rischio doppia spedizione.
+    if (attempt.status === AttemptStatus.FAILED) {
+      await this.attemptRepo.update(attempt.id, { status: AttemptStatus.SUCCESS });
+      if (recipient.status === RecipientStatus.FAILED) {
+        await this.recipientRepo.update(recipientId, { status: RecipientStatus.SENT });
+        await this.campaignRepo.decrement({ id: campaignId }, 'failedCount', 1);
+        await this.campaignRepo.increment({ id: campaignId }, 'sentCount', 1);
+      }
+    }
+
+    return result;
   }
 
   /**
