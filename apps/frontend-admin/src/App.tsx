@@ -1010,7 +1010,7 @@ export function App(): React.JSX.Element {
   const [notifDetail, setNotifDetail] = useState<{
     recipient: { id: string; codiceFiscale: string; fullName: string | null; email: string | null; pec: string | null; status: string };
     campaign: { id: string; name: string; channelType: string; postalServiceType?: string | null; postalReturnReceipt?: boolean };
-    attempts: Array<{ attemptNumber: number; status: string; channelType: string; errorMessage: string | null; sentAt: string | null; createdAt: string; appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null }; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalStatusHistory?: Array<{ stato: string; rilevatoIl: string; codiceErrore?: string; descrizione?: string }> | null; protocolNumber?: number | null; protocolYear?: number | null; protocolledAt?: string | null; costCents?: number | null; costCalculatedAt?: string | null; costBreakdown?: Record<string, unknown> | null }>;
+    attempts: Array<{ attemptNumber: number; status: string; channelType: string; errorMessage: string | null; sentAt: string | null; createdAt: string; appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null }; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalTrackingId?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalStatusHistory?: Array<{ stato: string; rilevatoIl: string; codiceErrore?: string; descrizione?: string }> | null; protocolNumber?: number | null; protocolYear?: number | null; protocolledAt?: string | null; costCents?: number | null; costCalculatedAt?: string | null; costBreakdown?: Record<string, unknown> | null }>;
     preview: { subject: string; bodyHtml?: string; bodyMarkdown?: string };
     appIoPreview: { subject: string; bodyHtml?: string; bodyMarkdown?: string } | null;
     downloads: Array<{ channel: string; attachmentIndex: number; downloadedAt: string }>;
@@ -1026,6 +1026,7 @@ export function App(): React.JSX.Element {
   const [addressEditAnprLoading, setAddressEditAnprLoading] = useState(false);
   const [addressEditSaving, setAddressEditSaving] = useState(false);
   const [postalStatusRefreshing, setPostalStatusRefreshing] = useState(false);
+  const [postalErrorsResetting, setPostalErrorsResetting] = useState(false);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -4647,6 +4648,28 @@ export function App(): React.JSX.Element {
       URL.revokeObjectURL(url);
     } catch {
       alert('Errore durante il download del report');
+    }
+  };
+
+  const handleResetPostalErrorsForRecheck = async () => {
+    if (!campaign) return;
+    setPostalErrorsResetting(true);
+    try {
+      const res = await apiFetch(`/campaigns/${campaign.id}/postal/reset-errors-for-recheck`, { method: 'POST' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert(body.message || 'Errore durante il reset dello stato GlobalCom.');
+        return;
+      }
+      const data = await res.json();
+      alert(data.resetCount > 0
+        ? `${data.resetCount} raccomandate resettate — il ricontrollo automatico le riprende entro un minuto.`
+        : 'Nessuna raccomandata in Errore con IDPRO da ricontrollare.');
+      fetchCampaignDetail(campaign.id);
+    } catch (err) {
+      if (!(err instanceof ApiAuthError)) alert('Errore durante il reset dello stato GlobalCom.');
+    } finally {
+      setPostalErrorsResetting(false);
     }
   };
 
@@ -10697,18 +10720,31 @@ export function App(): React.JSX.Element {
 
                         <div className="d-flex justify-content-between align-items-center">
                           <h6 className="fw-bold small mb-0">Storico Tentativi</h6>
-                          {notifDetail.campaign.channelType === 'POSTAL' && (
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-outline-secondary"
-                              disabled={postalStatusRefreshing}
-                              onClick={handleRefreshPostalStatus}
-                              title="Interroga di nuovo GlobalCom per lo stato dell'ultimo invio — utile se una raccomandata in Errore è stata corretta manualmente sul portale GlobalCom e non viene più ripollata in automatico"
-                            >
-                              {postalStatusRefreshing ? <Loader2 className="icon-spin me-1" size={14} /> : <RefreshCw className="me-1" size={14} />}
-                              Ricontrolla stato GlobalCom
-                            </button>
-                          )}
+                          {notifDetail.campaign.channelType === 'POSTAL' && (() => {
+                            const lastAttempt = notifDetail.attempts[notifDetail.attempts.length - 1];
+                            // Nessun IDPRO reale (mai davvero trasmesso a GlobalCom, es. attempt
+                            // creato prima del fix dedup in postal.strategy.ts) — non c'è nulla
+                            // da "ricontrollare", il bottone lancerebbe solo un errore confuso.
+                            // In questo caso l'unica azione utile è "Correggi indirizzo e rimetti
+                            // in coda" (visibile sotto), che rifà davvero l'invio.
+                            const hasTrackingId = !!lastAttempt?.postalTrackingId;
+                            return (
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-secondary"
+                                disabled={postalStatusRefreshing || !hasTrackingId}
+                                onClick={handleRefreshPostalStatus}
+                                title={
+                                  hasTrackingId
+                                    ? "Interroga di nuovo GlobalCom per lo stato dell'ultimo invio — utile se una raccomandata in Errore è stata corretta manualmente sul portale GlobalCom e non viene più ripollata in automatico"
+                                    : "Nessun IDPRO GlobalCom su questo tentativo — mai trasmesso realmente, niente da ricontrollare. Usa \"Correggi indirizzo e rimetti in coda\" per inviarlo davvero."
+                                }
+                              >
+                                {postalStatusRefreshing ? <Loader2 className="icon-spin me-1" size={14} /> : <RefreshCw className="me-1" size={14} />}
+                                Ricontrolla stato GlobalCom
+                              </button>
+                            );
+                          })()}
                         </div>
                         <div className="table-responsive">
                           <table className="table table-sm mb-4">
@@ -14317,6 +14353,17 @@ export function App(): React.JSX.Element {
                               </button>
                             </div>
                           )}
+                          {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType === 'POSTAL' && (
+                            <button
+                              className="btn btn-sm btn-outline-warning py-1"
+                              disabled={postalErrorsResetting}
+                              onClick={handleResetPostalErrorsForRecheck}
+                              title="Resetta le raccomandate in Errore che hai già corretto a mano su GlobalCom, così il ricontrollo automatico (ogni minuto) le ripesca da sole — salta quelle mai davvero arrivate a GlobalCom, per quelle serve un vero reinvio dal Dettaglio Notifica"
+                            >
+                              {postalErrorsResetting ? <Loader2 className="icon-spin me-1" size={14} /> : <RefreshCw className="me-1" size={14} />}
+                              Riattiva controllo errori GlobalCom
+                            </button>
+                          )}
                           <button className="btn btn-outline-secondary btn-sm border-0" onClick={() => fetchCampaignDetail(campaign.id)} title="Aggiorna esiti">
                             <RefreshCw />
                           </button>
@@ -14545,7 +14592,12 @@ export function App(): React.JSX.Element {
                       </div>
                       )}
 
-                      {['EMAIL', 'PEC', 'APP_IO'].includes(campaign.channelType) && (
+                      {(['EMAIL', 'PEC', 'APP_IO'].includes(campaign.channelType) || (campaign.channelType === 'POSTAL' && !!downloadCombinations)) && (
+                      // POSTAL normalmente non ha download (lettera cartacea) — ma un dirottato
+                      // INAD (POSTAL→PEC) sì (link scaricabile dal portale cittadino/PEC come
+                      // per una campagna PEC vera). Mostrare il widget solo se ci sono davvero
+                      // combinazioni (downloadCombinations non null) evita una card sempre vuota
+                      // sulle campagne POSTAL senza nessun dirottato.
                       <div className="col-md-6">
                         <div className="card shadow-sm h-100">
                           <div className="card-header bg-white py-3 border-bottom">
