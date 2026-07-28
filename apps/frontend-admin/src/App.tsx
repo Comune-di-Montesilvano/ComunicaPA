@@ -91,6 +91,11 @@ function ChannelBadge({ channel, extra }: { channel: string; extra?: string | nu
   );
 }
 
+// Sentinella filtro "Stato Consegna" per attempt SUCCESS senza send_status/postal_status
+// ancora sincronizzato — stringa concordata a mano col backend (campaigns.service.ts),
+// mai un valore reale emesso da PN/GlobalCom.
+const PENDING_DELIVERY_STATUS_SENTINEL = '__PENDING__';
+
 // Stati condivisi tra recipient/attempt/campaign: stessa parola, stesso
 // significato, stesso colore ovunque compaia in UI (coerenza grafica).
 const STATUS_META: Record<string, { label: string; badge: string }> = {
@@ -10760,7 +10765,22 @@ export function App(): React.JSX.Element {
                             // CodiceErrore valorizzato ma status resta SUCCESS) — stesso criterio già
                             // usato per la colonna Errore: il valore di codiceErrore, non lo status.
                             const hasDeliveryError = (last.postalStatusHistory || []).some((h) => h.codiceErrore && h.codiceErrore !== '0');
-                            return last.status === 'failed' || hasDeliveryError;
+                            // Un "Riuscito" POSTAL che non riceve MAI un postal_status (nemmeno
+                            // "Rimandato"/transitorio) entro un tempo ragionevole è di fatto appeso —
+                            // sync gira ogni minuto (postal-status-sync.service.ts), 30 minuti senza
+                            // nessun aggiornamento è ben oltre qualunque latenza normale GlobalCom.
+                            // Copre sia il caso dedup fittizio (bug corretto in postal.strategy.ts,
+                            // isGoodExistingSubmission) sia un IDPRO mai davvero assegnato — senza
+                            // questo controllo il bottone "Correggi indirizzo e rimetti in coda"
+                            // spariva proprio sui casi che ne hanno più bisogno (l'ultimo attempt,
+                            // quello davvero bloccato, non ha uno storico errore proprio).
+                            const POSTAL_STUCK_TIMEOUT_MS = 30 * 60 * 1000;
+                            const isStuckPending =
+                              last.channelType === 'POSTAL' &&
+                              last.status === 'success' &&
+                              !last.postalStatus &&
+                              Date.now() - new Date(last.createdAt).getTime() > POSTAL_STUCK_TIMEOUT_MS;
+                            return last.status === 'failed' || hasDeliveryError || isStuckPending;
                           })() && (
                           <div className="card border-warning mb-4">
                             <div className="card-header bg-warning-subtle d-flex align-items-center justify-content-between">
@@ -14219,7 +14239,9 @@ export function App(): React.JSX.Element {
                               <option value="">Stato consegna: tutti</option>
                               {(recipientsFilterOptions?.deliveryStatuses ?? []).map((s) => (
                                 <option key={s} value={s}>
-                                  {(campaign.channelType === 'SEND' ? SEND_STATUS_META[s]?.label : POSTAL_STATUS_META[s]?.label) ?? s}
+                                  {s === PENDING_DELIVERY_STATUS_SENTINEL
+                                    ? (campaign.channelType === 'SEND' ? 'In attesa' : 'In corso')
+                                    : ((campaign.channelType === 'SEND' ? SEND_STATUS_META[s]?.label : POSTAL_STATUS_META[s]?.label) ?? s)}
                                 </option>
                               ))}
                             </select>
