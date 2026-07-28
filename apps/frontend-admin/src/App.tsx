@@ -151,6 +151,15 @@ function SendStatusBadge({ status }: { status: string | null | undefined }): Rea
 
 type StatusMeta = { label: string; badge: string; icon: React.ComponentType<{ className?: string; size?: number }> };
 
+// Colonne CSV mappate su channelConfig.physicalAddressConfig (POSTAL/SEND).
+type PhysicalAddressConfigColumns = {
+  addressColumn?: string;
+  municipalityColumn?: string;
+  zipColumn?: string;
+  provinceColumn?: string;
+  countryColumn?: string;
+};
+
 function ChannelStatusBar({ breakdown, meta, pendingLabel }: { breakdown: Array<{ status: string | null; count: number }>; meta: Record<string, StatusMeta>; pendingLabel: string }): React.JSX.Element {
   const total = breakdown.reduce((sum, b) => sum + b.count, 0);
   if (total === 0) {
@@ -1305,6 +1314,10 @@ export function App(): React.JSX.Element {
   // caso d'uso tipico). Se il CSV è diverso, restano inapplicate senza errori.
   const [wizPendingMapping, setWizPendingMapping] = useState<typeof wizMapping | null>(null);
   const [wizPendingAttachments, setWizPendingAttachments] = useState<Array<{ key: string; label: string }> | null>(null);
+  // Stessa logica di wizPendingMapping/wizPendingAttachments, ma per le colonne
+  // indirizzo postale (physicalAddressConfig) — riapplicata campo per campo se la
+  // colonna salvata esiste ancora nel nuovo CSV, altrimenti resta all'euristica.
+  const [wizPendingPhysicalAddressConfig, setWizPendingPhysicalAddressConfig] = useState<PhysicalAddressConfigColumns | null>(null);
   const [wizValidationErrors, setWizValidationErrors] = useState<Array<{ row: number; field: string; val: string; err: string }>>([]);
   const [wizValidationWarnings, setWizValidationWarnings] = useState<Array<{ row: number; field: string; val: string; warn: string }>>([]);
   const [wizValidRows, setWizValidRows] = useState<Record<string, string>[]>([]);
@@ -4424,7 +4437,8 @@ export function App(): React.JSX.Element {
     file: File,
     hasHeaders: boolean,
     pendingMappingOverride?: typeof wizMapping | null,
-    pendingAttachmentsOverride?: Array<{ key: string; label: string }> | null
+    pendingAttachmentsOverride?: Array<{ key: string; label: string }> | null,
+    pendingPhysicalAddressOverride?: PhysicalAddressConfigColumns | null
   ): Promise<string[]> => {
     return new Promise((resolve) => {
     const reader = new FileReader();
@@ -4511,6 +4525,34 @@ export function App(): React.JSX.Element {
         else if (hLower === 'externalid') newMapping.externalId = h;
       });
 
+      // Guess colonne indirizzo postale (Arricchimento Tracciati produce sempre
+      // queste intestazioni fisse: indirizzo/cap/comune/provincia/stato_estero/allegato)
+      // e allegato, con lo stesso matching case/separatore-insensibile di sopra.
+      const newPhysicalAddress: PhysicalAddressConfigColumns = {
+        addressColumn: '',
+        municipalityColumn: '',
+        zipColumn: '',
+        provinceColumn: '',
+        countryColumn: '',
+      };
+      const guessedAttachments: Array<{ key: string; label: string }> = [];
+      headers.forEach(h => {
+        const hLower = h.toLowerCase().replace(/[\s_-]/g, '');
+        if (!newPhysicalAddress.addressColumn && (hLower === 'indirizzo' || hLower === 'indirizzo1' || hLower === 'via')) {
+          newPhysicalAddress.addressColumn = h;
+        } else if (!newPhysicalAddress.municipalityColumn && (hLower === 'comune' || hLower === 'citta' || hLower === 'città')) {
+          newPhysicalAddress.municipalityColumn = h;
+        } else if (!newPhysicalAddress.zipColumn && hLower === 'cap') {
+          newPhysicalAddress.zipColumn = h;
+        } else if (!newPhysicalAddress.provinceColumn && (hLower === 'provincia' || hLower === 'prov')) {
+          newPhysicalAddress.provinceColumn = h;
+        } else if (!newPhysicalAddress.countryColumn && (hLower === 'statoestero' || hLower === 'paese' || hLower === 'stato')) {
+          newPhysicalAddress.countryColumn = h;
+        } else if (guessedAttachments.length === 0 && hLower === 'allegato') {
+          guessedAttachments.push({ key: h, label: 'Documento' });
+        }
+      });
+
       // Se stiamo duplicando/riprendendo una campagna e il CSV ricaricato ha le
       // stesse colonne, riapplica la mappatura salvata invece dell'euristica
       // generica (che potrebbe indovinare male o non indovinare affatto colonne
@@ -4535,9 +4577,31 @@ export function App(): React.JSX.Element {
       if (effectivePendingAttachments) {
         setWizAttachments(effectivePendingAttachments.filter(a => headers.includes(a.key)));
       } else {
-        setWizAttachments([]);
+        // Nessuna mappatura salvata da riapplicare: usa l'euristica (vuota se
+        // nessuna colonna "allegato" trovata, valorizzata per bozze Arricchimento).
+        setWizAttachments(guessedAttachments);
       }
       setWizPendingAttachments(null);
+
+      // Stessa logica campo-per-campo di wizMapping sopra, applicata alle colonne
+      // indirizzo postale: la mappatura salvata vince SOLO per i campi la cui
+      // colonna esiste ancora nel nuovo CSV, gli altri restano all'euristica.
+      const effectivePendingPhysicalAddress = pendingPhysicalAddressOverride !== undefined ? pendingPhysicalAddressOverride : wizPendingPhysicalAddressConfig;
+      if (effectivePendingPhysicalAddress) {
+        (Object.keys(effectivePendingPhysicalAddress) as Array<keyof PhysicalAddressConfigColumns>).forEach((field) => {
+          const col = effectivePendingPhysicalAddress[field];
+          if (col && headers.includes(col)) {
+            newPhysicalAddress[field] = col;
+          }
+        });
+        setWizPendingPhysicalAddressConfig(null);
+      }
+      setWizPostalAddressColumn(newPhysicalAddress.addressColumn || '');
+      setWizPostalMunicipalityColumn(newPhysicalAddress.municipalityColumn || '');
+      setWizPostalZipColumn(newPhysicalAddress.zipColumn || '');
+      setWizPostalProvinceColumn(newPhysicalAddress.provinceColumn || '');
+      setWizPostalCountryColumn(newPhysicalAddress.countryColumn || '');
+
       resolve(headers);
     };
     reader.onerror = () => resolve([]);
@@ -5134,7 +5198,8 @@ export function App(): React.JSX.Element {
             file,
             !!source.channelConfig.wizCsvHasHeaders,
             source.channelConfig?.csvMapping || null,
-            source.channelConfig?.attachments || null
+            source.channelConfig?.attachments || null,
+            source.channelConfig?.physicalAddressConfig || null
           );
           if (source.channelConfig?.csvMapping) {
             setWizLastSyncedHeaders(parsedHeaders);
