@@ -473,6 +473,33 @@ fa il processor per gli altri canali. Bug reale: dimenticarlo lascia la
 campagna bloccata in `QUEUED` per sempre anche a invio terminato per tutti i
 destinatari — nessun errore visibile, solo uno stato mai aggiornato.
 
+## Stato consegna POSTAL/SEND post-accettazione — mai riflesso su recipient.status
+
+Un errore di consegna arrivato DOPO l'accettazione del provider (es.
+GlobalCom `Stato=Accettato` ma poi `CodiceErrore!=='0'` su
+`postalStatusHistory`, stesso principio già noto per `sendStatus`) non fa
+MAI transitare `NotificationAttempt.status`/`Recipient.status` a FAILED —
+nessun demone lo fa oggi (`postal-status-sync.service.ts`/
+`send-status-sync.service.ts` aggiornano solo `postalStatus`/`sendStatus`,
+mai lo status). Conseguenza pratica: `retryRecipient()` (richiede
+`RecipientStatus.FAILED`) rifiuta questi destinatari finché qualcosa non
+forza la transizione — vedi `updateRecipientAddressAndRetry()` in
+`campaigns.service.ts`, che la forza SOLO in risposta a un'azione operatore
+esplicita (mai in automatico, per non rischiare di marcare FAILED uno stato
+GlobalCom transitorio come "Rimandato").
+
+**`CampaignCompletionService.checkAndComplete()` non guarda `failedCount` né
+gli errori di consegna**: marca COMPLETED appena non restano
+PENDING/QUEUED, anche se tutti/alcuni i destinatari sono FAILED o hanno un
+errore di consegna post-accettazione — "Completata" oggi NON significa
+"tutti consegnati senza errori". Cambiare questo comportamento richiede
+prima decidere: cosa conta come errore (solo FAILED, o anche
+CodiceErrore/sendStatus post-accettazione?), che fare del caso misto
+(nuovo stato enum `COMPLETED_WITH_ERRORS`, o restare su COMPLETED con
+evidenza solo nei contatori?), e se il check deve aspettare la consegna
+finale (giorni, per SEND/POSTAL) o restare al solo momento di
+sottomissione — discussione aperta, non ancora implementata.
+
 ## Migration enum Postgres — ALTER TYPE ADD VALUE
 
 `typeorm migration:generate` NON sa generare `ALTER TYPE ... ADD VALUE` per un
@@ -680,6 +707,18 @@ predefinito per questo utente, ma non è presente in archivio"). Soluzione
 adottata: `Ricevuta` = mittente configurato (`postal.strategy.ts`,
 `ricevuta: ricevutaDiRitorno ? provider.mittente : undefined`) — la
 cartolina AR torna al mittente, comportamento standard per raccomandate PA.
+
+**Campo `Nazionale` (InfoGUIDExt) obbligatorio, nessun default.** Mai
+valorizzato prima di un fix reale: GlobalCom applicava il default
+nazionale e rigettava ogni invio con `Stato` estero valorizzato ("è
+stato indicato un invio nazionale, ma lo stato del destinatario non
+risulta l'Italia"), anche con contratto `Estero:true`. Fix:
+`Nazionale: !destinatario.stato` in ogni `invio_ext_singolo`
+(`globalcom-client.service.ts`). **CAP non forwardato per indirizzo
+estero**, stesso principio già in vigore per Provincia: GlobalCom
+valida `InfoIndirizzoExt.CAP` come "se presente, 5 cifre" (formato
+italiano) — un CAP estero (es. belga "1180") viene rigettato
+("Il CAP, se presente, deve essere un numero di cinque cifre").
 
 **Errore GlobalCom `-1: "numeri raccomandata non salvati o non
 disponibili"` (visibile solo su `postal_status_history`/portale GlobalCom,
@@ -928,6 +967,13 @@ canale di campagna dopo la protocollazione, vanificando il dirottamento),
 (filtrava `attempt.channel_type = campaign.channelType`, escludendo i
 dirottati dal widget "Stato Protocollazione" — sembravano mai protocollati
 anche quando lo erano).
+
+**Quarta istanza trovata in sessione successiva**: `getRecipientStats()`
+(lista "Destinatari Caricati") filtrava allo stesso modo su
+`channelType: campaign.channelType` — un dirottato mostrava sempre "—" su
+protocollo/iun/stato consegna anche quando il dato esisteva davvero in DB.
+Query su attempt per "ultimo tentativo per destinatario" non deve MAI
+filtrare su channelType, punto.
 
 **Priorità tra override**: se un destinatario è dirottato da INAD, l'App IO
 esclusiva (che salterebbe il canale primario) viene declassata a parallela
