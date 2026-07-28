@@ -13,6 +13,7 @@ import { THROTTLE_REDIS } from './notification-job.types';
 import { MailConfigsService } from '../mail-configs/mail-configs.service';
 import { IoServicesService } from '../io-services/io-services.service';
 import { CampaignCompletionService } from '../campaigns/campaign-completion.service';
+import { AppIoDeliveryService } from '../channels/app-io/app-io-delivery.service';
 import type { NotificationJobData } from '@comunicapa/shared-types';
 
 const mockRedis = {
@@ -143,6 +144,7 @@ describe('NotificationProcessor', () => {
         { provide: MailConfigsService, useValue: mockMailConfigs },
         { provide: IoServicesService, useValue: mockIoServices },
         { provide: CampaignCompletionService, useValue: mockCampaignCompletion },
+        AppIoDeliveryService,
       ],
     }).compile();
 

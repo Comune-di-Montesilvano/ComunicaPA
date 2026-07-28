@@ -11,18 +11,14 @@ import { Campaign } from '../entities/campaign.entity';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity';
 import { THROTTLE_REDIS } from './notification-job.types';
 import { CHANNEL_STRATEGIES, IChannelStrategy } from '../channels/channel.interface';
-import { processTemplate, buildParallelChannelNotice, formatAppIoMarkdown, resolveCitizenPortalUrl } from '../channels/template.helper';
-import { resolveAttachmentsConfig, resolveAttachmentLabel } from '../attachments/attachment.service';
-import { ConfigService } from '@nestjs/config';
-import type { AppConfiguration } from '../config/configuration';
 import { getEffectiveRetentionDays } from '../campaigns/retention.util';
 import { AppSettingsService } from '../settings/app-settings.service';
 import { MailConfigsService } from '../mail-configs/mail-configs.service';
 import { IoServicesService } from '../io-services/io-services.service';
 import { APP_IO_BASE_URL } from '../channels/app-io/app-io.strategy';
 import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util';
-import { resolvePaymentData } from '../channels/payment-config.util';
 import { CampaignCompletionService } from '../campaigns/campaign-completion.service';
+import { AppIoDeliveryService } from '../channels/app-io/app-io-delivery.service';
 
 @Injectable()
 export class NotificationProcessor extends WorkerHost {
@@ -37,13 +33,13 @@ export class NotificationProcessor extends WorkerHost {
     private readonly recipientRepo: Repository<Recipient>,
     @Inject(CHANNEL_STRATEGIES)
     private readonly strategies: Map<NotificationChannel, IChannelStrategy>,
-    private readonly config: ConfigService<AppConfiguration, true>,
     private readonly settings: AppSettingsService,
     @Inject(THROTTLE_REDIS)
     private readonly redis: Redis,
     private readonly mailConfigs: MailConfigsService,
     private readonly ioServices: IoServicesService,
     private readonly campaignCompletion: CampaignCompletionService,
+    private readonly appIoDelivery: AppIoDeliveryService,
   ) {
     super();
   }
@@ -175,11 +171,11 @@ export class NotificationProcessor extends WorkerHost {
 
     // Modalità ESCLUSIVA: se il destinatario ha App IO, si invia SOLO lì.
     if (appIoMode === 'exclusive' && isMailChannel && job.attemptsMade === 0) {
-      const hasAppIo = await this.checkAppIoProfile(
+      const hasAppIo = await this.appIoDelivery.checkProfile(
         APP_IO_BASE_URL, appIoResolved!.apiKey, recipient.codiceFiscale, jobLog,
       );
       if (hasAppIo) {
-        const appIoResult = await this.sendAppIoMessage(campaign, recipient, {
+        const appIoResult = await this.appIoDelivery.sendMessage(campaign, recipient, {
           apiKey: appIoResolved!.apiKey,
           baseUrl: APP_IO_BASE_URL,
           subjectOverride: (appIoConfig as { subjectOverride?: string } | undefined)?.subjectOverride,
@@ -231,13 +227,13 @@ export class NotificationProcessor extends WorkerHost {
 
       // 2. Co-delivery PARALLELA (comportamento attuale, solo primo tentativo)
       if (appIoMode === 'parallel' && isMailChannel && job.attemptsMade === 0) {
-        const hasAppIo = await this.checkAppIoProfile(
+        const hasAppIo = await this.appIoDelivery.checkProfile(
           APP_IO_BASE_URL, appIoResolved!.apiKey, recipient.codiceFiscale, jobLog,
         );
         if (hasAppIo) {
           this.logger.log(`Invio App IO parallelo per CF: ${recipient.codiceFiscale}`);
           jobLog(`Invio App IO parallelo per CF: ${recipient.codiceFiscale}`);
-          const appIoResult = await this.sendAppIoMessage(campaign, recipient, {
+          const appIoResult = await this.appIoDelivery.sendMessage(campaign, recipient, {
           apiKey: appIoResolved!.apiKey,
           baseUrl: APP_IO_BASE_URL,
           subjectOverride: (appIoConfig as { subjectOverride?: string } | undefined)?.subjectOverride,
@@ -308,132 +304,4 @@ export class NotificationProcessor extends WorkerHost {
     await this.campaignCompletion.checkAndComplete(campaignId);
   }
 
-  private async checkAppIoProfile(
-    baseUrl: string,
-    apiKey: string,
-    fiscalCode: string,
-    onLog?: (msg: string) => void,
-  ): Promise<boolean> {
-    try {
-      const res = await fetch(`${baseUrl}/api/v1/profiles/${fiscalCode}`, {
-        method: 'GET',
-        headers: {
-          'Ocp-Apim-Subscription-Key': apiKey,
-        },
-      });
-      if (!res.ok) {
-        // 404 = cittadino non ha mai attivato App IO (esito atteso, non un
-        // errore); altri status possono indicare un problema reale (CF
-        // malformato, api key non valida, servizio App IO giù, ecc.) —
-        // logghiamo comunque, col body di PagoPA quando c'è, per rendere
-        // distinguibili i due casi quando la co-consegna non parte.
-        const detail = res.status === 404 ? '' : await res.text().catch(() => '');
-        const msg = `Profilo App IO non disponibile per CF ${fiscalCode}: HTTP ${res.status}${detail ? ` — ${detail}` : ''}`;
-        this.logger.debug(msg);
-        onLog?.(msg);
-        return false;
-      }
-      const data = (await res.json()) as { sender_allowed: boolean };
-      if (!data?.sender_allowed) {
-        const msg = `Cittadino CF ${fiscalCode} ha disabilitato i messaggi da questo servizio App IO`;
-        this.logger.debug(msg);
-        onLog?.(msg);
-      }
-      return !!data?.sender_allowed;
-    } catch (err: any) {
-      const msg = `Verifica profilo App IO fallita per CF ${fiscalCode}: ${err?.message ?? err}`;
-      this.logger.warn(msg);
-      onLog?.(msg);
-      return false;
-    }
-  }
-
-  private async sendAppIoMessage(
-    campaign: Campaign,
-    recipient: Recipient,
-    appIoConfig: { apiKey: string; baseUrl: string; subjectOverride?: string; bodyOverride?: string },
-    onLog?: (msg: string) => void,
-    parallelPrimaryChannel?: NotificationChannel,
-  ): Promise<{ success: boolean; messageId?: string; error?: string }> {
-    try {
-      const publicApiUrl = await this.settings.get<string>('system.publicUrl');
-      const downloadLinkSecret = this.config.get('downloadLink.secret', { infer: true });
-      const retentionMaxDays = await this.settings.get<number>('retention.maxDays');
-      const retentionDays = getEffectiveRetentionDays(campaign, retentionMaxDays);
-      const expiresAtUnix = Math.floor(Date.now() / 1000) + retentionDays * 86400;
-
-      const attachmentLabels = resolveAttachmentsConfig(campaign.channelConfig).map((a) => resolveAttachmentLabel(a, recipient));
-      const processedSubject = processTemplate(
-        appIoConfig.subjectOverride || (campaign.channelConfig?.['subject'] as string) || campaign.name,
-        recipient,
-        publicApiUrl,
-        downloadLinkSecret,
-        expiresAtUnix,
-        attachmentLabels,
-        'html',
-        'APP_IO',
-      );
-      const rawMarkdown = processTemplate(
-        appIoConfig.bodyOverride || (campaign.channelConfig?.['body'] as string) || '',
-        recipient,
-        publicApiUrl,
-        downloadLinkSecret,
-        expiresAtUnix,
-        attachmentLabels,
-        'markdown',
-        'APP_IO',
-      );
-
-      const portalUrl = await resolveCitizenPortalUrl(this.settings);
-      const parallelNotice = parallelPrimaryChannel
-        ? buildParallelChannelNotice(recipient, parallelPrimaryChannel, campaign.channelConfig?.['physicalAddressConfig'] as Record<string, unknown> | undefined)
-        : undefined;
-      const processedMarkdown = formatAppIoMarkdown(rawMarkdown, { parallelNotice, portalUrl });
-
-      const contentPayload: Record<string, any> = {
-        subject: processedSubject,
-        markdown: processedMarkdown,
-      };
-
-      const paymentConfig = campaign.channelConfig?.['paymentConfig'] as Record<string, any> | undefined;
-      const resolvedPayment = resolvePaymentData(recipient, paymentConfig);
-      if (resolvedPayment?.noticeCode && resolvedPayment.amountCents != null) {
-        const paymentData: Record<string, any> = {
-          amount: resolvedPayment.amountCents,
-          notice_number: resolvedPayment.noticeCode,
-          invalid_after_due_date: true,
-        };
-        if (resolvedPayment.creditorTaxId) {
-          paymentData.payee = { fiscal_code: resolvedPayment.creditorTaxId };
-        }
-        contentPayload.payment_data = paymentData;
-      }
-      if (resolvedPayment?.dueDateIso) {
-        contentPayload.due_date = resolvedPayment.dueDateIso;
-      }
-
-      onLog?.(`Invio App IO (co-delivery) a CF ${recipient.codiceFiscale}: markdown length=${processedMarkdown.length}`);
-      const appIoRes = await fetch(`${appIoConfig.baseUrl}/api/v1/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Ocp-Apim-Subscription-Key': appIoConfig.apiKey },
-        body: JSON.stringify({
-          fiscal_code: recipient.codiceFiscale,
-          content: contentPayload,
-        }),
-      });
-      onLog?.(`Risposta App IO (co-delivery) per CF ${recipient.codiceFiscale}: HTTP ${appIoRes.status}`);
-
-      if (!appIoRes.ok) {
-        const detail = await appIoRes.text().catch(() => '');
-        const error = `App IO status: ${appIoRes.status}${detail ? ` — ${detail}` : ''}`;
-        onLog?.(error);
-        return { success: false, error };
-      }
-      const appIoData = (await appIoRes.json()) as { id: string };
-      return { success: true, messageId: appIoData.id };
-    } catch (err: any) {
-      onLog?.(`Eccezione invio App IO (co-delivery) per CF ${recipient.codiceFiscale}: ${err.message}`);
-      return { success: false, error: err.message };
-    }
-  }
 }
