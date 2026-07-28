@@ -176,6 +176,31 @@ describe('resolvePhysicalAddress', () => {
     });
   });
 
+  it('omette province per una riga estera anche se provinceColumn è valorizzata (dato residuo/template)', () => {
+    const recipient = makeRecipient({
+      indirizzo: 'Rue Dodonee 132',
+      comune: 'Uccle',
+      cap: '1180',
+      prov: 'XX',
+      paese: 'belgio',
+    });
+    const result = resolvePhysicalAddress(recipient, {
+      enabled: true,
+      addressColumn: 'indirizzo',
+      municipalityColumn: 'comune',
+      zipColumn: 'cap',
+      provinceColumn: 'prov',
+      countryColumn: 'paese',
+    });
+    expect(result).toEqual({
+      address: 'Rue Dodonee 132',
+      municipality: 'Uccle',
+      zip: '1180',
+      foreignState: 'Belgio',
+    });
+    expect(result?.province).toBeUndefined();
+  });
+
   it('non valorizza foreignState se countryColumn risolve a Italia', () => {
     const recipient = makeRecipient({
       indirizzo: 'Via Roma 1', comune: 'Roma', paese: 'Italia',

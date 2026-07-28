@@ -107,8 +107,9 @@ function normalizeCountryName(value: string): string {
   return value
     .trim()
     .toLowerCase()
+    .replace(/['’]/g, "'") // normalizza apostrofo tipografico/curly a quello dritto
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, ''); // rimuove diacritici (é->e, ù->u, ...)
+    .replace(/[\u0300-\u036f]/g, ''); // rimuove diacritici (é->e, ù->u, ...)
 }
 
 const COUNTRY_NORMALIZED_INDEX: Map<string, string> = new Map(

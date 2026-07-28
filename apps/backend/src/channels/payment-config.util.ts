@@ -135,7 +135,11 @@ export function resolvePhysicalAddress(
     address,
     municipality,
     ...(zip ? { zip } : {}),
-    ...(province ? { province } : {}),
+    // Provincia non significativa per un indirizzo estero (design doc
+    // 2026-07-28-indirizzo-estero): GlobalCom si aspetta un codice
+    // provincia italiano a 2 lettere, mai forwardato per righe estere anche
+    // se il CSV valorizza comunque la colonna mappata (dato residuo/template).
+    ...(province && !isForeign ? { province } : {}),
     ...(isForeign ? { foreignState } : {}),
   };
 }

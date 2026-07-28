@@ -312,15 +312,20 @@ describe('SendDispatchService', () => {
     expect(body.documents[0].title).toBe('Oggetto specifico per Mario');
   });
 
-  it('applica abbreviazioni e tronca denomination a 88 char se troppo lunga', async () => {
+  it('applica abbreviazioni e tronca denomination a 88 char se il nome originale è troppo lungo', async () => {
     settingsValues['notifiche.denominazioneAbbreviations'] = JSON.stringify([
       { pattern: 'IMPERSONALMENTE E COLLETTIVAMENTE AGLI EREDI DI', replacement: 'EREDI DI' },
     ]);
+    // Nome costruito apposta per superare 88 char PRIMA dell'abbreviazione (altrimenti
+    // splitDenominazione non abbrevia affatto un nome che già rientra nel limite — vedi
+    // gotcha "abbrevia solo se il nome eccede il limite" in denominazione.util.ts).
+    const nomeLunghissimo =
+      'IMPERSONALMENTE E COLLETTIVAMENTE AGLI EREDI DI ERASMO ALESSANDRO BUONGIORNO DELLA TORRE PALLADIO MONTESILVANO PESCARA ABRUZZO';
     const attempt = makeAttempt({
       recipient: {
         id: 'r1',
         codiceFiscale: 'RSSMRA85M01H501Z',
-        fullName: 'IMPERSONALMENTE E COLLETTIVAMENTE AGLI EREDI DI ERASMO ALESSANDRO',
+        fullName: nomeLunghissimo,
         extraData: {},
         campaign: {
           id: 'camp-1',
@@ -336,7 +341,35 @@ describe('SendDispatchService', () => {
 
     const sendCall = mockFetch.mock.calls.find(([url]) => url === 'https://send.test/delivery/v2.6/requests');
     const body = JSON.parse(sendCall![1].body as string);
-    expect(body.recipients[0].denomination).toBe('EREDI DI ERASMO ALESSANDRO');
+    expect(body.recipients[0].denomination.startsWith('EREDI DI')).toBe(true);
     expect(body.recipients[0].denomination.length).toBeLessThanOrEqual(88);
+  });
+
+  it('non applica abbreviazioni se il nome rientra già nel limite di 88 char', async () => {
+    settingsValues['notifiche.denominazioneAbbreviations'] = JSON.stringify([
+      { pattern: 'IMPERSONALMENTE E COLLETTIVAMENTE AGLI EREDI DI', replacement: 'EREDI DI' },
+    ]);
+    const nomeCorto = 'IMPERSONALMENTE E COLLETTIVAMENTE AGLI EREDI DI ERASMO ALESSANDRO';
+    const attempt = makeAttempt({
+      recipient: {
+        id: 'r1',
+        codiceFiscale: 'RSSMRA85M01H501Z',
+        fullName: nomeCorto,
+        extraData: {},
+        campaign: {
+          id: 'camp-1',
+          name: 'TARI',
+          retentionDays: null,
+          channelConfig: { subject: 'Avviso TARI 2026', taxonomyCode: '010101P', physicalCommunicationType: 'AR_REGISTERED_LETTER' },
+        } as unknown as Campaign,
+      } as unknown as Recipient,
+    });
+    mockBatch([attempt]);
+
+    await service.handleCron();
+
+    const sendCall = mockFetch.mock.calls.find(([url]) => url === 'https://send.test/delivery/v2.6/requests');
+    const body = JSON.parse(sendCall![1].body as string);
+    expect(body.recipients[0].denomination).toBe(nomeCorto);
   });
 });

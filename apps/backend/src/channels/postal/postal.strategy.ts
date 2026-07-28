@@ -91,10 +91,15 @@ export class PostalStrategy implements IChannelStrategy {
     } catch {
       this.logger.warn(`notifiche.denominazioneAbbreviations non è JSON valido, ignorata: ${abbreviationsRaw}`);
     }
-    const { denominazione1, denominazione2 } = splitDenominazione(
+    const { denominazione1, denominazione2, truncated } = splitDenominazione(
       recipient.fullName || recipient.codiceFiscale,
       abbreviations,
     );
+    if (truncated) {
+      this.logger.warn(
+        `Denominazione troncata per destinatario ${recipient.codiceFiscale}: nome oltre gli 88 caratteri disponibili su Denominazione1+2`,
+      );
+    }
 
     const destinatario: GbcAddress = {
       denominazione1,

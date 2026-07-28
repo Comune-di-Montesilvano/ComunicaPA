@@ -2917,10 +2917,26 @@ export function App(): React.JSX.Element {
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      JSON.parse(settDenominazioneAbbreviationsText || '[]');
+      const parsed: unknown = JSON.parse(settDenominazioneAbbreviationsText || '[]');
+      if (!Array.isArray(parsed)) {
+        throw new Error('non è un array');
+      }
+      for (const entry of parsed) {
+        if (
+          !entry ||
+          typeof entry !== 'object' ||
+          typeof (entry as { pattern?: unknown }).pattern !== 'string' ||
+          (entry as { pattern: string }).pattern.length === 0 ||
+          typeof (entry as { replacement?: unknown }).replacement !== 'string'
+        ) {
+          throw new Error('voce malformata');
+        }
+      }
       setSettDenominazioneAbbreviationsError('');
     } catch {
-      setSettDenominazioneAbbreviationsError('JSON non valido nella tabella abbreviazioni denominazione — correggi prima di salvare.');
+      setSettDenominazioneAbbreviationsError(
+        'Formato non valido nella tabella abbreviazioni denominazione — deve essere un array di oggetti { pattern, replacement } con pattern non vuoto, correggi prima di salvare.',
+      );
       return;
     }
     try {

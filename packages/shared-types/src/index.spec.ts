@@ -41,4 +41,8 @@ describe('matchCountry', () => {
   it('ritorna null se nessun match', () => {
     expect(matchCountry('Paese Inesistente XYZ')).toBeNull();
   });
+
+  it('normalizza apostrofo tipografico (curly) a quello dritto', () => {
+    expect(matchCountry('Costa d’Avorio')).toBe("Costa d'Avorio");
+  });
 });

@@ -16,15 +16,24 @@ export function splitDenominazione(
   fullName: string,
   abbreviations: DenominazioneAbbreviation[],
   maxPerLine = 44,
-): { denominazione1: string; denominazione2?: string } {
+): { denominazione1: string; denominazione2?: string; truncated: boolean } {
   let text = fullName.trim();
-  for (const { pattern, replacement } of abbreviations) {
-    text = text.split(pattern).join(replacement);
+
+  if (text.length > maxPerLine) {
+    const safeAbbreviations: DenominazioneAbbreviation[] = Array.isArray(abbreviations)
+      ? abbreviations.filter(
+          (a): a is DenominazioneAbbreviation =>
+            !!a && typeof a.pattern === 'string' && a.pattern.length > 0 && typeof a.replacement === 'string',
+        )
+      : [];
+    for (const { pattern, replacement } of safeAbbreviations) {
+      text = text.split(pattern).join(replacement);
+    }
+    text = text.trim();
   }
-  text = text.trim();
 
   if (text.length <= maxPerLine) {
-    return { denominazione1: text };
+    return { denominazione1: text, truncated: false };
   }
 
   // Word-wrap: trova l'ultimo spazio entro maxPerLine per non spezzare una parola.
@@ -32,7 +41,9 @@ export function splitDenominazione(
   if (splitAt <= 0) splitAt = maxPerLine; // parola singola più lunga del limite: taglio secco
 
   const denominazione1 = text.slice(0, splitAt).trim();
-  const denominazione2 = text.slice(splitAt).trim().slice(0, maxPerLine);
+  const remainder = text.slice(splitAt).trim();
+  const denominazione2 = remainder.slice(0, maxPerLine);
+  const truncated = remainder.length > maxPerLine;
 
-  return { denominazione1, denominazione2: denominazione2 || undefined };
+  return { denominazione1, denominazione2: denominazione2 || undefined, truncated };
 }

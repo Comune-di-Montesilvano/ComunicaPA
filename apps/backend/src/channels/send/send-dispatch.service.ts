@@ -197,11 +197,16 @@ export class SendDispatchService {
     // SEND ha un solo campo denomination (max 88 char, verificato su spec PN
     // raw) — riusa splitDenominazione solo per l'abbreviazione (maxPerLine=88
     // disabilita di fatto lo split multi-riga per nomi fino a 88 char).
-    const { denominazione1: denomination } = splitDenominazione(
+    const { denominazione1: denomination, truncated: denominationTruncated } = splitDenominazione(
       recipient.fullName ?? recipient.codiceFiscale,
       abbreviations,
       88,
     );
+    if (denominationTruncated) {
+      this.logger.warn(
+        `Denomination troncata per destinatario ${recipient.codiceFiscale}: nome oltre gli 88 caratteri disponibili`,
+      );
+    }
 
     const payload: Record<string, unknown> = {
       // Deterministico sull'attemptId: un retry del demone (crash, errore rete)
