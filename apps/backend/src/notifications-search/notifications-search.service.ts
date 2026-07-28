@@ -6,6 +6,7 @@ import { NotificationAttempt } from '../entities/notification-attempt.entity';
 import { DownloadEvent } from '../entities/download-event.entity';
 import { CampaignsService } from '../campaigns/campaigns.service';
 import { SendLegalFactsService, type SendLegalFactItem, type SendLegalFactDownloadResult } from '../channels/send/send-legal-facts.service';
+import { AttachmentService, resolveAttachmentsConfig, resolveAttachmentLabel, resolveCustomAttachmentFilename } from '../attachments/attachment.service';
 import type { NotificationDetailDto } from './dto/notification-detail.dto';
 
 export interface SearchFilters {
@@ -42,6 +43,7 @@ export class NotificationsSearchService {
     private readonly downloadEventRepo: Repository<DownloadEvent>,
     private readonly campaignsService: CampaignsService,
     private readonly sendLegalFacts: SendLegalFactsService,
+    private readonly attachmentService: AttachmentService,
   ) {}
 
   async search(filters: SearchFilters): Promise<{ rows: SearchRowDto[]; total: number }> {
@@ -115,6 +117,19 @@ export class NotificationsSearchService {
     const appIoDelivered = attempts.some((a) => (a.responsePayload?.['appIo'] as { success?: boolean } | undefined)?.success);
     const appIoPreview = appIoDelivered ? await this.campaignsService.renderAppIoCoDeliveryPreview(recipientId) : null;
 
+    // Stessa logica di CitizenService.toCitizenDto: elenco allegati configurati
+    // per il canale, con fallback legacy (campagne senza channelConfig.attachments
+    // esplicito, primo file .pdf in extraData) — serve per esporre un bottone di
+    // download lato admin anche per POSTAL, che non ha mai un link nel body
+    // (a differenza di EMAIL/PEC/APP_IO, dove il link è già nel preview.bodyHtml).
+    let attachments = resolveAttachmentsConfig(recipient.campaign.channelConfig).map((a, index) => ({ index, label: resolveAttachmentLabel(a, recipient) }));
+    if (attachments.length === 0) {
+      const legacyFile = resolveCustomAttachmentFilename(recipient, 0);
+      if (legacyFile) {
+        attachments = [{ index: 0, label: 'Documento principale.pdf' }];
+      }
+    }
+
     const isBillableChannel = recipient.campaign.channelType === 'SEND' || recipient.campaign.channelType === 'POSTAL';
     const calculatedAttempts = attempts.filter((a) => a.costCents !== null);
     const totalCostCents = isBillableChannel
@@ -174,7 +189,25 @@ export class NotificationsSearchService {
       preview,
       appIoPreview,
       totalCostCents,
+      attachments,
     };
+  }
+
+  /**
+   * Download admin dell'allegato di un destinatario — endpoint autenticato
+   * operatore (JwtAuthGuard di default sul controller), a differenza del link
+   * pubblico firmato usato nei body EMAIL/PEC/APP_IO
+   * (PublicDownloadController, verifica HMAC+scadenza, nessun login). Nessun
+   * incremento downloadCount/DownloadEvent: è una consultazione da backoffice,
+   * non un download del cittadino.
+   */
+  async downloadAttachment(recipientId: string, index: number): Promise<{ buffer: Buffer; filename: string }> {
+    const recipient = await this.recipientRepo.findOne({ where: { id: recipientId }, relations: ['campaign'] });
+    if (!recipient) throw new NotFoundException(`Recipient ${recipientId} not found`);
+
+    const buffer = await this.attachmentService.generatePdfBuffer(recipient, index);
+    const filename = resolveCustomAttachmentFilename(recipient, index) || `avviso_${recipientId.slice(0, 8)}_${index + 1}.pdf`;
+    return { buffer, filename };
   }
 
   async getSendLegalFacts(recipientId: string): Promise<{ items: SendLegalFactItem[] }> {

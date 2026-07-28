@@ -1010,6 +1010,7 @@ export function App(): React.JSX.Element {
     appIoPreview: { subject: string; bodyHtml?: string; bodyMarkdown?: string } | null;
     downloads: Array<{ channel: string; attachmentIndex: number; downloadedAt: string }>;
     totalCostCents?: number | null;
+    attachments: Array<{ index: number; label: string }>;
   } | null>(null);
   const [notifDetailLoading, setNotifDetailLoading] = useState(false);
   const [sendLegalFacts, setSendLegalFacts] = useState<{ legalFactId: string; category: string }[] | null>(null);
@@ -1225,6 +1226,35 @@ export function App(): React.JSX.Element {
       }
     } catch (err) {
       if (!(err instanceof ApiAuthError)) alert('Errore durante il download del documento.');
+    }
+  };
+
+  const downloadNotifAttachment = async (index: number) => {
+    if (!notifDetail) return;
+    try {
+      const res = await apiFetch(`/notifications-search/${notifDetail.recipient.id}/attachment/${index}`);
+      if (!res.ok) {
+        alert('Errore durante il download dell\'allegato.');
+        return;
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get('content-disposition') || '';
+      const match = disposition.match(/filename="?([^"]+)"?/);
+      const filename = match ? match[1] : `allegato-${index + 1}.pdf`;
+      const url = URL.createObjectURL(blob);
+      if (/\.pdf$/i.test(filename)) {
+        window.open(url, '_blank');
+      } else {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
+    } catch (err) {
+      if (!(err instanceof ApiAuthError)) alert('Errore durante il download dell\'allegato.');
     }
   };
 
@@ -10559,6 +10589,33 @@ export function App(): React.JSX.Element {
                                 </div>
                               )
                             )}
+                          </>
+                        )}
+
+                        {notifDetail.campaign.channelType !== 'SEND' && notifDetail.attachments.length > 0 && (
+                          <>
+                            <h6 className="fw-bold small">Allegati</h6>
+                            <div className="table-responsive">
+                              <table className="table table-sm mb-4">
+                                <thead><tr><th>Documento</th><th></th></tr></thead>
+                                <tbody>
+                                  {notifDetail.attachments.map((att) => (
+                                    <tr key={att.index}>
+                                      <td className="small">{att.label}</td>
+                                      <td className="small text-end">
+                                        <button
+                                          type="button"
+                                          className="btn btn-sm btn-outline-secondary"
+                                          onClick={() => downloadNotifAttachment(att.index)}
+                                        >
+                                          <Download className="me-1" size={16} />Scarica
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
                           </>
                         )}
 

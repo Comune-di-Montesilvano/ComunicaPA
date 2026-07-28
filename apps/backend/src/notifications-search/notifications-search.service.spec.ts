@@ -7,6 +7,7 @@ import { NotificationAttempt } from '../entities/notification-attempt.entity';
 import { DownloadEvent } from '../entities/download-event.entity';
 import { CampaignsService } from '../campaigns/campaigns.service';
 import { SendLegalFactsService } from '../channels/send/send-legal-facts.service';
+import { AttachmentService } from '../attachments/attachment.service';
 
 describe('NotificationsSearchService.search', () => {
   const qbMock = {
@@ -36,6 +37,7 @@ describe('NotificationsSearchService.search', () => {
         { provide: getRepositoryToken(DownloadEvent), useValue: { find: jest.fn() } },
         { provide: CampaignsService, useValue: { renderMessageForRecipient: jest.fn() } },
         { provide: SendLegalFactsService, useValue: { listLegalFacts: jest.fn(), downloadLegalFact: jest.fn() } },
+        { provide: AttachmentService, useValue: { generatePdfBuffer: jest.fn() } },
       ],
     }).compile();
     service = moduleRef.get(NotificationsSearchService);
@@ -113,6 +115,7 @@ describe('NotificationsSearchService.getDetail', () => {
         { provide: getRepositoryToken(DownloadEvent), useValue: downloadEventRepoMock },
         { provide: CampaignsService, useValue: campaignsServiceMock },
         { provide: SendLegalFactsService, useValue: { listLegalFacts: jest.fn(), downloadLegalFact: jest.fn() } },
+        { provide: AttachmentService, useValue: { generatePdfBuffer: jest.fn() } },
       ],
     }).compile();
     service = moduleRef.get(NotificationsSearchService);
@@ -198,7 +201,35 @@ describe('NotificationsSearchService.getDetail', () => {
       preview: { subject: 'Ciao Mario', bodyHtml: '<p>Corpo</p>' },
       appIoPreview: { subject: 'Ciao Mario IO', bodyMarkdown: 'Corpo IO' },
       totalCostCents: 0,
+      attachments: [],
     });
+  });
+
+  it('espone gli allegati configurati per una campagna POSTAL (nessun link nel body, serve per il bottone download admin)', async () => {
+    recipientRepoMock.findOne.mockResolvedValueOnce({
+      id: 'r-postal',
+      codiceFiscale: 'VRDLGU85B02H501X',
+      fullName: 'Luigi Verdi',
+      email: null,
+      pec: null,
+      status: 'sent',
+      extraData: {},
+      campaign: {
+        id: 'c-postal',
+        name: 'Raccomandata AR',
+        channelType: 'POSTAL',
+        postalServiceType: 'RaccomandataMarket4',
+        postalReturnReceipt: true,
+        channelConfig: { attachments: [{ key: 'file', label: 'Avviso' }] },
+      },
+    });
+    attemptRepoMock.find.mockResolvedValueOnce([]);
+    downloadEventRepoMock.find.mockResolvedValueOnce([]);
+    campaignsServiceMock.renderMessageForRecipient.mockResolvedValueOnce({ subject: 'Avviso', bodyHtml: '' });
+
+    const result = await service.getDetail('r-postal');
+
+    expect(result.attachments).toEqual([{ index: 0, label: 'Avviso' }]);
   });
 
   it('espone iun/protocollo/stato SEND quando presenti sull\'attempt', async () => {
@@ -305,6 +336,7 @@ describe('NotificationsSearchService.getSendLegalFacts / downloadSendLegalFact',
         { provide: getRepositoryToken(DownloadEvent), useValue: downloadEventRepoMock },
         { provide: CampaignsService, useValue: campaignsServiceMock },
         { provide: SendLegalFactsService, useValue: sendLegalFactsMock },
+        { provide: AttachmentService, useValue: { generatePdfBuffer: jest.fn() } },
       ],
     }).compile();
     service = moduleRef.get(NotificationsSearchService);
@@ -350,5 +382,52 @@ describe('NotificationsSearchService.getSendLegalFacts / downloadSendLegalFact',
 
     expect(sendLegalFactsMock.downloadLegalFact).toHaveBeenCalledWith('IUN-1', 'key1');
     expect(result).toEqual({ ready: true, filename: 'a.pdf', contentType: 'application/pdf', buffer: Buffer.from('x') });
+  });
+});
+
+describe('NotificationsSearchService.downloadAttachment', () => {
+  const recipientRepoMock = { findOne: jest.fn() };
+  const attachmentServiceMock = { generatePdfBuffer: jest.fn() };
+
+  let service: NotificationsSearchService;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        NotificationsSearchService,
+        { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
+        { provide: getRepositoryToken(NotificationAttempt), useValue: { find: jest.fn() } },
+        { provide: getRepositoryToken(DownloadEvent), useValue: { find: jest.fn() } },
+        { provide: CampaignsService, useValue: { renderMessageForRecipient: jest.fn() } },
+        { provide: SendLegalFactsService, useValue: { listLegalFacts: jest.fn(), downloadLegalFact: jest.fn() } },
+        { provide: AttachmentService, useValue: attachmentServiceMock },
+      ],
+    }).compile();
+    service = moduleRef.get(NotificationsSearchService);
+  });
+
+  it('lancia NotFoundException se il destinatario non esiste', async () => {
+    recipientRepoMock.findOne.mockResolvedValueOnce(null);
+
+    await expect(service.downloadAttachment('no-exist', 0)).rejects.toThrow(NotFoundException);
+    expect(attachmentServiceMock.generatePdfBuffer).not.toHaveBeenCalled();
+  });
+
+  it('genera il PDF via AttachmentService, nessun incremento downloadCount (consultazione da backoffice)', async () => {
+    recipientRepoMock.findOne.mockResolvedValueOnce({
+      id: 'r-postal', codiceFiscale: 'VRDLGU85B02H501X', extraData: { file: 'raccomandata.pdf' },
+      campaign: { channelConfig: { attachments: [{ key: 'file', label: 'Avviso' }] } },
+    });
+    attachmentServiceMock.generatePdfBuffer.mockResolvedValueOnce(Buffer.from('%PDF-fake'));
+
+    const result = await service.downloadAttachment('r-postal', 0);
+
+    expect(attachmentServiceMock.generatePdfBuffer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'r-postal' }),
+      0,
+    );
+    expect(result.buffer.toString()).toBe('%PDF-fake');
+    expect(result.filename).toBe('raccomandata.pdf');
   });
 });

@@ -5,11 +5,12 @@ import { NotificationAttempt } from '../entities/notification-attempt.entity';
 import { DownloadEvent } from '../entities/download-event.entity';
 import { CampaignsModule } from '../campaigns/campaigns.module';
 import { SendLegalFactsModule } from '../channels/send/send-legal-facts.module';
+import { AttachmentModule } from '../attachments/attachment.module';
 import { NotificationsSearchService } from './notifications-search.service';
 import { NotificationsSearchController } from './notifications-search.controller';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Recipient, NotificationAttempt, DownloadEvent]), CampaignsModule, SendLegalFactsModule],
+  imports: [TypeOrmModule.forFeature([Recipient, NotificationAttempt, DownloadEvent]), CampaignsModule, SendLegalFactsModule, AttachmentModule],
   controllers: [NotificationsSearchController],
   providers: [NotificationsSearchService],
 })

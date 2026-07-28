@@ -44,4 +44,5 @@ export interface NotificationDetailDto {
   preview: PreviewMessageResult;
   appIoPreview: PreviewMessageResult | null;
   totalCostCents?: number | null;
+  attachments: Array<{ index: number; label: string }>;
 }

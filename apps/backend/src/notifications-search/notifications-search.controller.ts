@@ -1,4 +1,4 @@
-import { Controller, Get, Param, ParseUUIDPipe, Query, Res } from '@nestjs/common';
+import { Controller, Get, Param, ParseIntPipe, ParseUUIDPipe, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { NotificationsSearchService } from './notifications-search.service';
@@ -59,5 +59,19 @@ export class NotificationsSearchController {
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `attachment; filename="${result.filename.replace(/"/g, '')}"`);
     res.end(result.buffer);
+  }
+
+  @Get(':recipientId/attachment/:index')
+  async downloadAttachment(
+    @Param('recipientId', ParseUUIDPipe) recipientId: string,
+    @Param('index', ParseIntPipe) index: number,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { buffer, filename } = await this.svc.downloadAttachment(recipientId, index);
+    const isPdf = filename.toLowerCase().endsWith('.pdf');
+    const contentType = isPdf ? 'application/pdf' : 'application/octet-stream';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename.replace(/"/g, '')}"`);
+    res.end(buffer);
   }
 }
