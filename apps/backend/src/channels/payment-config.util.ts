@@ -134,7 +134,14 @@ export function resolvePhysicalAddress(
   return {
     address,
     municipality,
-    ...(zip ? { zip } : {}),
+    // CAP non forwardato per un indirizzo estero: GlobalCom valida
+    // InfoIndirizzoExt.CAP come "se presente, numero di 5 cifre" (formato
+    // italiano) — un CAP estero (es. belga "1180", 4 cifre) fa rigettare
+    // l'invio con un errore reale GlobalCom ("Errore nei dati del
+    // destinatario... Il CAP, se presente, deve essere un numero di cinque
+    // cifre"), anche col contratto Estero abilitato. Stesso principio già
+    // applicato a Provincia sotto.
+    ...(zip && !isForeign ? { zip } : {}),
     // Provincia non significativa per un indirizzo estero (design doc
     // 2026-07-28-indirizzo-estero): GlobalCom si aspetta un codice
     // provincia italiano a 2 lettere, mai forwardato per righe estere anche

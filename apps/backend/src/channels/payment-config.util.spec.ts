@@ -154,7 +154,7 @@ describe('resolvePhysicalAddress', () => {
     expect(result).toEqual({ address: 'Via Roma 1', municipality: 'Roma' });
   });
 
-  it('valorizza foreignState se countryColumn risolve a un paese noto diverso da Italia', () => {
+  it('valorizza foreignState se countryColumn risolve a un paese noto diverso da Italia, ma omette zip (CAP estero non a 5 cifre italiane)', () => {
     const recipient = makeRecipient({
       indirizzo: 'Rue Dodonee 132',
       comune: 'Uccle',
@@ -171,12 +171,12 @@ describe('resolvePhysicalAddress', () => {
     expect(result).toEqual({
       address: 'Rue Dodonee 132',
       municipality: 'Uccle',
-      zip: '1180',
       foreignState: 'Belgio',
     });
+    expect(result?.zip).toBeUndefined();
   });
 
-  it('omette province per una riga estera anche se provinceColumn è valorizzata (dato residuo/template)', () => {
+  it('omette province e zip per una riga estera anche se entrambe le colonne sono valorizzate (dato residuo/template)', () => {
     const recipient = makeRecipient({
       indirizzo: 'Rue Dodonee 132',
       comune: 'Uccle',
@@ -195,10 +195,10 @@ describe('resolvePhysicalAddress', () => {
     expect(result).toEqual({
       address: 'Rue Dodonee 132',
       municipality: 'Uccle',
-      zip: '1180',
       foreignState: 'Belgio',
     });
     expect(result?.province).toBeUndefined();
+    expect(result?.zip).toBeUndefined();
   });
 
   it('non valorizza foreignState se countryColumn risolve a Italia', () => {
