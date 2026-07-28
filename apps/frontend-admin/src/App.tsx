@@ -1240,6 +1240,7 @@ export function App(): React.JSX.Element {
   const [singleMunicipality, setSingleMunicipality] = useState('');
   const [singleZip, setSingleZip] = useState('');
   const [singleProvince, setSingleProvince] = useState('');
+  const [singleCountry, setSingleCountry] = useState('Italia');
   const [singlePaymentIuv, setSinglePaymentIuv] = useState('');
   const [singlePaymentImporto, setSinglePaymentImporto] = useState('');
   const [singlePaymentScadenza, setSinglePaymentScadenza] = useState('');
@@ -4585,8 +4586,8 @@ export function App(): React.JSX.Element {
     const vals: string[] = [singleCf.toUpperCase(), fullName, singleEmail, singlePec];
 
     if (needsWizSinglePhysicalAddress) {
-      cols.push('sd_indirizzo', 'sd_comune', 'sd_cap', 'sd_provincia');
-      vals.push(singleAddress, singleMunicipality, singleZip, singleProvince);
+      cols.push('sd_indirizzo', 'sd_comune', 'sd_cap', 'sd_provincia', 'sd_paese');
+      vals.push(singleAddress, singleMunicipality, singleZip, singleProvince, singleCountry);
     }
     if (wizPaymentEnabled) {
       cols.push('sd_iuv', 'sd_importo', 'sd_scadenza');
@@ -4609,6 +4610,7 @@ export function App(): React.JSX.Element {
       setWizPostalMunicipalityColumn('sd_comune');
       setWizPostalZipColumn('sd_cap');
       setWizPostalProvinceColumn('sd_provincia');
+      setWizPostalCountryColumn('sd_paese');
     }
     if (wizPaymentEnabled) {
       setWizPaymentNoticeCol('sd_iuv');
@@ -4648,7 +4650,10 @@ export function App(): React.JSX.Element {
     !singleSurname.trim() ||
     (wizChannel === 'EMAIL' && (!singleEmail.trim() || !isValidEmailFormat(singleEmail))) ||
     (wizChannel === 'PEC' && (!singlePec.trim() || !isValidEmailFormat(singlePec))) ||
-    (needsWizSinglePhysicalAddress && (!singleAddress.trim() || !singleMunicipality.trim() || !singleZip.trim() || !singleProvince.trim() || !isValidCap(singleZip))) ||
+    (needsWizSinglePhysicalAddress && (
+      !singleAddress.trim() || !singleMunicipality.trim()
+      || (singleCountry === 'Italia' && (!singleZip.trim() || !isValidCap(singleZip) || !singleProvince.trim()))
+    )) ||
     ((wizChannel === 'SEND' || wizChannel === 'POSTAL') && wizSingleAttachmentSlots.filter(s => s.file).length === 0) ||
     ((wizChannel === 'EMAIL' || wizChannel === 'PEC') && !wizMailConfigId) ||
     ((wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && wizAppIoMode !== 'none' && !wizAppIoServiceId) ||
@@ -4947,6 +4952,7 @@ export function App(): React.JSX.Element {
     setSingleMunicipality('');
     setSingleZip('');
     setSingleProvince('');
+    setSingleCountry('Italia');
     setSinglePaymentIuv('');
     setSinglePaymentImporto('');
     setSinglePaymentScadenza('');
@@ -5109,6 +5115,7 @@ export function App(): React.JSX.Element {
               setSingleMunicipality(row['sd_comune'] || '');
               setSingleZip(row['sd_cap'] || '');
               setSingleProvince(row['sd_provincia'] || '');
+              setSingleCountry(row['sd_paese'] || 'Italia');
               setSinglePaymentIuv(row['sd_iuv'] || '');
               setSinglePaymentImporto(row['sd_importo'] || '');
               setSinglePaymentScadenza(row['sd_scadenza'] || '');
@@ -7645,6 +7652,16 @@ export function App(): React.JSX.Element {
                                 value={singleProvince}
                                 onChange={(e) => setSingleProvince(e.target.value.toUpperCase())}
                               />
+                            </div>
+                            <div className="col-md-6">
+                              <label className="form-label small fw-semibold">Paese</label>
+                              <select
+                                className="form-select form-select-sm"
+                                value={singleCountry}
+                                onChange={(e) => setSingleCountry(e.target.value)}
+                              >
+                                {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+                              </select>
                             </div>
                             </div>
                           </div>
