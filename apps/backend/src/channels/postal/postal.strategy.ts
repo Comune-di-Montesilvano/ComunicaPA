@@ -12,6 +12,21 @@ import { splitDenominazione, type DenominazioneAbbreviation } from './denominazi
 
 const NON_TERMINAL_DEDUP_STATI = ['Errore', 'Eliminato'];
 
+/**
+ * Un invio esistente su GlobalCom conta come "già presente" (blocca il
+ * retry) solo se non ha un errore reale — MAI gatare solo su `stato` testuale
+ * (stesso gotcha già noto: `CodiceErrore` arriva async DOPO l'accettazione,
+ * `Stato` può restare `Rimandato`/`Accettato` per un po' anche con un
+ * `CodiceErrore` già valorizzato — vedi CLAUDE.md "CodiceErrore non legato
+ * allo Stato"). Bug reale corretto: retry con indirizzo corretto silenziato
+ * come "duplicato" perché lo stato testuale non era ancora `Errore`, mentre
+ * `CodiceErrore` segnalava già "impossibile validare l'indirizzo" — il nuovo
+ * indirizzo non veniva mai trasmesso a GlobalCom.
+ */
+function isGoodExistingSubmission(d: { stato: string; codiceErrore?: string }): boolean {
+  return !NON_TERMINAL_DEDUP_STATI.includes(d.stato) && (!d.codiceErrore || d.codiceErrore === '0');
+}
+
 @Injectable()
 export class PostalStrategy implements IChannelStrategy {
   private readonly logger = new Logger(PostalStrategy.name);
@@ -59,7 +74,7 @@ export class PostalStrategy implements IChannelStrategy {
     const isRetry = (attemptsMade && attemptsMade > 0) || (recipientAttemptNumber && recipientAttemptNumber > 1);
     if (isRetry) {
       const trovati = await this.globalCom.cercaPerTesto(creds, recipient.id);
-      const esistente = trovati.find((d) => !NON_TERMINAL_DEDUP_STATI.includes(d.stato));
+      const esistente = trovati.find((d) => isGoodExistingSubmission(d));
       if (esistente) {
         const msg = `Invio già presente su GlobalCom per destinatario ${recipient.id} (IDPRO=${esistente.idPro}, stato=${esistente.stato}) — salto reinvio duplicato.`;
         this.logger.warn(msg);
