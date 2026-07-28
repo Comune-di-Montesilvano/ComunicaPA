@@ -227,6 +227,13 @@ export class GlobalComClient {
     // in test con GlobalCom, indipendente dal Servizio usato).
     const invio: Record<string, unknown> = {
       Servizio: params.servizio,
+      // Campo obbligatorio (InfoGUIDExt.Nazionale, manuale tecnico righe
+      // 9121-9124): "questa proprietà però va sempre valorizzata: non ha un
+      // default" — true = invio nazionale, false = estero. Mai impostato prima
+      // di questo fix: GlobalCom applicava di fatto il default nazionale,
+      // rigettando ogni invio con Stato estero valorizzato ("è stato indicato
+      // un invio nazionale, ma lo stato del destinatario non risulta l'Italia").
+      Nazionale: !params.destinatario.stato,
       RicevutaDiRitorno: params.ricevutaDiRitorno,
       Colore: params.colore,
       FronteRetro: params.fronteRetro,

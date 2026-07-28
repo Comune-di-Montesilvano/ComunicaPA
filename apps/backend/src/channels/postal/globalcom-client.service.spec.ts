@@ -52,6 +52,7 @@ describe('GlobalComClient', () => {
     expect(mockInvioAsync).toHaveBeenCalledWith(expect.objectContaining({
       Invio: expect.objectContaining({
         Servizio: 'Raccomandata',
+        Nazionale: true,
         RicevutaDiRitorno: true,
         Colore: true,
         FronteRetro: false,
@@ -62,6 +63,29 @@ describe('GlobalComClient', () => {
       }),
     }));
     expect(result).toEqual(expect.objectContaining({ idPro: 'IDPRO123', stato: 'Accettato', codiceErrore: '', descrizione: '' }));
+  });
+
+  it('invioExtSingolo imposta Nazionale=false quando il destinatario ha Stato estero valorizzato', async () => {
+    mockInvioAsync.mockResolvedValue([{
+      invio_ext_singoloResult: true,
+      Risposta: { IDPRO: 'IDPRO-EST', Stato: 'Accettato', CodiceErrore: '', Descrizione: '' },
+      Messaggio: '',
+    }]);
+
+    await client.invioExtSingolo(creds, {
+      servizio: 'RaccomandataMarket4',
+      ricevutaDiRitorno: false,
+      colore: false,
+      fronteRetro: true,
+      mittente: null,
+      destinatario: { denominazione1: 'Mario Bianchi', indirizzo1: 'Bahnhofplatz 2', citta: 'Kilchberg', stato: 'SVIZZERA' },
+      note: 'attempt-uuid-est',
+      fileBuffer: Buffer.from('%PDF-1.4 test'),
+    });
+
+    expect(mockInvioAsync).toHaveBeenCalledWith(expect.objectContaining({
+      Invio: expect.objectContaining({ Nazionale: false }),
+    }));
   });
 
   it('invioExtSingolo invia Ricevuta esplicita se params.ricevuta è impostato (AR), niente UsaDestinatarioARPredefinito', async () => {
