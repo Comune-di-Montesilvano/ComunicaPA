@@ -6550,8 +6550,14 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const handleResendByOutcome = async (campaignId: string, outcome: 'both' | 'inadDiverted', count: number) => {
-    if (!confirm(`Rimandare il contenuto corretto a ${count} destinatari? Il canale primario POSTAL/SEND non verrà mai ripetuto.`)) return;
+  // Cap deve combaciare con MAX_BULK_RESEND_SIZE lato backend
+  // (campaign-content-correction.service.ts) — fix review finale #5: a
+  // differenza del retry bulk (solo DB), il branch App IO qui fa fino a 2
+  // chiamate HTTP esterne per destinatario, un batch grande rischia il
+  // timeout del reverse proxy davanti al backend in produzione.
+  const MAX_RESEND_BY_OUTCOME_SIZE = 100;
+
+  const handleResendByOutcome = async (campaignId: string, outcome: 'both' | 'inadDiverted', _count: number) => {
     setResendingOutcome(outcome);
     try {
       // 'inadDiverted' non è una categoria di classifyChannelOutcome (è un
@@ -6560,6 +6566,16 @@ export function App(): React.JSX.Element {
       // sui destinatari con inadCheck.diverted true, non dal nuovo endpoint
       // recipients-by-channel-outcome (che copre solo le 5 categorie
       // primaryOnly/both/appIoOnly/appIoDespitePrimaryFail/neither).
+      //
+      // Il conteggio va calcolato QUI, prima della conferma operatore — il
+      // parametro `count`/`_count` passato dalla JSX è il totale sull'INTERA
+      // campagna (channelBreakdown.*), ma per 'inadDiverted' l'elenco reale
+      // usato sotto è filtrato lato client sulla sola pagina/riga
+      // attualmente caricata in `recipientsPage` (max 50, ed eventualmente
+      // ulteriormente ristretta da un filtro ricerca/stato attivo
+      // sull'operatore) — mostrare il totale campagna nella conferma
+      // prometterebbe un numero diverso da quello davvero agito (fix review
+      // finale #6).
       let recipientIds: string[] = [];
       if (outcome === 'both') {
         const res = await apiFetch(`/campaigns/${campaignId}/recipients-by-channel-outcome?outcome=both`);
@@ -6574,6 +6590,11 @@ export function App(): React.JSX.Element {
         alert('Nessun destinatario trovato per questa categoria.');
         return;
       }
+      if (recipientIds.length > MAX_RESEND_BY_OUTCOME_SIZE) {
+        alert(`Troppi destinatari selezionati (${recipientIds.length}). Il limite per una sola richiesta è ${MAX_RESEND_BY_OUTCOME_SIZE}: riduci la selezione o contatta l'amministratore per un'operazione batch.`);
+        return;
+      }
+      if (!confirm(`Rimandare il contenuto corretto a ${recipientIds.length} destinatari? Il canale primario POSTAL/SEND non verrà mai ripetuto.`)) return;
       const res = await apiFetch(`/campaigns/${campaignId}/resend-content`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
