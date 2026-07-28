@@ -27,5 +27,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build shared-types
+        run: pnpm --filter @comunicapa/shared-types build
+
       - name: Run integrated tests
         run: pnpm test
