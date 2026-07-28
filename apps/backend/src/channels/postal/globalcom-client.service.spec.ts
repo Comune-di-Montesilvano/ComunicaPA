@@ -4,6 +4,7 @@ const mockLoginAsync = jest.fn();
 const mockInvioAsync = jest.fn();
 const mockListaAsync = jest.fn();
 const mockDettagliAsync = jest.fn();
+const mockInformazioniUtenzaAsync = jest.fn();
 const mockAddHttpHeader = jest.fn();
 
 jest.mock('soap', () => ({
@@ -12,6 +13,7 @@ jest.mock('soap', () => ({
     invio_ext_singoloAsync: mockInvioAsync,
     lista_documentiAsync: mockListaAsync,
     dettagli_documentoAsync: mockDettagliAsync,
+    InformazioniUtenzaAsync: mockInformazioniUtenzaAsync,
     addHttpHeader: mockAddHttpHeader,
     lastResponseHeaders: { 'set-cookie': ['ASP.NET_SessionId=abc123; path=/'] },
   })),
@@ -234,6 +236,46 @@ describe('GlobalComClient', () => {
     const result = await client.dettagliDocumento(creds, 'IDPRO000');
 
     expect(result).toEqual(expect.objectContaining({ idPro: 'IDPRO000', stato: 'Consegnato', codiceErrore: '', descrizione: '' }));
+  });
+
+  it('informazioniUtenza legge il flag Estero per ogni contratto (oggi scartato)', async () => {
+    mockInformazioniUtenzaAsync.mockResolvedValue([{
+      InformazioniUtenzaResult: {
+        OperazioneRiuscita: true,
+        ProdottiDisponibili: { ServiceType: ['Raccomandata'] },
+        ContrattiH2H: {
+          DatiContrattoCOLMOLExt: [
+            { CodiceContratto: 'C1', Descrizione: 'Contratto Market', Tipologia: 'RaccomandataMarket', Estero: true },
+            { CodiceContratto: 'C2', Descrizione: 'Contratto Contest', Tipologia: 'LetteraContest', Estero: false },
+          ],
+        },
+      },
+    }]);
+
+    const result = await client.informazioniUtenza(creds);
+
+    expect(result.contratti).toEqual([
+      { codiceContratto: 'C1', descrizione: 'Contratto Market', tipologia: 'RaccomandataMarket', estero: true },
+      { codiceContratto: 'C2', descrizione: 'Contratto Contest', tipologia: 'LetteraContest', estero: false },
+    ]);
+  });
+
+  it('informazioniUtenza tratta Estero mancante/undefined come false (contratti legacy pre-fix)', async () => {
+    mockInformazioniUtenzaAsync.mockResolvedValue([{
+      InformazioniUtenzaResult: {
+        OperazioneRiuscita: true,
+        ProdottiDisponibili: { ServiceType: ['Raccomandata'] },
+        ContrattiH2H: {
+          DatiContrattoCOLMOLExt: { CodiceContratto: 'C1', Descrizione: 'D', Tipologia: 'RaccomandataMarket' },
+        },
+      },
+    }]);
+
+    const result = await client.informazioniUtenza(creds);
+
+    expect(result.contratti).toEqual([
+      { codiceContratto: 'C1', descrizione: 'D', tipologia: 'RaccomandataMarket', estero: false },
+    ]);
   });
 });
 

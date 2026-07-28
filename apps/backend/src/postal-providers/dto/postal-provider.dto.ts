@@ -100,6 +100,7 @@ export interface PostalProviderContrattoDto {
   codiceContratto: string;
   descrizione: string;
   tipologia: string;
+  estero: boolean;
 }
 
 export interface PostalProviderMaskedDto {

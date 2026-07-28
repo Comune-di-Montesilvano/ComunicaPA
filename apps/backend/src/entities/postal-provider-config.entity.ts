@@ -71,7 +71,7 @@ export class PostalProviderConfig {
    * confrontare con il prefisso del ServiceType scelto in campagna.
    */
   @Column({ type: 'jsonb', default: [] })
-  contratti!: Array<{ codiceContratto: string; descrizione: string; tipologia: string }>;
+  contratti!: Array<{ codiceContratto: string; descrizione: string; tipologia: string; estero: boolean }>;
 
   /** Data ultimo test riuscito. null = mai testata (non attivabile). */
   @Column({ name: 'tested_at', type: 'timestamptz', nullable: true })

@@ -102,6 +102,8 @@ export interface GbcContratto {
   codiceContratto: string;
   descrizione: string;
   tipologia: string;
+  /** DatiContrattoCOLMOLExt.Estero — true se il contratto supporta spedizioni estero (WSDL riga 221). */
+  estero: boolean;
 }
 
 export interface GbcInfoUtenza {
@@ -347,8 +349,8 @@ export class GlobalComClient {
     const prodottiDisponibili = Array.isArray(prodotti) ? prodotti : prodotti ? [prodotti] : [];
     const contrattiWrapper = info['ContrattiH2H'] as {
       DatiContrattoCOLMOLExt?:
-        | { CodiceContratto?: string; Descrizione?: string; Tipologia?: string }
-        | Array<{ CodiceContratto?: string; Descrizione?: string; Tipologia?: string }>;
+        | { CodiceContratto?: string; Descrizione?: string; Tipologia?: string; Estero?: boolean }
+        | Array<{ CodiceContratto?: string; Descrizione?: string; Tipologia?: string; Estero?: boolean }>;
     } | undefined;
     const contrattiRaw = contrattiWrapper?.DatiContrattoCOLMOLExt;
     const contrattiList = Array.isArray(contrattiRaw) ? contrattiRaw : contrattiRaw ? [contrattiRaw] : [];
@@ -360,6 +362,7 @@ export class GlobalComClient {
         codiceContratto: c.CodiceContratto || '',
         descrizione: c.Descrizione || '',
         tipologia: c.Tipologia || '',
+        estero: Boolean(c.Estero),
       })),
     };
   }
