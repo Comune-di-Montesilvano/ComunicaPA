@@ -58,3 +58,16 @@ def test_extract_corrupted_pdf():
     assert body["address"] is None
     assert body["payment"] is None
     assert len(body["warnings"]) >= 1
+
+
+def test_extract_search_payments_false(pdf_no_address):
+    res = client.post(
+        "/extract?search_payments=false",
+        files={"file": ("doc.pdf", pdf_no_address, "application/pdf")},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["payment"] is None
+    # No payment warning because search_payments is false
+    assert not any("PagoPA" in w for w in body["warnings"])
+

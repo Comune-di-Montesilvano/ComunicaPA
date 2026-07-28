@@ -80,7 +80,7 @@ export class EnrichmentController {
   @HttpCode(HttpStatus.OK)
   async completeUpload(
     @Param('uploadId') uploadId: string,
-    @Body() body: { traceFormat?: TraceFormat },
+    @Body() body: { traceFormat?: TraceFormat; searchPayments?: boolean },
     @Req() req: Request & { user: JwtOperatorPayload },
   ): Promise<{ jobId?: string; blocked?: boolean; message?: string }> {
     try {
@@ -92,6 +92,7 @@ export class EnrichmentController {
         zipPath: path,
         sourceFilename: filename,
         traceFormat: body.traceFormat,
+        searchPayments: body.searchPayments ?? true,
         createdBy: req.user.username,
       });
     } catch (err: any) {

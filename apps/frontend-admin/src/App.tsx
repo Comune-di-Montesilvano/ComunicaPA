@@ -1023,6 +1023,7 @@ export function App(): React.JSX.Element {
     id: string;
     status: 'queued' | 'processing' | 'done' | 'failed';
     traceFormat: string;
+    searchPayments?: boolean;
     sourceFilename: string;
     totalRecords: number;
     processedRecords: number;
@@ -1034,6 +1035,7 @@ export function App(): React.JSX.Element {
   }
   const [enrichJobs, setEnrichJobs] = useState<EnrichmentJobItem[]>([]);
   const [enrichFile, setEnrichFile] = useState<File | null>(null);
+  const [enrichSearchPayments, setEnrichSearchPayments] = useState(true);
   const [enrichUploading, setEnrichUploading] = useState(false);
   const [enrichUploadProgress, setEnrichUploadProgress] = useState(0);
   const [enrichError, setEnrichError] = useState<string | null>(null);
@@ -2423,7 +2425,7 @@ export function App(): React.JSX.Element {
         enrichFile.name,
         (loaded) => setEnrichUploadProgress(Math.round((loaded / enrichFile.size) * 100)),
         undefined,
-        { traceFormat: 'MAGGIOLI' },
+        { traceFormat: 'MAGGIOLI', searchPayments: enrichSearchPayments },
       );
       if (result.blocked) {
         setEnrichError(result.message || 'Tracciato non valido');
@@ -10795,6 +10797,18 @@ export function App(): React.JSX.Element {
                     onChange={(e) => setEnrichFile(e.target.files?.[0] || null)}
                   />
                 </div>
+                <div className="form-check mb-3">
+                  <input
+                    type="checkbox"
+                    className="form-check-input"
+                    id="enrichSearchPaymentsCheck"
+                    checked={enrichSearchPayments}
+                    onChange={(e) => setEnrichSearchPayments(e.target.checked)}
+                  />
+                  <label className="form-check-label small" htmlFor="enrichSearchPaymentsCheck">
+                    Ricerca dati PagoPA / pagamenti nei PDF
+                  </label>
+                </div>
                 {enrichError && <div className="alert alert-danger small">{enrichError}</div>}
                 <button
                   className="btn btn-primary btn-sm"
@@ -10824,6 +10838,7 @@ export function App(): React.JSX.Element {
                         {job.status === 'done' && `Completato (${job.totalRecords} righe${job.warningCount ? `, ${job.warningCount} avvisi` : ''})`}
                         {job.status === 'failed' && `Fallito: ${job.errorMessage}`}
                       </span>
+                      {job.searchPayments === false && <span className="badge bg-secondary-subtle text-secondary border">Senza PagoPA</span>}
                       {job.campaignId && <span className="badge bg-success-subtle text-success-emphasis border">Campagna creata</span>}
                     </div>
                     <div className="d-flex gap-2 mt-2 flex-wrap">
@@ -10859,9 +10874,13 @@ export function App(): React.JSX.Element {
 
                     {enrichDetailJobId === job.id && (
                       <ul className="small text-muted mt-2 mb-0">
-                        {job.warnings.map((w, i) => (
-                          <li key={i}>Riga {w.row} — {w.pdf}: {w.message}</li>
-                        ))}
+                        {job.warnings && job.warnings.length > 0 ? (
+                          job.warnings.map((w, i) => (
+                            <li key={i}>Riga {w.row} — {w.pdf}: {w.message}</li>
+                          ))
+                        ) : (
+                          <li className="fst-italic text-muted">Sincronizzazione avvisi in corso...</li>
+                        )}
                       </ul>
                     )}
 
@@ -10877,6 +10896,14 @@ export function App(): React.JSX.Element {
                               <pre className="small mb-0 mt-1" style={{ whiteSpace: 'pre-wrap' }}>
                                 {JSON.stringify(entry.payload, null, 2)}
                               </pre>
+                            </div>
+                          ) : entry.payload?.errore ? (
+                            <div key={i} className="small text-danger fw-bold">
+                              Riga {entry.row} — {entry.pdf}: {String(entry.payload.errore)}
+                            </div>
+                          ) : Array.isArray(entry.payload?.warnings) ? (
+                            <div key={i} className="small text-warning">
+                              Riga {entry.row} — {entry.pdf}: {(entry.payload.warnings as string[]).join(' | ')}
                             </div>
                           ) : (
                             <div key={i} className="small text-muted">

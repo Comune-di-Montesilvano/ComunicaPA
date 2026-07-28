@@ -22,6 +22,7 @@ export interface CreateEnrichmentJobParams {
   zipPath: string;
   sourceFilename: string;
   traceFormat: TraceFormat;
+  searchPayments?: boolean;
   createdBy: string;
 }
 
@@ -52,6 +53,7 @@ export class EnrichmentService {
       this.jobRepo.create({
         status: EnrichmentJobStatus.QUEUED,
         traceFormat: params.traceFormat,
+        searchPayments: params.searchPayments ?? true,
         sourceFilename: params.sourceFilename,
         totalRecords,
         processedRecords: 0,

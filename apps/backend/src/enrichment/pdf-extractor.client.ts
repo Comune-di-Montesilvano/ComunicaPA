@@ -33,12 +33,13 @@ export interface ExtractResult {
 export class PdfExtractorClient {
   constructor(private readonly config: ConfigService<AppConfiguration, true>) {}
 
-  async extract(pdf: Buffer, filename: string): Promise<ExtractResult> {
+  async extract(pdf: Buffer, filename: string, options?: { searchPayments?: boolean }): Promise<ExtractResult> {
     const baseUrl = this.config.get('pdfExtractor.url', { infer: true });
     const form = new FormData();
     form.append('file', new Blob([new Uint8Array(pdf)], { type: 'application/pdf' }), filename);
 
-    const res = await fetch(`${baseUrl}/extract`, { method: 'POST', body: form });
+    const searchPayments = options?.searchPayments ?? true;
+    const res = await fetch(`${baseUrl}/extract?search_payments=${searchPayments}`, { method: 'POST', body: form });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       throw new Error(`pdf-extractor HTTP ${res.status}: ${body.slice(0, 200)}`);

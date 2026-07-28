@@ -56,6 +56,7 @@ describe('EnrichmentProcessor', () => {
     id: 'j1',
     status: EnrichmentJobStatus.QUEUED,
     traceFormat: TraceFormat.MAGGIOLI,
+    searchPayments: true,
     totalRecords: 2,
   };
 
@@ -121,7 +122,7 @@ describe('EnrichmentProcessor', () => {
   });
 
   it('errore fatale (source.zip assente) → stato FAILED con errorMessage, niente throw', async () => {
-    fs.rmSync(getEnrichmentSourceZip('j1'));
+    fs.rmSync(getEnrichmentSourceZip('j1'), { force: true });
     await processor.process(fakeJob);
     const finalUpdate = repo.update.mock.calls.at(-1)![1];
     expect(finalUpdate.status).toBe(EnrichmentJobStatus.FAILED);

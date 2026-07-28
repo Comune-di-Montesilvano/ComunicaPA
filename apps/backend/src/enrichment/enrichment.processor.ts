@@ -69,7 +69,9 @@ export class EnrichmentProcessor extends WorkerHost {
           });
         } else {
           try {
-            const result = await this.extractor.extract(entry.getData(), rec.pdfFilename);
+            const result = await this.extractor.extract(entry.getData(), rec.pdfFilename, {
+              searchPayments: record.searchPayments ?? true,
+            });
             for (const w of result.warnings) {
               warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: w });
             }
@@ -97,24 +99,23 @@ export class EnrichmentProcessor extends WorkerHost {
               });
             }
 
-            this.events.emitLog(jobId, {
-              row: rowNum,
-              pdf: rec.pdfFilename,
-              detail: rowNum === 1 ? 'full' : 'summary',
-              payload: rowNum === 1
-                ? {
-                    indirizzo: result.address,
-                    pagamentoTotale: result.payment?.totale ?? null,
-                    rate: result.payment?.rate ?? [],
-                    warnings: result.warnings,
-                  }
-                : {
-                    indirizzoTrovato: Boolean(result.address || rec.csvAddress),
-                    pagamentoTotaleTrovato: Boolean(result.payment?.totale),
-                    numeroRate: rateCount,
-                    warningCount: result.warnings.length,
-                  },
-            });
+            if (rowNum === 1 || result.warnings.length > 0) {
+              this.events.emitLog(jobId, {
+                row: rowNum,
+                pdf: rec.pdfFilename,
+                detail: rowNum === 1 ? 'full' : 'summary',
+                payload: rowNum === 1
+                  ? {
+                      indirizzo: result.address,
+                      pagamentoTotale: result.payment?.totale ?? null,
+                      rate: result.payment?.rate ?? [],
+                      warnings: result.warnings,
+                    }
+                  : {
+                      warnings: result.warnings,
+                    },
+              });
+            }
           } catch (err: any) {
             warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: `Estrazione fallita: ${err.message}` });
             await job.log(`Riga ${rowNum}: estrazione fallita — ${err.message}`);
@@ -130,7 +131,11 @@ export class EnrichmentProcessor extends WorkerHost {
         rows.push(row);
 
         if (rowNum % PROGRESS_UPDATE_EVERY === 0) {
-          await this.jobRepo.update(jobId, { processedRecords: rowNum, warningCount: warnings.length });
+          await this.jobRepo.update(jobId, {
+            processedRecords: rowNum,
+            warningCount: warnings.length,
+            warnings: [...warnings],
+          });
         }
       }
 

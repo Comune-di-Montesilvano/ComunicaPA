@@ -11,7 +11,7 @@ describe('PdfExtractorClient', () => {
     global.fetch = jest.fn();
   });
 
-  it('POST multipart a /extract (nessun query param) e parse della risposta con payment {totale, rate}', async () => {
+  it('POST multipart a /extract?search_payments=true e parse della risposta con payment {totale, rate}', async () => {
     (global.fetch as jest.Mock).mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -24,13 +24,27 @@ describe('PdfExtractorClient', () => {
     const result = await client.extract(Buffer.from('%PDF'), 'doc.pdf');
 
     expect(global.fetch).toHaveBeenCalledWith(
-      'http://pdf-extractor:8000/extract',
+      'http://pdf-extractor:8000/extract?search_payments=true',
       expect.objectContaining({ method: 'POST' }),
     );
     expect(result.address).toEqual({ cap: '00100' });
     expect(result.payment?.totale).toEqual({ numero_avviso: '123' });
     expect(result.payment?.rate).toEqual([{ numero_avviso: '456' }]);
     expect(result.warnings).toEqual(['w1']);
+  });
+
+  it('passa search_payments=false quando specificato nelle opzioni', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({ address: null, payment: null, warnings: [] }),
+    });
+
+    await client.extract(Buffer.from('%PDF'), 'doc.pdf', { searchPayments: false });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      'http://pdf-extractor:8000/extract?search_payments=false',
+      expect.objectContaining({ method: 'POST' }),
+    );
   });
 
   it('HTTP non-ok → Error con status', async () => {

@@ -37,6 +37,9 @@ export class EnrichmentJob {
   @Column({ name: 'trace_format', type: 'enum', enum: TraceFormat })
   traceFormat!: TraceFormat;
 
+  @Column({ name: 'search_payments', type: 'boolean', default: true })
+  searchPayments!: boolean;
+
   @Column({ name: 'source_filename', type: 'varchar', length: 512 })
   sourceFilename!: string;
 
