@@ -142,6 +142,21 @@ export class PostalStrategy implements IChannelStrategy {
       || provider.contratti.find((c) => servizio.startsWith(c.tipologia))?.codiceContratto
       || undefined;
 
+    // Indirizzo estero: il contratto usato per questo invio deve dichiarare
+    // capability Estero (DatiContrattoCOLMOLExt.Estero, scoperto da
+    // InformazioniUtenza — vedi design doc 2026-07-28-indirizzo-estero
+    // Sezione 2). resolvedAddress.foreignState è già un valore canonico
+    // validato da matchCountry (payment-config.util.ts): qui basta il
+    // controllo capability, nessuna ri-validazione del paese.
+    if (resolvedAddress.foreignState) {
+      const contrattoUsato = provider.contratti.find((c) => c.codiceContratto === codiceContratto);
+      if (!contrattoUsato || contrattoUsato.estero !== true) {
+        throw new BadRequestException(
+          `Indirizzo estero (${resolvedAddress.foreignState}) ma il contratto ${codiceContratto || '(nessuno)'} non supporta spedizioni estero`,
+        );
+      }
+    }
+
     // Vedi commento su GbcInvioParams.agol: obbligatorio (mai omesso) per
     // questo Servizio, pena NullReferenceException generico lato GlobalCom.
     // avvisoRicevimentoDigitale sempre false: nessun caso d'uso di questo

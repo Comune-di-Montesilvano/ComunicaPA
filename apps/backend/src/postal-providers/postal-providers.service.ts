@@ -25,7 +25,7 @@ export interface ResolvedPostalProvider {
     provincia: string;
   } | null;
   enabledServiceTypes: string[];
-  contratti: Array<{ codiceContratto: string; descrizione: string; tipologia: string }>;
+  contratti: Array<{ codiceContratto: string; descrizione: string; tipologia: string; estero: boolean }>;
 }
 
 /** Campi che, se modificati, invalidano l'audit del test precedente (credenziali/endpoint cambiati). */

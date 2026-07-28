@@ -403,7 +403,7 @@ describe('PostalStrategy', () => {
 
   it('send() risolve CodiceContratto dal provider in base al prefisso Tipologia/Servizio', async () => {
     providers.getActive.mockResolvedValue(baseProvider({
-      contratti: [{ codiceContratto: '40009679559', descrizione: 'Racc. Market 4', tipologia: 'RaccomandataMarket' }],
+      contratti: [{ codiceContratto: '40009679559', descrizione: 'Racc. Market 4', tipologia: 'RaccomandataMarket', estero: false }],
     }));
     globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' } as any);
 
@@ -421,7 +421,7 @@ describe('PostalStrategy', () => {
 
   it('send() usa postalCodiceContratto esplicito da channelConfig se impostato (override)', async () => {
     providers.getActive.mockResolvedValue(baseProvider({
-      contratti: [{ codiceContratto: 'AUTO-123', descrizione: 'Auto', tipologia: 'RaccomandataMarket' }],
+      contratti: [{ codiceContratto: 'AUTO-123', descrizione: 'Auto', tipologia: 'RaccomandataMarket', estero: false }],
     }));
     globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Accettato' } as any);
 
@@ -439,7 +439,9 @@ describe('PostalStrategy', () => {
 
   it('invia Stato quando physicalAddressConfig risolve un indirizzo estero', async () => {
     globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO123', stato: 'Accettato' } as any);
-    providers.getActive.mockResolvedValue(baseProvider());
+    providers.getActive.mockResolvedValue(baseProvider({
+      contratti: [{ codiceContratto: 'EST-1', descrizione: 'Estero', tipologia: 'Raccomandata', estero: true }],
+    }));
 
     const recipientEstero = {
       ...baseRecipient,
@@ -469,6 +471,68 @@ describe('PostalStrategy', () => {
 
     const invioArg = globalCom.invioExtSingolo.mock.calls[0][1];
     expect(invioArg.destinatario.stato).toBeUndefined();
+  });
+
+  it('send() rifiuta indirizzo estero se il contratto risolto non ha estero:true', async () => {
+    providers.getActive.mockResolvedValue(baseProvider({
+      contratti: [{ codiceContratto: 'DOM-1', descrizione: 'Domestico', tipologia: 'Raccomandata', estero: false }],
+    }));
+
+    const recipientEstero = {
+      ...baseRecipient,
+      extraData: { indirizzo: 'Rue Dodonee 132', comune: 'Uccle', cap: '1180', paese: 'Belgio' },
+    };
+    const campaignEstero = baseCampaign({
+      postalCodiceContratto: 'DOM-1',
+      physicalAddressConfig: {
+        enabled: true,
+        addressColumn: 'indirizzo',
+        municipalityColumn: 'comune',
+        zipColumn: 'cap',
+        countryColumn: 'paese',
+      },
+    });
+
+    await expect(
+      strategy.send(recipientEstero as never, campaignEstero as never, undefined, 'attempt-uuid-est-ko-1', 0),
+    ).rejects.toThrow(/non supporta spedizioni estero/);
+
+    expect(globalCom.invioExtSingolo).not.toHaveBeenCalled();
+  });
+
+  it('send() rifiuta indirizzo estero se nessun contratto è risolto per il servizio', async () => {
+    providers.getActive.mockResolvedValue(baseProvider({ contratti: [] }));
+
+    const recipientEstero = {
+      ...baseRecipient,
+      extraData: { indirizzo: 'Rue Dodonee 132', comune: 'Uccle', cap: '1180', paese: 'Belgio' },
+    };
+    const campaignEstero = baseCampaign({
+      physicalAddressConfig: {
+        enabled: true,
+        addressColumn: 'indirizzo',
+        municipalityColumn: 'comune',
+        zipColumn: 'cap',
+        countryColumn: 'paese',
+      },
+    });
+
+    await expect(
+      strategy.send(recipientEstero as never, campaignEstero as never, undefined, 'attempt-uuid-est-ko-2', 0),
+    ).rejects.toThrow(/non supporta spedizioni estero/);
+
+    expect(globalCom.invioExtSingolo).not.toHaveBeenCalled();
+  });
+
+  it('indirizzo domestico non impattato dal check estero anche con contratti tutti estero:false', async () => {
+    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO123', stato: 'Accettato' } as any);
+    providers.getActive.mockResolvedValue(baseProvider({
+      contratti: [{ codiceContratto: 'DOM-1', descrizione: 'Domestico', tipologia: 'Raccomandata', estero: false }],
+    }));
+
+    await strategy.send(baseRecipient as never, baseCampaign() as never, undefined, 'attempt-uuid-dom-1', 0);
+
+    expect(globalCom.invioExtSingolo).toHaveBeenCalled();
   });
 
   it('spezza denominazione1/2 per un nome lungo (dicitura eredi)', async () => {
