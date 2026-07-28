@@ -74,6 +74,17 @@ export class Recipient {
   @Column({ type: 'timestamptz', name: 'attachment_deleted_at', nullable: true })
   attachmentDeletedAt!: Date | null;
 
+  // Firma del contenuto (subject/body TEMPLATE campagna, JSON.stringify)
+  // dell'ultimo "Rimanda con contenuto corretto" riuscito per questo
+  // destinatario (CampaignContentCorrectionService.resendSafe). Vive qui e
+  // non su NotificationAttempt.responsePayload perché NotificationProcessor
+  // rimpiazza sempre l'intero responsePayload quando il job del resend
+  // completa — su Recipient sopravvive, indispensabile per l'idempotenza
+  // quando lo stesso destinatario compare in due categorie sovrapposte
+  // dell'UI (es. "Dirottato INAD" + "App IO parallela").
+  @Column({ type: 'varchar', length: 512, name: 'last_content_resend_signature', nullable: true })
+  lastContentResendSignature!: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt!: Date;
 

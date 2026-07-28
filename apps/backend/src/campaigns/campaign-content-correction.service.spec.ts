@@ -47,7 +47,11 @@ describe('CampaignContentCorrectionService', () => {
 
       await service.resendSafe('camp-1', 'rec-1');
 
-      expect(recipientRepo.update).not.toHaveBeenCalled();
+      // Nessun update di stato (già FAILED) — l'unico recipientRepo.update
+      // atteso è quello della firma contenuto (fix wave 2 fix B), non uno
+      // status update duplicato.
+      expect(recipientRepo.update).not.toHaveBeenCalledWith('rec-1', { status: RecipientStatus.FAILED });
+      expect(recipientRepo.update).toHaveBeenCalledWith('rec-1', { lastContentResendSignature: JSON.stringify(['', '']) });
       expect(campaignsService.retryRecipient).toHaveBeenCalled();
     });
 
@@ -90,15 +94,18 @@ describe('CampaignContentCorrectionService', () => {
       expect(result).toBe('resent');
       expect(campaignsService.retryRecipient).not.toHaveBeenCalled();
       expect(appIoDelivery.sendMessage).toHaveBeenCalled();
-      // merge, non replace: envelope del canale primario resta, e la firma
-      // contenuto (subject/body correnti campagna, entrambi vuoti nel fixture)
-      // viene apposta nello stesso update, non in una chiamata separata.
+      // merge, non replace: envelope del canale primario resta. La firma
+      // contenuto (fix wave 2 fix B) NON vive più su responsePayload — vive
+      // su Recipient.lastContentResendSignature, scritta con un update
+      // dedicato separato.
       expect(attemptRepo.update).toHaveBeenCalledWith('att-1', {
-        responsePayload: expect.objectContaining({
+        responsePayload: {
           envelope: { to: ['x'] },
           appIo: { success: true, messageId: 'io-2' },
-          contentSignature: JSON.stringify(['', '']),
-        }),
+        },
+      });
+      expect(recipientRepo.update).toHaveBeenCalledWith('rec-1', {
+        lastContentResendSignature: JSON.stringify(['', '']),
       });
     });
 
@@ -112,8 +119,8 @@ describe('CampaignContentCorrectionService', () => {
       expect(campaignsService.retryRecipient).not.toHaveBeenCalled();
     });
 
-    describe('fix review finale #2: guardia CANCELLED sul branch App IO (POSTAL/SEND)', () => {
-      it('campagna CANCELLED: skipped, nessun invio App IO reale, nessun throw', async () => {
+    describe('fix review finale #2 / fix wave 2 fix A: guardia CANCELLED unica per ENTRAMBI i branch', () => {
+      it('campagna CANCELLED, canale effettivo POSTAL/SEND: skipped, nessun invio App IO reale, nessun throw', async () => {
         campaignRepo.findOneBy.mockResolvedValue({ ...campaign, status: 'cancelled' });
         attemptRepo.findOne.mockResolvedValue({
           id: 'att-1', channelType: 'POSTAL', attemptNumber: 1,
@@ -124,6 +131,20 @@ describe('CampaignContentCorrectionService', () => {
 
         expect(result).toBe('skipped');
         expect(appIoDelivery.sendMessage).not.toHaveBeenCalled();
+        expect(campaignsService.retryRecipient).not.toHaveBeenCalled();
+      });
+
+      it('campagna CANCELLED, canale effettivo già sicuro (PEC, es. dirottato INAD): skipped PRIMA di qualunque mutazione — nessun forzato FAILED, nessun tocco contatori, nessun retryRecipient', async () => {
+        campaignRepo.findOneBy.mockResolvedValue({ ...campaign, status: 'cancelled' });
+        recipientRepo.findOne.mockResolvedValue({ ...recipient, status: RecipientStatus.SENT });
+        attemptRepo.findOne.mockResolvedValue({ id: 'att-1', channelType: 'PEC', attemptNumber: 1, responsePayload: {} });
+
+        const result = await service.resendSafe('camp-1', 'rec-1');
+
+        expect(result).toBe('skipped');
+        expect(recipientRepo.update).not.toHaveBeenCalled();
+        expect(campaignRepo.decrement).not.toHaveBeenCalled();
+        expect(campaignRepo.increment).not.toHaveBeenCalled();
         expect(campaignsService.retryRecipient).not.toHaveBeenCalled();
       });
     });
@@ -182,13 +203,13 @@ describe('CampaignContentCorrectionService', () => {
       expect(result).toBe('skipped');
     });
 
-    describe('idempotenza per firma contenuto (fix doppio invio da categorie sovrapposte)', () => {
+    describe('idempotenza per firma contenuto (fix doppio invio da categorie sovrapposte) — fix wave 2 fix B: firma su Recipient, non su NotificationAttempt.responsePayload', () => {
       const currentSignature = JSON.stringify(['', '']); // campaign fixture: subject/body assenti da channelConfig
 
-      it('lastAttempt.responsePayload.contentSignature già uguale alla firma corrente → skipped, nessun branch eseguito', async () => {
+      it('recipient.lastContentResendSignature già uguale alla firma corrente → skipped, nessun branch eseguito', async () => {
+        recipientRepo.findOne.mockResolvedValue({ ...recipient, lastContentResendSignature: currentSignature });
         attemptRepo.findOne.mockResolvedValue({
-          id: 'att-1', channelType: 'PEC', attemptNumber: 1,
-          responsePayload: { contentSignature: currentSignature },
+          id: 'att-1', channelType: 'PEC', attemptNumber: 1, responsePayload: {},
         });
 
         const result = await service.resendSafe('camp-1', 'rec-1');
@@ -198,10 +219,10 @@ describe('CampaignContentCorrectionService', () => {
         expect(appIoDelivery.sendMessage).not.toHaveBeenCalled();
       });
 
-      it('canale sicuro, contentSignature assente/stale: procede al retry e appone la firma sul NUOVO attempt (non su lastAttempt)', async () => {
+      it('canale sicuro, lastContentResendSignature assente/stale: procede al retry e scrive la firma su Recipient (non su NotificationAttempt)', async () => {
+        recipientRepo.findOne.mockResolvedValue({ ...recipient, lastContentResendSignature: 'stale-signature' });
         attemptRepo.findOne.mockResolvedValue({
-          id: 'att-1', channelType: 'PEC', attemptNumber: 1,
-          responsePayload: { contentSignature: 'stale-signature' },
+          id: 'att-1', channelType: 'PEC', attemptNumber: 1, responsePayload: {},
         });
         campaignsService.retryRecipient.mockResolvedValue({ requeued: true, attemptId: 'att-new' });
 
@@ -209,15 +230,18 @@ describe('CampaignContentCorrectionService', () => {
 
         expect(result).toBe('resent');
         expect(campaignsService.retryRecipient).toHaveBeenCalledWith('camp-1', 'rec-1');
-        expect(attemptRepo.update).toHaveBeenCalledWith('att-new', {
-          responsePayload: { contentSignature: currentSignature },
+        expect(recipientRepo.update).toHaveBeenCalledWith('rec-1', {
+          lastContentResendSignature: currentSignature,
         });
-        // mai su lastAttempt: quell'attempt è superato dal nuovo creato dal retry
-        expect(attemptRepo.update).not.toHaveBeenCalledWith('att-1', expect.anything());
+        // mai più su responsePayload di un attempt (fix B): NotificationProcessor
+        // rimpiazza sempre l'intero responsePayload quando il job del retry
+        // completa, quindi una firma scritta lì sarebbe silenziosamente persa.
+        expect(attemptRepo.update).not.toHaveBeenCalled();
       });
 
-      it('scenario reale del bug: due click consecutivi (App IO parallela + Dirottato INAD) sullo stesso destinatario → il secondo si ferma', async () => {
-        // Primo click: nessuna firma pregressa, procede e stampa la firma sul nuovo attempt.
+      it('scenario reale del bug: due click consecutivi (App IO parallela + Dirottato INAD) sullo stesso destinatario → il secondo si ferma, ANCHE dopo che NotificationProcessor ha rimpiazzato responsePayload del nuovo attempt', async () => {
+        // Primo click: nessuna firma pregressa, procede e scrive la firma su Recipient.
+        recipientRepo.findOne.mockResolvedValueOnce({ ...recipient, lastContentResendSignature: undefined });
         attemptRepo.findOne.mockResolvedValueOnce({
           id: 'att-1', channelType: 'PEC', attemptNumber: 1, responsePayload: {},
         });
@@ -226,12 +250,21 @@ describe('CampaignContentCorrectionService', () => {
         const first = await service.resendSafe('camp-1', 'rec-1');
         expect(first).toBe('resent');
         expect(campaignsService.retryRecipient).toHaveBeenCalledTimes(1);
+        expect(recipientRepo.update).toHaveBeenCalledWith('rec-1', {
+          lastContentResendSignature: currentSignature,
+        });
 
-        // Secondo click (altro pulsante, stesso destinatario): l'ultimo attempt
-        // ora è quello appena creato/firmato dal primo click.
+        // Secondo click (altro pulsante, stesso destinatario): il job del primo
+        // resend è nel frattempo passato per NotificationProcessor, che ha
+        // RIMPIAZZATO l'intero responsePayload del nuovo attempt ('att-new')
+        // con un payload fresco senza alcuna traccia di firma — simulato qui
+        // non impostando affatto contentSignature su responsePayload. La
+        // firma su Recipient invece sopravvive intatta (mai toccata dal
+        // processor), quindi il guard la trova comunque.
+        recipientRepo.findOne.mockResolvedValueOnce({ ...recipient, lastContentResendSignature: currentSignature });
         attemptRepo.findOne.mockResolvedValueOnce({
           id: 'att-new', channelType: 'PEC', attemptNumber: 2,
-          responsePayload: { contentSignature: currentSignature },
+          responsePayload: { messageId: 'external-id-from-processor' },
         });
 
         const second = await service.resendSafe('camp-1', 'rec-1');

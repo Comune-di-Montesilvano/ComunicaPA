@@ -51,19 +51,20 @@ export class CampaignContentCorrectionService {
 
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
 
-    // Guardia di idempotenza per firma contenuto: se l'ultimo tentativo di
-    // questo destinatario riflette già il subject/body CORRENTE della
-    // campagna, un secondo "Rimanda" (es. cliccato dall'altro pulsante di
-    // categoria sovrapposta — "Anche App IO (parallela)" e "Dirottato su PEC
-    // (INAD)" non sono mutuamente esclusivi, uno stesso destinatario può
-    // comparire in entrambi) non deve rimandare una seconda volta.
-    const contentSignature = JSON.stringify([
-      (campaign?.channelConfig?.['subject'] as string) ?? '',
-      (campaign?.channelConfig?.['body'] as string) ?? '',
-    ]);
-    if (lastAttempt.responsePayload?.['contentSignature'] === contentSignature) {
-      return 'skipped';
-    }
+    // Fix wave 2, fix A: guardia CANCELLED unica, valutata UNA SOLA VOLTA
+    // qui, PRIMA di qualunque mutazione (stato recipient, contatori,
+    // chiamata a retryRecipient()/App IO) — vale per ENTRAMBI i branch, non
+    // solo POSTAL/SEND. Prima di questo fix esisteva solo dentro il branch
+    // POSTAL/SEND: il branch "canale sicuro" (PEC/EMAIL/APP_IO, es.
+    // dirottato INAD) forzava FAILED e aggiustava sentCount/failedCount
+    // PRIMA di chiamare retryRecipient() — che poi throw BadRequestException
+    // su una campagna CANCELLED, lasciando il destinatario con contatori
+    // corrotti (stesso sintomo "percentuali >100%" già visto in produzione,
+    // fix review finale #1) e nessun resend reale eseguito.
+    // updateCampaignContent() permette deliberatamente di correggere il
+    // contenuto anche su una campagna CANCELLED, ma questo non deve MAI
+    // autorizzare un resend reale né una mutazione di stato/contatori.
+    if (campaign?.status === CampaignStatus.CANCELLED) return 'skipped';
 
     // Ownership: recipientId deve appartenere davvero a questa campagna.
     // Il branch sicuro sotto è protetto implicitamente perché
@@ -75,6 +76,31 @@ export class CampaignContentCorrectionService {
     // #3). Controllo fatto una volta qui, copre entrambi i branch.
     const recipient = await this.recipientRepo.findOne({ where: { id: recipientId } });
     if (recipient && recipient.campaignId !== campaignId) return 'skipped';
+
+    // Guardia di idempotenza per firma contenuto: se l'ultimo resend di
+    // questo destinatario riflette già il subject/body CORRENTE della
+    // campagna, un secondo "Rimanda" (es. cliccato dall'altro pulsante di
+    // categoria sovrapposta — "Anche App IO (parallela)" e "Dirottato su PEC
+    // (INAD)" non sono mutuamente esclusivi, uno stesso destinatario può
+    // comparire in entrambi) non deve rimandare una seconda volta.
+    //
+    // Fix wave 2, fix B: la firma vive su Recipient.lastContentResendSignature,
+    // MAI su NotificationAttempt.responsePayload (dove viveva prima,
+    // c897efc) — NotificationProcessor rimpiazza SEMPRE l'intero
+    // responsePayload di un attempt quando il job accodato da
+    // retryRecipient() completa (successo o fallimento, vedi
+    // notification.processor.ts `completeSuccess()`/ramo FAILED), senza mai
+    // leggere/unire il valore preesistente: una firma scritta lì verrebbe
+    // silenziosamente cancellata pochi secondi dopo, rendendo la guardia
+    // inefficace. Recipient non è mai toccato da quel path, la firma
+    // sopravvive.
+    const contentSignature = JSON.stringify([
+      (campaign?.channelConfig?.['subject'] as string) ?? '',
+      (campaign?.channelConfig?.['body'] as string) ?? '',
+    ]);
+    if (recipient?.lastContentResendSignature === contentSignature) {
+      return 'skipped';
+    }
 
     if (!UNSAFE_TO_RESEND.includes(lastAttempt.channelType)) {
       // Canale già sicuro (PEC/EMAIL/APP_IO, es. dirottato INAD): stesso
@@ -95,10 +121,13 @@ export class CampaignContentCorrectionService {
         }
         await this.campaignRepo.increment({ id: campaignId }, 'failedCount', 1);
       }
-      const result = await this.campaignsService.retryRecipient(campaignId, recipientId);
-      // Il retry crea un NUOVO NotificationAttempt (lastAttempt è ormai
-      // superato) — la firma va apposta su quello nuovo, non su lastAttempt.
-      await this.attemptRepo.update(result.attemptId, { responsePayload: { contentSignature } });
+      await this.campaignsService.retryRecipient(campaignId, recipientId);
+      // Fix wave 2, fix B: firma scritta su Recipient (scalare dedicato),
+      // mai su un NotificationAttempt — retryRecipient() crea un NUOVO
+      // attempt che NotificationProcessor porterà a termine sovrascrivendo
+      // per intero il suo responsePayload, cancellando qualunque firma
+      // scritta lì (vedi commento sopra).
+      await this.recipientRepo.update(recipientId, { lastContentResendSignature: contentSignature });
       return 'resent';
     }
 
@@ -111,16 +140,8 @@ export class CampaignContentCorrectionService {
     if (!appIoPayload?.success) return 'skipped';
 
     if (!campaign || !recipient) return 'skipped';
-
-    // Campagna già annullata dall'operatore: updateCampaignContent (task 5)
-    // permette deliberatamente di correggere il contenuto anche su una
-    // campagna CANCELLED, ma questo non deve autorizzare un invio App IO
-    // REALE al cittadino — stessa guardia già presente in retryRecipient()
-    // per il branch sicuro sopra (fix review finale #2). Ritorna 'skipped'
-    // (non throw): resendSafeBulk chiama questo metodo in loop per-recipient,
-    // un'eccezione qui verrebbe riclassificata 'error' invece di 'skipped',
-    // meno accurato per un motivo puramente di stato campagna, non un guasto.
-    if (campaign.status === CampaignStatus.CANCELLED) return 'skipped';
+    // (La guardia CANCELLED è già stata valutata una sola volta in cima al
+    // metodo, fix wave 2 fix A — non duplicata qui.)
 
     const appIoConfig = resolveSecondaryAppIoConfig(campaign.channelConfig);
     const resolved = appIoConfig ? await this.ioServices.resolveApiKey(appIoConfig.ioServiceId) : null;
@@ -138,9 +159,12 @@ export class CampaignContentCorrectionService {
     if (!newAppIoResult.success) return 'skipped';
 
     // Merge, mai replace: envelope/dati del canale primario già scritti restano.
+    // La firma contenuto (fix wave 2 fix B) NON viene più scritta qui dentro
+    // responsePayload — vive su Recipient, aggiornata subito sotto.
     await this.attemptRepo.update(lastAttempt.id, {
-      responsePayload: { ...lastAttempt.responsePayload, appIo: newAppIoResult, contentSignature },
+      responsePayload: { ...lastAttempt.responsePayload, appIo: newAppIoResult },
     });
+    await this.recipientRepo.update(recipientId, { lastContentResendSignature: contentSignature });
     return 'resent';
   }
 
