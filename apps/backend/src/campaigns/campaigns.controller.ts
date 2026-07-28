@@ -692,6 +692,23 @@ export class CampaignsController {
     return result;
   }
 
+  @Post(':id/postal/reset-errors-for-recheck')
+  async resetPostalErrorsForRecheck(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request & { user: JwtOperatorPayload },
+  ) {
+    const result = await this.campaignsService.resetPostalErrorsForRecheck(id);
+    const campaign = await this.campaignsService.findOne(id).catch(() => null);
+    await this.auditLogsService.log({
+      campaignId: id,
+      campaignName: campaign ? campaign.name : null,
+      operator: req.user.username,
+      action: 'RETRY',
+      details: { postalErrorsResetForRecheck: true, resetCount: result.resetCount },
+    });
+    return result;
+  }
+
   @Post(':id/recipients/retry-bulk')
   retryRecipientsBulk(
     @Param('id', ParseUUIDPipe) id: string,

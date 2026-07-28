@@ -1852,6 +1852,20 @@ export class CampaignsService {
     return this.postalStatusSync.refreshOne(lastAttempt.id);
   }
 
+  /**
+   * Reset di massa per l'intera campagna — vedi PostalStatusSyncService.resetErrorsForRecheck
+   * per il razionale (raccomandate corrette a mano su GlobalCom, il cron non
+   * le ripolla più da sola perché già a stato terminale).
+   */
+  async resetPostalErrorsForRecheck(campaignId: string): Promise<{ resetCount: number }> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+    if (campaign.channelType !== 'POSTAL') {
+      throw new BadRequestException('Ricontrollo stato disponibile solo per campagne POSTAL');
+    }
+    return this.postalStatusSync.resetErrorsForRecheck(campaignId);
+  }
+
   async retryRecipientsBulk(campaignId: string, recipientIds: string[]): Promise<RetryBulkResultDto> {
     if (recipientIds.length > MAX_BULK_RETRY_SIZE) {
       throw new BadRequestException(
@@ -1913,15 +1927,22 @@ export class CampaignsService {
       // ed essere SUCCESS, altrimenti un FAILED pre-provider (mai un
       // send_status/postal_status per definizione) finirebbe qui invece che
       // sotto lo stato business FAILED sentinella già gestito altrove.
+      // channel_type = campaign.channelType obbligatorio: un dirottato INAD
+      // (attempt reale PEC, non POSTAL) ha send_status/postal_status NULL
+      // anche lui (colonne mai popolate per PEC) — senza questo filtro
+      // finiva anche lui in "In corso", pur avendo un canale che non avrà
+      // mai un postalStatus (bug reale, visto in UI: dirottati con "—"
+      // mescolati ai veri pending POSTAL sotto lo stesso filtro).
       qb.andWhere(
         `EXISTS (
           SELECT 1 FROM (
-            SELECT DISTINCT ON (recipient_id) recipient_id, send_status, postal_status, status
+            SELECT DISTINCT ON (recipient_id) recipient_id, send_status, postal_status, status, channel_type
             FROM notification_attempts
             ORDER BY recipient_id, attempt_number DESC
           ) la
-          WHERE la.recipient_id = r.id AND la.status = 'success' AND la.send_status IS NULL AND la.postal_status IS NULL
+          WHERE la.recipient_id = r.id AND la.channel_type = :campaignChannelType AND la.status = 'success' AND la.send_status IS NULL AND la.postal_status IS NULL
         )`,
+        { campaignChannelType: campaign.channelType },
       );
     } else if (deliveryStatus) {
       // "Stato Consegna" (SEND/POSTAL) vive sull'ultimo attempt del destinatario,
@@ -2004,6 +2025,9 @@ export class CampaignsService {
    * Consegna" senza mostrare opzioni che non produrrebbero mai risultati.
    */
   async getRecipientFilterOptions(campaignId: string): Promise<{ statuses: string[]; deliveryStatuses: string[] }> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+
     const statusRows = await this.recipientRepo
       .createQueryBuilder('r')
       .select('DISTINCT r.status', 'status')
@@ -2029,13 +2053,13 @@ export class CampaignsService {
     const pendingCount = await this.recipientRepo
       .createQueryBuilder('r')
       .leftJoin(
-        `(SELECT DISTINCT ON (recipient_id) recipient_id, send_status, postal_status, status
+        `(SELECT DISTINCT ON (recipient_id) recipient_id, send_status, postal_status, status, channel_type
           FROM notification_attempts ORDER BY recipient_id, attempt_number DESC)`,
         'la',
         'la.recipient_id = r.id',
       )
       .where('r.campaignId = :campaignId', { campaignId })
-      .andWhere(`la.status = 'success' AND la.send_status IS NULL AND la.postal_status IS NULL`)
+      .andWhere(`la.channel_type = :campaignChannelType AND la.status = 'success' AND la.send_status IS NULL AND la.postal_status IS NULL`, { campaignChannelType: campaign.channelType })
       .getCount();
 
     return {

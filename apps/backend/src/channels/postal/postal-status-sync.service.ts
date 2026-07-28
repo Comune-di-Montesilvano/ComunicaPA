@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Cron } from '@nestjs/schedule';
 import { NotificationAttempt, AttemptStatus } from '../../entities/notification-attempt.entity';
 import { PostalProvidersService } from '../../postal-providers/postal-providers.service';
@@ -133,5 +133,37 @@ export class PostalStatusSyncService {
 
     const changed = await this.syncOne(attempt, provider.creds);
     return { changed, postalStatus: attempt.postalStatus };
+  }
+
+  /**
+   * Reset di massa per una campagna: caso reale — una raccomandata `Errore`
+   * viene corretta a mano sul portale GlobalCom (mai tramite un nostro
+   * retry), il cron non la ripolla più da sola perché è già a stato
+   * terminale con costo calcolato (stesso motivo di `refreshOne`). Qui non
+   * interroghiamo GlobalCom direttamente (nessuna chiamata SOAP, solo un
+   * update DB) — resettiamo `postal_status` a NULL per farla rientrare nel
+   * filtro di `handleCron`, che la ripesca e la ricontrolla per davvero al
+   * giro successivo (entro un minuto). Esclude deliberatamente gli attempt
+   * senza `postal_tracking_id`: quelli non sono mai arrivati a GlobalCom
+   * (es. dedup fittizio pre-fix, vedi postal.strategy.ts) — non c'è nulla
+   * da "ricontrollare" lì, serve un vero reinvio (Correggi indirizzo e
+   * rimetti in coda), non un reset di stato.
+   */
+  async resetErrorsForRecheck(campaignId: string): Promise<{ resetCount: number }> {
+    const candidates = await this.attemptRepo
+      .createQueryBuilder('attempt')
+      .innerJoin('attempt.recipient', 'r')
+      .where('r.campaignId = :campaignId', { campaignId })
+      .andWhere('attempt.channel_type = :ch', { ch: 'POSTAL' })
+      .andWhere('attempt.status = :status', { status: AttemptStatus.SUCCESS })
+      .andWhere("attempt.postal_tracking_id IS NOT NULL AND attempt.postal_tracking_id != ''")
+      .andWhere('attempt.postal_status = :errore', { errore: 'Errore' })
+      .select(['attempt.id'])
+      .getMany();
+
+    if (candidates.length === 0) return { resetCount: 0 };
+
+    await this.attemptRepo.update({ id: In(candidates.map((a) => a.id)) }, { postalStatus: null });
+    return { resetCount: candidates.length };
   }
 }
