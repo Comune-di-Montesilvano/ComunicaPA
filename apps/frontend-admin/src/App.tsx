@@ -240,6 +240,7 @@ function WizRecipientPreviewPanel({
   wizAppIoMode,
   wizMapping,
   settInadCheckEnabled,
+  wizPecReserveMailConfigId,
   wizSingleMode,
   wizPdfFiles,
   fullWidth,
