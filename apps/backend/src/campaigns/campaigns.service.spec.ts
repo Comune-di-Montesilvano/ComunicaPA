@@ -1318,6 +1318,30 @@ describe('CampaignsService', () => {
     });
   });
 
+  describe('getRecipientIdsByChannelOutcome', () => {
+    it('ritorna solo gli id dei destinatari che matchano la categoria richiesta', async () => {
+      mockRecipientRepo.find.mockResolvedValueOnce([
+        { id: 'r1', status: RecipientStatus.SENT },
+        { id: 'r2', status: RecipientStatus.SENT },
+        { id: 'r3', status: RecipientStatus.FAILED },
+      ]);
+      mockAttemptRepo.find.mockResolvedValueOnce([
+        { recipientId: 'r1', responsePayload: { appIo: { success: true } } },
+        { recipientId: 'r2', responsePayload: {} },
+        { recipientId: 'r3', responsePayload: { appIo: { success: true } } },
+      ]);
+
+      const ids = await service.getRecipientIdsByChannelOutcome('camp-1', 'both');
+
+      expect(ids).toEqual(['r1']);
+    });
+
+    it('campagna inesistente → NotFoundException', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce(null);
+      await expect(service.getRecipientIdsByChannelOutcome('camp-x', 'both')).rejects.toThrow(NotFoundException);
+    });
+  });
+
   describe('getEffectiveChannelBreakdown', () => {
     it('bucketizza i destinatari SENT per canale effettivo (deliveredVia APP_IO > attempt.channelType)', async () => {
       mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'POSTAL' });

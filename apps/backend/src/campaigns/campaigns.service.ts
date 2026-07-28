@@ -7,7 +7,7 @@ import { parse } from 'csv-parse';
 import * as fs from 'fs';
 import { join } from 'path';
 import { extractZipWithYauzl } from './zip-extract.util';
-import { classifyChannelOutcome } from './channel-outcome.util';
+import { classifyChannelOutcome, type ChannelOutcome } from './channel-outcome.util';
 import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import type { AppConfiguration } from '../config/configuration';
@@ -1177,6 +1177,30 @@ export class CampaignsService {
       if (outcome) breakdown[outcome]++;
     }
     return breakdown;
+  }
+
+  async getRecipientIdsByChannelOutcome(campaignId: string, outcome: ChannelOutcome): Promise<string[]> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+
+    const recipients = await this.recipientRepo.find({
+      where: { campaignId },
+      select: ['id', 'status'],
+    });
+    const toClassify = recipients.filter(
+      (r) => r.status === RecipientStatus.SENT || r.status === RecipientStatus.FAILED,
+    );
+    if (toClassify.length === 0) return [];
+
+    const firstAttempts = await this.attemptRepo.find({
+      where: { recipientId: In(toClassify.map((r) => r.id)), attemptNumber: 1 },
+      select: ['recipientId', 'responsePayload'],
+    });
+    const payloadByRecipient = new Map(firstAttempts.map((a) => [a.recipientId, a.responsePayload]));
+
+    return toClassify
+      .filter((r) => classifyChannelOutcome(r.status, payloadByRecipient.get(r.id)) === outcome)
+      .map((r) => r.id);
   }
 
   /**

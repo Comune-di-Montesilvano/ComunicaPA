@@ -22,6 +22,7 @@ describe('CampaignsController', () => {
     findOne: jest.fn().mockResolvedValue({ id: 'uuid-1', name: 'Test Campaign' }),
     finalizeInadCheck: jest.fn().mockResolvedValue(undefined),
     skipInadCheck: jest.fn().mockResolvedValue({ launched: 3, campaignId: 'uuid-1' }),
+    getRecipientIdsByChannelOutcome: jest.fn(),
   };
 
   const mockAuditLogsService = {
@@ -276,6 +277,19 @@ describe('CampaignsController', () => {
       expect(result.launched).toBe(3);
       expect(mockService.skipInadCheck).toHaveBeenCalledWith('uuid-1');
       expect(mockAuditLogsService.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'INAD_CHECK_SKIP', campaignId: 'uuid-1' }));
+    });
+  });
+
+  describe('getRecipientIdsByChannelOutcome', () => {
+    it('recipients-by-channel-outcome: outcome non valido → BadRequestException', () => {
+      expect(() => controller.getRecipientIdsByChannelOutcome('camp-1', 'invalid' as any)).toThrow(BadRequestException);
+    });
+
+    it('recipients-by-channel-outcome: delega al service con outcome valido', async () => {
+      mockService.getRecipientIdsByChannelOutcome = jest.fn(async () => ['r1', 'r2']);
+      const result = await controller.getRecipientIdsByChannelOutcome('camp-1', 'both');
+      expect(mockService.getRecipientIdsByChannelOutcome).toHaveBeenCalledWith('camp-1', 'both');
+      expect(result).toEqual({ recipientIds: ['r1', 'r2'] });
     });
   });
 });

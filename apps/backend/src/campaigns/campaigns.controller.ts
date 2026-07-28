@@ -24,6 +24,7 @@ import type { JwtOperatorPayload } from '@comunicapa/shared-types';
 import type { Campaign } from '../entities/campaign.entity';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CampaignsService } from './campaigns.service';
+import type { ChannelOutcome } from './channel-outcome.util';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { OperatorDirectoryService } from '../operator-directory/operator-directory.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
@@ -531,6 +532,20 @@ export class CampaignsController {
   @Get(':id/channel-stats')
   getChannelBreakdown(@Param('id', ParseUUIDPipe) id: string) {
     return this.campaignsService.getChannelBreakdown(id).then((breakdown) => ({ campaignId: id, breakdown }));
+  }
+
+  @Get(':id/recipients-by-channel-outcome')
+  getRecipientIdsByChannelOutcome(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('outcome') outcome: string,
+  ) {
+    const valid: ChannelOutcome[] = ['primaryOnly', 'both', 'appIoOnly', 'appIoDespitePrimaryFail', 'neither'];
+    if (!valid.includes(outcome as ChannelOutcome)) {
+      throw new BadRequestException(`outcome deve essere uno tra: ${valid.join(', ')}`);
+    }
+    return this.campaignsService
+      .getRecipientIdsByChannelOutcome(id, outcome as ChannelOutcome)
+      .then((recipientIds) => ({ recipientIds }));
   }
 
   @Get(':id/effective-channel-stats')
