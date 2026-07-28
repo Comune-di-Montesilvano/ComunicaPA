@@ -1565,6 +1565,8 @@ export function App(): React.JSX.Element {
   const [settSendTestGroup, setSettSendTestGroup] = useState('');
   const [settSendSenderTaxId, setSettSendSenderTaxId] = useState('');
   const [settSendTaxonomies, setSettSendTaxonomies] = useState<Array<{ code: string; label: string; isDefault?: boolean }>>([]);
+  const [settDenominazioneAbbreviationsText, setSettDenominazioneAbbreviationsText] = useState('[]');
+  const [settDenominazioneAbbreviationsError, setSettDenominazioneAbbreviationsError] = useState('');
   const [settSendEntityType, setSettSendEntityType] = useState('');
   const [wizAddTaxonomyCode, setWizAddTaxonomyCode] = useState('');
   const [settSendProdBaseUrl, setSettSendProdBaseUrl] = useState('https://api.notifichedigitali.it');
@@ -1892,6 +1894,7 @@ export function App(): React.JSX.Element {
         } catch {
           setSettSendTaxonomies([]);
         }
+        setSettDenominazioneAbbreviationsText(String(s['notifiche.denominazioneAbbreviations'] ?? '[]'));
         setSettSendProdBaseUrl(String(s['send.prod.baseUrl'] ?? ''));
         setSettSendProdApiKey(String(s['send.prod.apiKey'] ?? ''));
         setSettSendProdPurposeId(String(s['send.prod.purposeId'] ?? ''));
@@ -2867,6 +2870,7 @@ export function App(): React.JSX.Element {
     'send.senderTaxId': settSendSenderTaxId,
     'send.entityType': settSendEntityType,
     'send.enabledTaxonomyCodes': JSON.stringify(settSendTaxonomies),
+    'notifiche.denominazioneAbbreviations': settDenominazioneAbbreviationsText,
     'send.prod.baseUrl': settSendProdBaseUrl,
     'send.prod.apiKey': settSendProdApiKey,
     'send.prod.purposeId': settSendProdPurposeId,
@@ -2912,6 +2916,13 @@ export function App(): React.JSX.Element {
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
+    try {
+      JSON.parse(settDenominazioneAbbreviationsText || '[]');
+      setSettDenominazioneAbbreviationsError('');
+    } catch {
+      setSettDenominazioneAbbreviationsError('JSON non valido nella tabella abbreviazioni denominazione — correggi prima di salvare.');
+      return;
+    }
     try {
       const res = await apiFetch('/settings', {
         method: 'PUT',
@@ -11530,6 +11541,25 @@ export function App(): React.JSX.Element {
                               <label className="form-label">Retention job arricchimento (giorni)</label>
                               <input type="number" min={1} className="form-control" value={settEnrichmentRetentionDays}
                                 onChange={(e) => setSettEnrichmentRetentionDays(e.target.value)} />
+                            </div>
+                            <div className="mb-3">
+                              <label className="form-label small fw-semibold">
+                                Abbreviazioni denominazione destinatario (POSTAL/SEND)
+                              </label>
+                              <textarea
+                                className={`form-control font-monospace small ${settDenominazioneAbbreviationsError ? 'is-invalid' : ''}`}
+                                rows={4}
+                                value={settDenominazioneAbbreviationsText}
+                                onChange={(e) => setSettDenominazioneAbbreviationsText(e.target.value)}
+                              />
+                              {settDenominazioneAbbreviationsError && (
+                                <div className="invalid-feedback">{settDenominazioneAbbreviationsError}</div>
+                              )}
+                              <div className="form-text small">
+                                JSON: {'[{"pattern": "testo da abbreviare", "replacement": "abbreviazione"}]'}. Applicato prima
+                                di troncare un nome destinatario troppo lungo per Denominazione1/2 GlobalCom (44 char) o
+                                denomination SEND (88 char) — es. dicitura legale eredi.
+                              </div>
                             </div>
                           </div>
                         )}
