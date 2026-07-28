@@ -104,11 +104,27 @@ indirizzo estero (già stringa libera, nessuna validazione formato oggi).
 
 ### Backend
 
-`launch()`/`uploadCsv()` in `campaigns.service.ts`: stessa validazione
-bulk (match paese in `COUNTRIES` + contratto `Estero:true`) rieseguita
-server-side, stesso pattern skip-riga già usato per altre righe invalide
-(coerente con gotcha "proxy esterno" — mai eccezione non-2xx, sempre riga
-esclusa con motivo visibile).
+**Revisione post-implementazione (fix-wave finale, verificata dal vivo):**
+`uploadCsv()`/`launch()`/`createAttemptsAndEnqueue()` in
+`campaigns.service.ts` non hanno mai avuto un meccanismo di skip-riga per
+nessun campo (CF, email, allegato...) — ogni validazione per-destinatario
+in questo backend vive nella strategy del canale, al momento dell'invio
+(`send()`), non a monte in `campaigns.service.ts`. Costruire uno skip-riga
+nuovo solo per l'estero avrebbe introdotto un pattern mai esistito in
+questo codebase, rischio sproporzionato rispetto al beneficio.
+
+Scelta finale: validazione server-side (match paese in `COUNTRIES` +
+contratto `Estero:true`) dentro `postal.strategy.ts.send()`, subito prima
+della chiamata SOAP — riusa il meccanismo di fallimento già esistente e
+collaudato per ogni altra validazione per-destinatario (indirizzo non
+risolvibile, allegato mancante...): l'errore lanciato marca quel singolo
+`NotificationAttempt` come `FAILED` (visibile in UI, retriable via
+"Rimetti in coda"), senza bloccare né gli altri destinatari né l'intero
+lancio campagna. Stessa protezione pratica del design originale (il
+server non è bypassabile passando dal wizard), cambio molto più piccolo e
+coerente con l'architettura esistente. SEND non necessita di un gate
+equivalente: PN accetta `foreignState` incondizionatamente (nessun
+concetto di "contratto abilitato estero" per quel canale).
 
 ## Sezione 3 — SEND (PN)
 
