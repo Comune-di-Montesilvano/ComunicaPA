@@ -24,6 +24,7 @@ import type { JwtOperatorPayload } from '@comunicapa/shared-types';
 import type { Campaign } from '../entities/campaign.entity';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CampaignsService } from './campaigns.service';
+import { CampaignContentCorrectionService } from './campaign-content-correction.service';
 import type { ChannelOutcome } from './channel-outcome.util';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { OperatorDirectoryService } from '../operator-directory/operator-directory.service';
@@ -55,6 +56,7 @@ export class CampaignsController {
     private readonly campaignsService: CampaignsService,
     private readonly auditLogsService: AuditLogsService,
     private readonly operatorDirectory: OperatorDirectoryService,
+    private readonly contentCorrectionService: CampaignContentCorrectionService,
   ) {}
 
   @Get()
@@ -118,6 +120,28 @@ export class CampaignsController {
       details: { subjectChanged: dto.subject !== undefined, bodyChanged: dto.body !== undefined },
     });
     return campaign;
+  }
+
+  @Post(':id/resend-content')
+  resendContent(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body('recipientIds') recipientIds: string[],
+    @Req() req: Request & { user: JwtOperatorPayload },
+  ): Promise<any> {
+    if (!Array.isArray(recipientIds) || recipientIds.length === 0) {
+      throw new BadRequestException('recipientIds deve essere un array non vuoto');
+    }
+    return this.contentCorrectionService.resendSafeBulk(id, recipientIds).then(async (results) => {
+      const campaign = await this.campaignsService.findOne(id).catch(() => null);
+      await this.auditLogsService.log({
+        campaignId: id,
+        campaignName: campaign ? campaign.name : null,
+        operator: req.user.username,
+        action: 'RESEND_CONTENT',
+        details: { count: recipientIds.length },
+      });
+      return results;
+    });
   }
 
   @Post('preview')

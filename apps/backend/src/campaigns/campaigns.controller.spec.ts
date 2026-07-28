@@ -34,6 +34,10 @@ describe('CampaignsController', () => {
     resolveMany: jest.fn().mockResolvedValue({}),
   };
 
+  const mockContentCorrectionService = {
+    resendSafeBulk: jest.fn(),
+  };
+
   const mockReq = {
     user: {
       username: 'test-operator',
@@ -48,6 +52,7 @@ describe('CampaignsController', () => {
       mockService as unknown as CampaignsService,
       mockAuditLogsService as any,
       mockOperatorDirectory as any,
+      mockContentCorrectionService as any,
     );
   });
 
@@ -156,6 +161,29 @@ describe('CampaignsController', () => {
       expect(mockService.updateCampaignContent).toHaveBeenCalledWith('camp-1', { body: 'nuovo' }, 'test-operator');
       expect(mockAuditLogsService.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'CONTENT_CORRECTION' }));
       expect(result).toEqual({ id: 'camp-1', name: 'TARI' });
+    });
+  });
+
+  describe('resendContent', () => {
+    it('resend-content: recipientIds vuoto/assente → BadRequestException', () => {
+      expect(() => controller.resendContent('camp-1', [], mockReq)).toThrow(BadRequestException);
+      expect(() => controller.resendContent('camp-1', undefined as any, mockReq)).toThrow(BadRequestException);
+    });
+
+    it('resend-content: delega al service e loggua audit con il conteggio', async () => {
+      mockContentCorrectionService.resendSafeBulk = jest.fn(async () => [
+        { recipientId: 'r1', result: 'resent' },
+        { recipientId: 'r2', result: 'skipped' },
+      ]);
+      mockService.findOne = jest.fn(async () => ({ id: 'camp-1', name: 'TARI' } as any));
+
+      const result = await controller.resendContent('camp-1', ['r1', 'r2'], mockReq);
+
+      expect(mockContentCorrectionService.resendSafeBulk).toHaveBeenCalledWith('camp-1', ['r1', 'r2']);
+      expect(mockAuditLogsService.log).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'RESEND_CONTENT', details: { count: 2 } }),
+      );
+      expect(result).toEqual([{ recipientId: 'r1', result: 'resent' }, { recipientId: 'r2', result: 'skipped' }]);
     });
   });
 
