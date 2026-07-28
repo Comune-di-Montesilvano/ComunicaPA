@@ -106,6 +106,7 @@ export class CampaignsController {
     return campaign;
   }
   @Patch(':id/content')
+  @Roles('admin')
   async updateCampaignContent(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateCampaignContentDto,
@@ -123,6 +124,7 @@ export class CampaignsController {
   }
 
   @Post(':id/resend-content')
+  @Roles('admin')
   resendContent(
     @Param('id', ParseUUIDPipe) id: string,
     @Body('recipientIds') recipientIds: string[],

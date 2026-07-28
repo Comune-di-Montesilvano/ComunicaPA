@@ -11,15 +11,19 @@ describe('CampaignContentCorrectionService', () => {
   let service: CampaignContentCorrectionService;
 
   const campaign = {
-    id: 'camp-1', name: 'TARI', channelType: 'POSTAL',
+    id: 'camp-1', name: 'TARI', channelType: 'POSTAL', status: 'queued',
     channelConfig: { secondaryChannels: [{ channel: 'APP_IO', mode: 'parallel', ioServiceId: 'svc-1' }] },
   };
-  const recipient = { id: 'rec-1', codiceFiscale: 'RSSMRA85M01H501Z', status: RecipientStatus.SENT };
+  const recipient = { id: 'rec-1', campaignId: 'camp-1', codiceFiscale: 'RSSMRA85M01H501Z', status: RecipientStatus.SENT };
 
   beforeEach(() => {
     attemptRepo = { findOne: jest.fn(), update: jest.fn(async () => undefined) };
     recipientRepo = { findOne: jest.fn(async () => recipient), update: jest.fn(async () => undefined) };
-    campaignRepo = { findOneBy: jest.fn(async () => campaign) };
+    campaignRepo = {
+      findOneBy: jest.fn(async () => campaign),
+      decrement: jest.fn(async () => undefined),
+      increment: jest.fn(async () => undefined),
+    };
     campaignsService = { retryRecipient: jest.fn(async () => ({ requeued: true, attemptId: 'att-new' })) };
     appIoDelivery = { checkProfile: jest.fn(async () => true), sendMessage: jest.fn(async () => ({ success: true, messageId: 'io-2' })) };
     ioServices = { resolveApiKey: jest.fn(async () => ({ apiKey: 'key', idService: 'svc-1' })) };
@@ -45,6 +49,34 @@ describe('CampaignContentCorrectionService', () => {
 
       expect(recipientRepo.update).not.toHaveBeenCalled();
       expect(campaignsService.retryRecipient).toHaveBeenCalled();
+    });
+
+    describe('fix review finale #1: sentCount/failedCount non driftano su resend canale sicuro', () => {
+      it('destinatario era SENT: decrementa sentCount E incrementa failedCount PRIMA di retryRecipient (che poi decrementerà failedCount da solo)', async () => {
+        recipientRepo.findOne.mockResolvedValue({ ...recipient, status: RecipientStatus.SENT });
+        attemptRepo.findOne.mockResolvedValue({ id: 'att-1', channelType: 'PEC', attemptNumber: 1, responsePayload: {} });
+
+        const result = await service.resendSafe('camp-1', 'rec-1');
+
+        expect(result).toBe('resent');
+        expect(campaignRepo.decrement).toHaveBeenCalledWith({ id: 'camp-1' }, 'sentCount', 1);
+        expect(campaignRepo.increment).toHaveBeenCalledWith({ id: 'camp-1' }, 'failedCount', 1);
+        // Ordine: prima il decrement/increment contatori, poi retryRecipient
+        // (che farà il suo proprio decrement di failedCount, invariato).
+        const decrementOrder = campaignRepo.decrement.mock.invocationCallOrder[0];
+        const retryOrder = campaignsService.retryRecipient.mock.invocationCallOrder[0];
+        expect(decrementOrder).toBeLessThan(retryOrder);
+      });
+
+      it('destinatario era già FAILED: nessun tocco a sentCount/failedCount qui (retryRecipient farà il proprio decrement failedCount, invariato)', async () => {
+        recipientRepo.findOne.mockResolvedValue({ ...recipient, status: RecipientStatus.FAILED });
+        attemptRepo.findOne.mockResolvedValue({ id: 'att-1', channelType: 'PEC', attemptNumber: 1, responsePayload: {} });
+
+        await service.resendSafe('camp-1', 'rec-1');
+
+        expect(campaignRepo.decrement).not.toHaveBeenCalled();
+        expect(campaignRepo.increment).not.toHaveBeenCalled();
+      });
     });
 
     it('canale effettivo POSTAL con co-consegna App IO pregressa: richiama solo AppIoDeliveryService, mai retryRecipient', async () => {
@@ -78,6 +110,47 @@ describe('CampaignContentCorrectionService', () => {
       const result = await service.resendSafe('camp-1', 'rec-1');
       expect(result).toBe('resent');
       expect(campaignsService.retryRecipient).not.toHaveBeenCalled();
+    });
+
+    describe('fix review finale #2: guardia CANCELLED sul branch App IO (POSTAL/SEND)', () => {
+      it('campagna CANCELLED: skipped, nessun invio App IO reale, nessun throw', async () => {
+        campaignRepo.findOneBy.mockResolvedValue({ ...campaign, status: 'cancelled' });
+        attemptRepo.findOne.mockResolvedValue({
+          id: 'att-1', channelType: 'POSTAL', attemptNumber: 1,
+          responsePayload: { appIo: { success: true } },
+        });
+
+        const result = await service.resendSafe('camp-1', 'rec-1');
+
+        expect(result).toBe('skipped');
+        expect(appIoDelivery.sendMessage).not.toHaveBeenCalled();
+        expect(campaignsService.retryRecipient).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('fix review finale #3: ownership recipient/campagna', () => {
+      it('recipient appartiene a un\'altra campagna (branch sicuro): skipped, nessun retry con contenuto sbagliato', async () => {
+        recipientRepo.findOne.mockResolvedValue({ ...recipient, campaignId: 'camp-ALTRA' });
+        attemptRepo.findOne.mockResolvedValue({ id: 'att-1', channelType: 'PEC', attemptNumber: 1, responsePayload: {} });
+
+        const result = await service.resendSafe('camp-1', 'rec-1');
+
+        expect(result).toBe('skipped');
+        expect(campaignsService.retryRecipient).not.toHaveBeenCalled();
+      });
+
+      it('recipient appartiene a un\'altra campagna (branch POSTAL/SEND, no retryRecipient a proteggere): skipped, nessun invio App IO con la config della campagna sbagliata', async () => {
+        recipientRepo.findOne.mockResolvedValue({ ...recipient, campaignId: 'camp-ALTRA' });
+        attemptRepo.findOne.mockResolvedValue({
+          id: 'att-1', channelType: 'POSTAL', attemptNumber: 1,
+          responsePayload: { appIo: { success: true } },
+        });
+
+        const result = await service.resendSafe('camp-1', 'rec-1');
+
+        expect(result).toBe('skipped');
+        expect(appIoDelivery.sendMessage).not.toHaveBeenCalled();
+      });
     });
 
     it('canale effettivo POSTAL SENZA co-consegna App IO pregressa: skipped, nessuna azione', async () => {
@@ -172,8 +245,8 @@ describe('CampaignContentCorrectionService', () => {
   });
 
   describe('resendSafeBulk', () => {
-    it('più di 500 recipientIds → throw', async () => {
-      const many = Array.from({ length: 501 }, (_, i) => `r${i}`);
+    it('più di 100 recipientIds → throw (cap abbassato da 500, fix review finale #5: costo I/O esterno per-item App IO)', async () => {
+      const many = Array.from({ length: 101 }, (_, i) => `r${i}`);
       await expect(service.resendSafeBulk('camp-1', many)).rejects.toThrow();
     });
 

@@ -3,14 +3,20 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { NotificationAttempt } from '../entities/notification-attempt.entity';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity';
-import { Campaign } from '../entities/campaign.entity';
+import { Campaign, CampaignStatus } from '../entities/campaign.entity';
 import { CampaignsService } from './campaigns.service';
 import { AppIoDeliveryService } from '../channels/app-io/app-io-delivery.service';
 import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util';
 import { IoServicesService } from '../io-services/io-services.service';
 import { APP_IO_BASE_URL } from '../channels/app-io/app-io.strategy';
 
-const MAX_BULK_RESEND_SIZE = 500;
+// A differenza di retryRecipientsBulk (solo lavoro DB per destinatario,
+// cap 500 sicuro), il branch App IO qui sotto fa fino a DUE chiamate HTTP
+// esterne sequenziali per destinatario (checkProfile + sendMessage verso
+// PagoPA) — un cap più basso riduce il rischio di timeout del reverse
+// proxy davanti al backend in produzione su un batch grande (fix review
+// finale #5, vedi CLAUDE.md sezione bulk/reverse proxy).
+const MAX_BULK_RESEND_SIZE = 100;
 // Mai questi due canali: spedizione fisica/legale irreversibile — vedi spec
 // task-6 (piano SDD). resendSafe non deve MAI accodare un job né chiamare la
 // strategy di invio per POSTAL o SEND.
@@ -59,13 +65,35 @@ export class CampaignContentCorrectionService {
       return 'skipped';
     }
 
+    // Ownership: recipientId deve appartenere davvero a questa campagna.
+    // Il branch sicuro sotto è protetto implicitamente perché
+    // retryRecipient() lo verifica da solo (NotFoundException se
+    // recipient.campaignId !== campaignId) — ma il branch POSTAL/SEND non
+    // passa mai da retryRecipient(), quindi senza questo controllo un
+    // recipientId di un'ALTRA campagna potrebbe essere rimandato con il
+    // contenuto/config App IO della campagna sbagliata (fix review finale
+    // #3). Controllo fatto una volta qui, copre entrambi i branch.
+    const recipient = await this.recipientRepo.findOne({ where: { id: recipientId } });
+    if (recipient && recipient.campaignId !== campaignId) return 'skipped';
+
     if (!UNSAFE_TO_RESEND.includes(lastAttempt.channelType)) {
       // Canale già sicuro (PEC/EMAIL/APP_IO, es. dirottato INAD): stesso
-      // pattern di updateRecipientAddressAndRetry, forza FAILED solo se
-      // necessario poi riusa il retry esistente, invariato.
-      const recipient = await this.recipientRepo.findOne({ where: { id: recipientId } });
+      // pattern di updateRecipientAddressAndRetry (campaigns.service.ts) —
+      // forza FAILED solo se necessario E aggiorna sentCount/failedCount
+      // PRIMA di chiamare retryRecipient(), che decrementa failedCount di 1
+      // assumendo il destinatario fosse GIÀ contato come fallito. Senza
+      // questo aggiornamento un destinatario forzato da SENT a FAILED non
+      // veniva mai scontato da sentCount, e retryRecipient() decrementava
+      // comunque failedCount (mai incrementato per lui) portandolo a -1 —
+      // la causa della drift sentCount/failedCount vista in produzione
+      // (fix review finale #1, torta "Esito Invio" con percentuali > 100%).
       if (recipient && recipient.status !== RecipientStatus.FAILED) {
+        const wasSent = recipient.status === RecipientStatus.SENT;
         await this.recipientRepo.update(recipientId, { status: RecipientStatus.FAILED });
+        if (wasSent) {
+          await this.campaignRepo.decrement({ id: campaignId }, 'sentCount', 1);
+        }
+        await this.campaignRepo.increment({ id: campaignId }, 'failedCount', 1);
       }
       const result = await this.campaignsService.retryRecipient(campaignId, recipientId);
       // Il retry crea un NUOVO NotificationAttempt (lastAttempt è ormai
@@ -82,8 +110,17 @@ export class CampaignContentCorrectionService {
     const appIoPayload = lastAttempt.responsePayload?.['appIo'] as { success?: boolean } | undefined;
     if (!appIoPayload?.success) return 'skipped';
 
-    const recipient = await this.recipientRepo.findOne({ where: { id: recipientId } });
     if (!campaign || !recipient) return 'skipped';
+
+    // Campagna già annullata dall'operatore: updateCampaignContent (task 5)
+    // permette deliberatamente di correggere il contenuto anche su una
+    // campagna CANCELLED, ma questo non deve autorizzare un invio App IO
+    // REALE al cittadino — stessa guardia già presente in retryRecipient()
+    // per il branch sicuro sopra (fix review finale #2). Ritorna 'skipped'
+    // (non throw): resendSafeBulk chiama questo metodo in loop per-recipient,
+    // un'eccezione qui verrebbe riclassificata 'error' invece di 'skipped',
+    // meno accurato per un motivo puramente di stato campagna, non un guasto.
+    if (campaign.status === CampaignStatus.CANCELLED) return 'skipped';
 
     const appIoConfig = resolveSecondaryAppIoConfig(campaign.channelConfig);
     const resolved = appIoConfig ? await this.ioServices.resolveApiKey(appIoConfig.ioServiceId) : null;
