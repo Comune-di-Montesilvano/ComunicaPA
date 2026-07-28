@@ -2111,6 +2111,71 @@ describe('CampaignsService', () => {
         expect(mockQueue.addBulk).not.toHaveBeenCalled();
       });
     });
+
+    it('applica lo stesso check INAD del lancio reale: destinatario di prova dirottato POSTAL→PEC', async () => {
+      mockSettings.get.mockImplementation(async (key?: string) => (key === 'inad.checkEnabled' ? true : null));
+      const parent = {
+        id: 'parent-1',
+        name: 'Campagna Raccomandata AR',
+        channelType: 'POSTAL',
+        channelConfig: { attachments: [{ key: 'file', label: 'Avviso' }] },
+        createdBy: 'operator1',
+      };
+      mockCampaignRepo.findOneBy
+        .mockResolvedValueOnce(parent)
+        .mockResolvedValueOnce(null);
+      const child = { ...parent, id: 'child-1', isTest: true, parentCampaignId: 'parent-1' };
+      mockCampaignRepo.create.mockReturnValue(child);
+      mockCampaignRepo.save.mockResolvedValue(child);
+
+      const testRecipient = { id: 'recipient-test', campaignId: 'child-1', codiceFiscale: 'RSSMRA80A01H501U', extraData: { file: 'xyz.pdf' } };
+      mockRecipientRepo.create.mockReturnValue(testRecipient);
+      mockRecipientRepo.save.mockResolvedValue(testRecipient);
+      // findMissingAttachments (allegato mappato "file" presente in extraData) + runInadExtractLoop
+      // rileggono il recipient appena creato — stesso recipient in entrambi i punti.
+      mockRecipientRepo.find.mockResolvedValue([
+        { id: 'recipient-test', codiceFiscale: 'RSSMRA80A01H501U', extraData: { file: 'xyz.pdf' }, pec: null },
+      ]);
+      const childDir = fs.mkdtempSync(join(os.tmpdir(), 'comunicapa-testsend-inad-'));
+      fs.writeFileSync(join(childDir, 'xyz.pdf'), '%PDF');
+      (getUploadsDir as jest.Mock).mockImplementation((id: string) => (id === 'child-1' ? childDir : '/tmp/comunicapa-nonexistent-parent-dir'));
+      mockRecipientRepo.update.mockResolvedValue(undefined);
+
+      mockInadService.extractDigitalAddress.mockResolvedValue({
+        found: true,
+        data: { codiceFiscale: 'RSSMRA80A01H501U', since: '2026-01-01', digitalAddress: [{ digitalAddress: 'trovato@pec.it', usageInfo: { motivation: 'CESSAZIONE_VOLONTARIA', dateEndValidity: '2020-01-01' } }] },
+      });
+
+      const insertResult = { raw: [{ id: 'attempt-test' }] };
+      const insertValues = jest.fn().mockReturnThis();
+      mockAttemptRepo.createQueryBuilder.mockReturnValue({
+        insert: jest.fn().mockReturnThis(),
+        into: jest.fn().mockReturnThis(),
+        values: insertValues,
+        returning: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue(insertResult),
+      });
+      mockAttemptRepo.findOne.mockResolvedValue({ id: 'attempt-test' });
+      mockQueue.addBulk.mockResolvedValue(undefined);
+
+      const result = await service.launchTestSend('parent-1', {
+        codiceFiscale: 'RSSMRA80A01H501U',
+        extraData: { file: 'xyz.pdf' },
+      });
+
+      expect(result.blocked).toBeUndefined();
+      expect(mockInadService.extractDigitalAddress).toHaveBeenCalledWith('RSSMRA80A01H501U');
+      expect(insertValues).toHaveBeenCalledWith([
+        expect.objectContaining({ recipientId: 'recipient-test', channelType: 'PEC' }),
+      ]);
+      expect(mockQueue.addBulk).toHaveBeenCalledWith(
+        'POSTAL',
+        expect.arrayContaining([
+          expect.objectContaining({ data: expect.objectContaining({ channel: 'PEC' }) }),
+        ]),
+      );
+      fs.rmSync(childDir, { recursive: true, force: true });
+    });
   });
 });
 

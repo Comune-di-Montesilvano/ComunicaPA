@@ -593,7 +593,22 @@ export class CampaignsService {
       return { attemptId: '', testCampaignId: child.id, ...attachmentsBlock };
     }
 
-    const { launched } = await this.createAttemptsAndEnqueue(child, [{ id: savedRecipient.id }]);
+    // Stessa logica INAD del lancio reale (launch()): il test deve rispecchiare
+    // esattamente cosa succederebbe al destinatario nella campagna vera, non un
+    // percorso semplificato — altrimenti un test "riuscito" mostra un canale
+    // (es. POSTAL) che nella campagna reale verrebbe dirottato a PEC da INAD.
+    // Un solo destinatario di prova: mai sopra INAD_BULK_THRESHOLD, nessun ramo
+    // bulk-batch da gestire qui.
+    const isWizSingleMode = child.channelConfig?.['wizSingleMode'] === true;
+    const inadCheckEnabled =
+      !isWizSingleMode &&
+      child.channelType !== 'SEND' &&
+      (await this.settings.get<boolean>('inad.checkEnabled'));
+    const channelOverrides = inadCheckEnabled
+      ? await this.runInadExtractLoop(child, [{ id: savedRecipient.id }])
+      : undefined;
+
+    const { launched } = await this.createAttemptsAndEnqueue(child, [{ id: savedRecipient.id }], channelOverrides);
     if (launched === 0) {
       throw new BadRequestException('Invio di prova non accodato');
     }
