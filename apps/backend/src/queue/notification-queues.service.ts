@@ -15,7 +15,7 @@ export class NotificationQueuesService {
     @InjectQueue(CHANNEL_QUEUES.POSTAL) postalQueue: Queue<NotificationJobData>,
     @InjectQueue(PROTOCOLLAZIONE_QUEUE) protocollazioneQueue: Queue<NotificationJobData>,
   ) {
-    this.queues = new Map([
+    this.queues = new Map<EngineName, Queue<NotificationJobData>>([
       ['EMAIL', emailQueue],
       ['PEC', pecQueue],
       ['APP_IO', appIoQueue],

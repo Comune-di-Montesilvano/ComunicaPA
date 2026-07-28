@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsEnum, IsIn, IsObject, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { IsIn, IsObject, IsOptional, IsString, ValidateNested } from 'class-validator';
 import type { NotificationChannel } from '@comunicapa/shared-types';
 
 export class PreviewAttachmentDto {
@@ -43,7 +43,7 @@ export class PreviewRecipientDto {
 }
 
 export class PreviewMessageDto {
-  @IsEnum(['PEC', 'EMAIL', 'APP_IO', 'SEND', 'POSTAL'])
+  @IsIn(['PEC', 'EMAIL', 'APP_IO', 'SEND', 'POSTAL'])
   channelType!: NotificationChannel;
 
   @IsString()
@@ -70,7 +70,7 @@ export class PreviewMessageDto {
   campaignId?: string;
 
   /** Canale primario reale, solo quando channelType==='APP_IO' e la co-consegna è PARALLELA (mai in esclusiva). */
-  @IsEnum(['PEC', 'EMAIL', 'APP_IO', 'SEND', 'POSTAL'])
+  @IsIn(['PEC', 'EMAIL', 'APP_IO', 'SEND', 'POSTAL'])
   @IsOptional()
   appIoParallelPrimaryChannel?: NotificationChannel;
 

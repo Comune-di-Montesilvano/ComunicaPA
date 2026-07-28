@@ -1491,7 +1491,13 @@ export function App(): React.JSX.Element {
           } : {}),
         }),
       })
-        .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`preview failed ${res.status}`))))
+        .then(async (res) => {
+          if (!res.ok) {
+            const errBody = await res.text();
+            throw new Error(`preview failed ${res.status} - ${errBody}`);
+          }
+          return res.json();
+        })
         .then((data) => setWizPreviewResult(data))
         .catch((err) => {
           if (err.name !== 'AbortError') {
