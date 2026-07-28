@@ -51,7 +51,10 @@ describe('CampaignContentCorrectionService', () => {
       // atteso è quello della firma contenuto (fix wave 2 fix B), non uno
       // status update duplicato.
       expect(recipientRepo.update).not.toHaveBeenCalledWith('rec-1', { status: RecipientStatus.FAILED });
-      expect(recipientRepo.update).toHaveBeenCalledWith('rec-1', { lastContentResendSignature: JSON.stringify(['', '']) });
+      // La firma è ora un hash SHA-256 hex (64 char), non raw JSON.stringify
+      expect(recipientRepo.update).toHaveBeenCalledWith('rec-1', {
+        lastContentResendSignature: expect.stringMatching(/^[a-f0-9]{64}$/),
+      });
       expect(campaignsService.retryRecipient).toHaveBeenCalled();
     });
 
@@ -97,7 +100,7 @@ describe('CampaignContentCorrectionService', () => {
       // merge, non replace: envelope del canale primario resta. La firma
       // contenuto (fix wave 2 fix B) NON vive più su responsePayload — vive
       // su Recipient.lastContentResendSignature, scritta con un update
-      // dedicato separato.
+      // dedicato separato. Fix wave 3: la firma è un hash SHA-256 hex.
       expect(attemptRepo.update).toHaveBeenCalledWith('att-1', {
         responsePayload: {
           envelope: { to: ['x'] },
@@ -105,7 +108,7 @@ describe('CampaignContentCorrectionService', () => {
         },
       });
       expect(recipientRepo.update).toHaveBeenCalledWith('rec-1', {
-        lastContentResendSignature: JSON.stringify(['', '']),
+        lastContentResendSignature: expect.stringMatching(/^[a-f0-9]{64}$/),
       });
     });
 
@@ -204,9 +207,17 @@ describe('CampaignContentCorrectionService', () => {
     });
 
     describe('idempotenza per firma contenuto (fix doppio invio da categorie sovrapposte) — fix wave 2 fix B: firma su Recipient, non su NotificationAttempt.responsePayload', () => {
-      const currentSignature = JSON.stringify(['', '']); // campaign fixture: subject/body assenti da channelConfig
+      // NOTA: fix wave 3 — la firma è ora un hash SHA-256 hex (64 char), non raw JSON.stringify
+      // Per il test baseline (campaign fixture vuota), il JSON.stringify di ['',''] produce uno string
+      // che quando hashato genera un hash fisso — ma il test non lo hardcoda per evitare fragilità.
+      // Invece usa expect().toMatch(/^[a-f0-9]{64}$/) per verificare che il risultato sia sempre un hex 64-char.
+      const getCurrentSignatureHash = () => {
+        const { createHash } = require('crypto');
+        return createHash('sha256').update(JSON.stringify(['', ''])).digest('hex');
+      };
 
       it('recipient.lastContentResendSignature già uguale alla firma corrente → skipped, nessun branch eseguito', async () => {
+        const currentSignature = getCurrentSignatureHash();
         recipientRepo.findOne.mockResolvedValue({ ...recipient, lastContentResendSignature: currentSignature });
         attemptRepo.findOne.mockResolvedValue({
           id: 'att-1', channelType: 'PEC', attemptNumber: 1, responsePayload: {},
@@ -220,6 +231,7 @@ describe('CampaignContentCorrectionService', () => {
       });
 
       it('canale sicuro, lastContentResendSignature assente/stale: procede al retry e scrive la firma su Recipient (non su NotificationAttempt)', async () => {
+        const currentSignature = getCurrentSignatureHash();
         recipientRepo.findOne.mockResolvedValue({ ...recipient, lastContentResendSignature: 'stale-signature' });
         attemptRepo.findOne.mockResolvedValue({
           id: 'att-1', channelType: 'PEC', attemptNumber: 1, responsePayload: {},
@@ -240,6 +252,7 @@ describe('CampaignContentCorrectionService', () => {
       });
 
       it('scenario reale del bug: due click consecutivi (App IO parallela + Dirottato INAD) sullo stesso destinatario → il secondo si ferma, ANCHE dopo che NotificationProcessor ha rimpiazzato responsePayload del nuovo attempt', async () => {
+        const currentSignature = getCurrentSignatureHash();
         // Primo click: nessuna firma pregressa, procede e scrive la firma su Recipient.
         recipientRepo.findOne.mockResolvedValueOnce({ ...recipient, lastContentResendSignature: undefined });
         attemptRepo.findOne.mockResolvedValueOnce({
@@ -273,6 +286,39 @@ describe('CampaignContentCorrectionService', () => {
         // Nessuna seconda chiamata: il conteggio resta fermo a quello del primo click.
         expect(campaignsService.retryRecipient).toHaveBeenCalledTimes(1);
         expect(appIoDelivery.sendMessage).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('fix wave 3: firma SHA-256 hash (64 char), mai raw JSON.stringify — overflow varchar(512) impossibile', () => {
+      it('body lunghissimo (1500+ char): firma sempre hash fisso 64-char, mai exceeds varchar(512)', async () => {
+        // Campaign fixture ha body vuoto — sostituisci con uno lunghissimo
+        // per provare che il hash non cresce al crescere del body
+        const hugeBody = 'X'.repeat(1500); // 1500 char, ben oltre il limit del raw JSON.stringify
+        const campaignWithHugeBody = {
+          ...campaign,
+          channelConfig: { ...campaign.channelConfig, subject: 'Test', body: hugeBody },
+        };
+        campaignRepo.findOneBy.mockResolvedValue(campaignWithHugeBody);
+        recipientRepo.findOne.mockResolvedValue({ ...recipient, lastContentResendSignature: undefined });
+        attemptRepo.findOne.mockResolvedValue({
+          id: 'att-1', channelType: 'PEC', attemptNumber: 1, responsePayload: {},
+        });
+        campaignsService.retryRecipient.mockResolvedValue({ requeued: true, attemptId: 'att-new' });
+
+        await service.resendSafe('camp-1', 'rec-1');
+
+        // Verifica che l'update della firma abbia un valore che sia:
+        // 1. Un hash hex (64 caratteri, solo [a-f0-9])
+        // 2. MAI il raw JSON.stringify del contenuto (che sarebbe 1000+ char)
+        const updateCalls = recipientRepo.update.mock.calls;
+        const signatureUpdate = updateCalls.find((call: any) => call[1]?.lastContentResendSignature);
+        expect(signatureUpdate).toBeDefined();
+
+        const signature = signatureUpdate[1].lastContentResendSignature;
+        expect(signature).toMatch(/^[a-f0-9]{64}$/); // SHA-256 hex = 64 char
+        expect(signature.length).toBe(64); // Esplicitamente 64, mai variable
+        // Bonus: se avessero usato raw JSON.stringify, sarebbe centinaio+ di char
+        expect(signature).not.toMatch(/XXX/); // Nessuna traccia del body reale
       });
     });
   });

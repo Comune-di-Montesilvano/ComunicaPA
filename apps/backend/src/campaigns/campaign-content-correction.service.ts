@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { createHash } from 'crypto';
 import { NotificationAttempt } from '../entities/notification-attempt.entity';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity';
 import { Campaign, CampaignStatus } from '../entities/campaign.entity';
@@ -94,10 +95,19 @@ export class CampaignContentCorrectionService {
     // silenziosamente cancellata pochi secondi dopo, rendendo la guardia
     // inefficace. Recipient non è mai toccato da quel path, la firma
     // sopravvive.
-    const contentSignature = JSON.stringify([
+    //
+    // Fix wave 3: firma computata come SHA-256 hex digest del contenuto
+    // (soggetto + body JSON.stringify), produce un hash fisso 64-char anche
+    // per body di lunghezza arbitraria — il limite varchar(512) della colonna
+    // non può mai venire superato. Bug precedente: raw JSON.stringify su
+    // body lunghi (HTML email 10000 chars, markdown App IO 10000 chars) poteva
+    // facilmente superare 512, lanciando Postgres error DOPO il resend reale
+    // (il messaggio era già uscito, l'errore era fuorviante).
+    const contentString = JSON.stringify([
       (campaign?.channelConfig?.['subject'] as string) ?? '',
       (campaign?.channelConfig?.['body'] as string) ?? '',
     ]);
+    const contentSignature = createHash('sha256').update(contentString).digest('hex');
     if (recipient?.lastContentResendSignature === contentSignature) {
       return 'skipped';
     }
