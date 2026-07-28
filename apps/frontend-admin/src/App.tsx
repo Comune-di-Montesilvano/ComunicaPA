@@ -1027,6 +1027,9 @@ export function App(): React.JSX.Element {
   const [addressEditSaving, setAddressEditSaving] = useState(false);
   const [postalStatusRefreshing, setPostalStatusRefreshing] = useState(false);
   const [postalErrorsResetting, setPostalErrorsResetting] = useState(false);
+  const [trackingIdEditOpenFor, setTrackingIdEditOpenFor] = useState<number | null>(null);
+  const [trackingIdEditValue, setTrackingIdEditValue] = useState('');
+  const [trackingIdEditSaving, setTrackingIdEditSaving] = useState(false);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1168,6 +1171,8 @@ export function App(): React.JSX.Element {
     setSendLegalFactRetry({});
     setAddressEditOpen(false);
     setAddressEditForm({ address: '', municipality: '', zip: '', province: '', country: 'Italia' });
+    setTrackingIdEditOpenFor(null);
+    setTrackingIdEditValue('');
     setNotifDetailLoading(true);
     try {
       const res = await fetch(`${ADMIN_API_BASE}/notifications-search/${recipientId}`, {
@@ -1339,6 +1344,34 @@ export function App(): React.JSX.Element {
       if (!(err instanceof ApiAuthError)) alert('Errore durante il salvataggio dell\'indirizzo.');
     } finally {
       setAddressEditSaving(false);
+    }
+  };
+
+  const handleAttachPostalTrackingId = async (attemptNumber: number) => {
+    if (!notifDetail) return;
+    if (!trackingIdEditValue.trim()) {
+      alert('IDPRO obbligatorio.');
+      return;
+    }
+    setTrackingIdEditSaving(true);
+    try {
+      const res = await apiFetch(`/campaigns/${notifDetail.campaign.id}/recipients/${notifDetail.recipient.id}/postal/attempts/${attemptNumber}/tracking-id`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idPro: trackingIdEditValue.trim() }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert(body.message || 'Errore durante l\'aggancio dell\'IDPRO — verifica che sia corretto e presente su GlobalCom.');
+        return;
+      }
+      setTrackingIdEditOpenFor(null);
+      setTrackingIdEditValue('');
+      await openNotificationDetail(notifDetail.recipient.id);
+    } catch (err) {
+      if (!(err instanceof ApiAuthError)) alert('Errore durante l\'aggancio dell\'IDPRO.');
+    } finally {
+      setTrackingIdEditSaving(false);
     }
   };
 
@@ -10783,7 +10816,19 @@ export function App(): React.JSX.Element {
                                       // colonna "In corso" a vita non ha senso in quel caso.
                                       a.channelType === 'POSTAL' ? (
                                         <>
-                                          <td className="small"><PostalStatusBadge status={a.postalStatus} /></td>
+                                          <td className="small">
+                                            <PostalStatusBadge status={a.postalStatus} />
+                                            {a.status === 'success' && !a.postalTrackingId && (
+                                              <button
+                                                type="button"
+                                                className="btn btn-sm btn-link p-0 ms-1"
+                                                title="Nessun IDPRO salvato — aggancia manualmente se l'invio è arrivato davvero a GlobalCom"
+                                                onClick={() => { setTrackingIdEditValue(''); setTrackingIdEditOpenFor(trackingIdEditOpenFor === a.attemptNumber ? null : a.attemptNumber); }}
+                                              >
+                                                <Link size={14} />
+                                              </button>
+                                            )}
+                                          </td>
                                           <td className="small text-muted">{a.postalStatusUpdatedAt ? new Date(a.postalStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
                                         </>
                                       ) : (
@@ -10807,6 +10852,28 @@ export function App(): React.JSX.Element {
                                       })()}
                                     </td>
                                   </tr>
+                                  {trackingIdEditOpenFor === a.attemptNumber && (
+                                    <tr>
+                                      <td colSpan={7} className="bg-light">
+                                        <div className="d-flex align-items-center gap-2 py-1">
+                                          <Link size={14} className="text-muted flex-shrink-0" />
+                                          <span className="small text-muted flex-shrink-0">IDPRO tentativo #{a.attemptNumber}:</span>
+                                          <input
+                                            type="text"
+                                            className="form-control form-control-sm"
+                                            style={{ maxWidth: 260 }}
+                                            placeholder="es. SOA_..."
+                                            value={trackingIdEditValue}
+                                            onChange={(e) => setTrackingIdEditValue(e.target.value)}
+                                          />
+                                          <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => setTrackingIdEditOpenFor(null)}>Annulla</button>
+                                          <button type="button" className="btn btn-sm btn-info" onClick={() => handleAttachPostalTrackingId(a.attemptNumber)} disabled={trackingIdEditSaving}>
+                                            {trackingIdEditSaving ? <Loader2 className="icon-spin" size={14} /> : 'Aggancia e verifica'}
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )}
                                   {/* Co-consegna App IO come tentativo a parte: non ha senso quando
                                       App IO è già il canale primario della campagna. */}
                                   {notifDetail.campaign.channelType !== 'APP_IO' && a.appIo.attempted && (

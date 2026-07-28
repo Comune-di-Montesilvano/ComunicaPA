@@ -33,6 +33,7 @@ import { UpdateCampaignDto } from './dto/update-campaign.dto';
 import { PreviewMessageDto } from './dto/preview-message.dto';
 import { TestSendDto } from './dto/test-send.dto';
 import { UpdateRecipientAddressDto } from './dto/update-recipient-address.dto';
+import { AttachPostalTrackingIdDto } from './dto/attach-postal-tracking-id.dto';
 import { UpdateCampaignContentDto } from './dto/update-campaign-content.dto';
 import { getUploadsDir } from '../attachments/attachment-paths';
 import { buildNeverDownloadedCsv } from './never-downloaded-csv.util';
@@ -688,6 +689,26 @@ export class CampaignsController {
       operator: req.user.username,
       action: 'RETRY',
       details: { recipientId, postalStatusRefresh: true, newStatus: result.postalStatus },
+    });
+    return result;
+  }
+
+  @Patch(':id/recipients/:recipientId/postal/attempts/:attemptNumber/tracking-id')
+  async attachPostalTrackingId(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('recipientId', ParseUUIDPipe) recipientId: string,
+    @Param('attemptNumber') attemptNumber: string,
+    @Body() dto: AttachPostalTrackingIdDto,
+    @Req() req: Request & { user: JwtOperatorPayload },
+  ) {
+    const result = await this.campaignsService.attachPostalTrackingId(id, recipientId, Number(attemptNumber), dto.idPro);
+    const campaign = await this.campaignsService.findOne(id).catch(() => null);
+    await this.auditLogsService.log({
+      campaignId: id,
+      campaignName: campaign ? campaign.name : null,
+      operator: req.user.username,
+      action: 'RETRY',
+      details: { recipientId, attemptNumber: Number(attemptNumber), postalTrackingIdAttached: dto.idPro },
     });
     return result;
   }

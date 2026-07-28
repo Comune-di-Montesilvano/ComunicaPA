@@ -1853,6 +1853,40 @@ export class CampaignsService {
   }
 
   /**
+   * Aggancio manuale IDPRO GlobalCom su un attempt SPECIFICO (attemptNumber
+   * esplicito, mai "l'ultimo" implicito) — un destinatario può avere più
+   * tentativi POSTAL, e più di uno può essere senza IDPRO: l'operatore deve
+   * poter scegliere a quale riga dello storico agganciarlo, non solo
+   * all'ultimo. Caso reale: invio davvero arrivato a GlobalCom (l'operatore
+   * lo trova cercando a mano sul portale), ma il nostro attempt è rimasto
+   * senza postalTrackingId per un bug di mapping (`isGoodExistingSubmission`/
+   * dedup, vedi postal.strategy.ts) o un fallimento di parsing risposta.
+   * Non tocca status/postalStatus da solo: dopo aver scritto l'IDPRO,
+   * richiama subito refreshOne() per validarlo contro GlobalCom (se l'IDPRO
+   * è sbagliato/inesistente, dettagliDocumento fallisce e l'errore risale
+   * al chiamante — niente salvato a metà).
+   */
+  async attachPostalTrackingId(campaignId: string, recipientId: string, attemptNumber: number, idPro: string): Promise<{ changed: boolean; postalStatus: string | null }> {
+    const trimmed = idPro.trim();
+    if (!trimmed) throw new BadRequestException('IDPRO obbligatorio');
+
+    const recipient = await this.recipientRepo.findOne({ where: { id: recipientId } });
+    if (!recipient || recipient.campaignId !== campaignId) {
+      throw new NotFoundException(`Recipient ${recipientId} non trovato in questa campagna`);
+    }
+    const attempt = await this.attemptRepo.findOne({
+      where: { recipientId, channelType: 'POSTAL', attemptNumber },
+    });
+    if (!attempt) throw new NotFoundException(`Tentativo #${attemptNumber} POSTAL non trovato per questo destinatario`);
+    if (attempt.postalTrackingId) {
+      throw new BadRequestException(`Questo tentativo ha già un IDPRO salvato (${attempt.postalTrackingId}) — usa "Ricontrolla stato" per aggiornarlo, non un aggancio manuale`);
+    }
+
+    await this.attemptRepo.update(attempt.id, { postalTrackingId: trimmed });
+    return this.postalStatusSync.refreshOne(attempt.id);
+  }
+
+  /**
    * Reset di massa per l'intera campagna — vedi PostalStatusSyncService.resetErrorsForRecheck
    * per il razionale (raccomandate corrette a mano su GlobalCom, il cron non
    * le ripolla più da sola perché già a stato terminale).
