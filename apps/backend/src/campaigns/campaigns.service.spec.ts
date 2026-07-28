@@ -1267,6 +1267,33 @@ describe('CampaignsService', () => {
       expect(result).toEqual({});
       expect(mockAttemptRepo.find).not.toHaveBeenCalled();
     });
+
+    it('co-delivery parallela: destinatario con due attempt attemptNumber=1 (PEC + APP_IO) conta UNA sola volta come "APP_IO + PEC"', async () => {
+      // Regressione bug: un destinatario con canale primario (PEC) e App IO secondario
+      // entrambi riusciti produce due attempt con attemptNumber=1.
+      // Prima del fix veniva contato due volte (una in "APP_IO", una in "PEC");
+      // dopo il fix viene contato una volta sola nella chiave combinata "APP_IO + PEC".
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'PEC' });
+      mockRecipientRepo.find.mockResolvedValueOnce([
+        { id: 'r-pec-only', status: RecipientStatus.SENT },
+        { id: 'r-pec-and-appio', status: RecipientStatus.SENT },
+      ]);
+      mockAttemptRepo.find.mockResolvedValueOnce([
+        // r-pec-only: solo PEC
+        { recipientId: 'r-pec-only', channelType: 'PEC', responsePayload: {} },
+        // r-pec-and-appio: due attempt con attemptNumber=1 (co-delivery parallela)
+        { recipientId: 'r-pec-and-appio', channelType: 'PEC', responsePayload: {} },
+        { recipientId: 'r-pec-and-appio', channelType: 'PEC', responsePayload: { deliveredVia: 'APP_IO' } },
+      ]);
+
+      const result = await service.getEffectiveChannelBreakdown('uuid-1');
+
+      // r-pec-only → 1 PEC; r-pec-and-appio → 1 "APP_IO + PEC" (chiave ordinata)
+      expect(result).toEqual({ PEC: 1, 'APP_IO + PEC': 1 });
+      // La somma totale non deve mai superare il numero di destinatari SENT (2)
+      const total = Object.values(result as Record<string, number>).reduce((s, v) => s + v, 0);
+      expect(total).toBe(2);
+    });
   });
 
   describe('getDownloadCombinationStats', () => {

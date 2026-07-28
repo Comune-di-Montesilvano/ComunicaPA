@@ -1196,11 +1196,23 @@ export class CampaignsService {
       select: ['recipientId', 'channelType', 'responsePayload'],
     });
 
-    const breakdown: Record<string, number> = {};
+    // Raggruppa i canali effettivi per destinatario: un destinatario con co-delivery
+    // parallela (PEC + App IO entrambi con attemptNumber=1) deve produrre UNA sola
+    // voce combinata (es. "APP_IO + PEC"), non due voci separate.
+    const channelsByRecipient = new Map<string, Set<string>>();
     for (const attempt of firstAttempts) {
       const deliveredViaAppIo = attempt.responsePayload?.['deliveredVia'] === 'APP_IO';
       const effectiveChannel = deliveredViaAppIo ? 'APP_IO' : attempt.channelType;
-      breakdown[effectiveChannel] = (breakdown[effectiveChannel] ?? 0) + 1;
+      if (!channelsByRecipient.has(attempt.recipientId)) {
+        channelsByRecipient.set(attempt.recipientId, new Set());
+      }
+      channelsByRecipient.get(attempt.recipientId)!.add(effectiveChannel);
+    }
+
+    const breakdown: Record<string, number> = {};
+    for (const channels of channelsByRecipient.values()) {
+      const key = [...channels].sort().join(' + ');
+      breakdown[key] = (breakdown[key] ?? 0) + 1;
     }
     return breakdown;
   }

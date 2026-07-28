@@ -256,6 +256,7 @@ function WizRecipientPreviewPanel({
   wizAppIoMode: 'none' | 'parallel' | 'exclusive';
   wizMapping: Record<string, string>;
   settInadCheckEnabled?: boolean;
+  wizPecReserveMailConfigId?: string;
   wizSingleMode?: boolean;
   wizPdfFiles?: File[];
   fullWidth?: boolean;
@@ -276,7 +277,7 @@ function WizRecipientPreviewPanel({
           >
             <ChannelBadge channel={wizChannel} />
           </button>
-          {wizChannel === 'POSTAL' && settInadCheckEnabled && !wizSingleMode && (
+          {wizChannel === 'POSTAL' && (settInadCheckEnabled || !!wizPecReserveMailConfigId) && !wizSingleMode && (
             <button
               type="button"
               className={`btn ${wizPreviewChannelTab === 'PEC' ? 'btn-primary' : 'btn-outline-secondary'}`}
@@ -1751,12 +1752,14 @@ export function App(): React.JSX.Element {
   // il campo differenziato è sempre attivo per questo canale (checkbox nascosta).
   useEffect(() => {
     if (wizChannel === 'POSTAL' && wizAppIoMode !== 'none' && !wizAppIoDifferentiate) {
-      // Se INAD è disattivo, o se è un invio singolo, la POSTAL non ha un template PEC da riusare.
-      if (!settInadCheckEnabled || wizSingleMode) {
+      // Se INAD è disattivo (né globalmente né per la campagna via PEC di riserva),
+      // o se è un invio singolo, la POSTAL non ha un template PEC da riusare.
+      const hasInad = settInadCheckEnabled || !!wizPecReserveMailConfigId;
+      if (!hasInad || wizSingleMode) {
         setWizAppIoDifferentiate(true);
       }
     }
-  }, [wizChannel, wizAppIoMode, wizAppIoDifferentiate, settInadCheckEnabled, wizSingleMode]);
+  }, [wizChannel, wizAppIoMode, wizAppIoDifferentiate, settInadCheckEnabled, wizSingleMode, wizPecReserveMailConfigId]);
 
   useEffect(() => {
     document.body.classList.toggle('bo-sidebar-open', sidebarOpen);
@@ -9205,11 +9208,11 @@ export function App(): React.JSX.Element {
                       onClick={handleWizAdvanceToStep5}
                       disabled={
                         wizDraftSaving || (
-                          wizChannel === 'POSTAL' && wizAppIoMode === 'none' && !(settInadCheckEnabled && !wizSingleMode)
+                          wizChannel === 'POSTAL' && wizAppIoMode === 'none' && !((settInadCheckEnabled || !!wizPecReserveMailConfigId) && !wizSingleMode)
                             ? false
                             : (
                                 !wizSubject ||
-                                ((wizChannel !== 'SEND' && (wizChannel !== 'POSTAL' || (settInadCheckEnabled && !wizSingleMode))) && isWizBodyEmpty(wizBody)) ||
+                                ((wizChannel !== 'SEND' && (wizChannel !== 'POSTAL' || ((settInadCheckEnabled || !!wizPecReserveMailConfigId) && !wizSingleMode))) && isWizBodyEmpty(wizBody)) ||
                                 wizAppIoBodyLenInvalid ||
                                 wizAppIoSubjectLenInvalid ||
                                 wizPrimaryBodyMissingAttachmentPlaceholder ||
@@ -9226,7 +9229,7 @@ export function App(): React.JSX.Element {
                   <div className="col-lg-6 border-end">
                     <h4 className="h6 fw-bold text-dark mb-3">{wizChannel === 'SEND' ? `Passo ${wizDisplayStep(4, wizSingleMode)}: Oggetto della Comunicazione` : `Passo ${wizDisplayStep(4, wizSingleMode)}: Scrittura Template & Jolly Fields`}</h4>
 
-                    {(wizChannel === 'EMAIL' || wizChannel === 'PEC' || (wizChannel === 'POSTAL' && settInadCheckEnabled && !wizSingleMode)) && templates.filter(t => t.type === 'MAIL').length > 0 && (
+                    {(wizChannel === 'EMAIL' || wizChannel === 'PEC' || (wizChannel === 'POSTAL' && (settInadCheckEnabled || !!wizPecReserveMailConfigId) && !wizSingleMode)) && templates.filter(t => t.type === 'MAIL').length > 0 && (
                       <div className="mb-3">
                         <label className="form-label small">Carica da template</label>
                         <select
@@ -9262,7 +9265,7 @@ export function App(): React.JSX.Element {
                       />
                     </div>
 
-                    {wizChannel !== 'SEND' && (wizChannel !== 'POSTAL' || (settInadCheckEnabled && !wizSingleMode)) && (
+                    {wizChannel !== 'SEND' && (wizChannel !== 'POSTAL' || ((settInadCheckEnabled || !!wizPecReserveMailConfigId) && !wizSingleMode)) && (
                       <>
                         <div className="mb-3">
                           <label className="form-label small fw-bold">Corpo del Messaggio (Template)</label>
@@ -9336,7 +9339,7 @@ export function App(): React.JSX.Element {
                       <div className="card mt-3 border-light shadow-sm" style={{ background: '#f8f9fc' }}>
                         <div className="card-body p-3">
                           <h6 className="small fw-bold text-dark mb-3"><Smartphone className="me-2 text-primary" size={16} />Co-consegna su App IO</h6>
-                          {wizChannel === 'POSTAL' && (!settInadCheckEnabled || wizSingleMode) ? (
+                          {wizChannel === 'POSTAL' && ((!settInadCheckEnabled && !wizPecReserveMailConfigId) || wizSingleMode) ? (
                             <div className="form-text small text-muted mb-2">
                               La lettera cartacea non ha un formato riutilizzabile per una notifica push: oggetto e testo App IO vanno definiti a parte.
                             </div>
@@ -9422,11 +9425,11 @@ export function App(): React.JSX.Element {
                         onClick={handleWizAdvanceToStep5}
                         disabled={
                           wizDraftSaving || (
-                            wizChannel === 'POSTAL' && wizAppIoMode === 'none' && !(settInadCheckEnabled && !wizSingleMode)
+                            wizChannel === 'POSTAL' && wizAppIoMode === 'none' && !((settInadCheckEnabled || !!wizPecReserveMailConfigId) && !wizSingleMode)
                               ? false
                               : (
                                   !wizSubject ||
-                                  ((wizChannel !== 'SEND' && (wizChannel !== 'POSTAL' || (settInadCheckEnabled && !wizSingleMode))) && isWizBodyEmpty(wizBody)) ||
+                                  ((wizChannel !== 'SEND' && (wizChannel !== 'POSTAL' || ((settInadCheckEnabled || !!wizPecReserveMailConfigId) && !wizSingleMode))) && isWizBodyEmpty(wizBody)) ||
                                   wizAppIoBodyLenInvalid ||
                                   wizAppIoSubjectLenInvalid ||
                                   wizPrimaryBodyMissingAttachmentPlaceholder ||
@@ -9454,6 +9457,7 @@ export function App(): React.JSX.Element {
                     wizAppIoMode={wizAppIoMode}
                     wizMapping={wizMapping}
                     settInadCheckEnabled={settInadCheckEnabled}
+                    wizPecReserveMailConfigId={wizPecReserveMailConfigId}
                     wizSingleMode={wizSingleMode}
                     wizPdfFiles={wizPdfFiles}
                   />
