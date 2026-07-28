@@ -7,9 +7,12 @@
   "scripts": {
     "build": "tsc",
     "lint": "echo 'no lint configured'",
-    "test": "echo 'no tests'"
+    "test": "jest"
   },
   "devDependencies": {
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.0",
+    "@types/jest": "^29.5.0"
   }
 }

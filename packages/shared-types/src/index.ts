@@ -48,3 +48,5 @@ export interface ChannelSendResult {
   messageId?: string;
   responsePayload?: Record<string, unknown>;
 }
+
+export { COUNTRIES, matchCountry } from './countries';
