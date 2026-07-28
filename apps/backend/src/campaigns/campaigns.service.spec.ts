@@ -422,6 +422,55 @@ describe('CampaignsService', () => {
     );
   });
 
+  it('getRecipientStats applica il filtro status su recipient.status', async () => {
+    const qb: any = {};
+    ['select', 'where', 'andWhere', 'orderBy', 'skip', 'take'].forEach((m) => {
+      qb[m] = jest.fn().mockReturnValue(qb);
+    });
+    qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
+    mockRecipientRepo.createQueryBuilder = jest.fn().mockReturnValue(qb);
+
+    await service.getRecipientStats('uuid-1', 1, 20, undefined, 'failed');
+
+    expect(qb.andWhere).toHaveBeenCalledWith('r.status = :status', { status: 'failed' });
+  });
+
+  it('getRecipientStats applica il filtro deliveryStatus via EXISTS sull\'ultimo attempt (send_status o postal_status)', async () => {
+    const qb: any = {};
+    ['select', 'where', 'andWhere', 'orderBy', 'skip', 'take'].forEach((m) => {
+      qb[m] = jest.fn().mockReturnValue(qb);
+    });
+    qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
+    mockRecipientRepo.createQueryBuilder = jest.fn().mockReturnValue(qb);
+
+    await service.getRecipientStats('uuid-1', 1, 20, undefined, undefined, 'ACCEPTED');
+
+    expect(qb.andWhere).toHaveBeenCalledWith(
+      expect.stringContaining('la.send_status = :deliveryStatus OR la.postal_status = :deliveryStatus'),
+      { deliveryStatus: 'ACCEPTED' },
+    );
+  });
+
+  describe('CampaignsService.getRecipientFilterOptions', () => {
+    it('ritorna gli status e i deliveryStatus distinti realmente presenti per la campagna', async () => {
+      const statusQb: any = {};
+      ['select', 'where'].forEach((m) => { statusQb[m] = jest.fn().mockReturnValue(statusQb); });
+      statusQb.getRawMany = jest.fn().mockResolvedValue([{ status: 'sent' }, { status: 'failed' }]);
+
+      const deliveryQb: any = {};
+      ['select', 'leftJoin', 'where', 'andWhere'].forEach((m) => { deliveryQb[m] = jest.fn().mockReturnValue(deliveryQb); });
+      deliveryQb.getRawMany = jest.fn().mockResolvedValue([{ deliveryStatus: 'ACCEPTED' }, { deliveryStatus: 'DELIVERED' }]);
+
+      mockRecipientRepo.createQueryBuilder = jest.fn()
+        .mockReturnValueOnce(statusQb)
+        .mockReturnValueOnce(deliveryQb);
+
+      const result = await service.getRecipientFilterOptions('uuid-1');
+
+      expect(result).toEqual({ statuses: ['sent', 'failed'], deliveryStatuses: ['ACCEPTED', 'DELIVERED'] });
+    });
+  });
+
   describe('CampaignsService.getRecipientStats — colonne SEND', () => {
     it('include iun/protocollo/stato SEND per l\'ultimo attempt di ciascun destinatario', async () => {
       mockCampaignRepo.findOneBy.mockResolvedValueOnce({ id: 'camp-1', channelType: 'SEND' });
@@ -2268,7 +2317,7 @@ describe('CampaignsService.getDuplicateSource', () => {
 });
 
 describe('CampaignsService.getFailures / retryRecipient', () => {
-  const campaignRepoMock = { findOneBy: jest.fn(), decrement: jest.fn() };
+  const campaignRepoMock = { findOneBy: jest.fn(), decrement: jest.fn(), increment: jest.fn(), save: jest.fn((c) => c) };
   const recipientRepoMock = { findOne: jest.fn(), update: jest.fn(), find: jest.fn(), createQueryBuilder: jest.fn() };
   const attemptRepoMock = {
     find: jest.fn(),
@@ -2637,6 +2686,123 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
     );
     expect(queuesMock.addBulk).not.toHaveBeenCalled();
     expect(campaignRepoMock.decrement).not.toHaveBeenCalled();
+  });
+
+  describe('updateRecipientAddressAndRetry', () => {
+    it('scrive le colonne physicalAddressConfig esistenti su extraData e rimette in coda', async () => {
+      campaignRepoMock.findOneBy.mockResolvedValue({
+        id: 'c1',
+        channelType: 'POSTAL',
+        channelConfig: { physicalAddressConfig: { enabled: true, addressColumn: 'via', municipalityColumn: 'comune', zipColumn: 'cap', provinceColumn: 'prov', countryColumn: 'paese' } },
+      });
+      recipientRepoMock.findOne = jest.fn().mockResolvedValue({ id: 'r1', campaignId: 'c1', status: RecipientStatus.FAILED, extraData: { via: 'Via Vecchia 1', comune: 'Roma' } });
+      attemptRepoMock.findOne = jest.fn().mockResolvedValue({ attemptNumber: 1 });
+      const insertExec = jest.fn().mockResolvedValue({ raw: [{ id: 'attempt-2' }] });
+      attemptRepoMock.createQueryBuilder.mockReturnValue({
+        insert: () => ({ into: () => ({ values: () => ({ returning: () => ({ execute: insertExec }) }) }) }),
+      });
+
+      const moduleRef = await buildModule();
+      const service = moduleRef.get(CampaignsService);
+
+      const result = await service.updateRecipientAddressAndRetry('c1', 'r1', {
+        address: 'Strada Vicinale Camerlengo 3',
+        municipality: 'Montesilvano',
+        zip: '65015',
+        province: 'PE',
+      });
+
+      expect(recipientRepoMock.update).toHaveBeenCalledWith('r1', {
+        extraData: { via: 'Strada Vicinale Camerlengo 3', comune: 'Montesilvano', cap: '65015', prov: 'PE', paese: '' },
+      });
+      expect(result).toEqual({ requeued: true, attemptId: 'attempt-2' });
+    });
+
+    it('crea un physicalAddressConfig self-bootstrap se la campagna non ne ha mai avuto uno', async () => {
+      campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'POSTAL', channelConfig: {} });
+      recipientRepoMock.findOne = jest.fn().mockResolvedValue({ id: 'r1', campaignId: 'c1', status: RecipientStatus.FAILED, extraData: {} });
+      attemptRepoMock.findOne = jest.fn().mockResolvedValue({ attemptNumber: 1 });
+      attemptRepoMock.createQueryBuilder.mockReturnValue({
+        insert: () => ({ into: () => ({ values: () => ({ returning: () => ({ execute: jest.fn().mockResolvedValue({ raw: [{ id: 'attempt-2' }] }) }) }) }) }),
+      });
+
+      const moduleRef = await buildModule();
+      const service = moduleRef.get(CampaignsService);
+
+      await service.updateRecipientAddressAndRetry('c1', 'r1', {
+        address: 'Rue Dodonee 132', municipality: 'Uccle', country: 'Belgio',
+      });
+
+      expect(campaignRepoMock.save).toHaveBeenCalledWith(expect.objectContaining({
+        channelConfig: expect.objectContaining({
+          physicalAddressConfig: { enabled: true, addressColumn: '_editAddress', municipalityColumn: '_editMunicipality', zipColumn: '_editZip', provinceColumn: '_editProvince', countryColumn: '_editCountry' },
+        }),
+      }));
+      expect(recipientRepoMock.update).toHaveBeenCalledWith('r1', {
+        extraData: { _editAddress: 'Rue Dodonee 132', _editMunicipality: 'Uccle', _editZip: '', _editProvince: '', _editCountry: 'Belgio' },
+      });
+    });
+
+    it('forza il recipient a FAILED prima del retry se è ancora SENT (errore di consegna POSTAL post-accettazione, es. CodiceErrore reale su attempt status=SUCCESS)', async () => {
+      campaignRepoMock.findOneBy.mockResolvedValue({
+        id: 'c1',
+        channelType: 'POSTAL',
+        channelConfig: { physicalAddressConfig: { enabled: true, addressColumn: 'via', municipalityColumn: 'comune' } },
+      });
+      // Prima lettura (updateRecipientAddressAndRetry): ancora SENT. Seconda
+      // lettura (re-fetch fresco dentro retryRecipient): già FAILED, riflette
+      // il recipientRepo.update({status: FAILED}) appena eseguito — un mock
+      // singolo con mockResolvedValue (non Once) non lo simulerebbe.
+      recipientRepoMock.findOne = jest.fn()
+        .mockResolvedValueOnce({ id: 'r1', campaignId: 'c1', status: RecipientStatus.SENT, extraData: {} })
+        .mockResolvedValueOnce({ id: 'r1', campaignId: 'c1', status: RecipientStatus.FAILED, extraData: {} });
+      attemptRepoMock.findOne = jest.fn().mockResolvedValue({ attemptNumber: 1 });
+      attemptRepoMock.createQueryBuilder.mockReturnValue({
+        insert: () => ({ into: () => ({ values: () => ({ returning: () => ({ execute: jest.fn().mockResolvedValue({ raw: [{ id: 'attempt-2' }] }) }) }) }) }),
+      });
+
+      const moduleRef = await buildModule();
+      const service = moduleRef.get(CampaignsService);
+
+      const result = await service.updateRecipientAddressAndRetry('c1', 'r1', { address: 'Strada Vicinale Camerlengo 3', municipality: 'Montesilvano' });
+
+      expect(recipientRepoMock.update).toHaveBeenCalledWith('r1', { status: RecipientStatus.FAILED });
+      expect(campaignRepoMock.decrement).toHaveBeenCalledWith({ id: 'c1' }, 'sentCount', 1);
+      expect(campaignRepoMock.increment).toHaveBeenCalledWith({ id: 'c1' }, 'failedCount', 1);
+      expect(result).toEqual({ requeued: true, attemptId: 'attempt-2' });
+    });
+
+    it('non forza alcuna transizione se il recipient è già FAILED', async () => {
+      campaignRepoMock.findOneBy.mockResolvedValue({
+        id: 'c1',
+        channelType: 'POSTAL',
+        channelConfig: { physicalAddressConfig: { enabled: true, addressColumn: 'via', municipalityColumn: 'comune' } },
+      });
+      recipientRepoMock.findOne = jest.fn().mockResolvedValue({ id: 'r1', campaignId: 'c1', status: RecipientStatus.FAILED, extraData: {} });
+      attemptRepoMock.findOne = jest.fn().mockResolvedValue({ attemptNumber: 1 });
+      attemptRepoMock.createQueryBuilder.mockReturnValue({
+        insert: () => ({ into: () => ({ values: () => ({ returning: () => ({ execute: jest.fn().mockResolvedValue({ raw: [{ id: 'attempt-2' }] }) }) }) }) }),
+      });
+
+      const moduleRef = await buildModule();
+      const service = moduleRef.get(CampaignsService);
+
+      await service.updateRecipientAddressAndRetry('c1', 'r1', { address: 'Via Roma 1', municipality: 'Roma' });
+
+      expect(campaignRepoMock.increment).not.toHaveBeenCalledWith({ id: 'c1' }, 'failedCount', 1);
+      expect(campaignRepoMock.decrement).not.toHaveBeenCalledWith({ id: 'c1' }, 'sentCount', 1);
+    });
+
+    it('rifiuta canali diversi da POSTAL/SEND', async () => {
+      campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'EMAIL', channelConfig: {} });
+
+      const moduleRef = await buildModule();
+      const service = moduleRef.get(CampaignsService);
+
+      await expect(service.updateRecipientAddressAndRetry('c1', 'r1', { address: 'Via Roma 1', municipality: 'Roma' }))
+        .rejects.toThrow('Correzione indirizzo disponibile solo per campagne POSTAL o SEND');
+      expect(recipientRepoMock.update).not.toHaveBeenCalled();
+    });
   });
 });
 

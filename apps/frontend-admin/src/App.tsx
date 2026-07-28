@@ -1016,6 +1016,10 @@ export function App(): React.JSX.Element {
   const [sendLegalFacts, setSendLegalFacts] = useState<{ legalFactId: string; category: string }[] | null>(null);
   const [sendLegalFactsLoading, setSendLegalFactsLoading] = useState(false);
   const [sendLegalFactRetry, setSendLegalFactRetry] = useState<Record<string, { retryAfterSeconds?: number; error?: string }>>({});
+  const [addressEditOpen, setAddressEditOpen] = useState(false);
+  const [addressEditForm, setAddressEditForm] = useState({ address: '', municipality: '', zip: '', province: '', country: 'Italia' });
+  const [addressEditAnprLoading, setAddressEditAnprLoading] = useState(false);
+  const [addressEditSaving, setAddressEditSaving] = useState(false);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1155,6 +1159,8 @@ export function App(): React.JSX.Element {
     setNotifDetail(null);
     setSendLegalFacts(null);
     setSendLegalFactRetry({});
+    setAddressEditOpen(false);
+    setAddressEditForm({ address: '', municipality: '', zip: '', province: '', country: 'Italia' });
     setNotifDetailLoading(true);
     try {
       const res = await fetch(`${ADMIN_API_BASE}/notifications-search/${recipientId}`, {
@@ -1255,6 +1261,77 @@ export function App(): React.JSX.Element {
       }
     } catch (err) {
       if (!(err instanceof ApiAuthError)) alert('Errore durante il download dell\'allegato.');
+    }
+  };
+
+  const runAddressEditAnprCheck = async () => {
+    if (!notifDetail) return;
+    setAddressEditAnprLoading(true);
+    try {
+      const res = await apiFetch('/domicilio/cerca', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codiceFiscale: notifDetail.recipient.codiceFiscale }),
+      });
+      const data = await res.json();
+      const residenza = data?.anpr?.residenza?.[0];
+      if (data?.anpr?.success && data?.anpr?.found && residenza?.indirizzo) {
+        const ind = residenza.indirizzo;
+        const via = [ind.toponimo?.specie, ind.toponimo?.denominazioneToponimo].filter(Boolean).join(' ');
+        const civico = [ind.numeroCivico?.numero, ind.numeroCivico?.lettera].filter(Boolean).join('');
+        setAddressEditForm({
+          address: [via, civico].filter(Boolean).join(', '),
+          municipality: ind.comune?.nomeComune || '',
+          zip: ind.cap || '',
+          province: ind.comune?.siglaProvinciaIstat || '',
+          country: 'Italia',
+        });
+      } else if (data?.anpr?.success && data?.anpr?.found && residenza?.localitaEstera?.indirizzoEstero) {
+        const ind = residenza.localitaEstera.indirizzoEstero;
+        const via = [ind.toponimo?.denominazione, ind.toponimo?.numeroCivico].filter(Boolean).join(' ');
+        const paeseRaw = ind.localita?.descrizioneStato || '';
+        const matched = paeseRaw ? matchCountry(paeseRaw) : null;
+        setAddressEditForm({
+          address: via,
+          municipality: ind.localita?.descrizioneLocalita || '',
+          zip: ind.cap || '',
+          province: '',
+          country: matched || paeseRaw || 'Italia',
+        });
+      } else {
+        alert('ANPR: nessun indirizzo di residenza trovato per questo CF.');
+      }
+    } catch (err) {
+      if (!(err instanceof ApiAuthError)) alert('Errore di connessione durante la verifica ANPR.');
+    } finally {
+      setAddressEditAnprLoading(false);
+    }
+  };
+
+  const handleSaveAddressAndRetry = async () => {
+    if (!notifDetail) return;
+    if (!addressEditForm.address.trim() || !addressEditForm.municipality.trim()) {
+      alert('Via e Comune sono obbligatori.');
+      return;
+    }
+    setAddressEditSaving(true);
+    try {
+      const res = await apiFetch(`/campaigns/${notifDetail.campaign.id}/recipients/${notifDetail.recipient.id}/address`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(addressEditForm),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert(body.message || 'Errore durante il salvataggio dell\'indirizzo.');
+        return;
+      }
+      setAddressEditOpen(false);
+      await openNotificationDetail(notifDetail.recipient.id);
+    } catch (err) {
+      if (!(err instanceof ApiAuthError)) alert('Errore durante il salvataggio dell\'indirizzo.');
+    } finally {
+      setAddressEditSaving(false);
     }
   };
 
@@ -1809,6 +1886,9 @@ export function App(): React.JSX.Element {
   const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; protocolNumber?: number | null; protocolYear?: number | null }> } | null>(null);
   const [recipientsSearch, setRecipientsSearch] = useState('');
   const [recipientsPageNum, setRecipientsPageNum] = useState(1);
+  const [recipientsStatusFilter, setRecipientsStatusFilter] = useState('');
+  const [recipientsDeliveryStatusFilter, setRecipientsDeliveryStatusFilter] = useState('');
+  const [recipientsFilterOptions, setRecipientsFilterOptions] = useState<{ statuses: string[]; deliveryStatuses: string[] } | null>(null);
   const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number; inadDiverted: number } | null>(null);
   const [effectiveChannelBreakdown, setEffectiveChannelBreakdown] = useState<Record<string, number> | null>(null);
   const [campaignSendStageCounts, setCampaignSendStageCounts] = useState<{ queued: number; protocollato: number; inviato: number; fallito: number } | null>(null);
@@ -1872,12 +1952,12 @@ export function App(): React.JSX.Element {
           fetchCampaignCost(selectedCampaignId);
           fetchCampaignCostSavings(selectedCampaignId);
           fetchDownloadCombinationStats(selectedCampaignId);
-          fetchRecipientsPage(selectedCampaignId, recipientsPageNum, recipientsSearch);
+          fetchRecipientsPage(selectedCampaignId, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter);
         }, 3000);
       }
     }
     return () => clearInterval(timer);
-  }, [view, selectedCampaignId, campaign, recipientsPageNum, recipientsSearch]);
+  }, [view, selectedCampaignId, campaign, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter]);
 
   // Auto-refresh degli elenchi campagne (dashboard "Attività Recenti" e "Campagne
   // Massive"): fetchCampaigns() girava solo una volta al login ([token]) — una
@@ -1938,10 +2018,10 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     if (!selectedCampaignId || view !== 'campaign-detail') return;
     const handle = setTimeout(() => {
-      fetchRecipientsPage(selectedCampaignId, recipientsPageNum, recipientsSearch);
+      fetchRecipientsPage(selectedCampaignId, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter);
     }, 300);
     return () => clearTimeout(handle);
-  }, [selectedCampaignId, view, recipientsPageNum, recipientsSearch]);
+  }, [selectedCampaignId, view, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter]);
 
   useEffect(() => {
     if (token) {
@@ -2781,7 +2861,8 @@ export function App(): React.JSX.Element {
       fetchCampaignCost(id),
       fetchCampaignCostSavings(id),
       fetchDownloadCombinationStats(id),
-      fetchRecipientsPage(id, recipientsPageNum, recipientsSearch),
+      fetchRecipientsPage(id, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter),
+      fetchRecipientsFilterOptions(id),
     ]);
   };
 
@@ -6094,6 +6175,9 @@ export function App(): React.JSX.Element {
     setRecipientsPage(null);
     setRecipientsSearch('');
     setRecipientsPageNum(1);
+    setRecipientsStatusFilter('');
+    setRecipientsDeliveryStatusFilter('');
+    setRecipientsFilterOptions(null);
     fetchCampaignDetail(id);
     fetchFailureGroups(id);
     fetchChannelBreakdown(id);
@@ -6104,6 +6188,7 @@ export function App(): React.JSX.Element {
     fetchCampaignCost(id);
     fetchCampaignCostSavings(id);
     fetchDownloadCombinationStats(id);
+    fetchRecipientsFilterOptions(id);
   };
 
   const getFilteredCampaigns = (): Campaign[] => {
@@ -6240,16 +6325,34 @@ export function App(): React.JSX.Element {
 
   const RECIPIENTS_PAGE_SIZE = 50;
 
-  const fetchRecipientsPage = async (campaignId: string, page: number, search: string) => {
+  const fetchRecipientsPage = async (
+    campaignId: string,
+    page: number,
+    search: string,
+    statusFilter: string,
+    deliveryStatusFilter: string,
+  ) => {
     try {
       const params = new URLSearchParams({ page: String(page), pageSize: String(RECIPIENTS_PAGE_SIZE) });
       if (search.trim()) params.set('search', search.trim());
+      if (statusFilter) params.set('status', statusFilter);
+      if (deliveryStatusFilter) params.set('deliveryStatus', deliveryStatusFilter);
       const res = await apiFetch(`/campaigns/${campaignId}/stats/recipients?${params.toString()}`);
       if (!res.ok) return;
       const data = await res.json();
       setRecipientsPage(data);
     } catch {
       // Non bloccante: la tabella resta sullo stato precedente.
+    }
+  };
+
+  const fetchRecipientsFilterOptions = async (campaignId: string) => {
+    try {
+      const res = await apiFetch(`/campaigns/${campaignId}/stats/recipients/filter-options`);
+      if (!res.ok) return;
+      setRecipientsFilterOptions(await res.json());
+    } catch {
+      // Non bloccante: le select filtro restano vuote.
     }
   };
 
@@ -10537,6 +10640,91 @@ export function App(): React.JSX.Element {
                           </table>
                         </div>
 
+                        {(notifDetail.campaign.channelType === 'POSTAL' || notifDetail.campaign.channelType === 'SEND')
+                          && notifDetail.attempts.length > 0
+                          && (() => {
+                            const last = notifDetail.attempts[notifDetail.attempts.length - 1];
+                            // Un attempt "Riuscito" può nascondere un errore di consegna reale
+                            // post-accettazione (es. GlobalCom "Impossibile validare l'indirizzo",
+                            // CodiceErrore valorizzato ma status resta SUCCESS) — stesso criterio già
+                            // usato per la colonna Errore: il valore di codiceErrore, non lo status.
+                            const hasDeliveryError = (last.postalStatusHistory || []).some((h) => h.codiceErrore && h.codiceErrore !== '0');
+                            return last.status === 'failed' || hasDeliveryError;
+                          })() && (
+                          <div className="card border-warning mb-4">
+                            <div className="card-header bg-warning-subtle d-flex align-items-center justify-content-between">
+                              <span className="fw-bold small"><MapPin className="me-1" size={16} />Correggi indirizzo e rimetti in coda</span>
+                              {!addressEditOpen && (
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-outline-dark"
+                                  onClick={() => {
+                                    setAddressEditForm({ address: '', municipality: '', zip: '', province: '', country: 'Italia' });
+                                    setAddressEditOpen(true);
+                                  }}
+                                >
+                                  <Pencil className="me-1" size={16} />Modifica
+                                </button>
+                              )}
+                            </div>
+                            {addressEditOpen && (
+                              <div className="card-body">
+                                <div className="d-flex justify-content-end mb-2">
+                                  <button
+                                    type="button"
+                                    className="btn btn-sm btn-outline-primary"
+                                    onClick={runAddressEditAnprCheck}
+                                    disabled={addressEditAnprLoading}
+                                  >
+                                    {addressEditAnprLoading ? (
+                                      <><Loader2 className="icon-spin me-1" size={16} />Verifica in corso...</>
+                                    ) : (
+                                      <><Search className="me-1" size={16} />Verifica ANPR</>
+                                    )}
+                                  </button>
+                                </div>
+                                <div className="row g-2">
+                                  <div className="col-12">
+                                    <label className="form-label small mb-1">Via/Indirizzo *</label>
+                                    <input type="text" className="form-control form-control-sm" value={addressEditForm.address} onChange={(e) => setAddressEditForm(f => ({ ...f, address: e.target.value }))} />
+                                  </div>
+                                  <div className="col-md-6">
+                                    <label className="form-label small mb-1">Comune *</label>
+                                    <input type="text" className="form-control form-control-sm" value={addressEditForm.municipality} onChange={(e) => setAddressEditForm(f => ({ ...f, municipality: e.target.value }))} />
+                                  </div>
+                                  <div className="col-md-3">
+                                    <label className="form-label small mb-1">CAP</label>
+                                    <input type="text" className="form-control form-control-sm" value={addressEditForm.zip} onChange={(e) => setAddressEditForm(f => ({ ...f, zip: e.target.value }))} />
+                                  </div>
+                                  <div className="col-md-3">
+                                    <label className="form-label small mb-1">Provincia</label>
+                                    <input type="text" className="form-control form-control-sm" value={addressEditForm.province} onChange={(e) => setAddressEditForm(f => ({ ...f, province: e.target.value }))} disabled={addressEditForm.country !== 'Italia'} />
+                                  </div>
+                                  <div className="col-md-6">
+                                    <label className="form-label small mb-1">Paese</label>
+                                    <select className="form-select form-select-sm" value={addressEditForm.country} onChange={(e) => setAddressEditForm(f => ({ ...f, country: e.target.value }))}>
+                                      {addressEditForm.country !== 'Italia' && !COUNTRIES.includes(addressEditForm.country as any) && (
+                                        <option value={addressEditForm.country}>{addressEditForm.country} (verifica manuale)</option>
+                                      )}
+                                      {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                  </div>
+                                </div>
+                                <div className="d-flex justify-content-end gap-2 mt-3">
+                                  <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => setAddressEditOpen(false)}>Annulla</button>
+                                  <button type="button" className="btn btn-sm btn-warning" onClick={handleSaveAddressAndRetry} disabled={addressEditSaving}>
+                                    {addressEditSaving ? (
+                                      <><Loader2 className="icon-spin me-1" size={16} />Salvataggio...</>
+                                    ) : (
+                                      <><RotateCcw className="me-1" size={16} />Salva e rimetti in coda</>
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                         {notifDetail.campaign.channelType === 'SEND' && (
                           <>
                             <h6 className="fw-bold small d-flex align-items-center justify-content-between">
@@ -13825,6 +14013,32 @@ export function App(): React.JSX.Element {
                             value={recipientsSearch}
                             onChange={(e) => { setRecipientsSearch(e.target.value); setRecipientsPageNum(1); }}
                           />
+                          <select
+                            className="form-select form-select-sm"
+                            style={{ maxWidth: 170 }}
+                            value={recipientsStatusFilter}
+                            onChange={(e) => { setRecipientsStatusFilter(e.target.value); setRecipientsPageNum(1); }}
+                          >
+                            <option value="">Stato notifica: tutti</option>
+                            {(recipientsFilterOptions?.statuses ?? []).map((s) => (
+                              <option key={s} value={s}>{STATUS_META[s]?.label ?? s}</option>
+                            ))}
+                          </select>
+                          {(campaign.channelType === 'SEND' || campaign.channelType === 'POSTAL') && (
+                            <select
+                              className="form-select form-select-sm"
+                              style={{ maxWidth: 190 }}
+                              value={recipientsDeliveryStatusFilter}
+                              onChange={(e) => { setRecipientsDeliveryStatusFilter(e.target.value); setRecipientsPageNum(1); }}
+                            >
+                              <option value="">Stato consegna: tutti</option>
+                              {(recipientsFilterOptions?.deliveryStatuses ?? []).map((s) => (
+                                <option key={s} value={s}>
+                                  {(campaign.channelType === 'SEND' ? SEND_STATUS_META[s]?.label : POSTAL_STATUS_META[s]?.label) ?? s}
+                                </option>
+                              ))}
+                            </select>
+                          )}
                           {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType !== 'SEND' && campaign.channelType !== 'POSTAL' && (
                             <button className="btn btn-sm btn-outline-primary py-1" onClick={handleExportDownloadReport} title="Esporta Report CSV">
                               <FileSpreadsheet className="me-1" /> Esporta Report Download

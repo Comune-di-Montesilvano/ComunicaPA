@@ -30,6 +30,7 @@ import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { UpdateCampaignDto } from './dto/update-campaign.dto';
 import { PreviewMessageDto } from './dto/preview-message.dto';
 import { TestSendDto } from './dto/test-send.dto';
+import { UpdateRecipientAddressDto } from './dto/update-recipient-address.dto';
 import { getUploadsDir } from '../attachments/attachment-paths';
 import { buildNeverDownloadedCsv } from './never-downloaded-csv.util';
 import { buildDownloadReportCsv } from './download-report-csv.util';
@@ -595,6 +596,25 @@ export class CampaignsController {
     return result;
   }
 
+  @Patch(':id/recipients/:recipientId/address')
+  async updateRecipientAddress(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('recipientId', ParseUUIDPipe) recipientId: string,
+    @Body() dto: UpdateRecipientAddressDto,
+    @Req() req: Request & { user: JwtOperatorPayload },
+  ) {
+    const result = await this.campaignsService.updateRecipientAddressAndRetry(id, recipientId, dto);
+    const campaign = await this.campaignsService.findOne(id).catch(() => null);
+    await this.auditLogsService.log({
+      campaignId: id,
+      campaignName: campaign ? campaign.name : null,
+      operator: req.user.username,
+      action: 'RETRY',
+      details: { recipientId, addressCorrected: true },
+    });
+    return result;
+  }
+
   @Post(':id/recipients/retry-bulk')
   retryRecipientsBulk(
     @Param('id', ParseUUIDPipe) id: string,
@@ -623,6 +643,8 @@ export class CampaignsController {
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
     @Query('search') search?: string,
+    @Query('status') status?: string,
+    @Query('deliveryStatus') deliveryStatus?: string,
   ) {
     const parsedPage = parseInt(page ?? '1', 10);
     const parsedPageSize = parseInt(pageSize ?? '50', 10);
@@ -634,7 +656,12 @@ export class CampaignsController {
       throw new BadRequestException('Il parametro pageSize deve essere un numero intero maggiore o uguale a 1');
     }
 
-    return this.campaignsService.getRecipientStats(id, parsedPage, parsedPageSize, search);
+    return this.campaignsService.getRecipientStats(id, parsedPage, parsedPageSize, search, status, deliveryStatus);
+  }
+
+  @Get(':id/stats/recipients/filter-options')
+  getRecipientFilterOptions(@Param('id', ParseUUIDPipe) id: string) {
+    return this.campaignsService.getRecipientFilterOptions(id);
   }
 
   @Get(':id/export-download-report.csv')

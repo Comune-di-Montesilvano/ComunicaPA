@@ -7,6 +7,7 @@ describe('CampaignsController', () => {
   let controller: CampaignsController;
   const mockService = {
     getRecipientStats: jest.fn().mockResolvedValue({ campaignId: 'uuid-1', page: 1, pageSize: 50, total: 0, items: [] }),
+    getRecipientFilterOptions: jest.fn().mockResolvedValue({ statuses: [], deliveryStatuses: [] }),
     assertDraftForAttachments: jest.fn(),
     finalizeAttachments: jest.fn().mockResolvedValue({ uploaded: 2, discarded: 0 }),
     remove: jest.fn().mockResolvedValue({ deleted: true }),
@@ -51,7 +52,7 @@ describe('CampaignsController', () => {
   describe('getRecipientStats', () => {
     it('usa i valori di default quando page/pageSize non sono forniti', async () => {
       await controller.getRecipientStats('uuid-1', undefined, undefined, undefined);
-      expect(mockService.getRecipientStats).toHaveBeenCalledWith('uuid-1', 1, 50, undefined);
+      expect(mockService.getRecipientStats).toHaveBeenCalledWith('uuid-1', 1, 50, undefined, undefined, undefined);
     });
 
     it('rifiuta un page non numerico con BadRequestException', () => {
@@ -76,12 +77,26 @@ describe('CampaignsController', () => {
 
     it('accetta valori validi e li inoltra al servizio', async () => {
       await controller.getRecipientStats('uuid-1', '2', '25', undefined);
-      expect(mockService.getRecipientStats).toHaveBeenCalledWith('uuid-1', 2, 25, undefined);
+      expect(mockService.getRecipientStats).toHaveBeenCalledWith('uuid-1', 2, 25, undefined, undefined, undefined);
     });
 
     it('inoltra il parametro search al servizio', async () => {
       await controller.getRecipientStats('uuid-1', '1', '50', 'rossi');
-      expect(mockService.getRecipientStats).toHaveBeenCalledWith('uuid-1', 1, 50, 'rossi');
+      expect(mockService.getRecipientStats).toHaveBeenCalledWith('uuid-1', 1, 50, 'rossi', undefined, undefined);
+    });
+
+    it('inoltra i parametri status e deliveryStatus al servizio', async () => {
+      await controller.getRecipientStats('uuid-1', '1', '50', undefined, 'failed', 'ACCEPTED');
+      expect(mockService.getRecipientStats).toHaveBeenCalledWith('uuid-1', 1, 50, undefined, 'failed', 'ACCEPTED');
+    });
+  });
+
+  describe('getRecipientFilterOptions', () => {
+    it('delega al service', async () => {
+      mockService.getRecipientFilterOptions = jest.fn().mockResolvedValue({ statuses: ['sent'], deliveryStatuses: ['ACCEPTED'] });
+      const result = await controller.getRecipientFilterOptions('uuid-1');
+      expect(mockService.getRecipientFilterOptions).toHaveBeenCalledWith('uuid-1');
+      expect(result).toEqual({ statuses: ['sent'], deliveryStatuses: ['ACCEPTED'] });
     });
   });
 

@@ -1685,6 +1685,85 @@ export class CampaignsService {
     return { requeued: true, attemptId };
   }
 
+  /**
+   * Corregge l'indirizzo fisico di un singolo destinatario FAILED (es.
+   * GlobalCom "Impossibile validare l'indirizzo", CAP/via non riconosciuti)
+   * e lo rimette subito in coda — un solo giro per non lasciare la
+   * correzione "salvata ma non ritentata". Scrive le colonne mappate da
+   * `channelConfig.physicalAddressConfig` (stesse lette da
+   * `resolvePhysicalAddress`, sia POSTAL che SEND): se la campagna non ha
+   * ancora un mapping indirizzo (caricamento originale senza colonne
+   * indirizzo dedicate, es. solo CF+contatti), ne crea uno nuovo puntato su
+   * chiavi extraData dedicate — self-bootstrap, nessuna colonna CSV da
+   * modificare a mano.
+   */
+  async updateRecipientAddressAndRetry(
+    campaignId: string,
+    recipientId: string,
+    dto: { address: string; municipality: string; zip?: string; province?: string; country?: string },
+  ): Promise<{ requeued: true; attemptId: string }> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+    if (campaign.channelType !== 'POSTAL' && campaign.channelType !== 'SEND') {
+      throw new BadRequestException('Correzione indirizzo disponibile solo per campagne POSTAL o SEND');
+    }
+
+    const recipient = await this.recipientRepo.findOne({ where: { id: recipientId } });
+    if (!recipient || recipient.campaignId !== campaignId) {
+      throw new NotFoundException(`Recipient ${recipientId} non trovato in questa campagna`);
+    }
+
+    let cfg = campaign.channelConfig?.['physicalAddressConfig'] as
+      | { enabled: boolean; addressColumn: string; municipalityColumn: string; zipColumn?: string; provinceColumn?: string; countryColumn?: string }
+      | undefined;
+    if (!cfg?.enabled) {
+      cfg = {
+        enabled: true,
+        addressColumn: '_editAddress',
+        municipalityColumn: '_editMunicipality',
+        zipColumn: '_editZip',
+        provinceColumn: '_editProvince',
+        countryColumn: '_editCountry',
+      };
+    } else if (!cfg.countryColumn) {
+      // Mapping esistente (bulk originale) senza colonna paese: nessun CSV
+      // aveva un indirizzo estero al momento del caricamento — aggiungiamo
+      // solo qui la colonna dedicata, senza toccare le altre già in uso.
+      cfg = { ...cfg, countryColumn: '_editCountry' };
+    }
+    campaign.channelConfig = { ...campaign.channelConfig, physicalAddressConfig: cfg };
+    await this.campaignRepo.save(campaign);
+
+    const extraData = { ...recipient.extraData };
+    extraData[cfg.addressColumn] = dto.address;
+    extraData[cfg.municipalityColumn] = dto.municipality;
+    if (cfg.zipColumn) extraData[cfg.zipColumn] = dto.zip ?? '';
+    if (cfg.provinceColumn) extraData[cfg.provinceColumn] = dto.province ?? '';
+    if (cfg.countryColumn) extraData[cfg.countryColumn] = dto.country ?? '';
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- _QueryDeepPartialEntity non gestisce bene un
+    // index signature generico (Record<string, unknown>) su colonna jsonb, stesso limite noto di TypeORM 0.3.x
+    // (vedi launchTestSend/channelConfig sopra).
+    await this.recipientRepo.update(recipientId, { extraData: extraData as any });
+
+    // Un errore di consegna POSTAL post-accettazione (es. GlobalCom
+    // "Impossibile validare l'indirizzo", CodiceErrore reale su un attempt
+    // che resta comunque status=SUCCESS — vedi gotcha CLAUDE.md "CodiceErrore
+    // non legato allo Stato") non fa mai transitare recipient.status a
+    // FAILED: nessun demone lo fa oggi. retryRecipient() richiede FAILED, quindi
+    // qui — SOLO in risposta a un'azione esplicita dell'operatore (salva
+    // correzione indirizzo), mai in automatico — forziamo la transizione prima
+    // del retry, aggiornando i contatori campagna coerentemente.
+    if (recipient.status !== RecipientStatus.FAILED) {
+      await this.recipientRepo.update(recipientId, { status: RecipientStatus.FAILED });
+      if (recipient.status === RecipientStatus.SENT) {
+        await this.campaignRepo.decrement({ id: campaignId }, 'sentCount', 1);
+      }
+      await this.campaignRepo.increment({ id: campaignId }, 'failedCount', 1);
+    }
+
+    return this.retryRecipient(campaignId, recipientId);
+  }
+
   async retryRecipientsBulk(campaignId: string, recipientIds: string[]): Promise<RetryBulkResultDto> {
     if (recipientIds.length > MAX_BULK_RETRY_SIZE) {
       throw new BadRequestException(
@@ -1707,7 +1786,14 @@ export class CampaignsService {
     return { requeued, failed };
   }
 
-  async getRecipientStats(campaignId: string, page: number, pageSize: number, search?: string): Promise<RecipientStatsPageDto> {
+  async getRecipientStats(
+    campaignId: string,
+    page: number,
+    pageSize: number,
+    search?: string,
+    status?: string,
+    deliveryStatus?: string,
+  ): Promise<RecipientStatsPageDto> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
@@ -1721,6 +1807,29 @@ export class CampaignsService {
 
     if (search && search.trim()) {
       qb.andWhere('(r.fullName ILIKE :search OR r.codiceFiscale ILIKE :search)', { search: `%${search.trim()}%` });
+    }
+    if (status) {
+      qb.andWhere('r.status = :status', { status });
+    }
+    if (deliveryStatus) {
+      // "Stato Consegna" (SEND/POSTAL) vive sull'ultimo attempt del destinatario,
+      // non su recipient.status — stesso identico sotto-query DISTINCT ON già
+      // usato in getFailures() per "ultimo attempt per destinatario". Filtro su
+      // send_status OR postal_status (mai entrambi valorizzati sullo stesso
+      // attempt): stesso principio già applicato in getRecipientStats sopra,
+      // nessun filtro su channelType — un destinatario dirottato da INAD ha
+      // channelType diverso da quello di campagna sul suo attempt reale.
+      qb.andWhere(
+        `EXISTS (
+          SELECT 1 FROM (
+            SELECT DISTINCT ON (recipient_id) recipient_id, send_status, postal_status
+            FROM notification_attempts
+            ORDER BY recipient_id, attempt_number DESC
+          ) la
+          WHERE la.recipient_id = r.id AND (la.send_status = :deliveryStatus OR la.postal_status = :deliveryStatus)
+        )`,
+        { deliveryStatus },
+      );
     }
 
     const [rawItems, total] = await qb
@@ -1775,6 +1884,40 @@ export class CampaignsService {
     }
 
     return { campaignId, page, pageSize, total, items };
+  }
+
+  /**
+   * Valori distinti REALMENTE presenti tra i destinatari di questa campagna
+   * (non l'intero enum) — popola le select filtro "Stato Notifica"/"Stato
+   * Consegna" senza mostrare opzioni che non produrrebbero mai risultati.
+   */
+  async getRecipientFilterOptions(campaignId: string): Promise<{ statuses: string[]; deliveryStatuses: string[] }> {
+    const statusRows = await this.recipientRepo
+      .createQueryBuilder('r')
+      .select('DISTINCT r.status', 'status')
+      .where('r.campaignId = :campaignId', { campaignId })
+      .getRawMany<{ status: string }>();
+
+    const deliveryRows = await this.recipientRepo
+      .createQueryBuilder('r')
+      .select(
+        `DISTINCT COALESCE(la.send_status, la.postal_status)`,
+        'deliveryStatus',
+      )
+      .leftJoin(
+        `(SELECT DISTINCT ON (recipient_id) recipient_id, send_status, postal_status
+          FROM notification_attempts ORDER BY recipient_id, attempt_number DESC)`,
+        'la',
+        'la.recipient_id = r.id',
+      )
+      .where('r.campaignId = :campaignId', { campaignId })
+      .andWhere('COALESCE(la.send_status, la.postal_status) IS NOT NULL')
+      .getRawMany<{ deliveryStatus: string }>();
+
+    return {
+      statuses: statusRows.map((r) => r.status),
+      deliveryStatuses: deliveryRows.map((r) => r.deliveryStatus),
+    };
   }
 
   async getDownloadReportRows(campaignId: string): Promise<DownloadReportDto> {
