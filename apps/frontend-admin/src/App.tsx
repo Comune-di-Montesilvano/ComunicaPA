@@ -4554,6 +4554,13 @@ export function App(): React.JSX.Element {
         setSingleZip(ind.cap || '');
         setSingleProvince('');
         setSingleCountry(matched || paeseRaw || 'Italia');
+      } else {
+        // Nessun indirizzo (domestico o AIRE) trovato per questo CF: azzera
+        // singleCountry, altrimenti resta al valore di un CF precedente
+        // controllato nella stessa sessione del form, facendo scattare
+        // falsamente il badge "Compilato da AIRE" (singleAnprCheckedCf
+        // viene comunque aggiornato al CF corrente sopra).
+        setSingleCountry('Italia');
       }
 
       const inadFound = Boolean(data?.inad?.success && data?.inad?.found && (data?.inad?.digitalAddress?.length ?? 0) > 0);
