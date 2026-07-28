@@ -15,6 +15,10 @@ COPY tsconfig.base.json ./
 COPY packages/shared-types packages/shared-types
 COPY apps/frontend-citizen apps/frontend-citizen
 
+# shared-types va compilato esplicitamente — main/types puntano a ./dist,
+# mai a ./src (vedi commento in apps/backend/Dockerfile per il motivo).
+RUN node_modules/.bin/tsc -p packages/shared-types/tsconfig.cjs.json && node_modules/.bin/tsc -p packages/shared-types/tsconfig.esm.json
+
 WORKDIR /app/apps/frontend-citizen
 RUN node_modules/.bin/tsc -b && node_modules/.bin/vite build
 

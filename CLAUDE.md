@@ -172,16 +172,58 @@ backend al primo `require('@comunicapa/shared-types')` (es.
 produzione — l'ambiente dev bind-mount maschera completamente questa classe
 di bug.
 
-Fix: `package.json` → `"main": "./dist/index.js"`, `"types": "./dist/index.d.ts"`
-(mai `./src`). Entrambi `apps/backend/Dockerfile` e `Dockerfile.dev`
-compilano esplicitamente `packages/shared-types` (`tsc -p
-packages/shared-types/tsconfig.json`) subito dopo `pnpm install
---ignore-scripts` — il suo script `"build"` non parte da solo per via di
-`--ignore-scripts`. **Conseguenza per lo sviluppo**: modificare
-`packages/shared-types/src/*.ts` richiede un rebuild del container backend
-(`docker compose build backend`) — il bind mount aggiorna solo `src/`, non
-`dist/`, stesso pattern già noto per modifiche fuori da `src/`
-dell'app stessa.
+Fix (parte 1): `package.json` → puntare a `./dist`, mai a `./src`.
+
+**Parte 2, bug successivo — CJS/ESM dual build.** Con `main` puntato a un
+unico `./dist/index.js` compilato `CommonJS`, la build di produzione dei
+frontend (`apps/frontend-admin/Dockerfile`, `tsc -b && vite build`) falliva
+a sua volta: `"matchCountry" is not exported by ".../dist/index.js"` —
+Rollup/Vite non rileva in modo affidabile i named export di un modulo CJS
+risolto fuori da `node_modules` (via symlink workspace), anche quando il
+pattern di export CJS è quello standard emesso da `tsc`. Riprodotto solo
+buildando l'immagine Docker di produzione reale, mai nei container dev
+(stesso motivo del bug precedente: dev maschera tutto).
+
+Fix definitivo: **build duale**, `packages/shared-types/tsconfig.cjs.json`
+(`module: CommonJS`, → `dist/cjs`) e `tsconfig.esm.json` (`module: ES2020`,
+→ `dist/esm`, nessuna `.d.ts` — le dichiarazioni le emette solo la build
+CJS). `package.json` usa `"exports"` condizionale:
+```json
+"exports": { ".": {
+  "types": "./dist/cjs/index.d.ts",
+  "import": "./dist/esm/index.js",
+  "require": "./dist/cjs/index.js"
+} }
+```
+Node (`require()`, backend) risolve `"require"` → CJS, invariato. Vite/Rollup
+(frontend, sempre `import`) risolve `"import"` → ESM nativo, zero euristica
+d'interop necessaria. `"main"`/`"types"` flat restano come fallback per tool
+che non capiscono `"exports"`.
+
+**Build in Docker — solo binario diretto, mai `pnpm --filter/run`.** Stesso
+gotcha pnpm v11 già noto per `CMD` (vedi sezione sopra): `pnpm --filter
+@comunicapa/shared-types build` fallisce in build con
+`runDepsStatusCheck`/deps-check preventivo bloccante. Pattern corretto in
+ogni Dockerfile/`Dockerfile.dev` (backend, frontend-admin, frontend-citizen
+— tutti e tre consumano il pacchetto), subito dopo `pnpm install
+--ignore-scripts`:
+```dockerfile
+RUN node_modules/.bin/tsc -p packages/shared-types/tsconfig.cjs.json \
+ && node_modules/.bin/tsc -p packages/shared-types/tsconfig.esm.json
+```
+In CI (`.github/workflows/tests.yml`) invece va bene `pnpm --filter
+@comunicapa/shared-types run build` — quella pipeline usa pnpm v9
+(`pnpm/action-setup@v6 version: 9`), non v11, nessun deps-check bloccante.
+
+**Conseguenza per lo sviluppo**: modificare `packages/shared-types/src/*.ts`
+richiede un rebuild dei container che lo consumano (`docker compose build
+backend frontend-admin frontend-citizen`) — il bind mount dev aggiorna solo
+`src/`, mai `dist/cjs`/`dist/esm`, stesso pattern già noto per modifiche
+fuori da `src/` dell'app stessa. **Prima di pushare qualunque modifica a
+questo pacchetto o ai Dockerfile che lo buildano, verificare SEMPRE
+buildando l'immagine di produzione reale in locale** (`docker build -f
+apps/<app>/Dockerfile .`, non solo `Dockerfile.dev`) — il dev bind-mount ha
+già mascherato due bug di produzione consecutivi in questa storia.
 
 ## TypeScript
 

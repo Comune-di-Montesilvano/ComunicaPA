@@ -21,7 +21,7 @@ COPY . .
 # sovrascrive solo i sorgenti, non dist/: dopo una modifica a shared-types
 # serve un rebuild del container (stesso pattern già documentato per modifiche
 # fuori da src/ o a package.json).
-RUN node_modules/.bin/tsc -p packages/shared-types/tsconfig.json
+RUN node_modules/.bin/tsc -p packages/shared-types/tsconfig.cjs.json && node_modules/.bin/tsc -p packages/shared-types/tsconfig.esm.json
 
 EXPOSE 8080
 # Usa il binario direttamente — bypassa il deps-check di pnpm v11 al runtime

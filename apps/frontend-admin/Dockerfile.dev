@@ -11,6 +11,11 @@ RUN pnpm install --ignore-scripts && pnpm rebuild esbuild
 
 COPY . .
 
+# shared-types va compilato esplicitamente (main/types puntano a ./dist, mai
+# a ./src — vedi commento in apps/backend/Dockerfile.dev per il motivo).
+# Modificare packages/shared-types/src richiede un rebuild di questo container.
+RUN node_modules/.bin/tsc -p packages/shared-types/tsconfig.cjs.json && node_modules/.bin/tsc -p packages/shared-types/tsconfig.esm.json
+
 EXPOSE 3000
 # Usa il binario direttamente — bypassa il deps-check di pnpm v11 al runtime
 WORKDIR /app/apps/frontend-admin
