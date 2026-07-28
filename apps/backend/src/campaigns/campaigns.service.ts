@@ -11,7 +11,7 @@ import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import type { AppConfiguration } from '../config/configuration';
 import { AppSettingsService } from '../settings/app-settings.service';
-import { processTemplate, wrapInHtmlLayout, hasValidAttachmentPlaceholders } from '../channels/template.helper';
+import { processTemplate, wrapInHtmlLayout, hasValidAttachmentPlaceholders, resolveCitizenPortalUrl, buildParallelChannelNotice, formatAppIoMarkdown } from '../channels/template.helper';
 import { getEffectiveRetentionDays } from './retention.util';
 import { getUploadsDir } from '../attachments/attachment-paths';
 import { resolveAttachmentsConfig, resolveAttachmentLabel, resolveCustomAttachmentFilename } from '../attachments/attachment.service';
@@ -187,6 +187,8 @@ export class CampaignsService {
       dto.format,
       undefined,
       true,
+      dto.appIoParallelPrimaryChannel,
+      dto.physicalAddressConfig,
     );
   }
 
@@ -226,7 +228,7 @@ export class CampaignsService {
 
     const campaign = recipient.campaign;
     const appIoConfig = resolveSecondaryAppIoConfig(campaign.channelConfig) as
-      | { subjectOverride?: string; bodyOverride?: string }
+      | { subjectOverride?: string; bodyOverride?: string; mode?: 'parallel' | 'exclusive' }
       | undefined;
     if (!appIoConfig) return null;
 
@@ -234,7 +236,12 @@ export class CampaignsService {
     const bodyTemplate = appIoConfig.bodyOverride || (campaign.channelConfig?.['body'] as string) || '';
     const attachmentLabels = resolveAttachmentsConfig(campaign.channelConfig).map((a) => resolveAttachmentLabel(a, recipient));
 
-    return this.renderMessage('APP_IO', subjectTemplate, bodyTemplate, attachmentLabels, recipient, 'markdown', undefined, true);
+    // Cortesia canale primario solo per co-consegna PARALLELA — in esclusiva
+    // il canale primario non viene inviato, nessun canale da annunciare.
+    const parallelPrimaryChannel = appIoConfig.mode === 'parallel' ? campaign.channelType : undefined;
+    const physicalAddressConfig = campaign.channelConfig?.['physicalAddressConfig'] as Record<string, unknown> | undefined;
+
+    return this.renderMessage('APP_IO', subjectTemplate, bodyTemplate, attachmentLabels, recipient, 'markdown', undefined, true, parallelPrimaryChannel, physicalAddressConfig);
   }
 
   private async renderMessage(
@@ -246,6 +253,8 @@ export class CampaignsService {
     format?: 'html' | 'markdown',
     linkChannelTag?: string,
     preview = false,
+    appIoParallelPrimaryChannel?: NotificationChannel,
+    physicalAddressConfig?: Record<string, unknown>,
   ): Promise<PreviewMessageResult> {
     const brandName = (await this.settings.get<string>('brand.name')) || 'Comune di Montesilvano';
     const publicApiUrl = await this.settings.get<string>('system.publicUrl');
@@ -259,13 +268,17 @@ export class CampaignsService {
     const subject = processTemplate(subjectTemplate, recipientLike, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, resolvedFormat, linkTag, preview);
     const body = processTemplate(bodyTemplate, recipientLike, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, resolvedFormat, linkTag, preview);
 
+    const portalUrl = await resolveCitizenPortalUrl(this.settings);
+
     if (resolvedFormat === 'markdown') {
-      return { subject, bodyMarkdown: body };
+      const parallelNotice = appIoParallelPrimaryChannel
+        ? buildParallelChannelNotice(recipientLike, appIoParallelPrimaryChannel, physicalAddressConfig)
+        : undefined;
+      return { subject, bodyMarkdown: formatAppIoMarkdown(body, { parallelNotice, portalUrl }) };
     }
 
     const brandLogo = await this.settings.get<string>('brand.logo');
     const logoUrl = brandLogo ? (/^https?:\/\//i.test(brandLogo) ? brandLogo : `${publicApiUrl}/branding/logo`) : null;
-    const portalUrl = (await this.settings.get<string>('system.citizenPublicUrl')) || null;
     const bodyHtml = wrapInHtmlLayout(body, brandName, { logoUrl, portalUrl });
 
     return { subject, bodyHtml };

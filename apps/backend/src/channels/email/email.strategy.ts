@@ -6,7 +6,7 @@ import type { Recipient } from '../../entities/recipient.entity';
 import type { Campaign } from '../../entities/campaign.entity';
 import * as nodemailer from 'nodemailer';
 import type { AppConfiguration } from '../../config/configuration';
-import { processTemplate, wrapInHtmlLayout } from '../template.helper';
+import { processTemplate, wrapInHtmlLayout, resolveCitizenPortalUrl } from '../template.helper';
 import { resolveAttachmentsConfig, resolveAttachmentLabel } from '../../attachments/attachment.service';
 import { getEffectiveRetentionDays } from '../../campaigns/retention.util';
 import { AppSettingsService } from '../../settings/app-settings.service';
@@ -46,7 +46,7 @@ export class EmailStrategy implements IChannelStrategy {
     const logoUrl = brandLogo
       ? (/^https?:\/\//i.test(brandLogo) ? brandLogo : `${publicApiUrl}/branding/logo`)
       : null;
-    const portalUrl = (await this.settings.get<string>('system.citizenPublicUrl')) || null;
+    const portalUrl = await resolveCitizenPortalUrl(this.settings);
 
     const subjectTemplate = (campaign.channelConfig?.['subject'] as string) || 'Notifica ComunicaPA';
     const bodyTemplate = (campaign.channelConfig?.['body'] as string) || 'Hai ricevuto una nuova notifica.';

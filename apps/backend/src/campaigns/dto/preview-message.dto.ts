@@ -68,6 +68,16 @@ export class PreviewMessageDto {
   @IsString()
   @IsOptional()
   campaignId?: string;
+
+  /** Canale primario reale, solo quando channelType==='APP_IO' e la co-consegna è PARALLELA (mai in esclusiva). */
+  @IsEnum(['PEC', 'EMAIL', 'APP_IO', 'SEND', 'POSTAL'])
+  @IsOptional()
+  appIoParallelPrimaryChannel?: NotificationChannel;
+
+  /** Mappatura colonne indirizzo postale (channelConfig.physicalAddressConfig), per formattare l'indirizzo nella cortesia POSTAL in anteprima. */
+  @IsObject()
+  @IsOptional()
+  physicalAddressConfig?: Record<string, unknown>;
 }
 
 export interface PreviewMessageResult {

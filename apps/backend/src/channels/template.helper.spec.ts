@@ -1,4 +1,4 @@
-import { processTemplate, wrapInHtmlLayout, hasValidAttachmentPlaceholders } from './template.helper';
+import { processTemplate, wrapInHtmlLayout, hasValidAttachmentPlaceholders, buildParallelChannelNotice, appendAppIoPortalFooter, formatAppIoMarkdown } from './template.helper';
 import type { Recipient } from '../entities/recipient.entity';
 
 const baseRecipient = {
@@ -132,12 +132,77 @@ describe('wrapInHtmlLayout con logo e portale', () => {
   it('inserisce il link al portale nel footer quando portalUrl è valorizzato', () => {
     const html = wrapInHtmlLayout('ciao', 'Comune Test', { portalUrl: 'https://portale.ente.it' });
     expect(html).toContain('href="https://portale.ente.it"');
-    expect(html).toContain('Portale del Cittadino');
+    expect(html).toContain('Portale ComunicaPA');
   });
 
   it('senza portalUrl il footer resta quello standard', () => {
     const html = wrapInHtmlLayout('ciao', 'Comune Test');
-    expect(html).not.toContain('Portale del Cittadino');
+    expect(html).not.toContain('Portale ComunicaPA');
+  });
+});
+
+describe('buildParallelChannelNotice', () => {
+  it('PEC: frase di cortesia con indirizzo PEC del destinatario', () => {
+    const recipient = { ...baseRecipient, pec: 'mario.rossi@pec.it' } as any;
+    const notice = buildParallelChannelNotice(recipient, 'PEC');
+    expect(notice).toBe("Questo messaggio vale come notifica di cortesia per la comunicazione spedita mediante PEC all'indirizzo mario.rossi@pec.it.");
+  });
+
+  it('EMAIL: frase di cortesia con indirizzo email del destinatario', () => {
+    const recipient = { ...baseRecipient, email: 'mario.rossi@example.it' } as any;
+    const notice = buildParallelChannelNotice(recipient, 'EMAIL');
+    expect(notice).toBe("Questo messaggio vale come notifica di cortesia per la comunicazione spedita mediante Email all'indirizzo mario.rossi@example.it.");
+  });
+
+  it('POSTAL: frase di cortesia con indirizzo completo (via, cap, città, provincia)', () => {
+    const recipient = {
+      ...baseRecipient,
+      extraData: { via: 'Via Roma 1', cap: '65100', citta: 'Pescara', prov: 'PE' },
+    } as any;
+    const notice = buildParallelChannelNotice(recipient, 'POSTAL', {
+      enabled: true, addressColumn: 'via', zipColumn: 'cap', municipalityColumn: 'citta', provinceColumn: 'prov',
+    });
+    expect(notice).toBe("Questo messaggio vale come notifica di cortesia per la comunicazione spedita mediante Raccomandata AR all'indirizzo Via Roma 1, 65100 Pescara (PE).");
+  });
+
+  it('POSTAL estero: usa lo stato estero al posto della provincia', () => {
+    const recipient = {
+      ...baseRecipient,
+      extraData: { via: 'Rue de Test 1', cap: '75000', citta: 'Parigi', paese: 'Francia' },
+    } as any;
+    const notice = buildParallelChannelNotice(recipient, 'POSTAL', {
+      enabled: true, addressColumn: 'via', zipColumn: 'cap', municipalityColumn: 'citta', countryColumn: 'paese',
+    });
+    expect(notice).toContain('Parigi (Francia)');
+  });
+
+  it('nessun indirizzo risolvibile: stringa vuota', () => {
+    const recipient = { ...baseRecipient, pec: undefined, email: undefined } as any;
+    expect(buildParallelChannelNotice(recipient, 'PEC')).toBe('');
+    expect(buildParallelChannelNotice(recipient, 'EMAIL')).toBe('');
+  });
+});
+
+describe('appendAppIoPortalFooter / formatAppIoMarkdown', () => {
+  it('appende il footer solo se portalUrl è valorizzato', () => {
+    expect(appendAppIoPortalFooter('corpo', 'https://portale.ente.it')).toBe(
+      'corpo\n\n---\nLa comunicazione ufficiale ed i relativi atti/allegati sono disponibili ed accessibili con SPID/CIE sul [Portale ComunicaPA](https://portale.ente.it).',
+    );
+    expect(appendAppIoPortalFooter('corpo', null)).toBe('corpo');
+  });
+
+  it('formatAppIoMarkdown combina cortesia + footer nell\'ordine corretto', () => {
+    const result = formatAppIoMarkdown('corpo', { parallelNotice: 'cortesia', portalUrl: 'https://portale.ente.it' });
+    expect(result).toBe(
+      'corpo\n\ncortesia\n\n---\nLa comunicazione ufficiale ed i relativi atti/allegati sono disponibili ed accessibili con SPID/CIE sul [Portale ComunicaPA](https://portale.ente.it).',
+    );
+  });
+
+  it('formatAppIoMarkdown senza cortesia (esclusiva/App IO primario): solo footer', () => {
+    const result = formatAppIoMarkdown('corpo', { portalUrl: 'https://portale.ente.it' });
+    expect(result).toBe(
+      'corpo\n\n---\nLa comunicazione ufficiale ed i relativi atti/allegati sono disponibili ed accessibili con SPID/CIE sul [Portale ComunicaPA](https://portale.ente.it).',
+    );
   });
 });
 

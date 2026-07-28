@@ -1,6 +1,9 @@
 import type { Recipient } from '../entities/recipient.entity';
+import type { NotificationChannel } from '@comunicapa/shared-types';
 import { signDownloadLink } from './download-link.util';
 import { resolveCustomAttachmentFilename } from '../attachments/attachment.service';
+import { resolvePhysicalAddress } from './payment-config.util';
+import type { AppSettingsService } from '../settings/app-settings.service';
 
 /**
  * Replaces fixed placeholders (%%allegato1%%, %%allegato2%%, ...), the standard
@@ -219,7 +222,7 @@ export function wrapInHtmlLayout(
     : '';
 
   const portalHtml = options.portalUrl
-    ? `<br />Consulta le tue comunicazioni sul <a href="${options.portalUrl}" style="color: #0066cc; font-weight: bold;">Portale del Cittadino</a>.`
+    ? `<br />Consulta le tue comunicazioni sul <a href="${options.portalUrl}" style="color: #0066cc; font-weight: bold;">Portale ComunicaPA</a>.`
     : '';
 
   return `
@@ -237,5 +240,67 @@ export function wrapInHtmlLayout(
   </div>
 </div>
   `;
+}
+
+/** Dedup del pattern `(await settings.get('system.citizenPublicUrl')) || null`, duplicato in ogni strategy/preview. */
+export async function resolveCitizenPortalUrl(settings: AppSettingsService): Promise<string | null> {
+  return (await settings.get<string>('system.citizenPublicUrl')) || null;
+}
+
+function formatPostalAddressForNotice(
+  recipient: Recipient,
+  physicalAddressConfig: Record<string, unknown> | undefined,
+): string {
+  const resolved = resolvePhysicalAddress(recipient, physicalAddressConfig);
+  if (!resolved) return '';
+  const locality = resolved.foreignState
+    ? `${resolved.municipality} (${resolved.foreignState})`
+    : `${resolved.municipality}${resolved.province ? ` (${resolved.province})` : ''}`;
+  return `${resolved.address}, ${resolved.zip ? `${resolved.zip} ` : ''}${locality}`;
+}
+
+/**
+ * Frase di cortesia da appendere al messaggio App IO inviato in co-consegna
+ * PARALLELA (mai in esclusiva, dove il canale primario non viene inviato):
+ * indica su quale canale primario è stata spedita la comunicazione ufficiale.
+ * `primaryChannel` è già `attempt.channelType`/job.data.channel, che riflette
+ * un eventuale dirottamento INAD — nessuna logica di dirottamento qui.
+ */
+export function buildParallelChannelNotice(
+  recipient: Recipient,
+  primaryChannel: NotificationChannel,
+  physicalAddressConfig?: Record<string, unknown>,
+): string {
+  if (primaryChannel === 'PEC' && recipient.pec) {
+    return `Questo messaggio vale come notifica di cortesia per la comunicazione spedita mediante PEC all'indirizzo ${recipient.pec}.`;
+  }
+  if (primaryChannel === 'EMAIL' && recipient.email) {
+    return `Questo messaggio vale come notifica di cortesia per la comunicazione spedita mediante Email all'indirizzo ${recipient.email}.`;
+  }
+  if (primaryChannel === 'POSTAL') {
+    const address = formatPostalAddressForNotice(recipient, physicalAddressConfig);
+    if (address) {
+      return `Questo messaggio vale come notifica di cortesia per la comunicazione spedita mediante Raccomandata AR all'indirizzo ${address}.`;
+    }
+  }
+  return '';
+}
+
+/** Footer markdown (App IO consuma content.markdown, mai HTML) con link al Portale ComunicaPA. */
+export function appendAppIoPortalFooter(markdown: string, portalUrl: string | null): string {
+  if (!portalUrl) return markdown;
+  return `${markdown}\n\n---\nLa comunicazione ufficiale ed i relativi atti/allegati sono disponibili ed accessibili con SPID/CIE sul [Portale ComunicaPA](${portalUrl}).`;
+}
+
+export interface FormatAppIoMarkdownOptions {
+  /** Non vuoto solo per co-consegna parallela; esclusiva/primario App IO non lo passano. */
+  parallelNotice?: string;
+  portalUrl: string | null;
+}
+
+/** Combina markdown base + cortesia canale primario (se parallela) + footer Portale ComunicaPA. */
+export function formatAppIoMarkdown(markdown: string, options: FormatAppIoMarkdownOptions): string {
+  const withNotice = options.parallelNotice ? `${markdown}\n\n${options.parallelNotice}` : markdown;
+  return appendAppIoPortalFooter(withNotice, options.portalUrl);
 }
 

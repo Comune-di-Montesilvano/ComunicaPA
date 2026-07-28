@@ -11,7 +11,7 @@ import { Campaign } from '../entities/campaign.entity';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity';
 import { THROTTLE_REDIS } from './notification-job.types';
 import { CHANNEL_STRATEGIES, IChannelStrategy } from '../channels/channel.interface';
-import { processTemplate } from '../channels/template.helper';
+import { processTemplate, buildParallelChannelNotice, formatAppIoMarkdown, resolveCitizenPortalUrl } from '../channels/template.helper';
 import { resolveAttachmentsConfig, resolveAttachmentLabel } from '../attachments/attachment.service';
 import { ConfigService } from '@nestjs/config';
 import type { AppConfiguration } from '../config/configuration';
@@ -242,7 +242,7 @@ export class NotificationProcessor extends WorkerHost {
           baseUrl: APP_IO_BASE_URL,
           subjectOverride: (appIoConfig as { subjectOverride?: string } | undefined)?.subjectOverride,
           bodyOverride: (appIoConfig as { bodyOverride?: string } | undefined)?.bodyOverride,
-        }, jobLog);
+        }, jobLog, channel);
           responsePayload.appIo = appIoResult;
           if (appIoResult.success) appIoLinkDelivered = true;
         }
@@ -353,6 +353,7 @@ export class NotificationProcessor extends WorkerHost {
     recipient: Recipient,
     appIoConfig: { apiKey: string; baseUrl: string; subjectOverride?: string; bodyOverride?: string },
     onLog?: (msg: string) => void,
+    parallelPrimaryChannel?: NotificationChannel,
   ): Promise<{ success: boolean; messageId?: string; error?: string }> {
     try {
       const publicApiUrl = await this.settings.get<string>('system.publicUrl');
@@ -372,7 +373,7 @@ export class NotificationProcessor extends WorkerHost {
         'html',
         'APP_IO',
       );
-      const processedMarkdown = processTemplate(
+      const rawMarkdown = processTemplate(
         appIoConfig.bodyOverride || (campaign.channelConfig?.['body'] as string) || '',
         recipient,
         publicApiUrl,
@@ -382,6 +383,12 @@ export class NotificationProcessor extends WorkerHost {
         'markdown',
         'APP_IO',
       );
+
+      const portalUrl = await resolveCitizenPortalUrl(this.settings);
+      const parallelNotice = parallelPrimaryChannel
+        ? buildParallelChannelNotice(recipient, parallelPrimaryChannel, campaign.channelConfig?.['physicalAddressConfig'] as Record<string, unknown> | undefined)
+        : undefined;
+      const processedMarkdown = formatAppIoMarkdown(rawMarkdown, { parallelNotice, portalUrl });
 
       const contentPayload: Record<string, any> = {
         subject: processedSubject,

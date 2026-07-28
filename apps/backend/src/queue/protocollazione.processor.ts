@@ -14,7 +14,7 @@ import { splitFullName } from '../channels/send/name.util';
 import { PROTOCOLLAZIONE_QUEUE, NOTIFICATION_JOB_SEND } from './notification-job.types';
 import { NotificationQueuesService } from './notification-queues.service';
 import { ConfigService } from '@nestjs/config';
-import { processTemplate, wrapInHtmlLayout } from '../channels/template.helper';
+import { processTemplate, wrapInHtmlLayout, resolveCitizenPortalUrl } from '../channels/template.helper';
 import { resolveAttachmentsConfig, resolveAttachmentLabel } from '../attachments/attachment.service';
 import { getEffectiveRetentionDays } from '../campaigns/retention.util';
 import { AppSettingsService } from '../settings/app-settings.service';
@@ -99,7 +99,7 @@ export class ProtocollazioneProcessor extends WorkerHost {
         const logoUrl = brandLogo
           ? (/^https?:\/\//i.test(brandLogo) ? brandLogo : `${publicApiUrl}/branding/logo`)
           : null;
-        const portalUrl = (await this.settings.get<string>('system.citizenPublicUrl')) || null;
+        const portalUrl = await resolveCitizenPortalUrl(this.settings);
 
         const subjectTemplate = (cfg['subject'] as string) || (campaign.channelType === 'PEC' ? 'Notifica PEC ComunicaPA' : 'Notifica Email ComunicaPA');
         const bodyTemplate = (cfg['body'] as string) || (campaign.channelType === 'PEC' ? 'Hai ricevuto una nuova notifica PEC.' : 'Hai ricevuto una nuova notifica Email.');

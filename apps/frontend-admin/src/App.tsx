@@ -1474,6 +1474,21 @@ export function App(): React.JSX.Element {
             extraData: row || {},
             protocolNumber: wizProtocolla ? '[N. Protocollo]' : undefined,
           },
+          // Cortesia canale primario nell'anteprima App IO: solo se la co-consegna
+          // è parallela (in esclusiva il canale primario non parte, nessuna cortesia).
+          ...(wizPreviewChannelTab === 'APP_IO' && wizAppIoMode === 'parallel' ? {
+            appIoParallelPrimaryChannel: wizChannel,
+            ...(wizChannel === 'POSTAL' ? {
+              physicalAddressConfig: {
+                enabled: true,
+                addressColumn: wizPostalAddressColumn,
+                municipalityColumn: wizPostalMunicipalityColumn,
+                zipColumn: wizPostalZipColumn,
+                provinceColumn: wizPostalProvinceColumn,
+                countryColumn: wizPostalCountryColumn,
+              },
+            } : {}),
+          } : {}),
         }),
       })
         .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`preview failed ${res.status}`))))

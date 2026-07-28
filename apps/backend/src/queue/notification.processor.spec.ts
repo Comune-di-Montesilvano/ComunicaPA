@@ -572,7 +572,9 @@ describe('NotificationProcessor', () => {
       await processor.process(mockJob(baseData));
 
       expect(capturedBody.content.subject).toBe('Oggetto IO');
-      expect(capturedBody.content.markdown).toBe('Corpo IO differenziato');
+      expect(capturedBody.content.markdown).toBe(
+        "Corpo IO differenziato\n\nQuesto messaggio vale come notifica di cortesia per la comunicazione spedita mediante Email all'indirizzo mario@example.com.",
+      );
     });
   });
 });
