@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Raw, Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { createReadStream } from 'fs';
 import { unlink } from 'fs/promises';
 import { parse } from 'csv-parse';
@@ -38,6 +38,11 @@ import { InadService } from '../channels/inad/inad.service';
 
 const MAX_BULK_RETRY_SIZE = 500;
 const INAD_BULK_THRESHOLD = 100;
+// Sentinella filtro "Stato Consegna" per attempt SUCCESS senza send_status/postal_status
+// ancora sincronizzato (stesso null gestito da ChannelStatusBar/pendingLabel "In corso"/
+// "In attesa" in frontend) — stringa concordata a mano col frontend (App.tsx), non un
+// valore reale mai emesso da PN/GlobalCom quindi nessuna collisione possibile.
+const PENDING_DELIVERY_STATUS_SENTINEL = '__PENDING__';
 
 export interface CampaignRequester {
   username: string;
@@ -1876,7 +1881,24 @@ export class CampaignsService {
     if (status) {
       qb.andWhere('r.status = :status', { status });
     }
-    if (deliveryStatus) {
+    if (deliveryStatus === PENDING_DELIVERY_STATUS_SENTINEL) {
+      // "In corso" (nessun send_status/postal_status ancora, es. attempt
+      // riuscito ma non ancora sincronizzato — stesso caso null gestito da
+      // ChannelStatusBar/pendingLabel in frontend) — attempt deve esistere
+      // ed essere SUCCESS, altrimenti un FAILED pre-provider (mai un
+      // send_status/postal_status per definizione) finirebbe qui invece che
+      // sotto lo stato business FAILED sentinella già gestito altrove.
+      qb.andWhere(
+        `EXISTS (
+          SELECT 1 FROM (
+            SELECT DISTINCT ON (recipient_id) recipient_id, send_status, postal_status, status
+            FROM notification_attempts
+            ORDER BY recipient_id, attempt_number DESC
+          ) la
+          WHERE la.recipient_id = r.id AND la.status = 'success' AND la.send_status IS NULL AND la.postal_status IS NULL
+        )`,
+      );
+    } else if (deliveryStatus) {
       // "Stato Consegna" (SEND/POSTAL) vive sull'ultimo attempt del destinatario,
       // non su recipient.status — stesso identico sotto-query DISTINCT ON già
       // usato in getFailures() per "ultimo attempt per destinatario". Filtro su
@@ -1979,9 +2001,24 @@ export class CampaignsService {
       .andWhere('COALESCE(la.send_status, la.postal_status) IS NOT NULL')
       .getRawMany<{ deliveryStatus: string }>();
 
+    const pendingCount = await this.recipientRepo
+      .createQueryBuilder('r')
+      .leftJoin(
+        `(SELECT DISTINCT ON (recipient_id) recipient_id, send_status, postal_status, status
+          FROM notification_attempts ORDER BY recipient_id, attempt_number DESC)`,
+        'la',
+        'la.recipient_id = r.id',
+      )
+      .where('r.campaignId = :campaignId', { campaignId })
+      .andWhere(`la.status = 'success' AND la.send_status IS NULL AND la.postal_status IS NULL`)
+      .getCount();
+
     return {
       statuses: statusRows.map((r) => r.status),
-      deliveryStatuses: deliveryRows.map((r) => r.deliveryStatus),
+      deliveryStatuses: [
+        ...deliveryRows.map((r) => r.deliveryStatus),
+        ...(pendingCount > 0 ? [PENDING_DELIVERY_STATUS_SENTINEL] : []),
+      ],
     };
   }
 
@@ -2155,7 +2192,11 @@ export class CampaignsService {
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
     if (campaign.channelType === 'POSTAL') {
-      const diverted = await this.recipientRepo.count({ where: { campaignId, inadCheck: Raw((alias) => `${alias}->>'diverted' = 'true'`) } });
+      const diverted = await this.recipientRepo
+        .createQueryBuilder('r')
+        .where('r.campaignId = :campaignId', { campaignId })
+        .andWhere(`r.inad_check->>'diverted' = 'true'`)
+        .getCount();
       return { campaignId, totalSavingCents: 0, postalNotEstimableCount: diverted };
     }
 
