@@ -10706,10 +10706,21 @@ export function App(): React.JSX.Element {
                                       </>
                                     )}
                                     {notifDetail.campaign.channelType === 'POSTAL' && (
-                                      <>
-                                        <td className="small"><PostalStatusBadge status={a.postalStatus} /></td>
-                                        <td className="small text-muted">{a.postalStatusUpdatedAt ? new Date(a.postalStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
-                                      </>
+                                      // a.channelType può essere PEC su questo stesso attempt se INAD ha
+                                      // dirottato il destinatario (campaign.channelType resta POSTAL,
+                                      // l'attempt reale no) — niente postalStatus per un invio PEC, la
+                                      // colonna "In corso" a vita non ha senso in quel caso.
+                                      a.channelType === 'POSTAL' ? (
+                                        <>
+                                          <td className="small"><PostalStatusBadge status={a.postalStatus} /></td>
+                                          <td className="small text-muted">{a.postalStatusUpdatedAt ? new Date(a.postalStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <td className="small text-muted">—</td>
+                                          <td className="small text-muted">—</td>
+                                        </>
+                                      )
                                     )}
                                     <td className="small text-danger text-break" style={{ maxWidth: '350px' }}>
                                       {a.errorMessage || (() => {
@@ -14324,7 +14335,23 @@ export function App(): React.JSX.Element {
                                           <td className="small text-muted">{r.sendStatusUpdatedAt ? new Date(r.sendStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
                                         </>
                                       ) : campaign.channelType === 'POSTAL' ? (
-                                        campaign.channelConfig?.['protocolla'] ? (
+                                        // Dirottato INAD (attempt reale su PEC, non POSTAL): niente
+                                        // postalStatus, mai lo avrà — "In corso" a vita altrimenti,
+                                        // stesso motivo del fix sul modale Dettaglio Notifica sopra.
+                                        r.inadCheck?.diverted ? (
+                                          campaign.channelConfig?.['protocolla'] ? (
+                                            <>
+                                              <td className="small">{r.protocolNumber ? `${r.protocolNumber}/${r.protocolYear}` : '—'}</td>
+                                              <td className="small text-muted">—</td>
+                                              <td className="small text-muted">—</td>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <td className="small text-muted">—</td>
+                                              <td className="small text-muted">—</td>
+                                            </>
+                                          )
+                                        ) : campaign.channelConfig?.['protocolla'] ? (
                                           <>
                                             <td className="small">{r.protocolNumber ? `${r.protocolNumber}/${r.protocolYear}` : '—'}</td>
                                             <td className="small"><PostalStatusBadge status={r.postalStatus} /></td>
