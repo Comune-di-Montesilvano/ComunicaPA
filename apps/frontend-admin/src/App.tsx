@@ -3765,6 +3765,9 @@ export function App(): React.JSX.Element {
                                       {p.contratti.map((c) => (
                                         <li key={c.codiceContratto}>
                                           <code>{c.codiceContratto}</code> — {c.descrizione} <span className="text-muted">({c.tipologia})</span>
+                                          {c.estero
+                                            ? <span className="badge bg-success-subtle text-success-emphasis border border-success-subtle ms-1">Estero abilitato</span>
+                                            : <span className="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle ms-1">Solo Italia</span>}
                                         </li>
                                       ))}
                                     </ul>
@@ -7516,6 +7519,14 @@ export function App(): React.JSX.Element {
                                   </select>
                                 </div>
                               )}
+                              {contrattiPerTipo.length > 0 && contrattiPerTipo.every(c => !c.estero) && (
+                                <div className="col-12">
+                                  <div className="alert alert-warning py-2 small mt-2 mb-0">
+                                    <AlertCircle className="me-1" size={16} />
+                                    Il contratto configurato per questo Servizio non supporta l'estero: i destinatari con indirizzo estero verranno esclusi dall'invio (vedi mapping colonna Paese al Passo 3).
+                                  </div>
+                                </div>
+                              )}
                               {wizPostalServiceType.startsWith('Raccomandata') && (
                                 <div className="col-12">
                                   <div className="form-check">
@@ -8122,6 +8133,14 @@ export function App(): React.JSX.Element {
                               <option key={c.codiceContratto} value={c.codiceContratto}>{c.descrizione} ({c.codiceContratto})</option>
                             ))}
                           </select>
+                        </div>
+                      )}
+                      {contrattiPerTipo.length > 0 && contrattiPerTipo.every(c => !c.estero) && (
+                        <div className="col-12">
+                          <div className="alert alert-warning py-2 small mt-2 mb-0">
+                            <AlertCircle className="me-1" size={16} />
+                            Il contratto configurato per questo Servizio non supporta l'estero: i destinatari con indirizzo estero verranno esclusi dall'invio (vedi mapping colonna Paese al Passo 3).
+                          </div>
                         </div>
                       )}
                       {wizPostalServiceType.startsWith('Agol') && (
