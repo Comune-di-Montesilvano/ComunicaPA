@@ -23,8 +23,16 @@ const NON_TERMINAL_DEDUP_STATI = ['Errore', 'Eliminato'];
  * `CodiceErrore` segnalava già "impossibile validare l'indirizzo" — il nuovo
  * indirizzo non veniva mai trasmesso a GlobalCom.
  */
-function isGoodExistingSubmission(d: { stato: string; codiceErrore?: string }): boolean {
-  return !NON_TERMINAL_DEDUP_STATI.includes(d.stato) && (!d.codiceErrore || d.codiceErrore === '0');
+function isGoodExistingSubmission(d: { idPro?: string; stato?: string; codiceErrore?: string }): boolean {
+  // idPro/stato undefined = mapping fallito su questa entry (risposta
+  // lista_documenti con forma diversa da dettagli_documento — stesso gotcha
+  // "nomi WSDL reali vanno verificati sul campo, mai assunti") — bug reale
+  // osservato in log prod: "IDPRO=undefined, stato=undefined" passava questo
+  // check su quasi ogni retry (undefined non è in NON_TERMINAL_DEDUP_STATI,
+  // codiceErrore era anch'esso undefined) e bloccava reinvii legittimi su
+  // dati spazzatura. Senza idPro/stato validi non c'è modo di fidarsi che
+  // sia davvero un invio buono: mai deduplicare.
+  return !!d.idPro && !!d.stato && !NON_TERMINAL_DEDUP_STATI.includes(d.stato) && (!d.codiceErrore || d.codiceErrore === '0');
 }
 
 @Injectable()

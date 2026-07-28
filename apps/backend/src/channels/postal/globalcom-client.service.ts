@@ -318,7 +318,15 @@ export class GlobalComClient {
     const risposta = result.Risposta;
     if (!risposta) return [];
     const list = Array.isArray(risposta) ? risposta : [risposta];
-    return list.map(mapDocStatus);
+    // lista_documenti può avere un wrapper diverso da dettagli_documento
+    // (es. array sotto una chiave tipata ArrayOfX, stesso gotcha WSDL già
+    // noto altrove) — se IDPRO/Stato risultano vuoti dopo il mapping, il
+    // motivo esatto è visibile solo nel payload grezzo, mai nello YAML/manuale.
+    const mapped = list.map(mapDocStatus);
+    if (mapped.some((d) => !d.idPro || !d.stato)) {
+      this.logger.warn(`cercaPerTesto: mapping IDPRO/Stato fallito su almeno un risultato — raw: ${JSON.stringify(list)}`);
+    }
+    return mapped;
   }
 
   /** Poll-stato dedicato (manuale §2.2.10) — non presente nel solo WSDL. */
