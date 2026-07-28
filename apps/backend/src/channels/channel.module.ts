@@ -20,6 +20,7 @@ import { PostalStrategy } from './postal/postal.strategy';
 import { GlobalComClientModule } from './postal/globalcom-client.module';
 import { PostalStatusSyncService } from './postal/postal-status-sync.service';
 import { CampaignCompletionService } from '../campaigns/campaign-completion.service';
+import { AppIoDeliveryService } from './app-io/app-io-delivery.service';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { CampaignCompletionService } from '../campaigns/campaign-completion.serv
     SendDispatchService,
     PostalStatusSyncService,
     CampaignCompletionService,
+    AppIoDeliveryService,
     {
       provide: CHANNEL_STRATEGIES,
       useFactory: (
@@ -57,6 +59,6 @@ import { CampaignCompletionService } from '../campaigns/campaign-completion.serv
       inject: [EmailStrategy, PecStrategy, AppIoStrategy, PostalStrategy],
     },
   ],
-  exports: [CHANNEL_STRATEGIES, CampaignCompletionService],
+  exports: [CHANNEL_STRATEGIES, CampaignCompletionService, AppIoDeliveryService],
 })
 export class ChannelModule {}
