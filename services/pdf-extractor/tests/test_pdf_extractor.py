@@ -24,6 +24,56 @@ def test_extract_address_missing_raises(pdf_no_address):
         PdfExtractor(pdf_no_address).extract_address()
 
 
+def test_extract_address_foreign_clean(pdf_foreign_address_clean):
+    addr = PdfExtractor(pdf_foreign_address_clean).extract_address()
+    assert addr.indirizzo == "Rue Test 132"
+    assert addr.cap == "1180"
+    assert addr.comune == "Uccle"
+    assert addr.provincia == ""
+    assert addr.stato_estero == "Belgio"
+
+
+def test_extract_address_foreign_cap_embedded_in_street(pdf_foreign_address_cap_embedded):
+    """Regressione bug reale: il CAP vero (8802) è dentro la via dopo la
+    keyword 'CAP', lo pseudocodice a 5 cifre (86078) prima del comune NON va
+    scambiato per il CAP."""
+    addr = PdfExtractor(pdf_foreign_address_cap_embedded).extract_address()
+    assert addr.indirizzo == "Bahnhofplatz 2"
+    assert addr.cap == "8802"
+    assert addr.comune == "Testdorf"
+    assert addr.stato_estero == "Svizzera"
+
+
+def test_extract_address_foreign_no_cap(pdf_foreign_address_no_cap):
+    addr = PdfExtractor(pdf_foreign_address_no_cap).extract_address()
+    assert addr.indirizzo == "Teststrasse 11"
+    assert addr.cap == ""
+    assert addr.comune == "Testort"
+    assert addr.stato_estero == "Svizzera"
+
+
+def test_extract_address_foreign_parenthetical_state(pdf_foreign_address_parenthetical):
+    addr = PdfExtractor(pdf_foreign_address_parenthetical).extract_address()
+    assert addr.indirizzo == "Teststrasse 67"
+    assert addr.comune == "Testcity"
+    assert addr.stato_estero == "Svizzera"
+
+
+def test_extract_address_foreign_alphanumeric_zip_stays_in_comune(pdf_foreign_address_alphanumeric_zip):
+    addr = PdfExtractor(pdf_foreign_address_alphanumeric_zip).extract_address()
+    assert addr.indirizzo == "732 Test Blvd. Testregion"
+    assert addr.cap == ""
+    assert addr.comune == "Testcity R2Y 1M8"
+    assert addr.stato_estero == "Canada"
+
+
+def test_extract_address_foreign_extra_segment(pdf_foreign_address_extra_segment):
+    addr = PdfExtractor(pdf_foreign_address_extra_segment).extract_address()
+    assert addr.cap == "5030"
+    assert addr.comune == "Testville"
+    assert addr.stato_estero == "Belgio"
+
+
 def test_extract_payment_from_qr(pdf_with_qr):
     totale, rate, warnings = PdfExtractor(pdf_with_qr).extract_payment()
     assert totale is not None

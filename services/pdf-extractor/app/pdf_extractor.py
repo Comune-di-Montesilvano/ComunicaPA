@@ -18,8 +18,12 @@ class PdfExtractor:
         r"Residente\s+in\s*:\s*(.+?)\s*[-–]\s*(\d{5})\s+([\w\s\'\\u2019]+?)\s+([A-Z]{2})\s*(?:\n|$)",
         re.MULTILINE | re.IGNORECASE,
     )
-    _RE_FOREIGN = re.compile(
-        r"Residente\s+in\s*:\s*(.+?)\s*[-–]\s*(\d{5})\s+([\w\s]+?)\s*[-–]\s*([A-Za-z][A-Za-z\s]{2,})\s*(?:\n|$)",
+    # Regex generica: cattura tutto il contenuto dopo "Residente in:" fino a
+    # newline — il parsing del contenuto (domestico vs estero) è delegato
+    # rispettivamente a _RE_DOMESTIC (provato per primo) e a
+    # _parse_foreign_address (fallback quando _RE_DOMESTIC non matcha).
+    _RE_RESIDENTE_IN_LINE = re.compile(
+        r"Residente\s+in\s*:\s*(.+?)\s*(?:\n|$)",
         re.MULTILINE | re.IGNORECASE,
     )
 
@@ -75,15 +79,11 @@ class PdfExtractor:
                 stato_estero="",
             )
 
-        m = self._RE_FOREIGN.search(text)
+        m = self._RE_RESIDENTE_IN_LINE.search(text)
         if m:
-            return AddressData(
-                indirizzo=m.group(1).strip(),
-                cap=m.group(2).strip(),
-                comune=m.group(3).strip(),
-                provincia="",
-                stato_estero=m.group(4).strip(),
-            )
+            foreign = self._parse_foreign_address(m.group(1))
+            if foreign:
+                return foreign
 
         m = self._RE_RESIDENZA_LABEL.search(text)
         if m:
@@ -98,6 +98,63 @@ class PdfExtractor:
 
         raise AddressExtractionError(
             f"Pattern 'Residente in:' non trovato. Testo pagina 0:\n{text[:500]}"
+        )
+
+    @staticmethod
+    def _parse_foreign_address(line: str) -> Optional["AddressData"]:
+        """Parsing indirizzo estero per segmenti (non una singola regex): il
+        formato reale varia troppo (CAP 4/5 cifre, CAP alfanumerico, CAP
+        assente, CAP incorporato nella via, nome stato ripetuto tra
+        parentesi) per una regex unica — verificato su 10 documenti reali
+        Maggioli (Belgio/Svizzera/Germania/Canada), vedi design doc
+        2026-07-28-indirizzo-estero-design.md Sezione 5.
+
+        1. Split su " - " (normalizzato da en-dash).
+        2. Ultimo segmento = stato.
+        3. Penultimo segmento = "[CAP] comune": primo token numerico
+           3-6 cifre -> CAP guess, resto -> comune; altrimenti CAP vuoto e
+           l'intero segmento è comune (limite noto: CAP alfanumerici tipo
+           Canada restano dentro il comune).
+        4. Segmenti restanti = indirizzo grezzo, ripulito da una keyword
+           esplicita "CAP <valore>" (CAP autoritativo, sovrascrive il guess
+           del punto 3) e da una parentetica finale tipo "(Svizzera)".
+        """
+        normalized = line.replace("–", "-").strip()
+        parts = [p.strip() for p in normalized.split(" - ") if p.strip()]
+        if len(parts) < 3:
+            return None
+
+        stato = parts[-1]
+        capcomune = parts[-2]
+        indirizzo_raw = " - ".join(parts[:-2])
+
+        cap_match = re.search(r"CAP\.?\s*(\w+)", indirizzo_raw, re.IGNORECASE)
+        cap_explicit = cap_match.group(1) if cap_match else None
+        if cap_explicit:
+            indirizzo = re.sub(
+                r"\s*-?\s*CAP\.?\s*\w+\s*(\([^)]*\))?", "", indirizzo_raw, flags=re.IGNORECASE
+            ).strip()
+        else:
+            indirizzo = indirizzo_raw
+        indirizzo = re.sub(r"\s*\([^)]*\)\s*$", "", indirizzo).strip()
+
+        cm = re.match(r"^(\d{3,6})\s+(.+)$", capcomune)
+        if cm:
+            cap_guess, comune = cm.group(1), cm.group(2)
+        else:
+            cap_guess, comune = None, capcomune
+
+        cap = cap_explicit or cap_guess or ""
+
+        if not indirizzo or not comune or not stato:
+            return None
+
+        return AddressData(
+            indirizzo=indirizzo,
+            cap=cap,
+            comune=comune,
+            provincia="",
+            stato_estero=stato,
         )
 
     # ------------------------------------------------------------------

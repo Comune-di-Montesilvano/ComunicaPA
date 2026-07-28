@@ -39,6 +39,47 @@ def pdf_no_address() -> bytes:
 
 
 @pytest.fixture
+def pdf_foreign_address_clean() -> bytes:
+    """Formato pulito: via - CAP comune - stato (CAP 4 cifre, non 5 — Belgio)."""
+    return _make_pdf(["Residente in: Rue Test 132 - 1180 Uccle - Belgio\n"])
+
+
+@pytest.fixture
+def pdf_foreign_address_cap_embedded() -> bytes:
+    """CAP estero incorporato nella riga indirizzo (keyword 'CAP'), seguito
+    da uno pseudocodice a 5 cifre + comune che NON è un CAP reale — bug
+    reale riscontrato su un documento Maggioli reale (Svizzera)."""
+    return _make_pdf(["Residente in: Bahnhofplatz 2 CAP 8802 - 86078 Testdorf - Svizzera\n"])
+
+
+@pytest.fixture
+def pdf_foreign_address_no_cap() -> bytes:
+    """Nessun CAP nella riga (formato osservato su documenti reali svizzeri/tedeschi)."""
+    return _make_pdf(["Residente in: Teststrasse 11 - Testort - Svizzera\n"])
+
+
+@pytest.fixture
+def pdf_foreign_address_parenthetical() -> bytes:
+    """Nome stato ripetuto tra parentesi subito dopo la via (formato osservato
+    su documenti reali svizzeri)."""
+    return _make_pdf(["Residente in: Teststrasse 67 (Svizzera) - Testcity - Svizzera\n"])
+
+
+@pytest.fixture
+def pdf_foreign_address_alphanumeric_zip() -> bytes:
+    """CAP alfanumerico (formato canadese) — limite noto/accettato: resta
+    dentro il comune, non viene separato."""
+    return _make_pdf(["Residente in: 732 Test Blvd. Testregion - Testcity R2Y 1M8 - Canada\n"])
+
+
+@pytest.fixture
+def pdf_foreign_address_extra_segment() -> bytes:
+    """4 segmenti invece di 3 (duplicazione CAP/stato tra parentesi) —
+    formato osservato su un documento reale belga."""
+    return _make_pdf(["Residente in: Rue Test 8 - CAP. 5030 (Belgio) - 5030 Testville - Belgio\n"])
+
+
+@pytest.fixture
 def pdf_with_qr() -> bytes:
     # Pagina 1: lettera con indirizzo; pagina 2: avviso con QR + testo CBILL (RATA UNICA)
     return _make_pdf(
