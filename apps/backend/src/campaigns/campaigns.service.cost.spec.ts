@@ -88,7 +88,10 @@ describe('CampaignsService - Cost and Savings', () => {
 
     it('campagna POSTAL: nessun risparmio stimato, solo conteggio dirottati N/D', async () => {
       campaignRepo.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'POSTAL' });
-      recipientRepo.count.mockResolvedValue(1);
+      const qb: any = {};
+      ['where', 'andWhere'].forEach((m) => { qb[m] = jest.fn().mockReturnValue(qb); });
+      qb.getCount = jest.fn().mockResolvedValue(1);
+      recipientRepo.createQueryBuilder = jest.fn().mockReturnValue(qb);
 
       const result = await service.getCampaignCostSavings('c1');
 

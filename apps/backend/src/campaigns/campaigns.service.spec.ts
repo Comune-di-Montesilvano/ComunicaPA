@@ -461,9 +461,14 @@ describe('CampaignsService', () => {
       ['select', 'leftJoin', 'where', 'andWhere'].forEach((m) => { deliveryQb[m] = jest.fn().mockReturnValue(deliveryQb); });
       deliveryQb.getRawMany = jest.fn().mockResolvedValue([{ deliveryStatus: 'ACCEPTED' }, { deliveryStatus: 'DELIVERED' }]);
 
+      const pendingQb: any = {};
+      ['leftJoin', 'where', 'andWhere'].forEach((m) => { pendingQb[m] = jest.fn().mockReturnValue(pendingQb); });
+      pendingQb.getCount = jest.fn().mockResolvedValue(0);
+
       mockRecipientRepo.createQueryBuilder = jest.fn()
         .mockReturnValueOnce(statusQb)
-        .mockReturnValueOnce(deliveryQb);
+        .mockReturnValueOnce(deliveryQb)
+        .mockReturnValueOnce(pendingQb);
 
       const result = await service.getRecipientFilterOptions('uuid-1');
 
