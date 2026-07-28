@@ -674,6 +674,24 @@ export class CampaignsController {
     return result;
   }
 
+  @Post(':id/recipients/:recipientId/postal/refresh-status')
+  async refreshPostalStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('recipientId', ParseUUIDPipe) recipientId: string,
+    @Req() req: Request & { user: JwtOperatorPayload },
+  ) {
+    const result = await this.campaignsService.refreshPostalStatus(id, recipientId);
+    const campaign = await this.campaignsService.findOne(id).catch(() => null);
+    await this.auditLogsService.log({
+      campaignId: id,
+      campaignName: campaign ? campaign.name : null,
+      operator: req.user.username,
+      action: 'RETRY',
+      details: { recipientId, postalStatusRefresh: true, newStatus: result.postalStatus },
+    });
+    return result;
+  }
+
   @Post(':id/recipients/retry-bulk')
   retryRecipientsBulk(
     @Param('id', ParseUUIDPipe) id: string,

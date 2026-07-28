@@ -1,10 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Cron } from '@nestjs/schedule';
 import { NotificationAttempt, AttemptStatus } from '../../entities/notification-attempt.entity';
 import { PostalProvidersService } from '../../postal-providers/postal-providers.service';
-import { GlobalComClient } from './globalcom-client.service';
+import { GlobalComClient, type GbcCredentials } from './globalcom-client.service';
 
 const BATCH_SIZE = 200;
 // GBCStatus terminali (manuale §3.1) — tutti gli altri sono transitori e
@@ -54,54 +54,84 @@ export class PostalStatusSyncService {
 
     for (const attempt of attempts) {
       try {
-        const stato = await this.globalCom.dettagliDocumento(creds, attempt.postalTrackingId!);
-        if (!stato) continue;
-
-        let changed = false;
-        if (stato.stato !== attempt.postalStatus) {
-          attempt.postalStatus = stato.stato;
-          attempt.postalStatusUpdatedAt = new Date();
-          attempt.postalStatusHistory = [
-            ...(attempt.postalStatusHistory ?? []),
-            {
-              stato: stato.stato,
-              rilevatoIl: new Date().toISOString(),
-              // Codice/descrizione errore GlobalCom (es. "-1"/"numeri
-              // raccomandata non salvati o non disponibili") — prima
-              // visibili solo sul portale GlobalCom, mai persistiti da noi.
-              // Gate su codiceErrore!=='0', non su stato: GlobalCom manda
-              // codici reali (es. "-2") anche su stati non terminali come
-              // "Rimandato" (bug reale: un gate su stato==='Errore' li
-              // nascondeva) ma manda anche un codice "benigno" ("0") su
-              // stati positivi come "Confermato" — persisterlo avrebbe
-              // mostrato in UI un esito positivo come se fosse un errore
-              // (bug reale riscontrato: "GlobalCom (0)" su un invio in
-              // realtà confermato).
-              ...(stato.codiceErrore && stato.codiceErrore !== '0' ? { codiceErrore: stato.codiceErrore } : {}),
-              ...(stato.descrizione && stato.codiceErrore !== '0' ? { descrizione: stato.descrizione } : {}),
-            },
-          ];
-          changed = true;
-        }
-        if (attempt.costCents === null && stato.costoNetto !== null && stato.costoNetto !== undefined) {
-          attempt.costCents = Math.round(stato.costoNetto * 100);
-          attempt.costCalculatedAt = new Date();
-          attempt.costBreakdown = {
-            costoNetto: stato.costoNetto,
-            numeroPagine: stato.numeroPagine ?? null,
-            nazionale: stato.nazionale ?? null,
-            importoPostaleNetto: stato.importoPostaleNetto ?? null,
-            importoStampaNetto: stato.importoStampaNetto ?? null,
-            importoARNetto: stato.importoARNetto ?? null,
-            tipoDocumento: stato.tipoDocumento ?? null,
-            codiceContratto: stato.codiceContratto ?? null,
-          };
-          changed = true;
-        }
-        if (changed) await this.attemptRepo.save(attempt);
+        await this.syncOne(attempt, creds);
       } catch (err: any) {
         this.logger.warn(`Errore aggiornamento stato POSTAL per attempt ${attempt.id} (IDPRO=${attempt.postalTrackingId}): ${err.message}`);
       }
     }
+  }
+
+  private async syncOne(attempt: NotificationAttempt, creds: GbcCredentials): Promise<boolean> {
+    const stato = await this.globalCom.dettagliDocumento(creds, attempt.postalTrackingId!);
+    if (!stato) return false;
+
+    let changed = false;
+    if (stato.stato !== attempt.postalStatus) {
+      attempt.postalStatus = stato.stato;
+      attempt.postalStatusUpdatedAt = new Date();
+      attempt.postalStatusHistory = [
+        ...(attempt.postalStatusHistory ?? []),
+        {
+          stato: stato.stato,
+          rilevatoIl: new Date().toISOString(),
+          // Codice/descrizione errore GlobalCom (es. "-1"/"numeri
+          // raccomandata non salvati o non disponibili") — prima
+          // visibili solo sul portale GlobalCom, mai persistiti da noi.
+          // Gate su codiceErrore!=='0', non su stato: GlobalCom manda
+          // codici reali (es. "-2") anche su stati non terminali come
+          // "Rimandato" (bug reale: un gate su stato==='Errore' li
+          // nascondeva) ma manda anche un codice "benigno" ("0") su
+          // stati positivi come "Confermato" — persisterlo avrebbe
+          // mostrato in UI un esito positivo come se fosse un errore
+          // (bug reale riscontrato: "GlobalCom (0)" su un invio in
+          // realtà confermato).
+          ...(stato.codiceErrore && stato.codiceErrore !== '0' ? { codiceErrore: stato.codiceErrore } : {}),
+          ...(stato.descrizione && stato.codiceErrore !== '0' ? { descrizione: stato.descrizione } : {}),
+        },
+      ];
+      changed = true;
+    }
+    if (attempt.costCents === null && stato.costoNetto !== null && stato.costoNetto !== undefined) {
+      attempt.costCents = Math.round(stato.costoNetto * 100);
+      attempt.costCalculatedAt = new Date();
+      attempt.costBreakdown = {
+        costoNetto: stato.costoNetto,
+        numeroPagine: stato.numeroPagine ?? null,
+        nazionale: stato.nazionale ?? null,
+        importoPostaleNetto: stato.importoPostaleNetto ?? null,
+        importoStampaNetto: stato.importoStampaNetto ?? null,
+        importoARNetto: stato.importoARNetto ?? null,
+        tipoDocumento: stato.tipoDocumento ?? null,
+        codiceContratto: stato.codiceContratto ?? null,
+      };
+      changed = true;
+    }
+    if (changed) await this.attemptRepo.save(attempt);
+    return changed;
+  }
+
+  /**
+   * Ricontrollo manuale su richiesta operatore — bypassa il filtro
+   * TERMINAL_STATUSES del cron. Serve per il caso reale: raccomandata in
+   * `Errore` (terminale per noi, mai più ripollata automaticamente una volta
+   * che cost_cents è già valorizzato) ma corretta manualmente sul portale
+   * GlobalCom — nessun demone la riprende in carico da sola. Se il nuovo
+   * stato letto qui non è più terminale (es. torna a `Confermato`), il
+   * prossimo giro di `handleCron` la ritrova da solo (il suo filtro esclude
+   * solo `postal_status IN (terminal) AND cost_cents IS NOT NULL`) — nessun
+   * flag di "riattivazione" separato necessario.
+   */
+  async refreshOne(attemptId: string): Promise<{ changed: boolean; postalStatus: string | null }> {
+    const attempt = await this.attemptRepo.findOneBy({ id: attemptId });
+    if (!attempt) throw new NotFoundException(`Attempt ${attemptId} non trovato`);
+    if (attempt.channelType !== 'POSTAL' || !attempt.postalTrackingId) {
+      throw new BadRequestException('Attempt non POSTAL o senza IDPRO GlobalCom — nessuno stato da interrogare');
+    }
+
+    const provider = await this.providers.getActive();
+    if (!provider) throw new BadRequestException('Nessun provider di postalizzazione attivo');
+
+    const changed = await this.syncOne(attempt, provider.creds);
+    return { changed, postalStatus: attempt.postalStatus };
   }
 }

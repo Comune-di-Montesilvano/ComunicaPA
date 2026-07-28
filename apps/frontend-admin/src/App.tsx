@@ -1025,6 +1025,7 @@ export function App(): React.JSX.Element {
   const [addressEditForm, setAddressEditForm] = useState({ address: '', municipality: '', zip: '', province: '', country: 'Italia' });
   const [addressEditAnprLoading, setAddressEditAnprLoading] = useState(false);
   const [addressEditSaving, setAddressEditSaving] = useState(false);
+  const [postalStatusRefreshing, setPostalStatusRefreshing] = useState(false);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1337,6 +1338,26 @@ export function App(): React.JSX.Element {
       if (!(err instanceof ApiAuthError)) alert('Errore durante il salvataggio dell\'indirizzo.');
     } finally {
       setAddressEditSaving(false);
+    }
+  };
+
+  const handleRefreshPostalStatus = async () => {
+    if (!notifDetail) return;
+    setPostalStatusRefreshing(true);
+    try {
+      const res = await apiFetch(`/campaigns/${notifDetail.campaign.id}/recipients/${notifDetail.recipient.id}/postal/refresh-status`, {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert(body.message || 'Errore durante il ricontrollo dello stato GlobalCom.');
+        return;
+      }
+      await openNotificationDetail(notifDetail.recipient.id);
+    } catch (err) {
+      if (!(err instanceof ApiAuthError)) alert('Errore durante il ricontrollo dello stato GlobalCom.');
+    } finally {
+      setPostalStatusRefreshing(false);
     }
   };
 
@@ -10674,7 +10695,21 @@ export function App(): React.JSX.Element {
                           <div><strong>Campagna:</strong> {notifDetail.campaign.name} <span className="ms-1"><ChannelBadge channel={notifDetail.campaign.channelType} extra={notifDetail.campaign.channelType === 'POSTAL' ? postalBadgeExtra({ postalServiceType: notifDetail.campaign.postalServiceType, postalReturnReceipt: notifDetail.campaign.postalReturnReceipt }, postalProviders.find((p) => p.active)?.enabledServiceTypes) : undefined} /></span></div>
                         </div>
 
-                        <h6 className="fw-bold small">Storico Tentativi</h6>
+                        <div className="d-flex justify-content-between align-items-center">
+                          <h6 className="fw-bold small mb-0">Storico Tentativi</h6>
+                          {notifDetail.campaign.channelType === 'POSTAL' && (
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-secondary"
+                              disabled={postalStatusRefreshing}
+                              onClick={handleRefreshPostalStatus}
+                              title="Interroga di nuovo GlobalCom per lo stato dell'ultimo invio — utile se una raccomandata in Errore è stata corretta manualmente sul portale GlobalCom e non viene più ripollata in automatico"
+                            >
+                              {postalStatusRefreshing ? <Loader2 className="icon-spin me-1" size={14} /> : <RefreshCw className="me-1" size={14} />}
+                              Ricontrolla stato GlobalCom
+                            </button>
+                          )}
+                        </div>
                         <div className="table-responsive">
                           <table className="table table-sm mb-4">
                             <thead>

@@ -10,6 +10,7 @@ import { AppSettingsService } from '../settings/app-settings.service';
 import { ConfigService } from '@nestjs/config';
 import { NotificationQueuesService } from '../queue/notification-queues.service';
 import { InadService } from '../channels/inad/inad.service';
+import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service';
 
 describe('CampaignsService - Cost and Savings', () => {
   let service: CampaignsService;
@@ -35,6 +36,7 @@ describe('CampaignsService - Cost and Savings', () => {
         { provide: AppSettingsService, useValue: settingsService },
         { provide: ConfigService, useValue: {} },
         { provide: InadService, useValue: {} },
+        { provide: PostalStatusSyncService, useValue: {} },
       ],
     }).compile();
 

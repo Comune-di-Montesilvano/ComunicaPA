@@ -35,6 +35,7 @@ import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } fro
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto';
 import type { NotificationChannel, OperatorRole } from '@comunicapa/shared-types';
 import { InadService } from '../channels/inad/inad.service';
+import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service';
 
 const MAX_BULK_RETRY_SIZE = 500;
 const INAD_BULK_THRESHOLD = 100;
@@ -92,6 +93,7 @@ export class CampaignsService {
     private readonly settings: AppSettingsService,
     private readonly config: ConfigService<AppConfiguration, true>,
     private readonly inadService: InadService,
+    private readonly postalStatusSync: PostalStatusSyncService,
   ) {}
 
   findAll(): Promise<Campaign[]> {
@@ -1825,6 +1827,29 @@ export class CampaignsService {
     }
 
     return this.retryRecipient(campaignId, recipientId);
+  }
+
+  /**
+   * Ricontrollo manuale stato GlobalCom per l'ultimo attempt POSTAL di un
+   * destinatario — caso reale: raccomandata `Errore` corretta a mano sul
+   * portale GlobalCom (mai tramite un nostro retry), quindi mai più
+   * ripollata dal cron perché già a stato terminale con costo calcolato
+   * (vedi PostalStatusSyncService.handleCron). Nessuna modifica a
+   * recipient.status/attempt.status: solo postalStatus/costCents, stesso
+   * identico effetto di un giro di poll automatico ma su richiesta esplicita.
+   */
+  async refreshPostalStatus(campaignId: string, recipientId: string): Promise<{ changed: boolean; postalStatus: string | null }> {
+    const recipient = await this.recipientRepo.findOne({ where: { id: recipientId } });
+    if (!recipient || recipient.campaignId !== campaignId) {
+      throw new NotFoundException(`Recipient ${recipientId} non trovato in questa campagna`);
+    }
+    const lastAttempt = await this.attemptRepo.findOne({
+      where: { recipientId, channelType: 'POSTAL' },
+      order: { attemptNumber: 'DESC' },
+    });
+    if (!lastAttempt) throw new BadRequestException('Nessun tentativo POSTAL per questo destinatario');
+
+    return this.postalStatusSync.refreshOne(lastAttempt.id);
   }
 
   async retryRecipientsBulk(campaignId: string, recipientIds: string[]): Promise<RetryBulkResultDto> {

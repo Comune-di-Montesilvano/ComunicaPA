@@ -11,6 +11,7 @@ import { DownloadEvent } from '../entities/download-event.entity';
 import { NotificationQueuesService } from '../queue/notification-queues.service';
 import { AppSettingsService } from '../settings/app-settings.service';
 import { InadService } from '../channels/inad/inad.service';
+import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service';
 import * as fs from 'fs';
 import { join } from 'path';
 import * as os from 'os';
@@ -100,6 +101,7 @@ describe('CampaignsService', () => {
     getBulkState: jest.fn(),
     getBulkResult: jest.fn(),
   };
+  const mockPostalStatusSync = { refreshOne: jest.fn() };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -113,6 +115,7 @@ describe('CampaignsService', () => {
         { provide: AppSettingsService, useValue: mockSettings },
         { provide: ConfigService, useValue: mockConfig },
         { provide: InadService, useValue: mockInadService },
+        { provide: PostalStatusSyncService, useValue: mockPostalStatusSync },
       ],
     }).compile();
     service = module.get<CampaignsService>(CampaignsService);
@@ -2309,6 +2312,7 @@ describe('CampaignsService.getDuplicateSource', () => {
         { provide: AppSettingsService, useValue: mockSettings },
         { provide: ConfigService, useValue: mockConfig },
         { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
+        { provide: PostalStatusSyncService, useValue: { refreshOne: jest.fn() } },
       ],
     }).compile();
 
@@ -2377,6 +2381,7 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
         { provide: AppSettingsService, useValue: mockSettings },
         { provide: ConfigService, useValue: mockConfig },
         { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
+        { provide: PostalStatusSyncService, useValue: { refreshOne: jest.fn() } },
       ],
     }).compile();
 
@@ -2848,6 +2853,7 @@ describe('CampaignsService.getFailuresByReason', () => {
         { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
         { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
         { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
+        { provide: PostalStatusSyncService, useValue: { refreshOne: jest.fn() } },
       ],
     }).compile();
     const service = moduleRef.get(CampaignsService);
@@ -2882,6 +2888,7 @@ describe('CampaignsService.retryRecipientsBulk', () => {
         { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
         { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
         { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
+        { provide: PostalStatusSyncService, useValue: { refreshOne: jest.fn() } },
       ],
     }).compile();
     const service = moduleRef.get(CampaignsService);
@@ -2912,6 +2919,7 @@ describe('CampaignsService.retryRecipientsBulk', () => {
         { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
         { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
         { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
+        { provide: PostalStatusSyncService, useValue: { refreshOne: jest.fn() } },
       ],
     }).compile();
     const service = moduleRef.get(CampaignsService);
@@ -2938,6 +2946,7 @@ describe('CampaignsService.getDownloadReportRows', () => {
         { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
         { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
         { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
+        { provide: PostalStatusSyncService, useValue: { refreshOne: jest.fn() } },
       ],
     }).compile();
     const service = moduleRef.get(CampaignsService);
@@ -2992,6 +3001,7 @@ describe('CampaignsService.getDownloadReportRows', () => {
         { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
         { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
         { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
+        { provide: PostalStatusSyncService, useValue: { refreshOne: jest.fn() } },
       ],
     }).compile();
     const service = moduleRef.get(CampaignsService);
@@ -3022,6 +3032,7 @@ describe('CampaignsService.updateDraft', () => {
         { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
         { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
         { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
+        { provide: PostalStatusSyncService, useValue: { refreshOne: jest.fn() } },
       ],
     }).compile();
 
@@ -3070,6 +3081,7 @@ describe('CampaignsService.updateCampaignContent', () => {
         { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
         { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
         { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
+        { provide: PostalStatusSyncService, useValue: { refreshOne: jest.fn() } },
       ],
     }).compile();
 
@@ -3166,6 +3178,7 @@ describe('CampaignsService.previewMessage', () => {
         { provide: AppSettingsService, useValue: mockSettings },
         { provide: ConfigService, useValue: mockConfig },
         { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
+        { provide: PostalStatusSyncService, useValue: { refreshOne: jest.fn() } },
       ],
     }).compile();
 
@@ -3254,6 +3267,7 @@ describe('CampaignsService.getSendStatusBreakdown / getSendReportRows', () => {
         { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
         { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
         { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
+        { provide: PostalStatusSyncService, useValue: { refreshOne: jest.fn() } },
       ],
     }).compile();
 
@@ -3409,6 +3423,7 @@ describe('CampaignsService.getPostalStatusBreakdown / getPostalReportRows', () =
         { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
         { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
         { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
+        { provide: PostalStatusSyncService, useValue: { refreshOne: jest.fn() } },
       ],
     }).compile();
 

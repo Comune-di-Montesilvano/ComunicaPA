@@ -59,6 +59,6 @@ import { AppIoDeliveryService } from './app-io/app-io-delivery.service';
       inject: [EmailStrategy, PecStrategy, AppIoStrategy, PostalStrategy],
     },
   ],
-  exports: [CHANNEL_STRATEGIES, CampaignCompletionService, AppIoDeliveryService],
+  exports: [CHANNEL_STRATEGIES, CampaignCompletionService, AppIoDeliveryService, PostalStatusSyncService],
 })
 export class ChannelModule {}
