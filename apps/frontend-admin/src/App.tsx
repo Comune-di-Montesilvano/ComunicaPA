@@ -3,6 +3,7 @@ import MDEditor from '@uiw/react-md-editor';
 import { TemplateEditor } from './components/TemplateEditor';
 import { SearchableSelect } from './components/SearchableSelect';
 import { SEND_ENTITY_TYPES, SEND_TAXONOMY_CATALOG } from './data/sendTaxonomy';
+import { COUNTRIES, matchCountry } from '@comunicapa/shared-types';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import {
   Mail, MailOpen, MailCheck, Mails, Smartphone, Send, Globe, HelpCircle,
@@ -866,7 +867,7 @@ type PostalProviderItem = {
   mittenteCitta: string;
   mittenteProvincia: string;
   enabledServiceTypes: string[];
-  contratti: Array<{ codiceContratto: string; descrizione: string; tipologia: string }>;
+  contratti: Array<{ codiceContratto: string; descrizione: string; tipologia: string; estero: boolean }>;
   testedAt: string | null;
   active: boolean;
 };
@@ -1313,6 +1314,7 @@ export function App(): React.JSX.Element {
   const [wizPostalMunicipalityColumn, setWizPostalMunicipalityColumn] = useState('');
   const [wizPostalZipColumn, setWizPostalZipColumn] = useState('');
   const [wizPostalProvinceColumn, setWizPostalProvinceColumn] = useState('');
+  const [wizPostalCountryColumn, setWizPostalCountryColumn] = useState('');
   const [wizPostalUserDataColumn, setWizPostalUserDataColumn] = useState('');
   const [wizBody, setWizBody] = useState('');
   const subjectInputRef = useRef<HTMLInputElement>(null);
@@ -4750,18 +4752,41 @@ export function App(): React.JSX.Element {
         isRowValid = false;
       }
 
-      if (wizChannel === 'POSTAL') {
-        if (wizPostalAddressColumn && !row[wizPostalAddressColumn]?.trim()) {
-          errors.push({ row: rowNum, field: 'Indirizzo', val: '', err: 'Indirizzo mancante (obbligatorio per Postalizzazione)' });
+      if (wizChannel === 'POSTAL' || wizChannel === 'SEND') {
+        const rawCountryVal = wizPostalCountryColumn ? (row[wizPostalCountryColumn]?.trim() || '') : '';
+        const matchedCountry = rawCountryVal ? matchCountry(rawCountryVal) : null;
+        const isForeignRow = !!matchedCountry && matchedCountry !== 'Italia';
+
+        if (rawCountryVal && !matchedCountry) {
+          errors.push({ row: rowNum, field: 'Paese', val: rawCountryVal, err: `Paese "${rawCountryVal}" non riconosciuto: record escluso dall'invio.` });
           isRowValid = false;
         }
-        if (wizPostalMunicipalityColumn && !row[wizPostalMunicipalityColumn]?.trim()) {
-          errors.push({ row: rowNum, field: 'Città', val: '', err: 'Città mancante (obbligatoria per Postalizzazione)' });
-          isRowValid = false;
-        }
-        if (wizPostalZipColumn && row[wizPostalZipColumn]?.trim() && !isValidCap(row[wizPostalZipColumn])) {
-          errors.push({ row: rowNum, field: 'CAP', val: row[wizPostalZipColumn], err: 'CAP non valido (richieste 5 cifre)' });
-          isRowValid = false;
+
+        if (wizChannel === 'POSTAL') {
+          if (wizPostalAddressColumn && !row[wizPostalAddressColumn]?.trim()) {
+            errors.push({ row: rowNum, field: 'Indirizzo', val: '', err: 'Indirizzo mancante (obbligatorio per Postalizzazione)' });
+            isRowValid = false;
+          }
+          if (wizPostalMunicipalityColumn && !row[wizPostalMunicipalityColumn]?.trim()) {
+            errors.push({ row: rowNum, field: 'Città', val: '', err: 'Città mancante (obbligatoria per Postalizzazione)' });
+            isRowValid = false;
+          }
+          if (
+            !isForeignRow &&
+            wizPostalZipColumn && row[wizPostalZipColumn]?.trim() && !isValidCap(row[wizPostalZipColumn])
+          ) {
+            errors.push({ row: rowNum, field: 'CAP', val: row[wizPostalZipColumn], err: 'CAP non valido (richieste 5 cifre)' });
+            isRowValid = false;
+          }
+
+          if (isForeignRow) {
+            const activeProvider = postalProviders.find(p => p.active);
+            const contrattoAttivo = activeProvider?.contratti.find(c => wizPostalServiceType.startsWith(c.tipologia) && c.codiceContratto === (wizPostalCodiceContratto || activeProvider.contratti.find(cc => wizPostalServiceType.startsWith(cc.tipologia))?.codiceContratto));
+            if (!contrattoAttivo?.estero) {
+              errors.push({ row: rowNum, field: 'Paese', val: matchedCountry || rawCountryVal, err: 'Indirizzo estero ma il contratto POSTAL configurato non supporta spedizioni estero: record escluso dall\'invio.' });
+              isRowValid = false;
+            }
+          }
         }
       }
 
@@ -4773,7 +4798,7 @@ export function App(): React.JSX.Element {
     setWizValidationErrors(errors);
     setWizValidationWarnings(warnings);
     setWizValidRows(valid);
-  }, [wizCsvRows, wizMapping, wizChannel, wizAppIoInvolved, wizPostalAddressColumn, wizPostalMunicipalityColumn, wizPostalZipColumn]);
+  }, [wizCsvRows, wizMapping, wizChannel, wizAppIoInvolved, wizPostalAddressColumn, wizPostalMunicipalityColumn, wizPostalZipColumn, wizPostalCountryColumn, postalProviders, wizPostalServiceType, wizPostalCodiceContratto]);
 
   useEffect(() => {
     if (wizStep === 5 && wizCampaignId) {
@@ -4968,6 +4993,7 @@ export function App(): React.JSX.Element {
     setWizPostalMunicipalityColumn(source.channelConfig?.physicalAddressConfig?.municipalityColumn || '');
     setWizPostalZipColumn(source.channelConfig?.physicalAddressConfig?.zipColumn || '');
     setWizPostalProvinceColumn(source.channelConfig?.physicalAddressConfig?.provinceColumn || '');
+    setWizPostalCountryColumn(source.channelConfig?.physicalAddressConfig?.countryColumn || '');
     setWizPostalUserDataColumn(source.channelConfig?.userDataColumn || '');
     setWizBody(source.channelConfig?.body || '');
     setWizMailConfigId(source.channelConfig?.mailConfigId || '');
@@ -5187,6 +5213,7 @@ export function App(): React.JSX.Element {
           municipalityColumn: wizPostalMunicipalityColumn,
           zipColumn: wizPostalZipColumn,
           provinceColumn: wizPostalProvinceColumn,
+          countryColumn: wizPostalCountryColumn,
         };
       }
     }
@@ -5211,6 +5238,7 @@ export function App(): React.JSX.Element {
         municipalityColumn: wizPostalMunicipalityColumn,
         zipColumn: wizPostalZipColumn,
         provinceColumn: wizPostalProvinceColumn,
+        countryColumn: wizPostalCountryColumn,
       };
       if (wizPostalUserDataColumn) {
         cfg.userDataColumn = wizPostalUserDataColumn;
@@ -5565,6 +5593,7 @@ export function App(): React.JSX.Element {
             municipalityColumn: wizPostalMunicipalityColumn,
             zipColumn: wizPostalZipColumn,
             provinceColumn: wizPostalProvinceColumn,
+            countryColumn: wizPostalCountryColumn,
           };
         }
       } else if (wizChannel === 'POSTAL') {
@@ -5590,6 +5619,7 @@ export function App(): React.JSX.Element {
           municipalityColumn: wizPostalMunicipalityColumn,
           zipColumn: wizPostalZipColumn,
           provinceColumn: wizPostalProvinceColumn,
+          countryColumn: wizPostalCountryColumn,
         };
         if (wizPostalUserDataColumn) {
           channelConfig.userDataColumn = wizPostalUserDataColumn;
@@ -8727,6 +8757,18 @@ export function App(): React.JSX.Element {
                               <option value="">-- Seleziona Colonna Provincia --</option>
                               {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
                             </select>
+                          </div>
+                          <div className="col-md-6">
+                            <label className="form-label small fw-semibold">Colonna Paese (facoltativa)</label>
+                            <select
+                              className="form-select form-select-sm"
+                              value={wizPostalCountryColumn}
+                              onChange={(e) => setWizPostalCountryColumn(e.target.value)}
+                            >
+                              <option value="">-- Nessuna (indirizzo sempre domestico) --</option>
+                              {wizCsvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                            </select>
+                            <div className="form-text small">Se non mappata, tutti i destinatari sono trattati come domestici (Italia).</div>
                           </div>
                           <div className="col-md-6">
                             <label className="form-label small">Colonna riferimento gestionale tributi (Opzionale)</label>
