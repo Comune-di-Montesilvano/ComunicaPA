@@ -14,6 +14,7 @@ import { resolvePaymentData, resolvePhysicalAddress } from '../payment-config.ut
 import { getEffectiveRetentionDays } from '../../campaigns/retention.util';
 import { CampaignCompletionService } from '../../campaigns/campaign-completion.service';
 import { resolveSubjectTemplate } from '../subject-mapping.util';
+import { splitDenominazione, type DenominazioneAbbreviation } from '../postal/denominazione.util';
 
 const BATCH_SIZE = 200;
 
@@ -186,6 +187,22 @@ export class SendDispatchService {
     const physicalAddressConfig = cfg['physicalAddressConfig'] as Record<string, unknown> | undefined;
     const physicalAddress = resolvePhysicalAddress(recipient, physicalAddressConfig);
 
+    const abbreviationsRaw = await this.settings.get<string>('notifiche.denominazioneAbbreviations');
+    let abbreviations: DenominazioneAbbreviation[] = [];
+    try {
+      abbreviations = JSON.parse(abbreviationsRaw || '[]');
+    } catch {
+      this.logger.warn(`notifiche.denominazioneAbbreviations non è JSON valido, ignorata: ${abbreviationsRaw}`);
+    }
+    // SEND ha un solo campo denomination (max 88 char, verificato su spec PN
+    // raw) — riusa splitDenominazione solo per l'abbreviazione (maxPerLine=88
+    // disabilita di fatto lo split multi-riga per nomi fino a 88 char).
+    const { denominazione1: denomination } = splitDenominazione(
+      recipient.fullName ?? recipient.codiceFiscale,
+      abbreviations,
+      88,
+    );
+
     const payload: Record<string, unknown> = {
       // Deterministico sull'attemptId: un retry del demone (crash, errore rete)
       // riusa lo stesso token, PN deduplica invece di creare una seconda
@@ -204,7 +221,7 @@ export class SendDispatchService {
       recipients: [{
         recipientType: 'PF',
         taxId: recipient.codiceFiscale,
-        denomination: recipient.fullName ?? recipient.codiceFiscale,
+        denomination,
         ...(payments ? { payments } : {}),
         ...(physicalAddress ? { physicalAddress } : {}),
       }],
