@@ -1,4 +1,4 @@
-import { COUNTRIES, matchCountry } from './countries';
+import { COUNTRIES, matchCountry } from './index';
 
 describe('COUNTRIES', () => {
   it('include Italia e una selezione di paesi esteri comuni', () => {
