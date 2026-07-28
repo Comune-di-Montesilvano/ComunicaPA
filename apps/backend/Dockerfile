@@ -15,6 +15,14 @@ COPY tsconfig.base.json ./
 COPY packages/shared-types packages/shared-types
 COPY apps/backend apps/backend
 
+# shared-types va compilato esplicitamente (--ignore-scripts sopra blocca il suo
+# script "build" automatico) — "main"/"types" puntano a ./dist, mai a ./src: in
+# produzione "pnpm deploy" sotto copia il pacchetto DENTRO node_modules (non un
+# symlink come in dev), e Node blocca il type-stripping nativo per qualunque
+# file sotto node_modules (ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING) — bug
+# reale riscontrato in produzione, crash-loop del backend al primo require().
+RUN node_modules/.bin/tsc -p packages/shared-types/tsconfig.json
+
 WORKDIR /app/apps/backend
 RUN node_modules/.bin/nest build
 

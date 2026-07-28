@@ -153,6 +153,36 @@ WORKDIR /app/apps/backend
 CMD ["node_modules/.bin/nest", "start", "--watch"]
 ```
 
+## `@comunicapa/shared-types` — main deve puntare a `./dist`, mai a `./src`
+
+Bug reale in produzione (crash-loop del backend): `packages/shared-types/package.json`
+aveva `"main": "./src/index.ts"` (TS grezzo, nessuna build). In **dev**
+funzionava per un caso fortuito — `docker-compose.override.yml` bind-monta
+`packages/shared-types/src` e il layout pnpm workspace crea un **symlink**
+`node_modules/@comunicapa/shared-types` → `../../packages/shared-types`
+(fuori da `node_modules` una volta risolto il symlink), quindi Node 22 poteva
+fare type-stripping nativo senza problemi. In **produzione**
+(`apps/backend/Dockerfile`, `pnpm --filter backend deploy --prod`) il
+pacchetto viene invece **copiato realmente dentro** `node_modules` (nessun
+symlink — è il punto di `pnpm deploy`, un albero standalone) — e Node
+blocca esplicitamente il type-stripping per qualunque file sotto
+`node_modules` (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), crashando il
+backend al primo `require('@comunicapa/shared-types')` (es.
+`payment-config.util.ts`). Mai riprodotto in dev, solo dal vivo in
+produzione — l'ambiente dev bind-mount maschera completamente questa classe
+di bug.
+
+Fix: `package.json` → `"main": "./dist/index.js"`, `"types": "./dist/index.d.ts"`
+(mai `./src`). Entrambi `apps/backend/Dockerfile` e `Dockerfile.dev`
+compilano esplicitamente `packages/shared-types` (`tsc -p
+packages/shared-types/tsconfig.json`) subito dopo `pnpm install
+--ignore-scripts` — il suo script `"build"` non parte da solo per via di
+`--ignore-scripts`. **Conseguenza per lo sviluppo**: modificare
+`packages/shared-types/src/*.ts` richiede un rebuild del container backend
+(`docker compose build backend`) — il bind mount aggiorna solo `src/`, non
+`dist/`, stesso pattern già noto per modifiche fuori da `src/`
+dell'app stessa.
+
 ## TypeScript
 
 `tsconfig.base.json` alla root impone strict mode completo. Ogni app estende questa base. Il backend aggiunge `experimentalDecorators` e `emitDecoratorMetadata` (richiesti dai decorator NestJS).
