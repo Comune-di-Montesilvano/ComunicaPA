@@ -239,6 +239,9 @@ function WizRecipientPreviewPanel({
   wizChannel,
   wizAppIoMode,
   wizMapping,
+  settInadCheckEnabled,
+  wizSingleMode,
+  wizPdfFiles,
   fullWidth,
   widthClass,
 }: {
@@ -247,11 +250,14 @@ function WizRecipientPreviewPanel({
   setWizPreviewIndex: React.Dispatch<React.SetStateAction<number>>;
   wizPreviewResult: { subject: string; bodyHtml?: string; bodyMarkdown?: string } | null;
   wizPreviewLoading: boolean;
-  wizPreviewChannelTab: 'MAIN' | 'APP_IO';
-  setWizPreviewChannelTab: (tab: 'MAIN' | 'APP_IO') => void;
+  wizPreviewChannelTab: 'MAIN' | 'PEC' | 'APP_IO';
+  setWizPreviewChannelTab: (tab: 'MAIN' | 'PEC' | 'APP_IO') => void;
   wizChannel: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL';
   wizAppIoMode: 'none' | 'parallel' | 'exclusive';
   wizMapping: Record<string, string>;
+  settInadCheckEnabled?: boolean;
+  wizSingleMode?: boolean;
+  wizPdfFiles?: File[];
   fullWidth?: boolean;
   /** Classe colonna Bootstrap quando non fullWidth (default 'col-lg-6'). */
   widthClass?: string;
@@ -261,7 +267,7 @@ function WizRecipientPreviewPanel({
       <h4 className="h6 fw-bold text-dark mb-2">Anteprima Live Destinatari ({wizValidRows.length} totali)</h4>
       <p className="small text-muted mb-3">Sfoglia i record validi del CSV per vedere come verranno risolti i parametri Jolly. Anteprima renderizzata con lo stesso motore usato per l'invio reale (logo, footer e link inclusi).</p>
 
-      {(wizChannel === 'EMAIL' || wizChannel === 'PEC') && wizAppIoMode !== 'none' && (
+      {(wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && wizAppIoMode !== 'none' && (
         <div className="btn-group btn-group-sm mb-3" role="group">
           <button
             type="button"
@@ -270,6 +276,15 @@ function WizRecipientPreviewPanel({
           >
             <ChannelBadge channel={wizChannel} />
           </button>
+          {wizChannel === 'POSTAL' && settInadCheckEnabled && !wizSingleMode && (
+            <button
+              type="button"
+              className={`btn ${wizPreviewChannelTab === 'PEC' ? 'btn-primary' : 'btn-outline-secondary'}`}
+              onClick={() => setWizPreviewChannelTab('PEC')}
+            >
+              <ChannelBadge channel="PEC" extra="INAD" />
+            </button>
+          )}
           <button
             type="button"
             className={`btn ${wizPreviewChannelTab === 'APP_IO' ? 'btn-primary' : 'btn-outline-secondary'}`}
@@ -311,6 +326,33 @@ function WizRecipientPreviewPanel({
           ) : wizPreviewChannelTab === 'APP_IO' ? (
             <div className="bg-white border rounded p-3" data-color-mode="light">
               <MDEditor.Markdown source={wizPreviewResult?.bodyMarkdown ?? ''} />
+            </div>
+          ) : wizPreviewChannelTab === 'MAIN' && wizChannel === 'POSTAL' ? (
+            <div className="bg-white border rounded overflow-hidden" style={{ padding: '4px' }}>
+              {(() => {
+                const row = wizValidRows[wizPreviewIndex];
+                if (!row) return null;
+                const pdfNameInRow = Object.values(row).find(v => typeof v === 'string' && v.toLowerCase().endsWith('.pdf'));
+                let matchedFile = wizPdfFiles?.find(f => f.name === pdfNameInRow);
+                if (!matchedFile && wizSingleMode && wizPdfFiles && wizPdfFiles.length > 0) {
+                  matchedFile = wizPdfFiles[0];
+                }
+                
+                if (matchedFile) {
+                  const url = URL.createObjectURL(matchedFile);
+                  // Non ripuliamo URL.revokeObjectURL qui perché causerebbe sfarfallio
+                  // continuo ai re-render. Il browser garbage-collecta gli url all'uscita.
+                  return <embed type="application/pdf" src={url} style={{ width: '100%', aspectRatio: '1 / 1.414', border: 'none' }} />;
+                }
+                return (
+                  <div className="text-center text-muted small py-5 px-3 bg-light rounded">
+                    <FileText className="mb-2 text-secondary" size={32} /><br />
+                    Anteprima documento cartaceo indisponibile.<br />
+                    Il file PDF verrà caricato o generato {wizSingleMode ? '' : 'nello step successivo.'}
+                    {pdfNameInRow && <strong className="d-block mt-3 text-dark">File PDF atteso: {pdfNameInRow}</strong>}
+                  </div>
+                );
+              })()}
             </div>
           ) : wizPreviewResult?.bodyHtml ? (
             <div
@@ -1370,7 +1412,7 @@ export function App(): React.JSX.Element {
   const [wizPreviewIndex, setWizPreviewIndex] = useState(0);
   const [wizPreviewResult, setWizPreviewResult] = useState<{ subject: string; bodyHtml?: string; bodyMarkdown?: string } | null>(null);
   const [wizPreviewLoading, setWizPreviewLoading] = useState(false);
-  const [wizPreviewChannelTab, setWizPreviewChannelTab] = useState<'MAIN' | 'APP_IO'>('MAIN');
+  const [wizPreviewChannelTab, setWizPreviewChannelTab] = useState<'MAIN' | 'PEC' | 'APP_IO'>('MAIN');
   const [wizSending, setWizSending] = useState(false);
   const [wizUploadProgress, setWizUploadProgress] = useState<{ label: string; loaded: number; total: number } | null>(null);
   // Elenco file effettivamente presenti sul server dopo l'upload allegati (step5),
@@ -1452,7 +1494,7 @@ export function App(): React.JSX.Element {
         signal: controller.signal,
         body: JSON.stringify({
           campaignId: wizCampaignId || undefined,
-          channelType: wizPreviewChannelTab === 'APP_IO' ? 'APP_IO' : wizChannel,
+          channelType: wizPreviewChannelTab === 'APP_IO' ? 'APP_IO' : (wizPreviewChannelTab === 'PEC' ? 'PEC' : wizChannel),
           subject: wizPreviewChannelTab === 'APP_IO'
             ? (wizAppIoDifferentiate ? wizAppIoSubjectOverride : wizSubject)
             : ((wizMapping.subject && row[wizMapping.subject]?.trim()) || wizSubject || 'Oggetto della comunicazione'),
@@ -1535,16 +1577,7 @@ export function App(): React.JSX.Element {
 
   // App IO impone al campo content.markdown una lunghezza >= 80 e < 10001
   // caratteri (altrimenti PagoPA rifiuta con HTTP 400 "Invalid message
-  // structure"). Vale sia per il canale App IO diretto sia per il testo
-  // (eventualmente differenziato) usato in co-consegna con EMAIL/PEC.
-  // POSTAL non ha un body "riusabile" per App IO (è html da stampa, non testo
-  // per notifica push): niente fallback silenzioso al corpo della lettera,
-  // il campo differenziato è sempre attivo per questo canale (checkbox nascosta).
-  useEffect(() => {
-    if (wizChannel === 'POSTAL' && wizAppIoMode !== 'none' && !wizAppIoDifferentiate) {
-      setWizAppIoDifferentiate(true);
-    }
-  }, [wizChannel, wizAppIoMode, wizAppIoDifferentiate]);
+  // [Moved down below settInadCheckEnabled]
 
   const wizAppIoInvolved = wizChannel === 'APP_IO' || wizAppIoMode !== 'none';
   const wizAppIoBodyText = wizChannel === 'APP_IO'
@@ -1708,6 +1741,22 @@ export function App(): React.JSX.Element {
   const [loadingJobLogs, setLoadingJobLogs] = useState(false);
   // Sidebar mobile (≤991px): il CSS la nasconde con translateX finché body non ha .bo-sidebar-open
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // App IO impone al campo content.markdown una lunghezza >= 80 e < 10001
+  // caratteri (altrimenti PagoPA rifiuta con HTTP 400 "Invalid message
+  // structure"). Vale sia per il canale App IO diretto sia per il testo
+  // (eventualmente differenziato) usato in co-consegna con EMAIL/PEC.
+  // POSTAL non ha un body "riusabile" per App IO (è html da stampa, non testo
+  // per notifica push): niente fallback silenzioso al corpo della lettera,
+  // il campo differenziato è sempre attivo per questo canale (checkbox nascosta).
+  useEffect(() => {
+    if (wizChannel === 'POSTAL' && wizAppIoMode !== 'none' && !wizAppIoDifferentiate) {
+      // Se INAD è disattivo, o se è un invio singolo, la POSTAL non ha un template PEC da riusare.
+      if (!settInadCheckEnabled || wizSingleMode) {
+        setWizAppIoDifferentiate(true);
+      }
+    }
+  }, [wizChannel, wizAppIoMode, wizAppIoDifferentiate, settInadCheckEnabled, wizSingleMode]);
 
   useEffect(() => {
     document.body.classList.toggle('bo-sidebar-open', sidebarOpen);
@@ -9287,7 +9336,7 @@ export function App(): React.JSX.Element {
                       <div className="card mt-3 border-light shadow-sm" style={{ background: '#f8f9fc' }}>
                         <div className="card-body p-3">
                           <h6 className="small fw-bold text-dark mb-3"><Smartphone className="me-2 text-primary" size={16} />Co-consegna su App IO</h6>
-                          {wizChannel === 'POSTAL' ? (
+                          {wizChannel === 'POSTAL' && (!settInadCheckEnabled || wizSingleMode) ? (
                             <div className="form-text small text-muted mb-2">
                               La lettera cartacea non ha un formato riutilizzabile per una notifica push: oggetto e testo App IO vanno definiti a parte.
                             </div>
@@ -9301,7 +9350,7 @@ export function App(): React.JSX.Element {
                                 onChange={e => setWizAppIoDifferentiate(e.target.checked)}
                               />
                               <label className="form-check-label small" htmlFor="wiz-appio-differentiate">
-                                Differenzia oggetto e testo per App IO (altrimenti usa lo stesso di {channelLabel(wizChannel)})
+                                Differenzia oggetto e testo per App IO (altrimenti usa lo stesso {wizChannel === 'POSTAL' ? 'della PEC' : `di ${channelLabel(wizChannel)}`})
                               </label>
                             </div>
                           )}
@@ -9404,6 +9453,9 @@ export function App(): React.JSX.Element {
                     wizChannel={wizChannel}
                     wizAppIoMode={wizAppIoMode}
                     wizMapping={wizMapping}
+                    settInadCheckEnabled={settInadCheckEnabled}
+                    wizSingleMode={wizSingleMode}
+                    wizPdfFiles={wizPdfFiles}
                   />
                 </div>
                 </>
@@ -9803,6 +9855,9 @@ export function App(): React.JSX.Element {
                               wizChannel={wizChannel}
                               wizAppIoMode={wizAppIoMode}
                               wizMapping={wizMapping}
+                              settInadCheckEnabled={settInadCheckEnabled}
+                              wizSingleMode={wizSingleMode}
+                              wizPdfFiles={wizPdfFiles}
                               fullWidth={effectiveAttachments.length === 0 || !currentRow}
                               widthClass="col-lg-5"
                             />
