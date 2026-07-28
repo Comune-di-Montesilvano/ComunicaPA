@@ -32,6 +32,7 @@ import { UpdateCampaignDto } from './dto/update-campaign.dto';
 import { PreviewMessageDto } from './dto/preview-message.dto';
 import { TestSendDto } from './dto/test-send.dto';
 import { UpdateRecipientAddressDto } from './dto/update-recipient-address.dto';
+import { UpdateCampaignContentDto } from './dto/update-campaign-content.dto';
 import { getUploadsDir } from '../attachments/attachment-paths';
 import { buildNeverDownloadedCsv } from './never-downloaded-csv.util';
 import { buildDownloadReportCsv } from './download-report-csv.util';
@@ -102,6 +103,23 @@ export class CampaignsController {
     });
     return campaign;
   }
+  @Patch(':id/content')
+  async updateCampaignContent(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateCampaignContentDto,
+    @Req() req: Request & { user: JwtOperatorPayload },
+  ) {
+    const campaign = await this.campaignsService.updateCampaignContent(id, dto, req.user.username);
+    await this.auditLogsService.log({
+      campaignId: id,
+      campaignName: campaign.name,
+      operator: req.user.username,
+      action: 'CONTENT_CORRECTION',
+      details: { subjectChanged: dto.subject !== undefined, bodyChanged: dto.body !== undefined },
+    });
+    return campaign;
+  }
+
   @Post('preview')
   previewMessage(@Body() dto: PreviewMessageDto) {
     return this.campaignsService.previewMessage(dto);

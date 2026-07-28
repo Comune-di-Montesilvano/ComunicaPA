@@ -23,6 +23,7 @@ describe('CampaignsController', () => {
     finalizeInadCheck: jest.fn().mockResolvedValue(undefined),
     skipInadCheck: jest.fn().mockResolvedValue({ launched: 3, campaignId: 'uuid-1' }),
     getRecipientIdsByChannelOutcome: jest.fn(),
+    updateCampaignContent: jest.fn(),
   };
 
   const mockAuditLogsService = {
@@ -143,6 +144,18 @@ describe('CampaignsController', () => {
       expect(res).toEqual({ uploaded: 2, discarded: 0, campaignId: 'uuid-1' });
       expect(unlinkSpy).not.toHaveBeenCalled();
       unlinkSpy.mockRestore();
+    });
+  });
+
+  describe('updateCampaignContent', () => {
+    it('PATCH content: delega al service e loggua audit', async () => {
+      mockService.updateCampaignContent = jest.fn(async () => ({ id: 'camp-1', name: 'TARI' } as any));
+
+      const result = await controller.updateCampaignContent('camp-1', { body: 'nuovo' }, mockReq);
+
+      expect(mockService.updateCampaignContent).toHaveBeenCalledWith('camp-1', { body: 'nuovo' }, 'test-operator');
+      expect(mockAuditLogsService.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'CONTENT_CORRECTION' }));
+      expect(result).toEqual({ id: 'camp-1', name: 'TARI' });
     });
   });
 

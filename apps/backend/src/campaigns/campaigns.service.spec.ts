@@ -3050,6 +3050,84 @@ describe('CampaignsService.updateDraft', () => {
   });
 });
 
+describe('CampaignsService.updateCampaignContent', () => {
+  const campaignRepoMock = { findOneBy: jest.fn(), save: jest.fn((x) => x) };
+
+  const buildModule = () =>
+    Test.createTestingModule({
+      providers: [
+        CampaignsService,
+        { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
+        { provide: getRepositoryToken(Recipient), useValue: {} },
+        { provide: getRepositoryToken(NotificationAttempt), useValue: {} },
+        { provide: getRepositoryToken(DownloadEvent), useValue: {} },
+        { provide: NotificationQueuesService, useValue: {} },
+        { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
+        { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
+        { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
+      ],
+    }).compile();
+
+  it('campagna non terminale → BadRequestException', async () => {
+    campaignRepoMock.findOneBy.mockResolvedValue({ id: 'camp-1', status: CampaignStatus.RUNNING, channelConfig: {} });
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    await expect(service.updateCampaignContent('camp-1', { body: 'nuovo' }, 'op')).rejects.toThrow(BadRequestException);
+  });
+
+  it('né subject né body → BadRequestException', async () => {
+    campaignRepoMock.findOneBy.mockResolvedValue({ id: 'camp-1', status: CampaignStatus.COMPLETED, channelConfig: {} });
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    await expect(service.updateCampaignContent('camp-1', {}, 'op')).rejects.toThrow(BadRequestException);
+  });
+
+  it('storicizza la versione precedente prima di sovrascrivere, merge senza toccare altre chiavi', async () => {
+    const campaign = {
+      id: 'camp-1', status: CampaignStatus.COMPLETED,
+      channelConfig: { subject: 'Vecchio oggetto', body: '', postalServiceType: 'RaccomandataMarket4' },
+    };
+    campaignRepoMock.findOneBy.mockResolvedValue(campaign);
+    campaignRepoMock.save.mockImplementation(async (c: any) => c);
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    const saved = await service.updateCampaignContent('camp-1', { subject: 'Nuovo oggetto', body: 'Nuovo testo' }, 'admin1');
+
+    expect(saved.channelConfig.subject).toBe('Nuovo oggetto');
+    expect(saved.channelConfig.body).toBe('Nuovo testo');
+    expect(saved.channelConfig.postalServiceType).toBe('RaccomandataMarket4'); // non toccato
+    expect(saved.channelConfig.contentHistory).toEqual([
+      expect.objectContaining({ subject: 'Vecchio oggetto', body: '', changedBy: 'admin1' }),
+    ]);
+  });
+
+  it('seconda correzione: accoda in history senza perdere la prima voce', async () => {
+    const campaign = {
+      id: 'camp-1', status: CampaignStatus.COMPLETED,
+      channelConfig: {
+        subject: 'Secondo oggetto', body: 'Secondo testo',
+        contentHistory: [{ subject: 'Primo oggetto', body: 'Primo testo', changedBy: 'admin1', changedAt: '2026-07-28T10:00:00.000Z' }],
+      },
+    };
+    campaignRepoMock.findOneBy.mockResolvedValue(campaign);
+    campaignRepoMock.save.mockImplementation(async (c: any) => c);
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    const saved = await service.updateCampaignContent('camp-1', { body: 'Terzo testo' }, 'admin2');
+    const savedContentHistory = (saved.channelConfig as any).contentHistory;
+
+    expect(savedContentHistory).toHaveLength(2);
+    expect(savedContentHistory[0].subject).toBe('Primo oggetto');
+    expect(savedContentHistory[1]).toEqual(
+      expect.objectContaining({ subject: 'Secondo oggetto', body: 'Secondo testo', changedBy: 'admin2' }),
+    );
+  });
+});
+
 describe('CampaignsService.previewMessage', () => {
   const mockSettings = {
     get: jest.fn(async (key: string) => {

@@ -27,6 +27,7 @@ import { NotificationQueuesService } from '../queue/notification-queues.service'
 import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util';
 import type { CreateCampaignDto } from './dto/create-campaign.dto';
 import type { UpdateCampaignDto } from './dto/update-campaign.dto';
+import type { UpdateCampaignContentDto } from './dto/update-campaign-content.dto';
 import type { TestSendDto } from './dto/test-send.dto';
 import type { CampaignStatsDto, RecipientStatDto, RecipientStatsPageDto, ChannelBreakdownDto, EffectiveChannelBreakdownDto, DownloadCombinationDto, DownloadCombinationStatsDto, FailureRowDto, FailureGroupDto, RetryBulkResultDto, DownloadReportDto, SendStatusBreakdownDto, SendReportDto, SendReportRowDto, PostalStatusBreakdownDto, PostalReportDto, PostalReportRowDto, CampaignCostDto, CampaignCostSavingsDto } from './dto/campaign-stats.dto';
 import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.dto';
@@ -125,6 +126,46 @@ export class CampaignsService {
     if (dto.description !== undefined) campaign.description = dto.description;
     if (dto.channelConfig !== undefined) campaign.channelConfig = dto.channelConfig;
     if (dto.isLegalValue !== undefined) campaign.isLegalValue = dto.isLegalValue;
+    return this.campaignRepo.save(campaign);
+  }
+
+  /**
+   * Corregge subject/body di una campagna già conclusa, storicizzando la
+   * versione precedente in channelConfig.contentHistory. MERGE puntuale su
+   * subject/body — mai un replace completo di channelConfig (a differenza di
+   * updateDraft sopra), per non perdere le altre chiavi già presenti
+   * (allegati, config canale, ecc.).
+   */
+  async updateCampaignContent(
+    campaignId: string,
+    dto: UpdateCampaignContentDto,
+    changedBy: string,
+  ): Promise<Campaign> {
+    if (dto.subject === undefined && dto.body === undefined) {
+      throw new BadRequestException('Specificare almeno subject o body da correggere');
+    }
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+    const terminal = [CampaignStatus.COMPLETED, CampaignStatus.FAILED, CampaignStatus.CANCELLED];
+    if (!terminal.includes(campaign.status)) {
+      throw new BadRequestException('Il contenuto si può correggere solo su una campagna già conclusa (completata, fallita o annullata)');
+    }
+
+    const cfg = campaign.channelConfig as Record<string, any>;
+    const previousEntry = {
+      subject: (cfg['subject'] as string) ?? null,
+      body: (cfg['body'] as string) ?? null,
+      changedBy,
+      changedAt: new Date().toISOString(),
+    };
+    const history = Array.isArray(cfg['contentHistory']) ? cfg['contentHistory'] : [];
+
+    campaign.channelConfig = {
+      ...cfg,
+      contentHistory: [...history, previousEntry],
+      ...(dto.subject !== undefined ? { subject: dto.subject } : {}),
+      ...(dto.body !== undefined ? { body: dto.body } : {}),
+    };
     return this.campaignRepo.save(campaign);
   }
 
