@@ -745,6 +745,24 @@ function isValidCap(value: string): boolean {
   return /^\d{5}$/.test(value.trim());
 }
 
+// Risolve LO STESSO contratto specifico usato sia dal banner di avviso
+// "contratto non supporta estero" sia dal gate di esclusione riga per riga
+// nella validazione CSV massiva — prima di questo fix i due punti usavano
+// notazioni diverse (banner: .every() su TUTTI i contratti della Tipologia,
+// gate: il contratto risolto/selezionato), potendo divergere quando esistono
+// più contratti per la stessa Tipologia e solo uno supporta l'estero.
+// Ritorna: 'none' se nessun contratto esiste per questa Tipologia (caso
+// legittimo per Raccomandata/Lettera senza H2H), altrimenti il contratto
+// risolto (override esplicito wizPostalCodiceContratto, o il primo match).
+function resolvePostalContract(
+  contrattiPerTipo: Array<{ codiceContratto: string; descrizione: string; tipologia: string; estero: boolean }>,
+  wizPostalCodiceContratto: string,
+): { codiceContratto: string; descrizione: string; tipologia: string; estero: boolean } | 'none' {
+  if (contrattiPerTipo.length === 0) return 'none';
+  const resolved = contrattiPerTipo.find((c) => c.codiceContratto === (wizPostalCodiceContratto || contrattiPerTipo[0]?.codiceContratto));
+  return resolved ?? 'none';
+}
+
 // Escapes HTML-special characters in untrusted values (e.g. CSV cell content)
 // before they are interpolated into a string that will be rendered via
 // dangerouslySetInnerHTML. Must NOT be applied to the operator's own
@@ -4834,8 +4852,12 @@ export function App(): React.JSX.Element {
 
           if (isForeignRow) {
             const activeProvider = postalProviders.find(p => p.active);
-            const contrattoAttivo = activeProvider?.contratti.find(c => wizPostalServiceType.startsWith(c.tipologia) && c.codiceContratto === (wizPostalCodiceContratto || activeProvider.contratti.find(cc => wizPostalServiceType.startsWith(cc.tipologia))?.codiceContratto));
-            if (!contrattoAttivo?.estero) {
+            const contrattiPerTipoRow = activeProvider?.contratti.filter(c => wizPostalServiceType.startsWith(c.tipologia)) ?? [];
+            const contrattoAttivo = resolvePostalContract(contrattiPerTipoRow, wizPostalCodiceContratto);
+            if (contrattoAttivo === 'none') {
+              errors.push({ row: rowNum, field: 'Paese', val: matchedCountry || rawCountryVal, err: 'Indirizzo estero ma nessun contratto è configurato per questo Servizio: impossibile verificare il supporto estero, il destinatario verrà escluso dall\'invio.' });
+              isRowValid = false;
+            } else if (!contrattoAttivo.estero) {
               errors.push({ row: rowNum, field: 'Paese', val: matchedCountry || rawCountryVal, err: 'Indirizzo estero ma il contratto POSTAL configurato non supporta spedizioni estero: record escluso dall\'invio.' });
               isRowValid = false;
             }
@@ -5261,7 +5283,13 @@ export function App(): React.JSX.Element {
     if (wizChannel === 'SEND') {
       cfg.taxonomyCode = wizTaxonomyCode;
       cfg.physicalCommunicationType = wizPhysicalCommunicationType;
-      if (wizSingleMode) {
+      // Facoltativo per SEND (fallback PN se non risolve un domicilio
+      // digitale legale) — a differenza di POSTAL non è mai obbligatorio,
+      // quindi va scritto sia in modalità singola che massiva (bulk) quando
+      // l'operatore ha effettivamente mappato una colonna Indirizzo, non solo
+      // per wizSingleMode (bug: prima le campagne SEND massive non avevano
+      // MAI physicalAddressConfig, indipendentemente dalla mappatura).
+      if (wizPostalAddressColumn) {
         cfg.physicalAddressConfig = {
           enabled: true,
           addressColumn: wizPostalAddressColumn,
@@ -5641,7 +5669,9 @@ export function App(): React.JSX.Element {
           physicalCommunicationType: wizPhysicalCommunicationType,
           attachments: wizAttachments,
         };
-        if (wizSingleMode) {
+        // Vedi commento gemello in buildWizChannelConfigDraft: facoltativo per
+        // SEND, va scritto sia in singolo che massivo quando mappato.
+        if (wizPostalAddressColumn) {
           channelConfig.physicalAddressConfig = {
             enabled: true,
             addressColumn: wizPostalAddressColumn,
@@ -7531,6 +7561,7 @@ export function App(): React.JSX.Element {
                           const activeProvider = postalProviders.find((p) => p.active);
                           const enabledTypes = activeProvider?.enabledServiceTypes ?? [];
                           const contrattiPerTipo = activeProvider?.contratti.filter((c) => wizPostalServiceType.startsWith(c.tipologia)) ?? [];
+                          const resolvedContract = wizPostalServiceType ? resolvePostalContract(contrattiPerTipo, wizPostalCodiceContratto) : 'none';
                           return (
                             <div className="row g-3">
                               {!activeProvider && (
@@ -7571,7 +7602,15 @@ export function App(): React.JSX.Element {
                                   </select>
                                 </div>
                               )}
-                              {contrattiPerTipo.length > 0 && contrattiPerTipo.every(c => !c.estero) && (
+                              {wizPostalServiceType && resolvedContract === 'none' && (
+                                <div className="col-12">
+                                  <div className="alert alert-warning py-2 small mt-2 mb-0">
+                                    <AlertCircle className="me-1" size={16} />
+                                    Nessun contratto configurato per questo Servizio: i destinatari con indirizzo estero verranno esclusi dall'invio (vedi mapping colonna Paese al Passo 3).
+                                  </div>
+                                </div>
+                              )}
+                              {resolvedContract !== 'none' && !resolvedContract.estero && (
                                 <div className="col-12">
                                   <div className="alert alert-warning py-2 small mt-2 mb-0">
                                     <AlertCircle className="me-1" size={16} />
@@ -7710,6 +7749,17 @@ export function App(): React.JSX.Element {
                                 value={singleCountry}
                                 onChange={(e) => setSingleCountry(e.target.value)}
                               >
+                                {/* Se l'autofill AIRE ha restituito una dicitura Paese che non
+                                    combacia con nessuna voce di COUNTRIES (es. apostrofo tipografico
+                                    diverso, dicitura non censita), singleCountry resta comunque
+                                    valorizzato con la stringa grezza ANPR — senza questa option
+                                    extra il <select> ricadrebbe silenziosamente sulla prima voce
+                                    (Italia), mostrando "Italia" mentre lo stato React contiene
+                                    ancora il valore estero: un destinatario estero apparirebbe/si
+                                    comporterebbe come domestico. Operatore deve verificare a mano. */}
+                                {singleCountry !== 'Italia' && !COUNTRIES.includes(singleCountry as any) && (
+                                  <option value={singleCountry}>{singleCountry} (non riconosciuto — verificare)</option>
+                                )}
                                 {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
                               </select>
                             </div>
@@ -8134,6 +8184,7 @@ export function App(): React.JSX.Element {
                     const activeProvider = postalProviders.find((p) => p.active);
                     const enabledTypes = activeProvider?.enabledServiceTypes ?? [];
                     const contrattiPerTipo = activeProvider?.contratti.filter((c) => wizPostalServiceType.startsWith(c.tipologia)) ?? [];
+                    const resolvedContract = wizPostalServiceType ? resolvePostalContract(contrattiPerTipo, wizPostalCodiceContratto) : 'none';
                     return (
                     <div className="row g-3 mb-3">
                       {!activeProvider && (
@@ -8202,7 +8253,15 @@ export function App(): React.JSX.Element {
                           </select>
                         </div>
                       )}
-                      {contrattiPerTipo.length > 0 && contrattiPerTipo.every(c => !c.estero) && (
+                      {wizPostalServiceType && resolvedContract === 'none' && (
+                        <div className="col-12">
+                          <div className="alert alert-warning py-2 small mt-2 mb-0">
+                            <AlertCircle className="me-1" size={16} />
+                            Nessun contratto configurato per questo Servizio: i destinatari con indirizzo estero verranno esclusi dall'invio (vedi mapping colonna Paese al Passo 3).
+                          </div>
+                        </div>
+                      )}
+                      {resolvedContract !== 'none' && !resolvedContract.estero && (
                         <div className="col-12">
                           <div className="alert alert-warning py-2 small mt-2 mb-0">
                             <AlertCircle className="me-1" size={16} />
@@ -8791,32 +8850,40 @@ export function App(): React.JSX.Element {
                     </div>
                   )}
 
-                  {wizChannel === 'POSTAL' && (
+                  {(wizChannel === 'POSTAL' || wizChannel === 'SEND') && (
                     <div className="card border-light shadow-sm mb-4" style={{ background: '#f8f9fc' }}>
                       <div className="card-body p-3">
                         <h6 className="small fw-bold text-dark mb-3">
-                          <MapPin className="me-2 text-primary" />Indirizzo Destinatario (Postalizzazione)
+                          <MapPin className="me-2 text-primary" />
+                          {wizChannel === 'POSTAL'
+                            ? 'Indirizzo Destinatario (Postalizzazione)'
+                            : 'Indirizzo Destinatario (opzionale — fallback SEND)'}
                         </h6>
+                        {wizChannel === 'SEND' && (
+                          <div className="form-text small text-muted mb-2">
+                            Facoltativo per SEND: usato da PN solo come fallback se non riesce a risolvere un domicilio digitale legale per il destinatario (es. CF non trovato su ANPR/INAD). Se non mappato, nessun indirizzo fisico viene inviato.
+                          </div>
+                        )}
                         <div className="row g-2">
                           <div className="col-md-6">
-                            <label className="form-label small fw-bold">Colonna Indirizzo *</label>
+                            <label className="form-label small fw-bold">Colonna Indirizzo{wizChannel === 'POSTAL' ? ' *' : ' (Opzionale)'}</label>
                             <select
                               className="form-select form-select-sm"
                               value={wizPostalAddressColumn}
                               onChange={e => setWizPostalAddressColumn(e.target.value)}
-                              required
+                              required={wizChannel === 'POSTAL'}
                             >
                               <option value="">-- Seleziona Colonna Indirizzo --</option>
                               {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
                             </select>
                           </div>
                           <div className="col-md-6">
-                            <label className="form-label small fw-bold">Colonna Città *</label>
+                            <label className="form-label small fw-bold">Colonna Città{wizChannel === 'POSTAL' ? ' *' : ' (Opzionale)'}</label>
                             <select
                               className="form-select form-select-sm"
                               value={wizPostalMunicipalityColumn}
                               onChange={e => setWizPostalMunicipalityColumn(e.target.value)}
-                              required
+                              required={wizChannel === 'POSTAL'}
                             >
                               <option value="">-- Seleziona Colonna Città --</option>
                               {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
@@ -8856,18 +8923,20 @@ export function App(): React.JSX.Element {
                             </select>
                             <div className="form-text small">Se non mappata, tutti i destinatari sono trattati come domestici (Italia).</div>
                           </div>
-                          <div className="col-md-6">
-                            <label className="form-label small">Colonna riferimento gestionale tributi (Opzionale)</label>
-                            <select
-                              className="form-select form-select-sm"
-                              value={wizPostalUserDataColumn}
-                              onChange={e => setWizPostalUserDataColumn(e.target.value)}
-                            >
-                              <option value="">-- Nessuna --</option>
-                              {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
-                            </select>
-                            <div className="form-text small text-muted">Riportato in UserData1 su GlobalCom per riconciliazione col gestionale tributi (es. Maggioli).</div>
-                          </div>
+                          {wizChannel === 'POSTAL' && (
+                            <div className="col-md-6">
+                              <label className="form-label small">Colonna riferimento gestionale tributi (Opzionale)</label>
+                              <select
+                                className="form-select form-select-sm"
+                                value={wizPostalUserDataColumn}
+                                onChange={e => setWizPostalUserDataColumn(e.target.value)}
+                              >
+                                <option value="">-- Nessuna --</option>
+                                {wizCsvHeaders.map(h => <option key={h} value={h}>{wizColumnOptionLabel(h)}</option>)}
+                              </select>
+                              <div className="form-text small text-muted">Riportato in UserData1 su GlobalCom per riconciliazione col gestionale tributi (es. Maggioli).</div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
