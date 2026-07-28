@@ -5933,6 +5933,13 @@ export function App(): React.JSX.Element {
         }
       } else if (wizChannel === 'POSTAL') {
         channelConfig.subject = wizSubject;
+        // Non usato per la lettera cartacea (generata da allegati, non da
+        // body HTML) ma riusato come template PEC/App IO per i destinatari
+        // dirottati da INAD o per la co-consegna App IO senza differenziazione
+        // — omesso qui, i dirottati/App IO ricevevano solo il testo di default
+        // (bug reale: buildWizChannelConfigDraft lo salva in bozza, questo
+        // ramo lo perdeva al lancio per il replace completo di channelConfig).
+        channelConfig.body = wizBody;
         channelConfig.attachments = wizAttachments;
         channelConfig.postalServiceType = wizPostalServiceType;
         channelConfig.postalReturnReceipt = wizPostalReturnReceipt;

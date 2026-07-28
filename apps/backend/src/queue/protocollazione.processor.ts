@@ -71,6 +71,13 @@ export class ProtocollazioneProcessor extends WorkerHost {
     const campaign = recipient.campaign;
     const cfg = campaign.channelConfig as Record<string, unknown>;
     const subject = (cfg['subject'] as string) ?? campaign.name;
+    // attempt.channelType (non campaign.channelType) è il canale effettivo del
+    // destinatario: un override INAD dirotta su PEC anche per una campagna
+    // POSTAL/EMAIL/APP_IO — bug reale corretto: usare campaign.channelType qui
+    // faceva cadere i dirottati nel ramo "solo PDF" invece di generare l'EML
+    // col contenuto PEC reale (stesso principio già applicato più sotto per
+    // l'accodamento sul canale dopo la protocollazione).
+    const effectiveChannel = attempt.channelType as NotificationChannel;
 
     try {
       const { nome, cognome } = splitFullName(recipient.fullName);
@@ -87,7 +94,7 @@ export class ProtocollazioneProcessor extends WorkerHost {
 
       const allegati: ProtocollaAllegato[] = [];
 
-      if (campaign.channelType === 'EMAIL' || campaign.channelType === 'PEC') {
+      if (effectiveChannel === 'EMAIL' || effectiveChannel === 'PEC') {
         const brandName = (await this.settings.get<string>('brand.name')) || 'Comune di Montesilvano';
         const publicApiUrl = (await this.settings.get<string>('system.publicUrl')) || '';
         const downloadLinkSecret = this.config.get<string>('downloadLink.secret') || '';
@@ -101,8 +108,8 @@ export class ProtocollazioneProcessor extends WorkerHost {
           : null;
         const portalUrl = await resolveCitizenPortalUrl(this.settings);
 
-        const subjectTemplate = (cfg['subject'] as string) || (campaign.channelType === 'PEC' ? 'Notifica PEC ComunicaPA' : 'Notifica Email ComunicaPA');
-        const bodyTemplate = (cfg['body'] as string) || (campaign.channelType === 'PEC' ? 'Hai ricevuto una nuova notifica PEC.' : 'Hai ricevuto una nuova notifica Email.');
+        const subjectTemplate = (cfg['subject'] as string) || (effectiveChannel === 'PEC' ? 'Notifica PEC ComunicaPA' : 'Notifica Email ComunicaPA');
+        const bodyTemplate = (cfg['body'] as string) || (effectiveChannel === 'PEC' ? 'Hai ricevuto una nuova notifica PEC.' : 'Hai ricevuto una nuova notifica Email.');
         const attachmentLabels = resolveAttachmentsConfig(campaign.channelConfig).map((a) => resolveAttachmentLabel(a, recipient));
 
         // Resolve body templates with temp protocol number
@@ -111,11 +118,11 @@ export class ProtocollazioneProcessor extends WorkerHost {
           protocolNumber: '[Numero Protocollo generato in trasmissione]',
         } as any;
 
-        const resolvedSubject = processTemplate(subjectTemplate, tempRecipient, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, 'html', campaign.channelType);
-        const resolvedBodyText = processTemplate(bodyTemplate, tempRecipient, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, 'html', campaign.channelType);
+        const resolvedSubject = processTemplate(subjectTemplate, tempRecipient, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, 'html', effectiveChannel);
+        const resolvedBodyText = processTemplate(bodyTemplate, tempRecipient, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, 'html', effectiveChannel);
         const resolvedBodyHtml = wrapInHtmlLayout(resolvedBodyText, brandName, { logoUrl, portalUrl });
 
-        const toAddress = campaign.channelType === 'PEC' ? recipient.pec : recipient.email;
+        const toAddress = effectiveChannel === 'PEC' ? recipient.pec : recipient.email;
         const emlContent = [
           `From: ${brandName}`,
           `To: ${toAddress || ''}`,
@@ -132,7 +139,7 @@ export class ProtocollazioneProcessor extends WorkerHost {
           allegati.push({
             buffer: Buffer.from(emlContent, 'utf-8'),
             filename: 'messaggio.eml',
-            oggetto: `Messaggio ${campaign.channelType} trasmesso`,
+            oggetto: `Messaggio ${effectiveChannel} trasmesso`,
           });
         } else {
           // Nessun allegato configurato: il messaggio stesso è il documento
@@ -173,13 +180,6 @@ export class ProtocollazioneProcessor extends WorkerHost {
       this.logger.log(msg);
       jobLog(msg);
 
-      // attempt.channelType (non campaign.channelType) è il canale effettivo del
-      // destinatario: può divergere dal canale di campagna se un override INAD
-      // ha dirottato questo destinatario su PEC (campagna EMAIL/POSTAL/APP_IO) —
-      // bug reale osservato in produzione: usare campaign.channelType qui
-      // faceva ripartire l'invio sul canale originale, vanificando l'override
-      // già applicato correttamente al momento della creazione dell'attempt.
-      const effectiveChannel = attempt.channelType as NotificationChannel;
       if (effectiveChannel !== 'SEND') {
         await this.notificationQueues.addBulk(effectiveChannel as Exclude<NotificationChannel, 'SEND'>, [
           {
