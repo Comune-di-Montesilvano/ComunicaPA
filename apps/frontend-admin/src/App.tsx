@@ -6590,20 +6590,26 @@ export function App(): React.JSX.Element {
         alert('Nessun destinatario trovato per questa categoria.');
         return;
       }
-      if (recipientIds.length > MAX_RESEND_BY_OUTCOME_SIZE) {
-        alert(`Troppi destinatari selezionati (${recipientIds.length}). Il limite per una sola richiesta è ${MAX_RESEND_BY_OUTCOME_SIZE}: riduci la selezione o contatta l'amministratore per un'operazione batch.`);
-        return;
-      }
       if (!confirm(`Rimandare il contenuto corretto a ${recipientIds.length} destinatari? Il canale primario POSTAL/SEND non verrà mai ripetuto.`)) return;
-      const res = await apiFetch(`/campaigns/${campaignId}/resend-content`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recipientIds }),
-      });
-      const results = await res.json();
-      const resent = results.filter((r: any) => r.result === 'resent').length;
-      const skipped = results.filter((r: any) => r.result === 'skipped').length;
-      const errored = results.filter((r: any) => r.result === 'error').length;
+
+      // Il backend cappa a MAX_RESEND_BY_OUTCOME_SIZE per chiamata (costo I/O
+      // esterno per-destinatario verso PagoPA, vedi CLAUDE.md sui bulk dietro
+      // il reverse proxy) — sopra soglia si spezza in blocchi sequenziali,
+      // mai in parallelo (evita di sommergere PagoPA/il proxy), sommando gli
+      // esiti invece di fallire l'intera operazione.
+      let resent = 0, skipped = 0, errored = 0;
+      for (let i = 0; i < recipientIds.length; i += MAX_RESEND_BY_OUTCOME_SIZE) {
+        const chunk = recipientIds.slice(i, i + MAX_RESEND_BY_OUTCOME_SIZE);
+        const res = await apiFetch(`/campaigns/${campaignId}/resend-content`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ recipientIds: chunk }),
+        });
+        const results = await res.json();
+        resent += results.filter((r: any) => r.result === 'resent').length;
+        skipped += results.filter((r: any) => r.result === 'skipped').length;
+        errored += results.filter((r: any) => r.result === 'error').length;
+      }
       alert(`Rimandati: ${resent}. Saltati: ${skipped}. Errori: ${errored}.`);
     } catch {
       alert('Errore durante il resend.');
