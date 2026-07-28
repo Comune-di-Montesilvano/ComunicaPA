@@ -1742,9 +1742,15 @@ export class CampaignsService {
       // relazione 1-a-molti (un destinatario può avere più attempt): il
       // riduttore "ultimo per destinatario" si fa in JS sul risultato,
       // batch piccolo (una pagina di destinatari), nessun impatto pratico.
+      // Niente filtro su channelType: un destinatario dirottato da INAD ha
+      // channelType diverso da campaign.channelType sul suo attempt reale
+      // (es. POSTAL->PEC) — filtrare sul canale di campagna escludeva questi
+      // attempt, mostrando "—" su protocollo/iun/stato anche quando il dato
+      // esisteva davvero in DB (stesso bug già corretto altrove per
+      // getSendStageCounts, mai applicato qui).
       const recipientIds = items.map((r) => r.id);
       const attempts = await this.attemptRepo.find({
-        where: { recipientId: In(recipientIds), channelType: campaign.channelType },
+        where: { recipientId: In(recipientIds) },
       });
       const latestByRecipient = new Map<string, NotificationAttempt>();
       for (const a of attempts) {

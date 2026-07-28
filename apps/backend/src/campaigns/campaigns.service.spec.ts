@@ -475,6 +475,37 @@ describe('CampaignsService', () => {
       expect(mockAttemptRepo.find).not.toHaveBeenCalled();
       expect(result.items[0].iun).toBeUndefined();
     });
+
+    it('trova il protocolNumber anche per un destinatario dirottato da INAD su un canale diverso da quello di campagna (POSTAL->PEC)', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ id: 'camp-3', channelType: 'POSTAL', channelConfig: { protocolla: true } });
+      const mockQb = {
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getManyAndCount: jest.fn().mockResolvedValue([
+          [{ id: 'r3', fullName: 'Anna Verdi', codiceFiscale: 'VRDNNA80A01H501Z', email: null, pec: 'anna@pec.it', status: 'sent', downloadCount: 0, firstDownloadedAt: null, lastDownloadedAt: null, attachmentDeletedAt: null }],
+          1,
+        ]),
+      };
+      mockRecipientRepo.createQueryBuilder.mockReturnValue(mockQb);
+      // Attempt reale: dirottato da INAD, channelType='PEC' mentre la campagna è POSTAL.
+      mockAttemptRepo.find.mockResolvedValueOnce([
+        { recipientId: 'r3', channelType: 'PEC', attemptNumber: 1, protocolNumber: 999, protocolYear: 2026 },
+      ]);
+
+      const result = await service.getRecipientStats('camp-3', 1, 50);
+
+      // La query attempt non deve filtrare per channelType di campagna: un
+      // destinatario dirottato da INAD ha channelType diverso (PEC) da
+      // campaign.channelType (POSTAL) sul suo attempt reale.
+      expect(mockAttemptRepo.find).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.not.objectContaining({ channelType: expect.anything() }) }),
+      );
+      expect(result.items[0]).toMatchObject({ id: 'r3', protocolNumber: 999, protocolYear: 2026 });
+    });
   });
 
   it('assertDraftForAttachments passa per campagna DRAFT', async () => {
