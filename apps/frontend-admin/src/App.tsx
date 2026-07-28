@@ -4543,6 +4543,17 @@ export function App(): React.JSX.Element {
         setSingleMunicipality(ind.comune?.nomeComune || '');
         setSingleZip(ind.cap || '');
         setSingleProvince(ind.comune?.siglaProvinciaIstat || '');
+        setSingleCountry('Italia');
+      } else if (data?.anpr?.success && data?.anpr?.found && residenza?.localitaEstera?.indirizzoEstero) {
+        const ind = residenza.localitaEstera.indirizzoEstero;
+        const via = [ind.toponimo?.denominazione, ind.toponimo?.numeroCivico].filter(Boolean).join(' ');
+        const paeseRaw = ind.localita?.descrizioneStato || '';
+        const matched = paeseRaw ? matchCountry(paeseRaw) : null;
+        setSingleAddress(via);
+        setSingleMunicipality(ind.localita?.descrizioneLocalita || '');
+        setSingleZip(ind.cap || '');
+        setSingleProvince('');
+        setSingleCountry(matched || paeseRaw || 'Italia');
       }
 
       const inadFound = Boolean(data?.inad?.success && data?.inad?.found && (data?.inad?.digitalAddress?.length ?? 0) > 0);
@@ -7654,7 +7665,12 @@ export function App(): React.JSX.Element {
                               />
                             </div>
                             <div className="col-md-6">
-                              <label className="form-label small fw-semibold">Paese</label>
+                              <label className="form-label small fw-semibold">
+                                Paese
+                                {singleAnprCheckedCf === singleCf && singleCountry !== 'Italia' && (
+                                  <span className="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-2">Compilato da AIRE</span>
+                                )}
+                              </label>
                               <select
                                 className="form-select form-select-sm"
                                 value={singleCountry}
