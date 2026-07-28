@@ -3,6 +3,7 @@ import { PostalStrategy } from './postal.strategy';
 import { GlobalComClient } from './globalcom-client.service';
 import { PostalProvidersService, type ResolvedPostalProvider } from '../../postal-providers/postal-providers.service';
 import { AttachmentService } from '../../attachments/attachment.service';
+import { AppSettingsService } from '../../settings/app-settings.service';
 
 describe('PostalStrategy', () => {
   let strategy: PostalStrategy;
@@ -63,6 +64,7 @@ describe('PostalStrategy', () => {
     };
     const mockProviders = { getActive: jest.fn(async () => baseProvider()) };
     const mockAttachments = { generatePdfBuffer: jest.fn(async () => Buffer.from('%PDF-1.4 test')) };
+    const mockSettings = { get: jest.fn(async () => '[]') };
 
     const module = await Test.createTestingModule({
       providers: [
@@ -70,6 +72,7 @@ describe('PostalStrategy', () => {
         { provide: GlobalComClient, useValue: mockGlobalCom },
         { provide: PostalProvidersService, useValue: mockProviders },
         { provide: AttachmentService, useValue: mockAttachments },
+        { provide: AppSettingsService, useValue: mockSettings },
       ],
     }).compile();
 
@@ -432,5 +435,57 @@ describe('PostalStrategy', () => {
       expect.anything(),
       expect.objectContaining({ codiceContratto: 'MANUALE-999' }),
     );
+  });
+
+  it('invia Stato quando physicalAddressConfig risolve un indirizzo estero', async () => {
+    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO123', stato: 'Accettato' } as any);
+    providers.getActive.mockResolvedValue(baseProvider());
+
+    const recipientEstero = {
+      ...baseRecipient,
+      extraData: { indirizzo: 'Rue Dodonee 132', comune: 'Uccle', cap: '1180', paese: 'Belgio' },
+    };
+    const campaignEstero = baseCampaign({
+      physicalAddressConfig: {
+        enabled: true,
+        addressColumn: 'indirizzo',
+        municipalityColumn: 'comune',
+        zipColumn: 'cap',
+        countryColumn: 'paese',
+      },
+    });
+
+    await strategy.send(recipientEstero as never, campaignEstero as never, undefined, 'attempt-uuid-2', 0);
+
+    const invioArg = globalCom.invioExtSingolo.mock.calls[0][1];
+    expect(invioArg.destinatario.stato).toBe('Belgio');
+  });
+
+  it('non invia Stato per indirizzo domestico', async () => {
+    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO123', stato: 'Accettato' } as any);
+    providers.getActive.mockResolvedValue(baseProvider());
+
+    await strategy.send(baseRecipient as never, baseCampaign() as never, undefined, 'attempt-uuid-3', 0);
+
+    const invioArg = globalCom.invioExtSingolo.mock.calls[0][1];
+    expect(invioArg.destinatario.stato).toBeUndefined();
+  });
+
+  it('spezza denominazione1/2 per un nome lungo (dicitura eredi)', async () => {
+    globalCom.invioExtSingolo.mockResolvedValue({ idPro: 'IDPRO123', stato: 'Accettato' } as any);
+    providers.getActive.mockResolvedValue(baseProvider());
+
+    const recipientErede = {
+      ...baseRecipient,
+      fullName: 'IMPERSONALMENTE E COLLETTIVAMENTE AGLI EREDI DI ERASMO ALESSANDRO',
+    };
+
+    await strategy.send(recipientErede as never, baseCampaign() as never, undefined, 'attempt-uuid-4', 0);
+
+    const invioArg = globalCom.invioExtSingolo.mock.calls[0][1];
+    expect(invioArg.destinatario.denominazione1.length).toBeLessThanOrEqual(44);
+    if (invioArg.destinatario.denominazione2) {
+      expect(invioArg.destinatario.denominazione2.length).toBeLessThanOrEqual(44);
+    }
   });
 });

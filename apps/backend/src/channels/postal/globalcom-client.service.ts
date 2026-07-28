@@ -10,6 +10,8 @@ export interface GbcAddress {
   cap?: string;
   citta: string;
   provincia?: string;
+  /** InfoIndirizzoExt.Stato — denominazione paese estero (WSDL riga 34); assente = domestico (default GlobalCom "ITALIA"). */
+  stato?: string;
   /** InfoIndirizzoExt.CodiceFiscale — verificato sull'XSD live, non nel manuale in prosa. */
   codiceFiscale?: string;
   /**
@@ -125,6 +127,7 @@ function toInfoIndirizzoExt(addr: GbcAddress): Record<string, unknown> {
     ...(addr.cap ? { CAP: addr.cap } : {}),
     Citta: addr.citta,
     ...(addr.provincia ? { Provincia: addr.provincia } : {}),
+    ...(addr.stato ? { Stato: addr.stato } : {}),
     ...(addr.codiceFiscale ? { CodiceFiscale: addr.codiceFiscale } : {}),
     ...(addr.email ? { Email: addr.email } : {}),
   };

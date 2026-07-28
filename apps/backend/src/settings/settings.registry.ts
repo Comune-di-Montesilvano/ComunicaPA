@@ -20,6 +20,18 @@ export const SETTING_DEFS = {
   'brand.logo': { env: 'BRAND_LOGO', type: 'string', default: '' },
   'brand.favicon': { type: 'string', default: '' },
   'retention.maxDays': { env: 'RETENTION_MAX_DAYS', type: 'number', default: 90 },
+  // Tabella abbreviazioni denominazione destinatario (JSON array
+  // [{pattern, replacement}]), usata sia da POSTAL (Denominazione1/2 max 44
+  // char ciascuna) sia da SEND (denomination max 88 char) quando il nome
+  // completo eccede il limite — es. dicitura legale eredi. Cross-canale,
+  // per questo in app_settings e non in postal_provider_configs (che è
+  // audit/config per-provider, non wording generico).
+  'notifiche.denominazioneAbbreviations': {
+    type: 'string',
+    default: JSON.stringify([
+      { pattern: 'IMPERSONALMENTE E COLLETTIVAMENTE AGLI EREDI DI', replacement: 'EREDI DI' },
+    ]),
+  },
   'enrichment.retentionDays': { type: 'number', default: 30 },
   'smtp.host': { env: 'SMTP_HOST', type: 'string', default: 'localhost' },
   'smtp.port': { env: 'SMTP_PORT', type: 'number', default: 587 },

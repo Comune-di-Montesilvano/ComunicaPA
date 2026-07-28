@@ -7,6 +7,8 @@ import { AttachmentService } from '../../attachments/attachment.service';
 import { GlobalComClient, type GbcAddress } from './globalcom-client.service';
 import { PostalProvidersService } from '../../postal-providers/postal-providers.service';
 import { getColumnValue, resolvePhysicalAddress } from '../payment-config.util';
+import { AppSettingsService } from '../../settings/app-settings.service';
+import { splitDenominazione, type DenominazioneAbbreviation } from './denominazione.util';
 
 const NON_TERMINAL_DEDUP_STATI = ['Errore', 'Eliminato'];
 
@@ -19,6 +21,7 @@ export class PostalStrategy implements IChannelStrategy {
     private readonly globalCom: GlobalComClient,
     private readonly providers: PostalProvidersService,
     private readonly attachments: AttachmentService,
+    private readonly settings: AppSettingsService,
   ) {}
 
   async send(
@@ -81,12 +84,26 @@ export class PostalStrategy implements IChannelStrategy {
     // GlobalCom per Atto Giudiziario (richiesta esplicita) — CF omesso per
     // evitare di innescare quel percorso, mantenuto per gli altri Servizio
     // (Raccomandata/Lettera) dove non risulta causare problemi.
+    const abbreviationsRaw = await this.settings.get<string>('notifiche.denominazioneAbbreviations');
+    let abbreviations: DenominazioneAbbreviation[] = [];
+    try {
+      abbreviations = JSON.parse(abbreviationsRaw || '[]');
+    } catch {
+      this.logger.warn(`notifiche.denominazioneAbbreviations non è JSON valido, ignorata: ${abbreviationsRaw}`);
+    }
+    const { denominazione1, denominazione2 } = splitDenominazione(
+      recipient.fullName || recipient.codiceFiscale,
+      abbreviations,
+    );
+
     const destinatario: GbcAddress = {
-      denominazione1: recipient.fullName || recipient.codiceFiscale,
+      denominazione1,
+      denominazione2,
       indirizzo1: resolvedAddress.address,
       cap: resolvedAddress.zip,
       citta: resolvedAddress.municipality,
       provincia: resolvedAddress.province,
+      stato: resolvedAddress.foreignState,
       codiceFiscale: servizio.startsWith('Agol') ? undefined : recipient.codiceFiscale,
       email: recipient.email || undefined,
     };
