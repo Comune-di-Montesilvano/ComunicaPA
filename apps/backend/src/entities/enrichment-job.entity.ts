@@ -49,6 +49,9 @@ export class EnrichmentJob {
   @Column({ name: 'processed_records', type: 'int', default: 0 })
   processedRecords!: number;
 
+  @Column({ name: 'checkpoint_row', type: 'int', default: 0 })
+  checkpointRow!: number;
+
   @Column({ name: 'warning_count', type: 'int', default: 0 })
   warningCount!: number;
 
