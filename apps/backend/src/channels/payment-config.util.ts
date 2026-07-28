@@ -1,3 +1,4 @@
+import { matchCountry } from '@comunicapa/shared-types';
 import type { Recipient } from '../entities/recipient.entity';
 
 export interface ResolvedPaymentData {
@@ -12,6 +13,8 @@ export interface ResolvedPhysicalAddress {
   municipality: string;
   zip?: string;
   province?: string;
+  /** Denominazione paese estero (PN: NotificationPhysicalAddress.foreignState). Assente = indirizzo domestico. */
+  foreignState?: string;
 }
 
 export function getColumnValue(recipient: Recipient, columnName?: string): string {
@@ -122,10 +125,17 @@ export function resolvePhysicalAddress(
   const zip = getColumnValue(recipient, physicalAddressConfig.zipColumn).trim();
   const province = getColumnValue(recipient, physicalAddressConfig.provinceColumn).trim();
 
+  const rawCountry = getColumnValue(recipient, physicalAddressConfig.countryColumn).trim();
+  const foreignState = rawCountry ? matchCountry(rawCountry) : null;
+  // "Italia" è il valore domestico di default: non viene mai inviato come
+  // foreignState, anche se matcha esplicitamente in COUNTRIES.
+  const isForeign = !!foreignState && foreignState !== 'Italia';
+
   return {
     address,
     municipality,
     ...(zip ? { zip } : {}),
     ...(province ? { province } : {}),
+    ...(isForeign ? { foreignState } : {}),
   };
 }

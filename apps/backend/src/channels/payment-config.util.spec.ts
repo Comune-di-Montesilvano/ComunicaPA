@@ -153,4 +153,62 @@ describe('resolvePhysicalAddress', () => {
     });
     expect(result).toEqual({ address: 'Via Roma 1', municipality: 'Roma' });
   });
+
+  it('valorizza foreignState se countryColumn risolve a un paese noto diverso da Italia', () => {
+    const recipient = makeRecipient({
+      indirizzo: 'Rue Dodonee 132',
+      comune: 'Uccle',
+      cap: '1180',
+      paese: 'belgio',
+    });
+    const result = resolvePhysicalAddress(recipient, {
+      enabled: true,
+      addressColumn: 'indirizzo',
+      municipalityColumn: 'comune',
+      zipColumn: 'cap',
+      countryColumn: 'paese',
+    });
+    expect(result).toEqual({
+      address: 'Rue Dodonee 132',
+      municipality: 'Uccle',
+      zip: '1180',
+      foreignState: 'Belgio',
+    });
+  });
+
+  it('non valorizza foreignState se countryColumn risolve a Italia', () => {
+    const recipient = makeRecipient({
+      indirizzo: 'Via Roma 1', comune: 'Roma', paese: 'Italia',
+    });
+    const result = resolvePhysicalAddress(recipient, {
+      enabled: true,
+      addressColumn: 'indirizzo',
+      municipalityColumn: 'comune',
+      countryColumn: 'paese',
+    });
+    expect(result).toEqual({ address: 'Via Roma 1', municipality: 'Roma' });
+  });
+
+  it('non valorizza foreignState se countryColumn non è mappata (comportamento invariato)', () => {
+    const recipient = makeRecipient({ indirizzo: 'Via Roma 1', comune: 'Roma' });
+    const result = resolvePhysicalAddress(recipient, {
+      enabled: true,
+      addressColumn: 'indirizzo',
+      municipalityColumn: 'comune',
+    });
+    expect(result).toEqual({ address: 'Via Roma 1', municipality: 'Roma' });
+  });
+
+  it('non valorizza foreignState se il valore non matcha nessun paese noto', () => {
+    const recipient = makeRecipient({
+      indirizzo: 'Via Roma 1', comune: 'Roma', paese: 'Paese Inesistente XYZ',
+    });
+    const result = resolvePhysicalAddress(recipient, {
+      enabled: true,
+      addressColumn: 'indirizzo',
+      municipalityColumn: 'comune',
+      countryColumn: 'paese',
+    });
+    expect(result).toEqual({ address: 'Via Roma 1', municipality: 'Roma' });
+  });
 });
