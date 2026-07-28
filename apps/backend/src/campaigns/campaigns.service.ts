@@ -7,6 +7,7 @@ import { parse } from 'csv-parse';
 import * as fs from 'fs';
 import { join } from 'path';
 import { extractZipWithYauzl } from './zip-extract.util';
+import { classifyChannelOutcome } from './channel-outcome.util';
 import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import type { AppConfiguration } from '../config/configuration';
@@ -1172,16 +1173,8 @@ export class CampaignsService {
 
     for (const r of toClassify) {
       const payload = payloadByRecipient.get(r.id);
-      const appIo = payload?.['appIo'] as { success?: boolean } | undefined;
-      const deliveredViaAppIo = payload?.['deliveredVia'] === 'APP_IO';
-      const appIoSucceeded = !!appIo?.success;
-      const primarySucceeded = r.status === RecipientStatus.SENT && !deliveredViaAppIo;
-
-      if (primarySucceeded && appIoSucceeded) breakdown.both++;
-      else if (primarySucceeded) breakdown.primaryOnly++;
-      else if (deliveredViaAppIo && appIoSucceeded) breakdown.appIoOnly++;
-      else if (r.status === RecipientStatus.FAILED && appIoSucceeded) breakdown.appIoDespitePrimaryFail++;
-      else breakdown.neither++;
+      const outcome = classifyChannelOutcome(r.status, payload);
+      if (outcome) breakdown[outcome]++;
     }
     return breakdown;
   }
