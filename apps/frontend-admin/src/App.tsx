@@ -14593,11 +14593,13 @@ export function App(): React.JSX.Element {
                       )}
 
                       {(['EMAIL', 'PEC', 'APP_IO'].includes(campaign.channelType) || (campaign.channelType === 'POSTAL' && !!downloadCombinations)) && (
-                      // POSTAL normalmente non ha download (lettera cartacea) — ma un dirottato
-                      // INAD (POSTAL→PEC) sì (link scaricabile dal portale cittadino/PEC come
-                      // per una campagna PEC vera). Mostrare il widget solo se ci sono davvero
-                      // combinazioni (downloadCombinations non null) evita una card sempre vuota
-                      // sulle campagne POSTAL senza nessun dirottato.
+                      // POSTAL normalmente non ha download (lettera cartacea) — ma un link di
+                      // download esiste comunque per ogni destinatario (dirottato INAD su PEC,
+                      // o anche un non dirottato che per caso accede al portale cittadino e
+                      // scarica: backend non filtra su diverted, solo su DownloadEvent reali).
+                      // Mostrare il widget solo se ci sono davvero combinazioni
+                      // (downloadCombinations non null) evita una card sempre vuota sulle
+                      // campagne POSTAL dove nessuno ha mai scaricato nulla.
                       <div className="col-md-6">
                         <div className="card shadow-sm h-100">
                           <div className="card-header bg-white py-3 border-bottom">
