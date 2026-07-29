@@ -9,6 +9,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
   Req,
   Res,
   UseInterceptors,
@@ -202,5 +203,30 @@ export class EnrichmentController {
       return { blocked: true, message: 'Nome campagna e canale richiesti' };
     }
     return this.svc.createCampaignFromJob(id, { name, channelType: body.channelType }, req.user.username);
+  }
+
+  @Get('jobs/:id/rows/:pdfFilename')
+  @Roles('user', 'admin')
+  getRow(@Param('id', ParseUUIDPipe) id: string, @Param('pdfFilename') pdfFilename: string) {
+    return this.svc.getRow(id, pdfFilename);
+  }
+
+  @Put('jobs/:id/rows/:pdfFilename/address')
+  @Roles('user', 'admin')
+  @HttpCode(HttpStatus.OK)
+  saveAddressOverride(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('pdfFilename') pdfFilename: string,
+    @Body() body: { indirizzo?: string; cap?: string; comune?: string; provincia?: string; statoEstero?: string },
+    @Req() req: Request & { user: JwtOperatorPayload },
+  ) {
+    return this.svc.saveAddressOverride(id, pdfFilename, body, req.user.username);
+  }
+
+  @Post('jobs/:id/regenerate-csv')
+  @Roles('user', 'admin')
+  @HttpCode(HttpStatus.OK)
+  regenerateCsv(@Param('id', ParseUUIDPipe) id: string) {
+    return this.svc.regenerateCsv(id);
   }
 }

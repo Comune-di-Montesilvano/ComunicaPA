@@ -13,6 +13,9 @@ describe('EnrichmentController', () => {
       getJob: jest.fn(async () => ({ id: 'j1' })),
       deleteJob: jest.fn(async () => ({})),
       buildResultZip: jest.fn(async () => Buffer.from('zip')),
+      getRow: jest.fn(async () => ({ pdfFilename: 'PROVV_1.pdf', codiceFiscale: 'X', indirizzo: '', cap: '', comune: '', provincia: '', statoEstero: '', override: null })),
+      saveAddressOverride: jest.fn(async () => ({})),
+      regenerateCsv: jest.fn(async () => ({})),
     };
     events = {
       subscribe: jest.fn(() => jest.fn()), // ritorna una funzione di unsubscribe fittizia
@@ -111,5 +114,28 @@ describe('EnrichmentController', () => {
     await streamPromise;
 
     expect(unsubscribe).toHaveBeenCalled();
+  });
+
+  it('GET rows/:pdfFilename delega al service', async () => {
+    const result = await controller.getRow('j1', 'PROVV_1.pdf');
+    expect(svc.getRow).toHaveBeenCalledWith('j1', 'PROVV_1.pdf');
+    expect(result.pdfFilename).toBe('PROVV_1.pdf');
+  });
+
+  it('PUT rows/:pdfFilename/address: passa operatore e body al service', async () => {
+    const result = await controller.saveAddressOverride(
+      'j1',
+      'PROVV_1.pdf',
+      { indirizzo: 'VIA NUOVA', cap: '00100', comune: 'ROMA', provincia: 'RM' },
+      { user: { username: 'op' } } as any,
+    );
+    expect(svc.saveAddressOverride).toHaveBeenCalledWith('j1', 'PROVV_1.pdf', { indirizzo: 'VIA NUOVA', cap: '00100', comune: 'ROMA', provincia: 'RM' }, 'op');
+    expect(result.blocked).toBeUndefined();
+  });
+
+  it('POST regenerate-csv delega al service', async () => {
+    const result = await controller.regenerateCsv('j1');
+    expect(svc.regenerateCsv).toHaveBeenCalledWith('j1');
+    expect(result.blocked).toBeUndefined();
   });
 });
