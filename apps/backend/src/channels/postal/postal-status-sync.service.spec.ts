@@ -9,7 +9,7 @@ describe('PostalStatusSyncService', () => {
   let service: PostalStatusSyncService;
   let globalCom: jest.Mocked<GlobalComClient>;
   let providers: jest.Mocked<PostalProvidersService>;
-  let attemptRepo: { find: jest.Mock; save: jest.Mock; createQueryBuilder: jest.Mock };
+  let attemptRepo: { find: jest.Mock; findOne: jest.Mock; findOneBy: jest.Mock; create: jest.Mock; save: jest.Mock; createQueryBuilder: jest.Mock };
 
   const activeProvider: ResolvedPostalProvider = {
     id: 'provider-1',
@@ -32,9 +32,16 @@ describe('PostalStatusSyncService', () => {
   }
 
   beforeEach(async () => {
-    const mockGlobalCom = { dettagliDocumento: jest.fn(), invioExtSingolo: jest.fn(), cercaPerTesto: jest.fn() };
+    const mockGlobalCom = { dettagliDocumento: jest.fn(), invioExtSingolo: jest.fn(), cercaPerTesto: jest.fn(), listaRiaccodamentiDocumento: jest.fn() };
     const mockProviders = { getActive: jest.fn(async () => activeProvider) };
-    attemptRepo = { find: jest.fn(), save: jest.fn(), createQueryBuilder: jest.fn() };
+    attemptRepo = {
+      find: jest.fn(),
+      findOne: jest.fn(),
+      findOneBy: jest.fn(),
+      create: jest.fn((partial) => partial),
+      save: jest.fn(async (entity) => entity),
+      createQueryBuilder: jest.fn(),
+    };
 
     const module = await Test.createTestingModule({
       providers: [
@@ -270,5 +277,134 @@ describe('PostalStatusSyncService', () => {
     await service.handleCron();
 
     expect(attemptRepo.save).toHaveBeenCalledWith(expect.objectContaining({ id: 'a1', costCents: 431 }));
+  });
+
+  describe('controllo riaccodamento su stato Eliminato', () => {
+    it('cron: rileva Eliminato senza riaccodamento — non crea nuovo attempt, stampa postalRequeueCheckedAt', async () => {
+      const attempt = {
+        id: 'a1', recipientId: 'r1', attemptNumber: 1,
+        postalTrackingId: 'IDPRO1', postalStatus: 'Errore', postalStatusUpdatedAt: null,
+        postalStatusHistory: [], postalRequeueCheckedAt: null,
+      };
+      attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
+      globalCom.dettagliDocumento.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Eliminato' } as any);
+      globalCom.listaRiaccodamentiDocumento.mockResolvedValue(['IDPRO1']);
+
+      await service.handleCron();
+
+      expect(globalCom.listaRiaccodamentiDocumento).toHaveBeenCalledWith(
+        expect.objectContaining({ baseUrl: activeProvider.creds.baseUrl }),
+        'IDPRO1',
+      );
+      expect(attemptRepo.create).not.toHaveBeenCalled();
+      expect(attemptRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+        id: 'a1', postalStatus: 'Eliminato', postalRequeueCheckedAt: expect.any(Date),
+      }));
+    });
+
+    it('cron: rileva Eliminato con riaccodamento — crea nuovo attempt con l\'ultimo IDPRO della catena', async () => {
+      const attempt = {
+        id: 'a1', recipientId: 'r1', attemptNumber: 1, channelType: 'POSTAL',
+        postalTrackingId: 'IDPRO1', postalStatus: 'Errore', postalStatusUpdatedAt: null,
+        postalStatusHistory: [], postalRequeueCheckedAt: null,
+      };
+      attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
+      globalCom.dettagliDocumento.mockImplementation(async (_creds: any, idPro: string) => {
+        if (idPro === 'IDPRO1') return { idPro: 'IDPRO1', stato: 'Eliminato' } as any;
+        return { idPro: 'IDPRO2', stato: 'Accettato', costoNetto: 4.31 } as any;
+      });
+      globalCom.listaRiaccodamentiDocumento.mockResolvedValue(['IDPRO1', 'IDPRO2']);
+      attemptRepo.findOne
+        .mockResolvedValueOnce(null) // idempotenza: nessun attempt esistente per IDPRO2
+        .mockResolvedValueOnce({ attemptNumber: 1 }); // ultimo attempt del destinatario
+
+      await service.handleCron();
+
+      expect(attemptRepo.create).toHaveBeenCalledWith(expect.objectContaining({
+        recipientId: 'r1',
+        channelType: 'POSTAL',
+        status: 'success',
+        attemptNumber: 2,
+        postalTrackingId: 'IDPRO2',
+        postalStatus: 'Accettato',
+        costCents: 431,
+      }));
+      expect(attemptRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+        postalTrackingId: 'IDPRO2', attemptNumber: 2,
+      }));
+      expect(attemptRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+        id: 'a1', postalRequeueCheckedAt: expect.any(Date),
+      }));
+    });
+
+    it('cron: non ripete il controllo se postalRequeueCheckedAt è già impostato', async () => {
+      const attempt = {
+        id: 'a1', recipientId: 'r1', attemptNumber: 1,
+        postalTrackingId: 'IDPRO1', postalStatus: 'Eliminato', postalStatusUpdatedAt: null,
+        postalStatusHistory: [], postalRequeueCheckedAt: new Date('2026-07-20T10:00:00.000Z'),
+      };
+      attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
+      globalCom.dettagliDocumento.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Eliminato' } as any);
+
+      await service.handleCron();
+
+      expect(globalCom.listaRiaccodamentiDocumento).not.toHaveBeenCalled();
+    });
+
+    it('manuale (refreshOne): ripete il controllo anche se postalRequeueCheckedAt è già impostato', async () => {
+      const attempt = {
+        id: 'a1', recipientId: 'r1', attemptNumber: 1, channelType: 'POSTAL',
+        postalTrackingId: 'IDPRO1', postalStatus: 'Eliminato', postalStatusUpdatedAt: null,
+        postalStatusHistory: [], postalRequeueCheckedAt: new Date('2026-07-20T10:00:00.000Z'),
+      };
+      attemptRepo.findOneBy = jest.fn().mockResolvedValue(attempt);
+      globalCom.dettagliDocumento.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Eliminato' } as any);
+      globalCom.listaRiaccodamentiDocumento.mockResolvedValue(['IDPRO1']);
+
+      await service.refreshOne('a1');
+
+      expect(globalCom.listaRiaccodamentiDocumento).toHaveBeenCalledWith(
+        expect.objectContaining({ baseUrl: activeProvider.creds.baseUrl }),
+        'IDPRO1',
+      );
+    });
+
+    it('non crea un duplicato se esiste già un attempt per il nuovo IDPRO (idempotenza cron+manuale)', async () => {
+      const attempt = {
+        id: 'a1', recipientId: 'r1', attemptNumber: 1,
+        postalTrackingId: 'IDPRO1', postalStatus: 'Eliminato', postalStatusUpdatedAt: null,
+        postalStatusHistory: [], postalRequeueCheckedAt: null,
+      };
+      attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
+      globalCom.dettagliDocumento.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Eliminato' } as any);
+      globalCom.listaRiaccodamentiDocumento.mockResolvedValue(['IDPRO1', 'IDPRO2']);
+      attemptRepo.findOne.mockResolvedValueOnce({ id: 'a2', postalTrackingId: 'IDPRO2' });
+
+      await service.handleCron();
+
+      expect(attemptRepo.create).not.toHaveBeenCalled();
+      expect(attemptRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+        id: 'a1', postalRequeueCheckedAt: expect.any(Date),
+      }));
+    });
+
+    it('errore SOAP nel controllo riaccodamento non blocca il salvataggio del postalStatus normale, e non stampa il flag', async () => {
+      const attempt = {
+        id: 'a1', recipientId: 'r1', attemptNumber: 1,
+        postalTrackingId: 'IDPRO1', postalStatus: 'Errore', postalStatusUpdatedAt: null,
+        postalStatusHistory: [], postalRequeueCheckedAt: null,
+      };
+      attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
+      globalCom.dettagliDocumento.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Eliminato' } as any);
+      globalCom.listaRiaccodamentiDocumento.mockRejectedValue(new Error('timeout SOAP'));
+
+      await service.handleCron();
+
+      expect(attemptRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+        id: 'a1', postalStatus: 'Eliminato',
+      }));
+      const savedCalls = attemptRepo.save.mock.calls.map((c: any[]) => c[0]);
+      expect(savedCalls.some((s: any) => s.id === 'a1' && s.postalRequeueCheckedAt != null)).toBe(false);
+    });
   });
 });

@@ -61,7 +61,7 @@ export class PostalStatusSyncService {
     }
   }
 
-  private async syncOne(attempt: NotificationAttempt, creds: GbcCredentials): Promise<boolean> {
+  private async syncOne(attempt: NotificationAttempt, creds: GbcCredentials, opts: { forceRequeueCheck?: boolean } = {}): Promise<boolean> {
     const stato = await this.globalCom.dettagliDocumento(creds, attempt.postalTrackingId!);
     attempt.postalLastCheckedAt = new Date();
     if (!stato) {
@@ -110,8 +110,68 @@ export class PostalStatusSyncService {
       };
       changed = true;
     }
+
+    if (attempt.postalStatus === 'Eliminato' && (opts.forceRequeueCheck || !attempt.postalRequeueCheckedAt)) {
+      await this.checkRequeue(attempt, creds);
+    }
+
     await this.attemptRepo.save(attempt);
     return changed;
+  }
+
+  /**
+   * Un attempt Eliminato può essere stato riaccodato da GlobalCom sotto un
+   * nuovo IDPRO (mai un re-invio nostro — solo presa d'atto di un invio già
+   * accettato). `lista_riaccodamenti_documento` ritorna l'intera catena,
+   * l'ultimo elemento è quello corretto/attivo. Se la catena ha più di un
+   * riaccodamento si crea un solo nuovo attempt per l'ultimo IDPRO — gli
+   * intermedi non hanno valore proprio. Il flag `postalRequeueCheckedAt`
+   * viene stampato solo se il controllo è andato a buon fine (trovato o
+   * non trovato) — su errore SOAP resta invariato, il prossimo giro cron
+   * riprova (il chiamante manuale invece forza sempre il controllo, vedi
+   * `refreshOne`).
+   */
+  private async checkRequeue(attempt: NotificationAttempt, creds: GbcCredentials): Promise<void> {
+    try {
+      const chain = await this.globalCom.listaRiaccodamentiDocumento(creds, attempt.postalTrackingId!);
+      const nuovoIdPro = chain[chain.length - 1];
+      if (chain.length > 1 && nuovoIdPro && nuovoIdPro !== attempt.postalTrackingId) {
+        const esistente = await this.attemptRepo.findOne({ where: { recipientId: attempt.recipientId, postalTrackingId: nuovoIdPro } });
+        if (!esistente) {
+          const statoNuovo = await this.globalCom.dettagliDocumento(creds, nuovoIdPro);
+          const ultimoAttempt = await this.attemptRepo.findOne({ where: { recipientId: attempt.recipientId }, order: { attemptNumber: 'DESC' } });
+          const nextAttemptNumber = (ultimoAttempt?.attemptNumber ?? attempt.attemptNumber) + 1;
+          const nuovoAttempt = this.attemptRepo.create({
+            recipientId: attempt.recipientId,
+            channelType: attempt.channelType,
+            status: AttemptStatus.SUCCESS,
+            attemptNumber: nextAttemptNumber,
+            sentAt: new Date(),
+            postalTrackingId: nuovoIdPro,
+            postalStatus: statoNuovo?.stato ?? null,
+            postalStatusUpdatedAt: statoNuovo ? new Date() : null,
+            postalStatusHistory: statoNuovo ? [{ stato: statoNuovo.stato, rilevatoIl: new Date().toISOString() }] : null,
+            costCents: statoNuovo?.costoNetto != null ? Math.round(statoNuovo.costoNetto * 100) : null,
+            costCalculatedAt: statoNuovo?.costoNetto != null ? new Date() : null,
+            costBreakdown: statoNuovo?.costoNetto != null ? {
+              costoNetto: statoNuovo.costoNetto,
+              numeroPagine: statoNuovo.numeroPagine ?? null,
+              nazionale: statoNuovo.nazionale ?? null,
+              importoPostaleNetto: statoNuovo.importoPostaleNetto ?? null,
+              importoStampaNetto: statoNuovo.importoStampaNetto ?? null,
+              importoARNetto: statoNuovo.importoARNetto ?? null,
+              tipoDocumento: statoNuovo.tipoDocumento ?? null,
+              codiceContratto: statoNuovo.codiceContratto ?? null,
+            } : null,
+          });
+          await this.attemptRepo.save(nuovoAttempt);
+          this.logger.log(`Riaccodamento rilevato: attempt ${attempt.id} IDPRO ${attempt.postalTrackingId} -> ${nuovoIdPro}, creato nuovo attempt attemptNumber=${nextAttemptNumber}`);
+        }
+      }
+      attempt.postalRequeueCheckedAt = new Date();
+    } catch (err: any) {
+      this.logger.warn(`Errore controllo riaccodamento per attempt ${attempt.id} (IDPRO=${attempt.postalTrackingId}): ${err.message}`);
+    }
   }
 
   /**
@@ -135,9 +195,10 @@ export class PostalStatusSyncService {
     const provider = await this.providers.getActive();
     if (!provider) throw new BadRequestException('Nessun provider di postalizzazione attivo');
 
-    const changed = await this.syncOne(attempt, provider.creds);
+    const changed = await this.syncOne(attempt, provider.creds, { forceRequeueCheck: true });
     return { changed, postalStatus: attempt.postalStatus };
   }
+
 
   /**
    * Reset di massa per una campagna: caso reale — una raccomandata `Errore`
