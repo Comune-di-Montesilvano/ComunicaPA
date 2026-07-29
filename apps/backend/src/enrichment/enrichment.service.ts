@@ -4,19 +4,23 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { Repository } from 'typeorm';
 import * as fs from 'fs';
-import { basename, join } from 'path';
+import { basename } from 'path';
 import AdmZip from 'adm-zip';
 import {
   EnrichmentJob,
   EnrichmentJobStatus,
+  CampaignConversionStatus,
   TraceFormat,
 } from '../entities/enrichment-job.entity';
 import { parseMaggioliZip } from './maggioli-parser';
-import { ENRICHMENT_QUEUE, EnrichmentQueueJobData } from './enrichment-job.types';
+import {
+  ENRICHMENT_QUEUE,
+  EnrichmentQueueJobData,
+  CONVERT_CAMPAIGN_JOB_NAME,
+  ConvertCampaignQueueJobData,
+} from './enrichment-job.types';
 import { getEnrichmentDir, getEnrichmentResultCsv, getEnrichmentSourceZip } from './enrichment-paths';
 import { readLargeFileSync } from './large-file-read.util';
-import { CampaignsService } from '../campaigns/campaigns.service';
-import { getUploadsDir } from '../attachments/attachment-paths';
 import { EnrichmentAddressOverrideService, type AddressOverrideInput } from './enrichment-address-override.service';
 import { readCheckpointSync } from './enrichment-checkpoint.util';
 import { buildEnrichedCsv, buildEnrichedCsvHeaders, parseEnrichedCsv, type EnrichedRow } from './enriched-csv.util';
@@ -36,8 +40,7 @@ export class EnrichmentService {
     @InjectRepository(EnrichmentJob)
     private readonly jobRepo: Repository<EnrichmentJob>,
     @InjectQueue(ENRICHMENT_QUEUE)
-    private readonly queue: Queue<EnrichmentQueueJobData>,
-    private readonly campaignsService: CampaignsService,
+    private readonly queue: Queue<EnrichmentQueueJobData | ConvertCampaignQueueJobData>,
     private readonly overrideService: EnrichmentAddressOverrideService,
   ) {}
 
@@ -133,12 +136,22 @@ export class EnrichmentService {
    * Qui NON importiamo destinatari: creiamo una bozza col meccanismo
    * wizCsvFilename + draft_recipients.csv, così "Riprendi wizard" ricarica il
    * CSV arricchito attraverso parseCsvFile con tutte le validazioni wizard.
+   *
+   * Solo validazioni rapide qui — il lavoro pesante (unzip del source.zip,
+   * fino a centinaia di MB, e scrittura di migliaia di PDF) gira in
+   * background su ENRICHMENT_QUEUE (EnrichmentProcessor), mai dentro la
+   * richiesta HTTP: farlo qui bloccherebbe l'event loop Node abbastanza a
+   * lungo da far scattare il timeout del reverse proxy esterno (bug reale:
+   * "Unexpected token '<'" sul frontend, corpo 500 sostituito dalla pagina
+   * HTML del proxy) e, nel frattempo, affamerebbe qualunque altra richiesta
+   * concorrente (single-thread Node — osservato in produzione: 403 su
+   * /admin/settings scollegato, in corso nello stesso momento).
    */
-  async createCampaignFromJob(
+  async requestCampaignConversion(
     jobId: string,
     params: { name: string; channelType: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL' },
     createdBy: string,
-  ): Promise<{ campaignId?: string; blocked?: boolean; message?: string }> {
+  ): Promise<{ accepted?: boolean; blocked?: boolean; message?: string }> {
     const job = await this.getJob(jobId);
     if (job.status !== EnrichmentJobStatus.DONE) {
       return { blocked: true, message: 'Il job non è completato: nessun risultato da convertire' };
@@ -146,37 +159,20 @@ export class EnrichmentService {
     if (job.campaignId) {
       return { blocked: true, message: 'Job già convertito in campagna' };
     }
+    if (job.campaignConversionStatus === CampaignConversionStatus.PENDING || job.campaignConversionStatus === CampaignConversionStatus.PROCESSING) {
+      return { blocked: true, message: 'Conversione in campagna già in corso' };
+    }
     if (!fs.existsSync(getEnrichmentResultCsv(jobId))) {
       return { blocked: true, message: 'File risultato non più disponibile (retention scaduta?)' };
     }
 
-    const campaign = await this.campaignsService.create(
-      {
-        name: params.name,
-        channelType: params.channelType,
-        channelConfig: { wizCsvFilename: 'arricchito.csv', wizCsvHasHeaders: true, wizStep: 1 },
-      },
-      createdBy,
-    );
-
-    const uploadsDir = getUploadsDir(campaign.id);
-    fs.mkdirSync(uploadsDir, { recursive: true });
-    fs.copyFileSync(getEnrichmentResultCsv(jobId), join(uploadsDir, 'draft_recipients.csv'));
-
-    const source = new AdmZip(readLargeFileSync(getEnrichmentSourceZip(jobId)));
-    for (const entry of source.getEntries()) {
-      if (entry.entryName.startsWith('allegati/') && entry.entryName.toLowerCase().endsWith('.pdf')) {
-        // basename(): il nome file nello ZIP è dato attaccante-influenzabile
-        // (operatore autenticato), mai usarlo per costruire un path senza
-        // sanitizzazione — previene un entry "allegati/../../altra/x.pdf".
-        fs.writeFileSync(join(uploadsDir, basename(entry.entryName)), entry.getData());
-      }
-    }
-
-    await this.jobRepo.update(jobId, { campaignId: campaign.id });
-    fs.rmSync(getEnrichmentDir(jobId), { recursive: true, force: true });
-
-    return { campaignId: campaign.id };
+    await this.jobRepo.update(jobId, {
+      campaignConversionStatus: CampaignConversionStatus.PENDING,
+      campaignConversionError: null,
+    });
+    const data: ConvertCampaignQueueJobData = { jobId, name: params.name, channelType: params.channelType, createdBy };
+    await this.queue.add(CONVERT_CAMPAIGN_JOB_NAME, data, { jobId: `${CONVERT_CAMPAIGN_JOB_NAME}-${jobId}` });
+    return { accepted: true };
   }
 
   /**

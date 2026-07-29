@@ -1119,6 +1119,11 @@ export function App(): React.JSX.Element {
     warnings: Array<{ row: number; pdf: string; message: string }>;
     errorMessage: string | null;
     campaignId: string | null;
+    // Conversione in campagna asincrona (coda BullMQ, mai dentro la richiesta
+    // HTTP: unzip + scrittura di migliaia di PDF bloccherebbe l'event loop
+    // Node abbastanza a lungo da far scattare il timeout del proxy esterno).
+    campaignConversionStatus: 'pending' | 'processing' | 'done' | 'failed' | null;
+    campaignConversionError: string | null;
     createdAt: string;
   }
   const [enrichJobs, setEnrichJobs] = useState<EnrichmentJobItem[]>([]);
@@ -1133,6 +1138,10 @@ export function App(): React.JSX.Element {
   const [enrichCampaignChannel, setEnrichCampaignChannel] = useState<'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL'>('PEC');
   const [enrichCampaignSubmitting, setEnrichCampaignSubmitting] = useState(false);
   const [enrichCampaignError, setEnrichCampaignError] = useState<string | null>(null);
+  // Job la cui conversione in campagna è stata accodata: la UI aspetta che
+  // campaignConversionStatus diventi 'done'/'failed' via polling, poi apre
+  // il wizard o mostra l'errore (vedi useEffect più sotto).
+  const [enrichAwaitingConversionJobId, setEnrichAwaitingConversionJobId] = useState<string | null>(null);
   interface EnrichLogEntry {
     row: number;
     pdf: string;
@@ -2706,15 +2715,34 @@ export function App(): React.JSX.Element {
       if (inProgress && !enrichStreamingJobId) streamEnrichJobLog(inProgress.id);
     });
     const interval = setInterval(() => {
-      // Poll solo se c'è un job non terminale
+      // Poll se c'è un job non terminale O una conversione in campagna in corso
       setEnrichJobs((prev) => {
-        if (prev.some((j) => j.status === 'queued' || j.status === 'processing')) fetchEnrichJobs();
+        if (prev.some((j) => j.status === 'queued' || j.status === 'processing' || j.campaignConversionStatus === 'pending' || j.campaignConversionStatus === 'processing')) {
+          fetchEnrichJobs();
+        }
         return prev;
       });
     }, 3000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, token]);
+
+  // Reagisce al completamento (in background) della conversione in campagna
+  // richiesta da handleEnrichCreateCampaignConfirm: apre il wizard su
+  // successo, mostra l'errore su fallimento.
+  useEffect(() => {
+    if (!enrichAwaitingConversionJobId) return;
+    const job = enrichJobs.find((j) => j.id === enrichAwaitingConversionJobId);
+    if (!job) return;
+    if (job.campaignConversionStatus === 'done' && job.campaignId) {
+      setEnrichAwaitingConversionJobId(null);
+      handleResumeDraft(job.campaignId);
+    } else if (job.campaignConversionStatus === 'failed') {
+      setEnrichAwaitingConversionJobId(null);
+      alert(job.campaignConversionError || 'Creazione bozza campagna fallita');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enrichJobs, enrichAwaitingConversionJobId]);
 
   const handleEnrichUpload = async () => {
     if (!enrichFile || !token) return;
@@ -2973,10 +3001,13 @@ export function App(): React.JSX.Element {
         setEnrichCampaignError(body.message || 'Richiesta bloccata');
         return;
       }
+      // Risposta immediata (accepted:true): il lavoro pesante (unzip +
+      // scrittura PDF) gira in background su coda, mai dentro questa
+      // richiesta HTTP. La UI aspetta campaignConversionStatus via polling
+      // (vedi useEffect enrichAwaitingConversionJobId più sotto).
+      setEnrichAwaitingConversionJobId(enrichCreateCampaignJobId);
       setEnrichCreateCampaignJobId(null);
-      // Instrada nel wizard esistente: il CSV passa da parseCsvFile con le
-      // validazioni wizard (nessun importer parallelo)
-      await handleResumeDraft(body.campaignId);
+      await fetchEnrichJobs();
     } catch (err: any) {
       setEnrichCampaignError(err.message || 'Errore durante la creazione della campagna');
     } finally {
@@ -11905,9 +11936,15 @@ export function App(): React.JSX.Element {
                           <button className="btn btn-sm btn-outline-secondary" type="button" onClick={() => handleEnrichRegenerateCsv(job.id)}>
                             Rigenera CSV
                           </button>
-                          <button className="btn btn-sm btn-outline-primary" type="button" onClick={() => handleEnrichCreateCampaignOpen(job)}>
-                            <Plus className="me-1" size={16} />Crea bozza campagna
-                          </button>
+                          {(job.campaignConversionStatus === 'pending' || job.campaignConversionStatus === 'processing') ? (
+                            <button className="btn btn-sm btn-outline-primary" type="button" disabled>
+                              <Loader2 className="icon-spin me-1" size={16} />Creazione bozza in corso...
+                            </button>
+                          ) : (
+                            <button className="btn btn-sm btn-outline-primary" type="button" onClick={() => handleEnrichCreateCampaignOpen(job)}>
+                              <Plus className="me-1" size={16} />Crea bozza campagna
+                            </button>
+                          )}
                         </>
                       )}
                       {job.warningCount > 0 && (

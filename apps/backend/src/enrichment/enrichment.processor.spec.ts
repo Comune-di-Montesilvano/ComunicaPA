@@ -52,6 +52,7 @@ describe('EnrichmentProcessor', () => {
   let client: any;
   let events: any;
   let overrideService: any;
+  let campaignsService: any;
   let processor: EnrichmentProcessor;
   const record = {
     id: 'j1',
@@ -81,7 +82,8 @@ describe('EnrichmentProcessor', () => {
     };
     events = { emitLog: jest.fn(), emitTerminal: jest.fn() };
     overrideService = { findByJob: jest.fn(async () => []), applyOverrides: jest.fn((rows: any) => rows) };
-    processor = new EnrichmentProcessor(repo, client, events, overrideService);
+    campaignsService = { create: jest.fn(async () => ({ id: 'camp-1' })) };
+    processor = new EnrichmentProcessor(repo, client, events, overrideService, campaignsService);
   });
 
   afterEach(() => {
@@ -309,6 +311,72 @@ describe('EnrichmentProcessor', () => {
     fs.rmSync(getEnrichmentSourceZip('j1'));
     await processor.process(fakeJob);
     expect(fs.existsSync(getEnrichmentCheckpoint('j1'))).toBe(false);
+  });
+
+  describe('convert-campaign (crea bozza campagna da job)', () => {
+    // Lavoro pesante spostato qui da EnrichmentService per non bloccare
+    // l'event loop Node dentro la richiesta HTTP (vedi CLAUDE.md/commit fix
+    // "Unexpected token '<'" — timeout proxy esterno + affamamento richieste
+    // concorrenti).
+    const convertJob = { name: 'convert-campaign', data: { jobId: 'job-uuid-1', name: 'Campagna X', channelType: 'PEC', createdBy: 'op' } } as unknown as Job<any>;
+
+    function setupDoneJob(): void {
+      repo.findOneBy.mockResolvedValue({ id: 'job-uuid-1', status: EnrichmentJobStatus.DONE, campaignId: null });
+      const dir = getEnrichmentDir('job-uuid-1');
+      fs.mkdirSync(dir, { recursive: true });
+      const zip = new AdmZip();
+      zip.addFile('rubrica.csv', Buffer.from('id;pec@pec.it;;MARIO;ROSSI;RSSMRA80A01H501U;;ROSSI MARIO;1;13/03/2026;Oggetto;;;PROVV_1.pdf', 'utf-8'));
+      zip.addFile('allegati/PROVV_1.pdf', Buffer.from('%PDF-fake'));
+      zip.writeZip(getEnrichmentSourceZip('job-uuid-1'));
+      fs.writeFileSync(getEnrichmentResultCsv('job-uuid-1'), '"codice_fiscale"\n"RSSMRA80A01H501U"');
+    }
+
+    it('crea la campagna, copia CSV+PDF in uploadsDir, marca DONE, elimina i file del job', async () => {
+      setupDoneJob();
+      await processor.process(convertJob);
+
+      expect(campaignsService.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'Campagna X',
+          channelType: 'PEC',
+          channelConfig: expect.objectContaining({ wizCsvFilename: 'arricchito.csv', wizCsvHasHeaders: true }),
+        }),
+        'op',
+      );
+      const uploadsDir = join(tmpDir, 'uploads', 'camp-1');
+      expect(fs.existsSync(join(uploadsDir, 'draft_recipients.csv'))).toBe(true);
+      expect(fs.existsSync(join(uploadsDir, 'PROVV_1.pdf'))).toBe(true);
+
+      const updates = repo.update.mock.calls.map((c: any[]) => c[1]);
+      expect(updates).toContainEqual({ campaignConversionStatus: 'processing' });
+      expect(updates.at(-1)).toEqual({ campaignId: 'camp-1', campaignConversionStatus: 'done' });
+      expect(fs.existsSync(getEnrichmentDir('job-uuid-1'))).toBe(false);
+    });
+
+    it('nomi file annidati in sottocartelle appiattiti con basename dentro uploadsDir', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 'job-uuid-1', status: EnrichmentJobStatus.DONE, campaignId: null });
+      const dir = getEnrichmentDir('job-uuid-1');
+      fs.mkdirSync(dir, { recursive: true });
+      const zip = new AdmZip();
+      zip.addFile('rubrica.csv', Buffer.from('id;pec@pec.it;;MARIO;ROSSI;RSSMRA80A01H501U;;ROSSI MARIO;1;13/03/2026;Oggetto;;;PROVV_1.pdf', 'utf-8'));
+      zip.addFile('allegati/sub/nested.pdf', Buffer.from('%PDF-nested'));
+      zip.writeZip(getEnrichmentSourceZip('job-uuid-1'));
+      fs.writeFileSync(getEnrichmentResultCsv('job-uuid-1'), '"codice_fiscale"\n"RSSMRA80A01H501U"');
+
+      await processor.process(convertJob);
+
+      const uploadsDir = join(tmpDir, 'uploads', 'camp-1');
+      expect(fs.existsSync(join(uploadsDir, 'nested.pdf'))).toBe(true);
+      expect(fs.existsSync(join(uploadsDir, 'sub'))).toBe(false);
+    });
+
+    it('errore durante la conversione → campaignConversionStatus=failed con errore, mai un throw', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 'job-uuid-1', status: EnrichmentJobStatus.DONE, campaignId: null });
+      // source.zip assente → readLargeFileSync lancia
+      await expect(processor.process(convertJob)).resolves.toBeUndefined();
+      const updates = repo.update.mock.calls.map((c: any[]) => c[1]);
+      expect(updates.at(-1)).toEqual(expect.objectContaining({ campaignConversionStatus: 'failed' }));
+    });
   });
 
   it('applica gli override indirizzo esistenti prima di scrivere il CSV finale', async () => {

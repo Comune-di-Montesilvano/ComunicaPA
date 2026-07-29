@@ -44,7 +44,7 @@ describe('EnrichmentService', () => {
       applyOverrides: jest.fn((rows: any) => rows),
       upsert: jest.fn(async () => ({ id: 'o1' })),
     };
-    service = new EnrichmentService(repo, queue, { create: jest.fn() } as any, overrideService);
+    service = new EnrichmentService(repo, queue, overrideService);
   });
 
   afterEach(() => {
@@ -153,70 +153,52 @@ describe('EnrichmentService', () => {
     expect(out.getEntries().every((e) => !e.entryName.includes('/'))).toBe(true);
   });
 
-  describe('createCampaignFromJob', () => {
-    let campaignsService: any;
-
-    beforeEach(() => {
-      campaignsService = { create: jest.fn(async () => ({ id: 'camp-1' })) };
-      service = new EnrichmentService(repo, queue, campaignsService, overrideService);
-    });
-
+  describe('requestCampaignConversion', () => {
+    // Il lavoro pesante (unzip + scrittura PDF) è stato spostato su
+    // ENRICHMENT_QUEUE/EnrichmentProcessor (vedi enrichment.processor.spec.ts)
+    // per non bloccare l'event loop Node dentro la richiesta HTTP — qui si
+    // testano solo i guard rapidi e l'accodamento.
     function setupDoneJob(): void {
-      repo.findOneBy.mockResolvedValue({ id: 'job-uuid-1', status: EnrichmentJobStatus.DONE, campaignId: null });
+      repo.findOneBy.mockResolvedValue({ id: 'job-uuid-1', status: EnrichmentJobStatus.DONE, campaignId: null, campaignConversionStatus: null });
       const dir = join(tmpDir, 'attachments', 'enrichment', 'job-uuid-1');
       fs.mkdirSync(dir, { recursive: true });
-      fs.copyFileSync(makeZipFile(tmpDir), join(dir, 'source.zip'));
       fs.writeFileSync(join(dir, 'result.csv'), '"codice_fiscale"\n"RSSMRA80A01H501U"');
     }
 
-    it('crea bozza: CSV come draft_recipients.csv, PDF copiati, job marcato, file eliminati', async () => {
+    it('job pronto: marca campaignConversionStatus=pending e accoda il job convert-campaign', async () => {
       setupDoneJob();
-      const result = await service.createCampaignFromJob('job-uuid-1', { name: 'Campagna X', channelType: 'PEC' }, 'op');
+      const result = await service.requestCampaignConversion('job-uuid-1', { name: 'Campagna X', channelType: 'PEC' }, 'op');
 
-      expect(result.campaignId).toBe('camp-1');
-      expect(campaignsService.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          name: 'Campagna X',
-          channelType: 'PEC',
-          channelConfig: expect.objectContaining({ wizCsvFilename: 'arricchito.csv', wizCsvHasHeaders: true }),
-        }),
-        'op',
+      expect(result.accepted).toBe(true);
+      expect(repo.update).toHaveBeenCalledWith('job-uuid-1', {
+        campaignConversionStatus: 'pending',
+        campaignConversionError: null,
+      });
+      expect(queue.add).toHaveBeenCalledWith(
+        'convert-campaign',
+        { jobId: 'job-uuid-1', name: 'Campagna X', channelType: 'PEC', createdBy: 'op' },
+        { jobId: 'convert-campaign-job-uuid-1' },
       );
-      const uploadsDir = join(tmpDir, 'attachments', 'uploads', 'camp-1');
-      expect(fs.existsSync(join(uploadsDir, 'draft_recipients.csv'))).toBe(true);
-      expect(fs.existsSync(join(uploadsDir, 'PROVV_1.pdf'))).toBe(true);
-      expect(repo.update).toHaveBeenCalledWith('job-uuid-1', { campaignId: 'camp-1' });
-      // File del job eliminati dopo la conversione
-      expect(fs.existsSync(join(tmpDir, 'attachments', 'enrichment', 'job-uuid-1'))).toBe(false);
     });
 
-    it('job non DONE → blocked', async () => {
-      repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.PROCESSING, campaignId: null });
-      const result = await service.createCampaignFromJob('j1', { name: 'X', channelType: 'PEC' }, 'op');
+    it('job non DONE → blocked, nessun accodamento', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.PROCESSING, campaignId: null, campaignConversionStatus: null });
+      const result = await service.requestCampaignConversion('j1', { name: 'X', channelType: 'PEC' }, 'op');
       expect(result.blocked).toBe(true);
+      expect(queue.add).not.toHaveBeenCalled();
     });
 
     it('job già convertito → blocked', async () => {
-      repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.DONE, campaignId: 'camp-old' });
-      const result = await service.createCampaignFromJob('j1', { name: 'X', channelType: 'PEC' }, 'op');
+      repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.DONE, campaignId: 'camp-old', campaignConversionStatus: 'done' });
+      const result = await service.requestCampaignConversion('j1', { name: 'X', channelType: 'PEC' }, 'op');
       expect(result.blocked).toBe(true);
     });
 
-    it('nomi file annidati in sottocartelle vengono appiattiti con basename dentro uploadsDir', async () => {
-      repo.findOneBy.mockResolvedValue({ id: 'job-uuid-1', status: EnrichmentJobStatus.DONE, campaignId: null });
-      const dir = join(tmpDir, 'attachments', 'enrichment', 'job-uuid-1');
-      fs.mkdirSync(dir, { recursive: true });
-      const zip = new AdmZip();
-      zip.addFile('rubrica.csv', Buffer.from(RUBRICA_ROW, 'utf-8'));
-      zip.addFile('allegati/sub/nested.pdf', Buffer.from('%PDF-nested'));
-      zip.writeZip(join(dir, 'source.zip'));
-      fs.writeFileSync(join(dir, 'result.csv'), '"codice_fiscale"\n"RSSMRA80A01H501U"');
-
-      await service.createCampaignFromJob('job-uuid-1', { name: 'X', channelType: 'PEC' }, 'op');
-
-      const uploadsDir = join(tmpDir, 'attachments', 'uploads', 'camp-1');
-      expect(fs.existsSync(join(uploadsDir, 'nested.pdf'))).toBe(true);
-      expect(fs.existsSync(join(uploadsDir, 'sub'))).toBe(false);
+    it('conversione già in corso (pending/processing) → blocked, nessun secondo job in coda', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.DONE, campaignId: null, campaignConversionStatus: 'processing' });
+      const result = await service.requestCampaignConversion('j1', { name: 'X', channelType: 'PEC' }, 'op');
+      expect(result.blocked).toBe(true);
+      expect(queue.add).not.toHaveBeenCalled();
     });
   });
 

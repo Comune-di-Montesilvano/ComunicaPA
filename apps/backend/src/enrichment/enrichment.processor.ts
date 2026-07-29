@@ -4,14 +4,21 @@ import { Repository } from 'typeorm';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import type { Job } from 'bullmq';
 import * as fs from 'fs';
+import { basename, join } from 'path';
 import AdmZip from 'adm-zip';
 import {
   EnrichmentJob,
   EnrichmentJobStatus,
+  CampaignConversionStatus,
   EnrichmentWarning,
 } from '../entities/enrichment-job.entity';
-import { ENRICHMENT_QUEUE, EnrichmentQueueJobData } from './enrichment-job.types';
-import { getEnrichmentResultCsv, getEnrichmentSourceZip } from './enrichment-paths';
+import {
+  ENRICHMENT_QUEUE,
+  EnrichmentQueueJobData,
+  CONVERT_CAMPAIGN_JOB_NAME,
+  ConvertCampaignQueueJobData,
+} from './enrichment-job.types';
+import { getEnrichmentDir, getEnrichmentResultCsv, getEnrichmentSourceZip } from './enrichment-paths';
 import { readLargeFileSync } from './large-file-read.util';
 import { parseMaggioliZip, type MaggioliRecord } from './maggioli-parser';
 import { buildEnrichedCsv, buildEnrichedCsvHeaders, type EnrichedRow } from './enriched-csv.util';
@@ -19,6 +26,8 @@ import { PdfExtractorClient, type ExtractedPaymentDetail } from './pdf-extractor
 import { EnrichmentEventsService } from './enrichment-events.service';
 import { EnrichmentAddressOverrideService } from './enrichment-address-override.service';
 import { readCheckpointSync, writeCheckpointSync, deleteCheckpointSync } from './enrichment-checkpoint.util';
+import { CampaignsService } from '../campaigns/campaigns.service';
+import { getUploadsDir } from '../attachments/attachment-paths';
 
 const PROGRESS_UPDATE_EVERY = 10;
 const CHECKPOINT_EVERY = 100;
@@ -34,11 +43,68 @@ export class EnrichmentProcessor extends WorkerHost {
     private readonly extractor: PdfExtractorClient,
     private readonly events: EnrichmentEventsService,
     private readonly overrideService: EnrichmentAddressOverrideService,
+    private readonly campaignsService: CampaignsService,
   ) {
     super();
   }
 
-  async process(job: Job<EnrichmentQueueJobData>): Promise<void> {
+  async process(job: Job<EnrichmentQueueJobData | ConvertCampaignQueueJobData>): Promise<void> {
+    if (job.name === CONVERT_CAMPAIGN_JOB_NAME) {
+      return this.processConvertCampaign(job as Job<ConvertCampaignQueueJobData>);
+    }
+    return this.processEnrich(job as Job<EnrichmentQueueJobData>);
+  }
+
+  /**
+   * Lavoro pesante di "Crea bozza campagna" spostato qui da EnrichmentService:
+   * unzip del source.zip (fino a centinaia di MB) + scrittura di migliaia di
+   * PDF su disco, mai dentro la richiesta HTTP originale (vedi commento in
+   * EnrichmentService.requestCampaignConversion — rischio timeout proxy +
+   * event loop Node affamato per qualunque richiesta concorrente).
+   */
+  private async processConvertCampaign(job: Job<ConvertCampaignQueueJobData>): Promise<void> {
+    const { jobId, name, channelType, createdBy } = job.data;
+    try {
+      await this.jobRepo.update(jobId, { campaignConversionStatus: CampaignConversionStatus.PROCESSING });
+
+      const campaign = await this.campaignsService.create(
+        {
+          name,
+          channelType,
+          channelConfig: { wizCsvFilename: 'arricchito.csv', wizCsvHasHeaders: true, wizStep: 1 },
+        },
+        createdBy,
+      );
+
+      const uploadsDir = getUploadsDir(campaign.id);
+      fs.mkdirSync(uploadsDir, { recursive: true });
+      fs.copyFileSync(getEnrichmentResultCsv(jobId), join(uploadsDir, 'draft_recipients.csv'));
+
+      const source = new AdmZip(readLargeFileSync(getEnrichmentSourceZip(jobId)));
+      for (const entry of source.getEntries()) {
+        if (entry.entryName.startsWith('allegati/') && entry.entryName.toLowerCase().endsWith('.pdf')) {
+          // basename(): il nome file nello ZIP è dato attaccante-influenzabile
+          // (operatore autenticato), mai usarlo per costruire un path senza
+          // sanitizzazione — previene un entry "allegati/../../altra/x.pdf".
+          fs.writeFileSync(join(uploadsDir, basename(entry.entryName)), entry.getData());
+        }
+      }
+
+      await this.jobRepo.update(jobId, {
+        campaignId: campaign.id,
+        campaignConversionStatus: CampaignConversionStatus.DONE,
+      });
+      fs.rmSync(getEnrichmentDir(jobId), { recursive: true, force: true });
+    } catch (err: any) {
+      this.logger.error(`Conversione in campagna fallita per EnrichmentJob ${jobId}: ${err.message}`);
+      await this.jobRepo.update(jobId, {
+        campaignConversionStatus: CampaignConversionStatus.FAILED,
+        campaignConversionError: err.message,
+      });
+    }
+  }
+
+  private async processEnrich(job: Job<EnrichmentQueueJobData>): Promise<void> {
     const { jobId } = job.data;
     const record = await this.jobRepo.findOneBy({ id: jobId });
     if (!record) {

@@ -16,6 +16,22 @@ export enum TraceFormat {
   MAGGIOLI = 'MAGGIOLI',
 }
 
+// "Crea bozza campagna" sposta unzip (fino a centinaia di MB) + scrittura di
+// migliaia di PDF su un job BullMQ dedicato — farlo dentro la richiesta HTTP
+// blocca l'event loop Node abbastanza a lungo da far scattare il timeout del
+// reverse proxy esterno (bug reale: "Unexpected token '<'" sul frontend,
+// corpo della risposta 500 sostituito dalla pagina HTML del proxy) E, essendo
+// Node single-thread, affama nel frattempo QUALUNQUE altra richiesta
+// concorrente (osservato: 403 su /admin/settings scollegato, in corso nello
+// stesso momento). Stato distinto da EnrichmentJobStatus (già DONE quando la
+// conversione viene richiesta).
+export enum CampaignConversionStatus {
+  PENDING = 'pending',
+  PROCESSING = 'processing',
+  DONE = 'done',
+  FAILED = 'failed',
+}
+
 export interface EnrichmentWarning {
   row: number;
   pdf: string;
@@ -64,6 +80,12 @@ export class EnrichmentJob {
   /** Valorizzato quando il job è stato convertito in bozza campagna (file già eliminati). */
   @Column({ name: 'campaign_id', type: 'uuid', nullable: true })
   campaignId!: string | null;
+
+  @Column({ name: 'campaign_conversion_status', type: 'enum', enum: CampaignConversionStatus, nullable: true })
+  campaignConversionStatus!: CampaignConversionStatus | null;
+
+  @Column({ name: 'campaign_conversion_error', type: 'text', nullable: true })
+  campaignConversionError!: string | null;
 
   @Column({ name: 'created_by', type: 'varchar', length: 256 })
   createdBy!: string;

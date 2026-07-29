@@ -202,7 +202,7 @@ export class EnrichmentController {
     if (!name || !body.channelType) {
       return { blocked: true, message: 'Nome campagna e canale richiesti' };
     }
-    return this.svc.createCampaignFromJob(id, { name, channelType: body.channelType }, req.user.username);
+    return this.svc.requestCampaignConversion(id, { name, channelType: body.channelType }, req.user.username);
   }
 
   @Get('jobs/:id/rows/:pdfFilename')
