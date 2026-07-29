@@ -107,9 +107,12 @@ function normalizeCountryName(value: string): string {
   return value
     .trim()
     .toLowerCase()
-    .replace(/['’]/g, "'") // normalizza apostrofo tipografico/curly a quello dritto
+    .replace(/['']/g, "'") // normalizza apostrofo tipografico/curly a quello dritto
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, ''); // rimuove diacritici (é->e, ù->u, ...)
+    .replace(/[̀-ͯ]/g, '') // rimuove diacritici (é->e, ù->u, ...)
+    .replace(/'/g, '') // rimuove apostrofi — dato PA comune: vocale accentata
+    // sostituita con lettera base + apostrofo finale (es. "PERU'" per "Perù")
+    .replace(/\s+/g, ''); // rimuove spazi — es. "SUD AFRICA" vs "Sudafrica"
 }
 
 const COUNTRY_NORMALIZED_INDEX: Map<string, string> = new Map(
@@ -126,4 +129,14 @@ export function matchCountry(raw: string): string | null {
   const key = normalizeCountryName(raw);
   if (!key) return null;
   return COUNTRY_NORMALIZED_INDEX.get(key) ?? null;
+}
+
+/**
+ * CAP domestico italiano — 5 cifre. Stessa regola richiesta sia dal wizard
+ * campagne sia dalla validazione in Arricchimento Tracciati (vedi
+ * docs/superpowers/specs/2026-07-29-arricchimento-validazione-design.md) —
+ * unica definizione condivisa invece di una copia locale per consumer.
+ */
+export function isValidCap(value: string): boolean {
+  return /^\d{5}$/.test(value.trim());
 }
