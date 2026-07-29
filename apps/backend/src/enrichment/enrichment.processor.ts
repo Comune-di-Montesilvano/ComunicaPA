@@ -90,8 +90,14 @@ export class EnrichmentProcessor extends WorkerHost {
               row.stato_estero = result.address.stato_estero;
             }
             if (result.payment?.totale) {
-              row.numero_avviso = rec.csvNumeroAvviso || result.payment.totale.numero_avviso;
-              row.numero_avviso_alternativo = rec.csvNumeroAvvisoAlt || result.payment.totale.numero_avviso_alternativo;
+              // QR/testo del PDF vince sempre sul CSV: il tracciato Maggioli può
+              // avere un numero avviso disallineato dal vero IUV stampato/embeddato
+              // nella notifica (visto dal vivo — CSV riportava un valore che non
+              // corrispondeva al QR scansionato realmente sul foglio). Il CSV
+              // resta solo un fallback per righe dove l'estrazione non ha trovato
+              // alcun dato pagamento.
+              row.numero_avviso = result.payment.totale.numero_avviso || rec.csvNumeroAvviso;
+              row.numero_avviso_alternativo = result.payment.totale.numero_avviso_alternativo || rec.csvNumeroAvvisoAlt;
               row.importo = result.payment.totale.importo;
               row.scadenza = result.payment.totale.scadenza;
             }

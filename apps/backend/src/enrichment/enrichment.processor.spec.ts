@@ -136,11 +136,16 @@ describe('EnrichmentProcessor', () => {
     await expect(processor.process(fakeJob)).resolves.toBeUndefined();
   });
 
-  it('indirizzo e numero avviso da pag_indice.csv vincono sui dati estratti dal PDF', async () => {
+  it('indirizzo da pag_indice.csv vince sul PDF, numero avviso dal PDF (QR) vince sul CSV', async () => {
     fs.rmSync(getEnrichmentDir('j1'), { recursive: true, force: true });
     setupJobDirPagIndice('j1');
-    // Il PDF restituisce un indirizzo/numero avviso DIVERSI da quelli già nel CSV:
-    // la riga finale deve mantenere i valori del CSV, non quelli del PDF.
+    // Il PDF restituisce un indirizzo/numero avviso DIVERSI da quelli già nel CSV.
+    // Indirizzo: resta quello del CSV (fonte affidabile per la consegna postale).
+    // Numero avviso: vince il PDF — il tracciato Maggioli può avere un valore
+    // disallineato dal vero IUV stampato/embeddato nel QR (visto dal vivo:
+    // colonna CSV con un numero che non corrispondeva al QR scansionato
+    // realmente sul foglio), fidarsi del CSV avrebbe prodotto un avviso PagoPA
+    // sbagliato in mano al cittadino.
     client.extract.mockResolvedValue({
       address: { indirizzo: 'VIA PDF ESTRATTA 99', cap: '99999', comune: 'ALTROVE', provincia: 'XX', stato_estero: '' },
       payment: {
@@ -160,16 +165,33 @@ describe('EnrichmentProcessor', () => {
     expect(lines[1]).toContain('"00067"');
     expect(lines[1]).toContain('"MORLUPO"');
     expect(lines[1]).not.toContain('VIA PDF ESTRATTA 99');
-    // Numero avviso: vince pag_indice.csv (Ocr int/rid), non il PDF
-    expect(lines[1]).toContain('"301000000000000099"');
-    expect(lines[1]).toContain('"RAV999"');
-    expect(lines[1]).not.toContain('999999999999999999');
+    // Numero avviso: vince il PDF (QR), non il CSV
+    expect(lines[1]).toContain('"999999999999999999"');
+    expect(lines[1]).toContain('"PDF-ALT"');
+    expect(lines[1]).not.toContain('301000000000000099');
     // Importo/scadenza: sempre dal PDF (non presenti nel CSV sorgente)
     expect(lines[1]).toContain('"10,00"');
     // external_id: pag_indice.csv senza colonna 'ocr notifica' → fallback su numero_provvedimento
     const headerCells = csv.split('\n')[0].split(';');
     const externalIdIdx = headerCells.indexOf('"external_id"');
     expect(lines[1].split(';')[externalIdIdx]).toBe('"99"');
+  });
+
+  it('numero avviso da pag_indice.csv usato come fallback quando il PDF non estrae dati pagamento', async () => {
+    fs.rmSync(getEnrichmentDir('j1'), { recursive: true, force: true });
+    setupJobDirPagIndice('j1');
+    client.extract.mockResolvedValue({
+      address: { indirizzo: 'VIA PDF ESTRATTA 99', cap: '99999', comune: 'ALTROVE', provincia: 'XX', stato_estero: '' },
+      payment: { totale: { numero_avviso: '', numero_avviso_alternativo: '', cf_ente: '', importo: '10,00', scadenza: '01/01/2027' }, rate: [] },
+      warnings: [],
+    });
+
+    await processor.process(fakeJob);
+
+    const csv = fs.readFileSync(getEnrichmentResultCsv('j1'), 'utf-8');
+    const lines = csv.split('\n');
+    expect(lines[1]).toContain('"301000000000000099"');
+    expect(lines[1]).toContain('"RAV999"');
   });
 
   it('external_id: usa "ocr notifica" quando presente nel tracciato pag_indice', async () => {
