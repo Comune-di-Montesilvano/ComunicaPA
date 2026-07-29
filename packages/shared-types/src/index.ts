@@ -107,11 +107,9 @@ function normalizeCountryName(value: string): string {
   return value
     .trim()
     .toLowerCase()
-    .replace(new RegExp("[\\u0027\\u2019]", "g"), "’") // normalizza apostrofo tipografico (curly, U+2019) o dritto a un apostrofo dritto
+    .replace(/[\u0027\u2019]/g, '') // rimuove apostrofi (dritto U+0027 o tipografico/curly U+2019) - dato PA comune: "PERU'" per Peru accentata
     .normalize("NFD")
     .replace(new RegExp("[\\u0300-\\u036f]", "g"), "") // rimuove diacritici (é->e, ù->u, ...)
-    .replace(/’/g, "") // rimuove apostrofi — dato PA comune: vocale accentata
-    // sostituita con lettera base + apostrofo finale (es. "PERU’" per "Perù")
     .replace(/\s+/g, ""); // rimuove spazi — es. "SUD AFRICA" vs "Sudafrica"
 }
 
