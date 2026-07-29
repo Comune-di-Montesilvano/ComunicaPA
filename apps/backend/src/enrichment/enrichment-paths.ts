@@ -12,3 +12,7 @@ export function getEnrichmentSourceZip(jobId: string): string {
 export function getEnrichmentResultCsv(jobId: string): string {
   return join(getEnrichmentDir(jobId), 'result.csv');
 }
+
+export function getEnrichmentCheckpoint(jobId: string): string {
+  return join(getEnrichmentDir(jobId), 'checkpoint.json');
+}
