@@ -14,12 +14,20 @@ describe('EnrichmentAddressOverrideService', () => {
   });
 
   it('upsert scrive su (jobId, pdfFilename) e ritorna la riga salvata', async () => {
-    const result = await service.upsert('j1', 'PROVV_1.pdf', { indirizzo: 'VIA NUOVA 1', cap: '00100', comune: 'ROMA', provincia: 'RM' }, 'op');
+    const result = await service.upsert('j1', 'PROVV_1.pdf', { indirizzo: 'VIA NUOVA 1', cap: '00100', comune: 'ROMA', provincia: 'RM' }, null, 'op');
     expect(repo.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ jobId: 'j1', pdfFilename: 'PROVV_1.pdf', indirizzo: 'VIA NUOVA 1', correctedBy: 'op' }),
+      expect.objectContaining({ jobId: 'j1', pdfFilename: 'PROVV_1.pdf', indirizzo: 'VIA NUOVA 1', extraFields: null, correctedBy: 'op' }),
       ['jobId', 'pdfFilename'],
     );
     expect(result.indirizzo).toBe('VIA NUOVA 1');
+  });
+
+  it('upsert con extraFields non vuoto lo scrive, vuoto/assente lo scrive null', async () => {
+    await service.upsert('j1', 'PROVV_1.pdf', {}, { importo: '100,00' }, 'op');
+    expect(repo.upsert).toHaveBeenCalledWith(expect.objectContaining({ extraFields: { importo: '100,00' } }), ['jobId', 'pdfFilename']);
+
+    await service.upsert('j1', 'PROVV_1.pdf', {}, {}, 'op');
+    expect(repo.upsert).toHaveBeenLastCalledWith(expect.objectContaining({ extraFields: null }), ['jobId', 'pdfFilename']);
   });
 
   it('findByJob ritorna tutti gli override del job', async () => {
@@ -49,5 +57,17 @@ describe('EnrichmentAddressOverrideService', () => {
     const overrides = [{ jobId: 'j1', pdfFilename: 'PROVV_1.pdf', indirizzo: 'VIA ESTERA', cap: '', comune: 'BRUXELLES', provincia: '', statoEstero: 'Belgio' } as any];
     const patched = service.applyOverrides(rows, overrides);
     expect(patched[0].stato_estero).toBe('Belgio');
+  });
+
+  it('applyOverrides applica anche extraFields (correzione PDF illeggibile: nessun dato estratto)', () => {
+    const rows = [{ allegato: 'PROVV_1.pdf', importo: '', scadenza: '', numero_avviso: '' }];
+    const overrides = [{
+      jobId: 'j1', pdfFilename: 'PROVV_1.pdf', indirizzo: null, cap: null, comune: null, provincia: null, statoEstero: null,
+      extraFields: { importo: '761,00', scadenza: '31/12/2026', numero_avviso: '12345' },
+    } as any];
+    const patched = service.applyOverrides(rows, overrides);
+    expect(patched[0].importo).toBe('761,00');
+    expect(patched[0].scadenza).toBe('31/12/2026');
+    expect(patched[0].numero_avviso).toBe('12345');
   });
 });

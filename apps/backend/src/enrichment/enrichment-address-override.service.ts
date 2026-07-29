@@ -23,6 +23,7 @@ export class EnrichmentAddressOverrideService {
     jobId: string,
     pdfFilename: string,
     address: AddressOverrideInput,
+    extraFields: Record<string, string> | null,
     correctedBy: string,
   ): Promise<EnrichmentAddressOverride> {
     await this.repo.upsert(
@@ -34,6 +35,7 @@ export class EnrichmentAddressOverrideService {
         comune: address.comune ?? null,
         provincia: address.provincia ?? null,
         statoEstero: address.statoEstero ?? null,
+        extraFields: extraFields && Object.keys(extraFields).length > 0 ? extraFields : null,
         correctedBy,
       },
       ['jobId', 'pdfFilename'],
@@ -57,6 +59,7 @@ export class EnrichmentAddressOverrideService {
       if (!override) return row;
       return {
         ...row,
+        ...(override.extraFields ?? {}),
         indirizzo: override.indirizzo ?? row['indirizzo'],
         cap: override.cap ?? row['cap'],
         comune: override.comune ?? row['comune'],

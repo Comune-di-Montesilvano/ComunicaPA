@@ -44,6 +44,13 @@ export class EnrichmentAddressOverride {
   @Column({ name: 'stato_estero', type: 'varchar', length: 256, nullable: true })
   statoEstero!: string | null;
 
+  // Override per qualunque colonna CSV oltre alle 5 tipizzate sopra (numero_avviso,
+  // importo, scadenza, rataN_*, tipo, pec, nominativo...) — caso PDF illeggibile,
+  // nessun dato estratto: l'operatore deve poter compilare tutto a mano, non solo
+  // l'indirizzo. jsonb libero perché le colonne rataN_* sono dinamiche per job.
+  @Column({ name: 'extra_fields', type: 'jsonb', nullable: true })
+  extraFields!: Record<string, string> | null;
+
   @Column({ name: 'corrected_by', type: 'varchar', length: 256 })
   correctedBy!: string;
 

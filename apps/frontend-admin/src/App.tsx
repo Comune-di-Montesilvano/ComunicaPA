@@ -1142,17 +1142,14 @@ export function App(): React.JSX.Element {
   const [enrichLiveLogs, setEnrichLiveLogs] = useState<Record<string, EnrichLogEntry[]>>({});
   const [enrichStreamingJobId, setEnrichStreamingJobId] = useState<string | null>(null);
 
-  interface EnrichAddressForm {
-    indirizzo: string;
-    cap: string;
-    comune: string;
-    provincia: string;
-    statoEstero: string;
-  }
   const [enrichAddressEditJobId, setEnrichAddressEditJobId] = useState<string | null>(null);
   const [enrichAddressEditPdf, setEnrichAddressEditPdf] = useState<string | null>(null);
   const [enrichAddressEditCf, setEnrichAddressEditCf] = useState('');
-  const [enrichAddressEditForm, setEnrichAddressEditForm] = useState<EnrichAddressForm>({ indirizzo: '', cap: '', comune: '', provincia: '', statoEstero: '' });
+  // Form dinamico: campi = tutte le colonne del CSV del job (incl. rataN_* variabili),
+  // non una lista fissa — caso PDF illeggibile (es. "ADM-ZIP: Unknown descriptor
+  // format"), nessun dato estratto, l'operatore deve poter compilare tutto a mano.
+  const [enrichAddressEditHeaders, setEnrichAddressEditHeaders] = useState<string[]>([]);
+  const [enrichAddressEditFields, setEnrichAddressEditFields] = useState<Record<string, string>>({});
   const [enrichAddressEditLoading, setEnrichAddressEditLoading] = useState(false);
   const [enrichAddressEditAnprLoading, setEnrichAddressEditAnprLoading] = useState(false);
   const [enrichAddressEditSaving, setEnrichAddressEditSaving] = useState(false);
@@ -2800,14 +2797,24 @@ export function App(): React.JSX.Element {
         return;
       }
       setEnrichAddressEditCf(row.codiceFiscale || '');
-      const source = row.override || row;
-      setEnrichAddressEditForm({
-        indirizzo: source.indirizzo || '',
-        cap: source.cap || '',
-        comune: source.comune || '',
-        provincia: source.provincia || '',
-        statoEstero: source.statoEstero || '',
-      });
+      const headers: string[] = row.headers || [];
+      const currentRow: Record<string, string> = row.row || {};
+      const override = row.override;
+      const fields: Record<string, string> = {};
+      for (const h of headers) {
+        if (override) {
+          // "stato_estero" (colonna CSV) è l'unico header mappato a un nome
+          // diverso lato override tipizzato (camelCase "statoEstero") — tutti
+          // gli altri campi tipizzati e ogni extraField usano lo stesso nome
+          // colonna, nessuna traduzione.
+          if (h === 'stato_estero' && override.statoEstero != null) { fields[h] = override.statoEstero; continue; }
+          if ((h === 'indirizzo' || h === 'cap' || h === 'comune' || h === 'provincia') && override[h] != null) { fields[h] = override[h]; continue; }
+          if (override.extraFields && override.extraFields[h] != null) { fields[h] = override.extraFields[h]; continue; }
+        }
+        fields[h] = currentRow[h] ?? '';
+      }
+      setEnrichAddressEditHeaders(headers);
+      setEnrichAddressEditFields(fields);
     } catch {
       setEnrichAddressEditError('Errore durante il caricamento della riga');
     } finally {
@@ -2815,10 +2822,21 @@ export function App(): React.JSX.Element {
     }
   };
 
+  const enrichHeaderLabel = (h: string): string => {
+    const m = h.match(/^rata(\d+)_(numero_avviso|importo|scadenza)$/);
+    if (m) {
+      const sub = { numero_avviso: 'N. avviso', importo: 'Importo', scadenza: 'Scadenza' }[m[2]];
+      return `Rata ${m[1]} — ${sub}`;
+    }
+    return h.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+  };
+
   const closeEnrichAddressEdit = () => {
     setEnrichAddressEditJobId(null);
     setEnrichAddressEditPdf(null);
     setEnrichAddressEditError(null);
+    setEnrichAddressEditHeaders([]);
+    setEnrichAddressEditFields({});
   };
 
   // Stessa mappatura toponimo+numeroCivico → indirizzo già usata in
@@ -2839,23 +2857,25 @@ export function App(): React.JSX.Element {
         const ind = residenza.indirizzo;
         const via = [ind.toponimo?.specie, ind.toponimo?.denominazioneToponimo].filter(Boolean).join(' ');
         const civico = [ind.numeroCivico?.numero, ind.numeroCivico?.lettera].filter(Boolean).join('');
-        setEnrichAddressEditForm({
+        setEnrichAddressEditFields((f) => ({
+          ...f,
           indirizzo: [via, civico].filter(Boolean).join(', '),
           cap: ind.cap || '',
           comune: ind.comune?.nomeComune || '',
           provincia: ind.comune?.siglaProvinciaIstat || '',
-          statoEstero: '',
-        });
+          stato_estero: '',
+        }));
       } else if (data?.anpr?.success && data?.anpr?.found && residenza?.localitaEstera?.indirizzoEstero) {
         const ind = residenza.localitaEstera.indirizzoEstero;
         const via = [ind.toponimo?.denominazione, ind.toponimo?.numeroCivico].filter(Boolean).join(' ');
-        setEnrichAddressEditForm({
+        setEnrichAddressEditFields((f) => ({
+          ...f,
           indirizzo: via,
           cap: ind.cap || '',
           comune: ind.localita?.descrizioneLocalita || '',
           provincia: '',
-          statoEstero: ind.localita?.descrizioneStato || '',
-        });
+          stato_estero: ind.localita?.descrizioneStato || '',
+        }));
       } else {
         alert('ANPR: nessun indirizzo di residenza trovato per questo CF.');
       }
@@ -2868,7 +2888,7 @@ export function App(): React.JSX.Element {
 
   const handleSaveEnrichAddress = async () => {
     if (!enrichAddressEditJobId || !enrichAddressEditPdf) return;
-    if (!enrichAddressEditForm.indirizzo.trim() || !enrichAddressEditForm.comune.trim()) {
+    if (!(enrichAddressEditFields.indirizzo ?? '').trim() || !(enrichAddressEditFields.comune ?? '').trim()) {
       setEnrichAddressEditError('Indirizzo e Comune sono obbligatori.');
       return;
     }
@@ -2876,8 +2896,8 @@ export function App(): React.JSX.Element {
     setEnrichAddressEditError(null);
     try {
       const res = await apiFetch(
-        `/enrichment/jobs/${enrichAddressEditJobId}/rows/${encodeURIComponent(enrichAddressEditPdf)}/address`,
-        { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(enrichAddressEditForm) },
+        `/enrichment/jobs/${enrichAddressEditJobId}/rows/${encodeURIComponent(enrichAddressEditPdf)}`,
+        { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(enrichAddressEditFields) },
       );
       const body = await res.json();
       if (body.blocked) {
@@ -11953,32 +11973,23 @@ export function App(): React.JSX.Element {
                                             'Carica da ANPR'
                                           )}
                                         </button>
+                                        {/* Form dinamico: tutte le colonne del job (indirizzo + dati pagamento/rate
+                                            inclusi) — caso PDF illeggibile, nessun dato estratto, l'operatore deve
+                                            poter compilare tutto a mano, non solo l'indirizzo. */}
                                         <div className="row g-2 mb-2">
-                                          <div className="col-md-8">
-                                            <label className="form-label small fw-bold">Indirizzo</label>
-                                            <input type="text" className="form-control form-control-sm" value={enrichAddressEditForm.indirizzo}
-                                              onChange={(e) => setEnrichAddressEditForm((f) => ({ ...f, indirizzo: e.target.value }))} />
-                                          </div>
-                                          <div className="col-md-4">
-                                            <label className="form-label small fw-bold">CAP</label>
-                                            <input type="text" className="form-control form-control-sm" value={enrichAddressEditForm.cap}
-                                              onChange={(e) => setEnrichAddressEditForm((f) => ({ ...f, cap: e.target.value }))} />
-                                          </div>
-                                          <div className="col-md-6">
-                                            <label className="form-label small fw-bold">Comune</label>
-                                            <input type="text" className="form-control form-control-sm" value={enrichAddressEditForm.comune}
-                                              onChange={(e) => setEnrichAddressEditForm((f) => ({ ...f, comune: e.target.value }))} />
-                                          </div>
-                                          <div className="col-md-3">
-                                            <label className="form-label small fw-bold">Provincia</label>
-                                            <input type="text" className="form-control form-control-sm" value={enrichAddressEditForm.provincia}
-                                              onChange={(e) => setEnrichAddressEditForm((f) => ({ ...f, provincia: e.target.value }))} />
-                                          </div>
-                                          <div className="col-md-3">
-                                            <label className="form-label small fw-bold">Stato estero</label>
-                                            <input type="text" className="form-control form-control-sm" value={enrichAddressEditForm.statoEstero}
-                                              onChange={(e) => setEnrichAddressEditForm((f) => ({ ...f, statoEstero: e.target.value }))} />
-                                          </div>
+                                          {enrichAddressEditHeaders
+                                            .filter((h) => h !== 'allegato' && h !== 'codice_fiscale')
+                                            .map((h) => (
+                                              <div className="col-md-3" key={h}>
+                                                <label className="form-label small fw-bold">{enrichHeaderLabel(h)}</label>
+                                                <input
+                                                  type="text"
+                                                  className="form-control form-control-sm"
+                                                  value={enrichAddressEditFields[h] ?? ''}
+                                                  onChange={(e) => setEnrichAddressEditFields((f) => ({ ...f, [h]: e.target.value }))}
+                                                />
+                                              </div>
+                                            ))}
                                         </div>
                                         {enrichAddressEditError && <div className="alert alert-danger small">{enrichAddressEditError}</div>}
                                         <div className="d-flex gap-2">

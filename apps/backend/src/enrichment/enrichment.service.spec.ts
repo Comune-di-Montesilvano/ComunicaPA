@@ -235,7 +235,8 @@ describe('EnrichmentService', () => {
       const row = await service.getRow('j1', 'PROVV_1.pdf');
 
       expect(row.codiceFiscale).toBe('RSSMRA80A01H501U');
-      expect(row.indirizzo).toBe('VIA VECCHIA'); // dato corrente non patchato di default
+      expect(row.row.indirizzo).toBe('VIA VECCHIA'); // dato corrente non patchato di default
+      expect(row.headers).toEqual(buildEnrichedCsvHeaders(0));
       expect(row.override).toEqual(expect.objectContaining({ indirizzo: 'VIA NUOVA' }));
     });
 
@@ -247,24 +248,30 @@ describe('EnrichmentService', () => {
     });
   });
 
-  describe('saveAddressOverride', () => {
-    it('pdfFilename valido → upsert e nessun blocco', async () => {
+  describe('saveRowOverride', () => {
+    it('pdfFilename valido → upsert, indirizzo tipizzato ed extraFields separati', async () => {
       repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.DONE });
       fs.mkdirSync(getEnrichmentDir('j1'), { recursive: true });
       fs.writeFileSync(
         getEnrichmentResultCsv('j1'),
         buildEnrichedCsv(buildEnrichedCsvHeaders(0), [{ allegato: 'PROVV_1.pdf' }]),
       );
-      const result = await service.saveAddressOverride('j1', 'PROVV_1.pdf', { indirizzo: 'VIA NUOVA' }, 'op');
+      const result = await service.saveRowOverride('j1', 'PROVV_1.pdf', { indirizzo: 'VIA NUOVA', importo: '100,00' }, 'op');
       expect(result.blocked).toBeUndefined();
-      expect(overrideService.upsert).toHaveBeenCalledWith('j1', 'PROVV_1.pdf', { indirizzo: 'VIA NUOVA' }, 'op');
+      expect(overrideService.upsert).toHaveBeenCalledWith(
+        'j1',
+        'PROVV_1.pdf',
+        { indirizzo: 'VIA NUOVA', cap: undefined, comune: undefined, provincia: undefined, statoEstero: undefined },
+        { importo: '100,00' },
+        'op',
+      );
     });
 
     it('pdfFilename inesistente → blocked', async () => {
       repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.DONE });
       fs.mkdirSync(getEnrichmentDir('j1'), { recursive: true });
       fs.writeFileSync(getEnrichmentResultCsv('j1'), buildEnrichedCsv(buildEnrichedCsvHeaders(0), []));
-      const result = await service.saveAddressOverride('j1', 'INESISTENTE.pdf', { indirizzo: 'X' }, 'op');
+      const result = await service.saveRowOverride('j1', 'INESISTENTE.pdf', { indirizzo: 'X' }, 'op');
       expect(result.blocked).toBe(true);
       expect(overrideService.upsert).not.toHaveBeenCalled();
     });

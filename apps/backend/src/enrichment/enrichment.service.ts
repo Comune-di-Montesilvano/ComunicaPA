@@ -19,7 +19,7 @@ import { CampaignsService } from '../campaigns/campaigns.service';
 import { getUploadsDir } from '../attachments/attachment-paths';
 import { EnrichmentAddressOverrideService, type AddressOverrideInput } from './enrichment-address-override.service';
 import { readCheckpointSync } from './enrichment-checkpoint.util';
-import { buildEnrichedCsv, parseEnrichedCsv, type EnrichedRow } from './enriched-csv.util';
+import { buildEnrichedCsv, buildEnrichedCsvHeaders, parseEnrichedCsv, type EnrichedRow } from './enriched-csv.util';
 import type { EnrichmentAddressOverride } from '../entities/enrichment-address-override.entity';
 
 export interface CreateEnrichmentJobParams {
@@ -184,19 +184,23 @@ export class EnrichmentService {
    * risultato già scritto; job ancora PROCESSING → dal checkpoint se
    * esiste (righe non ancora committate non sono raggiungibili: nessun
    * checkpoint le contiene, coerente col gate lato UI su checkpointRow).
+   *
+   * `headers`/`row` espongono TUTTE le colonne del job (incluse le rataN_*
+   * dinamiche) — necessario per il caso PDF illeggibile (es. "ADM-ZIP:
+   * Unknown descriptor format"): l'estrazione non ha prodotto alcun dato,
+   * l'operatore deve poter compilare a mano qualunque campo, non solo
+   * l'indirizzo. Il form lato frontend è quindi dinamico sugli `headers`,
+   * non una lista fissa di 5 campi.
    */
   async getRow(jobId: string, pdfFilename: string): Promise<{
     pdfFilename: string;
     codiceFiscale: string;
-    indirizzo: string;
-    cap: string;
-    comune: string;
-    provincia: string;
-    statoEstero: string;
+    headers: string[];
+    row: EnrichedRow;
     override: EnrichmentAddressOverride | null;
   }> {
     const job = await this.getJob(jobId);
-    const rows = this.loadCurrentRows(job);
+    const { headers, rows } = this.loadCurrentRows(job);
     const row = rows.find((r) => r['allegato'] === pdfFilename);
     if (!row) {
       throw new BadRequestException(`Nessuna riga con allegato "${pdfFilename}" in questo job`);
@@ -206,27 +210,47 @@ export class EnrichmentService {
     return {
       pdfFilename,
       codiceFiscale: row['codice_fiscale'] ?? '',
-      indirizzo: row['indirizzo'] ?? '',
-      cap: row['cap'] ?? '',
-      comune: row['comune'] ?? '',
-      provincia: row['provincia'] ?? '',
-      statoEstero: row['stato_estero'] ?? '',
+      headers,
+      row,
       override,
     };
   }
 
-  async saveAddressOverride(
+  /**
+   * fields copre qualunque colonna del CSV (indirizzo/cap/comune/provincia/
+   * statoEstero vanno nelle colonne tipizzate dell'override per compatibilità
+   * con l'uso esistente — es. futuri filtri/query — il resto in extraFields).
+   */
+  async saveRowOverride(
     jobId: string,
     pdfFilename: string,
-    address: AddressOverrideInput,
+    fields: Record<string, string>,
     correctedBy: string,
   ): Promise<{ blocked?: boolean; message?: string }> {
     const job = await this.getJob(jobId);
-    const rows = this.loadCurrentRows(job);
+    const { rows } = this.loadCurrentRows(job);
     if (!rows.some((r) => r['allegato'] === pdfFilename)) {
       return { blocked: true, message: `Nessuna riga con allegato "${pdfFilename}" in questo job` };
     }
-    await this.overrideService.upsert(jobId, pdfFilename, address, correctedBy);
+    // `fields` è chiavato sui nomi colonna CSV reali (snake_case, es. "stato_estero",
+    // "numero_avviso", "rata1_importo") — coerente con come li restituisce getRow e
+    // come applyOverrides li riscrive nella riga. Solo "stato_estero" va nella colonna
+    // tipizzata camelCase "statoEstero" dell'override, il resto passa in extraFields
+    // con la stessa chiave del CSV, senza traduzione.
+    const address: AddressOverrideInput = {
+      indirizzo: fields.indirizzo,
+      cap: fields.cap,
+      comune: fields.comune,
+      provincia: fields.provincia,
+      statoEstero: fields.stato_estero,
+    };
+    const extraFields: Record<string, string> = {};
+    for (const [key, value] of Object.entries(fields)) {
+      if (key === 'indirizzo' || key === 'cap' || key === 'comune' || key === 'provincia' || key === 'stato_estero') continue;
+      if (key === 'allegato') continue; // chiave di identità della riga, mai sovrascrivibile
+      extraFields[key] = value;
+    }
+    await this.overrideService.upsert(jobId, pdfFilename, address, extraFields, correctedBy);
     return {};
   }
 
@@ -259,12 +283,13 @@ export class EnrichmentService {
     return {};
   }
 
-  private loadCurrentRows(job: EnrichmentJob): EnrichedRow[] {
+  private loadCurrentRows(job: EnrichmentJob): { headers: string[]; rows: EnrichedRow[] } {
     if (job.status === EnrichmentJobStatus.DONE) {
       const csvPath = getEnrichmentResultCsv(job.id);
-      if (!fs.existsSync(csvPath)) return [];
-      return parseEnrichedCsv(fs.readFileSync(csvPath, 'utf-8')).rows;
+      if (!fs.existsSync(csvPath)) return { headers: [], rows: [] };
+      return parseEnrichedCsv(fs.readFileSync(csvPath, 'utf-8'));
     }
-    return readCheckpointSync(job.id)?.rows ?? [];
+    const checkpoint = readCheckpointSync(job.id);
+    return { headers: buildEnrichedCsvHeaders(checkpoint?.maxRate ?? 0), rows: checkpoint?.rows ?? [] };
   }
 }

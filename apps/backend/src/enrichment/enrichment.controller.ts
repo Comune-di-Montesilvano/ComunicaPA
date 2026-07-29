@@ -211,16 +211,16 @@ export class EnrichmentController {
     return this.svc.getRow(id, pdfFilename);
   }
 
-  @Put('jobs/:id/rows/:pdfFilename/address')
+  @Put('jobs/:id/rows/:pdfFilename')
   @Roles('user', 'admin')
   @HttpCode(HttpStatus.OK)
-  saveAddressOverride(
+  saveRowOverride(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('pdfFilename') pdfFilename: string,
-    @Body() body: { indirizzo?: string; cap?: string; comune?: string; provincia?: string; statoEstero?: string },
+    @Body() body: Record<string, string>,
     @Req() req: Request & { user: JwtOperatorPayload },
   ) {
-    return this.svc.saveAddressOverride(id, pdfFilename, body, req.user.username);
+    return this.svc.saveRowOverride(id, pdfFilename, body, req.user.username);
   }
 
   @Post('jobs/:id/regenerate-csv')

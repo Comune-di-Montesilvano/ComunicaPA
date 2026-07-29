@@ -13,8 +13,8 @@ describe('EnrichmentController', () => {
       getJob: jest.fn(async () => ({ id: 'j1' })),
       deleteJob: jest.fn(async () => ({})),
       buildResultZip: jest.fn(async () => Buffer.from('zip')),
-      getRow: jest.fn(async () => ({ pdfFilename: 'PROVV_1.pdf', codiceFiscale: 'X', indirizzo: '', cap: '', comune: '', provincia: '', statoEstero: '', override: null })),
-      saveAddressOverride: jest.fn(async () => ({})),
+      getRow: jest.fn(async () => ({ pdfFilename: 'PROVV_1.pdf', codiceFiscale: 'X', headers: ['indirizzo'], row: {}, override: null })),
+      saveRowOverride: jest.fn(async () => ({})),
       regenerateCsv: jest.fn(async () => ({})),
     };
     events = {
@@ -122,14 +122,14 @@ describe('EnrichmentController', () => {
     expect(result.pdfFilename).toBe('PROVV_1.pdf');
   });
 
-  it('PUT rows/:pdfFilename/address: passa operatore e body al service', async () => {
-    const result = await controller.saveAddressOverride(
+  it('PUT rows/:pdfFilename: passa operatore e body al service', async () => {
+    const result = await controller.saveRowOverride(
       'j1',
       'PROVV_1.pdf',
       { indirizzo: 'VIA NUOVA', cap: '00100', comune: 'ROMA', provincia: 'RM' },
       { user: { username: 'op' } } as any,
     );
-    expect(svc.saveAddressOverride).toHaveBeenCalledWith('j1', 'PROVV_1.pdf', { indirizzo: 'VIA NUOVA', cap: '00100', comune: 'ROMA', provincia: 'RM' }, 'op');
+    expect(svc.saveRowOverride).toHaveBeenCalledWith('j1', 'PROVV_1.pdf', { indirizzo: 'VIA NUOVA', cap: '00100', comune: 'ROMA', provincia: 'RM' }, 'op');
     expect(result.blocked).toBeUndefined();
   });
 
