@@ -3,7 +3,7 @@ import MDEditor from '@uiw/react-md-editor';
 import { TemplateEditor } from './components/TemplateEditor';
 import { SearchableSelect } from './components/SearchableSelect';
 import { SEND_ENTITY_TYPES, SEND_TAXONOMY_CATALOG } from './data/sendTaxonomy';
-import { COUNTRIES, matchCountry } from '@comunicapa/shared-types';
+import { COUNTRIES, matchCountry, isValidCap } from '@comunicapa/shared-types';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import {
   Mail, MailOpen, MailCheck, Mails, Smartphone, Send, Globe, HelpCircle,
@@ -797,10 +797,6 @@ function isValidCfOrPiva(value: string): boolean {
 // (Email/PEC/CAP non erano validati in formato, solo presenza).
 function isValidEmailFormat(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
-}
-
-function isValidCap(value: string): boolean {
-  return /^\d{5}$/.test(value.trim());
 }
 
 // Risolve LO STESSO contratto specifico usato sia dal banner di avviso
