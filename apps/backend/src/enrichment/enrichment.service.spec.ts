@@ -5,7 +5,7 @@ import AdmZip from 'adm-zip';
 import { BadRequestException } from '@nestjs/common';
 import { EnrichmentJobStatus, TraceFormat } from '../entities/enrichment-job.entity';
 import { EnrichmentService } from './enrichment.service';
-import { getEnrichmentDir, getEnrichmentResultCsv } from './enrichment-paths';
+import { getEnrichmentAttachmentsDir, getEnrichmentDir, getEnrichmentResultCsv } from './enrichment-paths';
 import { buildEnrichedCsv, buildEnrichedCsvHeaders } from './enriched-csv.util';
 
 const RUBRICA_ROW =
@@ -110,11 +110,11 @@ describe('EnrichmentService', () => {
     expect(fs.existsSync(dir)).toBe(false);
   });
 
-  it('buildResultZip: contiene result.csv e i PDF del source.zip', async () => {
+  it('buildResultZip: contiene result.csv e i PDF già scompattati su disco da processEnrich', async () => {
     repo.findOneBy.mockResolvedValue({ id: 'job-uuid-1', status: EnrichmentJobStatus.DONE });
     const dir = join(tmpDir, 'attachments', 'enrichment', 'job-uuid-1');
-    fs.mkdirSync(dir, { recursive: true });
-    fs.copyFileSync(makeZipFile(tmpDir), join(dir, 'source.zip'));
+    fs.mkdirSync(getEnrichmentAttachmentsDir('job-uuid-1'), { recursive: true });
+    fs.writeFileSync(join(getEnrichmentAttachmentsDir('job-uuid-1'), 'PROVV_1.pdf'), '%PDF-fake');
     fs.writeFileSync(join(dir, 'result.csv'), '"a"');
 
     const buf = await service.buildResultZip('job-uuid-1');
@@ -136,21 +136,16 @@ describe('EnrichmentService', () => {
     expect(buf).toBeNull();
   });
 
-  it('buildResultZip: nomi file annidati in sottocartelle vengono appiattiti con basename (difesa da entry name inatteso)', async () => {
+  it('buildResultZip: job DONE ma senza cartella allegati (job pre-refactor o senza PDF) → solo il CSV', async () => {
     repo.findOneBy.mockResolvedValue({ id: 'job-uuid-1', status: EnrichmentJobStatus.DONE });
     const dir = join(tmpDir, 'attachments', 'enrichment', 'job-uuid-1');
     fs.mkdirSync(dir, { recursive: true });
-    const zip = new AdmZip();
-    zip.addFile('rubrica.csv', Buffer.from(RUBRICA_ROW, 'utf-8'));
-    zip.addFile('allegati/sub/nested.pdf', Buffer.from('%PDF-nested'));
-    zip.writeZip(join(dir, 'source.zip'));
     fs.writeFileSync(join(dir, 'result.csv'), '"a"');
 
     const buf = await service.buildResultZip('job-uuid-1');
     const out = new AdmZip(buf as Buffer);
-    // basename() appiattisce sub/nested.pdf -> nested.pdf, non replica la sottocartella
-    expect(out.getEntry('nested.pdf')).toBeTruthy();
-    expect(out.getEntries().every((e) => !e.entryName.includes('/'))).toBe(true);
+    expect(out.getEntry('arricchito.csv')).toBeTruthy();
+    expect(out.getEntries()).toHaveLength(1);
   });
 
   describe('requestCampaignConversion', () => {

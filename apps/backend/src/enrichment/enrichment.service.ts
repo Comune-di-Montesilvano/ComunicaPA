@@ -4,7 +4,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { Repository } from 'typeorm';
 import * as fs from 'fs';
-import { basename } from 'path';
+import { join } from 'path';
 import AdmZip from 'adm-zip';
 import {
   EnrichmentJob,
@@ -19,7 +19,7 @@ import {
   CONVERT_CAMPAIGN_JOB_NAME,
   ConvertCampaignQueueJobData,
 } from './enrichment-job.types';
-import { getEnrichmentDir, getEnrichmentResultCsv, getEnrichmentSourceZip } from './enrichment-paths';
+import { getEnrichmentAttachmentsDir, getEnrichmentDir, getEnrichmentResultCsv, getEnrichmentSourceZip } from './enrichment-paths';
 import { readLargeFileSync } from './large-file-read.util';
 import { EnrichmentAddressOverrideService, type AddressOverrideInput } from './enrichment-address-override.service';
 import { readCheckpointSync } from './enrichment-checkpoint.util';
@@ -105,11 +105,13 @@ export class EnrichmentService {
   }
 
   /**
-   * ZIP risultato costruito on-the-fly: arricchito.csv + PDF dal source.zip.
-   * Ritorna null (mai un'eccezione non-2xx) se il job non è ancora pronto o
-   * il file è già stato rimosso (race con retention) — il chiamante HTTP
-   * deve rispondere 200+blocked, mai un errore che il proxy esterno
-   * sostituirebbe con la sua pagina HTML.
+   * ZIP risultato costruito on-the-fly: arricchito.csv + PDF già scompattati
+   * su disco da processEnrich (allegati/ piatta, niente più re-parsing di
+   * source.zip — cancellato a fine arricchimento riuscita). Ritorna null
+   * (mai un'eccezione non-2xx) se il job non è ancora pronto o il file è già
+   * stato rimosso (race con retention) — il chiamante HTTP deve rispondere
+   * 200+blocked, mai un errore che il proxy esterno sostituirebbe con la sua
+   * pagina HTML.
    */
   async buildResultZip(id: string): Promise<Buffer | null> {
     const job = await this.getJob(id);
@@ -122,10 +124,10 @@ export class EnrichmentService {
     }
     const out = new AdmZip();
     out.addFile('arricchito.csv', fs.readFileSync(csvPath));
-    const source = new AdmZip(readLargeFileSync(getEnrichmentSourceZip(id)));
-    for (const entry of source.getEntries()) {
-      if (entry.entryName.startsWith('allegati/') && entry.entryName.toLowerCase().endsWith('.pdf')) {
-        out.addFile(basename(entry.entryName), entry.getData());
+    const attachmentsDir = getEnrichmentAttachmentsDir(id);
+    if (fs.existsSync(attachmentsDir)) {
+      for (const filename of fs.readdirSync(attachmentsDir)) {
+        out.addFile(filename, fs.readFileSync(join(attachmentsDir, filename)));
       }
     }
     return out.toBuffer();

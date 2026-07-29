@@ -4,7 +4,7 @@ import { join } from 'path';
 import AdmZip from 'adm-zip';
 import type { Job } from 'bullmq';
 import { EnrichmentJobStatus, TraceFormat } from '../entities/enrichment-job.entity';
-import { getEnrichmentCheckpoint, getEnrichmentDir, getEnrichmentResultCsv, getEnrichmentSourceZip } from './enrichment-paths';
+import { getEnrichmentAttachmentsDir, getEnrichmentCheckpoint, getEnrichmentDir, getEnrichmentResultCsv, getEnrichmentSourceZip } from './enrichment-paths';
 import { EnrichmentProcessor } from './enrichment.processor';
 
 const RUBRICA = [
@@ -114,6 +114,23 @@ describe('EnrichmentProcessor', () => {
     expect(finalUpdate.warnings).toEqual(
       expect.arrayContaining([expect.objectContaining({ pdf: 'PROVV_MANCANTE.pdf' })]),
     );
+  });
+
+  it('scompatta il PDF valido su disco (allegati/ piatta) durante l\'estrazione ed elimina source.zip a fine job riuscito', async () => {
+    await processor.process(fakeJob);
+
+    expect(fs.existsSync(join(getEnrichmentAttachmentsDir('j1'), 'PROVV_1.pdf'))).toBe(true);
+    // PDF_MANCANTE non esiste nello ZIP: nessun file scompattato per quella riga
+    expect(fs.existsSync(join(getEnrichmentAttachmentsDir('j1'), 'PROVV_MANCANTE.pdf'))).toBe(false);
+    // source.zip non serve più dopo un job DONE: i PDF sono già su disco
+    expect(fs.existsSync(getEnrichmentSourceZip('j1'))).toBe(false);
+  });
+
+  it('errore fatale (source.zip assente): nessun tentativo di eliminarlo di nuovo, nessun throw aggiuntivo', async () => {
+    fs.rmSync(getEnrichmentSourceZip('j1'), { force: true });
+    await expect(processor.process(fakeJob)).resolves.toBeUndefined();
+    const finalUpdate = repo.update.mock.calls.at(-1)![1];
+    expect(finalUpdate.status).toBe(EnrichmentJobStatus.FAILED);
   });
 
   it('warnings del servizio Python confluiscono nei warnings del job', async () => {
@@ -321,13 +338,11 @@ describe('EnrichmentProcessor', () => {
     const convertJob = { name: 'convert-campaign', data: { jobId: 'job-uuid-1', name: 'Campagna X', channelType: 'PEC', createdBy: 'op' } } as unknown as Job<any>;
 
     function setupDoneJob(): void {
+      // PDF già scompattati su disco da processEnrich (allegati/ piatta) —
+      // convert-campaign non riparsa più source.zip (vedi enrichment-paths.ts).
       repo.findOneBy.mockResolvedValue({ id: 'job-uuid-1', status: EnrichmentJobStatus.DONE, campaignId: null });
-      const dir = getEnrichmentDir('job-uuid-1');
-      fs.mkdirSync(dir, { recursive: true });
-      const zip = new AdmZip();
-      zip.addFile('rubrica.csv', Buffer.from('id;pec@pec.it;;MARIO;ROSSI;RSSMRA80A01H501U;;ROSSI MARIO;1;13/03/2026;Oggetto;;;PROVV_1.pdf', 'utf-8'));
-      zip.addFile('allegati/PROVV_1.pdf', Buffer.from('%PDF-fake'));
-      zip.writeZip(getEnrichmentSourceZip('job-uuid-1'));
+      fs.mkdirSync(getEnrichmentAttachmentsDir('job-uuid-1'), { recursive: true });
+      fs.writeFileSync(join(getEnrichmentAttachmentsDir('job-uuid-1'), 'PROVV_1.pdf'), '%PDF-fake');
       fs.writeFileSync(getEnrichmentResultCsv('job-uuid-1'), '"codice_fiscale"\n"RSSMRA80A01H501U"');
     }
 
@@ -353,26 +368,22 @@ describe('EnrichmentProcessor', () => {
       expect(fs.existsSync(getEnrichmentDir('job-uuid-1'))).toBe(false);
     });
 
-    it('nomi file annidati in sottocartelle appiattiti con basename dentro uploadsDir', async () => {
+    it('nessuna cartella allegati (job senza PDF o pre-refactor) → solo il CSV copiato, nessun errore', async () => {
       repo.findOneBy.mockResolvedValue({ id: 'job-uuid-1', status: EnrichmentJobStatus.DONE, campaignId: null });
-      const dir = getEnrichmentDir('job-uuid-1');
-      fs.mkdirSync(dir, { recursive: true });
-      const zip = new AdmZip();
-      zip.addFile('rubrica.csv', Buffer.from('id;pec@pec.it;;MARIO;ROSSI;RSSMRA80A01H501U;;ROSSI MARIO;1;13/03/2026;Oggetto;;;PROVV_1.pdf', 'utf-8'));
-      zip.addFile('allegati/sub/nested.pdf', Buffer.from('%PDF-nested'));
-      zip.writeZip(getEnrichmentSourceZip('job-uuid-1'));
+      fs.mkdirSync(getEnrichmentDir('job-uuid-1'), { recursive: true });
       fs.writeFileSync(getEnrichmentResultCsv('job-uuid-1'), '"codice_fiscale"\n"RSSMRA80A01H501U"');
 
       await processor.process(convertJob);
 
       const uploadsDir = join(tmpDir, 'uploads', 'camp-1');
-      expect(fs.existsSync(join(uploadsDir, 'nested.pdf'))).toBe(true);
-      expect(fs.existsSync(join(uploadsDir, 'sub'))).toBe(false);
+      expect(fs.existsSync(join(uploadsDir, 'draft_recipients.csv'))).toBe(true);
+      const updates = repo.update.mock.calls.map((c: any[]) => c[1]);
+      expect(updates.at(-1)).toEqual({ campaignId: 'camp-1', campaignConversionStatus: 'done' });
     });
 
     it('errore durante la conversione → campaignConversionStatus=failed con errore, mai un throw', async () => {
       repo.findOneBy.mockResolvedValue({ id: 'job-uuid-1', status: EnrichmentJobStatus.DONE, campaignId: null });
-      // source.zip assente → readLargeFileSync lancia
+      // result.csv assente → copyFileSync lancia
       await expect(processor.process(convertJob)).resolves.toBeUndefined();
       const updates = repo.update.mock.calls.map((c: any[]) => c[1]);
       expect(updates.at(-1)).toEqual(expect.objectContaining({ campaignConversionStatus: 'failed' }));

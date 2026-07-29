@@ -18,7 +18,7 @@ import {
   CONVERT_CAMPAIGN_JOB_NAME,
   ConvertCampaignQueueJobData,
 } from './enrichment-job.types';
-import { getEnrichmentDir, getEnrichmentResultCsv, getEnrichmentSourceZip } from './enrichment-paths';
+import { getEnrichmentAttachmentsDir, getEnrichmentDir, getEnrichmentResultCsv, getEnrichmentSourceZip } from './enrichment-paths';
 import { readLargeFileSync } from './large-file-read.util';
 import { parseMaggioliZip, type MaggioliRecord } from './maggioli-parser';
 import { buildEnrichedCsv, buildEnrichedCsvHeaders, type EnrichedRow } from './enriched-csv.util';
@@ -80,13 +80,15 @@ export class EnrichmentProcessor extends WorkerHost {
       fs.mkdirSync(uploadsDir, { recursive: true });
       fs.copyFileSync(getEnrichmentResultCsv(jobId), join(uploadsDir, 'draft_recipients.csv'));
 
-      const source = new AdmZip(readLargeFileSync(getEnrichmentSourceZip(jobId)));
-      for (const entry of source.getEntries()) {
-        if (entry.entryName.startsWith('allegati/') && entry.entryName.toLowerCase().endsWith('.pdf')) {
-          // basename(): il nome file nello ZIP è dato attaccante-influenzabile
-          // (operatore autenticato), mai usarlo per costruire un path senza
-          // sanitizzazione — previene un entry "allegati/../../altra/x.pdf".
-          fs.writeFileSync(join(uploadsDir, basename(entry.entryName)), entry.getData());
+      // PDF già scompattati su disco da processEnrich (allegati/ piatta) —
+      // nessun re-parsing di source.zip qui (già cancellato a fine
+      // arricchimento riuscita, vedi processEnrich): un PDF assente da questa
+      // cartella significa semplicemente che l'estrazione lo aveva già
+      // segnalato come illeggibile in un warning, niente di nuovo da gestire.
+      const attachmentsDir = getEnrichmentAttachmentsDir(jobId);
+      if (fs.existsSync(attachmentsDir)) {
+        for (const filename of fs.readdirSync(attachmentsDir)) {
+          fs.copyFileSync(join(attachmentsDir, filename), join(uploadsDir, filename));
         }
       }
 
@@ -117,6 +119,8 @@ export class EnrichmentProcessor extends WorkerHost {
 
       const zip = new AdmZip(readLargeFileSync(getEnrichmentSourceZip(jobId)));
       const { records } = parseMaggioliZip(zip);
+      const attachmentsDir = getEnrichmentAttachmentsDir(jobId);
+      fs.mkdirSync(attachmentsDir, { recursive: true });
 
       const checkpoint = readCheckpointSync(jobId);
       const startIndex = checkpoint?.lastRow ?? 0;
@@ -142,7 +146,17 @@ export class EnrichmentProcessor extends WorkerHost {
           });
         } else {
           try {
-            const result = await this.extractor.extract(entry.getData(), rec.pdfFilename, {
+            // Buffer letto una sola volta: scritto su disco (allegati/ piatta,
+            // niente più re-parsing di source.zip a valle per download ZIP e
+            // creazione bozza campagna) PRIMA di passarlo all'estrattore, così
+            // il file resta disponibile anche se l'estrazione fallisce (stesso
+            // comportamento di quando il PDF viveva solo dentro lo ZIP).
+            const pdfBuffer = entry.getData();
+            // basename(): rec.pdfFilename viene dalla colonna del CSV
+            // caricato dall'operatore, dato comunque non fidato per
+            // costruire un path — previene un valore tipo "../../altra/x.pdf".
+            fs.writeFileSync(join(attachmentsDir, basename(rec.pdfFilename)), pdfBuffer);
+            const result = await this.extractor.extract(pdfBuffer, rec.pdfFilename, {
               searchPayments: record.searchPayments ?? true,
             });
             for (const w of result.warnings) {
@@ -239,6 +253,10 @@ export class EnrichmentProcessor extends WorkerHost {
         completedAt: new Date(),
       });
       deleteCheckpointSync(jobId);
+      // source.zip non serve più: i PDF validi sono già su disco in
+      // allegati/, il CSV risultato è scritto. Solo sul percorso di
+      // successo — un job FAILED deve poterlo rileggere in un retry/resume.
+      fs.rmSync(getEnrichmentSourceZip(jobId), { force: true });
       this.events.emitTerminal(jobId, { type: 'done' });
       this.logger.log(`EnrichmentJob ${jobId} completato: ${records.length} righe, ${warnings.length} warning`);
     } catch (err: any) {
