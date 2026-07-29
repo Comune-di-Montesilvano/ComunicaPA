@@ -1157,6 +1157,9 @@ export function App(): React.JSX.Element {
   const [enrichAddressEditAnprLoading, setEnrichAddressEditAnprLoading] = useState(false);
   const [enrichAddressEditSaving, setEnrichAddressEditSaving] = useState(false);
   const [enrichAddressEditError, setEnrichAddressEditError] = useState<string | null>(null);
+  // pdf corretti in questa sessione (per job) — solo per evidenza visiva "Corretto",
+  // non persistito lato client: al refresh torna a leggersi da row.override via GET.
+  const [enrichCorrectedPdfs, setEnrichCorrectedPdfs] = useState<Record<string, Set<string>>>({});
 
   const runNotificationSearch = async (page = searchPage) => {
     setSearchLoading(true);
@@ -2898,6 +2901,11 @@ export function App(): React.JSX.Element {
         // form, la correzione è comunque salvata in DB e riapplicabile con
         // "Rigenera CSV" manualmente.
       }
+      setEnrichCorrectedPdfs((prev) => {
+        const jobSet = new Set(prev[enrichAddressEditJobId] ?? []);
+        jobSet.add(enrichAddressEditPdf);
+        return { ...prev, [enrichAddressEditJobId]: jobSet };
+      });
       closeEnrichAddressEdit();
     } catch {
       setEnrichAddressEditError('Errore durante il salvataggio dell\'indirizzo');
@@ -11904,18 +11912,87 @@ export function App(): React.JSX.Element {
                         {job.warnings && job.warnings.length > 0 ? (
                           job.warnings.map((w, i) => {
                             const committed = job.status === 'done' || w.row <= (job.checkpointRow ?? 0);
+                            const corrected = enrichCorrectedPdfs[job.id]?.has(w.pdf) ?? false;
+                            const editingThisRow = enrichAddressEditJobId === job.id && enrichAddressEditPdf === w.pdf;
                             return (
-                              <li key={i} className="d-flex align-items-center gap-2 mb-1">
-                                <span>Riga {w.row} — {w.pdf}: {w.message}</span>
-                                <button
-                                  className="btn btn-sm btn-link p-0"
-                                  type="button"
-                                  disabled={!committed}
-                                  title={committed ? '' : 'In attesa di checkpoint (salvataggio ogni 100 righe)'}
-                                  onClick={() => openEnrichAddressEdit(job.id, w.pdf)}
-                                >
-                                  Correggi indirizzo
-                                </button>
+                              <li key={i} className="mb-1">
+                                <div className="d-flex align-items-center gap-2">
+                                  <span>Riga {w.row} — {w.pdf}: {w.message}</span>
+                                  {corrected ? (
+                                    <span className="badge bg-success-subtle text-success-emphasis border">
+                                      <CheckCircle2 className="me-1" size={12} />Corretto
+                                    </span>
+                                  ) : null}
+                                  <button
+                                    className="btn btn-sm btn-link p-0"
+                                    type="button"
+                                    disabled={!committed}
+                                    title={committed ? '' : 'In attesa di checkpoint (salvataggio ogni 100 righe)'}
+                                    onClick={() => openEnrichAddressEdit(job.id, w.pdf)}
+                                  >
+                                    {corrected ? 'Modifica correzione' : 'Correggi indirizzo'}
+                                  </button>
+                                </div>
+                                {editingThisRow && (
+                                  <div className="border rounded p-3 mt-2 bg-light">
+                                    <h6 className="small fw-bold mb-2">Correggi indirizzo — {enrichAddressEditPdf}</h6>
+                                    {enrichAddressEditLoading ? (
+                                      <div className="small text-muted"><Loader2 className="icon-spin me-1" size={16} />Caricamento...</div>
+                                    ) : (
+                                      <>
+                                        <div className="mb-2 small text-muted">CF: {enrichAddressEditCf || '—'}</div>
+                                        <button
+                                          className="btn btn-sm btn-outline-primary mb-3"
+                                          type="button"
+                                          disabled={!enrichAddressEditCf || enrichAddressEditAnprLoading}
+                                          onClick={runEnrichAddressAnprCheck}
+                                        >
+                                          {enrichAddressEditAnprLoading ? (
+                                            <><Loader2 className="icon-spin me-1" size={16} />Verifica ANPR...</>
+                                          ) : (
+                                            'Carica da ANPR'
+                                          )}
+                                        </button>
+                                        <div className="row g-2 mb-2">
+                                          <div className="col-md-8">
+                                            <label className="form-label small fw-bold">Indirizzo</label>
+                                            <input type="text" className="form-control form-control-sm" value={enrichAddressEditForm.indirizzo}
+                                              onChange={(e) => setEnrichAddressEditForm((f) => ({ ...f, indirizzo: e.target.value }))} />
+                                          </div>
+                                          <div className="col-md-4">
+                                            <label className="form-label small fw-bold">CAP</label>
+                                            <input type="text" className="form-control form-control-sm" value={enrichAddressEditForm.cap}
+                                              onChange={(e) => setEnrichAddressEditForm((f) => ({ ...f, cap: e.target.value }))} />
+                                          </div>
+                                          <div className="col-md-6">
+                                            <label className="form-label small fw-bold">Comune</label>
+                                            <input type="text" className="form-control form-control-sm" value={enrichAddressEditForm.comune}
+                                              onChange={(e) => setEnrichAddressEditForm((f) => ({ ...f, comune: e.target.value }))} />
+                                          </div>
+                                          <div className="col-md-3">
+                                            <label className="form-label small fw-bold">Provincia</label>
+                                            <input type="text" className="form-control form-control-sm" value={enrichAddressEditForm.provincia}
+                                              onChange={(e) => setEnrichAddressEditForm((f) => ({ ...f, provincia: e.target.value }))} />
+                                          </div>
+                                          <div className="col-md-3">
+                                            <label className="form-label small fw-bold">Stato estero</label>
+                                            <input type="text" className="form-control form-control-sm" value={enrichAddressEditForm.statoEstero}
+                                              onChange={(e) => setEnrichAddressEditForm((f) => ({ ...f, statoEstero: e.target.value }))} />
+                                          </div>
+                                        </div>
+                                        {enrichAddressEditError && <div className="alert alert-danger small">{enrichAddressEditError}</div>}
+                                        <div className="d-flex gap-2">
+                                          <button className="btn btn-sm btn-primary" type="button" disabled={enrichAddressEditSaving} onClick={handleSaveEnrichAddress}>
+                                            {enrichAddressEditSaving ? <><Loader2 className="icon-spin me-1" size={16} />Salvataggio...</> : 'Salva correzione'}
+                                          </button>
+                                          <button className="btn btn-sm btn-outline-secondary" type="button" disabled={enrichAddressEditSaving} onClick={closeEnrichAddressEdit}>
+                                            Annulla
+                                          </button>
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
+                                )}
                               </li>
                             );
                           })
@@ -12004,66 +12081,6 @@ export function App(): React.JSX.Element {
                       </div>
                     )}
 
-                    {enrichAddressEditJobId === job.id && enrichAddressEditPdf && (
-                      <div className="border rounded p-3 mt-2 bg-light">
-                        <h6 className="small fw-bold mb-2">Correggi indirizzo — {enrichAddressEditPdf}</h6>
-                        {enrichAddressEditLoading ? (
-                          <div className="small text-muted"><Loader2 className="icon-spin me-1" size={16} />Caricamento...</div>
-                        ) : (
-                          <>
-                            <div className="mb-2 small text-muted">CF: {enrichAddressEditCf || '—'}</div>
-                            <button
-                              className="btn btn-sm btn-outline-primary mb-3"
-                              type="button"
-                              disabled={!enrichAddressEditCf || enrichAddressEditAnprLoading}
-                              onClick={runEnrichAddressAnprCheck}
-                            >
-                              {enrichAddressEditAnprLoading ? (
-                                <><Loader2 className="icon-spin me-1" size={16} />Verifica ANPR...</>
-                              ) : (
-                                'Carica da ANPR'
-                              )}
-                            </button>
-                            <div className="row g-2 mb-2">
-                              <div className="col-md-8">
-                                <label className="form-label small fw-bold">Indirizzo</label>
-                                <input type="text" className="form-control form-control-sm" value={enrichAddressEditForm.indirizzo}
-                                  onChange={(e) => setEnrichAddressEditForm((f) => ({ ...f, indirizzo: e.target.value }))} />
-                              </div>
-                              <div className="col-md-4">
-                                <label className="form-label small fw-bold">CAP</label>
-                                <input type="text" className="form-control form-control-sm" value={enrichAddressEditForm.cap}
-                                  onChange={(e) => setEnrichAddressEditForm((f) => ({ ...f, cap: e.target.value }))} />
-                              </div>
-                              <div className="col-md-6">
-                                <label className="form-label small fw-bold">Comune</label>
-                                <input type="text" className="form-control form-control-sm" value={enrichAddressEditForm.comune}
-                                  onChange={(e) => setEnrichAddressEditForm((f) => ({ ...f, comune: e.target.value }))} />
-                              </div>
-                              <div className="col-md-3">
-                                <label className="form-label small fw-bold">Provincia</label>
-                                <input type="text" className="form-control form-control-sm" value={enrichAddressEditForm.provincia}
-                                  onChange={(e) => setEnrichAddressEditForm((f) => ({ ...f, provincia: e.target.value }))} />
-                              </div>
-                              <div className="col-md-3">
-                                <label className="form-label small fw-bold">Stato estero</label>
-                                <input type="text" className="form-control form-control-sm" value={enrichAddressEditForm.statoEstero}
-                                  onChange={(e) => setEnrichAddressEditForm((f) => ({ ...f, statoEstero: e.target.value }))} />
-                              </div>
-                            </div>
-                            {enrichAddressEditError && <div className="alert alert-danger small">{enrichAddressEditError}</div>}
-                            <div className="d-flex gap-2">
-                              <button className="btn btn-sm btn-primary" type="button" disabled={enrichAddressEditSaving} onClick={handleSaveEnrichAddress}>
-                                {enrichAddressEditSaving ? <><Loader2 className="icon-spin me-1" size={16} />Salvataggio...</> : 'Salva correzione'}
-                              </button>
-                              <button className="btn btn-sm btn-outline-secondary" type="button" disabled={enrichAddressEditSaving} onClick={closeEnrichAddressEdit}>
-                                Annulla
-                              </button>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    )}
                   </div>
                 ))}
               </div>
