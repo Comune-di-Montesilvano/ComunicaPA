@@ -6,6 +6,7 @@ import type { Job } from 'bullmq';
 import * as fs from 'fs';
 import { basename, join } from 'path';
 import AdmZip from 'adm-zip';
+import { matchCountry, isValidCap } from '@comunicapa/shared-types';
 import {
   EnrichmentJob,
   EnrichmentJobStatus,
@@ -219,6 +220,26 @@ export class EnrichmentProcessor extends WorkerHost {
               payload: { errore: `Estrazione fallita: ${err.message}` },
             });
           }
+        }
+
+        // Stesse 3 regole del wizard campagne (Paese/Città/CAP, vedi
+        // docs/superpowers/specs/2026-07-29-arricchimento-validazione-design.md)
+        // applicate qui: mai bloccanti, solo warning informativi come
+        // "PDF non trovato"/"Estrazione fallita" — l'operatore corregge via
+        // EnrichmentAddressOverrideService quando vuole. Applicate
+        // incondizionatamente: row esiste sempre (baseRow), anche quando il
+        // PDF è mancante o l'estrazione è fallita.
+        const paeseRaw = (row.stato_estero || '').trim();
+        const matchedCountry = paeseRaw ? matchCountry(paeseRaw) : null;
+        const isForeignRow = !!matchedCountry && matchedCountry !== 'Italia';
+        if (paeseRaw && !matchedCountry) {
+          warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: `Paese "${paeseRaw}" non riconosciuto` });
+        }
+        if (!(row.comune || '').trim()) {
+          warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: 'Città mancante' });
+        }
+        if (!isForeignRow && (row.cap || '').trim() && !isValidCap(row.cap || '')) {
+          warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: 'CAP non valido (richieste 5 cifre)' });
         }
 
         rows.push(row);

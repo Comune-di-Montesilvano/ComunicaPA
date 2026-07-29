@@ -399,4 +399,97 @@ describe('EnrichmentProcessor', () => {
     const csv = fs.readFileSync(getEnrichmentResultCsv('j1'), 'utf-8');
     expect(csv).toContain('VIA CORRETTA');
   });
+
+  describe('validazione Paese/Città/CAP (stesse regole del wizard campagne)', () => {
+    it('Città mancante → warning, quando comune resta vuoto dopo estrazione/CSV', async () => {
+      client.extract.mockResolvedValue({
+        address: { indirizzo: 'VIA ROMA 1', cap: '00100', comune: '', provincia: 'RM', stato_estero: '' },
+        payment: null,
+        warnings: [],
+      });
+
+      await processor.process(fakeJob);
+
+      const finalUpdate = repo.update.mock.calls.at(-1)![1];
+      expect(finalUpdate.warnings).toEqual(
+        expect.arrayContaining([expect.objectContaining({ message: 'Città mancante' })]),
+      );
+    });
+
+    it('Paese non riconosciuto → warning, con il fix apostrofo/spazi ora "PERU\'" viene riconosciuto e NON genera warning', async () => {
+      client.extract.mockResolvedValue({
+        address: { indirizzo: 'CALLE X', cap: '', comune: 'LIMA', provincia: '', stato_estero: "PERU'" },
+        payment: null,
+        warnings: [],
+      });
+
+      await processor.process(fakeJob);
+
+      const finalUpdate = repo.update.mock.calls.at(-1)![1];
+      expect(finalUpdate.warnings).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ message: expect.stringContaining('non riconosciuto') })]),
+      );
+    });
+
+    it('Paese realmente non riconosciuto (stringa non mappabile) → warning', async () => {
+      client.extract.mockResolvedValue({
+        address: { indirizzo: 'CALLE X', cap: '', comune: 'LIMA', provincia: '', stato_estero: 'PAESE INESISTENTE XYZ' },
+        payment: null,
+        warnings: [],
+      });
+
+      await processor.process(fakeJob);
+
+      const finalUpdate = repo.update.mock.calls.at(-1)![1];
+      expect(finalUpdate.warnings).toEqual(
+        expect.arrayContaining([expect.objectContaining({ message: 'Paese "PAESE INESISTENTE XYZ" non riconosciuto' })]),
+      );
+    });
+
+    it('CAP non valido → warning solo per indirizzo domestico (Paese vuoto o Italia)', async () => {
+      client.extract.mockResolvedValue({
+        address: { indirizzo: 'VIA ROMA 1', cap: 'LA', comune: 'ROMA', provincia: 'RM', stato_estero: '' },
+        payment: null,
+        warnings: [],
+      });
+
+      await processor.process(fakeJob);
+
+      const finalUpdate = repo.update.mock.calls.at(-1)![1];
+      expect(finalUpdate.warnings).toEqual(
+        expect.arrayContaining([expect.objectContaining({ message: 'CAP non valido (richieste 5 cifre)' })]),
+      );
+    });
+
+    it('CAP non a 5 cifre NON genera warning se l\'indirizzo è estero', async () => {
+      client.extract.mockResolvedValue({
+        address: { indirizzo: 'CALLE X', cap: 'LA', comune: 'LIMA', provincia: '', stato_estero: 'Perù' },
+        payment: null,
+        warnings: [],
+      });
+
+      await processor.process(fakeJob);
+
+      const finalUpdate = repo.update.mock.calls.at(-1)![1];
+      expect(finalUpdate.warnings).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ message: expect.stringContaining('CAP non valido') })]),
+      );
+    });
+
+    it('indirizzo domestico completo e valido → nessun nuovo warning di validazione', async () => {
+      client.extract.mockResolvedValue({
+        address: { indirizzo: 'VIA ROMA 1', cap: '00100', comune: 'ROMA', provincia: 'RM', stato_estero: '' },
+        payment: null,
+        warnings: [],
+      });
+
+      await processor.process(fakeJob);
+
+      const finalUpdate = repo.update.mock.calls.at(-1)![1];
+      const validationMessages = finalUpdate.warnings
+        .filter((w: any) => w.pdf === 'PROVV_1.pdf')
+        .map((w: any) => w.message);
+      expect(validationMessages).toEqual([]);
+    });
+  });
 });
