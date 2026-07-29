@@ -161,7 +161,6 @@ describe('PostalStatusSyncService', () => {
 
     await service.handleCron();
 
-    expect(attemptRepo.save).not.toHaveBeenCalled();
     expect(attempt.postalStatusHistory).toEqual([{ stato: 'Inviato', rilevatoIl: '2026-01-10T10:00:00.000Z' }]);
   });
 
@@ -178,14 +177,30 @@ describe('PostalStatusSyncService', () => {
     }));
   });
 
-  it('non salva se lo stato non è cambiato', async () => {
+  it('aggiorna comunque postalLastCheckedAt se lo stato non è cambiato (round-robin del cron)', async () => {
     const attempt = { id: 'a1', postalTrackingId: 'IDPRO1', postalStatus: 'Inviato', postalStatusUpdatedAt: null };
     attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
     globalCom.dettagliDocumento.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Inviato' } as any);
 
     await service.handleCron();
 
-    expect(attemptRepo.save).not.toHaveBeenCalled();
+    expect(attemptRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'a1',
+      postalStatus: 'Inviato',
+      postalLastCheckedAt: expect.any(Date),
+    }));
+  });
+
+  it('ordina la query per ultimo controllo (COALESCE postal_last_checked_at/created_at), non per created_at fisso', async () => {
+    const qb = makeQueryBuilder([]);
+    attemptRepo.createQueryBuilder.mockReturnValue(qb);
+
+    await service.handleCron();
+
+    expect(qb.orderBy).toHaveBeenCalledWith(
+      expect.stringContaining('postal_last_checked_at'),
+      'ASC',
+    );
   });
 
   it('logga e continua se dettagliDocumento fallisce per un attempt, senza bloccare gli altri', async () => {
@@ -254,6 +269,6 @@ describe('PostalStatusSyncService', () => {
 
     await service.handleCron();
 
-    expect(attemptRepo.save).not.toHaveBeenCalled();
+    expect(attemptRepo.save).toHaveBeenCalledWith(expect.objectContaining({ id: 'a1', costCents: 431 }));
   });
 });

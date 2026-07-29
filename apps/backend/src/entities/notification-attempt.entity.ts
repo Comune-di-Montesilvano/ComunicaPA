@@ -90,6 +90,15 @@ export class NotificationAttempt {
   @Column({ type: 'jsonb', name: 'postal_status_history', nullable: true })
   postalStatusHistory!: Array<{ stato: string; rilevatoIl: string }> | null;
 
+  // Ultimo tentativo di poll GlobalCom, indipendente da postalStatusUpdatedAt
+  // (che avanza solo se lo stato letto è CAMBIATO) — usato per l'ordinamento
+  // round-robin del cron: senza questo campo un record il cui stato non
+  // cambia mai monopolizza per sempre la testa della coda (ORDER BY
+  // created_at ASC fisso), affamando i record più nuovi una volta superato
+  // BATCH_SIZE nel totale dei candidati (bug reale, vedi PostalStatusSyncService).
+  @Column({ name: 'postal_last_checked_at', type: 'timestamptz', nullable: true })
+  postalLastCheckedAt!: Date | null;
+
   @Column({ type: 'int', name: 'cost_cents', nullable: true })
   costCents!: number | null;
 

@@ -42,7 +42,7 @@ export class PostalStatusSyncService {
       .andWhere('attempt.status = :status', { status: AttemptStatus.SUCCESS })
       .andWhere('attempt.postal_tracking_id IS NOT NULL')
       .andWhere('(attempt.postal_status IS NULL OR attempt.postal_status NOT IN (:...terminal) OR attempt.cost_cents IS NULL)', { terminal: TERMINAL_STATUSES })
-      .orderBy('attempt.created_at', 'ASC')
+      .orderBy('COALESCE(attempt.postal_last_checked_at, attempt.created_at)', 'ASC')
       .take(BATCH_SIZE)
       .getMany();
 
@@ -63,7 +63,11 @@ export class PostalStatusSyncService {
 
   private async syncOne(attempt: NotificationAttempt, creds: GbcCredentials): Promise<boolean> {
     const stato = await this.globalCom.dettagliDocumento(creds, attempt.postalTrackingId!);
-    if (!stato) return false;
+    attempt.postalLastCheckedAt = new Date();
+    if (!stato) {
+      await this.attemptRepo.save(attempt);
+      return false;
+    }
 
     let changed = false;
     if (stato.stato !== attempt.postalStatus) {
@@ -106,7 +110,7 @@ export class PostalStatusSyncService {
       };
       changed = true;
     }
-    if (changed) await this.attemptRepo.save(attempt);
+    await this.attemptRepo.save(attempt);
     return changed;
   }
 
