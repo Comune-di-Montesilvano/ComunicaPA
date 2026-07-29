@@ -143,6 +143,12 @@ Le route operatore sono segmentate sotto `admin/*` (`admin/campaigns`, `admin/se
 
 `.github/workflows/release.yml`: push su main → immagini `:dev`; tag `v*` → `:vX.Y.Z` + `:latest` su `ghcr.io/comune-di-montesilvano/comunicapa-*`. Namespace hardcoded lowercase (il nome org ha maiuscole e romperebbe il cache exporter buildx). Allegati: path fisso `/data/attachments` nel container, volume named `attachments_data`.
 
+**Tag pushato = solo build immagine, MAI deploy automatico.** Push+tag
+fanno partire CI che builda/pusha su ghcr — il container di produzione
+resta sul vecchio codice finché qualcuno non fa pull+redeploy su Portainer.
+`gh run list --workflow=release.yml` conferma solo che la build è
+riuscita, non che prod la stia servendo.
+
 ## pnpm v11 in Docker — Regola critica
 
 pnpm@latest è v11+ che blocca build script per default (`ERR_PNPM_IGNORED_BUILDS`). Pattern obbligatorio in ogni `Dockerfile.dev`:
@@ -542,6 +548,15 @@ non cambia — non basta il campo "ultimo cambio" esistente,
 `ORDER BY COALESCE(postal_last_checked_at, created_at) ASC`. Qualunque
 futuro cron con batch+limit va verificato per lo stesso rischio.
 
+**Ogni nuova condizione di re-check su un attempt POSTAL terminale (es.
+controllo riaccodamento su `Eliminato`) va aggiunta ANCHE alla WHERE di
+`PostalStatusSyncService.handleCron`, non solo alla logica di `syncOne`.**
+Bug reale: `checkRequeue()` era corretto ma il filtro del cron escludeva a
+priori un `Eliminato` con `cost_cents` già valorizzato (caso comune) — il
+controllo automatico non veniva mai raggiunto. Il manuale (`refreshOne`)
+bypassa questo filtro (legge per id) e può sembrare funzionare mentre
+l'automatico resta silenziosamente rotto — testare sempre entrambi.
+
 ## Stato consegna POSTAL/SEND post-accettazione — mai riflesso su recipient.status
 
 Un errore di consegna arrivato DOPO l'accettazione del provider (es.
@@ -761,6 +776,13 @@ Postel/Irideos), mai su Lettera/Raccomandata standard (canale Poste
 diretto), e i Servizio "Market"/"Contest"/Atto Giudiziario richiedono un
 `CodiceContratto` valido specifico per utenza.
 
+**Il DB dev ha il provider GlobalCom REALE di produzione** (Montesilvano,
+nessun sandbox separato) — un IDPRO/dato reale fornito dall'utente e
+assente dal DB dev si può comunque testare dal vivo contro il vero
+webservice, decriptando `password_enc` con
+`deriveSettingsKey(process.env.JWT_SECRET)` + `decryptValue()`
+(`settings-crypto.ts`). Mai loggare la password decriptata.
+
 **`RicevutaDiRitorno=true` richiede anche `Colore`/`FronteRetro` e un
 `Ricevuta` esplicito.** `Colore`/`FronteRetro` (stampa a colori/fronte-retro)
 sono booleani obbligatori nel WSDL (`InfoGUIDExt`, verificato sull'XSD
@@ -872,6 +894,17 @@ GlobalCom** — inventario completo delle 61 operazioni verificato
 (`invio_ext_singolo`, `AutorizzaLottoInvio`, `account_*`, ecc.): l'unica
 azione "annulla invio in preparazione" vista sul portale GlobalCom è solo
 UI loro, non esposta via API — non automatizzabile da questo codebase.
+
+**Un nuovo metodo SOAP ASMX: `<nomeMetodo>Result` è SEMPRE il booleano di
+esito, MAI il wrapper dati.** Bug reale (`listaRiaccodamentiDocumento`):
+leggeva `result.lista_riaccodamenti_documentoResult.string` assumendo che
+il wrapper `ArrayOfString` vivesse lì — invece quel campo è `true`/`false`
+(stessa convenzione di `dettagli_documentoResult`/`invio_ext_singoloResult`),
+i dati sono sempre in `Risposta`. `.string` su un booleano è `undefined`
+senza errore — ricadeva silenziosamente sul solo IDPRO originale anche con
+un riaccodamento reale presente, zero log/eccezioni. Verificato dal vivo
+contro GlobalCom prod (Montesilvano) con IDPRO reale. Per ogni nuovo
+metodo SOAP: dati sempre da `Risposta`, mai dal campo `<metodo>Result`.
 
 ## Frontend admin — mai `<form>` annidate
 
