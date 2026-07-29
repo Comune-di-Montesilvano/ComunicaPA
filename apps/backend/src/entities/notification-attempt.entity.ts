@@ -99,6 +99,14 @@ export class NotificationAttempt {
   @Column({ name: 'postal_last_checked_at', type: 'timestamptz', nullable: true })
   postalLastCheckedAt!: Date | null;
 
+  // Traccia se il controllo riaccodamento (lista_riaccodamenti_documento) è
+  // già stato eseguito per questo attempt quando è arrivato a Eliminato —
+  // distingue il controllo automatico (una tantum, cron) da quello manuale
+  // (sempre, bottone "Ricontrolla stato"). Vedi PostalStatusSyncService e
+  // docs/superpowers/specs/2026-07-29-postal-riaccodamento-design.md.
+  @Column({ name: 'postal_requeue_checked_at', type: 'timestamptz', nullable: true })
+  postalRequeueCheckedAt!: Date | null;
+
   @Column({ type: 'int', name: 'cost_cents', nullable: true })
   costCents!: number | null;
 
