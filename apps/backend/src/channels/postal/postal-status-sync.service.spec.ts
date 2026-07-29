@@ -269,6 +269,18 @@ describe('PostalStatusSyncService', () => {
     expect(includesCostNull).toBe(true);
   });
 
+  it('include nella query un attempt Eliminato con costo già calcolato ma mai controllato per riaccodamento', async () => {
+    const qb = makeQueryBuilder([]);
+    attemptRepo.createQueryBuilder.mockReturnValue(qb);
+
+    await service.handleCron();
+
+    const includesEliminatoRequeueCheck = qb.andWhere.mock.calls.some(
+      ([sql]: [string]) => /postal_status = :eliminato/i.test(sql) && /postal_requeue_checked_at IS NULL/i.test(sql),
+    );
+    expect(includesEliminatoRequeueCheck).toBe(true);
+  });
+
   it('non ricalcola il costo se cost_cents è già valorizzato e lo stato non cambia', async () => {
     const attempt = { id: 'a1', postalTrackingId: 'IDPRO1', postalStatus: 'Confermato', postalStatusUpdatedAt: null, costCents: 431 };
     attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));

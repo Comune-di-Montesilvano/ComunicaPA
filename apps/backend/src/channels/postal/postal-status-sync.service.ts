@@ -41,7 +41,18 @@ export class PostalStatusSyncService {
       .where('attempt.channel_type = :ch', { ch: 'POSTAL' })
       .andWhere('attempt.status = :status', { status: AttemptStatus.SUCCESS })
       .andWhere('attempt.postal_tracking_id IS NOT NULL')
-      .andWhere('(attempt.postal_status IS NULL OR attempt.postal_status NOT IN (:...terminal) OR attempt.cost_cents IS NULL)', { terminal: TERMINAL_STATUSES })
+      // Un attempt Eliminato con costo già calcolato (caso comune: il costo si
+      // valorizza spesso mentre il documento è ancora Confermato/Accettato,
+      // prima che GlobalCom lo passi a Eliminato) altrimenti non rientrerebbe
+      // mai più in questo batch — il controllo riaccodamento (vedi
+      // checkRequeue) non verrebbe mai raggiunto in automatico. Bug reale
+      // riscontrato: il filtro pre-esistente escludeva questi record fin
+      // dall'inizio, il flag postal_requeue_checked_at restava per sempre
+      // null e il controllo automatico non scattava mai.
+      .andWhere(
+        '(attempt.postal_status IS NULL OR attempt.postal_status NOT IN (:...terminal) OR attempt.cost_cents IS NULL OR (attempt.postal_status = :eliminato AND attempt.postal_requeue_checked_at IS NULL))',
+        { terminal: TERMINAL_STATUSES, eliminato: 'Eliminato' },
+      )
       .orderBy('COALESCE(attempt.postal_last_checked_at, attempt.created_at)', 'ASC')
       .take(BATCH_SIZE)
       .getMany();

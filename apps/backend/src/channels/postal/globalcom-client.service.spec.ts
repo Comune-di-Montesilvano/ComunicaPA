@@ -305,7 +305,8 @@ describe('GlobalComClient', () => {
   });
   it('listaRiaccodamentiDocumento ritorna solo l\'IDPRO iniziale se non ci sono riaccodamenti', async () => {
     mockListaRiaccodamentiAsync.mockResolvedValue([{
-      lista_riaccodamenti_documentoResult: { string: 'IDPRO1' },
+      lista_riaccodamenti_documentoResult: true,
+      Risposta: { string: 'IDPRO1' },
     }]);
 
     const result = await client.listaRiaccodamentiDocumento(creds, 'IDPRO1');
@@ -316,7 +317,8 @@ describe('GlobalComClient', () => {
 
   it('listaRiaccodamentiDocumento ritorna la catena completa ordinata quando ci sono riaccodamenti', async () => {
     mockListaRiaccodamentiAsync.mockResolvedValue([{
-      lista_riaccodamenti_documentoResult: { string: ['IDPRO1', 'IDPRO2', 'IDPRO3'] },
+      lista_riaccodamenti_documentoResult: true,
+      Risposta: { string: ['IDPRO1', 'IDPRO2', 'IDPRO3'] },
     }]);
 
     const result = await client.listaRiaccodamentiDocumento(creds, 'IDPRO1');
@@ -324,14 +326,45 @@ describe('GlobalComClient', () => {
     expect(result).toEqual(['IDPRO1', 'IDPRO2', 'IDPRO3']);
   });
 
-  it('listaRiaccodamentiDocumento ritorna l\'IDPRO passato se la risposta è vuota/inattesa', async () => {
+  it('listaRiaccodamentiDocumento ritorna l\'IDPRO passato se lista_riaccodamenti_documentoResult è false', async () => {
     mockListaRiaccodamentiAsync.mockResolvedValue([{
-      lista_riaccodamenti_documentoResult: {},
+      lista_riaccodamenti_documentoResult: false,
+      Risposta: null,
     }]);
 
     const result = await client.listaRiaccodamentiDocumento(creds, 'IDPRO1');
 
     expect(result).toEqual(['IDPRO1']);
+  });
+
+  it('listaRiaccodamentiDocumento ritorna l\'IDPRO passato se Risposta è presente ma senza campo string (risposta inattesa)', async () => {
+    mockListaRiaccodamentiAsync.mockResolvedValue([{
+      lista_riaccodamenti_documentoResult: true,
+      Risposta: {},
+    }]);
+
+    const result = await client.listaRiaccodamentiDocumento(creds, 'IDPRO1');
+
+    expect(result).toEqual(['IDPRO1']);
+  });
+
+  it('listaRiaccodamentiDocumento — regressione bug reale: lista_riaccodamenti_documentoResult è un booleano di esito, MAI il wrapper dati (verificato dal vivo su GlobalCom prod)', async () => {
+    // Riproduce esattamente la forma reale osservata: il booleano di esito
+    // sta in lista_riaccodamenti_documentoResult (stessa convenzione di
+    // dettagli_documentoResult), i dati in Risposta.string. La prima
+    // versione del metodo leggeva .string dal booleano stesso (undefined,
+    // nessun errore) e ricadeva silenziosamente su [idPro] anche con un
+    // riaccodamento reale presente — bug mai catturato dai test precedenti
+    // perché il mock non rispecchiava la forma reale della risposta.
+    mockListaRiaccodamentiAsync.mockResolvedValue([{
+      lista_riaccodamenti_documentoResult: true,
+      Risposta: { string: ['SOA_238ae93d-afa9-4edf-913b-d1c2f0b867ec', 'SOA_dac5003b-8088-459e-bf98-3d341e597739'] },
+      Messaggio: '',
+    }]);
+
+    const result = await client.listaRiaccodamentiDocumento(creds, 'SOA_238ae93d-afa9-4edf-913b-d1c2f0b867ec');
+
+    expect(result).toEqual(['SOA_238ae93d-afa9-4edf-913b-d1c2f0b867ec', 'SOA_dac5003b-8088-459e-bf98-3d341e597739']);
   });
 });
 

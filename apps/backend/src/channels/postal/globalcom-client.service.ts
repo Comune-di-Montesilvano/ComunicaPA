@@ -342,17 +342,25 @@ export class GlobalComClient {
    * corretto/attivo. Se il documento non è mai stato riaccodato, la
    * risposta contiene solo l'IDPRO iniziale.
    *
-   * Convenzione ASMX ArrayOfString: l'elemento ripetuto si chiama "string"
-   * (stesso pattern "wrapper nominato per tipo" già verificato per
-   * Destinatari/InfoIndirizzoExt e ProdottiDisponibili/ServiceType) — non
-   * ancora confermato con una chiamata reale contro GlobalCom, verificare
-   * al primo utilizzo in produzione (vedi
-   * docs/superpowers/specs/2026-07-29-postal-riaccodamento-design.md).
+   * Convenzione ASMX: `lista_riaccodamenti_documentoResult` è il booleano di
+   * esito (stessa convenzione di `dettagli_documentoResult`/
+   * `invio_ext_singoloResult` — MAI il wrapper dati), i dati veri sono in
+   * `Risposta`. Bug reale riscontrato: la prima versione leggeva
+   * `result.lista_riaccodamenti_documentoResult.string`, cioè provava ad
+   * accedere `.string` sul booleano `true` (`undefined`, nessun errore) —
+   * ricadeva silenziosamente su `[idPro]` (nessun riaccodamento rilevato)
+   * anche quando GlobalCom aveva davvero riaccodato il documento.
+   * Verificato dal vivo con IDPRO reale: `Risposta.string` è un array
+   * (`ArrayOfString`, elemento ripetuto nominato per tipo, stesso pattern
+   * già noto per Destinatari/InfoIndirizzoExt) quando ci sono riaccodamenti,
+   * verosimilmente una singola stringa se non riaccodato (mai osservato dal
+   * vivo il caso senza riaccodamento — normalizzato comunque sotto).
    */
   async listaRiaccodamentiDocumento(creds: GbcCredentials, idPro: string): Promise<string[]> {
     const client = await this.createSession(creds);
     const [result] = await (client as any).lista_riaccodamenti_documentoAsync({ IDPRO: idPro });
-    const wrapper = result.lista_riaccodamenti_documentoResult as { string?: string | string[] } | undefined;
+    if (!result.lista_riaccodamenti_documentoResult || !result.Risposta) return [idPro];
+    const wrapper = result.Risposta as { string?: string | string[] } | undefined;
     const raw = wrapper?.string;
     const list = Array.isArray(raw) ? raw : raw ? [raw] : [idPro];
     if (list.length === 0 || list.some((x) => typeof x !== 'string' || !x)) {
