@@ -2808,6 +2808,27 @@ export function App(): React.JSX.Element {
     }
   };
 
+  // `enrichCorrectedPdfs` è ottimistico (settato solo al salvataggio riuscito
+  // in questa sessione) — un remount/refresh lo azzera anche se la
+  // correzione resta salvata in DB (override table). Ad apertura pannello
+  // avvisi, riconcilia col server invece di fidarsi solo dello stato locale.
+  const openEnrichWarnings = async (jobId: string) => {
+    if (enrichDetailJobId === jobId) {
+      setEnrichDetailJobId(null);
+      return;
+    }
+    setEnrichDetailJobId(jobId);
+    try {
+      const res = await apiFetch(`/enrichment/jobs/${jobId}/overrides`);
+      const body = await res.json();
+      if (res.ok && Array.isArray(body.pdfs)) {
+        setEnrichCorrectedPdfs((prev) => ({ ...prev, [jobId]: new Set(body.pdfs) }));
+      }
+    } catch {
+      // best-effort — il badge resta quello ottimistico/vuoto già in stato locale
+    }
+  };
+
   const openEnrichAddressEdit = async (jobId: string, pdfFilename: string) => {
     setEnrichAddressEditJobId(jobId);
     setEnrichAddressEditPdf(pdfFilename);
@@ -11947,7 +11968,7 @@ export function App(): React.JSX.Element {
                         <button
                           className="btn btn-sm btn-outline-warning"
                           type="button"
-                          onClick={() => setEnrichDetailJobId(enrichDetailJobId === job.id ? null : job.id)}
+                          onClick={() => openEnrichWarnings(job.id)}
                         >
                           {enrichDetailJobId === job.id ? 'Nascondi avvisi' : `Avvisi (${job.warningCount})`}
                         </button>

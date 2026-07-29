@@ -205,6 +205,12 @@ export class EnrichmentController {
     return this.svc.requestCampaignConversion(id, { name, channelType: body.channelType }, req.user.username);
   }
 
+  @Get('jobs/:id/overrides')
+  @Roles('user', 'admin')
+  getCorrectedPdfs(@Param('id', ParseUUIDPipe) id: string) {
+    return this.svc.getCorrectedPdfs(id).then((pdfs) => ({ pdfs }));
+  }
+
   @Get('jobs/:id/rows/:pdfFilename')
   @Roles('user', 'admin')
   getRow(@Param('id', ParseUUIDPipe) id: string, @Param('pdfFilename') pdfFilename: string) {

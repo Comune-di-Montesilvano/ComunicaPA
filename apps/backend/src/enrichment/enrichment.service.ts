@@ -190,6 +190,16 @@ export class EnrichmentService {
    * l'indirizzo. Il form lato frontend è quindi dinamico sugli `headers`,
    * non una lista fissa di 5 campi.
    */
+  /**
+   * Elenco pdf con correzione salvata per un job — usato dal frontend per
+   * mostrare il badge "Corretto" anche dopo un refresh/riapertura del
+   * dettaglio (lo stato locale ottimistico da solo si perde a ogni remount).
+   */
+  async getCorrectedPdfs(jobId: string): Promise<string[]> {
+    const overrides = await this.overrideService.findByJob(jobId);
+    return overrides.map((o) => o.pdfFilename);
+  }
+
   async getRow(jobId: string, pdfFilename: string): Promise<{
     pdfFilename: string;
     codiceFiscale: string;
