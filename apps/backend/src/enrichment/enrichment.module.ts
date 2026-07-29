@@ -8,6 +8,7 @@ import { PdfExtractorClient } from './pdf-extractor.client';
 import { EnrichmentProcessor } from './enrichment.processor';
 import { EnrichmentRetentionService } from './enrichment-retention.service';
 import { EnrichmentEventsService } from './enrichment-events.service';
+import { EnrichmentResumeService } from './enrichment-resume.service';
 import { ENRICHMENT_QUEUE } from './enrichment-job.types';
 import { CampaignsModule } from '../campaigns/campaigns.module';
 
@@ -18,7 +19,7 @@ import { CampaignsModule } from '../campaigns/campaigns.module';
     CampaignsModule,
   ],
   controllers: [EnrichmentController],
-  providers: [EnrichmentService, PdfExtractorClient, EnrichmentProcessor, EnrichmentRetentionService, EnrichmentEventsService],
+  providers: [EnrichmentService, PdfExtractorClient, EnrichmentProcessor, EnrichmentRetentionService, EnrichmentEventsService, EnrichmentResumeService],
   exports: [EnrichmentService],
 })
 export class EnrichmentModule {}
