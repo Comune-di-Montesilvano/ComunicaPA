@@ -62,7 +62,7 @@ docker compose -f docker-compose.yml config --quiet
 
 Hot-reload: i frontend Vite ricaricano da soli; il watch di NestJS spesso NON vede le modifiche sui bind mount Windows — dopo modifiche a `apps/backend/src/` fare `docker compose restart backend` e verificare che `dist/` sia più recente di `src/` (`docker compose exec backend ls -la dist/... src/...`).
 
-**Rebuild obbligatorio** se si modifica `package.json`, `Dockerfile.dev`, o file fuori da `src/`. ATTENZIONE per le nuove dipendenze: il rebuild da solo NON basta — il volume named dei node_modules maschera quelli freschi dell'immagine (`Cannot find module` all'avvio):
+**Rebuild obbligatorio** se si modifica `package.json`, `Dockerfile.dev`, o file fuori da `src/`. Questo include file root come `publiccode.yml`: `AppController.getVersion()` lo legge dalla copia buildata nell'immagine, mai dal file host — modificarlo non basta, serve `docker compose build backend` (o `up -d --build`) perché il container lo veda, stesso principio già noto per `package.json`. `publiccode.yml.softwareVersion` inoltre non è mai toccato da CI — va bumpato a mano a ogni tag, altrimenti resta indietro rispetto ai tag git reali. ATTENZIONE per le nuove dipendenze: il rebuild da solo NON basta — il volume named dei node_modules maschera quelli freschi dell'immagine (`Cannot find module` all'avvio):
 
 ```bash
 # Dopo aver aggiunto una dipendenza a apps/backend/package.json:
@@ -311,6 +311,18 @@ da env (default `info`) e lo mappa ai livelli Nest — impostare
 dettaglio dei motori di invio (payload/risposte PEC/Email/App IO/SEND/Postal).
 I job BullMQ salvano inoltre i propri log (`job.log()`), consultabili dalla
 UI admin → Motori → "Vedi log" per singolo job, senza bisogno di accesso SSH.
+
+## E2E browser (Chrome DevTools MCP) — gotcha click sidebar
+
+Click su voci di navigazione sidebar (`href="#"`, routing client-side via
+`onClick` React, nessun cambio URL reale) spesso fallisce con "did not
+become interactive within the configured timeout" anche se l'elemento è
+visibile e cliccabile a mano. Workaround: `evaluate_script` che seleziona
+il link per testo e chiama `.click()` sul DOM direttamente, es. `() => {
+const link = [...document.querySelectorAll('a')].find(a =>
+a.textContent.trim() === 'Arricchimento Tracciati'); link?.click(); }` —
+bypassa il controllo di interattività del tool `click` che su questi
+elementi non lo soddisfa mai.
 
 ## Audit log — ogni endpoint che consulta un registro PA esterno deve loggare
 
@@ -1101,6 +1113,31 @@ i record del job), calcolate da `buildEnrichedCsvHeaders()`
 (`enriched-csv.util.ts`) — non più una costante fissa. Controlli di
 coerenza (somma rate vs totale, scadenze consecutive, unica≈prima rata)
 producono warning, mai bloccanti.
+
+**`pdf_extractor.py` — indirizzo (regex testo) e pagamento (QR code) sono
+estrazioni indipendenti sullo stesso PDF, un fallimento non blocca l'altra.**
+L'indirizzo usa un pattern testuale (`"Residente in:"`) via testo pagina;
+il pagamento decodifica il QR embeddato (`_extract_payment_from_page_qr`,
+payload `PAGOPA|002|<numero_avviso>|<cf_ente>|<centesimi>`). Una riga con
+warning "Indirizzo non estratto" può avere comunque numero_avviso/importo
+già corretti — verificare quale delle due estrazioni è fallita prima di
+assumere che l'intera riga vada corretta a mano.
+
+**`numero_avviso`/`numero_avviso_alternativo`: il PDF (QR) vince sempre sul
+CSV del tracciato** (`enrichment.processor.ts`, `row.numero_avviso =
+result.payment.totale.numero_avviso || rec.csvNumeroAvviso`) — il CSV Maggioli
+può avere un valore disallineato dal vero IUV stampato (verificato dal vivo:
+QR scansionato manualmente ≠ colonna CSV), il CSV resta solo fallback per
+righe senza dati pagamento estratti dal PDF. L'indirizzo fa l'opposto (CSV
+vince, PDF solo se `csvAddress` assente) — non generalizzare una priorità
+all'altra, sono decisioni indipendenti per campo.
+
+**Formato riga `rubrica.csv` (tracciato Maggioli) per costruire ZIP di test:**
+`id;pec@pec.it;;NOME;COGNOME;CODICE_FISCALE;;NOMINATIVO;numeroProvvedimento;
+dataEmissione;Oggetto;;;nomeFile.pdf` (14 campi `;`-separati, vedi
+`parseRubricaPec` in `maggioli-parser.ts`) — un file `allegati/nomeFile.pdf`
+mancante per una riga produce deliberatamente il warning "PDF non trovato nel
+ZIP", utile per riprodurre scenari di correzione manuale senza dati reali.
 
 **Log live job (SSE) — bridge in-memory, valido a singola istanza.**
 `GET admin/enrichment/jobs/:id/stream` inoltra in tempo reale gli eventi
