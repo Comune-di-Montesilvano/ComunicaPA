@@ -1,4 +1,4 @@
-import { BASE_CSV_HEADERS, buildEnrichedCsv, buildEnrichedCsvHeaders } from './enriched-csv.util';
+import { BASE_CSV_HEADERS, buildEnrichedCsv, buildEnrichedCsvHeaders, parseEnrichedCsv } from './enriched-csv.util';
 
 describe('buildEnrichedCsvHeaders', () => {
   it('maxRate=0: solo le colonne base', () => {
@@ -50,5 +50,29 @@ describe('buildEnrichedCsv', () => {
   it('nessun BOM iniziale', () => {
     const headers = buildEnrichedCsvHeaders(0);
     expect(buildEnrichedCsv(headers, []).charCodeAt(0)).not.toBe(0xfeff);
+  });
+});
+
+describe('parseEnrichedCsv', () => {
+  it('round-trip: parse(build(rows)) === rows originali', () => {
+    const headers = buildEnrichedCsvHeaders(0);
+    const rows: any[] = [
+      { codice_fiscale: 'RSSMRA80A01H501U', allegato: 'PROVV_1.pdf', indirizzo: 'VIA ROMA 1' },
+      { codice_fiscale: 'VRDLGU70A01H501X', allegato: 'PROVV_2.pdf', indirizzo: '' },
+    ];
+    const csv = buildEnrichedCsv(headers, rows);
+    const parsed = parseEnrichedCsv(csv);
+    expect(parsed.headers).toEqual(headers);
+    expect(parsed.rows).toHaveLength(2);
+    expect(parsed.rows[0]['codice_fiscale']).toBe('RSSMRA80A01H501U');
+    expect(parsed.rows[0]['allegato']).toBe('PROVV_1.pdf');
+    expect(parsed.rows[1]['indirizzo']).toBe('');
+  });
+
+  it('gestisce virgolette escaped ("") dentro un campo', () => {
+    const headers = ['nominativo'];
+    const csv = buildEnrichedCsv(headers, [{ nominativo: 'ROSSI "MARIO" jr' }]);
+    const parsed = parseEnrichedCsv(csv);
+    expect(parsed.rows[0]['nominativo']).toBe('ROSSI "MARIO" jr');
   });
 });

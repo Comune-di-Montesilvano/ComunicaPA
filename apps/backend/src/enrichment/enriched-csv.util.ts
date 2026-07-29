@@ -48,3 +48,25 @@ export function buildEnrichedCsv(headers: string[], rows: EnrichedRow[]): string
   }
   return lines.join('\n');
 }
+
+/**
+ * Inverso di buildEnrichedCsv. Sicuro solo sul formato che produciamo noi
+ * stessi (QUOTE_ALL, delimitatore ';', nessun newline embedded nei campi —
+ * non un parser CSV generico per input esterno/untrusted).
+ */
+function parseCsvLine(line: string): string[] {
+  const matches = line.match(/"(?:[^"]|"")*"/g) ?? [];
+  return matches.map((m) => m.slice(1, -1).replace(/""/g, '"'));
+}
+
+export function parseEnrichedCsv(content: string): { headers: string[]; rows: EnrichedRow[] } {
+  const lines = content.split('\n').filter((l) => l.length > 0);
+  const headers = parseCsvLine(lines[0] ?? '');
+  const rows: EnrichedRow[] = lines.slice(1).map((line) => {
+    const cells = parseCsvLine(line);
+    const row: EnrichedRow = {};
+    headers.forEach((h, i) => { row[h] = cells[i] ?? ''; });
+    return row;
+  });
+  return { headers, rows };
+}
