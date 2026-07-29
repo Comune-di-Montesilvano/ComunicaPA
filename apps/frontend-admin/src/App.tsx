@@ -1114,6 +1114,7 @@ export function App(): React.JSX.Element {
     sourceFilename: string;
     totalRecords: number;
     processedRecords: number;
+    checkpointRow: number;
     warningCount: number;
     warnings: Array<{ row: number; pdf: string; message: string }>;
     errorMessage: string | null;
@@ -1140,6 +1141,22 @@ export function App(): React.JSX.Element {
   }
   const [enrichLiveLogs, setEnrichLiveLogs] = useState<Record<string, EnrichLogEntry[]>>({});
   const [enrichStreamingJobId, setEnrichStreamingJobId] = useState<string | null>(null);
+
+  interface EnrichAddressForm {
+    indirizzo: string;
+    cap: string;
+    comune: string;
+    provincia: string;
+    statoEstero: string;
+  }
+  const [enrichAddressEditJobId, setEnrichAddressEditJobId] = useState<string | null>(null);
+  const [enrichAddressEditPdf, setEnrichAddressEditPdf] = useState<string | null>(null);
+  const [enrichAddressEditCf, setEnrichAddressEditCf] = useState('');
+  const [enrichAddressEditForm, setEnrichAddressEditForm] = useState<EnrichAddressForm>({ indirizzo: '', cap: '', comune: '', provincia: '', statoEstero: '' });
+  const [enrichAddressEditLoading, setEnrichAddressEditLoading] = useState(false);
+  const [enrichAddressEditAnprLoading, setEnrichAddressEditAnprLoading] = useState(false);
+  const [enrichAddressEditSaving, setEnrichAddressEditSaving] = useState(false);
+  const [enrichAddressEditError, setEnrichAddressEditError] = useState<string | null>(null);
 
   const runNotificationSearch = async (page = searchPage) => {
     setSearchLoading(true);
@@ -2764,6 +2781,123 @@ export function App(): React.JSX.Element {
       fetchEnrichJobs();
     } catch {
       alert('Errore durante l\'eliminazione');
+    }
+  };
+
+  const openEnrichAddressEdit = async (jobId: string, pdfFilename: string) => {
+    setEnrichAddressEditJobId(jobId);
+    setEnrichAddressEditPdf(pdfFilename);
+    setEnrichAddressEditError(null);
+    setEnrichAddressEditLoading(true);
+    try {
+      const res = await apiFetch(`/enrichment/jobs/${jobId}/rows/${encodeURIComponent(pdfFilename)}`);
+      const row = await res.json();
+      if (!res.ok) {
+        setEnrichAddressEditError(row.message || 'Riga non trovata');
+        return;
+      }
+      setEnrichAddressEditCf(row.codiceFiscale || '');
+      const source = row.override || row;
+      setEnrichAddressEditForm({
+        indirizzo: source.indirizzo || '',
+        cap: source.cap || '',
+        comune: source.comune || '',
+        provincia: source.provincia || '',
+        statoEstero: source.statoEstero || '',
+      });
+    } catch {
+      setEnrichAddressEditError('Errore durante il caricamento della riga');
+    } finally {
+      setEnrichAddressEditLoading(false);
+    }
+  };
+
+  const closeEnrichAddressEdit = () => {
+    setEnrichAddressEditJobId(null);
+    setEnrichAddressEditPdf(null);
+    setEnrichAddressEditError(null);
+  };
+
+  // Stessa mappatura toponimo+numeroCivico → indirizzo già usata in
+  // runAddressEditAnprCheck (correzione indirizzo POSTAL) — qui adattata ai
+  // nomi colonna del CSV arricchito (indirizzo/cap/comune/provincia/statoEstero).
+  const runEnrichAddressAnprCheck = async () => {
+    if (!enrichAddressEditCf) return;
+    setEnrichAddressEditAnprLoading(true);
+    try {
+      const res = await apiFetch('/domicilio/cerca', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codiceFiscale: enrichAddressEditCf }),
+      });
+      const data = await res.json();
+      const residenza = data?.anpr?.residenza?.[0];
+      if (data?.anpr?.success && data?.anpr?.found && residenza?.indirizzo) {
+        const ind = residenza.indirizzo;
+        const via = [ind.toponimo?.specie, ind.toponimo?.denominazioneToponimo].filter(Boolean).join(' ');
+        const civico = [ind.numeroCivico?.numero, ind.numeroCivico?.lettera].filter(Boolean).join('');
+        setEnrichAddressEditForm({
+          indirizzo: [via, civico].filter(Boolean).join(', '),
+          cap: ind.cap || '',
+          comune: ind.comune?.nomeComune || '',
+          provincia: ind.comune?.siglaProvinciaIstat || '',
+          statoEstero: '',
+        });
+      } else if (data?.anpr?.success && data?.anpr?.found && residenza?.localitaEstera?.indirizzoEstero) {
+        const ind = residenza.localitaEstera.indirizzoEstero;
+        const via = [ind.toponimo?.denominazione, ind.toponimo?.numeroCivico].filter(Boolean).join(' ');
+        setEnrichAddressEditForm({
+          indirizzo: via,
+          cap: ind.cap || '',
+          comune: ind.localita?.descrizioneLocalita || '',
+          provincia: '',
+          statoEstero: ind.localita?.descrizioneStato || '',
+        });
+      } else {
+        alert('ANPR: nessun indirizzo di residenza trovato per questo CF.');
+      }
+    } catch {
+      alert('Errore di connessione durante la verifica ANPR.');
+    } finally {
+      setEnrichAddressEditAnprLoading(false);
+    }
+  };
+
+  const handleSaveEnrichAddress = async () => {
+    if (!enrichAddressEditJobId || !enrichAddressEditPdf) return;
+    if (!enrichAddressEditForm.indirizzo.trim() || !enrichAddressEditForm.comune.trim()) {
+      setEnrichAddressEditError('Indirizzo e Comune sono obbligatori.');
+      return;
+    }
+    setEnrichAddressEditSaving(true);
+    setEnrichAddressEditError(null);
+    try {
+      const res = await apiFetch(
+        `/enrichment/jobs/${enrichAddressEditJobId}/rows/${encodeURIComponent(enrichAddressEditPdf)}/address`,
+        { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(enrichAddressEditForm) },
+      );
+      const body = await res.json();
+      if (body.blocked) {
+        setEnrichAddressEditError(body.message || 'Errore durante il salvataggio');
+        return;
+      }
+      closeEnrichAddressEdit();
+    } catch {
+      setEnrichAddressEditError('Errore durante il salvataggio dell\'indirizzo');
+    } finally {
+      setEnrichAddressEditSaving(false);
+    }
+  };
+
+  const handleEnrichRegenerateCsv = async (jobId: string) => {
+    if (!token) return;
+    try {
+      const res = await apiFetch(`/enrichment/jobs/${jobId}/regenerate-csv`, { method: 'POST' });
+      const body = await res.json();
+      if (body.blocked) { alert(body.message); return; }
+      alert('CSV rigenerato con le correzioni applicate.');
+    } catch {
+      alert('Errore durante la rigenerazione del CSV');
     }
   };
 
