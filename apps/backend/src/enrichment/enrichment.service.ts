@@ -247,7 +247,15 @@ export class EnrichmentService {
     const { headers, rows } = parseEnrichedCsv(fs.readFileSync(csvPath, 'utf-8'));
     const overrides = await this.overrideService.findByJob(jobId);
     const patched = this.overrideService.applyOverrides(rows, overrides);
-    fs.writeFileSync(csvPath, buildEnrichedCsv(headers, patched), 'utf-8');
+    // Scrittura mai diretta sul file finale (stesso principio di
+    // writeCheckpointSync, Global Constraint del piano) — un crash a metà
+    // qui colpirebbe un job già DONE col checkpoint già cancellato: nessuna
+    // via di recupero, e il click "Rigenera CSV" successivo dell'operatore
+    // rileggerebbe il file troncato che ha appena prodotto, peggiorando le
+    // cose invece di correggerle.
+    const tmpPath = `${csvPath}.tmp`;
+    fs.writeFileSync(tmpPath, buildEnrichedCsv(headers, patched), 'utf-8');
+    fs.renameSync(tmpPath, csvPath);
     return {};
   }
 

@@ -39,7 +39,16 @@ export function buildEnrichedCsvHeaders(maxRate: number): string[] {
 
 export type EnrichedRow = Partial<Record<string, string>>;
 
-const quote = (v: string | undefined) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+// Newline collassato a spazio, non solo escaped: parseEnrichedCsv (usato da
+// regenerateCsv/getRow/saveAddressOverride) fa lo split delle righe su '\n'
+// PRIMA di interpretare le virgolette — un valore con un newline embedded
+// (es. testo estratto da PDF via pdf-extractor, mai sanificato a monte in
+// enrichment.processor.ts) spezzerebbe il round-trip: la riga verrebbe letta
+// come due righe distinte, disallineando ogni colonna successiva. Il file
+// resta comunque valido CSV/RFC4183 per Excel se aperto direttamente (mai lo
+// scriviamo noi con newline embedded), ma qui la garanzia forte è "quello
+// che scriviamo lo rileggiamo identico", non la generalità del formato.
+const quote = (v: string | undefined) => `"${String(v ?? '').replace(/\r?\n/g, ' ').replace(/"/g, '""')}"`;
 
 export function buildEnrichedCsv(headers: string[], rows: EnrichedRow[]): string {
   const lines = [headers.map(quote).join(';')];

@@ -75,4 +75,15 @@ describe('parseEnrichedCsv', () => {
     const parsed = parseEnrichedCsv(csv);
     expect(parsed.rows[0]['nominativo']).toBe('ROSSI "MARIO" jr');
   });
+
+  it('un newline embedded in un campo (es. testo grezzo da PDF) non rompe il round-trip', () => {
+    const headers = ['indirizzo', 'comune'];
+    const csv = buildEnrichedCsv(headers, [{ indirizzo: 'VIA ROMA 1\nPIANO 2', comune: 'ROMA' }]);
+    const parsed = parseEnrichedCsv(csv);
+    // Il newline è collassato a spazio in scrittura — nessuna riga in più,
+    // nessuna colonna disallineata sulla riga successiva.
+    expect(parsed.rows).toHaveLength(1);
+    expect(parsed.rows[0]['indirizzo']).toBe('VIA ROMA 1 PIANO 2');
+    expect(parsed.rows[0]['comune']).toBe('ROMA');
+  });
 });

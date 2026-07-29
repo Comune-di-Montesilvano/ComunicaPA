@@ -3,6 +3,8 @@ import {
   CreateDateColumn,
   Entity,
   Index,
+  JoinColumn,
+  ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
@@ -14,6 +16,15 @@ export class EnrichmentAddressOverride {
 
   @Column({ name: 'job_id', type: 'uuid' })
   jobId!: string;
+
+  // Nessun override deve sopravvivere al job che corregge — senza questa FK
+  // (aggiunta solo con AddEnrichmentAddressOverridesJobFk1785900000000,
+  // dopo la creazione della tabella) deleteJob()/retention/
+  // createCampaignFromJob() eliminavano il job e i suoi file ma mai queste
+  // righe, orfane a vita (bug reale trovato in review finale whole-branch).
+  @ManyToOne('EnrichmentJob', { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'job_id' })
+  job?: unknown;
 
   @Column({ name: 'pdf_filename', type: 'varchar', length: 512 })
   pdfFilename!: string;
