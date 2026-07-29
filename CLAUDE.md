@@ -302,6 +302,21 @@ verify-bulk) — qualunque modifica a `chunked-upload.util.ts` va verificata
 con lo stesso rigore su tutti e quattro, non solo sul percorso che si sta
 toccando.
 
+## Lavoro pesante sincrono in un handler HTTP — non solo timeout proxy, affama TUTTO
+
+Oltre al noto rischio timeout proxy esterno (vedi sopra), un endpoint che fa
+unzip/scrittura file pesante in modo sincrono dentro la richiesta HTTP
+blocca l'event loop Node (single-thread) per l'intera durata — affamando
+ANCHE richieste concorrenti scollegate (osservato in prod: 403 su
+`/admin/settings` mentre "crea bozza campagna" da arricchimento (unzip
+500MB + scrittura 3280 PDF sync) girava). Fix reale applicato:
+`EnrichmentService.requestCampaignConversion()` fa solo validazioni rapide
+e accoda un job BullMQ (`convert-campaign`, stesso processor
+dell'arricchimento) — l'endpoint risponde subito, il frontend fa polling
+sul job esistente. Ogni futuro endpoint che fa unzip/IO pesante va valutato
+con lo stesso criterio, non solo "rischia il timeout proxy?" ma anche
+"blocca l'app intera nel frattempo?".
+
 ## Log debug/verbose — gotcha
 
 Il logger NestJS di default (`NestFactory.create`) esclude i livelli
@@ -510,6 +525,22 @@ caso produce due processor concorrenti sullo stesso job applicativo
 toccare, lascialo al recovery automatico; `completed/failed/assente` →
 `.remove()` esplicito poi `add()` con lo stesso jobId (ripristina la dedup
 come rete di sicurezza).
+
+## Cron/coda con batch fisso — round-robin obbligatorio, mai ORDER BY statico
+
+Un demone che processa un batch limitato (`LIMIT N`) da una coda più grande
+deve ordinare per "ultimo controllato", mai per un campo statico come
+`created_at` — bug reale: `PostalStatusSyncService` ordinava per
+`created_at ASC` fisso; con >200 (`BATCH_SIZE`) candidati totali (390 in
+produzione), i record più vecchi che non progrediscono mai (stato non
+terminale permanente) monopolizzano per sempre le prime posizioni,
+affamando i record più nuovi — mai ripescati dal cron, solo un
+"Ricontrolla stato" manuale li aggiornava. Fix: nuova colonna
+`postal_last_checked_at` (aggiornata ad OGNI controllo, anche se lo stato
+non cambia — non basta il campo "ultimo cambio" esistente,
+`postal_status_updated_at`, che non avanza mai per un record fermo),
+`ORDER BY COALESCE(postal_last_checked_at, created_at) ASC`. Qualunque
+futuro cron con batch+limit va verificato per lo stesso rischio.
 
 ## Stato consegna POSTAL/SEND post-accettazione — mai riflesso su recipient.status
 
@@ -1151,6 +1182,40 @@ a più repliche in futuro, va sostituito con Redis pub/sub — non fatto ora
 `response.body.getReader()`, parsing manuale delle righe `data: ...\n\n`.
 Nessuna persistenza lato backend — è un log live, non uno storico (i
 warning finali restano su `EnrichmentJob.warnings` come sempre).
+
+**adm-zip — "Unknown descriptor format" non è (necessariamente) un file
+corrotto.** Un'entry ZIP scritta con **data descriptor** (general purpose
+bit 3, sizes nell'header locale assenti, valori dopo i dati compressi) può
+far fallire `entry.getData()` di `adm-zip@0.5.18` con `"Unknown descriptor
+format"` — limite noto della libreria nel riconoscere il descriptor
+(verificato dal vivo: il PDF estratto standalone dallo stesso entry era un
+`%PDF-1.4` perfettamente valido, `%%EOF` finale incluso). Non trattarlo
+come sintomo di corruzione del file/PDF prima di aver verificato lo stream
+isolato. **Ogni punto che itera entry di uno ZIP arricchimento deve avere
+un try/catch PER-ENTRY** — bug reale: `EnrichmentProcessor.
+processConvertCampaign` iterava tutti i PDF senza try/catch, un solo entry
+illeggibile bloccava l'intera conversione di migliaia di destinatari,
+mentre `processEnrich` già gestiva lo stesso caso con un warning per-riga.
+Stesso fix applicato anche a `EnrichmentService.buildResultZip` (stesso
+pattern, stesso rischio).
+
+**PDF scompattati su disco una volta sola (mai più AdmZip su source.zip a
+valle).** `EnrichmentProcessor.processEnrich` scompatta ogni PDF valido su
+`allegati/` (cartella piatta, `getEnrichmentAttachmentsDir()`) nello stesso
+passaggio in cui già legge l'entry per l'estrazione (`entry.getData()`
+chiamato una sola volta, riusato sia per l'estrattore Python sia per la
+scrittura su disco, con `basename()` sul filename da CSV prima di scrivere
+— dato caricato dall'operatore, non fidato per costruire un path) — poi
+cancella `source.zip` a fine job **riuscito** (mai su FAILED: un
+resume/retry deve poterlo rileggere). `buildResultZip`/
+`processConvertCampaign` leggono solo da `allegati/`, mai più `new
+AdmZip(source.zip)` a valle — elimina il re-parsing ripetuto di uno ZIP
+fino a 500MB in 3 punti diversi e la classe di bug sopra in due di quei tre
+punti. **Gap noto**: nessun meccanismo di resume/recovery per
+`campaignConversionStatus` bloccato in `processing` (es. backend
+riavviato/redeploy a metà copia) — a differenza dello stato principale del
+job (`EnrichmentResumeService`), un `campaignConversionStatus` stallato
+oggi richiede intervento manuale in DB, nessuna valvola di sfogo da UI.
 
 ## Liste e pannelli con stato lato server — nessun refresh automatico globale
 
