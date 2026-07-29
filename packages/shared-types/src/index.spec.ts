@@ -43,7 +43,7 @@ describe('matchCountry', () => {
   });
 
   it("normalizza apostrofo tipografico (curly) a quello dritto", () => {
-    expect(matchCountry("Costa d’Avorio")).toBe("Costa d’Avorio");
+    expect(matchCountry("Costa d" + String.fromCharCode(0x2019) + "Avorio")).toBe("Costa d" + String.fromCharCode(0x0027) + "Avorio");
   });
 
   it('riconosce "PERU\'" (apostrofo finale al posto della vocale accentata, dato PA comune)', () => {
