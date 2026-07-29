@@ -2881,6 +2881,23 @@ export function App(): React.JSX.Element {
         setEnrichAddressEditError(body.message || 'Errore durante il salvataggio');
         return;
       }
+      // Un job già DONE non rilegge più le correzioni da solo (il CSV finale
+      // è già scritto) — senza questo, "Scarica CSV"/"Scarica ZIP"/"Crea
+      // bozza campagna" restano sull'indirizzo vecchio finché l'operatore
+      // non clicca "Rigenera CSV" a mano, e "Crea bozza campagna" in
+      // particolare elimina la cartella del job subito dopo: la correzione
+      // andrebbe persa in modo irrecuperabile se dimenticata. Silenzioso e
+      // best-effort: per un job ancora in PROCESSING l'endpoint risponde
+      // blocked (nessun CSV finale da rigenerare ancora), normale qui, non
+      // un errore da segnalare.
+      try {
+        const regenRes = await apiFetch(`/enrichment/jobs/${enrichAddressEditJobId}/regenerate-csv`, { method: 'POST' });
+        await regenRes.json();
+      } catch {
+        // best-effort — un fallimento qui non deve bloccare la chiusura del
+        // form, la correzione è comunque salvata in DB e riapplicabile con
+        // "Rigenera CSV" manualmente.
+      }
       closeEnrichAddressEdit();
     } catch {
       setEnrichAddressEditError('Errore durante il salvataggio dell\'indirizzo');
