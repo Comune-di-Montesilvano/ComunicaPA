@@ -11,6 +11,16 @@ import { readCheckpointSync } from './enrichment-checkpoint.util';
  * Un job lasciato in PROCESSING da un riavvio backend non ha altrimenti
  * alcun modo di uscire da quello stato (nessun demone lo tocca, BullMQ non
  * ha retry configurato) — questo scan gira una sola volta a boot.
+ *
+ * `resumeStuckJobs()` assume UNA sola invocazione per job bloccato: il
+ * re-enqueue non passa più un `opts.jobId` esplicito (vedi commento sotto),
+ * quindi non c'è più la dedup automatica di BullMQ a fare da rete di
+ * sicurezza — un secondo giro sullo stesso job (checkpoint ancora presente,
+ * status ancora PROCESSING) accoderebbe un secondo job reale invece di
+ * no-oppare. Oggi solo `onModuleInit()` chiama questo metodo, quindi non è
+ * un problema concreto — ma se in futuro si aggiunge un secondo punto di
+ * chiamata (es. un endpoint "riprova resume" manuale), va prima garantito
+ * che non possa mai girare in parallelo/doppione sullo stesso job.
  */
 @Injectable()
 export class EnrichmentResumeService implements OnModuleInit {
