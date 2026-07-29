@@ -12,15 +12,34 @@ import { readCheckpointSync } from './enrichment-checkpoint.util';
  * alcun modo di uscire da quello stato (nessun demone lo tocca, BullMQ non
  * ha retry configurato) — questo scan gira una sola volta a boot.
  *
- * `resumeStuckJobs()` assume UNA sola invocazione per job bloccato: il
- * re-enqueue non passa più un `opts.jobId` esplicito (vedi commento sotto),
- * quindi non c'è più la dedup automatica di BullMQ a fare da rete di
- * sicurezza — un secondo giro sullo stesso job (checkpoint ancora presente,
- * status ancora PROCESSING) accoderebbe un secondo job reale invece di
- * no-oppare. Oggi solo `onModuleInit()` chiama questo metodo, quindi non è
- * un problema concreto — ma se in futuro si aggiunge un secondo punto di
- * chiamata (es. un endpoint "riprova resume" manuale), va prima garantito
- * che non possa mai girare in parallelo/doppione sullo stesso job.
+ * **Due scenari BullMQ diversi dietro lo stesso stato DB "PROCESSING", vanno
+ * gestiti in modo opposto** (bug reale trovato in due giri di verifica live
+ * separati — il primo giro ha corretto solo metà del problema):
+ *
+ * 1. Il vecchio job BullMQ con id=job.id è **terminale** (completed/failed) —
+ *    es. il worker ha finito di scrivere lo stato DB=PROCESSING iniziale ma
+ *    NON è mai arrivato allo stato finale per un crash immediatamente dopo,
+ *    oppure (caso verificato dal vivo) il job era già stato processato una
+ *    volta e lo stato DB non riflette più la realtà. Qui `queue.add()` con
+ *    lo STESSO jobId è un no-op silenzioso — va rimosso esplicitamente prima
+ *    di riaggiungerlo, altrimenti il job non riparte mai (nessuna eccezione,
+ *    nessun log, il record resta bloccato in PROCESSING per sempre
+ *    nonostante il log "riprendo da riga N").
+ * 2. Il vecchio job BullMQ è ancora **active** (worker crashato mentre lo
+ *    stava eseguendo, lock non rilasciato) — qui NON bisogna toccarlo:
+ *    `main.ts` non chiama `app.enableShutdownHooks()` e la coda usa le
+ *    opzioni default di BullMQ (`stalledInterval`/`maxStalledCount`), quindi
+ *    il meccanismo di stalled-job recovery di BullMQ stesso lo rimette in
+ *    coda e lo rielabora DA SOLO entro pochi secondi dal boot del nuovo
+ *    worker. Se anche noi aggiungessimo qui un job (con lo stesso id o uno
+ *    nuovo), otterremmo DUE `EnrichmentProcessor.process()` concorrenti sullo
+ *    stesso `jobId` applicativo — stesso checkpoint letto/scritto due volte,
+ *    stessa `result.csv` sovrascritta due volte non atomicamente (rischio
+ *    concreto di file troncato/misto). Il fix precedente (rimuovere sempre
+ *    `opts.jobId`) copriva SOLO il caso 1, verificato dal vivo forzando a
+ *    mano `status='processing'` su un job BullMQ già completato — che non è
+ *    la forma di un crash vero, dove il job resta `active`. Corretto:
+ *    interrogare lo stato del job BullMQ esistente e agire di conseguenza.
  */
 @Injectable()
 export class EnrichmentResumeService implements OnModuleInit {
@@ -42,21 +61,32 @@ export class EnrichmentResumeService implements OnModuleInit {
     for (const job of stuck) {
       const checkpoint = readCheckpointSync(job.id);
       if (checkpoint) {
+        const existing = await this.queue.getJob(job.id);
+        const state = existing ? await existing.getState() : null;
+
+        if (state === 'active' || state === 'waiting' || state === 'waiting-children' || state === 'delayed') {
+          // Il job BullMQ esiste ancora ed è vivo/in attesa — non è davvero
+          // "bloccato", è solo il nostro stato DB (aggiornato solo a fine job)
+          // a non riflettere ancora la realtà, oppure è genuinamente `active`
+          // con lock scaduto: in quel caso lo stalled-job recovery di BullMQ
+          // (opzioni default, nessun enableShutdownHooks in main.ts) lo
+          // riprende da solo entro pochi secondi. Aggiungerne un secondo qui
+          // produrrebbe due process() concorrenti sullo stesso jobId — mai
+          // farlo, si limita a loggare.
+          this.logger.warn(`EnrichmentJob ${job.id}: job BullMQ ancora presente (stato ${state}) — nessuna azione, lo riprende in carico BullMQ stesso (stalled-job recovery)`);
+          continue;
+        }
+
         this.logger.warn(`EnrichmentJob ${job.id} bloccato in PROCESSING dopo riavvio — riprendo da riga ${checkpoint.lastRow}`);
-        // NIENTE opts.jobId = job.id qui (a differenza di enrichment.service.ts
-        // createJob()) — bug reale trovato in verifica end-to-end live: un job
-        // arrivato fin qui in PROCESSING ha per definizione già un job BullMQ
-        // con quello stesso ID (è così che ha iniziato a processare la prima
-        // volta). BullMQ deduplica su add() per jobId esistente — se quel job
-        // è già in stato terminale (completed/failed) in Redis, `queue.add`
-        // con lo stesso jobId è un no-op silenzioso: nessuna eccezione, nessun
-        // log, ma il job non viene MAI davvero rieseguito — il record resta
-        // bloccato in PROCESSING per sempre nonostante il log "riprendo da
-        // riga N". Nessun altro punto del codice usa il jobId BullMQ
-        // dell'arricchimento per lookup esterni (verificato: EnrichmentProcessor
-        // legge solo job.data.jobId, mai job.id; l'arricchimento non compare
-        // nella UI Motori) — libero di lasciare che BullMQ generi un ID nuovo.
-        await this.queue.add('enrich', { jobId: job.id });
+        // Il vecchio job BullMQ (se presente) è in stato terminale
+        // (completed/failed) — riaggiungerlo con lo stesso jobId sarebbe un
+        // no-op silenzioso di BullMQ (dedup su jobId esistente, qualunque sia
+        // lo stato). Va rimosso esplicitamente prima del re-add, altrimenti
+        // il job non riparte mai (nessuna eccezione, nessun log, il record
+        // resta bloccato in PROCESSING per sempre nonostante il log
+        // "riprendo da riga N" — bug reale, verificato dal vivo).
+        if (existing) await existing.remove();
+        await this.queue.add('enrich', { jobId: job.id }, { jobId: job.id });
       } else {
         this.logger.error(`EnrichmentJob ${job.id} bloccato in PROCESSING dopo riavvio, nessun checkpoint disponibile — marcato FAILED`);
         await this.jobRepo.update(job.id, {
