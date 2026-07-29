@@ -34,7 +34,12 @@ describe('EnrichmentResumeService', () => {
     await service.resumeStuckJobs();
 
     expect(jobRepo.find).toHaveBeenCalledWith({ where: { status: EnrichmentJobStatus.PROCESSING } });
-    expect(queue.add).toHaveBeenCalledWith('enrich', { jobId: 'j1' }, { jobId: 'j1' });
+    // Nessun opts.jobId = job.id: BullMQ dedupe-a su jobId esistente, un job
+    // arrivato qui in PROCESSING ha già un job BullMQ con quell'id (terminale
+    // o attivo) — riusarlo come opts.jobId renderebbe la add() un no-op
+    // silenzioso (bug reale trovato in verifica end-to-end live, mai
+    // rieseguito nonostante il log "riprendo da riga N").
+    expect(queue.add).toHaveBeenCalledWith('enrich', { jobId: 'j1' });
     expect(jobRepo.update).not.toHaveBeenCalled();
   });
 
@@ -63,7 +68,12 @@ describe('EnrichmentResumeService', () => {
     await service.resumeStuckJobs();
 
     expect(queue.add).toHaveBeenCalledTimes(1);
-    expect(queue.add).toHaveBeenCalledWith('enrich', { jobId: 'j1' }, { jobId: 'j1' });
+    // Nessun opts.jobId = job.id: BullMQ dedupe-a su jobId esistente, un job
+    // arrivato qui in PROCESSING ha già un job BullMQ con quell'id (terminale
+    // o attivo) — riusarlo come opts.jobId renderebbe la add() un no-op
+    // silenzioso (bug reale trovato in verifica end-to-end live, mai
+    // rieseguito nonostante il log "riprendo da riga N").
+    expect(queue.add).toHaveBeenCalledWith('enrich', { jobId: 'j1' });
     expect(jobRepo.update).toHaveBeenCalledTimes(1);
     expect(jobRepo.update).toHaveBeenCalledWith('j2', expect.objectContaining({ status: EnrichmentJobStatus.FAILED }));
   });
