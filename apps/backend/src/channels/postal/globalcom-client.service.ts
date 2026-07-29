@@ -338,6 +338,31 @@ export class GlobalComClient {
   }
 
   /**
+   * Catena di riaccodamento (manuale §2.2.57) — l'ultimo elemento è l'IDPRO
+   * corretto/attivo. Se il documento non è mai stato riaccodato, la
+   * risposta contiene solo l'IDPRO iniziale.
+   *
+   * Convenzione ASMX ArrayOfString: l'elemento ripetuto si chiama "string"
+   * (stesso pattern "wrapper nominato per tipo" già verificato per
+   * Destinatari/InfoIndirizzoExt e ProdottiDisponibili/ServiceType) — non
+   * ancora confermato con una chiamata reale contro GlobalCom, verificare
+   * al primo utilizzo in produzione (vedi
+   * docs/superpowers/specs/2026-07-29-postal-riaccodamento-design.md).
+   */
+  async listaRiaccodamentiDocumento(creds: GbcCredentials, idPro: string): Promise<string[]> {
+    const client = await this.createSession(creds);
+    const [result] = await (client as any).lista_riaccodamenti_documentoAsync({ IDPRO: idPro });
+    const wrapper = result.lista_riaccodamenti_documentoResult as { string?: string | string[] } | undefined;
+    const raw = wrapper?.string;
+    const list = Array.isArray(raw) ? raw : raw ? [raw] : [idPro];
+    if (list.length === 0 || list.some((x) => typeof x !== 'string' || !x)) {
+      this.logger.warn(`listaRiaccodamentiDocumento: risposta inattesa per IDPRO=${idPro} — raw: ${JSON.stringify(wrapper)}`);
+      return [idPro];
+    }
+    return list;
+  }
+
+  /**
    * Audit permessi/contratti dell'utenza (manuale §2.2.60) — solo
    * informativo, nessun invio: usato dal tasto "Test" del provider per
    * scoprire automaticamente quali Servizio l'utenza può davvero inviare e

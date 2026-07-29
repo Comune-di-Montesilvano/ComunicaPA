@@ -4,6 +4,7 @@ const mockLoginAsync = jest.fn();
 const mockInvioAsync = jest.fn();
 const mockListaAsync = jest.fn();
 const mockDettagliAsync = jest.fn();
+const mockListaRiaccodamentiAsync = jest.fn();
 const mockInformazioniUtenzaAsync = jest.fn();
 const mockAddHttpHeader = jest.fn();
 
@@ -13,6 +14,7 @@ jest.mock('soap', () => ({
     invio_ext_singoloAsync: mockInvioAsync,
     lista_documentiAsync: mockListaAsync,
     dettagli_documentoAsync: mockDettagliAsync,
+    lista_riaccodamenti_documentoAsync: mockListaRiaccodamentiAsync,
     InformazioniUtenzaAsync: mockInformazioniUtenzaAsync,
     addHttpHeader: mockAddHttpHeader,
     lastResponseHeaders: { 'set-cookie': ['ASP.NET_SessionId=abc123; path=/'] },
@@ -300,6 +302,36 @@ describe('GlobalComClient', () => {
     expect(result.contratti).toEqual([
       { codiceContratto: 'C1', descrizione: 'D', tipologia: 'RaccomandataMarket', estero: false },
     ]);
+  });
+  it('listaRiaccodamentiDocumento ritorna solo l\'IDPRO iniziale se non ci sono riaccodamenti', async () => {
+    mockListaRiaccodamentiAsync.mockResolvedValue([{
+      lista_riaccodamenti_documentoResult: { string: 'IDPRO1' },
+    }]);
+
+    const result = await client.listaRiaccodamentiDocumento(creds, 'IDPRO1');
+
+    expect(mockListaRiaccodamentiAsync).toHaveBeenCalledWith({ IDPRO: 'IDPRO1' });
+    expect(result).toEqual(['IDPRO1']);
+  });
+
+  it('listaRiaccodamentiDocumento ritorna la catena completa ordinata quando ci sono riaccodamenti', async () => {
+    mockListaRiaccodamentiAsync.mockResolvedValue([{
+      lista_riaccodamenti_documentoResult: { string: ['IDPRO1', 'IDPRO2', 'IDPRO3'] },
+    }]);
+
+    const result = await client.listaRiaccodamentiDocumento(creds, 'IDPRO1');
+
+    expect(result).toEqual(['IDPRO1', 'IDPRO2', 'IDPRO3']);
+  });
+
+  it('listaRiaccodamentiDocumento ritorna l\'IDPRO passato se la risposta è vuota/inattesa', async () => {
+    mockListaRiaccodamentiAsync.mockResolvedValue([{
+      lista_riaccodamenti_documentoResult: {},
+    }]);
+
+    const result = await client.listaRiaccodamentiDocumento(creds, 'IDPRO1');
+
+    expect(result).toEqual(['IDPRO1']);
   });
 });
 
