@@ -2,8 +2,11 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { join } from 'path';
 import AdmZip from 'adm-zip';
+import { BadRequestException } from '@nestjs/common';
 import { EnrichmentJobStatus, TraceFormat } from '../entities/enrichment-job.entity';
 import { EnrichmentService } from './enrichment.service';
+import { getEnrichmentDir, getEnrichmentResultCsv } from './enrichment-paths';
+import { buildEnrichedCsv, buildEnrichedCsvHeaders } from './enriched-csv.util';
 
 const RUBRICA_ROW =
   'id;pec@pec.it;;MARIO;ROSSI;RSSMRA80A01H501U;;ROSSI MARIO;1;13/03/2026;Oggetto;;;PROVV_1.pdf';
@@ -21,6 +24,7 @@ describe('EnrichmentService', () => {
   let tmpDir: string;
   let repo: any;
   let queue: any;
+  let overrideService: any;
   let service: EnrichmentService;
 
   beforeEach(() => {
@@ -35,7 +39,12 @@ describe('EnrichmentService', () => {
       update: jest.fn(async () => undefined),
     };
     queue = { add: jest.fn(async () => undefined) };
-    service = new EnrichmentService(repo, queue, { create: jest.fn() } as any);
+    overrideService = {
+      findByJob: jest.fn(async () => []),
+      applyOverrides: jest.fn((rows: any) => rows),
+      upsert: jest.fn(async () => ({ id: 'o1' })),
+    };
+    service = new EnrichmentService(repo, queue, { create: jest.fn() } as any, overrideService);
   });
 
   afterEach(() => {
@@ -149,7 +158,7 @@ describe('EnrichmentService', () => {
 
     beforeEach(() => {
       campaignsService = { create: jest.fn(async () => ({ id: 'camp-1' })) };
-      service = new EnrichmentService(repo, queue, campaignsService);
+      service = new EnrichmentService(repo, queue, campaignsService, overrideService);
     });
 
     function setupDoneJob(): void {
@@ -208,6 +217,84 @@ describe('EnrichmentService', () => {
       const uploadsDir = join(tmpDir, 'attachments', 'uploads', 'camp-1');
       expect(fs.existsSync(join(uploadsDir, 'nested.pdf'))).toBe(true);
       expect(fs.existsSync(join(uploadsDir, 'sub'))).toBe(false);
+    });
+  });
+
+  describe('getRow', () => {
+    it('job DONE: legge dal CSV risultato, override presente incluso', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.DONE });
+      fs.mkdirSync(getEnrichmentDir('j1'), { recursive: true });
+      fs.writeFileSync(
+        getEnrichmentResultCsv('j1'),
+        buildEnrichedCsv(buildEnrichedCsvHeaders(0), [
+          { codice_fiscale: 'RSSMRA80A01H501U', allegato: 'PROVV_1.pdf', indirizzo: 'VIA VECCHIA', cap: '00000', comune: 'X', provincia: 'XX', stato_estero: '' },
+        ]),
+      );
+      overrideService.findByJob.mockResolvedValue([{ pdfFilename: 'PROVV_1.pdf', indirizzo: 'VIA NUOVA' }]);
+
+      const row = await service.getRow('j1', 'PROVV_1.pdf');
+
+      expect(row.codiceFiscale).toBe('RSSMRA80A01H501U');
+      expect(row.indirizzo).toBe('VIA VECCHIA'); // dato corrente non patchato di default
+      expect(row.override).toEqual(expect.objectContaining({ indirizzo: 'VIA NUOVA' }));
+    });
+
+    it('pdfFilename inesistente nel job → BadRequestException', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.DONE });
+      fs.mkdirSync(getEnrichmentDir('j1'), { recursive: true });
+      fs.writeFileSync(getEnrichmentResultCsv('j1'), buildEnrichedCsv(buildEnrichedCsvHeaders(0), []));
+      await expect(service.getRow('j1', 'INESISTENTE.pdf')).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('saveAddressOverride', () => {
+    it('pdfFilename valido → upsert e nessun blocco', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.DONE });
+      fs.mkdirSync(getEnrichmentDir('j1'), { recursive: true });
+      fs.writeFileSync(
+        getEnrichmentResultCsv('j1'),
+        buildEnrichedCsv(buildEnrichedCsvHeaders(0), [{ allegato: 'PROVV_1.pdf' }]),
+      );
+      const result = await service.saveAddressOverride('j1', 'PROVV_1.pdf', { indirizzo: 'VIA NUOVA' }, 'op');
+      expect(result.blocked).toBeUndefined();
+      expect(overrideService.upsert).toHaveBeenCalledWith('j1', 'PROVV_1.pdf', { indirizzo: 'VIA NUOVA' }, 'op');
+    });
+
+    it('pdfFilename inesistente → blocked', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.DONE });
+      fs.mkdirSync(getEnrichmentDir('j1'), { recursive: true });
+      fs.writeFileSync(getEnrichmentResultCsv('j1'), buildEnrichedCsv(buildEnrichedCsvHeaders(0), []));
+      const result = await service.saveAddressOverride('j1', 'INESISTENTE.pdf', { indirizzo: 'X' }, 'op');
+      expect(result.blocked).toBe(true);
+      expect(overrideService.upsert).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('regenerateCsv', () => {
+    it('job non DONE → blocked', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.PROCESSING });
+      const result = await service.regenerateCsv('j1');
+      expect(result.blocked).toBe(true);
+    });
+
+    it('job DONE: rilegge il CSV, applica override, riscrive il file', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.DONE });
+      fs.mkdirSync(getEnrichmentDir('j1'), { recursive: true });
+      fs.writeFileSync(
+        getEnrichmentResultCsv('j1'),
+        buildEnrichedCsv(buildEnrichedCsvHeaders(0), [{ allegato: 'PROVV_1.pdf', indirizzo: 'VIA VECCHIA' }]),
+      );
+      overrideService.findByJob.mockResolvedValue([{ pdfFilename: 'PROVV_1.pdf', indirizzo: 'VIA CORRETTA' }]);
+      overrideService.applyOverrides.mockImplementation((rows: any[]) =>
+        rows.map((r) => (r.allegato === 'PROVV_1.pdf' ? { ...r, indirizzo: 'VIA CORRETTA' } : r)),
+      );
+
+      const result = await service.regenerateCsv('j1');
+
+      expect(result.blocked).toBeUndefined();
+      const csv = fs.readFileSync(getEnrichmentResultCsv('j1'), 'utf-8');
+      expect(csv).toContain('VIA CORRETTA');
+      expect(csv).not.toContain('VIA VECCHIA');
     });
   });
 });
