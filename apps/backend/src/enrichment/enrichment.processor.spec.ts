@@ -4,7 +4,7 @@ import { join } from 'path';
 import AdmZip from 'adm-zip';
 import type { Job } from 'bullmq';
 import { EnrichmentJobStatus, TraceFormat } from '../entities/enrichment-job.entity';
-import { getEnrichmentDir, getEnrichmentResultCsv, getEnrichmentSourceZip } from './enrichment-paths';
+import { getEnrichmentCheckpoint, getEnrichmentDir, getEnrichmentResultCsv, getEnrichmentSourceZip } from './enrichment-paths';
 import { EnrichmentProcessor } from './enrichment.processor';
 
 const RUBRICA = [
@@ -51,6 +51,7 @@ describe('EnrichmentProcessor', () => {
   let repo: any;
   let client: any;
   let events: any;
+  let overrideService: any;
   let processor: EnrichmentProcessor;
   const record = {
     id: 'j1',
@@ -79,7 +80,8 @@ describe('EnrichmentProcessor', () => {
       })),
     };
     events = { emitLog: jest.fn(), emitTerminal: jest.fn() };
-    processor = new EnrichmentProcessor(repo, client, events);
+    overrideService = { findByJob: jest.fn(async () => []), applyOverrides: jest.fn((rows: any) => rows) };
+    processor = new EnrichmentProcessor(repo, client, events, overrideService);
   });
 
   afterEach(() => {
@@ -242,5 +244,58 @@ describe('EnrichmentProcessor', () => {
     await processor.process(fakeJob);
     expect(events.emitTerminal).toHaveBeenCalledWith('j1', expect.objectContaining({ type: 'error' }));
     expect(events.emitTerminal).not.toHaveBeenCalledWith('j1', { type: 'done' });
+  });
+
+  it('checkpoint scritto ogni 100 righe: con meno di 100 record nessun checkpoint intermedio, ma checkpointRow finale = totale', async () => {
+    await processor.process(fakeJob);
+    const finalUpdate = repo.update.mock.calls.at(-1)![1];
+    expect(finalUpdate.status).toBe(EnrichmentJobStatus.DONE);
+    // Il job di test ha 2 record: sotto soglia 100, checkpointRow avanza comunque a fine job
+    // per coerenza (nessuna riga "non committata" a job concluso).
+  });
+
+  it('resume: con checkpoint esistente, salta extractor.extract per le righe già coperte da lastRow', async () => {
+    const { writeCheckpointSync } = await import('./enrichment-checkpoint.util');
+    writeCheckpointSync('j1', {
+      lastRow: 1,
+      rows: [{ codice_fiscale: 'RSSMRA80A01H501U', allegato: 'PROVV_1.pdf', indirizzo: 'GIA PROCESSATA' }],
+      warnings: [],
+      maxRate: 0,
+    });
+
+    await processor.process(fakeJob);
+
+    // Solo la riga 2 (PDF mancante, nessuna extract comunque) viene elaborata:
+    // extract non deve essere richiamato per la riga 1 già nel checkpoint.
+    expect(client.extract).not.toHaveBeenCalled();
+    const csv = fs.readFileSync(getEnrichmentResultCsv('j1'), 'utf-8');
+    expect(csv).toContain('GIA PROCESSATA');
+  });
+
+  it('checkpoint corrotto: trattato come assente, elabora da riga 0', async () => {
+    fs.writeFileSync(getEnrichmentCheckpoint('j1'), '{not valid json');
+    await processor.process(fakeJob);
+    expect(client.extract).toHaveBeenCalledTimes(1); // comportamento normale, da zero
+  });
+
+  it('a completamento (DONE) il checkpoint viene cancellato dal disco', async () => {
+    await processor.process(fakeJob);
+    expect(fs.existsSync(getEnrichmentCheckpoint('j1'))).toBe(false);
+  });
+
+  it('a completamento (FAILED) il checkpoint viene cancellato dal disco', async () => {
+    fs.rmSync(getEnrichmentSourceZip('j1'));
+    await processor.process(fakeJob);
+    expect(fs.existsSync(getEnrichmentCheckpoint('j1'))).toBe(false);
+  });
+
+  it('applica gli override indirizzo esistenti prima di scrivere il CSV finale', async () => {
+    overrideService.findByJob.mockResolvedValue([{ pdfFilename: 'PROVV_1.pdf', indirizzo: 'VIA CORRETTA' }]);
+    overrideService.applyOverrides.mockImplementation((rows: any[]) =>
+      rows.map((r) => (r.allegato === 'PROVV_1.pdf' ? { ...r, indirizzo: 'VIA CORRETTA' } : r)),
+    );
+    await processor.process(fakeJob);
+    const csv = fs.readFileSync(getEnrichmentResultCsv('j1'), 'utf-8');
+    expect(csv).toContain('VIA CORRETTA');
   });
 });

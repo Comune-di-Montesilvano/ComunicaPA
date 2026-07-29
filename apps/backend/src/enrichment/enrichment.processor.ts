@@ -17,8 +17,11 @@ import { parseMaggioliZip, type MaggioliRecord } from './maggioli-parser';
 import { buildEnrichedCsv, buildEnrichedCsvHeaders, type EnrichedRow } from './enriched-csv.util';
 import { PdfExtractorClient, type ExtractedPaymentDetail } from './pdf-extractor.client';
 import { EnrichmentEventsService } from './enrichment-events.service';
+import { EnrichmentAddressOverrideService } from './enrichment-address-override.service';
+import { readCheckpointSync, writeCheckpointSync, deleteCheckpointSync } from './enrichment-checkpoint.util';
 
 const PROGRESS_UPDATE_EVERY = 10;
+const CHECKPOINT_EVERY = 100;
 
 @Injectable()
 @Processor(ENRICHMENT_QUEUE)
@@ -30,6 +33,7 @@ export class EnrichmentProcessor extends WorkerHost {
     private readonly jobRepo: Repository<EnrichmentJob>,
     private readonly extractor: PdfExtractorClient,
     private readonly events: EnrichmentEventsService,
+    private readonly overrideService: EnrichmentAddressOverrideService,
   ) {
     super();
   }
@@ -47,11 +51,14 @@ export class EnrichmentProcessor extends WorkerHost {
 
       const zip = new AdmZip(readLargeFileSync(getEnrichmentSourceZip(jobId)));
       const { records } = parseMaggioliZip(zip);
-      const warnings: EnrichmentWarning[] = [];
-      const rows: EnrichedRow[] = [];
-      let maxRate = 0;
 
-      for (let i = 0; i < records.length; i++) {
+      const checkpoint = readCheckpointSync(jobId);
+      const startIndex = checkpoint?.lastRow ?? 0;
+      const warnings: EnrichmentWarning[] = checkpoint?.warnings ?? [];
+      const rows: EnrichedRow[] = checkpoint?.rows ?? [];
+      let maxRate = checkpoint?.maxRate ?? 0;
+
+      for (let i = startIndex; i < records.length; i++) {
         const rec = records[i];
         const rowNum = i + 1;
         const row = this.baseRow(rec);
@@ -137,18 +144,29 @@ export class EnrichmentProcessor extends WorkerHost {
             warnings: [...warnings],
           });
         }
+
+        if (rowNum % CHECKPOINT_EVERY === 0) {
+          const overrides = await this.overrideService.findByJob(jobId);
+          const patchedRows = this.overrideService.applyOverrides(rows, overrides);
+          writeCheckpointSync(jobId, { lastRow: rowNum, rows: patchedRows, warnings: [...warnings], maxRate });
+          await this.jobRepo.update(jobId, { checkpointRow: rowNum });
+        }
       }
 
+      const overrides = await this.overrideService.findByJob(jobId);
+      const finalRows = this.overrideService.applyOverrides(rows, overrides);
       const headers = buildEnrichedCsvHeaders(maxRate);
-      fs.writeFileSync(getEnrichmentResultCsv(jobId), buildEnrichedCsv(headers, rows), 'utf-8');
+      fs.writeFileSync(getEnrichmentResultCsv(jobId), buildEnrichedCsv(headers, finalRows), 'utf-8');
 
       await this.jobRepo.update(jobId, {
         status: EnrichmentJobStatus.DONE,
         processedRecords: records.length,
+        checkpointRow: records.length,
         warningCount: warnings.length,
         warnings,
         completedAt: new Date(),
       });
+      deleteCheckpointSync(jobId);
       this.events.emitTerminal(jobId, { type: 'done' });
       this.logger.log(`EnrichmentJob ${jobId} completato: ${records.length} righe, ${warnings.length} warning`);
     } catch (err: any) {
@@ -159,6 +177,7 @@ export class EnrichmentProcessor extends WorkerHost {
         errorMessage: err.message,
         completedAt: new Date(),
       });
+      deleteCheckpointSync(jobId);
       this.events.emitTerminal(jobId, { type: 'error', message: err.message });
     }
   }
