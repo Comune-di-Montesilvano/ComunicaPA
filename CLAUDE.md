@@ -88,6 +88,10 @@ docker exec comunicapa-postgres-1 psql -U comunicapa -d comunicapa_db -c "CREATE
 docker exec -e DATABASE_URL="postgresql://comunicapa:<password>@postgres:5432/migration_test" comunicapa-backend-1 node_modules/.bin/typeorm-ts-node-commonjs migration:run -d src/database/data-source.ts
 ```
 
+**subagent-driven-development su questo repo — mai `isolation:"worktree"` per gli implementer se il lavoro deve andare dritto su `main`.** Un subagent con worktree isolato committa su un branch/checkout separato (`.claude/worktrees/...`) — se poi lo si rimuove, il report scritto dal subagent nella working directory sparisce con esso (bug reale: report ricostruito a mano dal riassunto restituito). Per lavoro diretto su main, dispatchare i subagent SENZA `isolation`, verificare poi con `git log --oneline -1 && git branch --show-current` che il commit sia finito dove atteso.
+
+**`.superpowers/sdd/` è scratch condiviso tra TUTTI i piani eseguiti nel repo, non per-piano.** Nomi file generici (`task-N-brief.md`/`task-N-report.md`) vengono sovrascritti da esecuzioni diverse — un report letto da lì può essere residuo di un piano precedente non correlato (bug reale: report Task 1 riletto per il review conteneva il riepilogo di un task di tutt'altro piano). Verificare sempre che il contenuto corrisponda al task atteso prima di fidarsene per una review.
+
 ## Test
 
 ```bash
@@ -112,6 +116,8 @@ docker compose exec backend node -e "const jwt=require('/app/node_modules/.pnpm/
 **Baseline:** 1 fallimento noto pre-esistente (`app.controller.spec.ts`, `isLdapMock` — artefatto di `LDAP_HOST=mock` in dev), il resto della suite pulito. Il criterio per una modifica resta "failure set identico" al prima — se emerge un nuovo fallimento oltre a questo, è una regressione, non baseline nota.
 
 **Test rapido di un endpoint autenticato senza frontend**: nessun `curl` nel container backend — usare `node -e` con `fetch()` verso `http://localhost:8080/...` e il token JWT generato con lo snippet sopra. Utile per lanciare/testare una campagna reale da riga di comando durante il debug.
+
+**Simulare un crash reale del backend per test (es. resume da checkpoint) — `docker kill` è bloccato dal classificatore di sicurezza di Claude Code.** Usare `docker compose restart backend`: il container non gestisce `SIGTERM` (nessun `enableShutdownHooks`), quindi il processo termina comunque bruscamente — stesso effetto pratico di un crash vero per testare codice di recovery, senza permessi distruttivi.
 
 ## Configurazione runtime (settings in DB)
 
@@ -472,6 +478,26 @@ dal demone dopo ogni esito terminale (successo/fallimento), esattamente come
 fa il processor per gli altri canali. Bug reale: dimenticarlo lascia la
 campagna bloccata in `QUEUED` per sempre anche a invio terminato per tutti i
 destinatari — nessun errore visibile, solo uno stato mai aggiornato.
+
+## BullMQ — `queue.add()` con jobId esistente è no-op silenzioso, mai un errore
+
+Riaggiungere un job con lo stesso `opts.jobId` di uno già presente in Redis
+(**qualunque** stato: completed/failed/active) non lancia eccezioni e non
+logga nulla — semplicemente non rieseguirà mai il job. Un demone di
+"resume/retry" che riusa l'id originale come dedup naïve resta bloccato per
+sempre nonostante un log di successo apparente (bug reale, verificato dal
+vivo con crash reale simulato via `docker compose restart` — vedi
+`enrichment-resume.service.ts`). Ma rimuovere sempre `opts.jobId` non è la
+correzione giusta: se il vecchio job è ancora `active` (worker crashato,
+lock scaduto — questo repo non chiama `app.enableShutdownHooks()`, opzioni
+BullMQ default), lo stalled-job recovery di BullMQ lo riprende da solo
+entro il `stalledInterval` (default 30s) — aggiungerne un secondo in quel
+caso produce due processor concorrenti sullo stesso job applicativo
+(checkpoint/file scritti due volte, race reale). Prima di un re-add:
+`queue.getJob(id)` + `.getState()` — `active/waiting/delayed` → non
+toccare, lascialo al recovery automatico; `completed/failed/assente` →
+`.remove()` esplicito poi `add()` con lo stesso jobId (ripristina la dedup
+come rete di sicurezza).
 
 ## Stato consegna POSTAL/SEND post-accettazione — mai riflesso su recipient.status
 
