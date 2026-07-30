@@ -37,9 +37,9 @@ describe('CampaignBulkRetryService', () => {
       expect(queueMock.add).not.toHaveBeenCalled();
     });
 
-    it('rifiuta più di 20000 recipientIds senza creare il job', async () => {
+    it('rifiuta più di 100000 recipientIds senza creare il job', async () => {
       campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1' });
-      const tooMany = Array.from({ length: 20001 }, (_, i) => `r${i}`);
+      const tooMany = Array.from({ length: 100001 }, (_, i) => `r${i}`);
       await expect(service.createJob('c1', tooMany, 'op')).rejects.toThrow(BadRequestException);
       expect(jobRepoMock.save).not.toHaveBeenCalled();
       expect(queueMock.add).not.toHaveBeenCalled();

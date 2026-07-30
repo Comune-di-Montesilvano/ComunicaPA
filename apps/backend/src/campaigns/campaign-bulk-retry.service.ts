@@ -10,8 +10,10 @@ import { CAMPAIGN_BULK_RETRY_QUEUE, CampaignBulkRetryJobData } from './campaign-
 // Guard rail contro input assurdi (es. selezione client rotta), non più il
 // vincolo "operazione sincrona nella richiesta HTTP" — vedi CLAUDE.md,
 // il job gira in background su CAMPAIGN_BULK_RETRY_QUEUE, nessun rischio
-// timeout proxy/event-loop indipendentemente da quanti destinatari.
-const MAX_BULK_RETRY_JOB_SIZE = 20000;
+// timeout proxy/event-loop indipendentemente da quanti destinatari. Margine
+// ampio sopra la campagna PA più grande nota (TARI, ~20k destinatari) — non
+// un vincolo tecnico reale, solo un tetto contro un array clamoroso.
+const MAX_BULK_RETRY_JOB_SIZE = 100000;
 
 export interface BulkRetryStatus {
   status: CampaignBulkRetryJobStatus;
