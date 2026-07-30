@@ -963,6 +963,22 @@ const EMPTY_POSTAL_PROVIDER: Omit<PostalProviderItem, 'id' | 'testedAt' | 'activ
 
 const PIE_COLORS = ['var(--bi-navy)', 'var(--ms-purple-600)', 'var(--ms-gold-500)', 'var(--ms-green-600)', 'var(--bi-primary)'];
 
+// Colore stabile per chiave (mai per indice in array): un pie che si
+// ricalcola a ogni polling (nuova categoria comparsa/scomparsa tra un fetch
+// e l'altro) con colori assegnati per posizione (PIE_COLORS[i % len])
+// riassegna colori diversi alle STESSE categorie ogni volta che l'ordine
+// dell'array cambia — leggibilità pessima (bug reale segnalato: "Download
+// per Canale" cambiava colore/ordine ad ogni refresh). L'hash sulla chiave
+// (nome canale, combinazione canali...) resta identico indipendentemente da
+// quante altre categorie esistono in quel momento o in che ordine arrivano.
+function stableColorForKey(key: string): string {
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) {
+    hash = (hash * 31 + key.charCodeAt(i)) | 0;
+  }
+  return PIE_COLORS[Math.abs(hash) % PIE_COLORS.length];
+}
+
 function isJwtExpired(tokenStr: string): boolean {
   try {
     const payloadBase64 = tokenStr.split('.')[1];
@@ -10822,8 +10838,8 @@ export function App(): React.JSX.Element {
                           <ResponsiveContainer width="100%" height={220}>
                             <PieChart>
                               <Pie data={globalStats.channelTotals} dataKey="sent" nameKey="channel" outerRadius={80} label>
-                                {globalStats.channelTotals.map((entry, idx) => (
-                                  <Cell key={entry.channel} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
+                                {globalStats.channelTotals.map((entry) => (
+                                  <Cell key={entry.channel} fill={stableColorForKey(entry.channel)} />
                                 ))}
                               </Pie>
                               <Tooltip />
@@ -15164,7 +15180,7 @@ export function App(): React.JSX.Element {
                                   labelLine={false}
                                 >
                                   {Object.keys(effectiveChannelBreakdown).map((label) => (
-                                    <Cell key={label} fill={EFFECTIVE_CHANNEL_COLORS[label] ?? 'var(--bi-secondary, #6c757d)'} />
+                                    <Cell key={label} fill={EFFECTIVE_CHANNEL_COLORS[label] ?? stableColorForKey(label)} />
                                   ))}
                                 </Pie>
                                 <Tooltip />
@@ -15258,7 +15274,7 @@ export function App(): React.JSX.Element {
                               const downloaded = sentCount - notDownloaded;
                               const pct = (n: number) => (sentCount > 0 ? `${Math.round((n / sentCount) * 100)}%` : '0%');
 
-                              const colorFor = (c: { channels: string[] }, i: number) => (c.channels.length === 0 ? '#adb5bd' : PIE_COLORS[i % PIE_COLORS.length]);
+                              const colorFor = (c: { channels: string[] }) => (c.channels.length === 0 ? '#adb5bd' : stableColorForKey(c.channels.join('+')));
 
                               return (
                                 <>
@@ -15284,8 +15300,8 @@ export function App(): React.JSX.Element {
                                         label={renderPiePercentLabel}
                                         labelLine={false}
                                       >
-                                        {successCombos.map((c, i) => (
-                                          <Cell key={c.channels.join('+') || 'none'} fill={colorFor(c, i)} />
+                                        {successCombos.map((c) => (
+                                          <Cell key={c.channels.join('+') || 'none'} fill={colorFor(c)} />
                                         ))}
                                       </Pie>
                                       <Tooltip />
@@ -15293,12 +15309,12 @@ export function App(): React.JSX.Element {
                                   </ResponsiveContainer>
                                   <table className="table table-sm mb-0 mt-2">
                                     <tbody>
-                                      {successCombos.map((c, i) => (
+                                      {successCombos.map((c) => (
                                         <tr key={c.channels.join('+') || 'none'}>
                                           <td>
                                             <span
                                               className="d-inline-block me-2"
-                                              style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: colorFor(c, i) }}
+                                              style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: colorFor(c) }}
                                             ></span>
                                             {downloadComboLabel(c.channels)}
                                           </td>
