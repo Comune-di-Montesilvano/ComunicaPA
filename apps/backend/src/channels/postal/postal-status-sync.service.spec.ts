@@ -220,7 +220,12 @@ describe('PostalStatusSyncService', () => {
 
     await service.handleCron();
 
-    expect(attemptRepo.save).toHaveBeenCalledTimes(1);
+    // a1 (fallito) viene comunque salvato con postalLastCheckedAt aggiornato:
+    // altrimenti resterebbe per sempre il candidato più "vecchio" nell'ORDER
+    // BY ASC, riselezionato a ogni giro cron e mai superato (starvation degli
+    // altri candidati dietro di lui in coda — bug reale corretto).
+    expect(attemptRepo.save).toHaveBeenCalledTimes(2);
+    expect(attemptRepo.save).toHaveBeenCalledWith(expect.objectContaining({ id: 'a1', postalLastCheckedAt: expect.any(Date) }));
     expect(attemptRepo.save).toHaveBeenCalledWith(expect.objectContaining({ id: 'a2', postalStatus: 'Consegnato' }));
   });
 

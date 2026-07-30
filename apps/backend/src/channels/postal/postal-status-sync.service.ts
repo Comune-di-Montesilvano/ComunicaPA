@@ -73,7 +73,26 @@ export class PostalStatusSyncService {
   }
 
   private async syncOne(attempt: NotificationAttempt, creds: GbcCredentials, opts: { forceRequeueCheck?: boolean } = {}): Promise<boolean> {
-    const stato = await this.globalCom.dettagliDocumento(creds, attempt.postalTrackingId!);
+    let stato: Awaited<ReturnType<GlobalComClient['dettagliDocumento']>>;
+    try {
+      stato = await this.globalCom.dettagliDocumento(creds, attempt.postalTrackingId!);
+    } catch (err) {
+      // Round-robin anti-starvation (stesso principio già in nota per l'ORDER
+      // BY statico): un IDPRO che fa fallire dettagli_documento in modo
+      // persistente (SOAP fault, timeout, IDPRO non più valido) altrimenti
+      // NON aggiorna mai postal_last_checked_at — resta per sempre il
+      // candidato più "vecchio" in cima all'ORDER BY ASC, viene riselezionato
+      // a OGNI giro cron, fallisce di nuovo, e occupa uno slot del batch da
+      // 200 all'infinito senza mai avanzare. Su una campagna con migliaia di
+      // destinatari, anche pochi IDPRO bloccati così affamano il batch per
+      // tutti gli altri (bug reale riscontrato: costo/stato fermi da giorni
+      // su record non terminali, nonostante il filtro WHERE li includa a
+      // ogni giro). Timestamp aggiornato comunque, poi si rilancia l'errore:
+      // il chiamante (handleCron) logga come già faceva.
+      attempt.postalLastCheckedAt = new Date();
+      await this.attemptRepo.save(attempt);
+      throw err;
+    }
     attempt.postalLastCheckedAt = new Date();
     if (!stato) {
       await this.attemptRepo.save(attempt);
