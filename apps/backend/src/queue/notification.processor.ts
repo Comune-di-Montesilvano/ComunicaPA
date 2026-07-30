@@ -3,6 +3,7 @@ import { WorkerHost } from '@nestjs/bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { DelayedError } from 'bullmq';
+import { createHash } from 'crypto';
 import type { Job } from 'bullmq';
 import type { NotificationJobData, NotificationChannel } from '@comunicapa/shared-types';
 import Redis from 'ioredis';
@@ -163,6 +164,28 @@ export class NotificationProcessor extends WorkerHost {
     const appIoMode: 'none' | 'parallel' | 'exclusive' =
       configuredAppIoMode === 'exclusive' && recipient.inadCheck?.diverted ? 'parallel' : configuredAppIoMode;
 
+    // Gate anti-duplicato: retryRecipient() crea un NUOVO attempt con un
+    // NUOVO jobId per ogni retry (es. correzione indirizzo POSTAL dopo un
+    // errore GlobalCom) — job.attemptsMade riparte da 0 su quel job, quindi
+    // senza questo controllo la co-consegna App IO (gated solo su
+    // job.attemptsMade===0) verrebbe rispedita al cittadino ad ogni retry
+    // del canale primario, anche quando il contenuto non è cambiato. Stessa
+    // firma SHA-256 di CampaignContentCorrectionService.resendSafe() (stesso
+    // campo Recipient.lastContentResendSignature, mai su
+    // NotificationAttempt.responsePayload — un retry sovrascrive per intero
+    // il responsePayload del nuovo attempt, vedi commento lì) — se il retry
+    // è successivo al primo tentativo (attemptNumber>1) e la firma coincide
+    // con l'ultimo invio App IO riuscito, si salta il resend.
+    const appIoContentSignature = createHash('sha256')
+      .update(JSON.stringify([
+        (campaign.channelConfig?.['subject'] as string) ?? '',
+        (campaign.channelConfig?.['body'] as string) ?? '',
+      ]))
+      .digest('hex');
+    const isPrimaryRetryAttempt = ((recipient as any).attemptNumber ?? 1) > 1;
+    const skipAppIoUnchanged =
+      isPrimaryRetryAttempt && recipient.lastContentResendSignature === appIoContentSignature;
+
     const responsePayload: Record<string, any> = {};
     let appIoLinkDelivered = false;
     let primaryResult: { messageId?: string; responsePayload?: Record<string, unknown> } | undefined;
@@ -170,7 +193,7 @@ export class NotificationProcessor extends WorkerHost {
     let skipPrimary = false;
 
     // Modalità ESCLUSIVA: se il destinatario ha App IO, si invia SOLO lì.
-    if (appIoMode === 'exclusive' && isMailChannel && job.attemptsMade === 0) {
+    if (appIoMode === 'exclusive' && isMailChannel && job.attemptsMade === 0 && !skipAppIoUnchanged) {
       const hasAppIo = await this.appIoDelivery.checkProfile(
         APP_IO_BASE_URL, appIoResolved!.apiKey, recipient.codiceFiscale, jobLog,
       );
@@ -189,9 +212,12 @@ export class NotificationProcessor extends WorkerHost {
           responsePayload.deliveredVia = 'APP_IO';
           this.logger.log(`Consegna esclusiva App IO per CF ${recipient.codiceFiscale}: canale ${channel} saltato`);
           jobLog(`Consegna esclusiva App IO per CF ${recipient.codiceFiscale}: canale ${channel} saltato`);
+          await this.recipientRepo.update(recipientId, { lastContentResendSignature: appIoContentSignature });
         }
         // App IO fallita ⇒ si prosegue col canale primario (fallback)
       }
+    } else if (appIoMode === 'exclusive' && isMailChannel && job.attemptsMade === 0 && skipAppIoUnchanged) {
+      jobLog(`App IO esclusiva saltata per CF ${recipient.codiceFiscale}: contenuto invariato dall'ultimo invio riuscito (retry attempt ${(recipient as any).attemptNumber}).`);
     }
 
     // 1. Invio canale primario (saltato solo in esclusiva riuscita)
@@ -225,8 +251,9 @@ export class NotificationProcessor extends WorkerHost {
         }
       }
 
-      // 2. Co-delivery PARALLELA (comportamento attuale, solo primo tentativo)
-      if (appIoMode === 'parallel' && isMailChannel && job.attemptsMade === 0) {
+      // 2. Co-delivery PARALLELA (comportamento attuale, solo primo tentativo
+      // o retry con contenuto cambiato — vedi skipAppIoUnchanged sopra)
+      if (appIoMode === 'parallel' && isMailChannel && job.attemptsMade === 0 && !skipAppIoUnchanged) {
         const hasAppIo = await this.appIoDelivery.checkProfile(
           APP_IO_BASE_URL, appIoResolved!.apiKey, recipient.codiceFiscale, jobLog,
         );
@@ -240,8 +267,13 @@ export class NotificationProcessor extends WorkerHost {
           bodyOverride: (appIoConfig as { bodyOverride?: string } | undefined)?.bodyOverride,
         }, jobLog, channel);
           responsePayload.appIo = appIoResult;
-          if (appIoResult.success) appIoLinkDelivered = true;
+          if (appIoResult.success) {
+            appIoLinkDelivered = true;
+            await this.recipientRepo.update(recipientId, { lastContentResendSignature: appIoContentSignature });
+          }
         }
+      } else if (appIoMode === 'parallel' && isMailChannel && job.attemptsMade === 0 && skipAppIoUnchanged) {
+        jobLog(`App IO parallela saltata per CF ${recipient.codiceFiscale}: contenuto invariato dall'ultimo invio riuscito (retry attempt ${(recipient as any).attemptNumber}).`);
       }
     }
 

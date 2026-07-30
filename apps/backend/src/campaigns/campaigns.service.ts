@@ -1184,10 +1184,16 @@ export class CampaignsService {
   /**
    * Breakdown per canale/co-consegna App IO. Ritorna null se la campagna non
    * ha co-consegna configurata (nessuna sezione da mostrare). Il segnale App IO
-   * esiste solo sul PRIMO tentativo (job.attemptsMade === 0 in
-   * notification.processor.ts — la co-consegna non viene mai ritentata), quindi
-   * si legge solo attemptNumber=1; lo stato primario invece è quello ATTUALE
-   * del destinatario (aggiornato anche dai retry).
+   * NON vive solo sul primo tentativo: retryRecipient() crea un nuovo attempt
+   * con un nuovo jobId per ogni retry (es. correzione indirizzo POSTAL), e
+   * job.attemptsMade riparte da 0 su quel job — la co-delivery può quindi
+   * rifirmare (o riuscire per la prima volta) su un attempt successivo al
+   * primo (bug reale corretto: un successo App IO visibile sull'attempt 2 in
+   * "Dettaglio Notifica" non veniva mai contato qui, che leggeva solo
+   * attemptNumber=1 — sottostimava sistematicamente "Anche App IO
+   * (parallela)"). Aggreghiamo quindi su TUTTI gli attempt del destinatario;
+   * lo stato primario resta quello ATTUALE del destinatario (aggiornato
+   * anche dai retry).
    */
   async getChannelBreakdown(campaignId: string): Promise<ChannelBreakdownDto | null> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
@@ -1212,11 +1218,7 @@ export class CampaignsService {
     );
     if (toClassify.length === 0) return breakdown;
 
-    const firstAttempts = await this.attemptRepo.find({
-      where: { recipientId: In(toClassify.map((r) => r.id)), attemptNumber: 1 },
-      select: ['recipientId', 'responsePayload'],
-    });
-    const payloadByRecipient = new Map(firstAttempts.map((a) => [a.recipientId, a.responsePayload]));
+    const payloadByRecipient = await this.buildAggregatedAppIoPayloads(toClassify.map((r) => r.id));
 
     for (const r of toClassify) {
       const payload = payloadByRecipient.get(r.id);
@@ -1224,6 +1226,33 @@ export class CampaignsService {
       if (outcome) breakdown[outcome]++;
     }
     return breakdown;
+  }
+
+  /**
+   * Un destinatario può avere App IO riuscito su un attempt qualsiasi, non
+   * solo il primo (vedi commento getChannelBreakdown sopra) — riduce TUTTI
+   * gli attempt di ogni destinatario in un unico responsePayload aggregato:
+   * `appIo.success` true se un QUALSIASI attempt ha avuto successo App IO,
+   * `deliveredVia` 'APP_IO' se un QUALSIASI attempt ha consegnato in
+   * esclusiva. Condiviso da getChannelBreakdown/getRecipientIdsByChannelOutcome
+   * per restare coerenti tra loro.
+   */
+  private async buildAggregatedAppIoPayloads(recipientIds: string[]): Promise<Map<string, Record<string, unknown>>> {
+    const allAttempts = await this.attemptRepo.find({
+      where: { recipientId: In(recipientIds) },
+      select: ['recipientId', 'responsePayload'],
+    });
+    const payloadByRecipient = new Map<string, Record<string, unknown>>();
+    for (const a of allAttempts) {
+      const appIo = a.responsePayload?.['appIo'] as { success?: boolean } | undefined;
+      const deliveredViaAppIo = a.responsePayload?.['deliveredVia'] === 'APP_IO';
+      if (!appIo?.success && !deliveredViaAppIo) continue;
+      const existing = payloadByRecipient.get(a.recipientId) ?? {};
+      if (appIo?.success) existing.appIo = { success: true };
+      if (deliveredViaAppIo) existing.deliveredVia = 'APP_IO';
+      payloadByRecipient.set(a.recipientId, existing);
+    }
+    return payloadByRecipient;
   }
 
   async getRecipientIdsByChannelOutcome(campaignId: string, outcome: ChannelOutcome): Promise<string[]> {
@@ -1239,11 +1268,7 @@ export class CampaignsService {
     );
     if (toClassify.length === 0) return [];
 
-    const firstAttempts = await this.attemptRepo.find({
-      where: { recipientId: In(toClassify.map((r) => r.id)), attemptNumber: 1 },
-      select: ['recipientId', 'responsePayload'],
-    });
-    const payloadByRecipient = new Map(firstAttempts.map((a) => [a.recipientId, a.responsePayload]));
+    const payloadByRecipient = await this.buildAggregatedAppIoPayloads(toClassify.map((r) => r.id));
 
     return toClassify
       .filter((r) => classifyChannelOutcome(r.status, payloadByRecipient.get(r.id)) === outcome)
