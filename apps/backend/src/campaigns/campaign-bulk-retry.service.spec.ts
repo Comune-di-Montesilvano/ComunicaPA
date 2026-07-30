@@ -5,6 +5,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { CampaignBulkRetryService } from './campaign-bulk-retry.service';
 import { Campaign } from '../entities/campaign.entity';
 import { CampaignBulkRetryJob, CampaignBulkRetryJobStatus } from '../entities/campaign-bulk-retry-job.entity';
+import { CampaignsService } from './campaigns.service';
 import { CAMPAIGN_BULK_RETRY_QUEUE } from './campaign-bulk-retry-job.types';
 
 describe('CampaignBulkRetryService', () => {
@@ -16,6 +17,7 @@ describe('CampaignBulkRetryService', () => {
     findOneBy: jest.fn(),
   };
   const queueMock = { add: jest.fn() };
+  const campaignsServiceMock = { getFailedRecipientIdsByReason: jest.fn() };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -25,6 +27,7 @@ describe('CampaignBulkRetryService', () => {
         { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
         { provide: getRepositoryToken(CampaignBulkRetryJob), useValue: jobRepoMock },
         { provide: getQueueToken(CAMPAIGN_BULK_RETRY_QUEUE), useValue: queueMock },
+        { provide: CampaignsService, useValue: campaignsServiceMock },
       ],
     }).compile();
     service = moduleRef.get(CampaignBulkRetryService);
@@ -33,22 +36,17 @@ describe('CampaignBulkRetryService', () => {
   describe('createJob', () => {
     it('lancia NotFoundException se la campagna non esiste', async () => {
       campaignRepoMock.findOneBy.mockResolvedValue(null);
-      await expect(service.createJob('c1', ['r1'], 'op')).rejects.toThrow(NotFoundException);
+      await expect(service.createJob('c1', 'timeout', 'op')).rejects.toThrow(NotFoundException);
+      expect(campaignsServiceMock.getFailedRecipientIdsByReason).not.toHaveBeenCalled();
       expect(queueMock.add).not.toHaveBeenCalled();
     });
 
-    it('rifiuta più di 100000 recipientIds senza creare il job', async () => {
+    it('risolve i recipientId lato server dall\'errorMessage, mai dal client', async () => {
       campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1' });
-      const tooMany = Array.from({ length: 100001 }, (_, i) => `r${i}`);
-      await expect(service.createJob('c1', tooMany, 'op')).rejects.toThrow(BadRequestException);
-      expect(jobRepoMock.save).not.toHaveBeenCalled();
-      expect(queueMock.add).not.toHaveBeenCalled();
-    });
-
-    it('crea il job QUEUED e lo accoda con jobId=id del job creato', async () => {
-      campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1' });
-      const result = await service.createJob('c1', ['r1', 'r2'], 'op');
-      expect(result).toEqual({ jobId: 'job-1' });
+      campaignsServiceMock.getFailedRecipientIdsByReason.mockResolvedValue(['r1', 'r2']);
+      const result = await service.createJob('c1', 'timeout', 'op');
+      expect(campaignsServiceMock.getFailedRecipientIdsByReason).toHaveBeenCalledWith('c1', 'timeout');
+      expect(result).toEqual({ jobId: 'job-1', totalCount: 2 });
       expect(jobRepoMock.create).toHaveBeenCalledWith(expect.objectContaining({
         campaignId: 'c1',
         status: CampaignBulkRetryJobStatus.QUEUED,
@@ -57,6 +55,23 @@ describe('CampaignBulkRetryService', () => {
         createdBy: 'op',
       }));
       expect(queueMock.add).toHaveBeenCalledWith('retry', { jobId: 'job-1' }, { jobId: 'job-1' });
+    });
+
+    it('rifiuta se nessun destinatario FAILED corrisponde all\'errorMessage', async () => {
+      campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1' });
+      campaignsServiceMock.getFailedRecipientIdsByReason.mockResolvedValue([]);
+      await expect(service.createJob('c1', 'inesistente', 'op')).rejects.toThrow(BadRequestException);
+      expect(jobRepoMock.save).not.toHaveBeenCalled();
+      expect(queueMock.add).not.toHaveBeenCalled();
+    });
+
+    it('rifiuta più di 100000 recipientId risolti senza creare il job', async () => {
+      campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1' });
+      const tooMany = Array.from({ length: 100001 }, (_, i) => `r${i}`);
+      campaignsServiceMock.getFailedRecipientIdsByReason.mockResolvedValue(tooMany);
+      await expect(service.createJob('c1', 'timeout', 'op')).rejects.toThrow(BadRequestException);
+      expect(jobRepoMock.save).not.toHaveBeenCalled();
+      expect(queueMock.add).not.toHaveBeenCalled();
     });
   });
 

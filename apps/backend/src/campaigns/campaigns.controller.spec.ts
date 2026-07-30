@@ -226,19 +226,19 @@ describe('CampaignsController', () => {
   });
 
   describe('retryRecipientsBulk', () => {
-    it('rifiuta un body senza recipientIds', async () => {
+    it('rifiuta un body senza errorMessage', async () => {
       await expect(controller.retryRecipientsBulk('uuid-1', undefined as any, mockReq)).rejects.toThrow(BadRequestException);
     });
 
-    it('rifiuta un array vuoto', async () => {
-      await expect(controller.retryRecipientsBulk('uuid-1', [], mockReq)).rejects.toThrow(BadRequestException);
+    it('rifiuta una stringa vuota', async () => {
+      await expect(controller.retryRecipientsBulk('uuid-1', '', mockReq)).rejects.toThrow(BadRequestException);
     });
 
-    it('crea un job async tramite bulkRetryService e ritorna il jobId', async () => {
-      mockBulkRetryService.createJob.mockResolvedValue({ jobId: 'job-1' });
-      const result = await controller.retryRecipientsBulk('uuid-1', ['r1'], mockReq);
-      expect(mockBulkRetryService.createJob).toHaveBeenCalledWith('uuid-1', ['r1'], 'test-operator');
-      expect(result).toEqual({ jobId: 'job-1' });
+    it('crea un job async tramite bulkRetryService (solo errorMessage, mai un array di id) e ritorna jobId/totalCount', async () => {
+      mockBulkRetryService.createJob.mockResolvedValue({ jobId: 'job-1', totalCount: 3205 });
+      const result = await controller.retryRecipientsBulk('uuid-1', 'timeout', mockReq);
+      expect(mockBulkRetryService.createJob).toHaveBeenCalledWith('uuid-1', 'timeout', 'test-operator');
+      expect(result).toEqual({ jobId: 'job-1', totalCount: 3205 });
     });
   });
 

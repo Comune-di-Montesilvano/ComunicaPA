@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, type LogLevel } from '@nestjs/common';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
 import { mkdirSync } from 'fs';
 import { AppModule } from './app.module';
@@ -25,7 +26,19 @@ async function bootstrap(): Promise<void> {
 
   const logLevelName = (process.env['LOG_LEVEL'] ?? 'info').toLowerCase();
   const logger = LOG_LEVELS_BY_NAME[logLevelName] ?? LOG_LEVELS_BY_NAME['info'];
-  const app = await NestFactory.create(AppModule, { logger });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { logger });
+
+  // Default Nest/Express è 100kb, troppo basso per body legittimi non-file
+  // (es. POST recipients/retry-bulk con array di UUID — 3205 destinatari
+  // ~130KB, un batch TARI da 20100 ~800KB). Bug reale in produzione:
+  // "PayloadTooLargeError: request entity too large" su un retry-bulk con
+  // solo qualche migliaio di id, ben sotto il limite ~1MB del reverse proxy
+  // esterno (vedi CLAUDE.md) — il collo di bottiglia era tutto interno, mai
+  // arrivato al proxy. 2mb resta comunque sotto quel limite, quindi non
+  // sposta il vincolo reale (upload file passano da multer/chunked upload,
+  // non da questo body parser, e non sono impattati).
+  app.useBodyParser('json', { limit: '2mb' });
+  app.useBodyParser('urlencoded', { extended: true, limit: '2mb' });
 
   // Guardia di sicurezza: rifiuta l'avvio in ambienti non-development con segreti di default.
   const config = app.get<ConfigService<AppConfiguration, true>>(ConfigService);

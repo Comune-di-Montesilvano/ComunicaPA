@@ -1659,6 +1659,22 @@ export class CampaignsService {
     return Array.from(groups.values()).sort((a, b) => b.count - a.count);
   }
 
+  /**
+   * Elenco recipientId FAILED per un motivo di errore, risolto interamente
+   * lato server — mai chiesto al browser di rimandare indietro l'array (bug
+   * reale: POST retry-bulk con migliaia di UUID nel body superava il limite
+   * default 100kb del body-parser Express, "PayloadTooLargeError" su un
+   * batch TARI da 20100 destinatari). Stessa chiave sentinella
+   * ("Errore sconosciuto") già usata in getFailuresByReason, per restare
+   * coerente con l'etichetta di gruppo mostrata in UI.
+   */
+  async getFailedRecipientIdsByReason(campaignId: string, errorMessage: string): Promise<string[]> {
+    const failures = await this.getFailures(campaignId);
+    return failures
+      .filter((f) => (f.errorMessage ?? 'Errore sconosciuto') === errorMessage)
+      .map((f) => f.recipientId);
+  }
+
   async retryRecipient(campaignId: string, recipientId: string): Promise<{ requeued: true; attemptId: string }> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);

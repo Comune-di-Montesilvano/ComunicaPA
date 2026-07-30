@@ -3170,21 +3170,24 @@ export function App(): React.JSX.Element {
     ]);
   };
 
-  const handleRetryGroup = async (group: { errorMessage: string; recipientIds: string[] }) => {
+  const handleRetryGroup = async (group: { errorMessage: string; count: number; recipientIds: string[] }) => {
     if (!selectedCampaignId) return;
-    if (!confirm(`Rimettere in coda ${group.recipientIds.length} destinatari con errore "${group.errorMessage}"?`)) return;
+    if (!confirm(`Rimettere in coda ${group.count} destinatari con errore "${group.errorMessage}"?`)) return;
     setRetryingGroup(group.errorMessage);
     setRetryBulkStatus(null);
     try {
+      // Solo l'errorMessage viaggia nel body — l'elenco recipientId lo
+      // risolve il backend da solo (mai più migliaia di UUID nella
+      // richiesta, vedi commento sul controller).
       const res = await apiFetch(`/campaigns/${selectedCampaignId}/recipients/retry-bulk`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recipientIds: group.recipientIds }),
+        body: JSON.stringify({ errorMessage: group.errorMessage }),
       });
       if (!res.ok) throw new Error('Errore durante l\'avvio della rimessa in coda.');
-      const { jobId } = await res.json();
+      const { jobId, totalCount } = await res.json();
       setRetryBulkJobId(jobId);
-      setRetryBulkStatus({ status: 'queued', totalCount: group.recipientIds.length, processedCount: 0, requeuedCount: 0, failed: [], errorMessage: null });
+      setRetryBulkStatus({ status: 'queued', totalCount, processedCount: 0, requeuedCount: 0, failed: [], errorMessage: null });
     } catch (err: any) {
       if (err instanceof ApiAuthError) return;
       alert(err.message);

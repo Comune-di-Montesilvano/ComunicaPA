@@ -169,7 +169,12 @@ export class GlobalComClient {
     // browser durante il test del WSDL) per evitare "...asmx?wsdl?wsdl" e
     // un endpoint SOAP reale sbagliato per le chiamate successive al Login.
     const endpoint = creds.baseUrl.replace(/\?wsdl$/i, '');
-    this.logger.debug(`createSession: WSDL=${endpoint}?wsdl, endpoint=${endpoint}, user=${creds.user}, group=${creds.group}`);
+    // Mai loggare user/group: sono la coppia di credenziali GlobalCom (vedi
+    // errore Login ambiguo — "combinazione utente/gruppo non valida" — che
+    // le tratta come un'unica coppia auth), non solo un identificativo
+    // innocuo. Bug reale in produzione: comparivano in chiaro nei log a
+    // LOG_LEVEL=debug.
+    this.logger.debug(`createSession: WSDL=${endpoint}?wsdl, endpoint=${endpoint}`);
     const client = await soap.createClientAsync(`${endpoint}?wsdl`, { endpoint });
     this.logger.debug('createSession: client SOAP creato, chiamo LoginAsync...');
     let loginResult: any;

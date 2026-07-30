@@ -732,28 +732,30 @@ export class CampaignsController {
     return result;
   }
 
-  // Async: solo lavoro DB + queue.add() per destinatario, ma sequenziale su
-  // migliaia di record rischia comunque il timeout del reverse proxy esterno
-  // se fatto dentro la richiesta HTTP (vedi CLAUDE.md, "lavoro pesante
-  // sincrono in un handler HTTP") — l'endpoint crea solo il job e ritorna
-  // subito, CampaignBulkRetryProcessor lo esegue in background.
+  // Async, e l'elenco recipientId non arriva mai dal browser: il body porta
+  // solo l'errorMessage del gruppo, l'elenco è risolto server-side da
+  // CampaignBulkRetryService (getFailedRecipientIdsByReason) — niente più
+  // array di migliaia di UUID nella richiesta (bug reale:
+  // "PayloadTooLargeError" sopra il limite 100kb del body-parser Express su
+  // un batch TARI da 20100 destinatari, ben sotto il limite ~1MB del proxy
+  // esterno — indipendente da quel limite, non lo si aggira alzandolo).
   @Post(':id/recipients/retry-bulk')
   async retryRecipientsBulk(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body('recipientIds') recipientIds: string[],
+    @Body('errorMessage') errorMessage: string,
     @Req() req: Request & { user: JwtOperatorPayload },
-  ): Promise<{ jobId: string }> {
-    if (!Array.isArray(recipientIds) || recipientIds.length === 0) {
-      throw new BadRequestException('recipientIds deve essere un array non vuoto');
+  ): Promise<{ jobId: string; totalCount: number }> {
+    if (!errorMessage || typeof errorMessage !== 'string') {
+      throw new BadRequestException('errorMessage deve essere una stringa non vuota');
     }
-    const result = await this.bulkRetryService.createJob(id, recipientIds, req.user.username);
+    const result = await this.bulkRetryService.createJob(id, errorMessage, req.user.username);
     const campaign = await this.campaignsService.findOne(id).catch(() => null);
     await this.auditLogsService.log({
       campaignId: id,
       campaignName: campaign ? campaign.name : null,
       operator: req.user.username,
       action: 'RETRY',
-      details: { count: recipientIds.length, jobId: result.jobId },
+      details: { count: result.totalCount, errorMessage, jobId: result.jobId },
     });
     return result;
   }
