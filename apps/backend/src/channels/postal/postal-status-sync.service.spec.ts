@@ -296,6 +296,36 @@ describe('PostalStatusSyncService', () => {
     expect(attemptRepo.save).toHaveBeenCalledWith(expect.objectContaining({ id: 'a1', costCents: 431 }));
   });
 
+  it('cost_cents = 0 (placeholder GlobalCom durante lavorazione) viene sovrascritto appena arriva un costo reale', async () => {
+    const attempt = { id: 'a1', postalTrackingId: 'IDPRO1', postalStatus: 'Confermato', postalStatusUpdatedAt: null, costCents: 0 };
+    attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
+    globalCom.dettagliDocumento.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Confermato', costoNetto: 6.2 } as any);
+
+    await service.handleCron();
+
+    expect(attemptRepo.save).toHaveBeenCalledWith(expect.objectContaining({ id: 'a1', costCents: 620 }));
+  });
+
+  it('cost_cents = 0 resta 0 se GlobalCom continua a rispondere Costo:0 (nessun costo reale ancora disponibile)', async () => {
+    const attempt = { id: 'a1', postalTrackingId: 'IDPRO1', postalStatus: 'Confermato', postalStatusUpdatedAt: null, costCents: 0 };
+    attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
+    globalCom.dettagliDocumento.mockResolvedValue({ idPro: 'IDPRO1', stato: 'Confermato', costoNetto: 0 } as any);
+
+    await service.handleCron();
+
+    expect(attemptRepo.save).toHaveBeenCalledWith(expect.objectContaining({ id: 'a1', costCents: 0 }));
+  });
+
+  it('include nella query gli attempt terminali con cost_cents = 0 (placeholder, mai un costo reale)', async () => {
+    const qb = makeQueryBuilder([]);
+    attemptRepo.createQueryBuilder.mockReturnValue(qb);
+
+    await service.handleCron();
+
+    const includesCostZero = qb.andWhere.mock.calls.some(([sql]: [string]) => /cost_cents = 0/i.test(sql));
+    expect(includesCostZero).toBe(true);
+  });
+
   describe('controllo riaccodamento su stato Eliminato', () => {
     it('cron: rileva Eliminato senza riaccodamento — non crea nuovo attempt, stampa postalRequeueCheckedAt', async () => {
       const attempt = {

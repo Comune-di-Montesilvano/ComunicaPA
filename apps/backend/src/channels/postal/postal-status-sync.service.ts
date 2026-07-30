@@ -49,8 +49,16 @@ export class PostalStatusSyncService {
       // riscontrato: il filtro pre-esistente escludeva questi record fin
       // dall'inizio, il flag postal_requeue_checked_at restava per sempre
       // null e il controllo automatico non scattava mai.
+      //
+      // cost_cents = 0 trattato come "non ancora costato" quanto NULL (bug
+      // reale corretto: GlobalCom può rispondere Costo:0 mentre il documento
+      // è ancora in lavorazione — non un costo reale, un placeholder prima
+      // del calcolo effettivo — e una volta persistito quello 0 usciva per
+      // sempre da questo filtro su un attempt già a stato terminale, restando
+      // a 0 anche quando GlobalCom aveva nel frattempo calcolato il costo
+      // vero). Vedi anche il gate in syncOne più sotto.
       .andWhere(
-        '(attempt.postal_status IS NULL OR attempt.postal_status NOT IN (:...terminal) OR attempt.cost_cents IS NULL OR (attempt.postal_status = :eliminato AND attempt.postal_requeue_checked_at IS NULL))',
+        '(attempt.postal_status IS NULL OR attempt.postal_status NOT IN (:...terminal) OR attempt.cost_cents IS NULL OR attempt.cost_cents = 0 OR (attempt.postal_status = :eliminato AND attempt.postal_requeue_checked_at IS NULL))',
         { terminal: TERMINAL_STATUSES, eliminato: 'Eliminato' },
       )
       .orderBy('COALESCE(attempt.postal_last_checked_at, attempt.created_at)', 'ASC')
@@ -125,11 +133,19 @@ export class PostalStatusSyncService {
       ];
       changed = true;
     }
-    if (attempt.costCents === null && stato.costoNetto !== null && stato.costoNetto !== undefined) {
-      attempt.costCents = Math.round(stato.costoNetto * 100);
+    // costCents === 0 trattato come "non ancora costato" (vedi commento sul
+    // filtro WHERE sopra): un 0 salvato in precedenza (placeholder GlobalCom
+    // durante la lavorazione) va sovrascritto appena arriva un costo reale
+    // (!== 0) — se GlobalCom continua a rispondere 0 non c'è nulla di nuovo
+    // da persistere, evita un save no-op a ogni giro.
+    const costNotYetFinal = attempt.costCents === null || attempt.costCents === 0;
+    const costoNetto = stato.costoNetto;
+    const hasNewRealCost = costoNetto !== null && costoNetto !== undefined && (attempt.costCents === null || costoNetto !== 0);
+    if (costNotYetFinal && hasNewRealCost) {
+      attempt.costCents = Math.round(costoNetto * 100);
       attempt.costCalculatedAt = new Date();
       attempt.costBreakdown = {
-        costoNetto: stato.costoNetto,
+        costoNetto,
         numeroPagine: stato.numeroPagine ?? null,
         nazionale: stato.nazionale ?? null,
         importoPostaleNetto: stato.importoPostaleNetto ?? null,
