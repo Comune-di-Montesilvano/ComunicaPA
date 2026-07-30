@@ -2395,10 +2395,15 @@ export class CampaignsService {
       // Un solo costo per destinatario (l'attempt POSTAL costato più recente):
       // un retry rispedisce la STESSA lettera, sommare i costi di più
       // attempt dello stesso destinatario gonfierebbe la media.
+      // cost_cents = 0 escluso alla pari di NULL (stesso principio di
+      // postal-status-sync.service.ts): è un placeholder GlobalCom durante
+      // la lavorazione, mai un costo reale — includerlo nella media abbassa
+      // artificialmente la stima (bug reale segnalato: media tirata giù da
+      // centinaia di record ancora "non calcolati", risparmio sottostimato).
       const lastCostedAttemptNumber = new Map<string, number>();
       const costByRecipient = new Map<string, number>();
       for (const a of postalAttempts) {
-        if (a.costCents === null) continue;
+        if (a.costCents === null || a.costCents === 0) continue;
         const prevAttemptNumber = lastCostedAttemptNumber.get(a.recipientId) ?? -1;
         if (a.attemptNumber > prevAttemptNumber) {
           lastCostedAttemptNumber.set(a.recipientId, a.attemptNumber);

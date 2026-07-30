@@ -123,6 +123,29 @@ describe('CampaignsService - Cost and Savings', () => {
       expect(result.postalNotEstimableCount).toBe(0);
     });
 
+    it('campagna POSTAL: esclude dalla media gli attempt con cost_cents = 0 (placeholder GlobalCom, non ancora calcolato)', async () => {
+      campaignRepo.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'POSTAL' });
+      recipientRepo.find.mockResolvedValue([
+        { id: 'r1', inadCheck: null },
+        { id: 'r2', inadCheck: null },
+        { id: 'r3', inadCheck: null },
+        { id: 'r4', inadCheck: { diverted: true } },
+      ]);
+      attemptRepo.find.mockResolvedValue([
+        { recipientId: 'r1', channelType: 'POSTAL', attemptNumber: 1, costCents: 600 },
+        // r2/r3: ancora a 0 (non calcolato) — se entrassero nella media la
+        // tirerebbero giù fuorviando la stima (bug reale segnalato).
+        { recipientId: 'r2', channelType: 'POSTAL', attemptNumber: 1, costCents: 0 },
+        { recipientId: 'r3', channelType: 'POSTAL', attemptNumber: 1, costCents: 0 },
+      ]);
+
+      const result = await service.getCampaignCostSavings('c1');
+
+      // media SOLO su r1 (600), non su (600+0+0)/3=200 — 1 dirottato (r4) → 600
+      expect(result.totalSavingCents).toBe(600);
+      expect(result.postalNotEstimableCount).toBe(0);
+    });
+
     it('campagna POSTAL: nessun dirottato → nessun risparmio, non "non stimabile"', async () => {
       campaignRepo.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'POSTAL' });
       recipientRepo.find.mockResolvedValue([{ id: 'r1', inadCheck: null }]);
