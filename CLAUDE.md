@@ -1250,6 +1250,20 @@ riavviato/redeploy a metà copia) — a differenza dello stato principale del
 job (`EnrichmentResumeService`), un `campaignConversionStatus` stallato
 oggi richiede intervento manuale in DB, nessuna valvola di sfogo da UI.
 
+**Badge/stato "corretto" solo client-side ottimistico — verificare che il
+fallback da server dichiarato nel commento esista davvero, non fidarsi.**
+Bug reale: `enrichCorrectedPdfs` (badge "Corretto" su riga con override
+indirizzo salvato) settato solo al salvataggio riuscito in sessione — un
+commento nel codice dichiarava "al refresh torna a leggersi da row.override
+via GET" ma nessun endpoint bulk lo faceva, solo GET per singola riga
+on-demand al click "Correggi indirizzo". Dato restava sempre corretto in DB
+(`enrichment_address_overrides`), solo il badge spariva a ogni
+remount/refresh del pannello "Avvisi". Fix: `GET
+admin/enrichment/jobs/:id/overrides`, letto all'apertura del pannello per
+riconciliare stato locale con DB. Pattern generale: uno stato React
+Set/flag "visivo" con commento che promette un fallback server-side va
+grep-verificato sul setter effettivo, mai dato per buono dal commento.
+
 ## Liste e pannelli con stato lato server — nessun refresh automatico globale
 
 Non esiste un meccanismo generale (websocket/SSE) che push-aggiorna la UI
