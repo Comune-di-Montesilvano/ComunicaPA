@@ -31,6 +31,7 @@ export interface NotificationDetailDto {
     email: string | null;
     pec: string | null;
     status: string;
+    physicalAddress: { address: string; municipality: string; zip?: string; province?: string; foreignState?: string | null } | null;
   };
   campaign: {
     id: string;

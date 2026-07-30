@@ -39,6 +39,16 @@ describe('splitDenominazione', () => {
     expect(result).toEqual({ denominazione1: 'Mario Rossi', truncated: false });
   });
 
+  it('rimuove apostrofi (rifiutati da GlobalCom, es. cognomi con apostrofo)', () => {
+    const result = splitDenominazione("D'ANGELO DAVIDE", []);
+    expect(result.denominazione1).toBe('DANGELO DAVIDE');
+  });
+
+  it('rimuove apostrofi tipografici e backtick', () => {
+    const result = splitDenominazione('D’ANGELO `DAVIDE´', []);
+    expect(result.denominazione1).toBe('DANGELO DAVIDE');
+  });
+
   it('rispetta un maxPerLine custom', () => {
     const result = splitDenominazione('Mario Rossi Verdi', [], 10);
     expect(result.denominazione1.length).toBeLessThanOrEqual(10);

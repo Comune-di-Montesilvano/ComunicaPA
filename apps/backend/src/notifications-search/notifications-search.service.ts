@@ -7,6 +7,7 @@ import { DownloadEvent } from '../entities/download-event.entity';
 import { CampaignsService } from '../campaigns/campaigns.service';
 import { SendLegalFactsService, type SendLegalFactItem, type SendLegalFactDownloadResult } from '../channels/send/send-legal-facts.service';
 import { AttachmentService, resolveAttachmentsConfig, resolveAttachmentLabel, resolveCustomAttachmentFilename } from '../attachments/attachment.service';
+import { resolvePhysicalAddress } from '../channels/payment-config.util';
 import type { NotificationDetailDto } from './dto/notification-detail.dto';
 
 export interface SearchFilters {
@@ -138,6 +139,13 @@ export class NotificationsSearchService {
         : null
       : 0;
 
+    // Prepopola il form "Correggi indirizzo" col dato già presente (mai
+    // mostrato prima: il form partiva sempre vuoto anche quando l'indirizzo
+    // fisico era già risolvibile da extraData) — stessa risoluzione colonne
+    // usata realmente all'invio da PostalStrategy/SendDispatchService.
+    const physicalAddressConfig = recipient.campaign.channelConfig?.['physicalAddressConfig'] as Record<string, unknown> | undefined;
+    const resolvedAddress = resolvePhysicalAddress(recipient, physicalAddressConfig);
+
     return {
       recipient: {
         id: recipient.id,
@@ -146,6 +154,7 @@ export class NotificationsSearchService {
         email: recipient.email,
         pec: recipient.pec,
         status: recipient.status,
+        physicalAddress: resolvedAddress,
       },
       campaign: {
         id: recipient.campaign.id,

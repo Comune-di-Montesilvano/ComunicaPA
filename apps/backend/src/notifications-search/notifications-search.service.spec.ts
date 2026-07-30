@@ -173,6 +173,7 @@ describe('NotificationsSearchService.getDetail', () => {
         email: 'mario@test.it',
         pec: null,
         status: 'sent',
+        physicalAddress: null,
       },
       campaign: { id: 'c1', name: 'Avviso TARI', channelType: 'EMAIL', postalServiceType: null, postalReturnReceipt: false },
       attempts: [{

@@ -1780,7 +1780,7 @@ export class CampaignsService {
   async updateRecipientAddressAndRetry(
     campaignId: string,
     recipientId: string,
-    dto: { address: string; municipality: string; zip?: string; province?: string; country?: string },
+    dto: { address: string; municipality: string; zip?: string; province?: string; country?: string; fullName?: string },
   ): Promise<{ requeued: true; attemptId: string }> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
@@ -1823,7 +1823,10 @@ export class CampaignsService {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- _QueryDeepPartialEntity non gestisce bene un
     // index signature generico (Record<string, unknown>) su colonna jsonb, stesso limite noto di TypeORM 0.3.x
     // (vedi launchTestSend/channelConfig sopra).
-    await this.recipientRepo.update(recipientId, { extraData: extraData as any });
+    const updateFields: Record<string, unknown> = { extraData };
+    if (dto.fullName?.trim()) updateFields.fullName = dto.fullName.trim();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- vedi nota sopra su extraData/_QueryDeepPartialEntity
+    await this.recipientRepo.update(recipientId, updateFields as any);
 
     // Un errore di consegna POSTAL post-accettazione (es. GlobalCom
     // "Impossibile validare l'indirizzo", CodiceErrore reale su un attempt
@@ -1941,6 +1944,8 @@ export class CampaignsService {
     search?: string,
     status?: string,
     deliveryStatus?: string,
+    tags?: string[],
+    hasDownload?: string,
   ): Promise<RecipientStatsPageDto> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
@@ -2009,6 +2014,30 @@ export class CampaignsService {
         )`,
         { deliveryStatus },
       );
+    }
+
+    // Filtro "tipo di invio" multiselect — tag combinabili in AND (selezionare
+    // "Dirottato INAD" + "App IO" mostra SOLO i destinatari che soddisfano
+    // ENTRAMBI, non l'unione): ogni tag presente aggiunge un proprio andWhere.
+    if (tags?.includes('diverted')) {
+      qb.andWhere(`(r.inad_check->>'diverted')::boolean = true`);
+    }
+    if (tags?.includes('primary')) {
+      qb.andWhere(`COALESCE((r.inad_check->>'diverted')::boolean, false) = false`);
+    }
+    if (tags?.includes('appio')) {
+      // Co-consegna App IO tentata su un attempt qualsiasi del destinatario
+      // (stesso criterio `a.appIo.attempted` già usato nel dettaglio
+      // notifica) — appIo vive solo dentro response_payload jsonb, nessuna
+      // colonna dedicata.
+      qb.andWhere(
+        `EXISTS (SELECT 1 FROM notification_attempts na WHERE na.recipient_id = r.id AND na.response_payload -> 'appIo' IS NOT NULL)`,
+      );
+    }
+    if (hasDownload === 'yes') {
+      qb.andWhere('r.download_count > 0');
+    } else if (hasDownload === 'no') {
+      qb.andWhere('r.download_count = 0');
     }
 
     const [rawItems, total] = await qb

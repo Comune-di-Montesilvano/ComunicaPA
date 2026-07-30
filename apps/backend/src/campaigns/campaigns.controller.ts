@@ -773,6 +773,8 @@ export class CampaignsController {
     @Query('search') search?: string,
     @Query('status') status?: string,
     @Query('deliveryStatus') deliveryStatus?: string,
+    @Query('tags') tags?: string,
+    @Query('hasDownload') hasDownload?: string,
   ) {
     const parsedPage = parseInt(page ?? '1', 10);
     const parsedPageSize = parseInt(pageSize ?? '50', 10);
@@ -784,7 +786,8 @@ export class CampaignsController {
       throw new BadRequestException('Il parametro pageSize deve essere un numero intero maggiore o uguale a 1');
     }
 
-    return this.campaignsService.getRecipientStats(id, parsedPage, parsedPageSize, search, status, deliveryStatus);
+    const parsedTags = tags ? tags.split(',').map((t) => t.trim()).filter(Boolean) : undefined;
+    return this.campaignsService.getRecipientStats(id, parsedPage, parsedPageSize, search, status, deliveryStatus, parsedTags, hasDownload);
   }
 
   @Get(':id/stats/recipients/filter-options')

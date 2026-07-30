@@ -21,4 +21,9 @@ export class UpdateRecipientAddressDto {
   @IsString()
   @IsOptional()
   country?: string;
+
+  /** Nominativo destinatario — correggibile insieme all'indirizzo (es. refuso CSV, prepopolato da ANPR). */
+  @IsString()
+  @IsOptional()
+  fullName?: string;
 }

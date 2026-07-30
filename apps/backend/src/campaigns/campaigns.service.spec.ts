@@ -454,6 +454,50 @@ describe('CampaignsService', () => {
     );
   });
 
+  it('getRecipientStats applica i tag "diverted"+"appio" come due andWhere separati (AND, non OR)', async () => {
+    const qb: any = {};
+    ['select', 'where', 'andWhere', 'orderBy', 'skip', 'take'].forEach((m) => {
+      qb[m] = jest.fn().mockReturnValue(qb);
+    });
+    qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
+    mockRecipientRepo.createQueryBuilder = jest.fn().mockReturnValue(qb);
+
+    await service.getRecipientStats('uuid-1', 1, 20, undefined, undefined, undefined, ['diverted', 'appio']);
+
+    expect(qb.andWhere).toHaveBeenCalledWith(expect.stringContaining(`r.inad_check->>'diverted')::boolean = true`));
+    expect(qb.andWhere).toHaveBeenCalledWith(expect.stringContaining(`response_payload -> 'appIo' IS NOT NULL`));
+    // "primary" non richiesto: nessun andWhere sul suo pattern COALESCE.
+    expect(qb.andWhere).not.toHaveBeenCalledWith(expect.stringContaining('COALESCE'));
+  });
+
+  it('getRecipientStats applica il tag "primary" (non dirottato)', async () => {
+    const qb: any = {};
+    ['select', 'where', 'andWhere', 'orderBy', 'skip', 'take'].forEach((m) => {
+      qb[m] = jest.fn().mockReturnValue(qb);
+    });
+    qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
+    mockRecipientRepo.createQueryBuilder = jest.fn().mockReturnValue(qb);
+
+    await service.getRecipientStats('uuid-1', 1, 20, undefined, undefined, undefined, ['primary']);
+
+    expect(qb.andWhere).toHaveBeenCalledWith(expect.stringContaining('COALESCE'));
+  });
+
+  it('getRecipientStats applica hasDownload=yes/no su download_count', async () => {
+    const qb: any = {};
+    ['select', 'where', 'andWhere', 'orderBy', 'skip', 'take'].forEach((m) => {
+      qb[m] = jest.fn().mockReturnValue(qb);
+    });
+    qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
+    mockRecipientRepo.createQueryBuilder = jest.fn().mockReturnValue(qb);
+
+    await service.getRecipientStats('uuid-1', 1, 20, undefined, undefined, undefined, undefined, 'yes');
+    expect(qb.andWhere).toHaveBeenCalledWith('r.download_count > 0');
+
+    await service.getRecipientStats('uuid-1', 1, 20, undefined, undefined, undefined, undefined, 'no');
+    expect(qb.andWhere).toHaveBeenCalledWith('r.download_count = 0');
+  });
+
   describe('CampaignsService.getRecipientFilterOptions', () => {
     it('ritorna gli status e i deliveryStatus distinti realmente presenti per la campagna', async () => {
       const statusQb: any = {};
@@ -2750,6 +2794,31 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
         extraData: { via: 'Strada Vicinale Camerlengo 3', comune: 'Montesilvano', cap: '65015', prov: 'PE', paese: '' },
       });
       expect(result).toEqual({ requeued: true, attemptId: 'attempt-2' });
+    });
+
+    it('persiste fullName sul recipient se fornito nel dto', async () => {
+      campaignRepoMock.findOneBy.mockResolvedValue({
+        id: 'c1',
+        channelType: 'POSTAL',
+        channelConfig: { physicalAddressConfig: { enabled: true, addressColumn: 'via', municipalityColumn: 'comune' } },
+      });
+      recipientRepoMock.findOne = jest.fn().mockResolvedValue({ id: 'r1', campaignId: 'c1', status: RecipientStatus.FAILED, extraData: {} });
+      attemptRepoMock.findOne = jest.fn().mockResolvedValue({ attemptNumber: 1 });
+      const insertExec = jest.fn().mockResolvedValue({ raw: [{ id: 'attempt-2' }] });
+      attemptRepoMock.createQueryBuilder.mockReturnValue({
+        insert: () => ({ into: () => ({ values: () => ({ returning: () => ({ execute: insertExec }) }) }) }),
+      });
+
+      const moduleRef = await buildModule();
+      const service = moduleRef.get(CampaignsService);
+
+      await service.updateRecipientAddressAndRetry('c1', 'r1', {
+        address: 'Via Roma 1',
+        municipality: 'Montesilvano',
+        fullName: "D'Angelo Davide",
+      });
+
+      expect(recipientRepoMock.update).toHaveBeenCalledWith('r1', expect.objectContaining({ fullName: "D'Angelo Davide" }));
     });
 
     it('crea un physicalAddressConfig self-bootstrap se la campagna non ne ha mai avuto uno', async () => {

@@ -1004,7 +1004,7 @@ export function App(): React.JSX.Element {
   const [searchTotal, setSearchTotal] = useState(0);
   const [searchLoading, setSearchLoading] = useState(false);
   const [notifDetail, setNotifDetail] = useState<{
-    recipient: { id: string; codiceFiscale: string; fullName: string | null; email: string | null; pec: string | null; status: string };
+    recipient: { id: string; codiceFiscale: string; fullName: string | null; email: string | null; pec: string | null; status: string; physicalAddress: { address: string; municipality: string; zip?: string; province?: string; foreignState?: string | null } | null };
     campaign: { id: string; name: string; channelType: string; postalServiceType?: string | null; postalReturnReceipt?: boolean };
     attempts: Array<{ attemptNumber: number; status: string; channelType: string; errorMessage: string | null; sentAt: string | null; createdAt: string; appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null }; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalTrackingId?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalStatusHistory?: Array<{ stato: string; rilevatoIl: string; codiceErrore?: string; descrizione?: string }> | null; protocolNumber?: number | null; protocolYear?: number | null; protocolledAt?: string | null; costCents?: number | null; costCalculatedAt?: string | null; costBreakdown?: Record<string, unknown> | null }>;
     preview: { subject: string; bodyHtml?: string; bodyMarkdown?: string };
@@ -1018,7 +1018,7 @@ export function App(): React.JSX.Element {
   const [sendLegalFactsLoading, setSendLegalFactsLoading] = useState(false);
   const [sendLegalFactRetry, setSendLegalFactRetry] = useState<Record<string, { retryAfterSeconds?: number; error?: string }>>({});
   const [addressEditOpen, setAddressEditOpen] = useState(false);
-  const [addressEditForm, setAddressEditForm] = useState({ address: '', municipality: '', zip: '', province: '', country: 'Italia' });
+  const [addressEditForm, setAddressEditForm] = useState({ address: '', municipality: '', zip: '', province: '', country: 'Italia', fullName: '' });
   const [addressEditAnprLoading, setAddressEditAnprLoading] = useState(false);
   const [addressEditSaving, setAddressEditSaving] = useState(false);
   const [postalStatusRefreshing, setPostalStatusRefreshing] = useState(false);
@@ -1192,7 +1192,7 @@ export function App(): React.JSX.Element {
     setSendLegalFacts(null);
     setSendLegalFactRetry({});
     setAddressEditOpen(false);
-    setAddressEditForm({ address: '', municipality: '', zip: '', province: '', country: 'Italia' });
+    setAddressEditForm({ address: '', municipality: '', zip: '', province: '', country: 'Italia', fullName: '' });
     setTrackingIdEditOpenFor(null);
     setTrackingIdEditValue('');
     setNotifDetailLoading(true);
@@ -1309,29 +1309,36 @@ export function App(): React.JSX.Element {
       });
       const data = await res.json();
       const residenza = data?.anpr?.residenza?.[0];
+      // generalita arriva sempre insieme a residenza/esistenza in vita
+      // (stesso payload C002) — cognome+nome per prepopolare il nominativo,
+      // fallback al valore già in form se ANPR non la restituisce.
+      const generalita = data?.anpr?.generalita;
+      const anprFullName = generalita ? [generalita.cognome, generalita.nome].filter(Boolean).join(' ') : '';
       if (data?.anpr?.success && data?.anpr?.found && residenza?.indirizzo) {
         const ind = residenza.indirizzo;
         const via = [ind.toponimo?.specie, ind.toponimo?.denominazioneToponimo].filter(Boolean).join(' ');
         const civico = [ind.numeroCivico?.numero, ind.numeroCivico?.lettera].filter(Boolean).join('');
-        setAddressEditForm({
+        setAddressEditForm(f => ({
           address: [via, civico].filter(Boolean).join(', '),
           municipality: ind.comune?.nomeComune || '',
           zip: ind.cap || '',
           province: ind.comune?.siglaProvinciaIstat || '',
           country: 'Italia',
-        });
+          fullName: anprFullName || f.fullName,
+        }));
       } else if (data?.anpr?.success && data?.anpr?.found && residenza?.localitaEstera?.indirizzoEstero) {
         const ind = residenza.localitaEstera.indirizzoEstero;
         const via = [ind.toponimo?.denominazione, ind.toponimo?.numeroCivico].filter(Boolean).join(' ');
         const paeseRaw = ind.localita?.descrizioneStato || '';
         const matched = paeseRaw ? matchCountry(paeseRaw) : null;
-        setAddressEditForm({
+        setAddressEditForm(f => ({
           address: via,
           municipality: ind.localita?.descrizioneLocalita || '',
           zip: ind.cap || '',
           province: '',
           country: matched || paeseRaw || 'Italia',
-        });
+          fullName: anprFullName || f.fullName,
+        }));
       } else {
         alert('ANPR: nessun indirizzo di residenza trovato per questo CF.');
       }
@@ -1983,6 +1990,11 @@ export function App(): React.JSX.Element {
   const [recipientsPageNum, setRecipientsPageNum] = useState(1);
   const [recipientsStatusFilter, setRecipientsStatusFilter] = useState('');
   const [recipientsDeliveryStatusFilter, setRecipientsDeliveryStatusFilter] = useState('');
+  // Tag combinabili in AND: "diverted" (dirottato INAD), "primary" (canale
+  // primario, non dirottato), "appio" (co-consegna App IO tentata).
+  const [recipientsTagsFilter, setRecipientsTagsFilter] = useState<string[]>([]);
+  const [recipientsTagsMenuOpen, setRecipientsTagsMenuOpen] = useState(false);
+  const [recipientsDownloadFilter, setRecipientsDownloadFilter] = useState('');
   const [recipientsFilterOptions, setRecipientsFilterOptions] = useState<{ statuses: string[]; deliveryStatuses: string[] } | null>(null);
   const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number; inadDiverted: number } | null>(null);
   const [resendingOutcome, setResendingOutcome] = useState<string | null>(null);
@@ -2053,12 +2065,12 @@ export function App(): React.JSX.Element {
           fetchCampaignCost(selectedCampaignId);
           fetchCampaignCostSavings(selectedCampaignId);
           fetchDownloadCombinationStats(selectedCampaignId);
-          fetchRecipientsPage(selectedCampaignId, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter);
+          fetchRecipientsPage(selectedCampaignId, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter);
         }, 3000);
       }
     }
     return () => clearInterval(timer);
-  }, [view, selectedCampaignId, campaign, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter]);
+  }, [view, selectedCampaignId, campaign, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter]);
 
   // Auto-refresh degli elenchi campagne (dashboard "Attività Recenti" e "Campagne
   // Massive"): fetchCampaigns() girava solo una volta al login ([token]) — una
@@ -2119,10 +2131,10 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     if (!selectedCampaignId || view !== 'campaign-detail') return;
     const handle = setTimeout(() => {
-      fetchRecipientsPage(selectedCampaignId, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter);
+      fetchRecipientsPage(selectedCampaignId, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter);
     }, 300);
     return () => clearTimeout(handle);
-  }, [selectedCampaignId, view, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter]);
+  }, [selectedCampaignId, view, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter]);
 
   useEffect(() => {
     if (token) {
@@ -3165,7 +3177,7 @@ export function App(): React.JSX.Element {
       fetchCampaignCost(id),
       fetchCampaignCostSavings(id),
       fetchDownloadCombinationStats(id),
-      fetchRecipientsPage(id, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter),
+      fetchRecipientsPage(id, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter),
       fetchRecipientsFilterOptions(id),
     ]);
   };
@@ -6687,12 +6699,16 @@ export function App(): React.JSX.Element {
     search: string,
     statusFilter: string,
     deliveryStatusFilter: string,
+    tagsFilter: string[] = [],
+    downloadFilter: string = '',
   ) => {
     try {
       const params = new URLSearchParams({ page: String(page), pageSize: String(RECIPIENTS_PAGE_SIZE) });
       if (search.trim()) params.set('search', search.trim());
       if (statusFilter) params.set('status', statusFilter);
       if (deliveryStatusFilter) params.set('deliveryStatus', deliveryStatusFilter);
+      if (tagsFilter.length > 0) params.set('tags', tagsFilter.join(','));
+      if (downloadFilter) params.set('hasDownload', downloadFilter);
       const res = await apiFetch(`/campaigns/${campaignId}/stats/recipients?${params.toString()}`);
       if (!res.ok) return;
       const data = await res.json();
@@ -11045,8 +11061,9 @@ export function App(): React.JSX.Element {
                             <thead>
                               <tr>
                                 <th>#</th><th>Stato</th><th>Canale</th><th>Data</th>
+                                {notifDetail.attempts.some((a) => a.protocolNumber) && <th>Protocollo</th>}
                                 {notifDetail.campaign.channelType === 'SEND' && (
-                                  <><th>IUN</th><th>Protocollo</th><th>Stato SEND</th><th>Aggiornato il</th></>
+                                  <><th>IUN</th><th>Stato SEND</th><th>Aggiornato il</th></>
                                 )}
                                 {notifDetail.campaign.channelType === 'POSTAL' && (
                                   <><th>Stato Consegna</th><th>Aggiornato il</th></>
@@ -11055,17 +11072,19 @@ export function App(): React.JSX.Element {
                               </tr>
                             </thead>
                             <tbody>
-                              {notifDetail.attempts.map((a) => (
+                              {(() => {
+                                const anyProtocollo = notifDetail.attempts.some((a) => a.protocolNumber);
+                                return notifDetail.attempts.map((a) => (
                                 <React.Fragment key={a.attemptNumber}>
                                   <tr>
                                     <td>{a.attemptNumber}</td>
                                     <td><StatusBadge status={a.status} /></td>
                                     <td className="small"><ChannelBadge channel={a.channelType} /></td>
                                     <td className="small text-muted">{new Date(a.createdAt).toLocaleString('it-IT')}</td>
+                                    {anyProtocollo && <td className="small">{a.protocolNumber ? `${a.protocolNumber}/${a.protocolYear}` : '—'}</td>}
                                     {notifDetail.campaign.channelType === 'SEND' && (
                                       <>
                                         <td className="small fw-mono">{a.iun || '—'}</td>
-                                        <td className="small">{a.protocolNumber ? `${a.protocolNumber}/${a.protocolYear}` : '—'}</td>
                                         <td className="small"><SendStatusBadge status={a.sendStatus} /></td>
                                         <td className="small text-muted">{a.sendStatusUpdatedAt ? new Date(a.sendStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
                                       </>
@@ -11120,7 +11139,10 @@ export function App(): React.JSX.Element {
                                   </tr>
                                   {trackingIdEditOpenFor === a.attemptNumber && (
                                     <tr>
-                                      <td colSpan={7} className="bg-light">
+                                      <td
+                                        colSpan={4 + (anyProtocollo ? 1 : 0) + (notifDetail.campaign.channelType === 'SEND' ? 3 : notifDetail.campaign.channelType === 'POSTAL' ? 2 : 0) + 1}
+                                        className="bg-light"
+                                      >
                                         <div className="d-flex align-items-center gap-2 py-1">
                                           <Link size={14} className="text-muted flex-shrink-0" />
                                           <span className="small text-muted flex-shrink-0">IDPRO tentativo #{a.attemptNumber}:</span>
@@ -11148,9 +11170,9 @@ export function App(): React.JSX.Element {
                                       <td><StatusBadge status={a.appIo.success ? 'success' : 'failed'} /></td>
                                       <td className="small"><ChannelBadge channel="APP_IO" /></td>
                                       <td className="small text-muted">{new Date(a.createdAt).toLocaleString('it-IT')}</td>
+                                      {anyProtocollo && <td>—</td>}
                                       {notifDetail.campaign.channelType === 'SEND' && (
                                         <>
-                                          <td>—</td>
                                           <td>—</td>
                                           <td>—</td>
                                           <td>—</td>
@@ -11166,7 +11188,8 @@ export function App(): React.JSX.Element {
                                     </tr>
                                   )}
                                 </React.Fragment>
-                              ))}
+                              ));
+                              })()}
                             </tbody>
                           </table>
                         </div>
@@ -11205,7 +11228,17 @@ export function App(): React.JSX.Element {
                                   type="button"
                                   className="btn btn-sm btn-outline-dark"
                                   onClick={() => {
-                                    setAddressEditForm({ address: '', municipality: '', zip: '', province: '', country: 'Italia' });
+                                    // Prepopola con l'indirizzo/nominativo già presenti (mai vuoto se
+                                    // già risolvibile) — solo un vero indirizzo mai mappato resta vuoto.
+                                    const pa = notifDetail?.recipient.physicalAddress;
+                                    setAddressEditForm({
+                                      address: pa?.address || '',
+                                      municipality: pa?.municipality || '',
+                                      zip: pa?.zip || '',
+                                      province: pa?.province || '',
+                                      country: pa?.foreignState || 'Italia',
+                                      fullName: notifDetail?.recipient.fullName || '',
+                                    });
                                     setAddressEditOpen(true);
                                   }}
                                 >
@@ -11230,6 +11263,10 @@ export function App(): React.JSX.Element {
                                   </button>
                                 </div>
                                 <div className="row g-2">
+                                  <div className="col-12">
+                                    <label className="form-label small mb-1">Nominativo</label>
+                                    <input type="text" className="form-control form-control-sm" value={addressEditForm.fullName} onChange={(e) => setAddressEditForm(f => ({ ...f, fullName: e.target.value }))} />
+                                  </div>
                                   <div className="col-12">
                                     <label className="form-label small mb-1">Via/Indirizzo *</label>
                                     <input type="text" className="form-control form-control-sm" value={addressEditForm.address} onChange={(e) => setAddressEditForm(f => ({ ...f, address: e.target.value }))} />
@@ -14766,6 +14803,64 @@ export function App(): React.JSX.Element {
                               ))}
                             </select>
                           )}
+                          {campaign.channelType !== 'SEND' && (() => {
+                            const tagOptions: Array<{ id: string; label: string }> = [
+                              { id: 'diverted', label: 'Dirottato INAD' },
+                              { id: 'primary', label: getChannelMeta(campaign.channelType).label },
+                              ...(campaign.channelType !== 'APP_IO' ? [{ id: 'appio', label: 'App IO (co-consegna)' }] : []),
+                            ];
+                            return (
+                              <div className="dropdown">
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-outline-secondary dropdown-toggle"
+                                  onClick={() => setRecipientsTagsMenuOpen((o) => !o)}
+                                >
+                                  Tipo invio{recipientsTagsFilter.length > 0 ? ` (${recipientsTagsFilter.length})` : ': tutti'}
+                                </button>
+                                {recipientsTagsMenuOpen && (
+                                  <div className="dropdown-menu show p-2" style={{ minWidth: 220 }}>
+                                    {tagOptions.map((opt) => (
+                                      <div className="form-check" key={opt.id}>
+                                        <input
+                                          type="checkbox"
+                                          className="form-check-input"
+                                          id={`recipients-tag-${opt.id}`}
+                                          checked={recipientsTagsFilter.includes(opt.id)}
+                                          onChange={(e) => {
+                                            setRecipientsTagsFilter((prev) =>
+                                              e.target.checked ? [...prev, opt.id] : prev.filter((t) => t !== opt.id),
+                                            );
+                                            setRecipientsPageNum(1);
+                                          }}
+                                        />
+                                        <label className="form-check-label small" htmlFor={`recipients-tag-${opt.id}`}>{opt.label}</label>
+                                      </div>
+                                    ))}
+                                    {recipientsTagsFilter.length > 0 && (
+                                      <button
+                                        type="button"
+                                        className="btn btn-sm btn-link p-0 mt-1"
+                                        onClick={() => { setRecipientsTagsFilter([]); setRecipientsPageNum(1); }}
+                                      >
+                                        Azzera
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+                          <select
+                            className="form-select form-select-sm"
+                            style={{ maxWidth: 160 }}
+                            value={recipientsDownloadFilter}
+                            onChange={(e) => { setRecipientsDownloadFilter(e.target.value); setRecipientsPageNum(1); }}
+                          >
+                            <option value="">Download: tutti</option>
+                            <option value="yes">Con download</option>
+                            <option value="no">Senza download</option>
+                          </select>
                           {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType !== 'SEND' && campaign.channelType !== 'POSTAL' && (
                             <button className="btn btn-sm btn-outline-primary py-1" onClick={handleExportDownloadReport} title="Esporta Report CSV">
                               <FileSpreadsheet className="me-1" /> Esporta Report Download
@@ -14821,12 +14916,12 @@ export function App(): React.JSX.Element {
                                     <th>Contatti (Email/PEC)</th>
                                     <th>Stato Notifica</th>
                                     {campaign.channelType === 'SEND' ? (
-                                      <><th>IUN</th><th>Protocollo</th><th>Stato SEND</th><th>Aggiornato il</th></>
+                                      <><th>IUN</th><th>Protocollo</th><th>Stato SEND</th><th>Aggiornato il</th>{(((campaign.channelConfig?.['attachments'] as any[] | undefined)?.length ?? 0) > 0) && <th className="text-center">Download</th>}</>
                                     ) : campaign.channelType === 'POSTAL' ? (
                                       campaign.channelConfig?.['protocolla'] ? (
-                                        <><th>Protocollo</th><th>Stato Consegna</th><th>Aggiornato il</th></>
+                                        <><th>Protocollo</th><th>Stato Consegna</th><th>Aggiornato il</th>{(((campaign.channelConfig?.['attachments'] as any[] | undefined)?.length ?? 0) > 0) && <th className="text-center">Download</th>}</>
                                       ) : (
-                                        <><th>Stato Consegna</th><th>Aggiornato il</th></>
+                                        <><th>Stato Consegna</th><th>Aggiornato il</th>{(((campaign.channelConfig?.['attachments'] as any[] | undefined)?.length ?? 0) > 0) && <th className="text-center">Download</th>}</>
                                       )
                                     ) : campaign.channelConfig?.['protocolla'] ? (
                                       <><th>Protocollo</th><th className="text-center">Download</th></>
@@ -14836,7 +14931,19 @@ export function App(): React.JSX.Element {
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {recipientsPage.items.map((r) => (
+                                  {recipientsPage.items.map((r) => {
+                                    const downloadCell = (((campaign.channelConfig?.['attachments'] as any[] | undefined)?.length ?? 0) > 0) ? (
+                                      <td className="text-center fw-bold">
+                                        {r.downloadCount ? (
+                                          <span className="text-success">
+                                            <ArrowDown className="me-1" /> {r.downloadCount}
+                                          </span>
+                                        ) : (
+                                          <span className="text-muted">—</span>
+                                        )}
+                                      </td>
+                                    ) : null;
+                                    return (
                                     <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => openNotificationDetail(r.id)}>
                                       <td className="fw-mono fw-bold">{r.codiceFiscale}</td>
                                       <td>{r.fullName || <span className="text-muted">N/D</span>}</td>
@@ -14853,6 +14960,7 @@ export function App(): React.JSX.Element {
                                           <td className="small">{r.protocolNumber ? `${r.protocolNumber}/${r.protocolYear}` : '—'}</td>
                                           <td className="small"><SendStatusBadge status={r.sendStatus} /></td>
                                           <td className="small text-muted">{r.sendStatusUpdatedAt ? new Date(r.sendStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
+                                          {downloadCell}
                                         </>
                                       ) : campaign.channelType === 'POSTAL' ? (
                                         // Dirottato INAD (attempt reale su PEC, non POSTAL): niente
@@ -14864,11 +14972,13 @@ export function App(): React.JSX.Element {
                                               <td className="small">{r.protocolNumber ? `${r.protocolNumber}/${r.protocolYear}` : '—'}</td>
                                               <td className="small text-muted">—</td>
                                               <td className="small text-muted">—</td>
+                                              {downloadCell}
                                             </>
                                           ) : (
                                             <>
                                               <td className="small text-muted">—</td>
                                               <td className="small text-muted">—</td>
+                                              {downloadCell}
                                             </>
                                           )
                                         ) : campaign.channelConfig?.['protocolla'] ? (
@@ -14876,11 +14986,13 @@ export function App(): React.JSX.Element {
                                             <td className="small">{r.protocolNumber ? `${r.protocolNumber}/${r.protocolYear}` : '—'}</td>
                                             <td className="small"><PostalStatusBadge status={r.postalStatus} /></td>
                                             <td className="small text-muted">{r.postalStatusUpdatedAt ? new Date(r.postalStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
+                                            {downloadCell}
                                           </>
                                         ) : (
                                           <>
                                             <td className="small"><PostalStatusBadge status={r.postalStatus} /></td>
                                             <td className="small text-muted">{r.postalStatusUpdatedAt ? new Date(r.postalStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
+                                            {downloadCell}
                                           </>
                                         )
                                       ) : campaign.channelConfig?.['protocolla'] ? (
@@ -14908,7 +15020,8 @@ export function App(): React.JSX.Element {
                                         </td>
                                       )}
                                     </tr>
-                                  ))}
+                                    );
+                                  })}
                                 </tbody>
                               </table>
                             </div>

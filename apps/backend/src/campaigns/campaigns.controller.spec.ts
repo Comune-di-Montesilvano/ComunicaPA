@@ -64,7 +64,7 @@ describe('CampaignsController', () => {
   describe('getRecipientStats', () => {
     it('usa i valori di default quando page/pageSize non sono forniti', async () => {
       await controller.getRecipientStats('uuid-1', undefined, undefined, undefined);
-      expect(mockService.getRecipientStats).toHaveBeenCalledWith('uuid-1', 1, 50, undefined, undefined, undefined);
+      expect(mockService.getRecipientStats).toHaveBeenCalledWith('uuid-1', 1, 50, undefined, undefined, undefined, undefined, undefined);
     });
 
     it('rifiuta un page non numerico con BadRequestException', () => {
@@ -89,17 +89,22 @@ describe('CampaignsController', () => {
 
     it('accetta valori validi e li inoltra al servizio', async () => {
       await controller.getRecipientStats('uuid-1', '2', '25', undefined);
-      expect(mockService.getRecipientStats).toHaveBeenCalledWith('uuid-1', 2, 25, undefined, undefined, undefined);
+      expect(mockService.getRecipientStats).toHaveBeenCalledWith('uuid-1', 2, 25, undefined, undefined, undefined, undefined, undefined);
     });
 
     it('inoltra il parametro search al servizio', async () => {
       await controller.getRecipientStats('uuid-1', '1', '50', 'rossi');
-      expect(mockService.getRecipientStats).toHaveBeenCalledWith('uuid-1', 1, 50, 'rossi', undefined, undefined);
+      expect(mockService.getRecipientStats).toHaveBeenCalledWith('uuid-1', 1, 50, 'rossi', undefined, undefined, undefined, undefined);
     });
 
     it('inoltra i parametri status e deliveryStatus al servizio', async () => {
       await controller.getRecipientStats('uuid-1', '1', '50', undefined, 'failed', 'ACCEPTED');
-      expect(mockService.getRecipientStats).toHaveBeenCalledWith('uuid-1', 1, 50, undefined, 'failed', 'ACCEPTED');
+      expect(mockService.getRecipientStats).toHaveBeenCalledWith('uuid-1', 1, 50, undefined, 'failed', 'ACCEPTED', undefined, undefined);
+    });
+
+    it('splitta il parametro tags (comma-separated) in un array al servizio', async () => {
+      await controller.getRecipientStats('uuid-1', '1', '50', undefined, undefined, undefined, 'diverted,appio', 'yes');
+      expect(mockService.getRecipientStats).toHaveBeenCalledWith('uuid-1', 1, 50, undefined, undefined, undefined, ['diverted', 'appio'], 'yes');
     });
   });
 

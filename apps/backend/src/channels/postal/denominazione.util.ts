@@ -12,12 +12,26 @@ export interface DenominazioneAbbreviation {
  * risultato eccede maxPerLine*2 caratteri totali, denominazione2 viene
  * troncata secca come ultima rete di sicurezza.
  */
+/**
+ * GlobalCom rifiuta l'apostrofo in Denominazione1/2 (e Indirizzo1/2, stessa
+ * funzione riusata da postal.strategy.ts per l'indirizzo) — errore reale
+ * riscontrato: "Errore nei dati del destinatario 0, D'ANGELO DAVIDE:
+ * Caratteri non validi per D'ANGELO DAVIDE: `" (l'apostrofo compare
+ * codificato come backtick nel messaggio d'errore lato loro). Non
+ * documentato nel manuale/WSDL — scoperto solo dall'errore applicativo.
+ * Rimosso (non sostituito con spazio) per restare il più vicino possibile
+ * alla resa tipografica corretta del cognome.
+ */
+function stripInvalidGlobalComChars(text: string): string {
+  return text.replace(/['’`´]/g, '');
+}
+
 export function splitDenominazione(
   fullName: string,
   abbreviations: DenominazioneAbbreviation[],
   maxPerLine = 44,
 ): { denominazione1: string; denominazione2?: string; truncated: boolean } {
-  let text = fullName.trim();
+  let text = stripInvalidGlobalComChars(fullName.trim());
 
   if (text.length > maxPerLine) {
     const safeAbbreviations: DenominazioneAbbreviation[] = Array.isArray(abbreviations)
