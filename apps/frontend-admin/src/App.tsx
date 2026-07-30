@@ -14512,7 +14512,20 @@ export function App(): React.JSX.Element {
                           </div>
                         )}
 
-                        {channelBreakdown && (
+                        {channelBreakdown && (() => {
+                          // "Rimanda a questi" ha senso solo se il contenuto è
+                          // stato CORRETTO dopo l'invio originale (il conferma
+                          // dialog parla esplicitamente di "contenuto
+                          // corretto", vedi handleResendByOutcome) — con
+                          // subject/body invariati il resend è comunque
+                          // no-op lato backend (gate firma SHA-256, vedi
+                          // notification.processor.ts/resendSafe), ma
+                          // mostrare comunque il tasto è fuorviante (sembra
+                          // promettere un secondo invio reale). contentHistory
+                          // si popola solo quando un salvataggio di
+                          // correzione cambia davvero subject/body.
+                          const hasContentCorrection = Array.isArray(campaign.channelConfig?.contentHistory) && campaign.channelConfig.contentHistory.length > 0;
+                          return (
                           <div className="mt-4 border-top pt-3">
                             <h4 className="small fw-bold mb-2">
                               <Smartphone className="me-1 text-primary" />Dettaglio Consegna Multicanale
@@ -14526,7 +14539,7 @@ export function App(): React.JSX.Element {
                                 <span><CheckCheck className="text-success me-1" />Anche App IO (parallela)</span>
                                 <span className="d-flex align-items-center gap-2">
                                   <span className="fw-bold">{channelBreakdown.both}</span>
-                                  {channelBreakdown.both > 0 && (
+                                  {channelBreakdown.both > 0 && hasContentCorrection && (
                                     <button className="btn btn-sm btn-link p-0" type="button"
                                       disabled={resendingOutcome === 'both'}
                                       onClick={() => handleResendByOutcome(campaign.id, 'both', channelBreakdown.both)}>
@@ -14551,7 +14564,7 @@ export function App(): React.JSX.Element {
                                 <span><ShieldCheck className="text-primary me-1" />Dirottato su PEC (INAD)</span>
                                 <span className="d-flex align-items-center gap-2">
                                   <span className="fw-bold">{channelBreakdown.inadDiverted}</span>
-                                  {channelBreakdown.inadDiverted > 0 && (
+                                  {channelBreakdown.inadDiverted > 0 && hasContentCorrection && (
                                     <button className="btn btn-sm btn-link p-0" type="button"
                                       disabled={resendingOutcome === 'inadDiverted'}
                                       onClick={() => handleResendByOutcome(campaign.id, 'inadDiverted', channelBreakdown.inadDiverted)}>
@@ -14562,7 +14575,8 @@ export function App(): React.JSX.Element {
                               </div>
                             </div>
                           </div>
-                        )}
+                          );
+                        })()}
 
                         {failureGroups.length > 0 && (
                           <div className="mt-4 border-top pt-3">
