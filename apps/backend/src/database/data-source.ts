@@ -13,6 +13,9 @@ import { PostalProviderConfig } from '../entities/postal-provider-config.entity'
 import { AppIoVerificationJob } from '../entities/app-io-verification-job.entity';
 import { InadVerificationJob } from '../entities/inad-verification-job.entity';
 import { EnrichmentJob } from '../entities/enrichment-job.entity';
+import { EnrichmentAddressOverride } from '../entities/enrichment-address-override.entity';
+import { OperatorDirectoryEntry } from '../entities/operator-directory-entry.entity';
+import { CampaignBulkRetryJob } from '../entities/campaign-bulk-retry-job.entity';
 
 // DataSource per la CLI TypeORM (migration:generate / migration:run).
 // Il runtime dell'app usa database.module.ts, che condivide entity e migrations.
@@ -21,6 +24,6 @@ import { EnrichmentJob } from '../entities/enrichment-job.entity';
 export default new DataSource({
   type: 'postgres',
   url: process.env['DATABASE_URL'],
-  entities: [Campaign, Recipient, NotificationAttempt, AppSetting, MailServerConfig, IoServiceConfig, Template, DownloadEvent, AuditLog, PostalProviderConfig, AppIoVerificationJob, InadVerificationJob, EnrichmentJob],
+  entities: [Campaign, Recipient, NotificationAttempt, AppSetting, MailServerConfig, IoServiceConfig, Template, DownloadEvent, AuditLog, PostalProviderConfig, AppIoVerificationJob, InadVerificationJob, EnrichmentJob, EnrichmentAddressOverride, OperatorDirectoryEntry, CampaignBulkRetryJob],
   migrations: [`${__dirname}/migrations/*.{ts,js}`],
 });

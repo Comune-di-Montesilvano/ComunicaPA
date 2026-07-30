@@ -1965,6 +1965,19 @@ export function App(): React.JSX.Element {
   const [cancelling, setCancelling] = useState(false);
   const [failureGroups, setFailureGroups] = useState<Array<{ errorMessage: string; count: number; recipientIds: string[] }>>([]);
   const [retryingGroup, setRetryingGroup] = useState<string | null>(null);
+  // Job async (CampaignBulkRetryProcessor) — "Rimetti in coda tutti" non è più
+  // una singola richiesta sincrona (limite 500 legato al rischio timeout
+  // proxy/event-loop su migliaia di destinatari): il bottone crea un job e
+  // questo stato traccia il polling fino a DONE/FAILED.
+  const [retryBulkJobId, setRetryBulkJobId] = useState<string | null>(null);
+  const [retryBulkStatus, setRetryBulkStatus] = useState<{
+    status: 'queued' | 'processing' | 'done' | 'failed';
+    totalCount: number;
+    processedCount: number;
+    requeuedCount: number;
+    failed: Array<{ recipientId: string; reason: string }>;
+    errorMessage: string | null;
+  } | null>(null);
   const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; protocolNumber?: number | null; protocolYear?: number | null; inadCheck?: { found: boolean; diverted: boolean } | null }> } | null>(null);
   const [recipientsSearch, setRecipientsSearch] = useState('');
   const [recipientsPageNum, setRecipientsPageNum] = useState(1);
@@ -3139,8 +3152,6 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const MAX_BULK_RETRY_SIZE = 500;
-
   const refreshCampaignAllDetails = async (id: string) => {
     await Promise.all([
       fetchCampaignDetail(id),
@@ -3161,29 +3172,46 @@ export function App(): React.JSX.Element {
 
   const handleRetryGroup = async (group: { errorMessage: string; recipientIds: string[] }) => {
     if (!selectedCampaignId) return;
-    if (group.recipientIds.length > MAX_BULK_RETRY_SIZE) {
-      alert(`Impossibile rimettere in coda più di ${MAX_BULK_RETRY_SIZE} destinatari in una sola richiesta (richiesti: ${group.recipientIds.length}). Riduci la selezione o contatta l'amministratore per un'operazione batch.`);
-      return;
-    }
     if (!confirm(`Rimettere in coda ${group.recipientIds.length} destinatari con errore "${group.errorMessage}"?`)) return;
     setRetryingGroup(group.errorMessage);
+    setRetryBulkStatus(null);
     try {
       const res = await apiFetch(`/campaigns/${selectedCampaignId}/recipients/retry-bulk`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ recipientIds: group.recipientIds }),
       });
-      if (!res.ok) throw new Error('Errore durante la rimessa in coda dei destinatari.');
-      const result = await res.json();
-      alert(`${result.requeued} destinatari rimessi in coda${result.failed.length > 0 ? `, ${result.failed.length} non ritentabili` : ''}`);
-      await refreshCampaignAllDetails(selectedCampaignId);
+      if (!res.ok) throw new Error('Errore durante l\'avvio della rimessa in coda.');
+      const { jobId } = await res.json();
+      setRetryBulkJobId(jobId);
+      setRetryBulkStatus({ status: 'queued', totalCount: group.recipientIds.length, processedCount: 0, requeuedCount: 0, failed: [], errorMessage: null });
     } catch (err: any) {
       if (err instanceof ApiAuthError) return;
       alert(err.message);
-    } finally {
       setRetryingGroup(null);
     }
   };
+
+  // Polling stato job async — si ferma da solo a DONE/FAILED, poi aggiorna
+  // una volta i pannelli campagna (stesso pattern verifica bulk App IO/INAD).
+  useEffect(() => {
+    if (!retryBulkJobId) return;
+    if (retryBulkStatus?.status === 'done' || retryBulkStatus?.status === 'failed') return;
+    const timer = setInterval(async () => {
+      try {
+        const res = await apiFetch(`/campaigns/${selectedCampaignId}/recipients/retry-bulk/${retryBulkJobId}`);
+        const data = await res.json();
+        setRetryBulkStatus(data);
+        if (data.status === 'done' || data.status === 'failed') {
+          setRetryingGroup(null);
+          if (selectedCampaignId) await refreshCampaignAllDetails(selectedCampaignId);
+        }
+      } catch {
+        // errore transitorio di polling: riprova al giro successivo
+      }
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [retryBulkJobId, retryBulkStatus?.status, selectedCampaignId]);
 
   const handleCreateCampaign = async (nameVal: string, descVal: string, channelVal: string, configOverrides?: Record<string, any>) => {
     try {
@@ -6486,6 +6514,9 @@ export function App(): React.JSX.Element {
     setView('campaign-detail');
     setCampaign(null);
     setFailureGroups([]);
+    setRetryBulkJobId(null);
+    setRetryBulkStatus(null);
+    setRetryingGroup(null);
     setChannelBreakdown(null);
     setEffectiveChannelBreakdown(null);
     setCampaignSendStageCounts(null);
@@ -14522,6 +14553,27 @@ export function App(): React.JSX.Element {
                                 </tbody>
                               </table>
                             </div>
+                            {retryBulkStatus && (
+                              <div className="small mt-2">
+                                {retryBulkStatus.status === 'done' ? (
+                                  <span className="text-success">
+                                    <CheckCircle2 className="me-1" size={14} />
+                                    {retryBulkStatus.requeuedCount} destinatari rimessi in coda su {retryBulkStatus.totalCount}
+                                    {retryBulkStatus.failed.length > 0 ? `, ${retryBulkStatus.failed.length} non ritentabili` : ''}
+                                  </span>
+                                ) : retryBulkStatus.status === 'failed' ? (
+                                  <span className="text-danger">
+                                    <AlertTriangle className="me-1" size={14} />
+                                    Job fallito: {retryBulkStatus.errorMessage || 'errore sconosciuto'}
+                                  </span>
+                                ) : (
+                                  <span className="text-muted">
+                                    <Loader2 className="icon-spin me-1" size={14} />
+                                    Rimessa in coda in corso: {retryBulkStatus.processedCount}/{retryBulkStatus.totalCount}
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </div>
                         )}
 

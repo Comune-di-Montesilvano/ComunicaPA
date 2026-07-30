@@ -13,7 +13,6 @@ describe('CampaignsController', () => {
     remove: jest.fn().mockResolvedValue({ deleted: true }),
     getNeverDownloadedRecipients: jest.fn(),
     getFailuresByReason: jest.fn(),
-    retryRecipientsBulk: jest.fn(),
     getDownloadReportRows: jest.fn(),
     getSendStatusBreakdown: jest.fn(),
     getSendReportRows: jest.fn(),
@@ -38,6 +37,11 @@ describe('CampaignsController', () => {
     resendSafeBulk: jest.fn(),
   };
 
+  const mockBulkRetryService = {
+    createJob: jest.fn(),
+    getStatus: jest.fn(),
+  };
+
   const mockReq = {
     user: {
       username: 'test-operator',
@@ -53,6 +57,7 @@ describe('CampaignsController', () => {
       mockAuditLogsService as any,
       mockOperatorDirectory as any,
       mockContentCorrectionService as any,
+      mockBulkRetryService as any,
     );
   });
 
@@ -221,18 +226,28 @@ describe('CampaignsController', () => {
   });
 
   describe('retryRecipientsBulk', () => {
-    it('rifiuta un body senza recipientIds', () => {
-      expect(() => controller.retryRecipientsBulk('uuid-1', undefined as any, mockReq)).toThrow(BadRequestException);
+    it('rifiuta un body senza recipientIds', async () => {
+      await expect(controller.retryRecipientsBulk('uuid-1', undefined as any, mockReq)).rejects.toThrow(BadRequestException);
     });
 
-    it('rifiuta un array vuoto', () => {
-      expect(() => controller.retryRecipientsBulk('uuid-1', [], mockReq)).toThrow(BadRequestException);
+    it('rifiuta un array vuoto', async () => {
+      await expect(controller.retryRecipientsBulk('uuid-1', [], mockReq)).rejects.toThrow(BadRequestException);
     });
 
-    it('chiama il service con id campagna e recipientIds', async () => {
-      mockService.retryRecipientsBulk = jest.fn().mockResolvedValue({ requeued: 1, failed: [] });
-      await controller.retryRecipientsBulk('uuid-1', ['r1'], mockReq);
-      expect(mockService.retryRecipientsBulk).toHaveBeenCalledWith('uuid-1', ['r1']);
+    it('crea un job async tramite bulkRetryService e ritorna il jobId', async () => {
+      mockBulkRetryService.createJob.mockResolvedValue({ jobId: 'job-1' });
+      const result = await controller.retryRecipientsBulk('uuid-1', ['r1'], mockReq);
+      expect(mockBulkRetryService.createJob).toHaveBeenCalledWith('uuid-1', ['r1'], 'test-operator');
+      expect(result).toEqual({ jobId: 'job-1' });
+    });
+  });
+
+  describe('getRetryBulkStatus', () => {
+    it('chiama il service con lo jobId', async () => {
+      mockBulkRetryService.getStatus.mockResolvedValue({ status: 'done' });
+      const result = await controller.getRetryBulkStatus('job-1');
+      expect(mockBulkRetryService.getStatus).toHaveBeenCalledWith('job-1');
+      expect(result).toEqual({ status: 'done' });
     });
   });
 

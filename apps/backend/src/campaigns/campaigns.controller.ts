@@ -25,6 +25,7 @@ import type { Campaign } from '../entities/campaign.entity';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CampaignsService } from './campaigns.service';
 import { CampaignContentCorrectionService } from './campaign-content-correction.service';
+import { CampaignBulkRetryService } from './campaign-bulk-retry.service';
 import type { ChannelOutcome } from './channel-outcome.util';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { OperatorDirectoryService } from '../operator-directory/operator-directory.service';
@@ -58,6 +59,7 @@ export class CampaignsController {
     private readonly auditLogsService: AuditLogsService,
     private readonly operatorDirectory: OperatorDirectoryService,
     private readonly contentCorrectionService: CampaignContentCorrectionService,
+    private readonly bulkRetryService: CampaignBulkRetryService,
   ) {}
 
   @Get()
@@ -730,26 +732,35 @@ export class CampaignsController {
     return result;
   }
 
+  // Async: solo lavoro DB + queue.add() per destinatario, ma sequenziale su
+  // migliaia di record rischia comunque il timeout del reverse proxy esterno
+  // se fatto dentro la richiesta HTTP (vedi CLAUDE.md, "lavoro pesante
+  // sincrono in un handler HTTP") — l'endpoint crea solo il job e ritorna
+  // subito, CampaignBulkRetryProcessor lo esegue in background.
   @Post(':id/recipients/retry-bulk')
-  retryRecipientsBulk(
+  async retryRecipientsBulk(
     @Param('id', ParseUUIDPipe) id: string,
     @Body('recipientIds') recipientIds: string[],
     @Req() req: Request & { user: JwtOperatorPayload },
-  ): Promise<any> {
+  ): Promise<{ jobId: string }> {
     if (!Array.isArray(recipientIds) || recipientIds.length === 0) {
       throw new BadRequestException('recipientIds deve essere un array non vuoto');
     }
-    return this.campaignsService.retryRecipientsBulk(id, recipientIds).then(async (result) => {
-      const campaign = await this.campaignsService.findOne(id).catch(() => null);
-      await this.auditLogsService.log({
-        campaignId: id,
-        campaignName: campaign ? campaign.name : null,
-        operator: req.user.username,
-        action: 'RETRY',
-        details: { count: recipientIds.length },
-      });
-      return result;
+    const result = await this.bulkRetryService.createJob(id, recipientIds, req.user.username);
+    const campaign = await this.campaignsService.findOne(id).catch(() => null);
+    await this.auditLogsService.log({
+      campaignId: id,
+      campaignName: campaign ? campaign.name : null,
+      operator: req.user.username,
+      action: 'RETRY',
+      details: { count: recipientIds.length, jobId: result.jobId },
     });
+    return result;
+  }
+
+  @Get(':id/recipients/retry-bulk/:jobId')
+  getRetryBulkStatus(@Param('jobId', ParseUUIDPipe) jobId: string) {
+    return this.bulkRetryService.getStatus(jobId);
   }
 
   @Get(':id/stats/recipients')

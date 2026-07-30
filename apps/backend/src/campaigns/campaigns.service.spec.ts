@@ -2875,62 +2875,6 @@ describe('CampaignsService.getFailuresByReason', () => {
   });
 });
 
-describe('CampaignsService.retryRecipientsBulk', () => {
-  it('ritenta ogni destinatario e conta successi/fallimenti separatamente', async () => {
-    const moduleRef: TestingModule = await Test.createTestingModule({
-      providers: [
-        CampaignsService,
-        { provide: getRepositoryToken(Campaign), useValue: {} },
-        { provide: getRepositoryToken(Recipient), useValue: {} },
-        { provide: getRepositoryToken(NotificationAttempt), useValue: {} },
-        { provide: getRepositoryToken(DownloadEvent), useValue: {} },
-        { provide: NotificationQueuesService, useValue: {} },
-        { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
-        { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
-        { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
-        { provide: PostalStatusSyncService, useValue: { refreshOne: jest.fn() } },
-      ],
-    }).compile();
-    const service = moduleRef.get(CampaignsService);
-
-    jest
-      .spyOn(service, 'retryRecipient')
-      .mockResolvedValueOnce({ requeued: true, attemptId: 'a1' })
-      .mockRejectedValueOnce(new Error('Solo i destinatari in stato FAILED possono essere rimessi in coda'))
-      .mockResolvedValueOnce({ requeued: true, attemptId: 'a3' });
-
-    const result = await service.retryRecipientsBulk('c1', ['r1', 'r2', 'r3']);
-
-    expect(result).toEqual({
-      requeued: 2,
-      failed: [{ recipientId: 'r2', reason: 'Solo i destinatari in stato FAILED possono essere rimessi in coda' }],
-    });
-  });
-
-  it('rifiuta più di 500 recipientIds senza chiamare retryRecipient', async () => {
-    const moduleRef: TestingModule = await Test.createTestingModule({
-      providers: [
-        CampaignsService,
-        { provide: getRepositoryToken(Campaign), useValue: {} },
-        { provide: getRepositoryToken(Recipient), useValue: {} },
-        { provide: getRepositoryToken(NotificationAttempt), useValue: {} },
-        { provide: getRepositoryToken(DownloadEvent), useValue: {} },
-        { provide: NotificationQueuesService, useValue: {} },
-        { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
-        { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
-        { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
-        { provide: PostalStatusSyncService, useValue: { refreshOne: jest.fn() } },
-      ],
-    }).compile();
-    const service = moduleRef.get(CampaignsService);
-    const retrySpy = jest.spyOn(service, 'retryRecipient').mockResolvedValue({ requeued: true, attemptId: 'a1' });
-
-    const tooMany = Array.from({ length: 501 }, (_, i) => `r${i}`);
-
-    await expect(service.retryRecipientsBulk('c1', tooMany)).rejects.toThrow(BadRequestException);
-    expect(retrySpy).not.toHaveBeenCalled();
-  });
-});
 
 describe('CampaignsService.getDownloadReportRows', () => {
   it('mappa i destinatari della campagna nel formato report', async () => {

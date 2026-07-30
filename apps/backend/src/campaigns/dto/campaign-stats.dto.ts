@@ -89,11 +89,6 @@ export interface FailureGroupDto {
   recipientIds: string[];
 }
 
-export interface RetryBulkResultDto {
-  requeued: number;
-  failed: Array<{ recipientId: string; reason: string }>;
-}
-
 export interface DownloadReportRowDto {
   codiceFiscale: string;
   fullName: string | null;

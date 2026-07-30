@@ -29,7 +29,7 @@ import type { CreateCampaignDto } from './dto/create-campaign.dto';
 import type { UpdateCampaignDto } from './dto/update-campaign.dto';
 import type { UpdateCampaignContentDto } from './dto/update-campaign-content.dto';
 import type { TestSendDto } from './dto/test-send.dto';
-import type { CampaignStatsDto, RecipientStatDto, RecipientStatsPageDto, ChannelBreakdownDto, EffectiveChannelBreakdownDto, DownloadCombinationDto, DownloadCombinationStatsDto, FailureRowDto, FailureGroupDto, RetryBulkResultDto, DownloadReportDto, SendStatusBreakdownDto, SendReportDto, SendReportRowDto, PostalStatusBreakdownDto, PostalReportDto, PostalReportRowDto, CampaignCostDto, CampaignCostSavingsDto } from './dto/campaign-stats.dto';
+import type { CampaignStatsDto, RecipientStatDto, RecipientStatsPageDto, ChannelBreakdownDto, EffectiveChannelBreakdownDto, DownloadCombinationDto, DownloadCombinationStatsDto, FailureRowDto, FailureGroupDto, DownloadReportDto, SendStatusBreakdownDto, SendReportDto, SendReportRowDto, PostalStatusBreakdownDto, PostalReportDto, PostalReportRowDto, CampaignCostDto, CampaignCostSavingsDto } from './dto/campaign-stats.dto';
 import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.dto';
 import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util';
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto';
@@ -37,7 +37,6 @@ import type { NotificationChannel, OperatorRole } from '@comunicapa/shared-types
 import { InadService } from '../channels/inad/inad.service';
 import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service';
 
-const MAX_BULK_RETRY_SIZE = 500;
 const INAD_BULK_THRESHOLD = 100;
 // Sentinella filtro "Stato Consegna" per attempt SUCCESS senza send_status/postal_status
 // ancora sincronizzato (stesso null gestito da ChannelStatusBar/pendingLabel "In corso"/
@@ -1917,28 +1916,6 @@ export class CampaignsService {
       throw new BadRequestException('Ricontrollo stato disponibile solo per campagne POSTAL');
     }
     return this.postalStatusSync.resetErrorsForRecheck(campaignId);
-  }
-
-  async retryRecipientsBulk(campaignId: string, recipientIds: string[]): Promise<RetryBulkResultDto> {
-    if (recipientIds.length > MAX_BULK_RETRY_SIZE) {
-      throw new BadRequestException(
-        `Impossibile rimettere in coda più di ${MAX_BULK_RETRY_SIZE} destinatari in una sola richiesta (richiesti: ${recipientIds.length}). Riduci la selezione o contatta l'amministratore per un'operazione batch.`,
-      );
-    }
-
-    let requeued = 0;
-    const failed: Array<{ recipientId: string; reason: string }> = [];
-
-    for (const recipientId of recipientIds) {
-      try {
-        await this.retryRecipient(campaignId, recipientId);
-        requeued++;
-      } catch (e) {
-        failed.push({ recipientId, reason: e instanceof Error ? e.message : 'Errore sconosciuto' });
-      }
-    }
-
-    return { requeued, failed };
   }
 
   async getRecipientStats(

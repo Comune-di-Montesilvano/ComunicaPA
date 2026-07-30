@@ -11,12 +11,13 @@ import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util
 import { IoServicesService } from '../io-services/io-services.service';
 import { APP_IO_BASE_URL } from '../channels/app-io/app-io.strategy';
 
-// A differenza di retryRecipientsBulk (solo lavoro DB per destinatario,
-// cap 500 sicuro), il branch App IO qui sotto fa fino a DUE chiamate HTTP
-// esterne sequenziali per destinatario (checkProfile + sendMessage verso
-// PagoPA) — un cap più basso riduce il rischio di timeout del reverse
-// proxy davanti al backend in produzione su un batch grande (fix review
-// finale #5, vedi CLAUDE.md sezione bulk/reverse proxy).
+// A differenza di CampaignBulkRetryService (job BullMQ async, nessun cap
+// stretto necessario — solo lavoro DB per destinatario), il branch App IO
+// qui sotto fa fino a DUE chiamate HTTP esterne sequenziali per destinatario
+// (checkProfile + sendMessage verso PagoPA) dentro la richiesta HTTP stessa
+// — un cap basso riduce il rischio di timeout del reverse proxy davanti al
+// backend in produzione su un batch grande (fix review finale #5, vedi
+// CLAUDE.md sezione bulk/reverse proxy).
 const MAX_BULK_RESEND_SIZE = 100;
 // Mai questi due canali: spedizione fisica/legale irreversibile — vedi spec
 // task-6 (piano SDD). resendSafe non deve MAI accodare un job né chiamare la
