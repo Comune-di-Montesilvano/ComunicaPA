@@ -25,11 +25,12 @@ import { DownloadEvent } from '../entities/download-event.entity';
 import { NOTIFICATION_JOB_SEND } from '../queue/notification-job.types';
 import { NotificationQueuesService } from '../queue/notification-queues.service';
 import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util';
+import { resolvePaymentData } from '../channels/payment-config.util';
 import type { CreateCampaignDto } from './dto/create-campaign.dto';
 import type { UpdateCampaignDto } from './dto/update-campaign.dto';
 import type { UpdateCampaignContentDto } from './dto/update-campaign-content.dto';
 import type { TestSendDto } from './dto/test-send.dto';
-import type { CampaignStatsDto, RecipientStatDto, RecipientStatsPageDto, ChannelBreakdownDto, EffectiveChannelBreakdownDto, DownloadCombinationDto, DownloadCombinationStatsDto, FailureRowDto, FailureGroupDto, DownloadReportDto, SendStatusBreakdownDto, SendReportDto, SendReportRowDto, PostalStatusBreakdownDto, PostalReportDto, PostalReportRowDto, CampaignCostDto, CampaignCostSavingsDto } from './dto/campaign-stats.dto';
+import type { CampaignStatsDto, RecipientStatDto, RecipientStatsPageDto, ChannelBreakdownDto, EffectiveChannelBreakdownDto, DownloadCombinationDto, DownloadCombinationStatsDto, FailureRowDto, FailureGroupDto, DownloadReportDto, SendStatusBreakdownDto, SendReportDto, SendReportRowDto, PostalStatusBreakdownDto, PostalReportDto, PostalReportRowDto, CampaignCostDto, CampaignCostSavingsDto, CampaignPaymentTotalDto } from './dto/campaign-stats.dto';
 import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.dto';
 import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util';
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto';
@@ -2456,6 +2457,42 @@ export class CampaignsService {
     }
 
     return { campaignId, totalSavingCents, postalNotEstimableCount: 0 };
+  }
+
+  /**
+   * Somma degli importi PagoPA (channelConfig.paymentConfig, la stessa
+   * mappatura colonna già usata da resolvePaymentData per SEND — vedi
+   * payment-config.util.ts) su tutti i destinatari della campagna. Un solo
+   * valore per destinatario, qualunque cosa rappresenti la colonna mappata
+   * (rata unica o totale rate: dipende da cosa ha scelto l'operatore in
+   * Impostazioni, non deciso qui). Nessuna sezione da mostrare se la
+   * campagna non ha paymentConfig abilitato.
+   */
+  async getCampaignPaymentTotal(campaignId: string): Promise<CampaignPaymentTotalDto> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+
+    const paymentConfig = campaign.channelConfig?.['paymentConfig'] as Record<string, any> | undefined;
+    if (!paymentConfig?.enabled) {
+      return { campaignId, enabled: false, totalAmountCents: 0, recipientsWithPaymentCount: 0 };
+    }
+
+    const recipients = await this.recipientRepo.find({
+      where: { campaignId },
+      select: ['id', 'codiceFiscale', 'fullName', 'email', 'pec', 'extraData'],
+    });
+
+    let totalAmountCents = 0;
+    let recipientsWithPaymentCount = 0;
+    for (const recipient of recipients) {
+      const resolved = resolvePaymentData(recipient, paymentConfig);
+      if (resolved?.amountCents) {
+        totalAmountCents += resolved.amountCents;
+        recipientsWithPaymentCount += 1;
+      }
+    }
+
+    return { campaignId, enabled: true, totalAmountCents, recipientsWithPaymentCount };
   }
 
   async getPostalReportRows(campaignId: string): Promise<PostalReportDto> {

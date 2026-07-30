@@ -839,6 +839,11 @@ export class CampaignsController {
     return this.campaignsService.getCampaignCostSavings(id);
   }
 
+  @Get(':id/payment-total')
+  getCampaignPaymentTotal(@Param('id', ParseUUIDPipe) id: string) {
+    return this.campaignsService.getCampaignPaymentTotal(id);
+  }
+
   @Get(':id/export-postal-report-attuale.csv')
   async exportPostalReportAttuale(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response): Promise<void> {
     const report = await this.campaignsService.getPostalReportRows(id);

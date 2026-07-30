@@ -190,3 +190,13 @@ export interface CampaignCostSavingsDto {
   /** Numero di destinatari POSTAL dirottati per cui il risparmio non è stimabile (mostrato N/D in UI). */
   postalNotEstimableCount: number;
 }
+
+export interface CampaignPaymentTotalDto {
+  campaignId: string;
+  /** false = campagna senza channelConfig.paymentConfig.enabled — nessuna sezione da mostrare in UI. */
+  enabled: boolean;
+  /** Somma di resolvePaymentData(recipient, paymentConfig).amountCents su tutti i destinatari con un importo risolto. */
+  totalAmountCents: number;
+  /** Destinatari con un importo PagoPA risolto — denominatore per un'eventuale media, e per capire quanti mancano. */
+  recipientsWithPaymentCount: number;
+}

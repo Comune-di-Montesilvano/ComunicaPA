@@ -175,4 +175,40 @@ describe('CampaignsService - Cost and Savings', () => {
       expect(attemptRepo.find).not.toHaveBeenCalled();
     });
   });
+
+  describe('getCampaignPaymentTotal', () => {
+    it('ritorna enabled:false senza query destinatari se la campagna non ha paymentConfig abilitato', async () => {
+      campaignRepo.findOneBy.mockResolvedValue({ id: 'c1', channelConfig: {} });
+
+      const result = await service.getCampaignPaymentTotal('c1');
+
+      expect(result).toEqual({ campaignId: 'c1', enabled: false, totalAmountCents: 0, recipientsWithPaymentCount: 0 });
+      expect(recipientRepo.find).not.toHaveBeenCalled();
+    });
+
+    it('somma amountCents risolto (resolvePaymentData) su tutti i destinatari con un importo valido', async () => {
+      campaignRepo.findOneBy.mockResolvedValue({
+        id: 'c1',
+        channelConfig: {
+          paymentConfig: { enabled: true, amountColumn: 'importo', noticeNumberColumn: 'numero_avviso' },
+        },
+      });
+      recipientRepo.find.mockResolvedValue([
+        { id: 'r1', codiceFiscale: 'CF1', fullName: null, email: null, pec: null, extraData: { importo: '150,00', numero_avviso: '123' } },
+        { id: 'r2', codiceFiscale: 'CF2', fullName: null, email: null, pec: null, extraData: { importo: '80,50', numero_avviso: '456' } },
+        // r3: nessun numero_avviso → resolvePaymentData ritorna amountCents null, non deve entrare nella somma
+        { id: 'r3', codiceFiscale: 'CF3', fullName: null, email: null, pec: null, extraData: { importo: '50,00' } },
+      ]);
+
+      const result = await service.getCampaignPaymentTotal('c1');
+
+      expect(result).toEqual({ campaignId: 'c1', enabled: true, totalAmountCents: 23050, recipientsWithPaymentCount: 2 });
+    });
+
+    it('lancia NotFoundException se la campagna non esiste', async () => {
+      campaignRepo.findOneBy.mockResolvedValue(null);
+
+      await expect(service.getCampaignPaymentTotal('missing')).rejects.toThrow(NotFoundException);
+    });
+  });
 });

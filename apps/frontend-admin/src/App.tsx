@@ -637,7 +637,11 @@ function downloadComboLabel(channels: string[]): string {
 // centesimi (costCents) sempre passati direttamente, mai pre-divisi per 100
 // dal chiamante, per evitare arrotondamenti float incoerenti tra i vari punti.
 function formatEuroCents(cents: number): string {
-  return `${(cents / 100).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
+  // useGrouping esplicito: senza, il default 'auto' di alcune implementazioni
+  // Intl (verificato in Node — probabile anche in browser Chromium meno
+  // recenti) non applica il separatore delle migliaia, restituendo "2941,12"
+  // invece di "2.941,12" (bug reale segnalato dal vivo).
+  return `${(cents / 100).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: true })} €`;
 }
 
 // Le label di default di recharts Pie disegnano linea + testo fuori dal
@@ -2011,6 +2015,7 @@ export function App(): React.JSX.Element {
   const [postalStatusBreakdown, setPostalStatusBreakdown] = useState<Array<{ status: string | null; count: number }> | null>(null);
   const [campaignCost, setCampaignCost] = useState<{ campaignId: string; totalCostCents: number; byChannel: Array<{ channel: string; totalCostCents: number; uncalculatedCount: number }> } | null>(null);
   const [campaignCostSavings, setCampaignCostSavings] = useState<{ campaignId: string; totalSavingCents: number; postalNotEstimableCount: number } | null>(null);
+  const [campaignPaymentTotal, setCampaignPaymentTotal] = useState<{ campaignId: string; enabled: boolean; totalAmountCents: number; recipientsWithPaymentCount: number } | null>(null);
   const [downloadCombinations, setDownloadCombinations] = useState<Array<{ channels: string[]; count: number; sentSuccessfully: boolean }> | null>(null);
   const [postalNoDigitalDownloaded, setPostalNoDigitalDownloaded] = useState(0);
   const [contentCorrectionOpen, setContentCorrectionOpen] = useState(false);
@@ -2072,6 +2077,7 @@ export function App(): React.JSX.Element {
           fetchPostalStatusBreakdown(selectedCampaignId);
           fetchCampaignCost(selectedCampaignId);
           fetchCampaignCostSavings(selectedCampaignId);
+          fetchCampaignPaymentTotal(selectedCampaignId);
           fetchDownloadCombinationStats(selectedCampaignId);
           fetchRecipientsPage(selectedCampaignId, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter);
         }, 3000);
@@ -3184,6 +3190,7 @@ export function App(): React.JSX.Element {
       fetchPostalStatusBreakdown(id),
       fetchCampaignCost(id),
       fetchCampaignCostSavings(id),
+      fetchCampaignPaymentTotal(id),
       fetchDownloadCombinationStats(id),
       fetchRecipientsPage(id, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter),
       fetchRecipientsFilterOptions(id),
@@ -6547,6 +6554,7 @@ export function App(): React.JSX.Element {
     setPostalStatusBreakdown(null);
     setCampaignCost(null);
     setCampaignCostSavings(null);
+    setCampaignPaymentTotal(null);
     setDownloadCombinations(null);
     setPostalNoDigitalDownloaded(0);
     setRecipientsPage(null);
@@ -6564,6 +6572,7 @@ export function App(): React.JSX.Element {
     fetchPostalStatusBreakdown(id);
     fetchCampaignCost(id);
     fetchCampaignCostSavings(id);
+    fetchCampaignPaymentTotal(id);
     fetchDownloadCombinationStats(id);
     fetchRecipientsFilterOptions(id);
   };
@@ -6697,6 +6706,16 @@ export function App(): React.JSX.Element {
       setCampaignCostSavings(await res.json());
     } catch {
       // Non bloccante: il dettaglio campagna resta usabile senza il risparmio.
+    }
+  };
+
+  const fetchCampaignPaymentTotal = async (id: string) => {
+    try {
+      const res = await apiFetch(`/campaigns/${id}/payment-total`);
+      if (!res.ok) return;
+      setCampaignPaymentTotal(await res.json());
+    } catch {
+      // Non bloccante: il dettaglio campagna resta usabile senza il totale PagoPA.
     }
   };
 
@@ -15162,6 +15181,25 @@ export function App(): React.JSX.Element {
                                 {campaignCostSavings.postalNotEstimableCount} destinatari POSTAL dirottati — risparmio non stimabile (N/D).
                               </p>
                             )}
+                          </div>
+                        </div>
+                      </div>
+                      )}
+
+                      {campaignPaymentTotal?.enabled && (
+                      <div className="col-md-6">
+                        <div className="card shadow-sm h-100">
+                          <div className="card-header bg-white py-3 border-bottom">
+                            <h3 className="h6 mb-0 fw-bold text-dark"><Euro className="me-2 text-primary" size={16} />Totale PagoPA</h3>
+                          </div>
+                          <div className="card-body">
+                            <div className="text-center mb-3">
+                              <span className="text-muted small d-block">Importo Totale</span>
+                              <h3 className="h2 mb-0 fw-bold text-primary">{formatEuroCents(campaignPaymentTotal.totalAmountCents)}</h3>
+                            </div>
+                            <p className="text-muted small mb-0 text-center">
+                              Somma dell'importo mappato su {campaignPaymentTotal.recipientsWithPaymentCount} destinatari
+                            </p>
                           </div>
                         </div>
                       </div>
