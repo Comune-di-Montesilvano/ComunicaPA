@@ -88,17 +88,50 @@ describe('CampaignsService - Cost and Savings', () => {
       expect(result.postalNotEstimableCount).toBe(0);
     });
 
-    it('campagna POSTAL: nessun risparmio stimato, solo conteggio dirottati N/D', async () => {
+    it('campagna POSTAL: dirottati presenti ma nessun invio POSTAL costato in campagna → non stimabile', async () => {
       campaignRepo.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'POSTAL' });
-      const qb: any = {};
-      ['where', 'andWhere'].forEach((m) => { qb[m] = jest.fn().mockReturnValue(qb); });
-      qb.getCount = jest.fn().mockResolvedValue(1);
-      recipientRepo.createQueryBuilder = jest.fn().mockReturnValue(qb);
+      recipientRepo.find.mockResolvedValue([
+        { id: 'r1', inadCheck: null },
+        { id: 'r2', inadCheck: { diverted: true } },
+      ]);
+      attemptRepo.find.mockResolvedValue([
+        { recipientId: 'r1', channelType: 'POSTAL', attemptNumber: 1, costCents: null },
+      ]);
 
       const result = await service.getCampaignCostSavings('c1');
 
       expect(result.totalSavingCents).toBe(0);
       expect(result.postalNotEstimableCount).toBe(1);
+    });
+
+    it('campagna POSTAL: stima il risparmio come costo medio delle spedizioni realmente inviate moltiplicato per i dirottati', async () => {
+      campaignRepo.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'POSTAL' });
+      recipientRepo.find.mockResolvedValue([
+        { id: 'r1', inadCheck: null },
+        { id: 'r2', inadCheck: null },
+        { id: 'r3', inadCheck: { diverted: true } },
+      ]);
+      attemptRepo.find.mockResolvedValue([
+        { recipientId: 'r1', channelType: 'POSTAL', attemptNumber: 1, costCents: 400 },
+        { recipientId: 'r2', channelType: 'POSTAL', attemptNumber: 1, costCents: 600 },
+      ]);
+
+      const result = await service.getCampaignCostSavings('c1');
+
+      // media (400+600)/2 = 500, 1 solo dirottato (r3) → 500
+      expect(result.totalSavingCents).toBe(500);
+      expect(result.postalNotEstimableCount).toBe(0);
+    });
+
+    it('campagna POSTAL: nessun dirottato → nessun risparmio, non "non stimabile"', async () => {
+      campaignRepo.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'POSTAL' });
+      recipientRepo.find.mockResolvedValue([{ id: 'r1', inadCheck: null }]);
+
+      const result = await service.getCampaignCostSavings('c1');
+
+      expect(result.totalSavingCents).toBe(0);
+      expect(result.postalNotEstimableCount).toBe(0);
+      expect(attemptRepo.find).not.toHaveBeenCalled();
     });
   });
 });

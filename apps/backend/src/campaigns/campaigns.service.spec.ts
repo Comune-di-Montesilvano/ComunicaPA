@@ -1463,7 +1463,7 @@ describe('CampaignsService', () => {
 
       const result = await service.getDownloadCombinationStats('uuid-1');
 
-      expect(result).toEqual({ sentCount: 0, combinations: [] });
+      expect(result).toEqual({ sentCount: 0, combinations: [], postalNoDigitalDownloaded: 0 });
       expect(mockDownloadEventRepo.createQueryBuilder).not.toHaveBeenCalled();
     });
 
@@ -1542,7 +1542,7 @@ describe('CampaignsService', () => {
       const result = await service.getDownloadCombinationStats('uuid-1');
 
       expect(mockAttemptRepo.find).toHaveBeenCalledWith({
-        where: { recipientId: In(['r-appio-despite-fail']), attemptNumber: 1 },
+        where: { recipientId: In(['r-appio-despite-fail']) },
         select: ['recipientId', 'responsePayload'],
       });
       expect(result.sentCount).toBe(1);

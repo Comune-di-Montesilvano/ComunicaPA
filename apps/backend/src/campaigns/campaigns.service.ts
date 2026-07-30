@@ -1387,30 +1387,44 @@ export class CampaignsService {
    * comunque avere scaricato (es. link portale ancora valido da un invio
    * precedente), la combinazione viene marcata `sentSuccessfully: false` e va
    * mostrata separatamente lato UI, fuori dalla percentuale sul totale.
+   *
+   * POSTAL, ulteriore distinzione (bug reale corretto: il grafico marcava
+   * "non scaricato" anche i destinatari con SOLA lettera cartacea, senza
+   * alcuna co-consegna digitale — fuorviante, per definizione non hanno mai
+   * avuto nulla da scaricare, non è un mancato download). Un destinatario
+   * POSTAL ha un'opzione di download reale solo se: App IO parallela/
+   * esclusiva riuscita (su un attempt qualsiasi, non solo il primo — vedi
+   * buildAggregatedAppIoPayloads), oppure dirottato INAD su PEC
+   * (`inadCheck.diverted`, notifica realmente digitale). Un destinatario
+   * POSTAL "puro" (nessuna delle due) viene escluso da sentCount/
+   * combinations — se però un DownloadEvent esiste comunque per lui (es.
+   * portale cittadino raggiunto con CF nonostante nessun link fosse mai
+   * stato notificato), viene contato separatamente in
+   * `postalNoDigitalDownloaded`, mai perso silenziosamente.
    */
   async getDownloadCombinationStats(campaignId: string): Promise<DownloadCombinationStatsDto> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
-    const recipients = await this.recipientRepo.find({ where: { campaignId }, select: ['id', 'status'] });
-    if (recipients.length === 0) return { sentCount: 0, combinations: [] };
+    const recipients = await this.recipientRepo.find({ where: { campaignId }, select: ['id', 'status', 'inadCheck'] });
+    if (recipients.length === 0) return { sentCount: 0, combinations: [], postalNoDigitalDownloaded: 0 };
 
+    const isPostal = campaign.channelType === 'POSTAL';
     const appIoSuccessByRecipient = new Map<string, boolean>();
     if (resolveSecondaryAppIoConfig(campaign.channelConfig)) {
-      const nonSentIds = recipients.filter((r) => r.status !== RecipientStatus.SENT).map((r) => r.id);
-      if (nonSentIds.length > 0) {
-        const firstAttempts = await this.attemptRepo.find({
-          where: { recipientId: In(nonSentIds), attemptNumber: 1 },
-          select: ['recipientId', 'responsePayload'],
-        });
-        for (const a of firstAttempts) {
-          const appIo = a.responsePayload?.['appIo'] as { success?: boolean } | undefined;
-          if (appIo?.success) appIoSuccessByRecipient.set(a.recipientId, true);
+      const payloadByRecipient = await this.buildAggregatedAppIoPayloads(recipients.map((r) => r.id));
+      for (const [recipientId, payload] of payloadByRecipient) {
+        if ((payload['appIo'] as { success?: boolean } | undefined)?.success) {
+          appIoSuccessByRecipient.set(recipientId, true);
         }
       }
     }
     const wasNotified = (r: { id: string; status: RecipientStatus }) =>
       r.status === RecipientStatus.SENT || appIoSuccessByRecipient.get(r.id) === true;
+    // Non-POSTAL: ogni canale primario (EMAIL/PEC/APP_IO/SEND) è di per sé
+    // digitale, sempre un'opzione di download reale se notificato.
+    const hasDigitalOption = (r: { id: string; inadCheck: Recipient['inadCheck'] }) =>
+      !isPostal || appIoSuccessByRecipient.get(r.id) === true || r.inadCheck?.diverted === true;
 
     const rows = await this.downloadEventRepo
       .createQueryBuilder('de')
@@ -1429,11 +1443,21 @@ export class CampaignsService {
     const countByKey = new Map<string, DownloadCombinationDto>();
     let sentCount = 0;
     let notDownloadedSent = 0;
+    let postalNoDigitalDownloaded = 0;
     for (const recipient of recipients) {
       const notified = wasNotified(recipient);
+      const channels = channelsByRecipient.get(recipient.id);
+
+      if (notified && !hasDigitalOption(recipient)) {
+        // POSTAL puro (nessuna co-consegna digitale): non ha mai avuto un
+        // link da scaricare, escluso dal denominatore. Se però risulta un
+        // download reale comunque, va segnalato come anomalia a parte.
+        if (channels && channels.size > 0) postalNoDigitalDownloaded += 1;
+        continue;
+      }
+
       if (notified) sentCount++;
 
-      const channels = channelsByRecipient.get(recipient.id);
       if (!channels || channels.size === 0) {
         if (notified) notDownloadedSent++;
         // Non notificato e non scaricato: nessun link è mai esistito, non
@@ -1449,7 +1473,7 @@ export class CampaignsService {
 
     const combinations = [...countByKey.values()];
     if (notDownloadedSent > 0) combinations.push({ channels: [], count: notDownloadedSent, sentSuccessfully: true });
-    return { sentCount, combinations };
+    return { sentCount, combinations, postalNoDigitalDownloaded };
   }
 
   async getGlobalStats(dateFrom?: string, dateTo?: string): Promise<GlobalStatsDto> {
@@ -2341,12 +2365,56 @@ export class CampaignsService {
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
     if (campaign.channelType === 'POSTAL') {
-      const diverted = await this.recipientRepo
-        .createQueryBuilder('r')
-        .where('r.campaignId = :campaignId', { campaignId })
-        .andWhere(`r.inad_check->>'diverted' = 'true'`)
-        .getCount();
-      return { campaignId, totalSavingCents: 0, postalNotEstimableCount: diverted };
+      // Un destinatario POSTAL dirottato (INAD su PEC, oppure App IO
+      // esclusiva riuscita — skipPrimary, mai spedita la lettera) ha
+      // risparmiato il costo di una spedizione reale. Prima si rispondeva
+      // sempre "non stimabile" (nessun costo nozionale fisso per POSTAL, a
+      // differenza di SEND che ha `send.digitalBaseFeeCents`): stimiamo ora
+      // il risparmio come costo medio delle spedizioni POSTAL REALMENTE
+      // inviate in questa campagna (uniche per destinatario — l'ultimo
+      // attempt costato, per non sommare più volte un retry dello stesso
+      // invio) moltiplicato per il numero di dirottati, quando esiste
+      // almeno un invio POSTAL costato da cui ricavare una media.
+      const recipients = await this.recipientRepo.find({ where: { campaignId }, select: ['id', 'inadCheck'] });
+      const recipientIds = recipients.map((r) => r.id);
+      const divertedIds = new Set<string>(recipients.filter((r) => r.inadCheck?.diverted).map((r) => r.id));
+
+      if (resolveSecondaryAppIoConfig(campaign.channelConfig)) {
+        const payloadByRecipient = await this.buildAggregatedAppIoPayloads(recipientIds);
+        for (const [recipientId, payload] of payloadByRecipient) {
+          if (payload['deliveredVia'] === 'APP_IO') divertedIds.add(recipientId);
+        }
+      }
+      const divertedCount = divertedIds.size;
+      if (divertedCount === 0) return { campaignId, totalSavingCents: 0, postalNotEstimableCount: 0 };
+
+      const postalAttempts = await this.attemptRepo.find({
+        where: { recipientId: In(recipientIds), channelType: 'POSTAL' },
+        select: ['recipientId', 'attemptNumber', 'costCents'],
+      });
+      // Un solo costo per destinatario (l'attempt POSTAL costato più recente):
+      // un retry rispedisce la STESSA lettera, sommare i costi di più
+      // attempt dello stesso destinatario gonfierebbe la media.
+      const lastCostedAttemptNumber = new Map<string, number>();
+      const costByRecipient = new Map<string, number>();
+      for (const a of postalAttempts) {
+        if (a.costCents === null) continue;
+        const prevAttemptNumber = lastCostedAttemptNumber.get(a.recipientId) ?? -1;
+        if (a.attemptNumber > prevAttemptNumber) {
+          lastCostedAttemptNumber.set(a.recipientId, a.attemptNumber);
+          costByRecipient.set(a.recipientId, a.costCents);
+        }
+      }
+      const costedValues = [...costByRecipient.values()];
+      if (costedValues.length === 0) {
+        // Nessun invio POSTAL di questa campagna ha ancora un costo
+        // calcolato (es. GlobalCom non ha ancora restituito il costo reale):
+        // resta non stimabile, nessuna media disponibile da cui partire.
+        return { campaignId, totalSavingCents: 0, postalNotEstimableCount: divertedCount };
+      }
+      const avgCostCents = costedValues.reduce((sum, c) => sum + c, 0) / costedValues.length;
+      const totalSavingCents = Math.round(avgCostCents * divertedCount);
+      return { campaignId, totalSavingCents, postalNotEstimableCount: 0 };
     }
 
     if (campaign.channelType !== 'SEND') {

@@ -2005,6 +2005,7 @@ export function App(): React.JSX.Element {
   const [campaignCost, setCampaignCost] = useState<{ campaignId: string; totalCostCents: number; byChannel: Array<{ channel: string; totalCostCents: number; uncalculatedCount: number }> } | null>(null);
   const [campaignCostSavings, setCampaignCostSavings] = useState<{ campaignId: string; totalSavingCents: number; postalNotEstimableCount: number } | null>(null);
   const [downloadCombinations, setDownloadCombinations] = useState<Array<{ channels: string[]; count: number; sentSuccessfully: boolean }> | null>(null);
+  const [postalNoDigitalDownloaded, setPostalNoDigitalDownloaded] = useState(0);
   const [contentCorrectionOpen, setContentCorrectionOpen] = useState(false);
   const [contentCorrectionSubject, setContentCorrectionSubject] = useState('');
   const [contentCorrectionBody, setContentCorrectionBody] = useState('');
@@ -6540,6 +6541,7 @@ export function App(): React.JSX.Element {
     setCampaignCost(null);
     setCampaignCostSavings(null);
     setDownloadCombinations(null);
+    setPostalNoDigitalDownloaded(0);
     setRecipientsPage(null);
     setRecipientsSearch('');
     setRecipientsPageNum(1);
@@ -6734,6 +6736,7 @@ export function App(): React.JSX.Element {
       if (!res.ok) return;
       const data = await res.json();
       setDownloadCombinations(data.combinations && data.combinations.length > 0 ? data.combinations : null);
+      setPostalNoDigitalDownloaded(data.postalNoDigitalDownloaded ?? 0);
     } catch {
       // Non bloccante.
     }
@@ -15157,7 +15160,7 @@ export function App(): React.JSX.Element {
                       </div>
                       )}
 
-                      {(['EMAIL', 'PEC', 'APP_IO'].includes(campaign.channelType) || (campaign.channelType === 'POSTAL' && !!downloadCombinations)) && (
+                      {(['EMAIL', 'PEC', 'APP_IO'].includes(campaign.channelType) || (campaign.channelType === 'POSTAL' && (!!downloadCombinations || postalNoDigitalDownloaded > 0))) && (
                       // POSTAL normalmente non ha download (lettera cartacea) — ma un link di
                       // download esiste comunque per ogni destinatario (dirottato INAD su PEC,
                       // o anche un non dirottato che per caso accede al portale cittadino e
@@ -15246,10 +15249,24 @@ export function App(): React.JSX.Element {
                                       </ul>
                                     </div>
                                   )}
+                                  {postalNoDigitalDownloaded > 0 && (
+                                    <div className="alert alert-warning small mt-3 mb-0">
+                                      <AlertTriangle className="me-1" />
+                                      {postalNoDigitalDownloaded} destinatari con sola lettera cartacea (nessuna co-consegna digitale App IO/dirottamento INAD) risultano comunque avere un download dal Portale Cittadino — esclusi dal grafico sopra (non avevano mai un link atteso).
+                                    </div>
+                                  )}
                                 </>
                               );
                             })() : (
-                              <div className="text-center text-muted py-4">Nessun dato di download disponibile.</div>
+                              <>
+                                <div className="text-center text-muted py-4">Nessun dato di download disponibile.</div>
+                                {postalNoDigitalDownloaded > 0 && (
+                                  <div className="alert alert-warning small mb-0">
+                                    <AlertTriangle className="me-1" />
+                                    {postalNoDigitalDownloaded} destinatari con sola lettera cartacea (nessuna co-consegna digitale App IO/dirottamento INAD) risultano comunque avere un download dal Portale Cittadino.
+                                  </div>
+                                )}
+                              </>
                             )}
                           </div>
                         </div>

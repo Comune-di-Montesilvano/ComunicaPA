@@ -72,6 +72,16 @@ export interface DownloadCombinationStatsDto {
   /** Destinatari notificati con successo — denominatore delle percentuali di download. */
   sentCount: number;
   combinations: DownloadCombinationDto[];
+  /**
+   * Solo campagne POSTAL: destinatari con SOLO la lettera cartacea (nessuna
+   * co-consegna App IO riuscita, non dirottati INAD su PEC — quindi nessuna
+   * notifica digitale, nessun link da scaricare per definizione) che
+   * risultano comunque avere un DownloadEvent (es. portale cittadino
+   * raggiunto comunque, magari con CF). Esclusi da sentCount/combinations
+   * (non sono destinatari "digitali"), riportati qui solo come anomalia da
+   * segnalare.
+   */
+  postalNoDigitalDownloaded: number;
 }
 
 export interface FailureRowDto {
