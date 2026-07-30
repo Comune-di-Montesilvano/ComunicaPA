@@ -2394,7 +2394,7 @@ describe('CampaignsService.getDuplicateSource', () => {
 });
 
 describe('CampaignsService.getFailures / retryRecipient', () => {
-  const campaignRepoMock = { findOneBy: jest.fn(), decrement: jest.fn(), increment: jest.fn(), save: jest.fn((c) => c) };
+  const campaignRepoMock = { findOneBy: jest.fn(), decrement: jest.fn(), increment: jest.fn(), save: jest.fn((c) => c), update: jest.fn() };
   const recipientRepoMock = { findOne: jest.fn(), update: jest.fn(), find: jest.fn(), createQueryBuilder: jest.fn() };
   const attemptRepoMock = {
     find: jest.fn(),
@@ -2544,6 +2544,42 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
       { name: 'send', data: { campaignId: 'c1', recipientId: 'r1', attemptId: 'attempt-2', channel: 'EMAIL' }, opts: { jobId: 'attempt-2' } },
     ]);
     expect(result).toEqual({ requeued: true, attemptId: 'attempt-2' });
+  });
+
+  it('retryRecipient su campagna COMPLETED la riporta a QUEUED (destinatario tornato realmente in coda)', async () => {
+    campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'EMAIL', status: CampaignStatus.COMPLETED });
+    recipientRepoMock.findOne = jest.fn().mockResolvedValue({ id: 'r1', campaignId: 'c1', status: RecipientStatus.FAILED });
+    attemptRepoMock.findOne = jest.fn().mockResolvedValue({ attemptNumber: 1 });
+    const insertExec = jest.fn().mockResolvedValue({ raw: [{ id: 'attempt-2' }] });
+    attemptRepoMock.createQueryBuilder.mockReturnValue({
+      insert: () => ({ into: () => ({ values: () => ({ returning: () => ({ execute: insertExec }) }) }) }),
+    });
+    recipientRepoMock.update.mockResolvedValue({ affected: 1 });
+
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    await service.retryRecipient('c1', 'r1');
+
+    expect(campaignRepoMock.update).toHaveBeenCalledWith({ id: 'c1' }, { status: CampaignStatus.QUEUED, completedAt: null });
+  });
+
+  it('retryRecipient su campagna QUEUED/RUNNING non tocca campaign.status (già non terminale)', async () => {
+    campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'EMAIL', status: CampaignStatus.RUNNING });
+    recipientRepoMock.findOne = jest.fn().mockResolvedValue({ id: 'r1', campaignId: 'c1', status: RecipientStatus.FAILED });
+    attemptRepoMock.findOne = jest.fn().mockResolvedValue({ attemptNumber: 1 });
+    const insertExec = jest.fn().mockResolvedValue({ raw: [{ id: 'attempt-2' }] });
+    attemptRepoMock.createQueryBuilder.mockReturnValue({
+      insert: () => ({ into: () => ({ values: () => ({ returning: () => ({ execute: insertExec }) }) }) }),
+    });
+    recipientRepoMock.update.mockResolvedValue({ affected: 1 });
+
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    await service.retryRecipient('c1', 'r1');
+
+    expect(campaignRepoMock.update).not.toHaveBeenCalled();
   });
 
   it('retryRecipient preserva il canale overridden da INAD (PEC) invece del canale di campagna (EMAIL)', async () => {

@@ -1796,6 +1796,18 @@ export class CampaignsService {
     await this.recipientRepo.update({ id: recipientId }, { status: RecipientStatus.QUEUED });
     await this.campaignRepo.decrement({ id: campaignId }, 'failedCount', 1);
 
+    // Bug reale segnalato dal vivo: una campagna COMPLETED/FAILED (marcata
+    // tale perché a quel momento nessun destinatario era più PENDING/QUEUED)
+    // che riceve un retry (singolo o bulk) torna ad avere destinatari
+    // realmente in coda — ma restava "Completata" per sempre in UI, nessun
+    // punto la riportava a uno stato non terminale. checkAndComplete() la
+    // riporterà a COMPLETED da solo quando l'ultimo di questi retry sarà
+    // stato processato (stesso meccanismo già usato al lancio), quindi
+    // basta sbloccarla qui senza duplicare quella logica.
+    if (campaign.status === CampaignStatus.COMPLETED || campaign.status === CampaignStatus.FAILED) {
+      await this.campaignRepo.update({ id: campaignId }, { status: CampaignStatus.QUEUED, completedAt: null });
+    }
+
     const needsProtocolla = campaign.channelConfig?.['protocolla'] === true;
     if (effectiveChannel !== 'SEND' && !needsProtocolla) {
       await this.notificationQueues.addBulk(effectiveChannel as Exclude<NotificationChannel, 'SEND'>, [

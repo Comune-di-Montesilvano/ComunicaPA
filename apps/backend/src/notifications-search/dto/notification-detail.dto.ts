@@ -1,4 +1,5 @@
 import type { PreviewMessageResult } from '../../campaigns/dto/preview-message.dto';
+import type { ResolvedPaymentData } from '../../channels/payment-config.util';
 
 export interface AttemptDetailDto {
   attemptNumber: number;
@@ -46,4 +47,6 @@ export interface NotificationDetailDto {
   appIoPreview: PreviewMessageResult | null;
   totalCostCents?: number | null;
   attachments: Array<{ index: number; label: string }>;
+  /** null = campagna senza channelConfig.paymentConfig.enabled, o dato non risolvibile per questo destinatario. */
+  payment: ResolvedPaymentData | null;
 }

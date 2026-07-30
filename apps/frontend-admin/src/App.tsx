@@ -1023,6 +1023,7 @@ export function App(): React.JSX.Element {
     downloads: Array<{ channel: string; attachmentIndex: number; downloadedAt: string }>;
     totalCostCents?: number | null;
     attachments: Array<{ index: number; label: string }>;
+    payment: { noticeCode: string | null; amountCents: number | null; dueDateIso: string | null } | null;
   } | null>(null);
   const [notifDetailLoading, setNotifDetailLoading] = useState(false);
   const [sendLegalFacts, setSendLegalFacts] = useState<{ legalFactId: string; category: string }[] | null>(null);
@@ -11056,6 +11057,17 @@ export function App(): React.JSX.Element {
                           {notifDetail.recipient.pec && <div><strong>PEC:</strong> {notifDetail.recipient.pec}</div>}
                           <div><strong>Campagna:</strong> {notifDetail.campaign.name} <span className="ms-1"><ChannelBadge channel={notifDetail.campaign.channelType} extra={notifDetail.campaign.channelType === 'POSTAL' ? postalBadgeExtra({ postalServiceType: notifDetail.campaign.postalServiceType, postalReturnReceipt: notifDetail.campaign.postalReturnReceipt }, postalProviders.find((p) => p.active)?.enabledServiceTypes) : undefined} /></span></div>
                         </div>
+
+                        {notifDetail.payment && (notifDetail.payment.noticeCode || notifDetail.payment.amountCents !== null || notifDetail.payment.dueDateIso) && (
+                          <div className="mb-3 p-2 border rounded bg-light small">
+                            <div className="fw-bold mb-1"><Euro size={14} className="me-1" />Pagamento PagoPA</div>
+                            <div className="d-flex flex-wrap gap-4">
+                              {notifDetail.payment.noticeCode && <div><strong>IUV:</strong> {notifDetail.payment.noticeCode}</div>}
+                              {notifDetail.payment.amountCents !== null && <div><strong>Importo:</strong> {formatEuroCents(notifDetail.payment.amountCents)}</div>}
+                              {notifDetail.payment.dueDateIso && <div><strong>Scadenza:</strong> {new Date(notifDetail.payment.dueDateIso).toLocaleDateString('it-IT')}</div>}
+                            </div>
+                          </div>
+                        )}
 
                         <div className="d-flex justify-content-between align-items-center">
                           <h6 className="fw-bold small mb-0">Storico Tentativi</h6>

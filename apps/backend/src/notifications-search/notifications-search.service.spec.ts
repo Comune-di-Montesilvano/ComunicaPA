@@ -203,6 +203,37 @@ describe('NotificationsSearchService.getDetail', () => {
       appIoPreview: { subject: 'Ciao Mario IO', bodyMarkdown: 'Corpo IO' },
       totalCostCents: 0,
       attachments: [],
+      payment: null,
+    });
+  });
+
+  it('espone i dati di pagamento risolti (IUV/importo/scadenza) se la campagna ha paymentConfig abilitato', async () => {
+    recipientRepoMock.findOne.mockResolvedValueOnce({
+      id: 'r1',
+      codiceFiscale: 'RSSMRA80A01H501X',
+      fullName: 'Mario Rossi',
+      email: 'mario@test.it',
+      pec: null,
+      status: 'sent',
+      extraData: { numero_avviso: '123456789012', importo: '150,50', scadenza: '2026-12-31' },
+      campaign: {
+        id: 'c1', name: 'Avviso TARI', channelType: 'EMAIL', postalServiceType: null, postalReturnReceipt: false,
+        channelConfig: {
+          paymentConfig: { enabled: true, amountColumn: 'importo', noticeNumberColumn: 'numero_avviso', dueDateColumn: 'scadenza' },
+        },
+      },
+    });
+    attemptRepoMock.find.mockResolvedValueOnce([]);
+    campaignsServiceMock.renderMessageForRecipient.mockResolvedValueOnce({ subject: 'Ciao Mario', bodyHtml: '<p>Corpo</p>' });
+    downloadEventRepoMock.find.mockResolvedValueOnce([]);
+
+    const result = await service.getDetail('r1');
+
+    expect(result.payment).toEqual({
+      noticeCode: '123456789012',
+      amountCents: 15050,
+      creditorTaxId: '',
+      dueDateIso: '2026-12-31T23:59:59.000Z',
     });
   });
 
