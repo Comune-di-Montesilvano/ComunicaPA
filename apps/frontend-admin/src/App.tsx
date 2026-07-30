@@ -15091,28 +15091,41 @@ export function App(): React.JSX.Element {
                             </h3>
                           </div>
                           <div className="card-body">
-                            <ResponsiveContainer width="100%" height={220}>
-                              <PieChart>
-                                <Pie
-                                  data={[
-                                    { label: 'Inviati con successo', value: campaign.sentCount },
-                                    { label: 'Falliti', value: campaign.failedCount },
-                                  ]}
-                                  dataKey="value"
-                                  nameKey="label"
-                                  cx="50%"
-                                  cy="50%"
-                                  outerRadius={80}
-                                  label={renderPiePercentLabel}
-                                  labelLine={false}
-                                >
-                                  <Cell fill="var(--bi-success, #198754)" />
-                                  <Cell fill="var(--bi-danger, #dc3545)" />
-                                </Pie>
-                                <Tooltip />
-                                <Legend />
-                              </PieChart>
-                            </ResponsiveContainer>
+                            {(() => {
+                              // "In coda" = ancora non processati (né SENT né FAILED) — una
+                              // campagna con questa fetta > 0 non è mai davvero completata,
+                              // anche se il resto mostra 100% successo tra i soli processati
+                              // (bug reale segnalato: pie a 100% "Inviati con successo"
+                              // nascondeva del tutto i destinatari ancora in coda).
+                              const queuedCount = Math.max(0, campaign.totalRecipients - campaign.sentCount - campaign.failedCount);
+                              const pieData = [
+                                { label: 'Inviati con successo', value: campaign.sentCount },
+                                { label: 'Falliti', value: campaign.failedCount },
+                                ...(queuedCount > 0 ? [{ label: 'In coda', value: queuedCount }] : []),
+                              ];
+                              return (
+                                <ResponsiveContainer width="100%" height={220}>
+                                  <PieChart>
+                                    <Pie
+                                      data={pieData}
+                                      dataKey="value"
+                                      nameKey="label"
+                                      cx="50%"
+                                      cy="50%"
+                                      outerRadius={80}
+                                      label={renderPiePercentLabel}
+                                      labelLine={false}
+                                    >
+                                      <Cell fill="var(--bi-success, #198754)" />
+                                      <Cell fill="var(--bi-danger, #dc3545)" />
+                                      {queuedCount > 0 && <Cell fill="var(--bi-secondary, #6c757d)" />}
+                                    </Pie>
+                                    <Tooltip />
+                                    <Legend />
+                                  </PieChart>
+                                </ResponsiveContainer>
+                              );
+                            })()}
                           </div>
                         </div>
                       </div>
