@@ -124,10 +124,19 @@ export class PostalStrategy implements IChannelStrategy {
       );
     }
 
+    const { denominazione1: indirizzo1, denominazione2: indirizzo2, truncated: indirizzoTruncated } =
+      splitDenominazione(resolvedAddress.address, []);
+    if (indirizzoTruncated) {
+      this.logger.warn(
+        `Indirizzo troncato per destinatario ${recipient.codiceFiscale}: indirizzo oltre gli 88 caratteri disponibili su Indirizzo1+2`,
+      );
+    }
+
     const destinatario: GbcAddress = {
       denominazione1,
       denominazione2,
-      indirizzo1: resolvedAddress.address,
+      indirizzo1,
+      indirizzo2,
       cap: resolvedAddress.zip,
       citta: resolvedAddress.municipality,
       provincia: resolvedAddress.province,
