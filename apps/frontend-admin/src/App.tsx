@@ -633,6 +633,13 @@ function downloadComboLabel(channels: string[]): string {
   return channels.map((c) => channelLabel(c)).join(' + ');
 }
 
+// Notazione italiana (punto migliaia, virgola decimale) — importi in
+// centesimi (costCents) sempre passati direttamente, mai pre-divisi per 100
+// dal chiamante, per evitare arrotondamenti float incoerenti tra i vari punti.
+function formatEuroCents(cents: number): string {
+  return `${(cents / 100).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
+}
+
 // Le label di default di recharts Pie disegnano linea + testo fuori dal
 // raggio esterno: con più fette o nomi lunghi (combinazioni canali) finiscono
 // tagliate dal ResponsiveContainer. Mostriamo la percentuale dentro la fetta;
@@ -7552,7 +7559,7 @@ export function App(): React.JSX.Element {
                       <div className="bg-light text-primary rounded p-3" style={{ fontSize: '1.4rem' }}><Euro /></div>
                       <div>
                         <span className="text-muted small block">Costo Totale (30gg)</span>
-                        <div className="h4 mb-0 fw-bold">{dashboardStats ? `${(dashboardStats.totals.totalCostCents / 100).toFixed(2)} €` : '…'}</div>
+                        <div className="h4 mb-0 fw-bold">{dashboardStats ? formatEuroCents(dashboardStats.totals.totalCostCents) : '…'}</div>
                       </div>
                     </div>
                   </div>
@@ -10753,13 +10760,13 @@ export function App(): React.JSX.Element {
                     <div className="col-md-6">
                       <div className="card shadow-sm text-center p-3">
                         <span className="text-muted small">Costo Totale (SEND + POSTAL)</span>
-                        <h3 className="h2 mb-0 fw-bold text-primary">{(globalStats.totals.totalCostCents / 100).toFixed(2)} €</h3>
+                        <h3 className="h2 mb-0 fw-bold text-primary">{formatEuroCents(globalStats.totals.totalCostCents)}</h3>
                       </div>
                     </div>
                     <div className="col-md-6">
                       <div className="card shadow-sm text-center p-3">
                         <span className="text-muted small">Risparmio da Dirottamento (stimato)</span>
-                        <h3 className="h2 mb-0 fw-bold text-success">{(globalStats.totals.totalSavingCents / 100).toFixed(2)} €</h3>
+                        <h3 className="h2 mb-0 fw-bold text-success">{formatEuroCents(globalStats.totals.totalSavingCents)}</h3>
                       </div>
                     </div>
                   </div>
@@ -11004,7 +11011,7 @@ export function App(): React.JSX.Element {
                         {notifDetail.totalCostCents !== undefined && notifDetail.totalCostCents !== null ? (
                           <span className="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 fs-6 fw-semibold d-inline-flex align-items-center">
                             <Euro size={16} className="me-1" />
-                            Costo: {(notifDetail.totalCostCents / 100).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €
+                            Costo: {formatEuroCents(notifDetail.totalCostCents)}
                           </span>
                         ) : (notifDetail.campaign.channelType === 'SEND' || notifDetail.campaign.channelType === 'POSTAL') ? (
                           <span className="badge bg-warning-subtle text-warning border border-warning-subtle px-3 py-2 fs-6 fw-semibold">
@@ -15134,20 +15141,20 @@ export function App(): React.JSX.Element {
                           <div className="card-body">
                             <div className="text-center mb-3">
                               <span className="text-muted small d-block">Costo Totale</span>
-                              <h3 className="h2 mb-0 fw-bold text-primary">{(campaignCost.totalCostCents / 100).toFixed(2)} €</h3>
+                              <h3 className="h2 mb-0 fw-bold text-primary">{formatEuroCents(campaignCost.totalCostCents)}</h3>
                             </div>
                             {campaignCost.byChannel.map((c) => (
                               <div key={c.channel} className="d-flex justify-content-between small mb-1">
                                 <span>{c.channel}</span>
                                 <span>
-                                  {(c.totalCostCents / 100).toFixed(2)} €
+                                  {formatEuroCents(c.totalCostCents)}
                                   {c.uncalculatedCount > 0 && <span className="text-muted ms-1">({c.uncalculatedCount} non calcolati)</span>}
                                 </span>
                               </div>
                             ))}
                             {campaignCostSavings && campaignCostSavings.totalSavingCents > 0 && (
                               <div className="alert alert-success small mt-3 mb-0">
-                                Risparmio stimato da dirottamento: <strong>{(campaignCostSavings.totalSavingCents / 100).toFixed(2)} €</strong>
+                                Risparmio stimato da dirottamento: <strong>{formatEuroCents(campaignCostSavings.totalSavingCents)}</strong>
                               </div>
                             )}
                             {campaignCostSavings && campaignCostSavings.postalNotEstimableCount > 0 && (

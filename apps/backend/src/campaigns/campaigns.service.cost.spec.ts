@@ -62,6 +62,24 @@ describe('CampaignsService - Cost and Savings', () => {
       ]));
     });
 
+    it('tratta cost_cents = 0 come "non calcolato" (placeholder GlobalCom), non come costo reale a zero', async () => {
+      campaignRepo.findOneBy.mockResolvedValue({ id: 'c1' });
+      recipientRepo.find.mockResolvedValue([{ id: 'r1' }, { id: 'r2' }]);
+      attemptRepo.find.mockResolvedValue([
+        { recipientId: 'r1', channelType: 'POSTAL', costCents: 620, status: 'success' },
+        // r2: ancora a 0, non un costo reale — deve contare come "non
+        // calcolato", mai come 0€ silenzioso nel totale (bug reale
+        // segnalato: il totale sembrava fermo/basso, i "non calcolati"
+        // sottostimati perché questi record non venivano contati lì).
+        { recipientId: 'r2', channelType: 'POSTAL', costCents: 0, status: 'success' },
+      ]);
+
+      const result = await service.getCampaignCost('c1');
+
+      expect(result.totalCostCents).toBe(620);
+      expect(result.byChannel).toEqual([{ channel: 'POSTAL', totalCostCents: 620, uncalculatedCount: 1 }]);
+    });
+
     it('lancia NotFoundException se la campagna non esiste', async () => {
       campaignRepo.findOneBy.mockResolvedValue(null);
 

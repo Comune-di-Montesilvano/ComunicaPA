@@ -2342,8 +2342,16 @@ export class CampaignsService {
     const byChannelMap = new Map<string, { totalCostCents: number; uncalculatedCount: number }>();
     for (const a of attempts) {
       const entry = byChannelMap.get(a.channelType) ?? { totalCostCents: 0, uncalculatedCount: 0 };
-      if (a.costCents === null && a.status !== AttemptStatus.FAILED) entry.uncalculatedCount += 1;
-      else if (a.costCents !== null) entry.totalCostCents += a.costCents;
+      // costCents === 0 trattato come "non ancora calcolato" alla pari di
+      // NULL (stesso placeholder GlobalCom durante la lavorazione già noto
+      // da postal-status-sync.service.ts/getCampaignCostSavings) — bug
+      // reale segnalato: finiva silenziosamente nel totale come "già
+      // costato a 0€" invece che nel conteggio "non calcolati", facendo
+      // sembrare il costo totale fermo/basso mentre centinaia di record
+      // aspettavano ancora il costo reale da GlobalCom.
+      const notYetCosted = a.costCents === null || a.costCents === 0;
+      if (notYetCosted && a.status !== AttemptStatus.FAILED) entry.uncalculatedCount += 1;
+      else if (!notYetCosted && a.costCents !== null) entry.totalCostCents += a.costCents;
       byChannelMap.set(a.channelType, entry);
     }
 
