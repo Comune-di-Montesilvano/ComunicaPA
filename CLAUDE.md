@@ -27,6 +27,8 @@ packages/shared-types/ @comunicapa/shared-types — interfacce TypeScript condiv
 
 Tutti i comandi si eseguono con Docker Compose. Copiare `.env.example` in `.env` prima del primo avvio.
 
+**Senza dichiarazione esplicita dell'utente, lo stack Docker raggiungibile in sessione è locale/dev, mai prod** — nessun accesso reale a produzione per default. Il DB dev condivide comunque le credenziali GlobalCom REALI (vedi sezione POSTAL sotto), quindi un dato reale può comparire anche in un ambiente locale — non è prova che l'ambiente stesso sia prod.
+
 **Compose è splittato in due file:**
 - `docker-compose.yml` — **produzione**: immagini da ghcr.io, solo volumi named, nessun bind mount. Usato da solo per il deploy reale (Portainer / podman rootless).
 - `docker-compose.override.yml` — **sviluppo**: build da `Dockerfile.dev`, bind mount per hot-reload, porte DB esposte, frontend in ascolto su 3000/3001.
@@ -257,6 +259,16 @@ Per aggiungere un canale o cambiarne label/colore/logo, modificare solo il regis
 `frontend-citizen` NON carica Bootstrap: le utility (`d-grid`, `w-100`, `text-center`...) sono no-op. Usare i css custom (`tokens.css`, `fo-components.css`, design system `--ms-*`/`--bi-*`) o stili espliciti. L'admin ha le sue utility custom in `app.css`/`backoffice-shell.css`.
 
 `frontend-citizen` carica in ordine `tokens.css` → `fo-components.css` → `app.css` (vedi `main.tsx`): una classe con lo stesso nome definita in più file vince per ordine di caricamento a parità di specificity, non per "ultima modificata". Prima di aggiungere una classe già vista altrove, cercarla in tutti e tre i file (`grep -rn "nomeclasse" apps/frontend-citizen/src/assets/css/`).
+
+## Formattazione importi — `Intl.NumberFormat`/`toLocaleString('it-IT')` richiede `useGrouping: true` esplicito
+
+`(n).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })`
+senza `useGrouping` esplicito risolve internamente a `useGrouping: 'auto'`,
+che in pratica NON applica il separatore delle migliaia — produce
+`"2941,12"` invece di `"2.941,12"` (verificato dal vivo, sia Node che
+browser). Ogni formattazione di importi in euro deve passare
+`useGrouping: true` esplicito — vedi `formatEuroCents()` in
+`apps/frontend-admin/src/App.tsx`, unico punto da riusare per nuovi importi.
 
 ## Variabili d'ambiente
 
@@ -512,6 +524,17 @@ fa il processor per gli altri canali. Bug reale: dimenticarlo lascia la
 campagna bloccata in `QUEUED` per sempre anche a invio terminato per tutti i
 destinatari — nessun errore visibile, solo uno stato mai aggiornato.
 
+**L'inverso è altrettanto reale: un retry che rimette destinatari in coda
+deve riportare `campaign.status` FUORI da uno stato terminale.** Bug
+confermato dal vivo: `retryRecipient()` (chiamato da retry singolo, bulk
+retry, e content-correction) rimetteva `Recipient.status` a `QUEUED` ma non
+toccava mai `campaign.status` — una campagna già `COMPLETED`/`FAILED` a cui
+si rimettono in coda centinaia di destinatari FAILED resta "Completata" in
+UI per sempre, nonostante il lavoro reale ancora in corso. Fix: se
+`campaign.status` è `COMPLETED`/`FAILED` al momento del retry, riportarlo a
+`QUEUED` (`completedAt: null`) — `checkAndComplete()` la richiuderà da sola
+quando anche l'ultimo retry sarà terminale.
+
 ## BullMQ — `queue.add()` con jobId esistente è no-op silenzioso, mai un errore
 
 Riaggiungere un job con lo stesso `opts.jobId` di uno già presente in Redis
@@ -556,6 +579,27 @@ priori un `Eliminato` con `cost_cents` già valorizzato (caso comune) — il
 controllo automatico non veniva mai raggiunto. Il manuale (`refreshOne`)
 bypassa questo filtro (legge per id) e può sembrare funzionare mentre
 l'automatico resta silenziosamente rotto — testare sempre entrambi.
+
+**`postal_last_checked_at` va aggiornato ANCHE quando `dettagli_documento`
+lancia (SOAP fault/timeout/IDPRO non più valido), non solo su risposta
+riuscita.** Bug reale su una campagna con 4000+ POSTAL: un IDPRO che fallisce
+sempre non avanzava mai quel timestamp, restando per sempre il candidato più
+"vecchio" in cima all'`ORDER BY ASC` — riselezionato a ogni giro cron,
+falliva di nuovo, occupava uno slot del batch (200/min) senza mai avanzare,
+affamando gli altri destinatari dietro in coda (stato/costo fermi da giorni,
+nessun errore visibile lato UI). Fix in `syncOne`: try/catch attorno alla
+chiamata, timestamp aggiornato comunque prima di rilanciare l'errore.
+
+**GlobalCom risponde spesso `Costo:0` mentre il documento è ancora in
+lavorazione — è un placeholder, MAI un costo reale finale.** `cost_cents = 0`
+va trattato come "non ancora calcolato" alla pari di `NULL` in OGNI punto che
+legge/aggrega il costo: filtro WHERE del cron, gate di aggiornamento in
+`syncOne`, media in `getCampaignCostSavings` (POSTAL), conteggio
+"non calcolati" in `getCampaignCost`. 3 bug reali corretti nella stessa
+sessione per lo stesso motivo (`cost_cents !== null` bastava a considerarlo
+"già costato per sempre", bloccando il vero costo che GlobalCom calcola più
+tardi) — qualunque nuovo punto che legge `cost_cents` va controllato contro
+questo stesso caso.
 
 ## Stato consegna POSTAL/SEND post-accettazione — mai riflesso su recipient.status
 
