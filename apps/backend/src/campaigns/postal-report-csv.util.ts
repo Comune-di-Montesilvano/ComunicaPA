@@ -12,7 +12,7 @@ function appIoOutcomeLabel(outcome: PostalReportRowDto['appIoOutcome']): string 
 }
 
 export function buildPostalReportAttualeCsv(report: PostalReportDto): string {
-  const headers = ['Codice Fiscale', 'Nominativo', 'IDPRO', 'Stato', 'Data Stato', 'Codice Errore', 'Descrizione Errore'];
+  const headers = ['Codice Fiscale', 'Nominativo', 'IDPRO', 'Stato Documento', 'Data Stato', 'Stato Consegna Poste', 'Codice Consegna', 'Data Consegna Poste', 'ID Accettazione Poste', 'Codice Errore', 'Descrizione Errore'];
   if (report.hasAppIoCoDelivery) headers.push('Esito App IO');
   if (report.hasExternalId) headers.push('External ID');
 
@@ -26,6 +26,10 @@ export function buildPostalReportAttualeCsv(report: PostalReportDto): string {
       r.postalTrackingId ?? '',
       postalStatusLabel(r.postalStatus),
       formatDate(latestEntry?.rilevatoIl),
+      r.postalDeliveryStatus ?? '',
+      r.postalDeliveryCode !== null && r.postalDeliveryCode !== undefined ? String(r.postalDeliveryCode) : '',
+      formatDate(r.postalDeliveryDate ?? undefined),
+      r.postalAcceptanceId ?? '',
       r.codiceErrore ?? '',
       r.descrizioneErrore ?? '',
     ];
@@ -39,7 +43,7 @@ export function buildPostalReportAttualeCsv(report: PostalReportDto): string {
 
 export function buildPostalReportStoricoCsv(report: PostalReportDto): string {
   const headers = [
-    'Codice Fiscale', 'Nominativo', 'IDPRO', 'Codice Errore', 'Descrizione Errore',
+    'Codice Fiscale', 'Nominativo', 'IDPRO', 'Stato Consegna Poste', 'Codice Consegna', 'Data Consegna Poste', 'ID Accettazione Poste', 'Codice Errore', 'Descrizione Errore',
     ...POSTAL_STATUS_HISTORY_COLUMNS.map((c) => c.header),
   ];
   if (report.hasAppIoCoDelivery) headers.push('Esito App IO');
@@ -56,6 +60,10 @@ export function buildPostalReportStoricoCsv(report: PostalReportDto): string {
       r.codiceFiscale,
       r.fullName ?? '',
       r.postalTrackingId ?? '',
+      r.postalDeliveryStatus ?? '',
+      r.postalDeliveryCode !== null && r.postalDeliveryCode !== undefined ? String(r.postalDeliveryCode) : '',
+      formatDate(r.postalDeliveryDate ?? undefined),
+      r.postalAcceptanceId ?? '',
       r.codiceErrore ?? '',
       r.descrizioneErrore ?? '',
       ...POSTAL_STATUS_HISTORY_COLUMNS.map((c) => formatDate(firstOccurrenceByStatus.get(c.status))),

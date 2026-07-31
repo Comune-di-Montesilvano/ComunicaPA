@@ -95,6 +95,42 @@ describe('PostalStatusSyncService', () => {
     }));
   });
 
+  it('aggiorna postalDeliveryStatus e appende a postalStatusHistory quando il recapito Poste cambia (anche se postalStatus non cambia)', async () => {
+    const attempt = {
+      id: 'a1',
+      postalTrackingId: 'IDPRO1',
+      postalStatus: 'Confermato',
+      postalDeliveryStatus: 'In lavorazione',
+      postalDeliveryCode: 10,
+      postalStatusUpdatedAt: null,
+      postalStatusHistory: [{ stato: 'Confermato', statoConsegna: 'In lavorazione', codiceConsegna: 10, rilevatoIl: '2026-01-10T10:00:00.000Z' }],
+    };
+    attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
+    globalCom.dettagliDocumento.mockResolvedValue({
+      idPro: 'IDPRO1',
+      stato: 'Confermato',
+      statoConsegna: 'Consegnato',
+      codiceConsegna: 100,
+      dataConsegna: '2026-07-28T14:30:00.000Z',
+      idAccettazione: 'ACC123',
+    } as any);
+
+    await service.handleCron();
+
+    expect(attemptRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'a1',
+      postalStatus: 'Confermato',
+      postalDeliveryStatus: 'Consegnato',
+      postalDeliveryCode: 100,
+      postalDeliveryDate: '2026-07-28T14:30:00.000Z',
+      postalAcceptanceId: 'ACC123',
+      postalStatusHistory: [
+        { stato: 'Confermato', statoConsegna: 'In lavorazione', codiceConsegna: 10, rilevatoIl: '2026-01-10T10:00:00.000Z' },
+        { stato: 'Confermato', statoConsegna: 'Consegnato', codiceConsegna: 100, rilevatoIl: expect.any(String) },
+      ],
+    }));
+  });
+
   it('persiste codiceErrore/descrizione nella entry di postalStatusHistory quando presenti', async () => {
     const attempt = { id: 'a1', postalTrackingId: 'IDPRO1', postalStatus: 'Accettato', postalStatusUpdatedAt: null, postalStatusHistory: [] };
     attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));

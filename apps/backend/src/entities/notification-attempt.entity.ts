@@ -88,7 +88,19 @@ export class NotificationAttempt {
   postalStatusUpdatedAt!: Date | null;
 
   @Column({ type: 'jsonb', name: 'postal_status_history', nullable: true })
-  postalStatusHistory!: Array<{ stato: string; rilevatoIl: string }> | null;
+  postalStatusHistory!: Array<{ stato: string; rilevatoIl: string; codiceErrore?: string; descrizione?: string; statoConsegna?: string; codiceConsegna?: number }> | null;
+
+  @Column({ name: 'postal_delivery_status', type: 'varchar', length: 80, nullable: true })
+  postalDeliveryStatus!: string | null;
+
+  @Column({ name: 'postal_delivery_code', type: 'int', nullable: true })
+  postalDeliveryCode!: number | null;
+
+  @Column({ name: 'postal_delivery_date', type: 'timestamptz', nullable: true })
+  postalDeliveryDate!: Date | null;
+
+  @Column({ name: 'postal_acceptance_id', type: 'varchar', length: 50, nullable: true })
+  postalAcceptanceId!: string | null;
 
   // Ultimo tentativo di poll GlobalCom, indipendente da postalStatusUpdatedAt
   // (che avanza solo se lo stato letto è CAMBIATO) — usato per l'ordinamento

@@ -18,7 +18,11 @@ export interface AttemptDetailDto {
   postalTrackingId: string | null;
   postalStatus: string | null;
   postalStatusUpdatedAt: string | null;
-  postalStatusHistory: Array<{ stato: string; rilevatoIl: string; codiceErrore?: string; descrizione?: string }> | null;
+  postalDeliveryStatus?: string | null;
+  postalDeliveryCode?: number | null;
+  postalDeliveryDate?: string | null;
+  postalAcceptanceId?: string | null;
+  postalStatusHistory: Array<{ stato: string; rilevatoIl: string; codiceErrore?: string; descrizione?: string; statoConsegna?: string; codiceConsegna?: number }> | null;
   costCents?: number | null;
   costCalculatedAt?: string | null;
   costBreakdown?: Record<string, unknown> | null;

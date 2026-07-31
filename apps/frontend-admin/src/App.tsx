@@ -7,7 +7,7 @@ import { COUNTRIES, matchCountry, isValidCap } from '@comunicapa/shared-types';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import {
   Mail, MailOpen, MailCheck, Mails, Smartphone, Send, Globe, HelpCircle,
-  Hourglass, Truck, Inbox, Ban, Eye, CalendarCheck, Banknote, UserX, X,
+  Hourglass, Truck, Inbox, Ban, Eye, CalendarCheck, Banknote, UserX, X, Clock,
   RotateCcw, ChevronLeft, ChevronRight, Loader2, Download,
   Pause, Check, MapPin, Settings2, Printer, ThumbsUp, RotateCw,
   CheckCircle2, XCircle, AlertTriangle, AlertCircle, Trash2,
@@ -227,6 +227,32 @@ function PostalStatusBadge({ status }: { status: string | null | undefined }): R
   const meta = POSTAL_STATUS_META[status] ?? { label: status, badge: 'bg-light text-dark border', icon: HelpCircle };
   const Icon = meta.icon;
   return <span className={`badge ${meta.badge}`}><Icon className="me-1" size={14} />{meta.label}</span>;
+}
+
+const POSTAL_DELIVERY_STATUS_META: Record<string, { label: string; badge: string; icon: React.ComponentType<{ className?: string; size?: number }> }> = {
+  'Accettato online': { label: 'Accettato online', badge: 'bg-info-subtle text-info-emphasis border', icon: Inbox },
+  'Consegnato': { label: 'Consegnato', badge: 'bg-success-subtle text-success-emphasis border', icon: CheckCircle2 },
+  'Consegnato a persona abilitata': { label: 'Consegnato a persona abilitata', badge: 'bg-success-subtle text-success-emphasis border', icon: CheckCircle2 },
+  'Consegnato CAF': { label: 'Consegnato CAF', badge: 'bg-success-subtle text-success-emphasis border', icon: CheckCircle2 },
+  'Assente': { label: 'Assente', badge: 'bg-warning-subtle text-warning-emphasis border', icon: AlertTriangle },
+  'Assente – avviso lasciato': { label: 'Assente (avviso lasciato)', badge: 'bg-warning-subtle text-warning-emphasis border', icon: AlertTriangle },
+  'Giacenza': { label: 'In giacenza', badge: 'bg-warning-subtle text-warning-emphasis border', icon: Clock },
+  'In lavorazione': { label: 'In lavorazione Poste', badge: 'bg-info-subtle text-info-emphasis border', icon: Truck },
+  'Rifiuto': { label: 'Rifiutato', badge: 'bg-danger-subtle text-danger-emphasis border', icon: XCircle },
+  'Sconosciuto': { label: 'Destinatario sconosciuto', badge: 'bg-danger-subtle text-danger-emphasis border', icon: UserX },
+  'Trasferito': { label: 'Destinatario trasferito', badge: 'bg-danger-subtle text-danger-emphasis border', icon: MapPin },
+  'Deceduto': { label: 'Destinatario deceduto', badge: 'bg-secondary-subtle text-secondary-emphasis border', icon: X },
+};
+
+function PostalDeliveryStatusBadge({ status, code }: { status: string | null | undefined; code?: number | null }): React.JSX.Element {
+  if (!status) return <span className="badge bg-light text-dark border">—</span>;
+  const meta = POSTAL_DELIVERY_STATUS_META[status] ?? { label: status, badge: 'bg-light text-dark border', icon: HelpCircle };
+  const Icon = meta.icon;
+  return (
+    <span className={`badge ${meta.badge}`} title={code !== null && code !== undefined ? `Codice recapito Poste: ${code}` : undefined}>
+      <Icon className="me-1" size={14} />{meta.label}
+    </span>
+  );
 }
 
 // Pannello anteprima live destinatari (canale + tab App IO, paging record CSV,
@@ -893,6 +919,10 @@ interface Recipient {
     sendStatusUpdatedAt?: string | null;
     postalStatus?: string | null;
     postalStatusUpdatedAt?: string | null;
+    postalDeliveryStatus?: string | null;
+    postalDeliveryCode?: number | null;
+    postalDeliveryDate?: string | null;
+    postalAcceptanceId?: string | null;
     protocolNumber?: number | null;
     protocolYear?: number | null;
     protocolledAt?: string | null;
@@ -1033,7 +1063,7 @@ export function App(): React.JSX.Element {
   const [notifDetail, setNotifDetail] = useState<{
     recipient: { id: string; codiceFiscale: string; fullName: string | null; email: string | null; pec: string | null; status: string; physicalAddress: { address: string; municipality: string; zip?: string; province?: string; foreignState?: string | null } | null };
     campaign: { id: string; name: string; channelType: string; postalServiceType?: string | null; postalReturnReceipt?: boolean };
-    attempts: Array<{ attemptNumber: number; status: string; channelType: string; errorMessage: string | null; sentAt: string | null; createdAt: string; appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null }; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalTrackingId?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalStatusHistory?: Array<{ stato: string; rilevatoIl: string; codiceErrore?: string; descrizione?: string }> | null; protocolNumber?: number | null; protocolYear?: number | null; protocolledAt?: string | null; costCents?: number | null; costCalculatedAt?: string | null; costBreakdown?: Record<string, unknown> | null }>;
+    attempts: Array<{ attemptNumber: number; status: string; channelType: string; errorMessage: string | null; sentAt: string | null; createdAt: string; appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null }; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalTrackingId?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; postalStatusHistory?: Array<{ stato: string; rilevatoIl: string; codiceErrore?: string; descrizione?: string; statoConsegna?: string; codiceConsegna?: number }> | null; protocolNumber?: number | null; protocolYear?: number | null; protocolledAt?: string | null; costCents?: number | null; costCalculatedAt?: string | null; costBreakdown?: Record<string, unknown> | null }>;
     preview: { subject: string; bodyHtml?: string; bodyMarkdown?: string };
     appIoPreview: { subject: string; bodyHtml?: string; bodyMarkdown?: string } | null;
     downloads: Array<{ channel: string; attachmentIndex: number; downloadedAt: string }>;
@@ -2013,17 +2043,18 @@ export function App(): React.JSX.Element {
     failed: Array<{ recipientId: string; reason: string }>;
     errorMessage: string | null;
   } | null>(null);
-  const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; protocolNumber?: number | null; protocolYear?: number | null; inadCheck?: { found: boolean; diverted: boolean } | null }> } | null>(null);
+  const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; protocolNumber?: number | null; protocolYear?: number | null; inadCheck?: { found: boolean; diverted: boolean } | null }> } | null>(null);
   const [recipientsSearch, setRecipientsSearch] = useState('');
   const [recipientsPageNum, setRecipientsPageNum] = useState(1);
   const [recipientsStatusFilter, setRecipientsStatusFilter] = useState('');
   const [recipientsDeliveryStatusFilter, setRecipientsDeliveryStatusFilter] = useState('');
+  const [recipientsPostalDeliveryStatusFilter, setRecipientsPostalDeliveryStatusFilter] = useState('');
   // Tag combinabili in AND: "diverted" (dirottato INAD), "primary" (canale
   // primario, non dirottato), "appio" (co-consegna App IO tentata).
   const [recipientsTagsFilter, setRecipientsTagsFilter] = useState<string[]>([]);
   const [recipientsTagsMenuOpen, setRecipientsTagsMenuOpen] = useState(false);
   const [recipientsDownloadFilter, setRecipientsDownloadFilter] = useState('');
-  const [recipientsFilterOptions, setRecipientsFilterOptions] = useState<{ statuses: string[]; deliveryStatuses: string[] } | null>(null);
+  const [recipientsFilterOptions, setRecipientsFilterOptions] = useState<{ statuses: string[]; deliveryStatuses: string[]; postalDeliveryStatuses?: string[] } | null>(null);
   const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number; inadDiverted: number } | null>(null);
   const [resendingOutcome, setResendingOutcome] = useState<string | null>(null);
   const [effectiveChannelBreakdown, setEffectiveChannelBreakdown] = useState<Record<string, number> | null>(null);
@@ -2096,12 +2127,12 @@ export function App(): React.JSX.Element {
           fetchCampaignCostSavings(selectedCampaignId);
           fetchCampaignPaymentTotal(selectedCampaignId);
           fetchDownloadCombinationStats(selectedCampaignId);
-          fetchRecipientsPage(selectedCampaignId, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter);
+          fetchRecipientsPage(selectedCampaignId, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter);
         }, 3000);
       }
     }
     return () => clearInterval(timer);
-  }, [view, selectedCampaignId, campaign, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter]);
+  }, [view, selectedCampaignId, campaign, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter]);
 
   // Auto-refresh degli elenchi campagne (dashboard "Attività Recenti" e "Campagne
   // Massive"): fetchCampaigns() girava solo una volta al login ([token]) — una
@@ -2162,10 +2193,10 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     if (!selectedCampaignId || view !== 'campaign-detail') return;
     const handle = setTimeout(() => {
-      fetchRecipientsPage(selectedCampaignId, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter);
+      fetchRecipientsPage(selectedCampaignId, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter);
     }, 300);
     return () => clearTimeout(handle);
-  }, [selectedCampaignId, view, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter]);
+  }, [selectedCampaignId, view, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter]);
 
   useEffect(() => {
     if (token) {
@@ -6579,6 +6610,7 @@ export function App(): React.JSX.Element {
     setRecipientsPageNum(1);
     setRecipientsStatusFilter('');
     setRecipientsDeliveryStatusFilter('');
+    setRecipientsPostalDeliveryStatusFilter('');
     setRecipientsFilterOptions(null);
     fetchCampaignDetail(id);
     fetchFailureGroups(id);
@@ -6746,12 +6778,14 @@ export function App(): React.JSX.Element {
     deliveryStatusFilter: string,
     tagsFilter: string[] = [],
     downloadFilter: string = '',
+    postalDeliveryStatusFilter: string = '',
   ) => {
     try {
       const params = new URLSearchParams({ page: String(page), pageSize: String(RECIPIENTS_PAGE_SIZE) });
       if (search.trim()) params.set('search', search.trim());
       if (statusFilter) params.set('status', statusFilter);
       if (deliveryStatusFilter) params.set('deliveryStatus', deliveryStatusFilter);
+      if (postalDeliveryStatusFilter) params.set('postalDeliveryStatus', postalDeliveryStatusFilter);
       if (tagsFilter.length > 0) params.set('tags', tagsFilter.join(','));
       if (downloadFilter) params.set('hasDownload', downloadFilter);
       const res = await apiFetch(`/campaigns/${campaignId}/stats/recipients?${params.toString()}`);
@@ -11123,7 +11157,7 @@ export function App(): React.JSX.Element {
                                   <><th>IUN</th><th>Stato SEND</th><th>Aggiornato il</th></>
                                 )}
                                 {notifDetail.campaign.channelType === 'POSTAL' && (
-                                  <><th>Stato Consegna</th><th>Aggiornato il</th></>
+                                  <><th>Stato Documento</th><th>Recapito Poste</th><th>Aggiornato il</th></>
                                 )}
                                 <th>Errore</th>
                               </tr>
@@ -11147,20 +11181,11 @@ export function App(): React.JSX.Element {
                                       </>
                                     )}
                                     {notifDetail.campaign.channelType === 'POSTAL' && (
-                                      // a.channelType può essere PEC su questo stesso attempt se INAD ha
-                                      // dirottato il destinatario (campaign.channelType resta POSTAL,
-                                      // l'attempt reale no) — niente postalStatus per un invio PEC, la
-                                      // colonna "In corso" a vita non ha senso in quel caso.
                                       a.channelType === 'POSTAL' ? (
                                         <>
                                           <td className="small">
                                             <PostalStatusBadge status={a.postalStatus} />
                                             {!a.postalTrackingId && (
-                                              // Anche un attempt FAILED lato nostro (es. eccezione lanciata
-                                              // dopo che la chiamata SOAP era già passata, invio_ext_singolo
-                                              // rifiutato per un motivo non bloccante) può essere comunque
-                                              // arrivato a GlobalCom — l'operatore verifica sul portale e
-                                              // aggancia qui, indipendentemente dal nostro status locale.
                                               <button
                                                 type="button"
                                                 className="btn btn-sm btn-link p-0 ms-1"
@@ -11171,10 +11196,24 @@ export function App(): React.JSX.Element {
                                               </button>
                                             )}
                                           </td>
+                                          <td className="small">
+                                            <PostalDeliveryStatusBadge status={a.postalDeliveryStatus} code={a.postalDeliveryCode} />
+                                            {a.postalDeliveryDate && (
+                                              <div className="text-muted" style={{ fontSize: '0.75rem' }}>
+                                                {new Date(a.postalDeliveryDate).toLocaleString('it-IT')}
+                                              </div>
+                                            )}
+                                            {a.postalAcceptanceId && (
+                                              <div className="text-muted fw-mono" style={{ fontSize: '0.75rem' }}>
+                                                ID: {a.postalAcceptanceId}
+                                              </div>
+                                            )}
+                                          </td>
                                           <td className="small text-muted">{a.postalStatusUpdatedAt ? new Date(a.postalStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
                                         </>
                                       ) : (
                                         <>
+                                          <td className="small text-muted">—</td>
                                           <td className="small text-muted">—</td>
                                           <td className="small text-muted">—</td>
                                         </>
@@ -11182,11 +11221,6 @@ export function App(): React.JSX.Element {
                                     )}
                                     <td className="small text-danger text-break" style={{ maxWidth: '350px' }}>
                                       {a.errorMessage || (() => {
-                                        // errorMessage copre solo un fallimento lato nostro (invio_ext_singolo
-                                        // rifiutato) — un errore di consegna GlobalCom post-accettazione (es.
-                                        // "-1: numeri raccomandata non salvati o non disponibili") si vede solo
-                                        // nell'ultima entry di postalStatusHistory con codiceErrore, prima
-                                        // leggibile solo sul portale GlobalCom.
                                         const lastWithError = [...(a.postalStatusHistory || [])].reverse().find((h) => h.codiceErrore !== '0' && (h.codiceErrore || h.descrizione));
                                         return lastWithError
                                           ? `GlobalCom ${lastWithError.codiceErrore ? `(${lastWithError.codiceErrore})` : ''}: ${lastWithError.descrizione || ''}`
@@ -14864,12 +14898,27 @@ export function App(): React.JSX.Element {
                               value={recipientsDeliveryStatusFilter}
                               onChange={(e) => { setRecipientsDeliveryStatusFilter(e.target.value); setRecipientsPageNum(1); }}
                             >
-                              <option value="">Stato consegna: tutti</option>
+                              <option value="">Stato documento: tutti</option>
                               {(recipientsFilterOptions?.deliveryStatuses ?? []).map((s) => (
                                 <option key={s} value={s}>
                                   {s === PENDING_DELIVERY_STATUS_SENTINEL
                                     ? (campaign.channelType === 'SEND' ? 'In attesa' : 'In corso')
                                     : ((campaign.channelType === 'SEND' ? SEND_STATUS_META[s]?.label : POSTAL_STATUS_META[s]?.label) ?? s)}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                          {campaign.channelType === 'POSTAL' && (recipientsFilterOptions?.postalDeliveryStatuses ?? []).length > 0 && (
+                            <select
+                              className="form-select form-select-sm"
+                              style={{ maxWidth: 200 }}
+                              value={recipientsPostalDeliveryStatusFilter}
+                              onChange={(e) => { setRecipientsPostalDeliveryStatusFilter(e.target.value); setRecipientsPageNum(1); }}
+                            >
+                              <option value="">Recapito Poste: tutti</option>
+                              {(recipientsFilterOptions?.postalDeliveryStatuses ?? []).map((s) => (
+                                <option key={s} value={s}>
+                                  {POSTAL_DELIVERY_STATUS_META[s]?.label ?? s}
                                 </option>
                               ))}
                             </select>
@@ -14990,9 +15039,9 @@ export function App(): React.JSX.Element {
                                       <><th>IUN</th><th>Protocollo</th><th>Stato SEND</th><th>Aggiornato il</th>{(((campaign.channelConfig?.['attachments'] as any[] | undefined)?.length ?? 0) > 0) && <th className="text-center">Download</th>}</>
                                     ) : campaign.channelType === 'POSTAL' ? (
                                       campaign.channelConfig?.['protocolla'] ? (
-                                        <><th>Protocollo</th><th>Stato Consegna</th><th>Aggiornato il</th>{(((campaign.channelConfig?.['attachments'] as any[] | undefined)?.length ?? 0) > 0) && <th className="text-center">Download</th>}</>
+                                        <><th>Protocollo</th><th>Stato Documento</th><th>Recapito Poste</th><th>Aggiornato il</th>{(((campaign.channelConfig?.['attachments'] as any[] | undefined)?.length ?? 0) > 0) && <th className="text-center">Download</th>}</>
                                       ) : (
-                                        <><th>Stato Consegna</th><th>Aggiornato il</th>{(((campaign.channelConfig?.['attachments'] as any[] | undefined)?.length ?? 0) > 0) && <th className="text-center">Download</th>}</>
+                                        <><th>Stato Documento</th><th>Recapito Poste</th><th>Aggiornato il</th>{(((campaign.channelConfig?.['attachments'] as any[] | undefined)?.length ?? 0) > 0) && <th className="text-center">Download</th>}</>
                                       )
                                     ) : campaign.channelConfig?.['protocolla'] ? (
                                       <><th>Protocollo</th><th className="text-center">Download</th></>
@@ -15043,10 +15092,12 @@ export function App(): React.JSX.Element {
                                               <td className="small">{r.protocolNumber ? `${r.protocolNumber}/${r.protocolYear}` : '—'}</td>
                                               <td className="small text-muted">—</td>
                                               <td className="small text-muted">—</td>
+                                              <td className="small text-muted">—</td>
                                               {downloadCell}
                                             </>
                                           ) : (
                                             <>
+                                              <td className="small text-muted">—</td>
                                               <td className="small text-muted">—</td>
                                               <td className="small text-muted">—</td>
                                               {downloadCell}
@@ -15056,12 +15107,14 @@ export function App(): React.JSX.Element {
                                           <>
                                             <td className="small">{r.protocolNumber ? `${r.protocolNumber}/${r.protocolYear}` : '—'}</td>
                                             <td className="small"><PostalStatusBadge status={r.postalStatus} /></td>
+                                            <td className="small"><PostalDeliveryStatusBadge status={r.postalDeliveryStatus} code={r.postalDeliveryCode} /></td>
                                             <td className="small text-muted">{r.postalStatusUpdatedAt ? new Date(r.postalStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
                                             {downloadCell}
                                           </>
                                         ) : (
                                           <>
                                             <td className="small"><PostalStatusBadge status={r.postalStatus} /></td>
+                                            <td className="small"><PostalDeliveryStatusBadge status={r.postalDeliveryStatus} code={r.postalDeliveryCode} /></td>
                                             <td className="small text-muted">{r.postalStatusUpdatedAt ? new Date(r.postalStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
                                             {downloadCell}
                                           </>

@@ -775,6 +775,7 @@ export class CampaignsController {
     @Query('deliveryStatus') deliveryStatus?: string,
     @Query('tags') tags?: string,
     @Query('hasDownload') hasDownload?: string,
+    @Query('postalDeliveryStatus') postalDeliveryStatus?: string,
   ) {
     const parsedPage = parseInt(page ?? '1', 10);
     const parsedPageSize = parseInt(pageSize ?? '50', 10);
@@ -787,7 +788,7 @@ export class CampaignsController {
     }
 
     const parsedTags = tags ? tags.split(',').map((t) => t.trim()).filter(Boolean) : undefined;
-    return this.campaignsService.getRecipientStats(id, parsedPage, parsedPageSize, search, status, deliveryStatus, parsedTags, hasDownload);
+    return this.campaignsService.getRecipientStats(id, parsedPage, parsedPageSize, search, status, deliveryStatus, parsedTags, hasDownload, postalDeliveryStatus);
   }
 
   @Get(':id/stats/recipients/filter-options')

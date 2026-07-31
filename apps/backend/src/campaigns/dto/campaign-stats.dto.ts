@@ -27,6 +27,10 @@ export interface RecipientStatDto {
   postalTrackingId?: string | null;
   postalStatus?: string | null;
   postalStatusUpdatedAt?: Date | null;
+  postalDeliveryStatus?: string | null;
+  postalDeliveryCode?: number | null;
+  postalDeliveryDate?: Date | null;
+  postalAcceptanceId?: string | null;
   /** Esito ultima verifica INAD — `diverted` guida il filtro client-side del bottone "Rimanda a questi N" (widget multicanale). */
   inadCheck?: { found: boolean; diverted: boolean } | null;
 }
@@ -154,7 +158,11 @@ export interface PostalReportRowDto {
   fullName: string | null;
   postalTrackingId: string | null;
   postalStatus: string | null;
-  postalStatusHistory: Array<{ stato: string; rilevatoIl: string }>;
+  postalDeliveryStatus: string | null;
+  postalDeliveryCode: number | null;
+  postalDeliveryDate: string | null;
+  postalAcceptanceId: string | null;
+  postalStatusHistory: Array<{ stato: string; rilevatoIl: string; codiceErrore?: string; descrizione?: string; statoConsegna?: string; codiceConsegna?: number }>;
   codiceErrore: string | null;
   descrizioneErrore: string | null;
   /** null se la campagna non ha co-consegna App IO configurata. */

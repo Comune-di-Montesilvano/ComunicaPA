@@ -2008,6 +2008,7 @@ export class CampaignsService {
     deliveryStatus?: string,
     tags?: string[],
     hasDownload?: string,
+    postalDeliveryStatus?: string,
   ): Promise<RecipientStatsPageDto> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
@@ -2075,6 +2076,19 @@ export class CampaignsService {
           WHERE la.recipient_id = r.id AND (la.send_status = :deliveryStatus OR la.postal_status = :deliveryStatus)
         )`,
         { deliveryStatus },
+      );
+    }
+    if (postalDeliveryStatus) {
+      qb.andWhere(
+        `EXISTS (
+          SELECT 1 FROM (
+            SELECT DISTINCT ON (recipient_id) recipient_id, postal_delivery_status
+            FROM notification_attempts
+            ORDER BY recipient_id, attempt_number DESC
+          ) la
+          WHERE la.recipient_id = r.id AND la.postal_delivery_status = :postalDeliveryStatus
+        )`,
+        { postalDeliveryStatus },
       );
     }
 
@@ -2149,6 +2163,10 @@ export class CampaignsService {
           item.postalTrackingId = latest.postalTrackingId;
           item.postalStatus = latest.postalStatus;
           item.postalStatusUpdatedAt = latest.postalStatusUpdatedAt;
+          item.postalDeliveryStatus = latest.postalDeliveryStatus;
+          item.postalDeliveryCode = latest.postalDeliveryCode;
+          item.postalDeliveryDate = latest.postalDeliveryDate;
+          item.postalAcceptanceId = latest.postalAcceptanceId;
         }
       }
     }
@@ -2161,7 +2179,7 @@ export class CampaignsService {
    * (non l'intero enum) — popola le select filtro "Stato Notifica"/"Stato
    * Consegna" senza mostrare opzioni che non produrrebbero mai risultati.
    */
-  async getRecipientFilterOptions(campaignId: string): Promise<{ statuses: string[]; deliveryStatuses: string[] }> {
+  async getRecipientFilterOptions(campaignId: string): Promise<{ statuses: string[]; deliveryStatuses: string[]; postalDeliveryStatuses: string[] }> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
@@ -2187,6 +2205,19 @@ export class CampaignsService {
       .andWhere('COALESCE(la.send_status, la.postal_status) IS NOT NULL')
       .getRawMany<{ deliveryStatus: string }>();
 
+    const postalDeliveryRows = await this.recipientRepo
+      .createQueryBuilder('r')
+      .select('DISTINCT la.postal_delivery_status', 'postalDeliveryStatus')
+      .leftJoin(
+        `(SELECT DISTINCT ON (recipient_id) recipient_id, postal_delivery_status
+          FROM notification_attempts ORDER BY recipient_id, attempt_number DESC)`,
+        'la',
+        'la.recipient_id = r.id',
+      )
+      .where('r.campaignId = :campaignId', { campaignId })
+      .andWhere('la.postal_delivery_status IS NOT NULL')
+      .getRawMany<{ postalDeliveryStatus: string }>();
+
     const pendingCount = await this.recipientRepo
       .createQueryBuilder('r')
       .leftJoin(
@@ -2205,6 +2236,7 @@ export class CampaignsService {
         ...deliveryRows.map((r) => r.deliveryStatus),
         ...(pendingCount > 0 ? [PENDING_DELIVERY_STATUS_SENTINEL] : []),
       ],
+      postalDeliveryStatuses: postalDeliveryRows.map((r) => r.postalDeliveryStatus),
     };
   }
 
@@ -2218,7 +2250,7 @@ export class CampaignsService {
       order: { createdAt: 'ASC' },
     });
 
-    const mapped = rows.map((r) => ({
+    return { hasExternalId: rows.some((r) => r.extraData?.['externalId']), rows: rows.map((r) => ({
       codiceFiscale: r.codiceFiscale,
       fullName: r.fullName,
       email: r.email,
@@ -2227,9 +2259,7 @@ export class CampaignsService {
       downloadCount: r.downloadCount,
       lastDownloadedAt: r.lastDownloadedAt ? r.lastDownloadedAt.toISOString() : null,
       externalId: resolveExternalId(campaign, r),
-    }));
-
-    return { hasExternalId: mapped.some((r) => r.externalId !== null), rows: mapped };
+    })) };
   }
 
   async getSendStatusBreakdown(campaignId: string): Promise<SendStatusBreakdownDto[]> {
@@ -2548,6 +2578,10 @@ export class CampaignsService {
         fullName: r.fullName,
         postalTrackingId: latest?.postalTrackingId ?? null,
         postalStatus: latest?.status === AttemptStatus.FAILED ? 'FAILED' : (latest?.postalStatus ?? null),
+        postalDeliveryStatus: latest?.postalDeliveryStatus ?? null,
+        postalDeliveryCode: latest?.postalDeliveryCode ?? null,
+        postalDeliveryDate: latest?.postalDeliveryDate ? latest.postalDeliveryDate.toISOString() : null,
+        postalAcceptanceId: latest?.postalAcceptanceId ?? null,
         postalStatusHistory: latest?.postalStatusHistory ?? [],
         codiceErrore: (latestPayload?.['codiceErrore'] as string | undefined) ?? null,
         descrizioneErrore: (latestPayload?.['descrizione'] as string | undefined) ?? null,

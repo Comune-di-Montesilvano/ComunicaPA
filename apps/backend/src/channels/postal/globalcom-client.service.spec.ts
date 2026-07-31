@@ -410,4 +410,46 @@ describe('mapDocStatus — campi costo', () => {
     expect(result.numeroPagine).toBeNull();
     expect(result.nazionale).toBeNull();
   });
+
+  it('estrae campi consegna (StatoConsegna, CodiceConsegna, DataConsegna, IDAccettazione) da StatoDestinatari', () => {
+    const raw = {
+      IDPRO: 'SOA_123',
+      Stato: 'Confermato',
+      CodiceErrore: '0',
+      Descrizione: '',
+      StatoDestinatari: {
+        GBCDestStatus: {
+          StatoConsegna: 'Consegnato',
+          CodiceConsegna: 100,
+          DataConsegna: '2026-07-28T14:30:00.000Z',
+          IDAccettazione: 'ACC123456',
+        },
+      },
+    };
+
+    const result = mapDocStatus(raw);
+
+    expect(result.statoConsegna).toBe('Consegnato');
+    expect(result.codiceConsegna).toBe(100);
+    expect(result.dataConsegna).toBe('2026-07-28T14:30:00.000Z');
+    expect(result.idAccettazione).toBe('ACC123456');
+  });
+
+  it('gestisce GBCDestStatus come array (più destinatari)', () => {
+    const raw = {
+      IDPRO: 'SOA_123',
+      Stato: 'Confermato',
+      StatoDestinatari: {
+        GBCDestStatus: [
+          { StatoConsegna: 'In lavorazione', CodiceConsegna: 10 },
+          { StatoConsegna: 'Consegnato', CodiceConsegna: 100, DataConsegna: '2026-07-28T14:30:00.000Z', IDAccettazione: 'ACC999' },
+        ],
+      },
+    };
+
+    const result = mapDocStatus(raw);
+
+    expect(result.statoConsegna).toBe('In lavorazione');
+    expect(result.codiceConsegna).toBe(10);
+  });
 });

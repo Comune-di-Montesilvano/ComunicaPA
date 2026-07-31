@@ -98,6 +98,11 @@ export interface GbcDocStatus {
   importoARNetto: number | null;
   tipoDocumento: string | null;
   codiceContratto: string | null;
+  /** Granularità recapito Poste (Risposta.StatoDestinatari.GBCDestStatus) */
+  statoConsegna: string | null;
+  codiceConsegna: number | null;
+  dataConsegna: string | null;
+  idAccettazione: string | null;
 }
 
 export interface GbcContratto {
@@ -136,6 +141,13 @@ function toInfoIndirizzoExt(addr: GbcAddress): Record<string, unknown> {
 export function mapDocStatus(raw: any): GbcDocStatus {
   const valori = raw.Valori;
   const billing = valori?.DettaglioBilling;
+  const destContainer = raw.StatoDestinatari?.GBCDestStatus;
+  const firstDest = Array.isArray(destContainer) ? destContainer[0] : destContainer;
+
+  const rawCode = firstDest?.CodiceConsegna;
+  const parsedCode = rawCode !== undefined && rawCode !== null && rawCode !== '' ? Number(rawCode) : null;
+  const validCode = parsedCode !== null && !isNaN(parsedCode) ? parsedCode : null;
+
   return {
     idPro: raw.IDPRO,
     stato: raw.Stato,
@@ -149,6 +161,10 @@ export function mapDocStatus(raw: any): GbcDocStatus {
     importoARNetto: billing?.ImportoARNetto ?? null,
     tipoDocumento: raw.TipoDocumento ?? null,
     codiceContratto: raw.CodiceContratto ?? null,
+    statoConsegna: firstDest?.StatoConsegna ? String(firstDest.StatoConsegna).trim() : null,
+    codiceConsegna: validCode,
+    dataConsegna: firstDest?.DataConsegna ? String(firstDest.DataConsegna) : null,
+    idAccettazione: firstDest?.IDAccettazione ? String(firstDest.IDAccettazione).trim() : null,
   };
 }
 

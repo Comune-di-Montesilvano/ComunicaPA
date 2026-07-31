@@ -108,7 +108,33 @@ export class PostalStatusSyncService {
     }
 
     let changed = false;
-    if (stato.stato !== attempt.postalStatus) {
+    const deliveryChanged =
+      stato.statoConsegna !== attempt.postalDeliveryStatus ||
+      stato.codiceConsegna !== attempt.postalDeliveryCode ||
+      (stato.dataConsegna ? new Date(stato.dataConsegna).getTime() !== attempt.postalDeliveryDate?.getTime() : false) ||
+      (stato.idAccettazione && stato.idAccettazione !== attempt.postalAcceptanceId);
+
+    if (stato.statoConsegna !== attempt.postalDeliveryStatus) {
+      attempt.postalDeliveryStatus = stato.statoConsegna;
+      changed = true;
+    }
+    if (stato.codiceConsegna !== attempt.postalDeliveryCode) {
+      attempt.postalDeliveryCode = stato.codiceConsegna;
+      changed = true;
+    }
+    if (stato.dataConsegna) {
+      const parsedDate = new Date(stato.dataConsegna);
+      if (!isNaN(parsedDate.getTime()) && (!attempt.postalDeliveryDate || parsedDate.getTime() !== attempt.postalDeliveryDate.getTime())) {
+        attempt.postalDeliveryDate = parsedDate;
+        changed = true;
+      }
+    }
+    if (stato.idAccettazione && stato.idAccettazione !== attempt.postalAcceptanceId) {
+      attempt.postalAcceptanceId = stato.idAccettazione;
+      changed = true;
+    }
+
+    if (stato.stato !== attempt.postalStatus || deliveryChanged) {
       attempt.postalStatus = stato.stato;
       attempt.postalStatusUpdatedAt = new Date();
       attempt.postalStatusHistory = [
@@ -129,6 +155,8 @@ export class PostalStatusSyncService {
           // realtà confermato).
           ...(stato.codiceErrore && stato.codiceErrore !== '0' ? { codiceErrore: stato.codiceErrore } : {}),
           ...(stato.descrizione && stato.codiceErrore !== '0' ? { descrizione: stato.descrizione } : {}),
+          ...(stato.statoConsegna ? { statoConsegna: stato.statoConsegna } : {}),
+          ...(stato.codiceConsegna !== null && stato.codiceConsegna !== undefined ? { codiceConsegna: stato.codiceConsegna } : {}),
         },
       ];
       changed = true;
@@ -196,7 +224,16 @@ export class PostalStatusSyncService {
             postalTrackingId: nuovoIdPro,
             postalStatus: statoNuovo?.stato ?? null,
             postalStatusUpdatedAt: statoNuovo ? new Date() : null,
-            postalStatusHistory: statoNuovo ? [{ stato: statoNuovo.stato, rilevatoIl: new Date().toISOString() }] : null,
+            postalStatusHistory: statoNuovo ? [{
+              stato: statoNuovo.stato,
+              rilevatoIl: new Date().toISOString(),
+              ...(statoNuovo.statoConsegna ? { statoConsegna: statoNuovo.statoConsegna } : {}),
+              ...(statoNuovo.codiceConsegna !== null && statoNuovo.codiceConsegna !== undefined ? { codiceConsegna: statoNuovo.codiceConsegna } : {}),
+            }] : null,
+            postalDeliveryStatus: statoNuovo?.statoConsegna ?? null,
+            postalDeliveryCode: statoNuovo?.codiceConsegna ?? null,
+            postalDeliveryDate: statoNuovo?.dataConsegna ? new Date(statoNuovo.dataConsegna) : null,
+            postalAcceptanceId: statoNuovo?.idAccettazione ?? null,
             costCents: statoNuovo?.costoNetto != null ? Math.round(statoNuovo.costoNetto * 100) : null,
             costCalculatedAt: statoNuovo?.costoNetto != null ? new Date() : null,
             costBreakdown: statoNuovo?.costoNetto != null ? {
