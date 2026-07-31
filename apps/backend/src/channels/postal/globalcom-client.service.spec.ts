@@ -1,4 +1,4 @@
-import { GlobalComClient, mapDocStatus } from './globalcom-client.service';
+import { GlobalComClient, mapDocStatus, normalizeGlobalComField } from './globalcom-client.service';
 
 const mockLoginAsync = jest.fn();
 const mockInvioAsync = jest.fn();
@@ -67,7 +67,7 @@ describe('GlobalComClient', () => {
     expect(result).toEqual(expect.objectContaining({ idPro: 'IDPRO123', stato: 'Accettato', codiceErrore: '', descrizione: '' }));
   });
 
-  it('invioExtSingolo imposta Nazionale=false quando il destinatario ha Stato estero valorizzato', async () => {
+  it('invioExtSingolo imposta Nazionale=false e normalizza lo Stato rimuovendo accenti (es. PERÙ -> PERU)', async () => {
     mockInvioAsync.mockResolvedValue([{
       invio_ext_singoloResult: true,
       Risposta: { IDPRO: 'IDPRO-EST', Stato: 'Accettato', CodiceErrore: '', Descrizione: '' },
@@ -80,13 +80,18 @@ describe('GlobalComClient', () => {
       colore: false,
       fronteRetro: true,
       mittente: null,
-      destinatario: { denominazione1: 'Mario Bianchi', indirizzo1: 'Bahnhofplatz 2', citta: 'Kilchberg', stato: 'SVIZZERA' },
+      destinatario: { denominazione1: 'Mario Bianchi', indirizzo1: 'Bahnhofplatz 2', citta: 'Kilchberg', stato: 'Perù' },
       note: 'attempt-uuid-est',
       fileBuffer: Buffer.from('%PDF-1.4 test'),
     });
 
     expect(mockInvioAsync).toHaveBeenCalledWith(expect.objectContaining({
-      Invio: expect.objectContaining({ Nazionale: false }),
+      Invio: expect.objectContaining({
+        Nazionale: false,
+        Destinatari: {
+          InfoIndirizzoExt: [expect.objectContaining({ Stato: 'PERU' })],
+        },
+      }),
     }));
   });
 
@@ -451,5 +456,16 @@ describe('mapDocStatus — campi costo', () => {
 
     expect(result.statoConsegna).toBe('In lavorazione');
     expect(result.codiceConsegna).toBe(10);
+  });
+});
+
+describe('normalizeGlobalComField', () => {
+  it('rimuove accenti/diacritici e converte apostrofi ricurvi in apostrofo dritto ASCII (\'), preservando l\'apostrofo dritto', () => {
+    expect(normalizeGlobalComField('Perù', true)).toBe('PERU');
+    expect(normalizeGlobalComField('PERÙ', true)).toBe('PERU');
+    expect(normalizeGlobalComField('Città del Vaticano', true)).toBe('CITTA DEL VATICANO');
+    expect(normalizeGlobalComField("D'ANGELO DAVIDE")).toBe("D'ANGELO DAVIDE");
+    expect(normalizeGlobalComField("D’ANGELO DAVIDE")).toBe("D'ANGELO DAVIDE");
+    expect(normalizeGlobalComField('FORLÌ')).toBe('FORLI');
   });
 });

@@ -123,16 +123,33 @@ export interface GbcInfoUtenza {
   contratti: GbcContratto[];
 }
 
+/**
+ * GlobalCom rifiuta caratteri accentati/diacritici (es. Ù, Ú, ù, ú, À, à, È, è, é, Ì, ì, Ò, ò)
+ * ed apostrofi ricurvi/backtick nei campi InfoIndirizzoExt (Denominazione, Indirizzo, Citta, Stato).
+ * Errore reale riscontrato: "Caratteri non validi per TORICINI STEFANO: Ù" su Stato="PERÙ".
+ * L'apostrofo dritto ASCII standard (') viene preservato (es. "D'ANGELO").
+ */
+export function normalizeGlobalComField(text: string, toUpper = false): string {
+  if (!text) return '';
+  let cleaned = text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Rimuove accenti e diacritici (Ù -> U, é -> e, ecc.)
+    .replace(/[’`´]/g, "'")           // Converte apostrofi ricurvi/backtick in apostrofo dritto ASCII standard (')
+    .trim();
+  if (toUpper) cleaned = cleaned.toUpperCase();
+  return cleaned;
+}
+
 function toInfoIndirizzoExt(addr: GbcAddress): Record<string, unknown> {
   return {
-    Denominazione1: addr.denominazione1,
-    ...(addr.denominazione2 ? { Denominazione2: addr.denominazione2 } : {}),
-    Indirizzo1: addr.indirizzo1,
-    ...(addr.indirizzo2 ? { Indirizzo2: addr.indirizzo2 } : {}),
+    Denominazione1: normalizeGlobalComField(addr.denominazione1),
+    ...(addr.denominazione2 ? { Denominazione2: normalizeGlobalComField(addr.denominazione2) } : {}),
+    Indirizzo1: normalizeGlobalComField(addr.indirizzo1),
+    ...(addr.indirizzo2 ? { Indirizzo2: normalizeGlobalComField(addr.indirizzo2) } : {}),
     ...(addr.cap ? { CAP: addr.cap } : {}),
-    Citta: addr.citta,
-    ...(addr.provincia ? { Provincia: addr.provincia } : {}),
-    ...(addr.stato ? { Stato: addr.stato } : {}),
+    Citta: normalizeGlobalComField(addr.citta),
+    ...(addr.provincia ? { Provincia: normalizeGlobalComField(addr.provincia, true) } : {}),
+    ...(addr.stato ? { Stato: normalizeGlobalComField(addr.stato, true) } : {}),
     ...(addr.codiceFiscale ? { CodiceFiscale: addr.codiceFiscale } : {}),
     ...(addr.email ? { Email: addr.email } : {}),
   };
