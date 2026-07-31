@@ -2250,7 +2250,7 @@ export class CampaignsService {
       order: { createdAt: 'ASC' },
     });
 
-    return { hasExternalId: rows.some((r) => r.extraData?.['externalId']), rows: rows.map((r) => ({
+    return { hasExternalId: rows.some((r) => resolveExternalId(campaign, r) !== null), rows: rows.map((r) => ({
       codiceFiscale: r.codiceFiscale,
       fullName: r.fullName,
       email: r.email,

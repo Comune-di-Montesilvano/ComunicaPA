@@ -115,11 +115,11 @@ export class PostalStatusSyncService {
       (stato.idAccettazione && stato.idAccettazione !== attempt.postalAcceptanceId);
 
     if (stato.statoConsegna !== attempt.postalDeliveryStatus) {
-      attempt.postalDeliveryStatus = stato.statoConsegna;
+      attempt.postalDeliveryStatus = stato.statoConsegna ?? null;
       changed = true;
     }
     if (stato.codiceConsegna !== attempt.postalDeliveryCode) {
-      attempt.postalDeliveryCode = stato.codiceConsegna;
+      attempt.postalDeliveryCode = stato.codiceConsegna ?? null;
       changed = true;
     }
     if (stato.dataConsegna) {

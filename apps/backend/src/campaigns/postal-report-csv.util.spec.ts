@@ -27,7 +27,7 @@ describe('buildPostalReportAttualeCsv', () => {
   it('include intestazioni e riga con stato/data correnti (ultimo elemento storico)', () => {
     const csv = buildPostalReportAttualeCsv(baseReport);
     const lines = csv.split('\n');
-    expect(lines[0]).toBe('"Codice Fiscale";"Nominativo";"IDPRO";"Stato";"Data Stato";"Codice Errore";"Descrizione Errore"');
+    expect(lines[0]).toBe('"Codice Fiscale";"Nominativo";"IDPRO";"Stato Documento";"Data Stato";"Stato Consegna Poste";"Codice Consegna";"Data Consegna Poste";"ID Accettazione Poste";"Codice Errore";"Descrizione Errore"');
     expect(lines[1]).toContain('"Consegnato"');
     expect(lines[1]).not.toContain('Esito App IO');
   });
@@ -61,7 +61,7 @@ describe('buildPostalReportStoricoCsv', () => {
   it('include una colonna data per ciascuno dei 14 stati, vuota se mai raggiunto', () => {
     const csv = buildPostalReportStoricoCsv(baseReport);
     const lines = csv.split('\n');
-    expect(lines[0].split(';')).toHaveLength(5 + 14);
+    expect(lines[0].split(';')).toHaveLength(9 + 14);
     const headers = lines[0].split(';');
     const sospesoIndex = headers.findIndex((h: string) => h === '"Data Sospeso"');
     expect(lines[1].split(';')[sospesoIndex]).toBe('""');

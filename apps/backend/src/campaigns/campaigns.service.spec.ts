@@ -508,6 +508,10 @@ describe('CampaignsService', () => {
       ['select', 'leftJoin', 'where', 'andWhere'].forEach((m) => { deliveryQb[m] = jest.fn().mockReturnValue(deliveryQb); });
       deliveryQb.getRawMany = jest.fn().mockResolvedValue([{ deliveryStatus: 'ACCEPTED' }, { deliveryStatus: 'DELIVERED' }]);
 
+      const postalDeliveryQb: any = {};
+      ['select', 'leftJoin', 'where', 'andWhere'].forEach((m) => { postalDeliveryQb[m] = jest.fn().mockReturnValue(postalDeliveryQb); });
+      postalDeliveryQb.getRawMany = jest.fn().mockResolvedValue([{ postalDeliveryStatus: 'CONSEGNATO' }]);
+
       const pendingQb: any = {};
       ['leftJoin', 'where', 'andWhere'].forEach((m) => { pendingQb[m] = jest.fn().mockReturnValue(pendingQb); });
       pendingQb.getCount = jest.fn().mockResolvedValue(0);
@@ -515,11 +519,12 @@ describe('CampaignsService', () => {
       mockRecipientRepo.createQueryBuilder = jest.fn()
         .mockReturnValueOnce(statusQb)
         .mockReturnValueOnce(deliveryQb)
+        .mockReturnValueOnce(postalDeliveryQb)
         .mockReturnValueOnce(pendingQb);
 
       const result = await service.getRecipientFilterOptions('uuid-1');
 
-      expect(result).toEqual({ statuses: ['sent', 'failed'], deliveryStatuses: ['ACCEPTED', 'DELIVERED'] });
+      expect(result).toEqual({ statuses: ['sent', 'failed'], deliveryStatuses: ['ACCEPTED', 'DELIVERED'], postalDeliveryStatuses: ['CONSEGNATO'] });
     });
   });
 
@@ -3544,6 +3549,10 @@ describe('CampaignsService.getPostalStatusBreakdown / getPostalReportRows', () =
         fullName: 'Mario Rossi',
         postalTrackingId: 'IDPRO1',
         postalStatus: 'Consegnato',
+        postalDeliveryStatus: null,
+        postalDeliveryCode: null,
+        postalDeliveryDate: null,
+        postalAcceptanceId: null,
         postalStatusHistory: [{ stato: 'Accettato', rilevatoIl: '2026-01-10T10:00:00.000Z' }],
         codiceErrore: '',
         descrizioneErrore: '',

@@ -122,7 +122,7 @@ describe('PostalStatusSyncService', () => {
       postalStatus: 'Confermato',
       postalDeliveryStatus: 'Consegnato',
       postalDeliveryCode: 100,
-      postalDeliveryDate: '2026-07-28T14:30:00.000Z',
+      postalDeliveryDate: new Date('2026-07-28T14:30:00.000Z'),
       postalAcceptanceId: 'ACC123',
       postalStatusHistory: [
         { stato: 'Confermato', statoConsegna: 'In lavorazione', codiceConsegna: 10, rilevatoIl: '2026-01-10T10:00:00.000Z' },

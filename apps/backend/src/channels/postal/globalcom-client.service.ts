@@ -99,10 +99,10 @@ export interface GbcDocStatus {
   tipoDocumento: string | null;
   codiceContratto: string | null;
   /** Granularità recapito Poste (Risposta.StatoDestinatari.GBCDestStatus) */
-  statoConsegna: string | null;
-  codiceConsegna: number | null;
-  dataConsegna: string | null;
-  idAccettazione: string | null;
+  statoConsegna?: string | null;
+  codiceConsegna?: number | null;
+  dataConsegna?: string | null;
+  idAccettazione?: string | null;
 }
 
 export interface GbcContratto {

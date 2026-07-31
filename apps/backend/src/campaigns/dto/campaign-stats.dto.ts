@@ -158,10 +158,10 @@ export interface PostalReportRowDto {
   fullName: string | null;
   postalTrackingId: string | null;
   postalStatus: string | null;
-  postalDeliveryStatus: string | null;
-  postalDeliveryCode: number | null;
-  postalDeliveryDate: string | null;
-  postalAcceptanceId: string | null;
+  postalDeliveryStatus?: string | null;
+  postalDeliveryCode?: number | null;
+  postalDeliveryDate?: string | null;
+  postalAcceptanceId?: string | null;
   postalStatusHistory: Array<{ stato: string; rilevatoIl: string; codiceErrore?: string; descrizione?: string; statoConsegna?: string; codiceConsegna?: number }>;
   codiceErrore: string | null;
   descrizioneErrore: string | null;
