@@ -131,6 +131,9 @@ export function resolvePhysicalAddress(
   // foreignState, anche se matcha esplicitamente in COUNTRIES.
   const isForeign = !!foreignState && foreignState !== 'Italia';
 
+  // Per gli indirizzi italiani (!isForeign), la provincia a 2 lettere è OBBLIGATORIA.
+  if (!isForeign && !province) return null;
+
   return {
     address,
     municipality,

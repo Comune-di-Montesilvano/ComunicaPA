@@ -2856,6 +2856,7 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
       await service.updateRecipientAddressAndRetry('c1', 'r1', {
         address: 'Via Roma 1',
         municipality: 'Montesilvano',
+        province: 'PE',
         fullName: "D'Angelo Davide",
       });
 
@@ -2908,7 +2909,7 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
       const moduleRef = await buildModule();
       const service = moduleRef.get(CampaignsService);
 
-      const result = await service.updateRecipientAddressAndRetry('c1', 'r1', { address: 'Strada Vicinale Camerlengo 3', municipality: 'Montesilvano' });
+      const result = await service.updateRecipientAddressAndRetry('c1', 'r1', { address: 'Strada Vicinale Camerlengo 3', municipality: 'Montesilvano', province: 'PE' });
 
       expect(recipientRepoMock.update).toHaveBeenCalledWith('r1', { status: RecipientStatus.FAILED });
       expect(campaignRepoMock.decrement).toHaveBeenCalledWith({ id: 'c1' }, 'sentCount', 1);
@@ -2931,7 +2932,7 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
       const moduleRef = await buildModule();
       const service = moduleRef.get(CampaignsService);
 
-      await service.updateRecipientAddressAndRetry('c1', 'r1', { address: 'Via Roma 1', municipality: 'Roma' });
+      await service.updateRecipientAddressAndRetry('c1', 'r1', { address: 'Via Roma 1', municipality: 'Roma', province: 'RM' });
 
       expect(campaignRepoMock.increment).not.toHaveBeenCalledWith({ id: 'c1' }, 'failedCount', 1);
       expect(campaignRepoMock.decrement).not.toHaveBeenCalledWith({ id: 'c1' }, 'sentCount', 1);
@@ -2943,7 +2944,7 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
       const moduleRef = await buildModule();
       const service = moduleRef.get(CampaignsService);
 
-      await expect(service.updateRecipientAddressAndRetry('c1', 'r1', { address: 'Via Roma 1', municipality: 'Roma' }))
+      await expect(service.updateRecipientAddressAndRetry('c1', 'r1', { address: 'Via Roma 1', municipality: 'Roma', province: 'RM' }))
         .rejects.toThrow('Correzione indirizzo disponibile solo per campagne POSTAL o SEND');
       expect(recipientRepoMock.update).not.toHaveBeenCalled();
     });
@@ -3513,6 +3514,29 @@ describe('CampaignsService.getPostalStatusBreakdown / getPostalReportRows', () =
       const result = await service.getPostalStatusBreakdown('c1');
 
       expect(result).toEqual([{ status: 'FAILED', count: 1 }]);
+    });
+
+    it('esclude i destinatari dirottati INAD dai conteggi e include lo stato null per i destinatari POSTAL senza attempt o con postalStatus null', async () => {
+      campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'POSTAL' });
+      recipientRepoMock.find.mockResolvedValue([
+        { id: 'r-postal-1' },
+        { id: 'r-postal-2' },
+        { id: 'r-inad-diverted', inadCheck: { diverted: true } },
+      ]);
+      attemptRepoMock.find.mockResolvedValue([
+        { recipientId: 'r-postal-1', attemptNumber: 1, postalStatus: 'Consegnato', status: AttemptStatus.SUCCESS },
+      ]);
+
+      const moduleRef = await buildModule();
+      const service = moduleRef.get(CampaignsService);
+
+      const result = await service.getPostalStatusBreakdown('c1');
+
+      expect(result).toEqual(expect.arrayContaining([
+        { status: 'Consegnato', count: 1 },
+        { status: null, count: 1 },
+      ]));
+      expect(result).toHaveLength(2);
     });
 
     it('lancia NotFoundException se la campagna non esiste', async () => {

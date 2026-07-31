@@ -35,6 +35,7 @@ import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.d
 import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util';
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto';
 import type { NotificationChannel, OperatorRole } from '@comunicapa/shared-types';
+import { matchCountry } from '@comunicapa/shared-types';
 import { InadService } from '../channels/inad/inad.service';
 import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service';
 
@@ -1850,6 +1851,16 @@ export class CampaignsService {
       throw new BadRequestException('Correzione indirizzo disponibile solo per campagne POSTAL o SEND');
     }
 
+    const countryRaw = (dto.country || '').trim();
+    const matchedCountry = countryRaw ? matchCountry(countryRaw) : null;
+    const isForeign = !!matchedCountry && matchedCountry !== 'Italia';
+    if (!isForeign && !dto.province?.trim()) {
+      throw new BadRequestException('La provincia è obbligatoria per gli indirizzi italiani');
+    }
+    if (dto.municipality.trim().length > 30) {
+      throw new BadRequestException('La città non può superare i 30 caratteri');
+    }
+
     const recipient = await this.recipientRepo.findOne({ where: { id: recipientId } });
     if (!recipient || recipient.campaignId !== campaignId) {
       throw new NotFoundException(`Recipient ${recipientId} non trovato in questa campagna`);
@@ -2347,11 +2358,13 @@ export class CampaignsService {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
-    const recipientIds = (await this.recipientRepo.find({ where: { campaignId }, select: ['id'] })).map((r) => r.id);
-    if (recipientIds.length === 0) return [];
+    const recipients = await this.recipientRepo.find({ where: { campaignId }, select: ['id', 'inadCheck'] });
+    const postalRecipients = recipients.filter((r) => !r.inadCheck?.diverted);
+    if (postalRecipients.length === 0) return [];
+    const postalRecipientIds = postalRecipients.map((r) => r.id);
 
     const attempts = await this.attemptRepo.find({
-      where: { recipientId: In(recipientIds), channelType: 'POSTAL' },
+      where: { recipientId: In(postalRecipientIds), channelType: 'POSTAL' },
       select: ['recipientId', 'attemptNumber', 'postalStatus', 'status'],
     });
 
@@ -2362,8 +2375,9 @@ export class CampaignsService {
     }
 
     const counts = new Map<string | null, number>();
-    for (const a of latestByRecipient.values()) {
-      const key = a.status === AttemptStatus.FAILED ? 'FAILED' : a.postalStatus;
+    for (const rId of postalRecipientIds) {
+      const a = latestByRecipient.get(rId);
+      const key = !a ? null : (a.status === AttemptStatus.FAILED ? 'FAILED' : a.postalStatus);
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
 
@@ -2374,11 +2388,13 @@ export class CampaignsService {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
-    const recipientIds = (await this.recipientRepo.find({ where: { campaignId }, select: ['id'] })).map((r) => r.id);
-    if (recipientIds.length === 0) return [];
+    const recipients = await this.recipientRepo.find({ where: { campaignId }, select: ['id', 'inadCheck'] });
+    const postalRecipients = recipients.filter((r) => !r.inadCheck?.diverted);
+    if (postalRecipients.length === 0) return [];
+    const postalRecipientIds = postalRecipients.map((r) => r.id);
 
     const attempts = await this.attemptRepo.find({
-      where: { recipientId: In(recipientIds), channelType: 'POSTAL' },
+      where: { recipientId: In(postalRecipientIds), channelType: 'POSTAL' },
       select: ['recipientId', 'attemptNumber', 'postalDeliveryStatus', 'status'],
     });
 
@@ -2389,8 +2405,9 @@ export class CampaignsService {
     }
 
     const counts = new Map<string | null, number>();
-    for (const a of latestByRecipient.values()) {
-      const key = a.status === AttemptStatus.FAILED ? 'FAILED' : a.postalDeliveryStatus;
+    for (const rId of postalRecipientIds) {
+      const a = latestByRecipient.get(rId);
+      const key = !a ? null : (a.status === AttemptStatus.FAILED ? 'FAILED' : a.postalDeliveryStatus);
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
 

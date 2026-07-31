@@ -144,14 +144,14 @@ describe('resolvePhysicalAddress', () => {
     expect(result).toBeNull();
   });
 
-  it('omette zip/province se non configurati o non risolti', () => {
+  it('ritorna null se manca la provincia per un indirizzo italiano', () => {
     const recipient = makeRecipient({ indirizzo: 'Via Roma 1', comune: 'Roma' });
     const result = resolvePhysicalAddress(recipient, {
       enabled: true,
       addressColumn: 'indirizzo',
       municipalityColumn: 'comune',
     });
-    expect(result).toEqual({ address: 'Via Roma 1', municipality: 'Roma' });
+    expect(result).toBeNull();
   });
 
   it('valorizza foreignState se countryColumn risolve a un paese noto diverso da Italia, ma omette zip (CAP estero non a 5 cifre italiane)', () => {
@@ -203,37 +203,40 @@ describe('resolvePhysicalAddress', () => {
 
   it('non valorizza foreignState se countryColumn risolve a Italia', () => {
     const recipient = makeRecipient({
-      indirizzo: 'Via Roma 1', comune: 'Roma', paese: 'Italia',
+      indirizzo: 'Via Roma 1', comune: 'Roma', prov: 'RM', paese: 'Italia',
     });
     const result = resolvePhysicalAddress(recipient, {
       enabled: true,
       addressColumn: 'indirizzo',
       municipalityColumn: 'comune',
+      provinceColumn: 'prov',
       countryColumn: 'paese',
     });
-    expect(result).toEqual({ address: 'Via Roma 1', municipality: 'Roma' });
+    expect(result).toEqual({ address: 'Via Roma 1', municipality: 'Roma', province: 'RM' });
   });
 
   it('non valorizza foreignState se countryColumn non è mappata (comportamento invariato)', () => {
-    const recipient = makeRecipient({ indirizzo: 'Via Roma 1', comune: 'Roma' });
+    const recipient = makeRecipient({ indirizzo: 'Via Roma 1', comune: 'Roma', prov: 'RM' });
     const result = resolvePhysicalAddress(recipient, {
       enabled: true,
       addressColumn: 'indirizzo',
       municipalityColumn: 'comune',
+      provinceColumn: 'prov',
     });
-    expect(result).toEqual({ address: 'Via Roma 1', municipality: 'Roma' });
+    expect(result).toEqual({ address: 'Via Roma 1', municipality: 'Roma', province: 'RM' });
   });
 
   it('non valorizza foreignState se il valore non matcha nessun paese noto', () => {
     const recipient = makeRecipient({
-      indirizzo: 'Via Roma 1', comune: 'Roma', paese: 'Paese Inesistente XYZ',
+      indirizzo: 'Via Roma 1', comune: 'Roma', prov: 'RM', paese: 'Paese Inesistente XYZ',
     });
     const result = resolvePhysicalAddress(recipient, {
       enabled: true,
       addressColumn: 'indirizzo',
       municipalityColumn: 'comune',
+      provinceColumn: 'prov',
       countryColumn: 'paese',
     });
-    expect(result).toEqual({ address: 'Via Roma 1', municipality: 'Roma' });
+    expect(result).toEqual({ address: 'Via Roma 1', municipality: 'Roma', province: 'RM' });
   });
 });

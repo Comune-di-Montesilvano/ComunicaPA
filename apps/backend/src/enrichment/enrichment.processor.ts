@@ -235,8 +235,15 @@ export class EnrichmentProcessor extends WorkerHost {
         if (paeseRaw && !matchedCountry) {
           warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: `Paese "${paeseRaw}" non riconosciuto` });
         }
-        if (!(row.comune || '').trim()) {
+        const comuneTrimmed = (row.comune || '').trim();
+        if (!comuneTrimmed) {
           warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: 'Città mancante' });
+        } else if (comuneTrimmed.length > 30) {
+          warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: `Città troppo lunga (${comuneTrimmed.length} caratteri, max 30)` });
+          row.comune = comuneTrimmed.slice(0, 30);
+        }
+        if (!isForeignRow && !(row.provincia || '').trim()) {
+          warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: 'Provincia mancante' });
         }
         if (!isForeignRow && (row.cap || '').trim() && !isValidCap(row.cap || '')) {
           warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: 'CAP non valido (richieste 5 cifre)' });

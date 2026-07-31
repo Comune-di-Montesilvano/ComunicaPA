@@ -244,14 +244,41 @@ const POSTAL_DELIVERY_STATUS_META: Record<string, { label: string; badge: string
   'Deceduto': { label: 'Destinatario deceduto', badge: 'bg-secondary-subtle text-secondary-emphasis border', icon: X },
 };
 
-function PostalDeliveryStatusBadge({ status, code }: { status: string | null | undefined; code?: number | null }): React.JSX.Element {
-  if (!status) return <span className="badge bg-light text-dark border">—</span>;
-  const meta = POSTAL_DELIVERY_STATUS_META[status] ?? { label: status, badge: 'bg-light text-dark border', icon: HelpCircle };
-  const Icon = meta.icon;
+function PostalDeliveryStatusBadge({
+  status,
+  code,
+  acceptanceId,
+}: {
+  status: string | null | undefined;
+  code?: number | null;
+  acceptanceId?: string | null;
+}): React.JSX.Element {
+  if (!status && !acceptanceId) return <span className="badge bg-light text-dark border">—</span>;
+  const meta = status ? (POSTAL_DELIVERY_STATUS_META[status] ?? { label: status, badge: 'bg-light text-dark border', icon: HelpCircle }) : null;
+
   return (
-    <span className={`badge ${meta.badge}`} title={code !== null && code !== undefined ? `Codice recapito Poste: ${code}` : undefined}>
-      <Icon className="me-1" size={14} />{meta.label}
-    </span>
+    <div className="d-inline-flex flex-column align-items-start gap-1">
+      {meta && (
+        <span className={`badge ${meta.badge}`} title={code !== null && code !== undefined ? `Codice recapito Poste: ${code}` : undefined}>
+          <meta.icon className="me-1" size={14} />{meta.label}
+        </span>
+      )}
+      {acceptanceId && (
+        <a
+          href={`https://www.poste.it/cerca/#/risultati-spedizioni/${encodeURIComponent(acceptanceId)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="badge bg-light text-dark border text-decoration-none d-inline-flex align-items-center gap-1 font-monospace"
+          style={{ fontSize: '0.7rem', padding: '3px 6px', fontWeight: 500 }}
+          title="Apri tracking spedizione Poste Italiane"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <span className="text-muted">ID:</span>
+          <span className="text-primary text-decoration-underline me-1">{acceptanceId}</span>
+          <ExternalLink size={10} className="text-primary" />
+        </a>
+      )}
+    </div>
   );
 }
 
@@ -5421,8 +5448,8 @@ export function App(): React.JSX.Element {
     (wizChannel === 'EMAIL' && (!singleEmail.trim() || !isValidEmailFormat(singleEmail))) ||
     (wizChannel === 'PEC' && (!singlePec.trim() || !isValidEmailFormat(singlePec))) ||
     (needsWizSinglePhysicalAddress && (
-      !singleAddress.trim() || !singleMunicipality.trim()
-      || (singleCountry === 'Italia' && (!singleZip.trim() || !isValidCap(singleZip) || !singleProvince.trim()))
+      !singleAddress.trim() || !singleMunicipality.trim() || singleMunicipality.trim().length > 30
+      || ((!singleCountry || matchCountry(singleCountry) === 'Italia') && (!singleZip.trim() || !isValidCap(singleZip) || !singleProvince.trim()))
     )) ||
     ((wizChannel === 'SEND' || wizChannel === 'POSTAL') && wizSingleAttachmentSlots.filter(s => s.file).length === 0) ||
     ((wizChannel === 'EMAIL' || wizChannel === 'PEC') && !wizMailConfigId) ||
@@ -5547,6 +5574,13 @@ export function App(): React.JSX.Element {
           }
           if (wizPostalMunicipalityColumn && !row[wizPostalMunicipalityColumn]?.trim()) {
             errors.push({ row: rowNum, field: 'Città', val: '', err: 'Città mancante (obbligatoria per Postalizzazione)' });
+            isRowValid = false;
+          } else if (wizPostalMunicipalityColumn && row[wizPostalMunicipalityColumn]?.trim().length > 30) {
+            errors.push({ row: rowNum, field: 'Città', val: row[wizPostalMunicipalityColumn], err: 'Città troppo lunga (massimo 30 caratteri per Postalizzazione)' });
+            isRowValid = false;
+          }
+          if (!isForeignRow && (!wizPostalProvinceColumn || !row[wizPostalProvinceColumn]?.trim())) {
+            errors.push({ row: rowNum, field: 'Provincia', val: wizPostalProvinceColumn ? (row[wizPostalProvinceColumn] || '') : '', err: 'Provincia mancante (obbligatoria per indirizzi italiani in Postalizzazione)' });
             isRowValid = false;
           }
           if (
@@ -11246,15 +11280,10 @@ export function App(): React.JSX.Element {
                                             )}
                                           </td>
                                           <td className="small">
-                                            <PostalDeliveryStatusBadge status={a.postalDeliveryStatus} code={a.postalDeliveryCode} />
+                                            <PostalDeliveryStatusBadge status={a.postalDeliveryStatus} code={a.postalDeliveryCode} acceptanceId={a.postalAcceptanceId} />
                                             {a.postalDeliveryDate && (
                                               <div className="text-muted" style={{ fontSize: '0.75rem' }}>
                                                 {new Date(a.postalDeliveryDate).toLocaleString('it-IT')}
-                                              </div>
-                                            )}
-                                            {a.postalAcceptanceId && (
-                                              <div className="text-muted fw-mono" style={{ fontSize: '0.75rem' }}>
-                                                ID: {a.postalAcceptanceId}
                                               </div>
                                             )}
                                           </td>

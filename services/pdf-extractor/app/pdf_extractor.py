@@ -13,9 +13,9 @@ class AddressExtractionError(Exception):
 
 class PdfExtractor:
     # Regex indirizzo domestico:
-    # "Residente in:VIA ESEMPIO 10 - 65015 MONTESILVANO PE"
+    # "Residente in:VIA ESEMPIO 10 - 65015 MONTESILVANO PE" oppure senza provincia a 2 lettere / provincia tronca
     _RE_DOMESTIC = re.compile(
-        r"Residente\s+in\s*:\s*(.+?)\s*[-–]\s*(\d{5})\s+([\w\s\'\\u2019]+?)\s+([A-Z]{2})\s*(?:\n|$)",
+        r"Residente\s+in\s*:\s*(.+?)\s*[-–]\s*(\d{5})\s+(.+?)\s*(?:\n|$)",
         re.MULTILINE | re.IGNORECASE,
     )
     # Regex generica: cattura tutto il contenuto dopo "Residente in:" fino a
@@ -71,11 +71,21 @@ class PdfExtractor:
 
         m = self._RE_DOMESTIC.search(text)
         if m:
+            indirizzo = m.group(1).strip()
+            cap = m.group(2).strip()
+            rest = m.group(3).strip()
+            prov_match = re.search(r"^(.*?)\s+([A-Z]{2})$", rest)
+            if prov_match:
+                comune = prov_match.group(1).strip()
+                provincia = prov_match.group(2).strip()
+            else:
+                comune = rest
+                provincia = ""
             return AddressData(
-                indirizzo=m.group(1).strip(),
-                cap=m.group(2).strip(),
-                comune=m.group(3).strip(),
-                provincia=m.group(4).strip(),
+                indirizzo=indirizzo,
+                cap=cap,
+                comune=comune,
+                provincia=provincia,
                 stato_estero="",
             )
 
