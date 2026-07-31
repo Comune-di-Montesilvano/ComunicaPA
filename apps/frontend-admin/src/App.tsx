@@ -255,6 +255,40 @@ function PostalDeliveryStatusBadge({ status, code }: { status: string | null | u
   );
 }
 
+const POSTAL_STATUS_PIE_COLORS: Record<string, string> = {
+  FAILED: '#dc3545',
+  Accettato: '#6c757d',
+  Sospeso: '#6c757d',
+  Verificato: '#0dcaf0',
+  Normalizzazione: '#ffc107',
+  Inviato: '#0dcaf0',
+  Elaborato: '#0dcaf0',
+  AttesaStampa: '#0dcaf0',
+  Confermato: '#0d6efd',
+  Rimandato: '#ffc107',
+  Consegnato: '#198754',
+  NonConsegnato: '#dc3545',
+  ConsegnaParziale: '#ffc107',
+  Errore: '#dc3545',
+  Eliminato: '#6c757d',
+};
+
+const POSTAL_DELIVERY_STATUS_PIE_COLORS: Record<string, string> = {
+  FAILED: '#dc3545',
+  'Accettato online': '#0dcaf0',
+  'Consegnato': '#198754',
+  'Consegnato a persona abilitata': '#198754',
+  'Consegnato CAF': '#198754',
+  'Assente': '#ffc107',
+  'Assente – avviso lasciato': '#ffc107',
+  'Giacenza': '#ffc107',
+  'In lavorazione': '#0dcaf0',
+  'Rifiuto': '#dc3545',
+  'Sconosciuto': '#dc3545',
+  'Trasferito': '#dc3545',
+  'Deceduto': '#6c757d',
+};
+
 // Pannello anteprima live destinatari (canale + tab App IO, paging record CSV,
 // rendering oggetto/corpo). Estratto da wizStep === 4 ("Template & Anteprima")
 // per essere riusato invariato anche da wizStep === 6 ("Anteprima e Invio").
@@ -2061,6 +2095,7 @@ export function App(): React.JSX.Element {
   const [campaignSendStageCounts, setCampaignSendStageCounts] = useState<{ queued: number; protocollato: number; inviato: number; fallito: number } | null>(null);
   const [sendStatusBreakdown, setSendStatusBreakdown] = useState<Array<{ status: string | null; count: number }> | null>(null);
   const [postalStatusBreakdown, setPostalStatusBreakdown] = useState<Array<{ status: string | null; count: number }> | null>(null);
+  const [postalDeliveryStatusBreakdown, setPostalDeliveryStatusBreakdown] = useState<Array<{ status: string | null; count: number }> | null>(null);
   const [campaignCost, setCampaignCost] = useState<{ campaignId: string; totalCostCents: number; byChannel: Array<{ channel: string; totalCostCents: number; uncalculatedCount: number }> } | null>(null);
   const [campaignCostSavings, setCampaignCostSavings] = useState<{ campaignId: string; totalSavingCents: number; postalNotEstimableCount: number } | null>(null);
   const [campaignPaymentTotal, setCampaignPaymentTotal] = useState<{ campaignId: string; enabled: boolean; totalAmountCents: number; recipientsWithPaymentCount: number } | null>(null);
@@ -2123,6 +2158,7 @@ export function App(): React.JSX.Element {
           fetchCampaignSendStageCounts(selectedCampaignId);
           fetchSendStatusBreakdown(selectedCampaignId);
           fetchPostalStatusBreakdown(selectedCampaignId);
+          fetchPostalDeliveryStatusBreakdown(selectedCampaignId);
           fetchCampaignCost(selectedCampaignId);
           fetchCampaignCostSavings(selectedCampaignId);
           fetchCampaignPaymentTotal(selectedCampaignId);
@@ -3236,6 +3272,7 @@ export function App(): React.JSX.Element {
       fetchCampaignSendStageCounts(id),
       fetchSendStatusBreakdown(id),
       fetchPostalStatusBreakdown(id),
+      fetchPostalDeliveryStatusBreakdown(id),
       fetchCampaignCost(id),
       fetchCampaignCostSavings(id),
       fetchCampaignPaymentTotal(id),
@@ -6600,6 +6637,7 @@ export function App(): React.JSX.Element {
     setCampaignSendStageCounts(null);
     setSendStatusBreakdown(null);
     setPostalStatusBreakdown(null);
+    setPostalDeliveryStatusBreakdown(null);
     setCampaignCost(null);
     setCampaignCostSavings(null);
     setCampaignPaymentTotal(null);
@@ -6619,6 +6657,7 @@ export function App(): React.JSX.Element {
     fetchCampaignSendStageCounts(id);
     fetchSendStatusBreakdown(id);
     fetchPostalStatusBreakdown(id);
+    fetchPostalDeliveryStatusBreakdown(id);
     fetchCampaignCost(id);
     fetchCampaignCostSavings(id);
     fetchCampaignPaymentTotal(id);
@@ -6733,6 +6772,16 @@ export function App(): React.JSX.Element {
       const res = await apiFetch(`/campaigns/${id}/postal-status-breakdown`);
       if (!res.ok) return;
       setPostalStatusBreakdown(await res.json());
+    } catch {
+      // Non bloccante: il dettaglio campagna resta usabile senza la barra.
+    }
+  };
+
+  const fetchPostalDeliveryStatusBreakdown = async (id: string) => {
+    try {
+      const res = await apiFetch(`/campaigns/${id}/postal-delivery-status-breakdown`);
+      if (!res.ok) return;
+      setPostalDeliveryStatusBreakdown(await res.json());
     } catch {
       // Non bloccante: il dettaglio campagna resta usabile senza la barra.
     }
@@ -15031,9 +15080,8 @@ export function App(): React.JSX.Element {
                               <table className="table table-striped table-hover align-middle mb-0" style={{ fontSize: '0.82rem' }}>
                                 <thead className="table-light sticky-top">
                                   <tr>
-                                    <th>Codice Fiscale</th>
-                                    <th>Nominativo</th>
-                                    <th>Contatti (Email/PEC)</th>
+                                    <th>Destinatario</th>
+                                    <th>Contatti</th>
                                     <th>Stato Notifica</th>
                                     {campaign.channelType === 'SEND' ? (
                                       <><th>IUN</th><th>Protocollo</th><th>Stato SEND</th><th>Aggiornato il</th>{(((campaign.channelConfig?.['attachments'] as any[] | undefined)?.length ?? 0) > 0) && <th className="text-center">Download</th>}</>
@@ -15065,8 +15113,10 @@ export function App(): React.JSX.Element {
                                     ) : null;
                                     return (
                                     <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => openNotificationDetail(r.id)}>
-                                      <td className="fw-mono fw-bold">{r.codiceFiscale}</td>
-                                      <td>{r.fullName || <span className="text-muted">N/D</span>}</td>
+                                      <td>
+                                        <div className="fw-bold text-dark">{r.fullName || <span className="text-muted">N/D</span>}</div>
+                                        <div className="small text-muted fw-mono">{r.codiceFiscale}</div>
+                                      </td>
                                       <td>
                                         <div className="small d-flex flex-column gap-1">
                                           {r.email && <div><Mail className="me-1" /> {r.email}</div>}
@@ -15184,7 +15234,8 @@ export function App(): React.JSX.Element {
                                 { label: 'Falliti', value: campaign.failedCount },
                                 ...(queuedCount > 0 ? [{ label: 'In coda', value: queuedCount }] : []),
                               ];
-                              return (
+
+                              const renderOutcomePie = () => (
                                 <ResponsiveContainer width="100%" height={220}>
                                   <PieChart>
                                     <Pie
@@ -15193,7 +15244,7 @@ export function App(): React.JSX.Element {
                                       nameKey="label"
                                       cx="50%"
                                       cy="50%"
-                                      outerRadius={80}
+                                      outerRadius={75}
                                       label={renderPiePercentLabel}
                                       labelLine={false}
                                     >
@@ -15205,6 +15256,85 @@ export function App(): React.JSX.Element {
                                     <Legend />
                                   </PieChart>
                                 </ResponsiveContainer>
+                              );
+
+                              if (campaign.channelType !== 'POSTAL') {
+                                return renderOutcomePie();
+                              }
+
+                              const statusPieData = (postalStatusBreakdown ?? []).map((item) => ({
+                                label: item.status ? (POSTAL_STATUS_META[item.status]?.label ?? item.status) : 'In corso',
+                                value: item.count,
+                                color: item.status ? (POSTAL_STATUS_PIE_COLORS[item.status] ?? stableColorForKey(item.status)) : '#6c757d',
+                              }));
+
+                              const deliveryPieData = (postalDeliveryStatusBreakdown ?? []).map((item) => ({
+                                label: item.status ? (POSTAL_DELIVERY_STATUS_META[item.status]?.label ?? item.status) : 'In corso',
+                                value: item.count,
+                                color: item.status ? (POSTAL_DELIVERY_STATUS_PIE_COLORS[item.status] ?? stableColorForKey(item.status)) : '#adb5bd',
+                              }));
+
+                              return (
+                                <div className="row g-4 align-items-stretch">
+                                  <div className="col-md-4 text-center">
+                                    <h4 className="small fw-bold text-muted mb-2">Esito Invio</h4>
+                                    {renderOutcomePie()}
+                                  </div>
+                                  <div className="col-md-4 text-center border-start">
+                                    <h4 className="small fw-bold text-muted mb-2">Stato Documento</h4>
+                                    {statusPieData.length > 0 ? (
+                                      <ResponsiveContainer width="100%" height={220}>
+                                        <PieChart>
+                                          <Pie
+                                            data={statusPieData}
+                                            dataKey="value"
+                                            nameKey="label"
+                                            cx="50%"
+                                            cy="50%"
+                                            outerRadius={75}
+                                            label={renderPiePercentLabel}
+                                            labelLine={false}
+                                          >
+                                            {statusPieData.map((entry, idx) => (
+                                              <Cell key={`status-cell-${idx}`} fill={entry.color} />
+                                            ))}
+                                          </Pie>
+                                          <Tooltip />
+                                          <Legend />
+                                        </PieChart>
+                                      </ResponsiveContainer>
+                                    ) : (
+                                      <div className="text-muted small py-5">Nessun dato stato documento</div>
+                                    )}
+                                  </div>
+                                  <div className="col-md-4 text-center border-start">
+                                    <h4 className="small fw-bold text-muted mb-2">Recapito Poste</h4>
+                                    {deliveryPieData.length > 0 ? (
+                                      <ResponsiveContainer width="100%" height={220}>
+                                        <PieChart>
+                                          <Pie
+                                            data={deliveryPieData}
+                                            dataKey="value"
+                                            nameKey="label"
+                                            cx="50%"
+                                            cy="50%"
+                                            outerRadius={75}
+                                            label={renderPiePercentLabel}
+                                            labelLine={false}
+                                          >
+                                            {deliveryPieData.map((entry, idx) => (
+                                              <Cell key={`delivery-cell-${idx}`} fill={entry.color} />
+                                            ))}
+                                          </Pie>
+                                          <Tooltip />
+                                          <Legend />
+                                        </PieChart>
+                                      </ResponsiveContainer>
+                                    ) : (
+                                      <div className="text-muted small py-5">Nessun dato recapito poste</div>
+                                    )}
+                                  </div>
+                                </div>
                               );
                             })()}
                           </div>

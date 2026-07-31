@@ -830,6 +830,11 @@ export class CampaignsController {
     return this.campaignsService.getPostalStatusBreakdown(id);
   }
 
+  @Get(':id/postal-delivery-status-breakdown')
+  getPostalDeliveryStatusBreakdown(@Param('id', ParseUUIDPipe) id: string) {
+    return this.campaignsService.getPostalDeliveryStatusBreakdown(id);
+  }
+
   @Get(':id/cost')
   getCampaignCost(@Param('id', ParseUUIDPipe) id: string) {
     return this.campaignsService.getCampaignCost(id);

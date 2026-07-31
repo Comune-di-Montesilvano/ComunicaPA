@@ -2370,6 +2370,33 @@ export class CampaignsService {
     return Array.from(counts.entries()).map(([status, count]) => ({ status, count }));
   }
 
+  async getPostalDeliveryStatusBreakdown(campaignId: string): Promise<PostalStatusBreakdownDto[]> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+
+    const recipientIds = (await this.recipientRepo.find({ where: { campaignId }, select: ['id'] })).map((r) => r.id);
+    if (recipientIds.length === 0) return [];
+
+    const attempts = await this.attemptRepo.find({
+      where: { recipientId: In(recipientIds), channelType: 'POSTAL' },
+      select: ['recipientId', 'attemptNumber', 'postalDeliveryStatus', 'status'],
+    });
+
+    const latestByRecipient = new Map<string, NotificationAttempt>();
+    for (const a of attempts) {
+      const current = latestByRecipient.get(a.recipientId);
+      if (!current || a.attemptNumber > current.attemptNumber) latestByRecipient.set(a.recipientId, a);
+    }
+
+    const counts = new Map<string | null, number>();
+    for (const a of latestByRecipient.values()) {
+      const key = a.status === AttemptStatus.FAILED ? 'FAILED' : a.postalDeliveryStatus;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+
+    return Array.from(counts.entries()).map(([status, count]) => ({ status, count }));
+  }
+
   async getCampaignCost(campaignId: string): Promise<CampaignCostDto> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
