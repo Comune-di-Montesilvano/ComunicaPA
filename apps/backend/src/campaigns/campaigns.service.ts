@@ -2026,6 +2026,8 @@ export class CampaignsService {
     tags?: string[],
     hasDownload?: string,
     postalDeliveryStatus?: string,
+    sortBy?: string,
+    sortDir?: string,
   ): Promise<RecipientStatsPageDto> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
@@ -2035,12 +2037,6 @@ export class CampaignsService {
       .select([
         'r.id', 'r.fullName', 'r.codiceFiscale', 'r.email', 'r.pec', 'r.status',
         'r.downloadCount', 'r.firstDownloadedAt', 'r.lastDownloadedAt', 'r.attachmentDeletedAt',
-        // inadCheck.diverted serve al frontend (widget multicanale, bottone
-        // "Rimanda a questi N" su "Dirottato su PEC (INAD)") per filtrare
-        // client-side i destinatari dirottati della pagina corrente — senza
-        // questo campo il filtro `r.inadCheck?.diverted` era sempre vuoto
-        // (bug reale trovato in verifica manuale: il bottone diceva sempre
-        // "Nessun destinatario trovato" anche su una pagina con dirottati).
         'r.inadCheck',
       ])
       .where('r.campaignId = :campaignId', { campaignId });
@@ -2052,18 +2048,6 @@ export class CampaignsService {
       qb.andWhere('r.status = :status', { status });
     }
     if (deliveryStatus === PENDING_DELIVERY_STATUS_SENTINEL) {
-      // "In corso" (nessun send_status/postal_status ancora, es. attempt
-      // riuscito ma non ancora sincronizzato — stesso caso null gestito da
-      // ChannelStatusBar/pendingLabel in frontend) — attempt deve esistere
-      // ed essere SUCCESS, altrimenti un FAILED pre-provider (mai un
-      // send_status/postal_status per definizione) finirebbe qui invece che
-      // sotto lo stato business FAILED sentinella già gestito altrove.
-      // channel_type = campaign.channelType obbligatorio: un dirottato INAD
-      // (attempt reale PEC, non POSTAL) ha send_status/postal_status NULL
-      // anche lui (colonne mai popolate per PEC) — senza questo filtro
-      // finiva anche lui in "In corso", pur avendo un canale che non avrà
-      // mai un postalStatus (bug reale, visto in UI: dirottati con "—"
-      // mescolati ai veri pending POSTAL sotto lo stesso filtro).
       qb.andWhere(
         `EXISTS (
           SELECT 1 FROM (
@@ -2076,13 +2060,6 @@ export class CampaignsService {
         { campaignChannelType: campaign.channelType },
       );
     } else if (deliveryStatus) {
-      // "Stato Consegna" (SEND/POSTAL) vive sull'ultimo attempt del destinatario,
-      // non su recipient.status — stesso identico sotto-query DISTINCT ON già
-      // usato in getFailures() per "ultimo attempt per destinatario". Filtro su
-      // send_status OR postal_status (mai entrambi valorizzati sullo stesso
-      // attempt): stesso principio già applicato in getRecipientStats sopra,
-      // nessun filtro su channelType — un destinatario dirottato da INAD ha
-      // channelType diverso da quello di campagna sul suo attempt reale.
       qb.andWhere(
         `EXISTS (
           SELECT 1 FROM (
@@ -2109,9 +2086,6 @@ export class CampaignsService {
       );
     }
 
-    // Filtro "tipo di invio" multiselect — tag combinabili in AND (selezionare
-    // "Dirottato INAD" + "App IO" mostra SOLO i destinatari che soddisfano
-    // ENTRAMBI, non l'unione): ogni tag presente aggiunge un proprio andWhere.
     if (tags?.includes('diverted')) {
       qb.andWhere(`(r.inad_check->>'diverted')::boolean = true`);
     }
@@ -2119,10 +2093,6 @@ export class CampaignsService {
       qb.andWhere(`COALESCE((r.inad_check->>'diverted')::boolean, false) = false`);
     }
     if (tags?.includes('appio')) {
-      // Co-consegna App IO tentata su un attempt qualsiasi del destinatario
-      // (stesso criterio `a.appIo.attempted` già usato nel dettaglio
-      // notifica) — appIo vive solo dentro response_payload jsonb, nessuna
-      // colonna dedicata.
       qb.andWhere(
         `EXISTS (SELECT 1 FROM notification_attempts na WHERE na.recipient_id = r.id AND na.response_payload -> 'appIo' IS NOT NULL)`,
       );
@@ -2133,35 +2103,86 @@ export class CampaignsService {
       qb.andWhere('r.download_count = 0');
     }
 
+    const dir = sortDir?.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+
+    if (sortBy === 'alphabetical' || sortBy === 'name') {
+      qb.orderBy("COALESCE(NULLIF(TRIM(r.fullName), ''), r.codiceFiscale)", dir);
+      if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
+    } else if (sortBy === 'contacts') {
+      qb.orderBy("COALESCE(NULLIF(TRIM(r.email), ''), NULLIF(TRIM(r.pec), ''))", dir, 'NULLS LAST');
+      if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
+    } else if (sortBy === 'protocol') {
+      qb.orderBy(
+        `(SELECT na.protocol_number FROM notification_attempts na WHERE na.recipient_id = r.id AND na.protocol_number IS NOT NULL ORDER BY na.attempt_number DESC LIMIT 1)`,
+        dir,
+        'NULLS LAST',
+      );
+      if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
+    } else if (sortBy === 'status') {
+      qb.orderBy('r.status', dir);
+      if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
+    } else if (sortBy === 'iun') {
+      qb.orderBy(
+        `(SELECT na.iun FROM notification_attempts na WHERE na.recipient_id = r.id AND na.iun IS NOT NULL ORDER BY na.attempt_number DESC LIMIT 1)`,
+        dir,
+        'NULLS LAST',
+      );
+      if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
+    } else if (sortBy === 'sendStatus') {
+      qb.orderBy(
+        `(SELECT na.send_status FROM notification_attempts na WHERE na.recipient_id = r.id AND na.send_status IS NOT NULL ORDER BY na.attempt_number DESC LIMIT 1)`,
+        dir,
+        'NULLS LAST',
+      );
+      if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
+    } else if (sortBy === 'postalStatus') {
+      qb.orderBy(
+        `(SELECT na.postal_status FROM notification_attempts na WHERE na.recipient_id = r.id AND na.postal_status IS NOT NULL ORDER BY na.attempt_number DESC LIMIT 1)`,
+        dir,
+        'NULLS LAST',
+      );
+      if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
+    } else if (sortBy === 'postalDeliveryStatus') {
+      qb.orderBy(
+        `(SELECT na.postal_delivery_status FROM notification_attempts na WHERE na.recipient_id = r.id AND na.postal_delivery_status IS NOT NULL ORDER BY na.attempt_number DESC LIMIT 1)`,
+        dir,
+        'NULLS LAST',
+      );
+      if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
+    } else if (sortBy === 'updatedAt') {
+      qb.orderBy(
+        `COALESCE((SELECT MAX(COALESCE(na.postal_status_updated_at, na.send_status_updated_at, na.updated_at)) FROM notification_attempts na WHERE na.recipient_id = r.id), r.created_at)`,
+        dir,
+        'NULLS LAST',
+      );
+      if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
+    } else if (sortBy === 'download') {
+      qb.orderBy('r.downloadCount', dir);
+      if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
+    } else if (sortBy === 'cost') {
+      qb.orderBy(
+        `(SELECT na.cost_cents FROM notification_attempts na WHERE na.recipient_id = r.id AND na.cost_cents IS NOT NULL ORDER BY na.attempt_number DESC LIMIT 1)`,
+        dir,
+        'NULLS LAST',
+      );
+      if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
+    } else {
+      // Default: ordine deterministico per data creazione / id per evitare riordinamenti ad ogni polling
+      qb.orderBy('r.createdAt', 'ASC');
+      if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
+    }
+
     const [rawItems, total] = await qb
-      .orderBy('r.createdAt', 'ASC')
       .skip((page - 1) * pageSize)
       .take(pageSize)
       .getManyAndCount();
-    // Selezione parziale via .select(): il risultato ha solo i campi
-    // proiettati (compatibili con RecipientStatDto), non un Recipient
-    // completo — tipizzato esplicitamente per poter assegnare le colonne
-    // SEND opzionali qui sotto.
     const items: RecipientStatDto[] = rawItems;
 
-    if ((campaign.channelType === 'SEND' || campaign.channelType === 'POSTAL' || campaign.channelConfig?.['protocolla'] === true) && items.length > 0) {
-      // Due query separate invece di leftJoinAndSelect: stesso motivo del
-      // bug TypeORM documentato in protocollazione-sync.service.ts/
-      // send-dispatch.service.ts (leftJoinAndSelect + orderBy + take su
-      // relazione dichiarata per stringa). Qui il join sarebbe su una
-      // relazione 1-a-molti (un destinatario può avere più attempt): il
-      // riduttore "ultimo per destinatario" si fa in JS sul risultato,
-      // batch piccolo (una pagina di destinatari), nessun impatto pratico.
-      // Niente filtro su channelType: un destinatario dirottato da INAD ha
-      // channelType diverso da campaign.channelType sul suo attempt reale
-      // (es. POSTAL->PEC) — filtrare sul canale di campagna escludeva questi
-      // attempt, mostrando "—" su protocollo/iun/stato anche quando il dato
-      // esisteva davvero in DB (stesso bug già corretto altrove per
-      // getSendStageCounts, mai applicato qui).
+    if (items.length > 0) {
       const recipientIds = items.map((r) => r.id);
-      const attempts = await this.attemptRepo.find({
+      const attempts = (await this.attemptRepo.find({
         where: { recipientId: In(recipientIds) },
-      });
+      })) || [];
       const latestByRecipient = new Map<string, NotificationAttempt>();
       const protocolByRecipient = new Map<string, { protocolNumber: number; protocolYear: number }>();
       for (const a of attempts) {
@@ -2192,6 +2213,7 @@ export class CampaignsService {
           item.postalDeliveryCode = latest.postalDeliveryCode;
           item.postalDeliveryDate = latest.postalDeliveryDate;
           item.postalAcceptanceId = latest.postalAcceptanceId;
+          item.costCents = latest.costCents ?? null;
         }
       }
     }

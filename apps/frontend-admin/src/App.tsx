@@ -18,7 +18,7 @@ import {
   RefreshCw, Tag, UserCheck, Sparkles,
   CheckCheck, Shield, Paperclip, Upload, Filter, Award, ExternalLink, Contact,
   Play, FileArchive, Keyboard, Key, BookUser,
-  Minus, Star, Stamp, Settings, CircleUserRound, BarChart3, ShieldCheck, Rocket, ArrowDown,
+  Minus, Star, Stamp, Settings, CircleUserRound, BarChart3, ShieldCheck, Rocket, ArrowDown, ArrowUp, ArrowUpDown,
   Users, FolderOpen, Euro,
 } from 'lucide-react';
 
@@ -2104,12 +2104,14 @@ export function App(): React.JSX.Element {
     failed: Array<{ recipientId: string; reason: string }>;
     errorMessage: string | null;
   } | null>(null);
-  const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; protocolNumber?: number | null; protocolYear?: number | null; inadCheck?: { found: boolean; diverted: boolean } | null }> } | null>(null);
+  const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number; costCents?: number | null; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; protocolNumber?: number | null; protocolYear?: number | null; inadCheck?: { found: boolean; diverted: boolean } | null }> } | null>(null);
   const [recipientsSearch, setRecipientsSearch] = useState('');
   const [recipientsPageNum, setRecipientsPageNum] = useState(1);
   const [recipientsStatusFilter, setRecipientsStatusFilter] = useState('');
   const [recipientsDeliveryStatusFilter, setRecipientsDeliveryStatusFilter] = useState('');
   const [recipientsPostalDeliveryStatusFilter, setRecipientsPostalDeliveryStatusFilter] = useState('');
+  const [recipientsSortBy, setRecipientsSortBy] = useState<string>('alphabetical');
+  const [recipientsSortDir, setRecipientsSortDir] = useState<'ASC' | 'DESC'>('ASC');
   // Tag combinabili in AND: "diverted" (dirottato INAD), "primary" (canale
   // primario, non dirottato), "appio" (co-consegna App IO tentata).
   const [recipientsTagsFilter, setRecipientsTagsFilter] = useState<string[]>([]);
@@ -2190,12 +2192,12 @@ export function App(): React.JSX.Element {
           fetchCampaignCostSavings(selectedCampaignId);
           fetchCampaignPaymentTotal(selectedCampaignId);
           fetchDownloadCombinationStats(selectedCampaignId);
-          fetchRecipientsPage(selectedCampaignId, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter);
+          fetchRecipientsPage(selectedCampaignId, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter, recipientsSortBy, recipientsSortDir);
         }, 3000);
       }
     }
     return () => clearInterval(timer);
-  }, [view, selectedCampaignId, campaign, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter]);
+  }, [view, selectedCampaignId, campaign, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter, recipientsSortBy, recipientsSortDir]);
 
   // Auto-refresh degli elenchi campagne (dashboard "Attività Recenti" e "Campagne
   // Massive"): fetchCampaigns() girava solo una volta al login ([token]) — una
@@ -2256,10 +2258,10 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     if (!selectedCampaignId || view !== 'campaign-detail') return;
     const handle = setTimeout(() => {
-      fetchRecipientsPage(selectedCampaignId, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter);
+      fetchRecipientsPage(selectedCampaignId, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter, recipientsSortBy, recipientsSortDir);
     }, 300);
     return () => clearTimeout(handle);
-  }, [selectedCampaignId, view, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter]);
+  }, [selectedCampaignId, view, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter, recipientsSortBy, recipientsSortDir]);
 
   useEffect(() => {
     if (token) {
@@ -6683,6 +6685,8 @@ export function App(): React.JSX.Element {
     setRecipientsStatusFilter('');
     setRecipientsDeliveryStatusFilter('');
     setRecipientsPostalDeliveryStatusFilter('');
+    setRecipientsSortBy('alphabetical');
+    setRecipientsSortDir('ASC');
     setRecipientsFilterOptions(null);
     fetchCampaignDetail(id);
     fetchFailureGroups(id);
@@ -6853,6 +6857,29 @@ export function App(): React.JSX.Element {
 
   const RECIPIENTS_PAGE_SIZE = 50;
 
+  const handleSortRecipients = (col: string) => {
+    let nextDir: 'ASC' | 'DESC' = 'ASC';
+    if (recipientsSortBy === col) {
+      nextDir = recipientsSortDir === 'ASC' ? 'DESC' : 'ASC';
+    }
+    setRecipientsSortBy(col);
+    setRecipientsSortDir(nextDir);
+    if (selectedCampaignId) {
+      fetchRecipientsPage(
+        selectedCampaignId,
+        recipientsPageNum,
+        recipientsSearch,
+        recipientsStatusFilter,
+        recipientsDeliveryStatusFilter,
+        recipientsTagsFilter,
+        recipientsDownloadFilter,
+        recipientsPostalDeliveryStatusFilter,
+        col,
+        nextDir,
+      );
+    }
+  };
+
   const fetchRecipientsPage = async (
     campaignId: string,
     page: number,
@@ -6862,6 +6889,8 @@ export function App(): React.JSX.Element {
     tagsFilter: string[] = [],
     downloadFilter: string = '',
     postalDeliveryStatusFilter: string = '',
+    sortBy: string = recipientsSortBy,
+    sortDir: string = recipientsSortDir,
   ) => {
     try {
       const params = new URLSearchParams({ page: String(page), pageSize: String(RECIPIENTS_PAGE_SIZE) });
@@ -6871,6 +6900,8 @@ export function App(): React.JSX.Element {
       if (postalDeliveryStatusFilter) params.set('postalDeliveryStatus', postalDeliveryStatusFilter);
       if (tagsFilter.length > 0) params.set('tags', tagsFilter.join(','));
       if (downloadFilter) params.set('hasDownload', downloadFilter);
+      if (sortBy) params.set('sortBy', sortBy);
+      if (sortDir) params.set('sortDir', sortDir);
       const res = await apiFetch(`/campaigns/${campaignId}/stats/recipients?${params.toString()}`);
       if (!res.ok) return;
       const data = await res.json();
@@ -14456,8 +14487,8 @@ export function App(): React.JSX.Element {
               ) : detailError ? (
                 <div className="alert alert-danger"><AlertTriangle /> {detailError}</div>
               ) : campaign ? (
-                <div className="row g-4">
-                  <div className="col-lg-4">
+                <div className="row g-3">
+                  <div className="col-xxl-2 col-xl-3 col-lg-3">
                     <div className="card shadow-sm mb-4">
                       <div className="card-header bg-white py-3 border-bottom">
                         <h3 className="h6 mb-0 fw-bold text-dark"><Info className="me-2" />Metadati Campagna</h3>
@@ -14931,7 +14962,7 @@ export function App(): React.JSX.Element {
                     </div>
                   </div>
 
-                  <div className="col-lg-8">
+                  <div className="col-xxl-10 col-xl-9 col-lg-9">
                     {campaign.status === 'draft' && (
                       <div className="card shadow-sm mb-4">
                         <div className="card-body text-center py-4">
@@ -15112,26 +15143,199 @@ export function App(): React.JSX.Element {
                         ) : (
                           <>
                             <div className="table-responsive" style={{ maxHeight: '400px', overflowY: 'auto' }}>
-                              <table className="table table-striped table-hover align-middle mb-0" style={{ fontSize: '0.82rem' }}>
+                              <table className="table table-sm table-striped table-hover align-middle mb-0" style={{ fontSize: '0.8rem' }}>
                                 <thead className="table-light sticky-top">
                                   <tr>
-                                    <th>Destinatario</th>
+                                    <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('alphabetical')}>
+                                      <div className="d-inline-flex align-items-center gap-1">
+                                        <span>Destinatario</span>
+                                        {recipientsSortBy === 'alphabetical' ? (
+                                          recipientsSortDir === 'ASC' ? <ArrowUp size={12} className="text-primary" /> : <ArrowDown size={12} className="text-primary" />
+                                        ) : (
+                                          <ArrowUpDown size={12} className="text-muted opacity-50" />
+                                        )}
+                                      </div>
+                                    </th>
                                     <th>Contatti</th>
-                                    <th>Stato Notifica</th>
+                                    <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('status')}>
+                                      <div className="d-inline-flex align-items-center gap-1">
+                                        <span>Stato Notifica</span>
+                                        {recipientsSortBy === 'status' ? (
+                                          recipientsSortDir === 'ASC' ? <ArrowUp size={12} className="text-primary" /> : <ArrowDown size={12} className="text-primary" />
+                                        ) : (
+                                          <ArrowUpDown size={12} className="text-muted opacity-50" />
+                                        )}
+                                      </div>
+                                    </th>
                                     {campaign.channelType === 'SEND' ? (
-                                      <><th>IUN</th><th>Protocollo</th><th>Stato SEND</th><th>Aggiornato il</th>{(((campaign.channelConfig?.['attachments'] as any[] | undefined)?.length ?? 0) > 0) && <th className="text-center">Download</th>}</>
-                                    ) : campaign.channelType === 'POSTAL' ? (
-                                      campaign.channelConfig?.['protocolla'] ? (
-                                        <><th>Protocollo</th><th>Stato Documento</th><th>Recapito Poste</th><th>Aggiornato il</th>{(((campaign.channelConfig?.['attachments'] as any[] | undefined)?.length ?? 0) > 0) && <th className="text-center">Download</th>}</>
-                                      ) : (
-                                        <><th>Stato Documento</th><th>Recapito Poste</th><th>Aggiornato il</th>{(((campaign.channelConfig?.['attachments'] as any[] | undefined)?.length ?? 0) > 0) && <th className="text-center">Download</th>}</>
-                                      )
-                                    ) : campaign.channelConfig?.['protocolla'] ? (
-                                      <><th>Protocollo</th><th className="text-center">Download</th></>
-                                    ) : (
-                                      <th className="text-center">Download</th>
-                                    )}
-                                  </tr>
+                                       <>
+                                         <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('iun')}>
+                                           <div className="d-inline-flex align-items-center gap-1">
+                                             <span>IUN</span>
+                                             {recipientsSortBy === 'iun' ? (
+                                               recipientsSortDir === 'ASC' ? <ArrowUp size={12} className="text-primary" /> : <ArrowDown size={12} className="text-primary" />
+                                             ) : (
+                                               <ArrowUpDown size={12} className="text-muted opacity-50" />
+                                             )}
+                                           </div>
+                                         </th>
+                                         <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('protocol')}>
+                                           <div className="d-inline-flex align-items-center gap-1">
+                                             <span>Protocollo</span>
+                                             {recipientsSortBy === 'protocol' ? (
+                                               recipientsSortDir === 'ASC' ? <ArrowUp size={12} className="text-primary" /> : <ArrowDown size={12} className="text-primary" />
+                                             ) : (
+                                               <ArrowUpDown size={12} className="text-muted opacity-50" />
+                                             )}
+                                           </div>
+                                         </th>
+                                         <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('sendStatus')}>
+                                           <div className="d-inline-flex align-items-center gap-1">
+                                             <span>Stato SEND</span>
+                                             {recipientsSortBy === 'sendStatus' ? (
+                                               recipientsSortDir === 'ASC' ? <ArrowUp size={12} className="text-primary" /> : <ArrowDown size={12} className="text-primary" />
+                                             ) : (
+                                               <ArrowUpDown size={12} className="text-muted opacity-50" />
+                                             )}
+                                           </div>
+                                         </th>
+                                         <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('updatedAt')}>
+                                           <div className="d-inline-flex align-items-center gap-1">
+                                             <span>Aggiornato il</span>
+                                             {recipientsSortBy === 'updatedAt' ? (
+                                               recipientsSortDir === 'ASC' ? <ArrowUp size={12} className="text-primary" /> : <ArrowDown size={12} className="text-primary" />
+                                             ) : (
+                                               <ArrowUpDown size={12} className="text-muted opacity-50" />
+                                             )}
+                                           </div>
+                                         </th>
+                                         {(((campaign.channelConfig?.['attachments'] as any[] | undefined)?.length ?? 0) > 0) && (
+                                           <th className="text-center" style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('download')}>
+                                             <div className="d-inline-flex align-items-center justify-content-center gap-1">
+                                               <span>Download</span>
+                                               {recipientsSortBy === 'download' ? (
+                                                 recipientsSortDir === 'ASC' ? <ArrowUp size={12} className="text-primary" /> : <ArrowDown size={12} className="text-primary" />
+                                               ) : (
+                                                 <ArrowUpDown size={12} className="text-muted opacity-50" />
+                                               )}
+                                             </div>
+                                           </th>
+                                         )}
+                                         <th className="text-end" style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('cost')}>
+                                           <div className="d-inline-flex align-items-center justify-content-end gap-1">
+                                             <span>Costo Notifica</span>
+                                             {recipientsSortBy === 'cost' ? (
+                                               recipientsSortDir === 'ASC' ? <ArrowUp size={12} className="text-primary" /> : <ArrowDown size={12} className="text-primary" />
+                                             ) : (
+                                               <ArrowUpDown size={12} className="text-muted opacity-50" />
+                                             )}
+                                           </div>
+                                         </th>
+                                       </>
+                                     ) : campaign.channelType === 'POSTAL' ? (
+                                       <>
+                                         {campaign.channelConfig?.['protocolla'] && (
+                                           <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('protocol')}>
+                                             <div className="d-inline-flex align-items-center gap-1">
+                                               <span>Protocollo</span>
+                                               {recipientsSortBy === 'protocol' ? (
+                                                 recipientsSortDir === 'ASC' ? <ArrowUp size={12} className="text-primary" /> : <ArrowDown size={12} className="text-primary" />
+                                               ) : (
+                                                 <ArrowUpDown size={12} className="text-muted opacity-50" />
+                                               )}
+                                             </div>
+                                           </th>
+                                         )}
+                                         <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('postalStatus')}>
+                                           <div className="d-inline-flex align-items-center gap-1">
+                                             <span>Stato Documento</span>
+                                             {recipientsSortBy === 'postalStatus' ? (
+                                               recipientsSortDir === 'ASC' ? <ArrowUp size={12} className="text-primary" /> : <ArrowDown size={12} className="text-primary" />
+                                             ) : (
+                                               <ArrowUpDown size={12} className="text-muted opacity-50" />
+                                             )}
+                                           </div>
+                                         </th>
+                                         <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('postalDeliveryStatus')}>
+                                           <div className="d-inline-flex align-items-center gap-1">
+                                             <span>Recapito Poste</span>
+                                             {recipientsSortBy === 'postalDeliveryStatus' ? (
+                                               recipientsSortDir === 'ASC' ? <ArrowUp size={12} className="text-primary" /> : <ArrowDown size={12} className="text-primary" />
+                                             ) : (
+                                               <ArrowUpDown size={12} className="text-muted opacity-50" />
+                                             )}
+                                           </div>
+                                         </th>
+                                         <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('updatedAt')}>
+                                           <div className="d-inline-flex align-items-center gap-1">
+                                             <span>Aggiornato il</span>
+                                             {recipientsSortBy === 'updatedAt' ? (
+                                               recipientsSortDir === 'ASC' ? <ArrowUp size={12} className="text-primary" /> : <ArrowDown size={12} className="text-primary" />
+                                             ) : (
+                                               <ArrowUpDown size={12} className="text-muted opacity-50" />
+                                             )}
+                                           </div>
+                                         </th>
+                                         {(((campaign.channelConfig?.['attachments'] as any[] | undefined)?.length ?? 0) > 0) && (
+                                           <th className="text-center" style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('download')}>
+                                             <div className="d-inline-flex align-items-center justify-content-center gap-1">
+                                               <span>Download</span>
+                                               {recipientsSortBy === 'download' ? (
+                                                 recipientsSortDir === 'ASC' ? <ArrowUp size={12} className="text-primary" /> : <ArrowDown size={12} className="text-primary" />
+                                               ) : (
+                                                 <ArrowUpDown size={12} className="text-muted opacity-50" />
+                                               )}
+                                             </div>
+                                           </th>
+                                         )}
+                                         <th className="text-end" style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('cost')}>
+                                           <div className="d-inline-flex align-items-center justify-content-end gap-1">
+                                             <span>Costo Notifica</span>
+                                             {recipientsSortBy === 'cost' ? (
+                                               recipientsSortDir === 'ASC' ? <ArrowUp size={12} className="text-primary" /> : <ArrowDown size={12} className="text-primary" />
+                                             ) : (
+                                               <ArrowUpDown size={12} className="text-muted opacity-50" />
+                                             )}
+                                           </div>
+                                         </th>
+                                       </>
+                                     ) : (
+                                       <>
+                                         {campaign.channelConfig?.['protocolla'] && (
+                                           <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('protocol')}>
+                                             <div className="d-inline-flex align-items-center gap-1">
+                                               <span>Protocollo</span>
+                                               {recipientsSortBy === 'protocol' ? (
+                                                 recipientsSortDir === 'ASC' ? <ArrowUp size={12} className="text-primary" /> : <ArrowDown size={12} className="text-primary" />
+                                               ) : (
+                                                 <ArrowUpDown size={12} className="text-muted opacity-50" />
+                                               )}
+                                             </div>
+                                           </th>
+                                         )}
+                                         <th className="text-center" style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('download')}>
+                                           <div className="d-inline-flex align-items-center justify-content-center gap-1">
+                                             <span>Download</span>
+                                             {recipientsSortBy === 'download' ? (
+                                               recipientsSortDir === 'ASC' ? <ArrowUp size={12} className="text-primary" /> : <ArrowDown size={12} className="text-primary" />
+                                             ) : (
+                                               <ArrowUpDown size={12} className="text-muted opacity-50" />
+                                             )}
+                                           </div>
+                                         </th>
+                                         <th className="text-end" style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('cost')}>
+                                           <div className="d-inline-flex align-items-center justify-content-end gap-1">
+                                             <span>Costo Notifica</span>
+                                             {recipientsSortBy === 'cost' ? (
+                                               recipientsSortDir === 'ASC' ? <ArrowUp size={12} className="text-primary" /> : <ArrowDown size={12} className="text-primary" />
+                                             ) : (
+                                               <ArrowUpDown size={12} className="text-muted opacity-50" />
+                                             )}
+                                           </div>
+                                         </th>
+                                       </>
+                                     )}
+                                   </tr>
                                 </thead>
                                 <tbody>
                                   {recipientsPage.items.map((r) => {
@@ -15146,6 +15350,17 @@ export function App(): React.JSX.Element {
                                         )}
                                       </td>
                                     ) : null;
+                                    const costCell = (
+                                      <td className="text-end fw-mono small text-nowrap">
+                                        {r.costCents !== null && r.costCents !== undefined ? (
+                                          <span className="fw-semibold text-dark">
+                                            € {(r.costCents / 100).toFixed(2).replace('.', ',')}
+                                          </span>
+                                        ) : (
+                                          <span className="text-muted">—</span>
+                                        )}
+                                      </td>
+                                    );
                                     return (
                                     <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => openNotificationDetail(r.id)}>
                                       <td>
@@ -15166,6 +15381,7 @@ export function App(): React.JSX.Element {
                                           <td className="small"><SendStatusBadge status={r.sendStatus} /></td>
                                           <td className="small text-muted">{r.sendStatusUpdatedAt ? new Date(r.sendStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
                                           {downloadCell}
+                                          {costCell}
                                         </>
                                       ) : campaign.channelType === 'POSTAL' ? (
                                         // Dirottato INAD (attempt reale su PEC, non POSTAL): niente
@@ -15179,6 +15395,7 @@ export function App(): React.JSX.Element {
                                               <td className="small text-muted">—</td>
                                               <td className="small text-muted">—</td>
                                               {downloadCell}
+                                              {costCell}
                                             </>
                                           ) : (
                                             <>
@@ -15186,6 +15403,7 @@ export function App(): React.JSX.Element {
                                               <td className="small text-muted">—</td>
                                               <td className="small text-muted">—</td>
                                               {downloadCell}
+                                              {costCell}
                                             </>
                                           )
                                         ) : campaign.channelConfig?.['protocolla'] ? (
@@ -15195,6 +15413,7 @@ export function App(): React.JSX.Element {
                                             <td className="small"><PostalDeliveryStatusBadge status={r.postalDeliveryStatus} code={r.postalDeliveryCode} /></td>
                                             <td className="small text-muted">{r.postalStatusUpdatedAt ? new Date(r.postalStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
                                             {downloadCell}
+                                            {costCell}
                                           </>
                                         ) : (
                                           <>
@@ -15202,6 +15421,7 @@ export function App(): React.JSX.Element {
                                             <td className="small"><PostalDeliveryStatusBadge status={r.postalDeliveryStatus} code={r.postalDeliveryCode} /></td>
                                             <td className="small text-muted">{r.postalStatusUpdatedAt ? new Date(r.postalStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
                                             {downloadCell}
+                                            {costCell}
                                           </>
                                         )
                                       ) : campaign.channelConfig?.['protocolla'] ? (

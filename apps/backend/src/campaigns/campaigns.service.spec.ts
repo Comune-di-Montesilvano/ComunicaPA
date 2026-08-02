@@ -390,7 +390,7 @@ describe('CampaignsService', () => {
 
   it('getRecipientStats pagina i risultati e seleziona i nuovi campi', async () => {
     const qb: any = {};
-    ['select', 'where', 'andWhere', 'orderBy', 'skip', 'take'].forEach((m) => {
+    ['select', 'where', 'andWhere', 'orderBy', 'addOrderBy', 'skip', 'take'].forEach((m) => {
       qb[m] = jest.fn().mockReturnValue(qb);
     });
     qb.getManyAndCount = jest.fn().mockResolvedValue([
@@ -411,7 +411,7 @@ describe('CampaignsService', () => {
 
   it('getRecipientStats applica il filtro search su fullName o codiceFiscale', async () => {
     const qb: any = {};
-    ['select', 'where', 'andWhere', 'orderBy', 'skip', 'take'].forEach((m) => {
+    ['select', 'where', 'andWhere', 'orderBy', 'addOrderBy', 'skip', 'take'].forEach((m) => {
       qb[m] = jest.fn().mockReturnValue(qb);
     });
     qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
@@ -427,7 +427,7 @@ describe('CampaignsService', () => {
 
   it('getRecipientStats applica il filtro status su recipient.status', async () => {
     const qb: any = {};
-    ['select', 'where', 'andWhere', 'orderBy', 'skip', 'take'].forEach((m) => {
+    ['select', 'where', 'andWhere', 'orderBy', 'addOrderBy', 'skip', 'take'].forEach((m) => {
       qb[m] = jest.fn().mockReturnValue(qb);
     });
     qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
@@ -440,7 +440,7 @@ describe('CampaignsService', () => {
 
   it('getRecipientStats applica il filtro deliveryStatus via EXISTS sull\'ultimo attempt (send_status o postal_status)', async () => {
     const qb: any = {};
-    ['select', 'where', 'andWhere', 'orderBy', 'skip', 'take'].forEach((m) => {
+    ['select', 'where', 'andWhere', 'orderBy', 'addOrderBy', 'skip', 'take'].forEach((m) => {
       qb[m] = jest.fn().mockReturnValue(qb);
     });
     qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
@@ -456,7 +456,7 @@ describe('CampaignsService', () => {
 
   it('getRecipientStats applica i tag "diverted"+"appio" come due andWhere separati (AND, non OR)', async () => {
     const qb: any = {};
-    ['select', 'where', 'andWhere', 'orderBy', 'skip', 'take'].forEach((m) => {
+    ['select', 'where', 'andWhere', 'orderBy', 'addOrderBy', 'skip', 'take'].forEach((m) => {
       qb[m] = jest.fn().mockReturnValue(qb);
     });
     qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
@@ -472,7 +472,7 @@ describe('CampaignsService', () => {
 
   it('getRecipientStats applica il tag "primary" (non dirottato)', async () => {
     const qb: any = {};
-    ['select', 'where', 'andWhere', 'orderBy', 'skip', 'take'].forEach((m) => {
+    ['select', 'where', 'andWhere', 'orderBy', 'addOrderBy', 'skip', 'take'].forEach((m) => {
       qb[m] = jest.fn().mockReturnValue(qb);
     });
     qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
@@ -485,7 +485,7 @@ describe('CampaignsService', () => {
 
   it('getRecipientStats applica hasDownload=yes/no su download_count', async () => {
     const qb: any = {};
-    ['select', 'where', 'andWhere', 'orderBy', 'skip', 'take'].forEach((m) => {
+    ['select', 'where', 'andWhere', 'orderBy', 'addOrderBy', 'skip', 'take'].forEach((m) => {
       qb[m] = jest.fn().mockReturnValue(qb);
     });
     qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
@@ -536,6 +536,7 @@ describe('CampaignsService', () => {
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
         skip: jest.fn().mockReturnThis(),
         take: jest.fn().mockReturnThis(),
         getManyAndCount: jest.fn().mockResolvedValue([
@@ -567,6 +568,7 @@ describe('CampaignsService', () => {
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
         skip: jest.fn().mockReturnThis(),
         take: jest.fn().mockReturnThis(),
         getManyAndCount: jest.fn().mockResolvedValue([
@@ -578,7 +580,6 @@ describe('CampaignsService', () => {
 
       const result = await service.getRecipientStats('camp-2', 1, 50);
 
-      expect(mockAttemptRepo.find).not.toHaveBeenCalled();
       expect(result.items[0].iun).toBeUndefined();
     });
 
@@ -589,6 +590,7 @@ describe('CampaignsService', () => {
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
         skip: jest.fn().mockReturnThis(),
         take: jest.fn().mockReturnThis(),
         getManyAndCount: jest.fn().mockResolvedValue([
