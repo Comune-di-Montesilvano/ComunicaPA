@@ -2192,7 +2192,7 @@ export function App(): React.JSX.Element {
           fetchCampaignCostSavings(selectedCampaignId);
           fetchCampaignPaymentTotal(selectedCampaignId);
           fetchDownloadCombinationStats(selectedCampaignId);
-          fetchRecipientsPage(selectedCampaignId, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter, recipientsSortBy, recipientsSortDir);
+          fetchRecipientsPage(selectedCampaignId);
         }, 3000);
       }
     }
@@ -2254,13 +2254,27 @@ export function App(): React.JSX.Element {
     return () => clearInterval(timer);
   }, [token, notifDetail?.recipient.id]);
 
-  // Ricarica la pagina destinatari su cambio pagina/ricerca (debounce sulla ricerca)
+  // Ricarica la pagina destinatari su cambio pagina/ricerca/filtri/ordinamento
+  // (debounce 300ms solo sul testo di ricerca per non appesantire la digitazione,
+  // istantaneo 0ms per ordinamento, filtri e paginazione)
+  const prevSearchRef = useRef(recipientsSearch);
   useEffect(() => {
-    if (!selectedCampaignId || view !== 'campaign-detail') return;
-    const handle = setTimeout(() => {
-      fetchRecipientsPage(selectedCampaignId, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter, recipientsSortBy, recipientsSortDir);
-    }, 300);
-    return () => clearTimeout(handle);
+    if (!selectedCampaignId || view !== 'campaign-detail') return undefined;
+
+    const searchChanged = prevSearchRef.current !== recipientsSearch;
+    prevSearchRef.current = recipientsSearch;
+
+    if (searchChanged && recipientsSearch.trim()) {
+      const handle = setTimeout(() => {
+        fetchRecipientsPage(selectedCampaignId);
+      }, 300);
+      return () => {
+        clearTimeout(handle);
+      };
+    }
+
+    fetchRecipientsPage(selectedCampaignId);
+    return undefined;
   }, [selectedCampaignId, view, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter, recipientsSortBy, recipientsSortDir]);
 
   useEffect(() => {
@@ -3306,7 +3320,7 @@ export function App(): React.JSX.Element {
       fetchCampaignCostSavings(id),
       fetchCampaignPaymentTotal(id),
       fetchDownloadCombinationStats(id),
-      fetchRecipientsPage(id, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter),
+      fetchRecipientsPage(id),
       fetchRecipientsFilterOptions(id),
     ]);
   };
@@ -5098,6 +5112,7 @@ export function App(): React.JSX.Element {
         ? `${data.resetCount} raccomandate resettate — il ricontrollo automatico le riprende entro un minuto.`
         : 'Nessuna raccomandata in Errore con IDPRO da ricontrollare.');
       fetchCampaignDetail(campaign.id);
+      fetchRecipientsPage(campaign.id);
     } catch (err) {
       if (!(err instanceof ApiAuthError)) alert('Errore durante il reset dello stato GlobalCom.');
     } finally {
@@ -6864,31 +6879,17 @@ export function App(): React.JSX.Element {
     }
     setRecipientsSortBy(col);
     setRecipientsSortDir(nextDir);
-    if (selectedCampaignId) {
-      fetchRecipientsPage(
-        selectedCampaignId,
-        recipientsPageNum,
-        recipientsSearch,
-        recipientsStatusFilter,
-        recipientsDeliveryStatusFilter,
-        recipientsTagsFilter,
-        recipientsDownloadFilter,
-        recipientsPostalDeliveryStatusFilter,
-        col,
-        nextDir,
-      );
-    }
   };
 
   const fetchRecipientsPage = async (
     campaignId: string,
-    page: number,
-    search: string,
-    statusFilter: string,
-    deliveryStatusFilter: string,
-    tagsFilter: string[] = [],
-    downloadFilter: string = '',
-    postalDeliveryStatusFilter: string = '',
+    page: number = recipientsPageNum,
+    search: string = recipientsSearch,
+    statusFilter: string = recipientsStatusFilter,
+    deliveryStatusFilter: string = recipientsDeliveryStatusFilter,
+    tagsFilter: string[] = recipientsTagsFilter,
+    downloadFilter: string = recipientsDownloadFilter,
+    postalDeliveryStatusFilter: string = recipientsPostalDeliveryStatusFilter,
     sortBy: string = recipientsSortBy,
     sortDir: string = recipientsSortDir,
   ) => {
@@ -15142,7 +15143,14 @@ export function App(): React.JSX.Element {
                               Riattiva controllo errori GlobalCom
                             </button>
                           )}
-                          <button className="btn btn-outline-secondary btn-sm border-0" onClick={() => fetchCampaignDetail(campaign.id)} title="Aggiorna esiti">
+                          <button
+                            className="btn btn-outline-secondary btn-sm border-0"
+                            onClick={() => {
+                              fetchCampaignDetail(campaign.id);
+                              fetchRecipientsPage(campaign.id);
+                            }}
+                            title="Aggiorna esiti"
+                          >
                             <RefreshCw />
                           </button>
                         </div>
