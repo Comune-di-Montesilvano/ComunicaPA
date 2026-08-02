@@ -6872,6 +6872,24 @@ export function App(): React.JSX.Element {
 
   const RECIPIENTS_PAGE_SIZE = 50;
 
+  const handlePageChange = (newPage: number) => {
+    setRecipientsPageNum(newPage);
+    if (selectedCampaignId) {
+      fetchRecipientsPage(
+        selectedCampaignId,
+        newPage,
+        recipientsSearch,
+        recipientsStatusFilter,
+        recipientsDeliveryStatusFilter,
+        recipientsTagsFilter,
+        recipientsDownloadFilter,
+        recipientsPostalDeliveryStatusFilter,
+        recipientsSortBy,
+        recipientsSortDir,
+      );
+    }
+  };
+
   const handleSortRecipients = (col: string) => {
     let nextDir: 'ASC' | 'DESC' = 'ASC';
     if (recipientsSortBy === col) {
@@ -6879,6 +6897,20 @@ export function App(): React.JSX.Element {
     }
     setRecipientsSortBy(col);
     setRecipientsSortDir(nextDir);
+    if (selectedCampaignId) {
+      fetchRecipientsPage(
+        selectedCampaignId,
+        recipientsPageNum,
+        recipientsSearch,
+        recipientsStatusFilter,
+        recipientsDeliveryStatusFilter,
+        recipientsTagsFilter,
+        recipientsDownloadFilter,
+        recipientsPostalDeliveryStatusFilter,
+        col,
+        nextDir,
+      );
+    }
   };
 
   const fetchRecipientsPage = async (
@@ -15010,7 +15042,14 @@ export function App(): React.JSX.Element {
                             className="form-select form-select-sm"
                             style={{ maxWidth: 170 }}
                             value={recipientsStatusFilter}
-                            onChange={(e) => { setRecipientsStatusFilter(e.target.value); setRecipientsPageNum(1); }}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setRecipientsStatusFilter(val);
+                              setRecipientsPageNum(1);
+                              if (selectedCampaignId) {
+                                fetchRecipientsPage(selectedCampaignId, 1, recipientsSearch, val, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter, recipientsSortBy, recipientsSortDir);
+                              }
+                            }}
                           >
                             <option value="">Stato notifica: tutti</option>
                             {(recipientsFilterOptions?.statuses ?? []).map((s) => (
@@ -15022,7 +15061,14 @@ export function App(): React.JSX.Element {
                               className="form-select form-select-sm"
                               style={{ maxWidth: 190 }}
                               value={recipientsDeliveryStatusFilter}
-                              onChange={(e) => { setRecipientsDeliveryStatusFilter(e.target.value); setRecipientsPageNum(1); }}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setRecipientsDeliveryStatusFilter(val);
+                                setRecipientsPageNum(1);
+                                if (selectedCampaignId) {
+                                  fetchRecipientsPage(selectedCampaignId, 1, recipientsSearch, recipientsStatusFilter, val, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter, recipientsSortBy, recipientsSortDir);
+                                }
+                              }}
                             >
                               <option value="">Stato documento: tutti</option>
                               {(recipientsFilterOptions?.deliveryStatuses ?? []).map((s) => (
@@ -15039,7 +15085,14 @@ export function App(): React.JSX.Element {
                               className="form-select form-select-sm"
                               style={{ maxWidth: 200 }}
                               value={recipientsPostalDeliveryStatusFilter}
-                              onChange={(e) => { setRecipientsPostalDeliveryStatusFilter(e.target.value); setRecipientsPageNum(1); }}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setRecipientsPostalDeliveryStatusFilter(val);
+                                setRecipientsPageNum(1);
+                                if (selectedCampaignId) {
+                                  fetchRecipientsPage(selectedCampaignId, 1, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, val, recipientsSortBy, recipientsSortDir);
+                                }
+                              }}
                             >
                               <option value="">Recapito Poste: tutti</option>
                               {(recipientsFilterOptions?.postalDeliveryStatuses ?? []).map((s) => (
@@ -15101,7 +15154,14 @@ export function App(): React.JSX.Element {
                             className="form-select form-select-sm"
                             style={{ maxWidth: 160 }}
                             value={recipientsDownloadFilter}
-                            onChange={(e) => { setRecipientsDownloadFilter(e.target.value); setRecipientsPageNum(1); }}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setRecipientsDownloadFilter(val);
+                              setRecipientsPageNum(1);
+                              if (selectedCampaignId) {
+                                fetchRecipientsPage(selectedCampaignId, 1, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, val, recipientsPostalDeliveryStatusFilter, recipientsSortBy, recipientsSortDir);
+                              }
+                            }}
                           >
                             <option value="">Download: tutti</option>
                             <option value="yes">Con download</option>
@@ -15485,8 +15545,8 @@ export function App(): React.JSX.Element {
                                 Pagina {recipientsPage.page} di {Math.max(1, Math.ceil(recipientsPage.total / recipientsPage.pageSize))}
                               </span>
                               <div className="btn-group btn-group-sm">
-                                <button className="btn btn-outline-secondary" disabled={recipientsPageNum <= 1} onClick={() => setRecipientsPageNum((p) => p - 1)}>Precedente</button>
-                                <button className="btn btn-outline-secondary" disabled={recipientsPageNum >= Math.ceil(recipientsPage.total / recipientsPage.pageSize)} onClick={() => setRecipientsPageNum((p) => p + 1)}>Successiva</button>
+                                <button className="btn btn-outline-secondary" disabled={recipientsPageNum <= 1} onClick={() => handlePageChange(recipientsPageNum - 1)}>Precedente</button>
+                                <button className="btn btn-outline-secondary" disabled={recipientsPageNum >= Math.ceil(recipientsPage.total / recipientsPage.pageSize)} onClick={() => handlePageChange(recipientsPageNum + 1)}>Successiva</button>
                               </div>
                             </div>
                           </>
