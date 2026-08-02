@@ -449,7 +449,7 @@ describe('CampaignsService', () => {
     await service.getRecipientStats('uuid-1', 1, 20, undefined, undefined, 'ACCEPTED');
 
     expect(qb.andWhere).toHaveBeenCalledWith(
-      expect.stringContaining('la.send_status = :deliveryStatus OR la.postal_status = :deliveryStatus'),
+      expect.stringContaining('na.send_status = :deliveryStatus OR na.postal_status = :deliveryStatus'),
       { deliveryStatus: 'ACCEPTED' },
     );
   });
