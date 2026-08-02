@@ -15741,7 +15741,9 @@ export function App(): React.JSX.Element {
                               // (sentSuccessfully): un fallito non ha mai avuto un link da scaricare,
                               // mescolarlo nel bucket "non scaricato" renderebbe la % fuorviante su
                               // campagne con molti fallimenti (già visibili in "Esito Invio").
-                              const successCombos = downloadCombinations.filter((c) => c.sentSuccessfully);
+                              const successCombos = downloadCombinations
+                                .filter((c) => c.sentSuccessfully)
+                                .sort((a, b) => b.count - a.count || downloadComboLabel(a.channels).localeCompare(downloadComboLabel(b.channels)));
                               const anomalyCombos = downloadCombinations.filter((c) => !c.sentSuccessfully);
                               const sentCount = successCombos.reduce((sum, c) => sum + c.count, 0);
                               const notDownloaded = successCombos.find((c) => c.channels.length === 0)?.count ?? 0;
