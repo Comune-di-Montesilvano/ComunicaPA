@@ -2050,24 +2050,20 @@ export class CampaignsService {
     if (deliveryStatus === PENDING_DELIVERY_STATUS_SENTINEL) {
       qb.andWhere(
         `EXISTS (
-          SELECT 1 FROM (
-            SELECT DISTINCT ON (recipient_id) recipient_id, send_status, postal_status, status, channel_type
-            FROM notification_attempts
-            ORDER BY recipient_id, attempt_number DESC
-          ) la
-          WHERE la.recipient_id = r.id AND la.channel_type = :campaignChannelType AND la.status = 'success' AND la.send_status IS NULL AND la.postal_status IS NULL
+          SELECT 1 FROM notification_attempts na
+          WHERE na.recipient_id = r.id
+            AND na.attempt_number = (SELECT MAX(na2.attempt_number) FROM notification_attempts na2 WHERE na2.recipient_id = r.id)
+            AND na.channel_type = :campaignChannelType AND na.status = 'success' AND na.send_status IS NULL AND na.postal_status IS NULL
         )`,
         { campaignChannelType: campaign.channelType },
       );
     } else if (deliveryStatus) {
       qb.andWhere(
         `EXISTS (
-          SELECT 1 FROM (
-            SELECT DISTINCT ON (recipient_id) recipient_id, send_status, postal_status
-            FROM notification_attempts
-            ORDER BY recipient_id, attempt_number DESC
-          ) la
-          WHERE la.recipient_id = r.id AND (la.send_status = :deliveryStatus OR la.postal_status = :deliveryStatus)
+          SELECT 1 FROM notification_attempts na
+          WHERE na.recipient_id = r.id
+            AND na.attempt_number = (SELECT MAX(na2.attempt_number) FROM notification_attempts na2 WHERE na2.recipient_id = r.id)
+            AND (na.send_status = :deliveryStatus OR na.postal_status = :deliveryStatus)
         )`,
         { deliveryStatus },
       );
@@ -2075,12 +2071,10 @@ export class CampaignsService {
     if (postalDeliveryStatus) {
       qb.andWhere(
         `EXISTS (
-          SELECT 1 FROM (
-            SELECT DISTINCT ON (recipient_id) recipient_id, postal_delivery_status
-            FROM notification_attempts
-            ORDER BY recipient_id, attempt_number DESC
-          ) la
-          WHERE la.recipient_id = r.id AND la.postal_delivery_status = :postalDeliveryStatus
+          SELECT 1 FROM notification_attempts na
+          WHERE na.recipient_id = r.id
+            AND na.attempt_number = (SELECT MAX(na2.attempt_number) FROM notification_attempts na2 WHERE na2.recipient_id = r.id)
+            AND na.postal_delivery_status = :postalDeliveryStatus
         )`,
         { postalDeliveryStatus },
       );

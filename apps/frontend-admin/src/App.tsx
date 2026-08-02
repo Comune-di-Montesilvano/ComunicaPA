@@ -2181,23 +2181,11 @@ export function App(): React.JSX.Element {
       if (isRunningStatus || (hasAsyncDeliveryTracking && campaign.status === 'completed')) {
         timer = setInterval(() => {
           fetchCampaignDetail(selectedCampaignId);
-          fetchFailureGroups(selectedCampaignId);
-          fetchChannelBreakdown(selectedCampaignId);
-          fetchEffectiveChannelBreakdown(selectedCampaignId);
-          fetchCampaignSendStageCounts(selectedCampaignId);
-          fetchSendStatusBreakdown(selectedCampaignId);
-          fetchPostalStatusBreakdown(selectedCampaignId);
-          fetchPostalDeliveryStatusBreakdown(selectedCampaignId);
-          fetchCampaignCost(selectedCampaignId);
-          fetchCampaignCostSavings(selectedCampaignId);
-          fetchCampaignPaymentTotal(selectedCampaignId);
-          fetchDownloadCombinationStats(selectedCampaignId);
-          fetchRecipientsPage(selectedCampaignId);
-        }, 3000);
+        }, 5000);
       }
     }
     return () => clearInterval(timer);
-  }, [view, selectedCampaignId, campaign, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter, recipientsSortBy, recipientsSortDir]);
+  }, [view, selectedCampaignId, campaign]);
 
   // Auto-refresh degli elenchi campagne (dashboard "Attività Recenti" e "Campagne
   // Massive"): fetchCampaigns() girava solo una volta al login ([token]) — una
@@ -3320,7 +3308,6 @@ export function App(): React.JSX.Element {
       fetchCampaignCostSavings(id),
       fetchCampaignPaymentTotal(id),
       fetchDownloadCombinationStats(id),
-      fetchRecipientsPage(id),
       fetchRecipientsFilterOptions(id),
     ]);
   };
