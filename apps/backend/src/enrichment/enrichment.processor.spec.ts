@@ -197,7 +197,7 @@ describe('EnrichmentProcessor', () => {
   });
 
   it('numero avviso da pag_indice.csv usato come fallback quando il PDF non estrae dati pagamento', async () => {
-    fs.rmSync(getEnrichmentDir('j1'), { recursive: true, force: true });
+    try { fs.rmSync(getEnrichmentDir('j1'), { recursive: true, force: true }); } catch {}
     setupJobDirPagIndice('j1');
     client.extract.mockResolvedValue({
       address: { indirizzo: 'VIA PDF ESTRATTA 99', cap: '99999', comune: 'ALTROVE', provincia: 'XX', stato_estero: '' },

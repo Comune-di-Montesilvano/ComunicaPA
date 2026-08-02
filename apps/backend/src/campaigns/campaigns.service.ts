@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, Not, IsNull, Repository } from 'typeorm';
 import { createReadStream } from 'fs';
 import { unlink } from 'fs/promises';
 import { parse } from 'csv-parse';
@@ -1746,19 +1746,25 @@ export class CampaignsService {
       order: { attemptNumber: 'DESC' },
     });
     const nextAttemptNumber = (lastAttempt?.attemptNumber ?? 0) + 1;
+    const protoSource = lastAttempt?.protocolNumber
+      ? lastAttempt
+      : (await this.attemptRepo.findOne({
+          where: { recipientId, protocolNumber: Not(IsNull()) },
+          order: { attemptNumber: 'DESC' },
+        })) ?? lastAttempt;
 
-    // SEND: se l'ultimo tentativo era già protocollato, il nuovo attempt eredita
+    // SEND/POSTAL: se un tentativo precedente era già protocollato, il nuovo attempt eredita
     // lo stesso protocolNumber/protocolYear/protocolledAt invece di richiedere un
     // nuovo protocollo reale al demone — il documento non è cambiato, un retry
-    // (es. dopo un errore di configurazione/rete verso PN) non giustifica una
-    // nuova protocollazione. Riprotocolla da zero solo se l'ultimo tentativo
-    // non era mai arrivato a protocollare (protocolledAt ancora null).
+    // (es. dopo un errore di configurazione/rete o riaccodamento) non giustifica una
+    // nuova protocollazione. Riprotocolla da zero solo se nessun tentativo precedente
+    // era mai arrivato a protocollare (protocolledAt/protocolNumber ancora null).
     const inheritedProtocol =
-      (campaign.channelType === 'SEND' || campaign.channelConfig?.['protocolla'] === true) && lastAttempt?.protocolledAt
+      (campaign.channelType === 'SEND' || campaign.channelConfig?.['protocolla'] === true) && (protoSource?.protocolledAt || protoSource?.protocolNumber)
         ? {
-            protocolNumber: lastAttempt.protocolNumber,
-            protocolYear: lastAttempt.protocolYear,
-            protocolledAt: lastAttempt.protocolledAt,
+            protocolNumber: protoSource.protocolNumber,
+            protocolYear: protoSource.protocolYear,
+            protocolledAt: protoSource.protocolledAt,
           }
         : {};
 
@@ -2157,10 +2163,17 @@ export class CampaignsService {
         where: { recipientId: In(recipientIds) },
       });
       const latestByRecipient = new Map<string, NotificationAttempt>();
+      const protocolByRecipient = new Map<string, { protocolNumber: number; protocolYear: number }>();
       for (const a of attempts) {
         const current = latestByRecipient.get(a.recipientId);
         if (!current || a.attemptNumber > current.attemptNumber) {
           latestByRecipient.set(a.recipientId, a);
+        }
+        if (a.protocolNumber !== null && a.protocolNumber !== undefined) {
+          const currentProto = protocolByRecipient.get(a.recipientId);
+          if (!currentProto) {
+            protocolByRecipient.set(a.recipientId, { protocolNumber: a.protocolNumber, protocolYear: a.protocolYear! });
+          }
         }
       }
       for (const item of items) {
@@ -2169,8 +2182,9 @@ export class CampaignsService {
           item.iun = latest.iun;
           item.sendStatus = latest.sendStatus;
           item.sendStatusUpdatedAt = latest.sendStatusUpdatedAt;
-          item.protocolNumber = latest.protocolNumber;
-          item.protocolYear = latest.protocolYear;
+          const protoFallback = protocolByRecipient.get(item.id);
+          item.protocolNumber = latest.protocolNumber ?? protoFallback?.protocolNumber ?? null;
+          item.protocolYear = latest.protocolYear ?? protoFallback?.protocolYear ?? null;
           item.postalTrackingId = latest.postalTrackingId;
           item.postalStatus = latest.postalStatus;
           item.postalStatusUpdatedAt = latest.postalStatusUpdatedAt;

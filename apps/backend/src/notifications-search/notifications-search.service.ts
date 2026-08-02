@@ -166,37 +166,43 @@ export class NotificationsSearchService {
         postalServiceType: (recipient.campaign.channelConfig?.['postalServiceType'] as string) || null,
         postalReturnReceipt: !!recipient.campaign.channelConfig?.['postalReturnReceipt'],
       },
-      attempts: attempts.map((a) => {
-        const appIoPayload = a.responsePayload?.['appIo'] as { success?: boolean; error?: string } | undefined;
-        return {
-          attemptNumber: a.attemptNumber,
-          status: a.status,
-          channelType: a.channelType,
-          errorMessage: a.errorMessage,
-          sentAt: a.sentAt ? a.sentAt.toISOString() : null,
-          createdAt: a.createdAt.toISOString(),
-          appIo: appIoPayload
-            ? { attempted: true as const, success: !!appIoPayload.success, error: appIoPayload.error ?? null }
-            : { attempted: false as const },
-          iun: a.iun,
-          sendStatus: a.sendStatus,
-          sendStatusUpdatedAt: a.sendStatusUpdatedAt ? a.sendStatusUpdatedAt.toISOString() : null,
-          protocolNumber: a.protocolNumber,
-          protocolYear: a.protocolYear,
-          protocolledAt: a.protocolledAt ? a.protocolledAt.toISOString() : null,
-          postalTrackingId: a.postalTrackingId,
-          postalStatus: a.postalStatus,
-          postalStatusUpdatedAt: a.postalStatusUpdatedAt ? a.postalStatusUpdatedAt.toISOString() : null,
-          postalDeliveryStatus: a.postalDeliveryStatus ?? null,
-          postalDeliveryCode: a.postalDeliveryCode ?? null,
-          postalDeliveryDate: a.postalDeliveryDate ? a.postalDeliveryDate.toISOString() : null,
-          postalAcceptanceId: a.postalAcceptanceId ?? null,
-          postalStatusHistory: a.postalStatusHistory ?? null,
-          costCents: a.costCents ?? null,
-          costCalculatedAt: a.costCalculatedAt ? a.costCalculatedAt.toISOString() : null,
-          costBreakdown: a.costBreakdown ?? null,
-        };
-      }),
+      attempts: (() => {
+        const fallbackProto = attempts.find((a) => a.protocolNumber !== null && a.protocolNumber !== undefined);
+        return attempts.map((a) => {
+          const appIoPayload = a.responsePayload?.['appIo'] as { success?: boolean; error?: string } | undefined;
+          const protoNum = a.protocolNumber ?? fallbackProto?.protocolNumber ?? null;
+          const protoYr = a.protocolYear ?? fallbackProto?.protocolYear ?? null;
+          const protoAt = a.protocolledAt ?? fallbackProto?.protocolledAt ?? null;
+          return {
+            attemptNumber: a.attemptNumber,
+            status: a.status,
+            channelType: a.channelType,
+            errorMessage: a.errorMessage,
+            sentAt: a.sentAt ? a.sentAt.toISOString() : null,
+            createdAt: a.createdAt.toISOString(),
+            appIo: appIoPayload
+              ? { attempted: true as const, success: !!appIoPayload.success, error: appIoPayload.error ?? null }
+              : { attempted: false as const },
+            iun: a.iun,
+            sendStatus: a.sendStatus,
+            sendStatusUpdatedAt: a.sendStatusUpdatedAt ? a.sendStatusUpdatedAt.toISOString() : null,
+            protocolNumber: protoNum,
+            protocolYear: protoYr,
+            protocolledAt: protoAt ? protoAt.toISOString() : null,
+            postalTrackingId: a.postalTrackingId,
+            postalStatus: a.postalStatus,
+            postalStatusUpdatedAt: a.postalStatusUpdatedAt ? a.postalStatusUpdatedAt.toISOString() : null,
+            postalDeliveryStatus: a.postalDeliveryStatus ?? null,
+            postalDeliveryCode: a.postalDeliveryCode ?? null,
+            postalDeliveryDate: a.postalDeliveryDate ? a.postalDeliveryDate.toISOString() : null,
+            postalAcceptanceId: a.postalAcceptanceId ?? null,
+            postalStatusHistory: a.postalStatusHistory ?? null,
+            costCents: a.costCents ?? null,
+            costCalculatedAt: a.costCalculatedAt ? a.costCalculatedAt.toISOString() : null,
+            costBreakdown: a.costBreakdown ?? null,
+          };
+        });
+      })(),
       downloads: downloads.map((d) => ({
         channel: d.channel,
         attachmentIndex: d.attachmentIndex,

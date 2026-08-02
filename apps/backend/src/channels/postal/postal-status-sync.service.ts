@@ -215,6 +215,8 @@ export class PostalStatusSyncService {
           const statoNuovo = await this.globalCom.dettagliDocumento(creds, nuovoIdPro);
           const ultimoAttempt = await this.attemptRepo.findOne({ where: { recipientId: attempt.recipientId }, order: { attemptNumber: 'DESC' } });
           const nextAttemptNumber = (ultimoAttempt?.attemptNumber ?? attempt.attemptNumber) + 1;
+          const protoAttempt = ultimoAttempt?.protocolNumber ? ultimoAttempt : (attempt.protocolNumber ? attempt : null);
+
           const nuovoAttempt = this.attemptRepo.create({
             recipientId: attempt.recipientId,
             channelType: attempt.channelType,
@@ -224,6 +226,9 @@ export class PostalStatusSyncService {
             postalTrackingId: nuovoIdPro,
             postalStatus: statoNuovo?.stato ?? null,
             postalStatusUpdatedAt: statoNuovo ? new Date() : null,
+            protocolNumber: protoAttempt?.protocolNumber ?? null,
+            protocolYear: protoAttempt?.protocolYear ?? null,
+            protocolledAt: protoAttempt?.protocolledAt ?? null,
             postalStatusHistory: statoNuovo ? [{
               stato: statoNuovo.stato,
               rilevatoIl: new Date().toISOString(),

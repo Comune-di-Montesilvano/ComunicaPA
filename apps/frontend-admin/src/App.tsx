@@ -11248,14 +11248,19 @@ export function App(): React.JSX.Element {
                             <tbody>
                               {(() => {
                                 const anyProtocollo = notifDetail.attempts.some((a) => a.protocolNumber);
-                                return notifDetail.attempts.map((a) => (
-                                <React.Fragment key={a.attemptNumber}>
-                                  <tr>
-                                    <td>{a.attemptNumber}</td>
-                                    <td><StatusBadge status={a.status} /></td>
-                                    <td className="small"><ChannelBadge channel={a.channelType} /></td>
-                                    <td className="small text-muted">{new Date(a.createdAt).toLocaleString('it-IT')}</td>
-                                    {anyProtocollo && <td className="small">{a.protocolNumber ? `${a.protocolNumber}/${a.protocolYear}` : '—'}</td>}
+                                const fallbackProto = notifDetail.attempts.find((a) => a.protocolNumber);
+                                return notifDetail.attempts.map((a) => {
+                                  const protoStr = a.protocolNumber
+                                    ? `${a.protocolNumber}/${a.protocolYear}`
+                                    : (fallbackProto ? `${fallbackProto.protocolNumber}/${fallbackProto.protocolYear}` : '—');
+                                  return (
+                                  <React.Fragment key={a.attemptNumber}>
+                                    <tr>
+                                      <td>{a.attemptNumber}</td>
+                                      <td><StatusBadge status={a.status} /></td>
+                                      <td className="small"><ChannelBadge channel={a.channelType} /></td>
+                                      <td className="small text-muted">{new Date(a.createdAt).toLocaleString('it-IT')}</td>
+                                      {anyProtocollo && <td className="small">{protoStr}</td>}
                                     {notifDetail.campaign.channelType === 'SEND' && (
                                       <>
                                         <td className="small fw-mono">{a.iun || '—'}</td>
@@ -11357,7 +11362,8 @@ export function App(): React.JSX.Element {
                                     </tr>
                                   )}
                                 </React.Fragment>
-                              ));
+                              );
+                            });
                               })()}
                             </tbody>
                           </table>

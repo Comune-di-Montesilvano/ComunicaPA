@@ -24,7 +24,9 @@ describe('extractZipWithYauzl', () => {
   });
 
   afterEach(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {}
   });
 
   it('should extract PDF files only, flatten directories, and prevent path traversal', async () => {
