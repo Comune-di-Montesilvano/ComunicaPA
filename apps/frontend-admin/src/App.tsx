@@ -10983,17 +10983,22 @@ export function App(): React.JSX.Element {
                           <h3 className="h6 mb-0 fw-bold text-dark"><PieChartIcon className="me-2 text-primary" size={16} />Ripartizione Invii per Canale</h3>
                         </div>
                         <div className="card-body">
-                          <ResponsiveContainer width="100%" height={220}>
-                            <PieChart>
-                              <Pie data={globalStats.channelTotals} dataKey="sent" nameKey="channel" outerRadius={80} label>
-                                {globalStats.channelTotals.map((entry) => (
-                                  <Cell key={entry.channel} fill={stableColorForKey(entry.channel)} />
-                                ))}
-                              </Pie>
-                              <Tooltip />
-                              <Legend />
-                            </PieChart>
-                          </ResponsiveContainer>
+                          {(() => {
+                            const sortedChannelTotals = [...globalStats.channelTotals].sort((a, b) => b.sent - a.sent || a.channel.localeCompare(b.channel));
+                            return (
+                              <ResponsiveContainer width="100%" height={220}>
+                                <PieChart>
+                                  <Pie data={sortedChannelTotals} dataKey="sent" nameKey="channel" outerRadius={80} label>
+                                    {sortedChannelTotals.map((entry) => (
+                                      <Cell key={entry.channel} fill={stableColorForKey(entry.channel)} />
+                                    ))}
+                                  </Pie>
+                                  <Tooltip />
+                                  <Legend />
+                                </PieChart>
+                              </ResponsiveContainer>
+                            );
+                          })()}
                         </div>
                       </div>
                     </div>
@@ -14596,27 +14601,32 @@ export function App(): React.JSX.Element {
                           </div>
                         ) : null}
 
-                        {(campaign.status === 'running' || campaign.status === 'completed' || campaign.status === 'queued' || campaign.status === 'cancelled') && (
-                          <div className="mt-4 border-top pt-3">
-                            <h4 className="small fw-bold mb-2">Stato dell'Invio ({campaign.sentCount + campaign.failedCount} / {campaign.totalRecipients})</h4>
-                            <div className="progress mb-2" style={{ height: '10px' }}>
-                              <div
-                                className="progress-bar bg-success"
-                                role="progressbar"
-                                style={{ width: `${campaign.totalRecipients ? (campaign.sentCount / campaign.totalRecipients) * 100 : 0}%` }}
-                              ></div>
-                              <div
-                                className="progress-bar bg-danger"
-                                role="progressbar"
-                                style={{ width: `${campaign.totalRecipients ? (campaign.failedCount / campaign.totalRecipients) * 100 : 0}%` }}
-                              ></div>
+                        {(campaign.status === 'running' || campaign.status === 'completed' || campaign.status === 'queued' || campaign.status === 'cancelled') && (() => {
+                          const safeSentCount = Math.max(0, campaign.sentCount);
+                          const safeFailedCount = Math.max(0, campaign.failedCount);
+                          const totalProcessed = Math.min(campaign.totalRecipients, safeSentCount + safeFailedCount);
+                          return (
+                            <div className="mt-4 border-top pt-3">
+                              <h4 className="small fw-bold mb-2">Stato dell'Invio ({totalProcessed} / {campaign.totalRecipients})</h4>
+                              <div className="progress mb-2" style={{ height: '10px' }}>
+                                <div
+                                  className="progress-bar bg-success"
+                                  role="progressbar"
+                                  style={{ width: `${campaign.totalRecipients ? (safeSentCount / campaign.totalRecipients) * 100 : 0}%` }}
+                                ></div>
+                                <div
+                                  className="progress-bar bg-danger"
+                                  role="progressbar"
+                                  style={{ width: `${campaign.totalRecipients ? (safeFailedCount / campaign.totalRecipients) * 100 : 0}%` }}
+                                ></div>
+                              </div>
+                              <div className="d-flex justify-content-between small text-muted">
+                                <span><Check className="text-success" /> Successo: {safeSentCount}</span>
+                                <span><X className="text-danger" /> Errori: {safeFailedCount}</span>
+                              </div>
                             </div>
-                            <div className="d-flex justify-content-between small text-muted">
-                              <span><Check className="text-success" /> Successo: {campaign.sentCount}</span>
-                              <span><X className="text-danger" /> Errori: {campaign.failedCount}</span>
-                            </div>
-                          </div>
-                        )}
+                          );
+                        })()}
 
                         {campaign.channelType === 'SEND' && sendStatusBreakdown && (
                           <div className="mt-4 border-top pt-3">
@@ -15140,7 +15150,9 @@ export function App(): React.JSX.Element {
                       <div className="card-body p-0">
                         {!recipientsPage || recipientsPage.items.length === 0 ? (
                           <div className="text-center py-5 text-muted">Nessun destinatario associato a questa campagna.</div>
-                        ) : (
+                        ) : (() => {
+                          const hasCost = (campaignCost?.totalCostCents ?? 0) > 0;
+                          return (
                           <>
                             <div className="table-responsive" style={{ maxHeight: '400px', overflowY: 'auto' }}>
                               <table className="table table-sm table-striped table-hover align-middle mb-0" style={{ fontSize: '0.8rem' }}>
@@ -15221,16 +15233,18 @@ export function App(): React.JSX.Element {
                                              </div>
                                            </th>
                                          )}
-                                         <th className="text-end" style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('cost')}>
-                                           <div className="d-inline-flex align-items-center justify-content-end gap-1">
-                                             <span>Costo Notifica</span>
-                                             {recipientsSortBy === 'cost' ? (
-                                               recipientsSortDir === 'ASC' ? <ArrowUp size={12} className="text-primary" /> : <ArrowDown size={12} className="text-primary" />
-                                             ) : (
-                                               <ArrowUpDown size={12} className="text-muted opacity-50" />
-                                             )}
-                                           </div>
-                                         </th>
+                                         {hasCost && (
+                                           <th className="text-end" style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('cost')}>
+                                             <div className="d-inline-flex align-items-center justify-content-end gap-1">
+                                               <span>Costo Notifica</span>
+                                               {recipientsSortBy === 'cost' ? (
+                                                 recipientsSortDir === 'ASC' ? <ArrowUp size={12} className="text-primary" /> : <ArrowDown size={12} className="text-primary" />
+                                               ) : (
+                                                 <ArrowUpDown size={12} className="text-muted opacity-50" />
+                                               )}
+                                             </div>
+                                           </th>
+                                         )}
                                        </>
                                      ) : campaign.channelType === 'POSTAL' ? (
                                        <>
@@ -15288,16 +15302,18 @@ export function App(): React.JSX.Element {
                                              </div>
                                            </th>
                                          )}
-                                         <th className="text-end" style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('cost')}>
-                                           <div className="d-inline-flex align-items-center justify-content-end gap-1">
-                                             <span>Costo Notifica</span>
-                                             {recipientsSortBy === 'cost' ? (
-                                               recipientsSortDir === 'ASC' ? <ArrowUp size={12} className="text-primary" /> : <ArrowDown size={12} className="text-primary" />
-                                             ) : (
-                                               <ArrowUpDown size={12} className="text-muted opacity-50" />
-                                             )}
-                                           </div>
-                                         </th>
+                                         {hasCost && (
+                                           <th className="text-end" style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('cost')}>
+                                             <div className="d-inline-flex align-items-center justify-content-end gap-1">
+                                               <span>Costo Notifica</span>
+                                               {recipientsSortBy === 'cost' ? (
+                                                 recipientsSortDir === 'ASC' ? <ArrowUp size={12} className="text-primary" /> : <ArrowDown size={12} className="text-primary" />
+                                               ) : (
+                                                 <ArrowUpDown size={12} className="text-muted opacity-50" />
+                                               )}
+                                             </div>
+                                           </th>
+                                         )}
                                        </>
                                      ) : (
                                        <>
@@ -15323,16 +15339,18 @@ export function App(): React.JSX.Element {
                                              )}
                                            </div>
                                          </th>
-                                         <th className="text-end" style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('cost')}>
-                                           <div className="d-inline-flex align-items-center justify-content-end gap-1">
-                                             <span>Costo Notifica</span>
-                                             {recipientsSortBy === 'cost' ? (
-                                               recipientsSortDir === 'ASC' ? <ArrowUp size={12} className="text-primary" /> : <ArrowDown size={12} className="text-primary" />
-                                             ) : (
-                                               <ArrowUpDown size={12} className="text-muted opacity-50" />
-                                             )}
-                                           </div>
-                                         </th>
+                                         {hasCost && (
+                                           <th className="text-end" style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('cost')}>
+                                             <div className="d-inline-flex align-items-center justify-content-end gap-1">
+                                               <span>Costo Notifica</span>
+                                               {recipientsSortBy === 'cost' ? (
+                                                 recipientsSortDir === 'ASC' ? <ArrowUp size={12} className="text-primary" /> : <ArrowDown size={12} className="text-primary" />
+                                               ) : (
+                                                 <ArrowUpDown size={12} className="text-muted opacity-50" />
+                                               )}
+                                             </div>
+                                           </th>
+                                         )}
                                        </>
                                      )}
                                    </tr>
@@ -15350,7 +15368,7 @@ export function App(): React.JSX.Element {
                                         )}
                                       </td>
                                     ) : null;
-                                    const costCell = (
+                                    const costCell = hasCost ? (
                                       <td className="text-end fw-mono small text-nowrap">
                                         {r.costCents !== null && r.costCents !== undefined ? (
                                           <span className="fw-semibold text-dark">
@@ -15360,7 +15378,7 @@ export function App(): React.JSX.Element {
                                           <span className="text-muted">—</span>
                                         )}
                                       </td>
-                                    );
+                                    ) : null;
                                     return (
                                     <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => openNotificationDetail(r.id)}>
                                       <td>
@@ -15464,9 +15482,10 @@ export function App(): React.JSX.Element {
                               </div>
                             </div>
                           </>
-                        )}
-                      </div>
+                        );
+                      })()}
                     </div>
+                  </div>
 
                     <div className="row g-4 mt-0">
                       <div className={['EMAIL', 'PEC', 'APP_IO'].includes(campaign.channelType) ? 'col-md-6' : 'col-12'}>
@@ -15478,17 +15497,19 @@ export function App(): React.JSX.Element {
                           </div>
                           <div className="card-body">
                             {(() => {
-                              // "In coda" = ancora non processati (né SENT né FAILED) — una
-                              // campagna con questa fetta > 0 non è mai davvero completata,
-                              // anche se il resto mostra 100% successo tra i soli processati
-                              // (bug reale segnalato: pie a 100% "Inviati con successo"
-                              // nascondeva del tutto i destinatari ancora in coda).
-                              const queuedCount = Math.max(0, campaign.totalRecipients - campaign.sentCount - campaign.failedCount);
+                              const OUTCOME_COLORS: Record<string, string> = {
+                                'Inviati con successo': 'var(--bi-success, #198754)',
+                                'Falliti': 'var(--bi-danger, #dc3545)',
+                                'In coda': 'var(--bi-secondary, #6c757d)',
+                              };
+                              const safeSent = Math.max(0, campaign.sentCount);
+                              const safeFailed = Math.max(0, campaign.failedCount);
+                              const queuedCount = Math.max(0, campaign.totalRecipients - safeSent - safeFailed);
                               const pieData = [
-                                { label: 'Inviati con successo', value: campaign.sentCount },
-                                { label: 'Falliti', value: campaign.failedCount },
-                                ...(queuedCount > 0 ? [{ label: 'In coda', value: queuedCount }] : []),
-                              ];
+                                { label: 'Inviati con successo', value: safeSent, color: OUTCOME_COLORS['Inviati con successo'] },
+                                { label: 'Falliti', value: safeFailed, color: OUTCOME_COLORS['Falliti'] },
+                                ...(queuedCount > 0 ? [{ label: 'In coda', value: queuedCount, color: OUTCOME_COLORS['In coda'] }] : []),
+                              ].sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
 
                               const renderOutcomePie = () => (
                                 <ResponsiveContainer width="100%" height={220}>
@@ -15503,9 +15524,9 @@ export function App(): React.JSX.Element {
                                       label={renderPiePercentLabel}
                                       labelLine={false}
                                     >
-                                      <Cell fill="var(--bi-success, #198754)" />
-                                      <Cell fill="var(--bi-danger, #dc3545)" />
-                                      {queuedCount > 0 && <Cell fill="var(--bi-secondary, #6c757d)" />}
+                                      {pieData.map((entry) => (
+                                        <Cell key={entry.label} fill={entry.color} />
+                                      ))}
                                     </Pie>
                                     <Tooltip />
                                     <Legend />
@@ -15517,17 +15538,21 @@ export function App(): React.JSX.Element {
                                 return renderOutcomePie();
                               }
 
-                              const statusPieData = (postalStatusBreakdown ?? []).map((item) => ({
-                                label: item.status ? (POSTAL_STATUS_META[item.status]?.label ?? item.status) : 'In corso',
-                                value: item.count,
-                                color: item.status ? (POSTAL_STATUS_PIE_COLORS[item.status] ?? stableColorForKey(item.status)) : '#6c757d',
-                              }));
+                              const statusPieData = (postalStatusBreakdown ?? [])
+                                .map((item) => ({
+                                  label: item.status ? (POSTAL_STATUS_META[item.status]?.label ?? item.status) : 'In corso',
+                                  value: item.count,
+                                  color: item.status ? (POSTAL_STATUS_PIE_COLORS[item.status] ?? stableColorForKey(item.status)) : '#6c757d',
+                                }))
+                                .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
 
-                              const deliveryPieData = (postalDeliveryStatusBreakdown ?? []).map((item) => ({
-                                label: item.status ? (POSTAL_DELIVERY_STATUS_META[item.status]?.label ?? item.status) : 'In corso',
-                                value: item.count,
-                                color: item.status ? (POSTAL_DELIVERY_STATUS_PIE_COLORS[item.status] ?? stableColorForKey(item.status)) : '#adb5bd',
-                              }));
+                              const deliveryPieData = (postalDeliveryStatusBreakdown ?? [])
+                                .map((item) => ({
+                                  label: item.status ? (POSTAL_DELIVERY_STATUS_META[item.status]?.label ?? item.status) : 'In corso',
+                                  value: item.count,
+                                  color: item.status ? (POSTAL_DELIVERY_STATUS_PIE_COLORS[item.status] ?? stableColorForKey(item.status)) : '#adb5bd',
+                                }))
+                                .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
 
                               return (
                                 <div className="row g-4 align-items-stretch">
@@ -15605,26 +15630,37 @@ export function App(): React.JSX.Element {
                             </h3>
                           </div>
                           <div className="card-body">
-                            <ResponsiveContainer width="100%" height={220}>
-                              <PieChart>
-                                <Pie
-                                  data={Object.entries(effectiveChannelBreakdown).map(([label, value]) => ({ label, value }))}
-                                  dataKey="value"
-                                  nameKey="label"
-                                  cx="50%"
-                                  cy="50%"
-                                  outerRadius={80}
-                                  label={renderPiePercentLabel}
-                                  labelLine={false}
-                                >
-                                  {Object.keys(effectiveChannelBreakdown).map((label) => (
-                                    <Cell key={label} fill={EFFECTIVE_CHANNEL_COLORS[label] ?? stableColorForKey(label)} />
-                                  ))}
-                                </Pie>
-                                <Tooltip />
-                                <Legend />
-                              </PieChart>
-                            </ResponsiveContainer>
+                            {(() => {
+                              const effectivePieData = Object.entries(effectiveChannelBreakdown)
+                                .map(([label, value]) => ({
+                                  label,
+                                  value,
+                                  color: EFFECTIVE_CHANNEL_COLORS[label] ?? stableColorForKey(label),
+                                }))
+                                .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+                              return (
+                                <ResponsiveContainer width="100%" height={220}>
+                                  <PieChart>
+                                    <Pie
+                                      data={effectivePieData}
+                                      dataKey="value"
+                                      nameKey="label"
+                                      cx="50%"
+                                      cy="50%"
+                                      outerRadius={80}
+                                      label={renderPiePercentLabel}
+                                      labelLine={false}
+                                    >
+                                      {effectivePieData.map((entry) => (
+                                        <Cell key={entry.label} fill={entry.color} />
+                                      ))}
+                                    </Pie>
+                                    <Tooltip />
+                                    <Legend />
+                                  </PieChart>
+                                </ResponsiveContainer>
+                              );
+                            })()}
                           </div>
                         </div>
                       </div>
@@ -15726,25 +15762,36 @@ export function App(): React.JSX.Element {
                                       <div className="small text-muted">Non scaricati ({notDownloaded})</div>
                                     </div>
                                   </div>
-                                  <ResponsiveContainer width="100%" height={220}>
-                                    <PieChart>
-                                      <Pie
-                                        data={successCombos.map((c) => ({ label: downloadComboLabel(c.channels), value: c.count }))}
-                                        dataKey="value"
-                                        nameKey="label"
-                                        cx="50%"
-                                        cy="50%"
-                                        outerRadius={90}
-                                        label={renderPiePercentLabel}
-                                        labelLine={false}
-                                      >
-                                        {successCombos.map((c) => (
-                                          <Cell key={c.channels.join('+') || 'none'} fill={colorFor(c)} />
-                                        ))}
-                                      </Pie>
-                                      <Tooltip />
-                                    </PieChart>
-                                  </ResponsiveContainer>
+                                  {(() => {
+                                    const downloadPieData = successCombos
+                                      .map((c) => ({
+                                        label: downloadComboLabel(c.channels),
+                                        value: c.count,
+                                        color: colorFor(c),
+                                      }))
+                                      .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+                                    return (
+                                      <ResponsiveContainer width="100%" height={220}>
+                                        <PieChart>
+                                          <Pie
+                                            data={downloadPieData}
+                                            dataKey="value"
+                                            nameKey="label"
+                                            cx="50%"
+                                            cy="50%"
+                                            outerRadius={90}
+                                            label={renderPiePercentLabel}
+                                            labelLine={false}
+                                          >
+                                            {downloadPieData.map((entry, idx) => (
+                                              <Cell key={`dl-cell-${entry.label}-${idx}`} fill={entry.color} />
+                                            ))}
+                                          </Pie>
+                                          <Tooltip />
+                                        </PieChart>
+                                      </ResponsiveContainer>
+                                    );
+                                  })()}
                                   <table className="table table-sm mb-0 mt-2">
                                     <tbody>
                                       {successCombos.map((c) => (
