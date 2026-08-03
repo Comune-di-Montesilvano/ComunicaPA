@@ -970,6 +970,20 @@ corrette. `apps/backend/src/debug/` è escluso da `.dockerignore`
 (nessun `allowJs`) non lo compilerebbe comunque. Qualunque futuro script
 di debug backend va in questa cartella, stesso trattamento.
 
+**`StatoConsegna` vuoto è a volte un dato mancante lato GlobalCom stesso,
+non un bug nostro.** Verificato dal vivo con lo script di debug sopra su 3
+IDPRO reali (`RaccomandataMarket4`, sia esteri che italiani, spediti 5+
+giorni prima): `dettagli_documento` risponde `Stato: Confermato` con
+`StatoConsegna: ""` per tutti e tre, costo già dettagliato (documento
+realmente stampato/spedito) — non un problema di parsing/salvataggio né di
+round-robin del cron, il dato non c'è proprio lato GlobalCom. Ipotesi
+iniziale "succede solo per indirizzi estero" confutata dal terzo IDPRO
+(italiano, stesso esito). Prima di sospettare un bug nostro su questo
+sintomo, verificare con lo script contro IDPRO reali — se `StatoConsegna`
+torna vuoto anche da loro, è un problema esterno (stesso tipo già noto per
+l'errore `-1`), segnalare a supporto GlobalCom con gli IDPRO, nessuna
+azione lato codice possibile.
+
 ## Frontend admin — mai `<form>` annidate
 
 La pagina Impostazioni avvolge tutte le tab in un'unica `<form

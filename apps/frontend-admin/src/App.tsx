@@ -1149,6 +1149,7 @@ export function App(): React.JSX.Element {
   const [trackingIdEditOpenFor, setTrackingIdEditOpenFor] = useState<number | null>(null);
   const [trackingIdEditValue, setTrackingIdEditValue] = useState('');
   const [trackingIdEditSaving, setTrackingIdEditSaving] = useState(false);
+  const [idproCopiedFor, setIdproCopiedFor] = useState<number | null>(null);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -11346,6 +11347,20 @@ export function App(): React.JSX.Element {
                                         <>
                                           <td className="small">
                                             <PostalStatusBadge status={a.postalStatus} />
+                                            {a.postalTrackingId && (
+                                              <button
+                                                type="button"
+                                                className="btn btn-sm btn-link p-0 ms-1"
+                                                title={`Copia IDPRO (${a.postalTrackingId})`}
+                                                onClick={() => {
+                                                  navigator.clipboard.writeText(a.postalTrackingId!);
+                                                  setIdproCopiedFor(a.attemptNumber);
+                                                  setTimeout(() => setIdproCopiedFor((prev) => (prev === a.attemptNumber ? null : prev)), 1500);
+                                                }}
+                                              >
+                                                {idproCopiedFor === a.attemptNumber ? <Check size={14} className="text-success" /> : <Copy size={14} />}
+                                              </button>
+                                            )}
                                             {!a.postalTrackingId && (
                                               <button
                                                 type="button"
