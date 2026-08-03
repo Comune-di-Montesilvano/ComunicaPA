@@ -952,6 +952,24 @@ un riaccodamento reale presente, zero log/eccezioni. Verificato dal vivo
 contro GlobalCom prod (Montesilvano) con IDPRO reale. Per ogni nuovo
 metodo SOAP: dati sempre da `Risposta`, mai dal campo `<metodo>Result`.
 
+**Script di debug per interrogare GlobalCom a mano su un IDPRO reale**:
+`apps/backend/src/debug/globalcom-dettagli-documento.js` — replica a mano
+login+cookie di sessione+`dettagli_documento` senza passare da nest
+build/dist (decripta la password del provider POSTAL attivo dal DB dev,
+stesso pattern già noto per testare IDPRO reali assenti dal DB dev). Uso:
+`docker compose exec backend node src/debug/globalcom-dettagli-documento.js <IDPRO>`.
+Due gotcha già presi a mazzate una volta, incorporati nello script: (1)
+`LoginAsync` vuole `user`/`password`/`group` minuscoli inglesi — nomi
+diversi producono un `NullReferenceException` generico, non un errore di
+auth leggibile; (2) la sessione dopo Login è un **cookie HTTP**
+(`set-cookie` nella risposta), non un token nel payload — senza
+riapplicarlo con `client.addHttpHeader('Cookie', ...)` ogni chiamata
+successiva torna `CodiceErrore "0401" "NOK: Login"` anche con credenziali
+corrette. `apps/backend/src/debug/` è escluso da `.dockerignore`
+(`apps/backend/src/debug`) — mai finire nell'immagine, anche se `tsc`
+(nessun `allowJs`) non lo compilerebbe comunque. Qualunque futuro script
+di debug backend va in questa cartella, stesso trattamento.
+
 ## Frontend admin — mai `<form>` annidate
 
 La pagina Impostazioni avvolge tutte le tab in un'unica `<form
