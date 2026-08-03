@@ -1073,6 +1073,20 @@ carica le relazioni via `Repository.find({ where: { id: In(ids) },
 relations })`, senza `orderBy`/`take`. Vedi `protocollazione-sync.service.ts`
 e `send-dispatch.service.ts`.
 
+## Query paginata destinatari — subquery EXISTS va ancorata a recipient_id, non DISTINCT ON
+
+`CampaignsService.getRecipientsPage()` faceva scansione full-table con
+`DISTINCT ON` per calcolare l'ultimo tentativo per destinatario — su
+campagne grandi (migliaia di righe) niente indice utile. Fix: subquery
+`EXISTS` ancorata direttamente a `recipient_id` (scan indice, non
+full-table), più indici dedicati (migration
+`AddRecipientAndAttemptIndexes`): `recipients(campaign_id, status)` e
+`notification_attempts(recipient_id, attempt_number, send_status,
+postal_status, postal_delivery_status)`. Qualunque nuova query paginata
+su `Recipient`/`NotificationAttempt` con filtro/ordinamento va verificata
+con `EXPLAIN` per lo stesso pattern prima di aggiungerla, non assumere che
+un indice esistente coincida per colonna d'ordine.
+
 ## Side-effect su NotificationAttempt dopo l'invio — solo in notification.processor.ts
 
 Le `*Strategy.send()` (`postal.strategy.ts`, `send-dispatch.service.ts`...)
@@ -1342,3 +1356,22 @@ per giorni via demoni separati. Bug reale: l'elenco messaggi restava fermo
 all'ultimo stato di consegna visto al completamento — fix: continuare il
 polling anche a `status==='completed'` quando `channelType` è `SEND` o
 `POSTAL`.
+
+**Tabella destinatari (dettaglio campagna) — un solo trigger per fetch, mai
+sia `useEffect` reattivo sia chiamata esplicita sullo stesso cambio
+stato.** `fetchRecipientsPage()` ha parametri con default = stato React
+corrente (`page = recipientsPageNum`, ecc.), per poter essere chiamata
+senza argomenti sia dal timer di polling 3s sia da un handler. Serie di 3
+bug reali consecutivi sistemando questo: (1) il timer di polling passava i
+vecchi valori posizionali invece dei default, duplicando la fetch a ogni
+tick; (2) rimuovendo quella duplicazione, cambio pagina/filtro/ordinamento
+è stato spostato su un solo `useEffect` con tutte le dipendenze — corretto
+in teoria ma la paginazione ha smesso di rispondere in modo affidabile al
+click; (3) fix finale: `onClick`/`onChange` di paginazione, filtri e
+intestazioni ordinabili chiamano `fetchRecipientsPage(...)` esplicitamente
+con i nuovi valori, **oltre** allo `useEffect` che resta come rete di
+sicurezza sulle stesse dipendenze — doppia fetch occasionale accettata come
+compromesso, preferibile a un click che non aggiorna nulla. Debounce 300ms
+mantenuto SOLO sul campo di ricerca testuale libera, mai su
+pagina/filtri/ordinamento (0ms, l'operatore si aspetta risposta immediata
+al click).

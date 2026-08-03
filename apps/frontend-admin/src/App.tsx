@@ -11242,6 +11242,19 @@ export function App(): React.JSX.Element {
                       <>
                         <div className="mb-3">
                           <div><strong>Destinatario:</strong> {notifDetail.recipient.fullName || notifDetail.recipient.codiceFiscale} ({notifDetail.recipient.codiceFiscale})</div>
+                          {notifDetail.recipient.physicalAddress && (
+                            <div>
+                              <strong>Indirizzo:</strong>{' '}
+                              {notifDetail.recipient.physicalAddress.address}
+                              {notifDetail.recipient.physicalAddress.zip ? `, ${notifDetail.recipient.physicalAddress.zip}` : ''}
+                              {' '}{notifDetail.recipient.physicalAddress.municipality}
+                              {notifDetail.recipient.physicalAddress.province ? ` (${notifDetail.recipient.physicalAddress.province})` : ''}
+                              {notifDetail.recipient.physicalAddress.foreignState ? `, ${notifDetail.recipient.physicalAddress.foreignState}` : ''}
+                              <span className={`badge ms-2 ${notifDetail.recipient.physicalAddress.foreignState ? 'bg-warning text-dark' : 'bg-secondary'}`}>
+                                {notifDetail.recipient.physicalAddress.foreignState ? 'Estero' : 'Italia'}
+                              </span>
+                            </div>
+                          )}
                           {notifDetail.recipient.email && <div><strong>Email:</strong> {notifDetail.recipient.email}</div>}
                           {notifDetail.recipient.pec && <div><strong>PEC:</strong> {notifDetail.recipient.pec}</div>}
                           <div><strong>Campagna:</strong> {notifDetail.campaign.name} <span className="ms-1"><ChannelBadge channel={notifDetail.campaign.channelType} extra={notifDetail.campaign.channelType === 'POSTAL' ? postalBadgeExtra({ postalServiceType: notifDetail.campaign.postalServiceType, postalReturnReceipt: notifDetail.campaign.postalReturnReceipt }, postalProviders.find((p) => p.active)?.enabledServiceTypes) : undefined} /></span></div>
