@@ -310,6 +310,18 @@ describe('PostalStatusSyncService', () => {
     expect(includesCostNull).toBe(true);
   });
 
+  it('include nella query un attempt già terminale con costo calcolato ma postal_delivery_status ancora null (bug: usciva per sempre dal batch anche se GlobalCom non aveva mai restituito uno StatoConsegna)', async () => {
+    const qb = makeQueryBuilder([]);
+    attemptRepo.createQueryBuilder.mockReturnValue(qb);
+
+    await service.handleCron();
+
+    const includesDeliveryStatusNull = qb.andWhere.mock.calls.some(
+      ([sql]: [string]) => /postal_delivery_status IS NULL/i.test(sql),
+    );
+    expect(includesDeliveryStatusNull).toBe(true);
+  });
+
   it('include nella query un attempt Eliminato con costo già calcolato ma mai controllato per riaccodamento', async () => {
     const qb = makeQueryBuilder([]);
     attemptRepo.createQueryBuilder.mockReturnValue(qb);

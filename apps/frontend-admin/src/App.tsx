@@ -96,6 +96,10 @@ function ChannelBadge({ channel, extra }: { channel: string; extra?: string | nu
 // mai un valore reale emesso da PN/GlobalCom.
 const PENDING_DELIVERY_STATUS_SENTINEL = '__PENDING__';
 
+// Stesso pattern, per il bucket "In corso" del filtro "Recapito Poste"
+// (postal_delivery_status ancora null) — deve combaciare col backend.
+const POSTAL_DELIVERY_PENDING_SENTINEL = '__POSTAL_DELIVERY_PENDING__';
+
 // Stati condivisi tra recipient/attempt/campaign: stessa parola, stesso
 // significato, stesso colore ovunque compaia in UI (coerenza grafica).
 const STATUS_META: Record<string, { label: string; badge: string }> = {
@@ -15097,7 +15101,7 @@ export function App(): React.JSX.Element {
                               <option value="">Recapito Poste: tutti</option>
                               {(recipientsFilterOptions?.postalDeliveryStatuses ?? []).map((s) => (
                                 <option key={s} value={s}>
-                                  {POSTAL_DELIVERY_STATUS_META[s]?.label ?? s}
+                                  {s === POSTAL_DELIVERY_PENDING_SENTINEL ? 'In corso' : (POSTAL_DELIVERY_STATUS_META[s]?.label ?? s)}
                                 </option>
                               ))}
                             </select>

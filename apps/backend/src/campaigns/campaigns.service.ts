@@ -46,6 +46,11 @@ const INAD_BULK_THRESHOLD = 100;
 // valore reale mai emesso da PN/GlobalCom quindi nessuna collisione possibile.
 const PENDING_DELIVERY_STATUS_SENTINEL = '__PENDING__';
 
+// Stesso pattern del sentinel sopra, per il bucket "In corso" del filtro
+// "Recapito Poste" (postal_delivery_status ancora null, invio non fallito —
+// stessa definizione usata da getPostalDeliveryStatusBreakdown per il pie chart).
+const POSTAL_DELIVERY_PENDING_SENTINEL = '__POSTAL_DELIVERY_PENDING__';
+
 export interface CampaignRequester {
   username: string;
   role: OperatorRole;
@@ -2068,7 +2073,17 @@ export class CampaignsService {
         { deliveryStatus },
       );
     }
-    if (postalDeliveryStatus) {
+    if (postalDeliveryStatus === POSTAL_DELIVERY_PENDING_SENTINEL) {
+      qb.andWhere(
+        `EXISTS (
+          SELECT 1 FROM notification_attempts na
+          WHERE na.recipient_id = r.id
+            AND na.attempt_number = (SELECT MAX(na2.attempt_number) FROM notification_attempts na2 WHERE na2.recipient_id = r.id)
+            AND na.channel_type = :campaignChannelType AND na.status != 'failed' AND na.postal_delivery_status IS NULL
+        )`,
+        { campaignChannelType: campaign.channelType },
+      );
+    } else if (postalDeliveryStatus) {
       qb.andWhere(
         `EXISTS (
           SELECT 1 FROM notification_attempts na
@@ -2271,13 +2286,28 @@ export class CampaignsService {
       .andWhere(`la.channel_type = :campaignChannelType AND la.status = 'success' AND la.send_status IS NULL AND la.postal_status IS NULL`, { campaignChannelType: campaign.channelType })
       .getCount();
 
+    const pendingPostalDeliveryCount = await this.recipientRepo
+      .createQueryBuilder('r')
+      .leftJoin(
+        `(SELECT DISTINCT ON (recipient_id) recipient_id, postal_delivery_status, status, channel_type
+          FROM notification_attempts ORDER BY recipient_id, attempt_number DESC)`,
+        'la',
+        'la.recipient_id = r.id',
+      )
+      .where('r.campaignId = :campaignId', { campaignId })
+      .andWhere(`la.channel_type = :campaignChannelType AND la.status != 'failed' AND la.postal_delivery_status IS NULL`, { campaignChannelType: campaign.channelType })
+      .getCount();
+
     return {
       statuses: statusRows.map((r) => r.status),
       deliveryStatuses: [
         ...deliveryRows.map((r) => r.deliveryStatus),
         ...(pendingCount > 0 ? [PENDING_DELIVERY_STATUS_SENTINEL] : []),
       ],
-      postalDeliveryStatuses: postalDeliveryRows.map((r) => r.postalDeliveryStatus),
+      postalDeliveryStatuses: [
+        ...postalDeliveryRows.map((r) => r.postalDeliveryStatus),
+        ...(pendingPostalDeliveryCount > 0 ? [POSTAL_DELIVERY_PENDING_SENTINEL] : []),
+      ],
     };
   }
 
