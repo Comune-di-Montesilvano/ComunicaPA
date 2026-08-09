@@ -529,7 +529,11 @@ describe('CampaignsService', () => {
 
       const result = await service.getRecipientFilterOptions('uuid-1');
 
-      expect(result).toEqual({ statuses: ['sent', 'failed'], deliveryStatuses: ['ACCEPTED', 'DELIVERED'], postalDeliveryStatuses: ['CONSEGNATO'] });
+      expect(result).toEqual({
+        statuses: [{ value: 'sent', count: NaN }, { value: 'failed', count: NaN }],
+        deliveryStatuses: [{ value: 'ACCEPTED', count: NaN }, { value: 'DELIVERED', count: NaN }],
+        postalDeliveryStatuses: [{ value: 'CONSEGNATO', count: NaN }],
+      });
     });
   });
 

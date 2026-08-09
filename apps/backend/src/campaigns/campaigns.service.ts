@@ -2235,22 +2235,26 @@ export class CampaignsService {
    * (non l'intero enum) — popola le select filtro "Stato Notifica"/"Stato
    * Consegna" senza mostrare opzioni che non produrrebbero mai risultati.
    */
-  async getRecipientFilterOptions(campaignId: string): Promise<{ statuses: string[]; deliveryStatuses: string[]; postalDeliveryStatuses: string[] }> {
+  async getRecipientFilterOptions(campaignId: string): Promise<{
+    statuses: Array<{ value: string; count: number }>;
+    deliveryStatuses: Array<{ value: string; count: number }>;
+    postalDeliveryStatuses: Array<{ value: string; count: number }>;
+  }> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
     const statusRows = await this.recipientRepo
       .createQueryBuilder('r')
-      .select('DISTINCT r.status', 'status')
+      .select('r.status', 'value')
+      .addSelect('COUNT(r.id)', 'count')
       .where('r.campaignId = :campaignId', { campaignId })
-      .getRawMany<{ status: string }>();
+      .groupBy('r.status')
+      .getRawMany<{ value: string; count: string }>();
 
     const deliveryRows = await this.recipientRepo
       .createQueryBuilder('r')
-      .select(
-        `DISTINCT COALESCE(la.send_status, la.postal_status)`,
-        'deliveryStatus',
-      )
+      .select('COALESCE(la.send_status, la.postal_status)', 'value')
+      .addSelect('COUNT(r.id)', 'count')
       .leftJoin(
         `(SELECT DISTINCT ON (recipient_id) recipient_id, send_status, postal_status
           FROM notification_attempts ORDER BY recipient_id, attempt_number DESC)`,
@@ -2259,11 +2263,13 @@ export class CampaignsService {
       )
       .where('r.campaignId = :campaignId', { campaignId })
       .andWhere('COALESCE(la.send_status, la.postal_status) IS NOT NULL')
-      .getRawMany<{ deliveryStatus: string }>();
+      .groupBy('COALESCE(la.send_status, la.postal_status)')
+      .getRawMany<{ value: string; count: string }>();
 
     const postalDeliveryRows = await this.recipientRepo
       .createQueryBuilder('r')
-      .select('DISTINCT la.postal_delivery_status', 'postalDeliveryStatus')
+      .select('la.postal_delivery_status', 'value')
+      .addSelect('COUNT(r.id)', 'count')
       .leftJoin(
         `(SELECT DISTINCT ON (recipient_id) recipient_id, postal_delivery_status
           FROM notification_attempts ORDER BY recipient_id, attempt_number DESC)`,
@@ -2272,7 +2278,8 @@ export class CampaignsService {
       )
       .where('r.campaignId = :campaignId', { campaignId })
       .andWhere('la.postal_delivery_status IS NOT NULL')
-      .getRawMany<{ postalDeliveryStatus: string }>();
+      .groupBy('la.postal_delivery_status')
+      .getRawMany<{ value: string; count: string }>();
 
     const pendingCount = await this.recipientRepo
       .createQueryBuilder('r')
@@ -2299,14 +2306,14 @@ export class CampaignsService {
       .getCount();
 
     return {
-      statuses: statusRows.map((r) => r.status),
+      statuses: statusRows.map((r) => ({ value: r.value, count: Number(r.count) })),
       deliveryStatuses: [
-        ...deliveryRows.map((r) => r.deliveryStatus),
-        ...(pendingCount > 0 ? [PENDING_DELIVERY_STATUS_SENTINEL] : []),
+        ...deliveryRows.map((r) => ({ value: r.value, count: Number(r.count) })),
+        ...(pendingCount > 0 ? [{ value: PENDING_DELIVERY_STATUS_SENTINEL, count: pendingCount }] : []),
       ],
       postalDeliveryStatuses: [
-        ...postalDeliveryRows.map((r) => r.postalDeliveryStatus),
-        ...(pendingPostalDeliveryCount > 0 ? [POSTAL_DELIVERY_PENDING_SENTINEL] : []),
+        ...postalDeliveryRows.map((r) => ({ value: r.value, count: Number(r.count) })),
+        ...(pendingPostalDeliveryCount > 0 ? [{ value: POSTAL_DELIVERY_PENDING_SENTINEL, count: pendingPostalDeliveryCount }] : []),
       ],
     };
   }

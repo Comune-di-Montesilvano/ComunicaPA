@@ -2310,7 +2310,7 @@ export function App(): React.JSX.Element {
   const [recipientsTagsFilter, setRecipientsTagsFilter] = useState<string[]>([]);
   const [recipientsTagsMenuOpen, setRecipientsTagsMenuOpen] = useState(false);
   const [recipientsDownloadFilter, setRecipientsDownloadFilter] = useState('');
-  const [recipientsFilterOptions, setRecipientsFilterOptions] = useState<{ statuses: string[]; deliveryStatuses: string[]; postalDeliveryStatuses?: string[] } | null>(null);
+  const [recipientsFilterOptions, setRecipientsFilterOptions] = useState<{ statuses: Array<string | { value: string; count: number }>; deliveryStatuses: Array<string | { value: string; count: number }>; postalDeliveryStatuses?: Array<string | { value: string; count: number }> } | null>(null);
   const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number; inadDiverted: number } | null>(null);
   const [resendingOutcome, setResendingOutcome] = useState<string | null>(null);
   const [effectiveChannelBreakdown, setEffectiveChannelBreakdown] = useState<Record<string, number> | null>(null);
@@ -15298,70 +15298,108 @@ export function App(): React.JSX.Element {
                             value={recipientsSearch}
                             onChange={(e) => { setRecipientsSearch(e.target.value); setRecipientsPageNum(1); }}
                           />
-                          <select
-                            className="form-select form-select-sm"
-                            style={{ maxWidth: 170 }}
-                            value={recipientsStatusFilter}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setRecipientsStatusFilter(val);
-                              setRecipientsPageNum(1);
-                              if (selectedCampaignId) {
-                                fetchRecipientsPage(selectedCampaignId, 1, recipientsSearch, val, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter, recipientsSortBy, recipientsSortDir);
-                              }
-                            }}
-                          >
-                            <option value="">Stato notifica: tutti</option>
-                            {(recipientsFilterOptions?.statuses ?? []).map((s) => (
-                              <option key={s} value={s}>{STATUS_META[s]?.label ?? s}</option>
-                            ))}
-                          </select>
-                          {(campaign.channelType === 'SEND' || campaign.channelType === 'POSTAL') && (
-                            <select
-                              className="form-select form-select-sm"
-                              style={{ maxWidth: 190 }}
-                              value={recipientsDeliveryStatusFilter}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setRecipientsDeliveryStatusFilter(val);
-                                setRecipientsPageNum(1);
-                                if (selectedCampaignId) {
-                                  fetchRecipientsPage(selectedCampaignId, 1, recipientsSearch, recipientsStatusFilter, val, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter, recipientsSortBy, recipientsSortDir);
-                                }
-                              }}
-                            >
-                              <option value="">Stato documento: tutti</option>
-                              {(recipientsFilterOptions?.deliveryStatuses ?? []).map((s) => (
-                                <option key={s} value={s}>
-                                  {s === PENDING_DELIVERY_STATUS_SENTINEL
-                                    ? (campaign.channelType === 'SEND' ? 'In attesa' : 'In corso')
-                                    : ((campaign.channelType === 'SEND' ? SEND_STATUS_META[s]?.label : POSTAL_STATUS_META[s]?.label) ?? s)}
-                                </option>
-                              ))}
-                            </select>
-                          )}
-                          {campaign.channelType === 'POSTAL' && (recipientsFilterOptions?.postalDeliveryStatuses ?? []).length > 0 && (
-                            <select
-                              className="form-select form-select-sm"
-                              style={{ maxWidth: 200 }}
-                              value={recipientsPostalDeliveryStatusFilter}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setRecipientsPostalDeliveryStatusFilter(val);
-                                setRecipientsPageNum(1);
-                                if (selectedCampaignId) {
-                                  fetchRecipientsPage(selectedCampaignId, 1, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, val, recipientsSortBy, recipientsSortDir);
-                                }
-                              }}
-                            >
-                              <option value="">Recapito Poste: tutti</option>
-                              {(recipientsFilterOptions?.postalDeliveryStatuses ?? []).map((s) => (
-                                <option key={s} value={s}>
-                                  {s === POSTAL_DELIVERY_PENDING_SENTINEL ? 'In corso' : (POSTAL_DELIVERY_STATUS_META[s]?.label ?? s)}
-                                </option>
-                              ))}
-                            </select>
-                          )}
+                          {(() => {
+                            const getSortedFilterOptions = (
+                              rawList: Array<string | { value: string; count: number }> | undefined,
+                              getLabel: (val: string) => string,
+                            ): Array<{ value: string; label: string; count?: number }> => {
+                              if (!rawList) return [];
+                              return rawList
+                                .map((item) => {
+                                  const value = typeof item === 'string' ? item : item.value;
+                                  const count = typeof item === 'object' ? item.count : undefined;
+                                  const label = getLabel(value);
+                                  return { value, label, count };
+                                })
+                                .sort((a, b) => a.label.localeCompare(b.label, 'it', { sensitivity: 'base' }));
+                            };
+
+                            const statusOptions = getSortedFilterOptions(
+                              recipientsFilterOptions?.statuses,
+                              (s) => STATUS_META[s]?.label ?? s,
+                            );
+
+                            const deliveryStatusOptions = getSortedFilterOptions(
+                              recipientsFilterOptions?.deliveryStatuses,
+                              (s) => s === PENDING_DELIVERY_STATUS_SENTINEL
+                                ? (campaign.channelType === 'SEND' ? 'In attesa' : 'In corso')
+                                : ((campaign.channelType === 'SEND' ? SEND_STATUS_META[s]?.label : POSTAL_STATUS_META[s]?.label) ?? s),
+                            );
+
+                            const postalDeliveryStatusOptions = getSortedFilterOptions(
+                              recipientsFilterOptions?.postalDeliveryStatuses,
+                              (s) => s === POSTAL_DELIVERY_PENDING_SENTINEL ? 'In corso' : (POSTAL_DELIVERY_STATUS_META[s]?.label ?? s),
+                            );
+
+                            return (
+                              <>
+                                <select
+                                  className="form-select form-select-sm"
+                                  style={{ maxWidth: 210 }}
+                                  value={recipientsStatusFilter}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setRecipientsStatusFilter(val);
+                                    setRecipientsPageNum(1);
+                                    if (selectedCampaignId) {
+                                      fetchRecipientsPage(selectedCampaignId, 1, recipientsSearch, val, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter, recipientsSortBy, recipientsSortDir);
+                                    }
+                                  }}
+                                >
+                                  <option value="">Stato notifica: tutti</option>
+                                  {statusOptions.map((opt) => (
+                                    <option key={opt.value} value={opt.value}>
+                                      {opt.label}{opt.count != null ? ` (${opt.count})` : ''}
+                                    </option>
+                                  ))}
+                                </select>
+                                {(campaign.channelType === 'SEND' || campaign.channelType === 'POSTAL') && (
+                                  <select
+                                    className="form-select form-select-sm"
+                                    style={{ maxWidth: 240 }}
+                                    value={recipientsDeliveryStatusFilter}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setRecipientsDeliveryStatusFilter(val);
+                                      setRecipientsPageNum(1);
+                                      if (selectedCampaignId) {
+                                        fetchRecipientsPage(selectedCampaignId, 1, recipientsSearch, recipientsStatusFilter, val, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter, recipientsSortBy, recipientsSortDir);
+                                      }
+                                    }}
+                                  >
+                                    <option value="">Stato documento: tutti</option>
+                                    {deliveryStatusOptions.map((opt) => (
+                                      <option key={opt.value} value={opt.value}>
+                                        {opt.label}{opt.count != null ? ` (${opt.count})` : ''}
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
+                                {campaign.channelType === 'POSTAL' && postalDeliveryStatusOptions.length > 0 && (
+                                  <select
+                                    className="form-select form-select-sm"
+                                    style={{ maxWidth: 270 }}
+                                    value={recipientsPostalDeliveryStatusFilter}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setRecipientsPostalDeliveryStatusFilter(val);
+                                      setRecipientsPageNum(1);
+                                      if (selectedCampaignId) {
+                                        fetchRecipientsPage(selectedCampaignId, 1, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, val, recipientsSortBy, recipientsSortDir);
+                                      }
+                                    }}
+                                  >
+                                    <option value="">Recapito Poste: tutti</option>
+                                    {postalDeliveryStatusOptions.map((opt) => (
+                                      <option key={opt.value} value={opt.value}>
+                                        {opt.label}{opt.count != null ? ` (${opt.count})` : ''}
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
+                              </>
+                            );
+                          })()}
                           {campaign.channelType !== 'SEND' && (() => {
                             const tagOptions: Array<{ id: string; label: string }> = [
                               { id: 'diverted', label: 'Dirottato INAD' },
