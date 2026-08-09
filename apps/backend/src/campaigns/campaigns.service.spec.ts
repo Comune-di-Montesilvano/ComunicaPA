@@ -501,16 +501,16 @@ describe('CampaignsService', () => {
   describe('CampaignsService.getRecipientFilterOptions', () => {
     it('ritorna gli status e i deliveryStatus distinti realmente presenti per la campagna', async () => {
       const statusQb: any = {};
-      ['select', 'where'].forEach((m) => { statusQb[m] = jest.fn().mockReturnValue(statusQb); });
-      statusQb.getRawMany = jest.fn().mockResolvedValue([{ status: 'sent' }, { status: 'failed' }]);
+      ['select', 'addSelect', 'where', 'groupBy'].forEach((m) => { statusQb[m] = jest.fn().mockReturnValue(statusQb); });
+      statusQb.getRawMany = jest.fn().mockResolvedValue([{ value: 'sent', count: '10' }, { value: 'failed', count: '5' }]);
 
       const deliveryQb: any = {};
-      ['select', 'leftJoin', 'where', 'andWhere'].forEach((m) => { deliveryQb[m] = jest.fn().mockReturnValue(deliveryQb); });
-      deliveryQb.getRawMany = jest.fn().mockResolvedValue([{ deliveryStatus: 'ACCEPTED' }, { deliveryStatus: 'DELIVERED' }]);
+      ['select', 'addSelect', 'leftJoin', 'where', 'andWhere', 'groupBy'].forEach((m) => { deliveryQb[m] = jest.fn().mockReturnValue(deliveryQb); });
+      deliveryQb.getRawMany = jest.fn().mockResolvedValue([{ value: 'ACCEPTED', count: '12' }, { value: 'DELIVERED', count: '20' }]);
 
       const postalDeliveryQb: any = {};
-      ['select', 'leftJoin', 'where', 'andWhere'].forEach((m) => { postalDeliveryQb[m] = jest.fn().mockReturnValue(postalDeliveryQb); });
-      postalDeliveryQb.getRawMany = jest.fn().mockResolvedValue([{ postalDeliveryStatus: 'CONSEGNATO' }]);
+      ['select', 'addSelect', 'leftJoin', 'where', 'andWhere', 'groupBy'].forEach((m) => { postalDeliveryQb[m] = jest.fn().mockReturnValue(postalDeliveryQb); });
+      postalDeliveryQb.getRawMany = jest.fn().mockResolvedValue([{ value: 'CONSEGNATO', count: '15' }]);
 
       const pendingQb: any = {};
       ['leftJoin', 'where', 'andWhere'].forEach((m) => { pendingQb[m] = jest.fn().mockReturnValue(pendingQb); });
@@ -530,9 +530,9 @@ describe('CampaignsService', () => {
       const result = await service.getRecipientFilterOptions('uuid-1');
 
       expect(result).toEqual({
-        statuses: [{ value: 'sent', count: NaN }, { value: 'failed', count: NaN }],
-        deliveryStatuses: [{ value: 'ACCEPTED', count: NaN }, { value: 'DELIVERED', count: NaN }],
-        postalDeliveryStatuses: [{ value: 'CONSEGNATO', count: NaN }],
+        statuses: [{ value: 'sent', count: 10 }, { value: 'failed', count: 5 }],
+        deliveryStatuses: [{ value: 'ACCEPTED', count: 12 }, { value: 'DELIVERED', count: 20 }],
+        postalDeliveryStatuses: [{ value: 'CONSEGNATO', count: 15 }],
       });
     });
   });
