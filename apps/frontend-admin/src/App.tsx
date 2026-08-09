@@ -741,17 +741,217 @@ function formatEuroCents(cents: number): string {
 // i nomi completi restano in Legend/tabella sotto.
 function renderPiePercentLabel(props: any): React.ReactNode {
   const { cx, cy, midAngle, innerRadius, outerRadius, percent } = props;
-  if (!percent) return null;
+  if (!percent || percent < 0.04) return null;
   const RADIAN = Math.PI / 180;
   const radius = innerRadius + (outerRadius - innerRadius) * 0.6;
   const x = cx + radius * Math.cos(-midAngle * RADIAN);
   const y = cy + radius * Math.sin(-midAngle * RADIAN);
   return (
-    <text x={x} y={y} fill="#fff" textAnchor="middle" dominantBaseline="central" fontSize={12} fontWeight={600}>
+    <text x={x} y={y} fill="#fff" textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={600}>
       {`${Math.round(percent * 100)}%`}
     </text>
   );
 }
+
+function renderPieLegendPills(data: Array<{ label: string; value: number; color: string }>): React.ReactNode {
+  if (!data || data.length === 0) return null;
+  const total = data.reduce((acc, d) => acc + (d.value || 0), 0);
+  return (
+    <div className="d-flex flex-wrap justify-content-center gap-1 mt-2 px-1 text-center">
+      {data.map((item, idx) => {
+        const pct = total > 0 ? Math.round(((item.value || 0) / total) * 100) : 0;
+        return (
+          <span
+            key={`pill-${idx}-${item.label}`}
+            className="d-inline-flex align-items-center bg-light border rounded-pill px-2 py-0.5 text-nowrap me-1 mb-1 shadow-sm"
+            title={`${item.label}: ${item.value} (${pct}%)`}
+            style={{ fontSize: '0.72rem', lineHeight: '1.2' }}
+          >
+            <span
+              className="rounded-circle me-1 flex-shrink-0"
+              style={{ width: 7, height: 7, backgroundColor: item.color }}
+            />
+            <span className="text-secondary me-1">{item.label}</span>
+            <span className="text-dark fw-bold me-1">{item.value}</span>
+            <span className="text-muted" style={{ fontSize: '0.68rem' }}>({pct}%)</span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function renderDonutCard(
+  title: string,
+  data: Array<{ label: string; value: number; color: string }>,
+  emptyMessage: string
+): React.ReactNode {
+  if (!data || data.length === 0) {
+    return <div className="text-muted small py-4 text-center">{emptyMessage}</div>;
+  }
+  const total = data.reduce((acc, d) => acc + (d.value || 0), 0);
+  const topItem = data[0];
+  const topPct = total > 0 && topItem ? Math.round((topItem.value / total) * 100) : 0;
+
+  return (
+    <div className="d-flex flex-column h-100 p-2">
+      <h4 className="small fw-bold text-muted mb-2 text-center">{title}</h4>
+      <div style={{ height: '140px', position: 'relative' }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={data}
+              dataKey="value"
+              nameKey="label"
+              cx="50%"
+              cy="50%"
+              innerRadius={40}
+              outerRadius={58}
+              paddingAngle={data.length > 1 ? 2 : 0}
+              stroke="none"
+              label={false}
+              labelLine={false}
+            >
+              {data.map((entry, idx) => (
+                <Cell key={`cell-${idx}-${entry.label}`} fill={entry.color} />
+              ))}
+            </Pie>
+            <text x="50%" y="46%" textAnchor="middle" dominantBaseline="middle" className="fw-bold" style={{ fontSize: '1.15rem', fill: '#212529' }}>
+              {topPct}%
+            </text>
+            <text x="50%" y="62%" textAnchor="middle" dominantBaseline="middle" style={{ fontSize: '0.62rem', fill: '#6c757d' }}>
+              {topItem?.label ?? ''}
+            </text>
+            <Tooltip formatter={(val: any) => [`${val} (${total > 0 ? Math.round((Number(val) / total) * 100) : 0}%)`, 'Quantità']} />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="mt-2 pe-1 flex-grow-1" style={{ maxHeight: '160px', overflowY: 'auto' }}>
+        {data.map((item, idx) => {
+          const pct = total > 0 ? Math.round((item.value / total) * 100) : 0;
+          return (
+            <div key={`donut-item-${idx}-${item.label}`} className="mb-2">
+              <div className="d-flex align-items-center justify-content-between mb-1" style={{ fontSize: '0.73rem' }}>
+                <div className="d-flex align-items-center text-truncate me-2" style={{ maxWidth: '68%' }}>
+                  <span
+                    className="rounded-circle me-1.5 flex-shrink-0"
+                    style={{ width: 7, height: 7, backgroundColor: item.color, display: 'inline-block' }}
+                  />
+                  <span className="text-dark fw-medium text-truncate" title={item.label}>
+                    {item.label}
+                  </span>
+                </div>
+                <div className="text-nowrap">
+                  <span className="fw-bold text-dark me-1">{item.value}</span>
+                  <span className="text-muted small">({pct}%)</span>
+                </div>
+              </div>
+              <div className="progress" style={{ height: 3 }}>
+                <div
+                  className="progress-bar"
+                  role="progressbar"
+                  style={{ width: `${pct}%`, backgroundColor: item.color }}
+                  aria-valuenow={pct}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function renderPostalDeliveryBarWidget(
+  title: string,
+  data: Array<{ label: string; value: number; color: string }>
+): React.ReactNode {
+  if (!data || data.length === 0) {
+    return <div className="text-muted small py-5 text-center">Nessun dato recapito poste</div>;
+  }
+  const total = data.reduce((acc, d) => acc + (d.value || 0), 0);
+
+  return (
+    <div className="d-flex flex-column h-100 p-2">
+      <div className="d-flex justify-content-between align-items-center mb-3">
+        <h4 className="small fw-bold text-muted mb-0">{title}</h4>
+        <span className="badge bg-light text-dark border">Totale: {total} destinatari</span>
+      </div>
+
+      {/* Segmented Progress Bar Header */}
+      <div className="progress mb-3" style={{ height: 10, borderRadius: 6, overflow: 'hidden' }}>
+        {data.map((item, idx) => {
+          const pct = total > 0 ? (item.value / total) * 100 : 0;
+          if (pct <= 0) return null;
+          return (
+            <div
+              key={`seg-${idx}-${item.label}`}
+              className="progress-bar"
+              style={{ width: `${pct}%`, backgroundColor: item.color }}
+              title={`${item.label}: ${item.value} (${Math.round(pct)}%)`}
+            />
+          );
+        })}
+      </div>
+
+      {/* Vertical Bar Chart layout */}
+      <div style={{ height: Math.min(260, Math.max(160, data.length * 28)), width: '100%' }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart layout="vertical" data={data} margin={{ top: 5, right: 30, left: 10, bottom: 5 }}>
+            <XAxis type="number" hide />
+            <YAxis
+              type="category"
+              dataKey="label"
+              width={140}
+              tick={{ fontSize: 11, fill: '#495057' }}
+              interval={0}
+            />
+            <Tooltip
+              formatter={(val: any) => [`${val} (${total > 0 ? Math.round((Number(val) / total) * 100) : 0}%)`, 'Destinatari']}
+            />
+            <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={14}>
+              {data.map((entry, idx) => (
+                <Cell key={`postal-bar-${idx}`} fill={entry.color} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Detailed Grid of Badges below chart */}
+      <div className="mt-3 pt-2 border-top pe-1" style={{ maxHeight: '160px', overflowY: 'auto' }}>
+        <div className="row g-2">
+          {data.map((item, idx) => {
+            const pct = total > 0 ? Math.round((item.value / total) * 100) : 0;
+            return (
+              <div key={`badge-grid-${idx}-${item.label}`} className="col-sm-6">
+                <div className="d-flex align-items-center justify-content-between p-2 bg-light rounded border">
+                  <div className="d-flex align-items-center text-truncate me-1">
+                    <span
+                      className="rounded-circle me-1.5 flex-shrink-0"
+                      style={{ width: 8, height: 8, backgroundColor: item.color }}
+                    />
+                    <span className="text-dark small text-truncate fw-medium" title={item.label}>
+                      {item.label}
+                    </span>
+                  </div>
+                  <div className="text-nowrap ms-1" style={{ fontSize: '0.75rem' }}>
+                    <span className="fw-bold text-dark me-1">{item.value}</span>
+                    <span className="text-muted">({pct}%)</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 
 // Tiptap's editor.getHTML() always returns a non-empty shell (e.g. '<p></p>')
 // even when the user has deleted all content, so a plain truthiness check on
@@ -11009,19 +11209,23 @@ export function App(): React.JSX.Element {
                         </div>
                         <div className="card-body">
                           {(() => {
-                            const sortedChannelTotals = [...globalStats.channelTotals].sort((a, b) => b.sent - a.sent || a.channel.localeCompare(b.channel));
+                            const sortedChannelTotals = [...globalStats.channelTotals]
+                              .map((ct) => ({ label: ct.channel, value: ct.sent, color: stableColorForKey(ct.channel) }))
+                              .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
                             return (
-                              <ResponsiveContainer width="100%" height={220}>
-                                <PieChart>
-                                  <Pie data={sortedChannelTotals} dataKey="sent" nameKey="channel" outerRadius={80} label>
-                                    {sortedChannelTotals.map((entry) => (
-                                      <Cell key={entry.channel} fill={stableColorForKey(entry.channel)} />
-                                    ))}
-                                  </Pie>
-                                  <Tooltip />
-                                  <Legend />
-                                </PieChart>
-                              </ResponsiveContainer>
+                              <>
+                                <ResponsiveContainer width="100%" height={160}>
+                                  <PieChart>
+                                    <Pie data={sortedChannelTotals} dataKey="value" nameKey="label" outerRadius={65} label={renderPiePercentLabel} labelLine={false}>
+                                      {sortedChannelTotals.map((entry) => (
+                                        <Cell key={entry.label} fill={entry.color} />
+                                      ))}
+                                    </Pie>
+                                    <Tooltip />
+                                  </PieChart>
+                                </ResponsiveContainer>
+                                {renderPieLegendPills(sortedChannelTotals)}
+                              </>
                             );
                           })()}
                         </div>
@@ -15599,26 +15803,28 @@ export function App(): React.JSX.Element {
                               ].sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
 
                               const renderOutcomePie = () => (
-                                <ResponsiveContainer width="100%" height={220}>
-                                  <PieChart>
-                                    <Pie
-                                      data={pieData}
-                                      dataKey="value"
-                                      nameKey="label"
-                                      cx="50%"
-                                      cy="50%"
-                                      outerRadius={75}
-                                      label={renderPiePercentLabel}
-                                      labelLine={false}
-                                    >
-                                      {pieData.map((entry) => (
-                                        <Cell key={entry.label} fill={entry.color} />
-                                      ))}
-                                    </Pie>
-                                    <Tooltip />
-                                    <Legend />
-                                  </PieChart>
-                                </ResponsiveContainer>
+                                <>
+                                  <ResponsiveContainer width="100%" height={160}>
+                                    <PieChart>
+                                      <Pie
+                                        data={pieData}
+                                        dataKey="value"
+                                        nameKey="label"
+                                        cx="50%"
+                                        cy="50%"
+                                        outerRadius={65}
+                                        label={renderPiePercentLabel}
+                                        labelLine={false}
+                                      >
+                                        {pieData.map((entry) => (
+                                          <Cell key={entry.label} fill={entry.color} />
+                                        ))}
+                                      </Pie>
+                                      <Tooltip />
+                                    </PieChart>
+                                  </ResponsiveContainer>
+                                  {renderPieLegendPills(pieData)}
+                                </>
                               );
 
                               if (campaign.channelType !== 'POSTAL') {
@@ -15643,63 +15849,14 @@ export function App(): React.JSX.Element {
 
                               return (
                                 <div className="row g-4 align-items-stretch">
-                                  <div className="col-md-4 text-center">
-                                    <h4 className="small fw-bold text-muted mb-2">Esito Invio</h4>
-                                    {renderOutcomePie()}
+                                  <div className="col-lg-3 col-md-6 border-end">
+                                    {renderDonutCard("Esito Invio", pieData, "Nessun dato esito")}
                                   </div>
-                                  <div className="col-md-4 text-center border-start">
-                                    <h4 className="small fw-bold text-muted mb-2">Stato Documento</h4>
-                                    {statusPieData.length > 0 ? (
-                                      <ResponsiveContainer width="100%" height={220}>
-                                        <PieChart>
-                                          <Pie
-                                            data={statusPieData}
-                                            dataKey="value"
-                                            nameKey="label"
-                                            cx="50%"
-                                            cy="50%"
-                                            outerRadius={75}
-                                            label={renderPiePercentLabel}
-                                            labelLine={false}
-                                          >
-                                            {statusPieData.map((entry, idx) => (
-                                              <Cell key={`status-cell-${idx}`} fill={entry.color} />
-                                            ))}
-                                          </Pie>
-                                          <Tooltip />
-                                          <Legend />
-                                        </PieChart>
-                                      </ResponsiveContainer>
-                                    ) : (
-                                      <div className="text-muted small py-5">Nessun dato stato documento</div>
-                                    )}
+                                  <div className="col-lg-3 col-md-6 border-end">
+                                    {renderDonutCard("Stato Documento", statusPieData, "Nessun dato stato documento")}
                                   </div>
-                                  <div className="col-md-4 text-center border-start">
-                                    <h4 className="small fw-bold text-muted mb-2">Recapito Poste</h4>
-                                    {deliveryPieData.length > 0 ? (
-                                      <ResponsiveContainer width="100%" height={220}>
-                                        <PieChart>
-                                          <Pie
-                                            data={deliveryPieData}
-                                            dataKey="value"
-                                            nameKey="label"
-                                            cx="50%"
-                                            cy="50%"
-                                            outerRadius={75}
-                                            label={renderPiePercentLabel}
-                                            labelLine={false}
-                                          >
-                                            {deliveryPieData.map((entry, idx) => (
-                                              <Cell key={`delivery-cell-${idx}`} fill={entry.color} />
-                                            ))}
-                                          </Pie>
-                                          <Tooltip />
-                                          <Legend />
-                                        </PieChart>
-                                      </ResponsiveContainer>
-                                    ) : (
-                                      <div className="text-muted small py-5">Nessun dato recapito poste</div>
-                                    )}
+                                  <div className="col-lg-6 col-md-12">
+                                    {renderPostalDeliveryBarWidget("Recapito Poste (Dettaglio)", deliveryPieData)}
                                   </div>
                                 </div>
                               );
@@ -15726,26 +15883,28 @@ export function App(): React.JSX.Element {
                                 }))
                                 .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
                               return (
-                                <ResponsiveContainer width="100%" height={220}>
-                                  <PieChart>
-                                    <Pie
-                                      data={effectivePieData}
-                                      dataKey="value"
-                                      nameKey="label"
-                                      cx="50%"
-                                      cy="50%"
-                                      outerRadius={80}
-                                      label={renderPiePercentLabel}
-                                      labelLine={false}
-                                    >
-                                      {effectivePieData.map((entry) => (
-                                        <Cell key={entry.label} fill={entry.color} />
-                                      ))}
-                                    </Pie>
-                                    <Tooltip />
-                                    <Legend />
-                                  </PieChart>
-                                </ResponsiveContainer>
+                                <>
+                                  <ResponsiveContainer width="100%" height={160}>
+                                    <PieChart>
+                                      <Pie
+                                        data={effectivePieData}
+                                        dataKey="value"
+                                        nameKey="label"
+                                        cx="50%"
+                                        cy="50%"
+                                        outerRadius={65}
+                                        label={renderPiePercentLabel}
+                                        labelLine={false}
+                                      >
+                                        {effectivePieData.map((entry) => (
+                                          <Cell key={entry.label} fill={entry.color} />
+                                        ))}
+                                      </Pie>
+                                      <Tooltip />
+                                    </PieChart>
+                                  </ResponsiveContainer>
+                                  {renderPieLegendPills(effectivePieData)}
+                                </>
                               );
                             })()}
                           </div>
