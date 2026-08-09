@@ -169,10 +169,19 @@ export class NotificationsSearchService {
       attempts: (() => {
         const fallbackProto = attempts.find((a) => a.protocolNumber !== null && a.protocolNumber !== undefined);
         return attempts.map((a) => {
-          const appIoPayload = a.responsePayload?.['appIo'] as { success?: boolean; error?: string } | undefined;
+          const appIoPayload = a.responsePayload?.['appIo'] as { success?: boolean; error?: string; messageId?: string; id?: string } | undefined;
+          const directMessageId = (a.responsePayload?.['messageId'] as string)
+            || (a.responsePayload?.['id'] as string)
+            || (a.responsePayload?.['appIoMessageId'] as string)
+            || undefined;
+          const appIoMsgId = appIoPayload?.messageId
+            || appIoPayload?.id
+            || directMessageId
+            || null;
           const protoNum = a.protocolNumber ?? fallbackProto?.protocolNumber ?? null;
           const protoYr = a.protocolYear ?? fallbackProto?.protocolYear ?? null;
           const protoAt = a.protocolledAt ?? fallbackProto?.protocolledAt ?? null;
+          const resolvedAppIoMessageId = appIoPayload?.messageId || appIoPayload?.id || directMessageId || null;
           return {
             attemptNumber: a.attemptNumber,
             status: a.status,
@@ -181,8 +190,11 @@ export class NotificationsSearchService {
             sentAt: a.sentAt ? a.sentAt.toISOString() : null,
             createdAt: a.createdAt.toISOString(),
             appIo: appIoPayload
-              ? { attempted: true as const, success: !!appIoPayload.success, error: appIoPayload.error ?? null }
-              : { attempted: false as const },
+              ? { attempted: true as const, success: !!appIoPayload.success, error: appIoPayload.error ?? null, messageId: resolvedAppIoMessageId }
+              : (a.channelType === 'APP_IO' && resolvedAppIoMessageId
+                  ? { attempted: true as const, success: a.status === 'success', error: a.errorMessage, messageId: resolvedAppIoMessageId }
+                  : { attempted: false as const }),
+            appIoMessageId: appIoMsgId,
             iun: a.iun,
             sendStatus: a.sendStatus,
             sendStatusUpdatedAt: a.sendStatusUpdatedAt ? a.sendStatusUpdatedAt.toISOString() : null,

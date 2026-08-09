@@ -838,7 +838,7 @@ function renderDonutCard(
             <text x="50%" y="62%" textAnchor="middle" dominantBaseline="middle" style={{ fontSize: '0.65rem', fill: '#6b7280', fontWeight: 600 }}>
               {topItem?.label ? shortCenterLabel(topItem.label) : ''}
             </text>
-            <Tooltip formatter={(val: any) => [`${val} (${total > 0 ? Math.round((Number(val) / total) * 100) : 0}%)`, 'Quantità']} />
+            <Tooltip formatter={(val: any, name: any) => [`${val} (${total > 0 ? Math.round((Number(val) / total) * 100) : 0}%)`, name || 'Quantità']} />
           </PieChart>
         </ResponsiveContainer>
       </div>
@@ -1316,7 +1316,7 @@ export function App(): React.JSX.Element {
   const [notifDetail, setNotifDetail] = useState<{
     recipient: { id: string; codiceFiscale: string; fullName: string | null; email: string | null; pec: string | null; status: string; physicalAddress: { address: string; municipality: string; zip?: string; province?: string; foreignState?: string | null } | null };
     campaign: { id: string; name: string; channelType: string; postalServiceType?: string | null; postalReturnReceipt?: boolean };
-    attempts: Array<{ attemptNumber: number; status: string; channelType: string; errorMessage: string | null; sentAt: string | null; createdAt: string; appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null }; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalTrackingId?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; postalStatusHistory?: Array<{ stato: string; rilevatoIl: string; codiceErrore?: string; descrizione?: string; statoConsegna?: string; codiceConsegna?: number }> | null; protocolNumber?: number | null; protocolYear?: number | null; protocolledAt?: string | null; costCents?: number | null; costCalculatedAt?: string | null; costBreakdown?: Record<string, unknown> | null }>;
+    attempts: Array<{ attemptNumber: number; status: string; channelType: string; errorMessage: string | null; sentAt: string | null; createdAt: string; appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null; messageId?: string | null }; appIoMessageId?: string | null; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalTrackingId?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; postalStatusHistory?: Array<{ stato: string; rilevatoIl: string; codiceErrore?: string; descrizione?: string; statoConsegna?: string; codiceConsegna?: number }> | null; protocolNumber?: number | null; protocolYear?: number | null; protocolledAt?: string | null; costCents?: number | null; costCalculatedAt?: string | null; costBreakdown?: Record<string, unknown> | null }>;
     preview: { subject: string; bodyHtml?: string; bodyMarkdown?: string };
     appIoPreview: { subject: string; bodyHtml?: string; bodyMarkdown?: string } | null;
     downloads: Array<{ channel: string; attachmentIndex: number; downloadedAt: string }>;
@@ -11501,7 +11501,7 @@ export function App(): React.JSX.Element {
                             <thead>
                               <tr>
                                 <th>#</th><th>Stato</th><th>Canale</th><th>Data</th>
-                                {notifDetail.attempts.some((a) => a.protocolNumber) && <th>Protocollo</th>}
+                                {(notifDetail.attempts.some((a) => a.protocolNumber || a.appIoMessageId || (a.appIo?.attempted && a.appIo.messageId))) && <th>Protocollo</th>}
                                 {notifDetail.campaign.channelType === 'SEND' && (
                                   <><th>IUN</th><th>Stato SEND</th><th>Aggiornato il</th></>
                                 )}
@@ -11513,7 +11513,7 @@ export function App(): React.JSX.Element {
                             </thead>
                             <tbody>
                               {(() => {
-                                const anyProtocollo = notifDetail.attempts.some((a) => a.protocolNumber);
+                                const anyProtocolloOrAppIo = notifDetail.attempts.some((a) => a.protocolNumber || a.appIoMessageId || (a.appIo?.attempted && a.appIo.messageId));
                                 const fallbackProto = notifDetail.attempts.find((a) => a.protocolNumber);
                                 return notifDetail.attempts.map((a) => {
                                   const protoStr = a.protocolNumber
@@ -11526,7 +11526,32 @@ export function App(): React.JSX.Element {
                                       <td><StatusBadge status={a.status} /></td>
                                       <td className="small"><ChannelBadge channel={a.channelType} /></td>
                                       <td className="small text-muted">{new Date(a.createdAt).toLocaleString('it-IT')}</td>
-                                      {anyProtocollo && <td className="small">{protoStr}</td>}
+                                      {anyProtocolloOrAppIo && (
+                                        <td className="small fw-mono">
+                                          {(() => {
+                                            if (a.protocolNumber) return protoStr;
+                                            const msgId = a.appIoMessageId || (a.appIo?.attempted && a.appIo.messageId ? a.appIo.messageId : null);
+                                            if (!msgId) return protoStr;
+                                            return (
+                                              <span className="d-inline-flex align-items-center" title={`ID Messaggio App IO: ${msgId}`}>
+                                                {msgId.slice(0, 5)}...
+                                                <button
+                                                  type="button"
+                                                  className="btn btn-sm btn-link p-0 ms-1"
+                                                  title={`Copia ID Messaggio App IO (${msgId})`}
+                                                  onClick={() => {
+                                                    navigator.clipboard.writeText(msgId);
+                                                    setIdproCopiedFor(a.attemptNumber);
+                                                    setTimeout(() => setIdproCopiedFor((prev) => (prev === a.attemptNumber ? null : prev)), 1500);
+                                                  }}
+                                                >
+                                                  {idproCopiedFor === a.attemptNumber ? <Check size={14} className="text-success" /> : <Copy size={14} />}
+                                                </button>
+                                              </span>
+                                            );
+                                          })()}
+                                        </td>
+                                      )}
                                     {notifDetail.campaign.channelType === 'SEND' && (
                                       <>
                                         <td className="small fw-mono">{a.iun || '—'}</td>
@@ -11594,7 +11619,7 @@ export function App(): React.JSX.Element {
                                   {trackingIdEditOpenFor === a.attemptNumber && (
                                     <tr>
                                       <td
-                                        colSpan={4 + (anyProtocollo ? 1 : 0) + (notifDetail.campaign.channelType === 'SEND' ? 3 : notifDetail.campaign.channelType === 'POSTAL' ? 2 : 0) + 1}
+                                        colSpan={4 + (anyProtocolloOrAppIo ? 1 : 0) + (notifDetail.campaign.channelType === 'SEND' ? 3 : notifDetail.campaign.channelType === 'POSTAL' ? 3 : 0) + 1}
                                         className="bg-light"
                                       >
                                         <div className="d-flex align-items-center gap-2 py-1">
@@ -11624,7 +11649,31 @@ export function App(): React.JSX.Element {
                                       <td><StatusBadge status={a.appIo.success ? 'success' : 'failed'} /></td>
                                       <td className="small"><ChannelBadge channel="APP_IO" /></td>
                                       <td className="small text-muted">{new Date(a.createdAt).toLocaleString('it-IT')}</td>
-                                      {anyProtocollo && <td>—</td>}
+                                      {anyProtocolloOrAppIo && (
+                                        <td className="small fw-mono">
+                                          {(() => {
+                                            const msgId = a.appIo.messageId;
+                                            if (!msgId) return '—';
+                                            return (
+                                              <span className="d-inline-flex align-items-center" title={`ID Messaggio App IO: ${msgId}`}>
+                                                {msgId.slice(0, 5)}...
+                                                <button
+                                                  type="button"
+                                                  className="btn btn-sm btn-link p-0 ms-1"
+                                                  title={`Copia ID Messaggio App IO (${msgId})`}
+                                                  onClick={() => {
+                                                    navigator.clipboard.writeText(msgId);
+                                                    setIdproCopiedFor(a.attemptNumber + 9000);
+                                                    setTimeout(() => setIdproCopiedFor((prev) => (prev === a.attemptNumber + 9000 ? null : prev)), 1500);
+                                                  }}
+                                                >
+                                                  {idproCopiedFor === a.attemptNumber + 9000 ? <Check size={14} className="text-success" /> : <Copy size={14} />}
+                                                </button>
+                                              </span>
+                                            );
+                                          })()}
+                                        </td>
+                                      )}
                                       {notifDetail.campaign.channelType === 'SEND' && (
                                         <>
                                           <td>—</td>

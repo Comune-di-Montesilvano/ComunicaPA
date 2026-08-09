@@ -8,7 +8,8 @@ export interface AttemptDetailDto {
   errorMessage: string | null;
   sentAt: string | null;
   createdAt: string;
-  appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null };
+  appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null; messageId?: string | null };
+  appIoMessageId?: string | null;
   iun: string | null;
   sendStatus: string | null;
   sendStatusUpdatedAt: string | null;
