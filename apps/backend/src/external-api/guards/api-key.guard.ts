@@ -20,7 +20,7 @@ export class ApiKeyGuard implements CanActivate {
       throw new UnauthorizedException('API key non valida o revocata');
     }
     req.apiClient = client;
-    void this.clientsService.touchLastUsed(client.id);
+    this.clientsService.touchLastUsed(client.id).catch(() => {});
     return true;
   }
 }
