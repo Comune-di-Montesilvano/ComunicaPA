@@ -22,6 +22,7 @@ import { EnrichmentModule } from './enrichment/enrichment.module';
 import { NotificationsSearchModule } from './notifications-search/notifications-search.module';
 import { TemplatesModule } from './templates/templates.module';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
+import { ExternalApiModule } from './external-api/external-api.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import configuration from './config/configuration';
@@ -51,6 +52,7 @@ import configuration from './config/configuration';
     NotificationsSearchModule,
     TemplatesModule,
     AuditLogsModule,
+    ExternalApiModule,
   ],
   controllers: [AppController],
   providers: [
