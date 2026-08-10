@@ -29,6 +29,31 @@ describe('CreateExternalNotificationDto', () => {
     expect(errors.length).toBeGreaterThan(0);
   });
 
+  it('PEC senza campo email né pec produce errore', async () => {
+    const errors = await validateDto({ channelType: 'PEC', codiceFiscale: base.codiceFiscale, extraData: {} });
+    expect(errors.length).toBeGreaterThan(0);
+  });
+
+  it('CF di 15 caratteri (troppo corto) produce errore', async () => {
+    const errors = await validateDto({ ...base, codiceFiscale: 'x'.repeat(15) });
+    expect(errors.some((e) => e.property === 'codiceFiscale')).toBe(true);
+  });
+
+  it('CF di 17 caratteri (troppo lungo) produce errore', async () => {
+    const errors = await validateDto({ ...base, codiceFiscale: 'x'.repeat(17) });
+    expect(errors.some((e) => e.property === 'codiceFiscale')).toBe(true);
+  });
+
+  it('CF di 16 caratteri non alfanumerico produce errore', async () => {
+    const errors = await validateDto({ ...base, codiceFiscale: 'RSSMRA80A01H50!U' });
+    expect(errors.some((e) => e.property === 'codiceFiscale')).toBe(true);
+  });
+
+  it('CF di 16 caratteri alfanumerici è valido', async () => {
+    const errors = await validateDto({ ...base, codiceFiscale: 'x'.repeat(16) });
+    expect(errors.some((e) => e.property === 'codiceFiscale')).toBe(false);
+  });
+
   it('APP_IO con subject sotto i 10 caratteri produce errore', async () => {
     const errors = await validateDto({ ...base, channelType: 'APP_IO', subject: 'corto', body: 'x'.repeat(80) });
     expect(errors.some((e) => e.property === 'subject')).toBe(true);
@@ -39,7 +64,7 @@ describe('CreateExternalNotificationDto', () => {
     expect(errors.some((e) => e.property === 'body')).toBe(true);
   });
 
-  it('APP_IO con subject/body ai bordi esatti [10,120]/[80,10000] è valido', async () => {
+  it('APP_IO con subject/body ai bordi esatti minimi [10,80] è valido', async () => {
     const errors = await validateDto({
       ...base,
       channelType: 'APP_IO',
@@ -47,6 +72,36 @@ describe('CreateExternalNotificationDto', () => {
       body: 'x'.repeat(80),
     });
     expect(errors).toHaveLength(0);
+  });
+
+  it('APP_IO con subject/body ai bordi esatti massimi [120,10000] è valido', async () => {
+    const errors = await validateDto({
+      ...base,
+      channelType: 'APP_IO',
+      subject: 'x'.repeat(120),
+      body: 'x'.repeat(10000),
+    });
+    expect(errors).toHaveLength(0);
+  });
+
+  it('APP_IO con subject di 121 caratteri (oltre il massimo) produce errore', async () => {
+    const errors = await validateDto({
+      ...base,
+      channelType: 'APP_IO',
+      subject: 'x'.repeat(121),
+      body: 'x'.repeat(80),
+    });
+    expect(errors.some((e) => e.property === 'subject')).toBe(true);
+  });
+
+  it('APP_IO con body di 10001 caratteri (oltre il massimo) produce errore', async () => {
+    const errors = await validateDto({
+      ...base,
+      channelType: 'APP_IO',
+      subject: 'oggetto valido di 12+',
+      body: 'x'.repeat(10001),
+    });
+    expect(errors.some((e) => e.property === 'body')).toBe(true);
   });
 
   it('SEND senza protocolla=true produce errore', async () => {
