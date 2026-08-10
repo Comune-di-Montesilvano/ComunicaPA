@@ -37,7 +37,7 @@ import { CHANNELS_REGISTRY, EMBEDDED_LOGOS, ENGINE_LABELS, getChannelMeta, chann
 // Definizione centralizzata delle voci di navigazione della pagina Impostazioni.
 // Le voci canale leggono icona, logo e label direttamente da CHANNELS_REGISTRY.
 // ---------------------------------------------------------------------------
-type SettingsTab = 'personalizzazione' | 'smtp' | 'pec' | 'app-io' | 'pdnd' | 'send' | 'inad' | 'inipec' | 'anpr' | 'protocollo' | 'postalizzazione' | 'oidc' | 'motori';
+type SettingsTab = 'personalizzazione' | 'smtp' | 'pec' | 'app-io' | 'pdnd' | 'send' | 'inad' | 'inipec' | 'anpr' | 'protocollo' | 'postalizzazione' | 'external-api' | 'oidc' | 'motori';
 type SettingsNavSection = { section: string };
 type SettingsNavItem = {
   tab: SettingsTab;
@@ -63,6 +63,7 @@ const SETTINGS_NAV: Array<SettingsNavSection | SettingsNavItem> = [
   { tab: 'inipec',           icon: Contact,                label: 'INIPEC' },
   { tab: 'protocollo',       channelKey: 'PROTOCOLLAZIONE', icon: _sm('PROTOCOLLAZIONE').icon, label: _sm('PROTOCOLLAZIONE').label },
   { tab: 'postalizzazione',  channelKey: 'POSTAL',          icon: _sm('POSTAL').icon,          label: _sm('POSTAL').label },
+  { tab: 'external-api',     icon: Lock,                    label: 'API Esterne' },
   // ── Sicurezza ──────────────────────────────────────────────────────────
   { section: 'Sicurezza' },
   { tab: 'oidc',             icon: Contact,                label: 'SPID / CIE (OIDC)' },
@@ -1244,6 +1245,14 @@ const EMPTY_POSTAL_PROVIDER: Omit<PostalProviderItem, 'id' | 'testedAt' | 'activ
   mittenteCitta: '', mittenteProvincia: '',
 };
 
+type ExternalClientItem = {
+  id: string;
+  name: string;
+  active: boolean;
+  createdAt: string;
+  lastUsedAt: string | null;
+};
+
 const PIE_COLORS = ['var(--bi-navy)', 'var(--ms-purple-600)', 'var(--ms-gold-500)', 'var(--ms-green-600)', 'var(--bi-primary)'];
 
 // Colore stabile per chiave (mai per indice in array): un pie che si
@@ -2182,6 +2191,13 @@ export function App(): React.JSX.Element {
   const [postalProviderBusyId, setPostalProviderBusyId] = useState<string | null>(null);
   const [postalProviderMsg, setPostalProviderMsg] = useState<{ text: string; error: boolean } | null>(null);
 
+  const [externalClients, setExternalClients] = useState<ExternalClientItem[]>([]);
+  const [externalClientsLoading, setExternalClientsLoading] = useState(false);
+  const [externalClientBusyId, setExternalClientBusyId] = useState<string | null>(null);
+  const [externalClientMsg, setExternalClientMsg] = useState<{ text: string; error: boolean } | null>(null);
+  const [newExternalClientName, setNewExternalClientName] = useState('');
+  const [revealedApiKey, setRevealedApiKey] = useState<{ clientId: string; key: string } | null>(null);
+
   const [settPdndTestTokenUrl, setSettPdndTestTokenUrl] = useState('https://auth.uat.interop.pagopa.it/token.oauth2');
   const [settPdndTestAudience, setSettPdndTestAudience] = useState('auth.uat.interop.pagopa.it/client-assertion');
   const [settPdndTestClientId, setSettPdndTestClientId] = useState('');
@@ -2240,7 +2256,7 @@ export function App(): React.JSX.Element {
   const [settProtoTimeoutMs, setSettProtoTimeoutMs] = useState('120000');
 
 
-  const [activeSettingsTab, setActiveSettingsTab] = useState<'personalizzazione' | 'smtp' | 'pec' | 'app-io' | 'pdnd' | 'send' | 'inad' | 'inipec' | 'anpr' | 'protocollo' | 'postalizzazione' | 'oidc' | 'motori'>('personalizzazione');
+  const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>('personalizzazione');
   const [engines, setEngines] = useState<any[]>([]);
   const [sendStageCounts, setSendStageCounts] = useState<{ protocollato: number; inviato: number; fallito: number } | null>(null);
   const [loadingEngines, setLoadingEngines] = useState(false);
@@ -4879,6 +4895,225 @@ export function App(): React.JSX.Element {
             </div>
           </div>
         )}
+      </div>
+    );
+  };
+
+  const fetchExternalClients = async () => {
+    if (!token) return;
+    setExternalClientsLoading(true);
+    try {
+      const res = await fetch(`${ADMIN_API_BASE}/external-clients`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        setExternalClients(await res.json());
+      }
+    } catch (err) {
+      console.error("Errore caricamento external-clients:", err);
+    } finally {
+      setExternalClientsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (token && activeSettingsTab === 'external-api') {
+      fetchExternalClients();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, activeSettingsTab]);
+
+  const handleCreateExternalClient = async () => {
+    if (!token || !newExternalClientName.trim()) return;
+    setExternalClientBusyId('new');
+    setExternalClientMsg(null);
+    try {
+      const res = await fetch(`${ADMIN_API_BASE}/external-clients`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: newExternalClientName.trim() }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || `Errore creazione (HTTP ${res.status})`);
+      }
+      const { client, apiKeyPlain } = await res.json();
+      setRevealedApiKey({ clientId: client.id, key: apiKeyPlain });
+      setNewExternalClientName('');
+      setExternalClientMsg({ text: 'Client creato con successo.', error: false });
+      fetchExternalClients();
+    } catch (err: any) {
+      setExternalClientMsg({ text: err.message || 'Errore di rete', error: true });
+    } finally {
+      setExternalClientBusyId(null);
+    }
+  };
+
+  const handleRegenerateExternalClientKey = async (id: string) => {
+    if (!token) return;
+    setExternalClientBusyId(id);
+    setExternalClientMsg(null);
+    try {
+      const res = await fetch(`${ADMIN_API_BASE}/external-clients/${id}/regenerate-key`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || `Errore rigenerazione (HTTP ${res.status})`);
+      }
+      const { apiKeyPlain } = await res.json();
+      setRevealedApiKey({ clientId: id, key: apiKeyPlain });
+      fetchExternalClients();
+    } catch (err: any) {
+      setExternalClientMsg({ text: err.message || 'Errore di rete', error: true });
+    } finally {
+      setExternalClientBusyId(null);
+    }
+  };
+
+  const handleRevokeExternalClient = async (id: string, name: string) => {
+    if (!token || !window.confirm(`Revocare l'accesso del client "${name}"? La chiave attuale smetterà di funzionare.`)) return;
+    setExternalClientBusyId(id);
+    setExternalClientMsg(null);
+    try {
+      const res = await fetch(`${ADMIN_API_BASE}/external-clients/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok && res.status !== 204) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || `Errore revoca (HTTP ${res.status})`);
+      }
+      if (revealedApiKey?.clientId === id) setRevealedApiKey(null);
+      setExternalClientMsg({ text: 'Client revocato.', error: false });
+      fetchExternalClients();
+    } catch (err: any) {
+      setExternalClientMsg({ text: err.message || 'Errore di rete', error: true });
+    } finally {
+      setExternalClientBusyId(null);
+    }
+  };
+
+  const renderExternalClientsTab = () => {
+    return (
+      <div className="d-flex flex-column gap-4">
+        {externalClientMsg && (
+          <div className={`alert ${externalClientMsg.error ? 'alert-danger' : 'alert-success'} d-flex align-items-center gap-2 mb-0`}>
+            {externalClientMsg.error ? <AlertTriangle /> : <CheckCircle2 />}
+            <div>{externalClientMsg.text}</div>
+          </div>
+        )}
+
+        {revealedApiKey && (
+          <div className="alert alert-warning mb-0">
+            <div className="fw-bold mb-1 d-flex align-items-center gap-2"><AlertTriangle size={16} /> API key generata — copiala ora, non sarà più mostrata</div>
+            <code className="d-block mt-2 p-2 bg-white border rounded" style={{ wordBreak: 'break-all' }}>{revealedApiKey.key}</code>
+            <div className="d-flex gap-2 mt-2">
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1"
+                onClick={() => navigator.clipboard.writeText(revealedApiKey.key)}
+              >
+                <Copy size={14} /> Copia
+              </button>
+              <button type="button" className="btn btn-sm btn-link" onClick={() => setRevealedApiKey(null)}>
+                Chiudi
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div>
+          <div className="d-flex justify-content-between align-items-center mb-3">
+            <h5 className="mb-0 text-dark fw-bold small text-uppercase tracking-wider">
+              Client API Esterni ({externalClients.length})
+            </h5>
+          </div>
+
+          <div className="d-flex gap-2 mb-3">
+            <input
+              type="text"
+              className="form-control"
+              placeholder="Nome client (es. Sistema Tributi)"
+              value={newExternalClientName}
+              onChange={(e) => setNewExternalClientName(e.target.value)}
+            />
+            <button
+              type="button"
+              className="btn btn-sm btn-primary px-3 d-flex align-items-center gap-1 flex-shrink-0"
+              onClick={() => handleCreateExternalClient()}
+              disabled={!newExternalClientName.trim() || externalClientBusyId === 'new'}
+            >
+              <Plus /> {externalClientBusyId === 'new' ? 'Creazione…' : 'Nuovo client'}
+            </button>
+          </div>
+
+          {externalClientsLoading ? (
+            <div className="text-center py-4 text-muted">
+              <Loader2 className="mb-2 animate-spin" size={24} />
+              <p className="mb-0">Caricamento...</p>
+            </div>
+          ) : externalClients.length === 0 ? (
+            <div className="text-center py-4 border rounded bg-white text-muted">
+              <Lock size={24} className="mb-2 text-secondary" />
+              <p className="mb-0">Nessun client API esterno configurato.</p>
+            </div>
+          ) : (
+            <div className="d-flex flex-column gap-3">
+              {externalClients.map((c) => (
+                <div key={c.id} className={`card border shadow-sm ${c.active ? 'border-success' : 'border-light'}`}>
+                  <div className="card-body p-3">
+                    <div className="d-flex justify-content-between align-items-start flex-wrap gap-3">
+                      <div className="d-flex align-items-start gap-3 flex-grow-1" style={{ minWidth: 0 }}>
+                        <div className={`rounded-circle d-flex align-items-center justify-content-center text-white flex-shrink-0 ${c.active ? 'bg-success' : 'bg-secondary'}`} style={{ width: 40, height: 40 }}>
+                          <Lock />
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <div className="fw-bold text-dark d-flex align-items-center gap-2">
+                            {c.name}
+                            <span className={`badge ${c.active ? 'bg-success' : 'bg-secondary'}`} style={{ fontSize: '0.65rem' }}>
+                              {c.active ? 'Attivo' : 'Revocato'}
+                            </span>
+                          </div>
+                          <div className="text-muted small mt-1">
+                            Creato il {new Date(c.createdAt).toLocaleString('it-IT')}
+                          </div>
+                          <div className="text-muted small mt-1">
+                            Ultimo utilizzo: {c.lastUsedAt ? new Date(c.lastUsedAt).toLocaleString('it-IT') : 'mai'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="d-flex flex-column gap-2 flex-shrink-0">
+                        {c.active && (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1"
+                            onClick={() => handleRegenerateExternalClientKey(c.id)}
+                            disabled={externalClientBusyId === c.id}
+                          >
+                            <RefreshCw size={14} /> {externalClientBusyId === c.id ? 'Rigenerazione…' : 'Rigenera key'}
+                          </button>
+                        )}
+                        {c.active && (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-danger d-flex align-items-center gap-1"
+                            onClick={() => handleRevokeExternalClient(c.id, c.name)}
+                            disabled={externalClientBusyId === c.id}
+                          >
+                            <Trash2 size={14} /> Revoca
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     );
   };
@@ -13121,6 +13356,7 @@ export function App(): React.JSX.Element {
                         {activeSettingsTab === 'inipec' && 'Integrazione INIPEC'}
                         {activeSettingsTab === 'protocollo' && 'Connettore Protocollo Informatico'}
                         {activeSettingsTab === 'postalizzazione' && 'Postalizzazione Cartacea Istituzionale'}
+                        {activeSettingsTab === 'external-api' && 'API Esterne — Caricamento Puntuale'}
                         {activeSettingsTab === 'oidc' && 'SPID / CIE (OIDC) - Autenticazione Cittadini'}
                         {activeSettingsTab === 'motori' && 'Motori di Invio — Stato Code BullMQ'}
                       </h3>
@@ -13927,6 +14163,8 @@ export function App(): React.JSX.Element {
 
                         {/* TAB: POSTALIZZAZIONE */}
                         {activeSettingsTab === 'postalizzazione' && renderPostalProvidersTab()}
+
+                        {activeSettingsTab === 'external-api' && renderExternalClientsTab()}
 
                         {/* TAB: OIDC (SPID/CIE) */}
                         {activeSettingsTab === 'oidc' && (
