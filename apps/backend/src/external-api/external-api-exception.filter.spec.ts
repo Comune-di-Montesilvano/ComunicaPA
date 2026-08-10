@@ -1,4 +1,4 @@
-import { ArgumentsHost, BadRequestException, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { ArgumentsHost, BadRequestException, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { ExternalApiExceptionFilter } from './external-api-exception.filter';
 
 function makeHost() {
@@ -42,5 +42,12 @@ describe('ExternalApiExceptionFilter', () => {
     filter.catch(new Error('boom interno con dettagli sensibili'), host);
     expect(status).toHaveBeenCalledWith(200);
     expect(json).toHaveBeenCalledWith({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Errore interno' } });
+  });
+
+  it('normalizza ForbiddenException (generico HttpException non coperto) a 200 con code LAUNCH_BLOCKED', () => {
+    const { host, status, json } = makeHost();
+    filter.catch(new ForbiddenException('accesso negato'), host);
+    expect(status).toHaveBeenCalledWith(200);
+    expect(json).toHaveBeenCalledWith({ success: false, error: { code: 'LAUNCH_BLOCKED', message: 'accesso negato' } });
   });
 });
