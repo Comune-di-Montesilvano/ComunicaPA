@@ -64,6 +64,16 @@ describe('CreateExternalNotificationDto', () => {
     expect(errors.some((e) => e.property === 'attachments')).toBe(true);
   });
 
+  it('POSTAL con attachments del tutto omesso (non solo array vuoto) produce errore', async () => {
+    const errors = await validateDto({ channelType: 'POSTAL', codiceFiscale: base.codiceFiscale, extraData: {} });
+    expect(errors.some((e) => e.property === 'attachments')).toBe(true);
+  });
+
+  it('SEND con attachments del tutto omesso produce errore', async () => {
+    const errors = await validateDto({ ...base, channelType: 'SEND', protocolla: true });
+    expect(errors.some((e) => e.property === 'attachments')).toBe(true);
+  });
+
   it('secondaryAppIo valido (parallel, campi opzionali) non produce errori', async () => {
     const errors = await validateDto({ ...base, secondaryAppIo: { subjectOverride: 'oggetto valido' } });
     expect(errors).toHaveLength(0);

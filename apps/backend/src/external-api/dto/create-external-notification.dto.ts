@@ -63,11 +63,25 @@ export class CreateExternalNotificationDto {
   @IsObject()
   extraData!: Record<string, string>;
 
+  /**
+   * NIENTE `@IsOptional()` qui, deliberatamente: la versione originale del
+   * brief lo aveva insieme a `@ValidateIf`, ma `@IsOptional()` salta
+   * l'intera catena di validatori della property quando il valore è
+   * `undefined` — PRIMA che `@ValidateIf` possa decidere se il campo è
+   * davvero opzionale per il canale corrente. Risultato verificato
+   * empiricamente: un payload SEND/POSTAL che OMETTE del tutto
+   * `attachments` (non un array vuoto, proprio il campo assente) non
+   * produceva alcun errore, mentre `attachments: []` sì — incoerente con
+   * "obbligatorio (almeno 1) per SEND e POSTAL", e il caso più probabile
+   * per un chiamante esterno reale (omettere il campo, non inviarlo vuoto).
+   * `@ValidateIf` da solo basta a rendere il campo opzionale per gli altri
+   * canali: se la condizione è falsa, class-validator salta l'INTERA
+   * catena di validatori della property, non serve `@IsOptional()`.
+   */
+  @ValidateIf((o) => o.channelType === 'SEND' || o.channelType === 'POSTAL')
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ExternalAttachmentRefDto)
-  @IsOptional()
-  @ValidateIf((o) => o.channelType === 'SEND' || o.channelType === 'POSTAL')
   @ArrayMinSize(1, { message: 'attachments obbligatorio (almeno 1) per SEND e POSTAL' })
   attachments?: ExternalAttachmentRefDto[];
 
