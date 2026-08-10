@@ -204,6 +204,39 @@ describe('CampaignsService', () => {
     expect(mockCampaignRepo.create).toHaveBeenCalledWith(expect.objectContaining({ isLegalValue: false }));
   });
 
+  describe('setExternalClientId', () => {
+    it('aggiorna la colonna externalClientId sulla campagna', async () => {
+      await service.setExternalClientId('camp-1', 'client-1');
+      expect(mockCampaignRepo.update).toHaveBeenCalledWith({ id: 'camp-1' }, { externalClientId: 'client-1' });
+    });
+  });
+
+  describe('addSingleRecipient', () => {
+    it('crea e salva un Recipient PENDING con i dati passati', async () => {
+      mockRecipientRepo.create.mockReturnValue({ id: 'rec-1' });
+      mockRecipientRepo.save.mockResolvedValue({ id: 'rec-1' });
+
+      const result = await service.addSingleRecipient('camp-1', {
+        codiceFiscale: 'RSSMRA80A01H501U',
+        email: 'test@example.com',
+        pec: null,
+        extraData: { indirizzo: 'Via Roma 1' },
+      });
+
+      expect(mockRecipientRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          campaignId: 'camp-1',
+          codiceFiscale: 'RSSMRA80A01H501U',
+          email: 'test@example.com',
+          pec: null,
+          extraData: { indirizzo: 'Via Roma 1' },
+          status: RecipientStatus.PENDING,
+        }),
+      );
+      expect(result).toEqual({ id: 'rec-1' });
+    });
+  });
+
   it('launch throws BadRequestException when no pending recipients', async () => {
     // atomic UPDATE succeeds (affected: 1), campaign fetched, but no recipients
     mockCampaignQb.execute.mockResolvedValueOnce({ affected: 1 });

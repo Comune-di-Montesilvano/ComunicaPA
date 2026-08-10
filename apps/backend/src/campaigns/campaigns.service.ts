@@ -352,6 +352,31 @@ export class CampaignsService {
     return this.campaignRepo.save(campaign);
   }
 
+  async setExternalClientId(campaignId: string, externalClientId: string): Promise<void> {
+    await this.campaignRepo.update({ id: campaignId }, { externalClientId });
+  }
+
+  /**
+   * Riusa lo stesso pattern già visto in launchTestSend() (creazione singolo
+   * Recipient PENDING), estratto qui come metodo pubblico riusabile anche
+   * dal path esterno — nessuna duplicazione della logica campo-per-campo.
+   */
+  async addSingleRecipient(
+    campaignId: string,
+    data: { codiceFiscale: string; email?: string | null; pec?: string | null; extraData: Record<string, unknown> },
+  ): Promise<Recipient> {
+    const recipient = this.recipientRepo.create({
+      campaignId,
+      codiceFiscale: data.codiceFiscale,
+      email: data.email ?? null,
+      pec: data.pec ?? null,
+      fullName: (data.extraData['full_name'] as string | undefined) ?? null,
+      extraData: data.extraData,
+      status: RecipientStatus.PENDING,
+    });
+    return this.recipientRepo.save(recipient);
+  }
+
   async uploadCsv(
     campaignId: string,
     filePath: string,
