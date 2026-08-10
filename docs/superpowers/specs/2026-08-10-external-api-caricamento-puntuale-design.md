@@ -116,6 +116,58 @@ Backend: `admin/external-clients` CRUD (`list` mascherato senza hash, `create`, 
 - `ExternalApiService.createAndLaunch()`: mock di `campaignsService.launch()` per i tre esiti (successo, `blocked`, eccezione)
 - `admin/external-clients`: CRUD + verifica che la key in chiaro non sia mai ritornata da `list()`/`regenerate-key` response oltre alla creazione/rigenerazione stessa
 
+## Addendum — discovery capacità istanza + lookup domicilio digitale (auto-descrittività)
+
+Emerso in revisione: il client esterno sceglieva `channelType` alla cieca, senza modo di sapere se quel canale è realmente configurato su questa istanza (mail server attivo? provider POSTAL attivo con quali Servizio/contratti? servizio App IO configurato? SEND con quali codici tassonomia?), scoprendolo solo a posteriori da un `LAUNCH_BLOCKED`. Inoltre, per evitare che INAD dirotti a sorpresa un canale scelto dal client (comportamento bulk oggi disabilitato per `wizSingleMode`, ma il client non ha comunque modo di sapere a priori il vero domicilio digitale del CF), serve un endpoint di lookup dedicato — lo stesso principio già in uso per l'operatore in wizard (step1 "Carica dati ANPR", che risolve il domicilio A MANO prima di scegliere il canale).
+
+### `GET external/v1/capabilities`
+
+Riflette lo stato configurato REALE dell'istanza, stessa fonte dati che alimenta la UI wizard — nessun valore hardcoded/duplicato:
+
+```json
+{
+  "success": true,
+  "channels": {
+    "EMAIL": { "active": true },
+    "PEC": { "active": true },
+    "APP_IO": { "active": false },
+    "SEND": { "active": true, "enabledTaxonomyCodes": ["..."], "requiresGroup": true },
+    "POSTAL": { "active": true, "enabledServiceTypes": ["Raccomandata1Market", "..."], "contratti": [{ "codiceContratto": "...", "descrizione": "...", "tipologia": "...", "estero": false }] }
+  },
+  "appIoSecondary": { "available": false }
+}
+```
+
+Fonti (sola lettura, nessuna nuova persistenza):
+- EMAIL/PEC: `MailConfigsService.listMasked()`, `active = entries.some(e => e.type === X && e.active)`
+- APP_IO / `appIoSecondary`: `IoServicesService.resolveApiKey()` → `active = risultato !== null`
+- SEND: `AppSettingsService.get('send.enabledTaxonomyCodes')` (parse array) + `send.{environment}.group` per `requiresGroup`
+- POSTAL: `PostalProvidersService.getActive()` → `active = risultato !== null`, `enabledServiceTypes`/`contratti` dal provider attivo (stesso dato già scoperto dal tasto "Test" — vedi sezione POSTAL principale di CLAUDE.md)
+
+Endpoint pubblico dietro `ApiKeyGuard` (stesso auth degli altri), nessun audit log (sola lettura di configurazione, nessun dato personale coinvolto).
+
+### `POST external/v1/domicilio/cerca`
+
+Wrapper diretto di `DomicilioService.cercaDomicilio(codiceFiscale, operatorLabel)` — stesso orchestratore ANPR+INAD+App IO già usato da `admin/domicilio/cerca` per l'operatore in wizard, nessuna logica duplicata. Payload `{ codiceFiscale: string }`, risposta (sempre 200, pattern comune al modulo):
+
+```json
+{ "success": true, "codiceFiscale": "...", "inad": {...}, "appIo": {...}, "anpr": {...}, "anprEsistenzaInVita": {...} }
+```
+
+Il client interroga il CF **prima** di chiamare `POST notifications`, legge da `inad`/`appIo`/`anpr` il domicilio digitale reale del destinatario, sceglie `channelType` di conseguenza. Poiché la campagna nasce già con `wizSingleMode: true` (vedi `ExternalApiService.createAndLaunch`), il check INAD automatico bulk resta skippato lato server — la responsabilità della scelta canale è del client, informato da questo endpoint.
+
+**Audit log obbligatorio** (gotcha noto: "ogni endpoint che consulta un registro esterno con dati personali deve loggare operatore+CF cercato"): `AuditLogsService.log({ operator: 'external:'+client.name, action: 'EXTERNAL_DOMICILIO_SEARCH', details: { codiceFiscale } })`.
+
+### Eccezione — App IO parallela
+
+Anche con canale primario già risolto correttamente dal client via lookup, resta un caso legittimo di multi-canale: co-consegna App IO in parallelo (mai esclusiva — l'esclusiva presuppone un check di dirottamento che qui il client ha già fatto interrogando `domicilio/cerca`, non ha senso riproporlo). `CreateExternalNotificationDto` guadagna:
+
+```typescript
+secondaryAppIo?: { subjectOverride?: string; bodyOverride?: string }
+```
+
+Mappato da `ExternalApiService` su `channelConfig.secondaryChannels = [{ channel: 'APP_IO', mode: 'parallel', subjectOverride, bodyOverride }]` — stesso formato già risolto da `resolveSecondaryAppIoConfig()` (`secondary-channels.util.ts`), nessuna nuova logica di invio lato canale, solo nuovo punto di scrittura della config.
+
 ## Specifica OpenAPI
 
 Il modulo `external-api` è l'unica superficie di questo backend pensata per essere consumata da terzi esterni senza contesto pregresso (a differenza di `admin/*`/`citizen/*`, integrati coi rispettivi frontend nello stesso repo) — richiede quindi una spec OpenAPI 3.x dedicata, non solo Swagger decorator generici:
