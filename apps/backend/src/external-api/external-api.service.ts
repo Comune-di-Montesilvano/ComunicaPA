@@ -66,7 +66,7 @@ export class ExternalApiService {
           };
         }
         const key = `allegato_${i}`;
-        const destFilename = resolved.filename;
+        const destFilename = `${i}_${resolved.filename}`;
         fs.copyFileSync(resolved.path, join(destDir, destFilename));
         this.tokens.markConsumed(apiClient.id, ref.token);
         attachmentsConfig.push({ key, label: ref.label ?? `Allegato ${i + 1}` });

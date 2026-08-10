@@ -75,7 +75,7 @@ describe('ExternalApiService', () => {
     );
     expect(campaigns.addSingleRecipient).toHaveBeenCalledWith(
       'camp-1',
-      expect.objectContaining({ extraData: expect.objectContaining({ allegato_0: 'atto.pdf' }) }),
+      expect.objectContaining({ extraData: expect.objectContaining({ allegato_0: '0_atto.pdf' }) }),
     );
   });
 
