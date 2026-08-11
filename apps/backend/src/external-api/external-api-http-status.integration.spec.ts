@@ -3,6 +3,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import * as fs from 'fs';
+import { randomUUID } from 'crypto';
 import { ExternalNotificationsController } from './external-notifications.controller';
 import { ExternalAttachmentsController } from './external-attachments.controller';
 import { ExternalDomicilioController } from './external-domicilio.controller';
@@ -149,8 +150,8 @@ describe('external/v1 — status code contratto HTTP reale (integration)', () =>
     expect(res.body).toMatchObject({ success: false, error: { code: 'VALIDATION_ERROR' } });
   });
 
-  it('POST external/v1/attachments/upload/chunk (successo) → HTTP 200', async () => {
-    const uploadId = 'test-upload-http-status-spec';
+  it('POST external/v1/attachments/upload/chunk (successo, uploadId UUID valido) → HTTP 200', async () => {
+    const uploadId = randomUUID();
     createdUploadIds.push(uploadId);
     const res = await request(app.getHttpServer())
       .post('/external/v1/attachments/upload/chunk')
@@ -160,15 +161,85 @@ describe('external/v1 — status code contratto HTTP reale (integration)', () =>
       .attach('chunk', Buffer.from('contenuto di test'), 'chunk.bin')
       .expect(200);
     expect(res.body).toEqual({ success: true });
+    // Il chunk deve essere scritto DENTRO la cartella di upload prevista,
+    // non altrove — prova positiva simmetrica ai test di traversal sotto.
+    expect(fs.existsSync(`${chunkUploadDir(uploadId)}/0.part`)).toBe(true);
   });
 
-  it('POST external/v1/attachments/upload/complete (successo) → HTTP 200', async () => {
+  /**
+   * Path traversal — secondo finding critico review finale (follow-up al
+   * fix già applicato su init()/filename): chunk() usa FileInterceptor
+   * (multer/diskStorage) i cui callback `destination`/`filename` leggono
+   * `req.body.uploadId`/`index` DURANTE il parsing multipart, PRIMA che la
+   * ValidationPipe su @Body() possa intervenire — un test a livello
+   * controller (chiamata diretta al metodo) non eserciterebbe MAI questo
+   * percorso. Solo un vero giro HTTP attraverso multer prova che il file
+   * non viene scritto fuori da CHUNK_ROOT.
+   */
+  it('POST external/v1/attachments/upload/chunk con uploadId path-traversal → HTTP 200 con blocco esplicito, nessun file scritto fuori da CHUNK_ROOT', async () => {
+    const maliciousUploadId = '../../../../tmp/comunicapa-uploads-traversal-poc';
+    const res = await request(app.getHttpServer())
+      .post('/external/v1/attachments/upload/chunk')
+      .set('X-Api-Key', VALID_KEY)
+      .field('uploadId', maliciousUploadId)
+      .field('index', '0')
+      .attach('chunk', Buffer.from('payload malevolo'), 'chunk.bin')
+      .expect(200);
+    expect(res.body).toMatchObject({ success: false, error: { code: 'VALIDATION_ERROR' } });
+    // Prova diretta: nessun file scritto nella destinazione risolta dal
+    // traversal (fuori da CHUNK_ROOT).
+    expect(fs.existsSync('/tmp/comunicapa-uploads-traversal-poc')).toBe(false);
+  });
+
+  it('POST external/v1/attachments/upload/chunk con index path-traversal → HTTP 200 con blocco esplicito', async () => {
+    const uploadId = randomUUID();
+    createdUploadIds.push(uploadId);
+    // init reale, per avere una cartella di upload legittima su cui
+    // verificare che NON compaia alcun file col nome malevolo.
+    await request(app.getHttpServer())
+      .post('/external/v1/attachments/upload/init')
+      .set('X-Api-Key', VALID_KEY)
+      .send({ filename: 'avviso.pdf', totalChunks: 1 })
+      .expect(200);
+
+    const res = await request(app.getHttpServer())
+      .post('/external/v1/attachments/upload/chunk')
+      .set('X-Api-Key', VALID_KEY)
+      .field('uploadId', uploadId)
+      .field('index', '../../evil')
+      .attach('chunk', Buffer.from('payload malevolo'), 'chunk.bin')
+      .expect(200);
+    expect(res.body).toMatchObject({ success: false, error: { code: 'VALIDATION_ERROR' } });
+  });
+
+  it('POST external/v1/attachments/upload/complete (successo, uploadId UUID valido) → HTTP 200', async () => {
+    const uploadId = randomUUID();
     const res = await request(app.getHttpServer())
       .post('/external/v1/attachments/upload/complete')
       .set('X-Api-Key', VALID_KEY)
-      .send({ uploadId: 'test-upload-http-status-spec' })
+      .send({ uploadId })
       .expect(200);
     expect(res.body).toEqual({ success: true, attachmentToken: 'tok-http-1' });
+    expect(tokensService.completeUpload).toHaveBeenCalledWith('client-1', uploadId);
+  });
+
+  /**
+   * complete() non passa da multer — qui la ValidationPipe globale gira
+   * PRIMA del controller, quindi @IsUUID() su CompleteAttachmentUploadDto è
+   * la protezione REALE (non solo difesa in profondità come per chunk()).
+   */
+  it('POST external/v1/attachments/upload/complete con uploadId path-traversal → VALIDATION_ERROR, mai invocato con il payload malevolo', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/external/v1/attachments/upload/complete')
+      .set('X-Api-Key', VALID_KEY)
+      .send({ uploadId: '../../../../etc/passwd' })
+      .expect(200);
+    expect(res.body).toMatchObject({ success: false, error: { code: 'VALIDATION_ERROR' } });
+    // Altri test in questo describe chiamano legittimamente completeUpload
+    // (mock condiviso, nessun clearMocks tra i test) — l'asserzione giusta è
+    // che NON sia mai stato invocato con il payload di traversal, non che
+    // il call count totale sia zero.
+    expect(tokensService.completeUpload).not.toHaveBeenCalledWith(expect.anything(), '../../../../etc/passwd');
   });
 
   it('POST external/v1/domicilio/cerca (successo) → HTTP 200', async () => {

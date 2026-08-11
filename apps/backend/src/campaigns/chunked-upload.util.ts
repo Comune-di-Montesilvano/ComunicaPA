@@ -22,7 +22,34 @@ interface ChunkUploadMeta {
   totalChunks: number;
 }
 
+// uploadId è SEMPRE generato server-side da initChunkedUpload() (randomUUID()
+// qui sotto) — un chiamante legittimo non ha mai motivo di mandarne uno
+// diverso. Stesso principio già in uso per ExternalAttachmentRefDto.token
+// (create-external-notification.dto.ts): qualunque valore fuori da questa
+// forma è per definizione un tentativo di manipolare il path.
+const UPLOAD_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isValidUploadId(uploadId: unknown): uploadId is string {
+  return typeof uploadId === 'string' && UPLOAD_ID_PATTERN.test(uploadId);
+}
+
+/**
+ * Scelta di sicurezza: `uploadId` arriva da input non fidato su TUTTI i
+ * chiamanti di questa funzione, inclusi due percorsi (external-api chunk()/
+ * complete()) dove il body arriva o troppo TARDI (dopo che multer ha già
+ * scritto su disco nei callback diskStorage) o comunque non passa mai da
+ * una validazione a livello DTO. `chunkUploadDir()` è il choke point comune
+ * a init/chunk/complete (via readMeta/chunkPartPath) — validare la FORMA qui
+ * (UUID v4, mai un path/`..`) chiude il vettore di path traversal
+ * indipendentemente da dove viene chiamata, anche se un punto di chiamata a
+ * monte dimenticasse il proprio controllo (stesso principio già applicato a
+ * `filename`/`basename()` sotto, un secondo livello di difesa non un unico
+ * punto di fiducia).
+ */
 export function chunkUploadDir(uploadId: string): string {
+  if (!isValidUploadId(uploadId)) {
+    throw new Error(`uploadId non valido: atteso un UUID, ricevuto "${String(uploadId)}"`);
+  }
   return join(CHUNK_ROOT, uploadId);
 }
 
@@ -98,6 +125,20 @@ export async function assembleChunkedUpload(uploadId: string): Promise<{ path: s
   return { path: assembledPath, filename: meta.filename };
 }
 
+/**
+ * Best-effort, chiamata quasi sempre da un blocco `finally` a valle di un
+ * `try/catch` che ha già gestito l'esito reale (vedi
+ * enrichment.controller.ts, io-services.controller.ts, campaigns.controller.ts
+ * — pattern identico in tutti e 4). Un `uploadId` malformato/già invalidato
+ * qui non deve MAI lanciare: un throw dentro un `finally` sovrascrive
+ * silenziosamente il risultato/l'eccezione già prodotti dal blocco `try`
+ * (bug reale trovato in verifica di questo stesso fix — un `complete()` che
+ * gestiva correttamente un uploadId non valido rispondendo `{blocked:true}`
+ * tornava invece una promise rigettata perché il `finally` la sovrascriveva).
+ * Nessun dato sensibile a rischio nel no-op: un id di forma invalida non ha
+ * comunque mai potuto risolvere a una directory reale sotto CHUNK_ROOT.
+ */
 export function cleanupChunkedUpload(uploadId: string): void {
+  if (!isValidUploadId(uploadId)) return;
   fs.rmSync(chunkUploadDir(uploadId), { recursive: true, force: true });
 }

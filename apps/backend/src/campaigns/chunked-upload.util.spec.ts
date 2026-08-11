@@ -58,7 +58,24 @@ describe('assembleChunkedUpload', () => {
   });
 
   it('sessione upload inesistente → errore esplicito', async () => {
-    await expect(assembleChunkedUpload('id-mai-esistito')).rejects.toThrow(/non trovata/);
+    // UUID plausibile (stessa forma di randomUUID()) ma mai generato da
+    // initChunkedUpload — deve fallire per "non trovata", non per "non
+    // valido" (quella è la validazione di FORMA, verificata a parte sotto).
+    await expect(assembleChunkedUpload('11111111-2222-3333-4444-555555555555')).rejects.toThrow(/non trovata/);
+  });
+
+  /**
+   * Path traversal — secondo finding critico review finale (follow-up):
+   * chunk()/complete() su external-attachments.controller.ts passavano
+   * `uploadId` non validato fino a chunkUploadDir()/readMeta(). Fix:
+   * chunkUploadDir() ora valida la FORMA (UUID v4) come choke point comune
+   * a init/chunk/complete — chiude il vettore anche se un punto di chiamata
+   * a monte dimenticasse il proprio controllo.
+   */
+  it('uploadId non a forma di UUID → chunkUploadDir/assembleChunkedUpload rifiutano esplicitamente, mai un path risolto fuori da CHUNK_ROOT', async () => {
+    expect(() => chunkUploadDir('../../../../etc')).toThrow(/uploadId non valido/);
+    expect(() => chunkPartPath('../../../../etc', 0)).toThrow(/uploadId non valido/);
+    await expect(assembleChunkedUpload('../../../../etc')).rejects.toThrow(/uploadId non valido/);
   });
 
   /**
