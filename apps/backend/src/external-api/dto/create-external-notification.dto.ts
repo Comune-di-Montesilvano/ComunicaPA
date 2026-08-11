@@ -26,36 +26,54 @@ const APP_IO_BODY_MIN = 80;
 const APP_IO_BODY_MAX = 10000;
 
 /**
- * Regole verificate contro il wizard reale (`apps/frontend-admin/src/App.tsx`,
- * gate del bottone "Riepilogo" step4→5, righe ~10455-10467/10672-10684) —
+ * Il campo "Corpo del Messaggio" del wizard (EMAIL/PEC/APP_IO) è HTML
+ * (TemplateEditor), non testo semplice — PagoPA valuta il vincolo di
+ * lunghezza su `content.markdown` (testo effettivamente visibile), non sui
+ * caratteri di markup. Stessa regex usata dal wizard per lo stesso scopo
+ * (`apps/frontend-admin/src/App.tsx` `wizPlainTextLength()`, riga 984-986,
+ * e `isWizBodyEmpty()`, riga 948-951) — un body con 79 caratteri visibili
+ * ma 120 di markup deve restare sotto il minimo App IO, non sopra.
+ */
+function stripHtmlForLength(value: string): string {
+  return value.replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' ').trim();
+}
+
+/**
+ * Regole verificate contro il wizard reale, `apps/frontend-admin/src/App.tsx`.
  * `createAndLaunch` imposta sempre `channelConfig.wizSingleMode = true`
- * (external-api.service.ts), quindi l'equivalente wizard di ogni chiamata
- * esterna è SEMPRE "invio singolo": il ramo `!wizSingleMode` di quelle
- * condizioni è sempre falso, e questo file riflette la formula già
- * semplificata per quel caso, non la formula generale bulk-CSV.
+ * (external-api.service.ts:41), quindi l'equivalente wizard di ogni
+ * chiamata esterna è SEMPRE "invio singolo".
  *
- * subject ("Oggetto della Comunicazione"): il campo NON è mai nascosto in
- * UI (input sempre renderizzato indipendentemente dal canale, riga ~10501),
- * quindi è sempre di tipo stringa se presente. È obbligatorio (`!wizSubject`
- * nel gate) per OGNI canale tranne POSTAL puro senza co-consegna App IO
- * (unico bypass completo del gate, riga 10457/10674) — quindi obbligatorio
- * anche per SEND (bug corretto qui: la versione precedente di questo file
- * lo dava per opzionale) e per POSTAL quando è presente `secondaryAppIo`
- * (il gate richiede `!wizSubject` incondizionatamente in quel ramo, anche
- * se per POSTAL la differenziazione App IO è sempre forzata — riga 2279 —
- * quindi quel valore di `subject` non finisce mai come contenuto reale
- * dell'App IO co-consegnata: è comunque un campo obbligatorio nel wizard,
- * non un'inferenza nostra).
+ * ATTENZIONE gate corretto da usare: in modalità singola, per SEND/POSTAL
+ * lo step "Template" (step4, dove vive il gate "Riepilogo" righe
+ * ~10455-10467/10672-10684) viene SALTATO del tutto
+ * (`wizSingleNeedsTemplateStep = wizChannel==='EMAIL'||'PEC'||'APP_IO'`,
+ * riga 1855; step-bar singola mostra solo `[1,4,6]` per i canali con
+ * template, `[1,6]` per SEND/POSTAL) — quel gate non è mai raggiunto per
+ * questi due canali quando `wizSingleMode` è vero. Il gate REALMENTE
+ * eseguito per SEND/POSTAL in modalità singola è quello dei bottoni
+ * "Avvia Test"/"Conferma ed Avvia Campagna" allo step6 (righe
+ * 11021/11029, duplicato 11172/11180):
+ * `disabled = wizSending || (wizSingleMode && !wizSingleNeedsTemplateStep && !wizSubject.trim())`
+ * — cioè, per SEND e POSTAL in modalità singola, `subject` è SEMPRE
+ * obbligatorio, incondizionatamente, senza eccezioni legate a
+ * `secondaryAppIo`/co-consegna App IO (quella condizione appartiene solo
+ * al gate step4, mai raggiunto qui).
+ *
+ * subject ("Oggetto della Comunicazione"): obbligatorio per TUTTI i canali
+ * — EMAIL/PEC/APP_IO tramite il gate step4 (mai saltato per loro, riga
+ * 1855), SEND/POSTAL tramite il gate step6 sopra. Nessuna eccezione.
  *
  * body ("Corpo del Messaggio"): il campo è strutturalmente ASSENTE dal DOM
- * per SEND (sempre) e per POSTAL (sempre, in modalità wizSingleMode=true —
- * riga 10514: la condizione che lo renderizzerebbe per POSTAL richiede
- * `!wizSingleMode`, mai vero qui) — non solo facoltativo, proprio non
- * inviabile dal chiamante reale del wizard. Per questi due canali il DTO
- * quindi RIFIUTA un body valorizzato, non lo ignora silenziosamente (bonus
- * "reject if channel doesn't use it" richiesto — qui l'evidenza UI è
- * inequivocabile, a differenza del caso subject/POSTAL sopra). Obbligatorio
- * per EMAIL/PEC/APP_IO (sempre renderizzato e richiesto per quei canali).
+ * per SEND e POSTAL in modalità singola: per SEND lo step template non
+ * esiste (riga 1855); per POSTAL, anche nei rari casi in cui lo step
+ * esisterebbe, riga 10514 lo renderizza solo se `!wizSingleMode` (mai vero
+ * qui). Non solo facoltativo: non c'è alcun modo per il chiamante reale
+ * del wizard di valorizzarlo per questi due canali. Il DTO quindi RIFIUTA
+ * un body valorizzato per SEND/POSTAL, non lo ignora silenziosamente.
+ * Obbligatorio per EMAIL/PEC/APP_IO. Per APP_IO, il vincolo di lunghezza
+ * PagoPA [80,10000] va misurato su testo HTML-stripped (vedi
+ * `stripHtmlForLength`), non sui caratteri grezzi.
  */
 function IsValidChannelText(kind: 'subject' | 'body', validationOptions?: ValidationOptions): PropertyDecorator {
   return function (object: object, propertyName: string | symbol) {
@@ -75,22 +93,17 @@ function IsValidChannelText(kind: 'subject' | 'body', validationOptions?: Valida
             return value === undefined;
           }
 
-          if (kind === 'subject' && o.channelType === 'POSTAL') {
-            // Obbligatorio solo se presente co-consegna App IO
-            // (`secondaryAppIo`), facoltativo altrimenti — riflette
-            // esattamente il bypass del gate wizard (righe 10457/10674).
-            const required = !!o.secondaryAppIo;
-            if (value === undefined) return !required;
-            return typeof value === 'string' && value.length > 0;
-          }
-
-          const required = true; // EMAIL, PEC, APP_IO, SEND: sempre obbligatorio se si arriva qui
-          if (value === undefined) return !required;
+          // EMAIL, PEC, APP_IO, SEND, POSTAL: subject/body (quando
+          // applicabile) sempre obbligatorio, nessuna eccezione per canale.
+          if (value === undefined) return false;
           if (typeof value !== 'string' || value.length === 0) return false;
 
           if (o.channelType === 'APP_IO') {
-            const [min, max] = kind === 'subject' ? [APP_IO_SUBJECT_MIN, APP_IO_SUBJECT_MAX] : [APP_IO_BODY_MIN, APP_IO_BODY_MAX];
-            return value.length >= min && value.length <= max;
+            if (kind === 'subject') {
+              return value.length >= APP_IO_SUBJECT_MIN && value.length <= APP_IO_SUBJECT_MAX;
+            }
+            const plain = stripHtmlForLength(value);
+            return plain.length >= APP_IO_BODY_MIN && plain.length <= APP_IO_BODY_MAX;
           }
           return true;
         },
@@ -102,7 +115,7 @@ function IsValidChannelText(kind: 'subject' | 'body', validationOptions?: Valida
           if (o.channelType === 'APP_IO') {
             return kind === 'subject'
               ? `subject deve avere lunghezza tra ${APP_IO_SUBJECT_MIN} e ${APP_IO_SUBJECT_MAX} caratteri`
-              : `body deve avere lunghezza tra ${APP_IO_BODY_MIN} e ${APP_IO_BODY_MAX} caratteri`;
+              : `body deve avere lunghezza tra ${APP_IO_BODY_MIN} e ${APP_IO_BODY_MAX} caratteri di testo visibile (tag HTML esclusi dal conteggio)`;
           }
           return `${kind} obbligatorio (stringa non vuota) per canale ${o.channelType}`;
         },
@@ -121,19 +134,28 @@ function IsValidChannelText(kind: 'subject' | 'body', validationOptions?: Valida
  *   esiste proprio (pipeline propria, escluso da `isMailChannel` — vedi
  *   matrice comportamenti campagne). Quindi `secondaryAppIo` va RIFIUTATO
  *   per questi due canali, non ignorato.
- * - Per POSTAL, la differenziazione App IO è sempre forzata (App.tsx
- *   useEffect riga 2279, perché POSTAL non ha un body "riusabile" — è
- *   HTML da stampa, non testo per notifica push): `subjectOverride` e
- *   `bodyOverride` sono quindi SEMPRE obbligatori quando `secondaryAppIo`
- *   è presente per POSTAL, mai opzionali con fallback.
+ * - Per POSTAL, `subjectOverride`/`bodyOverride` sono SEMPRE obbligatori
+ *   quando `secondaryAppIo` è presente. Questa regola NON è giustificata
+ *   da parità wizard stretta (l'`useEffect` di App.tsx riga 2279 che forza
+ *   `wizAppIoDifferentiate=true` per POSTAL in singolo esiste, ma nessun
+ *   punto raggiungibile del gate step6 single-mode — vedi
+ *   `IsValidChannelText` sopra — lo verifica più a valle): è una regola
+ *   giustificata a runtime, non da UI. POSTAL non ha mai un `body`
+ *   primario valorizzabile (rifiutato per quel canale, vedi sopra): senza
+ *   override, `app-io-delivery.service.ts` (righe 72/76) ricadrebbe su
+ *   `bodyOverride || channelConfig.body || ''` → stringa vuota → PagoPA
+ *   risponderebbe 400 al momento dell'invio reale. Bloccarlo qui, in
+ *   validazione, evita di accettare un payload che fallirebbe comunque a
+ *   valle in modo silenzioso/asincrono.
  * - Per EMAIL/PEC, la differenziazione resta scelta del chiamante: se un
  *   override manca, il testo App IO effettivamente inviato ricade sul
  *   subject/body principale (stesso fallback di
  *   `app-io-delivery.service.ts` righe 72/76: `override || channelConfig
  *   subject/body`) — quel testo effettivo deve comunque rispettare i
  *   vincoli PagoPA su content.subject/content.markdown (App.tsx
- *   `wizAppIoSubjectLenInvalid`/`wizAppIoBodyLenInvalid`, righe 2106-2118),
- *   non solo quando c'è un override esplicito.
+ *   `wizAppIoSubjectLenInvalid`/`wizAppIoBodyLenInvalid`, righe 2106-2118,
+ *   `body` misurato HTML-stripped come in `IsValidChannelText`), non solo
+ *   quando c'è un override esplicito.
  */
 function IsValidSecondaryAppIo(validationOptions?: ValidationOptions): PropertyDecorator {
   return function (object: object, propertyName: string | symbol) {
@@ -154,7 +176,8 @@ function IsValidSecondaryAppIo(validationOptions?: ValidationOptions): PropertyD
           if (o.channelType === 'POSTAL' && (!v.subjectOverride || !v.bodyOverride)) return false;
 
           const effSubject = v.subjectOverride ?? o.subject ?? '';
-          const effBody = v.bodyOverride ?? o.body ?? '';
+          const effBodyRaw = v.bodyOverride ?? o.body ?? '';
+          const effBody = stripHtmlForLength(effBodyRaw);
           if (effSubject.length < APP_IO_SUBJECT_MIN || effSubject.length > APP_IO_SUBJECT_MAX) return false;
           if (effBody.length < APP_IO_BODY_MIN || effBody.length > APP_IO_BODY_MAX) return false;
 

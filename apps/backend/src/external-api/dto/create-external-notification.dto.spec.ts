@@ -120,6 +120,32 @@ describe('CreateExternalNotificationDto', () => {
     expect(errors.some((e) => e.property === 'body')).toBe(true);
   });
 
+  it('APP_IO con body HTML: testo visibile sotto 80 caratteri ma markup grezzo sopra produce comunque errore (tag non contati come contenuto)', async () => {
+    const paddedHtml = '<p>corto</p>' + '<b></b>'.repeat(15); // raw > 80, visibile = "corto" (5)
+    const errors = await validateDto({
+      ...base,
+      channelType: 'APP_IO',
+      subject: 'oggetto valido di 12+',
+      body: paddedHtml,
+    });
+    expect(errors.some((e) => e.property === 'body')).toBe(true);
+  });
+
+  it('APP_IO con body HTML: testo visibile abbastanza lungo con markup che porterebbe il grezzo sopra 10000 resta valido se il visibile è entro i limiti', async () => {
+    // Testo visibile di 8000 caratteri, ma con tag ripetuti il grezzo
+    // supera abbondantemente 10000 — deve restare VALIDO perché il
+    // conteggio è sul testo visibile, non sul markup.
+    const visibleText = 'x'.repeat(8000);
+    const paddedHtml = `<p>${visibleText}</p>` + '<span></span>'.repeat(200);
+    const errors = await validateDto({
+      ...base,
+      channelType: 'APP_IO',
+      subject: 'oggetto valido di 12+',
+      body: paddedHtml,
+    });
+    expect(errors.some((e) => e.property === 'body')).toBe(false);
+  });
+
   // --- EMAIL/PEC: subject/body sempre obbligatori, nessun vincolo di lunghezza ---
 
   it('EMAIL senza subject produce errore', async () => {
@@ -180,7 +206,7 @@ describe('CreateExternalNotificationDto', () => {
     expect(errors.some((e) => e.property === 'body')).toBe(true);
   });
 
-  it('POSTAL con subject non stringa (numero) produce errore (type-check anche se opzionale)', async () => {
+  it('POSTAL con subject non stringa (numero) produce errore', async () => {
     const { body, ...rest } = base;
     const errors = await validateDto({
       ...rest,
@@ -241,13 +267,25 @@ describe('CreateExternalNotificationDto', () => {
     expect(errors.some((e) => e.property === 'subject')).toBe(true);
   });
 
-  // --- POSTAL: subject/body facoltativi (il contenuto reale sono gli
-  // allegati), tranne subject che diventa obbligatorio quando è presente
-  // secondaryAppIo (stesso gate incondizionato del wizard); body sempre
-  // rifiutato se valorizzato, mai renderizzato in UI per questo canale ---
+  // --- POSTAL: subject SEMPRE obbligatorio (stesso gate incondizionato di
+  // SEND allo step6 in modalità singola — vedi App.tsx righe 11021/11029 —
+  // non il gate step4 "Riepilogo", MAI raggiunto per POSTAL in
+  // wizSingleMode: lo step Template viene saltato del tutto). body sempre
+  // rifiutato se valorizzato, mai renderizzato in UI per questo canale. Il
+  // contenuto notificato reale restano comunque gli allegati, non subject. ---
 
-  it('POSTAL senza subject/body non produce errore su subject/body (contenuto reale sono gli allegati)', async () => {
+  it('POSTAL senza subject produce errore (obbligatorio, gate step6 single-mode incondizionato)', async () => {
     const { subject, body, ...rest } = base;
+    const errors = await validateDto({
+      ...rest,
+      channelType: 'POSTAL',
+      attachments: [{ token: '123e4567-e89b-12d3-a456-426614174000' }],
+    });
+    expect(errors.some((e) => e.property === 'subject')).toBe(true);
+  });
+
+  it('POSTAL con subject presente e senza body non produce errore (body non gestito da questo canale)', async () => {
+    const { body, ...rest } = base;
     const errors = await validateDto({
       ...rest,
       channelType: 'POSTAL',
@@ -266,18 +304,7 @@ describe('CreateExternalNotificationDto', () => {
     expect(errors.some((e) => e.property === 'body')).toBe(true);
   });
 
-  it('POSTAL con secondaryAppIo ma senza subject produce errore (gate wizard incondizionato)', async () => {
-    const { subject, body, ...rest } = base;
-    const errors = await validateDto({
-      ...rest,
-      channelType: 'POSTAL',
-      attachments: [{ token: '123e4567-e89b-12d3-a456-426614174000' }],
-      secondaryAppIo: { subjectOverride: 'x'.repeat(15), bodyOverride: 'x'.repeat(90) },
-    });
-    expect(errors.some((e) => e.property === 'subject')).toBe(true);
-  });
-
-  it('POSTAL con secondaryAppIo e subject presente non produce errore su subject', async () => {
+  it('POSTAL con secondaryAppIo e subject presente non produce errore su subject (obbligatorio a prescindere, già rispettato)', async () => {
     const { body, ...rest } = base;
     const errors = await validateDto({
       ...rest,
@@ -343,6 +370,26 @@ describe('CreateExternalNotificationDto', () => {
       secondaryAppIo: {},
     });
     expect(errors).toHaveLength(0);
+  });
+
+  it('secondaryAppIo con override esplicito troppo corto (sotto i minimi PagoPA) produce errore', async () => {
+    const errors = await validateDto({
+      ...base,
+      secondaryAppIo: { subjectOverride: 'corto', bodyOverride: 'troppo corto' },
+    });
+    expect(errors.some((e) => e.property === 'secondaryAppIo')).toBe(true);
+  });
+
+  it('secondaryAppIo con bodyOverride HTML: testo visibile sotto 80 caratteri ma markup sopra produce comunque errore', async () => {
+    // <p></p> ripetuto per superare 80 caratteri grezzi, ma il testo
+    // visibile reale è solo "corto" (5 caratteri) — deve restare sotto il
+    // minimo App IO, non essere considerato valido per via del markup.
+    const paddedHtml = '<p>corto</p>' + '<b></b>'.repeat(15);
+    const errors = await validateDto({
+      ...base,
+      secondaryAppIo: { subjectOverride: 'oggetto valido App IO', bodyOverride: paddedHtml },
+    });
+    expect(errors.some((e) => e.property === 'secondaryAppIo')).toBe(true);
   });
 
   it('secondaryAppIo per canale APP_IO primario produce errore (ridondante, non disponibile nel wizard)', async () => {
@@ -414,7 +461,7 @@ describe('CreateExternalNotificationDto', () => {
   });
 
   it('attachments con token generico non-UUID produce errore', async () => {
-    const { subject, body, ...rest } = base;
+    const { body, ...rest } = base;
     const errors = await validateDto({
       ...rest,
       channelType: 'POSTAL',

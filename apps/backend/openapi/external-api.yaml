@@ -261,26 +261,29 @@ components:
           type: string
           description: >
             Regole verificate contro il wizard admin reale (ogni chiamata
-            esterna equivale a un invio singolo — vedi
-            CLAUDE.md/design doc). Obbligatorio (stringa non vuota) per
-            EMAIL/PEC/APP_IO/SEND — per APP_IO lunghezza [10,120].
-            Facoltativo per POSTAL, TRANNE quando è presente
-            `secondaryAppIo`: in quel caso è obbligatorio anche per POSTAL
-            (il wizard lo richiede incondizionatamente non appena la
-            co-consegna App IO è attiva, anche se per POSTAL il valore non
-            diventa mai il testo App IO effettivo — vedi `secondaryAppIo`
-            sotto). Non è mai il contenuto notificato reale per POSTAL (gli
-            allegati lo sono).
+            esterna equivale a un invio singolo — vedi CLAUDE.md/design
+            doc). OBBLIGATORIO (stringa non vuota) per TUTTI i canali,
+            senza eccezioni — per APP_IO lunghezza [10,120]. Per SEND/POSTAL
+            in particolare, l'obbligatorietà viene dal gate dei bottoni
+            "Avvia Test"/"Conferma ed Avvia Campagna" allo step finale del
+            wizard in modalità invio singolo (`!wizSubject.trim()`), non
+            dal gate dello step Template — quello step viene saltato del
+            tutto per questi due canali in modalità singola, quindi non è
+            mai la fonte di verità qui. Non è mai il contenuto notificato
+            reale per POSTAL (gli allegati lo sono) né per SEND (l'allegato
+            lo è), ma resta comunque richiesto dal wizard.
         body:
           type: string
           description: >
             Obbligatorio (stringa non vuota) per EMAIL/PEC/APP_IO — per
-            APP_IO lunghezza [80,10000]. NON supportato da SEND né da
-            POSTAL: il wizard admin non espone mai questo campo per questi
-            due canali (SEND: l'allegato è l'unico contenuto; POSTAL: la
-            lettera è generata dagli allegati, non da HTML) — inviare un
-            valore qui per SEND/POSTAL produce un errore di validazione,
-            non viene ignorato silenziosamente.
+            APP_IO lunghezza [80,10000] misurata sul testo VISIBILE (i tag
+            HTML del corpo, che è editato come HTML, non contano ai fini
+            del conteggio). NON supportato da SEND né da POSTAL: il wizard
+            admin non espone mai questo campo per questi due canali (SEND:
+            l'allegato è l'unico contenuto; POSTAL: la lettera è generata
+            dagli allegati, non da HTML) — inviare un valore qui per
+            SEND/POSTAL produce un errore di validazione, non viene
+            ignorato silenziosamente.
         secondaryAppIo:
           type: object
           description: >
@@ -291,12 +294,15 @@ components:
             canale già App IO) o SEND (pipeline propria, mai esposto nel
             wizard per questo canale). Per POSTAL, `subjectOverride` e
             `bodyOverride` sono entrambi OBBLIGATORI se l'oggetto è
-            presente (POSTAL non ha un corpo "riusabile" per una notifica
-            push, il wizard forza sempre la differenziazione). Per
-            EMAIL/PEC sono facoltativi: se assenti, il testo App IO
-            effettivamente inviato ricade sul `subject`/`body` principali
-            — che in tal caso devono comunque rispettare i vincoli PagoPA
-            di lunghezza (oggetto [10,120], testo [80,10000]).
+            presente: POSTAL non ha mai un `body` primario valorizzabile
+            (vedi sopra), quindi senza override il testo App IO
+            ricadrebbe su una stringa vuota e verrebbe rifiutato da PagoPA
+            al momento dell'invio — bloccato qui in validazione anziché
+            lasciarlo fallire più a valle. Per EMAIL/PEC sono facoltativi:
+            se assenti, il testo App IO effettivamente inviato ricade sul
+            `subject`/`body` principali — che in tal caso devono comunque
+            rispettare i vincoli PagoPA di lunghezza (oggetto [10,120],
+            testo [80,10000], quest'ultimo sul testo HTML-stripped).
           properties:
             subjectOverride: { type: string }
             bodyOverride: { type: string }
