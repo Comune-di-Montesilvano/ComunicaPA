@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req, UseFilters, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Req, UseFilters, UseGuards } from '@nestjs/common';
 import { Public } from '../auth/decorators/public.decorator';
 import { ApiKeyGuard, type RequestWithApiClient } from './guards/api-key.guard';
 import { ExternalApiExceptionFilter } from './external-api-exception.filter';
@@ -17,6 +17,7 @@ export class ExternalNotificationsController {
   ) {}
 
   @Post()
+  @HttpCode(HttpStatus.OK)
   create(@Body() dto: CreateExternalNotificationDto, @Req() req: RequestWithApiClient) {
     return this.externalApiService.createAndLaunch(dto, req.apiClient);
   }

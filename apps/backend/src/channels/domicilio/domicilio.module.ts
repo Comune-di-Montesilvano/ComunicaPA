@@ -11,5 +11,6 @@ import { DomicilioController } from './domicilio.controller';
   imports: [InadModule, AnprModule, AuditLogsModule],
   controllers: [DomicilioController],
   providers: [DomicilioService],
+  exports: [DomicilioService],
 })
 export class DomicilioModule {}

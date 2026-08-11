@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Post, Req, UploadedFile, UseFilters, UseGuards, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, HttpCode, HttpStatus, Post, Req, UploadedFile, UseFilters, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import * as fs from 'fs';
@@ -16,12 +16,14 @@ export class ExternalAttachmentsController {
   constructor(private readonly tokens: ExternalAttachmentTokensService) {}
 
   @Post('init')
+  @HttpCode(HttpStatus.OK)
   init(@Body() body: { filename: string; totalChunks: number }) {
     const uploadId = initChunkedUpload(body.filename, body.totalChunks);
     return { success: true, uploadId };
   }
 
   @Post('chunk')
+  @HttpCode(HttpStatus.OK)
   @UseInterceptors(
     FileInterceptor('chunk', {
       storage: diskStorage({
@@ -46,6 +48,7 @@ export class ExternalAttachmentsController {
   }
 
   @Post('complete')
+  @HttpCode(HttpStatus.OK)
   async complete(@Body() body: { uploadId: string }, @Req() req: RequestWithApiClient) {
     const { token } = await this.tokens.completeUpload(req.apiClient.id, body.uploadId);
     return { success: true, attachmentToken: token };
