@@ -22,7 +22,7 @@ describe('ExternalApiService', () => {
 
   beforeEach(() => {
     campaigns = {
-      create: jest.fn().mockResolvedValue({ id: 'camp-1', channelConfig: {} }),
+      create: jest.fn().mockResolvedValue({ id: 'camp-1', channelConfig: { wizSingleMode: true, protocolla: true } }),
       setExternalClientId: jest.fn().mockResolvedValue(undefined),
       addSingleRecipient: jest.fn().mockResolvedValue({ id: 'rec-1' }),
       updateDraft: jest.fn().mockResolvedValue({ id: 'camp-1' }),
@@ -45,7 +45,10 @@ describe('ExternalApiService', () => {
       apiClient,
     );
     expect(campaigns.create).toHaveBeenCalledWith(
-      expect.objectContaining({ channelType: 'EMAIL' }),
+      expect.objectContaining({
+        channelType: 'EMAIL',
+        channelConfig: expect.objectContaining({ wizSingleMode: true }),
+      }),
       'external:Comune X',
     );
     expect(campaigns.setExternalClientId).toHaveBeenCalledWith('camp-1', 'client-1');
@@ -71,7 +74,13 @@ describe('ExternalApiService', () => {
     expect(tokens.markConsumed).toHaveBeenCalledWith('client-1', 'tok-1');
     expect(campaigns.updateDraft).toHaveBeenCalledWith(
       'camp-1',
-      expect.objectContaining({ channelConfig: expect.objectContaining({ attachments: [expect.objectContaining({ key: 'allegato_0', label: 'Atto' })] }) }),
+      expect.objectContaining({
+        channelConfig: expect.objectContaining({
+          wizSingleMode: true,
+          protocolla: true,
+          attachments: [expect.objectContaining({ key: 'allegato_0', label: 'Atto' })],
+        }),
+      }),
     );
     expect(campaigns.addSingleRecipient).toHaveBeenCalledWith(
       'camp-1',
@@ -92,6 +101,14 @@ describe('ExternalApiService', () => {
       }),
       'external:Comune X',
     );
+  });
+
+  it('secondaryAppIo assente non aggiunge secondaryChannels a channelConfig', async () => {
+    await service.createAndLaunch(
+      { channelType: 'EMAIL', codiceFiscale: 'RSSMRA80A01H501U', email: 'a@b.it', extraData: {} } as any,
+      apiClient,
+    );
+    expect(campaigns.create.mock.calls[0][0].channelConfig).not.toHaveProperty('secondaryChannels');
   });
 
   it('token allegato non risolvibile ritorna errore LAUNCH_BLOCKED senza chiamare launch()', async () => {

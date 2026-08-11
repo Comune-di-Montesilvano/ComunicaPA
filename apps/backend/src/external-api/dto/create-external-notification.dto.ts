@@ -1,12 +1,22 @@
 import 'reflect-metadata';
-import { ArrayMinSize, Equals, IsArray, IsIn, IsObject, IsOptional, IsString, Length, Matches, ValidateIf, ValidateNested } from 'class-validator';
+import { ArrayMinSize, Equals, IsArray, IsIn, IsObject, IsOptional, IsString, IsUUID, Length, Matches, ValidateIf, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import type { NotificationChannel } from '@comunicapa/shared-types';
 
 const CF_PATTERN = /^[A-Za-z0-9]{16}$/;
 
 class ExternalAttachmentRefDto {
+  /**
+   * Sempre generato server-side come randomUUID() da
+   * ExternalAttachmentTokensService.completeUpload — un chiamante legittimo
+   * non ha mai motivo di mandare altro. @IsUUID() blocca qui qualunque
+   * payload di path-traversal (es. "../<altro-client>/<token>") PRIMA che
+   * arrivi a tokens.resolve()/join(root, clientId, token): senza questo
+   * vincolo, resolve() normalizzerebbe il path fuori dalla cartella del
+   * client chiamante, restituendo l'allegato di un client diverso.
+   */
   @IsString()
+  @IsUUID()
   token!: string;
 
   @IsString()

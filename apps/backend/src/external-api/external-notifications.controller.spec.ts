@@ -30,6 +30,12 @@ describe('ExternalNotificationsController', () => {
     expect(result).toEqual({ success: false, error: { code: 'NOT_FOUND', message: 'Notifica non trovata' } });
   });
 
+  it('getStatus ritorna lo stesso NOT_FOUND se la campagna non esiste affatto (findOne rigetta)', async () => {
+    campaigns.findOne.mockRejectedValue(new Error('Campaign camp-inesistente not found'));
+    const result = await controller.getStatus('camp-inesistente', req);
+    expect(result).toEqual({ success: false, error: { code: 'NOT_FOUND', message: 'Notifica non trovata' } });
+  });
+
   it('getStatus ritorna lo stato se la campagna appartiene al client chiamante', async () => {
     campaigns.findOne.mockResolvedValue({ id: 'camp-1', externalClientId: 'client-1', status: 'completed', channelType: 'EMAIL' });
     const result = await controller.getStatus('camp-1', req);

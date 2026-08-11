@@ -139,8 +139,27 @@ describe('CreateExternalNotificationDto', () => {
       ...base,
       channelType: 'SEND',
       protocolla: true,
-      attachments: [{ token: 't1', label: 'Atto' }],
+      attachments: [{ token: '123e4567-e89b-12d3-a456-426614174000', label: 'Atto' }],
     });
     expect(errors).toHaveLength(0);
+  });
+
+  it('attachments con token non-UUID (es. path traversal) produce errore', async () => {
+    const errors = await validateDto({
+      ...base,
+      channelType: 'SEND',
+      protocolla: true,
+      attachments: [{ token: '../other-client/some-token' }],
+    });
+    expect(errors.some((e) => e.property === 'attachments')).toBe(true);
+  });
+
+  it('attachments con token generico non-UUID produce errore', async () => {
+    const errors = await validateDto({
+      ...base,
+      channelType: 'POSTAL',
+      attachments: [{ token: 'not-a-uuid' }],
+    });
+    expect(errors.some((e) => e.property === 'attachments')).toBe(true);
   });
 });
