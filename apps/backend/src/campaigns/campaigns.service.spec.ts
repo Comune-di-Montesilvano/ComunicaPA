@@ -3682,3 +3682,129 @@ describe('CampaignsService.getPostalStatusBreakdown / getPostalReportRows', () =
   });
 });
 
+describe('CampaignsService.getExternalDeliveryStatus', () => {
+  const campaignRepoMock = { findOneBy: jest.fn() };
+  const recipientRepoMock = { findOne: jest.fn() };
+  const attemptRepoMock = { find: jest.fn() };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  const buildModule = () =>
+    Test.createTestingModule({
+      providers: [
+        CampaignsService,
+        { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
+        { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
+        { provide: getRepositoryToken(NotificationAttempt), useValue: attemptRepoMock },
+        { provide: getRepositoryToken(DownloadEvent), useValue: {} },
+        { provide: NotificationQueuesService, useValue: {} },
+        { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
+        { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
+        { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
+        { provide: PostalStatusSyncService, useValue: { refreshOne: jest.fn() } },
+      ],
+    }).compile();
+
+  it('ritorna null se la campagna non ha ancora un Recipient (mai raggiunta questa fase)', async () => {
+    recipientRepoMock.findOne.mockResolvedValue(null);
+
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    expect(await service.getExternalDeliveryStatus('c1')).toBeNull();
+    expect(attemptRepoMock.find).not.toHaveBeenCalled();
+  });
+
+  it('ritorna null se il Recipient esiste ma non ha ancora nessun attempt (ancora QUEUED)', async () => {
+    recipientRepoMock.findOne.mockResolvedValue({ id: 'r1', campaignId: 'c1' });
+    attemptRepoMock.find.mockResolvedValue([]);
+
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    expect(await service.getExternalDeliveryStatus('c1')).toBeNull();
+  });
+
+  it('SEND: espone sendStatus dall\'ultimo attempt, non postalStatus', async () => {
+    recipientRepoMock.findOne.mockResolvedValue({ id: 'r1', campaignId: 'c1' });
+    attemptRepoMock.find.mockResolvedValue([
+      { recipientId: 'r1', attemptNumber: 1, channelType: 'SEND', status: AttemptStatus.SUCCESS, sendStatus: 'ACCEPTED', errorMessage: null },
+      { recipientId: 'r1', attemptNumber: 2, channelType: 'SEND', status: AttemptStatus.SUCCESS, sendStatus: 'DELIVERED', errorMessage: null },
+    ]);
+
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    const result = await service.getExternalDeliveryStatus('c1');
+
+    expect(result).toEqual({ attemptStatus: AttemptStatus.SUCCESS, sendStatus: 'DELIVERED', error: null });
+  });
+
+  it('POSTAL: espone postalStatus dall\'ultimo attempt, non sendStatus', async () => {
+    recipientRepoMock.findOne.mockResolvedValue({ id: 'r1', campaignId: 'c1' });
+    attemptRepoMock.find.mockResolvedValue([
+      { recipientId: 'r1', attemptNumber: 1, channelType: 'POSTAL', status: AttemptStatus.SUCCESS, postalStatus: 'Confermato', postalStatusHistory: [], errorMessage: null },
+    ]);
+
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    const result = await service.getExternalDeliveryStatus('c1');
+
+    expect(result).toEqual({ attemptStatus: AttemptStatus.SUCCESS, postalStatus: 'Confermato', error: null });
+  });
+
+  it('attempt fallito PRIMA del provider: error = errorMessage, non gatato su CodiceErrore', async () => {
+    recipientRepoMock.findOne.mockResolvedValue({ id: 'r1', campaignId: 'c1' });
+    attemptRepoMock.find.mockResolvedValue([
+      { recipientId: 'r1', attemptNumber: 1, channelType: 'EMAIL', status: AttemptStatus.FAILED, errorMessage: 'SMTP connection refused' },
+    ]);
+
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    const result = await service.getExternalDeliveryStatus('c1');
+
+    expect(result).toEqual({ attemptStatus: AttemptStatus.FAILED, error: 'SMTP connection refused' });
+  });
+
+  it('POSTAL: errore post-accettazione (CodiceErrore!==\'0\' su uno stato non terminale) valorizza error senza marcare l\'attempt FAILED', async () => {
+    recipientRepoMock.findOne.mockResolvedValue({ id: 'r1', campaignId: 'c1' });
+    attemptRepoMock.find.mockResolvedValue([
+      {
+        recipientId: 'r1', attemptNumber: 1, channelType: 'POSTAL', status: AttemptStatus.SUCCESS, postalStatus: 'Rimandato', errorMessage: null,
+        postalStatusHistory: [
+          { stato: 'Accettato', rilevatoIl: '2026-08-01T10:00:00Z', codiceErrore: '0' },
+          { stato: 'Rimandato', rilevatoIl: '2026-08-02T10:00:00Z', codiceErrore: '-2', descrizione: 'Richiesta HTTP vietata' },
+        ],
+      },
+    ]);
+
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    const result = await service.getExternalDeliveryStatus('c1');
+
+    expect(result).toEqual({ attemptStatus: AttemptStatus.SUCCESS, postalStatus: 'Rimandato', error: '-2: Richiesta HTTP vietata' });
+  });
+
+  it('POSTAL: codiceErrore \'0\' (benigno) su uno stato positivo non produce un error spurio', async () => {
+    recipientRepoMock.findOne.mockResolvedValue({ id: 'r1', campaignId: 'c1' });
+    attemptRepoMock.find.mockResolvedValue([
+      {
+        recipientId: 'r1', attemptNumber: 1, channelType: 'POSTAL', status: AttemptStatus.SUCCESS, postalStatus: 'Confermato', errorMessage: null,
+        postalStatusHistory: [{ stato: 'Confermato', rilevatoIl: '2026-08-01T10:00:00Z', codiceErrore: '0' }],
+      },
+    ]);
+
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    const result = await service.getExternalDeliveryStatus('c1');
+
+    expect(result).toEqual({ attemptStatus: AttemptStatus.SUCCESS, postalStatus: 'Confermato', error: null });
+  });
+});
+

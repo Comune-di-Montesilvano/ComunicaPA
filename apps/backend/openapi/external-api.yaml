@@ -252,8 +252,20 @@ components:
               token: { type: string, format: uuid }
               label: { type: string }
         protocolla: { type: boolean, description: 'deve essere true per SEND' }
-        subject: { type: string, description: 'per APP_IO, lunghezza [10,120]' }
-        body: { type: string, description: 'per APP_IO, lunghezza [80,10000]' }
+        subject:
+          type: string
+          description: >
+            obbligatorio (stringa non vuota) per EMAIL/PEC/APP_IO — per
+            APP_IO lunghezza [10,120]. Opzionale per SEND (se presente deve
+            comunque essere una stringa non vuota). Non usato per POSTAL
+            (il contenuto reale notificato sono gli allegati, non
+            subject/body).
+        body:
+          type: string
+          description: >
+            obbligatorio (stringa non vuota) per EMAIL/PEC/APP_IO — per
+            APP_IO lunghezza [80,10000]. Opzionale per SEND (se presente deve
+            comunque essere una stringa non vuota). Non usato per POSTAL.
         secondaryAppIo:
           type: object
           description: >
@@ -279,6 +291,29 @@ components:
         campaignId: { type: string, format: uuid }
         status: { type: string, enum: [draft, checking_inad, queued, running, completed, failed, cancelled] }
         channelType: { type: string, enum: [PEC, EMAIL, APP_IO, SEND, POSTAL] }
+        delivery:
+          description: >
+            stato canale-specifico dell'unico attempt/recipient di questa
+            notifica. `null` se nessun attempt esiste ancora (campagna non
+            ancora processata). Per SEND/POSTAL, `status` può già essere
+            `completed` (sottomissione conclusa) mentre `sendStatus`/
+            `postalStatus` continuano ad aggiornarsi per giorni via
+            sincronizzazione a valle col provider — pollare questo campo,
+            non solo `status`, per conoscere l'esito di consegna reale.
+          nullable: true
+          type: object
+          properties:
+            attemptStatus: { type: string, enum: [queued, processing, success, failed, cancelled] }
+            sendStatus: { type: string, nullable: true, description: 'valorizzato solo per channelType=SEND' }
+            postalStatus: { type: string, nullable: true, description: 'valorizzato solo per channelType=POSTAL' }
+            error:
+              type: string
+              nullable: true
+              description: >
+                errore se l'attempt è fallito prima di raggiungere il
+                provider, o (solo POSTAL) l'ultimo CodiceErrore!=='0'
+                arrivato dopo l'accettazione (es. su uno stato non
+                terminale come "Rimandato").
     ErrorResponse:
       type: object
       properties:

@@ -101,7 +101,14 @@ describe('external/v1 — status code contratto HTTP reale (integration)', () =>
     const res = await request(app.getHttpServer())
       .post('/external/v1/notifications')
       .set('X-Api-Key', VALID_KEY)
-      .send({ channelType: 'EMAIL', codiceFiscale: 'RSSMRA80A01H501U', email: 'test@example.com', extraData: {} })
+      .send({
+        channelType: 'EMAIL',
+        codiceFiscale: 'RSSMRA80A01H501U',
+        email: 'test@example.com',
+        extraData: {},
+        subject: 'Oggetto di test',
+        body: 'Corpo del messaggio di test.',
+      })
       .expect(200);
     expect(res.body).toEqual({ success: true, campaignId: 'camp-http-1', status: 'QUEUED' });
   });
@@ -115,6 +122,31 @@ describe('external/v1 — status code contratto HTTP reale (integration)', () =>
     expect(res.body).toMatchObject({ success: true });
     expect(typeof res.body.uploadId).toBe('string');
     createdUploadIds.push(res.body.uploadId);
+  });
+
+  it('POST external/v1/attachments/upload/init con filename path-traversal → validazione lo riduce/rifiuta, mai scritto fuori dalla cartella upload', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/external/v1/attachments/upload/init')
+      .set('X-Api-Key', VALID_KEY)
+      .send({ filename: '../../../../etc/passwd', totalChunks: 1 })
+      .expect(200);
+    expect(res.body).toMatchObject({ success: true });
+    const uploadId = res.body.uploadId as string;
+    createdUploadIds.push(uploadId);
+    const meta = JSON.parse(fs.readFileSync(`${chunkUploadDir(uploadId)}/meta.json`, 'utf8'));
+    // basename() riduce il filename al solo nome file, mai al path completo —
+    // stessa protezione applicata a tutti i 5 punti di chiamata di
+    // initChunkedUpload (vedi chunked-upload.util.ts).
+    expect(meta.filename).toBe('passwd');
+  });
+
+  it('POST external/v1/attachments/upload/init con totalChunks non intero → VALIDATION_ERROR (DTO validato, non più interfaccia TS grezza)', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/external/v1/attachments/upload/init')
+      .set('X-Api-Key', VALID_KEY)
+      .send({ filename: 'avviso.pdf', totalChunks: 'not-a-number' })
+      .expect(200);
+    expect(res.body).toMatchObject({ success: false, error: { code: 'VALIDATION_ERROR' } });
   });
 
   it('POST external/v1/attachments/upload/chunk (successo) → HTTP 200', async () => {

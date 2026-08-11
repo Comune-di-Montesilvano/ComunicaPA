@@ -30,6 +30,7 @@ export class ExternalNotificationsController {
     if (!campaign || campaign.externalClientId !== req.apiClient.id) {
       return { success: false, error: { code: 'NOT_FOUND', message: 'Notifica non trovata' } };
     }
-    return { success: true, campaignId: campaign.id, status: campaign.status, channelType: campaign.channelType };
+    const delivery = await this.campaignsService.getExternalDeliveryStatus(campaign.id);
+    return { success: true, campaignId: campaign.id, status: campaign.status, channelType: campaign.channelType, delivery };
   }
 }

@@ -30,7 +30,7 @@ import type { CreateCampaignDto } from './dto/create-campaign.dto';
 import type { UpdateCampaignDto } from './dto/update-campaign.dto';
 import type { UpdateCampaignContentDto } from './dto/update-campaign-content.dto';
 import type { TestSendDto } from './dto/test-send.dto';
-import type { CampaignStatsDto, RecipientStatDto, RecipientStatsPageDto, ChannelBreakdownDto, EffectiveChannelBreakdownDto, DownloadCombinationDto, DownloadCombinationStatsDto, FailureRowDto, FailureGroupDto, DownloadReportDto, SendStatusBreakdownDto, SendReportDto, SendReportRowDto, PostalStatusBreakdownDto, PostalReportDto, PostalReportRowDto, CampaignCostDto, CampaignCostSavingsDto, CampaignPaymentTotalDto } from './dto/campaign-stats.dto';
+import type { CampaignStatsDto, RecipientStatDto, RecipientStatsPageDto, ChannelBreakdownDto, EffectiveChannelBreakdownDto, DownloadCombinationDto, DownloadCombinationStatsDto, FailureRowDto, FailureGroupDto, DownloadReportDto, SendStatusBreakdownDto, SendReportDto, SendReportRowDto, PostalStatusBreakdownDto, PostalReportDto, PostalReportRowDto, CampaignCostDto, CampaignCostSavingsDto, CampaignPaymentTotalDto, ExternalDeliveryStatusDto } from './dto/campaign-stats.dto';
 import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.dto';
 import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util';
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto';
@@ -2474,6 +2474,46 @@ export class CampaignsService {
     }
 
     return Array.from(counts.entries()).map(([status, count]) => ({ status, count }));
+  }
+
+  /**
+   * Stato canale-specifico dell'unico attempt di una campagna lanciata via
+   * external-api (sempre wizSingleMode, un solo Recipient) — usato da
+   * GET external/v1/notifications/:campaignId. Adatta la stessa logica di
+   * lettura sendStatus/postalStatus/errore già in uso in
+   * getSendStatusBreakdown/getPostalStatusBreakdown, ma per un singolo
+   * attempt invece di aggregare su molti destinatari.
+   */
+  async getExternalDeliveryStatus(campaignId: string): Promise<ExternalDeliveryStatusDto | null> {
+    const recipient = await this.recipientRepo.findOne({ where: { campaignId }, order: { createdAt: 'ASC' } });
+    if (!recipient) return null;
+
+    const attempts = await this.attemptRepo.find({ where: { recipientId: recipient.id } });
+    if (attempts.length === 0) return null;
+
+    const latest = attempts.reduce((a, b) => (b.attemptNumber > a.attemptNumber ? b : a));
+
+    let error: string | null = null;
+    if (latest.status === AttemptStatus.FAILED) {
+      error = latest.errorMessage ?? 'Invio fallito';
+    } else if (latest.channelType === 'POSTAL') {
+      // Gate su codiceErrore!=='0', mai su stato (vedi CLAUDE.md POSTAL
+      // gotcha) — un errore reale può arrivare su uno stato non terminale
+      // come "Rimandato", dopo che l'accettazione iniziale è già riuscita.
+      const lastError = [...(latest.postalStatusHistory ?? [])]
+        .reverse()
+        .find((h) => h.codiceErrore && h.codiceErrore !== '0');
+      if (lastError) {
+        error = lastError.descrizione ? `${lastError.codiceErrore}: ${lastError.descrizione}` : lastError.codiceErrore ?? null;
+      }
+    }
+
+    return {
+      attemptStatus: latest.status,
+      ...(latest.channelType === 'SEND' ? { sendStatus: latest.sendStatus } : {}),
+      ...(latest.channelType === 'POSTAL' ? { postalStatus: latest.postalStatus } : {}),
+      error,
+    };
   }
 
   async getPostalDeliveryStatusBreakdown(campaignId: string): Promise<PostalStatusBreakdownDto[]> {

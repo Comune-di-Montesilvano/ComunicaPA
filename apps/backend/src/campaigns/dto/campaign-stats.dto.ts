@@ -209,3 +209,26 @@ export interface CampaignPaymentTotalDto {
   /** Destinatari con un importo PagoPA risolto — denominatore per un'eventuale media, e per capire quanti mancano. */
   recipientsWithPaymentCount: number;
 }
+
+/**
+ * Stato canale-specifico dell'unico attempt di una campagna lanciata via
+ * external-api (sempre wizSingleMode, un solo Recipient). Usato da
+ * GET external/v1/notifications/:campaignId per esporre a un client esterno
+ * lo stato di consegna reale (sendStatus/postalStatus continuano ad
+ * aggiornarsi per giorni dopo che campaign.status è già COMPLETED, vedi
+ * CLAUDE.md "Stato consegna POSTAL/SEND post-accettazione").
+ */
+export interface ExternalDeliveryStatusDto {
+  attemptStatus: string;
+  /** Valorizzato solo per canale SEND. */
+  sendStatus?: string | null;
+  /** Valorizzato solo per canale POSTAL. */
+  postalStatus?: string | null;
+  /**
+   * errorMessage se l'attempt è fallito prima di raggiungere il provider,
+   * altrimenti l'ultimo codiceErrore!=='0' post-accettazione da
+   * postalStatusHistory (solo POSTAL) — mai gatato su stato, vedi CLAUDE.md
+   * "CodiceErrore/descrizione NON sono legati allo Stato".
+   */
+  error?: string | null;
+}

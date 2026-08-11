@@ -64,4 +64,27 @@ describe('ExternalAttachmentTokensService', () => {
     });
     expect(service.resolve('client-2', 'shared-token')).toBeNull();
   });
+
+  it('resolve ritorna null per un token già consumato (one-shot, non riusabile su più lanci)', () => {
+    const metaPath = join(root, 'client-1', 'consumed-token', 'meta.json');
+    let meta = { filename: 'avviso.pdf', createdAt: new Date().toISOString(), consumed: false };
+
+    (fs.existsSync as jest.Mock).mockImplementation((p: string) => p === metaPath);
+    (fs.readFileSync as jest.Mock).mockImplementation(() => JSON.stringify(meta));
+    (fs.writeFileSync as jest.Mock).mockImplementation((_p: string, contents: string) => {
+      meta = JSON.parse(contents);
+    });
+
+    // Prima del consumo, il token risolve normalmente.
+    expect(service.resolve('client-1', 'consumed-token')).toEqual({
+      path: join(root, 'client-1', 'consumed-token', 'avviso.pdf'),
+      filename: 'avviso.pdf',
+    });
+
+    service.markConsumed('client-1', 'consumed-token');
+
+    // Dopo markConsumed, un secondo resolve (es. un secondo lancio che
+    // riusa lo stesso token) deve fallire come "non trovato".
+    expect(service.resolve('client-1', 'consumed-token')).toBeNull();
+  });
 });

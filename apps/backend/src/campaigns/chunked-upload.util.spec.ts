@@ -1,7 +1,9 @@
 import * as fs from 'fs';
+import { basename, join } from 'path';
 import {
   assembleChunkedUpload,
   chunkPartPath,
+  chunkUploadDir,
   cleanupChunkedUpload,
   initChunkedUpload,
 } from './chunked-upload.util';
@@ -57,5 +59,51 @@ describe('assembleChunkedUpload', () => {
 
   it('sessione upload inesistente → errore esplicito', async () => {
     await expect(assembleChunkedUpload('id-mai-esistito')).rejects.toThrow(/non trovata/);
+  });
+
+  /**
+   * Path traversal — finding critico review finale: un filename tipo
+   * "../../../../etc/passwd" (o "../../../../app/dist/main.js") non
+   * sanitizzato, propagato invariato fino a fs.copyFileSync(path,
+   * join(dir, filename)) in ExternalAttachmentTokensService, risolveva
+   * fuori dalla directory di upload/token — scrittura file arbitraria nel
+   * container, raggiungibile da chiunque avesse una API key esterna valida.
+   * initChunkedUpload() è il choke point condiviso da tutti e 5 i punti di
+   * chiamata (campagne CSV/allegati, arricchimento, io-services,
+   * external-api): basename() qui chiude il buco ovunque in un colpo solo.
+   */
+  it('filename con path traversal viene ridotto al solo basename — mai scritto fuori dalla cartella di upload', async () => {
+    const uploadId = initChunkedUpload('../../../../etc/passwd', 1);
+    const metaPath = join(chunkUploadDir(uploadId), 'meta.json');
+    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+
+    expect(meta.filename).toBe('passwd');
+    expect(meta.filename).toBe(basename('../../../../etc/passwd'));
+    expect(meta.filename).not.toContain('..');
+    expect(meta.filename).not.toContain('/');
+
+    fs.writeFileSync(chunkPartPath(uploadId, 0), Buffer.from('contenuto innocuo'));
+    const { path, filename } = await assembleChunkedUpload(uploadId);
+
+    // Il file assemblato resta DENTRO la cartella di upload, non risolto
+    // verso /etc/passwd o qualunque path fuori da chunkUploadDir(uploadId).
+    expect(path.startsWith(chunkUploadDir(uploadId))).toBe(true);
+    expect(filename).toBe('passwd');
+
+    cleanupChunkedUpload(uploadId);
+  });
+
+  it('filename Windows-style con backslash (".. \\ .. \\ evil.pdf") non viene alterato da basename() POSIX, ma resta comunque un nome file letterale sotto Linux (nessun separatore di path reale)', async () => {
+    const uploadId = initChunkedUpload('..\\..\\evil.pdf', 1);
+    const metaPath = join(chunkUploadDir(uploadId), 'meta.json');
+    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+
+    // path.basename() è POSIX-only per il separatore '/' nel container Linux
+    // di produzione — un backslash non è mai un separatore di directory reale
+    // lì, quindi il filename risultante resta un nome file letterale (con
+    // backslash dentro), mai un path traversal effettivo su Linux.
+    expect(meta.filename).not.toContain('/');
+
+    cleanupChunkedUpload(uploadId);
   });
 });

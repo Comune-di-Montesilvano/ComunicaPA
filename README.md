@@ -155,6 +155,8 @@ Oltre al wizard admin (invii massivi da CSV), un sistema PA esterno può lanciar
 
 Tutte le risposte sono **sempre HTTP 200** (esito nel campo `success` del body — un reverse proxy di produzione sostituisce altrimenti il body delle risposte non-2xx con una pagina HTML). Gestione dei client (creazione/revoca API key) dalla UI admin, menu **Impostazioni → API Esterne**.
 
+I path sopra sono quelli interni al backend (`apps/backend/src/external-api/`); un chiamante esterno reale li raggiunge tramite qualunque path pubblico la propria infrastruttura instrada verso questo backend — nello stesso deployment di riferimento di questo repo, tramite il prefisso `/api/` con strip lato nginx (vedi `apps/backend/openapi/external-api.yaml`, `servers: /api/external/v1`), ma un'installazione diversa può esporlo diversamente.
+
 Specifica completa: [`apps/backend/openapi/external-api.yaml`](apps/backend/openapi/external-api.yaml).
 
 ## Riuso da parte di altre PA

@@ -25,6 +25,8 @@ describe('ExternalCapabilitiesController', () => {
         if (key === 'send.enabledTaxonomyCodes') return '["TARI","SANZIONI"]';
         if (key === 'send.environment') return 'collaudo';
         if (key === 'send.test.group') return 'gruppo-1';
+        if (key === 'send.test.apiKey') return 'api-key-collaudo';
+        if (key === 'send.test.purposeId') return 'purpose-collaudo';
         return '';
       }),
     };
@@ -55,9 +57,48 @@ describe('ExternalCapabilitiesController', () => {
     expect(result.appIoSecondary).toEqual({ available: true });
   });
 
-  it('SEND riflette enabledTaxonomyCodes e requiresGroup', async () => {
+  it('SEND riflette enabledTaxonomyCodes e requiresGroup, active da credenziali PDND configurate', async () => {
     const result = await controller.get();
     expect(result.channels.SEND).toEqual({ active: true, enabledTaxonomyCodes: ['TARI', 'SANZIONI'], requiresGroup: true });
+  });
+
+  it('SEND active=false se apiKey/purposeId non configurati, anche con taxonomy popolata', async () => {
+    settings.get.mockImplementation(async (key: string) => {
+      if (key === 'send.enabledTaxonomyCodes') return '["TARI","SANZIONI"]';
+      if (key === 'send.environment') return 'collaudo';
+      if (key === 'send.test.group') return 'gruppo-1';
+      return '';
+    });
+    const result = await controller.get();
+    expect(result.channels.SEND.active).toBe(false);
+    expect(result.channels.SEND.enabledTaxonomyCodes).toEqual(['TARI', 'SANZIONI']);
+  });
+
+  it('SEND active=true con credenziali configurate anche se taxonomy è vuota', async () => {
+    settings.get.mockImplementation(async (key: string) => {
+      if (key === 'send.enabledTaxonomyCodes') return '[]';
+      if (key === 'send.environment') return 'collaudo';
+      if (key === 'send.test.group') return 'gruppo-1';
+      if (key === 'send.test.apiKey') return 'api-key-collaudo';
+      if (key === 'send.test.purposeId') return 'purpose-collaudo';
+      return '';
+    });
+    const result = await controller.get();
+    expect(result.channels.SEND.active).toBe(true);
+    expect(result.channels.SEND.enabledTaxonomyCodes).toEqual([]);
+  });
+
+  it('SEND legge le credenziali dal prefisso prod quando send.environment è "produzione"', async () => {
+    settings.get.mockImplementation(async (key: string) => {
+      if (key === 'send.enabledTaxonomyCodes') return '[]';
+      if (key === 'send.environment') return 'produzione';
+      if (key === 'send.prod.group') return 'gruppo-prod';
+      if (key === 'send.prod.apiKey') return 'api-key-prod';
+      if (key === 'send.prod.purposeId') return 'purpose-prod';
+      return '';
+    });
+    const result = await controller.get();
+    expect(result.channels.SEND).toEqual({ active: true, enabledTaxonomyCodes: [], requiresGroup: true });
   });
 
   it('POSTAL non attivo se nessun provider attivo', async () => {

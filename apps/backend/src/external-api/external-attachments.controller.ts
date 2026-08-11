@@ -7,6 +7,7 @@ import { ApiKeyGuard, type RequestWithApiClient } from './guards/api-key.guard';
 import { ExternalApiExceptionFilter } from './external-api-exception.filter';
 import { ExternalAttachmentTokensService } from './external-attachment-tokens.service';
 import { chunkUploadDir, initChunkedUpload, MAX_CHUNK_SIZE_BYTES } from '../campaigns/chunked-upload.util';
+import { InitAttachmentUploadDto } from './dto/init-attachment-upload.dto';
 
 @Controller('external/v1/attachments/upload')
 @Public()
@@ -17,7 +18,7 @@ export class ExternalAttachmentsController {
 
   @Post('init')
   @HttpCode(HttpStatus.OK)
-  init(@Body() body: { filename: string; totalChunks: number }) {
+  init(@Body() body: InitAttachmentUploadDto) {
     const uploadId = initChunkedUpload(body.filename, body.totalChunks);
     return { success: true, uploadId };
   }

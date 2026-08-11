@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { join } from 'path';
+import { basename, join } from 'path';
 import { randomUUID } from 'crypto';
 
 /**
@@ -37,7 +37,18 @@ export function initChunkedUpload(filename: string, totalChunks: number): string
   const uploadId = randomUUID();
   const dir = chunkUploadDir(uploadId);
   fs.mkdirSync(dir, { recursive: true });
-  const meta: ChunkUploadMeta = { filename, totalChunks };
+  // basename() neutralizza path traversal (stesso idioma già in uso in
+  // branding.controller.ts/enrichment.processor.ts): `filename` arriva da
+  // input non fidato su TUTTI e 5 i punti di chiamata di questa funzione
+  // (upload CSV/allegati campagne, arricchimento, io-services, external-api)
+  // e finisce in join(dir, filename) sia qui (assembleChunkedUpload,
+  // `assembled-${filename}`) sia a valle in chi consuma il file assemblato
+  // (es. ExternalAttachmentTokensService.completeUpload, fs.copyFileSync)
+  // — un filename tipo "../../../../app/dist/main.js" senza sanitizzazione
+  // risolverebbe fuori dalla directory di upload/token (scrittura file
+  // arbitraria nel container).
+  const safeFilename = basename(filename);
+  const meta: ChunkUploadMeta = { filename: safeFilename, totalChunks };
   fs.writeFileSync(join(dir, 'meta.json'), JSON.stringify(meta));
   return uploadId;
 }
