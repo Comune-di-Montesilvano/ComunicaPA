@@ -80,6 +80,26 @@ describe('CreateExternalNotificationDto', () => {
     expect(errors.some((e) => e.property === 'body')).toBe(true);
   });
 
+  it('APP_IO con subject di 10 spazi (vuoto reale ma lungo 10) produce errore come "vuoto", non passa il vincolo di lunghezza [10,120]', async () => {
+    const errors = await validateDto({ ...base, channelType: 'APP_IO', subject: ' '.repeat(10), body: 'x'.repeat(80) });
+    const subjectErrors = errors.filter((e) => e.property === 'subject');
+    expect(subjectErrors.length).toBeGreaterThan(0);
+    // Deve fallire per la validazione "isValidChannelSubject" (che include
+    // la nuova emptiness check), non superarla accidentalmente perché la
+    // lunghezza grezza (10) rientra nel range.
+    expect(subjectErrors[0].constraints).toHaveProperty('isValidChannelSubject');
+  });
+
+  it('APP_IO con body di soli spazi HTML (es. "<p>   </p>") produce errore come "vuoto"', async () => {
+    const errors = await validateDto({
+      ...base,
+      channelType: 'APP_IO',
+      subject: 'oggetto valido di 12+',
+      body: '<p>' + ' '.repeat(80) + '</p>',
+    });
+    expect(errors.some((e) => e.property === 'body')).toBe(true);
+  });
+
   it('APP_IO con subject/body ai bordi esatti minimi [10,80] è valido', async () => {
     const errors = await validateDto({
       ...base,
@@ -178,6 +198,27 @@ describe('CreateExternalNotificationDto', () => {
   it('EMAIL con subject stringa vuota produce errore', async () => {
     const errors = await validateDto({ ...base, subject: '' });
     expect(errors.some((e) => e.property === 'subject')).toBe(true);
+  });
+
+  it('EMAIL con subject di soli spazi produce errore (parità con !wizSubject.trim() del wizard)', async () => {
+    const errors = await validateDto({ ...base, subject: '   ' });
+    expect(errors.some((e) => e.property === 'subject')).toBe(true);
+  });
+
+  it('EMAIL con body HTML vuoto (<p></p>, shell Tiptap senza testo) produce errore (parità con isWizBodyEmpty del wizard)', async () => {
+    const errors = await validateDto({ ...base, body: '<p></p>' });
+    expect(errors.some((e) => e.property === 'body')).toBe(true);
+  });
+
+  it('PEC con body HTML vuoto (<p></p>) produce errore', async () => {
+    const errors = await validateDto({
+      ...base,
+      channelType: 'PEC',
+      pec: 'test@pec.it',
+      email: undefined,
+      body: '<p>&nbsp;</p>',
+    });
+    expect(errors.some((e) => e.property === 'body')).toBe(true);
   });
 
   it('PEC senza subject/body produce errore', async () => {

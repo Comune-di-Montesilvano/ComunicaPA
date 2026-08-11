@@ -184,7 +184,7 @@ paths:
                   channelType: SEND
                   codiceFiscale: RSSMRA80A01H501U
                   extraData: { indirizzo: Via Roma 1, cap: '00100', citta: Roma, provincia: RM }
-                  attachments: [{ token: 3fbb1e2a-...-token, label: Atto notificato }]
+                  attachments: [{ token: 3fbb1e2a-1234-4abc-9def-426614174000, label: Atto notificato }]
                   protocolla: true
                   subject: Notifica atto — Comune di Montesilvano
               email_con_app_io_parallela:
@@ -234,7 +234,7 @@ components:
   schemas:
     CreateNotificationRequest:
       type: object
-      required: [channelType, codiceFiscale, extraData]
+      required: [channelType, codiceFiscale, extraData, subject]
       properties:
         channelType: { type: string, enum: [PEC, EMAIL, APP_IO, SEND, POSTAL] }
         codiceFiscale: { type: string, pattern: '^[A-Za-z0-9]{16}$' }

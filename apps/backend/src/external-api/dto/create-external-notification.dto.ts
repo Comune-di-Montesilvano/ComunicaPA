@@ -96,7 +96,14 @@ function IsValidChannelText(kind: 'subject' | 'body', validationOptions?: Valida
           // EMAIL, PEC, APP_IO, SEND, POSTAL: subject/body (quando
           // applicabile) sempre obbligatorio, nessuna eccezione per canale.
           if (value === undefined) return false;
-          if (typeof value !== 'string' || value.length === 0) return false;
+          if (typeof value !== 'string') return false;
+          // subject è testo semplice: trim() basta (parità con
+          // `!wizSubject.trim()`, App.tsx). body è HTML (TemplateEditor):
+          // serve lo stesso stripping usato per il vincolo di lunghezza
+          // (parità con `isWizBodyEmpty()`, App.tsx) — un `<p></p>` vuoto
+          // (shell Tiptap) ha length>0 ma nessun testo visibile.
+          const isEmpty = kind === 'subject' ? value.trim().length === 0 : stripHtmlForLength(value).length === 0;
+          if (isEmpty) return false;
 
           if (o.channelType === 'APP_IO') {
             if (kind === 'subject') {
