@@ -4,6 +4,8 @@ import { Repository } from 'typeorm';
 import { InadVerificationJob, InadVerificationJobStatus, InadVerificationBatch } from '../../entities/inad-verification-job.entity';
 import { parseCsvContent } from '../../io-services/csv.util';
 import { InadService } from './inad.service';
+import { RegistroImpreseVerifyQueueService } from '../registro-imprese/registro-imprese-verify-queue.service';
+import { isPartitaIva } from '../tax-id.util';
 
 const BATCH_SIZE = 1000;
 
@@ -36,6 +38,11 @@ export interface InadBulkVerifyStatus {
  * lato suo (fino a 1000 CF per chiamata, 5-10 minuti), quindi qui si accoda
  * solo la richiesta bulk e il progresso viene sincronizzato da
  * InadVerifyBulkSyncService (demone Cron, stesso pattern di InadCheckSyncService).
+ *
+ * Le righe a 11 cifre (Partita IVA) non vanno a INAD (nessun dato per
+ * imprese) — vengono accodate su registro-imprese-verify (1 job BullMQ per
+ * PIVA, rate limiter + backoff su 429). Il job resta PROCESSING finché
+ * entrambe le fonti non sono complete (vedi InadVerifyBulkSyncService).
  */
 @Injectable()
 export class InadVerifyBulkService {
@@ -43,6 +50,7 @@ export class InadVerifyBulkService {
     @InjectRepository(InadVerificationJob)
     private readonly jobRepo: Repository<InadVerificationJob>,
     private readonly inadService: InadService,
+    private readonly registroImpreseQueue: RegistroImpreseVerifyQueueService,
   ) {}
 
   async createJob(params: CreateInadBulkVerifyParams): Promise<CreateInadBulkVerifyResult> {
@@ -54,15 +62,11 @@ export class InadVerifyBulkService {
       return { blocked: true, message: `Colonna "${params.cfColumn}" non trovata tra le intestazioni del CSV` };
     }
 
-    const validCfs = Array.from(
-      new Set(
-        parsed.rows
-          .map((row) => (row[params.cfColumn] || '').trim().toUpperCase())
-          .filter((cf) => cf.length === 16),
-      ),
-    );
-    if (validCfs.length === 0) {
-      return { blocked: true, message: 'Nessun codice fiscale valido (16 caratteri) trovato nella colonna selezionata' };
+    const rawValues = parsed.rows.map((row) => (row[params.cfColumn] || '').trim().toUpperCase());
+    const validCfs = Array.from(new Set(rawValues.filter((v) => v.length === 16)));
+    const pivaValues = Array.from(new Set(rawValues.filter((v) => isPartitaIva(v))));
+    if (validCfs.length === 0 && pivaValues.length === 0) {
+      return { blocked: true, message: 'Nessun codice fiscale (16 caratteri) o Partita IVA (11 cifre) valido trovato nella colonna selezionata' };
     }
 
     const job = this.jobRepo.create({
@@ -71,6 +75,10 @@ export class InadVerifyBulkService {
       batches: [],
       foundCount: 0,
       notFoundCount: 0,
+      pivaTotal: pivaValues.length,
+      pivaDone: 0,
+      pivaFoundCount: 0,
+      pivaResults: {},
       sourceCsv: params.csvContent,
       csvHeaders: parsed.headers,
       cfColumn: params.cfColumn,
@@ -88,6 +96,9 @@ export class InadVerifyBulkService {
         const chunk = validCfs.slice(i, i + BATCH_SIZE);
         const { id } = await this.inadService.startBulkExtraction(chunk, `comunicapa-verifica-${saved.id}`);
         batches.push({ id, size: chunk.length, done: false });
+      }
+      for (const piva of pivaValues) {
+        await this.registroImpreseQueue.enqueueVerify(saved.id, piva);
       }
       await this.jobRepo.update(saved.id, { status: InadVerificationJobStatus.PROCESSING, batches });
     } catch (err: any) {
