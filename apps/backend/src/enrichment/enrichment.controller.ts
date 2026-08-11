@@ -26,9 +26,10 @@ import { EnrichmentEventsService } from './enrichment-events.service';
 import {
   MAX_CHUNK_SIZE_BYTES,
   assembleChunkedUpload,
-  chunkUploadDir,
   cleanupChunkedUpload,
   initChunkedUpload,
+  isValidChunkIndex,
+  safeChunkUploadDir,
 } from '../campaigns/chunked-upload.util';
 import { getEnrichmentResultCsv } from './enrichment-paths';
 
@@ -58,15 +59,24 @@ export class EnrichmentController {
     FileInterceptor('chunk', {
       storage: diskStorage({
         destination: (req, _file, cb) => {
-          const dir = chunkUploadDir(req.params['uploadId'] as string);
-          if (!fs.existsSync(dir)) {
+          // safeChunkUploadDir() mai un throw: dentro un callback diskStorage
+          // sincrono un throw grezzo sfugge come uncaughtException e abbatte
+          // l'intero processo Node (nessun handler globale in questo repo —
+          // bug reale, review fix path-traversal external-api chunk()/complete()).
+          const dir = safeChunkUploadDir(req.params['uploadId']);
+          if (!dir || !fs.existsSync(dir)) {
             cb(new BadRequestException('Sessione di upload non trovata o scaduta'), '');
             return;
           }
           cb(null, dir);
         },
         filename: (req, _file, cb) => {
-          cb(null, `${req.params['index']}.part`);
+          const index = req.params['index'];
+          if (!isValidChunkIndex(index)) {
+            cb(new BadRequestException('index non valido'), '');
+            return;
+          }
+          cb(null, `${index}.part`);
         },
       }),
       limits: { fileSize: MAX_CHUNK_SIZE_BYTES },

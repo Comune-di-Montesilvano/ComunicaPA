@@ -6,6 +6,8 @@ import {
   chunkUploadDir,
   cleanupChunkedUpload,
   initChunkedUpload,
+  isValidChunkIndex,
+  safeChunkUploadDir,
 } from './chunked-upload.util';
 
 /**
@@ -122,5 +124,65 @@ describe('assembleChunkedUpload', () => {
     expect(meta.filename).not.toContain('/');
 
     cleanupChunkedUpload(uploadId);
+  });
+});
+
+/**
+ * Terza occorrenza della stessa classe di bug (review finale, follow-up):
+ * i 4 endpoint operatore che condividono questo stesso pattern
+ * (campaigns.controller.ts x2, enrichment.controller.ts,
+ * io-services.controller.ts, channels/inad/inad-verify.controller.ts)
+ * chiamavano `chunkUploadDir()` DIRETTAMENTE dentro un callback
+ * `destination` sincrono di multer diskStorage — dopo l'hardening di
+ * `chunkUploadDir()` per rifiutare un uploadId non a forma di UUID (fix
+ * precedente), quel `throw` sincrono sfuggiva come `uncaughtException`
+ * (nessun handler globale in questo repo) e abbatteva l'intero processo
+ * Node per una singola richiesta operatore malformata — una regressione di
+ * disponibilità introdotta DAL fix stesso, non presente prima.
+ * `safeChunkUploadDir()`/`isValidChunkIndex()` sono le funzioni che TUTTI
+ * e 5 i controller (i 4 operatore + external-attachments) ora chiamano
+ * dentro i propri callback `destination`/`filename` — un test diretto su
+ * queste due funzioni copre la logica condivisa dei 3 controller
+ * (enrichment/io-services/campaigns) che non hanno un proprio test
+ * end-to-end HTTP dedicato (il quarto, inad-verify, ha una prova end-to-end
+ * completa in inad-verify-chunk-upload.integration.spec.ts, rappresentativa
+ * dell'intero gruppo).
+ */
+describe('safeChunkUploadDir — mai un throw, per i callback diskStorage sincroni', () => {
+  it('uploadId UUID valido → ritorna il path dentro CHUNK_ROOT (nessuna eccezione)', () => {
+    const uploadId = initChunkedUpload('elenco.csv', 1);
+    const dir = safeChunkUploadDir(uploadId);
+    expect(dir).toBe(chunkUploadDir(uploadId));
+    cleanupChunkedUpload(uploadId);
+  });
+
+  it('uploadId path-traversal → ritorna null, MAI un throw (la differenza cruciale rispetto a chunkUploadDir())', () => {
+    expect(() => safeChunkUploadDir('../../../../etc')).not.toThrow();
+    expect(safeChunkUploadDir('../../../../etc')).toBeNull();
+  });
+
+  it('uploadId assente/non stringa → ritorna null, MAI un throw', () => {
+    expect(() => safeChunkUploadDir(undefined)).not.toThrow();
+    expect(safeChunkUploadDir(undefined)).toBeNull();
+    expect(safeChunkUploadDir(123)).toBeNull();
+  });
+});
+
+describe('isValidChunkIndex', () => {
+  it('accetta solo stringhe di sole cifre', () => {
+    expect(isValidChunkIndex('0')).toBe(true);
+    expect(isValidChunkIndex('42')).toBe(true);
+  });
+
+  it('rifiuta un index con separatori di path (traversal su filename)', () => {
+    expect(isValidChunkIndex('../../evil')).toBe(false);
+    expect(isValidChunkIndex('0/../../etc')).toBe(false);
+    expect(isValidChunkIndex('../../../../etc/passwd')).toBe(false);
+  });
+
+  it('rifiuta valori assenti/non stringa/vuoti', () => {
+    expect(isValidChunkIndex(undefined)).toBe(false);
+    expect(isValidChunkIndex('')).toBe(false);
+    expect(isValidChunkIndex(0)).toBe(false);
   });
 });

@@ -6,17 +6,10 @@ import { Public } from '../auth/decorators/public.decorator';
 import { ApiKeyGuard, type RequestWithApiClient } from './guards/api-key.guard';
 import { ExternalApiExceptionFilter } from './external-api-exception.filter';
 import { ExternalAttachmentTokensService } from './external-attachment-tokens.service';
-import { chunkUploadDir, initChunkedUpload, isValidUploadId, MAX_CHUNK_SIZE_BYTES } from '../campaigns/chunked-upload.util';
+import { initChunkedUpload, isValidChunkIndex, MAX_CHUNK_SIZE_BYTES, safeChunkUploadDir } from '../campaigns/chunked-upload.util';
 import { InitAttachmentUploadDto } from './dto/init-attachment-upload.dto';
 import { ChunkAttachmentUploadDto } from './dto/chunk-attachment-upload.dto';
 import { CompleteAttachmentUploadDto } from './dto/complete-attachment-upload.dto';
-
-// Solo cifre, nessun separatore di path: stesso principio di isValidUploadId
-// (chunked-upload.util.ts) applicato all'indice del chunk — un valore tipo
-// "../../evil" o "0/../../etc" finirebbe letteralmente in `${index}.part`
-// dentro fs callback filename, PRIMA che una ValidationPipe/DTO possa
-// intervenire (vedi commento su ChunkAttachmentUploadDto sotto).
-const CHUNK_INDEX_PATTERN = /^\d+$/;
 
 @Controller('external/v1/attachments/upload')
 @Public()
@@ -54,13 +47,8 @@ export class ExternalAttachmentsController {
       storage: diskStorage({
         destination: (req, _file, cb) => {
           const uploadId = (req.body as { uploadId?: string }).uploadId;
-          if (!uploadId || !isValidUploadId(uploadId)) {
-            return cb(new BadRequestException('uploadId non valido'), '');
-          }
-          let dir: string;
-          try {
-            dir = chunkUploadDir(uploadId);
-          } catch {
+          const dir = safeChunkUploadDir(uploadId);
+          if (!dir) {
             return cb(new BadRequestException('uploadId non valido'), '');
           }
           fs.mkdirSync(dir, { recursive: true });
@@ -68,7 +56,7 @@ export class ExternalAttachmentsController {
         },
         filename: (req, _file, cb) => {
           const index = (req.body as { index?: string }).index;
-          if (!index || !CHUNK_INDEX_PATTERN.test(index)) {
+          if (!isValidChunkIndex(index)) {
             return cb(new BadRequestException('index non valido'), '');
           }
           cb(null, `${index}.part`);

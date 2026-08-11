@@ -57,6 +57,37 @@ export function chunkPartPath(uploadId: string, index: number): string {
   return join(chunkUploadDir(uploadId), `${index}.part`);
 }
 
+/**
+ * Variante "safe" (mai throw) di chunkUploadDir(), pensata per i callback
+ * `destination` di multer diskStorage — SEMPRE sincroni e chiamati DURANTE
+ * il parsing multipart, quindi PRIMA di qualunque pipe/exception filter
+ * Nest. Un `throw` grezzo lì dentro non viene intercettato né da Express né
+ * da Nest: sfugge come `uncaughtException` e — non essendoci in questo repo
+ * un handler globale (verificato, `grep -rn uncaughtException src` non
+ * trova nulla) — abbatte l'intero processo Node, BullMQ in-flight incluso.
+ * Bug reale: la review del fix path-traversal su chunkUploadDir() (che ha
+ * introdotto il throw sincrono) ha inizialmente lasciato tutti e 5 i
+ * callback `destination` che chiamano questa funzione esposti esattamente a
+ * questo — un operatore autenticato con un `uploadId` malformato poteva
+ * far crashare l'intero backend con una singola richiesta. Ogni callback
+ * `destination` deve usare QUESTA funzione (mai `chunkUploadDir()` diretta)
+ * e reagire a `null` con `cb(new BadRequestException(...), '')`, mai un
+ * throw.
+ */
+export function safeChunkUploadDir(uploadId: unknown): string | null {
+  if (!isValidUploadId(uploadId)) return null;
+  return join(CHUNK_ROOT, uploadId);
+}
+
+// Stesso principio di isValidUploadId, applicato all'indice del chunk:
+// arriva da input non fidato (route param o body a seconda dell'endpoint) e
+// finisce letteralmente in `${index}.part` dentro il callback `filename` di
+// multer diskStorage — un valore tipo "../../evil" scriverebbe fuori dalla
+// cartella di upload. Solo cifre, nessun separatore di path.
+export function isValidChunkIndex(index: unknown): index is string {
+  return typeof index === 'string' && /^\d+$/.test(index);
+}
+
 export function initChunkedUpload(filename: string, totalChunks: number): string {
   if (!Number.isInteger(totalChunks) || totalChunks < 1) {
     throw new Error('totalChunks deve essere un intero >= 1');
