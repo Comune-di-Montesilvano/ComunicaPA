@@ -84,15 +84,24 @@ Opzionale per tutti i canali, nessun impatto su comportamento invio/canale.
   l'unico contenuto (SEND). Vedi
   `docs/superpowers/specs/2026-07-23-blocco-allegati-senza-placeholder-design.md`.
 
+### 7. Contenuto testuale (subject/body)
+Obbligatorietà e vincoli di lunghezza divergono per canale, e il gate wizard
+reale per SEND/POSTAL in modalità singola non è quello più visibile (step
+Template/"Riepilogo") — quel gate viene saltato del tutto per questi due
+canali. Regola completa, per canale, con citazioni esatte al codice:
+[`docs/superpowers/specs/2026-08-11-regole-subject-body-canale-design.md`](2026-08-11-regole-subject-body-canale-design.md).
+
 ## Matrice per canale primario
 
-| Canale | App IO secondaria | Dirottamento INAD | Protocollo | Allegato |
-|---|---|---|---|---|
-| EMAIL | none / parallela / esclusiva (→parallela se destinatario dirottato) | sì, → `channelType` PEC + `recipient.pec` = indirizzo INAD | opzionale | opzionale |
-| PEC | none / parallela / esclusiva (→parallela se destinatario dirottato) | sì, se PEC INAD diversa da quella configurata → solo `recipient.pec` sovrascritto (canale resta PEC, nessun override) | opzionale | opzionale |
-| POSTAL | none / parallela / esclusiva (→parallela se destinatario dirottato) | sì, → `channelType` PEC (skip stampa/spedizione cartacea) + `recipient.pec` = indirizzo INAD | opzionale | **obbligatorio** |
-| APP_IO | n/a (canale già App IO) | sì, → `channelType` PEC (skip invio App IO) + `recipient.pec` = indirizzo INAD | opzionale | opzionale |
-| SEND | n/a (escluso da `isMailChannel`) | n/a (PN gestisce domicilio digitale via ANPR/INAD proprio) | **obbligatorio** | **obbligatorio** |
+| Canale | App IO secondaria | Dirottamento INAD | Protocollo | Allegato | Contenuto (subject/body)¹ |
+|---|---|---|---|---|---|
+| EMAIL | none / parallela / esclusiva (→parallela se destinatario dirottato) | sì, → `channelType` PEC + `recipient.pec` = indirizzo INAD | opzionale | opzionale | subject+body entrambi obbligatori |
+| PEC | none / parallela / esclusiva (→parallela se destinatario dirottato) | sì, se PEC INAD diversa da quella configurata → solo `recipient.pec` sovrascritto (canale resta PEC, nessun override) | opzionale | opzionale | subject+body entrambi obbligatori |
+| POSTAL | none / parallela / esclusiva (→parallela se destinatario dirottato) | sì, → `channelType` PEC (skip stampa/spedizione cartacea) + `recipient.pec` = indirizzo INAD | opzionale | **obbligatorio** | subject **obbligatorio**, body **rifiutato** (contenuto reale è l'allegato) |
+| APP_IO | n/a (canale già App IO) | sì, → `channelType` PEC (skip invio App IO) + `recipient.pec` = indirizzo INAD | opzionale | opzionale | subject [10,120] + body [80,10000] entrambi obbligatori |
+| SEND | n/a (escluso da `isMailChannel`) | n/a (PN gestisce domicilio digitale via ANPR/INAD proprio) | **obbligatorio** | **obbligatorio** | subject **obbligatorio**, body **rifiutato** (n/a per SEND) |
+
+¹ Solo modalità wizard singolo — dettaglio completo (gate reale, emptiness HTML, `secondaryAppIo`): [`2026-08-11-regole-subject-body-canale-design.md`](2026-08-11-regole-subject-body-canale-design.md).
 
 ## Non incluso / fuori scope
 
