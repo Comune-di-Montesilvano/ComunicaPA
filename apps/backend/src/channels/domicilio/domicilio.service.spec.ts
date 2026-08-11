@@ -3,10 +3,12 @@ import { DomicilioService } from './domicilio.service';
 import { InadService } from '../inad/inad.service';
 import { IoServicesService } from '../../io-services/io-services.service';
 import { AnprService } from '../anpr/anpr.service';
+import { RegistroImpreseService } from '../registro-imprese/registro-imprese.service';
 
 const mockInad = { extractDigitalAddress: jest.fn() };
 const mockIoServices = { verifyProfile: jest.fn() };
 const mockAnpr = { getResidenza: jest.fn(), getEsistenzaInVita: jest.fn() };
+const mockRegistroImpreseUnused = { dettaglioImpresa: jest.fn() };
 
 describe('DomicilioService.cercaDomicilio', () => {
   let service: DomicilioService;
@@ -19,6 +21,7 @@ describe('DomicilioService.cercaDomicilio', () => {
         { provide: InadService, useValue: mockInad },
         { provide: IoServicesService, useValue: mockIoServices },
         { provide: AnprService, useValue: mockAnpr },
+        { provide: RegistroImpreseService, useValue: mockRegistroImpreseUnused },
       ],
     }).compile();
     service = module.get(DomicilioService);
@@ -103,5 +106,47 @@ describe('DomicilioService.cercaDomicilio', () => {
     const result = await service.cercaDomicilio('CF1', 'mario.rossi');
 
     expect(result.anprEsistenzaInVita).toEqual({ success: false, message: 'Configurazione ANPR C019 incompleta: purposeId non impostato' });
+  });
+});
+
+describe('DomicilioService.cercaDomicilio — Partita IVA', () => {
+  let service: DomicilioService;
+  const mockRegistroImprese = { dettaglioImpresa: jest.fn() };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const module = await Test.createTestingModule({
+      providers: [
+        DomicilioService,
+        { provide: InadService, useValue: mockInad },
+        { provide: IoServicesService, useValue: mockIoServices },
+        { provide: AnprService, useValue: mockAnpr },
+        { provide: RegistroImpreseService, useValue: mockRegistroImprese },
+      ],
+    }).compile();
+    service = module.get(DomicilioService);
+  });
+
+  it('per una Partita IVA interroga solo Registro Imprese, non ANPR/INAD/AppIO', async () => {
+    mockRegistroImprese.dettaglioImpresa.mockResolvedValue({ found: true, raw: '<xml/>', pec: 'acme@pec.it', denominazione: 'ACME SRL' });
+
+    const result = await service.cercaDomicilio('12345678901', 'mario.rossi');
+
+    expect(result.codiceFiscale).toBe('12345678901');
+    expect(result.registroImprese).toEqual({ success: true, found: true, pec: 'acme@pec.it', denominazione: 'ACME SRL' });
+    expect(result.inad).toBeUndefined();
+    expect(result.appIo).toBeUndefined();
+    expect(result.anpr).toBeUndefined();
+    expect(mockInad.extractDigitalAddress).not.toHaveBeenCalled();
+    expect(mockIoServices.verifyProfile).not.toHaveBeenCalled();
+    expect(mockAnpr.getResidenza).not.toHaveBeenCalled();
+  });
+
+  it('gestisce un fallimento di Registro Imprese senza propagare eccezione', async () => {
+    mockRegistroImprese.dettaglioImpresa.mockRejectedValue(new Error('Registro Imprese: limite richieste superato'));
+
+    const result = await service.cercaDomicilio('12345678901', 'mario.rossi');
+
+    expect(result.registroImprese).toEqual({ success: false, found: false, message: 'Registro Imprese: limite richieste superato' });
   });
 });
