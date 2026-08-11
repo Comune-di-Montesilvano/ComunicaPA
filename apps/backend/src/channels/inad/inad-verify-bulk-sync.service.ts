@@ -6,10 +6,20 @@ import { InadVerificationJob, InadVerificationJobStatus } from '../../entities/i
 import { parseCsvContent, buildCsvContent } from '../../io-services/csv.util';
 import { InadService } from './inad.service';
 
+const ADDRESS_COLUMN = 'domicilio_digitale_inad';
+
 /**
  * Poll periodico dei batch bulk INAD per i job di "Verifica INAD massiva" —
  * stesso pattern demone Cron di InadCheckSyncService (nessuna coda BullMQ,
  * solo Cron + repo diretti), ma su InadVerificationJob invece che su Campaign.
+ *
+ * Un job resta PROCESSING finché ENTRAMBE le fonti non sono complete: i
+ * batch INAD (CF persona fisica) e la quota Partita IVA accodata su
+ * registro-imprese-verify (vedi InadVerifyBulkService, RegistroImpreseVerifyProcessor
+ * — quest'ultimo scrive piva_done/piva_results in autonomia, questo demone
+ * si limita a leggerli). Le PEC trovate via Registro Imprese confluiscono
+ * nella stessa colonna ADDRESS_COLUMN dei CF trovati via INAD — un solo CSV
+ * risultato indipendente dalla fonte.
  */
 @Injectable()
 export class InadVerifyBulkSyncService {
@@ -39,7 +49,8 @@ export class InadVerifyBulkSyncService {
           }
         }
 
-        if (!allReady) {
+        const pivaReady = job.pivaTotal === 0 || job.pivaDone >= job.pivaTotal;
+        if (!allReady || !pivaReady) {
           await this.jobRepo.update(job.id, { batches });
           continue;
         }
@@ -52,9 +63,11 @@ export class InadVerifyBulkSyncService {
             foundAddresses.set(item.codiceFiscale.toUpperCase(), addresses);
           });
         }
+        for (const [piva, pec] of Object.entries(job.pivaResults ?? {})) {
+          if (pec) foundAddresses.set(piva, pec);
+        }
 
         const parsed = parseCsvContent(job.sourceCsv, job.hasHeaders);
-        const ADDRESS_COLUMN = 'domicilio_digitale_inad';
         const foundHeaders = [...parsed.headers, ADDRESS_COLUMN];
         const foundRows: Record<string, string>[] = [];
         const notFoundRows: Record<string, string>[] = [];
