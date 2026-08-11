@@ -18,6 +18,7 @@ ComunicaPA consente agli enti pubblici di inviare comunicazioni di massa (TARI, 
 - [Configurazione](#configurazione)
 - [Sviluppo](#sviluppo)
 - [Architettura](#architettura)
+- [API esterna — caricamento puntuale](#api-esterna--caricamento-puntuale)
 - [Riuso da parte di altre PA](#riuso-da-parte-di-altre-pa)
 - [Contribuire](#contribuire)
 - [Licenza](#licenza)
@@ -141,6 +142,20 @@ services/
 **Flusso:** CSV upload → stream processing (nessun caricamento in memoria) → coda BullMQ (Redis) → worker asincroni → Strategy Pattern per canale (PEC/Email/App IO/SEND/Postal), con co-consegna opzionale su App IO in parallelo al canale primario.
 
 **Autenticazione:** LDAP/Active Directory per operatori PA; OIDC (SPID/CIE, Authorization Code + PKCE) per cittadini.
+
+## API esterna — caricamento puntuale
+
+Oltre al wizard admin (invii massivi da CSV), un sistema PA esterno può lanciare **una notifica puntuale per chiamata** (qualunque canale: PEC/Email/App IO/SEND/Postalizzazione) via API REST autenticata con API key, senza passare dal portale operatore:
+
+- `GET /external/v1/capabilities` — scopre canali e opzioni realmente configurati sull'istanza (nessun tentativo alla cieca)
+- `POST /external/v1/domicilio/cerca` — verifica il domicilio digitale reale del destinatario (ANPR/INAD/App IO) prima di scegliere il canale, evitando dirottamenti a sorpresa
+- `POST /external/v1/attachments/upload/{init,chunk,complete}` — upload allegato a chunk (obbligatorio per SEND/Postalizzazione)
+- `POST /external/v1/notifications` — crea e lancia la notifica (risposta asincrona, `campaignId` per il polling)
+- `GET /external/v1/notifications/{campaignId}` — stato della notifica
+
+Tutte le risposte sono **sempre HTTP 200** (esito nel campo `success` del body — un reverse proxy di produzione sostituisce altrimenti il body delle risposte non-2xx con una pagina HTML). Gestione dei client (creazione/revoca API key) dalla UI admin, menu **Impostazioni → API Esterne**.
+
+Specifica completa: [`apps/backend/openapi/external-api.yaml`](apps/backend/openapi/external-api.yaml).
 
 ## Riuso da parte di altre PA
 
