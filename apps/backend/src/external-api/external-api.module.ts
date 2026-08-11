@@ -11,10 +11,12 @@ import { ExternalAttachmentsController } from './external-attachments.controller
 import { ExternalApiService } from './external-api.service';
 import { ExternalNotificationsController } from './external-notifications.controller';
 import { ExternalCapabilitiesController } from './external-capabilities.controller';
+import { ExternalDomicilioController } from './external-domicilio.controller';
 import { MailConfigsModule } from '../mail-configs/mail-configs.module';
 import { IoServicesModule } from '../io-services/io-services.module';
 import { PostalProvidersModule } from '../postal-providers/postal-providers.module';
 import { SettingsModule } from '../settings/settings.module';
+import { DomicilioModule } from '../channels/domicilio/domicilio.module';
 
 @Module({
   imports: [
@@ -25,12 +27,14 @@ import { SettingsModule } from '../settings/settings.module';
     IoServicesModule,
     PostalProvidersModule,
     SettingsModule,
+    DomicilioModule,
   ],
   controllers: [
     AdminExternalClientsController,
     ExternalAttachmentsController,
     ExternalNotificationsController,
     ExternalCapabilitiesController,
+    ExternalDomicilioController,
   ],
   providers: [
     ExternalApiClientsService,
