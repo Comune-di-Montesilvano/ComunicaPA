@@ -48,6 +48,42 @@ describe('InadVerifyBulkSyncService.handleCron', () => {
     expect(patch.resultNotFoundCsv).toContain('98765432109');
   });
 
+  it('marca FAILED un job PROCESSING bloccato da troppo tempo (staleness guard)', async () => {
+    const oldDate = new Date(Date.now() - 25 * 3600 * 1000);
+    mockJobRepo.find.mockResolvedValue([{
+      id: 'job-1', status: InadVerificationJobStatus.PROCESSING,
+      batches: [{ id: 'batch-1', size: 1, done: false }],
+      pivaTotal: 3, pivaDone: 1, pivaResults: {},
+      sourceCsv: 'cf\nRRANGL74M28R701V\n', hasHeaders: true, cfColumn: 'cf',
+      createdAt: oldDate,
+    }]);
+    mockInad.getBulkState.mockResolvedValue('IN CORSO');
+
+    await service.handleCron();
+
+    expect(mockJobRepo.update).toHaveBeenCalledWith('job-1', expect.objectContaining({
+      status: InadVerificationJobStatus.FAILED,
+      errorMessage: expect.any(String),
+    }));
+  });
+
+  it('NON marca FAILED un job PROCESSING recente anche se non ancora completo', async () => {
+    mockJobRepo.find.mockResolvedValue([{
+      id: 'job-1', status: InadVerificationJobStatus.PROCESSING,
+      batches: [{ id: 'batch-1', size: 1, done: false }],
+      pivaTotal: 3, pivaDone: 1, pivaResults: {},
+      sourceCsv: 'cf\nRRANGL74M28R701V\n', hasHeaders: true, cfColumn: 'cf',
+      createdAt: new Date(),
+    }]);
+    mockInad.getBulkState.mockResolvedValue('IN CORSO');
+
+    await service.handleCron();
+
+    expect(mockJobRepo.update).toHaveBeenCalledWith('job-1', { batches: [{ id: 'batch-1', size: 1, done: false }] });
+    const failedCall = mockJobRepo.update.mock.calls.find(([, patch]: any) => patch.status === InadVerificationJobStatus.FAILED);
+    expect(failedCall).toBeUndefined();
+  });
+
   it('finalizza un job con sole Partite IVA (nessun batch INAD)', async () => {
     mockJobRepo.find.mockResolvedValue([{
       id: 'job-1', status: InadVerificationJobStatus.PROCESSING,

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import type { Job } from 'bullmq';
 import { InadVerificationJob } from '../../entities/inad-verification-job.entity';
 import { REGISTRO_IMPRESE_QUEUE, VERIFY_PIVA_JOB_NAME, RegistroImpreseVerifyJobData } from './registro-imprese-job.types';
@@ -54,6 +54,33 @@ export class RegistroImpreseVerifyProcessor extends WorkerHost {
            piva_found_count = piva_found_count + $2
        WHERE id = $3`,
       [JSON.stringify({ [partitaIva]: pec }), found ? 1 : 0, jobId],
+    );
+  }
+
+  /**
+   * BullMQ emette 'failed' ad OGNI tentativo fallito, non solo all'esaurimento
+   * finale — va ignorato finché ci sono ancora retry pianificati (altrimenti
+   * il job padre resta bloccato in PROCESSING per sempre: process() qui non
+   * scrive mai piva_done su RegistroImpreseRateLimitError, la riscrive solo
+   * process() su esito/errore generico o questo handler sull'esaurimento
+   * finale — mai entrambi per lo stesso tentativo).
+   */
+  @OnWorkerEvent('failed')
+  async onFailed(job: Job<RegistroImpreseVerifyJobData> | undefined): Promise<void> {
+    if (!job || job.name !== VERIFY_PIVA_JOB_NAME) return;
+    const maxAttempts = job.opts?.attempts ?? 1;
+    if ((job.attemptsMade ?? 0) < maxAttempts) return; // ritenterà ancora, non è esaurimento finale
+
+    const { jobId, partitaIva } = job.data;
+    this.logger.warn(
+      `Verifica Registro Imprese esaurita per ${partitaIva} (job ${jobId}) dopo ${job.attemptsMade} tentativi: trattata come non trovata per sbloccare il job padre.`,
+    );
+    await this.jobRepo.query(
+      `UPDATE inad_verification_jobs
+       SET piva_results = COALESCE(piva_results, '{}'::jsonb) || $1::jsonb,
+           piva_done = piva_done + 1
+       WHERE id = $2`,
+      [JSON.stringify({ [partitaIva]: null }), jobId],
     );
   }
 }

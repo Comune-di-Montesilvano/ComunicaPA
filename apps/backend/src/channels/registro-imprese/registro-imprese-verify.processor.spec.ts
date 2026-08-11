@@ -55,3 +55,51 @@ describe('RegistroImpreseVerifyProcessor.process', () => {
     expect(mockJobRepo.query).not.toHaveBeenCalled();
   });
 });
+
+describe('RegistroImpreseVerifyProcessor.onFailed', () => {
+  let processor: RegistroImpreseVerifyProcessor;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    processor = new RegistroImpreseVerifyProcessor(mockRegistroImprese as any, mockJobRepo as any);
+  });
+
+  it('non scrive nulla se il job ritenterà ancora (attemptsMade < attempts)', async () => {
+    const job = {
+      name: VERIFY_PIVA_JOB_NAME,
+      data: { jobId: 'job-1', partitaIva: '12345678901' },
+      attemptsMade: 3,
+      opts: { attempts: 8 },
+    } as any;
+
+    await processor.onFailed(job);
+
+    expect(mockJobRepo.query).not.toHaveBeenCalled();
+  });
+
+  it('scrive pec:null e incrementa piva_done quando i tentativi sono esauriti (esito finale)', async () => {
+    const job = {
+      name: VERIFY_PIVA_JOB_NAME,
+      data: { jobId: 'job-1', partitaIva: '12345678901' },
+      attemptsMade: 8,
+      opts: { attempts: 8 },
+    } as any;
+
+    await processor.onFailed(job);
+
+    expect(mockJobRepo.query).toHaveBeenCalledWith(
+      expect.stringContaining('piva_done = piva_done + 1'),
+      [JSON.stringify({ '12345678901': null }), 'job-1'],
+    );
+    // Non deve toccare piva_found_count: un esaurimento retry non è mai "trovato".
+    const [sql] = mockJobRepo.query.mock.calls[0];
+    expect(sql).not.toContain('piva_found_count');
+  });
+
+  it('ignora job undefined o di un tipo diverso', async () => {
+    await processor.onFailed(undefined);
+    await processor.onFailed({ name: 'other-job', attemptsMade: 8, opts: { attempts: 8 } } as any);
+
+    expect(mockJobRepo.query).not.toHaveBeenCalled();
+  });
+});
