@@ -168,6 +168,30 @@ secondaryAppIo?: { subjectOverride?: string; bodyOverride?: string }
 
 Mappato da `ExternalApiService` su `channelConfig.secondaryChannels = [{ channel: 'APP_IO', mode: 'parallel', subjectOverride, bodyOverride }]` — stesso formato già risolto da `resolveSecondaryAppIoConfig()` (`secondary-channels.util.ts`), nessuna nuova logica di invio lato canale, solo nuovo punto di scrittura della config.
 
+## Addendum — regole subject/body per canale, parità con la UI wizard
+
+Investigazione mirata (durante l'implementazione, in fase di code review) su quale gate reale del wizard admin governa l'obbligatorietà di `subject`/`body` per ciascun canale, per garantire che `CreateExternalNotificationDto` rifiuti esattamente ciò che il wizard rifiuterebbe — nessuna divergenza silenziosa tra i due percorsi di creazione campagna.
+
+**Attenzione al gate giusto**: `ExternalApiService.createAndLaunch()` imposta sempre `channelConfig.wizSingleMode = true` — l'equivalente wizard di ogni chiamata esterna è **sempre** un invio singolo, mai bulk-CSV. In `wizSingleMode`, lo step "Template" (dove vive il gate più visibile, `App.tsx` righe ~10455-10469/10672-10686) viene **saltato del tutto per SEND e POSTAL** (`wizSingleNeedsTemplateStep = channelType==='EMAIL'||'PEC'||'APP_IO'`, `App.tsx:1855` — SEND/POSTAL esclusi). Il gate realmente eseguito per questi due canali in modalità singola è quello dei bottoni finali "Avvia Test"/"Conferma ed Avvia Campagna" (`App.tsx:11021`/`:11029`, duplicato `:11172`/`:11180`):
+
+```js
+disabled = wizSending || (wizSingleMode && !wizSingleNeedsTemplateStep && !wizSubject.trim())
+```
+
+Per SEND/POSTAL questo si riduce a `!wizSubject.trim()` **incondizionato** — un bug reale è stato inizialmente introdotto in questo stesso branch usando il gate step4 (mai raggiunto per questi canali), che rendeva `subject` opzionale per POSTAL invece che sempre obbligatorio. Qualunque futura modifica alle regole di contenuto per SEND/POSTAL deve partire da QUESTO gate, non dal gate step4/Riepilogo.
+
+### Tabella finale per canale (verificata riga per riga contro `App.tsx`)
+
+| Canale | `subject` | `body` | `secondaryAppIo` |
+|---|---|---|---|
+| EMAIL | obbligatorio | obbligatorio (lunghezza libera) | opzionale; se assente override, il fallback su subject/body principali deve rispettare comunque [10,120]/[80,10000] (vincolo PagoPA — `body` misurato su testo HTML-stripped, non caratteri di markup grezzi) |
+| PEC | obbligatorio | obbligatorio (lunghezza libera) | idem EMAIL |
+| APP_IO | obbligatorio, [10,120] | obbligatorio, [80,10000] su testo HTML-stripped | **rifiutato** — selettore mai renderizzato nel wizard per canale primario App IO |
+| SEND | obbligatorio (gate step6 single-mode) | **rifiutato se valorizzato** — campo mai renderizzato per SEND | **rifiutato** — n/a nel wizard |
+| POSTAL | **obbligatorio sempre** (gate step6 single-mode, incondizionato — non legato a `secondaryAppIo`) | **rifiutato se valorizzato** — POSTAL non ha mai contenuto testuale reale (l'invio è l'allegato) | opzionale; se presente, `subjectOverride`+`bodyOverride` **entrambi obbligatori** — non per parità wizard-gate stretta, ma perché senza override `app-io-delivery.service.ts` ricadrebbe su `channelConfig.body` (sempre assente per POSTAL) → stringa vuota → PagoPA rifiuta con HTTP 400 al momento dell'invio reale; bloccato qui in validazione invece di fallire asincronamente a valle |
+
+Lunghezza `body` misurata con `stripHtmlForLength()` (stessa regex del wizard, `wizPlainTextLength()`: strip tag HTML + `&nbsp;` + trim) — mai sui caratteri HTML grezzi, altrimenti un body con markup pesante e poco testo visibile passerebbe a torto sotto al minimo reale, o un body riccamente formattato verrebbe rifiutato sopra un massimo mai realmente raggiunto in testo visibile. `subject` resta misurato su `.length` grezzo (campo plain-text, non HTML).
+
 ## Specifica OpenAPI
 
 Il modulo `external-api` è l'unica superficie di questo backend pensata per essere consumata da terzi esterni senza contesto pregresso (a differenza di `admin/*`/`citizen/*`, integrati coi rispettivi frontend nello stesso repo) — richiede quindi una spec OpenAPI 3.x dedicata, non solo Swagger decorator generici:
