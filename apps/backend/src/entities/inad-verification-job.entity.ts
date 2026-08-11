@@ -43,6 +43,26 @@ export class InadVerificationJob {
   @Column({ name: 'not_found_count', type: 'int', default: 0 })
   notFoundCount!: number;
 
+  /** Totale Partite IVA da verificare via Registro Imprese per questo job (0 se il CSV non ne contiene). */
+  @Column({ name: 'piva_total', type: 'int', default: 0 })
+  pivaTotal!: number;
+
+  /** Quante verifiche PIVA sono già state completate (aggiornato dal processor Registro Imprese). */
+  @Column({ name: 'piva_done', type: 'int', default: 0 })
+  pivaDone!: number;
+
+  @Column({ name: 'piva_found_count', type: 'int', default: 0 })
+  pivaFoundCount!: number;
+
+  /**
+   * Chiave = Partita IVA, valore = PEC trovata o null se non trovata.
+   * Scritto SEMPRE con una UPDATE SQL raw che concatena jsonb (mai un
+   * read-modify-write sull'intera colonna) — job PIVA paralleli sullo stesso
+   * InadVerificationJob altrimenti perderebbero scritture in race.
+   */
+  @Column({ name: 'piva_results', type: 'jsonb', default: {} })
+  pivaResults!: Record<string, string | null>;
+
   /** Contenuto raw del CSV caricato, riparsato al completamento per costruire i CSV di risultato. */
   @Column({ name: 'source_csv', type: 'text' })
   sourceCsv!: string;
