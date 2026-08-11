@@ -417,6 +417,16 @@ lato wizard: `wizAppIoSubjectLenInvalid`/`APP_IO_SUBJECT_MIN`/`_MAX`
 (`App.tsx`), stesso pattern del check body esistente
 (`wizAppIoBodyLenInvalid`).
 
+**Check di "campo vuoto" su testo HTML deve stripare i tag PRIMA di
+contare, non solo il vincolo di lunghezza.** Il wizard usa
+`isWizBodyEmpty()`/`.trim()` post-strip-HTML per decidere se un
+subject/body è vuoto — un check basato su `value.length === 0` grezzo (o
+solo `.trim()` senza strip HTML) accetta `"   "` come subject valido o
+`"<p></p>"` come body valido, che il wizard rifiuterebbe. Stessa funzione
+di strip va riusata sia per il bound di lunghezza sia per l'emptiness
+check — bug reale corretto: le due cose erano state implementate con
+criteri diversi.
+
 ## Wizard campagne — sync bozza/Recipient anticipato ad ogni "avanti"
 
 Dallo step2 in poi, ogni transizione "avanti" (bottoni, tab-click forward,
@@ -467,6 +477,18 @@ oltre lo step 3 è cliccabile in avanti — solo se CSV/mappatura non sono
 cambiati dall'ultimo sync. Il tab bar esistente (`App.tsx` "Steps
 Progress Header") permetteva SOLO click all'indietro prima di questa
 modifica — non dare per scontato che un salto in avanti "funzioni già".
+
+**`wizSingleMode` per SEND/POSTAL salta lo step Template — il gate reale
+per subject/body vive allo step finale, non al gate "Riepilogo".**
+`wizSingleNeedsTemplateStep = channel==='EMAIL'||'PEC'||'APP_IO'`
+(`App.tsx:1855`) esclude SEND/POSTAL dallo step Template in modalità
+singola — il gate step4 "Riepilogo" (`~10455-10469`) non viene MAI
+raggiunto per questi due canali. Il gate realmente eseguito è quello dei
+bottoni finali "Avvia Test"/"Conferma" (`~11021`/`11029`):
+`wizSingleMode && !wizSingleNeedsTemplateStep && !wizSubject.trim()` —
+incondizionato, nessun legame con altre opzioni del canale. Bug reale
+corretto: un'implementazione basata sul gate step4 aveva reso `subject`
+erroneamente opzionale per POSTAL.
 
 ## Wizard — bottoni "Avanti"/"Indietro" duplicati in cima e in fondo allo step
 
@@ -1441,3 +1463,26 @@ risposta, mai sullo status HTTP che Nest avrebbe realmente prodotto — emerso
 solo con un E2E che boota l'app e fa richieste HTTP vere (task 12). Ogni
 nuovo handler `@Post()` sotto `external/v1/*` va annotato esplicitamente,
 non assumere che il filtro di eccezioni copra anche il caso di successo.
+
+## multer diskStorage — esegue PRIMA di ValidationPipe/ParseUUIDPipe/guard Nest, mai un raw throw dentro
+
+I callback `destination`/`filename` di `diskStorage` (multer) girano DURANTE
+il parsing del body multipart, prima che NestJS risolva `@Body()`/`@Param()`
+e prima che qualunque `ValidationPipe`/`ParseUUIDPipe` li validi — un
+`@IsUUID()` sul DTO o un `ParseUUIDPipe` sul param NON protegge un valore
+letto direttamente da `req.body`/`req.params` dentro quei callback. Bug
+reale ritrovato **4 volte consecutive** nella stessa sessione (stessa classe,
+endpoint diversi): `filename`/`uploadId`/`index`/route param `:id` letti
+grezzi dentro `destination`/`filename` e joinati in un path — path traversal
+verso scrittura file arbitraria, sempre scoperto solo con un E2E che boota
+l'app reale (mai da unit test che chiamano il controller direttamente).
+Fix: validare/sanitizzare (`basename()`, regex UUID) DENTRO il callback
+stesso, PRIMA di ogni `path.join`/`mkdirSync`/`copyFileSync`.
+
+**Un `throw` sincrono dentro quel callback NON va a un exception filter
+Nest — diventa un `uncaughtException` e crash dell'intero processo Node**
+(nessun `process.on('uncaughtException')` in questo repo). Mai lanciare:
+usare la convenzione di errore di multer, `cb(new BadRequestException(...), '')`.
+Pattern di riferimento: `safeChunkUploadDir()`/`isValidChunkIndex()` in
+`chunked-upload.util.ts` (mai throw, ritornano `null`) — usare quelle o lo
+stesso identico pattern per qualunque nuovo endpoint multer.
