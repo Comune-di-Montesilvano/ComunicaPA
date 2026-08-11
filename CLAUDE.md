@@ -1207,18 +1207,22 @@ instradamento/reporting vanno sempre su `diverted`, mai su `found` da solo.
 Riferimento completo, verificato contro il codice (non contro il manuale):
 [`docs/superpowers/specs/2026-07-17-matrice-comportamenti-campagne-design.md`](docs/superpowers/specs/2026-07-17-matrice-comportamenti-campagne-design.md).
 Consultare PRIMA di modificare comportamento canale/INAD/App IO
-secondaria/protocollo/allegato — evita di reintrodurre un caso già
-verificato o di romperne uno esistente.
+secondaria/protocollo/allegato/contenuto testuale — evita di reintrodurre
+un caso già verificato o di romperne uno esistente. Per obbligatorietà e
+vincoli di `subject`/`body` per canale (wizard singolo — attenzione, il
+gate reale per SEND/POSTAL non è quello più visibile, vedi sezione "Wizard
+campagne" sopra), doc dedicato:
+[`docs/superpowers/specs/2026-08-11-regole-subject-body-canale-design.md`](docs/superpowers/specs/2026-08-11-regole-subject-body-canale-design.md).
 
 Riassunto (dettaglio riga-per-riga nel file linkato):
 
-| Canale | App IO secondaria | INAD | Protocollo | Allegato |
-|---|---|---|---|---|
-| EMAIL | none/parallela/esclusiva¹ | sì → `channelType`=PEC + `recipient.pec`=indirizzo INAD | opzionale | opzionale |
-| PEC | none/parallela/esclusiva¹ | sì, se PEC INAD diversa → solo `recipient.pec` sovrascritto (stesso canale) | opzionale | opzionale |
-| POSTAL | none/parallela/esclusiva¹ | sì → `channelType`=PEC + `recipient.pec`=indirizzo INAD (skip stampa) | opzionale | **obbligatorio** |
-| APP_IO | n/a | sì → `channelType`=PEC (skip invio App IO) | opzionale | opzionale |
-| SEND | n/a (`isMailChannel` esclude SEND) | n/a (PN risolve da sé) | **obbligatorio** | **obbligatorio** |
+| Canale | App IO secondaria | INAD | Protocollo | Allegato | Contenuto (subject/body) |
+|---|---|---|---|---|---|
+| EMAIL | none/parallela/esclusiva¹ | sì → `channelType`=PEC + `recipient.pec`=indirizzo INAD | opzionale | opzionale | subject+body obbligatori |
+| PEC | none/parallela/esclusiva¹ | sì, se PEC INAD diversa → solo `recipient.pec` sovrascritto (stesso canale) | opzionale | opzionale | subject+body obbligatori |
+| POSTAL | none/parallela/esclusiva¹ | sì → `channelType`=PEC + `recipient.pec`=indirizzo INAD (skip stampa) | opzionale | **obbligatorio** | subject obbligatorio, body **rifiutato** |
+| APP_IO | n/a | sì → `channelType`=PEC (skip invio App IO) | opzionale | opzionale | subject [10,120] + body [80,10000] obbligatori |
+| SEND | n/a (`isMailChannel` esclude SEND) | n/a (PN risolve da sé) | **obbligatorio** | **obbligatorio** | subject obbligatorio, body **rifiutato** |
 
 ¹ esclusiva → declassata a parallela per singolo destinatario se `diverted:true` (INAD vince sempre).
 
