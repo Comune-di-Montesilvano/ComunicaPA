@@ -25,21 +25,37 @@ const APP_IO_SUBJECT_MAX = 120;
 const APP_IO_BODY_MIN = 80;
 const APP_IO_BODY_MAX = 10000;
 
-// Canali per cui subject/body sono contenuto reale (vs POSTAL, dove il
-// contenuto notificato è negli allegati — vedi CLAUDE.md "POSTAL:
-// channelConfig.body/subject NON sono il contenuto reale inviato").
-const TEXT_REQUIRED_CHANNELS = ['EMAIL', 'PEC', 'APP_IO'];
-
 /**
- * Validatore custom invece di due @ValidateIf stackati sulla stessa
- * property: class-validator tratta OGNI @ValidateIf su una property come un
- * gate che va in AND con gli altri (vedi ValidationExecutor.performValidations
- * → conditionalValidations su TUTTI i metadata condizionali della property),
- * non un OR tra rami — due @ValidateIf con condizioni sul canale mutuamente
- * esclusive (es. una per APP_IO, una per EMAIL/PEC) si annullerebbero a
- * vicenda per QUALSIASI canale, saltando la validazione sempre. Un solo
- * validatore custom che branch-a internamente su channelType evita il
- * problema.
+ * Regole verificate contro il wizard reale (`apps/frontend-admin/src/App.tsx`,
+ * gate del bottone "Riepilogo" step4→5, righe ~10455-10467/10672-10684) —
+ * `createAndLaunch` imposta sempre `channelConfig.wizSingleMode = true`
+ * (external-api.service.ts), quindi l'equivalente wizard di ogni chiamata
+ * esterna è SEMPRE "invio singolo": il ramo `!wizSingleMode` di quelle
+ * condizioni è sempre falso, e questo file riflette la formula già
+ * semplificata per quel caso, non la formula generale bulk-CSV.
+ *
+ * subject ("Oggetto della Comunicazione"): il campo NON è mai nascosto in
+ * UI (input sempre renderizzato indipendentemente dal canale, riga ~10501),
+ * quindi è sempre di tipo stringa se presente. È obbligatorio (`!wizSubject`
+ * nel gate) per OGNI canale tranne POSTAL puro senza co-consegna App IO
+ * (unico bypass completo del gate, riga 10457/10674) — quindi obbligatorio
+ * anche per SEND (bug corretto qui: la versione precedente di questo file
+ * lo dava per opzionale) e per POSTAL quando è presente `secondaryAppIo`
+ * (il gate richiede `!wizSubject` incondizionatamente in quel ramo, anche
+ * se per POSTAL la differenziazione App IO è sempre forzata — riga 2279 —
+ * quindi quel valore di `subject` non finisce mai come contenuto reale
+ * dell'App IO co-consegnata: è comunque un campo obbligatorio nel wizard,
+ * non un'inferenza nostra).
+ *
+ * body ("Corpo del Messaggio"): il campo è strutturalmente ASSENTE dal DOM
+ * per SEND (sempre) e per POSTAL (sempre, in modalità wizSingleMode=true —
+ * riga 10514: la condizione che lo renderizzerebbe per POSTAL richiede
+ * `!wizSingleMode`, mai vero qui) — non solo facoltativo, proprio non
+ * inviabile dal chiamante reale del wizard. Per questi due canali il DTO
+ * quindi RIFIUTA un body valorizzato, non lo ignora silenziosamente (bonus
+ * "reject if channel doesn't use it" richiesto — qui l'evidenza UI è
+ * inequivocabile, a differenza del caso subject/POSTAL sopra). Obbligatorio
+ * per EMAIL/PEC/APP_IO (sempre renderizzato e richiesto per quei canali).
  */
 function IsValidChannelText(kind: 'subject' | 'body', validationOptions?: ValidationOptions): PropertyDecorator {
   return function (object: object, propertyName: string | symbol) {
@@ -51,11 +67,24 @@ function IsValidChannelText(kind: 'subject' | 'body', validationOptions?: Valida
       validator: {
         validate(value: unknown, args: ValidationArguments): boolean {
           const o = args.object as CreateExternalNotificationDto;
-          // POSTAL: il body reale sono gli allegati, subject/body non
-          // validati/richiesti qui, qualunque valore (anche assente) va bene.
-          if (o.channelType === 'POSTAL') return true;
 
-          const required = TEXT_REQUIRED_CHANNELS.includes(o.channelType);
+          if (kind === 'body' && (o.channelType === 'SEND' || o.channelType === 'POSTAL')) {
+            // Campo mai renderizzato in UI per questi due canali (vedi
+            // commento sopra) — un valore fornito è un dato che il canale
+            // non gestisce affatto, non un "opzionale ignorato".
+            return value === undefined;
+          }
+
+          if (kind === 'subject' && o.channelType === 'POSTAL') {
+            // Obbligatorio solo se presente co-consegna App IO
+            // (`secondaryAppIo`), facoltativo altrimenti — riflette
+            // esattamente il bypass del gate wizard (righe 10457/10674).
+            const required = !!o.secondaryAppIo;
+            if (value === undefined) return !required;
+            return typeof value === 'string' && value.length > 0;
+          }
+
+          const required = true; // EMAIL, PEC, APP_IO, SEND: sempre obbligatorio se si arriva qui
           if (value === undefined) return !required;
           if (typeof value !== 'string' || value.length === 0) return false;
 
@@ -67,12 +96,79 @@ function IsValidChannelText(kind: 'subject' | 'body', validationOptions?: Valida
         },
         defaultMessage(args: ValidationArguments): string {
           const o = args.object as CreateExternalNotificationDto;
+          if (kind === 'body' && (o.channelType === 'SEND' || o.channelType === 'POSTAL')) {
+            return `body non è gestito dal canale ${o.channelType} (il wizard non espone mai questo campo per questo canale) — non inviarlo`;
+          }
           if (o.channelType === 'APP_IO') {
             return kind === 'subject'
               ? `subject deve avere lunghezza tra ${APP_IO_SUBJECT_MIN} e ${APP_IO_SUBJECT_MAX} caratteri`
               : `body deve avere lunghezza tra ${APP_IO_BODY_MIN} e ${APP_IO_BODY_MAX} caratteri`;
           }
           return `${kind} obbligatorio (stringa non vuota) per canale ${o.channelType}`;
+        },
+      },
+    });
+  };
+}
+
+/**
+ * Regole per `secondaryAppIo` verificate contro il wizard reale:
+ *
+ * - Selettore App IO secondaria renderizzato SOLO per canale primario
+ *   EMAIL/PEC/POSTAL (App.tsx righe 369, 10584, 11073 — sempre gated
+ *   `wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel ===
+ *   'POSTAL'`): per APP_IO è ridondante (canale già App IO), per SEND non
+ *   esiste proprio (pipeline propria, escluso da `isMailChannel` — vedi
+ *   matrice comportamenti campagne). Quindi `secondaryAppIo` va RIFIUTATO
+ *   per questi due canali, non ignorato.
+ * - Per POSTAL, la differenziazione App IO è sempre forzata (App.tsx
+ *   useEffect riga 2279, perché POSTAL non ha un body "riusabile" — è
+ *   HTML da stampa, non testo per notifica push): `subjectOverride` e
+ *   `bodyOverride` sono quindi SEMPRE obbligatori quando `secondaryAppIo`
+ *   è presente per POSTAL, mai opzionali con fallback.
+ * - Per EMAIL/PEC, la differenziazione resta scelta del chiamante: se un
+ *   override manca, il testo App IO effettivamente inviato ricade sul
+ *   subject/body principale (stesso fallback di
+ *   `app-io-delivery.service.ts` righe 72/76: `override || channelConfig
+ *   subject/body`) — quel testo effettivo deve comunque rispettare i
+ *   vincoli PagoPA su content.subject/content.markdown (App.tsx
+ *   `wizAppIoSubjectLenInvalid`/`wizAppIoBodyLenInvalid`, righe 2106-2118),
+ *   non solo quando c'è un override esplicito.
+ */
+function IsValidSecondaryAppIo(validationOptions?: ValidationOptions): PropertyDecorator {
+  return function (object: object, propertyName: string | symbol) {
+    registerDecorator({
+      name: 'isValidSecondaryAppIo',
+      target: object.constructor,
+      propertyName: propertyName as string,
+      options: validationOptions,
+      validator: {
+        validate(value: unknown, args: ValidationArguments): boolean {
+          if (value === undefined) return true;
+          const o = args.object as CreateExternalNotificationDto;
+
+          if (o.channelType === 'APP_IO' || o.channelType === 'SEND') return false;
+
+          const v = value as SecondaryAppIoDto;
+
+          if (o.channelType === 'POSTAL' && (!v.subjectOverride || !v.bodyOverride)) return false;
+
+          const effSubject = v.subjectOverride ?? o.subject ?? '';
+          const effBody = v.bodyOverride ?? o.body ?? '';
+          if (effSubject.length < APP_IO_SUBJECT_MIN || effSubject.length > APP_IO_SUBJECT_MAX) return false;
+          if (effBody.length < APP_IO_BODY_MIN || effBody.length > APP_IO_BODY_MAX) return false;
+
+          return true;
+        },
+        defaultMessage(args: ValidationArguments): string {
+          const o = args.object as CreateExternalNotificationDto;
+          if (o.channelType === 'APP_IO' || o.channelType === 'SEND') {
+            return `secondaryAppIo non è disponibile per canale primario ${o.channelType} (co-consegna App IO applicabile solo a EMAIL/PEC/POSTAL)`;
+          }
+          if (o.channelType === 'POSTAL') {
+            return 'secondaryAppIo.subjectOverride e bodyOverride sono obbligatori per canale POSTAL (nessun testo riutilizzabile dal corpo della lettera)';
+          }
+          return `secondaryAppIo: oggetto/testo App IO effettivo (override o fallback su subject/body) deve rispettare i vincoli PagoPA — oggetto ${APP_IO_SUBJECT_MIN}-${APP_IO_SUBJECT_MAX} caratteri, testo ${APP_IO_BODY_MIN}-${APP_IO_BODY_MAX} caratteri`;
         },
       },
     });
@@ -129,6 +225,7 @@ export class CreateExternalNotificationDto {
    */
   @ValidateNested()
   @Type(() => SecondaryAppIoDto)
+  @IsValidSecondaryAppIo()
   @IsOptional()
   secondaryAppIo?: SecondaryAppIoDto;
 

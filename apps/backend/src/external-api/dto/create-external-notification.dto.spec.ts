@@ -56,6 +56,20 @@ describe('CreateExternalNotificationDto', () => {
     expect(errors.some((e) => e.property === 'codiceFiscale')).toBe(false);
   });
 
+  // --- APP_IO: subject/body obbligatori + vincoli di lunghezza PagoPA ---
+
+  it('APP_IO senza subject produce errore (obbligatorio)', async () => {
+    const { subject, ...payload } = base;
+    const errors = await validateDto({ ...payload, channelType: 'APP_IO', body: 'x'.repeat(80) });
+    expect(errors.some((e) => e.property === 'subject')).toBe(true);
+  });
+
+  it('APP_IO senza body produce errore (obbligatorio)', async () => {
+    const { body, ...payload } = base;
+    const errors = await validateDto({ ...payload, channelType: 'APP_IO', subject: 'oggetto valido di 12+' });
+    expect(errors.some((e) => e.property === 'body')).toBe(true);
+  });
+
   it('APP_IO con subject sotto i 10 caratteri produce errore', async () => {
     const errors = await validateDto({ ...base, channelType: 'APP_IO', subject: 'corto', body: 'x'.repeat(80) });
     expect(errors.some((e) => e.property === 'subject')).toBe(true);
@@ -106,6 +120,8 @@ describe('CreateExternalNotificationDto', () => {
     expect(errors.some((e) => e.property === 'body')).toBe(true);
   });
 
+  // --- EMAIL/PEC: subject/body sempre obbligatori, nessun vincolo di lunghezza ---
+
   it('EMAIL senza subject produce errore', async () => {
     const { subject, ...payload } = base;
     const errors = await validateDto(payload);
@@ -145,16 +161,78 @@ describe('CreateExternalNotificationDto', () => {
     expect(errors.some((e) => e.property === 'body')).toBe(true);
   });
 
-  it('SEND senza subject/body non produce errore (opzionali per SEND)', async () => {
+  it('PEC con subject/body non stringa (numero) produce errore', async () => {
+    const errors = await validateDto({
+      ...base,
+      channelType: 'PEC',
+      pec: 'test@pec.it',
+      email: undefined,
+      subject: 111,
+      body: 222,
+    });
+    expect(errors.some((e) => e.property === 'subject')).toBe(true);
+    expect(errors.some((e) => e.property === 'body')).toBe(true);
+  });
+
+  it('APP_IO con subject/body non stringa (numero) produce errore', async () => {
+    const errors = await validateDto({ ...base, channelType: 'APP_IO', subject: 111, body: 222 });
+    expect(errors.some((e) => e.property === 'subject')).toBe(true);
+    expect(errors.some((e) => e.property === 'body')).toBe(true);
+  });
+
+  it('POSTAL con subject non stringa (numero) produce errore (type-check anche se opzionale)', async () => {
+    const { body, ...rest } = base;
+    const errors = await validateDto({
+      ...rest,
+      channelType: 'POSTAL',
+      attachments: [{ token: '123e4567-e89b-12d3-a456-426614174000' }],
+      subject: 333,
+    });
+    expect(errors.some((e) => e.property === 'subject')).toBe(true);
+  });
+
+  // --- SEND: subject sempre obbligatorio (bug corretto: prima era opzionale
+  // come per POSTAL); body strutturalmente non gestito, mai renderizzato in
+  // UI per questo canale — un valore fornito è un errore, non un opzionale
+  // ignorato ---
+
+  it('SEND senza subject produce errore (obbligatorio, come nel wizard)', async () => {
     const { subject, body, ...rest } = base;
-    const errors = await validateDto({ ...rest, channelType: 'SEND', protocolla: true, attachments: [{ token: '123e4567-e89b-12d3-a456-426614174000' }] });
+    const errors = await validateDto({
+      ...rest,
+      channelType: 'SEND',
+      protocolla: true,
+      attachments: [{ token: '123e4567-e89b-12d3-a456-426614174000' }],
+    });
+    expect(errors.some((e) => e.property === 'subject')).toBe(true);
+  });
+
+  it('SEND con subject valido e senza body non produce errore (body opzionale/non gestito)', async () => {
+    const { body, ...rest } = base;
+    const errors = await validateDto({
+      ...rest,
+      channelType: 'SEND',
+      protocolla: true,
+      attachments: [{ token: '123e4567-e89b-12d3-a456-426614174000' }],
+    });
     expect(errors.some((e) => e.property === 'subject')).toBe(false);
     expect(errors.some((e) => e.property === 'body')).toBe(false);
   });
 
-  it('SEND con subject non stringa produce comunque errore (type-check anche se opzionale)', async () => {
+  it('SEND con body valorizzato produce errore (campo non gestito da questo canale)', async () => {
     const errors = await validateDto({
       ...base,
+      channelType: 'SEND',
+      protocolla: true,
+      attachments: [{ token: '123e4567-e89b-12d3-a456-426614174000' }],
+    });
+    expect(errors.some((e) => e.property === 'body')).toBe(true);
+  });
+
+  it('SEND con subject non stringa produce comunque errore (type-check anche se il campo è obbligatorio)', async () => {
+    const { body, ...rest } = base;
+    const errors = await validateDto({
+      ...rest,
       channelType: 'SEND',
       protocolla: true,
       attachments: [{ token: '123e4567-e89b-12d3-a456-426614174000' }],
@@ -162,6 +240,11 @@ describe('CreateExternalNotificationDto', () => {
     });
     expect(errors.some((e) => e.property === 'subject')).toBe(true);
   });
+
+  // --- POSTAL: subject/body facoltativi (il contenuto reale sono gli
+  // allegati), tranne subject che diventa obbligatorio quando è presente
+  // secondaryAppIo (stesso gate incondizionato del wizard); body sempre
+  // rifiutato se valorizzato, mai renderizzato in UI per questo canale ---
 
   it('POSTAL senza subject/body non produce errore su subject/body (contenuto reale sono gli allegati)', async () => {
     const { subject, body, ...rest } = base;
@@ -174,18 +257,52 @@ describe('CreateExternalNotificationDto', () => {
     expect(errors.some((e) => e.property === 'body')).toBe(false);
   });
 
+  it('POSTAL con body valorizzato produce errore (campo non gestito da questo canale)', async () => {
+    const errors = await validateDto({
+      ...base,
+      channelType: 'POSTAL',
+      attachments: [{ token: '123e4567-e89b-12d3-a456-426614174000' }],
+    });
+    expect(errors.some((e) => e.property === 'body')).toBe(true);
+  });
+
+  it('POSTAL con secondaryAppIo ma senza subject produce errore (gate wizard incondizionato)', async () => {
+    const { subject, body, ...rest } = base;
+    const errors = await validateDto({
+      ...rest,
+      channelType: 'POSTAL',
+      attachments: [{ token: '123e4567-e89b-12d3-a456-426614174000' }],
+      secondaryAppIo: { subjectOverride: 'x'.repeat(15), bodyOverride: 'x'.repeat(90) },
+    });
+    expect(errors.some((e) => e.property === 'subject')).toBe(true);
+  });
+
+  it('POSTAL con secondaryAppIo e subject presente non produce errore su subject', async () => {
+    const { body, ...rest } = base;
+    const errors = await validateDto({
+      ...rest,
+      channelType: 'POSTAL',
+      attachments: [{ token: '123e4567-e89b-12d3-a456-426614174000' }],
+      secondaryAppIo: { subjectOverride: 'x'.repeat(15), bodyOverride: 'x'.repeat(90) },
+    });
+    expect(errors.some((e) => e.property === 'subject')).toBe(false);
+  });
+
   it('SEND senza protocolla=true produce errore', async () => {
-    const errors = await validateDto({ ...base, channelType: 'SEND', attachments: [{ token: 't1' }], protocolla: false });
+    const { body, ...rest } = base;
+    const errors = await validateDto({ ...rest, channelType: 'SEND', attachments: [{ token: 't1' }], protocolla: false });
     expect(errors.some((e) => e.property === 'protocolla')).toBe(true);
   });
 
   it('SEND senza attachments produce errore', async () => {
-    const errors = await validateDto({ ...base, channelType: 'SEND', protocolla: true, attachments: [] });
+    const { body, ...rest } = base;
+    const errors = await validateDto({ ...rest, channelType: 'SEND', protocolla: true });
     expect(errors.some((e) => e.property === 'attachments')).toBe(true);
   });
 
   it('POSTAL senza attachments produce errore', async () => {
-    const errors = await validateDto({ ...base, channelType: 'POSTAL', attachments: [] });
+    const { body, ...rest } = base;
+    const errors = await validateDto({ ...rest, channelType: 'POSTAL', attachments: [] });
     expect(errors.some((e) => e.property === 'attachments')).toBe(true);
   });
 
@@ -195,18 +312,89 @@ describe('CreateExternalNotificationDto', () => {
   });
 
   it('SEND con attachments del tutto omesso produce errore', async () => {
-    const errors = await validateDto({ ...base, channelType: 'SEND', protocolla: true });
+    const { body, ...rest } = base;
+    const errors = await validateDto({ ...rest, channelType: 'SEND', protocolla: true });
     expect(errors.some((e) => e.property === 'attachments')).toBe(true);
   });
 
-  it('secondaryAppIo valido (parallel, campi opzionali) non produce errori', async () => {
-    const errors = await validateDto({ ...base, secondaryAppIo: { subjectOverride: 'oggetto valido' } });
+  // --- secondaryAppIo: disponibile solo per EMAIL/PEC/POSTAL, con vincoli
+  // di lunghezza PagoPA sul testo effettivamente inviato (override, o
+  // fallback su subject/body principali se l'override manca) ---
+
+  it('secondaryAppIo valido (parallel, override entro i limiti) non produce errori', async () => {
+    const errors = await validateDto({
+      ...base,
+      secondaryAppIo: { subjectOverride: 'oggetto valido App IO', bodyOverride: 'x'.repeat(80) },
+    });
     expect(errors).toHaveLength(0);
   });
 
-  it('SEND/POSTAL valido con attachments popolato non produce errori', async () => {
+  it('secondaryAppIo senza override ricade su subject/body principali: se troppo corti per App IO produce errore', async () => {
+    // base.body è ~29 caratteri, sotto la soglia minima App IO (80)
+    const errors = await validateDto({ ...base, secondaryAppIo: {} });
+    expect(errors.some((e) => e.property === 'secondaryAppIo')).toBe(true);
+  });
+
+  it('secondaryAppIo senza override ricade su subject/body principali: se abbastanza lunghi non produce errori', async () => {
     const errors = await validateDto({
       ...base,
+      subject: 'Oggetto abbastanza lungo per App IO',
+      body: 'x'.repeat(80),
+      secondaryAppIo: {},
+    });
+    expect(errors).toHaveLength(0);
+  });
+
+  it('secondaryAppIo per canale APP_IO primario produce errore (ridondante, non disponibile nel wizard)', async () => {
+    const errors = await validateDto({
+      ...base,
+      channelType: 'APP_IO',
+      subject: 'x'.repeat(20),
+      body: 'x'.repeat(80),
+      secondaryAppIo: { subjectOverride: 'x'.repeat(15), bodyOverride: 'x'.repeat(90) },
+    });
+    expect(errors.some((e) => e.property === 'secondaryAppIo')).toBe(true);
+  });
+
+  it('secondaryAppIo per canale SEND produce errore (non disponibile nel wizard, pipeline propria)', async () => {
+    const { body, ...rest } = base;
+    const errors = await validateDto({
+      ...rest,
+      channelType: 'SEND',
+      protocolla: true,
+      attachments: [{ token: '123e4567-e89b-12d3-a456-426614174000' }],
+      secondaryAppIo: { subjectOverride: 'x'.repeat(15), bodyOverride: 'x'.repeat(90) },
+    });
+    expect(errors.some((e) => e.property === 'secondaryAppIo')).toBe(true);
+  });
+
+  it('secondaryAppIo per canale POSTAL senza override produce errore (differenziazione sempre forzata)', async () => {
+    const { subject, body, ...rest } = base;
+    const errors = await validateDto({
+      ...rest,
+      channelType: 'POSTAL',
+      attachments: [{ token: '123e4567-e89b-12d3-a456-426614174000' }],
+      subject: 'Oggetto POSTAL',
+      secondaryAppIo: {},
+    });
+    expect(errors.some((e) => e.property === 'secondaryAppIo')).toBe(true);
+  });
+
+  it('secondaryAppIo per canale POSTAL con override completi ed entro i limiti non produce errore su secondaryAppIo', async () => {
+    const { body, ...rest } = base;
+    const errors = await validateDto({
+      ...rest,
+      channelType: 'POSTAL',
+      attachments: [{ token: '123e4567-e89b-12d3-a456-426614174000' }],
+      secondaryAppIo: { subjectOverride: 'x'.repeat(15), bodyOverride: 'x'.repeat(90) },
+    });
+    expect(errors.some((e) => e.property === 'secondaryAppIo')).toBe(false);
+  });
+
+  it('SEND/POSTAL valido con attachments popolato non produce errori', async () => {
+    const { body, ...rest } = base;
+    const errors = await validateDto({
+      ...rest,
       channelType: 'SEND',
       protocolla: true,
       attachments: [{ token: '123e4567-e89b-12d3-a456-426614174000', label: 'Atto' }],
@@ -215,8 +403,9 @@ describe('CreateExternalNotificationDto', () => {
   });
 
   it('attachments con token non-UUID (es. path traversal) produce errore', async () => {
+    const { body, ...rest } = base;
     const errors = await validateDto({
-      ...base,
+      ...rest,
       channelType: 'SEND',
       protocolla: true,
       attachments: [{ token: '../other-client/some-token' }],
@@ -225,8 +414,9 @@ describe('CreateExternalNotificationDto', () => {
   });
 
   it('attachments con token generico non-UUID produce errore', async () => {
+    const { subject, body, ...rest } = base;
     const errors = await validateDto({
-      ...base,
+      ...rest,
       channelType: 'POSTAL',
       attachments: [{ token: 'not-a-uuid' }],
     });

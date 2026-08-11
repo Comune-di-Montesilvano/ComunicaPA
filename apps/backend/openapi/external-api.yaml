@@ -176,6 +176,8 @@ paths:
                   codiceFiscale: RSSMRA80A01H501U
                   email: cittadino@example.com
                   extraData: {}
+                  subject: Avviso scadenza TARI 2026
+                  body: Gentile cittadino, la informiamo che...
               send_completo:
                 summary: SEND — con allegato obbligatorio e protocollo
                 value:
@@ -184,6 +186,7 @@ paths:
                   extraData: { indirizzo: Via Roma 1, cap: '00100', citta: Roma, provincia: RM }
                   attachments: [{ token: 3fbb1e2a-...-token, label: Atto notificato }]
                   protocolla: true
+                  subject: Notifica atto — Comune di Montesilvano
               email_con_app_io_parallela:
                 summary: EMAIL con co-consegna App IO parallela
                 value:
@@ -191,7 +194,9 @@ paths:
                   codiceFiscale: RSSMRA80A01H501U
                   email: cittadino@example.com
                   extraData: {}
-                  secondaryAppIo: { subjectOverride: 'Hai una nuova comunicazione', bodyOverride: 'Consulta la PEC per i dettagli.' }
+                  subject: Avviso scadenza TARI 2026
+                  body: Gentile cittadino, la informiamo che...
+                  secondaryAppIo: { subjectOverride: 'Hai una nuova comunicazione', bodyOverride: 'Ti abbiamo inviato una comunicazione via email. Consulta la tua casella di posta per leggerne il contenuto completo.' }
       responses:
         '200':
           description: sempre 200 — vedi `success` per l'esito reale
@@ -255,22 +260,43 @@ components:
         subject:
           type: string
           description: >
-            obbligatorio (stringa non vuota) per EMAIL/PEC/APP_IO — per
-            APP_IO lunghezza [10,120]. Opzionale per SEND (se presente deve
-            comunque essere una stringa non vuota). Non usato per POSTAL
-            (il contenuto reale notificato sono gli allegati, non
-            subject/body).
+            Regole verificate contro il wizard admin reale (ogni chiamata
+            esterna equivale a un invio singolo — vedi
+            CLAUDE.md/design doc). Obbligatorio (stringa non vuota) per
+            EMAIL/PEC/APP_IO/SEND — per APP_IO lunghezza [10,120].
+            Facoltativo per POSTAL, TRANNE quando è presente
+            `secondaryAppIo`: in quel caso è obbligatorio anche per POSTAL
+            (il wizard lo richiede incondizionatamente non appena la
+            co-consegna App IO è attiva, anche se per POSTAL il valore non
+            diventa mai il testo App IO effettivo — vedi `secondaryAppIo`
+            sotto). Non è mai il contenuto notificato reale per POSTAL (gli
+            allegati lo sono).
         body:
           type: string
           description: >
-            obbligatorio (stringa non vuota) per EMAIL/PEC/APP_IO — per
-            APP_IO lunghezza [80,10000]. Opzionale per SEND (se presente deve
-            comunque essere una stringa non vuota). Non usato per POSTAL.
+            Obbligatorio (stringa non vuota) per EMAIL/PEC/APP_IO — per
+            APP_IO lunghezza [80,10000]. NON supportato da SEND né da
+            POSTAL: il wizard admin non espone mai questo campo per questi
+            due canali (SEND: l'allegato è l'unico contenuto; POSTAL: la
+            lettera è generata dagli allegati, non da HTML) — inviare un
+            valore qui per SEND/POSTAL produce un errore di validazione,
+            non viene ignorato silenziosamente.
         secondaryAppIo:
           type: object
           description: >
-            co-consegna App IO in parallelo (mai esclusiva — vedi GET
-            /domicilio/cerca per risolvere il canale reale a monte)
+            Co-consegna App IO in parallelo (mai esclusiva — vedi GET
+            /domicilio/cerca per risolvere il canale reale a monte).
+            Disponibile SOLO per canale primario EMAIL/PEC/POSTAL — errore
+            di validazione se presente con channelType=APP_IO (ridondante,
+            canale già App IO) o SEND (pipeline propria, mai esposto nel
+            wizard per questo canale). Per POSTAL, `subjectOverride` e
+            `bodyOverride` sono entrambi OBBLIGATORI se l'oggetto è
+            presente (POSTAL non ha un corpo "riusabile" per una notifica
+            push, il wizard forza sempre la differenziazione). Per
+            EMAIL/PEC sono facoltativi: se assenti, il testo App IO
+            effettivamente inviato ricade sul `subject`/`body` principali
+            — che in tal caso devono comunque rispettare i vincoli PagoPA
+            di lunghezza (oggetto [10,120], testo [80,10000]).
           properties:
             subjectOverride: { type: string }
             bodyOverride: { type: string }
