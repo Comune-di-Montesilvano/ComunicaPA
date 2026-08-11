@@ -44,6 +44,41 @@ describe('InadVerifyBulkService.createJob', () => {
     expect(mockJobRepo.update).toHaveBeenCalledWith('job-1', { status: InadVerificationJobStatus.PROCESSING, batches: [] });
   });
 
+  it('un enqueueVerify fallito su una PIVA non blocca il job: le altre PIVA restano accodate', async () => {
+    const csv = 'cf\n12345678901\n98765432109\n11111111111\n';
+    mockRegistroImpreseQueue.enqueueVerify.mockImplementation(async (_jobId: string, piva: string) => {
+      if (piva === '98765432109') throw new Error('coda temporaneamente giù');
+    });
+
+    const result = await service.createJob({ csvContent: csv, hasHeaders: true, cfColumn: 'cf' });
+
+    expect(result.jobId).toBe('job-1');
+    expect(mockRegistroImpreseQueue.enqueueVerify).toHaveBeenCalledTimes(3);
+    expect(mockRegistroImpreseQueue.enqueueVerify).toHaveBeenCalledWith('job-1', '12345678901');
+    expect(mockRegistroImpreseQueue.enqueueVerify).toHaveBeenCalledWith('job-1', '11111111111');
+    expect(mockJobRepo.update).toHaveBeenCalledWith('job-1', { status: InadVerificationJobStatus.PROCESSING, batches: [] });
+  });
+
+  it('un chunk startBulkExtraction fallito non blocca il job: gli altri chunk restano avviati', async () => {
+    const cfs = Array.from({ length: 1500 }, (_, i) => `V${String(i).padStart(15, '0')}`);
+    const csv = 'cf\n' + cfs.join('\n') + '\n';
+    let call = 0;
+    mockInad.startBulkExtraction.mockImplementation(async () => {
+      call++;
+      if (call === 1) throw new Error('INAD non disponibile');
+      return { id: 'batch-2' };
+    });
+
+    const result = await service.createJob({ csvContent: csv, hasHeaders: true, cfColumn: 'cf' });
+
+    expect(result.jobId).toBe('job-1');
+    expect(mockInad.startBulkExtraction).toHaveBeenCalledTimes(2);
+    expect(mockJobRepo.update).toHaveBeenCalledWith('job-1', {
+      status: InadVerificationJobStatus.PROCESSING,
+      batches: [{ id: 'batch-2', size: 500, done: false }],
+    });
+  });
+
   it('blocca se non ci sono né CF validi né Partite IVA valide', async () => {
     const csv = 'cf\nnonvalido\n';
 

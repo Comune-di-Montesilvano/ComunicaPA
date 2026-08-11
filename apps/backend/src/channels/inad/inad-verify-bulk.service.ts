@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { InadVerificationJob, InadVerificationJobStatus, InadVerificationBatch } from '../../entities/inad-verification-job.entity';
@@ -46,6 +46,8 @@ export interface InadBulkVerifyStatus {
  */
 @Injectable()
 export class InadVerifyBulkService {
+  private readonly logger = new Logger(InadVerifyBulkService.name);
+
   constructor(
     @InjectRepository(InadVerificationJob)
     private readonly jobRepo: Repository<InadVerificationJob>,
@@ -90,23 +92,45 @@ export class InadVerifyBulkService {
     });
     const saved = await this.jobRepo.save(job);
 
-    try {
-      const batches: InadVerificationBatch[] = [];
-      for (let i = 0; i < validCfs.length; i += BATCH_SIZE) {
-        const chunk = validCfs.slice(i, i + BATCH_SIZE);
+    // Ogni chunk INAD e ogni PIVA vanno tentati indipendentemente: un fallimento
+    // isolato (es. coda temporaneamente giù) non deve annullare il job intero e
+    // orfanizzare i batch/enqueue già avviati con successo dalle iterazioni
+    // precedenti, nello stesso loop o nell'altro.
+    const chunkCount = Math.ceil(validCfs.length / BATCH_SIZE);
+    const totalAttempts = chunkCount + pivaValues.length;
+    let succeededAttempts = 0;
+    let lastError: any = null;
+
+    const batches: InadVerificationBatch[] = [];
+    for (let i = 0; i < validCfs.length; i += BATCH_SIZE) {
+      const chunk = validCfs.slice(i, i + BATCH_SIZE);
+      try {
         const { id } = await this.inadService.startBulkExtraction(chunk, `comunicapa-verifica-${saved.id}`);
         batches.push({ id, size: chunk.length, done: false });
+        succeededAttempts++;
+      } catch (err: any) {
+        lastError = err;
+        this.logger.warn(`Job ${saved.id}: startBulkExtraction fallito per un chunk (${chunk.length} CF): ${err.message}`);
       }
-      for (const piva of pivaValues) {
+    }
+    for (const piva of pivaValues) {
+      try {
         await this.registroImpreseQueue.enqueueVerify(saved.id, piva);
+        succeededAttempts++;
+      } catch (err: any) {
+        lastError = err;
+        this.logger.warn(`Job ${saved.id}: enqueueVerify fallito per PIVA ${piva}: ${err.message}`);
       }
-      await this.jobRepo.update(saved.id, { status: InadVerificationJobStatus.PROCESSING, batches });
-    } catch (err: any) {
+    }
+
+    if (totalAttempts > 0 && succeededAttempts === 0) {
       await this.jobRepo.update(saved.id, {
         status: InadVerificationJobStatus.FAILED,
-        errorMessage: err.message,
+        errorMessage: lastError?.message ?? 'Errore sconosciuto',
         completedAt: new Date(),
       });
+    } else {
+      await this.jobRepo.update(saved.id, { status: InadVerificationJobStatus.PROCESSING, batches });
     }
 
     return { jobId: saved.id };
