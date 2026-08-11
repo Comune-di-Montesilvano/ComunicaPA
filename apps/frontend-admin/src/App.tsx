@@ -2226,6 +2226,8 @@ export function App(): React.JSX.Element {
   >(null);
   const [settInipecTestPurposeId, setSettInipecTestPurposeId] = useState('');
   const [settInipecProdPurposeId, setSettInipecProdPurposeId] = useState('');
+  const [settRegistroImpreseTestPurposeId, setSettRegistroImpreseTestPurposeId] = useState('');
+  const [settRegistroImpreseProdPurposeId, setSettRegistroImpreseProdPurposeId] = useState('');
   const [settAnprC002PurposeId, setSettAnprC002PurposeId] = useState('');
   const [settAnprC019PurposeId, setSettAnprC019PurposeId] = useState('');
   const [settAnprTracingUserLocation, setSettAnprTracingUserLocation] = useState('');
@@ -2581,6 +2583,8 @@ export function App(): React.JSX.Element {
         setSettInadProdPurposeId(String(s['inad.prod.purposeId'] ?? ''));
         setSettInipecTestPurposeId(String(s['inipec.test.purposeId'] ?? ''));
         setSettInipecProdPurposeId(String(s['inipec.prod.purposeId'] ?? ''));
+        setSettRegistroImpreseTestPurposeId(String(s['registroImprese.test.purposeId'] ?? ''));
+        setSettRegistroImpreseProdPurposeId(String(s['registroImprese.prod.purposeId'] ?? ''));
         setSettAnprC002PurposeId(String(s['anpr.c002.purposeId'] ?? ''));
         setSettAnprC019PurposeId(String(s['anpr.c019.purposeId'] ?? ''));
         setSettAnprTracingUserLocation(String(s['anpr.trackingUserLocation'] ?? 'comunicapa-backend'));
@@ -3782,6 +3786,8 @@ export function App(): React.JSX.Element {
     'inad.prod.purposeId': settInadProdPurposeId,
     'inipec.test.purposeId': settInipecTestPurposeId,
     'inipec.prod.purposeId': settInipecProdPurposeId,
+    'registroImprese.test.purposeId': settRegistroImpreseTestPurposeId,
+    'registroImprese.prod.purposeId': settRegistroImpreseProdPurposeId,
     'anpr.c002.purposeId': settAnprC002PurposeId,
     'anpr.c019.purposeId': settAnprC019PurposeId,
     'anpr.trackingUserLocation': settAnprTracingUserLocation,
@@ -12368,6 +12374,12 @@ export function App(): React.JSX.Element {
 
                   {verificaInadBulkJobId && verificaInadBulkStatus && (
                     <div>
+                      {verificaInadBulkStatus.status !== 'failed' && verificaInadBulkStatus.errorMessage && (
+                        <div className="alert alert-warning small">
+                          Attenzione: {verificaInadBulkStatus.errorMessage}
+                        </div>
+                      )}
+
                       {(verificaInadBulkStatus.status === 'queued' || verificaInadBulkStatus.status === 'processing') && (
                         <>
                           <p className="small text-muted mb-2">
@@ -13971,6 +13983,31 @@ export function App(): React.JSX.Element {
                                     )}
                                   </>
                                 )}
+                              </fieldset>
+                            ))}
+                            <hr className="my-4" />
+                            <div className="alert alert-info small mb-3">
+                              Per le Partite IVA (11 cifre) la verifica del domicilio digitale passa dal
+                              Registro Imprese via PDND, non da INAD.
+                            </div>
+                            {([
+                              { label: 'Collaudo (UAT)', prefix: 'test' as const,
+                                purposeId: settRegistroImpreseTestPurposeId, setPurposeId: setSettRegistroImpreseTestPurposeId },
+                              { label: 'Produzione', prefix: 'prod' as const,
+                                purposeId: settRegistroImpreseProdPurposeId, setPurposeId: setSettRegistroImpreseProdPurposeId },
+                            ]).map((e) => (
+                              <fieldset key={`registro-imprese-${e.prefix}`} className="border rounded p-3 mb-3">
+                                <legend className="float-none w-auto px-2 small fw-bold text-dark">Registro Imprese — {e.label}</legend>
+                                <div className="mb-1">
+                                  <label className="form-label small fw-semibold text-muted" htmlFor={`registro_imprese_${e.prefix}_purposeid`}>Purpose ID</label>
+                                  <input
+                                    type="text"
+                                    id={`registro_imprese_${e.prefix}_purposeid`}
+                                    className="form-control form-control-sm"
+                                    value={e.purposeId}
+                                    onChange={(ev) => e.setPurposeId(ev.target.value)}
+                                  />
+                                </div>
                               </fieldset>
                             ))}
                           </div>
