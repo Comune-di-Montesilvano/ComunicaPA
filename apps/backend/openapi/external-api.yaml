@@ -1,0 +1,291 @@
+openapi: 3.0.3
+info:
+  title: ComunicaPA — API esterna caricamento puntuale
+  version: 1.0.0
+  description: >
+    API per sistemi PA esterni per lanciare una notifica puntuale (un
+    destinatario per chiamata) su un canale ComunicaPA (EMAIL/PEC/APP_IO/
+    SEND/POSTAL). Tutte le risposte sono SEMPRE HTTP 200: l'esito è
+    espresso nel campo `success` del body, mai nello status code (un
+    reverse proxy esterno in produzione sostituisce il body delle risposte
+    non-2xx con una pagina HTML propria).
+servers:
+  - url: /api/external/v1
+security:
+  - apiKey: []
+paths:
+  /capabilities:
+    get:
+      summary: Discovery — canali e opzioni realmente configurati su questa istanza
+      responses:
+        '200':
+          description: sempre 200
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  channels:
+                    type: object
+                    properties:
+                      EMAIL: { $ref: '#/components/schemas/ChannelCapability' }
+                      PEC: { $ref: '#/components/schemas/ChannelCapability' }
+                      APP_IO: { $ref: '#/components/schemas/ChannelCapability' }
+                      SEND:
+                        allOf:
+                          - $ref: '#/components/schemas/ChannelCapability'
+                          - type: object
+                            properties:
+                              enabledTaxonomyCodes: { type: array, items: { type: string } }
+                              requiresGroup: { type: boolean }
+                      POSTAL:
+                        allOf:
+                          - $ref: '#/components/schemas/ChannelCapability'
+                          - type: object
+                            properties:
+                              enabledServiceTypes: { type: array, items: { type: string } }
+                              contratti:
+                                type: array
+                                items:
+                                  type: object
+                                  properties:
+                                    codiceContratto: { type: string }
+                                    descrizione: { type: string }
+                                    tipologia: { type: string }
+                                    estero: { type: boolean }
+                  appIoSecondary:
+                    type: object
+                    properties:
+                      available: { type: boolean }
+  /domicilio/cerca:
+    post:
+      summary: >
+        Lookup domicilio digitale reale del destinatario (ANPR+INAD+App IO) —
+        da chiamare PRIMA di /notifications per scegliere channelType senza
+        rischio di dirottamento a sorpresa.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [codiceFiscale]
+              properties:
+                codiceFiscale: { type: string, pattern: '^[A-Za-z0-9]{16}$' }
+      responses:
+        '200':
+          description: sempre 200 — ogni fonte (INAD/App IO/ANPR) fallisce indipendentemente, mai un 500 totale
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      success: { type: boolean, example: true }
+                      codiceFiscale: { type: string }
+                      inad: { type: object }
+                      appIo: { type: object }
+                      anpr: { type: object }
+                      anprEsistenzaInVita: { type: object }
+                  - $ref: '#/components/schemas/ErrorResponse'
+  /attachments/upload/init:
+    post:
+      summary: Inizializza un upload allegato a chunk
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename, totalChunks]
+              properties:
+                filename: { type: string, example: avviso.pdf }
+                totalChunks: { type: integer, minimum: 1, example: 3 }
+      responses:
+        '200':
+          description: uploadId generato
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  uploadId: { type: string, format: uuid }
+  /attachments/upload/chunk:
+    post:
+      summary: Carica un singolo chunk (max 2MB, chunk client-side consigliato 512KB)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [uploadId, index, chunk]
+              properties:
+                uploadId: { type: string, format: uuid }
+                index: { type: integer, minimum: 0 }
+                chunk: { type: string, format: binary }
+      responses:
+        '200':
+          description: chunk ricevuto
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+  /attachments/upload/complete:
+    post:
+      summary: Assembla i chunk e restituisce il token allegato
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [uploadId]
+              properties:
+                uploadId: { type: string, format: uuid }
+      responses:
+        '200':
+          description: >
+            attachmentToken opaco, valido 24h e consumato al primo lancio
+            che lo referenzia — non riusabile su più chiamate.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  attachmentToken: { type: string, format: uuid }
+  /notifications:
+    post:
+      summary: Crea e lancia una notifica puntuale (asincrono — risposta immediata, stato via GET)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateNotificationRequest'
+            examples:
+              email_minimo:
+                summary: EMAIL — payload minimo
+                value:
+                  channelType: EMAIL
+                  codiceFiscale: RSSMRA80A01H501U
+                  email: cittadino@example.com
+                  extraData: {}
+              send_completo:
+                summary: SEND — con allegato obbligatorio e protocollo
+                value:
+                  channelType: SEND
+                  codiceFiscale: RSSMRA80A01H501U
+                  extraData: { indirizzo: Via Roma 1, cap: '00100', citta: Roma, provincia: RM }
+                  attachments: [{ token: 3fbb1e2a-...-token, label: Atto notificato }]
+                  protocolla: true
+              email_con_app_io_parallela:
+                summary: EMAIL con co-consegna App IO parallela
+                value:
+                  channelType: EMAIL
+                  codiceFiscale: RSSMRA80A01H501U
+                  email: cittadino@example.com
+                  extraData: {}
+                  secondaryAppIo: { subjectOverride: 'Hai una nuova comunicazione', bodyOverride: 'Consulta la PEC per i dettagli.' }
+      responses:
+        '200':
+          description: sempre 200 — vedi `success` per l'esito reale
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/LaunchSuccess'
+                  - $ref: '#/components/schemas/ErrorResponse'
+  /notifications/{campaignId}:
+    get:
+      summary: Stato di una notifica lanciata da questo client
+      parameters:
+        - name: campaignId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: >
+            sempre 200 — error.code NOT_FOUND sia per campagna inesistente
+            sia per campagna di un altro client (nessuna enumeration)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/StatusSuccess'
+                  - $ref: '#/components/schemas/ErrorResponse'
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+  schemas:
+    CreateNotificationRequest:
+      type: object
+      required: [channelType, codiceFiscale, extraData]
+      properties:
+        channelType: { type: string, enum: [PEC, EMAIL, APP_IO, SEND, POSTAL] }
+        codiceFiscale: { type: string, pattern: '^[A-Za-z0-9]{16}$' }
+        email: { type: string, description: obbligatorio se channelType=EMAIL e pec assente }
+        pec: { type: string, description: obbligatorio se channelType=PEC e email assente }
+        extraData:
+          type: object
+          additionalProperties: { type: string }
+          description: >
+            colonne aggiuntive canale-specifiche (es. indirizzo postale
+            completo per POSTAL) — il chiamante conosce le chiavi attese
+            dal canale scelto, il backend non deduce alcun mapping.
+        attachments:
+          type: array
+          description: obbligatorio (min 1) per SEND e POSTAL
+          items:
+            type: object
+            required: [token]
+            properties:
+              token: { type: string, format: uuid }
+              label: { type: string }
+        protocolla: { type: boolean, description: 'deve essere true per SEND' }
+        subject: { type: string, description: 'per APP_IO, lunghezza [10,120]' }
+        body: { type: string, description: 'per APP_IO, lunghezza [80,10000]' }
+        secondaryAppIo:
+          type: object
+          description: >
+            co-consegna App IO in parallelo (mai esclusiva — vedi GET
+            /domicilio/cerca per risolvere il canale reale a monte)
+          properties:
+            subjectOverride: { type: string }
+            bodyOverride: { type: string }
+    ChannelCapability:
+      type: object
+      properties:
+        active: { type: boolean }
+    LaunchSuccess:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        campaignId: { type: string, format: uuid }
+        status: { type: string, enum: [QUEUED] }
+    StatusSuccess:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        campaignId: { type: string, format: uuid }
+        status: { type: string, enum: [draft, checking_inad, queued, running, completed, failed, cancelled] }
+        channelType: { type: string, enum: [PEC, EMAIL, APP_IO, SEND, POSTAL] }
+    ErrorResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        error:
+          type: object
+          properties:
+            code: { type: string, enum: [UNAUTHORIZED, VALIDATION_ERROR, NOT_FOUND, LAUNCH_BLOCKED, INTERNAL_ERROR] }
+            message: { type: string }
+            details: {}
