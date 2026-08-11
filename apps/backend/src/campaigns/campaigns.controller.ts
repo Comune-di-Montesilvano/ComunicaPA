@@ -17,7 +17,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
-import { extname, join } from 'path';
+import { basename, extname, join } from 'path';
 import * as fs from 'fs';
 import type { Request, Response } from 'express';
 import type { JwtOperatorPayload } from '@comunicapa/shared-types';
@@ -36,7 +36,7 @@ import { TestSendDto } from './dto/test-send.dto';
 import { UpdateRecipientAddressDto } from './dto/update-recipient-address.dto';
 import { AttachPostalTrackingIdDto } from './dto/attach-postal-tracking-id.dto';
 import { UpdateCampaignContentDto } from './dto/update-campaign-content.dto';
-import { getUploadsDir } from '../attachments/attachment-paths';
+import { getUploadsDir, safeGetUploadsDir } from '../attachments/attachment-paths';
 import { buildNeverDownloadedCsv } from './never-downloaded-csv.util';
 import { buildDownloadReportCsv } from './download-report-csv.util';
 import { buildSendReportAttualeCsv, buildSendReportStoricoCsv } from './send-report-csv.util';
@@ -196,7 +196,16 @@ export class CampaignsController {
     FileInterceptor('file', {
       storage: diskStorage({
         destination: (req, _file, cb) => {
-          const dir = getUploadsDir(req.params['id'] as string);
+          // safeGetUploadsDir() mai un throw: dentro un callback diskStorage
+          // sincrono un throw grezzo sfugge come uncaughtException e abbatte
+          // l'intero processo Node (stesso principio già applicato a
+          // safeChunkUploadDir() — vedi chunked-upload.util.ts). `req.params['id']`
+          // raggiunge questo callback PRIMA di ParseUUIDPipe sull'handler.
+          const dir = safeGetUploadsDir(req.params['id']);
+          if (!dir) {
+            cb(new BadRequestException('id campagna non valido'), '');
+            return;
+          }
           fs.mkdirSync(dir, { recursive: true });
           cb(null, dir);
         },
@@ -316,12 +325,23 @@ export class CampaignsController {
     FilesInterceptor('files', 1000, {
       storage: diskStorage({
         destination: (req, _file, cb) => {
-          const dir = getUploadsDir(req.params['id'] as string);
+          // Stesso motivo di :id/recipients/draft-csv sopra — safeGetUploadsDir()
+          // mai un throw dentro un callback diskStorage sincrono.
+          const dir = safeGetUploadsDir(req.params['id']);
+          if (!dir) {
+            cb(new BadRequestException('id campagna non valido'), '');
+            return;
+          }
           fs.mkdirSync(dir, { recursive: true });
           cb(null, dir);
         },
         filename: (_req, file, cb) => {
-          cb(null, file.originalname);
+          // basename() neutralizza path traversal sul nome file caricato dal
+          // client (input non fidato) — stesso idioma già in uso in
+          // initChunkedUpload() (chunked-upload.util.ts) e branding.controller.ts:
+          // un originalname tipo "../../../../app/dist/main.js" senza
+          // sanitizzazione risolverebbe fuori dalla cartella di upload.
+          cb(null, basename(file.originalname));
         },
       }),
       fileFilter: (_req, file, cb) => {
