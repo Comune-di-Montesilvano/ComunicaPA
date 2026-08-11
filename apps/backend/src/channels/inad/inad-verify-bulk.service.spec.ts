@@ -30,7 +30,7 @@ describe('InadVerifyBulkService.createJob', () => {
     expect(mockRegistroImpreseQueue.enqueueVerify).toHaveBeenCalledWith('job-1', '98765432109');
     expect(mockRegistroImpreseQueue.enqueueVerify).toHaveBeenCalledTimes(2);
     expect(mockJobRepo.save).toHaveBeenCalledWith(expect.objectContaining({ pivaTotal: 2 }));
-    expect(mockJobRepo.update).toHaveBeenCalledWith('job-1', { status: InadVerificationJobStatus.PROCESSING, batches: [{ id: 'batch-1', size: 1, done: false }] });
+    expect(mockJobRepo.update).toHaveBeenCalledWith('job-1', { status: InadVerificationJobStatus.PROCESSING, batches: [{ id: 'batch-1', size: 1, done: false }], pivaTotal: 2 });
   });
 
   it('accetta un CSV con sole Partite IVA (nessun CF a 16 char)', async () => {
@@ -41,10 +41,10 @@ describe('InadVerifyBulkService.createJob', () => {
     expect(result.jobId).toBe('job-1');
     expect(mockInad.startBulkExtraction).not.toHaveBeenCalled();
     expect(mockRegistroImpreseQueue.enqueueVerify).toHaveBeenCalledWith('job-1', '12345678901');
-    expect(mockJobRepo.update).toHaveBeenCalledWith('job-1', { status: InadVerificationJobStatus.PROCESSING, batches: [] });
+    expect(mockJobRepo.update).toHaveBeenCalledWith('job-1', { status: InadVerificationJobStatus.PROCESSING, batches: [], pivaTotal: 1 });
   });
 
-  it('un enqueueVerify fallito su una PIVA non blocca il job: le altre PIVA restano accodate', async () => {
+  it('un enqueueVerify fallito su una PIVA non blocca il job: le altre PIVA restano accodate, pivaTotal riconciliato ed errorMessage impostato', async () => {
     const csv = 'cf\n12345678901\n98765432109\n11111111111\n';
     mockRegistroImpreseQueue.enqueueVerify.mockImplementation(async (_jobId: string, piva: string) => {
       if (piva === '98765432109') throw new Error('coda temporaneamente giù');
@@ -56,10 +56,17 @@ describe('InadVerifyBulkService.createJob', () => {
     expect(mockRegistroImpreseQueue.enqueueVerify).toHaveBeenCalledTimes(3);
     expect(mockRegistroImpreseQueue.enqueueVerify).toHaveBeenCalledWith('job-1', '12345678901');
     expect(mockRegistroImpreseQueue.enqueueVerify).toHaveBeenCalledWith('job-1', '11111111111');
-    expect(mockJobRepo.update).toHaveBeenCalledWith('job-1', { status: InadVerificationJobStatus.PROCESSING, batches: [] });
+    // pivaTotal riconciliato: 2 accodate con successo su 3, mai il pivaValues.length ottimistico (3) —
+    // altrimenti pivaDone (che si ferma a 2) non raggiungerebbe mai pivaTotal.
+    expect(mockJobRepo.update).toHaveBeenCalledWith('job-1', {
+      status: InadVerificationJobStatus.PROCESSING,
+      batches: [],
+      pivaTotal: 2,
+      errorMessage: expect.stringContaining('1 Partite IVA non accodate'),
+    });
   });
 
-  it('un chunk startBulkExtraction fallito non blocca il job: gli altri chunk restano avviati', async () => {
+  it('un chunk startBulkExtraction fallito non blocca il job: gli altri chunk restano avviati, errorMessage riporta il fallimento parziale', async () => {
     const cfs = Array.from({ length: 1500 }, (_, i) => `V${String(i).padStart(15, '0')}`);
     const csv = 'cf\n' + cfs.join('\n') + '\n';
     let call = 0;
@@ -76,7 +83,24 @@ describe('InadVerifyBulkService.createJob', () => {
     expect(mockJobRepo.update).toHaveBeenCalledWith('job-1', {
       status: InadVerificationJobStatus.PROCESSING,
       batches: [{ id: 'batch-2', size: 500, done: false }],
+      pivaTotal: 0,
+      errorMessage: expect.stringContaining('Batch INAD 1 fallito'),
     });
+  });
+
+  it('nessun fallimento parziale: pivaTotal riconciliato coincide col totale pianificato, nessun errorMessage', async () => {
+    const csv = 'cf\nRRANGL74M28R701V\n12345678901\n';
+    mockInad.startBulkExtraction.mockResolvedValue({ id: 'batch-1' });
+
+    await service.createJob({ csvContent: csv, hasHeaders: true, cfColumn: 'cf' });
+
+    const call = mockJobRepo.update.mock.calls.find(([, patch]: any) => patch.status === InadVerificationJobStatus.PROCESSING);
+    expect(call![1]).toEqual({
+      status: InadVerificationJobStatus.PROCESSING,
+      batches: [{ id: 'batch-1', size: 1, done: false }],
+      pivaTotal: 1,
+    });
+    expect(call![1].errorMessage).toBeUndefined();
   });
 
   it('blocca se non ci sono né CF validi né Partite IVA valide', async () => {

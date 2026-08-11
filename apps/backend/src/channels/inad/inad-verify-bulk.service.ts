@@ -100,9 +100,17 @@ export class InadVerifyBulkService {
     const totalAttempts = chunkCount + pivaValues.length;
     let succeededAttempts = 0;
     let lastError: any = null;
+    // Messaggi concisi per-chunk/per-lotto (non una riga per singolo CF/PIVA):
+    // un fallimento parziale non porta il job a FAILED (c'è comunque lavoro
+    // avviato con successo) ma va comunque segnalato, altrimenti gli
+    // identificativi mai accodati spariscono silenziosamente nel CSV "non
+    // trovati" come se fossero stati controllati davvero.
+    const partialFailures: string[] = [];
 
     const batches: InadVerificationBatch[] = [];
+    let chunkIndex = 0;
     for (let i = 0; i < validCfs.length; i += BATCH_SIZE) {
+      chunkIndex++;
       const chunk = validCfs.slice(i, i + BATCH_SIZE);
       try {
         const { id } = await this.inadService.startBulkExtraction(chunk, `comunicapa-verifica-${saved.id}`);
@@ -110,17 +118,33 @@ export class InadVerifyBulkService {
         succeededAttempts++;
       } catch (err: any) {
         lastError = err;
+        partialFailures.push(`Batch INAD ${chunkIndex} fallito (${chunk.length} CF): ${err.message}`);
         this.logger.warn(`Job ${saved.id}: startBulkExtraction fallito per un chunk (${chunk.length} CF): ${err.message}`);
       }
     }
+
+    // pivaSucceeded è il conteggio REALE di PIVA effettivamente accodate su
+    // BullMQ — mai il pivaTotal ottimistico calcolato prima del loop: se anche
+    // una sola enqueueVerify fallisce, quella PIVA non avrà mai un processor
+    // che incrementa piva_done, e pivaDone >= pivaTotal (il gate di
+    // completamento in InadVerifyBulkSyncService) non diventerebbe mai vero.
+    let pivaSucceeded = 0;
+    let pivaFailedCount = 0;
+    let lastPivaError: any = null;
     for (const piva of pivaValues) {
       try {
         await this.registroImpreseQueue.enqueueVerify(saved.id, piva);
         succeededAttempts++;
+        pivaSucceeded++;
       } catch (err: any) {
         lastError = err;
+        lastPivaError = err;
+        pivaFailedCount++;
         this.logger.warn(`Job ${saved.id}: enqueueVerify fallito per PIVA ${piva}: ${err.message}`);
       }
+    }
+    if (pivaFailedCount > 0) {
+      partialFailures.push(`${pivaFailedCount} Partite IVA non accodate: ${lastPivaError?.message ?? 'errore sconosciuto'}`);
     }
 
     if (totalAttempts > 0 && succeededAttempts === 0) {
@@ -130,7 +154,12 @@ export class InadVerifyBulkService {
         completedAt: new Date(),
       });
     } else {
-      await this.jobRepo.update(saved.id, { status: InadVerificationJobStatus.PROCESSING, batches });
+      await this.jobRepo.update(saved.id, {
+        status: InadVerificationJobStatus.PROCESSING,
+        batches,
+        pivaTotal: pivaSucceeded,
+        ...(partialFailures.length > 0 ? { errorMessage: partialFailures.join('; ') } : {}),
+      });
     }
 
     return { jobId: saved.id };
