@@ -64,21 +64,29 @@ export class PostalStatusSyncService {
   }
 
   /**
+   * Base query dei POSTAL con tracking ID e status SUCCESS — 3 condizioni
+   * condivise da getCandidatesQuery e getQueueHealth. Un solo punto di
+   * verità: chi lo cambia in futuro lo cambia qui una volta sola.
+   */
+  private getPostalSuccessWithTrackingQuery() {
+    return this.attemptRepo
+      .createQueryBuilder('attempt')
+      .where('attempt.channel_type = :ch', { ch: 'POSTAL' })
+      .andWhere('attempt.status = :status', { status: AttemptStatus.SUCCESS })
+      .andWhere('attempt.postal_tracking_id IS NOT NULL');
+  }
+
+  /**
    * Query dei candidati al poll GlobalCom — estratta da handleCron perché
    * riusata anche da getQueueHealth() (pannello "salute" della coda, tab
    * Motori). Un solo punto di verità sul filtro: chi lo cambia in futuro
    * lo cambia qui una volta sola, niente drift tra cron reale e pannello.
    */
   private getCandidatesQuery() {
-    return this.attemptRepo
-      .createQueryBuilder('attempt')
-      .where('attempt.channel_type = :ch', { ch: 'POSTAL' })
-      .andWhere('attempt.status = :status', { status: AttemptStatus.SUCCESS })
-      .andWhere('attempt.postal_tracking_id IS NOT NULL')
-      .andWhere(
-        '(attempt.postal_status IS NULL OR attempt.postal_status NOT IN (:...terminal) OR attempt.cost_cents IS NULL OR attempt.cost_cents = 0 OR attempt.postal_delivery_status IS NULL OR (attempt.postal_status = :eliminato AND attempt.postal_requeue_checked_at IS NULL))',
-        { terminal: TERMINAL_STATUSES, eliminato: 'Eliminato' },
-      );
+    return this.getPostalSuccessWithTrackingQuery().andWhere(
+      '(attempt.postal_status IS NULL OR attempt.postal_status NOT IN (:...terminal) OR attempt.cost_cents IS NULL OR attempt.cost_cents = 0 OR attempt.postal_delivery_status IS NULL OR (attempt.postal_status = :eliminato AND attempt.postal_requeue_checked_at IS NULL))',
+      { terminal: TERMINAL_STATUSES, eliminato: 'Eliminato' },
+    );
   }
 
   /**
@@ -87,28 +95,25 @@ export class PostalStatusSyncService {
    * girando bene o è bloccata?" (stessa colonna anti-starvation già usata
    * dall'ORDER BY del cron, vedi CLAUDE.md sui bug reali di starvation su
    * questo demone). oldestCandidateAgeMinutes: null a coda vuota.
+   *
+   * Unica query aggregata atomica per candidatesCount + oldest, non due
+   * separate (evita race condition tra le due: candidatesCount > 0 al primo
+   * giro ma coda vuotata dal cron prima del secondo giro).
    */
   async getQueueHealth(): Promise<PostalQueueHealth> {
-    const candidatesCount = await this.getCandidatesQuery().getCount();
+    // Query atomica: candidati + age del più vecchio in un unico round-trip.
+    const candidatesRaw = await this.getCandidatesQuery()
+      .select('COUNT(*)', 'count')
+      .addSelect('MIN(COALESCE(attempt.postal_last_checked_at, attempt.created_at))', 'oldest')
+      .getRawOne<{ count: string; oldest: string | null }>();
 
+    const candidatesCount = Number(candidatesRaw?.count ?? 0);
     let oldestCandidateAgeMinutes: number | null = null;
-    if (candidatesCount > 0) {
-      const raw = await this.getCandidatesQuery()
-        .select('COALESCE(attempt.postal_last_checked_at, attempt.created_at)', 'oldest')
-        .orderBy('COALESCE(attempt.postal_last_checked_at, attempt.created_at)', 'ASC')
-        .limit(1)
-        .getRawOne<{ oldest: string }>();
-      if (raw?.oldest) {
-        oldestCandidateAgeMinutes = Math.max(0, Math.floor((Date.now() - new Date(raw.oldest).getTime()) / 60000));
-      }
+    if (candidatesRaw?.oldest) {
+      oldestCandidateAgeMinutes = Math.max(0, Math.floor((Date.now() - new Date(candidatesRaw.oldest).getTime()) / 60000));
     }
 
-    const totalSentCount = await this.attemptRepo
-      .createQueryBuilder('attempt')
-      .where('attempt.channel_type = :ch', { ch: 'POSTAL' })
-      .andWhere('attempt.status = :status', { status: AttemptStatus.SUCCESS })
-      .andWhere('attempt.postal_tracking_id IS NOT NULL')
-      .getCount();
+    const totalSentCount = await this.getPostalSuccessWithTrackingQuery().getCount();
     const verifiedCount = Math.max(0, totalSentCount - candidatesCount);
 
     const errorCount = await this.attemptRepo

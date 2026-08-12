@@ -23,6 +23,7 @@ describe('PostalStatusSyncService', () => {
   function makeQueryBuilder(rows: any[]) {
     const qb: any = {
       select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
@@ -535,13 +536,11 @@ describe('PostalStatusSyncService', () => {
       service = module.get(PostalStatusSyncService);
     });
 
-    it('calcola candidati, età del più vecchio, verificati ed errori', async () => {
+    it('calcola candidati, età del più vecchio, verificati ed errori (atomica query candidates)', async () => {
       jest.useFakeTimers().setSystemTime(new Date('2026-08-12T12:00:00.000Z'));
 
-      const candidatesQb = makeQueryBuilder([{}, {}]);
-      candidatesQb.getCount.mockResolvedValue(2);
-      const oldestQb = makeQueryBuilder([]);
-      oldestQb.getRawOne.mockResolvedValue({ oldest: '2026-08-12T11:40:00.000Z' });
+      const candidatesQb = makeQueryBuilder([]);
+      candidatesQb.getRawOne.mockResolvedValue({ count: '2', oldest: '2026-08-12T11:40:00.000Z' });
       const totalSentQb = makeQueryBuilder([]);
       totalSentQb.getCount.mockResolvedValue(5);
       const errorQb = makeQueryBuilder([]);
@@ -549,7 +548,6 @@ describe('PostalStatusSyncService', () => {
 
       attemptRepo.createQueryBuilder
         .mockReturnValueOnce(candidatesQb)
-        .mockReturnValueOnce(oldestQb)
         .mockReturnValueOnce(totalSentQb)
         .mockReturnValueOnce(errorQb);
 
@@ -562,12 +560,16 @@ describe('PostalStatusSyncService', () => {
         errorCount: 1,
       });
 
+      // Verifica che candidatesQb abbia il select aggregato
+      expect(candidatesQb.select).toHaveBeenCalledWith('COUNT(*)', 'count');
+      expect(candidatesQb.addSelect).toHaveBeenCalled();
+
       jest.useRealTimers();
     });
 
-    it('ritorna oldestCandidateAgeMinutes null e verifiedCount 0 a coda vuota', async () => {
+    it('ritorna oldestCandidateAgeMinutes null e verifiedCount 0 a coda vuota (atomica query candidates)', async () => {
       const candidatesQb = makeQueryBuilder([]);
-      candidatesQb.getCount.mockResolvedValue(0);
+      candidatesQb.getRawOne.mockResolvedValue({ count: '0', oldest: null });
       const totalSentQb = makeQueryBuilder([]);
       totalSentQb.getCount.mockResolvedValue(0);
       const errorQb = makeQueryBuilder([]);
