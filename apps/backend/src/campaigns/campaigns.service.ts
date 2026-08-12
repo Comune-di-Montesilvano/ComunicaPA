@@ -2184,8 +2184,15 @@ export class CampaignsService {
       );
       if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
     } else if (sortBy === 'updatedAt') {
+      // notification_attempts non ha colonna updated_at (solo created_at,
+      // send_status_updated_at, postal_status_updated_at) — bug reale: la
+      // versione precedente referenziava na.updated_at, colonna inesistente,
+      // Postgres rigettava la query con HTTP 500 silenzioso lato frontend
+      // (nessun ordinamento visibile, nessun errore mostrato). sent_at è il
+      // fallback corretto per EMAIL/PEC/APP_IO (quando l'attempt è stato
+      // realmente inviato), created_at ultimo fallback (sempre presente).
       qb.orderBy(
-        `COALESCE((SELECT MAX(COALESCE(na.postal_status_updated_at, na.send_status_updated_at, na.updated_at)) FROM notification_attempts na WHERE na.recipient_id = r.id), r.created_at)`,
+        `COALESCE((SELECT MAX(COALESCE(na.postal_status_updated_at, na.send_status_updated_at, na.sent_at, na.created_at)) FROM notification_attempts na WHERE na.recipient_id = r.id), r.created_at)`,
         dir,
         'NULLS LAST',
       );
