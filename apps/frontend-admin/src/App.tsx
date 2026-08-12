@@ -2262,6 +2262,7 @@ export function App(): React.JSX.Element {
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>('personalizzazione');
   const [engines, setEngines] = useState<any[]>([]);
   const [sendStageCounts, setSendStageCounts] = useState<{ protocollato: number; inviato: number; fallito: number } | null>(null);
+  const [postalQueueHealth, setPostalQueueHealth] = useState<{ candidatesCount: number; oldestCandidateAgeMinutes: number | null; verifiedCount: number; errorCount: number } | null>(null);
   const [loadingEngines, setLoadingEngines] = useState(false);
   const [enginesError, setEnginesError] = useState<string | null>(null);
   const [engineJobsChannel, setEngineJobsChannel] = useState<string | null>(null);
@@ -3987,6 +3988,10 @@ export function App(): React.JSX.Element {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (stageRes.ok) setSendStageCounts(await stageRes.json());
+      const postalHealthRes = await fetch(`${ADMIN_API_BASE}/engines/postal/queue-health`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (postalHealthRes.ok) setPostalQueueHealth(await postalHealthRes.json());
     } catch (err: any) {
       setEnginesError(`Errore nel caricamento dei motori: ${err.message}`);
     } finally {
@@ -14666,7 +14671,8 @@ export function App(): React.JSX.Element {
                                 const completed = eng.counts?.completed ?? 0;
 
                                 return (
-                                  <div key={eng.channel} className={`card border shadow-sm ${eng.paused ? 'border-warning' : failed > 0 ? 'border-danger' : 'border-light'}`}>
+                                  <React.Fragment key={eng.channel}>
+                                  <div className={`card border shadow-sm ${eng.paused ? 'border-warning' : failed > 0 ? 'border-danger' : 'border-light'}`}>
                                     <div className="card-body p-3">
                                       <div className="d-flex justify-content-between align-items-start flex-wrap gap-2">
                                         <div className="d-flex align-items-center gap-3">
@@ -14719,7 +14725,11 @@ export function App(): React.JSX.Element {
                                           </div>
 
                                           <div>
-                                            {eng.paused ? (
+                                            {eng.pausable === false ? (
+                                              <span className={`badge ${total > 0 ? 'bg-primary' : 'bg-secondary'}`}>
+                                                {total > 0 ? <><Loader2 className="icon-spin me-1" />Attivo ({total})</> : <><Check className="me-1" />Idle</>}
+                                              </span>
+                                            ) : eng.paused ? (
                                               <div className="d-flex flex-column align-items-center gap-1">
                                                 <span className="badge bg-warning text-dark mb-1"><Pause className="me-1" />In Pausa</span>
                                                 <button
@@ -14750,6 +14760,7 @@ export function App(): React.JSX.Element {
                                         </div>
                                       </div>
 
+                                      {eng.pausable !== false && (
                                       <div className="mt-2">
                                         <button
                                           type="button"
@@ -14803,8 +14814,56 @@ export function App(): React.JSX.Element {
                                           </div>
                                         )}
                                       </div>
+                                      )}
                                     </div>
                                   </div>
+                                    {eng.channel === 'POSTAL' && postalQueueHealth && (() => {
+                                      const isStale = (postalQueueHealth.oldestCandidateAgeMinutes ?? 0) > 15;
+                                      return (
+                                        <div className={`card border shadow-sm ${isStale ? 'border-danger' : 'border-light'}`}>
+                                          <div className="card-body p-3">
+                                            <div className="d-flex align-items-center gap-3 mb-2">
+                                              <div
+                                                className="d-flex align-items-center justify-content-center rounded"
+                                                style={{ width: 44, height: 44, flexShrink: 0, background: isStale ? '#fff' : '#6c757d', border: isStale ? '2px solid #dc3545' : undefined }}
+                                              >
+                                                <Clock size={22} className={isStale ? 'text-danger' : 'text-white'} />
+                                              </div>
+                                              <div>
+                                                <div className="fw-bold text-dark">Verifica Stato POSTAL</div>
+                                                <div className="text-muted small">Interrogazione periodica GlobalCom per lo stato di consegna (demone schedulato)</div>
+                                              </div>
+                                              {isStale && (
+                                                <span className="badge bg-danger-subtle text-danger border border-danger-subtle ms-auto">
+                                                  <AlertTriangle className="me-1" size={14} />In ritardo
+                                                </span>
+                                              )}
+                                            </div>
+                                            <div className="d-flex gap-3 text-center">
+                                              <div>
+                                                <div className="fw-bold text-primary">{postalQueueHealth.candidatesCount}</div>
+                                                <div className="text-muted" style={{ fontSize: '0.7rem' }}>In coda</div>
+                                              </div>
+                                              <div>
+                                                <div className={`fw-bold ${isStale ? 'text-danger' : 'text-muted'}`}>
+                                                  {postalQueueHealth.oldestCandidateAgeMinutes === null ? '—' : `${postalQueueHealth.oldestCandidateAgeMinutes} min`}
+                                                </div>
+                                                <div className="text-muted" style={{ fontSize: '0.7rem' }}>Più vecchio in attesa da</div>
+                                              </div>
+                                              <div>
+                                                <div className="fw-bold text-success">{postalQueueHealth.verifiedCount}</div>
+                                                <div className="text-muted" style={{ fontSize: '0.7rem' }}>Verificato</div>
+                                              </div>
+                                              <div>
+                                                <div className={`fw-bold ${postalQueueHealth.errorCount > 0 ? 'text-danger' : 'text-muted'}`}>{postalQueueHealth.errorCount}</div>
+                                                <div className="text-muted" style={{ fontSize: '0.7rem' }}>Errore</div>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      );
+                                    })()}
+                                  </React.Fragment>
                                 );
                               })}
 
