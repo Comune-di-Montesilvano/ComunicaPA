@@ -75,6 +75,10 @@ docker compose rm -sf backend && docker volume rm comunicapa_backend_node_module
 
 Il nome del volume `node_modules` non sempre coincide col nome del servizio (es. `frontend-admin` → volume `comunicapa_admin_node_modules`, non `comunicapa_frontend-admin_node_modules`): verificare con `docker volume ls | grep node_modules` prima di eseguire `docker volume rm`.
 
+Stesso path-mangling anche su `docker compose exec <servizio> cat /path/assoluto`
+(non solo `-v`): prefissare `MSYS_NO_PATHCONV=1` a qualunque comando che passa
+un path unix assoluto come argomento a un container da Git Bash Windows.
+
 **Attenzione worktree/checkout paralleli — `docker-compose.yml` ha `name: comunicapa` fisso in cima al file.** Qualsiasi `docker compose` lanciato da QUALSIASI checkout/worktree di questo repo (anche una cartella diversa dalla principale) punta agli **stessi container condivisi** — non crea uno stack isolato, anche passando porte/env diversi. Un `docker compose up` da un worktree può silenziosamente ricreare in-place i container dev del checkout principale, ricollegandoli al codice del worktree (incidente reale già capitato). Se serve lavorare da un worktree/checkout secondario: **mai `docker compose`**, usare `docker run`/`docker exec` diretti sui container/volumi named già esistenti, es.:
 
 ```bash
@@ -1490,3 +1494,52 @@ usare la convenzione di errore di multer, `cb(new BadRequestException(...), '')`
 Pattern di riferimento: `safeChunkUploadDir()`/`isValidChunkIndex()` in
 `chunked-upload.util.ts` (mai throw, ritornano `null`) — usare quelle o lo
 stesso identico pattern per qualunque nuovo endpoint multer.
+
+## Sentry/GlitchTip — error tracking, gotcha reali
+
+`AllExceptionsFilter` (`src/common/all-exceptions.filter.ts`) DEVE estendere
+`BaseExceptionFilter` di NestJS (`super.catch(exception, host)`), mai
+reimplementare a mano status/body/logging — bug reale trovato solo dalla
+review finale whole-branch (i task review singoli non l'hanno preso): una
+reimplementazione manuale perdeva il branch `http-errors`
+(`PayloadTooLargeError`/413 diventava 500 generico, stesso incidente già
+documentato sopra per il body-parser) e il controllo `isHeadersSent`
+(rischio crash su handler `@Res()`/SSE che lanciano dopo aver già inviato
+risposta). `captureException` va chiamato solo per non-`HttpException` o
+status >=500 — stessa filosofia di `ExternalApiExceptionFilter`
+(INTERNAL_ERROR-only), altrimenti ogni 401/404 normale (bot scan su rotte
+pubbliche incluso) finisce su GlitchTip.
+
+`Sentry.init` con `@sentry/node` v8 installa di default
+`onUnhandledRejectionIntegration` in modalità `'warn'` — cambia il
+comportamento Node standard (crash → restart pulito via
+`restart: unless-stopped`) in "logga e continua". Va sempre passato
+esplicitamente `integrations: [Sentry.onUnhandledRejectionIntegration({ mode: 'strict' })]`
+per non alterare la semantica di crash solo perché l'observability è
+abilitata.
+
+Frontend: DSN va SOLO da `window.__COMUNICAPA_CONFIG__` runtime (mai
+`VITE_*`/`import.meta.env`, stesso principio già in vigore per `apiBase`
+— vedi sopra), iniettata dall'entrypoint nginx in prod. **In dev
+(`docker-compose.override.yml`, Vite dev server) l'entrypoint nginx non
+gira affatto** — `public/config.js` resta il placeholder statico committato
+(`sentryDsn: ''`), quindi Sentry è sempre disattivato in dev locale anche
+con una DSN valorizzata in `.env`; verificato solo buildando l'immagine
+prod reale (stesso principio già noto per `@comunicapa/shared-types`).
+`SENTRY_ENVIRONMENT` è un valore libero scelto dall'operatore (nome ente,
+può contenere spazi) — la validazione charset nell'entrypoint nginx deve
+ammettere lo spazio, altrimenti un valore plausibile blocca l'avvio del
+container frontend con `exit 1` mentre il backend (non validato) parte
+comunque. Il fallback del tag `environment` deve usare `||` non `??`:
+`docker-compose.yml` passa sempre la var (`${SENTRY_ENVIRONMENT:-}`, mai
+`undefined`), quindi `??` non scatta mai sulla stringa vuota — backend e
+frontend finiscono per taggare `environment` diversamente sulla stessa
+istanza.
+
+**Verifica manuale rapida della reachability DSN→GlitchTip** senza passare
+da un errore HTTP reale: `docker compose exec backend node -e "..."` che
+fa `Sentry.init(...)` con la DSN reale e chiama
+`Sentry.captureException(new Error(...))` poi `await Sentry.close(8000)` —
+ritorna `true`/`false` a seconda che il trasporto sia riuscito entro il
+timeout, utile per confermare auth/rete verso l'istanza GlitchTip prima di
+aspettare un errore applicativo vero.
