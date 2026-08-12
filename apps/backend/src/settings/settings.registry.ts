@@ -97,6 +97,11 @@ export const SETTING_DEFS = {
   'inad.prod.purposeId': { type: 'string', default: '' },
   'inipec.test.purposeId': { type: 'string', default: '' },
   'inipec.prod.purposeId': { type: 'string', default: '' },
+  // Registro Imprese (PCAD-PDND, Unioncamere) — sostituisce INIPEC come
+  // fonte del domicilio digitale d'impresa. Base URL fisse (vedi
+  // RegistroImpreseService), solo purposeId configurabile.
+  'registroImprese.test.purposeId': { type: 'string', default: '' },
+  'registroImprese.prod.purposeId': { type: 'string', default: '' },
   'anpr.c002.purposeId': { type: 'string', default: '' },
   'anpr.c019.purposeId': { type: 'string', default: '' },
   'anpr.trackingUserLocation': { type: 'string', default: 'comunicapa-backend' },

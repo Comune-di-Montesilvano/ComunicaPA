@@ -3,6 +3,8 @@ import { InadService, InadDigitalAddressElement } from '../inad/inad.service';
 import { IoServicesService } from '../../io-services/io-services.service';
 import { AnprService } from '../anpr/anpr.service';
 import type { AnprGeneralita, AnprResidenza, AnprInfoSoggettoEnte } from '../anpr/anpr.types';
+import { RegistroImpreseService } from '../registro-imprese/registro-imprese.service';
+import { isPartitaIva } from '../tax-id.util';
 
 export interface DomicilioInadResult {
   success: boolean;
@@ -33,19 +35,32 @@ export interface DomicilioEsistenzaInVitaResult {
   message?: string;
 }
 
+export interface DomicilioRegistroImpreseResult {
+  success: boolean;
+  found: boolean;
+  pec?: string;
+  denominazione?: string;
+  message?: string;
+}
+
 export interface DomicilioSearchResult {
   codiceFiscale: string;
-  inad: DomicilioInadResult;
-  appIo: DomicilioAppIoResult;
-  anpr: DomicilioAnprResult;
+  // Assenti (non interrogati) quando il valore è una Partita IVA — vedi
+  // registroImprese in quel caso.
+  inad?: DomicilioInadResult;
+  appIo?: DomicilioAppIoResult;
+  anpr?: DomicilioAnprResult;
   anprEsistenzaInVita?: DomicilioEsistenzaInVitaResult;
+  registroImprese?: DomicilioRegistroImpreseResult;
 }
 
 /**
  * Orchestratore "Cerca Domicilio": interroga INAD + App IO + ANPR in
- * parallelo per lo stesso CF. Nessuna persistenza — query live ogni volta.
- * Un fallimento di una fonte non deve azzerare le altre due già arrivate,
- * quindi ogni ramo cattura il proprio errore invece di propagarlo.
+ * parallelo per un CF persona fisica, oppure Registro Imprese (PDND) per una
+ * Partita IVA — mai entrambi gli insiemi di fonti per lo stesso input.
+ * Nessuna persistenza — query live ogni volta. Un fallimento di una fonte
+ * non deve azzerare le altre, quindi ogni ramo cattura il proprio errore
+ * invece di propagarlo.
  *
  * ANPR C019 (data decesso) è una finalità PDND separata da C002 — viene
  * interrogata SOLO se C002 ha già segnalato il soggetto deceduto (mai per
@@ -57,9 +72,14 @@ export class DomicilioService {
     private readonly inadService: InadService,
     private readonly ioServicesService: IoServicesService,
     private readonly anprService: AnprService,
+    private readonly registroImpreseService: RegistroImpreseService,
   ) {}
 
   async cercaDomicilio(codiceFiscale: string, operatorUsername: string): Promise<DomicilioSearchResult> {
+    if (isPartitaIva(codiceFiscale)) {
+      return this.cercaDomicilioImpresa(codiceFiscale);
+    }
+
     const [inad, appIo, anpr] = await Promise.allSettled([
       this.inadService.extractDigitalAddress(codiceFiscale),
       this.ioServicesService.verifyProfile(codiceFiscale),
@@ -105,5 +125,20 @@ export class DomicilioService {
     }
 
     return result;
+  }
+
+  private async cercaDomicilioImpresa(partitaIva: string): Promise<DomicilioSearchResult> {
+    try {
+      const dettaglio = await this.registroImpreseService.dettaglioImpresa(partitaIva);
+      return {
+        codiceFiscale: partitaIva,
+        registroImprese: { success: true, found: dettaglio.found, pec: dettaglio.pec, denominazione: dettaglio.denominazione },
+      };
+    } catch (error: any) {
+      return {
+        codiceFiscale: partitaIva,
+        registroImprese: { success: false, found: false, message: error?.message ?? 'Errore sconosciuto' },
+      };
+    }
   }
 }

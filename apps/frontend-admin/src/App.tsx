@@ -1380,9 +1380,10 @@ export function App(): React.JSX.Element {
   const [domicilioLoading, setDomicilioLoading] = useState(false);
   const [domicilioResult, setDomicilioResult] = useState<{
     codiceFiscale: string;
-    inad: { success: boolean; found: boolean; digitalAddress?: Array<{ digitalAddress: string; practicedProfession?: string }>; message?: string };
-    appIo: { success: boolean; active: boolean; message: string };
-    anpr: {
+    registroImprese?: { success: boolean; found: boolean; pec?: string; denominazione?: string; message?: string };
+    inad?: { success: boolean; found: boolean; digitalAddress?: Array<{ digitalAddress: string; practicedProfession?: string }>; message?: string };
+    appIo?: { success: boolean; active: boolean; message: string };
+    anpr?: {
       success: boolean;
       found: boolean;
       generalita?: {
@@ -2225,6 +2226,8 @@ export function App(): React.JSX.Element {
   >(null);
   const [settInipecTestPurposeId, setSettInipecTestPurposeId] = useState('');
   const [settInipecProdPurposeId, setSettInipecProdPurposeId] = useState('');
+  const [settRegistroImpreseTestPurposeId, setSettRegistroImpreseTestPurposeId] = useState('');
+  const [settRegistroImpreseProdPurposeId, setSettRegistroImpreseProdPurposeId] = useState('');
   const [settAnprC002PurposeId, setSettAnprC002PurposeId] = useState('');
   const [settAnprC019PurposeId, setSettAnprC019PurposeId] = useState('');
   const [settAnprTracingUserLocation, setSettAnprTracingUserLocation] = useState('');
@@ -2580,6 +2583,8 @@ export function App(): React.JSX.Element {
         setSettInadProdPurposeId(String(s['inad.prod.purposeId'] ?? ''));
         setSettInipecTestPurposeId(String(s['inipec.test.purposeId'] ?? ''));
         setSettInipecProdPurposeId(String(s['inipec.prod.purposeId'] ?? ''));
+        setSettRegistroImpreseTestPurposeId(String(s['registroImprese.test.purposeId'] ?? ''));
+        setSettRegistroImpreseProdPurposeId(String(s['registroImprese.prod.purposeId'] ?? ''));
         setSettAnprC002PurposeId(String(s['anpr.c002.purposeId'] ?? ''));
         setSettAnprC019PurposeId(String(s['anpr.c019.purposeId'] ?? ''));
         setSettAnprTracingUserLocation(String(s['anpr.trackingUserLocation'] ?? 'comunicapa-backend'));
@@ -3781,6 +3786,8 @@ export function App(): React.JSX.Element {
     'inad.prod.purposeId': settInadProdPurposeId,
     'inipec.test.purposeId': settInipecTestPurposeId,
     'inipec.prod.purposeId': settInipecProdPurposeId,
+    'registroImprese.test.purposeId': settRegistroImpreseTestPurposeId,
+    'registroImprese.prod.purposeId': settRegistroImpreseProdPurposeId,
     'anpr.c002.purposeId': settAnprC002PurposeId,
     'anpr.c019.purposeId': settAnprC019PurposeId,
     'anpr.trackingUserLocation': settAnprTracingUserLocation,
@@ -12367,6 +12374,12 @@ export function App(): React.JSX.Element {
 
                   {verificaInadBulkJobId && verificaInadBulkStatus && (
                     <div>
+                      {verificaInadBulkStatus.status !== 'failed' && verificaInadBulkStatus.errorMessage && (
+                        <div className="alert alert-warning small">
+                          Attenzione: {verificaInadBulkStatus.errorMessage}
+                        </div>
+                      )}
+
                       {(verificaInadBulkStatus.status === 'queued' || verificaInadBulkStatus.status === 'processing') && (
                         <>
                           <p className="small text-muted mb-2">
@@ -12461,7 +12474,34 @@ export function App(): React.JSX.Element {
               </div>
 
               {domicilioResult && (() => {
-                const anpr = domicilioResult.anpr;
+                if (domicilioResult.registroImprese) {
+                  const ri = domicilioResult.registroImprese;
+                  return (
+                    <div className={`card shadow-sm border-0 rounded-3 overflow-hidden ${
+                      !ri.success ? 'border-start border-4 border-danger' : !ri.found ? 'border-start border-4 border-secondary' : 'border-start border-4 border-success'
+                    }`}>
+                      <div className="card-header bg-light bg-gradient py-3 px-4 d-flex align-items-center gap-2 border-bottom-0">
+                        {!ri.success ? <AlertCircle className="text-danger" size={18} /> :
+                         !ri.found ? <XCircle className="text-secondary" size={18} /> :
+                         <CheckCircle2 className="text-success" size={18} />}
+                        <h6 className="fw-bold mb-0 text-dark">Registro Imprese</h6>
+                      </div>
+                      <div className="card-body p-4 bg-white">
+                        {!ri.success && <p className="small text-danger mb-0">{ri.message}</p>}
+                        {ri.success && !ri.found && <p className="small text-muted mb-0">Nessuna impresa trovata per questa Partita IVA</p>}
+                        {ri.success && ri.found && (
+                          <div className="d-flex flex-column gap-1">
+                            {ri.denominazione && <span className="fw-semibold">{ri.denominazione}</span>}
+                            {ri.pec && <span className="small text-muted">PEC: {ri.pec}</span>}
+                            {!ri.pec && <span className="small text-muted">Nessun domicilio digitale disponibile</span>}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+
+                const anpr = domicilioResult.anpr!;
                 const g = anpr.generalita;
                 const vitaInfo = anpr.infoSoggettoEnte?.find(i => (i.chiave ?? '').toLowerCase().includes('vita'));
                 const altreInfo = (anpr.infoSoggettoEnte ?? []).filter(i => i !== vitaInfo);
@@ -12617,28 +12657,28 @@ export function App(): React.JSX.Element {
                       {/* INAD */}
                       <div className="col-md-4">
                         <div className={`card shadow-sm border-0 rounded-3 h-100 d-flex flex-column ${
-                          !domicilioResult.inad.success ? 'border-start border-4 border-danger' :
-                          !domicilioResult.inad.found ? 'border-start border-4 border-secondary' : 'border-start border-4 border-success'
+                          !domicilioResult.inad!.success ? 'border-start border-4 border-danger' :
+                          !domicilioResult.inad!.found ? 'border-start border-4 border-secondary' : 'border-start border-4 border-success'
                         }`}>
                           <div className="card-header bg-light bg-gradient py-3 px-3 d-flex align-items-center justify-content-between border-bottom-0">
                             <div className="d-flex align-items-center gap-2">
-                              {!domicilioResult.inad.success ? <AlertCircle className="text-danger" size={16} /> :
-                               !domicilioResult.inad.found ? <XCircle className="text-secondary" size={16} /> :
+                              {!domicilioResult.inad!.success ? <AlertCircle className="text-danger" size={16} /> :
+                               !domicilioResult.inad!.found ? <XCircle className="text-secondary" size={16} /> :
                                <CheckCircle2 className="text-success" size={16} />}
                               <h6 className="fw-bold mb-0 text-dark small">INAD</h6>
                             </div>
-                            {domicilioResult.inad.success && (
-                              <span className={`badge rounded-pill ${domicilioResult.inad.found ? 'bg-success-subtle text-success border border-success-subtle' : 'bg-secondary-subtle text-secondary'}`}>
-                                {domicilioResult.inad.found ? 'Eletto' : 'Non Eletto'}
+                            {domicilioResult.inad!.success && (
+                              <span className={`badge rounded-pill ${domicilioResult.inad!.found ? 'bg-success-subtle text-success border border-success-subtle' : 'bg-secondary-subtle text-secondary'}`}>
+                                {domicilioResult.inad!.found ? 'Eletto' : 'Non Eletto'}
                               </span>
                             )}
                           </div>
                           <div className="card-body p-3 bg-white flex-grow-1">
-                            {!domicilioResult.inad.success && <p className="small text-danger mb-0">{domicilioResult.inad.message}</p>}
-                            {domicilioResult.inad.success && !domicilioResult.inad.found && <p className="small text-muted mb-0">Nessun domicilio digitale eletto</p>}
-                            {domicilioResult.inad.success && domicilioResult.inad.found && (
+                            {!domicilioResult.inad!.success && <p className="small text-danger mb-0">{domicilioResult.inad!.message}</p>}
+                            {domicilioResult.inad!.success && !domicilioResult.inad!.found && <p className="small text-muted mb-0">Nessun domicilio digitale eletto</p>}
+                            {domicilioResult.inad!.success && domicilioResult.inad!.found && (
                               <ul className="small mb-0 ps-3">
-                                {(domicilioResult.inad.digitalAddress ?? []).map((a, i) => (
+                                {(domicilioResult.inad!.digitalAddress ?? []).map((a, i) => (
                                   <li key={i} className="fw-medium font-monospace text-dark">{a.digitalAddress}</li>
                                 ))}
                               </ul>
@@ -12650,24 +12690,24 @@ export function App(): React.JSX.Element {
                       {/* App IO */}
                       <div className="col-md-4">
                         <div className={`card shadow-sm border-0 rounded-3 h-100 d-flex flex-column ${
-                          !domicilioResult.appIo.success ? 'border-start border-4 border-danger' :
-                          !domicilioResult.appIo.active ? 'border-start border-4 border-secondary' : 'border-start border-4 border-success'
+                          !domicilioResult.appIo!.success ? 'border-start border-4 border-danger' :
+                          !domicilioResult.appIo!.active ? 'border-start border-4 border-secondary' : 'border-start border-4 border-success'
                         }`}>
                           <div className="card-header bg-light bg-gradient py-3 px-3 d-flex align-items-center justify-content-between border-bottom-0">
                             <div className="d-flex align-items-center gap-2">
-                              {!domicilioResult.appIo.success ? <AlertCircle className="text-danger" size={16} /> :
-                               !domicilioResult.appIo.active ? <XCircle className="text-secondary" size={16} /> :
+                              {!domicilioResult.appIo!.success ? <AlertCircle className="text-danger" size={16} /> :
+                               !domicilioResult.appIo!.active ? <XCircle className="text-secondary" size={16} /> :
                                <CheckCircle2 className="text-success" size={16} />}
                               <h6 className="fw-bold mb-0 text-dark small">App IO</h6>
                             </div>
-                            {domicilioResult.appIo.success && (
-                              <span className={`badge rounded-pill ${domicilioResult.appIo.active ? 'bg-success-subtle text-success border border-success-subtle' : 'bg-secondary-subtle text-secondary'}`}>
-                                {domicilioResult.appIo.active ? 'Iscritto' : 'Non Iscritto'}
+                            {domicilioResult.appIo!.success && (
+                              <span className={`badge rounded-pill ${domicilioResult.appIo!.active ? 'bg-success-subtle text-success border border-success-subtle' : 'bg-secondary-subtle text-secondary'}`}>
+                                {domicilioResult.appIo!.active ? 'Iscritto' : 'Non Iscritto'}
                               </span>
                             )}
                           </div>
                           <div className="card-body p-3 bg-white flex-grow-1">
-                            <p className="small text-muted mb-0">{domicilioResult.appIo.message}</p>
+                            <p className="small text-muted mb-0">{domicilioResult.appIo!.message}</p>
                           </div>
                         </div>
                       </div>
@@ -13943,6 +13983,31 @@ export function App(): React.JSX.Element {
                                     )}
                                   </>
                                 )}
+                              </fieldset>
+                            ))}
+                            <hr className="my-4" />
+                            <div className="alert alert-info small mb-3">
+                              Per le Partite IVA (11 cifre) la verifica del domicilio digitale passa dal
+                              Registro Imprese via PDND, non da INAD.
+                            </div>
+                            {([
+                              { label: 'Collaudo (UAT)', prefix: 'test' as const,
+                                purposeId: settRegistroImpreseTestPurposeId, setPurposeId: setSettRegistroImpreseTestPurposeId },
+                              { label: 'Produzione', prefix: 'prod' as const,
+                                purposeId: settRegistroImpreseProdPurposeId, setPurposeId: setSettRegistroImpreseProdPurposeId },
+                            ]).map((e) => (
+                              <fieldset key={`registro-imprese-${e.prefix}`} className="border rounded p-3 mb-3">
+                                <legend className="float-none w-auto px-2 small fw-bold text-dark">Registro Imprese — {e.label}</legend>
+                                <div className="mb-1">
+                                  <label className="form-label small fw-semibold text-muted" htmlFor={`registro_imprese_${e.prefix}_purposeid`}>Purpose ID</label>
+                                  <input
+                                    type="text"
+                                    id={`registro_imprese_${e.prefix}_purposeid`}
+                                    className="form-control form-control-sm"
+                                    value={e.purposeId}
+                                    onChange={(ev) => e.setPurposeId(ev.target.value)}
+                                  />
+                                </div>
                               </fieldset>
                             ))}
                           </div>
