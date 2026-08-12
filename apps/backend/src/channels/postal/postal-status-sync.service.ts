@@ -105,7 +105,7 @@ export class PostalStatusSyncService {
     const candidatesRaw = await this.getCandidatesQuery()
       .select('COUNT(*)', 'count')
       .addSelect('MIN(COALESCE(attempt.postal_last_checked_at, attempt.created_at))', 'oldest')
-      .getRawOne<{ count: string; oldest: string | null }>();
+      .getRawOne<{ count: string; oldest: Date | string | null }>();
 
     const candidatesCount = Number(candidatesRaw?.count ?? 0);
     let oldestCandidateAgeMinutes: number | null = null;

@@ -2433,6 +2433,19 @@ export function App(): React.JSX.Element {
     return () => clearInterval(timer);
   }, [token, view]);
 
+  // Salute coda POSTAL: pannello visibile solo nella tab Motori — fetch/polling
+  // dedicato, mai parte del giro fetchEngines() del dashboard (vedi
+  // fetchPostalQueueHealth sopra). Fetch immediato all'apertura tab + polling
+  // 5s (stessa cadenza del dashboard) finché la tab resta attiva.
+  useEffect(() => {
+    if (!token || view !== 'impostazioni' || activeSettingsTab !== 'motori') return;
+    fetchPostalQueueHealth();
+    const timer = setInterval(() => {
+      fetchPostalQueueHealth();
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [token, view, activeSettingsTab]);
+
   // Stesso problema del dettaglio campagna: il modale "Dettaglio Notifica"
   // (openNotificationDetail) fetchava una volta sola all'apertura — restava
   // fermo sullo stato del tentativo (es. "In corso") anche a consegna
@@ -3988,14 +4001,26 @@ export function App(): React.JSX.Element {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (stageRes.ok) setSendStageCounts(await stageRes.json());
-      const postalHealthRes = await fetch(`${ADMIN_API_BASE}/engines/postal/queue-health`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (postalHealthRes.ok) setPostalQueueHealth(await postalHealthRes.json());
     } catch (err: any) {
       setEnginesError(`Errore nel caricamento dei motori: ${err.message}`);
     } finally {
       setLoadingEngines(false);
+    }
+  };
+
+  // Estratto da fetchEngines: la salute coda POSTAL è visibile solo nella tab
+  // Motori (mai sulla dashboard) — fetch dedicato, mai dentro il polling
+  // dashboard-wide di fetchEngines (3 query aggregate non indicizzate su
+  // notification_attempts, inutili se il pannello non è a schermo).
+  const fetchPostalQueueHealth = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${ADMIN_API_BASE}/engines/postal/queue-health`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) setPostalQueueHealth(await res.json());
+    } catch {
+      // silenzioso: pannello secondario, non deve bloccare/segnalare errore sulla tab Motori
     }
   };
 
@@ -8290,7 +8315,7 @@ export function App(): React.JSX.Element {
                       {(() => {
                         const displayEngines = [...engines];
                         if (!displayEngines.some((e) => (e.channel || '').toUpperCase() === 'SEND')) {
-                          const sendWaiting = ((sendStageCounts as any)?.inCoda ?? 0) + (sendStageCounts?.protocollato ?? 0);
+                          const sendWaiting = sendStageCounts?.protocollato ?? 0;
                           displayEngines.push({
                             channel: 'SEND',
                             paused: false,
@@ -14846,7 +14871,11 @@ export function App(): React.JSX.Element {
                                               </div>
                                               <div>
                                                 <div className={`fw-bold ${isStale ? 'text-danger' : 'text-muted'}`}>
-                                                  {postalQueueHealth.oldestCandidateAgeMinutes === null ? '—' : `${postalQueueHealth.oldestCandidateAgeMinutes} min`}
+                                                  {postalQueueHealth.oldestCandidateAgeMinutes === null
+                                                    ? '—'
+                                                    : postalQueueHealth.oldestCandidateAgeMinutes >= 60
+                                                      ? `${Math.floor(postalQueueHealth.oldestCandidateAgeMinutes / 60)}h ${postalQueueHealth.oldestCandidateAgeMinutes % 60}m`
+                                                      : `${postalQueueHealth.oldestCandidateAgeMinutes} min`}
                                                 </div>
                                                 <div className="text-muted" style={{ fontSize: '0.7rem' }}>Più vecchio in attesa da</div>
                                               </div>
