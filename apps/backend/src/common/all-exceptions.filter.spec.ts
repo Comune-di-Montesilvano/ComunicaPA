@@ -1,4 +1,4 @@
-import { ArgumentsHost, HttpStatus, NotFoundException } from '@nestjs/common';
+import { ArgumentsHost, HttpStatus, Logger, NotFoundException } from '@nestjs/common';
 import { AllExceptionsFilter } from './all-exceptions.filter';
 import * as sentryUtil from './sentry.util';
 
@@ -38,5 +38,22 @@ describe('AllExceptionsFilter', () => {
     filter.catch(genericErr, host);
     expect(sentryUtil.captureException).toHaveBeenNthCalledWith(1, httpErr);
     expect(sentryUtil.captureException).toHaveBeenNthCalledWith(2, genericErr);
+  });
+
+  it('per errore generico loga message e stack come default Nest', () => {
+    const loggerErrorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    const { host } = makeHost();
+    const error = new Error('test boom');
+    filter.catch(error, host);
+    expect(loggerErrorSpy).toHaveBeenCalledWith(error.message, error.stack);
+    loggerErrorSpy.mockRestore();
+  });
+
+  it('per errore non-Error (valore primitivo) loga il valore stringificato', () => {
+    const loggerErrorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    const { host } = makeHost();
+    filter.catch('errore primitivo', host);
+    expect(loggerErrorSpy).toHaveBeenCalledWith('errore primitivo');
+    loggerErrorSpy.mockRestore();
   });
 });
