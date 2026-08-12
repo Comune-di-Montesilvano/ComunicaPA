@@ -3,7 +3,7 @@ import { Footer } from './components/Footer';
 
 declare global {
   interface Window {
-    __COMUNICAPA_CONFIG__?: { apiBase?: string };
+    __COMUNICAPA_CONFIG__?: { apiBase?: string; sentryDsn?: string; sentryEnvironment?: string };
   }
 }
 
