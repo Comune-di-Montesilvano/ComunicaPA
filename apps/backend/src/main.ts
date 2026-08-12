@@ -7,6 +7,7 @@ import * as Sentry from '@sentry/node';
 import { AppModule } from './app.module';
 import type { AppConfiguration } from './config/configuration';
 import { assertProductionSecrets } from './config/production-guards';
+import { AllExceptionsFilter } from './common/all-exceptions.filter';
 
 // docker-compose.yml passa già LOG_LEVEL al container (default 'info'), ma
 // finora nessun codice lo leggeva: il default NestJS esclude 'debug'/
@@ -67,6 +68,8 @@ async function bootstrap(): Promise<void> {
       transform: true,
     }),
   );
+
+  app.useGlobalFilters(new AllExceptionsFilter());
 
   app.enableCors({
     origin: [
