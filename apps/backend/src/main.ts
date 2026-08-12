@@ -3,6 +3,7 @@ import { ValidationPipe, type LogLevel } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
 import { mkdirSync } from 'fs';
+import * as Sentry from '@sentry/node';
 import { AppModule } from './app.module';
 import type { AppConfiguration } from './config/configuration';
 import { assertProductionSecrets } from './config/production-guards';
@@ -22,6 +23,18 @@ const LOG_LEVELS_BY_NAME: Record<string, LogLevel[]> = {
 };
 
 async function bootstrap(): Promise<void> {
+  // Attivo SOLO se SENTRY_DSN_BACKEND è valorizzata — nessun invio di
+  // default, specialmente in dev locale. Un solo progetto GlitchTip
+  // condiviso per il backend, le istanze si distinguono con SENTRY_ENVIRONMENT.
+  const sentryDsn = process.env['SENTRY_DSN_BACKEND'];
+  if (sentryDsn) {
+    Sentry.init({
+      dsn: sentryDsn,
+      environment: process.env['SENTRY_ENVIRONMENT'] ?? 'unknown',
+      tracesSampleRate: 0,
+    });
+  }
+
   mkdirSync('/tmp/comunicapa-uploads', { recursive: true });
 
   const logLevelName = (process.env['LOG_LEVEL'] ?? 'info').toLowerCase();
