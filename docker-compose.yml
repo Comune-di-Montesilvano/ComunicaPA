@@ -89,6 +89,9 @@ services:
   frontend-admin:
     image: ghcr.io/comune-di-montesilvano/comunicapa-frontend-admin:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    environment:
+      SENTRY_DSN: ${SENTRY_DSN_ADMIN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
     ports:
       - "${ADMIN_PORT:-3000}:8080"
     depends_on:
