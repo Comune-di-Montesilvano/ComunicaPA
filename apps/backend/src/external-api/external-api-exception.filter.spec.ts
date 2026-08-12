@@ -1,5 +1,8 @@
 import { ArgumentsHost, BadRequestException, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { ExternalApiExceptionFilter } from './external-api-exception.filter';
+import * as sentryUtil from '../common/sentry.util';
+
+jest.mock('../common/sentry.util', () => ({ captureException: jest.fn() }));
 
 function makeHost() {
   const json = jest.fn();
@@ -12,6 +15,8 @@ function makeHost() {
 
 describe('ExternalApiExceptionFilter', () => {
   const filter = new ExternalApiExceptionFilter();
+
+  afterEach(() => jest.clearAllMocks());
 
   it('normalizza UnauthorizedException a 200 con code UNAUTHORIZED', () => {
     const { host, status, json } = makeHost();
@@ -49,5 +54,15 @@ describe('ExternalApiExceptionFilter', () => {
     filter.catch(new ForbiddenException('accesso negato'), host);
     expect(status).toHaveBeenCalledWith(200);
     expect(json).toHaveBeenCalledWith({ success: false, error: { code: 'LAUNCH_BLOCKED', message: 'accesso negato' } });
+  });
+
+  it('chiama captureException solo per errori generici (INTERNAL_ERROR), non per HttpException note', () => {
+    const { host } = makeHost();
+    filter.catch(new UnauthorizedException('key mancante'), host);
+    expect(sentryUtil.captureException).not.toHaveBeenCalled();
+
+    const genericErr = new Error('boom interno');
+    filter.catch(genericErr, host);
+    expect(sentryUtil.captureException).toHaveBeenCalledWith(genericErr);
   });
 });

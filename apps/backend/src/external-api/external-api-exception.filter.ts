@@ -1,5 +1,6 @@
 import { ArgumentsHost, BadRequestException, Catch, ExceptionFilter, HttpException, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import type { Response } from 'express';
+import { captureException } from '../common/sentry.util';
 
 interface NormalizedError {
   success: false;
@@ -15,6 +16,7 @@ export class ExternalApiExceptionFilter implements ExceptionFilter {
     const body = this.normalize(exception);
     if (body.error.code === 'INTERNAL_ERROR') {
       this.logger.error(exception instanceof Error ? exception.stack : String(exception));
+      captureException(exception);
     }
     response.status(200).json(body);
   }
