@@ -22,11 +22,16 @@ describe('PostalStatusSyncService', () => {
 
   function makeQueryBuilder(rows: any[]) {
     const qb: any = {
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
       take: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
       getMany: jest.fn().mockResolvedValue(rows),
+      getCount: jest.fn().mockResolvedValue(rows.length),
+      getRawOne: jest.fn().mockResolvedValue(undefined),
     };
     return qb;
   }
@@ -500,6 +505,84 @@ describe('PostalStatusSyncService', () => {
       }));
       const savedCalls = attemptRepo.save.mock.calls.map((c: any[]) => c[0]);
       expect(savedCalls.some((s: any) => s.id === 'a1' && s.postalRequeueCheckedAt != null)).toBe(false);
+    });
+  });
+
+  describe('PostalStatusSyncService.getQueueHealth', () => {
+    let service: PostalStatusSyncService;
+    let attemptRepo: { find: jest.Mock; findOne: jest.Mock; findOneBy: jest.Mock; create: jest.Mock; save: jest.Mock; createQueryBuilder: jest.Mock };
+
+    beforeEach(async () => {
+      const mockGlobalCom = { dettagliDocumento: jest.fn(), invioExtSingolo: jest.fn(), cercaPerTesto: jest.fn(), listaRiaccodamentiDocumento: jest.fn() };
+      const mockProviders = { getActive: jest.fn(async () => activeProvider) };
+      attemptRepo = {
+        find: jest.fn(),
+        findOne: jest.fn(),
+        findOneBy: jest.fn(),
+        create: jest.fn((partial) => partial),
+        save: jest.fn(async (entity) => entity),
+        createQueryBuilder: jest.fn(),
+      };
+
+      const module = await Test.createTestingModule({
+        providers: [
+          PostalStatusSyncService,
+          { provide: GlobalComClient, useValue: mockGlobalCom },
+          { provide: PostalProvidersService, useValue: mockProviders },
+          { provide: getRepositoryToken(NotificationAttempt), useValue: attemptRepo },
+        ],
+      }).compile();
+
+      service = module.get(PostalStatusSyncService);
+    });
+
+    it('calcola candidati, età del più vecchio, verificati ed errori (atomica query candidates)', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-08-12T12:00:00.000Z'));
+
+      const candidatesQb = makeQueryBuilder([]);
+      candidatesQb.getRawOne.mockResolvedValue({ count: '2', oldest: '2026-08-12T11:40:00.000Z' });
+      const totalSentQb = makeQueryBuilder([]);
+      totalSentQb.getCount.mockResolvedValue(5);
+      const errorQb = makeQueryBuilder([]);
+      errorQb.getCount.mockResolvedValue(1);
+
+      attemptRepo.createQueryBuilder
+        .mockReturnValueOnce(candidatesQb)
+        .mockReturnValueOnce(totalSentQb)
+        .mockReturnValueOnce(errorQb);
+
+      const health = await service.getQueueHealth();
+
+      expect(health).toEqual({
+        candidatesCount: 2,
+        oldestCandidateAgeMinutes: 20,
+        verifiedCount: 3,
+        errorCount: 1,
+      });
+
+      // Verifica che candidatesQb abbia il select aggregato
+      expect(candidatesQb.select).toHaveBeenCalledWith('COUNT(*)', 'count');
+      expect(candidatesQb.addSelect).toHaveBeenCalled();
+
+      jest.useRealTimers();
+    });
+
+    it('ritorna oldestCandidateAgeMinutes null e verifiedCount 0 a coda vuota (atomica query candidates)', async () => {
+      const candidatesQb = makeQueryBuilder([]);
+      candidatesQb.getRawOne.mockResolvedValue({ count: '0', oldest: null });
+      const totalSentQb = makeQueryBuilder([]);
+      totalSentQb.getCount.mockResolvedValue(0);
+      const errorQb = makeQueryBuilder([]);
+      errorQb.getCount.mockResolvedValue(0);
+
+      attemptRepo.createQueryBuilder
+        .mockReturnValueOnce(candidatesQb)
+        .mockReturnValueOnce(totalSentQb)
+        .mockReturnValueOnce(errorQb);
+
+      const health = await service.getQueueHealth();
+
+      expect(health).toEqual({ candidatesCount: 0, oldestCandidateAgeMinutes: null, verifiedCount: 0, errorCount: 0 });
     });
   });
 });

@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { EnginesController } from './engines.controller';
 import { NotificationQueuesService } from '../queue/notification-queues.service';
+import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service';
 import { NotificationAttempt } from '../entities/notification-attempt.entity';
 import { Campaign } from '../entities/campaign.entity';
 import { Recipient } from '../entities/recipient.entity';
@@ -19,46 +20,39 @@ describe('EnginesController', () => {
   const mockAttemptRepo = { count: jest.fn(), createQueryBuilder: jest.fn() };
   const mockCampaignRepo = { count: jest.fn().mockResolvedValue(0) };
   const mockRecipientRepo = { count: jest.fn().mockResolvedValue(0) };
+  const mockPostalStatusSync = { getQueueHealth: jest.fn() };
 
   beforeEach(async () => {
     jest.clearAllMocks();
     const module: TestingModule = await Test.createTestingModule({
       controllers: [EnginesController],
       providers: [
-        {
-          provide: NotificationQueuesService,
-          useValue: mockQueuesService,
-        },
-        {
-          provide: getRepositoryToken(NotificationAttempt),
-          useValue: mockAttemptRepo,
-        },
-        {
-          provide: getRepositoryToken(Campaign),
-          useValue: mockCampaignRepo,
-        },
-        {
-          provide: getRepositoryToken(Recipient),
-          useValue: mockRecipientRepo,
-        },
+        { provide: NotificationQueuesService, useValue: mockQueuesService },
+        { provide: PostalStatusSyncService, useValue: mockPostalStatusSync },
+        { provide: getRepositoryToken(NotificationAttempt), useValue: mockAttemptRepo },
+        { provide: getRepositoryToken(Campaign), useValue: mockCampaignRepo },
+        { provide: getRepositoryToken(Recipient), useValue: mockRecipientRepo },
       ],
     }).compile();
 
     controller = module.get<EnginesController>(EnginesController);
   });
 
-  it('list() ritorna lo stato di tutti i motori (4 canali + protocollazione + send + inad)', async () => {
+  it('list() ritorna 6 motori (5 code BullMQ pausabili + INAD non pausabile), nessun SEND', async () => {
     const res = await controller.list();
-    expect(res.engines).toHaveLength(7);
+    expect(res.engines).toHaveLength(6);
     expect(res.engines[0]).toEqual({
       channel: 'EMAIL',
       queueName: 'notifications-email',
       paused: false,
+      pausable: true,
       counts: { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 },
     });
     expect(res.engines.map((e: any) => e.channel)).toContain('PROTOCOLLAZIONE');
-    expect(res.engines.map((e: any) => e.channel)).toContain('SEND');
-    expect(res.engines.map((e: any) => e.channel)).toContain('INAD');
+    expect(res.engines.map((e: any) => e.channel)).not.toContain('SEND');
+    const inad = res.engines.find((e: any) => e.channel === 'INAD');
+    expect(inad).toBeDefined();
+    expect(inad!.pausable).toBe(false);
   });
 
   it('pause() mette in pausa un canale valido', async () => {
@@ -90,12 +84,22 @@ describe('EnginesController', () => {
 
   it('GET send/stage-counts ritorna i contatori (senza queued, ora nel motore protocollazione)', async () => {
     mockAttemptRepo.count
-      .mockResolvedValueOnce(2) // protocollato non inviato
-      .mockResolvedValueOnce(10) // inviato
-      .mockResolvedValueOnce(1); // fallito
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(10)
+      .mockResolvedValueOnce(1);
 
     const result = await controller.sendStageCounts();
 
     expect(result).toEqual({ protocollato: 2, inviato: 10, fallito: 1 });
+  });
+
+  it('GET postal/queue-health delega a PostalStatusSyncService.getQueueHealth()', async () => {
+    mockPostalStatusSync.getQueueHealth.mockResolvedValue({
+      candidatesCount: 3, oldestCandidateAgeMinutes: 5, verifiedCount: 100, errorCount: 2,
+    });
+
+    const result = await controller.postalQueueHealth();
+
+    expect(result).toEqual({ candidatesCount: 3, oldestCandidateAgeMinutes: 5, verifiedCount: 100, errorCount: 2 });
   });
 });

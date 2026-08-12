@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Not, IsNull, Repository } from 'typeorm';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { NotificationQueuesService } from '../queue/notification-queues.service';
+import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service';
 import { ENGINE_NAMES, type EngineName } from '../queue/notification-job.types';
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity';
 import { Campaign, CampaignStatus } from '../entities/campaign.entity';
@@ -16,6 +17,7 @@ function isEngineName(name: string): name is EngineName {
 export class EnginesController {
   constructor(
     private readonly queues: NotificationQueuesService,
+    private readonly postalStatusSync: PostalStatusSyncService,
     @InjectRepository(NotificationAttempt)
     private readonly attemptRepo: Repository<NotificationAttempt>,
     @InjectRepository(Campaign)
@@ -28,9 +30,10 @@ export class EnginesController {
   @Roles('admin', 'user')
   async list() {
     const engines: Array<{
-      channel: EngineName | 'SEND' | 'INAD';
+      channel: EngineName | 'INAD';
       queueName: string;
       paused: boolean;
+      pausable: boolean;
       counts: Record<string, number>;
     }> = await Promise.all(
       ENGINE_NAMES.map(async (name) => {
@@ -42,36 +45,11 @@ export class EnginesController {
           channel: name,
           queueName: `notifications-${name.toLowerCase()}`,
           paused,
+          pausable: true,
           counts,
         };
       }),
     );
-
-    const [sendQueued, sendFailed, sendSuccess] = await Promise.all([
-      this.attemptRepo.count({
-        where: { channelType: 'SEND', status: AttemptStatus.QUEUED },
-      }),
-      this.attemptRepo.count({
-        where: { channelType: 'SEND', status: AttemptStatus.FAILED },
-      }),
-      this.attemptRepo.count({
-        where: { channelType: 'SEND', status: AttemptStatus.SUCCESS },
-      }),
-    ]);
-
-    engines.push({
-      channel: 'SEND',
-      queueName: 'notifications-send',
-      paused: false,
-      counts: {
-        active: 0,
-        completed: sendSuccess,
-        failed: sendFailed,
-        delayed: 0,
-        waiting: sendQueued,
-        paused: 0,
-      },
-    });
 
     const [inadCheckingCampaigns, inadPendingRecipients, inadTotalCheckedRecipients] = await Promise.all([
       this.campaignRepo.count({ where: { status: CampaignStatus.CHECKING_INAD } }),
@@ -83,6 +61,7 @@ export class EnginesController {
       channel: 'INAD',
       queueName: 'inad-check-bulk',
       paused: false,
+      pausable: false,
       counts: {
         active: inadPendingRecipients,
         completed: inadTotalCheckedRecipients,
@@ -107,6 +86,12 @@ export class EnginesController {
       this.attemptRepo.count({ where: { channelType: 'SEND', status: AttemptStatus.FAILED } }),
     ]);
     return { protocollato, inviato, fallito };
+  }
+
+  @Get('postal/queue-health')
+  @Roles('admin', 'user')
+  async postalQueueHealth() {
+    return this.postalStatusSync.getQueueHealth();
   }
 
   @Post(':channel/pause')
