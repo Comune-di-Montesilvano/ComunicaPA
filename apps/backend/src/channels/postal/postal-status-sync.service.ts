@@ -6,6 +6,13 @@ import { NotificationAttempt, AttemptStatus } from '../../entities/notification-
 import { PostalProvidersService } from '../../postal-providers/postal-providers.service';
 import { GlobalComClient, type GbcCredentials } from './globalcom-client.service';
 
+export interface PostalQueueHealth {
+  candidatesCount: number;
+  oldestCandidateAgeMinutes: number | null;
+  verifiedCount: number;
+  errorCount: number;
+}
+
 const BATCH_SIZE = 200;
 // GBCStatus terminali (manuale §3.1) — tutti gli altri sono transitori e
 // vanno ricontrollati al prossimo giro.
@@ -36,41 +43,7 @@ export class PostalStatusSyncService {
 
   @Cron('*/1 * * * *')
   async handleCron(): Promise<void> {
-    const attempts = await this.attemptRepo
-      .createQueryBuilder('attempt')
-      .where('attempt.channel_type = :ch', { ch: 'POSTAL' })
-      .andWhere('attempt.status = :status', { status: AttemptStatus.SUCCESS })
-      .andWhere('attempt.postal_tracking_id IS NOT NULL')
-      // Un attempt Eliminato con costo già calcolato (caso comune: il costo si
-      // valorizza spesso mentre il documento è ancora Confermato/Accettato,
-      // prima che GlobalCom lo passi a Eliminato) altrimenti non rientrerebbe
-      // mai più in questo batch — il controllo riaccodamento (vedi
-      // checkRequeue) non verrebbe mai raggiunto in automatico. Bug reale
-      // riscontrato: il filtro pre-esistente escludeva questi record fin
-      // dall'inizio, il flag postal_requeue_checked_at restava per sempre
-      // null e il controllo automatico non scattava mai.
-      //
-      // cost_cents = 0 trattato come "non ancora costato" quanto NULL (bug
-      // reale corretto: GlobalCom può rispondere Costo:0 mentre il documento
-      // è ancora in lavorazione — non un costo reale, un placeholder prima
-      // del calcolo effettivo — e una volta persistito quello 0 usciva per
-      // sempre da questo filtro su un attempt già a stato terminale, restando
-      // a 0 anche quando GlobalCom aveva nel frattempo calcolato il costo
-      // vero). Vedi anche il gate in syncOne più sotto.
-      //
-      // postal_delivery_status IS NULL: stesso principio generalizzato dal
-      // caso Eliminato sopra — bug reale riscontrato, un attempt che arriva a
-      // uno stato terminale (es. Consegnato) con costo già calcolato usciva
-      // per sempre da questo filtro anche se GlobalCom non aveva mai
-      // restituito uno StatoConsegna valido (portale GlobalCom mostrava
-      // comunque un tracking reale, es. "Trasmesso" — il dato esisteva lato
-      // loro, solo mai più richiesto da noi). Nessun limite sul numero di
-      // retry: il round-robin per postal_last_checked_at basta a non
-      // affamare gli altri candidati anche se questo resta bloccato a null.
-      .andWhere(
-        '(attempt.postal_status IS NULL OR attempt.postal_status NOT IN (:...terminal) OR attempt.cost_cents IS NULL OR attempt.cost_cents = 0 OR attempt.postal_delivery_status IS NULL OR (attempt.postal_status = :eliminato AND attempt.postal_requeue_checked_at IS NULL))',
-        { terminal: TERMINAL_STATUSES, eliminato: 'Eliminato' },
-      )
+    const attempts = await this.getCandidatesQuery()
       .orderBy('COALESCE(attempt.postal_last_checked_at, attempt.created_at)', 'ASC')
       .take(BATCH_SIZE)
       .getMany();
@@ -88,6 +61,63 @@ export class PostalStatusSyncService {
         this.logger.warn(`Errore aggiornamento stato POSTAL per attempt ${attempt.id} (IDPRO=${attempt.postalTrackingId}): ${err.message}`);
       }
     }
+  }
+
+  /**
+   * Query dei candidati al poll GlobalCom — estratta da handleCron perché
+   * riusata anche da getQueueHealth() (pannello "salute" della coda, tab
+   * Motori). Un solo punto di verità sul filtro: chi lo cambia in futuro
+   * lo cambia qui una volta sola, niente drift tra cron reale e pannello.
+   */
+  private getCandidatesQuery() {
+    return this.attemptRepo
+      .createQueryBuilder('attempt')
+      .where('attempt.channel_type = :ch', { ch: 'POSTAL' })
+      .andWhere('attempt.status = :status', { status: AttemptStatus.SUCCESS })
+      .andWhere('attempt.postal_tracking_id IS NOT NULL')
+      .andWhere(
+        '(attempt.postal_status IS NULL OR attempt.postal_status NOT IN (:...terminal) OR attempt.cost_cents IS NULL OR attempt.cost_cents = 0 OR attempt.postal_delivery_status IS NULL OR (attempt.postal_status = :eliminato AND attempt.postal_requeue_checked_at IS NULL))',
+        { terminal: TERMINAL_STATUSES, eliminato: 'Eliminato' },
+      );
+  }
+
+  /**
+   * Stato di salute della coda di verifica POSTAL per la tab Motori —
+   * candidatesCount/oldestCandidateAgeMinutes rispondono alla domanda "sta
+   * girando bene o è bloccata?" (stessa colonna anti-starvation già usata
+   * dall'ORDER BY del cron, vedi CLAUDE.md sui bug reali di starvation su
+   * questo demone). oldestCandidateAgeMinutes: null a coda vuota.
+   */
+  async getQueueHealth(): Promise<PostalQueueHealth> {
+    const candidatesCount = await this.getCandidatesQuery().getCount();
+
+    let oldestCandidateAgeMinutes: number | null = null;
+    if (candidatesCount > 0) {
+      const raw = await this.getCandidatesQuery()
+        .select('COALESCE(attempt.postal_last_checked_at, attempt.created_at)', 'oldest')
+        .orderBy('COALESCE(attempt.postal_last_checked_at, attempt.created_at)', 'ASC')
+        .limit(1)
+        .getRawOne<{ oldest: string }>();
+      if (raw?.oldest) {
+        oldestCandidateAgeMinutes = Math.max(0, Math.floor((Date.now() - new Date(raw.oldest).getTime()) / 60000));
+      }
+    }
+
+    const totalSentCount = await this.attemptRepo
+      .createQueryBuilder('attempt')
+      .where('attempt.channel_type = :ch', { ch: 'POSTAL' })
+      .andWhere('attempt.status = :status', { status: AttemptStatus.SUCCESS })
+      .andWhere('attempt.postal_tracking_id IS NOT NULL')
+      .getCount();
+    const verifiedCount = Math.max(0, totalSentCount - candidatesCount);
+
+    const errorCount = await this.attemptRepo
+      .createQueryBuilder('attempt')
+      .where('attempt.channel_type = :ch', { ch: 'POSTAL' })
+      .andWhere('attempt.postal_status = :errore', { errore: 'Errore' })
+      .getCount();
+
+    return { candidatesCount, oldestCandidateAgeMinutes, verifiedCount, errorCount };
   }
 
   private async syncOne(attempt: NotificationAttempt, creds: GbcCredentials, opts: { forceRequeueCheck?: boolean } = {}): Promise<boolean> {
