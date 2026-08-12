@@ -102,6 +102,9 @@ services:
   frontend-citizen:
     image: ghcr.io/comune-di-montesilvano/comunicapa-frontend-citizen:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    environment:
+      SENTRY_DSN: ${SENTRY_DSN_CITIZEN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
     ports:
       - "${CITIZEN_PORT:-3001}:8080"
     depends_on:
