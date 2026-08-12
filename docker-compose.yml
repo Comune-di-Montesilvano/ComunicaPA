@@ -45,6 +45,8 @@ services:
       NODE_ENV: production
       PORT: "8080"
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      SENTRY_DSN_BACKEND: ${SENTRY_DSN_BACKEND:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET obbligatorio - genera con openssl rand -hex 32}
