@@ -1,40 +1,29 @@
-import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logger } from '@nestjs/common';
-import type { Response } from 'express';
+import { ArgumentsHost, Catch, HttpException } from '@nestjs/common';
+import { BaseExceptionFilter } from '@nestjs/core';
 import { captureException } from './sentry.util';
 
 /**
- * Filtro globale di ultima istanza — replica ESATTAMENTE il comportamento
- * di default di Nest (stesso status/body per HttpException e per errori
- * generici), aggiungendo la segnalazione a Sentry/GlitchTip e il logging
- * dei generic error (non-HttpException) come fa di default Nest.
+ * Filtro globale di ultima istanza — ESTENDE `BaseExceptionFilter` di Nest
+ * invece di reimplementarne il comportamento a mano, per ereditare
+ * automaticamente ogni caso limite già gestito dal default Nest (status/body
+ * per HttpException, errori non-HttpException con shape `http-errors` come
+ * `PayloadTooLargeError` dal body-parser, `isHeadersSent` per handler
+ * `@Res()`/SSE che hanno già inviato risposta prima di lanciare...).
+ * Aggiunge solo la segnalazione a Sentry/GlitchTip — SOLO per errori reali
+ * (non-HttpException, o HttpException con status >= 500): un 4xx normale
+ * (401/400/404 — token scaduti, validazioni, scan bot su rotte pubbliche)
+ * non è un errore da riportare, stessa filosofia di `ExternalApiExceptionFilter`
+ * (che riporta solo INTERNAL_ERROR).
  * Ha precedenza più bassa dei filtri scoped via @UseFilters (es.
  * ExternalApiExceptionFilter su external-api/*), che restano intoccati.
  */
 @Catch()
-export class AllExceptionsFilter implements ExceptionFilter {
-  private readonly logger = new Logger(AllExceptionsFilter.name);
-
-  catch(exception: unknown, host: ArgumentsHost): void {
-    captureException(exception);
-
-    const response = host.switchToHttp().getResponse<Response>();
-
-    if (exception instanceof HttpException) {
-      response.status(exception.getStatus()).json(exception.getResponse());
-      return;
+export class AllExceptionsFilter extends BaseExceptionFilter {
+  override catch(exception: unknown, host: ArgumentsHost): void {
+    const isServerError = !(exception instanceof HttpException) || exception.getStatus() >= 500;
+    if (isServerError) {
+      captureException(exception);
     }
-
-    // Log generic errors (non-HttpException) per preservare il comportamento
-    // di debug del default Nest BaseExceptionFilter
-    if (exception instanceof Error) {
-      this.logger.error(exception.message, exception.stack);
-    } else {
-      this.logger.error(String(exception));
-    }
-
-    response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
-      statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-      message: 'Internal server error',
-    });
+    super.catch(exception, host);
   }
 }

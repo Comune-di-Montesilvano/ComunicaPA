@@ -20,8 +20,13 @@ case "$SENTRY_DSN" in
     exit 1
     ;;
 esac
+# SENTRY_ENVIRONMENT è per design un nome di istanza/ente scelto liberamente
+# dall'operatore (es. "Comune di Montesilvano", con spazio) — il charset
+# ammesso include lo spazio, escludendo solo i caratteri pericolosi per
+# l'interpolazione shell nell'heredoc sotto (apice singolo, dollaro,
+# backtick, backslash).
 case "$SENTRY_ENVIRONMENT" in
-  *[!A-Za-z0-9_.-]*)
+  *[!A-Za-z0-9_.\ -]*)
     echo "SENTRY_ENVIRONMENT contiene caratteri non ammessi: $SENTRY_ENVIRONMENT" >&2
     exit 1
     ;;

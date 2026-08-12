@@ -31,8 +31,15 @@ async function bootstrap(): Promise<void> {
   if (sentryDsn) {
     Sentry.init({
       dsn: sentryDsn,
-      environment: process.env['SENTRY_ENVIRONMENT'] ?? 'unknown',
+      environment: process.env['SENTRY_ENVIRONMENT'] || 'unknown',
       tracesSampleRate: 0,
+      // Sentry v8 installa di default onUnhandledRejectionIntegration in
+      // mode 'warn' (logga e continua) invece del comportamento Node di
+      // default (crash del processo → il container con
+      // `restart: unless-stopped` riparte pulito) — senza questo override
+      // un'istanza CON DSN configurata avrebbe una semantica di failure
+      // diversa da una SENZA, per lo stesso identico codice applicativo.
+      integrations: [Sentry.onUnhandledRejectionIntegration({ mode: 'strict' })],
     });
   }
 
@@ -69,7 +76,7 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
-  app.useGlobalFilters(new AllExceptionsFilter());
+  app.useGlobalFilters(new AllExceptionsFilter(app.getHttpAdapter()));
 
   app.enableCors({
     origin: [

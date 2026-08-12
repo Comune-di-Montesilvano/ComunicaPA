@@ -1,4 +1,4 @@
-import { ArgumentsHost, HttpStatus, Logger, NotFoundException } from '@nestjs/common';
+import { ArgumentsHost, NotFoundException } from '@nestjs/common';
 import { AllExceptionsFilter } from './all-exceptions.filter';
 import * as sentryUtil from './sentry.util';
 
@@ -7,53 +7,75 @@ jest.mock('./sentry.util', () => ({ captureException: jest.fn() }));
 function makeHost() {
   const json = jest.fn();
   const status = jest.fn(() => ({ json }));
-  const host = { switchToHttp: () => ({ getResponse: () => ({ status }) }) } as unknown as ArgumentsHost;
+  const response = { status };
+  const getResponse = () => response;
+  const getRequest = () => ({});
+  const host = {
+    switchToHttp: () => ({ getResponse, getRequest }),
+    // BaseExceptionFilter legge la response reale con getArgByIndex(1),
+    // non tramite switchToHttp().getResponse() — entrambe devono tornare
+    // lo stesso oggetto response.
+    getArgByIndex: (index: number) => (index === 1 ? response : undefined),
+  } as unknown as ArgumentsHost;
   return { host, status, json };
 }
 
-describe('AllExceptionsFilter', () => {
-  const filter = new AllExceptionsFilter();
+// Fake HttpAdapter minimale, sufficiente per BaseExceptionFilter — non
+// bootiamo l'intera app Nest qui, solo il comportamento del filtro.
+function makeHttpAdapter() {
+  return {
+    reply: jest.fn((response: { status: (code: number) => { json: (body: unknown) => void } }, body: unknown, statusCode: number) => {
+      response.status(statusCode).json(body);
+    }),
+    end: jest.fn(),
+    isHeadersSent: jest.fn(() => false),
+    getRequestUrl: jest.fn(() => '/test'),
+    getRequestMethod: jest.fn(() => 'GET'),
+  };
+}
 
+describe('AllExceptionsFilter', () => {
   afterEach(() => jest.clearAllMocks());
 
-  it('per HttpException risponde con lo stesso status/body che Nest produrrebbe di default', () => {
-    const { host, status, json } = makeHost();
-    filter.catch(new NotFoundException('destinatario non trovato'), host);
-    expect(status).toHaveBeenCalledWith(HttpStatus.NOT_FOUND);
-    expect(json).toHaveBeenCalledWith({ statusCode: HttpStatus.NOT_FOUND, message: 'destinatario non trovato', error: 'Not Found' });
-  });
-
-  it('per errore generico risponde 500 con body standard Nest', () => {
-    const { host, status, json } = makeHost();
-    filter.catch(new Error('boom'), host);
-    expect(status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR);
-    expect(json).toHaveBeenCalledWith({ statusCode: HttpStatus.INTERNAL_SERVER_ERROR, message: 'Internal server error' });
-  });
-
-  it('chiama sempre captureException, sia per HttpException che per errore generico', () => {
+  it('chiama captureException per un errore generico (non-HttpException)', () => {
+    const adapter = makeHttpAdapter();
+    const filter = new AllExceptionsFilter(adapter as never);
     const { host } = makeHost();
-    const httpErr = new NotFoundException('x');
     const genericErr = new Error('boom');
-    filter.catch(httpErr, host);
+
     filter.catch(genericErr, host);
-    expect(sentryUtil.captureException).toHaveBeenNthCalledWith(1, httpErr);
-    expect(sentryUtil.captureException).toHaveBeenNthCalledWith(2, genericErr);
+
+    expect(sentryUtil.captureException).toHaveBeenCalledWith(genericErr);
   });
 
-  it('per errore generico loga message e stack come default Nest', () => {
-    const loggerErrorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+  it('chiama captureException per una HttpException con status >= 500', () => {
+    const adapter = makeHttpAdapter();
+    const filter = new AllExceptionsFilter(adapter as never);
     const { host } = makeHost();
-    const error = new Error('test boom');
-    filter.catch(error, host);
-    expect(loggerErrorSpy).toHaveBeenCalledWith(error.message, error.stack);
-    loggerErrorSpy.mockRestore();
+    const serverErr = new NotFoundException('x');
+    jest.spyOn(serverErr, 'getStatus').mockReturnValue(500);
+
+    filter.catch(serverErr, host);
+
+    expect(sentryUtil.captureException).toHaveBeenCalledWith(serverErr);
   });
 
-  it('per errore non-Error (valore primitivo) loga il valore stringificato', () => {
-    const loggerErrorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+  it('NON chiama captureException per una HttpException 4xx (es. NotFoundException)', () => {
+    const adapter = makeHttpAdapter();
+    const filter = new AllExceptionsFilter(adapter as never);
     const { host } = makeHost();
-    filter.catch('errore primitivo', host);
-    expect(loggerErrorSpy).toHaveBeenCalledWith('errore primitivo');
-    loggerErrorSpy.mockRestore();
+
+    filter.catch(new NotFoundException('destinatario non trovato'), host);
+
+    expect(sentryUtil.captureException).not.toHaveBeenCalled();
+  });
+
+  it('non lancia e produce comunque una risposta tramite l\'adapter', () => {
+    const adapter = makeHttpAdapter();
+    const filter = new AllExceptionsFilter(adapter as never);
+    const { host, status } = makeHost();
+
+    expect(() => filter.catch(new Error('boom'), host)).not.toThrow();
+    expect(status).toHaveBeenCalled();
   });
 });
