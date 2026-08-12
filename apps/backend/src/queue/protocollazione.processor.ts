@@ -18,6 +18,7 @@ import { processTemplate, wrapInHtmlLayout, resolveCitizenPortalUrl } from '../c
 import { resolveAttachmentsConfig, resolveAttachmentLabel } from '../attachments/attachment.service';
 import { getEffectiveRetentionDays } from '../campaigns/retention.util';
 import { AppSettingsService } from '../settings/app-settings.service';
+import { captureException } from '../common/sentry.util';
 import type { ProtocollaAllegato } from '../protocollo/protocollo.service';
 
 /**
@@ -198,6 +199,7 @@ export class ProtocollazioneProcessor extends WorkerHost {
         jobLog(dispatchMsg);
       }
     } catch (err: any) {
+      captureException(err, { attemptId, recipientId });
       const msg = `Protocollazione fallita per attempt ${attemptId}: ${err.message}`;
       this.logger.warn(msg);
       jobLog(msg);

@@ -15,6 +15,9 @@ import { IoServicesService } from '../io-services/io-services.service';
 import { CampaignCompletionService } from '../campaigns/campaign-completion.service';
 import { AppIoDeliveryService } from '../channels/app-io/app-io-delivery.service';
 import type { NotificationJobData } from '@comunicapa/shared-types';
+import * as sentryUtil from '../common/sentry.util';
+
+jest.mock('../common/sentry.util', () => ({ captureException: jest.fn() }));
 
 const mockRedis = {
   incr: jest.fn().mockResolvedValue(1),
@@ -206,6 +209,7 @@ describe('NotificationProcessor', () => {
     }));
     expect(mockCampaignRepo.increment).toHaveBeenCalledWith({ id: 'camp-1' }, 'failedCount', 1);
     expect(mockRecipientRepo.update).toHaveBeenCalledWith('rec-1', { status: RecipientStatus.FAILED });
+    expect(sentryUtil.captureException).toHaveBeenCalled();
   });
 
   it('process() lancia Error se nessuna strategy per channel', async () => {

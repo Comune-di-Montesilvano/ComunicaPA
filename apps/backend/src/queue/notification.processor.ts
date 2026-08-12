@@ -20,6 +20,7 @@ import { APP_IO_BASE_URL } from '../channels/app-io/app-io.strategy';
 import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util';
 import { CampaignCompletionService } from '../campaigns/campaign-completion.service';
 import { AppIoDeliveryService } from '../channels/app-io/app-io-delivery.service';
+import { captureException } from '../common/sentry.util';
 
 @Injectable()
 export class NotificationProcessor extends WorkerHost {
@@ -279,6 +280,7 @@ export class NotificationProcessor extends WorkerHost {
 
     // 3. Esito canale primario determina lo stato del tentativo/destinatario
     if (primaryError) {
+      captureException(primaryError, { attemptId, channel, recipientId: recipient.id });
       await this.attemptRepo.update(attemptId, {
         status: AttemptStatus.FAILED,
         errorMessage: primaryError.message,

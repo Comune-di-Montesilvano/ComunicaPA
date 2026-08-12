@@ -10,6 +10,9 @@ import { CampaignCompletionService } from '../campaigns/campaign-completion.serv
 import { NotificationQueuesService } from './notification-queues.service';
 import { ConfigService } from '@nestjs/config';
 import { AppSettingsService } from '../settings/app-settings.service';
+import * as sentryUtil from '../common/sentry.util';
+
+jest.mock('../common/sentry.util', () => ({ captureException: jest.fn() }));
 
 describe('ProtocollazioneProcessor', () => {
   let processor: ProtocollazioneProcessor;
@@ -146,6 +149,7 @@ describe('ProtocollazioneProcessor', () => {
     expect(mockRecipientRepo.update).toHaveBeenCalledWith('r1', { status: RecipientStatus.FAILED });
     expect(mockCampaignRepo.increment).toHaveBeenCalledWith({ id: 'camp-1' }, 'failedCount', 1);
     expect(mockCompletion.checkAndComplete).toHaveBeenCalledWith('camp-1');
+    expect(sentryUtil.captureException).toHaveBeenCalled();
   });
 
   it('canale EMAIL senza allegato configurato: protocolla usando l\'EML come documento, senza chiamare generatePdfBuffer', async () => {
