@@ -284,6 +284,8 @@ Obbligatorie in produzione (`:?` nel compose): `JWT_SECRET`, `DOWNLOAD_LINK_SECR
 
 `POSTGRES_PASSWORD` SOLO caratteri alfanumerici: il compose la incastra in `DATABASE_URL` senza escaping — `$ @ # ^` rompono il parsing dell'URL e il backend prova a connettersi a un host sbagliato (es. `0.0.0.48`).
 
+**Nuova env var backend = va aggiunta ANCHE al blocco `environment:` di `docker-compose.yml`, non solo a `configuration.ts`/`.env.example`.** Bug reale trovato in E2E manuale: `LDAP_ADMIN_USERNAMES` letta correttamente in `configuration.ts` e valorizzata in `.env`, ma assente dal blocco `environment:` del servizio `backend` — il container non la riceve affatto (nessun errore, `process.env['LDAP_ADMIN_USERNAMES']` è `undefined` in silenzio, fallback al default). Il compose non fa passthrough automatico di tutte le var di `.env`: ogni var letta da `configuration.ts` deve avere una riga esplicita `NOME_VAR: ${NOME_VAR:-default}` nel servizio `backend` di `docker-compose.yml`, altrimenti resta invisibile al processo Node anche se presente in `.env` e anche dopo un `docker compose restart` (serve comunque `docker compose up -d backend` per far ripartire il container con l'`environment:` aggiornato, il `restart` da solo non rilegge il compose).
+
 ## Reverse proxy esterno in produzione — gotcha critico
 
 Davanti al backend in produzione c'è un reverse proxy esterno (fuori da questo
