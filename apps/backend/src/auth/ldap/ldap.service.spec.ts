@@ -11,7 +11,7 @@ const mockClient = {
   unbind: jest.fn(),
 };
 
-async function buildService(host: string): Promise<LdapService> {
+async function buildService(host: string, adminUsernames: string[] = []): Promise<LdapService> {
   const module = await Test.createTestingModule({
     providers: [
       LdapService,
@@ -26,6 +26,7 @@ async function buildService(host: string): Promise<LdapService> {
               'ldap.tlsSkipVerify': true,
               'ldap.adminGroup': 'COMUNICAPA_ADMINS',
               'ldap.requiredGroup': 'COMUNICAPA_USERS',
+              'ldap.adminUsernames': adminUsernames,
             };
             return cfg[key];
           },
@@ -157,6 +158,90 @@ describe('LdapService', () => {
     expect(result.displayName).toBe('Mario Rossi');
   });
 
+  it('should promote to role=admin via LDAP_ADMIN_USERNAMES override even if not in admin group', async () => {
+    service = await buildService('ldap://localhost:389', ['mario.rossi']);
+
+    mockClient.bind.mockImplementation(
+      (_dn: string, _pw: string, cb: (err: null) => void) => cb(null),
+    );
+
+    const mockSearchRes = {
+      on: jest.fn().mockImplementation(function (
+        this: typeof mockSearchRes,
+        event: string,
+        cb: (...args: unknown[]) => void,
+      ) {
+        if (event === 'searchEntry') {
+          cb({
+            object: {
+              sAMAccountName: 'mario.rossi',
+              displayName: 'Mario Rossi',
+              memberOf: ['CN=COMUNICAPA_USERS,OU=Groups,DC=test,DC=local'],
+            },
+          });
+        }
+        if (event === 'end') {
+          cb({ status: 0 });
+        }
+        return this;
+      }),
+    };
+
+    mockClient.search.mockImplementation(
+      (
+        _base: string,
+        _opts: unknown,
+        cb: (err: null, res: typeof mockSearchRes) => void,
+      ) => cb(null, mockSearchRes),
+    );
+
+    const result = await service.authenticate('mario.rossi', 'password123');
+
+    expect(result.role).toBe('admin');
+  });
+
+  it('should match LDAP_ADMIN_USERNAMES case-insensitively', async () => {
+    service = await buildService('ldap://localhost:389', ['MARIO.ROSSI']);
+
+    mockClient.bind.mockImplementation(
+      (_dn: string, _pw: string, cb: (err: null) => void) => cb(null),
+    );
+
+    const mockSearchRes = {
+      on: jest.fn().mockImplementation(function (
+        this: typeof mockSearchRes,
+        event: string,
+        cb: (...args: unknown[]) => void,
+      ) {
+        if (event === 'searchEntry') {
+          cb({
+            object: {
+              sAMAccountName: 'mario.rossi',
+              displayName: 'Mario Rossi',
+              memberOf: ['CN=COMUNICAPA_USERS,OU=Groups,DC=test,DC=local'],
+            },
+          });
+        }
+        if (event === 'end') {
+          cb({ status: 0 });
+        }
+        return this;
+      }),
+    };
+
+    mockClient.search.mockImplementation(
+      (
+        _base: string,
+        _opts: unknown,
+        cb: (err: null, res: typeof mockSearchRes) => void,
+      ) => cb(null, mockSearchRes),
+    );
+
+    const result = await service.authenticate('mario.rossi', 'password123');
+
+    expect(result.role).toBe('admin');
+  });
+
   it('should reject when bind fails (wrong password)', async () => {
     mockClient.bind.mockImplementation(
       (_dn: string, _pw: string, cb: (err: Error) => void) =>
@@ -194,6 +279,12 @@ describe('LdapService', () => {
     it('accepts operator/operator with role=user', async () => {
       const result = await service.authenticate('operator', 'operator');
       expect(result.role).toBe('user');
+    });
+
+    it('promotes operator to role=admin via LDAP_ADMIN_USERNAMES override', async () => {
+      service = await buildService('mock', ['operator']);
+      const result = await service.authenticate('operator', 'operator');
+      expect(result.role).toBe('admin');
     });
 
     it('rejects any other credentials without contacting LDAP', async () => {

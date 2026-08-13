@@ -18,6 +18,10 @@ export class LdapService {
 
   async authenticate(username: string, password: string): Promise<LdapUser> {
     const host = this.config.get('ldap.host', { infer: true });
+    const adminUsernames = this.config.get('ldap.adminUsernames', { infer: true }) ?? [];
+    const isAdminOverride = adminUsernames
+      .map((u) => u.toLowerCase())
+      .includes(username.toLowerCase());
 
     // Credenziali simulate SOLO in sviluppo locale (LDAP_HOST=mock):
     // con un host reale non esiste alcun bypass
@@ -33,7 +37,7 @@ export class LdapService {
         return {
           username: 'operator',
           displayName: 'Operatore Simulato',
-          role: 'user',
+          role: isAdminOverride ? 'admin' : 'user',
         };
       }
       throw new UnauthorizedException('Credenziali non valide');
@@ -134,7 +138,16 @@ export class LdapService {
         throw new UnauthorizedException('Accesso non autorizzato: gruppo AD richiesto non trovato');
       }
 
-      const role: OperatorRole = isAdmin ? 'admin' : 'user';
+      const adminUsernames = this.config.get('ldap.adminUsernames', { infer: true }) ?? [];
+      const isAdminOverride = adminUsernames
+        .map((u) => u.toLowerCase())
+        .includes(opts.username.toLowerCase());
+      if (isAdminOverride && !isAdmin) {
+        this.logger.log(
+          `Override admin individuale applicato per ${opts.username} (LDAP_ADMIN_USERNAMES)`,
+        );
+      }
+      const role: OperatorRole = isAdmin || isAdminOverride ? 'admin' : 'user';
 
       const givenName = String(entry['givenName'] ?? entry['givenname'] ?? '');
       const sn = String(entry['sn'] ?? entry['surname'] ?? '');
