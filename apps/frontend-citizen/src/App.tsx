@@ -732,9 +732,9 @@ export function App(): React.JSX.Element {
                 <h1>Le tue comunicazioni ufficiali,<br />sempre a portata di mano.</h1>
 
                 <p className="lead">
-                  Avvisi TARI, accertamenti, sanzioni e ogni altra comunicazione del {entityName}:
-                  qui trovi lo storico completo di ciò che l'ente ti ha inviato e puoi scaricare
-                  gli atti in ogni momento.
+                  Avvisi TARI, accertamenti, sanzioni e ogni altra comunicazione dell'ente
+                  ({entityName}): qui trovi lo storico completo di ciò che l'ente ti ha inviato
+                  e puoi scaricare gli atti in ogni momento.
                 </p>
 
                 <div className="hero-actions">
@@ -767,7 +767,7 @@ export function App(): React.JSX.Element {
                       Area riservata
                     </div>
                     <h2>Entra con la tua identità digitale</h2>
-                    <p>Riservato ai destinatari delle comunicazioni del {entityName}.</p>
+                    <p>Riservato ai destinatari delle comunicazioni dell'ente ({entityName}).</p>
                   </div>
                   <div className="login-card-body">
 
