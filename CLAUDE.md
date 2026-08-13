@@ -1545,3 +1545,30 @@ fa `Sentry.init(...)` con la DSN reale e chiama
 ritorna `true`/`false` a seconda che il trasporto sia riuscito entro il
 timeout, utile per confermare auth/rete verso l'istanza GlitchTip prima di
 aspettare un errore applicativo vero.
+
+**Attenzione — proprio questo script di verifica manuale MASCHERA il bug
+reale più insidioso di tutti: `captureException()` senza flush esplicito
+NON invia mai l'evento da un processo Node long-running.** Bug reale
+trovato solo con E2E completo (immagine ghcr reale, richiesta HTTP
+multipart vera contro un'istanza standalone, verifica via API REST di
+GlitchTip — mai visibile da unit test, che mockano `@sentry/node` di
+default). `AllExceptionsFilter.catch()` chiamava `captureException()`
+(che internamente fa solo `Sentry.captureException()`, nessun flush) — in
+un processo che gira per giorni (il backend, non uno script one-off) 
+l'evento restava in coda interna del transport e non veniva MAI inviato
+spontaneamente: zero errore, zero log SDK anche con `debug:true`, sparisce
+nel nulla. Ogni evento arrivato durante quella sessione di debug aveva
+SEMPRE un flush/close esplicito a monte — lo script di verifica sopra
+(`Sentry.close(8000)`, che flusha), oppure un crash imminente del processo
+(`OnUncaughtException`, che flusha da solo prima di uscire) — **mai** il
+caso reale di un errore HTTP catturato a runtime dal filtro globale. Fix
+in `sentry.util.ts`: `Sentry.flush(2000)` fire-and-forget (mai `await` —
+bloccherebbe la risposta HTTP all'utente) subito dopo
+`Sentry.captureException()`. Diagnosticato isolando l'app reale (pull
+immagine ghcr, Postgres/Redis/volume usa-e-getta su `docker run` standalone
+per non toccare lo stack dev condiviso) e patchando `dist/common/
+sentry.util.js` in-place nel container per aggiungere log diagnostici e
+`Sentry.flush()` di prova, poi confermando l'arrivo dell'evento via
+`GET /api/0/projects/<org>/<project>/issues/` (GlitchTip è API-compatibile
+Sentry, nessun bisogno di MCP dedicato — basta un Auth Token da
+Settings → API Tokens e query REST dirette).
