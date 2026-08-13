@@ -271,7 +271,7 @@ export function App(): React.JSX.Element {
   const [cf, setCf] = useState<string | null>(localStorage.getItem('comunicapa_citizen_cf'));
   const [name, setName] = useState<string | null>(localStorage.getItem('comunicapa_citizen_name'));
   const [provider, setProvider] = useState<string>(localStorage.getItem('comunicapa_citizen_provider') || 'Identità Digitale');
-  const [entityName, setEntityName] = useState('Comune di Montesilvano');
+  const [entityName, setEntityName] = useState('Ente');
   const [brandLogoUrl, setBrandLogoUrl] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState<string | null>(null);
 

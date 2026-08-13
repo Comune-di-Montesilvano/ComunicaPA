@@ -96,7 +96,7 @@ export class ProtocollazioneProcessor extends WorkerHost {
       const allegati: ProtocollaAllegato[] = [];
 
       if (effectiveChannel === 'EMAIL' || effectiveChannel === 'PEC') {
-        const brandName = (await this.settings.get<string>('brand.name')) || 'Comune di Montesilvano';
+        const brandName = await this.settings.get<string>('brand.name');
         const publicApiUrl = (await this.settings.get<string>('system.publicUrl')) || '';
         const downloadLinkSecret = this.config.get<string>('downloadLink.secret') || '';
         const retentionMaxDays = await this.settings.get<number>('retention.maxDays');

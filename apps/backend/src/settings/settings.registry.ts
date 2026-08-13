@@ -15,7 +15,7 @@ export interface SettingDef {
 export const MASKED_VALUE = '••••••••';
 
 export const SETTING_DEFS = {
-  'brand.name': { env: 'BRAND_NAME', type: 'string', default: 'Comune di Montesilvano' },
+  'brand.name': { env: 'BRAND_NAME', type: 'string', default: 'Ente' },
   'brand.subtitle': { type: 'string', default: '' },
   'brand.logo': { env: 'BRAND_LOGO', type: 'string', default: '' },
   'brand.favicon': { type: 'string', default: '' },

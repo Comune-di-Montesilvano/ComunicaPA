@@ -2131,7 +2131,7 @@ export function App(): React.JSX.Element {
     !hasValidAttachmentPlaceholders(wizAppIoBodyOverride, wizAttachmentCount);
 
   // Settings State (loaded from backend GET /settings; see useEffect below)
-  const [settEntityName, setSettEntityName] = useState('Comune di Montesilvano');
+  const [settEntityName, setSettEntityName] = useState('Ente');
   const [settSubtitle, setSettSubtitle] = useState('ComunicaPA Hub');
   // brand.logo / brand.favicon: filename locale (da upload) oppure URL esterno https://
   const [settLogoValue, setSettLogoValue] = useState('');
@@ -4806,7 +4806,7 @@ export function App(): React.JSX.Element {
                   type="text"
                   className="form-control form-control-sm"
                   required
-                  placeholder="Es. GlobalCom Montesilvano"
+                  placeholder="Es. GlobalCom Ente"
                   value={editing.name || ''}
                   onChange={(e) => setEditingPostalProvider({ ...editing, name: e.target.value })}
                 />
@@ -9465,7 +9465,7 @@ export function App(): React.JSX.Element {
                     <input
                       type="text"
                       className="form-control form-control-sm"
-                      placeholder="Es: Avviso TARI 2026 Montesilvano"
+                      placeholder="Es: Avviso TARI 2026"
                       value={wizName}
                       onChange={e => setWizName(e.target.value)}
                       required
@@ -14250,7 +14250,7 @@ export function App(): React.JSX.Element {
                                 className="form-control form-control-sm"
                                 value={settProtoMittenteDenominazione}
                                 onChange={(e) => setSettProtoMittenteDenominazione(e.target.value)}
-                                placeholder="Es: Comune di Montesilvano"
+                                placeholder="Es: Comune di Esempio"
                               />
                             </div>
                           </div>

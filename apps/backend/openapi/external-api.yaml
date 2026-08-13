@@ -186,7 +186,7 @@ paths:
                   extraData: { indirizzo: Via Roma 1, cap: '00100', citta: Roma, provincia: RM }
                   attachments: [{ token: 3fbb1e2a-1234-4abc-9def-426614174000, label: Atto notificato }]
                   protocolla: true
-                  subject: Notifica atto — Comune di Montesilvano
+                  subject: Notifica atto — Comune di Esempio
               email_con_app_io_parallela:
                 summary: EMAIL con co-consegna App IO parallela
                 value:
