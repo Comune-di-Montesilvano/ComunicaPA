@@ -38,6 +38,12 @@ ARG APP_VERSION=dev
 ENV APP_VERSION=${APP_VERSION} NODE_ENV=production TZ=Europe/Rome
 WORKDIR /app
 COPY --from=build --chown=node:node /prod/backend /app
+# Volume named "attachments_data" (docker-compose.yml) montato su questo path:
+# se il volume è vuoto al primo avvio (istanza nuova), Docker eredita
+# permessi/owner dalla directory già presente nell'immagine — senza questa
+# riga il mount point resta root:root e il processo (USER node sotto)
+# fallisce con EACCES al primo mkdir/scrittura (branding, allegati...).
+RUN mkdir -p /data/attachments && chown node:node /data/attachments
 USER node
 EXPOSE 8080
 CMD ["node", "dist/main.js"]
