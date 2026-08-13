@@ -96,7 +96,13 @@ export class OidcCitizenStrategy extends PassportStrategy(Strategy, 'oidc-citize
     if (process.env.LOG_LEVEL?.toLowerCase() === 'debug') {
       Logger.debug(`OidcCitizenStrategy.validate payload: ${JSON.stringify(payload)}`, OidcCitizenStrategy.name);
     }
-    const issuer = await this.settings.get<string>('oidc.issuer');
+    // Trailing slash normalizzato: il claim `iss` reale del provider non ce l'ha
+    // mai (convenzione OIDC standard), ma l'operatore può averlo digitato in UI
+    // (es. "https://sso.ente.it/") — bug reale: un confronto stringa esatta
+    // rifiutava sempre il login con "Issuer OIDC non valido" in quel caso.
+    // Stessa normalizzazione già applicata in oidc-flow.service.ts
+    // (requireConfig()) per costruire authorize/token/userinfo endpoint.
+    const issuer = (await this.settings.get<string>('oidc.issuer'))?.replace(/\/+$/, '');
     if (issuer && payload['iss'] !== issuer) {
       throw new UnauthorizedException('Issuer OIDC non valido');
     }

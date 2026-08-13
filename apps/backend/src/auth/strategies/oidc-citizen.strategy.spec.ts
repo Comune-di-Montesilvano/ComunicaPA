@@ -49,6 +49,15 @@ describe('OidcCitizenStrategy', () => {
     ).rejects.toThrow(UnauthorizedException);
   });
 
+  it('validate() accetta issuer configurato con trailing slash (bug reale: confronto stringa esatta lo rifiutava sempre)', async () => {
+    settingsValues = { 'oidc.issuer': 'https://issuer.test/', 'oidc.audience': '' };
+    strategy = await buildStrategy();
+
+    const claims = await strategy.validate({ iss: 'https://issuer.test', sub: 'user-1' });
+
+    expect(claims.sub).toBe('user-1');
+  });
+
   it('validate() con oidc.audience vuoto non verifica aud e accetta token senza claim aud (regressione mock SPID)', async () => {
     settingsValues = { 'oidc.issuer': '', 'oidc.audience': '' };
     strategy = await buildStrategy();
