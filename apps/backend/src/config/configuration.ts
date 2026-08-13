@@ -21,6 +21,7 @@ export interface AppConfiguration {
     bindPassword: string;
     requiredGroup: string;
     adminGroup: string;
+    adminUsernames: string[];
   };
   downloadLink: {
     secret: string;
@@ -53,6 +54,10 @@ export default (): AppConfiguration => ({
     bindPassword: process.env['LDAP_BIND_PASSWORD'] ?? '',
     requiredGroup: process.env['LDAP_REQUIRED_GROUP'] ?? 'COMUNICAPA_USERS',
     adminGroup: process.env['LDAP_ADMIN_GROUP'] ?? 'COMUNICAPA_ADMINS',
+    adminUsernames: (process.env['LDAP_ADMIN_USERNAMES'] ?? '')
+      .split(',')
+      .map((u) => u.trim().toLowerCase())
+      .filter((u) => u.length > 0),
   },
   downloadLink: {
     secret: process.env['DOWNLOAD_LINK_SECRET'] ?? 'change-me-in-production',
