@@ -79,6 +79,9 @@ services:
   pdf-extractor:
     image: ghcr.io/comune-di-montesilvano/comunicapa-pdf-extractor:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    environment:
+      SENTRY_DSN_PDF_EXTRACTOR: ${SENTRY_DSN_PDF_EXTRACTOR:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
     networks:
       - comunicapa-net
     healthcheck:

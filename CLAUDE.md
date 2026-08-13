@@ -1572,3 +1572,23 @@ sentry.util.js` in-place nel container per aggiungere log diagnostici e
 `GET /api/0/projects/<org>/<project>/issues/` (GlitchTip è API-compatibile
 Sentry, nessun bisogno di MCP dedicato — basta un Auth Token da
 Settings → API Tokens e query REST dirette).
+
+**`pdf-extractor` (Python/FastAPI) non aveva Sentry — coperti solo
+backend/frontend-admin/frontend-citizen.** Aggiunto `sentry_sdk` (stesso
+pattern opt-in: no-op se `SENTRY_DSN_PDF_EXTRACTOR` non valorizzata),
+`docker-compose.yml` aggiorna il blocco `environment:` del servizio (stesso
+gotcha env-non-whitelistata di sopra — mancava del tutto, nessun
+`environment:` esisteva per `pdf-extractor` prima). A differenza del bug
+Node sopra, il SDK Python (`sentry_sdk`) usa un `BackgroundWorker` su
+thread dedicato che drena la coda in continuo — **non richiede un
+`flush()` esplicito per funzionare in un processo long-running**,
+verificato dal vivo con `capture_exception()` senza flush (arrivato su
+GlitchTip). Non equivale a "mai testarlo" — verificato comunque con lo
+stesso principio (DSN reale, evento reale, conferma via API), solo
+un'architettura SDK diversa da quella Node che ha causato il bug sopra.
+
+Il progetto GlitchTip corrispondente NON esisteva (solo backend/admin/
+citizen) — creato via API: `POST /api/0/teams/<org>/<team>/projects/`
+(serve lo slug del team, non solo dell'org — `GET
+/api/0/organizations/<org>/teams/` per trovarlo), poi DSN da `GET
+/api/0/projects/<org>/<project>/keys/`.
