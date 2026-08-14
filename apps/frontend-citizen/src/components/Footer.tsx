@@ -19,7 +19,20 @@ export function Footer({ entityName, logoUrl, version }: FooterProps): React.JSX
               <i className="fas fa-landmark stemma" style={{ fontSize: '1.6rem', color: '#94a3b8' }} aria-hidden="true"></i>
             )}
             <div className="f-info">
-              <div className="title">{entityName} <span style={{ color: '#64748b', fontWeight: 'normal', marginLeft: 4 }}>— ComunicaPA</span></div>
+              <div className="title">
+                {entityName}{' '}
+                <span style={{ color: '#64748b', fontWeight: 'normal', marginLeft: 4 }}>
+                  —{' '}
+                  <a
+                    href="https://github.com/Comune-di-Montesilvano/ComunicaPA"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: 'inherit' }}
+                  >
+                    ComunicaPA
+                  </a>
+                </span>
+              </div>
               <div className="sub">
                 © {new Date().getFullYear()} Tutti i diritti riservati{version ? ` (${version})` : ''}
               </div>
