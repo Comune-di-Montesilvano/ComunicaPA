@@ -344,6 +344,7 @@ export class SettingsController {
   }
 
   @Get()
+  @Roles('user', 'admin')
   async getAll() {
     return { settings: await this.appSettings.getAllMasked() };
   }
