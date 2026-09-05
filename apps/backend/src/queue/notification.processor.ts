@@ -6,7 +6,7 @@ import { DelayedError } from 'bullmq';
 import { createHash } from 'crypto';
 import type { Job } from 'bullmq';
 import type { NotificationJobData, NotificationChannel } from '@comunicapa/shared-types';
-import Redis from 'ioredis';
+import { Redis } from 'ioredis';
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity.js';
 import { Campaign } from '../entities/campaign.entity.js';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity.js';

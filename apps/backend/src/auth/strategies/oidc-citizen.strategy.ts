@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { passportJwtSecret } from 'jwks-rsa';
-import Redis from 'ioredis';
+import { Redis } from 'ioredis';
 import { extractClaimString } from '../oidc/oidc-flow.service.js';
 import type { CitizenTokenClaims } from '@comunicapa/shared-types';
 import type { AppConfiguration } from '../../config/configuration.js';
