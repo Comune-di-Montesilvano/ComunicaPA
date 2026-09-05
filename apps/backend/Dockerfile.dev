@@ -2,7 +2,7 @@ FROM node:26-alpine
 RUN apk add --no-cache tzdata
 ENV TZ=Europe/Rome
 WORKDIR /app
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN npm install -g corepack@latest && corepack enable && corepack prepare pnpm@11.9.0 --activate
 
 # Cache layer: solo i manifesti (prima di COPY . . per sfruttare cache Docker)
 COPY package.json pnpm-workspace.yaml .npmrc pnpm.yaml ./

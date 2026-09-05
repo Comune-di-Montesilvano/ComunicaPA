@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # ── Build ─────────────────────────────────────────────────────────────────────
 FROM node:26-alpine AS build
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN npm install -g corepack@latest && corepack enable && corepack prepare pnpm@11.9.0 --activate
 WORKDIR /app
 
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc pnpm.yaml ./
