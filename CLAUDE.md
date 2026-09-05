@@ -89,7 +89,7 @@ MSYS_NO_PATHCONV=1 docker run --rm \
   -v "$(pwd)/apps/backend/src:/app/apps/backend/src" \
   -v "$(pwd)/packages/shared-types/src:/app/packages/shared-types/src" \
   -v comunicapa_backend_node_modules:/app/node_modules \
-  -w /app/apps/backend comunicapa/backend:dev node_modules/.bin/jest --maxWorkers=2
+  -w /app/apps/backend comunicapa/backend:dev node_modules/.bin/vitest run
 
 # Migration contro un DB temporaneo, sul container postgres già in esecuzione
 docker exec comunicapa-postgres-1 psql -U comunicapa -d comunicapa_db -c "CREATE DATABASE migration_test;"
@@ -103,14 +103,17 @@ docker exec -e DATABASE_URL="postgresql://comunicapa:<password>@postgres:5432/mi
 ## Test
 
 ```bash
-# Suite backend (SEMPRE --maxWorkers=2: senza, jest satura la RAM su WSL2)
-docker compose exec backend node_modules/.bin/jest --maxWorkers=2
+# Suite backend (Vitest — maxForks:2 già impostato in vitest.config.ts, niente flag da passare)
+docker compose exec backend node_modules/.bin/vitest run
 
 # Test singolo/focalizzato
-docker compose exec backend node_modules/.bin/jest <pattern> --maxWorkers=2
+docker compose exec backend node_modules/.bin/vitest run <pattern>
 
-# Type-check backend
+# Type-check backend (solo src/, esclude gli *.spec.ts)
 docker compose exec backend node_modules/.bin/tsc --noEmit
+
+# Type-check backend INCLUSI gli *.spec.ts (SWC/Vitest non type-checkano gli spec — serve questo per coprirli)
+docker compose exec backend node_modules/.bin/tsc -p tsconfig.spec.json --noEmit
 
 # Type-check frontend (NON usare `tsc -b`: fallisce nel container dev per
 # errori @types/node preesistenti che non riproducono nel build prod)
@@ -1037,11 +1040,14 @@ contro GlobalCom prod (Montesilvano) con IDPRO reale. Per ogni nuovo
 metodo SOAP: dati sempre da `Risposta`, mai dal campo `<metodo>Result`.
 
 **Script di debug per interrogare GlobalCom a mano su un IDPRO reale**:
-`apps/backend/src/debug/globalcom-dettagli-documento.js` — replica a mano
+`apps/backend/src/debug/globalcom-dettagli-documento.cjs` — replica a mano
 login+cookie di sessione+`dettagli_documento` senza passare da nest
 build/dist (decripta la password del provider POSTAL attivo dal DB dev,
 stesso pattern già noto per testare IDPRO reali assenti dal DB dev). Uso:
-`docker compose exec backend node src/debug/globalcom-dettagli-documento.js <IDPRO>`.
+`docker compose exec backend node src/debug/globalcom-dettagli-documento.cjs <IDPRO>`.
+Estensione `.cjs`, non `.js`: `apps/backend/package.json` ha `"type": "module"`,
+quindi un `.js` in questo package verrebbe trattato come ESM e il `require()`
+in cima allo script fallirebbe con `ReferenceError: require is not defined`.
 Due gotcha già presi a mazzate una volta, incorporati nello script: (1)
 `LoginAsync` vuole `user`/`password`/`group` minuscoli inglesi — nomi
 diversi producono un `NullReferenceException` generico, non un errore di
