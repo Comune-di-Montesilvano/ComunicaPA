@@ -18,6 +18,11 @@
 - Baseline test: failure set identico a quello Jest attuale — 1 solo fallimento noto (`app.controller.spec.ts`, `isLdapMock`). Qualunque nuovo fallimento è una regressione, non baseline nota.
 - Nessun merge in main prima che TUTTI i task abbiano superato la propria verifica — rollout big-bang, non incrementale (vedi spec, sezione Rollout).
 - Rebuild obbligatorio del volume `comunicapa_backend_node_modules` a ogni cambio di `package.json` (pattern già documentato in CLAUDE.md).
+- **Risorse di sistema — vincolo aggiunto dopo lo spike (host già andato in low-memory durante suite complete in container throwaway parallele).** Ogni implementer:
+  - Mai eseguire la suite completa (jest o vitest) in locale — solo test mirati sui file/aree toccate dal proprio task. La verifica di regressione whole-suite è demandata a CI (`.github/workflows/tests.yml`, gira su push/PR verso `main` — vedi Task 12 per il trigger PR aggiunto).
+  - Un solo container Docker throwaway alla volta, mai in parallelo. Sempre `--rm` o pulizia esplicita (`docker rm -f`) subito dopo l'uso — mai lasciare container `Up` non necessari.
+  - Passare sempre un limite esplicito (`--memory=2g` o simile) ai container throwaway usati per compilazioni/test pesanti.
+  - Se un comando va in background/timeout, verificare lo stato con `docker ps`/`docker wait` invece di rilanciarlo — rilanci multipli dello stesso comando sono la causa più comune di esaurimento memoria osservata in questa sessione.
 
 ---
 
@@ -707,10 +712,12 @@ Claude-Session: https://claude.ai/code/session_01AzaWjo41oFJK2355bKqG8Z"
 
 ---
 
-## Task 10: Suite Vitest completa verde + `nest build` pulito
+## Task 10: Verifica mirata Vitest + `nest build` pulito (suite completa demandata a CI)
+
+**Vincolo risorse (vedi Global Constraints): niente suite completa in locale.** Questo task esegue solo un sottoinsieme rappresentativo mirato — un file per area/canale toccato dai fix dei task precedenti — non l'intera suite da 1142 test. La verifica whole-suite avviene in CI dopo il push (Task 12).
 
 **Files:**
-- Nessuna modifica di file prevista in questo task — è verifica pura. Se emergono fallimenti reali (non i 3 problemi già risolti nei task 2-9), la loro fix va aggiunta qui come step extra, con lo stesso rigore "no placeholder": codice reale, non "sistemare i test che falliscono".
+- Nessuna modifica di file prevista in questo task — è verifica pura. Se emergono fallimenti reali (non i 3 problemi già risolti nei task 2-9) nel sottoinsieme testato, la loro fix va aggiunta qui come step extra, con lo stesso rigore "no placeholder": codice reale, non "sistemare i test che falliscono".
 
 **Interfaces:**
 - Nessuna.
@@ -740,13 +747,24 @@ docker compose exec backend node_modules/.bin/nest build
 
 Expected: nessun output (successo silenzioso, come per `tsc`).
 
-- [ ] **Step 4: Suite Vitest completa**
+- [ ] **Step 4: Verifica mirata — un file rappresentativo per ciascuna area toccata dai fix**
 
 ```bash
-docker compose exec backend node_modules/.bin/vitest run
+docker compose exec backend node_modules/.bin/vitest run \
+  auth/auth.module.spec.ts \
+  auth/oidc/oidc-flow.service.spec.ts \
+  auth/strategies/oidc-citizen.strategy.spec.ts \
+  queue/notification.processor.spec.ts \
+  queue/queue.module.spec.ts \
+  channels/anpr/anpr.service.spec.ts \
+  channels/postal/globalcom-client.service.spec.ts \
+  channels/domicilio/domicilio.service.spec.ts \
+  database/data-source.spec.ts
 ```
 
-Expected: **failure set identico alla baseline Jest attuale** — 1 solo fallimento noto (`app.controller.spec.ts`, `isLdapMock`), resto verde. Confrontare il numero totale di test con la baseline nota (1142) — un numero significativamente diverso indica che alcuni file non vengono raccolti da Vitest (verificare `include` in `vitest.config.ts`).
+(se uno di questi file non esiste — es. `auth.module.spec.ts`/`queue.module.spec.ts`/`data-source.spec.ts` potrebbero non avere uno spec dedicato — ometterlo dalla lista, non crearne uno nuovo: non è nello scope di questo task).
+
+Expected: tutti i file eseguiti passano, **zero fallimenti nuovi** rispetto alla baseline nota.
 
 - [ ] **Step 5: `tsc --noEmit` finale (include gli spec file, esclusi dalla build ma non dal type-check)**
 
@@ -915,15 +933,60 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01AzaWjo41oFJK2355bKqG8Z"
 ```
 
-- [ ] **Step 4: Push branch e richiedere code review prima del merge**
+- [ ] **Step 4: Abilitare CI (`tests.yml`) anche su pull request**
+
+`tests.yml` oggi triggera solo su `push: branches: [main]` — non gira mai su un branch feature/PR. Dato che la verifica whole-suite di questa migrazione è demandata esplicitamente a CI (vedi Global Constraints/Task 10), serve farla girare PRIMA del merge, non dopo. In `.github/workflows/tests.yml`, cambiare:
+
+```yaml
+on:
+  push:
+    branches: [main]
+```
+
+in:
+
+```yaml
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+```
+
+```bash
+git add .github/workflows/tests.yml
+git commit -m "ci: esegui tests.yml anche su pull_request verso main
+
+Necessario per validare la suite Vitest completa in CI prima del merge
+della migrazione NestJS v12 ESM (verifica locale volutamente limitata
+a test mirati, vedi piano).
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01AzaWjo41oFJK2355bKqG8Z"
+```
+
+- [ ] **Step 5: Push branch e aprire PR**
 
 ```bash
 git push -u origin feature/nestjs-v12-esm
+gh pr create --base main --head feature/nestjs-v12-esm \
+  --title "feat(backend): migrazione NestJS v12 (ESM)" \
+  --body "Migrazione completa backend a NestJS v12 ESM. Spec: docs/superpowers/specs/2026-09-05-nestjs-v12-esm-migration-design.md — Piano: docs/superpowers/plans/2026-09-05-nestjs-v12-esm-migration.md
+
+Verifica locale: test mirati per area (vedi Task 10), suite completa demandata a questa CI. Attendere l'esito di tests.yml su questa PR prima del merge."
 ```
 
-Non fare merge diretto in main — questo è un cambiamento ad alto impatto (intero backend, framework core). Seguire `superpowers:requesting-code-review` prima di procedere al merge, anche se tutti i task precedenti sono verdi.
+- [ ] **Step 6: Attendere l'esito di CI sulla PR prima di procedere al merge**
 
-- [ ] **Step 5: Chiudere le 6 PR dependabot obsolete**
+```bash
+gh pr checks --watch
+```
+
+Expected: `tests.yml` verde. Se fallisce, NON forzare il merge — il fallimento in CI (ambiente pulito, Node 22, pnpm v9, nessuno dei workaround/volumi Docker locali) è il segnale più affidabile che questo piano abbia prodotto, esattamente perché è indipendente dallo stato locale mutato di questa sessione. Diagnosticare con `superpowers:systematic-debugging`.
+
+Non fare merge diretto in main senza che CI sia verde — questo è un cambiamento ad alto impatto (intero backend, framework core). Seguire `superpowers:requesting-code-review` prima di procedere al merge, anche a CI verde.
+
+- [ ] **Step 7: Chiudere le 6 PR dependabot obsolete**
 
 ```bash
 gh pr close 12 -c "Sostituita da migrazione manuale coordinata: docs/superpowers/specs/2026-09-05-nestjs-v12-esm-migration-design.md"
