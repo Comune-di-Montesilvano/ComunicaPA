@@ -1035,6 +1035,12 @@ HTML non valido, il browser instrada il submit sulla form esterna
 di salvare). Usare `<div>` + bottone con `onClick` esplicito per
 qualunque pannello di editing dentro una tab di Impostazioni.
 
+**Un dato correttamente calcolato/salvato in state può restare invisibile per un gate di rendering indipendente
+dal dato stesso** (es. una sezione mostrata solo per un certo canale, non per la presenza del dato) — prima di
+sospettare un bug di parsing/backend quando "il dato non compare", verificare se la sezione UI che lo mostrerebbe
+è condizionata da altro stato (bug reale: indirizzo Registro Imprese scritto giusto nello state, sezione
+indirizzo nascosta perché il canale non era POSTAL/SEND — vedi "Verifica Anagrafica" sopra).
+
 ## Verifica Anagrafica (Cerca Domicilio) — validazione locale + errori leggibili
 
 `isValidCfOrPiva()` (`App.tsx`, già usata dal wizard singolo) va sempre chiamata lato client PRIMA di interrogare
@@ -1043,6 +1049,12 @@ un endpoint di verifica esterna (ANPR/INAD/App IO/Registro Imprese) — bug real
 `formatExternalErrorMessage()` (`App.tsx`) sanitizza il payload JSON/XML grezzo degli errori esterni prima di
 mostrarli in UI (tiene solo contesto + HTTP code + suggerimento IT) — ogni nuovo pannello che mostra un
 `message` di errore da un servizio esterno deve passarci attraverso, mai stampare `error.message` grezzo.
+
+**Wizard singolo, PIVA senza PEC: l'indirizzo sede va comunque compilato, ma resta invisibile senza un avviso
+esplicito.** Nessuna PEC trovata su Registro Imprese non forza alcun canale (correttamente — nessun domicilio
+digitale) ma `needsWizSinglePhysicalAddress` mostra i campi indirizzo fisico solo per canale POSTAL/SEND: senza un
+banner dedicato l'operatore non ha modo di sapere che l'indirizzo è già disponibile e serve solo cambiare canale.
+Stesso principio generale sotto ("un dato può restare invisibile per un gate di rendering indipendente").
 
 ## Allegati e co-consegna App IO — gotcha
 
@@ -1142,6 +1154,12 @@ COMPLETA (`jest --maxWorkers=2`, non un pattern) durante un task
 successivo non correlato. Dopo ogni modifica a una firma di costruttore,
 lanciare la suite intera prima di dichiarare la baseline pulita.
 
+**Un service molto testato può avere PIÙ `Test.createTestingModule` indipendenti anche nello stesso file, e/o in
+file spec separati.** Aggiungere un parametro al costruttore non basta patchare un solo `beforeEach`: grep
+`createTestingModule` nell'intero file E in tutto `src/` per lo stesso service prima di considerare il fix
+completo — bug reale: `campaigns.service.spec.ts` aveva 12 builder indipendenti, più un tredicesimo in
+`campaigns.service.cost.spec.ts`, scoperti solo eseguendo la suite completa dopo un fix parziale.
+
 ## TypeORM — leftJoinAndSelect + orderBy + take, bug interno
 
 TypeORM 0.3.30 lancia `Cannot read properties of undefined (reading
@@ -1229,6 +1247,14 @@ digitale, non bypassabile da un'esclusiva App IO (`notification.processor.ts`).
 una campagna PEC con indirizzo INAD coincidente, `found:true` ma
 `diverted:false`, non è un vero dirottamento). Le decisioni di
 instradamento/reporting vanno sempre su `diverted`, mai su `found` da solo.
+
+**Portando questa logica su un nuovo path (es. sync→async), copiare la base di confronto ESATTA per `diverted`,
+mai riderivarla "a logica".** `diverted` confronta SEMPRE `recipient.pec` grezzo, indipendente dal canale
+campagna — non `originalAddress` (campo solo-audit, per canali non-PEC è `recipient.email`, coincide con
+`recipient.pec` per puro caso solo quando il canale È PEC). I due campi sembrano intercambiabili ma non lo sono:
+estendendo il check al percorso async per Registro Imprese (job BullMQ per PIVA), la tentazione naturale era
+confrontare contro `originalAddress` — avrebbe cambiato silenziosamente il comportamento esistente. Diff riga per
+riga contro l'originale quando si porta business logic su un path parallelo, non riscrivere "equivalente".
 
 ## Matrice comportamenti campagne per canale — fonte di verità
 
