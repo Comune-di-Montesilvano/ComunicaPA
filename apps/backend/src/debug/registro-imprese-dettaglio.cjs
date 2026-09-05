@@ -5,7 +5,7 @@
 // usato per globalcom-dettagli-documento.js (vedi CLAUDE.md).
 //
 // Uso (dal container backend, workdir /app/apps/backend):
-//   docker compose exec backend node src/debug/registro-imprese-dettaglio.js <PARTITA_IVA>
+//   docker compose exec backend node src/debug/registro-imprese-dettaglio.cjs <PARTITA_IVA>
 
 const { Client } = require('pg');
 const crypto = require('crypto');
@@ -32,7 +32,7 @@ const REGISTRO_IMPRESE_BASE_URL = {
 async function main() {
   const partitaIva = process.argv[2];
   if (!partitaIva) {
-    console.error('Uso: node src/debug/registro-imprese-dettaglio.js <PARTITA_IVA>');
+    console.error('Uso: node src/debug/registro-imprese-dettaglio.cjs <PARTITA_IVA>');
     process.exit(1);
   }
 

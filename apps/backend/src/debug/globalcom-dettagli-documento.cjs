@@ -7,7 +7,7 @@
 // senza passare da un job/cron.
 //
 // Uso (dal container backend, workdir /app/apps/backend):
-//   docker compose exec backend node src/debug/globalcom-dettagli-documento.js <IDPRO>
+//   docker compose exec backend node src/debug/globalcom-dettagli-documento.cjs <IDPRO>
 //
 // Gotcha già presi a mazzate una volta, non ripeterli:
 // - LoginAsync vuole i parametri "user"/"password"/"group" (inglese,
@@ -40,7 +40,7 @@ function decryptValue(stored, key) {
 async function main() {
   const idpro = process.argv[2];
   if (!idpro) {
-    console.error('Uso: node src/debug/globalcom-dettagli-documento.js <IDPRO>');
+    console.error('Uso: node src/debug/globalcom-dettagli-documento.cjs <IDPRO>');
     process.exit(1);
   }
 
