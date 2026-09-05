@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # ── Build ─────────────────────────────────────────────────────────────────────
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 
@@ -32,7 +32,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm --filter backend deploy --prod --ignore-scripts --legacy /prod/backend
 
 # ── Runtime ───────────────────────────────────────────────────────────────────
-FROM node:22-alpine
+FROM node:26-alpine
 RUN apk add --no-cache tzdata
 ARG APP_VERSION=dev
 ENV APP_VERSION=${APP_VERSION} NODE_ENV=production TZ=Europe/Rome
