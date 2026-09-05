@@ -1,0 +1,83 @@
+version: 2
+updates:
+  # pnpm workspace monorepo — root pnpm-lock.yaml copre apps/* + packages/*
+  # (Dependabot rileva il workspace pnpm da un solo entry alla root, non
+  # serve un entry per apps/backend, apps/frontend-admin, ecc.)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    groups:
+      npm-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  # services/pdf-extractor — FastAPI/PyMuPDF, requirements.txt separato
+  - package-ecosystem: "pip"
+    directory: "/services/pdf-extractor"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    groups:
+      pip-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  # Dockerfile + Dockerfile.dev per servizio — un entry per directory copre
+  # entrambi i file (Dependabot scansiona ogni Dockerfile* nella directory).
+  - package-ecosystem: "docker"
+    directory: "/apps/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  - package-ecosystem: "docker"
+    directory: "/apps/frontend-admin"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  - package-ecosystem: "docker"
+    directory: "/apps/frontend-citizen"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  - package-ecosystem: "docker"
+    directory: "/services/pdf-extractor"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  # Workflow GitHub Actions (.github/workflows/*.yml)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
