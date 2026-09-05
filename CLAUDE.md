@@ -247,6 +247,49 @@ buildando l'immagine di produzione reale in locale** (`docker build -f
 apps/<app>/Dockerfile .`, non solo `Dockerfile.dev`) — il dev bind-mount ha
 già mascherato due bug di produzione consecutivi in questa storia.
 
+## Backend NestJS v12 (ESM) — migrazione completata
+
+Il backend è ESM puro (`"type": "module"`, `moduleResolution: NodeNext`)
+dalla migrazione a NestJS v12 (v10 era CommonJS). Punti che restano
+gotcha per lavoro futuro:
+
+- **Ogni nuovo import relativo richiede `.js` esplicito**
+  (`from './foo.js'`, non `from './foo'`) — vincolo Node ESM nativo con
+  `moduleResolution: NodeNext`, TS lo mappa al file `.ts` corrispondente
+  in compilazione. Dimenticarlo produce `Cannot find module` solo a
+  runtime su `dist/`, non sempre a `tsc --noEmit` (dipende dal path).
+- **Import di pacchetti CJS**: verificare sempre se il pacchetto espone
+  un default export "sintetico" problematico sotto NodeNext (visto con
+  `ioredis` v6: serve `import { Redis } from 'ioredis'`, non l'import di
+  default) — non assumere che un pacchetto CJS funzioni automaticamente
+  con l'import di default solo perché ha sempre funzionato in CJS.
+- **`@nestjs/passport` — `AuthGuard()` richiede sempre
+  `PassportModule.register({})` esplicito**, mai l'import nudo di
+  `PassportModule` (che non fornisce alcun provider) — regressione v12
+  dove `@Optional()` sul provider `AuthModuleOptions` non è rispettato
+  dal mixin, causa `UnknownDependenciesException` invece di `undefined`.
+- **Vitest sostituisce Jest** (`docker compose exec backend
+  node_modules/.bin/vitest run`, stesso vincolo `--maxWorkers`→
+  `poolOptions.forks.maxForks: 2` già noto per jest). `vitest.setup.ts`
+  fa da shim (`globalThis.jest = vi`) per i test esistenti — ma
+  **`jest.mock()` non viene hoistato** dallo shim (l'hoisting di
+  `vi.mock()` è statico, cerca sintatticamente `vi.mock` nel sorgente):
+  ogni nuovo test che deve mockare un modulo intero va scritto con
+  `vi.mock(...)` letterale, mai `jest.mock(...)`.
+- **`unplugin-swc` in `vitest.config.ts` richiede
+  `jsc.transform.decoratorMetadata: true` esplicito** — senza, la DI di
+  Nest (`Test.createTestingModule().compile()`) va in **hang silenzioso**
+  (timeout hook, nessun errore) per perdita dei `design:paramtypes`.
+- **`typeorm-ts-node-esm`** sostituisce `typeorm-ts-node-commonjs` in
+  tutti i comandi di migration CLI documentati sopra (sezione
+  "Migration DB") — stesso utilizzo, solo binario diverso.
+- **`dist/esm/package.json` con `{"type":"module"}`** va rigenerato a
+  ogni build di `@comunicapa/shared-types` (i Dockerfile lo fanno con un
+  `echo` dopo le due chiamate `tsc` — vedi Dockerfile backend/frontend-
+  admin/frontend-citizen) — senza, Node logga
+  `MODULE_TYPELESS_PACKAGE_JSON` a ogni boot (non bloccante, ma da
+  eliminare).
+
 ## TypeScript
 
 `tsconfig.base.json` alla root impone strict mode completo. Ogni app estende questa base. Il backend aggiunge `experimentalDecorators` e `emitDecoratorMetadata` (richiesti dai decorator NestJS).
