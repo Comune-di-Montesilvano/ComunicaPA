@@ -1,4 +1,4 @@
-import { parseCsvContent, buildCsvContent } from './csv.util';
+import { parseCsvContent, buildCsvContent } from './csv.util.js';
 
 describe('csv.util', () => {
   describe('parseCsvContent', () => {

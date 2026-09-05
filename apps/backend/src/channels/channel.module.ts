@@ -1,26 +1,26 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import type { NotificationChannel } from '@comunicapa/shared-types';
-import { PdndModule } from '../pdnd/pdnd.module';
-import { ProtocolloModule } from '../protocollo/protocollo.module';
-import { AttachmentModule } from '../attachments/attachment.module';
-import { NotificationAttempt } from '../entities/notification-attempt.entity';
-import { Campaign } from '../entities/campaign.entity';
-import { Recipient } from '../entities/recipient.entity';
-import type { IChannelStrategy } from './channel.interface';
-import { CHANNEL_STRATEGIES } from './channel.interface';
-import { EmailStrategy } from './email/email.strategy';
-import { PecStrategy } from './pec/pec.strategy';
-import { AppIoStrategy } from './app-io/app-io.strategy';
-import { SendAttachmentUploadService } from './send/send-attachment-upload.service';
-import { SendStatusSyncService } from './send/send-status-sync.service';
-import { SendBaseFeeService } from './send/send-base-fee.service';
-import { SendDispatchService } from './send/send-dispatch.service';
-import { PostalStrategy } from './postal/postal.strategy';
-import { GlobalComClientModule } from './postal/globalcom-client.module';
-import { PostalStatusSyncService } from './postal/postal-status-sync.service';
-import { CampaignCompletionService } from '../campaigns/campaign-completion.service';
-import { AppIoDeliveryService } from './app-io/app-io-delivery.service';
+import { PdndModule } from '../pdnd/pdnd.module.js';
+import { ProtocolloModule } from '../protocollo/protocollo.module.js';
+import { AttachmentModule } from '../attachments/attachment.module.js';
+import { NotificationAttempt } from '../entities/notification-attempt.entity.js';
+import { Campaign } from '../entities/campaign.entity.js';
+import { Recipient } from '../entities/recipient.entity.js';
+import type { IChannelStrategy } from './channel.interface.js';
+import { CHANNEL_STRATEGIES } from './channel.interface.js';
+import { EmailStrategy } from './email/email.strategy.js';
+import { PecStrategy } from './pec/pec.strategy.js';
+import { AppIoStrategy } from './app-io/app-io.strategy.js';
+import { SendAttachmentUploadService } from './send/send-attachment-upload.service.js';
+import { SendStatusSyncService } from './send/send-status-sync.service.js';
+import { SendBaseFeeService } from './send/send-base-fee.service.js';
+import { SendDispatchService } from './send/send-dispatch.service.js';
+import { PostalStrategy } from './postal/postal.strategy.js';
+import { GlobalComClientModule } from './postal/globalcom-client.module.js';
+import { PostalStatusSyncService } from './postal/postal-status-sync.service.js';
+import { CampaignCompletionService } from '../campaigns/campaign-completion.service.js';
+import { AppIoDeliveryService } from './app-io/app-io-delivery.service.js';
 
 @Module({
   imports: [

@@ -1,9 +1,9 @@
-import type { Recipient } from '../entities/recipient.entity';
+import type { Recipient } from '../entities/recipient.entity.js';
 import type { NotificationChannel } from '@comunicapa/shared-types';
-import { signDownloadLink } from './download-link.util';
-import { resolveCustomAttachmentFilename } from '../attachments/attachment.service';
-import { resolvePhysicalAddress } from './payment-config.util';
-import type { AppSettingsService } from '../settings/app-settings.service';
+import { signDownloadLink } from './download-link.util.js';
+import { resolveCustomAttachmentFilename } from '../attachments/attachment.service.js';
+import { resolvePhysicalAddress } from './payment-config.util.js';
+import type { AppSettingsService } from '../settings/app-settings.service.js';
 
 /**
  * Replaces fixed placeholders (%%allegato1%%, %%allegato2%%, ...), the standard

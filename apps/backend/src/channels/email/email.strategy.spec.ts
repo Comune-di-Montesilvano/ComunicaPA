@@ -1,8 +1,8 @@
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { EmailStrategy } from './email.strategy';
-import { AppSettingsService } from '../../settings/app-settings.service';
-import { MailConfigsService } from '../../mail-configs/mail-configs.service';
+import { EmailStrategy } from './email.strategy.js';
+import { AppSettingsService } from '../../settings/app-settings.service.js';
+import { MailConfigsService } from '../../mail-configs/mail-configs.service.js';
 
 const mockSendMail = jest.fn();
 const mockCreateTransport = jest.fn<{ sendMail: jest.Mock }, [unknown?]>(() => ({ sendMail: mockSendMail }));

@@ -1,6 +1,6 @@
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { InitAttachmentUploadDto } from './init-attachment-upload.dto';
+import { InitAttachmentUploadDto } from './init-attachment-upload.dto.js';
 
 async function validateDto(payload: Record<string, unknown>) {
   const dto = plainToInstance(InitAttachmentUploadDto, payload);

@@ -1,6 +1,6 @@
 import { Processor } from '@nestjs/bullmq';
-import { CHANNEL_QUEUES } from './notification-job.types';
-import { NotificationProcessor } from './notification.processor';
+import { CHANNEL_QUEUES } from './notification-job.types.js';
+import { NotificationProcessor } from './notification.processor.js';
 
 // Le sottoclassi NON dichiarano un costruttore: i metadati di iniezione
 // (design:paramtypes e @Inject) vengono risolti risalendo la prototype chain

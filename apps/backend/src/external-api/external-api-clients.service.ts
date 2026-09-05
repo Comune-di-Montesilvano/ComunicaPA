@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { randomBytes, createHash } from 'crypto';
-import { ExternalApiClient } from '../entities/external-api-client.entity';
+import { ExternalApiClient } from '../entities/external-api-client.entity.js';
 
 export interface ExternalApiClientMaskedDto {
   id: string;

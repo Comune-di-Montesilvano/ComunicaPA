@@ -1,6 +1,6 @@
-import { escapeCsvField } from './csv.util';
-import type { PostalReportDto, PostalReportRowDto } from './dto/campaign-stats.dto';
-import { postalStatusLabel, POSTAL_STATUS_HISTORY_COLUMNS } from './postal-status-labels.util';
+import { escapeCsvField } from './csv.util.js';
+import type { PostalReportDto, PostalReportRowDto } from './dto/campaign-stats.dto.js';
+import { postalStatusLabel, POSTAL_STATUS_HISTORY_COLUMNS } from './postal-status-labels.util.js';
 
 function formatDate(iso: string | undefined): string {
   return iso ? new Date(iso).toLocaleString('it-IT', { timeZone: 'Europe/Rome' }) : '';

@@ -21,26 +21,26 @@ import { basename, extname, join } from 'path';
 import * as fs from 'fs';
 import type { Request, Response } from 'express';
 import type { JwtOperatorPayload } from '@comunicapa/shared-types';
-import type { Campaign } from '../entities/campaign.entity';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { CampaignsService } from './campaigns.service';
-import { CampaignContentCorrectionService } from './campaign-content-correction.service';
-import { CampaignBulkRetryService } from './campaign-bulk-retry.service';
-import type { ChannelOutcome } from './channel-outcome.util';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
-import { OperatorDirectoryService } from '../operator-directory/operator-directory.service';
-import { CreateCampaignDto } from './dto/create-campaign.dto';
-import { UpdateCampaignDto } from './dto/update-campaign.dto';
-import { PreviewMessageDto } from './dto/preview-message.dto';
-import { TestSendDto } from './dto/test-send.dto';
-import { UpdateRecipientAddressDto } from './dto/update-recipient-address.dto';
-import { AttachPostalTrackingIdDto } from './dto/attach-postal-tracking-id.dto';
-import { UpdateCampaignContentDto } from './dto/update-campaign-content.dto';
-import { getUploadsDir, safeGetUploadsDir } from '../attachments/attachment-paths';
-import { buildNeverDownloadedCsv } from './never-downloaded-csv.util';
-import { buildDownloadReportCsv } from './download-report-csv.util';
-import { buildSendReportAttualeCsv, buildSendReportStoricoCsv } from './send-report-csv.util';
-import { buildPostalReportAttualeCsv, buildPostalReportStoricoCsv } from './postal-report-csv.util';
+import type { Campaign } from '../entities/campaign.entity.js';
+import { Roles } from '../auth/decorators/roles.decorator.js';
+import { CampaignsService } from './campaigns.service.js';
+import { CampaignContentCorrectionService } from './campaign-content-correction.service.js';
+import { CampaignBulkRetryService } from './campaign-bulk-retry.service.js';
+import type { ChannelOutcome } from './channel-outcome.util.js';
+import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
+import { OperatorDirectoryService } from '../operator-directory/operator-directory.service.js';
+import { CreateCampaignDto } from './dto/create-campaign.dto.js';
+import { UpdateCampaignDto } from './dto/update-campaign.dto.js';
+import { PreviewMessageDto } from './dto/preview-message.dto.js';
+import { TestSendDto } from './dto/test-send.dto.js';
+import { UpdateRecipientAddressDto } from './dto/update-recipient-address.dto.js';
+import { AttachPostalTrackingIdDto } from './dto/attach-postal-tracking-id.dto.js';
+import { UpdateCampaignContentDto } from './dto/update-campaign-content.dto.js';
+import { getUploadsDir, safeGetUploadsDir } from '../attachments/attachment-paths.js';
+import { buildNeverDownloadedCsv } from './never-downloaded-csv.util.js';
+import { buildDownloadReportCsv } from './download-report-csv.util.js';
+import { buildSendReportAttualeCsv, buildSendReportStoricoCsv } from './send-report-csv.util.js';
+import { buildPostalReportAttualeCsv, buildPostalReportStoricoCsv } from './postal-report-csv.util.js';
 import {
   assembleChunkedUpload,
   cleanupChunkedUpload,
@@ -48,7 +48,7 @@ import {
   isValidChunkIndex,
   MAX_CHUNK_SIZE_BYTES,
   safeChunkUploadDir,
-} from './chunked-upload.util';
+} from './chunked-upload.util.js';
 
 type CampaignWithOwnerDisplay = Campaign & { createdByDisplayName?: string; attachmentExpiresAt?: string | null };
 

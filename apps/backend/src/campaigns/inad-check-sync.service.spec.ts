@@ -1,10 +1,10 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { InadCheckSyncService } from './inad-check-sync.service';
-import { Campaign, CampaignStatus } from '../entities/campaign.entity';
-import { InadService } from '../channels/inad/inad.service';
-import { RegistroImpreseVerifyQueueService } from '../channels/registro-imprese/registro-imprese-verify-queue.service';
-import { CampaignsService } from './campaigns.service';
+import { InadCheckSyncService } from './inad-check-sync.service.js';
+import { Campaign, CampaignStatus } from '../entities/campaign.entity.js';
+import { InadService } from '../channels/inad/inad.service.js';
+import { RegistroImpreseVerifyQueueService } from '../channels/registro-imprese/registro-imprese-verify-queue.service.js';
+import { CampaignsService } from './campaigns.service.js';
 
 describe('InadCheckSyncService', () => {
   let service: InadCheckSyncService;

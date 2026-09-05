@@ -1,6 +1,6 @@
-import { ExternalAttachmentsController } from './external-attachments.controller';
-import { ExternalAttachmentTokensService } from './external-attachment-tokens.service';
-import * as chunkedUpload from '../campaigns/chunked-upload.util';
+import { ExternalAttachmentsController } from './external-attachments.controller.js';
+import { ExternalAttachmentTokensService } from './external-attachment-tokens.service.js';
+import * as chunkedUpload from '../campaigns/chunked-upload.util.js';
 
 jest.mock('../campaigns/chunked-upload.util');
 

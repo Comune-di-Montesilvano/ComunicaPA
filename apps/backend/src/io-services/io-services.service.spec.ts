@@ -1,8 +1,8 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import { IoServicesService } from './io-services.service';
-import { IoServiceConfig } from '../entities/io-service-config.entity';
+import { IoServicesService } from './io-services.service.js';
+import { IoServiceConfig } from '../entities/io-service-config.entity.js';
 
 describe('IoServicesService', () => {
   let service: IoServicesService;

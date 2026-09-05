@@ -1,5 +1,5 @@
-import { SettingsController } from './settings.controller';
-import { MASKED_VALUE } from './settings.registry';
+import { SettingsController } from './settings.controller.js';
+import { MASKED_VALUE } from './settings.registry.js';
 
 describe('SettingsController — GET/PUT', () => {
   const settingsMock = {

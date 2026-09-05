@@ -1,4 +1,4 @@
-import { assertProductionSecrets, DEFAULT_DOWNLOAD_LINK_SECRET } from './production-guards';
+import { assertProductionSecrets, DEFAULT_DOWNLOAD_LINK_SECRET } from './production-guards.js';
 
 describe('assertProductionSecrets', () => {
   it('rifiuta il boot in produzione se il download-link secret è ancora il default', () => {

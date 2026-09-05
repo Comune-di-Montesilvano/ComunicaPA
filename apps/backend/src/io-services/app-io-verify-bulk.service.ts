@@ -3,10 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { Repository } from 'typeorm';
-import { AppIoVerificationJob, AppIoVerificationJobStatus } from '../entities/app-io-verification-job.entity';
-import { IoServiceConfig } from '../entities/io-service-config.entity';
-import { parseCsvContent } from './csv.util';
-import { APP_IO_VERIFY_BULK_QUEUE, AppIoVerifyBulkJobData } from './app-io-verify-bulk-job.types';
+import { AppIoVerificationJob, AppIoVerificationJobStatus } from '../entities/app-io-verification-job.entity.js';
+import { IoServiceConfig } from '../entities/io-service-config.entity.js';
+import { parseCsvContent } from './csv.util.js';
+import { APP_IO_VERIFY_BULK_QUEUE, AppIoVerifyBulkJobData } from './app-io-verify-bulk-job.types.js';
 
 export interface CreateBulkVerifyParams {
   csvContent: string;

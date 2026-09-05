@@ -1,4 +1,4 @@
-import { EnrichmentEventsService } from './enrichment-events.service';
+import { EnrichmentEventsService } from './enrichment-events.service.js';
 
 describe('EnrichmentEventsService', () => {
   let service: EnrichmentEventsService;

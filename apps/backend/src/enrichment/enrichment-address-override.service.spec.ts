@@ -1,4 +1,4 @@
-import { EnrichmentAddressOverrideService } from './enrichment-address-override.service';
+import { EnrichmentAddressOverrideService } from './enrichment-address-override.service.js';
 
 describe('EnrichmentAddressOverrideService', () => {
   let repo: any;

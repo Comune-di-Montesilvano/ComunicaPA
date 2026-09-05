@@ -8,7 +8,7 @@ import {
   initChunkedUpload,
   isValidChunkIndex,
   safeChunkUploadDir,
-} from './chunked-upload.util';
+} from './chunked-upload.util.js';
 
 /**
  * assembleChunkedUpload è condivisa da campagne (CSV destinatari, allegati),

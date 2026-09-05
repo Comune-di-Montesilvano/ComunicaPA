@@ -3,11 +3,11 @@ import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import * as fs from 'fs';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { IoServicesService } from './io-services.service';
-import { AppIoVerifyBulkService } from './app-io-verify-bulk.service';
-import { CreateIoServiceDto, UpdateIoServiceDto, TestIoServiceDto, VerifyBulkCompleteDto } from './dto/io-service.dto';
-import { initChunkedUpload, safeChunkUploadDir, isValidChunkIndex, assembleChunkedUpload, cleanupChunkedUpload, MAX_CHUNK_SIZE_BYTES } from '../campaigns/chunked-upload.util';
+import { Roles } from '../auth/decorators/roles.decorator.js';
+import { IoServicesService } from './io-services.service.js';
+import { AppIoVerifyBulkService } from './app-io-verify-bulk.service.js';
+import { CreateIoServiceDto, UpdateIoServiceDto, TestIoServiceDto, VerifyBulkCompleteDto } from './dto/io-service.dto.js';
+import { initChunkedUpload, safeChunkUploadDir, isValidChunkIndex, assembleChunkedUpload, cleanupChunkedUpload, MAX_CHUNK_SIZE_BYTES } from '../campaigns/chunked-upload.util.js';
 
 @Controller('admin/io-services')
 export class IoServicesController {

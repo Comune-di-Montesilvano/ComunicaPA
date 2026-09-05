@@ -1,8 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Template } from '../entities/template.entity';
-import type { CreateTemplateDto, UpdateTemplateDto } from './dto/template.dto';
+import { Template } from '../entities/template.entity.js';
+import type { CreateTemplateDto, UpdateTemplateDto } from './dto/template.dto.js';
 
 @Injectable()
 export class TemplatesService {

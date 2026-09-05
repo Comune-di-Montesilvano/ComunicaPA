@@ -1,12 +1,12 @@
 import { Controller, Get, UseFilters, UseGuards } from '@nestjs/common';
-import { Public } from '../auth/decorators/public.decorator';
-import { ApiKeyGuard } from './guards/api-key.guard';
-import { ExternalApiExceptionFilter } from './external-api-exception.filter';
-import { MailConfigsService } from '../mail-configs/mail-configs.service';
-import { IoServicesService } from '../io-services/io-services.service';
-import { PostalProvidersService } from '../postal-providers/postal-providers.service';
-import { AppSettingsService } from '../settings/app-settings.service';
-import type { SettingKey } from '../settings/settings.registry';
+import { Public } from '../auth/decorators/public.decorator.js';
+import { ApiKeyGuard } from './guards/api-key.guard.js';
+import { ExternalApiExceptionFilter } from './external-api-exception.filter.js';
+import { MailConfigsService } from '../mail-configs/mail-configs.service.js';
+import { IoServicesService } from '../io-services/io-services.service.js';
+import { PostalProvidersService } from '../postal-providers/postal-providers.service.js';
+import { AppSettingsService } from '../settings/app-settings.service.js';
+import type { SettingKey } from '../settings/settings.registry.js';
 
 @Controller('external/v1/capabilities')
 @Public()

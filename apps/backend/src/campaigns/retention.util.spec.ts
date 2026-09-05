@@ -1,4 +1,4 @@
-import { getEffectiveRetentionDays } from './retention.util';
+import { getEffectiveRetentionDays } from './retention.util.js';
 
 describe('getEffectiveRetentionDays', () => {
   it('usa retentionDays della campagna se impostato', () => {

@@ -1,5 +1,5 @@
-import { resolvePaymentData, resolvePhysicalAddress } from './payment-config.util';
-import type { Recipient } from '../entities/recipient.entity';
+import { resolvePaymentData, resolvePhysicalAddress } from './payment-config.util.js';
+import type { Recipient } from '../entities/recipient.entity.js';
 
 function makeRecipient(extraData: Record<string, unknown> = {}): Recipient {
   return {

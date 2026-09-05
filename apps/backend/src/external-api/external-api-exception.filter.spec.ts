@@ -1,6 +1,6 @@
 import { ArgumentsHost, BadRequestException, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
-import { ExternalApiExceptionFilter } from './external-api-exception.filter';
-import * as sentryUtil from '../common/sentry.util';
+import { ExternalApiExceptionFilter } from './external-api-exception.filter.js';
+import * as sentryUtil from '../common/sentry.util.js';
 
 jest.mock('../common/sentry.util', () => ({ captureException: jest.fn() }));
 

@@ -3,9 +3,9 @@ import * as os from 'os';
 import { join } from 'path';
 import AdmZip from 'adm-zip';
 import type { Job } from 'bullmq';
-import { EnrichmentJobStatus, TraceFormat } from '../entities/enrichment-job.entity';
-import { getEnrichmentAttachmentsDir, getEnrichmentCheckpoint, getEnrichmentDir, getEnrichmentResultCsv, getEnrichmentSourceZip } from './enrichment-paths';
-import { EnrichmentProcessor } from './enrichment.processor';
+import { EnrichmentJobStatus, TraceFormat } from '../entities/enrichment-job.entity.js';
+import { getEnrichmentAttachmentsDir, getEnrichmentCheckpoint, getEnrichmentDir, getEnrichmentResultCsv, getEnrichmentSourceZip } from './enrichment-paths.js';
+import { EnrichmentProcessor } from './enrichment.processor.js';
 
 const RUBRICA = [
   'id;pec1@pec.it;;MARIO;ROSSI;RSSMRA80A01H501U;;ROSSI MARIO;1;13/03/2026;Oggetto 1;;;PROVV_1.pdf',
@@ -296,7 +296,7 @@ describe('EnrichmentProcessor', () => {
   });
 
   it('resume: con checkpoint esistente, salta extractor.extract per le righe già coperte da lastRow', async () => {
-    const { writeCheckpointSync } = await import('./enrichment-checkpoint.util');
+    const { writeCheckpointSync } = await import('./enrichment-checkpoint.util.js');
     writeCheckpointSync('j1', {
       lastRow: 1,
       rows: [{ codice_fiscale: 'RSSMRA80A01H501U', allegato: 'PROVV_1.pdf', indirizzo: 'GIA PROCESSATA' }],

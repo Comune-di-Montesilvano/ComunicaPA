@@ -1,8 +1,8 @@
 import { Test } from '@nestjs/testing';
 import { createHash } from 'node:crypto';
-import { AnprService } from './anpr.service';
-import { AppSettingsService } from '../../settings/app-settings.service';
-import { PdndAuthService } from '../../pdnd/pdnd-auth.service';
+import { AnprService } from './anpr.service.js';
+import { AppSettingsService } from '../../settings/app-settings.service.js';
+import { PdndAuthService } from '../../pdnd/pdnd-auth.service.js';
 
 const mockFetch = jest.fn();
 global.fetch = mockFetch as unknown as typeof fetch;

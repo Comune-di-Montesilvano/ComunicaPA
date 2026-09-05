@@ -4,10 +4,10 @@ import { Repository } from 'typeorm';
 import { Cron } from '@nestjs/schedule';
 import { join } from 'path';
 import { unlink, rm, readdir } from 'fs/promises';
-import { Recipient } from '../entities/recipient.entity';
-import { Campaign } from '../entities/campaign.entity';
-import { resolveAttachmentsConfig, resolveCustomAttachmentFilename } from '../attachments/attachment.service';
-import { getUploadsDir, getAttachmentsRoot } from '../attachments/attachment-paths';
+import { Recipient } from '../entities/recipient.entity.js';
+import { Campaign } from '../entities/campaign.entity.js';
+import { resolveAttachmentsConfig, resolveCustomAttachmentFilename } from '../attachments/attachment.service.js';
+import { getUploadsDir, getAttachmentsRoot } from '../attachments/attachment-paths.js';
 
 const BATCH_SIZE = 200;
 

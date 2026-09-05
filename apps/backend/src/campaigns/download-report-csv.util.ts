@@ -1,5 +1,5 @@
-import type { DownloadReportDto } from './dto/campaign-stats.dto';
-import { escapeCsvField } from './csv.util';
+import type { DownloadReportDto } from './dto/campaign-stats.dto.js';
+import { escapeCsvField } from './csv.util.js';
 
 export function buildDownloadReportCsv(report: DownloadReportDto): string {
   const headers = ['Codice Fiscale', 'Nominativo', 'Email', 'PEC', 'Stato Invio', 'Download Effettuati', 'Data Ultimo Download'];

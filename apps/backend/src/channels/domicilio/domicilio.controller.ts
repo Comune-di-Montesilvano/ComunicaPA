@@ -1,10 +1,10 @@
 import { Body, Controller, HttpCode, HttpStatus, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import type { JwtOperatorPayload } from '@comunicapa/shared-types';
-import { Roles } from '../../auth/decorators/roles.decorator';
-import { AuditLogsService } from '../../audit-logs/audit-logs.service';
-import { DomicilioService } from './domicilio.service';
-import { CercaDomicilioDto } from './dto/cerca-domicilio.dto';
+import { Roles } from '../../auth/decorators/roles.decorator.js';
+import { AuditLogsService } from '../../audit-logs/audit-logs.service.js';
+import { DomicilioService } from './domicilio.service.js';
+import { CercaDomicilioDto } from './dto/cerca-domicilio.dto.js';
 
 @Controller('admin/domicilio')
 export class DomicilioController {

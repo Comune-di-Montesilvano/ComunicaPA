@@ -1,8 +1,8 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { CampaignBulkRetryProcessor } from './campaign-bulk-retry.processor';
-import { CampaignBulkRetryJob, CampaignBulkRetryJobStatus } from '../entities/campaign-bulk-retry-job.entity';
-import { CampaignsService } from './campaigns.service';
+import { CampaignBulkRetryProcessor } from './campaign-bulk-retry.processor.js';
+import { CampaignBulkRetryJob, CampaignBulkRetryJobStatus } from '../entities/campaign-bulk-retry-job.entity.js';
+import { CampaignsService } from './campaigns.service.js';
 
 describe('CampaignBulkRetryProcessor', () => {
   let processor: CampaignBulkRetryProcessor;

@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import { join } from 'path';
-import { ExternalAttachmentTokensService } from './external-attachment-tokens.service';
-import * as chunkedUpload from '../campaigns/chunked-upload.util';
+import { ExternalAttachmentTokensService } from './external-attachment-tokens.service.js';
+import * as chunkedUpload from '../campaigns/chunked-upload.util.js';
 
 // `jest.mock('fs')` (automock) invece di `jest.spyOn(fs, ...)`: con
 // `esModuleInterop` l'helper `__createBinding` di TS copia le funzioni del

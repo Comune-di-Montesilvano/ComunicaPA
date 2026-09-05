@@ -1,6 +1,6 @@
 import { ArgumentsHost, NotFoundException } from '@nestjs/common';
-import { AllExceptionsFilter } from './all-exceptions.filter';
-import * as sentryUtil from './sentry.util';
+import { AllExceptionsFilter } from './all-exceptions.filter.js';
+import * as sentryUtil from './sentry.util.js';
 
 jest.mock('./sentry.util', () => ({ captureException: jest.fn() }));
 

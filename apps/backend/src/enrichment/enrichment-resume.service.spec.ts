@@ -1,10 +1,10 @@
-import { EnrichmentJobStatus } from '../entities/enrichment-job.entity';
-import { EnrichmentResumeService } from './enrichment-resume.service';
+import { EnrichmentJobStatus } from '../entities/enrichment-job.entity.js';
+import { EnrichmentResumeService } from './enrichment-resume.service.js';
 
 jest.mock('./enrichment-checkpoint.util', () => ({
   readCheckpointSync: jest.fn(),
 }));
-import { readCheckpointSync } from './enrichment-checkpoint.util';
+import { readCheckpointSync } from './enrichment-checkpoint.util.js';
 
 describe('EnrichmentResumeService', () => {
   let jobRepo: any;

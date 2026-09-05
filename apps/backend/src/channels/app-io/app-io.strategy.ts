@@ -1,15 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { NotificationChannel, ChannelSendResult } from '@comunicapa/shared-types';
-import type { ChannelLogFn, IChannelStrategy } from '../channel.interface';
-import type { Recipient } from '../../entities/recipient.entity';
-import type { Campaign } from '../../entities/campaign.entity';
-import { IoServicesService } from '../../io-services/io-services.service';
-import { AppSettingsService } from '../../settings/app-settings.service';
-import { processTemplate, formatAppIoMarkdown, resolveCitizenPortalUrl } from '../template.helper';
-import { resolveAttachmentsConfig, resolveAttachmentLabel } from '../../attachments/attachment.service';
-import { getEffectiveRetentionDays } from '../../campaigns/retention.util';
-import { resolvePaymentData } from '../payment-config.util';
+import type { ChannelLogFn, IChannelStrategy } from '../channel.interface.js';
+import type { Recipient } from '../../entities/recipient.entity.js';
+import type { Campaign } from '../../entities/campaign.entity.js';
+import { IoServicesService } from '../../io-services/io-services.service.js';
+import { AppSettingsService } from '../../settings/app-settings.service.js';
+import { processTemplate, formatAppIoMarkdown, resolveCitizenPortalUrl } from '../template.helper.js';
+import { resolveAttachmentsConfig, resolveAttachmentLabel } from '../../attachments/attachment.service.js';
+import { getEffectiveRetentionDays } from '../../campaigns/retention.util.js';
+import { resolvePaymentData } from '../payment-config.util.js';
 
 /** Endpoint ufficiale App IO (PagoPA). Non configurabile: cambia solo con una nuova release. */
 export const APP_IO_BASE_URL = 'https://api.io.pagopa.it';

@@ -1,6 +1,6 @@
-import { AdminExternalClientsController } from './admin-external-clients.controller';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
-import { ExternalApiClientsService } from './external-api-clients.service';
+import { AdminExternalClientsController } from './admin-external-clients.controller.js';
+import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
+import { ExternalApiClientsService } from './external-api-clients.service.js';
 
 describe('AdminExternalClientsController', () => {
   let controller: AdminExternalClientsController;

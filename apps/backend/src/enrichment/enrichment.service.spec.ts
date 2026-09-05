@@ -3,10 +3,10 @@ import * as os from 'os';
 import { join } from 'path';
 import AdmZip from 'adm-zip';
 import { BadRequestException } from '@nestjs/common';
-import { EnrichmentJobStatus, TraceFormat } from '../entities/enrichment-job.entity';
-import { EnrichmentService } from './enrichment.service';
-import { getEnrichmentAttachmentsDir, getEnrichmentDir, getEnrichmentResultCsv } from './enrichment-paths';
-import { buildEnrichedCsv, buildEnrichedCsvHeaders } from './enriched-csv.util';
+import { EnrichmentJobStatus, TraceFormat } from '../entities/enrichment-job.entity.js';
+import { EnrichmentService } from './enrichment.service.js';
+import { getEnrichmentAttachmentsDir, getEnrichmentDir, getEnrichmentResultCsv } from './enrichment-paths.js';
+import { buildEnrichedCsv, buildEnrichedCsvHeaders } from './enriched-csv.util.js';
 
 const RUBRICA_ROW =
   'id;pec@pec.it;;MARIO;ROSSI;RSSMRA80A01H501U;;ROSSI MARIO;1;13/03/2026;Oggetto;;;PROVV_1.pdf';

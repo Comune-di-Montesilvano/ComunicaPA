@@ -1,5 +1,5 @@
-import { processTemplate, wrapInHtmlLayout, hasValidAttachmentPlaceholders, buildParallelChannelNotice, appendAppIoPortalFooter, formatAppIoMarkdown } from './template.helper';
-import type { Recipient } from '../entities/recipient.entity';
+import { processTemplate, wrapInHtmlLayout, hasValidAttachmentPlaceholders, buildParallelChannelNotice, appendAppIoPortalFooter, formatAppIoMarkdown } from './template.helper.js';
+import type { Recipient } from '../entities/recipient.entity.js';
 
 const baseRecipient = {
   id: 'r-123',

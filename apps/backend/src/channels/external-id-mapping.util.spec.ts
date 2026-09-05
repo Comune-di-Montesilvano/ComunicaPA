@@ -1,4 +1,4 @@
-import { resolveExternalId } from './external-id-mapping.util';
+import { resolveExternalId } from './external-id-mapping.util.js';
 
 describe('resolveExternalId', () => {
   it('usa la colonna mappata esplicitamente in csvMapping.externalId', () => {

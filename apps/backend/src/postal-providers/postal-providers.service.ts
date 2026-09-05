@@ -2,16 +2,16 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
-import { PostalProviderConfig } from '../entities/postal-provider-config.entity';
-import { GlobalComClient, type GbcCredentials } from '../channels/postal/globalcom-client.service';
-import { MASKED_VALUE } from '../settings/settings.registry';
-import { decryptValue, deriveSettingsKey, encryptValue } from '../settings/settings-crypto';
-import type { AppConfiguration } from '../config/configuration';
+import { PostalProviderConfig } from '../entities/postal-provider-config.entity.js';
+import { GlobalComClient, type GbcCredentials } from '../channels/postal/globalcom-client.service.js';
+import { MASKED_VALUE } from '../settings/settings.registry.js';
+import { decryptValue, deriveSettingsKey, encryptValue } from '../settings/settings-crypto.js';
+import type { AppConfiguration } from '../config/configuration.js';
 import type {
   CreatePostalProviderDto,
   PostalProviderMaskedDto,
   UpdatePostalProviderDto,
-} from './dto/postal-provider.dto';
+} from './dto/postal-provider.dto.js';
 
 export interface ResolvedPostalProvider {
   id: string;

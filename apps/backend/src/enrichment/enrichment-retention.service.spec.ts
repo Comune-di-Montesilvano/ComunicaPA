@@ -1,9 +1,9 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import { join } from 'path';
-import { EnrichmentJobStatus } from '../entities/enrichment-job.entity';
-import { getEnrichmentDir } from './enrichment-paths';
-import { EnrichmentRetentionService } from './enrichment-retention.service';
+import { EnrichmentJobStatus } from '../entities/enrichment-job.entity.js';
+import { getEnrichmentDir } from './enrichment-paths.js';
+import { EnrichmentRetentionService } from './enrichment-retention.service.js';
 
 describe('EnrichmentRetentionService', () => {
   let tmpDir: string;

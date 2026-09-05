@@ -1,8 +1,8 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import * as fs from 'fs';
 import { join } from 'path';
-import type { Recipient } from '../entities/recipient.entity';
-import { getUploadsDir } from './attachment-paths';
+import type { Recipient } from '../entities/recipient.entity.js';
+import { getUploadsDir } from './attachment-paths.js';
 
 /**
  * Risolve la lista di allegati configurati per una campagna. `attachments`

@@ -1,16 +1,16 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { ProtocollazioneProcessor } from './protocollazione.processor';
-import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity';
-import { Recipient, RecipientStatus } from '../entities/recipient.entity';
-import { Campaign } from '../entities/campaign.entity';
-import { ProtocolloService } from '../protocollo/protocollo.service';
-import { AttachmentService } from '../attachments/attachment.service';
-import { CampaignCompletionService } from '../campaigns/campaign-completion.service';
-import { NotificationQueuesService } from './notification-queues.service';
+import { ProtocollazioneProcessor } from './protocollazione.processor.js';
+import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity.js';
+import { Recipient, RecipientStatus } from '../entities/recipient.entity.js';
+import { Campaign } from '../entities/campaign.entity.js';
+import { ProtocolloService } from '../protocollo/protocollo.service.js';
+import { AttachmentService } from '../attachments/attachment.service.js';
+import { CampaignCompletionService } from '../campaigns/campaign-completion.service.js';
+import { NotificationQueuesService } from './notification-queues.service.js';
 import { ConfigService } from '@nestjs/config';
-import { AppSettingsService } from '../settings/app-settings.service';
-import * as sentryUtil from '../common/sentry.util';
+import { AppSettingsService } from '../settings/app-settings.service.js';
+import * as sentryUtil from '../common/sentry.util.js';
 
 jest.mock('../common/sentry.util', () => ({ captureException: jest.fn() }));
 

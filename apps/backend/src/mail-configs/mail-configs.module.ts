@@ -1,8 +1,8 @@
 import { Global, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { MailServerConfig } from '../entities/mail-server-config.entity';
-import { MailConfigsService } from './mail-configs.service';
-import { MailConfigsController } from './mail-configs.controller';
+import { MailServerConfig } from '../entities/mail-server-config.entity.js';
+import { MailConfigsService } from './mail-configs.service.js';
+import { MailConfigsController } from './mail-configs.controller.js';
 
 @Global()
 @Module({

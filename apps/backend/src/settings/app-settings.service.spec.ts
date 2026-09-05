@@ -1,8 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
-import { AppSettingsService } from './app-settings.service';
-import { AppSetting } from '../entities/app-setting.entity';
-import { MASKED_VALUE } from './settings.registry';
-import { deriveSettingsKey, encryptValue } from './settings-crypto';
+import { AppSettingsService } from './app-settings.service.js';
+import { AppSetting } from '../entities/app-setting.entity.js';
+import { MASKED_VALUE } from './settings.registry.js';
+import { deriveSettingsKey, encryptValue } from './settings-crypto.js';
 
 describe('AppSettingsService', () => {
   let rows: Map<string, AppSetting>;

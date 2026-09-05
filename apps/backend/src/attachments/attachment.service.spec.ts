@@ -1,5 +1,5 @@
-import { AttachmentService, resolveAttachmentsConfig, resolveCustomAttachmentFilename } from './attachment.service';
-import type { Recipient } from '../entities/recipient.entity';
+import { AttachmentService, resolveAttachmentsConfig, resolveCustomAttachmentFilename } from './attachment.service.js';
+import type { Recipient } from '../entities/recipient.entity.js';
 
 describe('resolveAttachmentsConfig', () => {
   it('legge channelConfig.attachments quando presente', () => {

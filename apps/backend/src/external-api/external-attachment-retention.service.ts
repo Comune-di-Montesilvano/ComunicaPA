@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import * as fs from 'fs';
-import { ExternalAttachmentTokensService } from './external-attachment-tokens.service';
+import { ExternalAttachmentTokensService } from './external-attachment-tokens.service.js';
 
 const MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24h, coerente col design
 

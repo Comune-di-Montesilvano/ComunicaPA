@@ -1,4 +1,4 @@
-import { BASE_CSV_HEADERS, buildEnrichedCsv, buildEnrichedCsvHeaders, parseEnrichedCsv } from './enriched-csv.util';
+import { BASE_CSV_HEADERS, buildEnrichedCsv, buildEnrichedCsvHeaders, parseEnrichedCsv } from './enriched-csv.util.js';
 
 describe('buildEnrichedCsvHeaders', () => {
   it('maxRate=0: solo le colonne base', () => {

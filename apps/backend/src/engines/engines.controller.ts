@@ -1,13 +1,13 @@
 import { Controller, Get, Post, Param, Query, HttpStatus, HttpCode, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Not, IsNull, Repository } from 'typeorm';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { NotificationQueuesService } from '../queue/notification-queues.service';
-import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service';
-import { ENGINE_NAMES, type EngineName } from '../queue/notification-job.types';
-import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity';
-import { Campaign, CampaignStatus } from '../entities/campaign.entity';
-import { Recipient, RecipientStatus } from '../entities/recipient.entity';
+import { Roles } from '../auth/decorators/roles.decorator.js';
+import { NotificationQueuesService } from '../queue/notification-queues.service.js';
+import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service.js';
+import { ENGINE_NAMES, type EngineName } from '../queue/notification-job.types.js';
+import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity.js';
+import { Campaign, CampaignStatus } from '../entities/campaign.entity.js';
+import { Recipient, RecipientStatus } from '../entities/recipient.entity.js';
 
 function isEngineName(name: string): name is EngineName {
   return (ENGINE_NAMES as readonly string[]).includes(name);

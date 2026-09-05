@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { InadService, InadDigitalAddressElement } from '../inad/inad.service';
-import { IoServicesService } from '../../io-services/io-services.service';
-import { AnprService } from '../anpr/anpr.service';
-import type { AnprGeneralita, AnprResidenza, AnprInfoSoggettoEnte } from '../anpr/anpr.types';
-import { RegistroImpreseService, type RegistroImpreseImpresaData } from '../registro-imprese/registro-imprese.service';
-import { isPartitaIva } from '../tax-id.util';
+import { InadService, InadDigitalAddressElement } from '../inad/inad.service.js';
+import { IoServicesService } from '../../io-services/io-services.service.js';
+import { AnprService } from '../anpr/anpr.service.js';
+import type { AnprGeneralita, AnprResidenza, AnprInfoSoggettoEnte } from '../anpr/anpr.types.js';
+import { RegistroImpreseService, type RegistroImpreseImpresaData } from '../registro-imprese/registro-imprese.service.js';
+import { isPartitaIva } from '../tax-id.util.js';
 
 export interface DomicilioInadResult {
   success: boolean;

@@ -2,12 +2,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Cron } from '@nestjs/schedule';
-import { NotificationAttempt } from '../../entities/notification-attempt.entity';
-import { AppSettingsService } from '../../settings/app-settings.service';
-import type { SettingKey } from '../../settings/settings.registry';
-import { PdndAuthService } from '../../pdnd/pdnd-auth.service';
-import { extractSendStatusHistory, extractSendDigitalDomicile, extractSendAnalogCost } from './send-status-history.util';
-import { SendBaseFeeService } from './send-base-fee.service';
+import { NotificationAttempt } from '../../entities/notification-attempt.entity.js';
+import { AppSettingsService } from '../../settings/app-settings.service.js';
+import type { SettingKey } from '../../settings/settings.registry.js';
+import { PdndAuthService } from '../../pdnd/pdnd-auth.service.js';
+import { extractSendStatusHistory, extractSendDigitalDomicile, extractSendAnalogCost } from './send-status-history.util.js';
+import { SendBaseFeeService } from './send-base-fee.service.js';
 
 const BATCH_SIZE = 200;
 const TERMINAL_STATUSES = ['VIEWED', 'EFFECTIVE_DATE', 'UNREACHABLE', 'CANCELLED', 'RETURNED_TO_SENDER', 'REFUSED'];

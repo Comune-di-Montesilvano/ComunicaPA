@@ -3,9 +3,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, LessThan, Repository } from 'typeorm';
 import { Cron } from '@nestjs/schedule';
 import * as fs from 'fs';
-import { EnrichmentJob, EnrichmentJobStatus } from '../entities/enrichment-job.entity';
-import { AppSettingsService } from '../settings/app-settings.service';
-import { getEnrichmentDir } from './enrichment-paths';
+import { EnrichmentJob, EnrichmentJobStatus } from '../entities/enrichment-job.entity.js';
+import { AppSettingsService } from '../settings/app-settings.service.js';
+import { getEnrichmentDir } from './enrichment-paths.js';
 
 @Injectable()
 export class EnrichmentRetentionService {

@@ -4,22 +4,22 @@ import { Repository } from 'typeorm';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import type { Job } from 'bullmq';
 import type { NotificationChannel, NotificationJobData } from '@comunicapa/shared-types';
-import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity';
-import { Recipient, RecipientStatus } from '../entities/recipient.entity';
-import { Campaign } from '../entities/campaign.entity';
-import { ProtocolloService } from '../protocollo/protocollo.service';
-import { AttachmentService } from '../attachments/attachment.service';
-import { CampaignCompletionService } from '../campaigns/campaign-completion.service';
-import { splitFullName } from '../channels/send/name.util';
-import { PROTOCOLLAZIONE_QUEUE, NOTIFICATION_JOB_SEND } from './notification-job.types';
-import { NotificationQueuesService } from './notification-queues.service';
+import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity.js';
+import { Recipient, RecipientStatus } from '../entities/recipient.entity.js';
+import { Campaign } from '../entities/campaign.entity.js';
+import { ProtocolloService } from '../protocollo/protocollo.service.js';
+import { AttachmentService } from '../attachments/attachment.service.js';
+import { CampaignCompletionService } from '../campaigns/campaign-completion.service.js';
+import { splitFullName } from '../channels/send/name.util.js';
+import { PROTOCOLLAZIONE_QUEUE, NOTIFICATION_JOB_SEND } from './notification-job.types.js';
+import { NotificationQueuesService } from './notification-queues.service.js';
 import { ConfigService } from '@nestjs/config';
-import { processTemplate, wrapInHtmlLayout, resolveCitizenPortalUrl } from '../channels/template.helper';
-import { resolveAttachmentsConfig, resolveAttachmentLabel } from '../attachments/attachment.service';
-import { getEffectiveRetentionDays } from '../campaigns/retention.util';
-import { AppSettingsService } from '../settings/app-settings.service';
-import { captureException } from '../common/sentry.util';
-import type { ProtocollaAllegato } from '../protocollo/protocollo.service';
+import { processTemplate, wrapInHtmlLayout, resolveCitizenPortalUrl } from '../channels/template.helper.js';
+import { resolveAttachmentsConfig, resolveAttachmentLabel } from '../attachments/attachment.service.js';
+import { getEffectiveRetentionDays } from '../campaigns/retention.util.js';
+import { AppSettingsService } from '../settings/app-settings.service.js';
+import { captureException } from '../common/sentry.util.js';
+import type { ProtocollaAllegato } from '../protocollo/protocollo.service.js';
 
 /**
  * Sostituisce ProtocollazioneSyncService (cron poll): ogni attempt da

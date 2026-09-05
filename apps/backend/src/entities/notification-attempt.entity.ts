@@ -6,7 +6,7 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import type { Recipient } from './recipient.entity';
+import type { Recipient } from './recipient.entity.js';
 
 export enum AttemptStatus {
   QUEUED = 'queued',

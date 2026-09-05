@@ -2,10 +2,10 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { BadRequestException } from '@nestjs/common';
-import { MailConfigsService } from './mail-configs.service';
-import { MailServerConfig } from '../entities/mail-server-config.entity';
-import { AppSettingsService } from '../settings/app-settings.service';
-import { MASKED_VALUE } from '../settings/settings.registry';
+import { MailConfigsService } from './mail-configs.service.js';
+import { MailServerConfig } from '../entities/mail-server-config.entity.js';
+import { AppSettingsService } from '../settings/app-settings.service.js';
+import { MASKED_VALUE } from '../settings/settings.registry.js';
 
 describe('MailConfigsService', () => {
   let service: MailConfigsService;

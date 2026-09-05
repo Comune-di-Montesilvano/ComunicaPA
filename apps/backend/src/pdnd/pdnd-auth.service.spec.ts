@@ -1,8 +1,8 @@
 import { Test } from '@nestjs/testing';
 import { generateKeyPairSync } from 'node:crypto';
 import * as jwt from 'jsonwebtoken';
-import { PdndAuthService } from './pdnd-auth.service';
-import { AppSettingsService } from '../settings/app-settings.service';
+import { PdndAuthService } from './pdnd-auth.service.js';
+import { AppSettingsService } from '../settings/app-settings.service.js';
 
 const { publicKey, privateKey } = generateKeyPairSync('rsa', {
   modulusLength: 2048,

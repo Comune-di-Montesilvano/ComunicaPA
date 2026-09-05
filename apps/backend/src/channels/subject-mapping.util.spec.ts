@@ -1,4 +1,4 @@
-import { resolveSubjectTemplate } from './subject-mapping.util';
+import { resolveSubjectTemplate } from './subject-mapping.util.js';
 
 describe('resolveSubjectTemplate', () => {
   it('usa il valore per-destinatario quando csvMapping.subject è configurato e la cella non è vuota', () => {

@@ -1,5 +1,5 @@
 import { IsIn, IsOptional, IsString, IsUUID, MaxLength, MinLength, ValidateIf } from 'class-validator';
-import type { TemplateType } from '../../entities/template.entity';
+import type { TemplateType } from '../../entities/template.entity.js';
 
 export class CreateTemplateDto {
   @IsIn(['MAIL', 'APP_IO'])

@@ -3,11 +3,11 @@ import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import * as fs from 'fs';
-import { Roles } from '../../auth/decorators/roles.decorator';
-import { InadService } from './inad.service';
-import { InadVerifyBulkService } from './inad-verify-bulk.service';
-import { VerifyInadSingleDto, VerifyInadBulkCompleteDto } from './dto/inad-verify.dto';
-import { initChunkedUpload, safeChunkUploadDir, isValidChunkIndex, assembleChunkedUpload, cleanupChunkedUpload, MAX_CHUNK_SIZE_BYTES } from '../../campaigns/chunked-upload.util';
+import { Roles } from '../../auth/decorators/roles.decorator.js';
+import { InadService } from './inad.service.js';
+import { InadVerifyBulkService } from './inad-verify-bulk.service.js';
+import { VerifyInadSingleDto, VerifyInadBulkCompleteDto } from './dto/inad-verify.dto.js';
+import { initChunkedUpload, safeChunkUploadDir, isValidChunkIndex, assembleChunkedUpload, cleanupChunkedUpload, MAX_CHUNK_SIZE_BYTES } from '../../campaigns/chunked-upload.util.js';
 
 @Controller('admin/inad-verify')
 export class InadVerifyController {

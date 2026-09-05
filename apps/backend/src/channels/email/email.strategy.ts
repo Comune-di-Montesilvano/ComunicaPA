@@ -1,16 +1,16 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { NotificationChannel, ChannelSendResult } from '@comunicapa/shared-types';
-import type { ChannelLogFn, IChannelStrategy } from '../channel.interface';
-import type { Recipient } from '../../entities/recipient.entity';
-import type { Campaign } from '../../entities/campaign.entity';
+import type { ChannelLogFn, IChannelStrategy } from '../channel.interface.js';
+import type { Recipient } from '../../entities/recipient.entity.js';
+import type { Campaign } from '../../entities/campaign.entity.js';
 import * as nodemailer from 'nodemailer';
-import type { AppConfiguration } from '../../config/configuration';
-import { processTemplate, wrapInHtmlLayout, resolveCitizenPortalUrl } from '../template.helper';
-import { resolveAttachmentsConfig, resolveAttachmentLabel } from '../../attachments/attachment.service';
-import { getEffectiveRetentionDays } from '../../campaigns/retention.util';
-import { AppSettingsService } from '../../settings/app-settings.service';
-import { MailConfigsService } from '../../mail-configs/mail-configs.service';
+import type { AppConfiguration } from '../../config/configuration.js';
+import { processTemplate, wrapInHtmlLayout, resolveCitizenPortalUrl } from '../template.helper.js';
+import { resolveAttachmentsConfig, resolveAttachmentLabel } from '../../attachments/attachment.service.js';
+import { getEffectiveRetentionDays } from '../../campaigns/retention.util.js';
+import { AppSettingsService } from '../../settings/app-settings.service.js';
+import { MailConfigsService } from '../../mail-configs/mail-configs.service.js';
 
 @Injectable()
 export class EmailStrategy implements IChannelStrategy {

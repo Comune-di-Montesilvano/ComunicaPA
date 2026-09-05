@@ -12,23 +12,23 @@ import {
   EnrichmentJobStatus,
   CampaignConversionStatus,
   EnrichmentWarning,
-} from '../entities/enrichment-job.entity';
+} from '../entities/enrichment-job.entity.js';
 import {
   ENRICHMENT_QUEUE,
   EnrichmentQueueJobData,
   CONVERT_CAMPAIGN_JOB_NAME,
   ConvertCampaignQueueJobData,
-} from './enrichment-job.types';
-import { getEnrichmentAttachmentsDir, getEnrichmentDir, getEnrichmentResultCsv, getEnrichmentSourceZip } from './enrichment-paths';
-import { readLargeFileSync } from './large-file-read.util';
-import { parseMaggioliZip, type MaggioliRecord } from './maggioli-parser';
-import { buildEnrichedCsv, buildEnrichedCsvHeaders, type EnrichedRow } from './enriched-csv.util';
-import { PdfExtractorClient, type ExtractedPaymentDetail } from './pdf-extractor.client';
-import { EnrichmentEventsService } from './enrichment-events.service';
-import { EnrichmentAddressOverrideService } from './enrichment-address-override.service';
-import { readCheckpointSync, writeCheckpointSync, deleteCheckpointSync } from './enrichment-checkpoint.util';
-import { CampaignsService } from '../campaigns/campaigns.service';
-import { getUploadsDir } from '../attachments/attachment-paths';
+} from './enrichment-job.types.js';
+import { getEnrichmentAttachmentsDir, getEnrichmentDir, getEnrichmentResultCsv, getEnrichmentSourceZip } from './enrichment-paths.js';
+import { readLargeFileSync } from './large-file-read.util.js';
+import { parseMaggioliZip, type MaggioliRecord } from './maggioli-parser.js';
+import { buildEnrichedCsv, buildEnrichedCsvHeaders, type EnrichedRow } from './enriched-csv.util.js';
+import { PdfExtractorClient, type ExtractedPaymentDetail } from './pdf-extractor.client.js';
+import { EnrichmentEventsService } from './enrichment-events.service.js';
+import { EnrichmentAddressOverrideService } from './enrichment-address-override.service.js';
+import { readCheckpointSync, writeCheckpointSync, deleteCheckpointSync } from './enrichment-checkpoint.util.js';
+import { CampaignsService } from '../campaigns/campaigns.service.js';
+import { getUploadsDir } from '../attachments/attachment-paths.js';
 
 const PROGRESS_UPDATE_EVERY = 10;
 const CHECKPOINT_EVERY = 100;

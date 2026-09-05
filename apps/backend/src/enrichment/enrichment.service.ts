@@ -11,20 +11,20 @@ import {
   EnrichmentJobStatus,
   CampaignConversionStatus,
   TraceFormat,
-} from '../entities/enrichment-job.entity';
-import { parseMaggioliZip } from './maggioli-parser';
+} from '../entities/enrichment-job.entity.js';
+import { parseMaggioliZip } from './maggioli-parser.js';
 import {
   ENRICHMENT_QUEUE,
   EnrichmentQueueJobData,
   CONVERT_CAMPAIGN_JOB_NAME,
   ConvertCampaignQueueJobData,
-} from './enrichment-job.types';
-import { getEnrichmentAttachmentsDir, getEnrichmentDir, getEnrichmentResultCsv, getEnrichmentSourceZip } from './enrichment-paths';
-import { readLargeFileSync } from './large-file-read.util';
-import { EnrichmentAddressOverrideService, type AddressOverrideInput } from './enrichment-address-override.service';
-import { readCheckpointSync } from './enrichment-checkpoint.util';
-import { buildEnrichedCsv, buildEnrichedCsvHeaders, parseEnrichedCsv, type EnrichedRow } from './enriched-csv.util';
-import type { EnrichmentAddressOverride } from '../entities/enrichment-address-override.entity';
+} from './enrichment-job.types.js';
+import { getEnrichmentAttachmentsDir, getEnrichmentDir, getEnrichmentResultCsv, getEnrichmentSourceZip } from './enrichment-paths.js';
+import { readLargeFileSync } from './large-file-read.util.js';
+import { EnrichmentAddressOverrideService, type AddressOverrideInput } from './enrichment-address-override.service.js';
+import { readCheckpointSync } from './enrichment-checkpoint.util.js';
+import { buildEnrichedCsv, buildEnrichedCsvHeaders, parseEnrichedCsv, type EnrichedRow } from './enriched-csv.util.js';
+import type { EnrichmentAddressOverride } from '../entities/enrichment-address-override.entity.js';
 
 export interface CreateEnrichmentJobParams {
   zipPath: string;

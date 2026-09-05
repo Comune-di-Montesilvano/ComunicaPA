@@ -1,6 +1,6 @@
 import { ArgumentsHost, Catch, HttpException } from '@nestjs/common';
 import { BaseExceptionFilter } from '@nestjs/core';
-import { captureException } from './sentry.util';
+import { captureException } from './sentry.util.js';
 
 /**
  * Filtro globale di ultima istanza — ESTENDE `BaseExceptionFilter` di Nest

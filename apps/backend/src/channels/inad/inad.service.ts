@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { AppSettingsService } from '../../settings/app-settings.service';
-import type { SettingKey } from '../../settings/settings.registry';
-import { PdndAuthService, type PdndEnvironment } from '../../pdnd/pdnd-auth.service';
+import { AppSettingsService } from '../../settings/app-settings.service.js';
+import type { SettingKey } from '../../settings/settings.registry.js';
+import { PdndAuthService, type PdndEnvironment } from '../../pdnd/pdnd-auth.service.js';
 
 const INAD_BASE_URL = 'https://api.inad.gov.it/rest/inad/v1/domiciliodigitale';
 const PRACTICAL_REFERENCE = 'comunicapa-verifica-domicilio';

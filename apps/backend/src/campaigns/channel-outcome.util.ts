@@ -1,4 +1,4 @@
-import { RecipientStatus } from '../entities/recipient.entity';
+import { RecipientStatus } from '../entities/recipient.entity.js';
 
 export type ChannelOutcome = 'primaryOnly' | 'both' | 'appIoOnly' | 'appIoDespitePrimaryFail' | 'neither';
 

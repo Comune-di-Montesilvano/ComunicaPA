@@ -1,5 +1,5 @@
 import { Global, Module } from '@nestjs/common';
-import { GlobalComClient } from './globalcom-client.service';
+import { GlobalComClient } from './globalcom-client.service.js';
 
 @Global()
 @Module({

@@ -1,4 +1,4 @@
-import { resolveSecondaryAppIoConfig } from './secondary-channels.util';
+import { resolveSecondaryAppIoConfig } from './secondary-channels.util.js';
 
 describe('resolveSecondaryAppIoConfig', () => {
   it('legge dal nuovo formato secondaryChannels quando presente', () => {

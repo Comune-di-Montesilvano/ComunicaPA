@@ -4,7 +4,7 @@ import {
   parseMaggioliZip,
   parsePagIndice,
   parseRubricaPec,
-} from './maggioli-parser';
+} from './maggioli-parser.js';
 
 // rubrica.csv: ';', senza header, campi posizionali (vedi CLAUDE.md sendcsv):
 // 0=raw_id, 1=PEC, 3=nome, 4=cognome, 5=CF, 7=nome completo, 8=n. provv, 9=data, 10=oggetto, 13=nome PDF

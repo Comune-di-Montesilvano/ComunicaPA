@@ -10,7 +10,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
-import type { MailServerType } from '../../entities/mail-server-config.entity';
+import type { MailServerType } from '../../entities/mail-server-config.entity.js';
 
 export class CreateMailConfigDto {
   @IsIn(['EMAIL', 'PEC'])

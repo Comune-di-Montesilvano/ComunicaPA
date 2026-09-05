@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { createHash } from 'node:crypto';
-import { SendAttachmentUploadService } from './send-attachment-upload.service';
+import { SendAttachmentUploadService } from './send-attachment-upload.service.js';
 
 const mockFetch = jest.fn();
 global.fetch = mockFetch as unknown as typeof fetch;

@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import { join } from 'path';
 import AdmZip from 'adm-zip';
-import { extractZipWithYauzl } from './zip-extract.util';
+import { extractZipWithYauzl } from './zip-extract.util.js';
 
 describe('extractZipWithYauzl', () => {
   const tmpDir = join(__dirname, '../../test-zip-extract-tmp');

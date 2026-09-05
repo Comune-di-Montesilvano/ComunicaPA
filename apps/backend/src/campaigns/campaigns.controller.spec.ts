@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import * as fs from 'fs';
-import { CampaignsController } from './campaigns.controller';
-import { CampaignsService } from './campaigns.service';
+import { CampaignsController } from './campaigns.controller.js';
+import { CampaignsService } from './campaigns.service.js';
 
 describe('CampaignsController', () => {
   let controller: CampaignsController;

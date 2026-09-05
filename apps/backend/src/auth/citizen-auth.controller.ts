@@ -1,12 +1,12 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
-import { AuthService } from './auth.service';
-import { OidcFlowService } from './oidc/oidc-flow.service';
-import { AppSettingsService } from '../settings/app-settings.service';
-import { OidcCallbackDto, CitizenLoginDto } from './dto/oidc.dto';
-import type { AppConfiguration } from '../config/configuration';
-import { Public } from './decorators/public.decorator';
+import { AuthService } from './auth.service.js';
+import { OidcFlowService } from './oidc/oidc-flow.service.js';
+import { AppSettingsService } from '../settings/app-settings.service.js';
+import { OidcCallbackDto, CitizenLoginDto } from './dto/oidc.dto.js';
+import type { AppConfiguration } from '../config/configuration.js';
+import { Public } from './decorators/public.decorator.js';
 
 @Controller('citizen/auth')
 export class CitizenAuthController {

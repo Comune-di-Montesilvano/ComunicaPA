@@ -1,9 +1,9 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { AppIoVerifyBulkProcessor, isPresentResult } from './app-io-verify-bulk.processor';
-import { AppIoVerificationJob, AppIoVerificationJobStatus } from '../entities/app-io-verification-job.entity';
-import { IoServiceConfig } from '../entities/io-service-config.entity';
-import { IoServicesService } from './io-services.service';
+import { AppIoVerifyBulkProcessor, isPresentResult } from './app-io-verify-bulk.processor.js';
+import { AppIoVerificationJob, AppIoVerificationJobStatus } from '../entities/app-io-verification-job.entity.js';
+import { IoServiceConfig } from '../entities/io-service-config.entity.js';
+import { IoServicesService } from './io-services.service.js';
 
 describe('isPresentResult', () => {
   it('presente solo se success && active && messaggio non contiene "disabilitati"', () => {

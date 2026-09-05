@@ -2,7 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { BrandingController, ALLOWED_LOGO_TYPES } from './branding.controller';
+import { BrandingController, ALLOWED_LOGO_TYPES } from './branding.controller.js';
 
 describe('BrandingController', () => {
   const values = new Map<string, string | number | boolean>([

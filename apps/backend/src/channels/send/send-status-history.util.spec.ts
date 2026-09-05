@@ -1,4 +1,4 @@
-import { extractSendStatusHistory, extractSendDigitalDomicile, extractSendAnalogCost } from './send-status-history.util';
+import { extractSendStatusHistory, extractSendDigitalDomicile, extractSendAnalogCost } from './send-status-history.util.js';
 
 describe('send-status-history.util', () => {
   describe('extractSendStatusHistory', () => {

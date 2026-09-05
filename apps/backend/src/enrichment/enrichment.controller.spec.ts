@@ -1,5 +1,5 @@
-import { TraceFormat } from '../entities/enrichment-job.entity';
-import { EnrichmentController } from './enrichment.controller';
+import { TraceFormat } from '../entities/enrichment-job.entity.js';
+import { EnrichmentController } from './enrichment.controller.js';
 
 describe('EnrichmentController', () => {
   let svc: any;

@@ -6,13 +6,13 @@ import * as fs from 'fs';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { CampaignsController } from './campaigns.controller';
-import { CampaignsService } from './campaigns.service';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
-import { OperatorDirectoryService } from '../operator-directory/operator-directory.service';
-import { CampaignContentCorrectionService } from './campaign-content-correction.service';
-import { CampaignBulkRetryService } from './campaign-bulk-retry.service';
-import { getUploadsDir } from '../attachments/attachment-paths';
+import { CampaignsController } from './campaigns.controller.js';
+import { CampaignsService } from './campaigns.service.js';
+import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
+import { OperatorDirectoryService } from '../operator-directory/operator-directory.service.js';
+import { CampaignContentCorrectionService } from './campaign-content-correction.service.js';
+import { CampaignBulkRetryService } from './campaign-bulk-retry.service.js';
+import { getUploadsDir } from '../attachments/attachment-paths.js';
 
 /**
  * Quarta occorrenza della stessa classe di bug (path traversal dentro un

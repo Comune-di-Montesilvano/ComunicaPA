@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
-import { MailConfigsController } from './mail-configs.controller';
-import { MailConfigsService } from './mail-configs.service';
+import { MailConfigsController } from './mail-configs.controller.js';
+import { MailConfigsService } from './mail-configs.service.js';
 
 describe('MailConfigsController', () => {
   let controller: MailConfigsController;

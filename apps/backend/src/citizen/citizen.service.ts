@@ -1,11 +1,11 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Not, Repository } from 'typeorm';
-import { Recipient } from '../entities/recipient.entity';
-import { CampaignStatus } from '../entities/campaign.entity';
-import { DownloadEvent } from '../entities/download-event.entity';
-import { AttachmentService, resolveAttachmentsConfig, resolveAttachmentLabel, resolveCustomAttachmentFilename } from '../attachments/attachment.service';
-import { CampaignsService } from '../campaigns/campaigns.service';
+import { Recipient } from '../entities/recipient.entity.js';
+import { CampaignStatus } from '../entities/campaign.entity.js';
+import { DownloadEvent } from '../entities/download-event.entity.js';
+import { AttachmentService, resolveAttachmentsConfig, resolveAttachmentLabel, resolveCustomAttachmentFilename } from '../attachments/attachment.service.js';
+import { CampaignsService } from '../campaigns/campaigns.service.js';
 
 export interface CitizenAttachmentDto {
   index: number;

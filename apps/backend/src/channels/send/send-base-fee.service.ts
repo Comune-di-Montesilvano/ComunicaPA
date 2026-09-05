@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { AppSettingsService } from '../../settings/app-settings.service';
+import { AppSettingsService } from '../../settings/app-settings.service.js';
 
 /**
  * Costo digitale base ("gestione piattaforma", ~1€ nel contratto tipo

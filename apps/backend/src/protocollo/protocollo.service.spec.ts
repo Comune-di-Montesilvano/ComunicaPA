@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
-import { ProtocolloService } from './protocollo.service';
-import { AppSettingsService } from '../settings/app-settings.service';
+import { ProtocolloService } from './protocollo.service.js';
+import { AppSettingsService } from '../settings/app-settings.service.js';
 
 const mockFetch = jest.fn();
 global.fetch = mockFetch as unknown as typeof fetch;

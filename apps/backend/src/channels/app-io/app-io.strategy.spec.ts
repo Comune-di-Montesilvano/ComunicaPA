@@ -1,8 +1,8 @@
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { AppIoStrategy } from './app-io.strategy';
-import { IoServicesService } from '../../io-services/io-services.service';
-import { AppSettingsService } from '../../settings/app-settings.service';
+import { AppIoStrategy } from './app-io.strategy.js';
+import { IoServicesService } from '../../io-services/io-services.service.js';
+import { AppSettingsService } from '../../settings/app-settings.service.js';
 
 const mockFetch = jest.fn();
 global.fetch = mockFetch as unknown as typeof fetch;

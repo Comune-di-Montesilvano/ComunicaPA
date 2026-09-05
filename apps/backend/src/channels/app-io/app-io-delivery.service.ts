@@ -1,15 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { NotificationChannel } from '@comunicapa/shared-types';
-import type { ChannelLogFn } from '../channel.interface';
-import type { Recipient } from '../../entities/recipient.entity';
-import type { Campaign } from '../../entities/campaign.entity';
-import type { AppConfiguration } from '../../config/configuration';
-import { processTemplate, buildParallelChannelNotice, formatAppIoMarkdown, resolveCitizenPortalUrl } from '../template.helper';
-import { resolveAttachmentsConfig, resolveAttachmentLabel } from '../../attachments/attachment.service';
-import { getEffectiveRetentionDays } from '../../campaigns/retention.util';
-import { AppSettingsService } from '../../settings/app-settings.service';
-import { resolvePaymentData } from '../payment-config.util';
+import type { ChannelLogFn } from '../channel.interface.js';
+import type { Recipient } from '../../entities/recipient.entity.js';
+import type { Campaign } from '../../entities/campaign.entity.js';
+import type { AppConfiguration } from '../../config/configuration.js';
+import { processTemplate, buildParallelChannelNotice, formatAppIoMarkdown, resolveCitizenPortalUrl } from '../template.helper.js';
+import { resolveAttachmentsConfig, resolveAttachmentLabel } from '../../attachments/attachment.service.js';
+import { getEffectiveRetentionDays } from '../../campaigns/retention.util.js';
+import { AppSettingsService } from '../../settings/app-settings.service.js';
+import { resolvePaymentData } from '../payment-config.util.js';
 
 @Injectable()
 export class AppIoDeliveryService {

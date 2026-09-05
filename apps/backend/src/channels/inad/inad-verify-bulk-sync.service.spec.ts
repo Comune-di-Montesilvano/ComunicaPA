@@ -1,5 +1,5 @@
-import { InadVerifyBulkSyncService } from './inad-verify-bulk-sync.service';
-import { InadVerificationJobStatus } from '../../entities/inad-verification-job.entity';
+import { InadVerifyBulkSyncService } from './inad-verify-bulk-sync.service.js';
+import { InadVerificationJobStatus } from '../../entities/inad-verification-job.entity.js';
 
 const mockJobRepo = { find: jest.fn(), update: jest.fn() };
 const mockInad = { getBulkState: jest.fn(), getBulkResult: jest.fn() };

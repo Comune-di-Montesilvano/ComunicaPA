@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { EnrichmentAddressOverride } from '../entities/enrichment-address-override.entity';
-import type { EnrichedRow } from './enriched-csv.util';
+import { EnrichmentAddressOverride } from '../entities/enrichment-address-override.entity.js';
+import type { EnrichedRow } from './enriched-csv.util.js';
 
 export interface AddressOverrideInput {
   indirizzo?: string;

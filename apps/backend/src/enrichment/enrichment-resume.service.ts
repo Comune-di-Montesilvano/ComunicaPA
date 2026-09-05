@@ -3,9 +3,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Repository } from 'typeorm';
 import { Queue } from 'bullmq';
-import { EnrichmentJob, EnrichmentJobStatus } from '../entities/enrichment-job.entity';
-import { ENRICHMENT_QUEUE, EnrichmentQueueJobData } from './enrichment-job.types';
-import { readCheckpointSync } from './enrichment-checkpoint.util';
+import { EnrichmentJob, EnrichmentJobStatus } from '../entities/enrichment-job.entity.js';
+import { ENRICHMENT_QUEUE, EnrichmentQueueJobData } from './enrichment-job.types.js';
+import { readCheckpointSync } from './enrichment-checkpoint.util.js';
 
 /**
  * Un job lasciato in PROCESSING da un riavvio backend non ha altrimenti

@@ -7,20 +7,20 @@ import { createHash } from 'crypto';
 import type { Job } from 'bullmq';
 import type { NotificationJobData, NotificationChannel } from '@comunicapa/shared-types';
 import Redis from 'ioredis';
-import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity';
-import { Campaign } from '../entities/campaign.entity';
-import { Recipient, RecipientStatus } from '../entities/recipient.entity';
-import { THROTTLE_REDIS } from './notification-job.types';
-import { CHANNEL_STRATEGIES, IChannelStrategy } from '../channels/channel.interface';
-import { getEffectiveRetentionDays } from '../campaigns/retention.util';
-import { AppSettingsService } from '../settings/app-settings.service';
-import { MailConfigsService } from '../mail-configs/mail-configs.service';
-import { IoServicesService } from '../io-services/io-services.service';
-import { APP_IO_BASE_URL } from '../channels/app-io/app-io.strategy';
-import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util';
-import { CampaignCompletionService } from '../campaigns/campaign-completion.service';
-import { AppIoDeliveryService } from '../channels/app-io/app-io-delivery.service';
-import { captureException } from '../common/sentry.util';
+import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity.js';
+import { Campaign } from '../entities/campaign.entity.js';
+import { Recipient, RecipientStatus } from '../entities/recipient.entity.js';
+import { THROTTLE_REDIS } from './notification-job.types.js';
+import { CHANNEL_STRATEGIES, IChannelStrategy } from '../channels/channel.interface.js';
+import { getEffectiveRetentionDays } from '../campaigns/retention.util.js';
+import { AppSettingsService } from '../settings/app-settings.service.js';
+import { MailConfigsService } from '../mail-configs/mail-configs.service.js';
+import { IoServicesService } from '../io-services/io-services.service.js';
+import { APP_IO_BASE_URL } from '../channels/app-io/app-io.strategy.js';
+import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util.js';
+import { CampaignCompletionService } from '../campaigns/campaign-completion.service.js';
+import { AppIoDeliveryService } from '../channels/app-io/app-io-delivery.service.js';
+import { captureException } from '../common/sentry.util.js';
 
 @Injectable()
 export class NotificationProcessor extends WorkerHost {

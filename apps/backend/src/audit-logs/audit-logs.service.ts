@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like } from 'typeorm';
-import { AuditLog } from '../entities/audit-log.entity';
+import { AuditLog } from '../entities/audit-log.entity.js';
 
 export interface AuditLogQueryDto {
   page?: number;

@@ -2,14 +2,14 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { createHash } from 'crypto';
-import { NotificationAttempt } from '../entities/notification-attempt.entity';
-import { Recipient, RecipientStatus } from '../entities/recipient.entity';
-import { Campaign, CampaignStatus } from '../entities/campaign.entity';
-import { CampaignsService } from './campaigns.service';
-import { AppIoDeliveryService } from '../channels/app-io/app-io-delivery.service';
-import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util';
-import { IoServicesService } from '../io-services/io-services.service';
-import { APP_IO_BASE_URL } from '../channels/app-io/app-io.strategy';
+import { NotificationAttempt } from '../entities/notification-attempt.entity.js';
+import { Recipient, RecipientStatus } from '../entities/recipient.entity.js';
+import { Campaign, CampaignStatus } from '../entities/campaign.entity.js';
+import { CampaignsService } from './campaigns.service.js';
+import { AppIoDeliveryService } from '../channels/app-io/app-io-delivery.service.js';
+import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util.js';
+import { IoServicesService } from '../io-services/io-services.service.js';
+import { APP_IO_BASE_URL } from '../channels/app-io/app-io.strategy.js';
 
 // A differenza di CampaignBulkRetryService (job BullMQ async, nessun cap
 // stretto necessario — solo lavoro DB per destinatario), il branch App IO

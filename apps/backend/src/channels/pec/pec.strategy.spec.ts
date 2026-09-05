@@ -1,8 +1,8 @@
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { PecStrategy } from './pec.strategy';
-import { AppSettingsService } from '../../settings/app-settings.service';
-import { MailConfigsService } from '../../mail-configs/mail-configs.service';
+import { PecStrategy } from './pec.strategy.js';
+import { AppSettingsService } from '../../settings/app-settings.service.js';
+import { MailConfigsService } from '../../mail-configs/mail-configs.service.js';
 
 const mockSendMail = jest.fn();
 jest.mock('nodemailer', () => ({

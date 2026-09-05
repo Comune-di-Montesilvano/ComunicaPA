@@ -1,9 +1,9 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Post, Request } from '@nestjs/common';
-import { AuthService } from './auth.service';
-import { LoginDto } from './dto/login.dto';
-import type { AuthResponseDto } from './dto/auth-response.dto';
+import { AuthService } from './auth.service.js';
+import { LoginDto } from './dto/login.dto.js';
+import type { AuthResponseDto } from './dto/auth-response.dto.js';
 import type { JwtOperatorPayload } from '@comunicapa/shared-types';
-import { Public } from './decorators/public.decorator';
+import { Public } from './decorators/public.decorator.js';
 
 @Controller('admin/auth')
 export class AuthController {

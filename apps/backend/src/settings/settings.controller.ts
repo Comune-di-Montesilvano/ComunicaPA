@@ -12,15 +12,15 @@ import {
   Req,
 } from '@nestjs/common';
 import { createPrivateKey, createPublicKey, generateKeyPairSync } from 'node:crypto';
-import { Roles } from '../auth/decorators/roles.decorator';
+import { Roles } from '../auth/decorators/roles.decorator.js';
 import type { Request } from 'express';
 import * as nodemailer from 'nodemailer';
-import { AppSettingsService } from './app-settings.service';
-import { UpdateSettingsDto } from './dto/update-settings.dto';
-import { isSettingKey, type SettingKey } from './settings.registry';
-import { PdndAuthService } from '../pdnd/pdnd-auth.service';
-import { InadService } from '../channels/inad/inad.service';
-import { RegistroImpreseService } from '../channels/registro-imprese/registro-imprese.service';
+import { AppSettingsService } from './app-settings.service.js';
+import { UpdateSettingsDto } from './dto/update-settings.dto.js';
+import { isSettingKey, type SettingKey } from './settings.registry.js';
+import { PdndAuthService } from '../pdnd/pdnd-auth.service.js';
+import { InadService } from '../channels/inad/inad.service.js';
+import { RegistroImpreseService } from '../channels/registro-imprese/registro-imprese.service.js';
 
 class TestConnectionDto {
   host!: string;

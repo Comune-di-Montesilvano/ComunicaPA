@@ -1,11 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { EnginesController } from './engines.controller';
-import { NotificationQueuesService } from '../queue/notification-queues.service';
-import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service';
-import { NotificationAttempt } from '../entities/notification-attempt.entity';
-import { Campaign } from '../entities/campaign.entity';
-import { Recipient } from '../entities/recipient.entity';
+import { EnginesController } from './engines.controller.js';
+import { NotificationQueuesService } from '../queue/notification-queues.service.js';
+import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service.js';
+import { NotificationAttempt } from '../entities/notification-attempt.entity.js';
+import { Campaign } from '../entities/campaign.entity.js';
+import { Recipient } from '../entities/recipient.entity.js';
 import { BadRequestException } from '@nestjs/common';
 
 describe('EnginesController', () => {

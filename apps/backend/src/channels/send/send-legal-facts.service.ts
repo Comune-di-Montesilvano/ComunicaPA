@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { AppSettingsService } from '../../settings/app-settings.service';
-import type { SettingKey } from '../../settings/settings.registry';
-import { PdndAuthService } from '../../pdnd/pdnd-auth.service';
+import { AppSettingsService } from '../../settings/app-settings.service.js';
+import type { SettingKey } from '../../settings/settings.registry.js';
+import { PdndAuthService } from '../../pdnd/pdnd-auth.service.js';
 
 export interface SendLegalFactItem {
   legalFactId: string;

@@ -1,10 +1,10 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Req, UseFilters, UseGuards } from '@nestjs/common';
-import { Public } from '../auth/decorators/public.decorator';
-import { ApiKeyGuard, type RequestWithApiClient } from './guards/api-key.guard';
-import { ExternalApiExceptionFilter } from './external-api-exception.filter';
-import { ExternalApiService } from './external-api.service';
-import { CampaignsService } from '../campaigns/campaigns.service';
-import { CreateExternalNotificationDto } from './dto/create-external-notification.dto';
+import { Public } from '../auth/decorators/public.decorator.js';
+import { ApiKeyGuard, type RequestWithApiClient } from './guards/api-key.guard.js';
+import { ExternalApiExceptionFilter } from './external-api-exception.filter.js';
+import { ExternalApiService } from './external-api.service.js';
+import { CampaignsService } from '../campaigns/campaigns.service.js';
+import { CreateExternalNotificationDto } from './dto/create-external-notification.dto.js';
 
 @Controller('external/v1/notifications')
 @Public()

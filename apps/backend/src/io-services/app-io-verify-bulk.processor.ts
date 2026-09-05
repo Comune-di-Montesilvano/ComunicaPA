@@ -3,11 +3,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import type { Job } from 'bullmq';
-import { AppIoVerificationJob, AppIoVerificationJobStatus } from '../entities/app-io-verification-job.entity';
-import { IoServiceConfig } from '../entities/io-service-config.entity';
-import { IoServicesService } from './io-services.service';
-import { parseCsvContent, buildCsvContent } from './csv.util';
-import { APP_IO_VERIFY_BULK_QUEUE, AppIoVerifyBulkJobData } from './app-io-verify-bulk-job.types';
+import { AppIoVerificationJob, AppIoVerificationJobStatus } from '../entities/app-io-verification-job.entity.js';
+import { IoServiceConfig } from '../entities/io-service-config.entity.js';
+import { IoServicesService } from './io-services.service.js';
+import { parseCsvContent, buildCsvContent } from './csv.util.js';
+import { APP_IO_VERIFY_BULK_QUEUE, AppIoVerifyBulkJobData } from './app-io-verify-bulk-job.types.js';
 
 const PROGRESS_UPDATE_EVERY = 25;
 const CONCURRENCY = 5;

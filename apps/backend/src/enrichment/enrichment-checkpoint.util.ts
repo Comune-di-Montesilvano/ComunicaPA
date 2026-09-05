@@ -1,7 +1,7 @@
 import * as fs from 'fs';
-import { getEnrichmentCheckpoint } from './enrichment-paths';
-import type { EnrichedRow } from './enriched-csv.util';
-import type { EnrichmentWarning } from '../entities/enrichment-job.entity';
+import { getEnrichmentCheckpoint } from './enrichment-paths.js';
+import type { EnrichedRow } from './enriched-csv.util.js';
+import type { EnrichmentWarning } from '../entities/enrichment-job.entity.js';
 
 export interface EnrichmentCheckpoint {
   lastRow: number;

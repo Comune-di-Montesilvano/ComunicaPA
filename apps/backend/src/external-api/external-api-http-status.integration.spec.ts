@@ -4,17 +4,17 @@ import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import * as fs from 'fs';
 import { randomUUID } from 'crypto';
-import { ExternalNotificationsController } from './external-notifications.controller';
-import { ExternalAttachmentsController } from './external-attachments.controller';
-import { ExternalDomicilioController } from './external-domicilio.controller';
-import { ExternalApiService } from './external-api.service';
-import { CampaignsService } from '../campaigns/campaigns.service';
-import { ExternalAttachmentTokensService } from './external-attachment-tokens.service';
-import { DomicilioService } from '../channels/domicilio/domicilio.service';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
-import { ApiKeyGuard } from './guards/api-key.guard';
-import { ExternalApiClientsService } from './external-api-clients.service';
-import { chunkUploadDir } from '../campaigns/chunked-upload.util';
+import { ExternalNotificationsController } from './external-notifications.controller.js';
+import { ExternalAttachmentsController } from './external-attachments.controller.js';
+import { ExternalDomicilioController } from './external-domicilio.controller.js';
+import { ExternalApiService } from './external-api.service.js';
+import { CampaignsService } from '../campaigns/campaigns.service.js';
+import { ExternalAttachmentTokensService } from './external-attachment-tokens.service.js';
+import { DomicilioService } from '../channels/domicilio/domicilio.service.js';
+import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
+import { ApiKeyGuard } from './guards/api-key.guard.js';
+import { ExternalApiClientsService } from './external-api-clients.service.js';
+import { chunkUploadDir } from '../campaigns/chunked-upload.util.js';
 
 /**
  * Task 12 (review follow-up) — Nessuno spec in external-api/ prima d'ora

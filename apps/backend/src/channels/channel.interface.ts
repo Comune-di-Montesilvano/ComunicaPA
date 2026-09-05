@@ -1,6 +1,6 @@
 import type { NotificationChannel, ChannelSendResult } from '@comunicapa/shared-types';
-import type { Recipient } from '../entities/recipient.entity';
-import type { Campaign } from '../entities/campaign.entity';
+import type { Recipient } from '../entities/recipient.entity.js';
+import type { Campaign } from '../entities/campaign.entity.js';
 
 /** Riceve una riga di log per volta; il chiamante decide dove persisterla (es. job.log() BullMQ). */
 export type ChannelLogFn = (message: string) => void;

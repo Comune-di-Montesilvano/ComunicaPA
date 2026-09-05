@@ -3,22 +3,22 @@ import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import Redis from 'ioredis';
-import type { AppConfiguration } from '../config/configuration';
-import { CHANNEL_QUEUES, PROTOCOLLAZIONE_QUEUE, THROTTLE_REDIS } from './notification-job.types';
+import type { AppConfiguration } from '../config/configuration.js';
+import { CHANNEL_QUEUES, PROTOCOLLAZIONE_QUEUE, THROTTLE_REDIS } from './notification-job.types.js';
 import {
   EmailNotificationProcessor,
   PecNotificationProcessor,
   AppIoNotificationProcessor,
   PostalNotificationProcessor,
-} from './channel-processors';
-import { NotificationQueuesService } from './notification-queues.service';
-import { ProtocollazioneProcessor } from './protocollazione.processor';
-import { NotificationAttempt } from '../entities/notification-attempt.entity';
-import { Campaign } from '../entities/campaign.entity';
-import { Recipient } from '../entities/recipient.entity';
-import { ChannelModule } from '../channels/channel.module';
-import { ProtocolloModule } from '../protocollo/protocollo.module';
-import { AttachmentModule } from '../attachments/attachment.module';
+} from './channel-processors.js';
+import { NotificationQueuesService } from './notification-queues.service.js';
+import { ProtocollazioneProcessor } from './protocollazione.processor.js';
+import { NotificationAttempt } from '../entities/notification-attempt.entity.js';
+import { Campaign } from '../entities/campaign.entity.js';
+import { Recipient } from '../entities/recipient.entity.js';
+import { ChannelModule } from '../channels/channel.module.js';
+import { ProtocolloModule } from '../protocollo/protocollo.module.js';
+import { AttachmentModule } from '../attachments/attachment.module.js';
 
 @Module({
   imports: [

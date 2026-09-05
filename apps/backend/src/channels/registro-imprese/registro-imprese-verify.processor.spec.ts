@@ -1,6 +1,6 @@
-import { RegistroImpreseVerifyProcessor } from './registro-imprese-verify.processor';
-import { RegistroImpreseRateLimitError } from './registro-imprese-rate-limit.error';
-import { VERIFY_PIVA_JOB_NAME, VERIFY_PIVA_CAMPAIGN_JOB_NAME } from './registro-imprese-job.types';
+import { RegistroImpreseVerifyProcessor } from './registro-imprese-verify.processor.js';
+import { RegistroImpreseRateLimitError } from './registro-imprese-rate-limit.error.js';
+import { VERIFY_PIVA_JOB_NAME, VERIFY_PIVA_CAMPAIGN_JOB_NAME } from './registro-imprese-job.types.js';
 
 const mockRegistroImprese = { dettaglioImpresa: jest.fn() };
 const mockJobRepo = { query: jest.fn() };

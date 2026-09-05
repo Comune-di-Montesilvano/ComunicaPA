@@ -1,8 +1,8 @@
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { UnauthorizedException } from '@nestjs/common';
-import { OidcCitizenStrategy } from './oidc-citizen.strategy';
-import { AppSettingsService } from '../../settings/app-settings.service';
+import { OidcCitizenStrategy } from './oidc-citizen.strategy.js';
+import { AppSettingsService } from '../../settings/app-settings.service.js';
 
 const mockConfig = {
   get: (key: string) => {

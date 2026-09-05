@@ -7,8 +7,8 @@ import {
   OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import type { Campaign } from './campaign.entity';
-import type { NotificationAttempt } from './notification-attempt.entity';
+import type { Campaign } from './campaign.entity.js';
+import type { NotificationAttempt } from './notification-attempt.entity.js';
 
 export enum RecipientStatus {
   PENDING = 'pending',

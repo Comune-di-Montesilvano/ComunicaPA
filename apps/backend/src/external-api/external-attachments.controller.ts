@@ -2,14 +2,14 @@ import { BadRequestException, Body, Controller, HttpCode, HttpStatus, Post, Req,
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import * as fs from 'fs';
-import { Public } from '../auth/decorators/public.decorator';
-import { ApiKeyGuard, type RequestWithApiClient } from './guards/api-key.guard';
-import { ExternalApiExceptionFilter } from './external-api-exception.filter';
-import { ExternalAttachmentTokensService } from './external-attachment-tokens.service';
-import { initChunkedUpload, isValidChunkIndex, MAX_CHUNK_SIZE_BYTES, safeChunkUploadDir } from '../campaigns/chunked-upload.util';
-import { InitAttachmentUploadDto } from './dto/init-attachment-upload.dto';
-import { ChunkAttachmentUploadDto } from './dto/chunk-attachment-upload.dto';
-import { CompleteAttachmentUploadDto } from './dto/complete-attachment-upload.dto';
+import { Public } from '../auth/decorators/public.decorator.js';
+import { ApiKeyGuard, type RequestWithApiClient } from './guards/api-key.guard.js';
+import { ExternalApiExceptionFilter } from './external-api-exception.filter.js';
+import { ExternalAttachmentTokensService } from './external-attachment-tokens.service.js';
+import { initChunkedUpload, isValidChunkIndex, MAX_CHUNK_SIZE_BYTES, safeChunkUploadDir } from '../campaigns/chunked-upload.util.js';
+import { InitAttachmentUploadDto } from './dto/init-attachment-upload.dto.js';
+import { ChunkAttachmentUploadDto } from './dto/chunk-attachment-upload.dto.js';
+import { CompleteAttachmentUploadDto } from './dto/complete-attachment-upload.dto.js';
 
 @Controller('external/v1/attachments/upload')
 @Public()

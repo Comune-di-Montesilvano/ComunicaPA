@@ -1,14 +1,14 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { SendDispatchService } from './send-dispatch.service';
-import { NotificationAttempt, AttemptStatus } from '../../entities/notification-attempt.entity';
-import { Campaign } from '../../entities/campaign.entity';
-import { Recipient, RecipientStatus } from '../../entities/recipient.entity';
-import { AppSettingsService } from '../../settings/app-settings.service';
-import { PdndAuthService } from '../../pdnd/pdnd-auth.service';
-import { AttachmentService } from '../../attachments/attachment.service';
-import { SendAttachmentUploadService } from './send-attachment-upload.service';
-import { CampaignCompletionService } from '../../campaigns/campaign-completion.service';
+import { SendDispatchService } from './send-dispatch.service.js';
+import { NotificationAttempt, AttemptStatus } from '../../entities/notification-attempt.entity.js';
+import { Campaign } from '../../entities/campaign.entity.js';
+import { Recipient, RecipientStatus } from '../../entities/recipient.entity.js';
+import { AppSettingsService } from '../../settings/app-settings.service.js';
+import { PdndAuthService } from '../../pdnd/pdnd-auth.service.js';
+import { AttachmentService } from '../../attachments/attachment.service.js';
+import { SendAttachmentUploadService } from './send-attachment-upload.service.js';
+import { CampaignCompletionService } from '../../campaigns/campaign-completion.service.js';
 
 const mockFetch = jest.fn();
 global.fetch = mockFetch as unknown as typeof fetch;

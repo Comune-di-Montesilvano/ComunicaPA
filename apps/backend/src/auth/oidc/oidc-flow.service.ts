@@ -9,8 +9,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomBytes } from 'crypto';
 import Redis from 'ioredis';
-import type { AppConfiguration } from '../../config/configuration';
-import { AppSettingsService } from '../../settings/app-settings.service';
+import type { AppConfiguration } from '../../config/configuration.js';
+import { AppSettingsService } from '../../settings/app-settings.service.js';
 
 interface OidcEndpoints {
   authorizationEndpoint: string;

@@ -1,8 +1,8 @@
-import { ExternalCapabilitiesController } from './external-capabilities.controller';
-import { MailConfigsService } from '../mail-configs/mail-configs.service';
-import { IoServicesService } from '../io-services/io-services.service';
-import { PostalProvidersService } from '../postal-providers/postal-providers.service';
-import { AppSettingsService } from '../settings/app-settings.service';
+import { ExternalCapabilitiesController } from './external-capabilities.controller.js';
+import { MailConfigsService } from '../mail-configs/mail-configs.service.js';
+import { IoServicesService } from '../io-services/io-services.service.js';
+import { PostalProvidersService } from '../postal-providers/postal-providers.service.js';
+import { AppSettingsService } from '../settings/app-settings.service.js';
 
 describe('ExternalCapabilitiesController', () => {
   let controller: ExternalCapabilitiesController;

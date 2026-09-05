@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { PdfService } from './pdf.service';
+import { PdfService } from './pdf.service.js';
 import { PDFDocument } from 'pdf-lib';
 
 describe('PdfService', () => {

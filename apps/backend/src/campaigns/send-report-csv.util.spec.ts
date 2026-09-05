@@ -1,5 +1,5 @@
-import { buildSendReportAttualeCsv, buildSendReportStoricoCsv } from './send-report-csv.util';
-import type { SendReportDto } from './dto/campaign-stats.dto';
+import { buildSendReportAttualeCsv, buildSendReportStoricoCsv } from './send-report-csv.util.js';
+import type { SendReportDto } from './dto/campaign-stats.dto.js';
 
 const baseReport: SendReportDto = {
   hasAppIoCoDelivery: false,

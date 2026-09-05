@@ -1,5 +1,5 @@
 import { createHmac } from 'crypto';
-import { signDownloadLink, verifyDownloadLink } from './download-link.util';
+import { signDownloadLink, verifyDownloadLink } from './download-link.util.js';
 
 describe('download-link.util con indice allegato', () => {
   const secret = 'test-secret';

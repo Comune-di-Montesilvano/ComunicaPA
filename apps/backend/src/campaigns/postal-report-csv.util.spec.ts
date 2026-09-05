@@ -1,5 +1,5 @@
-import { buildPostalReportAttualeCsv, buildPostalReportStoricoCsv } from './postal-report-csv.util';
-import type { PostalReportDto } from './dto/campaign-stats.dto';
+import { buildPostalReportAttualeCsv, buildPostalReportStoricoCsv } from './postal-report-csv.util.js';
+import type { PostalReportDto } from './dto/campaign-stats.dto.js';
 
 const baseReport: PostalReportDto = {
   hasAppIoCoDelivery: false,

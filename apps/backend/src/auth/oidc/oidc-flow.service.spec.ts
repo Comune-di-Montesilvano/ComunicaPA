@@ -1,5 +1,5 @@
 import { BadGatewayException, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
-import { OidcFlowService } from './oidc-flow.service';
+import { OidcFlowService } from './oidc-flow.service.js';
 
 const redisMock = {
   set: jest.fn(),

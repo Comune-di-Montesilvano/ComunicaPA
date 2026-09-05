@@ -1,9 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { PostalStrategy } from './postal.strategy';
-import { GlobalComClient } from './globalcom-client.service';
-import { PostalProvidersService, type ResolvedPostalProvider } from '../../postal-providers/postal-providers.service';
-import { AttachmentService } from '../../attachments/attachment.service';
-import { AppSettingsService } from '../../settings/app-settings.service';
+import { PostalStrategy } from './postal.strategy.js';
+import { GlobalComClient } from './globalcom-client.service.js';
+import { PostalProvidersService, type ResolvedPostalProvider } from '../../postal-providers/postal-providers.service.js';
+import { AttachmentService } from '../../attachments/attachment.service.js';
+import { AppSettingsService } from '../../settings/app-settings.service.js';
 
 describe('PostalStrategy', () => {
   let strategy: PostalStrategy;

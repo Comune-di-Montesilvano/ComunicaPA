@@ -2,11 +2,11 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { getQueueToken } from '@nestjs/bullmq';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { CampaignBulkRetryService } from './campaign-bulk-retry.service';
-import { Campaign } from '../entities/campaign.entity';
-import { CampaignBulkRetryJob, CampaignBulkRetryJobStatus } from '../entities/campaign-bulk-retry-job.entity';
-import { CampaignsService } from './campaigns.service';
-import { CAMPAIGN_BULK_RETRY_QUEUE } from './campaign-bulk-retry-job.types';
+import { CampaignBulkRetryService } from './campaign-bulk-retry.service.js';
+import { Campaign } from '../entities/campaign.entity.js';
+import { CampaignBulkRetryJob, CampaignBulkRetryJobStatus } from '../entities/campaign-bulk-retry-job.entity.js';
+import { CampaignsService } from './campaigns.service.js';
+import { CAMPAIGN_BULK_RETRY_QUEUE } from './campaign-bulk-retry-job.types.js';
 
 describe('CampaignBulkRetryService', () => {
   let service: CampaignBulkRetryService;

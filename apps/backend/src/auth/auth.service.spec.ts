@@ -2,10 +2,10 @@ import { Test } from '@nestjs/testing';
 import { ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { AuthService } from './auth.service';
-import { LdapService } from './ldap/ldap.service';
-import { OperatorDirectoryService } from '../operator-directory/operator-directory.service';
-import type { LoginDto } from './dto/login.dto';
+import { AuthService } from './auth.service.js';
+import { LdapService } from './ldap/ldap.service.js';
+import { OperatorDirectoryService } from '../operator-directory/operator-directory.service.js';
+import type { LoginDto } from './dto/login.dto.js';
 
 describe('AuthService', () => {
   let service: AuthService;

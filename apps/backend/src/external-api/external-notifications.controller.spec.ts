@@ -1,6 +1,6 @@
-import { ExternalNotificationsController } from './external-notifications.controller';
-import { ExternalApiService } from './external-api.service';
-import { CampaignsService } from '../campaigns/campaigns.service';
+import { ExternalNotificationsController } from './external-notifications.controller.js';
+import { ExternalApiService } from './external-api.service.js';
+import { CampaignsService } from '../campaigns/campaigns.service.js';
 
 describe('ExternalNotificationsController', () => {
   let controller: ExternalNotificationsController;

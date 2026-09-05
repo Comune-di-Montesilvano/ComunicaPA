@@ -3,13 +3,13 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
-import { MailServerConfig, MailServerType } from '../entities/mail-server-config.entity';
-import { AppSettingsService } from '../settings/app-settings.service';
-import { MASKED_VALUE } from '../settings/settings.registry';
-import { decryptValue, deriveSettingsKey, encryptValue } from '../settings/settings-crypto';
-import type { AppConfiguration } from '../config/configuration';
-import type { CreateMailConfigDto, MailConfigMaskedDto, UpdateMailConfigDto } from './dto/mail-config.dto';
-import type { SettingKey } from '../settings/settings.registry';
+import { MailServerConfig, MailServerType } from '../entities/mail-server-config.entity.js';
+import { AppSettingsService } from '../settings/app-settings.service.js';
+import { MASKED_VALUE } from '../settings/settings.registry.js';
+import { decryptValue, deriveSettingsKey, encryptValue } from '../settings/settings-crypto.js';
+import type { AppConfiguration } from '../config/configuration.js';
+import type { CreateMailConfigDto, MailConfigMaskedDto, UpdateMailConfigDto } from './dto/mail-config.dto.js';
+import type { SettingKey } from '../settings/settings.registry.js';
 
 export interface ResolvedMailConfig {
   host: string;

@@ -1,4 +1,4 @@
-import { buildDownloadReportCsv } from './download-report-csv.util';
+import { buildDownloadReportCsv } from './download-report-csv.util.js';
 
 describe('buildDownloadReportCsv', () => {
   it('produce header e righe separate da ; con i campi attesi', () => {

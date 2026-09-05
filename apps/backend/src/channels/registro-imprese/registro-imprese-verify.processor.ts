@@ -3,17 +3,17 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import type { Job } from 'bullmq';
-import { InadVerificationJob } from '../../entities/inad-verification-job.entity';
-import { Recipient } from '../../entities/recipient.entity';
+import { InadVerificationJob } from '../../entities/inad-verification-job.entity.js';
+import { Recipient } from '../../entities/recipient.entity.js';
 import {
   REGISTRO_IMPRESE_QUEUE,
   VERIFY_PIVA_JOB_NAME,
   VERIFY_PIVA_CAMPAIGN_JOB_NAME,
   RegistroImpreseVerifyJobData,
   RegistroImpreseCampaignVerifyJobData,
-} from './registro-imprese-job.types';
-import { RegistroImpreseService } from './registro-imprese.service';
-import { RegistroImpreseRateLimitError } from './registro-imprese-rate-limit.error';
+} from './registro-imprese-job.types.js';
+import { RegistroImpreseService } from './registro-imprese.service.js';
+import { RegistroImpreseRateLimitError } from './registro-imprese-rate-limit.error.js';
 
 type AnyJobData = RegistroImpreseVerifyJobData | RegistroImpreseCampaignVerifyJobData;
 

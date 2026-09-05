@@ -1,7 +1,7 @@
-import { ExternalApiService } from './external-api.service';
-import { CampaignsService } from '../campaigns/campaigns.service';
-import { ExternalAttachmentTokensService } from './external-attachment-tokens.service';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { ExternalApiService } from './external-api.service.js';
+import { CampaignsService } from '../campaigns/campaigns.service.js';
+import { ExternalAttachmentTokensService } from './external-attachment-tokens.service.js';
+import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
 import * as fs from 'fs';
 
 jest.mock('fs');

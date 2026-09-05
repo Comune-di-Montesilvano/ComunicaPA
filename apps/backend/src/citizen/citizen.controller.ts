@@ -1,10 +1,10 @@
 import { Controller, Get, HttpCode, HttpStatus, NotFoundException, Param, ParseIntPipe, ParseUUIDPipe, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import type { CitizenTokenClaims } from '@comunicapa/shared-types';
-import { OidcAuthGuard } from '../auth/guards/oidc-auth.guard';
-import { Public } from '../auth/decorators/public.decorator';
-import { CitizenService } from './citizen.service';
-import { SendLegalFactsService } from '../channels/send/send-legal-facts.service';
+import { OidcAuthGuard } from '../auth/guards/oidc-auth.guard.js';
+import { Public } from '../auth/decorators/public.decorator.js';
+import { CitizenService } from './citizen.service.js';
+import { SendLegalFactsService } from '../channels/send/send-legal-facts.service.js';
 
 // @Public() esclude questo controller dal JwtAuthGuard globale (pensato per
 // gli operatori, verifica JWT HS256/JWT_SECRET): i token cittadino OIDC reali

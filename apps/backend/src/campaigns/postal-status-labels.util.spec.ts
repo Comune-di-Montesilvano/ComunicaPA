@@ -1,4 +1,4 @@
-import { postalStatusLabel, POSTAL_STATUS_HISTORY_COLUMNS } from './postal-status-labels.util';
+import { postalStatusLabel, POSTAL_STATUS_HISTORY_COLUMNS } from './postal-status-labels.util.js';
 
 describe('postalStatusLabel', () => {
   it('traduce uno stato GBC noto', () => {

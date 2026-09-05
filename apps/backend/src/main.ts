@@ -4,10 +4,10 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
 import { mkdirSync } from 'fs';
 import * as Sentry from '@sentry/node';
-import { AppModule } from './app.module';
-import type { AppConfiguration } from './config/configuration';
-import { assertProductionSecrets } from './config/production-guards';
-import { AllExceptionsFilter } from './common/all-exceptions.filter';
+import { AppModule } from './app.module.js';
+import type { AppConfiguration } from './config/configuration.js';
+import { assertProductionSecrets } from './config/production-guards.js';
+import { AllExceptionsFilter } from './common/all-exceptions.filter.js';
 
 // docker-compose.yml passa già LOG_LEVEL al container (default 'info'), ma
 // finora nessun codice lo leggeva: il default NestJS esclude 'debug'/

@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { LdapService } from './ldap.service';
+import { LdapService } from './ldap.service.js';
 import * as ldapjs from 'ldapjs';
 
 jest.mock('ldapjs');

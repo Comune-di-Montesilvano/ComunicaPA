@@ -1,10 +1,10 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { SendStatusSyncService } from './send-status-sync.service';
-import { SendBaseFeeService } from './send-base-fee.service';
-import { AppSettingsService } from '../../settings/app-settings.service';
-import { PdndAuthService } from '../../pdnd/pdnd-auth.service';
-import { NotificationAttempt } from '../../entities/notification-attempt.entity';
+import { SendStatusSyncService } from './send-status-sync.service.js';
+import { SendBaseFeeService } from './send-base-fee.service.js';
+import { AppSettingsService } from '../../settings/app-settings.service.js';
+import { PdndAuthService } from '../../pdnd/pdnd-auth.service.js';
+import { NotificationAttempt } from '../../entities/notification-attempt.entity.js';
 
 const mockFetch = jest.fn();
 global.fetch = mockFetch as unknown as typeof fetch;

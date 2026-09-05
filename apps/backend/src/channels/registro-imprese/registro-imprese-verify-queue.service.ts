@@ -7,7 +7,7 @@ import {
   VERIFY_PIVA_CAMPAIGN_JOB_NAME,
   RegistroImpreseVerifyJobData,
   RegistroImpreseCampaignVerifyJobData,
-} from './registro-imprese-job.types';
+} from './registro-imprese-job.types.js';
 
 type AnyJobData = RegistroImpreseVerifyJobData | RegistroImpreseCampaignVerifyJobData;
 

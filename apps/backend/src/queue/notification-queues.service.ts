@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
 import type { NotificationJobData } from '@comunicapa/shared-types';
-import { CHANNEL_QUEUES, PROTOCOLLAZIONE_QUEUE, type EngineName } from './notification-job.types';
+import { CHANNEL_QUEUES, PROTOCOLLAZIONE_QUEUE, type EngineName } from './notification-job.types.js';
 
 @Injectable()
 export class NotificationQueuesService {

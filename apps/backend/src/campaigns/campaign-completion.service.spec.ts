@@ -1,9 +1,9 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { CampaignCompletionService } from './campaign-completion.service';
-import { Campaign, CampaignStatus } from '../entities/campaign.entity';
-import { Recipient } from '../entities/recipient.entity';
-import { NotificationAttempt } from '../entities/notification-attempt.entity';
+import { CampaignCompletionService } from './campaign-completion.service.js';
+import { Campaign, CampaignStatus } from '../entities/campaign.entity.js';
+import { Recipient } from '../entities/recipient.entity.js';
+import { NotificationAttempt } from '../entities/notification-attempt.entity.js';
 
 describe('CampaignCompletionService', () => {
   let service: CampaignCompletionService;

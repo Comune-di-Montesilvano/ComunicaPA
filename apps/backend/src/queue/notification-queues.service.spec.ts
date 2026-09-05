@@ -1,7 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { getQueueToken } from '@nestjs/bullmq';
-import { NotificationQueuesService } from './notification-queues.service';
-import { CHANNEL_QUEUES, PROTOCOLLAZIONE_QUEUE } from './notification-job.types';
+import { NotificationQueuesService } from './notification-queues.service.js';
+import { CHANNEL_QUEUES, PROTOCOLLAZIONE_QUEUE } from './notification-job.types.js';
 
 describe('NotificationQueuesService.getJobsDetail', () => {
   const mockJob = {

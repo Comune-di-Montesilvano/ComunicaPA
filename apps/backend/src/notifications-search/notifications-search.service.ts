@@ -1,14 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Recipient } from '../entities/recipient.entity';
-import { NotificationAttempt } from '../entities/notification-attempt.entity';
-import { DownloadEvent } from '../entities/download-event.entity';
-import { CampaignsService } from '../campaigns/campaigns.service';
-import { SendLegalFactsService, type SendLegalFactItem, type SendLegalFactDownloadResult } from '../channels/send/send-legal-facts.service';
-import { AttachmentService, resolveAttachmentsConfig, resolveAttachmentLabel, resolveCustomAttachmentFilename } from '../attachments/attachment.service';
-import { resolvePhysicalAddress, resolvePaymentData } from '../channels/payment-config.util';
-import type { NotificationDetailDto } from './dto/notification-detail.dto';
+import { Recipient } from '../entities/recipient.entity.js';
+import { NotificationAttempt } from '../entities/notification-attempt.entity.js';
+import { DownloadEvent } from '../entities/download-event.entity.js';
+import { CampaignsService } from '../campaigns/campaigns.service.js';
+import { SendLegalFactsService, type SendLegalFactItem, type SendLegalFactDownloadResult } from '../channels/send/send-legal-facts.service.js';
+import { AttachmentService, resolveAttachmentsConfig, resolveAttachmentLabel, resolveCustomAttachmentFilename } from '../attachments/attachment.service.js';
+import { resolvePhysicalAddress, resolvePaymentData } from '../channels/payment-config.util.js';
+import type { NotificationDetailDto } from './dto/notification-detail.dto.js';
 
 export interface SearchFilters {
   codiceFiscale?: string;

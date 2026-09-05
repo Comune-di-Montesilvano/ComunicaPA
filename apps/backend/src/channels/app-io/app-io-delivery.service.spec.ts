@@ -1,8 +1,8 @@
-import { AppIoDeliveryService } from './app-io-delivery.service';
-import * as templateHelper from '../template.helper';
-import * as attachmentService from '../../attachments/attachment.service';
-import * as retentionUtil from '../../campaigns/retention.util';
-import * as paymentUtil from '../payment-config.util';
+import { AppIoDeliveryService } from './app-io-delivery.service.js';
+import * as templateHelper from '../template.helper.js';
+import * as attachmentService from '../../attachments/attachment.service.js';
+import * as retentionUtil from '../../campaigns/retention.util.js';
+import * as paymentUtil from '../payment-config.util.js';
 
 jest.mock('../template.helper');
 jest.mock('../../attachments/attachment.service');

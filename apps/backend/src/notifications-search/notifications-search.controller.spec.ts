@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
-import { NotificationsSearchController } from './notifications-search.controller';
-import { NotificationsSearchService } from './notifications-search.service';
+import { NotificationsSearchController } from './notifications-search.controller.js';
+import { NotificationsSearchService } from './notifications-search.service.js';
 
 describe('NotificationsSearchController', () => {
   const svcMock = {

@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/node';
-import { captureException } from './sentry.util';
+import { captureException } from './sentry.util.js';
 
 jest.mock('@sentry/node', () => ({
   getClient: jest.fn(),

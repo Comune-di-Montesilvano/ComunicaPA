@@ -1,6 +1,6 @@
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { CreateExternalNotificationDto } from './create-external-notification.dto';
+import { CreateExternalNotificationDto } from './create-external-notification.dto.js';
 
 async function validateDto(payload: Record<string, unknown>) {
   const dto = plainToInstance(CreateExternalNotificationDto, payload);

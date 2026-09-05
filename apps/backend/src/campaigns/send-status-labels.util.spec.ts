@@ -1,4 +1,4 @@
-import { sendStatusLabel, digitalDomicileTypeLabel, SEND_STATUS_HISTORY_COLUMNS } from './send-status-labels.util';
+import { sendStatusLabel, digitalDomicileTypeLabel, SEND_STATUS_HISTORY_COLUMNS } from './send-status-labels.util.js';
 
 describe('sendStatusLabel', () => {
   it('traduce uno stato PN noto', () => {

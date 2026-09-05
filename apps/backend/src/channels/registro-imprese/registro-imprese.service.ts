@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { XMLParser } from 'fast-xml-parser';
-import { AppSettingsService } from '../../settings/app-settings.service';
-import type { SettingKey } from '../../settings/settings.registry';
-import { PdndAuthService, type PdndEnvironment } from '../../pdnd/pdnd-auth.service';
-import { RegistroImpreseRateLimitError } from './registro-imprese-rate-limit.error';
+import { AppSettingsService } from '../../settings/app-settings.service.js';
+import type { SettingKey } from '../../settings/settings.registry.js';
+import { PdndAuthService, type PdndEnvironment } from '../../pdnd/pdnd-auth.service.js';
+import { RegistroImpreseRateLimitError } from './registro-imprese-rate-limit.error.js';
 
 const REGISTRO_IMPRESE_BASE_URL: Record<PdndEnvironment, string> = {
   test: 'https://pdndcl.registroimprese.it',

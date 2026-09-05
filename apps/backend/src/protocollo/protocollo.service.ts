@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { AppSettingsService } from '../settings/app-settings.service';
-import type { SettingKey } from '../settings/settings.registry';
+import { AppSettingsService } from '../settings/app-settings.service.js';
+import type { SettingKey } from '../settings/settings.registry.js';
 
 interface ProtocolloConfig {
   baseUrl: string;

@@ -2,11 +2,11 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
-import { IoServiceConfig } from '../entities/io-service-config.entity';
-import { decryptValue, deriveSettingsKey, encryptValue } from '../settings/settings-crypto';
-import { MASKED_VALUE } from '../settings/settings.registry';
-import type { AppConfiguration } from '../config/configuration';
-import type { CreateIoServiceDto, IoServiceMaskedDto, UpdateIoServiceDto } from './dto/io-service.dto';
+import { IoServiceConfig } from '../entities/io-service-config.entity.js';
+import { decryptValue, deriveSettingsKey, encryptValue } from '../settings/settings-crypto.js';
+import { MASKED_VALUE } from '../settings/settings.registry.js';
+import type { AppConfiguration } from '../config/configuration.js';
+import type { CreateIoServiceDto, IoServiceMaskedDto, UpdateIoServiceDto } from './dto/io-service.dto.js';
 
 @Injectable()
 export class IoServicesService {
@@ -117,7 +117,7 @@ export class IoServicesService {
       throw new BadRequestException('Nessun servizio App IO configurato o abilitato come predefinito');
     }
 
-    const { APP_IO_BASE_URL } = await import('../channels/app-io/app-io.strategy');
+    const { APP_IO_BASE_URL } = await import('../channels/app-io/app-io.strategy.js');
 
     try {
       const response = await fetch(`${APP_IO_BASE_URL}/api/v1/profiles/${codiceFiscale.toUpperCase().trim()}`, {
@@ -149,7 +149,7 @@ export class IoServicesService {
     if (!codiceFiscale) throw new BadRequestException('Codice fiscale di test richiesto');
 
     const apiKey = decryptValue(entity.apiKeyPrimariaEnc, this.cryptoKey);
-    const { APP_IO_BASE_URL } = await import('../channels/app-io/app-io.strategy');
+    const { APP_IO_BASE_URL } = await import('../channels/app-io/app-io.strategy.js');
 
     // 1. Verifica profilo cittadino
     const profileResponse = await fetch(`${APP_IO_BASE_URL}/api/v1/profiles/${codiceFiscale}`, {

@@ -1,5 +1,5 @@
-import { RecipientStatus } from '../entities/recipient.entity';
-import { classifyChannelOutcome } from './channel-outcome.util';
+import { RecipientStatus } from '../entities/recipient.entity.js';
+import { classifyChannelOutcome } from './channel-outcome.util.js';
 
 describe('classifyChannelOutcome', () => {
   it('primario riuscito, nessun appIo → primaryOnly', () => {

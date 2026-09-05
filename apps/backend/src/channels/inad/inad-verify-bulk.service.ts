@@ -1,11 +1,11 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { InadVerificationJob, InadVerificationJobStatus, InadVerificationBatch } from '../../entities/inad-verification-job.entity';
-import { parseCsvContent } from '../../io-services/csv.util';
-import { InadService } from './inad.service';
-import { RegistroImpreseVerifyQueueService } from '../registro-imprese/registro-imprese-verify-queue.service';
-import { isPartitaIva } from '../tax-id.util';
+import { InadVerificationJob, InadVerificationJobStatus, InadVerificationBatch } from '../../entities/inad-verification-job.entity.js';
+import { parseCsvContent } from '../../io-services/csv.util.js';
+import { InadService } from './inad.service.js';
+import { RegistroImpreseVerifyQueueService } from '../registro-imprese/registro-imprese-verify-queue.service.js';
+import { isPartitaIva } from '../tax-id.util.js';
 
 const BATCH_SIZE = 1000;
 

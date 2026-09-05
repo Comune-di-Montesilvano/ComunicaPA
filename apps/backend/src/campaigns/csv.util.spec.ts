@@ -1,4 +1,4 @@
-import { escapeCsvField } from './csv.util';
+import { escapeCsvField } from './csv.util.js';
 
 describe('escapeCsvField', () => {
   it('racchiude il valore tra virgolette ed esegue escaping delle virgolette interne', () => {

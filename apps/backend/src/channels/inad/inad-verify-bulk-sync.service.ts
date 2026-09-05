@@ -2,9 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Cron } from '@nestjs/schedule';
-import { InadVerificationJob, InadVerificationJobStatus } from '../../entities/inad-verification-job.entity';
-import { parseCsvContent, buildCsvContent } from '../../io-services/csv.util';
-import { InadService } from './inad.service';
+import { InadVerificationJob, InadVerificationJobStatus } from '../../entities/inad-verification-job.entity.js';
+import { parseCsvContent, buildCsvContent } from '../../io-services/csv.util.js';
+import { InadService } from './inad.service.js';
 
 const ADDRESS_COLUMN = 'domicilio_digitale_inad';
 

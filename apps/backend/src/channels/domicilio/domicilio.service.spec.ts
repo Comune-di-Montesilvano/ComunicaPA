@@ -1,9 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { DomicilioService } from './domicilio.service';
-import { InadService } from '../inad/inad.service';
-import { IoServicesService } from '../../io-services/io-services.service';
-import { AnprService } from '../anpr/anpr.service';
-import { RegistroImpreseService } from '../registro-imprese/registro-imprese.service';
+import { DomicilioService } from './domicilio.service.js';
+import { InadService } from '../inad/inad.service.js';
+import { IoServicesService } from '../../io-services/io-services.service.js';
+import { AnprService } from '../anpr/anpr.service.js';
+import { RegistroImpreseService } from '../registro-imprese/registro-imprese.service.js';
 
 const mockInad = { extractDigitalAddress: jest.fn() };
 const mockIoServices = { verifyProfile: jest.fn() };

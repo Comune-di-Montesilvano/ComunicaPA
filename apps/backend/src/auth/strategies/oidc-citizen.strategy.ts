@@ -4,10 +4,10 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { passportJwtSecret } from 'jwks-rsa';
 import Redis from 'ioredis';
-import { extractClaimString } from '../oidc/oidc-flow.service';
+import { extractClaimString } from '../oidc/oidc-flow.service.js';
 import type { CitizenTokenClaims } from '@comunicapa/shared-types';
-import type { AppConfiguration } from '../../config/configuration';
-import { AppSettingsService } from '../../settings/app-settings.service';
+import type { AppConfiguration } from '../../config/configuration.js';
+import { AppSettingsService } from '../../settings/app-settings.service.js';
 
 // Cache dei secret provider JWKS per URI: ricreato solo quando l'admin cambia
 // oidc.jwksUri dalla UI, evitando di ricreare il provider ad ogni richiesta.

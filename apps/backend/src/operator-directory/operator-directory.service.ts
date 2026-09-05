@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { OperatorDirectoryEntry } from '../entities/operator-directory-entry.entity';
+import { OperatorDirectoryEntry } from '../entities/operator-directory-entry.entity.js';
 
 @Injectable()
 export class OperatorDirectoryService {

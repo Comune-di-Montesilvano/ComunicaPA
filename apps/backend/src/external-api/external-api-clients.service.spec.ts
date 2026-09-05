@@ -1,7 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { ExternalApiClientsService } from './external-api-clients.service';
-import { ExternalApiClient } from '../entities/external-api-client.entity';
+import { ExternalApiClientsService } from './external-api-clients.service.js';
+import { ExternalApiClient } from '../entities/external-api-client.entity.js';
 
 describe('ExternalApiClientsService', () => {
   let service: ExternalApiClientsService;

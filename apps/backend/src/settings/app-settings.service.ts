@@ -2,8 +2,8 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
-import { AppSetting } from '../entities/app-setting.entity';
-import type { AppConfiguration } from '../config/configuration';
+import { AppSetting } from '../entities/app-setting.entity.js';
+import type { AppConfiguration } from '../config/configuration.js';
 import {
   MASKED_VALUE,
   SETTING_DEFS,
@@ -11,8 +11,8 @@ import {
   type SettingDef,
   type SettingKey,
   type SettingValue,
-} from './settings.registry';
-import { decryptValue, deriveSettingsKey, encryptValue } from './settings-crypto';
+} from './settings.registry.js';
+import { decryptValue, deriveSettingsKey, encryptValue } from './settings-crypto.js';
 
 @Injectable()
 export class AppSettingsService {

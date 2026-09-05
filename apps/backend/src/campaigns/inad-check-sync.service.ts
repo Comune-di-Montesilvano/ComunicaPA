@@ -2,10 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Cron } from '@nestjs/schedule';
-import { Campaign, CampaignStatus } from '../entities/campaign.entity';
-import { InadService } from '../channels/inad/inad.service';
-import { RegistroImpreseVerifyQueueService } from '../channels/registro-imprese/registro-imprese-verify-queue.service';
-import { CampaignsService } from './campaigns.service';
+import { Campaign, CampaignStatus } from '../entities/campaign.entity.js';
+import { InadService } from '../channels/inad/inad.service.js';
+import { RegistroImpreseVerifyQueueService } from '../channels/registro-imprese/registro-imprese-verify-queue.service.js';
+import { CampaignsService } from './campaigns.service.js';
 
 interface InadCheckBulkState {
   mechanism: 'bulk';

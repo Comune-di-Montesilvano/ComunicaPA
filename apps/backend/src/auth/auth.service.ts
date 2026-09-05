@@ -2,11 +2,11 @@ import { ForbiddenException, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import type { JwtOperatorPayload, CitizenTokenClaims } from '@comunicapa/shared-types';
-import { LdapService } from './ldap/ldap.service';
-import { OperatorDirectoryService } from '../operator-directory/operator-directory.service';
-import type { LoginDto } from './dto/login.dto';
-import type { AuthResponseDto } from './dto/auth-response.dto';
-import type { AppConfiguration } from '../config/configuration';
+import { LdapService } from './ldap/ldap.service.js';
+import { OperatorDirectoryService } from '../operator-directory/operator-directory.service.js';
+import type { LoginDto } from './dto/login.dto.js';
+import type { AuthResponseDto } from './dto/auth-response.dto.js';
+import type { AppConfiguration } from '../config/configuration.js';
 
 @Injectable()
 export class AuthService {

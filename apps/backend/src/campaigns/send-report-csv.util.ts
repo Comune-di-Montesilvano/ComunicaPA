@@ -1,6 +1,6 @@
-import { escapeCsvField } from './csv.util';
-import type { SendReportDto, SendReportRowDto } from './dto/campaign-stats.dto';
-import { sendStatusLabel, digitalDomicileTypeLabel, SEND_STATUS_HISTORY_COLUMNS } from './send-status-labels.util';
+import { escapeCsvField } from './csv.util.js';
+import type { SendReportDto, SendReportRowDto } from './dto/campaign-stats.dto.js';
+import { sendStatusLabel, digitalDomicileTypeLabel, SEND_STATUS_HISTORY_COLUMNS } from './send-status-labels.util.js';
 
 function formatDate(iso: string | undefined): string {
   return iso ? new Date(iso).toLocaleString('it-IT', { timeZone: 'Europe/Rome' }) : '';

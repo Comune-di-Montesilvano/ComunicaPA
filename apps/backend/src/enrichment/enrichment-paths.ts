@@ -1,5 +1,5 @@
 import { join } from 'path';
-import { getAttachmentsRoot } from '../attachments/attachment-paths';
+import { getAttachmentsRoot } from '../attachments/attachment-paths.js';
 
 export function getEnrichmentDir(jobId: string): string {
   return join(getAttachmentsRoot(), 'enrichment', jobId);

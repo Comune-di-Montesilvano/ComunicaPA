@@ -1,7 +1,7 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import type { Request } from 'express';
-import { ExternalApiClientsService } from '../external-api-clients.service';
-import type { ExternalApiClient } from '../../entities/external-api-client.entity';
+import { ExternalApiClientsService } from '../external-api-clients.service.js';
+import type { ExternalApiClient } from '../../entities/external-api-client.entity.js';
 
 export type RequestWithApiClient = Request & { apiClient: ExternalApiClient };
 

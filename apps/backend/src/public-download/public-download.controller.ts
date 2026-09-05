@@ -3,12 +3,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
-import type { AppConfiguration } from '../config/configuration';
-import { Public } from '../auth/decorators/public.decorator';
-import { Recipient } from '../entities/recipient.entity';
-import { DownloadEvent } from '../entities/download-event.entity';
-import { AttachmentService, resolveCustomAttachmentFilename } from '../attachments/attachment.service';
-import { verifyDownloadLink } from '../channels/download-link.util';
+import type { AppConfiguration } from '../config/configuration.js';
+import { Public } from '../auth/decorators/public.decorator.js';
+import { Recipient } from '../entities/recipient.entity.js';
+import { DownloadEvent } from '../entities/download-event.entity.js';
+import { AttachmentService, resolveCustomAttachmentFilename } from '../attachments/attachment.service.js';
+import { verifyDownloadLink } from '../channels/download-link.util.js';
 
 @Controller('public/download')
 @Public()

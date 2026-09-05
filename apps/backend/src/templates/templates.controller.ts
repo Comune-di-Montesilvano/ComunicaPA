@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Put } from '@nestjs/common';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { TemplatesService } from './templates.service';
-import { CreateTemplateDto, UpdateTemplateDto } from './dto/template.dto';
+import { Roles } from '../auth/decorators/roles.decorator.js';
+import { TemplatesService } from './templates.service.js';
+import { CreateTemplateDto, UpdateTemplateDto } from './dto/template.dto.js';
 
 @Controller('admin/templates')
 @Roles('user', 'admin')

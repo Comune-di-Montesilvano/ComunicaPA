@@ -1,5 +1,5 @@
 import { matchCountry } from '@comunicapa/shared-types';
-import type { Recipient } from '../entities/recipient.entity';
+import type { Recipient } from '../entities/recipient.entity.js';
 
 export interface ResolvedPaymentData {
   noticeCode: string | null;

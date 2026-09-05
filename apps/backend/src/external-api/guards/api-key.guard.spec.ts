@@ -1,6 +1,6 @@
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
-import { ApiKeyGuard } from './api-key.guard';
-import { ExternalApiClientsService } from '../external-api-clients.service';
+import { ApiKeyGuard } from './api-key.guard.js';
+import { ExternalApiClientsService } from '../external-api-clients.service.js';
 
 function makeContext(headers: Record<string, string>): ExecutionContext {
   const req: any = { headers };

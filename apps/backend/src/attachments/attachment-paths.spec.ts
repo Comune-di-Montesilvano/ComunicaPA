@@ -1,5 +1,5 @@
 import { join } from 'path';
-import { getAttachmentsRoot, getUploadsDir, getBrandingDir } from './attachment-paths';
+import { getAttachmentsRoot, getUploadsDir, getBrandingDir } from './attachment-paths.js';
 
 describe('attachment-paths', () => {
   afterEach(() => {

@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
-import { SendBaseFeeService } from './send-base-fee.service';
-import { AppSettingsService } from '../../settings/app-settings.service';
+import { SendBaseFeeService } from './send-base-fee.service.js';
+import { AppSettingsService } from '../../settings/app-settings.service.js';
 
 const mockFetch = jest.fn();
 global.fetch = mockFetch as unknown as typeof fetch;

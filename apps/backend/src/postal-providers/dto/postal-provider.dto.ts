@@ -1,5 +1,5 @@
 import { IsBoolean, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
-import type { PostalProviderType } from '../../entities/postal-provider-config.entity';
+import type { PostalProviderType } from '../../entities/postal-provider-config.entity.js';
 
 export class CreatePostalProviderDto {
   @IsIn(['GLOBALCOM'])

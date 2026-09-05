@@ -2,7 +2,7 @@ import { Injectable, Logger, NotFoundException, InternalServerErrorException, Ba
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
-import { getAttachmentsRoot } from '../attachments/attachment-paths';
+import { getAttachmentsRoot } from '../attachments/attachment-paths.js';
 
 @Injectable()
 export class PdfService {

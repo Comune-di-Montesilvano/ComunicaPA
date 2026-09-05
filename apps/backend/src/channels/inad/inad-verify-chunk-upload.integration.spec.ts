@@ -3,10 +3,10 @@ import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import * as fs from 'fs';
-import { InadVerifyController } from './inad-verify.controller';
-import { InadService } from './inad.service';
-import { InadVerifyBulkService } from './inad-verify-bulk.service';
-import { chunkUploadDir, initChunkedUpload, cleanupChunkedUpload } from '../../campaigns/chunked-upload.util';
+import { InadVerifyController } from './inad-verify.controller.js';
+import { InadService } from './inad.service.js';
+import { InadVerifyBulkService } from './inad-verify-bulk.service.js';
+import { chunkUploadDir, initChunkedUpload, cleanupChunkedUpload } from '../../campaigns/chunked-upload.util.js';
 
 /**
  * Terza occorrenza della stessa classe di bug (path traversal su uploadId/

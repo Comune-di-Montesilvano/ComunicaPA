@@ -1,4 +1,4 @@
-import { buildNeverDownloadedCsv } from './never-downloaded-csv.util';
+import { buildNeverDownloadedCsv } from './never-downloaded-csv.util.js';
 
 describe('buildNeverDownloadedCsv', () => {
   it('produce header e righe separate da ; con escaping delle virgolette', () => {

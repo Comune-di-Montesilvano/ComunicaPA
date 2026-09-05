@@ -1,4 +1,4 @@
-import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util';
+import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util.js';
 
 describe('mergeMonthlyTrend', () => {
   it('unisce mesi con invii e download coincidenti', () => {

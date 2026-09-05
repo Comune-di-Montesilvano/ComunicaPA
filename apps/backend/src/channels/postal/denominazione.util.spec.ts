@@ -1,4 +1,4 @@
-import { splitDenominazione } from './denominazione.util';
+import { splitDenominazione } from './denominazione.util.js';
 
 describe('splitDenominazione', () => {
   it('nome corto: denominazione1 piena, denominazione2 assente', () => {

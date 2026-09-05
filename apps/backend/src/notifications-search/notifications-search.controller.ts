@@ -1,7 +1,7 @@
 import { Controller, Get, Param, ParseIntPipe, ParseUUIDPipe, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { NotificationsSearchService } from './notifications-search.service';
+import { Roles } from '../auth/decorators/roles.decorator.js';
+import { NotificationsSearchService } from './notifications-search.service.js';
 
 @Controller('admin/notifications-search')
 @Roles('user', 'admin')

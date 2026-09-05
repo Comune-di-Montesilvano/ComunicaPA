@@ -2,10 +2,10 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { getQueueToken } from '@nestjs/bullmq';
 import { NotFoundException } from '@nestjs/common';
-import { AppIoVerifyBulkService } from './app-io-verify-bulk.service';
-import { AppIoVerificationJob, AppIoVerificationJobStatus } from '../entities/app-io-verification-job.entity';
-import { IoServiceConfig } from '../entities/io-service-config.entity';
-import { APP_IO_VERIFY_BULK_QUEUE } from './app-io-verify-bulk-job.types';
+import { AppIoVerifyBulkService } from './app-io-verify-bulk.service.js';
+import { AppIoVerificationJob, AppIoVerificationJobStatus } from '../entities/app-io-verification-job.entity.js';
+import { IoServiceConfig } from '../entities/io-service-config.entity.js';
+import { APP_IO_VERIFY_BULK_QUEUE } from './app-io-verify-bulk-job.types.js';
 
 describe('AppIoVerifyBulkService', () => {
   let service: AppIoVerifyBulkService;

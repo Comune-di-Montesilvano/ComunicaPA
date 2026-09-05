@@ -1,7 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { AuditLog } from '../entities/audit-log.entity';
-import { AuditLogsService } from './audit-logs.service';
+import { AuditLog } from '../entities/audit-log.entity.js';
+import { AuditLogsService } from './audit-logs.service.js';
 
 const mockAuditLogRepo = {
   create: jest.fn(),

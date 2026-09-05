@@ -1,5 +1,5 @@
-import type { NeverDownloadedRowDto } from './dto/global-stats.dto';
-import { escapeCsvField } from './csv.util';
+import type { NeverDownloadedRowDto } from './dto/global-stats.dto.js';
+import { escapeCsvField } from './csv.util.js';
 
 export function buildNeverDownloadedCsv(rows: NeverDownloadedRowDto[]): string {
   const header = ['Codice Fiscale', 'Nominativo', 'Campagna', 'Canale', 'Stato', 'Data invio']

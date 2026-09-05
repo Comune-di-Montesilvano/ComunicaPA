@@ -1,5 +1,5 @@
-import type { PreviewMessageResult } from '../../campaigns/dto/preview-message.dto';
-import type { ResolvedPaymentData } from '../../channels/payment-config.util';
+import type { PreviewMessageResult } from '../../campaigns/dto/preview-message.dto.js';
+import type { ResolvedPaymentData } from '../../channels/payment-config.util.js';
 
 export interface AttemptDetailDto {
   attemptNumber: number;

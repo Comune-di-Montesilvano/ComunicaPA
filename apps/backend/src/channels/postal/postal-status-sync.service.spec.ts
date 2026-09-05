@@ -1,9 +1,9 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { PostalStatusSyncService } from './postal-status-sync.service';
-import { GlobalComClient } from './globalcom-client.service';
-import { PostalProvidersService, type ResolvedPostalProvider } from '../../postal-providers/postal-providers.service';
-import { NotificationAttempt } from '../../entities/notification-attempt.entity';
+import { PostalStatusSyncService } from './postal-status-sync.service.js';
+import { GlobalComClient } from './globalcom-client.service.js';
+import { PostalProvidersService, type ResolvedPostalProvider } from '../../postal-providers/postal-providers.service.js';
+import { NotificationAttempt } from '../../entities/notification-attempt.entity.js';
 
 describe('PostalStatusSyncService', () => {
   let service: PostalStatusSyncService;

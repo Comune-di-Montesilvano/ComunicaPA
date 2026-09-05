@@ -1,13 +1,13 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException } from '@nestjs/common';
-import { NotificationsSearchService } from './notifications-search.service';
-import { Recipient } from '../entities/recipient.entity';
-import { NotificationAttempt } from '../entities/notification-attempt.entity';
-import { DownloadEvent } from '../entities/download-event.entity';
-import { CampaignsService } from '../campaigns/campaigns.service';
-import { SendLegalFactsService } from '../channels/send/send-legal-facts.service';
-import { AttachmentService } from '../attachments/attachment.service';
+import { NotificationsSearchService } from './notifications-search.service.js';
+import { Recipient } from '../entities/recipient.entity.js';
+import { NotificationAttempt } from '../entities/notification-attempt.entity.js';
+import { DownloadEvent } from '../entities/download-event.entity.js';
+import { CampaignsService } from '../campaigns/campaigns.service.js';
+import { SendLegalFactsService } from '../channels/send/send-legal-facts.service.js';
+import { AttachmentService } from '../attachments/attachment.service.js';
 
 describe('NotificationsSearchService.search', () => {
   const qbMock = {

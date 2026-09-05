@@ -3,10 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { Repository } from 'typeorm';
-import { Campaign } from '../entities/campaign.entity';
-import { CampaignBulkRetryJob, CampaignBulkRetryJobStatus } from '../entities/campaign-bulk-retry-job.entity';
-import { CampaignsService } from './campaigns.service';
-import { CAMPAIGN_BULK_RETRY_QUEUE, CampaignBulkRetryJobData } from './campaign-bulk-retry-job.types';
+import { Campaign } from '../entities/campaign.entity.js';
+import { CampaignBulkRetryJob, CampaignBulkRetryJobStatus } from '../entities/campaign-bulk-retry-job.entity.js';
+import { CampaignsService } from './campaigns.service.js';
+import { CAMPAIGN_BULK_RETRY_QUEUE, CampaignBulkRetryJobData } from './campaign-bulk-retry-job.types.js';
 
 // Guard rail contro un'anomalia dati (mai più un limite legato al body della
 // richiesta HTTP — il browser manda solo campaignId+errorMessage, l'elenco

@@ -2,10 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as fs from 'fs';
 import { In, Repository } from 'typeorm';
-import { Campaign, CampaignStatus } from '../entities/campaign.entity';
-import { Recipient, RecipientStatus } from '../entities/recipient.entity';
-import { NotificationAttempt } from '../entities/notification-attempt.entity';
-import { getUploadsDir } from '../attachments/attachment-paths';
+import { Campaign, CampaignStatus } from '../entities/campaign.entity.js';
+import { Recipient, RecipientStatus } from '../entities/recipient.entity.js';
+import { NotificationAttempt } from '../entities/notification-attempt.entity.js';
+import { getUploadsDir } from '../attachments/attachment-paths.js';
 
 /**
  * Estratto da notification.processor.ts (era privato lì, chiamato solo dal

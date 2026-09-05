@@ -2,9 +2,9 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Cron } from '@nestjs/schedule';
-import { NotificationAttempt, AttemptStatus } from '../../entities/notification-attempt.entity';
-import { PostalProvidersService } from '../../postal-providers/postal-providers.service';
-import { GlobalComClient, type GbcCredentials } from './globalcom-client.service';
+import { NotificationAttempt, AttemptStatus } from '../../entities/notification-attempt.entity.js';
+import { PostalProvidersService } from '../../postal-providers/postal-providers.service.js';
+import { GlobalComClient, type GbcCredentials } from './globalcom-client.service.js';
 
 export interface PostalQueueHealth {
   candidatesCount: number;

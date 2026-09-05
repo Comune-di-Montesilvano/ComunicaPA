@@ -2,8 +2,8 @@ import { Injectable } from '@nestjs/common';
 import * as fs from 'fs';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
-import { assembleChunkedUpload, cleanupChunkedUpload } from '../campaigns/chunked-upload.util';
-import { getAttachmentsRoot } from '../attachments/attachment-paths';
+import { assembleChunkedUpload, cleanupChunkedUpload } from '../campaigns/chunked-upload.util.js';
+import { getAttachmentsRoot } from '../attachments/attachment-paths.js';
 
 interface TokenMeta {
   filename: string;

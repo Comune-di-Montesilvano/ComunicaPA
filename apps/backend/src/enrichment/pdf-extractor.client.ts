@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { AppConfiguration } from '../config/configuration';
+import type { AppConfiguration } from '../config/configuration.js';
 
 export interface ExtractedAddress {
   indirizzo: string;

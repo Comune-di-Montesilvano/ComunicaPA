@@ -1,10 +1,10 @@
 import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import type { JwtOperatorPayload } from '@comunicapa/shared-types';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { ExternalApiClientsService } from './external-api-clients.service';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
-import { CreateExternalClientDto } from './dto/create-external-client.dto';
+import { Roles } from '../auth/decorators/roles.decorator.js';
+import { ExternalApiClientsService } from './external-api-clients.service.js';
+import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
+import { CreateExternalClientDto } from './dto/create-external-client.dto.js';
 
 @Controller('admin/external-clients')
 @Roles('admin')

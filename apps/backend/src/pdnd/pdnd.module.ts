@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { PdndAuthService } from './pdnd-auth.service';
+import { PdndAuthService } from './pdnd-auth.service.js';
 
 @Module({
   providers: [PdndAuthService],

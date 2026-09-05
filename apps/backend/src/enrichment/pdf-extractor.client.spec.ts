@@ -1,6 +1,6 @@
 import { ConfigService } from '@nestjs/config';
-import type { AppConfiguration } from '../config/configuration';
-import { PdfExtractorClient } from './pdf-extractor.client';
+import type { AppConfiguration } from '../config/configuration.js';
+import { PdfExtractorClient } from './pdf-extractor.client.js';
 
 describe('PdfExtractorClient', () => {
   const config = { get: jest.fn().mockReturnValue('http://pdf-extractor:8000') } as unknown as ConfigService<AppConfiguration, true>;

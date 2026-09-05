@@ -1,14 +1,14 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import type { NotificationChannel, ChannelSendResult } from '@comunicapa/shared-types';
-import type { ChannelLogFn, IChannelStrategy } from '../channel.interface';
-import type { Recipient } from '../../entities/recipient.entity';
-import type { Campaign } from '../../entities/campaign.entity';
-import { AttachmentService } from '../../attachments/attachment.service';
-import { GlobalComClient, type GbcAddress } from './globalcom-client.service';
-import { PostalProvidersService } from '../../postal-providers/postal-providers.service';
-import { getColumnValue, resolvePhysicalAddress } from '../payment-config.util';
-import { AppSettingsService } from '../../settings/app-settings.service';
-import { splitDenominazione, type DenominazioneAbbreviation } from './denominazione.util';
+import type { ChannelLogFn, IChannelStrategy } from '../channel.interface.js';
+import type { Recipient } from '../../entities/recipient.entity.js';
+import type { Campaign } from '../../entities/campaign.entity.js';
+import { AttachmentService } from '../../attachments/attachment.service.js';
+import { GlobalComClient, type GbcAddress } from './globalcom-client.service.js';
+import { PostalProvidersService } from '../../postal-providers/postal-providers.service.js';
+import { getColumnValue, resolvePhysicalAddress } from '../payment-config.util.js';
+import { AppSettingsService } from '../../settings/app-settings.service.js';
+import { splitDenominazione, type DenominazioneAbbreviation } from './denominazione.util.js';
 
 const NON_TERMINAL_DEDUP_STATI = ['Errore', 'Eliminato'];
 

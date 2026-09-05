@@ -1,7 +1,7 @@
 import { Test } from '@nestjs/testing';
-import { InadService } from './inad.service';
-import { AppSettingsService } from '../../settings/app-settings.service';
-import { PdndAuthService } from '../../pdnd/pdnd-auth.service';
+import { InadService } from './inad.service.js';
+import { AppSettingsService } from '../../settings/app-settings.service.js';
+import { PdndAuthService } from '../../pdnd/pdnd-auth.service.js';
 
 const mockFetch = jest.fn();
 global.fetch = mockFetch as unknown as typeof fetch;

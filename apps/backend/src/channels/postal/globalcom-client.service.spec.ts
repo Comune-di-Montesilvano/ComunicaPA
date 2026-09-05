@@ -1,4 +1,4 @@
-import { GlobalComClient, mapDocStatus, normalizeGlobalComField } from './globalcom-client.service';
+import { GlobalComClient, mapDocStatus, normalizeGlobalComField } from './globalcom-client.service.js';
 
 const mockLoginAsync = jest.fn();
 const mockInvioAsync = jest.fn();

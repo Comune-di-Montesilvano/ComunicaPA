@@ -3,9 +3,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import type { Job } from 'bullmq';
-import { CampaignBulkRetryJob, CampaignBulkRetryJobStatus, CampaignBulkRetryFailure } from '../entities/campaign-bulk-retry-job.entity';
-import { CampaignsService } from './campaigns.service';
-import { CAMPAIGN_BULK_RETRY_QUEUE, CampaignBulkRetryJobData } from './campaign-bulk-retry-job.types';
+import { CampaignBulkRetryJob, CampaignBulkRetryJobStatus, CampaignBulkRetryFailure } from '../entities/campaign-bulk-retry-job.entity.js';
+import { CampaignsService } from './campaigns.service.js';
+import { CAMPAIGN_BULK_RETRY_QUEUE, CampaignBulkRetryJobData } from './campaign-bulk-retry-job.types.js';
 
 const PROGRESS_UPDATE_EVERY = 50;
 // Solo lavoro DB + queue.add() per destinatario (nessuna chiamata HTTP

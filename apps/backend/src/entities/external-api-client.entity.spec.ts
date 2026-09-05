@@ -1,4 +1,4 @@
-import { ExternalApiClient } from './external-api-client.entity';
+import { ExternalApiClient } from './external-api-client.entity.js';
 
 describe('ExternalApiClient', () => {
   it('ha i campi attesi con i default corretti prima del save', () => {

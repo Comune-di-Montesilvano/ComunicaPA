@@ -1,4 +1,4 @@
-import { isPartitaIva } from './tax-id.util';
+import { isPartitaIva } from './tax-id.util.js';
 
 describe('isPartitaIva', () => {
   it('riconosce 11 cifre numeriche come Partita IVA', () => {

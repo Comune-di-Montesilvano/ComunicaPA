@@ -1,18 +1,18 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException } from '@nestjs/common';
-import { CampaignsService } from './campaigns.service';
-import { Campaign } from '../entities/campaign.entity';
-import { Recipient } from '../entities/recipient.entity';
-import { NotificationAttempt } from '../entities/notification-attempt.entity';
-import { DownloadEvent } from '../entities/download-event.entity';
-import { AppSettingsService } from '../settings/app-settings.service';
+import { CampaignsService } from './campaigns.service.js';
+import { Campaign } from '../entities/campaign.entity.js';
+import { Recipient } from '../entities/recipient.entity.js';
+import { NotificationAttempt } from '../entities/notification-attempt.entity.js';
+import { DownloadEvent } from '../entities/download-event.entity.js';
+import { AppSettingsService } from '../settings/app-settings.service.js';
 import { ConfigService } from '@nestjs/config';
-import { NotificationQueuesService } from '../queue/notification-queues.service';
-import { InadService } from '../channels/inad/inad.service';
-import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service';
-import { RegistroImpreseService } from '../channels/registro-imprese/registro-imprese.service';
-import { RegistroImpreseVerifyQueueService } from '../channels/registro-imprese/registro-imprese-verify-queue.service';
+import { NotificationQueuesService } from '../queue/notification-queues.service.js';
+import { InadService } from '../channels/inad/inad.service.js';
+import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service.js';
+import { RegistroImpreseService } from '../channels/registro-imprese/registro-imprese.service.js';
+import { RegistroImpreseVerifyQueueService } from '../channels/registro-imprese/registro-imprese-verify-queue.service.js';
 
 describe('CampaignsService - Cost and Savings', () => {
   let service: CampaignsService;

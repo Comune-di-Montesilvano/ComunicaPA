@@ -11,9 +11,9 @@ import {
   Post,
   Put,
 } from '@nestjs/common';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { PostalProvidersService } from './postal-providers.service';
-import { CreatePostalProviderDto, SetActivePostalProviderDto, UpdatePostalProviderDto } from './dto/postal-provider.dto';
+import { Roles } from '../auth/decorators/roles.decorator.js';
+import { PostalProvidersService } from './postal-providers.service.js';
+import { CreatePostalProviderDto, SetActivePostalProviderDto, UpdatePostalProviderDto } from './dto/postal-provider.dto.js';
 
 @Controller('admin/postal-providers')
 export class PostalProvidersController {

@@ -1,8 +1,8 @@
 import { Test } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { TemplatesService } from './templates.service';
-import { Template } from '../entities/template.entity';
+import { TemplatesService } from './templates.service.js';
+import { Template } from '../entities/template.entity.js';
 
 describe('TemplatesService', () => {
   const repoMock = {

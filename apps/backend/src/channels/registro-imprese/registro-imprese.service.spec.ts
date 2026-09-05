@@ -1,8 +1,8 @@
 import { Test } from '@nestjs/testing';
-import { RegistroImpreseService } from './registro-imprese.service';
-import { RegistroImpreseRateLimitError } from './registro-imprese-rate-limit.error';
-import { AppSettingsService } from '../../settings/app-settings.service';
-import { PdndAuthService } from '../../pdnd/pdnd-auth.service';
+import { RegistroImpreseService } from './registro-imprese.service.js';
+import { RegistroImpreseRateLimitError } from './registro-imprese-rate-limit.error.js';
+import { AppSettingsService } from '../../settings/app-settings.service.js';
+import { PdndAuthService } from '../../pdnd/pdnd-auth.service.js';
 
 const mockFetch = jest.fn();
 global.fetch = mockFetch as unknown as typeof fetch;

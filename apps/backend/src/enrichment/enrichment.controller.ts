@@ -19,10 +19,10 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import * as fs from 'fs';
 import type { JwtOperatorPayload } from '@comunicapa/shared-types';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { TraceFormat } from '../entities/enrichment-job.entity';
-import { EnrichmentService } from './enrichment.service';
-import { EnrichmentEventsService } from './enrichment-events.service';
+import { Roles } from '../auth/decorators/roles.decorator.js';
+import { TraceFormat } from '../entities/enrichment-job.entity.js';
+import { EnrichmentService } from './enrichment.service.js';
+import { EnrichmentEventsService } from './enrichment-events.service.js';
 import {
   MAX_CHUNK_SIZE_BYTES,
   assembleChunkedUpload,
@@ -30,8 +30,8 @@ import {
   initChunkedUpload,
   isValidChunkIndex,
   safeChunkUploadDir,
-} from '../campaigns/chunked-upload.util';
-import { getEnrichmentResultCsv } from './enrichment-paths';
+} from '../campaigns/chunked-upload.util.js';
+import { getEnrichmentResultCsv } from './enrichment-paths.js';
 
 @Controller('admin/enrichment')
 export class EnrichmentController {

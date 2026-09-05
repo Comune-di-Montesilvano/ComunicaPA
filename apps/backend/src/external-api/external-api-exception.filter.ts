@@ -1,6 +1,6 @@
 import { ArgumentsHost, BadRequestException, Catch, ExceptionFilter, HttpException, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import type { Response } from 'express';
-import { captureException } from '../common/sentry.util';
+import { captureException } from '../common/sentry.util.js';
 
 interface NormalizedError {
   success: false;

@@ -1,21 +1,21 @@
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
-import { AppSetting } from '../entities/app-setting.entity';
-import { Campaign } from '../entities/campaign.entity';
-import { NotificationAttempt } from '../entities/notification-attempt.entity';
-import { Recipient } from '../entities/recipient.entity';
-import { MailServerConfig } from '../entities/mail-server-config.entity';
-import { IoServiceConfig } from '../entities/io-service-config.entity';
-import { Template } from '../entities/template.entity';
-import { DownloadEvent } from '../entities/download-event.entity';
-import { AuditLog } from '../entities/audit-log.entity';
-import { PostalProviderConfig } from '../entities/postal-provider-config.entity';
-import { AppIoVerificationJob } from '../entities/app-io-verification-job.entity';
-import { InadVerificationJob } from '../entities/inad-verification-job.entity';
-import { EnrichmentJob } from '../entities/enrichment-job.entity';
-import { EnrichmentAddressOverride } from '../entities/enrichment-address-override.entity';
-import { OperatorDirectoryEntry } from '../entities/operator-directory-entry.entity';
-import { CampaignBulkRetryJob } from '../entities/campaign-bulk-retry-job.entity';
+import { AppSetting } from '../entities/app-setting.entity.js';
+import { Campaign } from '../entities/campaign.entity.js';
+import { NotificationAttempt } from '../entities/notification-attempt.entity.js';
+import { Recipient } from '../entities/recipient.entity.js';
+import { MailServerConfig } from '../entities/mail-server-config.entity.js';
+import { IoServiceConfig } from '../entities/io-service-config.entity.js';
+import { Template } from '../entities/template.entity.js';
+import { DownloadEvent } from '../entities/download-event.entity.js';
+import { AuditLog } from '../entities/audit-log.entity.js';
+import { PostalProviderConfig } from '../entities/postal-provider-config.entity.js';
+import { AppIoVerificationJob } from '../entities/app-io-verification-job.entity.js';
+import { InadVerificationJob } from '../entities/inad-verification-job.entity.js';
+import { EnrichmentJob } from '../entities/enrichment-job.entity.js';
+import { EnrichmentAddressOverride } from '../entities/enrichment-address-override.entity.js';
+import { OperatorDirectoryEntry } from '../entities/operator-directory-entry.entity.js';
+import { CampaignBulkRetryJob } from '../entities/campaign-bulk-retry-job.entity.js';
 
 // DataSource per la CLI TypeORM (migration:generate / migration:run).
 // Il runtime dell'app usa database.module.ts, che condivide entity e migrations.

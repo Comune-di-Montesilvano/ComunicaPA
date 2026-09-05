@@ -1,6 +1,6 @@
-import { ExternalDomicilioController } from './external-domicilio.controller';
-import { DomicilioService } from '../channels/domicilio/domicilio.service';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { ExternalDomicilioController } from './external-domicilio.controller.js';
+import { DomicilioService } from '../channels/domicilio/domicilio.service.js';
+import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
 
 describe('ExternalDomicilioController', () => {
   let controller: ExternalDomicilioController;

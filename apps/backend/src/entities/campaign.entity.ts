@@ -7,7 +7,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import type { NotificationChannel } from '@comunicapa/shared-types';
-import type { Recipient } from './recipient.entity';
+import type { Recipient } from './recipient.entity.js';
 
 export enum CampaignStatus {
   DRAFT = 'draft',

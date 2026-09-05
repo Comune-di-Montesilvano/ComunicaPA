@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as jwt from 'jsonwebtoken';
 import { randomUUID } from 'node:crypto';
-import { AppSettingsService } from '../settings/app-settings.service';
-import type { SettingKey } from '../settings/settings.registry';
+import { AppSettingsService } from '../settings/app-settings.service.js';
+import type { SettingKey } from '../settings/settings.registry.js';
 
 export type PdndEnvironment = 'test' | 'prod';
 

@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import * as fs from 'fs';
 import { join } from 'path';
-import { CampaignsService } from '../campaigns/campaigns.service';
-import { getUploadsDir } from '../attachments/attachment-paths';
-import type { AttachmentConfigEntry } from '../attachments/attachment.service';
-import { ExternalAttachmentTokensService } from './external-attachment-tokens.service';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
-import { CreateExternalNotificationDto } from './dto/create-external-notification.dto';
-import type { ExternalApiClient } from '../entities/external-api-client.entity';
+import { CampaignsService } from '../campaigns/campaigns.service.js';
+import { getUploadsDir } from '../attachments/attachment-paths.js';
+import type { AttachmentConfigEntry } from '../attachments/attachment.service.js';
+import { ExternalAttachmentTokensService } from './external-attachment-tokens.service.js';
+import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
+import { CreateExternalNotificationDto } from './dto/create-external-notification.dto.js';
+import type { ExternalApiClient } from '../entities/external-api-client.entity.js';
 
 export type CreateAndLaunchResult =
   | { success: true; campaignId: string; status: 'QUEUED' }

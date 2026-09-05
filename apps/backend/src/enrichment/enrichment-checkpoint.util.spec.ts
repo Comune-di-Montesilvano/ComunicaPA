@@ -1,8 +1,8 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import { join } from 'path';
-import { getEnrichmentDir, getEnrichmentCheckpoint } from './enrichment-paths';
-import { writeCheckpointSync, readCheckpointSync, deleteCheckpointSync } from './enrichment-checkpoint.util';
+import { getEnrichmentDir, getEnrichmentCheckpoint } from './enrichment-paths.js';
+import { writeCheckpointSync, readCheckpointSync, deleteCheckpointSync } from './enrichment-checkpoint.util.js';
 
 describe('enrichment-checkpoint.util', () => {
   let tmpDir: string;

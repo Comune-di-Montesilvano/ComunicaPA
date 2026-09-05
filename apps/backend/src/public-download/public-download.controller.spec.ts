@@ -2,11 +2,11 @@ import { Test } from '@nestjs/testing';
 import { GoneException, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { PublicDownloadController } from './public-download.controller';
-import { AttachmentService } from '../attachments/attachment.service';
-import { Recipient } from '../entities/recipient.entity';
-import { DownloadEvent } from '../entities/download-event.entity';
-import { signDownloadLink } from '../channels/download-link.util';
+import { PublicDownloadController } from './public-download.controller.js';
+import { AttachmentService } from '../attachments/attachment.service.js';
+import { Recipient } from '../entities/recipient.entity.js';
+import { DownloadEvent } from '../entities/download-event.entity.js';
+import { signDownloadLink } from '../channels/download-link.util.js';
 
 describe('PublicDownloadController', () => {
   let controller: PublicDownloadController;

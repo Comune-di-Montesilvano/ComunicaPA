@@ -1,5 +1,5 @@
-import { RecipientStatus } from '../entities/recipient.entity';
-import { CampaignContentCorrectionService } from './campaign-content-correction.service';
+import { RecipientStatus } from '../entities/recipient.entity.js';
+import { CampaignContentCorrectionService } from './campaign-content-correction.service.js';
 
 describe('CampaignContentCorrectionService', () => {
   let attemptRepo: any;

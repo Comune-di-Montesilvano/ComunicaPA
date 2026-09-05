@@ -1,4 +1,4 @@
-import { deriveSettingsKey, encryptValue, decryptValue, isEncryptedValue } from './settings-crypto';
+import { deriveSettingsKey, encryptValue, decryptValue, isEncryptedValue } from './settings-crypto.js';
 
 describe('settings-crypto', () => {
   const key = deriveSettingsKey('test-master-secret');

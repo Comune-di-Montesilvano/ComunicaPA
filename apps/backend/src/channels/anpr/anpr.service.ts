@@ -1,10 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { decode as jwtDecodeComplete } from 'jsonwebtoken';
-import { AppSettingsService } from '../../settings/app-settings.service';
-import type { SettingKey } from '../../settings/settings.registry';
-import { PdndAuthService } from '../../pdnd/pdnd-auth.service';
-import type { AnprResidenzaResult, AnprGeneralita, AnprResidenza, AnprInfoSoggettoEnte, AnprEsistenzaInVitaResult } from './anpr.types';
+import { AppSettingsService } from '../../settings/app-settings.service.js';
+import type { SettingKey } from '../../settings/settings.registry.js';
+import { PdndAuthService } from '../../pdnd/pdnd-auth.service.js';
+import type { AnprResidenzaResult, AnprGeneralita, AnprResidenza, AnprInfoSoggettoEnte, AnprEsistenzaInVitaResult } from './anpr.types.js';
 
 const ANPR_C002_BASE_URL =
   'https://modipa.anpr.interno.it/govway/rest/in/MinInternoPortaANPR-PDND/C002-servizioComunicazione/v1';

@@ -13,10 +13,10 @@ import {
   Put,
   Query,
 } from '@nestjs/common';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { MailConfigsService } from './mail-configs.service';
-import { CreateMailConfigDto, UpdateMailConfigDto, TestMailConfigDto, SetActiveMailConfigDto } from './dto/mail-config.dto';
-import type { MailServerType } from '../entities/mail-server-config.entity';
+import { Roles } from '../auth/decorators/roles.decorator.js';
+import { MailConfigsService } from './mail-configs.service.js';
+import { CreateMailConfigDto, UpdateMailConfigDto, TestMailConfigDto, SetActiveMailConfigDto } from './dto/mail-config.dto.js';
+import type { MailServerType } from '../entities/mail-server-config.entity.js';
 
 @Controller('admin/mail-configs')
 export class MailConfigsController {
