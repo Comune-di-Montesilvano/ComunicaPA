@@ -11,6 +11,8 @@ import { DownloadEvent } from '../entities/download-event.entity';
 import { NotificationQueuesService } from '../queue/notification-queues.service';
 import { AppSettingsService } from '../settings/app-settings.service';
 import { InadService } from '../channels/inad/inad.service';
+import { RegistroImpreseService } from '../channels/registro-imprese/registro-imprese.service';
+import { RegistroImpreseVerifyQueueService } from '../channels/registro-imprese/registro-imprese-verify-queue.service';
 import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service';
 import * as fs from 'fs';
 import { join } from 'path';
@@ -102,6 +104,8 @@ describe('CampaignsService', () => {
     getBulkResult: jest.fn(),
   };
   const mockPostalStatusSync = { refreshOne: jest.fn() };
+  const mockRegistroImpreseService = { dettaglioImpresa: jest.fn() };
+  const mockRegistroImpreseVerifyQueue = { enqueueCampaignVerify: jest.fn(), isCampaignJobDone: jest.fn() };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -116,6 +120,8 @@ describe('CampaignsService', () => {
         { provide: ConfigService, useValue: mockConfig },
         { provide: InadService, useValue: mockInadService },
         { provide: PostalStatusSyncService, useValue: mockPostalStatusSync },
+        { provide: RegistroImpreseService, useValue: mockRegistroImpreseService },
+        { provide: RegistroImpreseVerifyQueueService, useValue: mockRegistroImpreseVerifyQueue },
       ],
     }).compile();
     service = module.get<CampaignsService>(CampaignsService);
@@ -2406,6 +2412,8 @@ describe('CampaignsService.getDuplicateSource', () => {
         { provide: ConfigService, useValue: mockConfig },
         { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
         { provide: PostalStatusSyncService, useValue: { refreshOne: jest.fn() } },
+        { provide: RegistroImpreseService, useValue: { dettaglioImpresa: jest.fn() } },
+        { provide: RegistroImpreseVerifyQueueService, useValue: { enqueueCampaignVerify: jest.fn(), isCampaignJobDone: jest.fn() } },
       ],
     }).compile();
 
@@ -2475,6 +2483,8 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
         { provide: ConfigService, useValue: mockConfig },
         { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
         { provide: PostalStatusSyncService, useValue: { refreshOne: jest.fn() } },
+        { provide: RegistroImpreseService, useValue: { dettaglioImpresa: jest.fn() } },
+        { provide: RegistroImpreseVerifyQueueService, useValue: { enqueueCampaignVerify: jest.fn(), isCampaignJobDone: jest.fn() } },
       ],
     }).compile();
 
@@ -3009,6 +3019,8 @@ describe('CampaignsService.getFailuresByReason', () => {
         { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
         { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
         { provide: PostalStatusSyncService, useValue: { refreshOne: jest.fn() } },
+        { provide: RegistroImpreseService, useValue: { dettaglioImpresa: jest.fn() } },
+        { provide: RegistroImpreseVerifyQueueService, useValue: { enqueueCampaignVerify: jest.fn(), isCampaignJobDone: jest.fn() } },
       ],
     }).compile();
     const service = moduleRef.get(CampaignsService);
@@ -3046,6 +3058,8 @@ describe('CampaignsService.getDownloadReportRows', () => {
         { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
         { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
         { provide: PostalStatusSyncService, useValue: { refreshOne: jest.fn() } },
+        { provide: RegistroImpreseService, useValue: { dettaglioImpresa: jest.fn() } },
+        { provide: RegistroImpreseVerifyQueueService, useValue: { enqueueCampaignVerify: jest.fn(), isCampaignJobDone: jest.fn() } },
       ],
     }).compile();
     const service = moduleRef.get(CampaignsService);
@@ -3101,6 +3115,8 @@ describe('CampaignsService.getDownloadReportRows', () => {
         { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
         { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
         { provide: PostalStatusSyncService, useValue: { refreshOne: jest.fn() } },
+        { provide: RegistroImpreseService, useValue: { dettaglioImpresa: jest.fn() } },
+        { provide: RegistroImpreseVerifyQueueService, useValue: { enqueueCampaignVerify: jest.fn(), isCampaignJobDone: jest.fn() } },
       ],
     }).compile();
     const service = moduleRef.get(CampaignsService);
@@ -3132,6 +3148,8 @@ describe('CampaignsService.updateDraft', () => {
         { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
         { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
         { provide: PostalStatusSyncService, useValue: { refreshOne: jest.fn() } },
+        { provide: RegistroImpreseService, useValue: { dettaglioImpresa: jest.fn() } },
+        { provide: RegistroImpreseVerifyQueueService, useValue: { enqueueCampaignVerify: jest.fn(), isCampaignJobDone: jest.fn() } },
       ],
     }).compile();
 
@@ -3181,6 +3199,8 @@ describe('CampaignsService.updateCampaignContent', () => {
         { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
         { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
         { provide: PostalStatusSyncService, useValue: { refreshOne: jest.fn() } },
+        { provide: RegistroImpreseService, useValue: { dettaglioImpresa: jest.fn() } },
+        { provide: RegistroImpreseVerifyQueueService, useValue: { enqueueCampaignVerify: jest.fn(), isCampaignJobDone: jest.fn() } },
       ],
     }).compile();
 
@@ -3278,6 +3298,8 @@ describe('CampaignsService.previewMessage', () => {
         { provide: ConfigService, useValue: mockConfig },
         { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
         { provide: PostalStatusSyncService, useValue: { refreshOne: jest.fn() } },
+        { provide: RegistroImpreseService, useValue: { dettaglioImpresa: jest.fn() } },
+        { provide: RegistroImpreseVerifyQueueService, useValue: { enqueueCampaignVerify: jest.fn(), isCampaignJobDone: jest.fn() } },
       ],
     }).compile();
 
@@ -3367,6 +3389,8 @@ describe('CampaignsService.getSendStatusBreakdown / getSendReportRows', () => {
         { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
         { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
         { provide: PostalStatusSyncService, useValue: { refreshOne: jest.fn() } },
+        { provide: RegistroImpreseService, useValue: { dettaglioImpresa: jest.fn() } },
+        { provide: RegistroImpreseVerifyQueueService, useValue: { enqueueCampaignVerify: jest.fn(), isCampaignJobDone: jest.fn() } },
       ],
     }).compile();
 
@@ -3523,6 +3547,8 @@ describe('CampaignsService.getPostalStatusBreakdown / getPostalReportRows', () =
         { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
         { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
         { provide: PostalStatusSyncService, useValue: { refreshOne: jest.fn() } },
+        { provide: RegistroImpreseService, useValue: { dettaglioImpresa: jest.fn() } },
+        { provide: RegistroImpreseVerifyQueueService, useValue: { enqueueCampaignVerify: jest.fn(), isCampaignJobDone: jest.fn() } },
       ],
     }).compile();
 
@@ -3704,6 +3730,8 @@ describe('CampaignsService.getExternalDeliveryStatus', () => {
         { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
         { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
         { provide: PostalStatusSyncService, useValue: { refreshOne: jest.fn() } },
+        { provide: RegistroImpreseService, useValue: { dettaglioImpresa: jest.fn() } },
+        { provide: RegistroImpreseVerifyQueueService, useValue: { enqueueCampaignVerify: jest.fn(), isCampaignJobDone: jest.fn() } },
       ],
     }).compile();
 

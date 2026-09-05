@@ -9,6 +9,7 @@ import { CampaignBulkRetryJob } from '../entities/campaign-bulk-retry-job.entity
 import { QueueModule } from '../queue/queue.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { InadModule } from '../channels/inad/inad.module';
+import { RegistroImpreseModule } from '../channels/registro-imprese/registro-imprese.module';
 import { OperatorDirectoryModule } from '../operator-directory/operator-directory.module';
 import { ChannelModule } from '../channels/channel.module';
 import { CampaignsService } from './campaigns.service';
@@ -26,6 +27,7 @@ import { CAMPAIGN_BULK_RETRY_QUEUE } from './campaign-bulk-retry-job.types';
     QueueModule,
     AuditLogsModule,
     InadModule,
+    RegistroImpreseModule,
     OperatorDirectoryModule,
     ChannelModule,
     BullModule.registerQueue({ name: CAMPAIGN_BULK_RETRY_QUEUE }),

@@ -3,12 +3,14 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { InadCheckSyncService } from './inad-check-sync.service';
 import { Campaign, CampaignStatus } from '../entities/campaign.entity';
 import { InadService } from '../channels/inad/inad.service';
+import { RegistroImpreseVerifyQueueService } from '../channels/registro-imprese/registro-imprese-verify-queue.service';
 import { CampaignsService } from './campaigns.service';
 
 describe('InadCheckSyncService', () => {
   let service: InadCheckSyncService;
   const mockCampaignRepo = { find: jest.fn() };
   const mockInadService = { getBulkState: jest.fn() };
+  const mockRegistroImpreseVerifyQueue = { isCampaignJobDone: jest.fn() };
   const mockCampaignsService = { finalizeInadCheck: jest.fn() };
 
   beforeEach(async () => {
@@ -18,6 +20,7 @@ describe('InadCheckSyncService', () => {
         InadCheckSyncService,
         { provide: getRepositoryToken(Campaign), useValue: mockCampaignRepo },
         { provide: InadService, useValue: mockInadService },
+        { provide: RegistroImpreseVerifyQueueService, useValue: mockRegistroImpreseVerifyQueue },
         { provide: CampaignsService, useValue: mockCampaignsService },
       ],
     }).compile();
@@ -78,5 +81,53 @@ describe('InadCheckSyncService', () => {
 
     expect(mockCampaignsService.finalizeInadCheck).toHaveBeenCalledWith('c-ok');
     expect(mockCampaignsService.finalizeInadCheck).not.toHaveBeenCalledWith('c-err');
+  });
+
+  it('chiama finalizeInadCheck quando i batch INAD sono vuoti ma tutti i job PIVA sono conclusi', async () => {
+    mockCampaignRepo.find.mockResolvedValue([
+      {
+        id: 'c-piva',
+        status: CampaignStatus.CHECKING_INAD,
+        channelConfig: { inadCheck: { mechanism: 'bulk', batches: [], pivaRecipientIds: ['r1', 'r2'] } },
+      },
+    ]);
+    mockRegistroImpreseVerifyQueue.isCampaignJobDone.mockResolvedValue(true);
+
+    await service.handleCron();
+
+    expect(mockRegistroImpreseVerifyQueue.isCampaignJobDone).toHaveBeenCalledWith('c-piva', 'r1');
+    expect(mockRegistroImpreseVerifyQueue.isCampaignJobDone).toHaveBeenCalledWith('c-piva', 'r2');
+    expect(mockCampaignsService.finalizeInadCheck).toHaveBeenCalledWith('c-piva');
+  });
+
+  it('non chiama finalizeInadCheck se un job PIVA non è ancora concluso', async () => {
+    mockCampaignRepo.find.mockResolvedValue([
+      {
+        id: 'c-piva-pending',
+        status: CampaignStatus.CHECKING_INAD,
+        channelConfig: { inadCheck: { mechanism: 'bulk', batches: [], pivaRecipientIds: ['r1'] } },
+      },
+    ]);
+    mockRegistroImpreseVerifyQueue.isCampaignJobDone.mockResolvedValue(false);
+
+    await service.handleCron();
+
+    expect(mockCampaignsService.finalizeInadCheck).not.toHaveBeenCalled();
+  });
+
+  it('non interroga i job PIVA se un batch INAD è ancora pending (short-circuit)', async () => {
+    mockCampaignRepo.find.mockResolvedValue([
+      {
+        id: 'c-mix',
+        status: CampaignStatus.CHECKING_INAD,
+        channelConfig: { inadCheck: { mechanism: 'bulk', batches: [{ id: 'b1', done: false }], pivaRecipientIds: ['r1'] } },
+      },
+    ]);
+    mockInadService.getBulkState.mockResolvedValue('IN_ELABORAZIONE');
+
+    await service.handleCron();
+
+    expect(mockRegistroImpreseVerifyQueue.isCampaignJobDone).not.toHaveBeenCalled();
+    expect(mockCampaignsService.finalizeInadCheck).not.toHaveBeenCalled();
   });
 });

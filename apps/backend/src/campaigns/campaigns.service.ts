@@ -38,6 +38,9 @@ import type { NotificationChannel, OperatorRole } from '@comunicapa/shared-types
 import { matchCountry } from '@comunicapa/shared-types';
 import { InadService } from '../channels/inad/inad.service';
 import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service';
+import { RegistroImpreseService } from '../channels/registro-imprese/registro-imprese.service';
+import { RegistroImpreseVerifyQueueService } from '../channels/registro-imprese/registro-imprese-verify-queue.service';
+import { isPartitaIva } from '../channels/tax-id.util';
 
 const INAD_BULK_THRESHOLD = 100;
 // Sentinella filtro "Stato Consegna" per attempt SUCCESS senza send_status/postal_status
@@ -100,6 +103,8 @@ export class CampaignsService {
     private readonly config: ConfigService<AppConfiguration, true>,
     private readonly inadService: InadService,
     private readonly postalStatusSync: PostalStatusSyncService,
+    private readonly registroImpreseService: RegistroImpreseService,
+    private readonly registroImpreseVerifyQueue: RegistroImpreseVerifyQueueService,
   ) {}
 
   findAll(): Promise<Campaign[]> {
@@ -701,6 +706,17 @@ export class CampaignsService {
     return { attemptId: attempt!.id, testCampaignId: child.id };
   }
 
+  /**
+   * Check "dirottamento domicilio digitale" per campagne piccole (< INAD_BULK_THRESHOLD,
+   * sincrono nella richiesta di lancio): un CF persona fisica (16 char) passa
+   * da INAD, una Partita IVA (11 cifre, isPartitaIva) da Registro Imprese —
+   * mai la stessa fonte per entrambi, stesso smistamento già in uso in
+   * DomicilioService.cercaDomicilio(). Registro Imprese non ha un limite
+   * giornaliero condiviso noto come INAD /extract, ma stessa CONCURRENCY per
+   * restare comunque sotto il rate-limiter reale (5/sec, vedi
+   * RegistroImpreseVerifyProcessor) anche in caso di verifica massiva
+   * concorrente dall'ad-hoc "Verifica INAD Massiva".
+   */
   private async runInadExtractLoop(
     campaign: Campaign,
     recipients: Array<{ id: string }>,
@@ -716,16 +732,30 @@ export class CampaignsService {
       await Promise.all(
         batch.map(async (recipient) => {
           if (!recipient.codiceFiscale) return;
-          let result: { found: boolean; data?: { digitalAddress: Array<{ digitalAddress: string }> } };
-          try {
-            result = await this.inadService.extractDigitalAddress(recipient.codiceFiscale);
-          } catch (err) {
-            this.logger.warn(`Check INAD fallito per destinatario ${recipient.id} (CF ${recipient.codiceFiscale}): ${err instanceof Error ? err.message : err}`);
-            return;
+          const originalAddress = campaign.channelType === 'PEC' ? recipient.pec : recipient.email;
+          let found = false;
+          let digitalAddress: string | null = null;
+          if (isPartitaIva(recipient.codiceFiscale)) {
+            try {
+              const result = await this.registroImpreseService.dettaglioImpresa(recipient.codiceFiscale);
+              found = result.found;
+              digitalAddress = found ? result.pec ?? null : null;
+            } catch (err) {
+              this.logger.warn(`Check Registro Imprese fallito per destinatario ${recipient.id} (PIVA ${recipient.codiceFiscale}): ${err instanceof Error ? err.message : err}`);
+              return;
+            }
+          } else {
+            let result: { found: boolean; data?: { digitalAddress: Array<{ digitalAddress: string }> } };
+            try {
+              result = await this.inadService.extractDigitalAddress(recipient.codiceFiscale);
+            } catch (err) {
+              this.logger.warn(`Check INAD fallito per destinatario ${recipient.id} (CF ${recipient.codiceFiscale}): ${err instanceof Error ? err.message : err}`);
+              return;
+            }
+            found = result.found && (result.data?.digitalAddress?.length ?? 0) > 0;
+            digitalAddress = found ? result.data!.digitalAddress[0].digitalAddress : null;
           }
-          const found = result.found && (result.data?.digitalAddress?.length ?? 0) > 0;
-          const inadAddress = found ? result.data!.digitalAddress[0].digitalAddress : null;
-          const diverted = found && inadAddress !== recipient.pec;
+          const diverted = found && digitalAddress !== recipient.pec;
           await this.recipientRepo.update(
             { id: recipient.id },
             {
@@ -733,10 +763,10 @@ export class CampaignsService {
                 found,
                 diverted,
                 originalChannel: campaign.channelType,
-                originalAddress: campaign.channelType === 'PEC' ? recipient.pec : recipient.email,
+                originalAddress,
                 checkedAt: new Date().toISOString(),
               },
-              ...(diverted ? { pec: inadAddress } : {}),
+              ...(diverted ? { pec: digitalAddress } : {}),
             },
           );
           if (diverted) {
@@ -748,20 +778,31 @@ export class CampaignsService {
     return channelOverrides;
   }
 
+  /**
+   * Percorso async (>= INAD_BULK_THRESHOLD): CF persona fisica va sui batch
+   * bulk propri di INAD (startBulkExtraction, polling via InadCheckSyncService
+   * su getBulkState), Partite IVA vanno sulla coda BullMQ registro-imprese-verify
+   * (job VERIFY_PIVA_CAMPAIGN_JOB_NAME, un job per destinatario — Registro
+   * Imprese non ha un meccanismo bulk-batch proprio come INAD, solo query
+   * singola con rate-limiter 5/sec). Entrambi i meccanismi convergono sulla
+   * stessa campagna in CHECKING_INAD; InadCheckSyncService attende il
+   * completamento di ENTRAMBI prima di chiamare finalizeInadCheck().
+   */
   private async startInadBulkCheck(
     campaign: Campaign,
     recipients: Array<{ id: string }>,
   ): Promise<{ launched: number }> {
     const fullRecipients = await this.recipientRepo.find({
       where: { id: In(recipients.map((r) => r.id)) },
-      select: ['id', 'codiceFiscale'],
+      select: ['id', 'codiceFiscale', 'pec', 'email'],
     });
-    const withCf = fullRecipients.filter((r) => r.codiceFiscale);
+    const cfRecipients = fullRecipients.filter((r) => r.codiceFiscale && !isPartitaIva(r.codiceFiscale));
+    const pivaRecipients = fullRecipients.filter((r) => r.codiceFiscale && isPartitaIva(r.codiceFiscale));
 
     const BATCH = 1000;
     const batches: Array<{ id: string; recipientIds: string[]; done: boolean }> = [];
-    for (let i = 0; i < withCf.length; i += BATCH) {
-      const chunk = withCf.slice(i, i + BATCH);
+    for (let i = 0; i < cfRecipients.length; i += BATCH) {
+      const chunk = cfRecipients.slice(i, i + BATCH);
       const { id } = await this.inadService.startBulkExtraction(
         chunk.map((r) => r.codiceFiscale!),
         `comunicapa-campagna-${campaign.id}`,
@@ -769,20 +810,33 @@ export class CampaignsService {
       batches.push({ id, recipientIds: chunk.map((r) => r.id), done: false });
     }
 
-    if (batches.length === 0) {
-      // Nessun destinatario ha un CF valorizzato (caso valido per EMAIL): non
-      // c'è nulla da controllare su INAD. Entrare comunque in CHECKING_INAD
+    for (const recipient of pivaRecipients) {
+      const originalAddress = campaign.channelType === 'PEC' ? recipient.pec : recipient.email;
+      await this.registroImpreseVerifyQueue.enqueueCampaignVerify(
+        campaign.id,
+        recipient.id,
+        recipient.codiceFiscale!,
+        campaign.channelType,
+        originalAddress,
+        recipient.pec,
+      );
+    }
+    const pivaRecipientIds = pivaRecipients.map((r) => r.id);
+
+    if (batches.length === 0 && pivaRecipientIds.length === 0) {
+      // Nessun destinatario ha un CF/PIVA valorizzato (caso valido per EMAIL): non
+      // c'è nulla da controllare. Entrare comunque in CHECKING_INAD
       // bloccherebbe la campagna per sempre — il demone (InadCheckSyncService)
-      // salta le campagne con `pendingBatches.length === 0`, quindi
-      // finalizeInadCheck non verrebbe mai chiamato automaticamente. Procedi
-      // come se il check INAD fosse disabilitato per questa campagna.
+      // salta le campagne senza batch/PIVA pendenti, quindi finalizeInadCheck
+      // non verrebbe mai chiamato automaticamente. Procedi come se il check
+      // fosse disabilitato per questa campagna.
       return this.createAttemptsAndEnqueue(campaign, recipients);
     }
 
     campaign.status = CampaignStatus.CHECKING_INAD;
     campaign.channelConfig = {
       ...campaign.channelConfig,
-      inadCheck: { mechanism: 'bulk', batches, requestedAt: new Date().toISOString() },
+      inadCheck: { mechanism: 'bulk', batches, pivaRecipientIds, requestedAt: new Date().toISOString() },
     };
     await this.campaignRepo.save(campaign);
     return { launched: 0 };
@@ -802,9 +856,10 @@ export class CampaignsService {
     if (!campaign || campaign.status !== CampaignStatus.CHECKING_INAD) return;
 
     const inadCheck = campaign.channelConfig?.['inadCheck'] as
-      | { mechanism: 'bulk'; batches: Array<{ id: string; recipientIds: string[]; done: boolean }>; requestedAt: string }
+      | { mechanism: 'bulk'; batches: Array<{ id: string; recipientIds: string[]; done: boolean }>; pivaRecipientIds?: string[]; requestedAt: string }
       | undefined;
     if (!inadCheck) return;
+    const pivaRecipientIds = inadCheck.pivaRecipientIds ?? [];
 
     const pendingBatches = inadCheck.batches.filter((b) => !b.done);
 
@@ -821,12 +876,17 @@ export class CampaignsService {
     // batch già pronto verrebbe processato e marcato `done` senza che il
     // save che persiste quel flag venga mai raggiunto (return anticipato su
     // un batch successivo non pronto), causando riprocessamenti ridondanti
-    // ad ogni chiamata successiva.
+    // ad ogni chiamata successiva. Stessa difesa per i job PIVA (Registro
+    // Imprese): se anche uno solo non è ancora 'completed'/'failed', abortisci.
     for (const batch of pendingBatches) {
       const state = await this.inadService.getBulkState(batch.id);
       if (state !== 'DISPONIBILE') {
         return;
       }
+    }
+    for (const recipientId of pivaRecipientIds) {
+      const done = await this.registroImpreseVerifyQueue.isCampaignJobDone(campaignId, recipientId);
+      if (!done) return;
     }
 
     // Fase 2: tutti i batch pending sono DISPONIBILE — procedi a processarli.
@@ -882,7 +942,7 @@ export class CampaignsService {
       }
 
       const overriddenRecipients = await this.recipientRepo.find({
-        where: { id: In(inadCheck.batches.flatMap((b) => b.recipientIds)), status: RecipientStatus.PENDING },
+        where: { id: In([...inadCheck.batches.flatMap((b) => b.recipientIds), ...pivaRecipientIds]), status: RecipientStatus.PENDING },
         select: ['id', 'pec', 'inadCheck'],
       });
       const channelOverrides = new Map<string, NotificationChannel>();
@@ -910,17 +970,23 @@ export class CampaignsService {
       state: string | null;
       error: string | null;
     }>;
+    pivaTotal: number;
+    pivaCompleted: number;
   }> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
     const inadCheck = campaign.channelConfig?.['inadCheck'] as
-      | { mechanism: 'bulk'; batches: Array<{ id: string; recipientIds: string[]; done: boolean }>; requestedAt?: string }
+      | { mechanism: 'bulk'; batches: Array<{ id: string; recipientIds: string[]; done: boolean }>; pivaRecipientIds?: string[]; requestedAt?: string }
       | undefined;
 
     if (!inadCheck || !Array.isArray(inadCheck.batches)) {
-      return { requestedAt: null, totalBatches: 0, completedBatches: 0, batches: [] };
+      return { requestedAt: null, totalBatches: 0, completedBatches: 0, batches: [], pivaTotal: 0, pivaCompleted: 0 };
     }
+    const pivaRecipientIds = inadCheck.pivaRecipientIds ?? [];
+    const pivaCompleted = (
+      await Promise.all(pivaRecipientIds.map((id) => this.registroImpreseVerifyQueue.isCampaignJobDone(campaignId, id)))
+    ).filter(Boolean).length;
 
     const batchStatuses = await Promise.all(
       inadCheck.batches.map(async (b) => {
@@ -952,6 +1018,8 @@ export class CampaignsService {
       totalBatches: inadCheck.batches.length,
       completedBatches,
       batches: batchStatuses,
+      pivaTotal: pivaRecipientIds.length,
+      pivaCompleted,
     };
   }
 

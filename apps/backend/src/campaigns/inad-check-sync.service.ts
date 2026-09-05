@@ -4,18 +4,23 @@ import { Repository } from 'typeorm';
 import { Cron } from '@nestjs/schedule';
 import { Campaign, CampaignStatus } from '../entities/campaign.entity';
 import { InadService } from '../channels/inad/inad.service';
+import { RegistroImpreseVerifyQueueService } from '../channels/registro-imprese/registro-imprese-verify-queue.service';
 import { CampaignsService } from './campaigns.service';
 
 interface InadCheckBulkState {
   mechanism: 'bulk';
   batches: Array<{ id: string; recipientIds: string[]; done: boolean }>;
+  /** Destinatari Partita IVA in verifica su Registro Imprese (coda BullMQ, non batch INAD) — vedi campaigns.service.ts startInadBulkCheck. */
+  pivaRecipientIds?: string[];
   requestedAt: string;
 }
 
 /**
- * Poll periodico dei batch bulk INAD (/listDigitalAddress) per le campagne
- * ferme in CHECKING_INAD — stesso pattern "demone" di SendStatusSyncService/
- * PostalStatusSyncService (nessuna coda BullMQ, solo Cron + repo diretti).
+ * Poll periodico dei batch bulk INAD (/listDigitalAddress) E dei job PIVA
+ * (Registro Imprese, coda BullMQ) per le campagne ferme in CHECKING_INAD —
+ * stesso pattern "demone" di SendStatusSyncService/PostalStatusSyncService
+ * per la parte INAD; la parte PIVA interroga direttamente lo stato dei job
+ * BullMQ (nessun demone dedicato separato, stessa coda del check singolo).
  */
 @Injectable()
 export class InadCheckSyncService {
@@ -25,6 +30,7 @@ export class InadCheckSyncService {
     @InjectRepository(Campaign)
     private readonly campaignRepo: Repository<Campaign>,
     private readonly inadService: InadService,
+    private readonly registroImpreseVerifyQueue: RegistroImpreseVerifyQueueService,
     private readonly campaignsService: CampaignsService,
   ) {}
 
@@ -37,7 +43,8 @@ export class InadCheckSyncService {
       if (!inadCheck || inadCheck.mechanism !== 'bulk') continue;
 
       const pendingBatches = inadCheck.batches.filter((b) => !b.done);
-      if (pendingBatches.length === 0) continue;
+      const pivaRecipientIds = inadCheck.pivaRecipientIds ?? [];
+      if (pendingBatches.length === 0 && pivaRecipientIds.length === 0) continue;
 
       try {
         let allReady = true;
@@ -49,10 +56,19 @@ export class InadCheckSyncService {
           }
         }
         if (allReady) {
+          for (const recipientId of pivaRecipientIds) {
+            const done = await this.registroImpreseVerifyQueue.isCampaignJobDone(campaign.id, recipientId);
+            if (!done) {
+              allReady = false;
+              break;
+            }
+          }
+        }
+        if (allReady) {
           await this.campaignsService.finalizeInadCheck(campaign.id);
         }
       } catch (err) {
-        this.logger.warn(`Errore verifica stato INAD bulk per campagna ${campaign.id}: ${err instanceof Error ? err.message : err}`);
+        this.logger.warn(`Errore verifica stato INAD/Registro Imprese bulk per campagna ${campaign.id}: ${err instanceof Error ? err.message : err}`);
       }
     }
   }

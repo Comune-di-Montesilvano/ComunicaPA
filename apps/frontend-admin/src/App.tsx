@@ -3544,6 +3544,8 @@ export function App(): React.JSX.Element {
     totalBatches: number;
     completedBatches: number;
     batches: InadStatusBatch[];
+    pivaTotal: number;
+    pivaCompleted: number;
   }
 
   const [inadStatusInfo, setInadStatusInfo] = useState<InadStatusInfo | null>(null);
@@ -5849,6 +5851,38 @@ export function App(): React.JSX.Element {
       });
       const data = await res.json();
       setSingleAnprCheckedCf(singleCf);
+
+      // Partita IVA: risposta con `registroImprese` invece di `anpr`/`inad`/`appIo`
+      // (vedi DomicilioService.cercaDomicilio) — persona giuridica, ramo separato.
+      if (data?.registroImprese) {
+        const ri = data.registroImprese;
+        if (ri.success && ri.found) {
+          if (ri.denominazione) {
+            setSingleSurname(ri.denominazione);
+            setWizName(`Invio singolo a ${ri.denominazione}`);
+          }
+          const sedeIndirizzo = ri.data?.sede?.indirizzo;
+          if (sedeIndirizzo) {
+            const via = [sedeIndirizzo.toponimo, sedeIndirizzo.via].filter(Boolean).join(' ');
+            setSingleAddress([via, sedeIndirizzo.nCivico].filter(Boolean).join(', '));
+            setSingleMunicipality(sedeIndirizzo.comune || '');
+            setSingleZip(sedeIndirizzo.cap || '');
+            setSingleProvince(sedeIndirizzo.provincia || '');
+            setSingleCountry('Italia');
+          }
+          const pecFound = Boolean(ri.pec);
+          setSingleInadForced(pecFound);
+          setSingleInadAddress(pecFound ? ri.pec : '');
+          if (pecFound) {
+            setWizChannel('PEC');
+            setSinglePec(ri.pec);
+            setWizPaymentEnabled(false);
+          }
+        }
+        // App IO non si applica a una Partita IVA (n/a, vedi matrice canali).
+        setSingleAppIoActive(false);
+        return;
+      }
 
       const g = data?.anpr?.generalita;
       if (data?.anpr?.success && data?.anpr?.found && g) {
@@ -8866,7 +8900,7 @@ export function App(): React.JSX.Element {
                             onClick={runWizAnprCheck}
                           >
                             {singleAnprLoading ? <Loader2 className="icon-spin me-1" size={16} /> : null}
-                            Carica dati ANPR
+                            Carica dati PDND
                           </button>
                         </div>
                       </div>
@@ -15707,7 +15741,7 @@ export function App(): React.JSX.Element {
                                 <span className="fw-bold">{channelBreakdown.neither}</span>
                               </div>
                               <div className="d-flex justify-content-between align-items-center">
-                                <span><ShieldCheck className="text-primary me-1" />Dirottato su PEC (INAD)</span>
+                                <span><ShieldCheck className="text-primary me-1" />Dirottato su PEC (domicilio digitale)</span>
                                 <span className="d-flex align-items-center gap-2">
                                   <span className="fw-bold">{channelBreakdown.inadDiverted}</span>
                                   {channelBreakdown.inadDiverted > 0 && hasContentCorrection && (
@@ -15809,7 +15843,7 @@ export function App(): React.JSX.Element {
                               <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
                                 <div className="d-flex align-items-center gap-2 fw-semibold text-primary">
                                   <Loader2 className="icon-spin" size={18} />
-                                  <span>Verifica domicilio digitale INAD (AgID/PDND) in corso…</span>
+                                  <span>Verifica domicilio digitale (INAD/Registro Imprese, AgID/PDND) in corso…</span>
                                 </div>
                                 <div className="d-flex align-items-center gap-2 flex-wrap">
                                   <button
@@ -15844,6 +15878,11 @@ export function App(): React.JSX.Element {
                                     <span>
                                       Stato Batch INAD: <strong>{inadStatusInfo.completedBatches} su {inadStatusInfo.totalBatches} completati</strong>
                                     </span>
+                                    {inadStatusInfo.pivaTotal > 0 && (
+                                      <span>
+                                        Stato Partite IVA (Registro Imprese): <strong>{inadStatusInfo.pivaCompleted} su {inadStatusInfo.pivaTotal} completate</strong>
+                                      </span>
+                                    )}
                                   </div>
                                   {inadStatusInfo.batches.length > 0 ? (
                                     <div className="d-flex flex-column gap-2">
@@ -16039,7 +16078,7 @@ export function App(): React.JSX.Element {
                           })()}
                           {campaign.channelType !== 'SEND' && (() => {
                             const tagOptions: Array<{ id: string; label: string }> = [
-                              { id: 'diverted', label: 'Dirottato INAD' },
+                              { id: 'diverted', label: 'Dirottato domicilio digitale' },
                               { id: 'primary', label: getChannelMeta(campaign.channelType).label },
                               ...(campaign.channelType !== 'APP_IO' ? [{ id: 'appio', label: 'App IO (co-consegna)' }] : []),
                             ];
