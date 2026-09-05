@@ -1,4 +1,6 @@
 import 'reflect-metadata';
+import { fileURLToPath } from 'node:url';
+import { dirname } from 'node:path';
 import { DataSource } from 'typeorm';
 import { AppSetting } from '../entities/app-setting.entity.js';
 import { Campaign } from '../entities/campaign.entity.js';
@@ -21,6 +23,8 @@ import { CampaignBulkRetryJob } from '../entities/campaign-bulk-retry-job.entity
 // Il runtime dell'app usa database.module.ts, che condivide entity e migrations.
 // Elenco entities allineato a database.module.ts: se disallineato, migration:generate
 // può proporre DROP TABLE per le entity mancanti qui ma presenti a runtime.
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
 export default new DataSource({
   type: 'postgres',
   url: process.env['DATABASE_URL'],
