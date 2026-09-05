@@ -15,7 +15,7 @@ import {
   ArrowLeft, ArrowRight, Menu, Building2, Megaphone, LineChart as LineChartIcon, PieChart as PieChartIcon,
   Copy, CreditCard, FileSpreadsheet, FileText, Save, History, Info, Link, List,
   Lock, Wand2, Search, Network, Plug, Reply, LogOut, SlidersHorizontal,
-  RefreshCw, Tag, UserCheck, Sparkles,
+  RefreshCw, Tag, UserCheck, Sparkles, Github,
   CheckCheck, Shield, Paperclip, Upload, Filter, Award, ExternalLink, Contact,
   Play, FileArchive, Keyboard, Key, BookUser,
   Minus, Star, Stamp, Settings, CircleUserRound, BarChart3, ShieldCheck, Rocket, ArrowDown, ArrowUp, ArrowUpDown,
@@ -7889,9 +7889,15 @@ export function App(): React.JSX.Element {
           <span className="bo-sidebar-status-dot active"></span>
           <span>Online{import.meta.env.DEV ? ' (Dev Mode)' : ''}</span>
           {appVersion && (
-            <span className="bo-sidebar-version" title="Versione applicazione">
-              <Tag className="me-1" />{appVersion}
-            </span>
+            <a
+              className="bo-sidebar-version"
+              href="https://github.com/Comune-di-Montesilvano/ComunicaPA"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Repository GitHub ComunicaPA"
+            >
+              <Github className="me-1" size={14} />{appVersion}
+            </a>
           )}
         </div>
       </aside>
