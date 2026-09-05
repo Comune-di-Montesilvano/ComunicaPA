@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { generateKeyPairSync } from 'node:crypto';
-import * as jwt from 'jsonwebtoken';
+import jwt from 'jsonwebtoken';
 import { PdndAuthService } from './pdnd-auth.service.js';
 import { AppSettingsService } from '../settings/app-settings.service.js';
 

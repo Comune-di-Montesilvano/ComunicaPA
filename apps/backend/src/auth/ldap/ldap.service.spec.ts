@@ -2,7 +2,7 @@ import { vi } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { LdapService } from './ldap.service.js';
-import * as ldapjs from 'ldapjs';
+import ldapjs from 'ldapjs';
 
 vi.mock('ldapjs');
 

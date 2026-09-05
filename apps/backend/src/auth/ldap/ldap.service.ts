@@ -1,6 +1,6 @@
 import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as ldapjs from 'ldapjs';
+import ldapjs from 'ldapjs';
 import type { OperatorRole } from '@comunicapa/shared-types';
 import type { AppConfiguration } from '../../config/configuration.js';
 
