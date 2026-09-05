@@ -77,4 +77,33 @@ describe('RegistroImpreseService.dettaglioImpresa', () => {
     mockSettings.get.mockResolvedValueOnce(undefined);
     await expect(service.dettaglioImpresa('12345678901')).rejects.toThrow(/purposeId non impostato/);
   });
+
+  it('estrae pec/denominazione dallo schema reale (dati-identificativi + indirizzo-posta-certificata)', async () => {
+    // Forma confermata con chiamata reale (2026-09-05) — dati qui fittizi,
+    // vedi CLAUDE.md "No PII reale nel codice".
+    const xml =
+      '<?xml version="1.0" encoding="windows-1252"?>' +
+      '<blocchi-impresa>' +
+      '<dati-identificativi c-fonte="RI" fonte="Registro Imprese" denominazione="ROSSI ESEMPIO S.R.L." c-fiscale="00000000001" partita-iva="00000000001" cciaa="PE" n-rea="1">' +
+      '<forma-giuridica c="SR">SOCIETA\' A RESPONSABILITA\' LIMITATA</forma-giuridica>' +
+      '<indirizzo-posta-certificata>ESEMPIO@PEC.IT</indirizzo-posta-certificata>' +
+      '</dati-identificativi>' +
+      '</blocchi-impresa>';
+    mockFetch.mockResolvedValue({ ok: true, status: 200, headers: { get: () => null }, text: () => Promise.resolve(xml) });
+
+    const result = await service.dettaglioImpresa('00000000001');
+
+    expect(result.found).toBe(true);
+    expect(result.denominazione).toBe('ROSSI ESEMPIO S.R.L.');
+    expect(result.pec).toBe('esempio@pec.it');
+  });
+
+  it('lascia pec/denominazione undefined se lo schema atteso non è presente', async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, headers: { get: () => null }, text: () => Promise.resolve('<blocchi-impresa/>') });
+
+    const result = await service.dettaglioImpresa('00000000001');
+
+    expect(result.denominazione).toBeUndefined();
+    expect(result.pec).toBeUndefined();
+  });
 });

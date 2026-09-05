@@ -20,6 +20,7 @@ import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { isSettingKey, type SettingKey } from './settings.registry';
 import { PdndAuthService } from '../pdnd/pdnd-auth.service';
 import { InadService } from '../channels/inad/inad.service';
+import { RegistroImpreseService } from '../channels/registro-imprese/registro-imprese.service';
 
 class TestConnectionDto {
   host!: string;
@@ -39,6 +40,7 @@ export class SettingsController {
     private readonly appSettings: AppSettingsService,
     private readonly pdndAuth: PdndAuthService,
     private readonly inadService: InadService,
+    private readonly registroImpreseService: RegistroImpreseService,
   ) {}
 
   @Post('test-email')
@@ -266,6 +268,26 @@ export class SettingsController {
     return this.testServicePurposeConnection(env, 'inipec');
   }
 
+  @Post('registro-imprese/:env/test-connection')
+  @HttpCode(HttpStatus.OK)
+  async testRegistroImpreseConnection(@Param('env') env: string) {
+    return this.testServicePurposeConnection(env, 'registroImprese');
+  }
+
+  @Post('registro-imprese/prod/dettaglio')
+  @HttpCode(HttpStatus.OK)
+  async testRegistroImpreseDettaglio(@Body() body: { partitaIva?: string }) {
+    if (!body.partitaIva) {
+      throw new BadRequestException('partitaIva obbligatoria');
+    }
+    try {
+      const result = await this.registroImpreseService.dettaglioImpresa(body.partitaIva);
+      return { success: true, ...result };
+    } catch (error: any) {
+      return { success: false, message: error.message || 'Errore sconosciuto durante l\'interrogazione Registro Imprese.' };
+    }
+  }
+
   @Post('anpr/c002/test-connection')
   @HttpCode(HttpStatus.OK)
   async testAnprC002Connection() {
@@ -291,7 +313,7 @@ export class SettingsController {
     }
   }
 
-  private async testServicePurposeConnection(env: string, service: 'send' | 'inad' | 'inipec') {
+  private async testServicePurposeConnection(env: string, service: 'send' | 'inad' | 'inipec' | 'registroImprese') {
     if (env !== 'test' && env !== 'prod') {
       throw new BadRequestException('Ambiente non valido: usare "test" o "prod"');
     }

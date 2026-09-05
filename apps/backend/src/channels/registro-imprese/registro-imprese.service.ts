@@ -18,11 +18,10 @@ export interface RegistroImpreseDettaglioResult {
 
 /**
  * Integrazione Registro Imprese (PCAD-PDND, Unioncamere) — sostituisce
- * INIPEC come fonte del domicilio digitale d'impresa. Risposta XML opaca
- * (nessuno schema nello spec OpenAPI, solo {type:"string"}): parsing
- * minimale finché non disponibile un esempio reale (API non ancora
- * abilitata per l'ente al momento di questa implementazione — vedi
- * docs/superpowers/specs/2026-08-11-registro-imprese-pdnd-design.md).
+ * INIPEC come fonte del domicilio digitale d'impresa. Risposta XML (nessuno
+ * schema nello spec OpenAPI, solo {type:"string"}) — parsing via regex,
+ * struttura confermata con chiamata reale (vedi parseDettaglioImpresaXml
+ * sotto e docs/superpowers/specs/2026-08-11-registro-imprese-pdnd-design.md).
  */
 @Injectable()
 export class RegistroImpreseService {
@@ -57,9 +56,31 @@ export class RegistroImpreseService {
       throw new Error(`Registro Imprese dettaglio fallito: HTTP ${response.status} — ${text.slice(0, 500)}`);
     }
 
-    // Fase 1: schema XML non documentato nello spec OpenAPI. Nessun parsing
-    // tipizzato finché non arriva un esempio reale — solo `raw` restituito.
-    // pec/denominazione da estrarre qui una volta noto lo schema.
-    return { found: true, raw: text };
+    const { pec, denominazione } = parseDettaglioImpresaXml(text);
+    return { found: true, raw: text, pec, denominazione };
   }
+}
+
+/**
+ * Parsing minimale via regex (nessuna dipendenza XML aggiunta apposta per
+ * questo, vedi CLAUDE.md "pnpm v11" per il costo di una nuova dependency in
+ * Docker) — struttura confermata con una chiamata reale del 2026-09-05
+ * (endpoint appena abilitato per l'ente, PIVA reale, encoding windows-1252):
+ *
+ *   <blocchi-impresa><dati-identificativi ... denominazione="ACME SRL" ...>
+ *     <indirizzo-posta-certificata>PEC@ESEMPIO.IT</indirizzo-posta-certificata>
+ *   </dati-identificativi>...
+ *
+ * Solo il PRIMO blocco `dati-identificativi` (sede impresa) va letto — blocchi
+ * successivi (persone, localizzazioni) non hanno mai `indirizzo-posta-certificata`
+ * a questo livello, ma un match globale prenderebbe comunque solo il primo per
+ * via del flag non-globale sulle regex sotto.
+ */
+function parseDettaglioImpresaXml(xml: string): { pec?: string; denominazione?: string } {
+  const denominazioneMatch = /<dati-identificativi\b[^>]*\bdenominazione="([^"]*)"/.exec(xml);
+  const pecMatch = /<indirizzo-posta-certificata>([^<]*)<\/indirizzo-posta-certificata>/.exec(xml);
+  return {
+    denominazione: denominazioneMatch?.[1]?.trim() || undefined,
+    pec: pecMatch?.[1]?.trim().toLowerCase() || undefined,
+  };
 }

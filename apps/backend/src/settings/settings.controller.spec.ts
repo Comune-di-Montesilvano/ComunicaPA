@@ -11,7 +11,7 @@ describe('SettingsController — GET/PUT', () => {
   const pdndAuthMock = { getVoucher: jest.fn(async () => 'voucher') };
 
   const inadServiceMock = { extractDigitalAddress: jest.fn() };
-  const controller = new SettingsController(settingsMock as never, pdndAuthMock as never, inadServiceMock as never);
+  const controller = new SettingsController(settingsMock as never, pdndAuthMock as never, inadServiceMock as never, { dettaglioImpresa: jest.fn() } as never);
 
   it('GET restituisce i settings mascherati', async () => {
     const res = await controller.getAll();
@@ -37,7 +37,7 @@ describe('SettingsController — SEND test-connection (x-api-key + voucher PDND)
   const settingsMock = { get: jest.fn(async (key: string) => values[key]) };
   const pdndAuthMock = { getVoucher: jest.fn(async () => 'voucher-abc') };
   const inadServiceMock = { extractDigitalAddress: jest.fn() };
-  const controller = new SettingsController(settingsMock as never, pdndAuthMock as never, inadServiceMock as never);
+  const controller = new SettingsController(settingsMock as never, pdndAuthMock as never, inadServiceMock as never, { dettaglioImpresa: jest.fn() } as never);
 
   beforeEach(() => {
     // Riassegnato ad ogni test: più describe block in questo file impostano
@@ -115,7 +115,7 @@ describe('SettingsController — SEND groups (elenco gruppi PN self-care)', () =
   const settingsMock = { get: jest.fn(async (key: string) => values[key]) };
   const pdndAuthMock = { getVoucher: jest.fn(async () => 'voucher-abc') };
   const inadServiceMock = { extractDigitalAddress: jest.fn() };
-  const controller = new SettingsController(settingsMock as never, pdndAuthMock as never, inadServiceMock as never);
+  const controller = new SettingsController(settingsMock as never, pdndAuthMock as never, inadServiceMock as never, { dettaglioImpresa: jest.fn() } as never);
 
   beforeEach(() => {
     // Vedi commento nel describe block "SEND test-connection" sopra.

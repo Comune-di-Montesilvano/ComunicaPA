@@ -2236,6 +2236,13 @@ export function App(): React.JSX.Element {
   const [settAnprTestResult, setSettAnprTestResult] = useState<{ key: 'c002' | 'c019'; ok: boolean; message: string } | null>(null);
   const [settInipecTesting, setSettInipecTesting] = useState<'test' | 'prod' | null>(null);
   const [settInipecTestResult, setSettInipecTestResult] = useState<{ env: 'test' | 'prod'; ok: boolean; message: string } | null>(null);
+  const [settRegistroImpreseTesting, setSettRegistroImpreseTesting] = useState<'test' | 'prod' | null>(null);
+  const [settRegistroImpreseTestResult, setSettRegistroImpreseTestResult] = useState<{ env: 'test' | 'prod'; ok: boolean; message: string } | null>(null);
+  const [settRegistroImpreseDettaglioPiva, setSettRegistroImpreseDettaglioPiva] = useState('');
+  const [settRegistroImpreseDettaglioLoading, setSettRegistroImpreseDettaglioLoading] = useState(false);
+  const [settRegistroImpreseDettaglioResult, setSettRegistroImpreseDettaglioResult] = useState<
+    { success: boolean; found?: boolean; pec?: string; denominazione?: string; message?: string } | null
+  >(null);
   const [settRetentionDays, setSettRetentionDays] = useState('90');
   const [settEnrichmentRetentionDays, setSettEnrichmentRetentionDays] = useState('30');
 
@@ -3985,6 +3992,29 @@ export function App(): React.JSX.Element {
 
   const handleTestInipecConnection = (env: 'test' | 'prod') =>
     runPdndTest(`/settings/inipec/${env}/test-connection`, env, setSettInipecTesting, setSettInipecTestResult);
+
+  const handleTestRegistroImpreseConnection = (env: 'test' | 'prod') =>
+    runPdndTest(`/settings/registro-imprese/${env}/test-connection`, env, setSettRegistroImpreseTesting, setSettRegistroImpreseTestResult);
+
+  const handleTestRegistroImpreseDettaglio = async () => {
+    if (!settRegistroImpreseDettaglioPiva.trim()) return;
+    setSettRegistroImpreseDettaglioLoading(true);
+    setSettRegistroImpreseDettaglioResult(null);
+    try {
+      const res = await apiFetch('/settings/registro-imprese/prod/dettaglio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ partitaIva: settRegistroImpreseDettaglioPiva.trim() }),
+      });
+      const data = await res.json();
+      setSettRegistroImpreseDettaglioResult(data);
+    } catch (error: any) {
+      if (error instanceof ApiAuthError) return;
+      setSettRegistroImpreseDettaglioResult({ success: false, message: error.message || 'Errore di rete' });
+    } finally {
+      setSettRegistroImpreseDettaglioLoading(false);
+    }
+  };
 
   const fetchEngines = async () => {
     if (!token) return;
@@ -14044,8 +14074,54 @@ export function App(): React.JSX.Element {
                                     onChange={(ev) => e.setPurposeId(ev.target.value)}
                                   />
                                 </div>
+                                <hr className="my-3" />
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-sm"
+                                  disabled={settRegistroImpreseTesting === e.prefix}
+                                  onClick={() => handleTestRegistroImpreseConnection(e.prefix)}
+                                >
+                                  {settRegistroImpreseTesting === e.prefix ? 'Test in corso…' : 'Test connessione (voucher PDND)'}
+                                </button>
+                                <div className="form-text small text-muted">Salva le impostazioni e prova a ottenere un voucher PDND reale con client PDND + Purpose ID Registro Imprese.</div>
+                                {settRegistroImpreseTestResult?.env === e.prefix && (
+                                  <div className={`alert ${settRegistroImpreseTestResult.ok ? 'alert-success' : 'alert-danger'} mt-2 mb-0 small`} style={{ wordBreak: 'break-word' }}>
+                                    {settRegistroImpreseTestResult.message}
+                                  </div>
+                                )}
                               </fieldset>
                             ))}
+                            <fieldset className="border rounded p-3">
+                              <legend className="float-none w-auto px-2 small fw-bold text-dark">Interroga Partita IVA (Produzione)</legend>
+                              <input
+                                type="text"
+                                id="registro_imprese_dettaglio_piva"
+                                className="form-control form-control-sm mb-2"
+                                value={settRegistroImpreseDettaglioPiva}
+                                onChange={(ev) => setSettRegistroImpreseDettaglioPiva(ev.target.value)}
+                                placeholder="01234567890"
+                              />
+                              <button
+                                type="button"
+                                className="btn btn-outline-primary btn-sm"
+                                disabled={settRegistroImpreseDettaglioLoading || !settRegistroImpreseDettaglioPiva.trim()}
+                                onClick={handleTestRegistroImpreseDettaglio}
+                              >
+                                {settRegistroImpreseDettaglioLoading ? 'Interrogazione in corso…' : 'Interroga Registro Imprese'}
+                              </button>
+                              {settRegistroImpreseDettaglioResult && (
+                                <div className={`alert ${settRegistroImpreseDettaglioResult.success ? 'alert-success' : 'alert-danger'} mt-2 mb-0 small`} style={{ wordBreak: 'break-word' }}>
+                                  {!settRegistroImpreseDettaglioResult.success && (settRegistroImpreseDettaglioResult.message || 'Errore sconosciuto')}
+                                  {settRegistroImpreseDettaglioResult.success && settRegistroImpreseDettaglioResult.found === false && 'Nessuna impresa trovata per questa Partita IVA.'}
+                                  {settRegistroImpreseDettaglioResult.success && settRegistroImpreseDettaglioResult.found && (
+                                    <div className="d-flex flex-column gap-1">
+                                      {settRegistroImpreseDettaglioResult.denominazione && <span className="fw-semibold">{settRegistroImpreseDettaglioResult.denominazione}</span>}
+                                      <span>PEC: {settRegistroImpreseDettaglioResult.pec || 'non disponibile'}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </fieldset>
                           </div>
                         )}
 
