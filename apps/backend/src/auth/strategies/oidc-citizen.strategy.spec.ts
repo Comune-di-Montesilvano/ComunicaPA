@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { UnauthorizedException } from '@nestjs/common';
@@ -18,7 +19,7 @@ const redisMock = {
   set: jest.fn(),
 };
 
-jest.mock('ioredis', () => ({
+vi.mock('ioredis', () => ({
   __esModule: true,
   default: jest.fn().mockImplementation(() => redisMock),
 }));

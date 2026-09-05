@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
@@ -21,7 +22,7 @@ import AdmZip from 'adm-zip';
 import { getUploadsDir } from '../attachments/attachment-paths.js';
 
 const tmpDirRef = { dir: '' };
-jest.mock('../attachments/attachment-paths', () => ({
+vi.mock('../attachments/attachment-paths', () => ({
   getUploadsDir: jest.fn(() => tmpDirRef.dir),
 }));
 
@@ -804,7 +805,7 @@ describe('CampaignsService', () => {
 
   describe('resolveAttachmentPreviewFilePath', () => {
     // getUploadsDir è mockato globalmente in cima a questo file (vedi
-    // `jest.mock('../attachments/attachment-paths', ...)`) per restituire
+    // `vi.mock('../attachments/attachment-paths', ...)`) per restituire
     // sempre `tmpDirRef.dir`, ignorando il campaignId passato — pattern
     // già usato da `finalizeAttachments` più sopra. Non serve quindi (e
     // non avrebbe effetto) impostare `process.env['ATTACHMENTS_PATH']`.

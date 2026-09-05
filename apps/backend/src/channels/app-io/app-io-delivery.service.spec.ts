@@ -1,13 +1,14 @@
+import { vi } from 'vitest';
 import { AppIoDeliveryService } from './app-io-delivery.service.js';
 import * as templateHelper from '../template.helper.js';
 import * as attachmentService from '../../attachments/attachment.service.js';
 import * as retentionUtil from '../../campaigns/retention.util.js';
 import * as paymentUtil from '../payment-config.util.js';
 
-jest.mock('../template.helper');
-jest.mock('../../attachments/attachment.service');
-jest.mock('../../campaigns/retention.util');
-jest.mock('../payment-config.util');
+vi.mock('../template.helper');
+vi.mock('../../attachments/attachment.service');
+vi.mock('../../campaigns/retention.util');
+vi.mock('../payment-config.util');
 
 describe('AppIoDeliveryService', () => {
   let config: any;

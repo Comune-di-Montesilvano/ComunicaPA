@@ -1,7 +1,8 @@
+import { vi } from 'vitest';
 import * as Sentry from '@sentry/node';
 import { captureException } from './sentry.util.js';
 
-jest.mock('@sentry/node', () => ({
+vi.mock('@sentry/node', () => ({
   getClient: jest.fn(),
   captureException: jest.fn(),
   flush: jest.fn(),

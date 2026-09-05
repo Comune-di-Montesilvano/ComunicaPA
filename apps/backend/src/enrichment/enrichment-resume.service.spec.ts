@@ -1,7 +1,8 @@
+import { vi } from 'vitest';
 import { EnrichmentJobStatus } from '../entities/enrichment-job.entity.js';
 import { EnrichmentResumeService } from './enrichment-resume.service.js';
 
-jest.mock('./enrichment-checkpoint.util', () => ({
+vi.mock('./enrichment-checkpoint.util', () => ({
   readCheckpointSync: jest.fn(),
 }));
 import { readCheckpointSync } from './enrichment-checkpoint.util.js';

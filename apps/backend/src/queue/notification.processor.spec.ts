@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -17,7 +18,7 @@ import { AppIoDeliveryService } from '../channels/app-io/app-io-delivery.service
 import type { NotificationJobData } from '@comunicapa/shared-types';
 import * as sentryUtil from '../common/sentry.util.js';
 
-jest.mock('../common/sentry.util', () => ({ captureException: jest.fn() }));
+vi.mock('../common/sentry.util', () => ({ captureException: jest.fn() }));
 
 const mockRedis = {
   incr: jest.fn().mockResolvedValue(1),

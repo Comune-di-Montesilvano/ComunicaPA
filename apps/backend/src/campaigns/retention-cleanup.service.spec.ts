@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import * as fs from 'fs/promises';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
@@ -5,7 +6,7 @@ import { RetentionCleanupService } from './retention-cleanup.service.js';
 import { Recipient } from '../entities/recipient.entity.js';
 import { Campaign } from '../entities/campaign.entity.js';
 
-jest.mock('fs/promises', () => ({
+vi.mock('fs/promises', () => ({
   unlink: jest.fn().mockResolvedValue(undefined),
   rm: jest.fn().mockResolvedValue(undefined),
   readdir: jest.fn().mockResolvedValue([]),

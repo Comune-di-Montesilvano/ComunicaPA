@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import { BadGatewayException, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { OidcFlowService } from './oidc-flow.service.js';
 
@@ -7,7 +8,7 @@ const redisMock = {
   quit: jest.fn(async () => 'OK'),
 };
 
-jest.mock('ioredis', () => ({
+vi.mock('ioredis', () => ({
   __esModule: true,
   default: jest.fn().mockImplementation(() => redisMock),
 }));

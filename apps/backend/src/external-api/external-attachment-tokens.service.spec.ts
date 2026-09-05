@@ -1,19 +1,20 @@
+import { vi } from 'vitest';
 import * as fs from 'fs';
 import { join } from 'path';
 import { ExternalAttachmentTokensService } from './external-attachment-tokens.service.js';
 import * as chunkedUpload from '../campaigns/chunked-upload.util.js';
 
-// `jest.mock('fs')` (automock) invece di `jest.spyOn(fs, ...)`: con
+// `vi.mock('fs')` (automock) invece di `jest.spyOn(fs, ...)`: con
 // `esModuleInterop` l'helper `__createBinding` di TS copia le funzioni del
 // modulo builtin `fs` come getter non configurabili (`configurable: false`)
 // sul namespace importato con `import * as fs from 'fs'` — `jest.spyOn`
 // prova a rimpiazzare la proprietà con `Object.defineProperty` e fallisce con
 // "Cannot redefine property". L'automock intercetta invece `require('fs')`
 // stesso, sostituendo ogni export con un `jest.fn()` a monte (stesso motivo
-// per cui `jest.mock('../campaigns/chunked-upload.util')` già funziona senza
+// per cui `vi.mock('../campaigns/chunked-upload.util')` già funziona senza
 // spyOn qui sotto).
-jest.mock('fs');
-jest.mock('../campaigns/chunked-upload.util');
+vi.mock('fs');
+vi.mock('../campaigns/chunked-upload.util');
 
 describe('ExternalAttachmentTokensService', () => {
   let service: ExternalAttachmentTokensService;

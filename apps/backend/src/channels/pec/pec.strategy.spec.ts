@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { PecStrategy } from './pec.strategy.js';
@@ -5,7 +6,7 @@ import { AppSettingsService } from '../../settings/app-settings.service.js';
 import { MailConfigsService } from '../../mail-configs/mail-configs.service.js';
 
 const mockSendMail = jest.fn();
-jest.mock('nodemailer', () => ({
+vi.mock('nodemailer', () => ({
   createTransport: jest.fn(() => ({ sendMail: mockSendMail })),
 }));
 

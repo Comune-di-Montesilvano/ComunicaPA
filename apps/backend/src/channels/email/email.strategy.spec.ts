@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { EmailStrategy } from './email.strategy.js';
@@ -7,7 +8,7 @@ import { MailConfigsService } from '../../mail-configs/mail-configs.service.js';
 const mockSendMail = jest.fn();
 const mockCreateTransport = jest.fn<{ sendMail: jest.Mock }, [unknown?]>(() => ({ sendMail: mockSendMail }));
 
-jest.mock('nodemailer', () => ({
+vi.mock('nodemailer', () => ({
   createTransport: (opts: unknown) => mockCreateTransport(opts),
 }));
 

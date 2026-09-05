@@ -1,10 +1,11 @@
+import { vi } from 'vitest';
 import { ExternalApiService } from './external-api.service.js';
 import { CampaignsService } from '../campaigns/campaigns.service.js';
 import { ExternalAttachmentTokensService } from './external-attachment-tokens.service.js';
 import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
 import * as fs from 'fs';
 
-jest.mock('fs');
+vi.mock('fs');
 
 describe('ExternalApiService', () => {
   let service: ExternalApiService;

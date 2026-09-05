@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ProtocollazioneProcessor } from './protocollazione.processor.js';
@@ -12,7 +13,7 @@ import { ConfigService } from '@nestjs/config';
 import { AppSettingsService } from '../settings/app-settings.service.js';
 import * as sentryUtil from '../common/sentry.util.js';
 
-jest.mock('../common/sentry.util', () => ({ captureException: jest.fn() }));
+vi.mock('../common/sentry.util', () => ({ captureException: jest.fn() }));
 
 describe('ProtocollazioneProcessor', () => {
   let processor: ProtocollazioneProcessor;

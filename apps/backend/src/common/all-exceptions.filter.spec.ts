@@ -1,8 +1,9 @@
+import { vi } from 'vitest';
 import { ArgumentsHost, NotFoundException } from '@nestjs/common';
 import { AllExceptionsFilter } from './all-exceptions.filter.js';
 import * as sentryUtil from './sentry.util.js';
 
-jest.mock('./sentry.util', () => ({ captureException: jest.fn() }));
+vi.mock('./sentry.util', () => ({ captureException: jest.fn() }));
 
 function makeHost() {
   const json = jest.fn();

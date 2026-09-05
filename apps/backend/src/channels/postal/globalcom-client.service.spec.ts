@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import { GlobalComClient, mapDocStatus, normalizeGlobalComField } from './globalcom-client.service.js';
 
 const mockLoginAsync = jest.fn();
@@ -8,7 +9,7 @@ const mockListaRiaccodamentiAsync = jest.fn();
 const mockInformazioniUtenzaAsync = jest.fn();
 const mockAddHttpHeader = jest.fn();
 
-jest.mock('soap', () => ({
+vi.mock('soap', () => ({
   createClientAsync: jest.fn(async () => ({
     LoginAsync: mockLoginAsync,
     invio_ext_singoloAsync: mockInvioAsync,

@@ -1,8 +1,9 @@
+import { vi } from 'vitest';
 import { ExternalAttachmentsController } from './external-attachments.controller.js';
 import { ExternalAttachmentTokensService } from './external-attachment-tokens.service.js';
 import * as chunkedUpload from '../campaigns/chunked-upload.util.js';
 
-jest.mock('../campaigns/chunked-upload.util');
+vi.mock('../campaigns/chunked-upload.util');
 
 describe('ExternalAttachmentsController', () => {
   let controller: ExternalAttachmentsController;
