@@ -1,7 +1,8 @@
 import { Module } from '@nestjs/common';
-import { JwtModule } from '@nestjs/jwt';
+import { JwtModule, type JwtModuleOptions } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import type { SignOptions } from 'jsonwebtoken';
 import { AuthService } from './auth.service.js';
 import { AuthController } from './auth.controller.js';
 import { CitizenAuthController } from './citizen-auth.controller.js';
@@ -14,19 +15,26 @@ import type { AppConfiguration } from '../config/configuration.js';
 
 @Module({
   imports: [
-    PassportModule,
+    // @nestjs/passport v12: AuthGuard() richiede AuthModuleOptions via DI
+    // anche se dichiarato @Optional() nel mixin (regressione framework,
+    // verificata su OidcAuthGuard in CitizenModule) - import nudo di
+    // PassportModule non fornisce alcun provider (modulo vuoto), serve
+    // .register({}) esplicito per fornire AuthModuleOptions anche vuoto.
+    PassportModule.register({}),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (config: ConfigService<AppConfiguration, true>) => ({
+      useFactory: (config: ConfigService<AppConfiguration, true>): JwtModuleOptions => ({
         secret: config.get('jwt.secret', { infer: true }),
-        signOptions: { expiresIn: config.get('jwt.expiresIn', { infer: true }) },
+        signOptions: {
+          expiresIn: config.get('jwt.expiresIn', { infer: true }) as SignOptions['expiresIn'],
+        },
       }),
     }),
     OperatorDirectoryModule,
   ],
   providers: [AuthService, LdapService, JwtStrategy, OidcCitizenStrategy, OidcFlowService],
   controllers: [AuthController, CitizenAuthController],
-  exports: [AuthService, JwtModule],
+  exports: [AuthService, JwtModule, PassportModule],
 })
 export class AuthModule {}

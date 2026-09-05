@@ -255,7 +255,7 @@ export class OidcFlowService implements OnModuleDestroy {
         JSON.stringify({ codiceFiscale, name, provider }),
         'EX',
         3600 * 8, // 8 ore
-      ).catch((err) => {
+      ).catch((err: unknown) => {
         this.logger.warn(`Errore nel salvataggio dei claims su Redis: ${String(err)}`);
       });
     }
