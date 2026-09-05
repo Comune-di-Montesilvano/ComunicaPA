@@ -1083,6 +1083,26 @@ function isValidCfOrPiva(value: string): boolean {
   return /^[A-Z0-9]{16}$/i.test(v) || /^\d{11}$/.test(v);
 }
 
+// I servizi esterni (ANPR/INAD/App IO/Registro Imprese) restituiscono errori
+// come "<contesto>: HTTP <code> — <payload JSON/XML grezzo>" — utile nei log
+// backend, illeggibile in UI. Taglia via il payload grezzo dopo l'em-dash,
+// tiene solo contesto+codice, e aggiunge un suggerimento in italiano in base
+// al codice HTTP.
+function formatExternalErrorMessage(message?: string): string {
+  if (!message) return 'Errore sconosciuto.';
+  const prefix = message.split(' — ')[0].trim();
+  const httpMatch = /HTTP (\d{3})/.exec(prefix);
+  const code = httpMatch ? Number(httpMatch[1]) : undefined;
+  const hint =
+    code === 400 ? 'dati non validi (formato Codice Fiscale/Partita IVA non corretto per questo servizio).' :
+    code === 401 || code === 403 ? 'accesso negato — verificare la configurazione PDND in Impostazioni.' :
+    code === 404 ? 'nessun dato trovato.' :
+    code === 429 ? 'troppe richieste al servizio esterno, riprovare tra qualche minuto.' :
+    code && code >= 500 ? 'servizio esterno momentaneamente non disponibile, riprovare più tardi.' :
+    'riprovare più tardi o contattare l\'assistenza.';
+  return `${prefix} — ${hint}`;
+}
+
 // Stesso vincolo già applicato riga per riga nella validazione CSV del
 // wizard massivo — qui riusato per i campi diretti del wizard singolo
 // (Email/PEC/CAP non erano validati in formato, solo presenza).
@@ -1377,6 +1397,7 @@ export function App(): React.JSX.Element {
 
   // ── Verifica INAD (duplicato di Verifica App IO, ma su domicilio digitale INAD) ──
   const [domicilioCf, setDomicilioCf] = useState('');
+  const [domicilioValidationError, setDomicilioValidationError] = useState<string | null>(null);
   const [domicilioLoading, setDomicilioLoading] = useState(false);
   const [domicilioResult, setDomicilioResult] = useState<{
     codiceFiscale: string;
@@ -2913,6 +2934,12 @@ export function App(): React.JSX.Element {
 
   const runCercaDomicilio = async () => {
     if (!domicilioCf.trim()) return;
+    if (!isValidCfOrPiva(domicilioCf)) {
+      setDomicilioValidationError('Formato non valido: Codice Fiscale persona fisica (16 caratteri alfanumerici) o Partita IVA (11 cifre).');
+      setDomicilioResult(null);
+      return;
+    }
+    setDomicilioValidationError(null);
     setDomicilioLoading(true);
     setDomicilioResult(null);
     try {
@@ -12537,7 +12564,7 @@ export function App(): React.JSX.Element {
                     maxLength={16}
                     style={{ letterSpacing: '0.5px' }}
                     value={domicilioCf}
-                    onChange={e => setDomicilioCf(e.target.value.toUpperCase().trim())}
+                    onChange={e => { setDomicilioCf(e.target.value.toUpperCase().trim()); setDomicilioValidationError(null); }}
                     onKeyDown={e => { if (e.key === 'Enter') runCercaDomicilio(); }}
                   />
                   <button
@@ -12557,6 +12584,9 @@ export function App(): React.JSX.Element {
                     )}
                   </button>
                 </div>
+                {domicilioValidationError && (
+                  <div className="small text-danger mt-2">{domicilioValidationError}</div>
+                )}
               </div>
 
               {domicilioResult && (() => {
@@ -12573,7 +12603,7 @@ export function App(): React.JSX.Element {
                         <h6 className="fw-bold mb-0 text-dark">Registro Imprese</h6>
                       </div>
                       <div className="card-body p-4 bg-white">
-                        {!ri.success && <p className="small text-danger mb-0">{ri.message}</p>}
+                        {!ri.success && <p className="small text-danger mb-0">{formatExternalErrorMessage(ri.message)}</p>}
                         {ri.success && !ri.found && <p className="small text-muted mb-0">Nessuna impresa trovata per questa Partita IVA</p>}
                         {ri.success && ri.found && !ri.data && (
                           <div className="d-flex flex-column gap-1">
@@ -12737,14 +12767,14 @@ export function App(): React.JSX.Element {
                               <span className="small text-muted">Data decesso non disponibile in ANPR</span>
                             )}
                             {vitaInfo.valore === 'N' && domicilioResult.anprEsistenzaInVita && !domicilioResult.anprEsistenzaInVita.success && (
-                              <span className="small text-warning">Data decesso non disponibile ({domicilioResult.anprEsistenzaInVita.message})</span>
+                              <span className="small text-warning">Data decesso non disponibile ({formatExternalErrorMessage(domicilioResult.anprEsistenzaInVita.message)})</span>
                             )}
                           </div>
                         )}
                       </div>
 
                       <div className="card-body p-4 bg-white">
-                        {!anpr.success && <div className="alert alert-danger mb-0 py-2 px-3 small">{anpr.message}</div>}
+                        {!anpr.success && <div className="alert alert-danger mb-0 py-2 px-3 small">{formatExternalErrorMessage(anpr.message)}</div>}
                         {anpr.success && !anpr.found && <p className="small text-muted mb-0">Nessun dato trovato in ANPR per il Codice Fiscale specificato.</p>}
                         {anpr.success && anpr.found && (
                           <div className="row g-4">
@@ -12816,7 +12846,7 @@ export function App(): React.JSX.Element {
                             </div>
                           </div>
                           <div className="card-body p-3 bg-white flex-grow-1">
-                            {!anpr.success && <p className="small text-danger mb-0">{anpr.message}</p>}
+                            {!anpr.success && <p className="small text-danger mb-0">{formatExternalErrorMessage(anpr.message)}</p>}
                             {anpr.success && !anpr.found && <p className="small text-muted mb-0">Nessun dato trovato in ANPR</p>}
                             {anpr.success && anpr.found && anpr.residenza?.[0]?.indirizzo && (() => {
                               const resComune = anpr.residenza[0].indirizzo?.comune;
@@ -12874,7 +12904,7 @@ export function App(): React.JSX.Element {
                             )}
                           </div>
                           <div className="card-body p-3 bg-white flex-grow-1">
-                            {!domicilioResult.inad!.success && <p className="small text-danger mb-0">{domicilioResult.inad!.message}</p>}
+                            {!domicilioResult.inad!.success && <p className="small text-danger mb-0">{formatExternalErrorMessage(domicilioResult.inad!.message)}</p>}
                             {domicilioResult.inad!.success && !domicilioResult.inad!.found && <p className="small text-muted mb-0">Nessun domicilio digitale eletto</p>}
                             {domicilioResult.inad!.success && domicilioResult.inad!.found && (
                               <ul className="small mb-0 ps-3">
@@ -12907,7 +12937,7 @@ export function App(): React.JSX.Element {
                             )}
                           </div>
                           <div className="card-body p-3 bg-white flex-grow-1">
-                            <p className="small text-muted mb-0">{domicilioResult.appIo!.message}</p>
+                            <p className="small text-muted mb-0">{domicilioResult.appIo!.success ? domicilioResult.appIo!.message : formatExternalErrorMessage(domicilioResult.appIo!.message)}</p>
                           </div>
                         </div>
                       </div>
