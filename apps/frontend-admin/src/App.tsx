@@ -1380,7 +1380,26 @@ export function App(): React.JSX.Element {
   const [domicilioLoading, setDomicilioLoading] = useState(false);
   const [domicilioResult, setDomicilioResult] = useState<{
     codiceFiscale: string;
-    registroImprese?: { success: boolean; found: boolean; pec?: string; denominazione?: string; message?: string };
+    registroImprese?: {
+      success: boolean; found: boolean; pec?: string; denominazione?: string; message?: string;
+      data?: {
+        sede: {
+          denominazione?: string; formaGiuridica?: string; cFiscale?: string; partitaIva?: string;
+          cciaa?: string; nRea?: string; dtIscrizioneRi?: string; dtAttoCostituzione?: string; pec?: string;
+          indirizzo?: { comune?: string; provincia?: string; toponimo?: string; via?: string; nCivico?: string; cap?: string; frazione?: string };
+        };
+        attivita: { esercitata?: string; secondaria?: string; prevalente?: string; ateco: Array<{ codice?: string; descrizione?: string; importanza?: string }> };
+        persone: Array<{ nome?: string; cognome?: string; cFiscale?: string; dataNascita?: string; rappresentante: boolean; cariche: string[] }>;
+        localizzazioni: Array<{
+          tipo?: string; sottoTipi: string[]; dataApertura?: string;
+          indirizzo?: { comune?: string; provincia?: string; toponimo?: string; via?: string; nCivico?: string; cap?: string; frazione?: string };
+          attivitaEsercitata?: string; ateco: Array<{ codice?: string; descrizione?: string; importanza?: string }>;
+        }>;
+        soci: Array<{ denominazione?: string; cFiscale?: string; diritto?: string }>;
+        statuto: { durataSocieta?: string; sistemaAmministrazione?: string; formeAmministrative: string[]; collegioSindacale?: { effettivi?: string; supplenti?: string } };
+        patrimonio?: { valuta?: string; deliberato?: string; sottoscritto?: string; versato?: string };
+      };
+    };
     inad?: { success: boolean; found: boolean; digitalAddress?: Array<{ digitalAddress: string; practicedProfession?: string }>; message?: string };
     appIo?: { success: boolean; active: boolean; message: string };
     anpr?: {
@@ -12501,19 +12520,20 @@ export function App(): React.JSX.Element {
                     <MapPin className="text-primary" size={20} />Verifica Anagrafica
                   </h3>
                   <p className="small text-muted mb-0">
-                    Interrogazione integrata ANPR (generalità e residenza), INAD (domicilio digitale) e App IO (servizi attivi).
+                    Persone fisiche (Codice Fiscale): ANPR (generalità e residenza), INAD (domicilio digitale) e App IO (servizi attivi).
+                    Persone giuridiche (Partita IVA): Registro Imprese (dati camerali, PEC).
                   </p>
                 </div>
               </div>
 
               <div className="card shadow-sm p-4 mb-4 border-0 bg-white rounded-3">
-                <label className="form-label small fw-bold text-secondary text-uppercase tracking-wider">Codice Fiscale</label>
+                <label className="form-label small fw-bold text-secondary text-uppercase tracking-wider">Codice Fiscale o Partita IVA</label>
                 <div className="input-group input-group-sm" style={{ maxWidth: '600px' }}>
                   <span className="input-group-text bg-light border-end-0"><Contact size={16} className="text-muted" /></span>
                   <input
                     type="text"
                     className="form-control border-start-0 ps-0 fw-semibold"
-                    placeholder="Es. RSSMRA80A01H501U"
+                    placeholder="CF persona fisica o Partita IVA"
                     maxLength={16}
                     style={{ letterSpacing: '0.5px' }}
                     value={domicilioCf}
@@ -12555,13 +12575,127 @@ export function App(): React.JSX.Element {
                       <div className="card-body p-4 bg-white">
                         {!ri.success && <p className="small text-danger mb-0">{ri.message}</p>}
                         {ri.success && !ri.found && <p className="small text-muted mb-0">Nessuna impresa trovata per questa Partita IVA</p>}
-                        {ri.success && ri.found && (
+                        {ri.success && ri.found && !ri.data && (
                           <div className="d-flex flex-column gap-1">
                             {ri.denominazione && <span className="fw-semibold">{ri.denominazione}</span>}
                             {ri.pec && <span className="small text-muted">PEC: {ri.pec}</span>}
                             {!ri.pec && <span className="small text-muted">Nessun domicilio digitale disponibile</span>}
                           </div>
                         )}
+                        {ri.success && ri.found && ri.data && (() => {
+                          const d = ri.data;
+                          const ind = d.sede.indirizzo;
+                          const indStr = (i?: typeof ind) => i ? [
+                            [i.toponimo, i.via].filter(Boolean).join(' '),
+                            i.nCivico ? `n. ${i.nCivico}` : null,
+                            [i.cap, i.comune, i.provincia ? `(${i.provincia})` : null].filter(Boolean).join(' '),
+                            i.frazione ? `frazione ${i.frazione}` : null,
+                          ].filter(Boolean).join(', ') : null;
+                          return (
+                            <div className="d-flex flex-column gap-3">
+                              {/* Sede: sempre visibile, non in collapse */}
+                              <div>
+                                <span className="fw-bold fs-6">{d.sede.denominazione}</span>
+                                {d.sede.formaGiuridica && <span className="text-muted"> — {d.sede.formaGiuridica}</span>}
+                                <div className="small text-muted mt-1 d-flex flex-column gap-1">
+                                  {(d.sede.cFiscale || d.sede.partitaIva) && <span>CF/P.IVA: {d.sede.cFiscale || d.sede.partitaIva}</span>}
+                                  {(d.sede.cciaa || d.sede.nRea) && <span>REA: {d.sede.cciaa} {d.sede.nRea}</span>}
+                                  {indStr(ind) && <span>Sede: {indStr(ind)}</span>}
+                                  {d.sede.pec && <span>PEC: {d.sede.pec}</span>}
+                                  {(d.sede.dtIscrizioneRi || d.sede.dtAttoCostituzione) && (
+                                    <span>
+                                      {d.sede.dtAttoCostituzione && `Costituita il ${d.sede.dtAttoCostituzione}`}
+                                      {d.sede.dtAttoCostituzione && d.sede.dtIscrizioneRi && ' — '}
+                                      {d.sede.dtIscrizioneRi && `iscritta RI il ${d.sede.dtIscrizioneRi}`}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {(d.attivita.esercitata || d.attivita.prevalente || d.attivita.secondaria || d.attivita.ateco.length > 0) && (
+                                <details className="border rounded p-2">
+                                  <summary className="fw-semibold small text-dark" style={{ cursor: 'pointer' }}>Attività ({d.attivita.ateco.length} codici ATECO)</summary>
+                                  <div className="mt-2 small d-flex flex-column gap-2">
+                                    {d.attivita.prevalente && <div><span className="text-muted">Prevalente: </span>{d.attivita.prevalente}</div>}
+                                    {d.attivita.esercitata && <div><span className="text-muted">Esercitata: </span>{d.attivita.esercitata}</div>}
+                                    {d.attivita.secondaria && <div><span className="text-muted">Secondaria: </span>{d.attivita.secondaria}</div>}
+                                    {d.attivita.ateco.length > 0 && (
+                                      <ul className="mb-0 ps-3">
+                                        {d.attivita.ateco.map((a, i) => (
+                                          <li key={i}>{a.codice} — {a.descrizione} <span className="text-muted">({a.importanza})</span></li>
+                                        ))}
+                                      </ul>
+                                    )}
+                                  </div>
+                                </details>
+                              )}
+
+                              {d.persone.length > 0 && (
+                                <details className="border rounded p-2">
+                                  <summary className="fw-semibold small text-dark" style={{ cursor: 'pointer' }}>Amministratori e cariche ({d.persone.length})</summary>
+                                  <ul className="mb-0 mt-2 small ps-3">
+                                    {d.persone.map((p, i) => (
+                                      <li key={i}>
+                                        {p.rappresentante && <Star size={12} className="text-warning me-1" />}
+                                        <span className="fw-semibold">{p.nome} {p.cognome}</span>
+                                        {p.cFiscale && <span className="text-muted"> — {p.cFiscale}</span>}
+                                        {p.cariche.length > 0 && <span className="text-muted"> ({p.cariche.join(', ')})</span>}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </details>
+                              )}
+
+                              {d.localizzazioni.length > 0 && (
+                                <details className="border rounded p-2">
+                                  <summary className="fw-semibold small text-dark" style={{ cursor: 'pointer' }}>Localizzazioni / unità locali ({d.localizzazioni.length})</summary>
+                                  <ul className="mb-0 mt-2 small ps-3 d-flex flex-column gap-2">
+                                    {d.localizzazioni.map((l, i) => (
+                                      <li key={i}>
+                                        <span className="fw-semibold">{l.tipo}{l.sottoTipi.length > 0 && ` (${l.sottoTipi.join(', ')})`}</span>
+                                        {indStr(l.indirizzo) && <div className="text-muted">{indStr(l.indirizzo)}</div>}
+                                        {l.attivitaEsercitata && <div>{l.attivitaEsercitata}</div>}
+                                        {l.dataApertura && <div className="text-muted">Apertura: {l.dataApertura}</div>}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </details>
+                              )}
+
+                              {d.soci.length > 0 && (
+                                <details className="border rounded p-2">
+                                  <summary className="fw-semibold small text-dark" style={{ cursor: 'pointer' }}>Soci ({d.soci.length})</summary>
+                                  <ul className="mb-0 mt-2 small ps-3">
+                                    {d.soci.map((s, i) => (
+                                      <li key={i}>
+                                        <span className="fw-semibold">{s.denominazione}</span>
+                                        {s.cFiscale && <span className="text-muted"> — {s.cFiscale}</span>}
+                                        {s.diritto && <span className="text-muted"> ({s.diritto})</span>}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </details>
+                              )}
+
+                              {(d.statuto.durataSocieta || d.statuto.sistemaAmministrazione || d.statuto.formeAmministrative.length > 0 || d.patrimonio) && (
+                                <details className="border rounded p-2">
+                                  <summary className="fw-semibold small text-dark" style={{ cursor: 'pointer' }}>Assetto societario e patrimonio</summary>
+                                  <div className="mt-2 small d-flex flex-column gap-1">
+                                    {d.statuto.durataSocieta && <span>Durata società: fino al {d.statuto.durataSocieta}</span>}
+                                    {d.statuto.sistemaAmministrazione && <span>Sistema amministrazione: {d.statuto.sistemaAmministrazione}</span>}
+                                    {d.statuto.formeAmministrative.length > 0 && <span>Forme amministrative: {d.statuto.formeAmministrative.join(', ')}</span>}
+                                    {d.statuto.collegioSindacale && <span>Collegio sindacale: {d.statuto.collegioSindacale.effettivi} effettivi, {d.statuto.collegioSindacale.supplenti} supplenti</span>}
+                                    {d.patrimonio && (
+                                      <span>
+                                        Capitale sociale: deliberato {d.patrimonio.deliberato} — sottoscritto {d.patrimonio.sottoscritto} — versato {d.patrimonio.versato} {d.patrimonio.valuta}
+                                      </span>
+                                    )}
+                                  </div>
+                                </details>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   );
