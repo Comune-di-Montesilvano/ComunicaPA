@@ -75,6 +75,8 @@ docker compose rm -sf backend && docker volume rm comunicapa_backend_node_module
 
 Il nome del volume `node_modules` non sempre coincide col nome del servizio (es. `frontend-admin` → volume `comunicapa_admin_node_modules`, non `comunicapa_frontend-admin_node_modules`): verificare con `docker volume ls | grep node_modules` prima di eseguire `docker volume rm`.
 
+**Il volume può risultare stale anche SENZA aver aggiunto una dipendenza** — un semplice `docker compose up -d --build` su un checkout rimasto fermo a lungo può far ripartire un container con `MODULE_NOT_FOUND`/`Cannot find module` su pacchetti già presenti nell'immagine appena buildata (visto dal vivo: `frontend-admin` su `vite`, `backend` su `bullmq`). Stesso fix di sopra: `docker compose rm -sf <servizio> && docker volume rm comunicapa_<nome>_node_modules && docker compose up -d --build <servizio>`.
+
 Stesso path-mangling anche su `docker compose exec <servizio> cat /path/assoluto`
 (non solo `-v`): prefissare `MSYS_NO_PATHCONV=1` a qualunque comando che passa
 un path unix assoluto come argomento a un container da Git Bash Windows.
@@ -285,6 +287,8 @@ Obbligatorie in produzione (`:?` nel compose): `JWT_SECRET`, `DOWNLOAD_LINK_SECR
 `POSTGRES_PASSWORD` SOLO caratteri alfanumerici: il compose la incastra in `DATABASE_URL` senza escaping — `$ @ # ^` rompono il parsing dell'URL e il backend prova a connettersi a un host sbagliato (es. `0.0.0.48`).
 
 **Nuova env var backend = va aggiunta ANCHE al blocco `environment:` di `docker-compose.yml`, non solo a `configuration.ts`/`.env.example`.** Bug reale trovato in E2E manuale: `LDAP_ADMIN_USERNAMES` letta correttamente in `configuration.ts` e valorizzata in `.env`, ma assente dal blocco `environment:` del servizio `backend` — il container non la riceve affatto (nessun errore, `process.env['LDAP_ADMIN_USERNAMES']` è `undefined` in silenzio, fallback al default). Il compose non fa passthrough automatico di tutte le var di `.env`: ogni var letta da `configuration.ts` deve avere una riga esplicita `NOME_VAR: ${NOME_VAR:-default}` nel servizio `backend` di `docker-compose.yml`, altrimenti resta invisibile al processo Node anche se presente in `.env` e anche dopo un `docker compose restart` (serve comunque `docker compose up -d backend` per far ripartire il container con l'`environment:` aggiornato, il `restart` da solo non rilegge il compose).
+
+**CORS backend hardcoded su `localhost:3000`/`3001` (`main.ts` `enableCors`).** Se `ADMIN_PORT`/`CITIZEN_PORT` in `.env` cambia dal default, il browser blocca ogni fetch **senza alcun log lato backend** — sintomo "non riesco a fare login" con nessun errore leggibile né in console rete lato server. Fix: riportare la porta al default, oppure valorizzare `ADMIN_ORIGIN`/`CITIZEN_ORIGIN` in `.env` (già letti da `main.ts`, non documentati in `.env.example`).
 
 ## Reverse proxy esterno in produzione — gotcha critico
 
@@ -790,6 +794,15 @@ dello schema `NotificationStatus` — verificare sempre lo spec raw, non un
 riassunto, prima di aggiungere/rimuovere valori da `TERMINAL_STATUSES`
 (`send-status-sync.service.ts`) o da `SEND_STATUS_META` (`App.tsx`).
 
+## API esterne con XML — verificare l'encoding, mai fidarsi di `response.text()`
+
+`response.text()` di `fetch` decodifica sempre come UTF-8 di default, ignorando l'encoding dichiarato nel
+prologo XML (`<?xml ... encoding="windows-1252"?>`) — bug reale su Registro Imprese: ogni carattere accentato
+storpiato (`unit�` invece di `unità`), nessun errore, scoperto solo controllando l'output a video. Fix: leggere
+`response.arrayBuffer()` e decodificare esplicitamente con `new TextDecoder(encodingDichiarato).decode(buffer)`.
+Verificare sempre l'encoding reale di una nuova API esterna (header `Content-Type` o prologo XML) prima di
+fidarsi di `response.text()`.
+
 ## INAD — Indice Nazionale Domicili Digitali, dati verificati dal vivo
 
 `GET /extract/{cf}` (query singola): **~0.5s**, sincrona. `POST
@@ -1021,6 +1034,15 @@ HTML non valido, il browser instrada il submit sulla form esterna
 (bug reale: "Salva" su un pannello interno riportava alla home invece
 di salvare). Usare `<div>` + bottone con `onClick` esplicito per
 qualunque pannello di editing dentro una tab di Impostazioni.
+
+## Verifica Anagrafica (Cerca Domicilio) — validazione locale + errori leggibili
+
+`isValidCfOrPiva()` (`App.tsx`, già usata dal wizard singolo) va sempre chiamata lato client PRIMA di interrogare
+un endpoint di verifica esterna (ANPR/INAD/App IO/Registro Imprese) — bug reale corretto: un input malformato
+(es. 10 cifre) veniva instradato su ANPR invece di essere rifiutato subito, sprecando una chiamata PDND reale.
+`formatExternalErrorMessage()` (`App.tsx`) sanitizza il payload JSON/XML grezzo degli errori esterni prima di
+mostrarli in UI (tiene solo contesto + HTTP code + suggerimento IT) — ogni nuovo pannello che mostra un
+`message` di errore da un servizio esterno deve passarci attraverso, mai stampare `error.message` grezzo.
 
 ## Allegati e co-consegna App IO — gotcha
 
