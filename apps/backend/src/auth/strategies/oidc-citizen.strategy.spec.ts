@@ -19,10 +19,14 @@ const redisMock = {
   set: jest.fn(),
 };
 
-vi.mock('ioredis', () => ({
-  __esModule: true,
-  default: jest.fn().mockImplementation(() => redisMock),
-}));
+vi.mock('ioredis', () => {
+  const RedisMock = jest.fn().mockImplementation(() => redisMock);
+  return {
+    __esModule: true,
+    default: RedisMock,
+    Redis: RedisMock,
+  };
+});
 
 describe('OidcCitizenStrategy', () => {
   let strategy: OidcCitizenStrategy;
