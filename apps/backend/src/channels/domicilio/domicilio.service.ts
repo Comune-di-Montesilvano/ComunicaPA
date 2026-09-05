@@ -3,7 +3,7 @@ import { InadService, InadDigitalAddressElement } from '../inad/inad.service';
 import { IoServicesService } from '../../io-services/io-services.service';
 import { AnprService } from '../anpr/anpr.service';
 import type { AnprGeneralita, AnprResidenza, AnprInfoSoggettoEnte } from '../anpr/anpr.types';
-import { RegistroImpreseService } from '../registro-imprese/registro-imprese.service';
+import { RegistroImpreseService, type RegistroImpreseImpresaData } from '../registro-imprese/registro-imprese.service';
 import { isPartitaIva } from '../tax-id.util';
 
 export interface DomicilioInadResult {
@@ -40,6 +40,7 @@ export interface DomicilioRegistroImpreseResult {
   found: boolean;
   pec?: string;
   denominazione?: string;
+  data?: RegistroImpreseImpresaData;
   message?: string;
 }
 
@@ -132,7 +133,7 @@ export class DomicilioService {
       const dettaglio = await this.registroImpreseService.dettaglioImpresa(partitaIva);
       return {
         codiceFiscale: partitaIva,
-        registroImprese: { success: true, found: dettaglio.found, pec: dettaglio.pec, denominazione: dettaglio.denominazione },
+        registroImprese: { success: true, found: dettaglio.found, pec: dettaglio.pec, denominazione: dettaglio.denominazione, data: dettaglio.data },
       };
     } catch (error: any) {
       return {
