@@ -23,7 +23,7 @@ WORKDIR /app/apps/frontend-citizen
 RUN node_modules/.bin/tsc -b && node_modules/.bin/vite build
 
 # ── Runtime ───────────────────────────────────────────────────────────────────
-FROM nginxinc/nginx-unprivileged:1.27-alpine
+FROM nginxinc/nginx-unprivileged:1.31-alpine
 ARG APP_VERSION=dev
 ENV APP_VERSION=${APP_VERSION}
 COPY --from=build --chown=nginx:nginx /app/apps/frontend-citizen/dist /usr/share/nginx/html
