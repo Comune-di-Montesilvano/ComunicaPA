@@ -1880,6 +1880,7 @@ export function App(): React.JSX.Element {
   const [singleAnprCheckedCf, setSingleAnprCheckedCf] = useState<string | null>(null);
   const [singleInadForced, setSingleInadForced] = useState(false);
   const [singleInadAddress, setSingleInadAddress] = useState('');
+  const [singleRegistroImpreseNoPec, setSingleRegistroImpreseNoPec] = useState(false);
   const [singleAppIoActive, setSingleAppIoActive] = useState(false);
 
   // Wizard States
@@ -5873,11 +5874,14 @@ export function App(): React.JSX.Element {
           const pecFound = Boolean(ri.pec);
           setSingleInadForced(pecFound);
           setSingleInadAddress(pecFound ? ri.pec : '');
+          setSingleRegistroImpreseNoPec(!pecFound);
           if (pecFound) {
             setWizChannel('PEC');
             setSinglePec(ri.pec);
             setWizPaymentEnabled(false);
           }
+        } else {
+          setSingleRegistroImpreseNoPec(false);
         }
         // App IO non si applica a una Partita IVA (n/a, vedi matrice canali).
         setSingleAppIoActive(false);
@@ -8890,6 +8894,7 @@ export function App(): React.JSX.Element {
                                 setSingleInadAddress('');
                                 setSingleAppIoActive(false);
                                 setWizAppIoMode('none');
+                                setSingleRegistroImpreseNoPec(false);
                               }
                             }}
                           />
@@ -8985,6 +8990,15 @@ export function App(): React.JSX.Element {
                                 {wizChannel === 'SEND'
                                   ? `Domicilio digitale INAD trovato (${singleInadAddress}): invio impostato su SEND.`
                                   : `Domicilio digitale INAD trovato (${singleInadAddress}): canale limitato a PEC o SEND.`}
+                              </span>
+                            </div>
+                          )}
+                          {singleRegistroImpreseNoPec && (
+                            <div className="alert alert-warning border-0 bg-warning-subtle text-warning-emphasis py-2 px-3 small d-flex align-items-center gap-2 mt-2 mb-0">
+                              <AlertTriangle size={16} />
+                              <span>
+                                Nessuna PEC trovata su Registro Imprese per questa Partita IVA. Indirizzo sede
+                                camerale compilato automaticamente: seleziona il canale POSTAL per usarlo.
                               </span>
                             </div>
                           )}
