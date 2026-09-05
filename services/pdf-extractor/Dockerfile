@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.14-slim
 WORKDIR /svc
 RUN apt-get update && apt-get install -y --no-install-recommends libzbar0 && rm -rf /var/lib/apt/lists/*
 COPY services/pdf-extractor/requirements.txt .
