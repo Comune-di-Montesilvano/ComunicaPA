@@ -22,6 +22,7 @@ COPY . .
 # serve un rebuild del container (stesso pattern già documentato per modifiche
 # fuori da src/ o a package.json).
 RUN node_modules/.bin/tsc -p packages/shared-types/tsconfig.cjs.json && node_modules/.bin/tsc -p packages/shared-types/tsconfig.esm.json
+RUN echo '{"type":"module"}' > packages/shared-types/dist/esm/package.json
 
 EXPOSE 8080
 # Usa il binario direttamente — bypassa il deps-check di pnpm v11 al runtime

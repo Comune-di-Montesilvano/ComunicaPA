@@ -15,6 +15,7 @@ COPY . .
 # a ./src — vedi commento in apps/backend/Dockerfile.dev per il motivo).
 # Modificare packages/shared-types/src richiede un rebuild di questo container.
 RUN node_modules/.bin/tsc -p packages/shared-types/tsconfig.cjs.json && node_modules/.bin/tsc -p packages/shared-types/tsconfig.esm.json
+RUN echo '{"type":"module"}' > packages/shared-types/dist/esm/package.json
 
 EXPOSE 3001
 # Usa il binario direttamente — bypassa il deps-check di pnpm v11 al runtime

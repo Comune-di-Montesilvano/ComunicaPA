@@ -22,6 +22,7 @@ COPY apps/backend apps/backend
 # file sotto node_modules (ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING) — bug
 # reale riscontrato in produzione, crash-loop del backend al primo require().
 RUN node_modules/.bin/tsc -p packages/shared-types/tsconfig.cjs.json && node_modules/.bin/tsc -p packages/shared-types/tsconfig.esm.json
+RUN echo '{"type":"module"}' > packages/shared-types/dist/esm/package.json
 
 WORKDIR /app/apps/backend
 RUN node_modules/.bin/nest build
