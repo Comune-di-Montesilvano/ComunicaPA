@@ -8998,7 +8998,7 @@ export function App(): React.JSX.Element {
                               <AlertTriangle size={16} />
                               <span>
                                 Nessuna PEC trovata su Registro Imprese per questa Partita IVA. Indirizzo sede
-                                camerale compilato automaticamente: seleziona il canale POSTAL per usarlo.
+                                camerale compilato automaticamente: seleziona il canale POSTAL o SEND per usarlo.
                               </span>
                             </div>
                           )}
