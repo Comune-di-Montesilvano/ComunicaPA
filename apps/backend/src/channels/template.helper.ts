@@ -18,6 +18,30 @@ import type { AppSettingsService } from '../settings/app-settings.service.js';
  * (in ordine: indice 0 → %%allegato1%%, indice 1 → %%allegato2%%, ...). Ogni
  * etichetta produce un link di download firmato per quell'indice specifico.
  */
+/**
+ * Escapa caratteri speciali HTML in valori NON fidati (colonne CSV del
+ * destinatario, extraData) prima che vengano interpolati nel template HTML
+ * dell'operatore. Va applicata SOLO ai valori sostituiti nei placeholder
+ * (%%chiave%%, {{chiave}}, etichette allegato da colonna), MAI al markup
+ * HTML del template stesso (quello scritto dall'operatore nell'editor
+ * rich-text) — altrimenti il body verrebbe doppiamente escapato e mostrato
+ * come testo letterale invece che renderizzato.
+ *
+ * Bug reale corretto: un CSV destinatari con un valore tipo
+ * `<script>...</script>` in una colonna sostituita in un placeholder
+ * finiva verbatim nell'HTML — sia nella mail/PEC reale sia nell'anteprima
+ * mostrata all'operatore in admin via dangerouslySetInnerHTML (XSS
+ * memorizzato, eseguibile nella sessione autenticata dell'operatore).
+ */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 export function processTemplate(
   bodyTemplate: string,
   recipient: Recipient,
@@ -64,7 +88,10 @@ export function processTemplate(
             .map(
               (label, index) =>
                 `<table style="width:100%; border-collapse: collapse; margin: 0 0 12px 0; background-color: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px;"><tr>` +
-                `<td style="padding: 16px 20px; font-weight: 600; color: #1a202c; font-size: 0.95rem;">📄 ${label}</td>` +
+                // label può venire da recipient.extraData[labelColumn] (colonna CSV,
+                // vedi resolveAttachmentLabel) — non fidata, va escapata come le
+                // altre sostituzioni HTML sopra.
+                `<td style="padding: 16px 20px; font-weight: 600; color: #1a202c; font-size: 0.95rem;">📄 ${escapeHtml(label)}</td>` +
                 `<td style="padding: 16px 20px; text-align: right; white-space: nowrap;"><a href="${buildDownloadUrl(index)}" target="_blank" rel="noopener" style="display:inline-block; background-color:#0066cc; color:#ffffff; text-decoration:none; font-weight:600; padding:10px 22px; border-radius:6px; font-size:0.875rem;">Scarica</a></td>` +
                 `</tr></table>`,
             )
@@ -72,29 +99,31 @@ export function processTemplate(
     content = content.replace(/%%elenco_allegati%%/g, block);
   }
 
-  // 3. Helper to get recipient value case-insensitively
+  // 3. Helper to get recipient value case-insensitively — valori sempre
+  // escapati per HTML (vedi escapeHtml sopra), il template stesso non è
+  // toccato da questa funzione.
   const getVal = (key: string): string => {
     const k = key.toLowerCase().trim();
     if (k === 'codice_fiscale' || k === 'codicefiscale' || k === 'cf') {
-      return recipient.codiceFiscale;
+      return escapeHtml(recipient.codiceFiscale);
     }
     if (k === 'full_name' || k === 'fullname' || k === 'nome' || k === 'nominativo') {
-      return recipient.fullName || '';
+      return escapeHtml(recipient.fullName || '');
     }
     if (k === 'email') {
-      return recipient.email || '';
+      return escapeHtml(recipient.email || '');
     }
     if (k === 'pec') {
-      return recipient.pec || '';
+      return escapeHtml(recipient.pec || '');
     }
     if (k === 'numero_protocollo' || k === 'numeroprotocollo' || k === 'protocollo' || k === 'protocol_number') {
-      return (recipient as any).protocolNumber || '';
+      return escapeHtml((recipient as any).protocolNumber || '');
     }
     // Search in extraData keys case-insensitively
     if (recipient.extraData) {
       for (const [exKey, exVal] of Object.entries(recipient.extraData)) {
         if (exKey.toLowerCase() === k) {
-          return String(exVal ?? '');
+          return escapeHtml(String(exVal ?? ''));
         }
       }
     }
@@ -121,21 +150,21 @@ export function processTemplate(
   content = content.replace(/\{\{([^}]+)\}\}/gi, (fullMatch, key) => {
     const k = key.toLowerCase().trim();
     if (k === 'codice_fiscale' || k === 'codicefiscale' || k === 'cf') {
-      return recipient.codiceFiscale;
+      return escapeHtml(recipient.codiceFiscale);
     }
     if (k === 'full_name' || k === 'fullname' || k === 'nome' || k === 'nominativo') {
-      return recipient.fullName || '';
+      return escapeHtml(recipient.fullName || '');
     }
     if (k === 'email') {
-      return recipient.email || '';
+      return escapeHtml(recipient.email || '');
     }
     if (k === 'pec') {
-      return recipient.pec || '';
+      return escapeHtml(recipient.pec || '');
     }
     if (recipient.extraData) {
       for (const [exKey, exVal] of Object.entries(recipient.extraData)) {
         if (exKey.toLowerCase() === k) {
-          return String(exVal ?? '');
+          return escapeHtml(String(exVal ?? ''));
         }
       }
     }

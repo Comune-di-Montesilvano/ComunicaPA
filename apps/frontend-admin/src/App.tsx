@@ -1128,30 +1128,16 @@ function resolvePostalContract(
   return resolved ?? 'none';
 }
 
-// Escapes HTML-special characters in untrusted values (e.g. CSV cell content)
-// before they are interpolated into a string that will be rendered via
-// dangerouslySetInnerHTML. Must NOT be applied to the operator's own
-// rich-text template markup, only to the substituted values.
-//
-// TROVATO NON CHIAMATO DA NESSUNO (audit ESLint 2026-09-06): esistono 3 usi
-// reali di dangerouslySetInnerHTML in questo file (bodyHtml preview wizard,
-// notifDetail.preview.bodyHtml, campaign.channelConfig['body']) che
-// interpolano contenuto per-destinatario (colonne CSV extraData) dentro il
-// template HTML SENZA passare da questa funzione — potenziale XSS se un CSV
-// destinatari contiene markup malevolo in una colonna sostituita nel
-// placeholder. Da verificare e decidere: o wire escapeHtml nei 3 punti sopra,
-// o determinare che il rischio è accettato (operatore autenticato, dato
-// comunque proprio dell'ente) e documentarlo esplicitamente. Non rimuovere
-// questa funzione finché la domanda non è stata chiusa.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
+// NOTA: la sanificazione XSS dei valori sostituiti nei placeholder (colonne
+// CSV, extraData) è stata spostata a monte, nel backend
+// (apps/backend/src/channels/template.helper.ts, funzione escapeHtml lì
+// definita) — è l'unico punto che compone il bodyHtml, sia per l'invio
+// reale sia per l'anteprima admin (wizPreviewResult/notifDetail.preview/
+// campaign.channelConfig['body'], i 3 usi di dangerouslySetInnerHTML in
+// questo file). Un escapeHtml lato frontend qui sarebbe stato un secondo
+// livello ridondante su dati già sanificati, non una difesa aggiuntiva
+// reale — rimosso invece di lasciarlo come dead code (audit ESLint
+// 2026-09-06, bug corretto nel backend).
 
 interface TemplateItem {
   id: string;

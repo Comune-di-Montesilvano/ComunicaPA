@@ -46,6 +46,47 @@ describe('processTemplate — link firmato con indice allegato', () => {
   });
 });
 
+describe('processTemplate — escaping XSS su valori sostituiti (bug reale corretto)', () => {
+  const secret = 'test-secret';
+  const exp = 1893456000;
+
+  it('escapa markup HTML in %%nominativo%% (extraData/campo fisso non fidato)', () => {
+    const recipient = {
+      ...baseRecipient,
+      fullName: '<script>alert(1)</script>',
+    } as Recipient;
+    const result = processTemplate('Gentile %%nominativo%%', recipient, 'http://api.test', secret, exp);
+    expect(result).toBe('Gentile &lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(result).not.toContain('<script>');
+  });
+
+  it('escapa markup HTML in un placeholder da colonna extraData', () => {
+    const recipient = {
+      ...baseRecipient,
+      extraData: { comune: '<img src=x onerror=alert(1)>' },
+    } as Recipient;
+    const result = processTemplate('Comune: %%comune%%', recipient, 'http://api.test', secret, exp);
+    expect(result).toBe('Comune: &lt;img src=x onerror=alert(1)&gt;');
+  });
+
+  it('escapa markup HTML nella sintassi {{chiave}}', () => {
+    const recipient = { ...baseRecipient, fullName: '<b>x</b>' } as Recipient;
+    const result = processTemplate('Ciao {{nome}}', recipient, 'http://api.test', secret, exp);
+    expect(result).toBe('Ciao &lt;b&gt;x&lt;/b&gt;');
+  });
+
+  it('NON escapa il markup del template stesso (solo i valori sostituiti)', () => {
+    const result = processTemplate('<p>Gentile <strong>%%nominativo%%</strong></p>', baseRecipient, 'http://api.test', secret, exp);
+    expect(result).toBe('<p>Gentile <strong>Mario Rossi</strong></p>');
+  });
+
+  it('escapa l\'etichetta allegato quando viene da una colonna CSV (resolveAttachmentLabel)', () => {
+    const result = processTemplate('%%elenco_allegati%%', baseRecipient, 'http://api.test', secret, exp, ['<img src=x onerror=alert(1)>']);
+    expect(result).not.toContain('<img src=x onerror=alert(1)>');
+    expect(result).toContain('&lt;img src=x onerror=alert(1)&gt;');
+  });
+});
+
 describe('processTemplate — macro %%elenco_allegati%%', () => {
   const secret = 'test-secret';
   const exp = 1893456000;
