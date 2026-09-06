@@ -5843,6 +5843,7 @@ export function App(): React.JSX.Element {
         }
         // App IO non si applica a una Partita IVA (n/a, vedi matrice canali).
         setSingleAppIoActive(false);
+        setWizAppIoMode('none');
         return;
       }
 
@@ -5899,6 +5900,10 @@ export function App(): React.JSX.Element {
       }
 
       setSingleAppIoActive(appIoActiveNow);
+      // Default: se App IO risulta attivo per il destinatario, la co-consegna
+      // parte già in modalità parallela (combinato) — l'operatore può comunque
+      // passare a esclusiva o disabilitarla dal select. Se non attivo, azzera.
+      setWizAppIoMode(appIoActiveNow ? 'parallel' : 'none');
     } catch (err: any) {
       if (err instanceof ApiAuthError) return;
       alert(err.message || 'Errore di connessione durante la verifica ANPR.');
@@ -8928,7 +8933,7 @@ export function App(): React.JSX.Element {
                                 return defaultCfg?.id || '';
                               });
                               if (newChan === 'SEND') setWizProtocolla(true);
-                              if (newChan !== 'SEND' && newChan !== 'APP_IO' && !(wizAppIoMode === 'parallel' && singleAppIoActive)) {
+                              if (newChan !== 'SEND' && newChan !== 'APP_IO' && !(wizAppIoMode !== 'none' && singleAppIoActive)) {
                                 setWizPaymentEnabled(false);
                               }
                             }}
@@ -9354,23 +9359,23 @@ export function App(): React.JSX.Element {
                                 <CheckCircle2 size={16} />
                                 <span>Servizio App IO attivo per questo destinatario.</span>
                               </div>
-                              <div className="form-check mb-0">
-                                <input
-                                  type="checkbox"
-                                  className="form-check-input"
-                                  id="wiz_single_appio_parallel"
-                                  checked={wizAppIoMode === 'parallel'}
+                              <div className="mb-0">
+                                <label className="form-label small">Modalità Co-consegna</label>
+                                <select
+                                  className="form-select form-select-sm"
+                                  value={wizAppIoMode}
                                   onChange={e => {
-                                    const checked = e.target.checked;
-                                    setWizAppIoMode(checked ? 'parallel' : 'none');
-                                    if (!checked) setWizPaymentEnabled(false);
+                                    const mode = e.target.value as 'none' | 'parallel' | 'exclusive';
+                                    setWizAppIoMode(mode);
+                                    if (mode === 'none') setWizPaymentEnabled(false);
                                   }}
-                                />
-                                <label className="form-check-label small fw-medium" htmlFor="wiz_single_appio_parallel">
-                                  Invia anche via App IO (co-consegna parallela, oltre a {channelLabel(wizChannel)})
-                                </label>
+                                >
+                                  <option value="none">Disabilitata (Invia solo via {channelLabel(wizChannel)})</option>
+                                  <option value="parallel">Parallela (Invia sia via {channelLabel(wizChannel)} che via App IO)</option>
+                                  <option value="exclusive">Esclusiva (Invia su App IO, ripiega su {channelLabel(wizChannel)} se non registrato)</option>
+                                </select>
                               </div>
-                              {wizAppIoMode === 'parallel' && (
+                              {wizAppIoMode !== 'none' && (
                                 <div className="mt-3">
                                   <label className="form-label small fw-bold text-dark mb-1">Servizio App IO *</label>
                                   <SearchableSelect
@@ -9448,7 +9453,7 @@ export function App(): React.JSX.Element {
                           </div>
                         </div>
 
-                        {(wizChannel === 'SEND' || wizChannel === 'APP_IO' || (wizAppIoMode === 'parallel' && singleAppIoActive)) && (
+                        {(wizChannel === 'SEND' || wizChannel === 'APP_IO' || (wizAppIoMode !== 'none' && singleAppIoActive)) && (
                           <div className="card border-0 rounded-3 mb-2 shadow-sm" style={{ background: '#f8f9fc' }}>
                             <div className="card-body p-2">
                               <div className="d-flex align-items-center gap-2 mb-2">
