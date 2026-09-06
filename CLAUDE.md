@@ -154,7 +154,15 @@ Le route operatore sono segmentate sotto `admin/*` (`admin/campaigns`, `admin/se
 
 ## CI/CD
 
-`.github/workflows/release.yml`: push su main → immagini `:dev`; tag `v*` → `:vX.Y.Z` + `:latest` su `ghcr.io/comune-di-montesilvano/comunicapa-*`. Namespace hardcoded lowercase (il nome org ha maiuscole e romperebbe il cache exporter buildx). Allegati: path fisso `/data/attachments` nel container, volume named `attachments_data`.
+`.github/workflows/release.yml`: triggera SOLO su tag `v*` (mai su push a main, nonostante il tag `dev` nel metadata-action — condizione mai raggiunta, riga corretta dopo audit). Push tag → `:vX.Y.Z` + `:latest` su `ghcr.io/comune-di-montesilvano/comunicapa-*`. Namespace hardcoded lowercase (il nome org ha maiuscole e romperebbe il cache exporter buildx). Allegati: path fisso `/data/attachments` nel container, volume named `attachments_data`.
+
+**`main` è protetto (dal 2026-09-06): required check `run-tests`, no force-push, no delete branch.** Push diretto a main viene RIFIUTATO — serve sempre branch + PR + CI verde + merge. `tests.yml` triggera anche su `pull_request` (non solo push a main), quindi il check gira già sulla PR prima del merge.
+
+**`tests.yml` usa pnpm v11.9.0/Node 26** (stesso pattern `--ignore-scripts` + `pnpm rebuild esbuild` dei Dockerfile, vedi sezione sotto) ed esegue anche `pnpm lint` (reale, non più placeholder — vedi `apps/*/eslint.config.{mjs,js}`) e `pnpm build` (stesso comando delle immagini Docker) prima dei test — un errore di compilazione o lint viene preso qui, non solo al build immagine su tag.
+
+**`release.yml` scansiona ogni immagine con Trivy** (CRITICAL/HIGH, report-only, risultati su tab Security) subito dopo il push su ghcr.
+
+**Tutte le Actions nei 3 workflow sono pinnate per commit SHA** (non tag mobile `@v7`), con commento `# vX` per leggibilità — dependabot (ecosistema `github-actions` già configurato) apre PR per bump futuri.
 
 **Tag pushato = solo build immagine, MAI deploy automatico.** Push+tag
 fanno partire CI che builda/pusha su ghcr — il container di produzione
@@ -455,6 +463,19 @@ Delimitatore `%%chiave%%` (doppio `%`, non singolo) — vedi `template.helper.ts
 `processTemplate()`. Un `%` singolo (percentuale in prosa, es. "60% del
 tributo") non forma mai un placeholder. Nessuna retrocompatibilità col vecchio
 delimitatore singolo: i template esistenti vanno riscritti.
+
+**Ogni valore sostituito in un placeholder HTML va escapato — bug XSS reale
+corretto.** `getVal()` in `processTemplate()` (e l'etichetta allegato da
+`resolveAttachmentLabel`) sostituivano `recipient.extraData`/campi fissi
+SENZA escaping HTML — un CSV destinatari con `<script>`/`<img onerror=...>`
+in una colonna finiva verbatim nel body HTML, sia nell'invio reale sia
+nell'anteprima admin (`dangerouslySetInnerHTML`, XSS eseguibile nella
+sessione dell'operatore). Fix: `escapeHtml()` in `template.helper.ts`
+applicata a ogni valore sostituito — MAI al markup del template stesso
+(scritto dall'operatore nell'editor rich-text). Qualunque nuovo placeholder/
+sostituzione futura deve passare da lì, non reinventare l'escaping altrove
+(un tentativo lato frontend era stato scritto ma mai wired — rimosso,
+la sanificazione va fatta una sola volta, a monte).
 
 **Oggetto per-destinatario da colonna CSV.** Se `channelConfig.csvMapping.subject`
 mappa una colonna, `resolveSubjectTemplate()` (`subject-mapping.util.ts`) usa
