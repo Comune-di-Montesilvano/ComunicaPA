@@ -517,7 +517,7 @@ export function App(): React.JSX.Element {
           logoutUrlObj.searchParams.set('id_token_hint', currentToken);
         }
         targetUrl = logoutUrlObj.toString();
-      } catch (e) {
+      } catch {
         const separator = oidcLogoutUrl.includes('?') ? '&' : '?';
         targetUrl = `${oidcLogoutUrl}${separator}post_logout_redirect_uri=${encodeURIComponent(returnUrl)}`;
         if (currentToken) {

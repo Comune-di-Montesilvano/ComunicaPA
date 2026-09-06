@@ -25,10 +25,10 @@ jobs:
     name: publiccode.yml validation
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Validate publiccode.yml
-        uses: italia/publiccode-parser-action@v1
+        uses: italia/publiccode-parser-action@0deab88c3f094aa12c5826e52ac2c4f176446821 # v1
         with:
           publiccode: publiccode.yml
           # Nessun logo/screenshot pubblicato oggi: evita falsi negativi sui

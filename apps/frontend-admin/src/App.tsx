@@ -4,9 +4,9 @@ import { TemplateEditor } from './components/TemplateEditor';
 import { SearchableSelect } from './components/SearchableSelect';
 import { SEND_ENTITY_TYPES, SEND_TAXONOMY_CATALOG } from './data/sendTaxonomy';
 import { COUNTRIES, matchCountry, isValidCap } from '@comunicapa/shared-types';
-import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, PieChart, Pie, Cell, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import {
-  Mail, MailOpen, MailCheck, Mails, Smartphone, Send, Globe, HelpCircle,
+  Mail, MailOpen, MailCheck, Mails, Smartphone, Send, HelpCircle,
   Hourglass, Truck, Inbox, Ban, Eye, CalendarCheck, Banknote, UserX, X, Clock,
   RotateCcw, ChevronLeft, ChevronRight, Loader2, Download,
   Pause, Check, MapPin, Settings2, Printer, ThumbsUp, RotateCw,
@@ -14,12 +14,12 @@ import {
   Plus, Server, User, TestTube, ToggleRight, ToggleLeft, Pencil, AtSign, Gauge,
   ArrowLeft, ArrowRight, Menu, Building2, Megaphone, LineChart as LineChartIcon, PieChart as PieChartIcon,
   Copy, CreditCard, FileSpreadsheet, FileText, Save, History, Info, Link, List,
-  Lock, Wand2, Search, Network, Plug, Reply, LogOut, SlidersHorizontal,
+  Lock, Wand2, Search, Network, Reply, LogOut, SlidersHorizontal,
   RefreshCw, Tag, UserCheck, Sparkles, Github,
   CheckCheck, Shield, Paperclip, Upload, Filter, Award, ExternalLink, Contact,
-  Play, FileArchive, Keyboard, Key, BookUser,
-  Minus, Star, Stamp, Settings, CircleUserRound, BarChart3, ShieldCheck, Rocket, ArrowDown, ArrowUp, ArrowUpDown,
-  Users, FolderOpen, Euro,
+  Play, FileArchive, Keyboard, Key,
+  Minus, Star, Stamp, CircleUserRound, BarChart3, ShieldCheck, Rocket, ArrowDown, ArrowUp, ArrowUpDown,
+  Users, Euro,
 } from 'lucide-react';
 
 declare global {
@@ -1132,6 +1132,18 @@ function resolvePostalContract(
 // before they are interpolated into a string that will be rendered via
 // dangerouslySetInnerHTML. Must NOT be applied to the operator's own
 // rich-text template markup, only to the substituted values.
+//
+// TROVATO NON CHIAMATO DA NESSUNO (audit ESLint 2026-09-06): esistono 3 usi
+// reali di dangerouslySetInnerHTML in questo file (bodyHtml preview wizard,
+// notifDetail.preview.bodyHtml, campaign.channelConfig['body']) che
+// interpolano contenuto per-destinatario (colonne CSV extraData) dentro il
+// template HTML SENZA passare da questa funzione — potenziale XSS se un CSV
+// destinatari contiene markup malevolo in una colonna sostituita nel
+// placeholder. Da verificare e decidere: o wire escapeHtml nei 3 punti sopra,
+// o determinare che il rischio è accettato (operatore autenticato, dato
+// comunque proprio dell'ente) e documentarlo esplicitamente. Non rimuovere
+// questa funzione finché la domanda non è stata chiusa.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -1849,7 +1861,7 @@ export function App(): React.JSX.Element {
   const [loadingCampaigns, setLoadingCampaigns] = useState(false);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
 
-  const [initialVersion, setInitialVersion] = useState<string | null>(null);
+  const [, setInitialVersion] = useState<string | null>(null);
   const [newVersionAvailable, setNewVersionAvailable] = useState<string | null>(null);
 
   // Campaign list filter and pagination state
@@ -3641,46 +3653,6 @@ export function App(): React.JSX.Element {
     }, 2000);
     return () => clearInterval(timer);
   }, [retryBulkJobId, retryBulkStatus?.status, selectedCampaignId]);
-
-  const handleCreateCampaign = async (nameVal: string, descVal: string, channelVal: string, configOverrides?: Record<string, any>) => {
-    try {
-      let channelConfig: Record<string, any> = configOverrides || {};
-      
-      if (!configOverrides) {
-        if (channelVal === 'EMAIL') {
-          const activeSmtp = mailConfigs.find(c => c.type === 'EMAIL' && c.active && c.isDefault)
-            ?? mailConfigs.find(c => c.type === 'EMAIL' && c.active);
-          channelConfig = { from: activeSmtp?.fromAddress || '', mailConfigId: activeSmtp?.id };
-        } else if (channelVal === 'PEC') {
-          const activePec = mailConfigs.find(c => c.type === 'PEC' && c.active && c.isDefault)
-            ?? mailConfigs.find(c => c.type === 'PEC' && c.active);
-          channelConfig = { from: activePec?.fromAddress || '', mailConfigId: activePec?.id };
-        } else if (channelVal === 'SEND') {
-          channelConfig = {};
-        }
-      }
-
-      const res = await fetch(`${ADMIN_API_BASE}/campaigns`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          name: nameVal,
-          description: descVal,
-          channelType: channelVal,
-          channelConfig,
-        }),
-      });
-
-      if (!res.ok) throw new Error('Errore durante la creazione della campagna');
-      const created = await res.json();
-      return created as Campaign;
-    } catch (err: any) {
-      throw new Error(err.message || 'Errore di connessione API.');
-    }
-  };
 
   // App IO Service Management handlers — persistiti lato server (IoServiceConfig)
   const handleAddIoService = async (e: React.FormEvent) => {
@@ -6469,7 +6441,7 @@ export function App(): React.JSX.Element {
             setWizLastSyncedMapping(null);
           }
 
-          if (Boolean(source.channelConfig?.wizSingleMode)) {
+          if (source.channelConfig?.wizSingleMode) {
             // wizCsvRows non è ancora aggiornato in questo punto della stessa closure
             // (setState non è visibile nel render corrente) — rileggiamo la singola riga
             // direttamente dal CSV appena fetchato via un secondo parse locale, sola lettura.
@@ -16566,31 +16538,6 @@ export function App(): React.JSX.Element {
                                 { label: 'Falliti', value: safeFailed, color: OUTCOME_COLORS['Falliti'] },
                                 ...(queuedCount > 0 ? [{ label: 'In coda', value: queuedCount, color: OUTCOME_COLORS['In coda'] }] : []),
                               ].sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
-
-                              const renderOutcomePie = () => (
-                                <>
-                                  <ResponsiveContainer width="100%" height={160}>
-                                    <PieChart>
-                                      <Pie
-                                        data={pieData}
-                                        dataKey="value"
-                                        nameKey="label"
-                                        cx="50%"
-                                        cy="50%"
-                                        outerRadius={65}
-                                        label={renderPiePercentLabel}
-                                        labelLine={false}
-                                      >
-                                        {pieData.map((entry) => (
-                                          <Cell key={entry.label} fill={entry.color} />
-                                        ))}
-                                      </Pie>
-                                      <Tooltip />
-                                    </PieChart>
-                                  </ResponsiveContainer>
-                                  {renderPieLegendPills(pieData)}
-                                </>
-                              );
 
                               if (campaign.channelType !== 'POSTAL') {
                                 return renderDonutCard("Esito Invio", pieData, "Nessun dato esito", true);
