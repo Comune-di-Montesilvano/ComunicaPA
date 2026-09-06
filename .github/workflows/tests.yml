@@ -7,6 +7,12 @@ on:
   pull_request:
     branches: [main]
 
+# Cancella run precedenti sullo stesso branch/PR quando arriva un nuovo push -
+# evita di sprecare minuti CI su commit gia' superati (push rapidi, force-push).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   run-tests:
     runs-on: ubuntu-latest
@@ -31,6 +37,15 @@ jobs:
 
       - name: Build shared-types
         run: pnpm --filter @comunicapa/shared-types run build
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Type-check backend spec files
+        run: pnpm --filter backend exec tsc -p tsconfig.spec.json --noEmit
+
+      - name: Build (stesso comando usato nelle immagini Docker)
+        run: pnpm build
 
       - name: Run integrated tests
         run: pnpm test

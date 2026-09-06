@@ -8,6 +8,7 @@ on:
 permissions:
   contents: read
   packages: write
+  security-events: write
 
 jobs:
   build-push:
@@ -55,3 +56,21 @@ jobs:
             APP_VERSION=${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}
           cache-from: type=registry,ref=ghcr.io/comune-di-montesilvano/comunicapa-${{ matrix.app }}:buildcache
           cache-to: type=registry,ref=ghcr.io/comune-di-montesilvano/comunicapa-${{ matrix.app }}:buildcache,mode=max
+
+      # Report-only: non blocca la release (exit-code 0), risultati visibili
+      # nella tab Security del repo. Scansiona l'immagine appena pushata,
+      # taggata con il tag git corrente (sempre presente, trigger solo su tag).
+      - name: Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ghcr.io/comune-di-montesilvano/comunicapa-${{ matrix.app }}:${{ github.ref_name }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-${{ matrix.app }}
