@@ -64,7 +64,8 @@ Dettaglio completo delle combinazioni: [`docs/superpowers/specs/2026-07-17-matri
 
 Oltre all'invio massivo, il portale operatori offre:
 
-- **Verifica Anagrafica**: ricerca il domicilio digitale reale di un destinatario (ANPR, INAD, App IO, Registro Imprese per le partite IVA) prima di scegliere il canale, evitando dirottamenti a sorpresa.
+- **Invio Singolo**: invio a un solo destinatario senza caricare un CSV — stessa procedura guidata, stesse regole di validazione (formato codice fiscale/email, lunghezza minima testo) e stessi canali dell'invio massivo, per comunicazioni puntuali fuori campagna.
+- **Verifica Anagrafica**: ricerca il domicilio digitale reale di un destinatario (ANPR, INAD, App IO, Registro Imprese per le partite IVA) prima di scegliere il canale, evitando dirottamenti a sorpresa. Le interrogazioni ad ANPR e INAD passano dalla **Piattaforma Digitale Nazionale Dati (PDND)**: autenticazione tramite voucher (client assertion firmata, non semplice chiave statica) verso i registri nazionali, con audit obbligatorio di ogni ricerca (operatore + codice fiscale cercato).
 - **Arricchimento Tracciati**: converte un tracciato Maggioli (CSV + allegati PDF) in un CSV pronto per l'invio, estraendo automaticamente indirizzo postale e dati di pagamento pagoPA dai PDF (codice a barre/QR), con correzione manuale riga per riga in caso di dati mancanti.
 - **Ricerca Notifiche**: consultazione trasversale di tutte le notifiche inviate, per destinatario o codice fiscale, con dettaglio esiti per canale.
 - **Statistiche**: andamento invii, tasso di successo per canale, costi di postalizzazione nel tempo.
