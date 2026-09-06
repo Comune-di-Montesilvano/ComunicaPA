@@ -24,16 +24,22 @@ jobs:
       - name: Setup PNPM
         uses: pnpm/action-setup@v6
         with:
-          version: 9
+          version: 11.9.0
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 26
           cache: 'pnpm'
 
+      # pnpm v11 blocca i lifecycle script per default (ERR_PNPM_IGNORED_BUILDS)
+      # - stesso pattern gia' in uso nei Dockerfile (vedi CLAUDE.md). esbuild
+      # (dipendenza vite) va ricostruito esplicitamente dopo l'install.
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Rebuild esbuild (necessario per vite, bloccato da --ignore-scripts)
+        run: pnpm rebuild esbuild
 
       - name: Build shared-types
         run: pnpm --filter @comunicapa/shared-types run build

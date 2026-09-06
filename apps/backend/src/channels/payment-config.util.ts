@@ -56,7 +56,9 @@ export function parseDateToIso(dateStr?: string): string | null {
     if (!isNaN(d.getTime())) {
       return d.toISOString();
     }
-  } catch {}
+  } catch {
+    // data non parsabile: fallback a null gestito sotto
+  }
 
   return null;
 }

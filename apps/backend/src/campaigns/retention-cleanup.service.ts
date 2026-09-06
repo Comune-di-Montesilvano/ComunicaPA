@@ -41,7 +41,7 @@ export class RetentionCleanupService {
     let entries: string[];
     try {
       entries = await readdir(uploadsRoot);
-    } catch (err) {
+    } catch {
       return; // uploads/ non ancora creata: niente da pulire
     }
 
@@ -52,7 +52,7 @@ export class RetentionCleanupService {
       try {
         await rm(getUploadsDir(campaignId), { recursive: true, force: true });
         removed++;
-      } catch (err) {
+      } catch {
         this.logger.warn(`Cartella allegati orfana non eliminabile: ${campaignId}`);
       }
     }
@@ -101,7 +101,7 @@ export class RetentionCleanupService {
             const filePath = join(getUploadsDir(recipient.campaignId), customFilename);
             try {
               await unlink(filePath);
-            } catch (err) {
+            } catch {
               this.logger.warn(`File già assente o non eliminabile: ${filePath}`);
             }
           }

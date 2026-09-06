@@ -1191,7 +1191,7 @@ export class CampaignsService {
             if (!filename) continue;
             try {
               await unlink(join(dir, filename));
-            } catch (err) {
+            } catch {
               this.logger.warn(`Allegato già assente o non eliminabile: ${filename}`);
             }
           }
