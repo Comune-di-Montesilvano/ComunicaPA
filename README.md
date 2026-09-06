@@ -12,7 +12,8 @@ ComunicaPA consente agli enti pubblici di inviare comunicazioni di massa (TARI, 
 
 - [Perché ComunicaPA](#perché-comunicapa)
 - [Canali supportati](#canali-supportati)
-- [Stack tecnologico](#stack-tecnologico)
+- [Altre funzionalità](#altre-funzionalità)
+- [Componenti tecnologici](#componenti-tecnologici)
 - [Requisiti](#requisiti)
 - [Avvio rapido](#avvio-rapido)
 - [Configurazione](#configurazione)
@@ -59,14 +60,25 @@ il canale legalmente valido (PEC) è sempre garantito.
 
 Dettaglio completo delle combinazioni: [`docs/superpowers/specs/2026-07-17-matrice-comportamenti-campagne-design.md`](docs/superpowers/specs/2026-07-17-matrice-comportamenti-campagne-design.md).
 
-## Stack tecnologico
+## Altre funzionalità
 
-- **Backend:** NestJS 10 + TypeScript (porta 8080) — API REST + worker asincroni BullMQ
+Oltre all'invio massivo, il portale operatori offre:
+
+- **Verifica Anagrafica**: ricerca il domicilio digitale reale di un destinatario (ANPR, INAD, App IO, Registro Imprese per le partite IVA) prima di scegliere il canale, evitando dirottamenti a sorpresa.
+- **Arricchimento Tracciati**: converte un tracciato Maggioli (CSV + allegati PDF) in un CSV pronto per l'invio, estraendo automaticamente indirizzo postale e dati di pagamento pagoPA dai PDF (codice a barre/QR), con correzione manuale riga per riga in caso di dati mancanti.
+- **Ricerca Notifiche**: consultazione trasversale di tutte le notifiche inviate, per destinatario o codice fiscale, con dettaglio esiti per canale.
+- **Statistiche**: andamento invii, tasso di successo per canale, costi di postalizzazione nel tempo.
+- **Motori**: pannello di controllo delle code di invio per canale — pausa/ripresa, elenco job falliti, log di dettaglio per singolo invio.
+- **Registro Attività**: log di controllo per ogni ricerca su un registro anagrafico esterno (ANPR/INAD/App IO/Registro Imprese) — chi ha cercato quale codice fiscale e quando.
+
+## Componenti tecnologici
+
+- **Backend:** NestJS 12 (ESM) + TypeScript (porta 8080) — API REST + worker asincroni BullMQ
 - **Frontend Admin:** React 19 + Vite 6 — portale operatori PA (porta 3000)
 - **Frontend Cittadino:** React 19 + Vite 6 — portale accesso cittadini, SPID/CIE (porta 3001)
 - **Database:** PostgreSQL 17
 - **Coda:** Redis 7 + BullMQ
-- **Monorepo:** pnpm workspaces (build/test/lint interamente dentro Docker — nessun tool richiesto sull'host)
+- **Monorepo:** pnpm workspaces (compilazione/test/controllo qualità interamente dentro Docker — nessuno strumento richiesto sull'host)
 
 ## Requisiti
 
@@ -93,7 +105,7 @@ docker compose up -d
 
 ## Configurazione
 
-Il file `.env` contiene **solo** variabili di bootstrap (porte, credenziali PostgreSQL, secret, LDAP, URL pubblico) — vedi `.env.example` per l'elenco completo con documentazione inline. Tutto il resto (branding dell'ente, server SMTP/PEC, provider App IO/SEND/Postalizzazione, OIDC SPID/CIE, retention allegati) si configura dalla UI admin (menu **Impostazioni**) ed è persistito in database, con i secret cifrati.
+Il file `.env` contiene **solo** variabili di avvio (porte, credenziali PostgreSQL, secret, LDAP, URL pubblico) — vedi `.env.example` per l'elenco completo con documentazione inline. Tutto il resto (branding dell'ente, server SMTP/PEC, provider App IO/SEND/Postalizzazione, OIDC SPID/CIE, retention allegati) si configura dalla UI admin (menu **Impostazioni**) ed è persistito in database, con i secret cifrati.
 
 In produzione sono obbligatori (il compose si rifiuta di partire senza): `JWT_SECRET`, `DOWNLOAD_LINK_SECRET` — generali con `openssl rand -hex 32`.
 
@@ -102,27 +114,27 @@ In produzione sono obbligatori (il compose si rifiuta di partire senza): `JWT_SE
 Tutto il ciclo di sviluppo avviene dentro Docker.
 
 ```bash
-# Avvia stack di sviluppo con hot-reload (richiede COMPOSE_FILE in .env, vedi .env.example)
+# Avvia stack di sviluppo con ricarica automatica (richiede COMPOSE_FILE in .env, vedi .env.example)
 docker compose up -d
 
 # Log in tempo reale
 docker compose logs -f backend
 
-# Rebuild dopo modifica a package.json o Dockerfile
+# Ricompila dopo una modifica a package.json o Dockerfile
 docker compose up -d --build backend
 
-# Test backend (sempre --maxWorkers=2)
-docker compose exec backend node_modules/.bin/jest --maxWorkers=2
+# Test backend (worker limitati a 2 in vitest.config.ts, non serve un flag)
+docker compose exec backend node_modules/.bin/vitest run
 
-# Type-check
+# Controllo dei tipi
 docker compose exec backend node_modules/.bin/tsc --noEmit
 docker compose exec frontend-admin node_modules/.bin/tsc -p tsconfig.app.json --noEmit
 
-# Reset completo (inclusi volumi DB)
+# Ripristino completo (inclusi i volumi del database)
 docker compose down -v
 ```
 
-Hot-reload attivo: le modifiche ai file sorgente in `apps/*/src/` sono riflesse nei container tramite bind mount (il watch di NestJS a volte non le rileva su Windows — vedi `CLAUDE.md`).
+Ricarica automatica attiva: le modifiche ai file sorgente in `apps/*/src/` sono riflesse nei container tramite bind mount (il watch di NestJS a volte non le rileva su Windows — vedi `CLAUDE.md`).
 
 Per il contesto architetturale completo (gotcha, pattern interni, integrazioni SEND/POSTAL/App IO, migration, CI/CD) vedi **[`CLAUDE.md`](CLAUDE.md)** — pensato sia per Claude Code sia come riferimento tecnico per chi contribuisce.
 
@@ -131,7 +143,7 @@ Per il contesto architetturale completo (gotcha, pattern interni, integrazioni S
 ```
 apps/
 ├── backend/          # API REST + worker asincroni BullMQ (Strategy Pattern per canale)
-├── frontend-admin/   # Portale operatori PA — wizard invio massivo, impostazioni, motori
+├── frontend-admin/   # Portale operatori PA — procedura guidata invio massivo, impostazioni, motori
 └── frontend-citizen/ # Portale cittadini — login SPID/CIE, notifiche ricevute
 packages/
 └── shared-types/     # Interfacce TypeScript condivise (@comunicapa/shared-types)
@@ -139,23 +151,23 @@ services/
 └── pdf-extractor/    # Microservizio Python (FastAPI) per estrazione dati da PDF/allegati
 ```
 
-**Flusso:** CSV upload → stream processing (nessun caricamento in memoria) → coda BullMQ (Redis) → worker asincroni → Strategy Pattern per canale (PEC/Email/App IO/SEND/Postal), con co-consegna opzionale su App IO in parallelo al canale primario.
+**Flusso:** caricamento CSV → elaborazione a flusso (nessun caricamento in memoria) → coda BullMQ (Redis) → worker asincroni → Strategy Pattern per canale (PEC/Email/App IO/SEND/Postal), con co-consegna opzionale su App IO in parallelo al canale primario.
 
 **Autenticazione:** LDAP/Active Directory per operatori PA; OIDC (SPID/CIE, Authorization Code + PKCE) per cittadini.
 
 ## API esterna — caricamento puntuale
 
-Oltre al wizard admin (invii massivi da CSV), un sistema PA esterno può lanciare **una notifica puntuale per chiamata** (qualunque canale: PEC/Email/App IO/SEND/Postalizzazione) via API REST autenticata con API key, senza passare dal portale operatore:
+Oltre alla procedura guidata admin (invii massivi da CSV), un sistema PA esterno può lanciare **una notifica puntuale per chiamata** (qualunque canale: PEC/Email/App IO/SEND/Postalizzazione) via API REST autenticata con chiave API, senza passare dal portale operatore:
 
 - `GET /external/v1/capabilities` — scopre canali e opzioni realmente configurati sull'istanza (nessun tentativo alla cieca)
 - `POST /external/v1/domicilio/cerca` — verifica il domicilio digitale reale del destinatario (ANPR/INAD/App IO) prima di scegliere il canale, evitando dirottamenti a sorpresa
-- `POST /external/v1/attachments/upload/{init,chunk,complete}` — upload allegato a chunk (obbligatorio per SEND/Postalizzazione)
-- `POST /external/v1/notifications` — crea e lancia la notifica (risposta asincrona, `campaignId` per il polling)
+- `POST /external/v1/attachments/upload/{init,chunk,complete}` — caricamento allegato a blocchi (obbligatorio per SEND/Postalizzazione)
+- `POST /external/v1/notifications` — crea e lancia la notifica (risposta asincrona, `campaignId` per l'interrogazione periodica dello stato)
 - `GET /external/v1/notifications/{campaignId}` — stato della notifica
 
-Tutte le risposte sono **sempre HTTP 200** (esito nel campo `success` del body — un reverse proxy di produzione sostituisce altrimenti il body delle risposte non-2xx con una pagina HTML). Gestione dei client (creazione/revoca API key) dalla UI admin, menu **Impostazioni → API Esterne**.
+Tutte le risposte sono **sempre HTTP 200** (esito nel campo `success` del body — un proxy inverso di produzione sostituisce altrimenti il body delle risposte non-2xx con una pagina HTML). Gestione dei client (creazione/revoca chiave API) dalla UI admin, menu **Impostazioni → API Esterne**.
 
-I path sopra sono quelli interni al backend (`apps/backend/src/external-api/`); un chiamante esterno reale li raggiunge tramite qualunque path pubblico la propria infrastruttura instrada verso questo backend — nello stesso deployment di riferimento di questo repo, tramite il prefisso `/api/` con strip lato nginx (vedi `apps/backend/openapi/external-api.yaml`, `servers: /api/external/v1`), ma un'installazione diversa può esporlo diversamente.
+I percorsi sopra sono quelli interni al backend (`apps/backend/src/external-api/`); un chiamante esterno reale li raggiunge tramite qualunque percorso pubblico la propria infrastruttura instrada verso questo backend — nello stesso ambiente di riferimento di questo repository, tramite il prefisso `/api/` con rimozione del prefisso lato nginx (vedi `apps/backend/openapi/external-api.yaml`, `servers: /api/external/v1`), ma un'installazione diversa può esporlo diversamente.
 
 Specifica completa: [`apps/backend/openapi/external-api.yaml`](apps/backend/openapi/external-api.yaml).
 
@@ -166,9 +178,9 @@ ComunicaPA è distribuito secondo le linee guida AgID per il riuso del software 
 Per adottarlo in un altro ente:
 
 1. **Fork o clone** di questo repository — nessuna dipendenza dall'infrastruttura del Comune di Montesilvano, tutto lo stack (incluso il database) gira in Docker autoconsistente.
-2. **Configurazione bootstrap** via `.env` (porte, secret, LDAP/AD dell'ente) — vedi [Configurazione](#configurazione).
+2. **Configurazione di avvio** via `.env` (porte, secret, LDAP/AD dell'ente) — vedi [Configurazione](#configurazione).
 3. **Branding e integrazioni specifiche dell'ente** (logo, provider SMTP/PEC, App IO, SEND, Postalizzazione, OIDC SPID/CIE) si configurano interamente dalla UI admin dopo il primo avvio, senza modificare codice.
-4. **Immagini Docker pronte** pubblicate su `ghcr.io/comune-di-montesilvano/comunicapa-*` a ogni release (`docker-compose.yml` in produzione le usa direttamente, senza build locale).
+4. **Immagini Docker pronte** pubblicate su `ghcr.io/comune-di-montesilvano/comunicapa-*` a ogni release (`docker-compose.yml` in produzione le usa direttamente, senza compilazione locale).
 
 Per domande su un'adozione o per segnalare che il software è in uso presso un altro ente (campo `usedBy` di `publiccode.yml`), contattare l'ente titolare: **supporto@comune.montesilvano.pe.it**.
 
@@ -176,8 +188,8 @@ Per domande su un'adozione o per segnalare che il software è in uso presso un a
 
 Issue e pull request sono benvenute. Prima di aprire una PR:
 
-1. Verifica che la suite test passi (`docker compose exec backend node_modules/.bin/jest --maxWorkers=2`)
-2. Verifica il type-check di backend e frontend
+1. Verifica che la suite test passi (`docker compose exec backend node_modules/.bin/vitest run`)
+2. Verifica il controllo dei tipi di backend e frontend
 3. Leggi `CLAUDE.md` per i pattern e i gotcha del progetto (evita di reintrodurre bug già risolti)
 
 ## Licenza
