@@ -264,7 +264,7 @@ export class CampaignsService {
    * passare mai true per il rendering mostrato al cittadino stesso).
    */
   async renderMessageForRecipient(recipientId: string, linkChannelTag?: string, preview = true): Promise<PreviewMessageResult> {
-    const recipient = await this.recipientRepo.findOne({ where: { id: recipientId }, relations: ['campaign'] });
+    const recipient = await this.recipientRepo.findOne({ where: { id: recipientId }, relations: { campaign: true } });
     if (!recipient) throw new NotFoundException(`Recipient ${recipientId} not found`);
 
     const campaign = recipient.campaign;
@@ -283,7 +283,7 @@ export class CampaignsService {
    * distinto dal contenuto (lettera POSTAL, PEC, ecc.) del canale primario.
    */
   async renderAppIoCoDeliveryPreview(recipientId: string): Promise<PreviewMessageResult | null> {
-    const recipient = await this.recipientRepo.findOne({ where: { id: recipientId }, relations: ['campaign'] });
+    const recipient = await this.recipientRepo.findOne({ where: { id: recipientId }, relations: { campaign: true } });
     if (!recipient) throw new NotFoundException(`Recipient ${recipientId} not found`);
 
     const campaign = recipient.campaign;
@@ -581,7 +581,7 @@ export class CampaignsService {
 
     const recipients = await this.recipientRepo.find({
       where: { campaignId, status: RecipientStatus.PENDING },
-      select: ['id'],
+      select: { id: true },
     });
 
     if (recipients.length === 0) {
@@ -723,7 +723,7 @@ export class CampaignsService {
   ): Promise<Map<string, NotificationChannel>> {
     const fullRecipients = await this.recipientRepo.find({
       where: { id: In(recipients.map((r) => r.id)) },
-      select: ['id', 'codiceFiscale', 'pec', 'email'],
+      select: { id: true, codiceFiscale: true, pec: true, email: true },
     });
     const channelOverrides = new Map<string, NotificationChannel>();
     const CONCURRENCY = 5;
@@ -794,7 +794,7 @@ export class CampaignsService {
   ): Promise<{ launched: number }> {
     const fullRecipients = await this.recipientRepo.find({
       where: { id: In(recipients.map((r) => r.id)) },
-      select: ['id', 'codiceFiscale', 'pec', 'email'],
+      select: { id: true, codiceFiscale: true, pec: true, email: true },
     });
     const cfRecipients = fullRecipients.filter((r) => r.codiceFiscale && !isPartitaIva(r.codiceFiscale));
     const pivaRecipients = fullRecipients.filter((r) => r.codiceFiscale && isPartitaIva(r.codiceFiscale));
@@ -895,7 +895,7 @@ export class CampaignsService {
       const resultByCf = new Map(result.map((r) => [r.codiceFiscale, r]));
       const batchRecipients = await this.recipientRepo.find({
         where: { id: In(batch.recipientIds) },
-        select: ['id', 'codiceFiscale', 'pec', 'email'],
+        select: { id: true, codiceFiscale: true, pec: true, email: true },
       });
       for (const recipient of batchRecipients) {
         const match = recipient.codiceFiscale ? resultByCf.get(recipient.codiceFiscale) : undefined;
@@ -943,7 +943,7 @@ export class CampaignsService {
 
       const overriddenRecipients = await this.recipientRepo.find({
         where: { id: In([...inadCheck.batches.flatMap((b) => b.recipientIds), ...pivaRecipientIds]), status: RecipientStatus.PENDING },
-        select: ['id', 'pec', 'inadCheck'],
+        select: { id: true, pec: true, inadCheck: true },
       });
       const channelOverrides = new Map<string, NotificationChannel>();
       for (const r of overriddenRecipients) {
@@ -953,7 +953,7 @@ export class CampaignsService {
       }
       const allRecipients = await this.recipientRepo.find({
         where: { campaignId: campaign.id, status: RecipientStatus.PENDING },
-        select: ['id'],
+        select: { id: true },
       });
       await this.createAttemptsAndEnqueue(campaign, allRecipients, channelOverrides);
     }
@@ -1095,7 +1095,7 @@ export class CampaignsService {
 
     const cancelableRecipients = await this.recipientRepo.find({
       where: { campaignId, status: In([RecipientStatus.QUEUED, RecipientStatus.PENDING]) },
-      select: ['id', 'extraData', 'status'],
+      select: { id: true, extraData: true, status: true },
     });
     const cancelableById = new Map(cancelableRecipients.map((r) => [r.id, r]));
 
@@ -1245,7 +1245,7 @@ export class CampaignsService {
 
     const recipients = await this.recipientRepo.find({
       where: { campaignId, status: RecipientStatus.PENDING },
-      select: ['id'],
+      select: { id: true },
     });
     const { launched } = await this.createAttemptsAndEnqueue(campaign, recipients);
     campaign.status = CampaignStatus.QUEUED;
@@ -1259,7 +1259,7 @@ export class CampaignsService {
 
     const recipients = await this.recipientRepo.find({
       where: { campaignId },
-      select: ['downloadCount', 'lastDownloadedAt'],
+      select: { downloadCount: true, lastDownloadedAt: true },
     });
 
     const totalDownloaded = recipients.filter((r) => r.downloadCount > 0).length;
@@ -1301,7 +1301,7 @@ export class CampaignsService {
 
     const recipients = await this.recipientRepo.find({
       where: { campaignId },
-      select: ['id', 'status', 'inadCheck'],
+      select: { id: true, status: true, inadCheck: true },
     });
 
     const hasAppIo = !!resolveSecondaryAppIoConfig(campaign.channelConfig);
@@ -1340,7 +1340,7 @@ export class CampaignsService {
   private async buildAggregatedAppIoPayloads(recipientIds: string[]): Promise<Map<string, Record<string, unknown>>> {
     const allAttempts = await this.attemptRepo.find({
       where: { recipientId: In(recipientIds) },
-      select: ['recipientId', 'responsePayload'],
+      select: { recipientId: true, responsePayload: true },
     });
     const payloadByRecipient = new Map<string, Record<string, unknown>>();
     for (const a of allAttempts) {
@@ -1361,7 +1361,7 @@ export class CampaignsService {
 
     const recipients = await this.recipientRepo.find({
       where: { campaignId },
-      select: ['id', 'status'],
+      select: { id: true, status: true },
     });
     const toClassify = recipients.filter(
       (r) => r.status === RecipientStatus.SENT || r.status === RecipientStatus.FAILED,
@@ -1391,13 +1391,13 @@ export class CampaignsService {
 
     const sentRecipients = await this.recipientRepo.find({
       where: { campaignId, status: RecipientStatus.SENT },
-      select: ['id'],
+      select: { id: true },
     });
     if (sentRecipients.length === 0) return {};
 
     const firstAttempts = await this.attemptRepo.find({
       where: { recipientId: In(sentRecipients.map((r) => r.id)), attemptNumber: 1 },
-      select: ['recipientId', 'channelType', 'responsePayload'],
+      select: { recipientId: true, channelType: true, responsePayload: true },
     });
 
     // Raggruppa i canali effettivi per destinatario: un destinatario con co-delivery
@@ -1431,7 +1431,7 @@ export class CampaignsService {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
-    const recipients = await this.recipientRepo.find({ where: { campaignId }, select: ['id'] });
+    const recipients = await this.recipientRepo.find({ where: { campaignId }, select: { id: true } });
     if (recipients.length === 0) {
       return { queued: 0, protocollato: 0, inviato: 0, fallito: 0 };
     }
@@ -1439,7 +1439,7 @@ export class CampaignsService {
     const recipientIds = recipients.map((r) => r.id);
     const attempts = await this.attemptRepo.find({
       where: { recipientId: In(recipientIds) },
-      select: ['recipientId', 'attemptNumber', 'status', 'protocolledAt'],
+      select: { recipientId: true, attemptNumber: true, status: true, protocolledAt: true },
     });
 
     const latestByRecipient = new Map<string, NotificationAttempt>();
@@ -1506,7 +1506,7 @@ export class CampaignsService {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
-    const recipients = await this.recipientRepo.find({ where: { campaignId }, select: ['id', 'status', 'inadCheck'] });
+    const recipients = await this.recipientRepo.find({ where: { campaignId }, select: { id: true, status: true, inadCheck: true } });
     if (recipients.length === 0) return { sentCount: 0, combinations: [], postalNoDigitalDownloaded: 0 };
 
     const isPostal = campaign.channelType === 'POSTAL';
@@ -2424,7 +2424,7 @@ export class CampaignsService {
 
     const rows = await this.recipientRepo.find({
       where: { campaignId },
-      select: ['codiceFiscale', 'fullName', 'email', 'pec', 'status', 'downloadCount', 'lastDownloadedAt', 'extraData'],
+      select: { codiceFiscale: true, fullName: true, email: true, pec: true, status: true, downloadCount: true, lastDownloadedAt: true, extraData: true },
       order: { createdAt: 'ASC' },
     });
 
@@ -2444,7 +2444,7 @@ export class CampaignsService {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
-    const recipientIds = (await this.recipientRepo.find({ where: { campaignId }, select: ['id'] })).map((r) => r.id);
+    const recipientIds = (await this.recipientRepo.find({ where: { campaignId }, select: { id: true } })).map((r) => r.id);
     if (recipientIds.length === 0) return [];
 
     // Stesso pattern di getRecipientStats: due query separate invece di
@@ -2452,7 +2452,7 @@ export class CampaignsService {
     // stringa), riduzione "ultimo attempt per destinatario" in JS.
     const attempts = await this.attemptRepo.find({
       where: { recipientId: In(recipientIds), channelType: 'SEND' },
-      select: ['recipientId', 'attemptNumber', 'sendStatus', 'status'],
+      select: { recipientId: true, attemptNumber: true, sendStatus: true, status: true },
     });
 
     const latestByRecipient = new Map<string, NotificationAttempt>();
@@ -2476,7 +2476,7 @@ export class CampaignsService {
 
     const recipients = await this.recipientRepo.find({
       where: { campaignId },
-      select: ['id', 'codiceFiscale', 'fullName', 'extraData'],
+      select: { id: true, codiceFiscale: true, fullName: true, extraData: true },
       order: { createdAt: 'ASC' },
     });
     if (recipients.length === 0) return { hasAppIoCoDelivery: false, hasExternalId: false, rows: [] };
@@ -2525,14 +2525,14 @@ export class CampaignsService {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
-    const recipients = await this.recipientRepo.find({ where: { campaignId }, select: ['id', 'inadCheck'] });
+    const recipients = await this.recipientRepo.find({ where: { campaignId }, select: { id: true, inadCheck: true } });
     const postalRecipients = recipients.filter((r) => !r.inadCheck?.diverted);
     if (postalRecipients.length === 0) return [];
     const postalRecipientIds = postalRecipients.map((r) => r.id);
 
     const attempts = await this.attemptRepo.find({
       where: { recipientId: In(postalRecipientIds), channelType: 'POSTAL' },
-      select: ['recipientId', 'attemptNumber', 'postalStatus', 'status'],
+      select: { recipientId: true, attemptNumber: true, postalStatus: true, status: true },
     });
 
     const latestByRecipient = new Map<string, NotificationAttempt>();
@@ -2595,14 +2595,14 @@ export class CampaignsService {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
-    const recipients = await this.recipientRepo.find({ where: { campaignId }, select: ['id', 'inadCheck'] });
+    const recipients = await this.recipientRepo.find({ where: { campaignId }, select: { id: true, inadCheck: true } });
     const postalRecipients = recipients.filter((r) => !r.inadCheck?.diverted);
     if (postalRecipients.length === 0) return [];
     const postalRecipientIds = postalRecipients.map((r) => r.id);
 
     const attempts = await this.attemptRepo.find({
       where: { recipientId: In(postalRecipientIds), channelType: 'POSTAL' },
-      select: ['recipientId', 'attemptNumber', 'postalDeliveryStatus', 'status'],
+      select: { recipientId: true, attemptNumber: true, postalDeliveryStatus: true, status: true },
     });
 
     const latestByRecipient = new Map<string, NotificationAttempt>();
@@ -2625,12 +2625,12 @@ export class CampaignsService {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
-    const recipientIds = (await this.recipientRepo.find({ where: { campaignId }, select: ['id'] })).map((r) => r.id);
+    const recipientIds = (await this.recipientRepo.find({ where: { campaignId }, select: { id: true } })).map((r) => r.id);
     if (recipientIds.length === 0) return { campaignId, totalCostCents: 0, byChannel: [] };
 
     const attempts = await this.attemptRepo.find({
       where: { recipientId: In(recipientIds), channelType: In(['SEND', 'POSTAL']) },
-      select: ['recipientId', 'channelType', 'costCents', 'status'],
+      select: { recipientId: true, channelType: true, costCents: true, status: true },
     });
 
     const byChannelMap = new Map<string, { totalCostCents: number; uncalculatedCount: number }>();
@@ -2677,7 +2677,7 @@ export class CampaignsService {
       // attempt costato, per non sommare più volte un retry dello stesso
       // invio) moltiplicato per il numero di dirottati, quando esiste
       // almeno un invio POSTAL costato da cui ricavare una media.
-      const recipients = await this.recipientRepo.find({ where: { campaignId }, select: ['id', 'inadCheck'] });
+      const recipients = await this.recipientRepo.find({ where: { campaignId }, select: { id: true, inadCheck: true } });
       const recipientIds = recipients.map((r) => r.id);
       const divertedIds = new Set<string>(recipients.filter((r) => r.inadCheck?.diverted).map((r) => r.id));
 
@@ -2692,7 +2692,7 @@ export class CampaignsService {
 
       const postalAttempts = await this.attemptRepo.find({
         where: { recipientId: In(recipientIds), channelType: 'POSTAL' },
-        select: ['recipientId', 'attemptNumber', 'costCents'],
+        select: { recipientId: true, attemptNumber: true, costCents: true },
       });
       // Un solo costo per destinatario (l'attempt POSTAL costato più recente):
       // un retry rispedisce la STESSA lettera, sommare i costi di più
@@ -2728,13 +2728,13 @@ export class CampaignsService {
       return { campaignId, totalSavingCents: 0, postalNotEstimableCount: 0 };
     }
 
-    const recipients = await this.recipientRepo.find({ where: { campaignId }, select: ['id'] });
+    const recipients = await this.recipientRepo.find({ where: { campaignId }, select: { id: true } });
     const recipientIds = recipients.map((r) => r.id);
     if (recipientIds.length === 0) return { campaignId, totalSavingCents: 0, postalNotEstimableCount: 0 };
 
     const attempts = await this.attemptRepo.find({
       where: { recipientId: In(recipientIds), channelType: 'SEND' },
-      select: ['recipientId', 'costCents'],
+      select: { recipientId: true, costCents: true },
     });
     const costByRecipient = new Map<string, number>();
     for (const a of attempts) {
@@ -2772,7 +2772,7 @@ export class CampaignsService {
 
     const recipients = await this.recipientRepo.find({
       where: { campaignId },
-      select: ['id', 'codiceFiscale', 'fullName', 'email', 'pec', 'extraData'],
+      select: { id: true, codiceFiscale: true, fullName: true, email: true, pec: true, extraData: true },
     });
 
     let totalAmountCents = 0;
@@ -2794,7 +2794,7 @@ export class CampaignsService {
 
     const recipients = await this.recipientRepo.find({
       where: { campaignId },
-      select: ['id', 'codiceFiscale', 'fullName', 'extraData'],
+      select: { id: true, codiceFiscale: true, fullName: true, extraData: true },
       order: { createdAt: 'ASC' },
     });
     if (recipients.length === 0) return { hasAppIoCoDelivery: false, hasExternalId: false, rows: [] };
@@ -2872,7 +2872,7 @@ export class CampaignsService {
 
     const recipients = await this.recipientRepo.find({
       where: { campaignId: campaign.id, status: RecipientStatus.PENDING },
-      select: ['id', 'codiceFiscale', 'extraData'],
+      select: { id: true, codiceFiscale: true, extraData: true },
     });
 
     const missing: Array<{ recipientId: string; codiceFiscale: string; slotIndex: number; expectedFilename: string }> = [];
@@ -2925,7 +2925,7 @@ export class CampaignsService {
   async getReferencedAttachments(campaign: Campaign): Promise<Set<string>> {
     const recipients = await this.recipientRepo.find({
       where: { campaignId: campaign.id },
-      select: ['extraData'],
+      select: { extraData: true },
     });
     const attachmentsConfig = resolveAttachmentsConfig(campaign.channelConfig);
     const totalSlots = Math.max(attachmentsConfig.length, 1); // almeno un tentativo per il fallback legacy
@@ -3034,7 +3034,7 @@ export class CampaignsService {
 
     const linkedTestCampaign = await this.campaignRepo.findOneBy({ parentCampaignId: campaignId, isTest: true });
     if (linkedTestCampaign) {
-      const testRecipients = await this.recipientRepo.find({ where: { campaignId: linkedTestCampaign.id }, select: ['id'] });
+      const testRecipients = await this.recipientRepo.find({ where: { campaignId: linkedTestCampaign.id }, select: { id: true } });
       const testRecipientIds = testRecipients.map((r) => r.id);
       if (testRecipientIds.length > 0) {
         await this.attemptRepo.delete({ recipientId: In(testRecipientIds) });

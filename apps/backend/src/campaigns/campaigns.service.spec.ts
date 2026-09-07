@@ -886,8 +886,8 @@ describe('CampaignsService', () => {
       // Only create xxx.pdf, not xyz.pdf that r3 needs
       fs.writeFileSync(join(tmpDir, 'xxx.pdf'), '%PDF');
 
-      mockRecipientRepo.find.mockImplementation(({ select }: { select: string[] }) => {
-        if (select.includes('extraData')) {
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: { extraData?: boolean } }) => {
+        if (select.extraData) {
           return Promise.resolve([
             { id: 'r1', codiceFiscale: 'AAA1', extraData: { file: 'xxx.pdf' } },
             { id: 'r2', codiceFiscale: 'BBB2', extraData: { file: 'xxx.pdf' } },
@@ -920,8 +920,8 @@ describe('CampaignsService', () => {
       // Create all needed files
       fs.writeFileSync(join(tmpDir, 'xxx.pdf'), '%PDF');
 
-      mockRecipientRepo.find.mockImplementation(({ select }: { select: string[] }) => {
-        if (select.includes('extraData')) {
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: { extraData?: boolean } }) => {
+        if (select.extraData) {
           return Promise.resolve([{ id: 'r1', codiceFiscale: 'AAA1', extraData: { file: 'xxx.pdf' } }]);
         }
         return Promise.resolve([{ id: 'r1' }]);
@@ -943,8 +943,8 @@ describe('CampaignsService', () => {
       };
       mockCampaignRepo.findOneBy.mockResolvedValue(campaign);
       fs.writeFileSync(join(tmpDir, 'xxx.pdf'), '%PDF');
-      mockRecipientRepo.find.mockImplementation(({ select }: { select: string[] }) => {
-        if (select.includes('extraData')) {
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: { extraData?: boolean } }) => {
+        if (select.extraData) {
           return Promise.resolve([{ id: 'r1', codiceFiscale: 'AAA1', extraData: { file: 'xxx.pdf' } }]);
         }
         return Promise.resolve([{ id: 'r1' }]);
@@ -970,8 +970,8 @@ describe('CampaignsService', () => {
       };
       mockCampaignRepo.findOneBy.mockResolvedValue(campaign);
       fs.writeFileSync(join(tmpDir, 'xxx.pdf'), '%PDF');
-      mockRecipientRepo.find.mockImplementation(({ select }: { select: string[] }) => {
-        if (select.includes('extraData')) {
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: { extraData?: boolean } }) => {
+        if (select.extraData) {
           return Promise.resolve([{ id: 'r1', codiceFiscale: 'AAA1', extraData: { file: 'xxx.pdf' } }]);
         }
         return Promise.resolve([{ id: 'r1' }]);
@@ -994,8 +994,8 @@ describe('CampaignsService', () => {
       mockCampaignRepo.findOneBy.mockResolvedValue(campaign);
       fs.writeFileSync(join(tmpDir, 'xxx.pdf'), '%PDF');
       fs.writeFileSync(join(tmpDir, 'yyy.pdf'), '%PDF');
-      mockRecipientRepo.find.mockImplementation(({ select }: { select: string[] }) => {
-        if (select.includes('extraData')) {
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: { extraData?: boolean } }) => {
+        if (select.extraData) {
           return Promise.resolve([{ id: 'r1', codiceFiscale: 'AAA1', extraData: { file1: 'xxx.pdf', file2: 'yyy.pdf' } }]);
         }
         return Promise.resolve([{ id: 'r1' }]);
@@ -1018,8 +1018,8 @@ describe('CampaignsService', () => {
       };
       mockCampaignRepo.findOneBy.mockResolvedValue(campaign);
       fs.writeFileSync(join(tmpDir, 'xxx.pdf'), '%PDF');
-      mockRecipientRepo.find.mockImplementation(({ select }: { select: string[] }) => {
-        if (select.includes('extraData')) {
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: { extraData?: boolean } }) => {
+        if (select.extraData) {
           return Promise.resolve([{ id: 'r1', codiceFiscale: 'AAA1', extraData: { file: 'xxx.pdf' } }]);
         }
         return Promise.resolve([{ id: 'r1' }]);
@@ -1045,8 +1045,8 @@ describe('CampaignsService', () => {
       };
       mockCampaignRepo.findOneBy.mockResolvedValue(campaign);
       fs.writeFileSync(join(tmpDir, 'xxx.pdf'), '%PDF');
-      mockRecipientRepo.find.mockImplementation(({ select }: { select: string[] }) => {
-        if (select.includes('extraData')) {
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: { extraData?: boolean } }) => {
+        if (select.extraData) {
           return Promise.resolve([{ id: 'r1', codiceFiscale: 'AAA1', extraData: { file: 'xxx.pdf' } }]);
         }
         return Promise.resolve([{ id: 'r1' }]);
@@ -1078,8 +1078,8 @@ describe('CampaignsService', () => {
       mockSettings.get.mockImplementation(async (key?: string) => (key === 'inad.checkEnabled' ? true : null));
       const campaignEmail = { ...mockCampaign, id: 'c-inad-1', channelType: 'EMAIL', channelConfig: {} };
       mockCampaignRepo.findOneBy.mockResolvedValue(campaignEmail);
-      mockRecipientRepo.find.mockImplementation(({ select }: { select: string[] }) => {
-        if (select?.includes('extraData')) return Promise.resolve([]);
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: { extraData?: boolean } }) => {
+        if (select?.extraData) return Promise.resolve([]);
         return Promise.resolve([
           { id: 'r1', codiceFiscale: 'CF1', pec: null },
           { id: 'r2', codiceFiscale: 'CF2', pec: null },
@@ -1110,8 +1110,8 @@ describe('CampaignsService', () => {
       mockSettings.get.mockImplementation(async () => false);
       const campaignEmail = { ...mockCampaign, id: 'c-inad-2', channelType: 'EMAIL', channelConfig: {} };
       mockCampaignRepo.findOneBy.mockResolvedValue(campaignEmail);
-      mockRecipientRepo.find.mockImplementation(({ select }: { select: string[] }) => {
-        if (select?.includes('extraData')) return Promise.resolve([]);
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: { extraData?: boolean } }) => {
+        if (select?.extraData) return Promise.resolve([]);
         return Promise.resolve([{ id: 'r1' }]);
       });
 
@@ -1128,8 +1128,8 @@ describe('CampaignsService', () => {
         mockSettings.get.mockImplementation(async (key?: string) => (key === 'inad.checkEnabled' ? true : (key === 'send.environment' ? undefined : null)));
         const campaignSend = { ...mockCampaign, id: 'c-inad-3', channelType: 'SEND', channelConfig: { protocolla: true, attachments: [{ key: 'a', label: 'A' }] } };
         mockCampaignRepo.findOneBy.mockResolvedValue(campaignSend);
-        mockRecipientRepo.find.mockImplementation(({ select }: { select: string[] }) => {
-          if (select?.includes('extraData')) return Promise.resolve([{ id: 'r1', codiceFiscale: 'CF1', extraData: { a: 'x.pdf' } }]);
+        mockRecipientRepo.find.mockImplementation(({ select }: { select: { extraData?: boolean } }) => {
+          if (select?.extraData) return Promise.resolve([{ id: 'r1', codiceFiscale: 'CF1', extraData: { a: 'x.pdf' } }]);
           return Promise.resolve([{ id: 'r1' }]);
         });
 
@@ -1145,8 +1145,8 @@ describe('CampaignsService', () => {
       mockSettings.get.mockImplementation(async (key?: string) => (key === 'inad.checkEnabled' ? true : null));
       const campaignSingle = { ...mockCampaign, id: 'c-inad-4', channelType: 'EMAIL', channelConfig: { wizSingleMode: true } };
       mockCampaignRepo.findOneBy.mockResolvedValue(campaignSingle);
-      mockRecipientRepo.find.mockImplementation(({ select }: { select: string[] }) => {
-        if (select?.includes('extraData')) return Promise.resolve([]);
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: { extraData?: boolean } }) => {
+        if (select?.extraData) return Promise.resolve([]);
         return Promise.resolve([{ id: 'r1' }]);
       });
 
@@ -1169,8 +1169,8 @@ describe('CampaignsService', () => {
       const campaignEmail = { ...mockCampaign, id: 'c-bulk-1', channelType: 'EMAIL', channelConfig: {} };
       mockCampaignRepo.findOneBy.mockResolvedValue(campaignEmail);
       const manyRecipients = Array.from({ length: 150 }, (_, i) => ({ id: `r${i}`, codiceFiscale: `CF${i}` }));
-      mockRecipientRepo.find.mockImplementation(({ select }: { select: string[] }) => {
-        if (select?.includes('extraData')) return Promise.resolve([]);
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: { extraData?: boolean } }) => {
+        if (select?.extraData) return Promise.resolve([]);
         return Promise.resolve(manyRecipients);
       });
       mockInadService.startBulkExtraction.mockResolvedValue({ id: 'batch-1' });
@@ -1272,8 +1272,8 @@ describe('CampaignsService', () => {
       const campaignEmail = { ...mockCampaign, id: 'c-bulk-nocf', channelType: 'EMAIL', channelConfig: {} };
       mockCampaignRepo.findOneBy.mockResolvedValue(campaignEmail);
       const manyRecipientsNoCf = Array.from({ length: 150 }, (_, i) => ({ id: `r${i}`, codiceFiscale: null }));
-      mockRecipientRepo.find.mockImplementation(({ select }: { select: string[] }) => {
-        if (select?.includes('extraData')) return Promise.resolve([]);
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: { extraData?: boolean } }) => {
+        if (select?.extraData) return Promise.resolve([]);
         return Promise.resolve(manyRecipientsNoCf);
       });
       mockAttemptRepo.createQueryBuilder.mockReturnValue({
@@ -1599,7 +1599,7 @@ describe('CampaignsService', () => {
 
       expect(mockAttemptRepo.find).toHaveBeenCalledWith({
         where: { recipientId: In(['r-appio-despite-fail']) },
-        select: ['recipientId', 'responsePayload'],
+        select: { recipientId: true, responsePayload: true },
       });
       expect(result.sentCount).toBe(1);
       expect(result.combinations).toEqual([{ channels: ['APP_IO'], count: 1, sentSuccessfully: true }]);
@@ -3082,7 +3082,7 @@ describe('CampaignsService.getDownloadReportRows', () => {
 
     expect(recipientRepoMock.find).toHaveBeenCalledWith({
       where: { campaignId: 'c1' },
-      select: ['codiceFiscale', 'fullName', 'email', 'pec', 'status', 'downloadCount', 'lastDownloadedAt', 'extraData'],
+      select: { codiceFiscale: true, fullName: true, email: true, pec: true, status: true, downloadCount: true, lastDownloadedAt: true, extraData: true },
       order: { createdAt: 'ASC' },
     });
     expect(result).toEqual({

@@ -86,7 +86,7 @@ export class CitizenService {
     // dall'operatore, visibile in anteprima sul portale cittadino).
     const recipients = await this.recipientRepo.find({
       where: { codiceFiscale: codiceFiscale.toUpperCase().trim(), campaign: { status: Not(CampaignStatus.DRAFT) } },
-      relations: ['campaign', 'attempts'],
+      relations: { campaign: true, attempts: true },
       order: { createdAt: 'DESC' },
     });
     return Promise.all(recipients.map((r) => this.toCitizenDto(r)));
@@ -99,7 +99,7 @@ export class CitizenService {
         codiceFiscale: codiceFiscale.toUpperCase().trim(),
         campaign: { status: Not(CampaignStatus.DRAFT) },
       },
-      relations: ['campaign', 'attempts'],
+      relations: { campaign: true, attempts: true },
     });
 
     if (!recipient) {

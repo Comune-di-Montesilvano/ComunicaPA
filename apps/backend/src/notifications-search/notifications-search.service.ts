@@ -100,7 +100,7 @@ export class NotificationsSearchService {
   async getDetail(recipientId: string): Promise<NotificationDetailDto> {
     const recipient = await this.recipientRepo.findOne({
       where: { id: recipientId },
-      relations: ['campaign'],
+      relations: { campaign: true },
     });
     if (!recipient) throw new NotFoundException(`Recipient ${recipientId} not found`);
 
@@ -237,7 +237,7 @@ export class NotificationsSearchService {
    * non un download del cittadino.
    */
   async downloadAttachment(recipientId: string, index: number): Promise<{ buffer: Buffer; filename: string }> {
-    const recipient = await this.recipientRepo.findOne({ where: { id: recipientId }, relations: ['campaign'] });
+    const recipient = await this.recipientRepo.findOne({ where: { id: recipientId }, relations: { campaign: true } });
     if (!recipient) throw new NotFoundException(`Recipient ${recipientId} not found`);
 
     const buffer = await this.attachmentService.generatePdfBuffer(recipient, index);

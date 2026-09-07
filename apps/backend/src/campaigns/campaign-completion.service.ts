@@ -63,7 +63,7 @@ export class CampaignCompletionService {
     const child = await this.campaignRepo.findOneBy({ parentCampaignId, isTest: true });
     if (!child) return;
 
-    const recipients = await this.recipientRepo.find({ where: { campaignId: child.id }, select: ['id'] });
+    const recipients = await this.recipientRepo.find({ where: { campaignId: child.id }, select: { id: true } });
     const recipientIds = recipients.map((r) => r.id);
     if (recipientIds.length > 0) {
       await this.attemptRepo.delete({ recipientId: In(recipientIds) });

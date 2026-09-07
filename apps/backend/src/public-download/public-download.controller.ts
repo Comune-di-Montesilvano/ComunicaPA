@@ -55,7 +55,7 @@ export class PublicDownloadController {
 
     const recipient = await this.recipientRepo.findOne({
       where: { id: recipientId },
-      relations: ['campaign'],
+      relations: { campaign: true },
     });
     if (!recipient || recipient.attachmentDeletedAt) {
       throw new GoneException('Allegato non più disponibile');
