@@ -154,6 +154,25 @@ Le route operatore sono segmentate sotto `admin/*` (`admin/campaigns`, `admin/se
 
 ## CI/CD
 
+## Dependabot — bump "a scaglioni" su pacchetti fratelli, verificare sempre l'intera famiglia
+
+Dependabot bumpa un pacchetto per volta: un major su un solo membro di
+una famiglia (`@tiptap/starter-kit` senza `@tiptap/react`/
+`@tiptap/extension-link`) lascia versioni incrociate nell'albero —
+doppio `@tiptap/core` risolto, TS rifiuta i tipi (`ChainedCommands`
+senza `toggleBold` ecc.), pur senza errore a runtime. Prima di mergiare
+un major su un pacchetto con "fratelli" nello stesso `package.json`,
+allinearli tutti alla stessa major a mano, poi `pnpm install
+--lockfile-only` (pattern Docker già noto) e riverificare la build.
+
+**Merge sequenziale di più PR dependabot**: dopo ogni merge, le PR
+successive passano da `mergeable:true` a `CONFLICTING`/`BEHIND` (lockfile
+cambiato) — un solo `@dependabot rebase` non basta se altre merge
+arrivano nel frattempo, va ripetuto finché `gh pr view N --json
+mergeStateStatus` non torna `CLEAN` (non fidarsi del solo `mergeable`,
+resta `MERGEABLE` anche con branch behind se `strict` non lo blocca
+ancora).
+
 `.github/workflows/release.yml`: triggera SOLO su tag `v*` (mai su push a main, nonostante il tag `dev` nel metadata-action — condizione mai raggiunta, riga corretta dopo audit). Push tag → `:vX.Y.Z` + `:latest` su `ghcr.io/comune-di-montesilvano/comunicapa-*`. Namespace hardcoded lowercase (il nome org ha maiuscole e romperebbe il cache exporter buildx). Allegati: path fisso `/data/attachments` nel container, volume named `attachments_data`.
 
 **`main` è protetto (dal 2026-09-06): required check `run-tests`, no force-push, no delete branch.** Push diretto a main viene RIFIUTATO — serve sempre branch + PR + CI verde + merge. `tests.yml` triggera anche su `pull_request` (non solo push a main), quindi il check gira già sulla PR prima del merge.
@@ -1229,6 +1248,15 @@ file spec separati.** Aggiungere un parametro al costruttore non basta patchare 
 `createTestingModule` nell'intero file E in tutto `src/` per lo stesso service prima di considerare il fix
 completo — bug reale: `campaigns.service.spec.ts` aveva 12 builder indipendenti, più un tredicesimo in
 `campaigns.service.cost.spec.ts`, scoperti solo eseguendo la suite completa dopo un fix parziale.
+
+## TypeORM v1 — select/relations vogliono forma oggetto, non più string[]
+
+`FindOptionsSelect`/`FindOptionsRelations` in typeorm 1.x rifiutano
+`select: ['a','b']`/`relations: ['a','b']` (`TS2559: no properties in
+common`) — serve `select: { a: true, b: true }`. Bug reale: un mock di
+test che leggeva `select.includes('campo')` per emulare la select va
+riscritto come `select.campo` — non solo il codice prod, anche i mock
+che leggono l'oggetto `select`/`relations` passato al repo.
 
 ## TypeORM — leftJoinAndSelect + orderBy + take, bug interno
 
