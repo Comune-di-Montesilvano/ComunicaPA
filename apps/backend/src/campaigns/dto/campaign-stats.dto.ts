@@ -194,7 +194,20 @@ export interface CampaignCostDto {
 
 export interface CampaignCostSavingsDto {
   campaignId: string;
-  /** Somma dei risparmi calcolabili (solo destinatari SEND dirottati/skippati) — vedi design doc per il perché POSTAL non è incluso. */
+  /**
+   * Semantica diversa per canale (getCampaignCostSavings, campaigns.service.ts) —
+   * NON è sempre un risparmio "da dirottamento", la UI deve etichettarlo di
+   * conseguenza (bug reale corretto: label unica "da dirottamento" mostrata
+   * anche per SEND):
+   * - SEND: per destinatario, `send.digitalBaseFeeCents` (costo nozionale di
+   *   un invio tradizionale) meno il costo SEND realmente sostenuto — non ha
+   *   nulla a che fare con INAD/dirottamento (SEND risolve il domicilio da
+   *   sé, vedi matrice comportamenti campagne).
+   * - POSTAL: costo medio delle spedizioni POSTAL realmente inviate in
+   *   questa campagna, moltiplicato per il numero di destinatari dirottati
+   *   (INAD su PEC, o App IO esclusiva riuscita) — questo sì è un risparmio
+   *   da dirottamento vero e proprio.
+   */
   totalSavingCents: number;
   /** Numero di destinatari POSTAL dirottati per cui il risparmio non è stimabile (mostrato N/D in UI). */
   postalNotEstimableCount: number;

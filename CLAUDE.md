@@ -96,6 +96,18 @@ docker exec comunicapa-postgres-1 psql -U comunicapa -d comunicapa_db -c "CREATE
 docker exec -e DATABASE_URL="postgresql://comunicapa:<password>@postgres:5432/migration_test" comunicapa-backend-1 node_modules/.bin/typeorm-ts-node-commonjs migration:run -d src/database/data-source.ts
 ```
 
+**`git checkout <ref> -- .` — mai per "ispezionare"/confrontare, cancella lavoro non committato.**
+Sovrascrive SIA index SIA working tree per ogni path che differisce, in
+TUTTO il repo — non solo il file che si intendeva guardare. Su un branch
+feature con modifiche non committate (anche già `git add`), questo le
+cancella silenziosamente senza conferma, comprese quelle su file mai
+toccati dal branch/ref confrontato (incidente reale: ha cancellato 4 fix
+non committati invece di limitarsi al file previsto). I commit già fatti
+restano al sicuro (comando non tocca la history) — recuperabili con
+`git checkout HEAD -- .`, ma il lavoro solo in working tree/index no. Per
+confrontare con un altro branch senza rischio: `git diff <ref> -- <path>`
+(sola lettura) o `git stash` esplicito prima di qualunque `checkout -- .`.
+
 **subagent-driven-development su questo repo — mai `isolation:"worktree"` per gli implementer se il lavoro deve andare dritto su `main`.** Un subagent con worktree isolato committa su un branch/checkout separato (`.claude/worktrees/...`) — se poi lo si rimuove, il report scritto dal subagent nella working directory sparisce con esso (bug reale: report ricostruito a mano dal riassunto restituito). Per lavoro diretto su main, dispatchare i subagent SENZA `isolation`, verificare poi con `git log --oneline -1 && git branch --show-current` che il commit sia finito dove atteso.
 
 **`.superpowers/sdd/` è scratch condiviso tra TUTTI i piani eseguiti nel repo, non per-piano.** Nomi file generici (`task-N-brief.md`/`task-N-report.md`) vengono sovrascritti da esecuzioni diverse — un report letto da lì può essere residuo di un piano precedente non correlato (bug reale: report Task 1 riletto per il review conteneva il riepilogo di un task di tutt'altro piano). Verificare sempre che il contenuto corrisponda al task atteso prima di fidarsene per una review.
@@ -736,17 +748,18 @@ forza la transizione — vedi `updateRecipientAddressAndRetry()` in
 esplicita (mai in automatico, per non rischiare di marcare FAILED uno stato
 GlobalCom transitorio come "Rimandato").
 
-**`CampaignCompletionService.checkAndComplete()` non guarda `failedCount` né
-gli errori di consegna**: marca COMPLETED appena non restano
-PENDING/QUEUED, anche se tutti/alcuni i destinatari sono FAILED o hanno un
-errore di consegna post-accettazione — "Completata" oggi NON significa
-"tutti consegnati senza errori". Cambiare questo comportamento richiede
-prima decidere: cosa conta come errore (solo FAILED, o anche
-CodiceErrore/sendStatus post-accettazione?), che fare del caso misto
-(nuovo stato enum `COMPLETED_WITH_ERRORS`, o restare su COMPLETED con
-evidenza solo nei contatori?), e se il check deve aspettare la consegna
-finale (giorni, per SEND/POSTAL) o restare al solo momento di
-sottomissione — discussione aperta, non ancora implementata.
+**`CampaignCompletionService.checkAndComplete()` distingue COMPLETED da
+FAILED solo nel caso 100% fallito** (bug reale corretto, PR #44:
+campagna a destinatario singolo con invio in errore mostrata
+"Completata" invece di "Fallito" — `CampaignStatus.FAILED` esisteva già
+nell'enum, mai scritto da nessun codice prima). Se nessun destinatario
+è arrivato a SENT, chiude FAILED; altrimenti COMPLETED. **Il caso misto
+(alcuni SENT, alcuni FAILED, o errori di consegna post-accettazione tipo
+CodiceErrore/sendStatus) resta deliberatamente COMPLETED** — stessa
+discussione aperta di prima, non ancora decisa: cosa conta come errore
+oltre FAILED puro, se serve un enum `COMPLETED_WITH_ERRORS`, se aspettare
+la consegna finale (giorni, SEND/POSTAL) o restare al solo momento di
+sottomissione.
 
 ## Migration enum Postgres — ALTER TYPE ADD VALUE
 
@@ -918,6 +931,15 @@ api-external-b2b-pa-bundle.yaml` — NON `pn-openapi-devportal`, repo
 inesistente/404) e grep diretto su `securitySchemes`/
 schema dei singoli campi. Un riassunto ha già portato a un fix sbagliato
 una volta in questa stessa giornata di debug.
+
+**Trovare il file giusto tra i repo PagoPA**: `gh search code "<termine>"
+--owner pagopa` (richiede `gh` autenticato) batte `WebFetch`/ricerca
+GitHub web per individuare quale repo/file OpenAPI/implementazione Java
+contiene un endpoint — una `WebFetch` diretta su un path indovinato ha
+dato 404 o un riassunto fuorviante una volta in questa sessione;
+`gh search code` ha trovato il file corretto (`pn-selfcare-external-v1.yaml`)
+al primo colpo e permesso di leggere anche l'implementazione Java reale
+per confutare un'ipotesi sbagliata sul 403 di `/ext-registry-b2b/*`.
 
 ## SEND — stati notifica PN (sendStatus)
 
