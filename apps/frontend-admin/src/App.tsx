@@ -16614,7 +16614,9 @@ export function App(): React.JSX.Element {
                             ))}
                             {campaignCostSavings && campaignCostSavings.totalSavingCents > 0 && (
                               <div className="alert alert-success small mt-3 mb-0">
-                                Risparmio stimato da dirottamento: <strong>{formatEuroCents(campaignCostSavings.totalSavingCents)}</strong>
+                                {campaign.channelType === 'SEND'
+                                  ? <>Risparmio stimato vs canale tradizionale: <strong>{formatEuroCents(campaignCostSavings.totalSavingCents)}</strong></>
+                                  : <>Risparmio stimato da dirottamento: <strong>{formatEuroCents(campaignCostSavings.totalSavingCents)}</strong></>}
                               </div>
                             )}
                             {campaignCostSavings && campaignCostSavings.postalNotEstimableCount > 0 && (

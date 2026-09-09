@@ -26,9 +26,19 @@ export class CampaignCompletionService {
   ) {}
 
   /**
-   * Se non restano destinatari PENDING/QUEUED per la campagna, la marca
-   * COMPLETED. È l'unico punto che porta una campagna fuori da QUEUED, che
-   * altrimenti resterebbe tale per sempre anche a invio terminato.
+   * Se non restano destinatari PENDING/QUEUED per la campagna, la chiude.
+   * È l'unico punto che porta una campagna fuori da QUEUED, che altrimenti
+   * resterebbe tale per sempre anche a invio terminato.
+   *
+   * COMPLETED vs FAILED: se NESSUN destinatario è arrivato a SENT (tutti
+   * FAILED, o l'unico destinatario di un invio singolo è FAILED),
+   * la campagna chiude FAILED — non COMPLETED, che in UI legge come esito
+   * positivo (badge verde) anche a invio totalmente fallito (bug reale
+   * riscontrato: campagna a destinatario singolo, invio in errore,
+   * mostrata "Completata"). Il caso misto (alcuni SENT, alcuni FAILED)
+   * resta deliberatamente COMPLETED: nessuna decisione ancora presa su
+   * come distinguerlo in UI (vedi discussione in CLAUDE.md), non è lo
+   * scope di questo fix.
    */
   async checkAndComplete(campaignId: string): Promise<void> {
     const remaining = await this.recipientRepo.count({
@@ -36,10 +46,16 @@ export class CampaignCompletionService {
     });
     if (remaining > 0) return;
 
+    const [sentCount, failedCount] = await Promise.all([
+      this.recipientRepo.count({ where: { campaignId, status: RecipientStatus.SENT } }),
+      this.recipientRepo.count({ where: { campaignId, status: RecipientStatus.FAILED } }),
+    ]);
+    const finalStatus = sentCount === 0 && failedCount > 0 ? CampaignStatus.FAILED : CampaignStatus.COMPLETED;
+
     const result = await this.campaignRepo
       .createQueryBuilder()
       .update()
-      .set({ status: CampaignStatus.COMPLETED, completedAt: new Date() })
+      .set({ status: finalStatus, completedAt: new Date() })
       .where('id = :id AND status = :queued AND is_test = :isTest', {
         id: campaignId,
         queued: CampaignStatus.QUEUED,

@@ -38,8 +38,11 @@ describe('CampaignCompletionService', () => {
     service = module.get(CampaignCompletionService);
   });
 
-  it('marca la campagna COMPLETED quando non restano destinatari PENDING/QUEUED', async () => {
-    mockRecipientRepo.count.mockResolvedValueOnce(0);
+  it('marca la campagna COMPLETED quando non restano destinatari PENDING/QUEUED e almeno un SENT', async () => {
+    mockRecipientRepo.count
+      .mockResolvedValueOnce(0) // PENDING/QUEUED residui
+      .mockResolvedValueOnce(2) // SENT
+      .mockResolvedValueOnce(0); // FAILED
 
     await service.checkAndComplete('camp-1');
 
@@ -47,6 +50,32 @@ describe('CampaignCompletionService', () => {
       where: { campaignId: 'camp-1', status: expect.anything() },
     });
     expect(mockCampaignRepo.createQueryBuilder).toHaveBeenCalled();
+    expect(mockQb.set).toHaveBeenCalledWith(
+      expect.objectContaining({ status: CampaignStatus.COMPLETED, completedAt: expect.any(Date) }),
+    );
+  });
+
+  it('marca la campagna FAILED quando nessun destinatario è arrivato a SENT (tutti FAILED) — bug reale: invio singolo in errore mostrato "Completata"', async () => {
+    mockRecipientRepo.count
+      .mockResolvedValueOnce(0) // PENDING/QUEUED residui
+      .mockResolvedValueOnce(0) // SENT
+      .mockResolvedValueOnce(1); // FAILED
+
+    await service.checkAndComplete('camp-1');
+
+    expect(mockQb.set).toHaveBeenCalledWith(
+      expect.objectContaining({ status: CampaignStatus.FAILED, completedAt: expect.any(Date) }),
+    );
+  });
+
+  it('resta COMPLETED nel caso misto (alcuni SENT, alcuni FAILED)', async () => {
+    mockRecipientRepo.count
+      .mockResolvedValueOnce(0) // PENDING/QUEUED residui
+      .mockResolvedValueOnce(1) // SENT
+      .mockResolvedValueOnce(1); // FAILED
+
+    await service.checkAndComplete('camp-1');
+
     expect(mockQb.set).toHaveBeenCalledWith(
       expect.objectContaining({ status: CampaignStatus.COMPLETED, completedAt: expect.any(Date) }),
     );
