@@ -8,6 +8,7 @@ import type { SettingKey } from '../../settings/settings.registry.js';
 import { PdndAuthService } from '../../pdnd/pdnd-auth.service.js';
 import { extractSendStatusHistory, extractSendDigitalDomicile, extractSendAnalogCost } from './send-status-history.util.js';
 import { SendBaseFeeService } from './send-base-fee.service.js';
+import { captureException } from '../../common/sentry.util.js';
 
 const BATCH_SIZE = 200;
 const TERMINAL_STATUSES = ['VIEWED', 'EFFECTIVE_DATE', 'UNREACHABLE', 'CANCELLED', 'RETURNED_TO_SENDER', 'REFUSED'];
@@ -79,6 +80,11 @@ export class SendStatusSyncService {
         }
       } catch (err: any) {
         this.logger.warn(`Errore risoluzione IUN per richiesta SEND ${requestId}: ${err.message}`);
+        captureException(err instanceof Error ? err : new Error(String(err)), {
+          attemptId: attempt.id,
+          channel: 'SEND',
+          stage: 'resolveMissingIun',
+        });
       }
     }
   }
@@ -130,6 +136,11 @@ export class SendStatusSyncService {
         if (changed) await this.attemptRepo.save(attempt);
       } catch (err: any) {
         this.logger.warn(`Errore aggiornamento stato SEND IUN ${attempt.iun}: ${err.message}`);
+        captureException(err instanceof Error ? err : new Error(String(err)), {
+          attemptId: attempt.id,
+          channel: 'SEND',
+          stage: 'updateStatuses',
+        });
       }
     }
   }

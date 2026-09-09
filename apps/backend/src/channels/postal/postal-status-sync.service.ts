@@ -5,6 +5,7 @@ import { Cron } from '@nestjs/schedule';
 import { NotificationAttempt, AttemptStatus } from '../../entities/notification-attempt.entity.js';
 import { PostalProvidersService } from '../../postal-providers/postal-providers.service.js';
 import { GlobalComClient, type GbcCredentials } from './globalcom-client.service.js';
+import { captureException } from '../../common/sentry.util.js';
 
 export interface PostalQueueHealth {
   candidatesCount: number;
@@ -59,6 +60,11 @@ export class PostalStatusSyncService {
         await this.syncOne(attempt, creds);
       } catch (err: any) {
         this.logger.warn(`Errore aggiornamento stato POSTAL per attempt ${attempt.id} (IDPRO=${attempt.postalTrackingId}): ${err.message}`);
+        captureException(err instanceof Error ? err : new Error(String(err)), {
+          attemptId: attempt.id,
+          channel: 'POSTAL',
+          idpro: attempt.postalTrackingId,
+        });
       }
     }
   }
@@ -304,6 +310,12 @@ export class PostalStatusSyncService {
       attempt.postalRequeueCheckedAt = new Date();
     } catch (err: any) {
       this.logger.warn(`Errore controllo riaccodamento per attempt ${attempt.id} (IDPRO=${attempt.postalTrackingId}): ${err.message}`);
+      captureException(err instanceof Error ? err : new Error(String(err)), {
+        attemptId: attempt.id,
+        channel: 'POSTAL',
+        idpro: attempt.postalTrackingId,
+        stage: 'checkRequeue',
+      });
     }
   }
 

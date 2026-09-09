@@ -15,6 +15,7 @@ import { getEffectiveRetentionDays } from '../../campaigns/retention.util.js';
 import { CampaignCompletionService } from '../../campaigns/campaign-completion.service.js';
 import { resolveSubjectTemplate } from '../subject-mapping.util.js';
 import { splitDenominazione, type DenominazioneAbbreviation } from '../postal/denominazione.util.js';
+import { captureException } from '../../common/sentry.util.js';
 
 const BATCH_SIZE = 200;
 
@@ -96,6 +97,11 @@ export class SendDispatchService {
         await this.dispatchOne(attempt);
       } catch (err: any) {
         this.logger.warn(`Invio SEND fallito per attempt ${attempt.id}: ${err.message}`);
+        captureException(err instanceof Error ? err : new Error(String(err)), {
+          attemptId: attempt.id,
+          channel: 'SEND',
+          recipientId: attempt.recipient.id,
+        });
         await this.markFailed(attempt, err.message);
       }
     }
