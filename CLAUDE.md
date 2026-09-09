@@ -859,6 +859,48 @@ trovato su ANPR/INAD) — errore "PhysicalAddress cannot be null". `group`
 (self-care PN) — errore "Specify a group in cx_groups=[...]". Entrambi
 configurabili via Impostazioni → SEND, nessun default hardcoded.
 
+**`group` può diventare obbligatorio da un giorno all'altro senza alcuna
+modifica di codice — drift di configurazione lato PN, non regressione
+nostra.** Un account con un solo `cx_group` non richiede `group` nel
+payload (comportamento corretto, campo omesso); se sul portale self-care
+PN viene aggiunto un secondo gruppo all'account, PN inizia a rifiutare
+con `PN_DELIVERY_INVALIDPARAMETER_GROUP`/"Specify a group in
+cx_groups=[...]" invii che fino al giorno prima passavano — incidente
+reale il 2026-09-08 (nessun commit toccava SEND/`group` da settimane).
+L'errore stesso include l'id del gruppo valido da usare — bastava
+incollarlo in Impostazioni → SEND → Gruppo PN (env corretto) e salvare
+(submit dell'intero form, non basta selezionare dal dropdown — vedi
+gotcha "Salva Impostazioni" sotto).
+
+**Bottone "Carica gruppi" (`GET admin/settings/send/:env/groups`) può
+dare 403 anche con apiKey/voucher validi per l'invio** — PN separa
+`/delivery/*` (invio, autenticato con apiKey+voucher PDND) da
+`/ext-registry-b2b/pa/v1/groups` (registro gruppi, solo apiKey): sono due
+prodotti PN diversi con provisioning/scope indipendenti sul portale
+self-care. Un'apiKey scoped solo per delivery risponde 200 su
+`test-connection` ma 403 sul recupero gruppi — non è un bug nostro, non
+fixabile da codice. Verificato dal vivo (`send-status-sync`/
+`send-dispatch` OK, `getSendGroups` 403) l'8-9 settembre 2026. Workaround
+sempre disponibile: l'id del `cx_group` richiesto arriva comunque
+nell'errore `PN_DELIVERY_INVALIDPARAMETER_GROUP` di un invio fallito —
+inseribile a mano nel campo, nessun bisogno del bottone. Se serve
+davvero "Carica gruppi" funzionante, va richiesto a PN l'abilitamento
+dello scope `ext-registry-b2b` per quella apiKey, azione lato portale
+self-care, non lato nostro.
+
+**Un errore che finisce solo nei log del demone `@Cron`, mai su
+Sentry/GlitchTip — gap reale corretto (PR #43, 2026-09-09).**
+`send-dispatch.service.ts`/`send-status-sync.service.ts` (SEND) e
+`postal-status-sync.service.ts` (POSTAL) girano fuori da BullMQ (vedi
+"pattern jobId = attemptId" sopra) — i loro `catch` non passano MAI da
+`notification.processor.ts`, l'unico punto che chiamava
+`captureException`. Un 400 reale verso PN (incluso questo stesso
+incidente `group`) restava quindi invisibile su GlitchTip, solo `logger.warn`
+nei log del container. Fix: `captureException` aggiunto in ogni catch di
+quei tre file. Qualunque futuro demone `@Cron` channel-agnostico che
+bypassa BullMQ va verificato per lo stesso gap prima di considerarlo
+"osservabile allo stesso modo" del resto della pipeline.
+
 **Verifica spec**: mai fidarsi di un riassunto AI dello spec OpenAPI —
 scaricare il raw YAML (`curl` su `pagopa/pn-delivery`, `docs/openapi/
 api-external-b2b-pa-bundle.yaml` — NON `pn-openapi-devportal`, repo

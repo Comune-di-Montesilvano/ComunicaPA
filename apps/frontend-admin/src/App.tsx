@@ -14111,7 +14111,7 @@ export function App(): React.JSX.Element {
                                     value={e.group}
                                     onChange={(ev) => e.setGroup(ev.target.value)}
                                   />
-                                  <div className="form-text small text-muted">Necessario solo se l'account PN è associato a più gruppi utenti (portale self-care PN) — PN rifiuta l'invio senza specificarlo in quel caso ("Specify a group in cx_groups=..."). Usa "Carica gruppi" per scegliere da elenco, oppure inserisci l'id a mano. Lascia vuoto se l'account ha un solo gruppo.</div>
+                                  <div className="form-text small text-muted">Necessario solo se l'account PN è associato a più gruppi utenti (portale self-care PN) — PN rifiuta l'invio senza specificarlo in quel caso ("Specify a group in cx_groups=..."). Può diventare obbligatorio da un giorno all'altro se sul portale PN viene aggiunto un secondo gruppo all'account, senza alcuna modifica qui. Usa "Carica gruppi" per scegliere da elenco (può dare 403 se l'API Key non è abilitata anche per il prodotto PN "registro gruppi" — indipendente dall'invio, chiedere l'abilitazione a PN se serve), oppure inserisci l'id a mano (compare comunque nel messaggio di errore di un invio fallito per questo motivo). Lascia vuoto se l'account ha un solo gruppo. Dopo aver scelto/incollato il valore, ricordati di salvare con "Salva Impostazioni" in fondo alla pagina — selezionarlo qui non basta.</div>
                                 </div>
                                 <hr className="my-3" />
                                 <button
