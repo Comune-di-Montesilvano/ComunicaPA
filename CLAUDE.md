@@ -873,20 +873,31 @@ incollarlo in Impostazioni → SEND → Gruppo PN (env corretto) e salvare
 gotcha "Salva Impostazioni" sotto).
 
 **Bottone "Carica gruppi" (`GET admin/settings/send/:env/groups`) può
-dare 403 anche con apiKey/voucher validi per l'invio** — PN separa
-`/delivery/*` (invio, autenticato con apiKey+voucher PDND) da
-`/ext-registry-b2b/pa/v1/groups` (registro gruppi, solo apiKey): sono due
-prodotti PN diversi con provisioning/scope indipendenti sul portale
-self-care. Un'apiKey scoped solo per delivery risponde 200 su
-`test-connection` ma 403 sul recupero gruppi — non è un bug nostro, non
-fixabile da codice. Verificato dal vivo (`send-status-sync`/
-`send-dispatch` OK, `getSendGroups` 403) l'8-9 settembre 2026. Workaround
-sempre disponibile: l'id del `cx_group` richiesto arriva comunque
-nell'errore `PN_DELIVERY_INVALIDPARAMETER_GROUP` di un invio fallito —
-inseribile a mano nel campo, nessun bisogno del bottone. Se serve
-davvero "Carica gruppi" funzionante, va richiesto a PN l'abilitamento
-dello scope `ext-registry-b2b` per quella apiKey, azione lato portale
-self-care, non lato nostro.
+dare 403 anche con apiKey/voucher validi per l'invio — verificato che
+NON è correlato al numero di gruppi dell'account.** Spec raw
+(`pagopa/pn-external-registries`, `docs/openapi/
+pn-selfcare-external-v1.yaml`, endpoint `/ext-registry-b2b/pa/v1/groups`,
+security `ApiKeyAuth` solo `x-api-key`, esattamente quello che il nostro
+codice manda) documenta solo risposte `200`/`400`/`500` — **mai 403** —
+e l'implementazione Java reale (`InfoPaController.getGroupsB2B` /
+`InfoSelfcareGroupsService`) non ha alcuna logica sul conteggio gruppi:
+un account a gruppo singolo torna 200 con la lista, non 403. Un 403 non
+documentato nello spec applicativo arriva quindi PRIMA del codice PN
+vero e proprio — livello gateway/API Manager che autorizza le chiamate
+in ingresso per quell'apiKey su quello specifico path, non la UI
+self-care PN (quella gestisce solo business config: gruppi/ruoli
+utente — coerente col fatto che lì non si vede alcuna opzione di
+"permesso"/scope per l'apiKey). Non fixabile da codice: header/query
+param (`x-api-key`, `statusFilter`) già combaciano esatti con lo spec.
+Verificato dal vivo (`send-status-sync`/`send-dispatch` OK su
+`/delivery/*`, `getSendGroups` 403 su `/ext-registry-b2b/*` con la
+STESSA apiKey) l'8-9 settembre 2026. Workaround sempre disponibile:
+l'id del `cx_group` richiesto arriva comunque nell'errore
+`PN_DELIVERY_INVALIDPARAMETER_GROUP` di un invio fallito — inseribile a
+mano nel campo, nessun bisogno del bottone. Se serve davvero "Carica
+gruppi" funzionante, va aperta segnalazione al supporto PN — non
+un'azione self-service disponibile in self-care, causa non ancora
+identificata con certezza oltre "livello gateway, non applicativo".
 
 **Un errore che finisce solo nei log del demone `@Cron`, mai su
 Sentry/GlitchTip — gap reale corretto (PR #43, 2026-09-09).**
