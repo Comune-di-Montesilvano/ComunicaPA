@@ -2931,9 +2931,11 @@ export function App(): React.JSX.Element {
     setVerificaBulkSubmitError(null);
   };
 
-  const runCercaDomicilio = async () => {
-    if (!domicilioCf.trim()) return;
-    if (!isValidCfOrPiva(domicilioCf)) {
+  const runCercaDomicilio = async (cfOverride?: string) => {
+    const cf = (cfOverride ?? domicilioCf).toUpperCase().trim();
+    if (cfOverride !== undefined) setDomicilioCf(cf);
+    if (!cf) return;
+    if (!isValidCfOrPiva(cf)) {
       setDomicilioValidationError('Formato non valido: Codice Fiscale persona fisica (16 caratteri alfanumerici) o Partita IVA (11 cifre).');
       setDomicilioResult(null);
       return;
@@ -2945,7 +2947,7 @@ export function App(): React.JSX.Element {
       const res = await apiFetch('/domicilio/cerca', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ codiceFiscale: domicilioCf }),
+        body: JSON.stringify({ codiceFiscale: cf }),
       });
       const data = await res.json();
       setDomicilioResult(data);
@@ -2953,7 +2955,7 @@ export function App(): React.JSX.Element {
       if (err instanceof ApiAuthError) return;
       const message = err.message || 'Errore di connessione durante la ricerca';
       setDomicilioResult({
-        codiceFiscale: domicilioCf,
+        codiceFiscale: cf,
         inad: { success: false, found: false, message },
         appIo: { success: false, active: false, message },
         anpr: { success: false, found: false, message },
@@ -12581,7 +12583,7 @@ export function App(): React.JSX.Element {
                   <button
                     className="btn btn-primary px-4 fw-medium d-flex align-items-center gap-2"
                     type="button"
-                    onClick={runCercaDomicilio}
+                    onClick={() => runCercaDomicilio()}
                     disabled={domicilioLoading || !domicilioCf.trim()}
                   >
                     {domicilioLoading ? (
@@ -12679,7 +12681,9 @@ export function App(): React.JSX.Element {
                                       <li key={i}>
                                         {p.rappresentante && <Star size={12} className="text-warning me-1" />}
                                         <span className="fw-semibold">{p.nome} {p.cognome}</span>
-                                        {p.cFiscale && <span className="text-muted"> — {p.cFiscale}</span>}
+                                        {p.cFiscale && (
+                                          <span className="text-muted"> — <button type="button" className="btn btn-link btn-sm p-0 align-baseline" onClick={() => runCercaDomicilio(p.cFiscale)}>{p.cFiscale}</button></span>
+                                        )}
                                         {p.cariche.length > 0 && <span className="text-muted"> ({p.cariche.join(', ')})</span>}
                                       </li>
                                     ))}
@@ -12710,7 +12714,9 @@ export function App(): React.JSX.Element {
                                     {d.soci.map((s, i) => (
                                       <li key={i}>
                                         <span className="fw-semibold">{s.denominazione}</span>
-                                        {s.cFiscale && <span className="text-muted"> — {s.cFiscale}</span>}
+                                        {s.cFiscale && (
+                                          <span className="text-muted"> — <button type="button" className="btn btn-link btn-sm p-0 align-baseline" onClick={() => runCercaDomicilio(s.cFiscale)}>{s.cFiscale}</button></span>
+                                        )}
                                         {s.diritto && <span className="text-muted"> ({s.diritto})</span>}
                                       </li>
                                     ))}
