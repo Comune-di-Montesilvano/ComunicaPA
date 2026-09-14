@@ -4774,6 +4774,7 @@ export function App(): React.JSX.Element {
       { id: 'guida-dirottamento', title: 'Dirottamento automatico su domicilio digitale' },
       { id: 'guida-regole-canale', title: 'Regole per canale (allegato, oggetto/testo, App IO)' },
       { id: 'guida-wizard', title: 'Come lanciare un invio' },
+      { id: 'guida-templating', title: 'Personalizzare oggetto e testo (placeholder)' },
       { id: 'guida-canali', title: 'Canali disponibili' },
       { id: 'guida-protocollo', title: 'Protocollo e sigillo elettronico' },
       { id: 'guida-monitoraggio', title: 'Monitoraggio e stato invii' },
@@ -4932,6 +4933,37 @@ export function App(): React.JSX.Element {
               <li className="mb-2">Riepilogo e verifica — è possibile inviare un invio di prova a un singolo destinatario prima del lancio definitivo.</li>
               <li>Lancio della campagna: da qui in poi lo stato si segue dal dettaglio campagna o dalla lista "Campagne Massive".</li>
             </ol>
+          </div>
+        </div>
+
+        <div id="guida-templating" className="card shadow-sm border-0 rounded-3">
+          <div className="card-body p-4">
+            <h4 className="h5 fw-bold text-dark mb-3">Personalizzare oggetto e testo (placeholder)</h4>
+            <p className="text-muted mb-2">
+              Nell'oggetto e nel testo del messaggio puoi inserire dei segnaposto che vengono sostituiti
+              automaticamente, riga per riga, con il valore di quel destinatario. Il formato è sempre con il
+              <strong> doppio percento</strong>: <code>%%nome_segnaposto%%</code>. Un singolo <code>%</code>
+              scritto in mezzo al testo (es. "sconto del 60% sul tributo") non viene toccato — solo il doppio
+              percento forma un segnaposto reale.
+            </p>
+            <p className="text-muted mb-2">
+              Segnaposto sempre disponibili: <code>%%nominativo%%</code>, <code>%%codice_fiscale%%</code>, e
+              — se hai attivato allegati, protocollazione o pagoPA — anche <code>%%elenco_allegati%%</code>,
+              <code> %%allegato1%%</code>/<code>%%allegato2%%</code>..., <code>%%numero_protocollo%%</code> e i
+              campi pagoPA (importo, numero avviso, scadenza).
+            </p>
+            <p className="text-muted mb-2">
+              Nell'invio massivo puoi usare anche <strong>qualsiasi colonna del tuo file</strong> non già
+              usata per CF/nome/email: basta scrivere <code>%%NomeColonna%%</code> esattamente come intestata
+              nel file. L'editor mostra sempre l'elenco completo dei segnaposto disponibili — non serve
+              ricordarli a memoria.
+            </p>
+            <p className="text-muted mb-0">
+              Attenzione: se nel wizard massivo mappi una colonna del CSV come "Oggetto" (mappatura colonne,
+              passo 3), l'oggetto che scrivi a mano nel wizard viene <strong>ignorato</strong> per quei
+              destinatari — vince sempre il valore della colonna, riga per riga (utile per invii con tributi
+              diversi nello stesso lancio).
+            </p>
           </div>
         </div>
 
