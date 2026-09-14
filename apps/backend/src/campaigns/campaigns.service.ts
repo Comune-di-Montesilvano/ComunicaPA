@@ -40,6 +40,7 @@ import { InadService } from '../channels/inad/inad.service.js';
 import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service.js';
 import { RegistroImpreseService } from '../channels/registro-imprese/registro-imprese.service.js';
 import { RegistroImpreseVerifyQueueService } from '../channels/registro-imprese/registro-imprese-verify-queue.service.js';
+import { PostalAuthorizedUsersService } from '../postal-authorized-users/postal-authorized-users.service.js';
 import { isPartitaIva } from '../channels/tax-id.util.js';
 
 const INAD_BULK_THRESHOLD = 100;
@@ -105,6 +106,7 @@ export class CampaignsService {
     private readonly postalStatusSync: PostalStatusSyncService,
     private readonly registroImpreseService: RegistroImpreseService,
     private readonly registroImpreseVerifyQueue: RegistroImpreseVerifyQueueService,
+    private readonly postalAuthorizedUsers: PostalAuthorizedUsersService,
   ) {}
 
   findAll(): Promise<Campaign[]> {
@@ -544,6 +546,7 @@ export class CampaignsService {
 
   async launch(
     campaignId: string,
+    requester: CampaignRequester,
   ): Promise<{ launched: number; campaignId: string; blocked?: boolean; message?: string }> {
     const launchResult = await this.campaignRepo
       .createQueryBuilder()
@@ -560,6 +563,22 @@ export class CampaignsService {
 
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+
+    // Solo l'avvio (launch/launchTestSend) è gated — retry/correzioni su
+    // una campagna POSTAL già avviata restano permessi a qualunque 'user'
+    // (perimetro deciso in fase di design, vedi spec).
+    if (campaign.channelType === 'POSTAL' && requester.role !== 'admin') {
+      const authorized = await this.postalAuthorizedUsers.isAuthorized(requester.username);
+      if (!authorized) {
+        await this.campaignRepo.update({ id: campaignId }, { status: CampaignStatus.DRAFT });
+        return {
+          launched: 0,
+          campaignId,
+          blocked: true,
+          message: 'Non sei autorizzato ad avviare invii Postalizzazione. Contatta un amministratore.',
+        };
+      }
+    }
 
     // SEND richiede sempre protocollazione preventiva (ProtocollazioneSyncService
     // pesca solo attempt con channelConfig.protocolla=true; SendDispatchService
@@ -614,9 +633,22 @@ export class CampaignsService {
   async launchTestSend(
     parentCampaignId: string,
     dto: TestSendDto,
+    requester: CampaignRequester,
   ): Promise<{ attemptId: string; testCampaignId: string; blocked?: boolean; message?: string }> {
     const parent = await this.campaignRepo.findOneBy({ id: parentCampaignId });
     if (!parent) throw new NotFoundException(`Campaign ${parentCampaignId} not found`);
+
+    if (parent.channelType === 'POSTAL' && requester.role !== 'admin') {
+      const authorized = await this.postalAuthorizedUsers.isAuthorized(requester.username);
+      if (!authorized) {
+        return {
+          attemptId: '',
+          testCampaignId: '',
+          blocked: true,
+          message: 'Non sei autorizzato ad avviare invii Postalizzazione. Contatta un amministratore.',
+        };
+      }
+    }
 
     this.assertSendProtocolConfigured(parent);
 

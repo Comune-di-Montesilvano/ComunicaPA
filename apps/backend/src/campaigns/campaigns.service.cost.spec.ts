@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException } from '@nestjs/common';
@@ -13,6 +14,7 @@ import { InadService } from '../channels/inad/inad.service.js';
 import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service.js';
 import { RegistroImpreseService } from '../channels/registro-imprese/registro-imprese.service.js';
 import { RegistroImpreseVerifyQueueService } from '../channels/registro-imprese/registro-imprese-verify-queue.service.js';
+import { PostalAuthorizedUsersService } from '../postal-authorized-users/postal-authorized-users.service.js';
 
 describe('CampaignsService - Cost and Savings', () => {
   let service: CampaignsService;
@@ -30,6 +32,7 @@ describe('CampaignsService - Cost and Savings', () => {
     const module = await Test.createTestingModule({
       providers: [
         CampaignsService,
+        { provide: PostalAuthorizedUsersService, useValue: { isAuthorized: vi.fn().mockResolvedValue(true) } },
         { provide: getRepositoryToken(Campaign), useValue: campaignRepo },
         { provide: getRepositoryToken(Recipient), useValue: recipientRepo },
         { provide: getRepositoryToken(NotificationAttempt), useValue: attemptRepo },

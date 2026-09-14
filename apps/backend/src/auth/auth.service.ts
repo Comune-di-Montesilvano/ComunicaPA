@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import type { JwtOperatorPayload, CitizenTokenClaims } from '@comunicapa/shared-types';
 import { LdapService } from './ldap/ldap.service.js';
 import { OperatorDirectoryService } from '../operator-directory/operator-directory.service.js';
+import { PostalAuthorizedUsersService } from '../postal-authorized-users/postal-authorized-users.service.js';
 import type { LoginDto } from './dto/login.dto.js';
 import type { AuthResponseDto } from './dto/auth-response.dto.js';
 import type { AppConfiguration } from '../config/configuration.js';
@@ -17,11 +18,15 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly config: ConfigService<AppConfiguration, true>,
     private readonly operatorDirectory: OperatorDirectoryService,
+    private readonly postalAuthorizedUsers: PostalAuthorizedUsersService,
   ) {}
 
   async loginWithLdap(dto: LoginDto): Promise<AuthResponseDto> {
     const ldapUser = await this.ldapService.authenticate(dto.username, dto.password);
     await this.operatorDirectory.upsert(ldapUser.username, ldapUser.displayName);
+
+    const canUsePostal =
+      ldapUser.role === 'admin' || (await this.postalAuthorizedUsers.isAuthorized(ldapUser.username));
 
     const payload: Omit<JwtOperatorPayload, 'iat' | 'exp'> = {
       sub: ldapUser.username,
@@ -40,6 +45,7 @@ export class AuthService {
       username: ldapUser.username,
       displayName: ldapUser.displayName,
       role: ldapUser.role,
+      canUsePostal,
     };
   }
 

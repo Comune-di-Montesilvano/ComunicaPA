@@ -500,7 +500,7 @@ export class CampaignsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: Request & { user: JwtOperatorPayload },
   ): Promise<{ launched: number; campaignId: string }> {
-    const result = await this.campaignsService.launch(id);
+    const result = await this.campaignsService.launch(id, { username: req.user.username, role: req.user.role });
     const campaign = await this.campaignsService.findOne(id).catch(() => null);
     await this.auditLogsService.log({
       campaignId: id,
@@ -518,7 +518,7 @@ export class CampaignsController {
     @Body() dto: TestSendDto,
     @Req() req: Request & { user: JwtOperatorPayload },
   ): Promise<{ attemptId: string; testCampaignId: string; blocked?: boolean; message?: string }> {
-    const result = await this.campaignsService.launchTestSend(id, dto);
+    const result = await this.campaignsService.launchTestSend(id, dto, { username: req.user.username, role: req.user.role });
     const campaign = await this.campaignsService.findOne(id).catch(() => null);
     await this.auditLogsService.log({
       campaignId: id,

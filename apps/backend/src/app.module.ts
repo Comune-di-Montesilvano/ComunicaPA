@@ -15,6 +15,7 @@ import { PublicDownloadModule } from './public-download/public-download.module.j
 import { SettingsModule } from './settings/settings.module.js';
 import { MailConfigsModule } from './mail-configs/mail-configs.module.js';
 import { PostalProvidersModule } from './postal-providers/postal-providers.module.js';
+import { PostalAuthorizedUsersModule } from './postal-authorized-users/postal-authorized-users.module.js';
 import { EnginesModule } from './engines/engines.module.js';
 import { IoServicesModule } from './io-services/io-services.module.js';
 import { DomicilioModule } from './channels/domicilio/domicilio.module.js';
@@ -45,6 +46,7 @@ import configuration from './config/configuration.js';
     SettingsModule,
     MailConfigsModule,
     PostalProvidersModule,
+    PostalAuthorizedUsersModule,
     EnginesModule,
     IoServicesModule,
     DomicilioModule,

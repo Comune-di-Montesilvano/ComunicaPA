@@ -5,6 +5,7 @@ import { JwtService } from '@nestjs/jwt';
 import { AuthService } from './auth.service.js';
 import { LdapService } from './ldap/ldap.service.js';
 import { OperatorDirectoryService } from '../operator-directory/operator-directory.service.js';
+import { PostalAuthorizedUsersService } from '../postal-authorized-users/postal-authorized-users.service.js';
 import type { LoginDto } from './dto/login.dto.js';
 
 describe('AuthService', () => {
@@ -12,6 +13,7 @@ describe('AuthService', () => {
   let ldapService: jest.Mocked<LdapService>;
   let jwtService: jest.Mocked<JwtService>;
   let operatorDirectory: jest.Mocked<OperatorDirectoryService>;
+  let postalAuthorizedUsers: jest.Mocked<PostalAuthorizedUsersService>;
   let ldapHost = 'ldap://ad.example.it:389';
 
   beforeEach(async () => {
@@ -43,6 +45,12 @@ describe('AuthService', () => {
             upsert: jest.fn().mockResolvedValue(undefined),
           },
         },
+        {
+          provide: PostalAuthorizedUsersService,
+          useValue: {
+            isAuthorized: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
@@ -50,6 +58,7 @@ describe('AuthService', () => {
     ldapService = module.get(LdapService);
     jwtService = module.get(JwtService);
     operatorDirectory = module.get(OperatorDirectoryService);
+    postalAuthorizedUsers = module.get(PostalAuthorizedUsersService);
   });
 
   it('should return access_token on valid LDAP credentials', async () => {
@@ -75,6 +84,35 @@ describe('AuthService', () => {
       role: 'admin',
       type: 'operator',
     });
+  });
+
+  it('loginWithLdap(): canUsePostal true per un admin anche se non in tabella', async () => {
+    ldapService.authenticate.mockResolvedValueOnce({ username: 'admin1', displayName: 'Admin Uno', role: 'admin' });
+    postalAuthorizedUsers.isAuthorized.mockResolvedValueOnce(false);
+
+    const result = await service.loginWithLdap({ username: 'admin1', password: 'x' });
+
+    expect(result.canUsePostal).toBe(true);
+    expect(postalAuthorizedUsers.isAuthorized).not.toHaveBeenCalled();
+  });
+
+  it('loginWithLdap(): canUsePostal true per un user presente in tabella', async () => {
+    ldapService.authenticate.mockResolvedValueOnce({ username: 'user1', displayName: 'User Uno', role: 'user' });
+    postalAuthorizedUsers.isAuthorized.mockResolvedValueOnce(true);
+
+    const result = await service.loginWithLdap({ username: 'user1', password: 'x' });
+
+    expect(result.canUsePostal).toBe(true);
+    expect(postalAuthorizedUsers.isAuthorized).toHaveBeenCalledWith('user1');
+  });
+
+  it('loginWithLdap(): canUsePostal false per un user non in tabella', async () => {
+    ldapService.authenticate.mockResolvedValueOnce({ username: 'user2', displayName: 'User Due', role: 'user' });
+    postalAuthorizedUsers.isAuthorized.mockResolvedValueOnce(false);
+
+    const result = await service.loginWithLdap({ username: 'user2', password: 'x' });
+
+    expect(result.canUsePostal).toBe(false);
   });
 
   it('should propagate UnauthorizedException from LDAP', async () => {

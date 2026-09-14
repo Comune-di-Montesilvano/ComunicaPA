@@ -7,4 +7,5 @@ export class AuthResponseDto {
   username!: string;
   displayName?: string;
   role!: OperatorRole;
+  canUsePostal!: boolean;
 }
