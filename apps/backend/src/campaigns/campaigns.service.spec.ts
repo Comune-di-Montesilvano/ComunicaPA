@@ -14,6 +14,7 @@ import { AppSettingsService } from '../settings/app-settings.service.js';
 import { InadService } from '../channels/inad/inad.service.js';
 import { RegistroImpreseService } from '../channels/registro-imprese/registro-imprese.service.js';
 import { RegistroImpreseVerifyQueueService } from '../channels/registro-imprese/registro-imprese-verify-queue.service.js';
+import { PostalAuthorizedUsersService } from '../postal-authorized-users/postal-authorized-users.service.js';
 import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service.js';
 import * as fs from 'fs';
 import { join } from 'path';
@@ -45,6 +46,10 @@ const mockCampaign: Partial<Campaign> = {
 };
 
 const ADMIN_REQUESTER = { username: 'admin', role: 'admin' as const };
+// Top-level (non dentro describe('CampaignsService')): gli altri 11 describe
+// in questo file sono blocchi SIBLING separati, ognuno col proprio
+// Test.createTestingModule — serve visibile ovunque, non solo nel primo.
+const mockPostalAuthorizedUsersService = { isAuthorized: vi.fn().mockResolvedValue(true) };
 
 describe('CampaignsService', () => {
   let service: CampaignsService;
@@ -112,6 +117,7 @@ describe('CampaignsService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CampaignsService,
+        { provide: PostalAuthorizedUsersService, useValue: mockPostalAuthorizedUsersService },
         { provide: getRepositoryToken(Campaign), useValue: mockCampaignRepo },
         { provide: getRepositoryToken(Recipient), useValue: mockRecipientRepo },
         { provide: getRepositoryToken(NotificationAttempt), useValue: mockAttemptRepo },
@@ -127,6 +133,8 @@ describe('CampaignsService', () => {
     }).compile();
     service = module.get<CampaignsService>(CampaignsService);
     jest.clearAllMocks();
+    mockPostalAuthorizedUsersService.isAuthorized.mockReset();
+    mockPostalAuthorizedUsersService.isAuthorized.mockResolvedValue(true);
     mockCampaignRepo.find.mockResolvedValue([mockCampaign]);
     mockCampaignRepo.findOne.mockResolvedValue(mockCampaign);
     mockCampaignRepo.findOneBy.mockResolvedValue(mockCampaign);
@@ -249,20 +257,20 @@ describe('CampaignsService', () => {
     mockCampaignQb.execute.mockResolvedValueOnce({ affected: 1 });
     mockCampaignRepo.findOneBy.mockResolvedValueOnce(mockCampaign);
     mockRecipientRepo.find.mockResolvedValueOnce([]);
-    await expect(service.launch('uuid-1')).rejects.toThrow(BadRequestException);
+    await expect(service.launch('uuid-1', ADMIN_REQUESTER)).rejects.toThrow(BadRequestException);
   });
 
   it('launch throws BadRequestException when campaign not in DRAFT', async () => {
     // atomic UPDATE fails because campaign is not in DRAFT (affected: 0) and exists
     mockCampaignQb.execute.mockResolvedValueOnce({ affected: 0 });
     mockCampaignRepo.existsBy.mockResolvedValueOnce(true);
-    await expect(service.launch('uuid-1')).rejects.toThrow(BadRequestException);
+    await expect(service.launch('uuid-1', ADMIN_REQUESTER)).rejects.toThrow(BadRequestException);
   });
 
   it('launch throws NotFoundException when campaign does not exist', async () => {
     mockCampaignQb.execute.mockResolvedValueOnce({ affected: 0 });
     mockCampaignRepo.existsBy.mockResolvedValueOnce(false);
-    await expect(service.launch('no-exist')).rejects.toThrow(NotFoundException);
+    await expect(service.launch('no-exist', ADMIN_REQUESTER)).rejects.toThrow(NotFoundException);
   });
 
   it('launch() usa UPDATE atomico WHERE status=draft invece di findOneBy+update separati', async () => {
@@ -277,8 +285,51 @@ describe('CampaignsService', () => {
     mockCampaignRepo.existsBy.mockResolvedValueOnce(true);
     mockRecipientRepo.find = jest.fn().mockResolvedValue([]);
 
-    await expect(service.launch('camp-1')).rejects.toThrow('Only draft campaigns can be launched');
+    await expect(service.launch('camp-1', ADMIN_REQUESTER)).rejects.toThrow('Only draft campaigns can be launched');
     expect(mockQb.execute).toHaveBeenCalled();
+  });
+
+  it('launch(): blocca un user non autorizzato su campagna POSTAL', async () => {
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'POSTAL' });
+    mockPostalAuthorizedUsersService.isAuthorized.mockResolvedValueOnce(false);
+
+    const result = await service.launch('c-postal-blocked', { username: 'user1', role: 'user' });
+
+    expect(result.blocked).toBe(true);
+    expect(result.message).toContain('Non sei autorizzato');
+    expect(mockCampaignRepo.update).toHaveBeenCalledWith({ id: 'c-postal-blocked' }, { status: CampaignStatus.DRAFT });
+  });
+
+  it('launch(): un admin lancia POSTAL senza controllare la tabella', async () => {
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'POSTAL' });
+
+    const result = await service.launch('c-postal-admin', ADMIN_REQUESTER);
+
+    // Non ci interessa l'esito finale del lancio (richiederebbe allegati
+    // reali su disco, altro test se ne occupa già) — solo che il gate
+    // di autorizzazione POSTAL non scatti mai per un admin.
+    expect(mockPostalAuthorizedUsersService.isAuthorized).not.toHaveBeenCalled();
+    expect(result.message).not.toContain('Non sei autorizzato');
+  });
+
+  it('launch(): un user autorizzato in tabella lancia POSTAL', async () => {
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'POSTAL' });
+    mockPostalAuthorizedUsersService.isAuthorized.mockResolvedValueOnce(true);
+
+    const result = await service.launch('c-postal-user-ok', { username: 'user2', role: 'user' });
+
+    expect(mockPostalAuthorizedUsersService.isAuthorized).toHaveBeenCalledWith('user2');
+    expect(result.message).not.toContain('Non sei autorizzato');
+  });
+
+  it('launch(): un canale non-POSTAL non controlla mai la tabella', async () => {
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'EMAIL' });
+    mockRecipientRepo.find.mockResolvedValueOnce([{ id: 'r1' }]);
+
+    const result = await service.launch('c-email', { username: 'user3', role: 'user' });
+
+    expect(mockPostalAuthorizedUsersService.isAuthorized).not.toHaveBeenCalled();
+    expect(result.blocked).toBeUndefined();
   });
 
   it('launch() POSTAL Servizio Agol senza protocolla lancia BadRequestException e riporta la campagna a DRAFT', async () => {
@@ -289,7 +340,7 @@ describe('CampaignsService', () => {
       channelConfig: { postalServiceType: 'AgolMarket', attachments: [{ key: 'doc', label: 'Documento' }] },
     });
 
-    await expect(service.launch('c1')).rejects.toThrow('Protocollazione obbligatoria per Atto Giudiziario');
+    await expect(service.launch('c1', ADMIN_REQUESTER)).rejects.toThrow('Protocollazione obbligatoria per Atto Giudiziario');
 
     expect(mockCampaignRepo.update).toHaveBeenCalledWith({ id: 'c1' }, { status: CampaignStatus.DRAFT });
   });
@@ -305,7 +356,7 @@ describe('CampaignsService', () => {
     // Nessun allegato configurato: blocca comunque (obbligatorio per POSTAL),
     // ma per un motivo indipendente dal protocollo — prova che il gate
     // assertSendProtocolConfigured non scatta fuori da SEND/Agol.
-    const result = await service.launch('c1');
+    const result = await service.launch('c1', ADMIN_REQUESTER);
 
     expect(result.blocked).toBe(true);
     expect(result.message).not.toContain('Protocollazione obbligatoria');
@@ -323,7 +374,7 @@ describe('CampaignsService', () => {
       execute: jest.fn().mockResolvedValue({ raw: [{ id: 'att-1' }, { id: 'att-2' }] }),
     });
 
-    await service.launch('c1');
+    await service.launch('c1', ADMIN_REQUESTER);
 
     expect(mockQueue.addBulk).toHaveBeenCalledWith(
       mockCampaign.channelType,
@@ -346,7 +397,7 @@ describe('CampaignsService', () => {
       execute: jest.fn().mockResolvedValue({ raw: [{ id: 'att-1' }] }),
     });
 
-    const result = await service.launch('c1');
+    const result = await service.launch('c1', ADMIN_REQUESTER);
 
     expect(mockQueue.addBulk).toHaveBeenCalledTimes(1);
     expect(mockQueue.addBulk).toHaveBeenCalledWith(
@@ -368,7 +419,7 @@ describe('CampaignsService', () => {
       execute: jest.fn().mockResolvedValue({ raw: [{ id: 'att-1' }, { id: 'att-2' }] }),
     });
 
-    await service.launch('c1');
+    await service.launch('c1', ADMIN_REQUESTER);
 
     expect(mockQueue.addBulk).toHaveBeenCalledWith(
       'PROTOCOLLAZIONE',
@@ -383,7 +434,7 @@ describe('CampaignsService', () => {
     mockCampaignQb.execute.mockResolvedValueOnce({ affected: 1 });
     mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'SEND', channelConfig: {} });
 
-    await expect(service.launch('c-no-protocolla')).rejects.toThrow(BadRequestException);
+    await expect(service.launch('c-no-protocolla', ADMIN_REQUESTER)).rejects.toThrow(BadRequestException);
     expect(mockAttemptRepo.createQueryBuilder).not.toHaveBeenCalled();
     expect(mockCampaignRepo.update).toHaveBeenCalledWith({ id: 'c-no-protocolla' }, { status: CampaignStatus.DRAFT });
   });
@@ -392,7 +443,7 @@ describe('CampaignsService', () => {
     mockCampaignQb.execute.mockResolvedValueOnce({ affected: 1 });
     mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'SEND', channelConfig: { protocolla: false } });
 
-    await expect(service.launch('c-protocolla-false')).rejects.toThrow(BadRequestException);
+    await expect(service.launch('c-protocolla-false', ADMIN_REQUESTER)).rejects.toThrow(BadRequestException);
     expect(mockAttemptRepo.createQueryBuilder).not.toHaveBeenCalled();
   });
 
@@ -902,7 +953,7 @@ describe('CampaignsService', () => {
       // propria, rendendo illeggibile il messaggio di errore dal frontend (stesso
       // problema già risolto altrove — vedi io-services.service.ts `test()`).
       // Deve invece rispondere 200 con blocked:true e il messaggio nel body.
-      const result = await service.launch('c-att');
+      const result = await service.launch('c-att', ADMIN_REQUESTER);
       expect(result.blocked).toBe(true);
       expect(result.message).toContain('Impossibile avviare');
       expect(result.launched).toBe(0);
@@ -927,7 +978,7 @@ describe('CampaignsService', () => {
         return Promise.resolve([{ id: 'r1' }]);
       });
 
-      const result = await service.launch('c-att-ok');
+      const result = await service.launch('c-att-ok', ADMIN_REQUESTER);
       expect(result.launched).toBe(1);
     });
 
@@ -950,7 +1001,7 @@ describe('CampaignsService', () => {
         return Promise.resolve([{ id: 'r1' }]);
       });
 
-      const result = await service.launch('c-no-placeholder');
+      const result = await service.launch('c-no-placeholder', ADMIN_REQUESTER);
       expect(result.blocked).toBe(true);
       expect(result.message).toContain('elenco_allegati');
       expect(result.launched).toBe(0);
@@ -977,7 +1028,7 @@ describe('CampaignsService', () => {
         return Promise.resolve([{ id: 'r1' }]);
       });
 
-      const result = await service.launch('c-elenco-ok');
+      const result = await service.launch('c-elenco-ok', ADMIN_REQUESTER);
       expect(result.launched).toBe(1);
     });
 
@@ -1001,7 +1052,7 @@ describe('CampaignsService', () => {
         return Promise.resolve([{ id: 'r1' }]);
       });
 
-      const result = await service.launch('c-parziale');
+      const result = await service.launch('c-parziale', ADMIN_REQUESTER);
       expect(result.blocked).toBe(true);
       expect(result.launched).toBe(0);
     });
@@ -1025,7 +1076,7 @@ describe('CampaignsService', () => {
         return Promise.resolve([{ id: 'r1' }]);
       });
 
-      const result = await service.launch('c-postal');
+      const result = await service.launch('c-postal', ADMIN_REQUESTER);
       expect(result.blocked).toBeUndefined();
       expect(result.launched).toBe(1);
     });
@@ -1052,7 +1103,7 @@ describe('CampaignsService', () => {
         return Promise.resolve([{ id: 'r1' }]);
       });
 
-      const result = await service.launch('c-appio-override');
+      const result = await service.launch('c-appio-override', ADMIN_REQUESTER);
       expect(result.blocked).toBe(true);
       expect(result.message).toContain('App IO');
       expect(result.launched).toBe(0);
@@ -1090,7 +1141,7 @@ describe('CampaignsService', () => {
         return { found: false };
       });
 
-      const result = await service.launch('c-inad-1');
+      const result = await service.launch('c-inad-1', ADMIN_REQUESTER);
 
       expect(result.launched).toBe(2);
       expect(mockInadService.extractDigitalAddress).toHaveBeenCalledWith('CF1');
@@ -1115,7 +1166,7 @@ describe('CampaignsService', () => {
         return Promise.resolve([{ id: 'r1' }]);
       });
 
-      await service.launch('c-inad-2');
+      await service.launch('c-inad-2', ADMIN_REQUESTER);
 
       expect(mockInadService.extractDigitalAddress).not.toHaveBeenCalled();
     });
@@ -1133,7 +1184,7 @@ describe('CampaignsService', () => {
           return Promise.resolve([{ id: 'r1' }]);
         });
 
-        await service.launch('c-inad-3');
+        await service.launch('c-inad-3', ADMIN_REQUESTER);
 
         expect(mockInadService.extractDigitalAddress).not.toHaveBeenCalled();
       } finally {
@@ -1150,7 +1201,7 @@ describe('CampaignsService', () => {
         return Promise.resolve([{ id: 'r1' }]);
       });
 
-      await service.launch('c-inad-4');
+      await service.launch('c-inad-4', ADMIN_REQUESTER);
 
       expect(mockInadService.extractDigitalAddress).not.toHaveBeenCalled();
     });
@@ -1175,7 +1226,7 @@ describe('CampaignsService', () => {
       });
       mockInadService.startBulkExtraction.mockResolvedValue({ id: 'batch-1' });
 
-      const result = await service.launch('c-bulk-1');
+      const result = await service.launch('c-bulk-1', ADMIN_REQUESTER);
 
       expect(result.launched).toBe(0);
       expect(mockInadService.startBulkExtraction).toHaveBeenCalledTimes(1);
@@ -1284,7 +1335,7 @@ describe('CampaignsService', () => {
         execute: jest.fn().mockResolvedValue({ raw: manyRecipientsNoCf.map((r) => ({ id: `att-${r.id}` })) }),
       });
 
-      const result = await service.launch('c-bulk-nocf');
+      const result = await service.launch('c-bulk-nocf', ADMIN_REQUESTER);
 
       expect(result.launched).toBe(150);
       expect(mockInadService.startBulkExtraction).not.toHaveBeenCalled();
@@ -2148,6 +2199,21 @@ describe('CampaignsService', () => {
   });
 
   describe('launchTestSend', () => {
+    it('launchTestSend(): blocca un user non autorizzato su campagna POSTAL', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, id: 'parent-1', channelType: 'POSTAL' });
+      mockPostalAuthorizedUsersService.isAuthorized.mockResolvedValueOnce(false);
+
+      const result = await service.launchTestSend(
+        'parent-1',
+        { codiceFiscale: 'RSSMRA80A01H501U', extraData: {} },
+        { username: 'user1', role: 'user' },
+      );
+
+      expect(result.blocked).toBe(true);
+      expect(result.message).toContain('Non sei autorizzato');
+      expect(mockCampaignRepo.save).not.toHaveBeenCalled();
+    });
+
     it('crea una campagna figlia isTest=true al primo invio di prova', async () => {
       const parent = {
         id: 'parent-1',
@@ -2177,7 +2243,7 @@ describe('CampaignsService', () => {
       mockQueue.addBulk.mockResolvedValue(undefined);
 
       const dto = { codiceFiscale: 'RSSMRA80A01H501U', email: 'test@example.com', extraData: { full_name: 'Mario Rossi' } };
-      const result = await service.launchTestSend('parent-1', dto);
+      const result = await service.launchTestSend('parent-1', dto, ADMIN_REQUESTER);
 
       expect(result.testCampaignId).toBe('child-1');
       expect(result.attemptId).toBeTruthy();
@@ -2213,7 +2279,7 @@ describe('CampaignsService', () => {
       mockQueue.addBulk.mockResolvedValue(undefined);
 
       const dto = { codiceFiscale: 'VRDLGU85B02H501X', extraData: {} };
-      const result = await service.launchTestSend('parent-1', dto);
+      const result = await service.launchTestSend('parent-1', dto, ADMIN_REQUESTER);
 
       expect(result.testCampaignId).toBe('child-1');
       expect(mockCampaignRepo.create).not.toHaveBeenCalled();
@@ -2224,7 +2290,7 @@ describe('CampaignsService', () => {
       const parent = { id: 'parent-1', name: 'Campagna SEND', channelType: 'SEND', channelConfig: {}, createdBy: 'operator1' };
       mockCampaignRepo.findOneBy.mockResolvedValueOnce(parent);
 
-      await expect(service.launchTestSend('parent-1', { codiceFiscale: 'RSSMRA80A01H501U', extraData: {} }))
+      await expect(service.launchTestSend('parent-1', { codiceFiscale: 'RSSMRA80A01H501U', extraData: {} }, ADMIN_REQUESTER))
         .rejects.toThrow('Protocollazione obbligatoria per SEND');
       expect(mockCampaignRepo.create).not.toHaveBeenCalled();
     });
@@ -2268,7 +2334,7 @@ describe('CampaignsService', () => {
         fs.writeFileSync(join(parentDir, 'avviso.pdf'), '%PDF');
         fs.writeFileSync(join(childDir, 'vecchio.pdf'), 'stale');
 
-        await service.launchTestSend('parent-1', { codiceFiscale: 'RSSMRA80A01H501U', extraData: {} });
+        await service.launchTestSend('parent-1', { codiceFiscale: 'RSSMRA80A01H501U', extraData: {} }, ADMIN_REQUESTER);
 
         expect(fs.existsSync(join(childDir, 'vecchio.pdf'))).toBe(false);
         expect(fs.existsSync(join(childDir, 'avviso.pdf'))).toBe(true);
@@ -2311,7 +2377,7 @@ describe('CampaignsService', () => {
         const result = await service.launchTestSend('parent-1', {
           codiceFiscale: 'RSSMRA80A01H501U',
           extraData: { file: 'xyz.pdf' },
-        });
+        }, ADMIN_REQUESTER);
 
         expect(result.blocked).toBe(true);
         expect(result.message).toContain('Impossibile avviare');
@@ -2373,7 +2439,7 @@ describe('CampaignsService', () => {
       const result = await service.launchTestSend('parent-1', {
         codiceFiscale: 'RSSMRA80A01H501U',
         extraData: { file: 'xyz.pdf' },
-      });
+      }, ADMIN_REQUESTER);
 
       expect(result.blocked).toBeUndefined();
       expect(mockInadService.extractDigitalAddress).toHaveBeenCalledWith('RSSMRA80A01H501U');
@@ -2404,6 +2470,7 @@ describe('CampaignsService.getDuplicateSource', () => {
     Test.createTestingModule({
       providers: [
         CampaignsService,
+        { provide: PostalAuthorizedUsersService, useValue: mockPostalAuthorizedUsersService },
         { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
         { provide: getRepositoryToken(Recipient), useValue: {} },
         { provide: getRepositoryToken(NotificationAttempt), useValue: {} },
@@ -2475,6 +2542,7 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
     Test.createTestingModule({
       providers: [
         CampaignsService,
+        { provide: PostalAuthorizedUsersService, useValue: mockPostalAuthorizedUsersService },
         { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
         { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
         { provide: getRepositoryToken(NotificationAttempt), useValue: attemptRepoMock },
@@ -3011,6 +3079,7 @@ describe('CampaignsService.getFailuresByReason', () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
       providers: [
         CampaignsService,
+        { provide: PostalAuthorizedUsersService, useValue: mockPostalAuthorizedUsersService },
         { provide: getRepositoryToken(Campaign), useValue: {} },
         { provide: getRepositoryToken(Recipient), useValue: {} },
         { provide: getRepositoryToken(NotificationAttempt), useValue: {} },
@@ -3050,6 +3119,7 @@ describe('CampaignsService.getDownloadReportRows', () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
       providers: [
         CampaignsService,
+        { provide: PostalAuthorizedUsersService, useValue: mockPostalAuthorizedUsersService },
         { provide: getRepositoryToken(Campaign), useValue: { findOneBy: jest.fn().mockResolvedValue({ id: 'c1', channelConfig: {} }) } },
         { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
         { provide: getRepositoryToken(NotificationAttempt), useValue: {} },
@@ -3107,6 +3177,7 @@ describe('CampaignsService.getDownloadReportRows', () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
       providers: [
         CampaignsService,
+        { provide: PostalAuthorizedUsersService, useValue: mockPostalAuthorizedUsersService },
         { provide: getRepositoryToken(Campaign), useValue: { findOneBy: jest.fn().mockResolvedValue({ id: 'c1', channelConfig: { csvMapping: { externalId: 'id_pratica' } } }) } },
         { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
         { provide: getRepositoryToken(NotificationAttempt), useValue: {} },
@@ -3140,6 +3211,7 @@ describe('CampaignsService.updateDraft', () => {
     Test.createTestingModule({
       providers: [
         CampaignsService,
+        { provide: PostalAuthorizedUsersService, useValue: mockPostalAuthorizedUsersService },
         { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
         { provide: getRepositoryToken(Recipient), useValue: {} },
         { provide: getRepositoryToken(NotificationAttempt), useValue: {} },
@@ -3191,6 +3263,7 @@ describe('CampaignsService.updateCampaignContent', () => {
     Test.createTestingModule({
       providers: [
         CampaignsService,
+        { provide: PostalAuthorizedUsersService, useValue: mockPostalAuthorizedUsersService },
         { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
         { provide: getRepositoryToken(Recipient), useValue: {} },
         { provide: getRepositoryToken(NotificationAttempt), useValue: {} },
@@ -3290,6 +3363,7 @@ describe('CampaignsService.previewMessage', () => {
     Test.createTestingModule({
       providers: [
         CampaignsService,
+        { provide: PostalAuthorizedUsersService, useValue: mockPostalAuthorizedUsersService },
         { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
         { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
         { provide: getRepositoryToken(NotificationAttempt), useValue: attemptRepoMock },
@@ -3381,6 +3455,7 @@ describe('CampaignsService.getSendStatusBreakdown / getSendReportRows', () => {
     Test.createTestingModule({
       providers: [
         CampaignsService,
+        { provide: PostalAuthorizedUsersService, useValue: mockPostalAuthorizedUsersService },
         { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
         { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
         { provide: getRepositoryToken(NotificationAttempt), useValue: attemptRepoMock },
@@ -3539,6 +3614,7 @@ describe('CampaignsService.getPostalStatusBreakdown / getPostalReportRows', () =
     Test.createTestingModule({
       providers: [
         CampaignsService,
+        { provide: PostalAuthorizedUsersService, useValue: mockPostalAuthorizedUsersService },
         { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
         { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
         { provide: getRepositoryToken(NotificationAttempt), useValue: attemptRepoMock },
@@ -3722,6 +3798,7 @@ describe('CampaignsService.getExternalDeliveryStatus', () => {
     Test.createTestingModule({
       providers: [
         CampaignsService,
+        { provide: PostalAuthorizedUsersService, useValue: mockPostalAuthorizedUsersService },
         { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
         { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
         { provide: getRepositoryToken(NotificationAttempt), useValue: attemptRepoMock },

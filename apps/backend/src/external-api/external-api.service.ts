@@ -89,7 +89,10 @@ export class ExternalApiService {
       extraData,
     });
 
-    const launchResult = await this.campaignsService.launch(campaign.id);
+    // Requester sintetico admin: l'accesso è già gated dal proprio confine
+    // di sicurezza (ApiKeyGuard esterno), non dal ruolo operatore — bypassa
+    // l'allowlist POSTAL per design, stesso livello di fiducia di un admin.
+    const launchResult = await this.campaignsService.launch(campaign.id, { username: 'external-api', role: 'admin' });
     if (launchResult.blocked) {
       return { success: false, error: { code: 'LAUNCH_BLOCKED', message: launchResult.message ?? 'Lancio bloccato' } };
     }

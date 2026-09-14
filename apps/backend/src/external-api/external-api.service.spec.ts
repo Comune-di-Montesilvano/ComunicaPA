@@ -54,7 +54,7 @@ describe('ExternalApiService', () => {
     );
     expect(campaigns.setExternalClientId).toHaveBeenCalledWith('camp-1', 'client-1');
     expect(campaigns.addSingleRecipient).toHaveBeenCalledWith('camp-1', expect.objectContaining({ codiceFiscale: 'RSSMRA80A01H501U' }));
-    expect(campaigns.launch).toHaveBeenCalledWith('camp-1');
+    expect(campaigns.launch).toHaveBeenCalledWith('camp-1', { username: 'external-api', role: 'admin' });
     expect(result).toEqual({ success: true, campaignId: 'camp-1', status: 'QUEUED' });
   });
 
