@@ -208,8 +208,8 @@ importers:
         specifier: ^4.1.2
         version: 4.1.2(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(supports-color@8.1.1)
       lucide-react:
-        specifier: ^0.400.0
-        version: 0.400.0(react@19.3.0)
+        specifier: ^1.44.0
+        version: 1.44.0(react@19.3.0)
       react:
         specifier: ^19.3.0
         version: 19.3.0
@@ -3941,8 +3941,8 @@ packages:
   lru-memoizer@3.0.0:
     resolution: {integrity: sha512-m83w/cYXLdUIboKSPxzPAGfYnk+vqeDYXuoSrQRw1q+yVEd8IXhvMufN8Q5TIPe7e2jyX4SRNrDJI2Skw1yznQ==}
 
-  lucide-react@0.400.0:
-    resolution: {integrity: sha512-rpp7pFHh3Xd93KHixNgB0SqThMHpYNzsGUu69UaQbSZ75Q/J3m5t6EhKyMT3m4w2WOxmJ2mY0tD3vebnXqQryQ==}
+  lucide-react@1.44.0:
+    resolution: {integrity: sha512-2egNApH4hX4j/qdCgRublh88+9u3mEhz9iSlW5ckm4kaQEqZbXbMr0l5u5JZLy8nmWRx2dbHGQkEDYz6C9aCgw==}
     peerDependencies:
       react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
@@ -9379,7 +9379,7 @@ snapshots:
       lodash.clonedeep: 4.5.0
       lru-cache: 11.5.2
 
-  lucide-react@0.400.0(react@19.3.0):
+  lucide-react@1.44.0(react@19.3.0):
     dependencies:
       react: 19.3.0
 
