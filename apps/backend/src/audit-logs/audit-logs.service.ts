@@ -7,6 +7,8 @@ export interface AuditLogQueryDto {
   page?: number;
   pageSize?: number;
   search?: string;
+  /** Se impostato, restringe il risultato alle sole righe di questo operatore — usato per i ruoli 'user' (vedono solo la propria attività, mai il registro completo). */
+  operatorFilter?: string;
 }
 
 @Injectable()
@@ -52,6 +54,15 @@ export class AuditLogsService {
         { campaignName: Like(`%${search}%`) },
         { action: Like(`%${search}%`) },
       ];
+    }
+
+    // Un 'user' vede solo la propria attività, mai il registro completo —
+    // sovrascrive volutamente operator su ogni ramo OR (una ricerca per
+    // sotto-stringa dell'operatore non ha senso ristretta al proprio username).
+    if (query.operatorFilter) {
+      where = Array.isArray(where)
+        ? where.map((clause) => ({ ...clause, operator: query.operatorFilter }))
+        : { ...where, operator: query.operatorFilter };
     }
 
     const [data, total] = await this.auditLogRepo.findAndCount({
