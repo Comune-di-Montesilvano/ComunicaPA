@@ -23,7 +23,12 @@ const redisMock = vi.hoisted(() => ({
 }));
 
 vi.mock('ioredis', () => {
-  const RedisMock = vi.fn().mockImplementation(() => redisMock);
+  // vitest 5: il mock ora fa Reflect.construct() sull'implementation quando
+  // chiamato con `new` (per incatenare il prototype) — richiede una funzione
+  // costruibile, mai una arrow function (non ha [[Construct]]).
+  const RedisMock = vi.fn().mockImplementation(function RedisCtor() {
+    return redisMock;
+  });
   return {
     __esModule: true,
     default: RedisMock,
