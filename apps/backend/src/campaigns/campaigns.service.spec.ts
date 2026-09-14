@@ -16,6 +16,8 @@ import { RegistroImpreseService } from '../channels/registro-imprese/registro-im
 import { RegistroImpreseVerifyQueueService } from '../channels/registro-imprese/registro-imprese-verify-queue.service.js';
 import { PostalAuthorizedUsersService } from '../postal-authorized-users/postal-authorized-users.service.js';
 import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service.js';
+import { SignatureVerificationBulkService } from '../signature-verification/signature-verification-bulk.service.js';
+import { SignatureVerificationService } from '../signature-verification/signature-verification.service.js';
 import * as fs from 'fs';
 import { join } from 'path';
 import * as os from 'os';
@@ -50,6 +52,8 @@ const ADMIN_REQUESTER = { username: 'admin', role: 'admin' as const };
 // in questo file sono blocchi SIBLING separati, ognuno col proprio
 // Test.createTestingModule — serve visibile ovunque, non solo nel primo.
 const mockPostalAuthorizedUsersService = { isAuthorized: vi.fn().mockResolvedValue(true) };
+const mockSignatureVerificationBulkService = { getLatestStatus: vi.fn().mockResolvedValue({ status: 'done', totalRows: 0, validCount: 0, invalidCount: 0, errorMessage: null }) };
+const mockSignatureVerificationService = { verify: vi.fn().mockResolvedValue({ valid: true, reason: null }) };
 
 describe('CampaignsService', () => {
   let service: CampaignsService;
@@ -117,6 +121,8 @@ describe('CampaignsService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CampaignsService,
+        { provide: SignatureVerificationBulkService, useValue: mockSignatureVerificationBulkService },
+        { provide: SignatureVerificationService, useValue: mockSignatureVerificationService },
         { provide: PostalAuthorizedUsersService, useValue: mockPostalAuthorizedUsersService },
         { provide: getRepositoryToken(Campaign), useValue: mockCampaignRepo },
         { provide: getRepositoryToken(Recipient), useValue: mockRecipientRepo },
@@ -445,6 +451,81 @@ describe('CampaignsService', () => {
 
     await expect(service.launch('c-protocolla-false', ADMIN_REQUESTER)).rejects.toThrow(BadRequestException);
     expect(mockAttemptRepo.createQueryBuilder).not.toHaveBeenCalled();
+  });
+
+  it('launch(): SEND massivo bloccato se la verifica firma non è mai stata avviata', async () => {
+    mockCampaignQb.execute.mockResolvedValueOnce({ affected: 1 });
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({
+      ...mockCampaign,
+      channelType: 'SEND',
+      channelConfig: { protocolla: true, attachments: [{ key: 'doc', label: 'Documento' }], wizSingleMode: false },
+    });
+    mockSignatureVerificationBulkService.getLatestStatus.mockResolvedValueOnce(null);
+
+    const result = await service.launch('c-send-nosig', ADMIN_REQUESTER);
+
+    expect(result.blocked).toBe(true);
+    expect(result.message).toContain('Verifica firma');
+  });
+
+  it('launch(): SEND massivo bloccato se la verifica ha trovato allegati non validi', async () => {
+    mockCampaignQb.execute.mockResolvedValueOnce({ affected: 1 });
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({
+      ...mockCampaign,
+      channelType: 'SEND',
+      channelConfig: { protocolla: true, attachments: [{ key: 'doc', label: 'Documento' }], wizSingleMode: false },
+    });
+    mockSignatureVerificationBulkService.getLatestStatus.mockResolvedValueOnce({
+      status: 'done', totalRows: 5, validCount: 4, invalidCount: 1, errorMessage: null,
+    });
+
+    const result = await service.launch('c-send-invalid', ADMIN_REQUESTER);
+
+    expect(result.blocked).toBe(true);
+    expect(result.message).toContain('1');
+  });
+
+  it('launch(): SEND singolo NON bloccato da firma non valida, solo warning', async () => {
+    // File reale su disco (stesso pattern `tmpDirRef`/`getUploadsDir` mockato
+    // già usato altrove in questo file per `finalizeAttachments`) — niente
+    // `fs.existsSync =`/`fs.readFileSync =` diretti: `fs` qui è il modulo
+    // Node reale (non mockato con `vi.mock('fs')`, che romperebbe gli altri
+    // test di questo file basati su file veri), e sotto ESM/esModuleInterop
+    // le sue proprietà non sono riassegnabili (stesso gotcha già noto per
+    // `vi.spyOn` su `import * as fs`).
+    const tmpDir = fs.mkdtempSync(join(os.tmpdir(), 'comunicapa-sig-'));
+    tmpDirRef.dir = tmpDir;
+    fs.writeFileSync(join(tmpDir, 'nonfirmato.p7m'), 'dummy');
+
+    mockCampaignQb.execute.mockResolvedValueOnce({ affected: 1 });
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({
+      ...mockCampaign,
+      channelType: 'SEND',
+      channelConfig: { protocolla: true, attachments: [{ key: 'doc', label: 'Documento' }], wizSingleMode: true },
+    });
+    // 3 chiamate sequenziali a recipientRepo.find dentro launch() per SEND
+    // singolo: (1) verifica firma sincrona, (2) findMissingAttachments
+    // dentro checkAttachmentsBlocking, (3) recipients principali del lancio.
+    mockRecipientRepo.find.mockResolvedValueOnce([{ id: 'r1', extraData: { doc: 'nonfirmato.p7m' } }]);
+    mockRecipientRepo.find.mockResolvedValueOnce([{ id: 'r1' }]);
+    mockRecipientRepo.find.mockResolvedValueOnce([{ id: 'r1' }]);
+    mockSignatureVerificationService.verify.mockResolvedValueOnce({ valid: false, reason: 'CA non riconosciuta' });
+    mockAttemptRepo.createQueryBuilder.mockReturnValue({
+      insert: jest.fn().mockReturnThis(),
+      into: jest.fn().mockReturnThis(),
+      values: jest.fn().mockReturnThis(),
+      returning: jest.fn().mockReturnThis(),
+      execute: jest.fn().mockResolvedValue({ raw: [{ id: 'att-1' }] }),
+    });
+
+    try {
+      const result = await service.launch('c-send-single', ADMIN_REQUESTER);
+
+      expect(result.blocked).toBeUndefined();
+      expect(result.signatureWarning).toContain('CA non riconosciuta');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 
   it('uploadCsv uses increment for totalRecipients instead of update (no overwrite)', async () => {
@@ -2470,6 +2551,8 @@ describe('CampaignsService.getDuplicateSource', () => {
     Test.createTestingModule({
       providers: [
         CampaignsService,
+        { provide: SignatureVerificationBulkService, useValue: mockSignatureVerificationBulkService },
+        { provide: SignatureVerificationService, useValue: mockSignatureVerificationService },
         { provide: PostalAuthorizedUsersService, useValue: mockPostalAuthorizedUsersService },
         { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
         { provide: getRepositoryToken(Recipient), useValue: {} },
@@ -2542,6 +2625,8 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
     Test.createTestingModule({
       providers: [
         CampaignsService,
+        { provide: SignatureVerificationBulkService, useValue: mockSignatureVerificationBulkService },
+        { provide: SignatureVerificationService, useValue: mockSignatureVerificationService },
         { provide: PostalAuthorizedUsersService, useValue: mockPostalAuthorizedUsersService },
         { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
         { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
@@ -3079,6 +3164,8 @@ describe('CampaignsService.getFailuresByReason', () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
       providers: [
         CampaignsService,
+        { provide: SignatureVerificationBulkService, useValue: mockSignatureVerificationBulkService },
+        { provide: SignatureVerificationService, useValue: mockSignatureVerificationService },
         { provide: PostalAuthorizedUsersService, useValue: mockPostalAuthorizedUsersService },
         { provide: getRepositoryToken(Campaign), useValue: {} },
         { provide: getRepositoryToken(Recipient), useValue: {} },
@@ -3119,6 +3206,8 @@ describe('CampaignsService.getDownloadReportRows', () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
       providers: [
         CampaignsService,
+        { provide: SignatureVerificationBulkService, useValue: mockSignatureVerificationBulkService },
+        { provide: SignatureVerificationService, useValue: mockSignatureVerificationService },
         { provide: PostalAuthorizedUsersService, useValue: mockPostalAuthorizedUsersService },
         { provide: getRepositoryToken(Campaign), useValue: { findOneBy: jest.fn().mockResolvedValue({ id: 'c1', channelConfig: {} }) } },
         { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
@@ -3177,6 +3266,8 @@ describe('CampaignsService.getDownloadReportRows', () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
       providers: [
         CampaignsService,
+        { provide: SignatureVerificationBulkService, useValue: mockSignatureVerificationBulkService },
+        { provide: SignatureVerificationService, useValue: mockSignatureVerificationService },
         { provide: PostalAuthorizedUsersService, useValue: mockPostalAuthorizedUsersService },
         { provide: getRepositoryToken(Campaign), useValue: { findOneBy: jest.fn().mockResolvedValue({ id: 'c1', channelConfig: { csvMapping: { externalId: 'id_pratica' } } }) } },
         { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
@@ -3211,6 +3302,8 @@ describe('CampaignsService.updateDraft', () => {
     Test.createTestingModule({
       providers: [
         CampaignsService,
+        { provide: SignatureVerificationBulkService, useValue: mockSignatureVerificationBulkService },
+        { provide: SignatureVerificationService, useValue: mockSignatureVerificationService },
         { provide: PostalAuthorizedUsersService, useValue: mockPostalAuthorizedUsersService },
         { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
         { provide: getRepositoryToken(Recipient), useValue: {} },
@@ -3263,6 +3356,8 @@ describe('CampaignsService.updateCampaignContent', () => {
     Test.createTestingModule({
       providers: [
         CampaignsService,
+        { provide: SignatureVerificationBulkService, useValue: mockSignatureVerificationBulkService },
+        { provide: SignatureVerificationService, useValue: mockSignatureVerificationService },
         { provide: PostalAuthorizedUsersService, useValue: mockPostalAuthorizedUsersService },
         { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
         { provide: getRepositoryToken(Recipient), useValue: {} },
@@ -3363,6 +3458,8 @@ describe('CampaignsService.previewMessage', () => {
     Test.createTestingModule({
       providers: [
         CampaignsService,
+        { provide: SignatureVerificationBulkService, useValue: mockSignatureVerificationBulkService },
+        { provide: SignatureVerificationService, useValue: mockSignatureVerificationService },
         { provide: PostalAuthorizedUsersService, useValue: mockPostalAuthorizedUsersService },
         { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
         { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
@@ -3455,6 +3552,8 @@ describe('CampaignsService.getSendStatusBreakdown / getSendReportRows', () => {
     Test.createTestingModule({
       providers: [
         CampaignsService,
+        { provide: SignatureVerificationBulkService, useValue: mockSignatureVerificationBulkService },
+        { provide: SignatureVerificationService, useValue: mockSignatureVerificationService },
         { provide: PostalAuthorizedUsersService, useValue: mockPostalAuthorizedUsersService },
         { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
         { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
@@ -3614,6 +3713,8 @@ describe('CampaignsService.getPostalStatusBreakdown / getPostalReportRows', () =
     Test.createTestingModule({
       providers: [
         CampaignsService,
+        { provide: SignatureVerificationBulkService, useValue: mockSignatureVerificationBulkService },
+        { provide: SignatureVerificationService, useValue: mockSignatureVerificationService },
         { provide: PostalAuthorizedUsersService, useValue: mockPostalAuthorizedUsersService },
         { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
         { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
@@ -3798,6 +3899,8 @@ describe('CampaignsService.getExternalDeliveryStatus', () => {
     Test.createTestingModule({
       providers: [
         CampaignsService,
+        { provide: SignatureVerificationBulkService, useValue: mockSignatureVerificationBulkService },
+        { provide: SignatureVerificationService, useValue: mockSignatureVerificationService },
         { provide: PostalAuthorizedUsersService, useValue: mockPostalAuthorizedUsersService },
         { provide: getRepositoryToken(Campaign), useValue: campaignRepoMock },
         { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
