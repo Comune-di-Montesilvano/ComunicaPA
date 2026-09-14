@@ -4777,6 +4777,7 @@ export function App(): React.JSX.Element {
       { id: 'guida-templating', title: 'Personalizzare oggetto e testo (placeholder)' },
       { id: 'guida-canali', title: 'Canali disponibili' },
       { id: 'guida-protocollo', title: 'Protocollo e sigillo elettronico' },
+      { id: 'guida-costi', title: 'Costi degli invii' },
       { id: 'guida-monitoraggio', title: 'Monitoraggio e stato invii' },
       { id: 'guida-postal', title: 'Autorizzazione Postalizzazione' },
       { id: 'guida-impostazioni', title: 'Impostazioni' },
@@ -5011,6 +5012,27 @@ export function App(): React.JSX.Element {
               ma quella usata qui <strong>non appone il sigillo elettronico</strong>: un limite tecnico reale,
               non un'alternativa equivalente al protocollo ufficiale. Non va quindi usata in modo indiscriminato
               al posto del protocollo per ogni comunicazione.
+            </p>
+          </div>
+        </div>
+
+        <div id="guida-costi" className="card shadow-sm border-0 rounded-3">
+          <div className="card-body p-4">
+            <h4 className="h5 fw-bold text-dark mb-3">Costi degli invii</h4>
+            <p className="text-muted mb-2">
+              EMAIL, PEC e App IO non hanno un costo per notifica. <strong>SEND</strong> e <strong>Posta</strong>
+              sì — il widget "Costo Campagna" nel dettaglio di ogni campagna mostra il totale, aggiornato man
+              mano che arrivano i costi reali.
+            </p>
+            <ul className="text-muted mb-2 ps-3">
+              <li className="mb-2"><strong>SEND</strong>: si paga sempre un costo base per notifica, circa <strong>1 euro</strong> (importo configurabile in Impostazioni → SEND) — a prescindere dal contenuto o dal numero di pagine.</li>
+              <li><strong>Posta</strong>: il costo è quello reale del fornitore (dipende da tipologia, peso, ricevuta di ritorno...) e non è noto subito — spesso compare a "0€" per un po' prima di essere calcolato: non è un errore, è solo il costo non ancora arrivato dal fornitore.</li>
+            </ul>
+            <p className="text-muted mb-0">
+              Se hai attivato il dirottamento automatico su domicilio digitale (vedi sopra), un destinatario
+              dirottato su PEC non genera alcun costo aggiuntivo rispetto all'invio cartaceo originariamente
+              previsto — anzi, il dettaglio campagna mostra anche il risparmio stimato rispetto al canale
+              tradizionale.
             </p>
           </div>
         </div>
