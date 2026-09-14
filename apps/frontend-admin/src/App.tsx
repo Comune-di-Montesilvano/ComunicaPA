@@ -1237,6 +1237,14 @@ const EMPTY_MAIL_CONFIG: Omit<MailConfigItem, 'id' | 'testedAt' | 'active'> = {
   batchSize: 100, batchIntervalSeconds: 60, isDefault: false,
 };
 
+type PostalAuthorizedUserItem = {
+  id: string;
+  username: string;
+  addedBy: string;
+  addedByDisplayName?: string;
+  createdAt: string;
+};
+
 type PostalProviderItem = {
   id: string;
   type: 'GLOBALCOM';
@@ -1306,6 +1314,7 @@ export function App(): React.JSX.Element {
   const [username, setUsername] = useState<string | null>(localStorage.getItem('comunicapa_username'));
   const [displayName, setDisplayName] = useState<string | null>(localStorage.getItem('comunicapa_display_name'));
   const [role, setRole] = useState<string | null>(localStorage.getItem('comunicapa_role'));
+  const [canUsePostal, setCanUsePostal] = useState<boolean>(localStorage.getItem('comunicapa_can_use_postal') === 'true');
   const [view, setView] = useState<'dashboard' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'notifiche-ricerca' | 'cerca-domicilio' | 'verifica-appio' | 'verifica-inad' | 'template-dashboard' | 'impostazioni' | 'campaign-detail' | 'audit-logs' | 'arricchimento'>('dashboard');
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [templates, setTemplates] = useState<TemplateItem[]>([]);
@@ -1893,6 +1902,10 @@ export function App(): React.JSX.Element {
   // step "Template" viene saltato del tutto nella step-bar, l'Oggetto si
   // inserisce direttamente nello step finale "Anteprima e Invio".
   const wizSingleNeedsTemplateStep = wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'APP_IO';
+  // Admin sempre autorizzato; un 'user' solo se presente nell'elenco
+  // caricato al login (canUsePostal) — gate solo UX, il controllo reale
+  // resta server-side in launch()/launchTestSend().
+  const canSelectPostal = role === 'admin' || canUsePostal;
   const [wizAppIoServiceId, setWizAppIoServiceId] = useState('');
   const [wizCsvFile, setWizCsvFile] = useState<File | null>(null);
   const [wizCsvHeaders, setWizCsvHeaders] = useState<string[]>([]);
@@ -2230,6 +2243,10 @@ export function App(): React.JSX.Element {
   const [editingPostalProvider, setEditingPostalProvider] = useState<(Partial<PostalProviderItem> & { type: 'GLOBALCOM' }) | null>(null);
   const [postalProviderBusyId, setPostalProviderBusyId] = useState<string | null>(null);
   const [postalProviderMsg, setPostalProviderMsg] = useState<{ text: string; error: boolean } | null>(null);
+  const [postalAuthorizedUsers, setPostalAuthorizedUsers] = useState<PostalAuthorizedUserItem[]>([]);
+  const [postalAuthorizedUserMsg, setPostalAuthorizedUserMsg] = useState<{ text: string; error: boolean } | null>(null);
+  const [postalAuthorizedUserBusy, setPostalAuthorizedUserBusy] = useState(false);
+  const [newPostalAuthorizedUsername, setNewPostalAuthorizedUsername] = useState('');
 
   const [externalClients, setExternalClients] = useState<ExternalClientItem[]>([]);
   const [externalClientsLoading, setExternalClientsLoading] = useState(false);
@@ -2546,6 +2563,7 @@ export function App(): React.JSX.Element {
       fetchCampaigns();
       fetchMailConfigs();
       fetchPostalProviders();
+      fetchPostalAuthorizedUsers();
       fetchIoServices();
     }
   }, [token]);
@@ -2699,10 +2717,12 @@ export function App(): React.JSX.Element {
         setDisplayName(null);
       }
       localStorage.setItem('comunicapa_role', data.role);
-      
+      localStorage.setItem('comunicapa_can_use_postal', String(!!data.canUsePostal));
+
       setToken(data.access_token);
       setUsername(data.username);
       setRole(data.role);
+      setCanUsePostal(!!data.canUsePostal);
       setView('dashboard');
     } catch (err: any) {
       setLoginError(err.message || 'Errore durante il login');
@@ -2716,6 +2736,7 @@ export function App(): React.JSX.Element {
     localStorage.removeItem('comunicapa_username');
     localStorage.removeItem('comunicapa_display_name');
     localStorage.removeItem('comunicapa_role');
+    localStorage.removeItem('comunicapa_can_use_postal');
     setToken(null);
     setUsername(null);
     setDisplayName(null);
@@ -4570,6 +4591,67 @@ export function App(): React.JSX.Element {
     }
   };
 
+  const fetchPostalAuthorizedUsers = async () => {
+    if (!token || role !== 'admin') return;
+    try {
+      const res = await fetch(`${ADMIN_API_BASE}/postal-authorized-users`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPostalAuthorizedUsers(data.users || []);
+      }
+    } catch (err) {
+      console.error("Errore caricamento postal-authorized-users:", err);
+    }
+  };
+
+  const handleAddPostalAuthorizedUser = async () => {
+    if (!token || !newPostalAuthorizedUsername.trim()) return;
+    setPostalAuthorizedUserBusy(true);
+    setPostalAuthorizedUserMsg(null);
+    try {
+      const res = await fetch(`${ADMIN_API_BASE}/postal-authorized-users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ username: newPostalAuthorizedUsername.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.message || `Errore aggiunta (HTTP ${res.status})`);
+      }
+      setPostalAuthorizedUserMsg({ text: 'Utente abilitato.', error: false });
+      setNewPostalAuthorizedUsername('');
+      fetchPostalAuthorizedUsers();
+    } catch (err: any) {
+      setPostalAuthorizedUserMsg({ text: err.message || 'Errore di rete', error: true });
+    } finally {
+      setPostalAuthorizedUserBusy(false);
+    }
+  };
+
+  const handleRemovePostalAuthorizedUser = async (id: string, usernameLabel: string) => {
+    if (!token || !window.confirm(`Rimuovere "${usernameLabel}" dagli utenti abilitati?`)) return;
+    setPostalAuthorizedUserBusy(true);
+    setPostalAuthorizedUserMsg(null);
+    try {
+      const res = await fetch(`${ADMIN_API_BASE}/postal-authorized-users/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok && res.status !== 204) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || `Errore rimozione (HTTP ${res.status})`);
+      }
+      setPostalAuthorizedUserMsg({ text: 'Utente rimosso.', error: false });
+      fetchPostalAuthorizedUsers();
+    } catch (err: any) {
+      setPostalAuthorizedUserMsg({ text: err.message || 'Errore di rete', error: true });
+    } finally {
+      setPostalAuthorizedUserBusy(false);
+    }
+  };
+
   const handleSavePostalProvider = async () => {
     if (!editingPostalProvider || !token) return;
     setPostalProviderBusyId(editingPostalProvider.id || 'new');
@@ -4820,6 +4902,76 @@ export function App(): React.JSX.Element {
             )}
           </div>
         )}
+
+        <div className="card border shadow-sm">
+          <div className="card-body p-3">
+            {postalAuthorizedUserMsg && (
+              <div className={`alert ${postalAuthorizedUserMsg.error ? 'alert-danger' : 'alert-success'} d-flex align-items-center gap-2 mb-3`}>
+                {postalAuthorizedUserMsg.error ? <AlertTriangle /> : <CheckCircle2 />}
+                <div>{postalAuthorizedUserMsg.text}</div>
+              </div>
+            )}
+            <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-3 d-flex align-items-center gap-2">
+              <Users size={18} /> Utenti abilitati all'invio Postalizzazione ({postalAuthorizedUsers.length})
+            </h5>
+            <p className="text-muted small mb-3">
+              Gli amministratori possono sempre avviare campagne POSTAL. Aggiungi qui gli operatori
+              'user' a cui vuoi consentire l'avvio di invii Postalizzazione.
+            </p>
+            <div className="d-flex gap-2 mb-3">
+              <input
+                type="text"
+                className="form-control form-control-sm"
+                placeholder="Username operatore (es. mario.rossi)"
+                value={newPostalAuthorizedUsername}
+                onChange={(e) => setNewPostalAuthorizedUsername(e.target.value)}
+              />
+              <button
+                type="button"
+                className="btn btn-sm btn-primary d-flex align-items-center gap-1 text-nowrap"
+                disabled={postalAuthorizedUserBusy || !newPostalAuthorizedUsername.trim()}
+                onClick={() => handleAddPostalAuthorizedUser()}
+              >
+                <Plus size={16} /> Aggiungi
+              </button>
+            </div>
+            {postalAuthorizedUsers.length === 0 ? (
+              <div className="text-center py-3 border rounded bg-white text-muted small">
+                Nessun utente abilitato oltre agli amministratori.
+              </div>
+            ) : (
+              <table className="table table-sm mb-0">
+                <thead>
+                  <tr>
+                    <th>Utente</th>
+                    <th>Aggiunto da</th>
+                    <th>Data</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {postalAuthorizedUsers.map((u) => (
+                    <tr key={u.id}>
+                      <td>{u.username}</td>
+                      <td>{u.addedByDisplayName || u.addedBy}</td>
+                      <td>{new Date(u.createdAt).toLocaleDateString('it-IT')}</td>
+                      <td className="text-end">
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-danger"
+                          disabled={postalAuthorizedUserBusy}
+                          onClick={() => handleRemovePostalAuthorizedUser(u.id, u.username)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
 
         {editing && (
           // <div>, non <form>: questo pannello vive dentro la <form> generale
@@ -8942,6 +9094,7 @@ export function App(): React.JSX.Element {
                           >
                             {(['EMAIL', 'PEC', 'APP_IO', 'SEND', 'POSTAL'] as const)
                               .filter(key => !singleInadForced || key === 'PEC' || key === 'SEND')
+                              .filter(key => key !== 'POSTAL' || canSelectPostal)
                               .map(key => (
                                 <option key={key} value={key}>
                                   {getChannelMeta(key).label}
@@ -9593,9 +9746,11 @@ export function App(): React.JSX.Element {
                         if (newChan === 'SEND') setWizProtocolla(true);
                       }}
                     >
-                      {(['EMAIL', 'PEC', 'APP_IO', 'SEND', 'POSTAL'] as const).map(key => (
-                        <option key={key} value={key}>{getChannelMeta(key).label}</option>
-                      ))}
+                      {(['EMAIL', 'PEC', 'APP_IO', 'SEND', 'POSTAL'] as const)
+                        .filter(key => key !== 'POSTAL' || canSelectPostal)
+                        .map(key => (
+                          <option key={key} value={key}>{getChannelMeta(key).label}</option>
+                        ))}
                     </select>
                   </div>
 
@@ -13212,9 +13367,11 @@ export function App(): React.JSX.Element {
                             value={enrichCampaignChannel}
                             onChange={(e: any) => setEnrichCampaignChannel(e.target.value)}
                           >
-                            {(['EMAIL', 'PEC', 'APP_IO', 'SEND', 'POSTAL'] as const).map(k => (
-                              <option key={k} value={k}>{getChannelMeta(k).label}</option>
-                            ))}
+                            {(['EMAIL', 'PEC', 'APP_IO', 'SEND', 'POSTAL'] as const)
+                              .filter(k => k !== 'POSTAL' || canSelectPostal)
+                              .map(k => (
+                                <option key={k} value={k}>{getChannelMeta(k).label}</option>
+                              ))}
                           </select>
                         </div>
                         {enrichCampaignError && <div className="alert alert-danger small">{enrichCampaignError}</div>}
