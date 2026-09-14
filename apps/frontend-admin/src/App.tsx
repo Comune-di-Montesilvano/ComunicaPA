@@ -6448,7 +6448,7 @@ export function App(): React.JSX.Element {
     // allegato allo Step 3 (Anteprima e Invio) cerca il file sul disco del
     // server prima che sia mai stato caricato — 404 "Allegato non trovato".
     try {
-      await ensureWizSingleAttachmentsUploaded(campaignId, attachmentSlotsWithFile.map(s => s.file!));
+      if (!(await ensureWizSingleAttachmentsUploaded(campaignId, attachmentSlotsWithFile.map(s => s.file!)))) return;
     } catch (err: any) {
       alert(err.message || 'Errore durante il caricamento degli allegati.');
       return;
@@ -7366,23 +7366,21 @@ export function App(): React.JSX.Element {
   };
 
   // Avvia la verifica firma (job unico, singolo o massivo — il job non
-  // distingue) e attende il risultato con un poll breve per dare un esito
-  // SUBITO al momento del caricamento, non solo al lancio: l'operatore deve
-  // sapere di un allegato non firmato mentre sta ancora sullo step allegati,
-  // non scoprirlo minuti dopo al bottone "Lancia". Timeout 20s (un solo file
-  // o pochi file, il job dovrebbe chiudersi in pochi secondi) — oltre il
+  // distingue) e attende il risultato con un poll breve per un esito SUBITO
+  // al momento del caricamento, non solo al lancio. Timeout 20s — oltre il
   // timeout si desiste silenziosamente: il pannello di stato allo step 6/7
   // (massivo) o il gate al lancio (singolo) mostrano comunque l'esito reale.
-  // Per il singolo, un allegato non valido richiede conferma esplicita
-  // (vedi `confirmContinueDespiteInvalidSignature`) — un `throw` qui interrompe
-  // il flusso del chiamante riusando il suo `catch` esistente (stesso pattern
-  // già in uso ovunque in questo file, nessuna plumbing aggiuntiva ai 3 call site).
-  const triggerAndAlertSignatureVerification = async (campaignId: string): Promise<void> => {
+  // Niente popup sul caso valido (rumore inutile, l'operatore non ha nulla
+  // da decidere) — solo sul caso invalido, dove serve davvero una reazione.
+  // Ritorna `false` solo se il singolo viene annullato (Annulla sulla
+  // conferma) — i chiamanti interrompono il flusso silenziosamente, nessun
+  // ulteriore popup di errore: la conferma già spiegata è l'unico messaggio.
+  const triggerAndAlertSignatureVerification = async (campaignId: string): Promise<boolean> => {
     const isSingolo = wizChannel === 'SEND' && wizSingleMode;
     try {
       await apiFetch(`/campaigns/${campaignId}/signature-verification`, { method: 'POST' });
     } catch {
-      return;
+      return true;
     }
     const deadline = Date.now() + 20000;
     while (Date.now() < deadline) {
@@ -7395,28 +7393,21 @@ export function App(): React.JSX.Element {
         if (status.status === 'done') {
           if (status.invalidCount > 0) {
             if (isSingolo) {
-              if (!confirmContinueDespiteInvalidSignature(status.invalidCount, status.totalRows)) {
-                throw new Error('Caricamento annullato: allegato non firmato digitalmente in modo valido.');
-              }
-            } else {
-              alert(`Attenzione: ${status.invalidCount} allegato/i su ${status.totalRows} non risultano firmati validamente.`);
+              return confirmContinueDespiteInvalidSignature(status.invalidCount, status.totalRows);
             }
-          } else if (isSingolo) {
-            alert('Allegato firmato digitalmente in modo valido.');
-          } else {
-            alert(`Verifica firma completata: tutti gli allegati (${status.totalRows}) risultano firmati validamente.`);
+            alert(`Attenzione: ${status.invalidCount} allegato/i su ${status.totalRows} non risultano firmati validamente.`);
           }
-          return;
+          return true;
         }
-        if (status.status === 'failed') return;
-      } catch (err) {
-        if (err instanceof Error && err.message.startsWith('Caricamento annullato')) throw err;
-        // silenzioso per ogni altro errore: stesso principio del polling stato campagna esistente
+        if (status.status === 'failed') return true;
+      } catch {
+        // silenzioso: stesso principio del polling stato campagna esistente
       }
     }
+    return true;
   };
 
-  const ensureWizSingleAttachmentsUploaded = async (campaignId: string, filesOverride?: File[]) => {
+  const ensureWizSingleAttachmentsUploaded = async (campaignId: string, filesOverride?: File[]): Promise<boolean> => {
     // filesOverride: setWizPdfFiles() è async — un chiamante che l'ha appena
     // invocato nello stesso tick (handleWizSingleSubmit) leggerebbe qui
     // wizPdfFiles ancora allo stato PRIMA dell'update (closure stale, stesso
@@ -7424,12 +7415,13 @@ export function App(): React.JSX.Element {
     // ("nessun allegato" finché non si torna indietro e si riavanza, quando
     // lo state è finalmente committato dal giro precedente).
     const files = filesOverride !== undefined ? filesOverride : wizPdfFiles;
-    if (!wizSingleMode || files.length === 0) return;
+    if (!wizSingleMode || files.length === 0) return true;
     await uploadAttachmentFilesCore(campaignId, files);
     setWizPdfFiles([]);
     if (wizChannel === 'SEND') {
-      await triggerAndAlertSignatureVerification(campaignId);
+      return triggerAndAlertSignatureVerification(campaignId);
     }
+    return true;
   };
 
   const addWizSingleAttachmentSlot = () => {
@@ -7658,7 +7650,7 @@ export function App(): React.JSX.Element {
         campaignObj = await res.json();
       }
 
-      await ensureWizSingleAttachmentsUploaded(campaignObj.id);
+      if (!(await ensureWizSingleAttachmentsUploaded(campaignObj.id))) return;
 
       const blob = buildNormalizedRecipientsCsvBlob();
 
@@ -7729,7 +7721,7 @@ export function App(): React.JSX.Element {
     try {
       if (!wizCampaignId) throw new Error('Campagna non ancora salvata.');
       if (!wizTestForm.codiceFiscale.trim()) throw new Error('Codice Fiscale obbligatorio.');
-      await ensureWizSingleAttachmentsUploaded(wizCampaignId);
+      if (!(await ensureWizSingleAttachmentsUploaded(wizCampaignId))) return;
 
       const first = wizValidRows[0] ?? {};
       const extraData: Record<string, string> = { ...first };
