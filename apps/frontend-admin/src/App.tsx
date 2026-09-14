@@ -4771,6 +4771,8 @@ export function App(): React.JSX.Element {
     const sections: Array<{ id: string; title: string }> = [
       { id: 'guida-cose', title: "Cos'è ComunicaPA" },
       { id: 'guida-anagrafica', title: 'Verifica Anagrafica e domicilio digitale' },
+      { id: 'guida-dirottamento', title: 'Dirottamento automatico su domicilio digitale' },
+      { id: 'guida-regole-canale', title: 'Regole per canale (allegato, oggetto/testo, App IO)' },
       { id: 'guida-wizard', title: 'Come lanciare un invio' },
       { id: 'guida-canali', title: 'Canali disponibili' },
       { id: 'guida-protocollo', title: 'Protocollo e sigillo elettronico' },
@@ -4826,6 +4828,92 @@ export function App(): React.JSX.Element {
               È utile anche senza dover inviare nulla: è il modo più rapido per un ufficio di sapere se un
               cittadino o un'impresa ha un domicilio digitale attivo e su quale canale sarebbe effettivamente
               raggiungibile, prima ancora di organizzare una comunicazione.
+            </p>
+          </div>
+        </div>
+
+        <div id="guida-dirottamento" className="card shadow-sm border-0 rounded-3">
+          <div className="card-body p-4">
+            <h4 className="h5 fw-bold text-dark mb-3">Dirottamento automatico su domicilio digitale</h4>
+            <p className="text-muted mb-2">
+              Su una campagna <strong>massiva</strong> con canale EMAIL, App IO o Posta cartacea, il sistema
+              verifica per ogni destinatario se ha un domicilio digitale attivo su INAD. Se lo trova, quella
+              persona viene dirottata automaticamente su PEC — anche se la campagna nel complesso è, ad
+              esempio, un invio cartaceo: per un cittadino con domicilio digitale non viene stampata e
+              spedita alcuna lettera, riceve invece una PEC.
+            </p>
+            <p className="text-muted mb-0">
+              Il canale effettivamente usato per ciascun destinatario si vede sempre nel dettaglio della
+              campagna, riga per riga — non fidarti del canale "nominale" della campagna per capire cosa ha
+              ricevuto davvero un singolo cittadino. Questo controllo <strong>non</strong> si applica a SEND
+              (la piattaforma nazionale risolve da sé il domicilio) né agli invii singoli dal wizard (l'operatore
+              ha già verificato il domicilio a mano, es. da Verifica Anagrafica, prima di scegliere il canale).
+            </p>
+          </div>
+        </div>
+
+        <div id="guida-regole-canale" className="card shadow-sm border-0 rounded-3">
+          <div className="card-body p-4">
+            <h4 className="h5 fw-bold text-dark mb-3">Regole per canale</h4>
+            <p className="text-muted mb-3">
+              Ogni canale ha vincoli diversi su allegato, oggetto/testo e App IO abbinata — se il wizard
+              blocca "Avanti" o rifiuta un campo, è quasi sempre per una di queste regole.
+            </p>
+            <div className="table-responsive">
+              <table className="table table-sm align-middle mb-0">
+                <thead className="text-muted small text-uppercase">
+                  <tr>
+                    <th>Canale</th>
+                    <th>Allegato</th>
+                    <th>Oggetto / Testo</th>
+                    <th>App IO abbinata</th>
+                    <th>Protocollo</th>
+                  </tr>
+                </thead>
+                <tbody className="small text-muted">
+                  <tr>
+                    <td><strong>EMAIL</strong></td>
+                    <td>Facoltativo</td>
+                    <td>Entrambi obbligatori</td>
+                    <td>Nessuna / parallela / esclusiva*</td>
+                    <td>Facoltativo</td>
+                  </tr>
+                  <tr>
+                    <td><strong>PEC</strong></td>
+                    <td>Facoltativo</td>
+                    <td>Entrambi obbligatori</td>
+                    <td>Nessuna / parallela / esclusiva*</td>
+                    <td>Facoltativo</td>
+                  </tr>
+                  <tr>
+                    <td><strong>App IO</strong></td>
+                    <td>Facoltativo</td>
+                    <td>Oggetto 10–120 caratteri, testo 80–10.000 — entrambi obbligatori</td>
+                    <td>—</td>
+                    <td>Facoltativo</td>
+                  </tr>
+                  <tr>
+                    <td><strong>SEND</strong></td>
+                    <td><strong>Obbligatorio</strong></td>
+                    <td>Solo oggetto obbligatorio — il testo libero non è previsto</td>
+                    <td>—</td>
+                    <td><strong>Obbligatorio</strong></td>
+                  </tr>
+                  <tr>
+                    <td><strong>Posta</strong></td>
+                    <td><strong>Obbligatorio</strong></td>
+                    <td>Solo oggetto obbligatorio — il testo libero non è previsto (il contenuto è l'allegato)</td>
+                    <td>Nessuna / parallela / esclusiva*</td>
+                    <td>Facoltativo</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p className="text-muted small mb-0 mt-2">
+              * Su EMAIL, PEC e Posta si può abbinare una notifica App IO. Se scelta come "esclusiva" (solo
+              App IO, senza il canale primario) e quel destinatario viene dirottato da INAD, per lui diventa
+              automaticamente "parallela" — l'App IO da sola non basterebbe se il domicilio digitale reale è
+              su PEC.
             </p>
           </div>
         </div>
