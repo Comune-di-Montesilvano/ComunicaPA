@@ -41,6 +41,9 @@ import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.s
 import { RegistroImpreseService } from '../channels/registro-imprese/registro-imprese.service.js';
 import { RegistroImpreseVerifyQueueService } from '../channels/registro-imprese/registro-imprese-verify-queue.service.js';
 import { PostalAuthorizedUsersService } from '../postal-authorized-users/postal-authorized-users.service.js';
+import { SignatureVerificationBulkService } from '../signature-verification/signature-verification-bulk.service.js';
+import { SignatureVerificationService } from '../signature-verification/signature-verification.service.js';
+import { SignatureVerificationJobStatus } from '../entities/signature-verification-job.entity.js';
 import { isPartitaIva } from '../channels/tax-id.util.js';
 
 const INAD_BULK_THRESHOLD = 100;
@@ -107,6 +110,8 @@ export class CampaignsService {
     private readonly registroImpreseService: RegistroImpreseService,
     private readonly registroImpreseVerifyQueue: RegistroImpreseVerifyQueueService,
     private readonly postalAuthorizedUsers: PostalAuthorizedUsersService,
+    private readonly signatureVerificationBulk: SignatureVerificationBulkService,
+    private readonly signatureVerification: SignatureVerificationService,
   ) {}
 
   findAll(): Promise<Campaign[]> {
@@ -547,7 +552,7 @@ export class CampaignsService {
   async launch(
     campaignId: string,
     requester: CampaignRequester,
-  ): Promise<{ launched: number; campaignId: string; blocked?: boolean; message?: string }> {
+  ): Promise<{ launched: number; campaignId: string; blocked?: boolean; message?: string; signatureWarning?: string }> {
     const launchResult = await this.campaignRepo
       .createQueryBuilder()
       .update()
@@ -592,6 +597,55 @@ export class CampaignsService {
       throw err;
     }
 
+    // Verifica firma digitale allegati SEND: invio singolo non bloccante
+    // (solo warning restituito), invio massivo bloccante finché il job
+    // BullMQ di verifica non è done con invalidCount 0 — l'allegato SEND
+    // È il contenuto legale notificato, non un corredo opzionale.
+    let signatureWarning: string | undefined;
+    if (campaign.channelType === 'SEND') {
+      const isWizSingleModeForSignature = campaign.channelConfig?.['wizSingleMode'] === true;
+      if (isWizSingleModeForSignature) {
+        const singleRecipients = await this.recipientRepo.find({
+          where: { campaignId, status: RecipientStatus.PENDING },
+          select: { id: true, extraData: true },
+        });
+        const attachmentsConfig = resolveAttachmentsConfig(campaign.channelConfig);
+        if (singleRecipients.length > 0 && attachmentsConfig.length > 0) {
+          const filename = resolveCustomAttachmentFilename(
+            { campaign, extraData: singleRecipients[0].extraData } as unknown as Recipient,
+            0,
+          );
+          if (filename) {
+            const filePath = join(getUploadsDir(campaignId), filename);
+            if (fs.existsSync(filePath)) {
+              const result = await this.signatureVerification.verify(fs.readFileSync(filePath), filename);
+              if (!result.valid) signatureWarning = `Allegato non firmato correttamente: ${result.reason}`;
+            }
+          }
+        }
+      } else {
+        const verificationStatus = await this.signatureVerificationBulk.getLatestStatus(campaignId);
+        if (!verificationStatus || verificationStatus.status !== SignatureVerificationJobStatus.DONE) {
+          await this.campaignRepo.update({ id: campaignId }, { status: CampaignStatus.DRAFT });
+          return {
+            launched: 0,
+            campaignId,
+            blocked: true,
+            message: 'Verifica firma digitale allegati in corso o mai avviata. Attendi il completamento prima di lanciare.',
+          };
+        }
+        if (verificationStatus.invalidCount > 0) {
+          await this.campaignRepo.update({ id: campaignId }, { status: CampaignStatus.DRAFT });
+          return {
+            launched: 0,
+            campaignId,
+            blocked: true,
+            message: `${verificationStatus.invalidCount} allegato/i non risultano firmati validamente. Correggi i file prima di rilanciare.`,
+          };
+        }
+      }
+    }
+
     const attachmentsBlock = await this.checkAttachmentsBlocking(campaign);
     if (attachmentsBlock) {
       await this.campaignRepo.update({ id: campaignId }, { status: CampaignStatus.DRAFT });
@@ -622,19 +676,19 @@ export class CampaignsService {
         channelOverrides = await this.runInadExtractLoop(campaign, recipients);
       } else {
         const { launched } = await this.startInadBulkCheck(campaign, recipients);
-        return { launched, campaignId };
+        return { launched, campaignId, signatureWarning };
       }
     }
 
     const { launched } = await this.createAttemptsAndEnqueue(campaign, recipients, channelOverrides);
-    return { launched, campaignId };
+    return { launched, campaignId, signatureWarning };
   }
 
   async launchTestSend(
     parentCampaignId: string,
     dto: TestSendDto,
     requester: CampaignRequester,
-  ): Promise<{ attemptId: string; testCampaignId: string; blocked?: boolean; message?: string }> {
+  ): Promise<{ attemptId: string; testCampaignId: string; blocked?: boolean; message?: string; signatureWarning?: string }> {
     const parent = await this.campaignRepo.findOneBy({ id: parentCampaignId });
     if (!parent) throw new NotFoundException(`Campaign ${parentCampaignId} not found`);
 
@@ -651,6 +705,24 @@ export class CampaignsService {
     }
 
     this.assertSendProtocolConfigured(parent);
+
+    // launchTestSend crea/riusa sempre un solo destinatario di test — verifica
+    // sempre sincrona e non bloccante (solo warning), stesso principio del
+    // ramo wizSingleMode di launch().
+    let signatureWarning: string | undefined;
+    if (parent.channelType === 'SEND') {
+      const attachmentsConfig = resolveAttachmentsConfig(parent.channelConfig);
+      if (attachmentsConfig.length > 0 && dto.extraData) {
+        const filename = resolveCustomAttachmentFilename({ campaign: parent, extraData: dto.extraData } as unknown as Recipient, 0);
+        if (filename) {
+          const filePath = join(getUploadsDir(parentCampaignId), filename);
+          if (fs.existsSync(filePath)) {
+            const result = await this.signatureVerification.verify(fs.readFileSync(filePath), filename);
+            if (!result.valid) signatureWarning = `Allegato non firmato correttamente: ${result.reason}`;
+          }
+        }
+      }
+    }
 
     let child = await this.campaignRepo.findOneBy({ parentCampaignId, isTest: true });
     if (!child) {
@@ -735,7 +807,7 @@ export class CampaignsService {
       order: { createdAt: 'DESC' },
     });
 
-    return { attemptId: attempt!.id, testCampaignId: child.id };
+    return { attemptId: attempt!.id, testCampaignId: child.id, signatureWarning };
   }
 
   /**
@@ -2167,7 +2239,7 @@ export class CampaignsService {
       .select([
         'r.id', 'r.fullName', 'r.codiceFiscale', 'r.email', 'r.pec', 'r.status',
         'r.downloadCount', 'r.firstDownloadedAt', 'r.lastDownloadedAt', 'r.attachmentDeletedAt',
-        'r.inadCheck',
+        'r.inadCheck', 'r.signatureCheck',
       ])
       .where('r.campaignId = :campaignId', { campaignId });
 

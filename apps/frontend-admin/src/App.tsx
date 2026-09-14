@@ -1922,6 +1922,7 @@ export function App(): React.JSX.Element {
     externalId: '',
   });
   const [wizAttachments, setWizAttachments] = useState<Array<{ key: string; label: string; labelColumn?: string }>>([]);
+  const [wizSignatureJobStatus, setWizSignatureJobStatus] = useState<{ status: string; totalRows: number; validCount: number; invalidCount: number; errorMessage: string | null } | null>(null);
   // Mappatura colonna→campo e colonne allegato salvate su una campagna sorgente
   // (duplica/riprendi bozza), da riapplicare al prossimo CSV caricato SOLO se le
   // stesse colonne sono presenti nell'intestazione (stesso formato CSV riusato,
@@ -2380,7 +2381,7 @@ export function App(): React.JSX.Element {
     failed: Array<{ recipientId: string; reason: string }>;
     errorMessage: string | null;
   } | null>(null);
-  const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number; costCents?: number | null; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; protocolNumber?: number | null; protocolYear?: number | null; inadCheck?: { found: boolean; diverted: boolean } | null }> } | null>(null);
+  const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number; costCents?: number | null; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; protocolNumber?: number | null; protocolYear?: number | null; inadCheck?: { found: boolean; diverted: boolean } | null; signatureCheck?: { valid: boolean; reason: string | null } | null }> } | null>(null);
   const [recipientsSearch, setRecipientsSearch] = useState('');
   const [recipientsPageNum, setRecipientsPageNum] = useState(1);
   const [recipientsStatusFilter, setRecipientsStatusFilter] = useState('');
@@ -6447,7 +6448,7 @@ export function App(): React.JSX.Element {
     // allegato allo Step 3 (Anteprima e Invio) cerca il file sul disco del
     // server prima che sia mai stato caricato — 404 "Allegato non trovato".
     try {
-      await ensureWizSingleAttachmentsUploaded(campaignId, attachmentSlotsWithFile.map(s => s.file!));
+      if (!(await ensureWizSingleAttachmentsUploaded(campaignId, attachmentSlotsWithFile.map(s => s.file!)))) return;
     } catch (err: any) {
       alert(err.message || 'Errore durante il caricamento degli allegati.');
       return;
@@ -6654,6 +6655,24 @@ export function App(): React.JSX.Element {
     }
   }, [wizStep, wizCampaignId, token]);
 
+  useEffect(() => {
+    if (!(wizChannel === 'SEND' && !wizSingleMode && wizCampaignId && (wizStep === 6 || wizStep === 7))) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await apiFetch(`/campaigns/${wizCampaignId}/signature-verification`);
+        if (!cancelled && res.ok) {
+          setWizSignatureJobStatus(await res.json());
+        }
+      } catch {
+        // silenzioso: stesso principio del polling stato campagna esistente
+      }
+    };
+    poll();
+    const interval = setInterval(poll, 3000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [wizChannel, wizSingleMode, wizCampaignId, wizStep]);
+
   const handleWizValidation = async () => {
     setWizPreviewIndex(0);
     if (wizValidationErrors.length === 0) {
@@ -6729,6 +6748,7 @@ export function App(): React.JSX.Element {
       externalId: '',
     });
     setWizAttachments([]);
+    setWizSignatureJobStatus(null);
     setWizValidationErrors([]);
     setWizValidationWarnings([]);
     setWizValidRows([]);
@@ -7321,7 +7341,73 @@ export function App(): React.JSX.Element {
     return lastAttachData;
   };
 
-  const ensureWizSingleAttachmentsUploaded = async (campaignId: string, filesOverride?: File[]) => {
+  // Avvia la verifica firma (job unico, singolo o massivo — il job non
+  // distingue) e attende il risultato con un poll breve per dare un alert
+  // SUBITO al momento del caricamento, non solo al lancio: l'operatore deve
+  // sapere di un allegato non firmato mentre sta ancora sullo step allegati,
+  // non scoprirlo minuti dopo al bottone "Lancia". Timeout 20s (un solo file
+  // o pochi file, il job dovrebbe chiudersi in pochi secondi) — oltre il
+  // timeout si desiste silenziosamente: il pannello di stato allo step 6/7
+  // (massivo) o il gate al lancio (singolo) mostrano comunque l'esito reale.
+  // Per invio singolo: spiega la conseguenza normativa reale (l'allegato È il
+  // documento legale notificato su SEND, vedi "Allegati e co-consegna App IO
+  // — gotcha" in CLAUDE.md) e chiede conferma esplicita. `window.confirm` non
+  // permette di rinominare i bottoni nativi (restano OK/Annulla) né di
+  // impostarne il default a livello browser — il testo lo rende comunque
+  // esplicito: Annulla è l'opzione consigliata, OK prosegue a rischio
+  // dell'operatore. Ritorna `true` solo se l'operatore sceglie di proseguire.
+  const confirmContinueDespiteInvalidSignature = (invalidCount: number, totalRows: number): boolean => {
+    return window.confirm(
+      `ATTENZIONE: ${invalidCount} allegato/i su ${totalRows} non risulta/no firmato/i digitalmente in modo valido.\n\n` +
+      `Per il canale SEND l'allegato è il documento legale notificato al cittadino: senza una firma digitale valida (o con firma non riconducibile a una CA della lista di fiducia AgID) non è garantita l'integrità né la provenienza del documento. La notifica rischia di NON avere piena validità legale/probatoria — possibili contestazioni su autenticità dell'atto o decorrenza dei termini.\n\n` +
+      `Premi ANNULLA (consigliato) per tornare indietro e caricare un allegato correttamente firmato.\n` +
+      `Premi OK solo se vuoi procedere comunque, sotto la tua responsabilità.`
+    );
+  };
+
+  // Avvia la verifica firma (job unico, singolo o massivo — il job non
+  // distingue) e attende il risultato con un poll breve per un esito SUBITO
+  // al momento del caricamento, non solo al lancio. Timeout 20s — oltre il
+  // timeout si desiste silenziosamente: il pannello di stato allo step 6/7
+  // (massivo) o il gate al lancio (singolo) mostrano comunque l'esito reale.
+  // Niente popup sul caso valido (rumore inutile, l'operatore non ha nulla
+  // da decidere) — solo sul caso invalido, dove serve davvero una reazione.
+  // Ritorna `false` solo se il singolo viene annullato (Annulla sulla
+  // conferma) — i chiamanti interrompono il flusso silenziosamente, nessun
+  // ulteriore popup di errore: la conferma già spiegata è l'unico messaggio.
+  const triggerAndAlertSignatureVerification = async (campaignId: string): Promise<boolean> => {
+    const isSingolo = wizChannel === 'SEND' && wizSingleMode;
+    try {
+      await apiFetch(`/campaigns/${campaignId}/signature-verification`, { method: 'POST' });
+    } catch {
+      return true;
+    }
+    const deadline = Date.now() + 20000;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 1000));
+      try {
+        const res = await apiFetch(`/campaigns/${campaignId}/signature-verification`);
+        if (!res.ok) continue;
+        const status = await res.json();
+        if (wizChannel === 'SEND' && !wizSingleMode) setWizSignatureJobStatus(status);
+        if (status.status === 'done') {
+          if (status.invalidCount > 0) {
+            if (isSingolo) {
+              return confirmContinueDespiteInvalidSignature(status.invalidCount, status.totalRows);
+            }
+            alert(`Attenzione: ${status.invalidCount} allegato/i su ${status.totalRows} non risultano firmati validamente.`);
+          }
+          return true;
+        }
+        if (status.status === 'failed') return true;
+      } catch {
+        // silenzioso: stesso principio del polling stato campagna esistente
+      }
+    }
+    return true;
+  };
+
+  const ensureWizSingleAttachmentsUploaded = async (campaignId: string, filesOverride?: File[]): Promise<boolean> => {
     // filesOverride: setWizPdfFiles() è async — un chiamante che l'ha appena
     // invocato nello stesso tick (handleWizSingleSubmit) leggerebbe qui
     // wizPdfFiles ancora allo stato PRIMA dell'update (closure stale, stesso
@@ -7329,9 +7415,13 @@ export function App(): React.JSX.Element {
     // ("nessun allegato" finché non si torna indietro e si riavanza, quando
     // lo state è finalmente committato dal giro precedente).
     const files = filesOverride !== undefined ? filesOverride : wizPdfFiles;
-    if (!wizSingleMode || files.length === 0) return;
+    if (!wizSingleMode || files.length === 0) return true;
     await uploadAttachmentFilesCore(campaignId, files);
     setWizPdfFiles([]);
+    if (wizChannel === 'SEND') {
+      return triggerAndAlertSignatureVerification(campaignId);
+    }
+    return true;
   };
 
   const addWizSingleAttachmentSlot = () => {
@@ -7380,6 +7470,16 @@ export function App(): React.JSX.Element {
         const input = document.getElementById('wiz_pdf_input') as HTMLInputElement;
         if (input) {
           input.value = '';
+        }
+
+        // Verifica firma digitale allegati (solo SEND massivo — il singolo la
+        // avvia da ensureWizSingleAttachmentsUploaded): avvia il job appena gli
+        // allegati sono fisicamente sul server (altrimenti "Allegato non
+        // trovato su disco"), poi attende con un poll breve per un alert
+        // immediato invece di scoprirlo solo al bottone "Lancia" — il pannello
+        // di stato allo step 6/7 resta comunque aggiornato dal proprio poll.
+        if (wizChannel === 'SEND' && !wizSingleMode) {
+          await triggerAndAlertSignatureVerification(campaignId);
         }
       }
     } catch (err: any) {
@@ -7550,7 +7650,7 @@ export function App(): React.JSX.Element {
         campaignObj = await res.json();
       }
 
-      await ensureWizSingleAttachmentsUploaded(campaignObj.id);
+      if (!(await ensureWizSingleAttachmentsUploaded(campaignObj.id))) return;
 
       const blob = buildNormalizedRecipientsCsvBlob();
 
@@ -7598,6 +7698,9 @@ export function App(): React.JSX.Element {
       setView('dashboard');
 
       alert('Campagna creata e avviata con successo! I messaggi sono in coda.');
+      if (launchData?.signatureWarning) {
+        alert(`Attenzione: ${launchData.signatureWarning}`);
+      }
     } catch (err: any) {
       alert(err.message || 'Errore durante l\'invio della campagna.');
     } finally {
@@ -7618,7 +7721,7 @@ export function App(): React.JSX.Element {
     try {
       if (!wizCampaignId) throw new Error('Campagna non ancora salvata.');
       if (!wizTestForm.codiceFiscale.trim()) throw new Error('Codice Fiscale obbligatorio.');
-      await ensureWizSingleAttachmentsUploaded(wizCampaignId);
+      if (!(await ensureWizSingleAttachmentsUploaded(wizCampaignId))) return;
 
       const first = wizValidRows[0] ?? {};
       const extraData: Record<string, string> = { ...first };
@@ -7664,6 +7767,9 @@ export function App(): React.JSX.Element {
       ]);
       if (data.testCampaignId) {
         setWizTestCampaignId(data.testCampaignId);
+      }
+      if (data.signatureWarning) {
+        alert(`Attenzione: ${data.signatureWarning}`);
       }
     } catch (err) {
       setWizTestError(err instanceof Error ? err.message : 'Errore durante l\'invio di prova.');
@@ -9767,6 +9873,15 @@ export function App(): React.JSX.Element {
                           {(wizChannel === 'SEND' || wizChannel === 'POSTAL') && <span className="text-danger"> *</span>}
                         </h5>
 
+                        {wizChannel === 'SEND' && (
+                          <div className="alert alert-info d-flex align-items-start gap-2 mb-3">
+                            <AlertCircle size={16} className="mt-1 flex-shrink-0" />
+                            <div>
+                              I file devono essere firmati digitalmente in formato <strong>PAdES</strong> (firma integrata nel PDF stesso — il formato prodotto dalla maggior parte dei software di firma su documenti .pdf). Il formato .p7m non è utilizzabile su SEND. Un allegato non firmato correttamente viene rilevato dalla verifica automatica dopo il caricamento.
+                            </div>
+                          </div>
+                        )}
+
                         {wizSingleAttachmentSlots.map((slot, idx) => (
                           <div className="row g-2 mb-2 align-items-center" key={slot.id}>
                             <div className="col-md-4">
@@ -11346,6 +11461,15 @@ export function App(): React.JSX.Element {
                   <div style={{ maxWidth: '600px', margin: '0 auto' }}>
                     <h4 className="h6 fw-bold text-dark mb-3"><Paperclip className="text-warning me-2" size={16} />Passo 5: Upload Allegati</h4>
 
+                    {wizChannel === 'SEND' && (
+                      <div className="alert alert-info d-flex align-items-start gap-2 mb-3">
+                        <AlertCircle size={16} className="mt-1 flex-shrink-0" />
+                        <div>
+                          I file devono essere firmati digitalmente in formato <strong>PAdES</strong> (firma integrata nel PDF stesso — il formato prodotto dalla maggior parte dei software di firma su documenti .pdf). Il formato .p7m non è utilizzabile su SEND. Un allegato non firmato correttamente viene rilevato dalla verifica automatica dopo il caricamento.
+                        </div>
+                      </div>
+                    )}
+
                     <div className="mb-4 pb-3 border-bottom d-flex justify-content-between">
                       <button
                         className="btn btn-outline-secondary"
@@ -11605,6 +11729,20 @@ export function App(): React.JSX.Element {
                 <div>
                   <h4 className="h6 fw-bold text-dark mb-3"><CheckCircle2 className="text-success me-2" size={16} />Passo {wizDisplayStep(6, wizSingleMode)}: Anteprima e Invio</h4>
 
+                  {wizChannel === 'SEND' && !wizSingleMode && (
+                    <div className={`alert ${wizSignatureJobStatus?.status === 'done' && wizSignatureJobStatus.invalidCount === 0 ? 'alert-success' : 'alert-warning'} d-flex align-items-center gap-2 mb-3`}>
+                      {!wizSignatureJobStatus ? (
+                        <>Verifica firma digitale allegati in corso...</>
+                      ) : wizSignatureJobStatus.status !== 'done' ? (
+                        <><Loader2 className="icon-spin" size={16} /> Verifica firma digitale in corso...</>
+                      ) : wizSignatureJobStatus.invalidCount > 0 ? (
+                        <><AlertTriangle size={16} /> {wizSignatureJobStatus.invalidCount} allegato/i non firmati validamente su {wizSignatureJobStatus.totalRows} — correggi i file prima di lanciare.</>
+                      ) : (
+                        <><CheckCircle2 size={16} /> Tutti gli allegati ({wizSignatureJobStatus.totalRows}) risultano firmati validamente.</>
+                      )}
+                    </div>
+                  )}
+
                   <div className="mb-4 pb-3 border-bottom d-flex justify-content-between">
                     <button
                       className="btn btn-outline-secondary"
@@ -11636,7 +11774,7 @@ export function App(): React.JSX.Element {
                       <button
                         className="btn btn-success"
                         onClick={handleWizLaunch}
-                        disabled={wizSending || (wizSingleMode && !wizSingleNeedsTemplateStep && !wizSubject.trim())}
+                        disabled={wizSending || (wizSingleMode && !wizSingleNeedsTemplateStep && !wizSubject.trim()) || (wizChannel === 'SEND' && !wizSingleMode && (!wizSignatureJobStatus || wizSignatureJobStatus.status !== 'done' || wizSignatureJobStatus.invalidCount > 0))}
                       >
                         {wizSending ? (
                           <>
@@ -11756,6 +11894,20 @@ export function App(): React.JSX.Element {
                     </div>
                   </div>
 
+                  {wizChannel === 'SEND' && !wizSingleMode && (
+                    <div className={`alert ${wizSignatureJobStatus?.status === 'done' && wizSignatureJobStatus.invalidCount === 0 ? 'alert-success' : 'alert-warning'} d-flex align-items-center gap-2 mb-3`}>
+                      {!wizSignatureJobStatus ? (
+                        <>Verifica firma digitale allegati in corso...</>
+                      ) : wizSignatureJobStatus.status !== 'done' ? (
+                        <><Loader2 className="icon-spin" size={16} /> Verifica firma digitale in corso...</>
+                      ) : wizSignatureJobStatus.invalidCount > 0 ? (
+                        <><AlertTriangle size={16} /> {wizSignatureJobStatus.invalidCount} allegato/i non firmati validamente su {wizSignatureJobStatus.totalRows} — correggi i file prima di lanciare.</>
+                      ) : (
+                        <><CheckCircle2 size={16} /> Tutti gli allegati ({wizSignatureJobStatus.totalRows}) risultano firmati validamente.</>
+                      )}
+                    </div>
+                  )}
+
                   <div className="mt-4 pt-3 border-top d-flex justify-content-between">
                     <button
                       className="btn btn-outline-secondary"
@@ -11787,7 +11939,7 @@ export function App(): React.JSX.Element {
                       <button
                         className="btn btn-success"
                         onClick={handleWizLaunch}
-                        disabled={wizSending || (wizSingleMode && !wizSingleNeedsTemplateStep && !wizSubject.trim())}
+                        disabled={wizSending || (wizSingleMode && !wizSingleNeedsTemplateStep && !wizSubject.trim()) || (wizChannel === 'SEND' && !wizSingleMode && (!wizSignatureJobStatus || wizSignatureJobStatus.status !== 'done' || wizSignatureJobStatus.invalidCount > 0))}
                       >
                         {wizSending ? (
                           <>
@@ -16899,7 +17051,14 @@ export function App(): React.JSX.Element {
                                           {r.pec && <div className="text-primary"><MailOpen className="me-1" /> {r.pec}</div>}
                                         </div>
                                       </td>
-                                      <td><StatusBadge status={r.status} /></td>
+                                      <td>
+                                        <StatusBadge status={r.status} />
+                                        {r.signatureCheck?.valid === false && (
+                                          <span className="badge bg-danger-subtle text-danger border border-danger-subtle ms-1" title={r.signatureCheck.reason ?? ''}>
+                                            Firma non valida
+                                          </span>
+                                        )}
+                                      </td>
                                       {campaign.channelType === 'SEND' ? (
                                         <>
                                           <td className="small fw-mono">{r.iun || '—'}</td>
