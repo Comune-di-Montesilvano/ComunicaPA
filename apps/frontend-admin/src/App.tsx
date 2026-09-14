@@ -1922,6 +1922,7 @@ export function App(): React.JSX.Element {
     externalId: '',
   });
   const [wizAttachments, setWizAttachments] = useState<Array<{ key: string; label: string; labelColumn?: string }>>([]);
+  const [wizSignatureJobStatus, setWizSignatureJobStatus] = useState<{ status: string; totalRows: number; validCount: number; invalidCount: number; errorMessage: string | null } | null>(null);
   // Mappatura colonna→campo e colonne allegato salvate su una campagna sorgente
   // (duplica/riprendi bozza), da riapplicare al prossimo CSV caricato SOLO se le
   // stesse colonne sono presenti nell'intestazione (stesso formato CSV riusato,
@@ -6654,6 +6655,24 @@ export function App(): React.JSX.Element {
     }
   }, [wizStep, wizCampaignId, token]);
 
+  useEffect(() => {
+    if (!(wizChannel === 'SEND' && !wizSingleMode && wizCampaignId && (wizStep === 6 || wizStep === 7))) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await apiFetch(`/campaigns/${wizCampaignId}/signature-verification`);
+        if (!cancelled && res.ok) {
+          setWizSignatureJobStatus(await res.json());
+        }
+      } catch {
+        // silenzioso: stesso principio del polling stato campagna esistente
+      }
+    };
+    poll();
+    const interval = setInterval(poll, 3000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [wizChannel, wizSingleMode, wizCampaignId, wizStep]);
+
   const handleWizValidation = async () => {
     setWizPreviewIndex(0);
     if (wizValidationErrors.length === 0) {
@@ -6729,6 +6748,7 @@ export function App(): React.JSX.Element {
       externalId: '',
     });
     setWizAttachments([]);
+    setWizSignatureJobStatus(null);
     setWizValidationErrors([]);
     setWizValidationWarnings([]);
     setWizValidRows([]);
@@ -7380,6 +7400,14 @@ export function App(): React.JSX.Element {
         const input = document.getElementById('wiz_pdf_input') as HTMLInputElement;
         if (input) {
           input.value = '';
+        }
+
+        // Verifica firma digitale allegati: solo SEND massivo (il singolo
+        // è verificato in modo sincrono e non bloccante al lancio, lato
+        // backend) — avvia il job appena gli allegati sono fisicamente sul
+        // server, non prima (altrimenti "Allegato non trovato su disco").
+        if (wizChannel === 'SEND' && !wizSingleMode) {
+          apiFetch(`/campaigns/${campaignId}/signature-verification`, { method: 'POST' }).catch(() => undefined);
         }
       }
     } catch (err: any) {
@@ -11605,6 +11633,20 @@ export function App(): React.JSX.Element {
                 <div>
                   <h4 className="h6 fw-bold text-dark mb-3"><CheckCircle2 className="text-success me-2" size={16} />Passo {wizDisplayStep(6, wizSingleMode)}: Anteprima e Invio</h4>
 
+                  {wizChannel === 'SEND' && !wizSingleMode && (
+                    <div className={`alert ${wizSignatureJobStatus?.status === 'done' && wizSignatureJobStatus.invalidCount === 0 ? 'alert-success' : 'alert-warning'} d-flex align-items-center gap-2 mb-3`}>
+                      {!wizSignatureJobStatus ? (
+                        <>Verifica firma digitale allegati in corso...</>
+                      ) : wizSignatureJobStatus.status !== 'done' ? (
+                        <><Loader2 className="icon-spin" size={16} /> Verifica firma digitale in corso...</>
+                      ) : wizSignatureJobStatus.invalidCount > 0 ? (
+                        <><AlertTriangle size={16} /> {wizSignatureJobStatus.invalidCount} allegato/i non firmati validamente su {wizSignatureJobStatus.totalRows} — correggi i file prima di lanciare.</>
+                      ) : (
+                        <><CheckCircle2 size={16} /> Tutti gli allegati ({wizSignatureJobStatus.totalRows}) risultano firmati validamente.</>
+                      )}
+                    </div>
+                  )}
+
                   <div className="mb-4 pb-3 border-bottom d-flex justify-content-between">
                     <button
                       className="btn btn-outline-secondary"
@@ -11636,7 +11678,7 @@ export function App(): React.JSX.Element {
                       <button
                         className="btn btn-success"
                         onClick={handleWizLaunch}
-                        disabled={wizSending || (wizSingleMode && !wizSingleNeedsTemplateStep && !wizSubject.trim())}
+                        disabled={wizSending || (wizSingleMode && !wizSingleNeedsTemplateStep && !wizSubject.trim()) || (wizChannel === 'SEND' && !wizSingleMode && (!wizSignatureJobStatus || wizSignatureJobStatus.status !== 'done' || wizSignatureJobStatus.invalidCount > 0))}
                       >
                         {wizSending ? (
                           <>
@@ -11756,6 +11798,20 @@ export function App(): React.JSX.Element {
                     </div>
                   </div>
 
+                  {wizChannel === 'SEND' && !wizSingleMode && (
+                    <div className={`alert ${wizSignatureJobStatus?.status === 'done' && wizSignatureJobStatus.invalidCount === 0 ? 'alert-success' : 'alert-warning'} d-flex align-items-center gap-2 mb-3`}>
+                      {!wizSignatureJobStatus ? (
+                        <>Verifica firma digitale allegati in corso...</>
+                      ) : wizSignatureJobStatus.status !== 'done' ? (
+                        <><Loader2 className="icon-spin" size={16} /> Verifica firma digitale in corso...</>
+                      ) : wizSignatureJobStatus.invalidCount > 0 ? (
+                        <><AlertTriangle size={16} /> {wizSignatureJobStatus.invalidCount} allegato/i non firmati validamente su {wizSignatureJobStatus.totalRows} — correggi i file prima di lanciare.</>
+                      ) : (
+                        <><CheckCircle2 size={16} /> Tutti gli allegati ({wizSignatureJobStatus.totalRows}) risultano firmati validamente.</>
+                      )}
+                    </div>
+                  )}
+
                   <div className="mt-4 pt-3 border-top d-flex justify-content-between">
                     <button
                       className="btn btn-outline-secondary"
@@ -11787,7 +11843,7 @@ export function App(): React.JSX.Element {
                       <button
                         className="btn btn-success"
                         onClick={handleWizLaunch}
-                        disabled={wizSending || (wizSingleMode && !wizSingleNeedsTemplateStep && !wizSubject.trim())}
+                        disabled={wizSending || (wizSingleMode && !wizSingleNeedsTemplateStep && !wizSubject.trim()) || (wizChannel === 'SEND' && !wizSingleMode && (!wizSignatureJobStatus || wizSignatureJobStatus.status !== 'done' || wizSignatureJobStatus.invalidCount > 0))}
                       >
                         {wizSending ? (
                           <>
