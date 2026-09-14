@@ -77,6 +77,14 @@ Il nome del volume `node_modules` non sempre coincide col nome del servizio (es.
 
 **Il volume può risultare stale anche SENZA aver aggiunto una dipendenza** — un semplice `docker compose up -d --build` su un checkout rimasto fermo a lungo può far ripartire un container con `MODULE_NOT_FOUND`/`Cannot find module` su pacchetti già presenti nell'immagine appena buildata (visto dal vivo: `frontend-admin` su `vite`, `backend` su `bullmq`). Stesso fix di sopra: `docker compose rm -sf <servizio> && docker volume rm comunicapa_<nome>_node_modules && docker compose up -d --build <servizio>`.
 
+**`docker compose up -d --build <un-solo-servizio>` può far ripartire ANCHE
+un servizio sibling non toccato dal comando**, con lo stesso
+`MODULE_NOT_FOUND` da volume stale se pure il suo volume è vecchio
+(container su da giorni) — visto dal vivo: rebuild di solo
+`frontend-admin` ha fatto ripartire e crash-loopare `backend`. Controllare
+`docker compose ps` dopo ogni `--build` mirato, non solo il servizio
+appena ricostruito.
+
 Stesso path-mangling anche su `docker compose exec <servizio> cat /path/assoluto`
 (non solo `-v`): prefissare `MSYS_NO_PATHCONV=1` a qualunque comando che passa
 un path unix assoluto come argomento a un container da Git Bash Windows.
@@ -160,6 +168,22 @@ docker compose exec postgres psql -U comunicapa -d comunicapa_db -c "DROP DATABA
 
 **Bug reale — migration scritta ma non registrata è invisibile, nessun errore.** Una migration con solo `CREATE INDEX` raw (nessun `@Index` sull'entity) dimenticata nell'array `migrations` di `database.module.ts` non produce log né eccezioni: gli indici restano assenti sia in prod (mai eseguita) sia in dev (`synchronize` sincronizza solo i metadata delle entity, non SQL raw di una migration) — sintomo osservato solo indirettamente come lentezza su una query, non un errore. Dopo aver scritto una migration, verificare SEMPRE che la classe sia sia importata sia presente nell'array `migrations` (`grep NomeMigration database.module.ts`). Se serve testarla subito in dev senza aspettare un redeploy prod, applicare a mano l'SQL della migration sul DB dev (`docker compose exec postgres psql -U comunicapa -d comunicapa_db -c "..."`, idempotente con `IF NOT EXISTS`).
 
+**`repository.save({ id: 'stringa-fissa', ... })` su una colonna
+`@PrimaryGeneratedColumn('uuid')` fallisce sempre** ("invalid input
+syntax for type uuid") — se il chiamante è fail-open (try/catch che
+logga solo un warn, pattern comune per un refresh/cache "meglio dati
+vecchi che un crash"), l'errore sparisce silenziosamente e la tabella
+resta vuota per sempre. Invisibile ai test se il repository è mockato
+(il mock non valida i tipi). Se serve un record "singleton" riletto per
+ultimo aggiornamento (es. una cache TSL/registro esterno), non forzare
+un id fisso: lasciarlo autogenerato e leggere sempre `ORDER BY
+<colonna-timestamp> DESC LIMIT 1`.
+
+**Stessa cosa vale per una entity NUOVA**: va aggiunta sia all'array
+`entities:` sia (se introduce una migration) all'array `migrations:` di
+`database.module.ts` — mancare `entities:` fa fallire silenziosamente
+l'injection del Repository per quella entity, nessun errore a compile-time.
+
 ## Topologia API — gotcha
 
 Le route operatore sono segmentate sotto `admin/*` (`admin/campaigns`, `admin/settings`, `admin/auth`, `admin/notifications-search`...), quelle cittadino sotto `citizen/*` (`citizen/auth`, `citizen/notifications`...). Restano bare solo `public/download/*` e le route di root (`/version`, `/branding`). In produzione il nginx di ogni frontend proxya `/api/` verso `backend:8080` **strippando il prefisso** (same-origin, niente CORS, backend mai esposto dal proxy esterno). In dev il browser chiama direttamente `http://localhost:8080`. `API_BASE` arriva a runtime da `/config.js` (dev: `public/config.js`; prod: generato dall'entrypoint nginx da `API_BASE`, default `/api`); il frontend admin usa `ADMIN_API_BASE = \`${API_BASE}/admin\`` per tutte le chiamate autenticate operatore.
@@ -185,6 +209,36 @@ mergeStateStatus` non torna `CLEAN` (non fidarsi del solo `mergeable`,
 resta `MERGEABLE` anche con branch behind se `strict` non lo blocca
 ancora).
 
+**Merge PR dependabot — usare update-branch diretto, non `@dependabot rebase`, quando possibile.**
+Se `mergeStateStatus` è `BEHIND` (mai conflitto reale), `gh api -X PUT
+repos/<org>/<repo>/pulls/<N>/update-branch` aggiorna il branch in pochi
+secondi — molto più veloce di commentare `@dependabot rebase`, che può
+metterci 10-20+ minuti o non rispondere affatto. Riservare
+`@dependabot rebase` al solo caso `CONFLICTING` (conflitto vero, es.
+lockfile), dove update-branch non basta.
+
+**vitest 3→5 — mock costruiti con `new` devono usare `function`, mai arrow
+function, in `mockImplementation()`.** Vitest 5 fa `Reflect.construct()`
+sull'implementation per incatenare il prototype quando il mock viene
+chiamato con `new` — un'arrow function non ha `[[Construct]]` e lancia
+`"...is not a constructor"`. Sintomo tipico: mock di un client
+(`ioredis`, ecc.) che prima funzionava con `jest.fn().mockImplementation(()
+=> obj)`.
+
+**eslint-plugin-react-hooks 5→7 aggiunge il ruleset "React Compiler" al
+preset `recommended`**, anche per progetti che non l'hanno adottato —
+nuove regole (`set-state-in-effect`, riferimento a variabile prima della
+dichiarazione, mutazione di `window.location`/valori esterni al
+componente) diventano errori bloccanti. Per un progetto senza React
+Compiler: fixare i casi genuini (riordino dichiarazioni, helper esterno
+per `window.location`), disattivare solo la regola specifica rumorosa
+(`react-hooks/set-state-in-effect`) con commento — mai l'intero preset.
+
+**`@eslint/js` 9→10 abilita `no-useless-assignment`** — trova
+assegnazioni iniziali sempre sovrascritte in ogni ramo prima di essere
+lette (bug reale, non solo stile): fixare rimuovendo l'inizializzatore
+morto (`let x: T;` invece di `let x: T = default;`).
+
 `.github/workflows/release.yml`: triggera SOLO su tag `v*` (mai su push a main, nonostante il tag `dev` nel metadata-action — condizione mai raggiunta, riga corretta dopo audit). Push tag → `:vX.Y.Z` + `:latest` su `ghcr.io/comune-di-montesilvano/comunicapa-*`. Namespace hardcoded lowercase (il nome org ha maiuscole e romperebbe il cache exporter buildx). Allegati: path fisso `/data/attachments` nel container, volume named `attachments_data`.
 
 **`main` è protetto (dal 2026-09-06): required check `run-tests`, no force-push, no delete branch.** Push diretto a main viene RIFIUTATO — serve sempre branch + PR + CI verde + merge. `tests.yml` triggera anche su `pull_request` (non solo push a main), quindi il check gira già sulla PR prima del merge.
@@ -200,6 +254,15 @@ fanno partire CI che builda/pusha su ghcr — il container di produzione
 resta sul vecchio codice finché qualcuno non fa pull+redeploy su Portainer.
 `gh run list --workflow=release.yml` conferma solo che la build è
 riuscita, non che prod la stia servendo.
+
+**Spostare un tag Git (delete+recreate) scollega la GitHub Release.**
+Cancellare e ricreare un tag già associato a una Release lo trasforma in
+una release "draft"/`untagged-<sha>` (nascosta, scollegata). Fix: `gh
+release edit <tag> --tag <tag> --draft=false` — riattacca la release al
+tag senza bisogno di cancellarla e ricrearla. `gh release delete` (e a
+volte anche `gh release edit --help`) vengono bloccati dal classificatore
+di sicurezza di Claude Code (cancellazione irreversibile) — preferire
+sempre il fix non distruttivo sopra.
 
 ## pnpm v11 in Docker — Regola critica
 
@@ -305,6 +368,20 @@ gotcha per lavoro futuro:
   `ioredis` v6: serve `import { Redis } from 'ioredis'`, non l'import di
   default) — non assumere che un pacchetto CJS funzioni automaticamente
   con l'import di default solo perché ha sempre funzionato in CJS.
+- **`node-forge` — caso opposto a `ioredis` sopra: usare `import forge
+  from 'node-forge'` (default), MAI `import * as forge from
+  'node-forge'`.** Bug reale: node-forge non ha `exports` in
+  `package.json` e il suo entry point attacca i sottomoduli dinamicamente
+  (`require('./pki')` da FUORI del file, mai `module.exports.pki = ...`
+  testuale) — sotto il loader ESM nativo di Node un `import * as forge`
+  costruisce il namespace con SOLO `default` valorizzato:
+  `forge.pki`/`forge.util`/`forge.asn1` tutti `undefined`. Nessun crash
+  all'avvio, nessun log — solo un `TypeError` alla prima chiamata reale.
+  **Mai riprodotto sotto Vitest** (esbuild/swc trasformano l'import in un
+  `require()` diretto, aggirando l'interop nativo) — un fix su un
+  pacchetto CJS del genere va sempre verificato anche con l'app reale o
+  uno script standalone (`node --input-type=module -e "..."`), mai
+  fidandosi della sola suite unit.
 - **`@nestjs/passport` — `AuthGuard()` richiede sempre
   `PassportModule.register({})` esplicito**, mai l'import nudo di
   `PassportModule` (che non fornisce alcun provider) — regressione v12
@@ -954,6 +1031,35 @@ usa l'enum `NotificationStatusV26` dello spec ufficiale PN (repo
 dello schema `NotificationStatus` — verificare sempre lo spec raw, non un
 riassunto, prima di aggiungere/rimuovere valori da `TERMINAL_STATUSES`
 (`send-status-sync.service.ts`) o da `SEND_STATUS_META` (`App.tsx`).
+
+## Verifica firma digitale PDF (PAdES) — node-forge, gotcha reali
+
+Un allegato SEND è quasi sempre un **PDF con firma PAdES embedded**
+(`/ByteRange` + `/Contents`, CAdES-detached), MAI un `.p7m` — SEND manda
+sempre `contentType: 'application/pdf'` a PN (`send-dispatch.service.ts`),
+`.p7m` non è un formato utilizzabile su quel canale (supportato comunque
+in `SignatureVerificationService` per completezza/altri usi futuri).
+
+**`forge.asn1.fromDer(der)` con le opzioni default (`parseAllBytes: true`)
+rigetta ogni firma PAdES reale** con "Unparsed DER bytes remain after
+ASN.1 parsing" — il placeholder esadecimale riservato per `/Contents` nel
+PDF è quasi sempre più grande della firma effettiva, il padding di zeri
+finale dentro l'hex string non è DER valido. Serve `parseAllBytes: false`
+esplicito (non tipizzato da `@types/node-forge`, richiede un cast).
+
+**`forge.pkcs7.PkcsSignedData.verify()` non è implementato** (lancia
+sempre "not yet implemented", verificato leggendo `pkcs7.js`) — la
+verifica va fatta a mano: digest del contenuto vs attributo
+`messageDigest`, poi verifica RSA sul SET DER degli
+`authenticatedAttributes` (RFC 2315 §9.3), mai sul contenuto diretto.
+
+**Selezionare il certificato firmatario per issuer+serialNumber dichiarati
+nel SignerInfo, mai `certificates[0]` per posizione** — un file firmato
+reale include spesso la CA intermedia nella busta, l'ordine non è
+garantito. Vedi
+`apps/backend/src/signature-verification/signature-verification.service.ts`
+per l'implementazione completa (gotcha `node-forge` import sopra
+applicabile 1:1 anche qui).
 
 ## API esterne con XML — verificare l'encoding, mai fidarsi di `response.text()`
 
