@@ -7341,6 +7341,43 @@ export function App(): React.JSX.Element {
     return lastAttachData;
   };
 
+  // Avvia la verifica firma (job unico, singolo o massivo — il job non
+  // distingue) e attende il risultato con un poll breve per dare un alert
+  // SUBITO al momento del caricamento, non solo al lancio: l'operatore deve
+  // sapere di un allegato non firmato mentre sta ancora sullo step allegati,
+  // non scoprirlo minuti dopo al bottone "Lancia". Timeout 20s (un solo file
+  // o pochi file, il job dovrebbe chiudersi in pochi secondi) — oltre il
+  // timeout si desiste silenziosamente: il pannello di stato allo step 6/7
+  // (massivo) o il gate al lancio (singolo) mostrano comunque l'esito reale.
+  const triggerAndAlertSignatureVerification = async (campaignId: string): Promise<void> => {
+    try {
+      await apiFetch(`/campaigns/${campaignId}/signature-verification`, { method: 'POST' });
+    } catch {
+      return;
+    }
+    const deadline = Date.now() + 20000;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 1000));
+      try {
+        const res = await apiFetch(`/campaigns/${campaignId}/signature-verification`);
+        if (!res.ok) continue;
+        const status = await res.json();
+        if (wizChannel === 'SEND' && !wizSingleMode) setWizSignatureJobStatus(status);
+        if (status.status === 'done') {
+          if (status.invalidCount > 0) {
+            alert(`Attenzione: ${status.invalidCount} allegato/i su ${status.totalRows} non risultano firmati validamente.`);
+          } else {
+            alert(`Verifica firma completata: tutti gli allegati (${status.totalRows}) risultano firmati validamente.`);
+          }
+          return;
+        }
+        if (status.status === 'failed') return;
+      } catch {
+        // silenzioso: stesso principio del polling stato campagna esistente
+      }
+    }
+  };
+
   const ensureWizSingleAttachmentsUploaded = async (campaignId: string, filesOverride?: File[]) => {
     // filesOverride: setWizPdfFiles() è async — un chiamante che l'ha appena
     // invocato nello stesso tick (handleWizSingleSubmit) leggerebbe qui
@@ -7352,6 +7389,9 @@ export function App(): React.JSX.Element {
     if (!wizSingleMode || files.length === 0) return;
     await uploadAttachmentFilesCore(campaignId, files);
     setWizPdfFiles([]);
+    if (wizChannel === 'SEND') {
+      await triggerAndAlertSignatureVerification(campaignId);
+    }
   };
 
   const addWizSingleAttachmentSlot = () => {
@@ -7402,12 +7442,14 @@ export function App(): React.JSX.Element {
           input.value = '';
         }
 
-        // Verifica firma digitale allegati: solo SEND massivo (il singolo
-        // è verificato in modo sincrono e non bloccante al lancio, lato
-        // backend) — avvia il job appena gli allegati sono fisicamente sul
-        // server, non prima (altrimenti "Allegato non trovato su disco").
+        // Verifica firma digitale allegati (solo SEND massivo — il singolo la
+        // avvia da ensureWizSingleAttachmentsUploaded): avvia il job appena gli
+        // allegati sono fisicamente sul server (altrimenti "Allegato non
+        // trovato su disco"), poi attende con un poll breve per un alert
+        // immediato invece di scoprirlo solo al bottone "Lancia" — il pannello
+        // di stato allo step 6/7 resta comunque aggiornato dal proprio poll.
         if (wizChannel === 'SEND' && !wizSingleMode) {
-          apiFetch(`/campaigns/${campaignId}/signature-verification`, { method: 'POST' }).catch(() => undefined);
+          await triggerAndAlertSignatureVerification(campaignId);
         }
       }
     } catch (err: any) {
