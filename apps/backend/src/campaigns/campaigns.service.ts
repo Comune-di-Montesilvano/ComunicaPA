@@ -765,8 +765,8 @@ export class CampaignsService {
         batch.map(async (recipient) => {
           if (!recipient.codiceFiscale) return;
           const originalAddress = campaign.channelType === 'PEC' ? recipient.pec : recipient.email;
-          let found = false;
-          let digitalAddress: string | null = null;
+          let found: boolean;
+          let digitalAddress: string | null;
           if (isPartitaIva(recipient.codiceFiscale)) {
             try {
               const result = await this.registroImpreseService.dettaglioImpresa(recipient.codiceFiscale);

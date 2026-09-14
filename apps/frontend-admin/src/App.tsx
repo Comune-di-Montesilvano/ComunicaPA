@@ -15,7 +15,7 @@ import {
   ArrowLeft, ArrowRight, Menu, Building2, Megaphone, LineChart as LineChartIcon, PieChart as PieChartIcon,
   Copy, CreditCard, FileSpreadsheet, FileText, Save, History, Info, Link, List,
   Lock, Wand2, Search, Network, Reply, LogOut, SlidersHorizontal,
-  RefreshCw, Tag, UserCheck, Sparkles, Github,
+  RefreshCw, Tag, UserCheck, Sparkles,
   CheckCheck, Shield, Paperclip, Upload, Filter, Award, ExternalLink, Contact,
   Play, FileArchive, Keyboard, Key,
   Minus, Star, Stamp, CircleUserRound, BarChart3, ShieldCheck, Rocket, ArrowDown, ArrowUp, ArrowUpDown,
@@ -5799,7 +5799,7 @@ export function App(): React.JSX.Element {
       };
 
       let headers: string[] = [];
-      let parsedRows: Record<string, string>[] = [];
+      let parsedRows: Record<string, string>[];
 
       if (hasHeaders) {
         headers = parseCsvLine(lines[0]);
@@ -8127,7 +8127,7 @@ export function App(): React.JSX.Element {
               rel="noopener noreferrer"
               title="Repository GitHub ComunicaPA"
             >
-              <Github className="me-1" size={14} />{appVersion}
+              <ExternalLink className="me-1" size={14} />{appVersion}
             </a>
           )}
         </div>

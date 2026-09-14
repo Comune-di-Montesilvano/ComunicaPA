@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Footer } from './components/Footer';
 
 declare global {
@@ -266,6 +266,13 @@ function ChannelBadge({ channel }: { channel: string }): React.JSX.Element {
   );
 }
 
+// Helper a livello modulo: la mutazione di window.location va fatta fuori dal
+// corpo del componente (react-hooks/refs — v7 vieta di modificare un valore
+// definito fuori da componente/hook direttamente dentro il render/handler).
+function navigateTo(url: string): void {
+  window.location.href = url;
+}
+
 export function App(): React.JSX.Element {
   const [token, setToken] = useState<string | null>(localStorage.getItem('comunicapa_citizen_token'));
   const [cf, setCf] = useState<string | null>(localStorage.getItem('comunicapa_citizen_cf'));
@@ -368,11 +375,71 @@ export function App(): React.JSX.Element {
     { cf: 'BNCMRI80A01H501Y', name: 'Maria Bianchi', email: 'maria.bianchi@example.com' },
   ];
 
+  const handleLogout = useCallback((clientSideOnly = false) => {
+    const currentToken = token;
+    localStorage.removeItem('comunicapa_citizen_token');
+    localStorage.removeItem('comunicapa_citizen_cf');
+    localStorage.removeItem('comunicapa_citizen_name');
+    localStorage.removeItem('comunicapa_citizen_provider');
+    setToken(null);
+    setCf(null);
+    setName(null);
+    setProvider('Identità Digitale');
+    setSelectedNotif(null);
+
+    if (clientSideOnly) {
+      navigateTo('/');
+      return;
+    }
+
+    // Termina anche la sessione SPID/CIE sul proxy, se configurato
+    if (authMode === 'oidc' && oidcLogoutUrl) {
+      const returnUrl = window.location.origin;
+      let targetUrl: string;
+      try {
+        const logoutUrlObj = new URL(oidcLogoutUrl);
+        logoutUrlObj.searchParams.set('post_logout_redirect_uri', returnUrl);
+        if (currentToken) {
+          logoutUrlObj.searchParams.set('id_token_hint', currentToken);
+        }
+        targetUrl = logoutUrlObj.toString();
+      } catch {
+        const separator = oidcLogoutUrl.includes('?') ? '&' : '?';
+        targetUrl = `${oidcLogoutUrl}${separator}post_logout_redirect_uri=${encodeURIComponent(returnUrl)}`;
+        if (currentToken) {
+          targetUrl += `&id_token_hint=${encodeURIComponent(currentToken)}`;
+        }
+      }
+      navigateTo(targetUrl);
+    }
+  }, [token, authMode, oidcLogoutUrl]);
+
+  const fetchNotifications = useCallback(async () => {
+    setLoadingNotifications(true);
+    setErrorNotifications(null);
+    try {
+      const res = await fetch(`${API_BASE}/citizen/notifications`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (res.status === 401) {
+        handleLogout(true);
+        return;
+      }
+      if (!res.ok) throw new Error('Impossibile caricare le comunicazioni');
+      const data = await res.json();
+      setNotifications(data);
+    } catch (err: any) {
+      setErrorNotifications(err.message);
+    } finally {
+      setLoadingNotifications(false);
+    }
+  }, [token, handleLogout]);
+
   useEffect(() => {
     if (token) {
       fetchNotifications();
     }
-  }, [token]);
+  }, [token, fetchNotifications]);
 
   useEffect(() => {
     fetch(`${API_BASE}/branding`)
@@ -489,66 +556,6 @@ export function App(): React.JSX.Element {
   // Reset pagina quando cambiano i filtri
   useEffect(() => { setCurrentPage(1); }, [searchText, filterStatus, filterChannel, filterDateFrom, filterDateTo]);
 
-  const handleLogout = (clientSideOnly = false) => {
-    const currentToken = token;
-    localStorage.removeItem('comunicapa_citizen_token');
-    localStorage.removeItem('comunicapa_citizen_cf');
-    localStorage.removeItem('comunicapa_citizen_name');
-    localStorage.removeItem('comunicapa_citizen_provider');
-    setToken(null);
-    setCf(null);
-    setName(null);
-    setProvider('Identità Digitale');
-    setSelectedNotif(null);
-
-    if (clientSideOnly) {
-      window.location.href = '/';
-      return;
-    }
-
-    // Termina anche la sessione SPID/CIE sul proxy, se configurato
-    if (authMode === 'oidc' && oidcLogoutUrl) {
-      const returnUrl = window.location.origin;
-      let targetUrl = oidcLogoutUrl;
-      try {
-        const logoutUrlObj = new URL(oidcLogoutUrl);
-        logoutUrlObj.searchParams.set('post_logout_redirect_uri', returnUrl);
-        if (currentToken) {
-          logoutUrlObj.searchParams.set('id_token_hint', currentToken);
-        }
-        targetUrl = logoutUrlObj.toString();
-      } catch {
-        const separator = oidcLogoutUrl.includes('?') ? '&' : '?';
-        targetUrl = `${oidcLogoutUrl}${separator}post_logout_redirect_uri=${encodeURIComponent(returnUrl)}`;
-        if (currentToken) {
-          targetUrl += `&id_token_hint=${encodeURIComponent(currentToken)}`;
-        }
-      }
-      window.location.href = targetUrl;
-    }
-  };
-
-  const fetchNotifications = async () => {
-    setLoadingNotifications(true);
-    setErrorNotifications(null);
-    try {
-      const res = await fetch(`${API_BASE}/citizen/notifications`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      if (res.status === 401) {
-        handleLogout(true);
-        return;
-      }
-      if (!res.ok) throw new Error('Impossibile caricare le comunicazioni');
-      const data = await res.json();
-      setNotifications(data);
-    } catch (err: any) {
-      setErrorNotifications(err.message);
-    } finally {
-      setLoadingNotifications(false);
-    }
-  };
-
   const handleSpidLogin = async (provider: string) => {
     setLoginLoading(true);
     setLoginError(null);
@@ -608,7 +615,7 @@ export function App(): React.JSX.Element {
 
   const handleOidcLogin = () => {
     setLoginError(null);
-    window.location.href = `${API_BASE}/citizen/auth/oidc/start`;
+    navigateTo(`${API_BASE}/citizen/auth/oidc/start`);
   };
 
   const handleDownloadAttachment = async (notifId: string, attachmentIndex: number) => {
