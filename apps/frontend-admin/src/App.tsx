@@ -4770,9 +4770,9 @@ export function App(): React.JSX.Element {
 
     const sections: Array<{ id: string; title: string }> = [
       { id: 'guida-cose', title: "Cos'è ComunicaPA" },
+      { id: 'guida-anagrafica', title: 'Verifica Anagrafica e domicilio digitale' },
       { id: 'guida-wizard', title: 'Come lanciare un invio' },
       { id: 'guida-canali', title: 'Canali disponibili' },
-      { id: 'guida-anagrafica', title: 'Verifica Anagrafica e domicilio digitale' },
       { id: 'guida-monitoraggio', title: 'Monitoraggio e stato invii' },
       { id: 'guida-postal', title: 'Autorizzazione Postalizzazione' },
       { id: 'guida-impostazioni', title: 'Impostazioni' },
@@ -4805,6 +4805,26 @@ export function App(): React.JSX.Element {
             <p className="text-muted mb-0">
               Ogni invio resta tracciato: stato di consegna, errori, costi (per la posta cartacea) e report
               scaricabili sono sempre consultabili dal dettaglio della campagna.
+            </p>
+          </div>
+        </div>
+
+        <div id="guida-anagrafica" className="card shadow-sm border-0 rounded-3">
+          <div className="card-body p-4">
+            <h4 className="h5 fw-bold text-dark mb-3 d-flex align-items-center gap-2">
+              Verifica Anagrafica e domicilio digitale
+              <span className="badge bg-primary-subtle text-primary border border-primary-subtle" style={{ fontSize: '0.65rem' }}>La funzione più usata</span>
+            </h4>
+            <p className="text-muted mb-2">
+              Dalla voce "Verifica Anagrafica" è possibile cercare un codice fiscale o una partita IVA e
+              consultare in un unico posto: dati anagrafici, domicilio digitale (INAD), eventuale PEC da
+              Registro Imprese e — per le imprese — amministratori e soci, con i relativi CF/PIVA cliccabili
+              per approfondire a cascata.
+            </p>
+            <p className="text-muted mb-0">
+              È utile anche senza dover inviare nulla: è il modo più rapido per un ufficio di sapere se un
+              cittadino o un'impresa ha un domicilio digitale attivo e su quale canale sarebbe effettivamente
+              raggiungibile, prima ancora di organizzare una comunicazione.
             </p>
           </div>
         </div>
@@ -4848,18 +4868,6 @@ export function App(): React.JSX.Element {
                 );
               })}
             </div>
-          </div>
-        </div>
-
-        <div id="guida-anagrafica" className="card shadow-sm border-0 rounded-3">
-          <div className="card-body p-4">
-            <h4 className="h5 fw-bold text-dark mb-3">Verifica Anagrafica e domicilio digitale</h4>
-            <p className="text-muted mb-0">
-              Dalla voce "Verifica Anagrafica" è possibile cercare un codice fiscale o una partita IVA e
-              consultare i dati anagrafici, il domicilio digitale (INAD) e — per le imprese — amministratori
-              e soci con i relativi CF/PIVA cliccabili per approfondire. Utile prima di un invio per capire
-              su quale canale un cittadino sarà effettivamente raggiungibile.
-            </p>
           </div>
         </div>
 
