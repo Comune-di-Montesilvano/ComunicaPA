@@ -1315,7 +1315,7 @@ export function App(): React.JSX.Element {
   const [displayName, setDisplayName] = useState<string | null>(localStorage.getItem('comunicapa_display_name'));
   const [role, setRole] = useState<string | null>(localStorage.getItem('comunicapa_role'));
   const [canUsePostal, setCanUsePostal] = useState<boolean>(localStorage.getItem('comunicapa_can_use_postal') === 'true');
-  const [view, setView] = useState<'dashboard' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'notifiche-ricerca' | 'cerca-domicilio' | 'verifica-appio' | 'verifica-inad' | 'template-dashboard' | 'impostazioni' | 'campaign-detail' | 'audit-logs' | 'arricchimento'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'notifiche-ricerca' | 'cerca-domicilio' | 'verifica-appio' | 'verifica-inad' | 'template-dashboard' | 'impostazioni' | 'campaign-detail' | 'audit-logs' | 'arricchimento' | 'guida'>('dashboard');
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [templates, setTemplates] = useState<TemplateItem[]>([]);
   const [editingTemplate, setEditingTemplate] = useState<Partial<TemplateItem> & { type: 'MAIL' | 'APP_IO' } | null>(null);
@@ -4762,6 +4762,146 @@ export function App(): React.JSX.Element {
     }
   };
 
+  const renderGuidaView = () => {
+    const guidaChannels = (['EMAIL', 'PEC', 'APP_IO', 'SEND', 'POSTAL'] as const).map((key) => ({
+      key,
+      meta: getChannelMeta(key),
+    }));
+
+    const sections: Array<{ id: string; title: string }> = [
+      { id: 'guida-cose', title: "Cos'è ComunicaPA" },
+      { id: 'guida-wizard', title: 'Come lanciare un invio' },
+      { id: 'guida-canali', title: 'Canali disponibili' },
+      { id: 'guida-anagrafica', title: 'Verifica Anagrafica e domicilio digitale' },
+      { id: 'guida-monitoraggio', title: 'Monitoraggio e stato invii' },
+      { id: 'guida-postal', title: 'Autorizzazione Postalizzazione' },
+      { id: 'guida-impostazioni', title: 'Impostazioni' },
+    ];
+
+    return (
+      <div className="d-flex flex-column gap-4">
+        <div className="card shadow-sm border-0 rounded-3">
+          <div className="card-body p-4">
+            <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-3">In questa pagina</h5>
+            <div className="d-flex flex-wrap gap-2">
+              {sections.map((s) => (
+                <a key={s.id} href={`#${s.id}`} className="btn btn-sm btn-outline-secondary">
+                  {s.title}
+                </a>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div id="guida-cose" className="card shadow-sm border-0 rounded-3">
+          <div className="card-body p-4">
+            <h4 className="h5 fw-bold text-dark mb-3">Cos'è ComunicaPA</h4>
+            <p className="text-muted mb-2">
+              ComunicaPA è l'hub con cui l'Ente invia comunicazioni ufficiali ai cittadini (avvisi TARI,
+              notifiche, sanzioni) su più canali. Per ogni destinatario il sistema può verificare se esiste
+              un domicilio digitale attivo (INAD) e instradare l'invio di conseguenza, oppure usare il canale
+              scelto direttamente dall'operatore.
+            </p>
+            <p className="text-muted mb-0">
+              Ogni invio resta tracciato: stato di consegna, errori, costi (per la posta cartacea) e report
+              scaricabili sono sempre consultabili dal dettaglio della campagna.
+            </p>
+          </div>
+        </div>
+
+        <div id="guida-wizard" className="card shadow-sm border-0 rounded-3">
+          <div className="card-body p-4">
+            <h4 className="h5 fw-bold text-dark mb-3">Come lanciare un invio</h4>
+            <p className="text-muted">
+              Ogni campagna si crea dal wizard guidato — è l'unico percorso di creazione, garantisce le
+              validazioni corrette (formato CF/email, allegati obbligatori dove previsto).
+            </p>
+            <ol className="text-muted mb-0 ps-3">
+              <li className="mb-2"><strong>Invio singolo</strong> (un solo destinatario) o <strong>invio massivo</strong> (elenco da file CSV) — scelta dal menu "Nuovo Invio".</li>
+              <li className="mb-2">Scelta del canale e configurazione (allegati, oggetto/testo del messaggio).</li>
+              <li className="mb-2">Per l'invio massivo: caricamento del file e mappatura delle colonne (codice fiscale, nome, email/PEC, allegato...).</li>
+              <li className="mb-2">Riepilogo e verifica — è possibile inviare un invio di prova a un singolo destinatario prima del lancio definitivo.</li>
+              <li>Lancio della campagna: da qui in poi lo stato si segue dal dettaglio campagna o dalla lista "Campagne Massive".</li>
+            </ol>
+          </div>
+        </div>
+
+        <div id="guida-canali" className="card shadow-sm border-0 rounded-3">
+          <div className="card-body p-4">
+            <h4 className="h5 fw-bold text-dark mb-3">Canali disponibili</h4>
+            <div className="d-flex flex-column gap-3">
+              {guidaChannels.map(({ key, meta }) => {
+                const Icon = meta.icon;
+                return (
+                  <div key={key} className="d-flex align-items-start gap-3">
+                    <span className={`badge ${meta.badge} d-flex align-items-center gap-1 flex-shrink-0`} style={{ fontSize: '0.8rem' }}>
+                      <Icon size={14} /> {meta.label}
+                    </span>
+                    <span className="text-muted small">
+                      {key === 'EMAIL' && 'Posta elettronica ordinaria — per comunicazioni non aventi valore legale.'}
+                      {key === 'PEC' && 'Posta Elettronica Certificata — per comunicazioni con valore legale verso destinatari con indirizzo PEC noto.'}
+                      {key === 'APP_IO' && "Notifica push sull'app IO — può accompagnare un altro canale (co-consegna) o essere usata da sola."}
+                      {key === 'SEND' && 'Piattaforma nazionale Notifiche Digitali — invio a valore legale con ricevute opponibili, richiede protocollazione.'}
+                      {key === 'POSTAL' && 'Posta cartacea (raccomandata o lettera) per chi non ha un domicilio digitale — riservata ad admin e operatori autorizzati.'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div id="guida-anagrafica" className="card shadow-sm border-0 rounded-3">
+          <div className="card-body p-4">
+            <h4 className="h5 fw-bold text-dark mb-3">Verifica Anagrafica e domicilio digitale</h4>
+            <p className="text-muted mb-0">
+              Dalla voce "Verifica Anagrafica" è possibile cercare un codice fiscale o una partita IVA e
+              consultare i dati anagrafici, il domicilio digitale (INAD) e — per le imprese — amministratori
+              e soci con i relativi CF/PIVA cliccabili per approfondire. Utile prima di un invio per capire
+              su quale canale un cittadino sarà effettivamente raggiungibile.
+            </p>
+          </div>
+        </div>
+
+        <div id="guida-monitoraggio" className="card shadow-sm border-0 rounded-3">
+          <div className="card-body p-4">
+            <h4 className="h5 fw-bold text-dark mb-3">Monitoraggio e stato invii</h4>
+            <p className="text-muted mb-0">
+              Il dettaglio di ogni campagna mostra lo stato di ciascun destinatario (in coda, consegnato,
+              letto, errore) con aggiornamento automatico mentre l'invio è in corso. Da "Ricerca Notifiche"
+              è possibile cercare un singolo invio per codice fiscale o ID campagna, anche a distanza di
+              tempo. Report dettagliati (CSV) sono scaricabili dal dettaglio campagna.
+            </p>
+          </div>
+        </div>
+
+        <div id="guida-postal" className="card shadow-sm border-0 rounded-3">
+          <div className="card-body p-4">
+            <h4 className="h5 fw-bold text-dark mb-3">Autorizzazione Postalizzazione</h4>
+            <p className="text-muted mb-0">
+              L'avvio di una campagna sul canale Posta (raccomandata/lettera) è riservato agli amministratori
+              e agli operatori esplicitamente abilitati, per via del costo reale di ogni spedizione. Se non
+              vedi l'opzione "Posta" nel wizard e ne hai bisogno, chiedi a un amministratore di abilitarti
+              dalla tab Impostazioni → Postalizzazione, sezione "Utenti abilitati all'invio Postalizzazione".
+            </p>
+          </div>
+        </div>
+
+        <div id="guida-impostazioni" className="card shadow-sm border-0 rounded-3">
+          <div className="card-body p-4">
+            <h4 className="h5 fw-bold text-dark mb-3">Impostazioni</h4>
+            <p className="text-muted mb-0">
+              Visibile solo agli amministratori. Da qui si configurano i server di invio (SMTP/PEC), App IO,
+              SEND, Postalizzazione (provider e utenti abilitati), verifica INAD, personalizzazione del
+              portale e altro. Ogni tab riguarda un canale o un aspetto del sistema — le modifiche si
+              applicano subito, senza bisogno di riavviare nulla.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderPostalProvidersTab = () => {
     const editing = editingPostalProvider;
 
@@ -8114,6 +8254,14 @@ export function App(): React.JSX.Element {
             <History />
             <span>Registro Attività</span>
           </a>
+          <a
+            className={`bo-nav-item ${view === 'guida' ? 'is-active' : ''}`}
+            href="#"
+            onClick={(e) => { e.preventDefault(); setView('guida'); }}
+          >
+            <HelpCircle />
+            <span>Guida</span>
+          </a>
         </nav>
 
         <div className="bo-sidebar-meta mt-auto">
@@ -8162,6 +8310,7 @@ export function App(): React.JSX.Element {
           {view === 'arricchimento' && 'Arricchimento Tracciati'}
           {view === 'impostazioni' && 'Impostazioni di Sistema'}
           {view === 'audit-logs' && 'Registro Attività'}
+          {view === 'guida' && 'Guida'}
           {view === 'campaign-detail' && `Dettaglio Campagna / ${campaign?.name || '...'}`}
         </h2>
 
@@ -15575,6 +15724,9 @@ export function App(): React.JSX.Element {
               </div>
             </div>
           )}
+
+          {/* VIEW: GUIDA */}
+          {view === 'guida' && renderGuidaView()}
 
           {/* VIEW: CAMPAIGN DETAIL */}
           {view === 'campaign-detail' && (
