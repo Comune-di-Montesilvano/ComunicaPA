@@ -4773,6 +4773,7 @@ export function App(): React.JSX.Element {
       { id: 'guida-anagrafica', title: 'Verifica Anagrafica e domicilio digitale' },
       { id: 'guida-wizard', title: 'Come lanciare un invio' },
       { id: 'guida-canali', title: 'Canali disponibili' },
+      { id: 'guida-protocollo', title: 'Protocollo e sigillo elettronico' },
       { id: 'guida-monitoraggio', title: 'Monitoraggio e stato invii' },
       { id: 'guida-postal', title: 'Autorizzazione Postalizzazione' },
       { id: 'guida-impostazioni', title: 'Impostazioni' },
@@ -4849,6 +4850,13 @@ export function App(): React.JSX.Element {
         <div id="guida-canali" className="card shadow-sm border-0 rounded-3">
           <div className="card-body p-4">
             <h4 className="h5 fw-bold text-dark mb-3">Canali disponibili</h4>
+            <div className="alert alert-warning border-0 bg-warning-subtle text-warning-emphasis mb-3">
+              <strong>Se l'invio deve avere valore formale, il canale è SEND — punto.</strong> È l'unico canale
+              con piena garanzia normativa (ricevute opponibili a norma di legge) e gestisce da sé anche i
+              destinatari senza domicilio digitale, recapitando in automatico su carta se serve. Sugli altri
+              canali sappiamo comunque se una comunicazione è stata consegnata o scaricata, ma questo non
+              equivale al valore legale di SEND.
+            </div>
             <div className="d-flex flex-column gap-3">
               {guidaChannels.map(({ key, meta }) => {
                 const Icon = meta.icon;
@@ -4859,15 +4867,31 @@ export function App(): React.JSX.Element {
                     </span>
                     <span className="text-muted small">
                       {key === 'EMAIL' && 'Posta elettronica ordinaria — per comunicazioni non aventi valore legale.'}
-                      {key === 'PEC' && 'Posta Elettronica Certificata — per comunicazioni con valore legale verso destinatari con indirizzo PEC noto.'}
+                      {key === 'PEC' && 'Posta Elettronica Certificata — per comunicazioni con valore legale verso destinatari con indirizzo PEC noto. La protocollazione ordinaria dell\'Ente resta comunque necessaria, vedi sotto.'}
                       {key === 'APP_IO' && "Notifica push sull'app IO — può accompagnare un altro canale (co-consegna) o essere usata da sola."}
-                      {key === 'SEND' && 'Piattaforma nazionale Notifiche Digitali — invio a valore legale con ricevute opponibili, richiede protocollazione.'}
-                      {key === 'POSTAL' && 'Posta cartacea (raccomandata o lettera) per chi non ha un domicilio digitale — riservata ad admin e operatori autorizzati.'}
+                      {key === 'SEND' && "Piattaforma nazionale Notifiche Digitali — l'unico canale a pieno valore legale, ricevute opponibili, gestisce da sé anche chi non ha domicilio digitale. Richiede protocollazione, integrata direttamente nel flusso di invio."}
+                      {key === 'POSTAL' && 'Posta cartacea (raccomandata o lettera) — pensata per invii massivi, non come alternativa spicciola a SEND per un singolo destinatario senza domicilio digitale. Riservata ad admin e operatori autorizzati.'}
                     </span>
                   </div>
                 );
               })}
             </div>
+          </div>
+        </div>
+
+        <div id="guida-protocollo" className="card shadow-sm border-0 rounded-3">
+          <div className="card-body p-4">
+            <h4 className="h5 fw-bold text-dark mb-3">ComunicaPA non sostituisce il protocollo</h4>
+            <p className="text-muted mb-2">
+              ComunicaPA <strong>non sostituisce il protocollo generale dell'Ente</strong>, in particolare per
+              la PEC: per gli invii PEC continua a valere l'iter di protocollazione ordinario.
+            </p>
+            <p className="text-muted mb-0">
+              Per i canali che la richiedono (es. SEND), ComunicaPA integra una protocollazione automatica —
+              ma quella usata qui <strong>non appone il sigillo elettronico</strong>: un limite tecnico reale,
+              non un'alternativa equivalente al protocollo ufficiale. Non va quindi usata in modo indiscriminato
+              al posto del protocollo per ogni comunicazione.
+            </p>
           </div>
         </div>
 
