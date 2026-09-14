@@ -509,7 +509,7 @@ export function App(): React.JSX.Element {
     // Termina anche la sessione SPID/CIE sul proxy, se configurato
     if (authMode === 'oidc' && oidcLogoutUrl) {
       const returnUrl = window.location.origin;
-      let targetUrl = oidcLogoutUrl;
+      let targetUrl: string;
       try {
         const logoutUrlObj = new URL(oidcLogoutUrl);
         logoutUrlObj.searchParams.set('post_logout_redirect_uri', returnUrl);
