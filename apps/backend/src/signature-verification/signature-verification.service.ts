@@ -8,13 +8,22 @@ export interface SignatureVerificationResult {
   signerCn?: string;
 }
 
-const DIGEST_CREATORS: Record<string, () => forge.md.MessageDigest> = {
-  [forge.pki.oids.sha1]: () => forge.md.sha1.create(),
-  [forge.pki.oids.sha256]: () => forge.md.sha256.create(),
-  [forge.pki.oids.sha384]: () => forge.md.sha384.create(),
-  [forge.pki.oids.sha512]: () => forge.md.sha512.create(),
-  [forge.pki.oids.md5]: () => forge.md.md5.create(),
-};
+// Costruita a runtime (non a module-scope): un accesso a `forge.pki.oids`
+// nell'inizializzatore di una const top-level fallisce con "Cannot read
+// properties of undefined" sotto NodeNext/ESM — l'interop CJS di node-forge
+// non garantisce che i sotto-moduli (`pki`, `md`) siano già attaccati
+// all'import-time del modulo, solo quando effettivamente usati a runtime
+// (stesso principio dei gotcha CJS/ESM già noti in CLAUDE.md per ioredis).
+function digestCreatorFor(oid: string): (() => forge.md.MessageDigest) | undefined {
+  const creators: Record<string, () => forge.md.MessageDigest> = {
+    [forge.pki.oids.sha1]: () => forge.md.sha1.create(),
+    [forge.pki.oids.sha256]: () => forge.md.sha256.create(),
+    [forge.pki.oids.sha384]: () => forge.md.sha384.create(),
+    [forge.pki.oids.sha512]: () => forge.md.sha512.create(),
+    [forge.pki.oids.md5]: () => forge.md.md5.create(),
+  };
+  return creators[oid];
+}
 
 /**
  * Verifica offline (nessun controllo di revoca OCSP/CRL): integrità
@@ -102,7 +111,7 @@ export class SignatureVerificationService {
     if (!rawCapture) throw new Error('rawCapture assente sul messaggio PKCS7');
 
     const digestOid = forge.asn1.derToOid(rawCapture.digestAlgorithm);
-    const createDigest = DIGEST_CREATORS[digestOid];
+    const createDigest = digestCreatorFor(digestOid);
     if (!createDigest) throw new Error(`Algoritmo di digest non supportato: ${digestOid}`);
 
     const contentBytes = this.extractContentBytes(rawCapture.content);

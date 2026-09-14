@@ -52,6 +52,13 @@ export class Recipient {
     checkedAt: string;
   } | null;
 
+  @Column({ type: 'jsonb', name: 'signature_check', nullable: true })
+  signatureCheck!: {
+    valid: boolean;
+    reason: string | null;
+    checkedAt: string;
+  } | null;
+
   @Column({
     type: 'enum',
     enum: RecipientStatus,
