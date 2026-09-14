@@ -58,8 +58,8 @@ export class RegistroImpreseVerifyProcessor extends WorkerHost {
   private async processAdHocVerify(job: Job<RegistroImpreseVerifyJobData>): Promise<void> {
     const { jobId, partitaIva } = job.data;
 
-    let pec: string | null = null;
-    let found = false;
+    let pec: string | null;
+    let found: boolean;
     try {
       const result = await this.registroImpreseService.dettaglioImpresa(partitaIva);
       found = result.found;

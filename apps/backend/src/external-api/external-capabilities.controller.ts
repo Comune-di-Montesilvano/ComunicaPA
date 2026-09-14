@@ -50,7 +50,7 @@ export class ExternalCapabilitiesController {
     ]);
     const sendActive = !!sendApiKey && !!sendPurposeId;
 
-    let enabledTaxonomyCodes: string[] = [];
+    let enabledTaxonomyCodes: string[];
     try {
       enabledTaxonomyCodes = JSON.parse(taxonomyRaw || '[]');
     } catch {

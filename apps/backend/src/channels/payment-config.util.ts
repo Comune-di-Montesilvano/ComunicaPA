@@ -73,7 +73,7 @@ export function resolvePaymentData(
   const rawAmount = getColumnValue(recipient, paymentConfig.amountColumn);
   const noticeCode = getColumnValue(recipient, paymentConfig.noticeNumberColumn).replace(/\s+/g, '');
 
-  let amountCents = 0;
+  let amountCents: number;
   if (paymentConfig.amountType === 'cents') {
     amountCents = parseInt(rawAmount, 10) || 0;
   } else {

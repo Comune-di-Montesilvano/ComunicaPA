@@ -5647,7 +5647,7 @@ export function App(): React.JSX.Element {
       };
 
       let headers: string[] = [];
-      let parsedRows: Record<string, string>[] = [];
+      let parsedRows: Record<string, string>[];
 
       if (hasHeaders) {
         headers = parseCsvLine(lines[0]);
