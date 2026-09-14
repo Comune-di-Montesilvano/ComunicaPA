@@ -67,7 +67,15 @@ export class SignatureVerificationService {
     if (!p7.certificates || p7.certificates.length === 0) {
       return { valid: false, reason: 'Nessun certificato firmatario trovato nella busta .p7m' };
     }
-    const signerCert = p7.certificates[0];
+    // Un .p7m reale include spesso l'intera catena (firmatario + CA
+    // intermedia), non solo il certificato firmatario — prendere sempre
+    // `certificates[0]` sceglierebbe il certificato sbagliato se l'ordine
+    // non è quello atteso. Si seleziona il certificato che corrisponde
+    // esattamente a issuer+serialNumber dichiarati nel SignerInfo.
+    const signerCert = this.selectSignerCertificate(p7, (p7 as any).rawCapture);
+    if (!signerCert) {
+      return { valid: false, reason: 'Certificato firmatario non identificabile nella busta .p7m' };
+    }
 
     const now = new Date();
     if (now < signerCert.validity.notBefore || now > signerCert.validity.notAfter) {
@@ -86,9 +94,15 @@ export class SignatureVerificationService {
     }
 
     const trustedCerts = await this.trustList.getTrustedCertificates();
+    // Solo verifica crittografica reale (ca.verify firma effettivamente il
+    // certificato firmatario) — MAI un confronto di solo nome (subject vs
+    // issuer): un DN uguale per stringa non prova che quella CA abbia
+    // davvero firmato il certificato, bypassabile costruendo un issuer che
+    // dichiara semplicemente il nome di una CA fidata senza averne la
+    // chiave privata.
     const issuerRecognized = trustedCerts.some((ca) => {
       try {
-        return ca.verify(signerCert) || this.sameSubject(ca, signerCert);
+        return ca.verify(signerCert);
       } catch {
         return false;
       }
@@ -164,11 +178,28 @@ export class SignatureVerificationService {
     return nodes.map((n) => n.value as string).join('');
   }
 
-  private commonName(cert: forge.pki.Certificate): string | undefined {
-    return cert.subject.getField('CN')?.value;
+  /**
+   * Sceglie, fra tutti i certificati inclusi nella busta (firmatario +
+   * eventuali CA intermedie), quello che corrisponde esattamente a
+   * issuer+serialNumber dichiarati nel SignerInfo — mai il primo per
+   * posizione, l'ordine dei certificati in un .p7m reale non è garantito.
+   */
+  private selectSignerCertificate(p7: forge.pkcs7.PkcsSignedData, rawCapture: any): forge.pki.Certificate | undefined {
+    const certs = p7.certificates;
+    if (!rawCapture?.serial || !rawCapture?.issuer) return certs[0];
+
+    const normalizeHex = (hex: string): string => hex.replace(/^0+/, '').toUpperCase() || '0';
+    const wantedSerial = normalizeHex(forge.util.createBuffer(rawCapture.serial).toHex());
+    const wantedIssuerDer = forge.asn1.toDer(rawCapture.issuer).getBytes();
+
+    return certs.find((cert) => {
+      if (normalizeHex(cert.serialNumber) !== wantedSerial) return false;
+      const certIssuerDer = forge.asn1.toDer(forge.pki.distinguishedNameToAsn1(cert.issuer)).getBytes();
+      return certIssuerDer === wantedIssuerDer;
+    });
   }
 
-  private sameSubject(a: forge.pki.Certificate, b: forge.pki.Certificate): boolean {
-    return forge.pki.distinguishedNameToAsn1(a.subject).value === forge.pki.distinguishedNameToAsn1(b.issuer).value;
+  private commonName(cert: forge.pki.Certificate): string | undefined {
+    return cert.subject.getField('CN')?.value;
   }
 }

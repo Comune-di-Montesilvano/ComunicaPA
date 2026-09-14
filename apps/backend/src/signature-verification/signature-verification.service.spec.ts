@@ -95,4 +95,57 @@ describe('SignatureVerificationService', () => {
     expect(result.valid).toBe(false);
     expect(result.reason).toContain('non leggibile');
   });
+
+  it('CA nella trust list con lo stesso subject DN ma chiave diversa (non ha firmato realmente) → rifiutata, mai un bypass per solo nome', async () => {
+    // Stesso subject/issuer "Test CA" della CA reale, ma coppia di chiavi
+    // diversa: non ha mai firmato signerCert. Un confronto per solo nome
+    // (bypassato in una versione precedente del service) la accetterebbe
+    // per errore.
+    const rogueKeys = forge.pki.rsa.generateKeyPair(1024);
+    const rogueCa = forge.pki.createCertificate();
+    rogueCa.publicKey = rogueKeys.publicKey;
+    rogueCa.serialNumber = '99';
+    rogueCa.validity.notBefore = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    rogueCa.validity.notAfter = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+    rogueCa.setSubject([{ name: 'commonName', value: 'Test CA' }]);
+    rogueCa.setIssuer([{ name: 'commonName', value: 'Test CA' }]);
+    rogueCa.sign(rogueKeys.privateKey);
+
+    trustList.getTrustedCertificates.mockResolvedValue([rogueCa]);
+    const content = Buffer.from('contenuto');
+    const p7m = makeP7m(content, signerCert, signerKeys);
+
+    const result = await service.verify(p7m, 'documento.p7m');
+
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain('non riconosciuta');
+  });
+
+  it('.p7m con catena completa (CA intermedia + firmatario, in quest\'ordine) → sceglie il certificato firmatario corretto, non il primo per posizione', async () => {
+    const content = Buffer.from('contenuto con catena completa');
+    const p7 = forge.pkcs7.createSignedData();
+    p7.content = forge.util.createBuffer(content.toString('binary'));
+    // CA aggiunta PRIMA del firmatario: se il codice prendesse certificates[0]
+    // per posizione, selezionerebbe erroneamente la CA come "firmatario".
+    p7.addCertificate(ca);
+    p7.addCertificate(signerCert);
+    p7.addSigner({
+      key: signerKeys.privateKey,
+      certificate: signerCert,
+      digestAlgorithm: forge.pki.oids.sha256,
+      authenticatedAttributes: [
+        { type: forge.pki.oids.contentType, value: forge.pki.oids.data },
+        { type: forge.pki.oids.messageDigest },
+        { type: forge.pki.oids.signingTime, value: new Date() as unknown as string },
+      ],
+    });
+    p7.sign();
+    const der = forge.asn1.toDer(p7.toAsn1()).getBytes();
+    const p7m = Buffer.from(der, 'binary');
+
+    const result = await service.verify(p7m, 'documento.p7m');
+
+    expect(result.valid).toBe(true);
+    expect(result.signerCn).toBe('Mario Rossi Test');
+  });
 });
