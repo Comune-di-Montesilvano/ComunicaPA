@@ -168,6 +168,17 @@ docker compose exec postgres psql -U comunicapa -d comunicapa_db -c "DROP DATABA
 
 **Bug reale — migration scritta ma non registrata è invisibile, nessun errore.** Una migration con solo `CREATE INDEX` raw (nessun `@Index` sull'entity) dimenticata nell'array `migrations` di `database.module.ts` non produce log né eccezioni: gli indici restano assenti sia in prod (mai eseguita) sia in dev (`synchronize` sincronizza solo i metadata delle entity, non SQL raw di una migration) — sintomo osservato solo indirettamente come lentezza su una query, non un errore. Dopo aver scritto una migration, verificare SEMPRE che la classe sia sia importata sia presente nell'array `migrations` (`grep NomeMigration database.module.ts`). Se serve testarla subito in dev senza aspettare un redeploy prod, applicare a mano l'SQL della migration sul DB dev (`docker compose exec postgres psql -U comunicapa -d comunicapa_db -c "..."`, idempotente con `IF NOT EXISTS`).
 
+**`repository.save({ id: 'stringa-fissa', ... })` su una colonna
+`@PrimaryGeneratedColumn('uuid')` fallisce sempre** ("invalid input
+syntax for type uuid") — se il chiamante è fail-open (try/catch che
+logga solo un warn, pattern comune per un refresh/cache "meglio dati
+vecchi che un crash"), l'errore sparisce silenziosamente e la tabella
+resta vuota per sempre. Invisibile ai test se il repository è mockato
+(il mock non valida i tipi). Se serve un record "singleton" riletto per
+ultimo aggiornamento (es. una cache TSL/registro esterno), non forzare
+un id fisso: lasciarlo autogenerato e leggere sempre `ORDER BY
+<colonna-timestamp> DESC LIMIT 1`.
+
 **Stessa cosa vale per una entity NUOVA**: va aggiunta sia all'array
 `entities:` sia (se introduce una migration) all'array `migrations:` di
 `database.module.ts` — mancare `entities:` fa fallire silenziosamente
@@ -357,6 +368,20 @@ gotcha per lavoro futuro:
   `ioredis` v6: serve `import { Redis } from 'ioredis'`, non l'import di
   default) — non assumere che un pacchetto CJS funzioni automaticamente
   con l'import di default solo perché ha sempre funzionato in CJS.
+- **`node-forge` — caso opposto a `ioredis` sopra: usare `import forge
+  from 'node-forge'` (default), MAI `import * as forge from
+  'node-forge'`.** Bug reale: node-forge non ha `exports` in
+  `package.json` e il suo entry point attacca i sottomoduli dinamicamente
+  (`require('./pki')` da FUORI del file, mai `module.exports.pki = ...`
+  testuale) — sotto il loader ESM nativo di Node un `import * as forge`
+  costruisce il namespace con SOLO `default` valorizzato:
+  `forge.pki`/`forge.util`/`forge.asn1` tutti `undefined`. Nessun crash
+  all'avvio, nessun log — solo un `TypeError` alla prima chiamata reale.
+  **Mai riprodotto sotto Vitest** (esbuild/swc trasformano l'import in un
+  `require()` diretto, aggirando l'interop nativo) — un fix su un
+  pacchetto CJS del genere va sempre verificato anche con l'app reale o
+  uno script standalone (`node --input-type=module -e "..."`), mai
+  fidandosi della sola suite unit.
 - **`@nestjs/passport` — `AuthGuard()` richiede sempre
   `PassportModule.register({})` esplicito**, mai l'import nudo di
   `PassportModule` (che non fornisce alcun provider) — regressione v12
@@ -1006,6 +1031,35 @@ usa l'enum `NotificationStatusV26` dello spec ufficiale PN (repo
 dello schema `NotificationStatus` — verificare sempre lo spec raw, non un
 riassunto, prima di aggiungere/rimuovere valori da `TERMINAL_STATUSES`
 (`send-status-sync.service.ts`) o da `SEND_STATUS_META` (`App.tsx`).
+
+## Verifica firma digitale PDF (PAdES) — node-forge, gotcha reali
+
+Un allegato SEND è quasi sempre un **PDF con firma PAdES embedded**
+(`/ByteRange` + `/Contents`, CAdES-detached), MAI un `.p7m` — SEND manda
+sempre `contentType: 'application/pdf'` a PN (`send-dispatch.service.ts`),
+`.p7m` non è un formato utilizzabile su quel canale (supportato comunque
+in `SignatureVerificationService` per completezza/altri usi futuri).
+
+**`forge.asn1.fromDer(der)` con le opzioni default (`parseAllBytes: true`)
+rigetta ogni firma PAdES reale** con "Unparsed DER bytes remain after
+ASN.1 parsing" — il placeholder esadecimale riservato per `/Contents` nel
+PDF è quasi sempre più grande della firma effettiva, il padding di zeri
+finale dentro l'hex string non è DER valido. Serve `parseAllBytes: false`
+esplicito (non tipizzato da `@types/node-forge`, richiede un cast).
+
+**`forge.pkcs7.PkcsSignedData.verify()` non è implementato** (lancia
+sempre "not yet implemented", verificato leggendo `pkcs7.js`) — la
+verifica va fatta a mano: digest del contenuto vs attributo
+`messageDigest`, poi verifica RSA sul SET DER degli
+`authenticatedAttributes` (RFC 2315 §9.3), mai sul contenuto diretto.
+
+**Selezionare il certificato firmatario per issuer+serialNumber dichiarati
+nel SignerInfo, mai `certificates[0]` per posizione** — un file firmato
+reale include spesso la CA intermedia nella busta, l'ordine non è
+garantito. Vedi
+`apps/backend/src/signature-verification/signature-verification.service.ts`
+per l'implementazione completa (gotcha `node-forge` import sopra
+applicabile 1:1 anche qui).
 
 ## API esterne con XML — verificare l'encoding, mai fidarsi di `response.text()`
 
