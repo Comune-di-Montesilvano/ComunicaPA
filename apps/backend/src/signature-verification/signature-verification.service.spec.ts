@@ -47,6 +47,48 @@ function makeP7m(content: Buffer, signerCert: forge.pki.Certificate, signerKeys:
   return Buffer.from(der, 'binary');
 }
 
+/** PKCS7 detached (CAdES-detached) su un contenuto esterno — stesso schema usato dentro un PDF PAdES. */
+function makeDetachedPkcs7(signedBytes: Buffer, signerCert: forge.pki.Certificate, signerKeys: forge.pki.rsa.KeyPair): Buffer {
+  const p7 = forge.pkcs7.createSignedData();
+  p7.content = forge.util.createBuffer(signedBytes.toString('binary'));
+  p7.addCertificate(signerCert);
+  p7.addSigner({
+    key: signerKeys.privateKey,
+    certificate: signerCert,
+    digestAlgorithm: forge.pki.oids.sha256,
+    authenticatedAttributes: [
+      { type: forge.pki.oids.contentType, value: forge.pki.oids.data },
+      { type: forge.pki.oids.messageDigest },
+      { type: forge.pki.oids.signingTime, value: new Date() as unknown as string },
+    ],
+  });
+  p7.sign({ detached: true });
+  const der = forge.asn1.toDer(p7.toAsn1()).getBytes();
+  return Buffer.from(der, 'binary');
+}
+
+/**
+ * Costruisce un finto "PDF" con `/ByteRange`/`/Contents` sintatticamente
+ * validi (non serve una struttura PDF reale — il service legge solo questi
+ * due campi via regex, mai un parser PDF completo). Il PKCS7 firma
+ * esattamente i byte fuori dal placeholder `/Contents`, replicando lo
+ * schema PAdES reale (ByteRange esclude solo l'hex della firma stessa).
+ */
+function makePadesPdf(before: Buffer, after: Buffer, signerCert: forge.pki.Certificate, signerKeys: forge.pki.rsa.KeyPair): Buffer {
+  const signedBytes = Buffer.concat([before, after]);
+  const pkcs7Der = makeDetachedPkcs7(signedBytes, signerCert, signerKeys);
+  const hex = pkcs7Der.toString('hex').toUpperCase();
+  const contentsField = Buffer.from(`/Contents<${hex}>`, 'latin1');
+
+  const o1 = 0;
+  const l1 = before.length;
+  const o2 = before.length + contentsField.length;
+  const l2 = after.length;
+  const byteRangeField = Buffer.from(`/ByteRange[${o1} ${l1} ${o2} ${l2}]`, 'latin1');
+
+  return Buffer.concat([before, contentsField, after, byteRangeField]);
+}
+
 describe('SignatureVerificationService', () => {
   let service: SignatureVerificationService;
   let trustList: { getTrustedCertificates: ReturnType<typeof vi.fn> };
@@ -147,5 +189,55 @@ describe('SignatureVerificationService', () => {
 
     expect(result.valid).toBe(true);
     expect(result.signerCn).toBe('Mario Rossi Test');
+  });
+
+  describe('PAdES (PDF con firma embedded)', () => {
+    it('PDF firmato PAdES valido, CA in trust list → valid: true', async () => {
+      const before = Buffer.from('%PDF-1.4\n1 0 obj<< /Sig 2 0 R >>\nendobj\n2 0 obj<< /Type /Sig ');
+      const after = Buffer.from(' >>\nendobj\n%%EOF');
+      const pdf = makePadesPdf(before, after, signerCert, signerKeys);
+
+      const result = await service.verify(pdf, 'documento.pdf');
+
+      expect(result.valid).toBe(true);
+      expect(result.reason).toBeNull();
+      expect(result.signerCn).toBe('Mario Rossi Test');
+    });
+
+    it('PDF PAdES con CA non in trust list → valid: false, reason CA non riconosciuta', async () => {
+      trustList.getTrustedCertificates.mockResolvedValue([]);
+      const before = Buffer.from('%PDF-1.4\ncontenuto prima ');
+      const after = Buffer.from(' contenuto dopo\n%%EOF');
+      const pdf = makePadesPdf(before, after, signerCert, signerKeys);
+
+      const result = await service.verify(pdf, 'documento.pdf');
+
+      expect(result.valid).toBe(false);
+      expect(result.reason).toContain('non riconosciuta');
+    });
+
+    it('PDF PAdES manomesso dopo la firma (byte fuori ByteRange coerenti ma contenuto realmente alterato) → valid: false, hash non corrispondente', async () => {
+      const before = Buffer.from('%PDF-1.4\ncontenuto originale ');
+      const after = Buffer.from(' fine\n%%EOF');
+      const pdf = makePadesPdf(before, after, signerCert, signerKeys);
+      // Altera un byte dentro il range firmato (prima parte, fuori dal
+      // placeholder /Contents) — stesso principio di un documento
+      // modificato dopo la firma: il digest ricalcolato non corrisponde più.
+      const tampered = Buffer.from(pdf);
+      tampered[10] = tampered[10] === 0x61 ? 0x62 : 0x61; // ribalta un byte qualsiasi nel preambolo
+
+      const result = await service.verify(tampered, 'documento.pdf');
+
+      expect(result.valid).toBe(false);
+    });
+
+    it('PDF senza /ByteRange o /Contents (non firmato) → valid: false, reason non firmato', async () => {
+      const plainPdf = Buffer.from('%PDF-1.4\ncontenuto qualsiasi\n%%EOF');
+
+      const result = await service.verify(plainPdf, 'documento.pdf');
+
+      expect(result.valid).toBe(false);
+      expect(result.reason).toContain('non firmato');
+    });
   });
 });
