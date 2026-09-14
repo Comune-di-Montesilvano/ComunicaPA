@@ -2,14 +2,22 @@ import { vi } from 'vitest';
 import { BadGatewayException, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { OidcFlowService } from './oidc-flow.service.js';
 
-const redisMock = {
-  set: jest.fn(),
-  getdel: jest.fn(),
-  quit: jest.fn(async () => 'OK'),
-};
+// vitest 5: una const top-level referenziata dentro una factory vi.mock()
+// va dichiarata con vi.hoisted(), altrimenti la factory (hoistata sopra gli
+// import) la vede ancora in TDZ — vedi migration guide vitest 5.
+const redisMock = vi.hoisted(() => ({
+  set: vi.fn(),
+  getdel: vi.fn(),
+  quit: vi.fn(async () => 'OK'),
+}));
 
 vi.mock('ioredis', () => {
-  const RedisMock = jest.fn().mockImplementation(() => redisMock);
+  // vitest 5: il mock ora fa Reflect.construct() sull'implementation quando
+  // chiamato con `new` (per incatenare il prototype) — richiede una funzione
+  // costruibile, mai una arrow function (non ha [[Construct]]).
+  const RedisMock = vi.fn().mockImplementation(function RedisCtor() {
+    return redisMock;
+  });
   return {
     __esModule: true,
     default: RedisMock,
