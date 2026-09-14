@@ -7349,7 +7349,36 @@ export function App(): React.JSX.Element {
   // o pochi file, il job dovrebbe chiudersi in pochi secondi) — oltre il
   // timeout si desiste silenziosamente: il pannello di stato allo step 6/7
   // (massivo) o il gate al lancio (singolo) mostrano comunque l'esito reale.
+  // Per invio singolo: spiega la conseguenza normativa reale (l'allegato È il
+  // documento legale notificato su SEND, vedi "Allegati e co-consegna App IO
+  // — gotcha" in CLAUDE.md) e chiede conferma esplicita. `window.confirm` non
+  // permette di rinominare i bottoni nativi (restano OK/Annulla) né di
+  // impostarne il default a livello browser — il testo lo rende comunque
+  // esplicito: Annulla è l'opzione consigliata, OK prosegue a rischio
+  // dell'operatore. Ritorna `true` solo se l'operatore sceglie di proseguire.
+  const confirmContinueDespiteInvalidSignature = (invalidCount: number, totalRows: number): boolean => {
+    return window.confirm(
+      `ATTENZIONE: ${invalidCount} allegato/i su ${totalRows} non risulta/no firmato/i digitalmente in modo valido.\n\n` +
+      `Per il canale SEND l'allegato è il documento legale notificato al cittadino: senza una firma digitale valida (o con firma non riconducibile a una CA della lista di fiducia AgID) non è garantita l'integrità né la provenienza del documento. La notifica rischia di NON avere piena validità legale/probatoria — possibili contestazioni su autenticità dell'atto o decorrenza dei termini.\n\n` +
+      `Premi ANNULLA (consigliato) per tornare indietro e caricare un allegato correttamente firmato.\n` +
+      `Premi OK solo se vuoi procedere comunque, sotto la tua responsabilità.`
+    );
+  };
+
+  // Avvia la verifica firma (job unico, singolo o massivo — il job non
+  // distingue) e attende il risultato con un poll breve per dare un esito
+  // SUBITO al momento del caricamento, non solo al lancio: l'operatore deve
+  // sapere di un allegato non firmato mentre sta ancora sullo step allegati,
+  // non scoprirlo minuti dopo al bottone "Lancia". Timeout 20s (un solo file
+  // o pochi file, il job dovrebbe chiudersi in pochi secondi) — oltre il
+  // timeout si desiste silenziosamente: il pannello di stato allo step 6/7
+  // (massivo) o il gate al lancio (singolo) mostrano comunque l'esito reale.
+  // Per il singolo, un allegato non valido richiede conferma esplicita
+  // (vedi `confirmContinueDespiteInvalidSignature`) — un `throw` qui interrompe
+  // il flusso del chiamante riusando il suo `catch` esistente (stesso pattern
+  // già in uso ovunque in questo file, nessuna plumbing aggiuntiva ai 3 call site).
   const triggerAndAlertSignatureVerification = async (campaignId: string): Promise<void> => {
+    const isSingolo = wizChannel === 'SEND' && wizSingleMode;
     try {
       await apiFetch(`/campaigns/${campaignId}/signature-verification`, { method: 'POST' });
     } catch {
@@ -7365,15 +7394,24 @@ export function App(): React.JSX.Element {
         if (wizChannel === 'SEND' && !wizSingleMode) setWizSignatureJobStatus(status);
         if (status.status === 'done') {
           if (status.invalidCount > 0) {
-            alert(`Attenzione: ${status.invalidCount} allegato/i su ${status.totalRows} non risultano firmati validamente.`);
+            if (isSingolo) {
+              if (!confirmContinueDespiteInvalidSignature(status.invalidCount, status.totalRows)) {
+                throw new Error('Caricamento annullato: allegato non firmato digitalmente in modo valido.');
+              }
+            } else {
+              alert(`Attenzione: ${status.invalidCount} allegato/i su ${status.totalRows} non risultano firmati validamente.`);
+            }
+          } else if (isSingolo) {
+            alert('Allegato firmato digitalmente in modo valido.');
           } else {
             alert(`Verifica firma completata: tutti gli allegati (${status.totalRows}) risultano firmati validamente.`);
           }
           return;
         }
         if (status.status === 'failed') return;
-      } catch {
-        // silenzioso: stesso principio del polling stato campagna esistente
+      } catch (err) {
+        if (err instanceof Error && err.message.startsWith('Caricamento annullato')) throw err;
+        // silenzioso per ogni altro errore: stesso principio del polling stato campagna esistente
       }
     }
   };
