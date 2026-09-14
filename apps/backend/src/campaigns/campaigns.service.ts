@@ -2239,7 +2239,7 @@ export class CampaignsService {
       .select([
         'r.id', 'r.fullName', 'r.codiceFiscale', 'r.email', 'r.pec', 'r.status',
         'r.downloadCount', 'r.firstDownloadedAt', 'r.lastDownloadedAt', 'r.attachmentDeletedAt',
-        'r.inadCheck',
+        'r.inadCheck', 'r.signatureCheck',
       ])
       .where('r.campaignId = :campaignId', { campaignId });
 

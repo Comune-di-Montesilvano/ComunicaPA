@@ -2381,7 +2381,7 @@ export function App(): React.JSX.Element {
     failed: Array<{ recipientId: string; reason: string }>;
     errorMessage: string | null;
   } | null>(null);
-  const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number; costCents?: number | null; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; protocolNumber?: number | null; protocolYear?: number | null; inadCheck?: { found: boolean; diverted: boolean } | null }> } | null>(null);
+  const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number; costCents?: number | null; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; protocolNumber?: number | null; protocolYear?: number | null; inadCheck?: { found: boolean; diverted: boolean } | null; signatureCheck?: { valid: boolean; reason: string | null } | null }> } | null>(null);
   const [recipientsSearch, setRecipientsSearch] = useState('');
   const [recipientsPageNum, setRecipientsPageNum] = useState(1);
   const [recipientsStatusFilter, setRecipientsStatusFilter] = useState('');
@@ -7626,6 +7626,9 @@ export function App(): React.JSX.Element {
       setView('dashboard');
 
       alert('Campagna creata e avviata con successo! I messaggi sono in coda.');
+      if (launchData?.signatureWarning) {
+        alert(`Attenzione: ${launchData.signatureWarning}`);
+      }
     } catch (err: any) {
       alert(err.message || 'Errore durante l\'invio della campagna.');
     } finally {
@@ -7692,6 +7695,9 @@ export function App(): React.JSX.Element {
       ]);
       if (data.testCampaignId) {
         setWizTestCampaignId(data.testCampaignId);
+      }
+      if (data.signatureWarning) {
+        alert(`Attenzione: ${data.signatureWarning}`);
       }
     } catch (err) {
       setWizTestError(err instanceof Error ? err.message : 'Errore durante l\'invio di prova.');
@@ -16955,7 +16961,14 @@ export function App(): React.JSX.Element {
                                           {r.pec && <div className="text-primary"><MailOpen className="me-1" /> {r.pec}</div>}
                                         </div>
                                       </td>
-                                      <td><StatusBadge status={r.status} /></td>
+                                      <td>
+                                        <StatusBadge status={r.status} />
+                                        {r.signatureCheck?.valid === false && (
+                                          <span className="badge bg-danger-subtle text-danger border border-danger-subtle ms-1" title={r.signatureCheck.reason ?? ''}>
+                                            Firma non valida
+                                          </span>
+                                        )}
+                                      </td>
                                       {campaign.channelType === 'SEND' ? (
                                         <>
                                           <td className="small fw-mono">{r.iun || '—'}</td>
