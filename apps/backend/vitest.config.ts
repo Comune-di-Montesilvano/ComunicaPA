@@ -1,11 +1,15 @@
 import swc from 'unplugin-swc';
 import { defineConfig } from 'vitest/config';
-import tsconfigPaths from 'vite-tsconfig-paths';
 
 // Vitest sostituisce Jest/ts-jest per il backend ESM (Nest v12).
 // swc gestisce decorator/metadata (esbuild di default non li supporta),
 // stesso pattern documentato nei progetti e2e ufficiali NestJS+Vitest.
 export default defineConfig({
+  resolve: {
+    // Vitest 5 risolve nativamente i path da tsconfig — sostituisce il
+    // plugin vite-tsconfig-paths (deprecato per questo caso d'uso).
+    tsconfigPaths: true,
+  },
   test: {
     globals: true,
     root: './src',
@@ -17,7 +21,7 @@ export default defineConfig({
     // Test.createTestingModule vanno in timeout non per un bug reale ma
     // per starvation.
     pool: 'forks',
-    poolOptions: { forks: { maxForks: 2 } },
+    maxForks: 2,
     testTimeout: 15000,
     hookTimeout: 15000,
     coverage: {
@@ -26,7 +30,6 @@ export default defineConfig({
     },
   },
   plugins: [
-    tsconfigPaths(),
     swc.vite({
       module: { type: 'es6' },
       // Senza questo, Test.createTestingModule().compile() va in hang
