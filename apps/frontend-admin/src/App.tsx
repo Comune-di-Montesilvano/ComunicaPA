@@ -9881,6 +9881,15 @@ export function App(): React.JSX.Element {
                           {(wizChannel === 'SEND' || wizChannel === 'POSTAL') && <span className="text-danger"> *</span>}
                         </h5>
 
+                        {wizChannel === 'SEND' && (
+                          <div className="alert alert-info d-flex align-items-start gap-2 mb-3">
+                            <AlertCircle size={16} className="mt-1 flex-shrink-0" />
+                            <div>
+                              I file devono essere firmati digitalmente in formato <strong>PAdES</strong> (firma integrata nel PDF stesso — il formato prodotto dalla maggior parte dei software di firma su documenti .pdf). Il formato .p7m non è utilizzabile su SEND. Un allegato non firmato correttamente viene rilevato dalla verifica automatica dopo il caricamento.
+                            </div>
+                          </div>
+                        )}
+
                         {wizSingleAttachmentSlots.map((slot, idx) => (
                           <div className="row g-2 mb-2 align-items-center" key={slot.id}>
                             <div className="col-md-4">
@@ -11459,6 +11468,15 @@ export function App(): React.JSX.Element {
                 return (
                   <div style={{ maxWidth: '600px', margin: '0 auto' }}>
                     <h4 className="h6 fw-bold text-dark mb-3"><Paperclip className="text-warning me-2" size={16} />Passo 5: Upload Allegati</h4>
+
+                    {wizChannel === 'SEND' && (
+                      <div className="alert alert-info d-flex align-items-start gap-2 mb-3">
+                        <AlertCircle size={16} className="mt-1 flex-shrink-0" />
+                        <div>
+                          I file devono essere firmati digitalmente in formato <strong>PAdES</strong> (firma integrata nel PDF stesso — il formato prodotto dalla maggior parte dei software di firma su documenti .pdf). Il formato .p7m non è utilizzabile su SEND. Un allegato non firmato correttamente viene rilevato dalla verifica automatica dopo il caricamento.
+                        </div>
+                      </div>
+                    )}
 
                     <div className="mb-4 pb-3 border-bottom d-flex justify-content-between">
                       <button
