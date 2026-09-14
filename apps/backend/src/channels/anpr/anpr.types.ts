@@ -74,6 +74,17 @@ export interface AnprResidenzaResult {
   };
 }
 
+/** Criteri per ricerca ANPR C002 per anagrafica (senza CF/idANPR) — tutti i campi obbligatori, verificato dal vivo. */
+export interface AnprAnagraficaCriteri {
+  cognome: string;
+  nome: string;
+  sesso: string;
+  /** YYYY-MM-DD */
+  dataNascita: string;
+  comuneNascita: string;
+  provinciaNascita?: string;
+}
+
 export interface AnprEsistenzaInVitaResult {
   found: boolean;
   data?: {
