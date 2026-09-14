@@ -4771,8 +4771,13 @@ export function App(): React.JSX.Element {
     const sections: Array<{ id: string; title: string }> = [
       { id: 'guida-cose', title: "Cos'è ComunicaPA" },
       { id: 'guida-anagrafica', title: 'Verifica Anagrafica e domicilio digitale' },
+      { id: 'guida-dirottamento', title: 'Dirottamento automatico su domicilio digitale' },
+      { id: 'guida-regole-canale', title: 'Regole per canale (allegato, oggetto/testo, App IO)' },
       { id: 'guida-wizard', title: 'Come lanciare un invio' },
+      { id: 'guida-templating', title: 'Personalizzare oggetto e testo (placeholder)' },
       { id: 'guida-canali', title: 'Canali disponibili' },
+      { id: 'guida-protocollo', title: 'Protocollo e sigillo elettronico' },
+      { id: 'guida-costi', title: 'Costi degli invii' },
       { id: 'guida-monitoraggio', title: 'Monitoraggio e stato invii' },
       { id: 'guida-postal', title: 'Autorizzazione Postalizzazione' },
       { id: 'guida-impostazioni', title: 'Impostazioni' },
@@ -4829,6 +4834,92 @@ export function App(): React.JSX.Element {
           </div>
         </div>
 
+        <div id="guida-dirottamento" className="card shadow-sm border-0 rounded-3">
+          <div className="card-body p-4">
+            <h4 className="h5 fw-bold text-dark mb-3">Dirottamento automatico su domicilio digitale</h4>
+            <p className="text-muted mb-2">
+              Su una campagna <strong>massiva</strong> con canale EMAIL, App IO o Posta cartacea, il sistema
+              verifica per ogni destinatario se ha un domicilio digitale attivo su INAD. Se lo trova, quella
+              persona viene dirottata automaticamente su PEC — anche se la campagna nel complesso è, ad
+              esempio, un invio cartaceo: per un cittadino con domicilio digitale non viene stampata e
+              spedita alcuna lettera, riceve invece una PEC.
+            </p>
+            <p className="text-muted mb-0">
+              Il canale effettivamente usato per ciascun destinatario si vede sempre nel dettaglio della
+              campagna, riga per riga — non fidarti del canale "nominale" della campagna per capire cosa ha
+              ricevuto davvero un singolo cittadino. Questo controllo <strong>non</strong> si applica a SEND
+              (la piattaforma nazionale risolve da sé il domicilio) né agli invii singoli dal wizard (l'operatore
+              ha già verificato il domicilio a mano, es. da Verifica Anagrafica, prima di scegliere il canale).
+            </p>
+          </div>
+        </div>
+
+        <div id="guida-regole-canale" className="card shadow-sm border-0 rounded-3">
+          <div className="card-body p-4">
+            <h4 className="h5 fw-bold text-dark mb-3">Regole per canale</h4>
+            <p className="text-muted mb-3">
+              Ogni canale ha vincoli diversi su allegato, oggetto/testo e App IO abbinata — se il wizard
+              blocca "Avanti" o rifiuta un campo, è quasi sempre per una di queste regole.
+            </p>
+            <div className="table-responsive">
+              <table className="table table-sm align-middle mb-0">
+                <thead className="text-muted small text-uppercase">
+                  <tr>
+                    <th>Canale</th>
+                    <th>Allegato</th>
+                    <th>Oggetto / Testo</th>
+                    <th>App IO abbinata</th>
+                    <th>Protocollo</th>
+                  </tr>
+                </thead>
+                <tbody className="small text-muted">
+                  <tr>
+                    <td><strong>EMAIL</strong></td>
+                    <td>Facoltativo</td>
+                    <td>Entrambi obbligatori</td>
+                    <td>Nessuna / parallela / esclusiva*</td>
+                    <td>Facoltativo</td>
+                  </tr>
+                  <tr>
+                    <td><strong>PEC</strong></td>
+                    <td>Facoltativo</td>
+                    <td>Entrambi obbligatori</td>
+                    <td>Nessuna / parallela / esclusiva*</td>
+                    <td>Facoltativo</td>
+                  </tr>
+                  <tr>
+                    <td><strong>App IO</strong></td>
+                    <td>Facoltativo</td>
+                    <td>Oggetto 10–120 caratteri, testo 80–10.000 — entrambi obbligatori</td>
+                    <td>—</td>
+                    <td>Facoltativo</td>
+                  </tr>
+                  <tr>
+                    <td><strong>SEND</strong></td>
+                    <td><strong>Obbligatorio</strong></td>
+                    <td>Solo oggetto obbligatorio — il testo libero non è previsto</td>
+                    <td>—</td>
+                    <td><strong>Obbligatorio</strong></td>
+                  </tr>
+                  <tr>
+                    <td><strong>Posta</strong></td>
+                    <td><strong>Obbligatorio</strong></td>
+                    <td>Solo oggetto obbligatorio — il testo libero non è previsto (il contenuto è l'allegato)</td>
+                    <td>Nessuna / parallela / esclusiva*</td>
+                    <td>Facoltativo</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p className="text-muted small mb-0 mt-2">
+              * Su EMAIL, PEC e Posta si può abbinare una notifica App IO. Se scelta come "esclusiva" (solo
+              App IO, senza il canale primario) e quel destinatario viene dirottato da INAD, per lui diventa
+              automaticamente "parallela" — l'App IO da sola non basterebbe se il domicilio digitale reale è
+              su PEC.
+            </p>
+          </div>
+        </div>
+
         <div id="guida-wizard" className="card shadow-sm border-0 rounded-3">
           <div className="card-body p-4">
             <h4 className="h5 fw-bold text-dark mb-3">Come lanciare un invio</h4>
@@ -4846,9 +4937,47 @@ export function App(): React.JSX.Element {
           </div>
         </div>
 
+        <div id="guida-templating" className="card shadow-sm border-0 rounded-3">
+          <div className="card-body p-4">
+            <h4 className="h5 fw-bold text-dark mb-3">Personalizzare oggetto e testo (placeholder)</h4>
+            <p className="text-muted mb-2">
+              Nell'oggetto e nel testo del messaggio puoi inserire dei segnaposto che vengono sostituiti
+              automaticamente, riga per riga, con il valore di quel destinatario. Il formato è sempre con il
+              <strong> doppio percento</strong>: <code>%%nome_segnaposto%%</code>. Un singolo <code>%</code>
+              scritto in mezzo al testo (es. "sconto del 60% sul tributo") non viene toccato — solo il doppio
+              percento forma un segnaposto reale.
+            </p>
+            <p className="text-muted mb-2">
+              Segnaposto sempre disponibili: <code>%%nominativo%%</code>, <code>%%codice_fiscale%%</code>, e
+              — se hai attivato allegati, protocollazione o pagoPA — anche <code>%%elenco_allegati%%</code>,
+              <code> %%allegato1%%</code>/<code>%%allegato2%%</code>..., <code>%%numero_protocollo%%</code> e i
+              campi pagoPA (importo, numero avviso, scadenza).
+            </p>
+            <p className="text-muted mb-2">
+              Nell'invio massivo puoi usare anche <strong>qualsiasi colonna del tuo file</strong> non già
+              usata per CF/nome/email: basta scrivere <code>%%NomeColonna%%</code> esattamente come intestata
+              nel file. L'editor mostra sempre l'elenco completo dei segnaposto disponibili — non serve
+              ricordarli a memoria.
+            </p>
+            <p className="text-muted mb-0">
+              Attenzione: se nel wizard massivo mappi una colonna del CSV come "Oggetto" (mappatura colonne,
+              passo 3), l'oggetto che scrivi a mano nel wizard viene <strong>ignorato</strong> per quei
+              destinatari — vince sempre il valore della colonna, riga per riga (utile per invii con tributi
+              diversi nello stesso lancio).
+            </p>
+          </div>
+        </div>
+
         <div id="guida-canali" className="card shadow-sm border-0 rounded-3">
           <div className="card-body p-4">
             <h4 className="h5 fw-bold text-dark mb-3">Canali disponibili</h4>
+            <div className="alert alert-warning border-0 bg-warning-subtle text-warning-emphasis mb-3">
+              <strong>Se l'invio deve avere valore formale, il canale è SEND — punto.</strong> È l'unico canale
+              con piena garanzia normativa (ricevute opponibili a norma di legge) e gestisce da sé anche i
+              destinatari senza domicilio digitale, recapitando in automatico su carta se serve. Sugli altri
+              canali sappiamo comunque se una comunicazione è stata consegnata o scaricata, ma questo non
+              equivale al valore legale di SEND.
+            </div>
             <div className="d-flex flex-column gap-3">
               {guidaChannels.map(({ key, meta }) => {
                 const Icon = meta.icon;
@@ -4859,15 +4988,52 @@ export function App(): React.JSX.Element {
                     </span>
                     <span className="text-muted small">
                       {key === 'EMAIL' && 'Posta elettronica ordinaria — per comunicazioni non aventi valore legale.'}
-                      {key === 'PEC' && 'Posta Elettronica Certificata — per comunicazioni con valore legale verso destinatari con indirizzo PEC noto.'}
+                      {key === 'PEC' && 'Posta Elettronica Certificata — per comunicazioni con valore legale verso destinatari con indirizzo PEC noto. La protocollazione ordinaria dell\'Ente resta comunque necessaria, vedi sotto.'}
                       {key === 'APP_IO' && "Notifica push sull'app IO — può accompagnare un altro canale (co-consegna) o essere usata da sola."}
-                      {key === 'SEND' && 'Piattaforma nazionale Notifiche Digitali — invio a valore legale con ricevute opponibili, richiede protocollazione.'}
-                      {key === 'POSTAL' && 'Posta cartacea (raccomandata o lettera) per chi non ha un domicilio digitale — riservata ad admin e operatori autorizzati.'}
+                      {key === 'SEND' && "Piattaforma nazionale Notifiche Digitali — l'unico canale a pieno valore legale, ricevute opponibili, gestisce da sé anche chi non ha domicilio digitale. Richiede protocollazione, integrata direttamente nel flusso di invio."}
+                      {key === 'POSTAL' && 'Posta cartacea (raccomandata o lettera) — pensata per invii massivi, non come alternativa spicciola a SEND per un singolo destinatario senza domicilio digitale. Riservata ad admin e operatori autorizzati.'}
                     </span>
                   </div>
                 );
               })}
             </div>
+          </div>
+        </div>
+
+        <div id="guida-protocollo" className="card shadow-sm border-0 rounded-3">
+          <div className="card-body p-4">
+            <h4 className="h5 fw-bold text-dark mb-3">ComunicaPA non sostituisce il protocollo</h4>
+            <p className="text-muted mb-2">
+              ComunicaPA <strong>non sostituisce il protocollo generale dell'Ente</strong>, in particolare per
+              la PEC: per gli invii PEC continua a valere l'iter di protocollazione ordinario.
+            </p>
+            <p className="text-muted mb-0">
+              Per i canali che la richiedono (es. SEND), ComunicaPA integra una protocollazione automatica —
+              ma quella usata qui <strong>non appone il sigillo elettronico</strong>: un limite tecnico reale,
+              non un'alternativa equivalente al protocollo ufficiale. Non va quindi usata in modo indiscriminato
+              al posto del protocollo per ogni comunicazione.
+            </p>
+          </div>
+        </div>
+
+        <div id="guida-costi" className="card shadow-sm border-0 rounded-3">
+          <div className="card-body p-4">
+            <h4 className="h5 fw-bold text-dark mb-3">Costi degli invii</h4>
+            <p className="text-muted mb-2">
+              EMAIL, PEC e App IO non hanno un costo per notifica. <strong>SEND</strong> e <strong>Posta</strong>
+              sì — il widget "Costo Campagna" nel dettaglio di ogni campagna mostra il totale, aggiornato man
+              mano che arrivano i costi reali.
+            </p>
+            <ul className="text-muted mb-2 ps-3">
+              <li className="mb-2"><strong>SEND</strong>: si paga sempre un costo base per notifica, circa <strong>1 euro</strong> (importo configurabile in Impostazioni → SEND) — a prescindere dal contenuto o dal numero di pagine.</li>
+              <li><strong>Posta</strong>: il costo è quello reale del fornitore (dipende da tipologia, peso, ricevuta di ritorno...) e non è noto subito — spesso compare a "0€" per un po' prima di essere calcolato: non è un errore, è solo il costo non ancora arrivato dal fornitore.</li>
+            </ul>
+            <p className="text-muted mb-0">
+              Se hai attivato il dirottamento automatico su domicilio digitale (vedi sopra), un destinatario
+              dirottato su PEC non genera alcun costo aggiuntivo rispetto all'invio cartaceo originariamente
+              previsto — anzi, il dettaglio campagna mostra anche il risparmio stimato rispetto al canale
+              tradizionale.
+            </p>
           </div>
         </div>
 
