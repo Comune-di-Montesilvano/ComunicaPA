@@ -14,13 +14,21 @@ const mockConfig = {
   },
 };
 
-const redisMock = {
-  get: jest.fn(),
-  set: jest.fn(),
-};
+// vitest 5: una const top-level referenziata dentro una factory vi.mock()
+// va dichiarata con vi.hoisted(), altrimenti la factory (hoistata sopra gli
+// import) la vede ancora in TDZ — vedi migration guide vitest 5.
+const redisMock = vi.hoisted(() => ({
+  get: vi.fn(),
+  set: vi.fn(),
+}));
 
 vi.mock('ioredis', () => {
-  const RedisMock = jest.fn().mockImplementation(() => redisMock);
+  // vitest 5: il mock ora fa Reflect.construct() sull'implementation quando
+  // chiamato con `new` (per incatenare il prototype) — richiede una funzione
+  // costruibile, mai una arrow function (non ha [[Construct]]).
+  const RedisMock = vi.fn().mockImplementation(function RedisCtor() {
+    return redisMock;
+  });
   return {
     __esModule: true,
     default: RedisMock,
