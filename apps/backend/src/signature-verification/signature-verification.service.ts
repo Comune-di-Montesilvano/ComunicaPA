@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import * as forge from 'node-forge';
+import forge from 'node-forge';
 import { AgidTrustListService } from './agid-trust-list.service.js';
 
 export interface SignatureVerificationResult {
@@ -8,12 +8,27 @@ export interface SignatureVerificationResult {
   signerCn?: string;
 }
 
-// Costruita a runtime (non a module-scope): un accesso a `forge.pki.oids`
-// nell'inizializzatore di una const top-level fallisce con "Cannot read
-// properties of undefined" sotto NodeNext/ESM — l'interop CJS di node-forge
-// non garantisce che i sotto-moduli (`pki`, `md`) siano già attaccati
-// all'import-time del modulo, solo quando effettivamente usati a runtime
-// (stesso principio dei gotcha CJS/ESM già noti in CLAUDE.md per ioredis).
+// Import `node-forge` — deve essere `import forge from 'node-forge'`
+// (default), MAI `import * as forge from 'node-forge'`. Bug reale
+// verificato dal vivo: node-forge non ha un campo "exports" in
+// package.json e il suo entry point (`lib/index.js`) attacca i sottomoduli
+// dinamicamente (`require('./pki')` ecc. mutano `module.exports` da FUORI
+// del file, mai un `module.exports.pki = ...` testuale in quel file) — il
+// loader ESM nativo di Node, sotto `import * as forge`, costruisce il
+// namespace analizzando SOLO il testo del entry point (nessun export
+// nominale rilevato lì), risultando in un namespace con ESCLUSIVAMENTE
+// `default` valorizzato: `forge.pki`/`forge.util`/`forge.asn1` sono tutti
+// `undefined` — non un errore all'avvio (nessun crash, nessun log), solo
+// un `TypeError: Cannot read properties of undefined` alla prima chiamata
+// reale (es. `forge.util.createBuffer` dentro `verify()`). Zero repro sotto
+// Vitest (esbuild/swc trasformano l'import in un `require()` diretto,
+// aggirando l'interop nativo) — il bug è visibile SOLO nell'app reale
+// (dist compilato, Node nativo), mai nei test: verificare sempre un fix
+// `node-forge` anche con uno script standalone (`node --input-type=module`)
+// o via l'app reale, mai fidarsi della sola suite unit.
+// `esModuleInterop`/`allowSyntheticDefaultImports` (già attivi in
+// tsconfig.base.json) rendono valido `import forge from 'node-forge'` pur
+// con le dichiarazioni `@types/node-forge` tutte nominali (ambient module).
 function digestCreatorFor(oid: string): (() => forge.md.MessageDigest) | undefined {
   const creators: Record<string, () => forge.md.MessageDigest> = {
     [forge.pki.oids.sha1]: () => forge.md.sha1.create(),

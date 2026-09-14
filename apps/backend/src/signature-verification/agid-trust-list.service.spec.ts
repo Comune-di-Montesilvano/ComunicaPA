@@ -1,7 +1,7 @@
 import { vi } from 'vitest';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import * as forge from 'node-forge';
+import forge from 'node-forge';
 import { AgidTrustListService } from './agid-trust-list.service.js';
 import { AgidTrustListCache } from '../entities/agid-trust-list-cache.entity.js';
 
@@ -22,11 +22,16 @@ function makeTestCertPem(): string {
 
 describe('AgidTrustListService', () => {
   let service: AgidTrustListService;
-  let repo: { findOne: ReturnType<typeof vi.fn>; save: ReturnType<typeof vi.fn> };
+  let repo: { findOne: ReturnType<typeof vi.fn>; save: ReturnType<typeof vi.fn>; createQueryBuilder: ReturnType<typeof vi.fn> };
   const testCertPem = makeTestCertPem();
 
   beforeEach(async () => {
-    repo = { findOne: vi.fn(), save: vi.fn((v) => Promise.resolve(v)) };
+    const qb = {
+      delete: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      execute: vi.fn().mockResolvedValue(undefined),
+    };
+    repo = { findOne: vi.fn(), save: vi.fn((v) => Promise.resolve(v)), createQueryBuilder: vi.fn(() => qb) };
     global.fetch = vi.fn();
 
     const module: TestingModule = await Test.createTestingModule({
@@ -79,6 +84,18 @@ describe('AgidTrustListService', () => {
       await service.refresh();
 
       expect(repo.save).not.toHaveBeenCalled();
+    });
+
+    it('salva senza un id fisso — bug reale: "current" non è un uuid valido, il save falliva sempre in produzione', async () => {
+      repo.findOne.mockResolvedValueOnce(null);
+      (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        text: async () => `<?xml version="1.0"?><TrustServiceStatusList></TrustServiceStatusList>`,
+      });
+
+      await service.refresh();
+
+      expect(repo.save).toHaveBeenCalledWith(expect.not.objectContaining({ id: expect.anything() }));
     });
   });
 });

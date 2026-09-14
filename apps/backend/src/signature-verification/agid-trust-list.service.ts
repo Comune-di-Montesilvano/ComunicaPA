@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Cron } from '@nestjs/schedule';
 import { XMLParser } from 'fast-xml-parser';
-import * as forge from 'node-forge';
+import forge from 'node-forge';
 import { AgidTrustListCache } from '../entities/agid-trust-list-cache.entity.js';
 
 const TSL_URL = 'https://eidas.agid.gov.it/TL/TSL-IT.xml';
@@ -81,7 +81,18 @@ export class AgidTrustListService {
         }
       }).filter((c): c is string => c !== null);
 
-      await this.repo.save({ id: 'current', certificatesPem });
+      // Bug reale corretto: `id` è `@PrimaryGeneratedColumn('uuid')` — un
+      // save con `id: 'current'` falliva sempre con "invalid input syntax
+      // for type uuid" (fail-open lo inghiottiva in un warn, la cache
+      // restava vuota per sempre, mai scoperto perché i test mockano il
+      // repository). Nessun id fisso: si lascia generare, si legge sempre
+      // la riga più recente per `fetchedAt`, si ripulisce lo storico.
+      await this.repo.save({ certificatesPem });
+      await this.repo
+        .createQueryBuilder()
+        .delete()
+        .where('fetched_at < NOW() - INTERVAL \'7 days\'')
+        .execute();
       this.logger.log(`TSL-IT aggiornata: ${certificatesPem.length} certificati CA.`);
     } catch (err: any) {
       this.logger.warn(`Refresh TSL-IT fallito, mantengo la cache esistente: ${err?.message ?? err}`);

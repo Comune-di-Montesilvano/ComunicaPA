@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import * as forge from 'node-forge';
+import forge from 'node-forge';
 import { SignatureVerificationService } from './signature-verification.service.js';
 import type { AgidTrustListService } from './agid-trust-list.service.js';
 
