@@ -7,7 +7,7 @@ import { RegistroImpreseService } from '../registro-imprese/registro-imprese.ser
 
 const mockInad = { extractDigitalAddress: jest.fn() };
 const mockIoServices = { verifyProfile: jest.fn() };
-const mockAnpr = { getResidenza: jest.fn(), getEsistenzaInVita: jest.fn() };
+const mockAnpr = { getResidenza: jest.fn(), getEsistenzaInVita: jest.fn(), getGeneralitaByAnagrafica: jest.fn() };
 const mockRegistroImpreseUnused = { dettaglioImpresa: jest.fn() };
 
 describe('DomicilioService.cercaDomicilio', () => {
@@ -106,6 +106,61 @@ describe('DomicilioService.cercaDomicilio', () => {
     const result = await service.cercaDomicilio('CF1', 'mario.rossi');
 
     expect(result.anprEsistenzaInVita).toEqual({ success: false, message: 'Configurazione ANPR C019 incompleta: purposeId non impostato' });
+  });
+});
+
+describe('DomicilioService.cercaPerAnagrafica', () => {
+  let service: DomicilioService;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const module = await Test.createTestingModule({
+      providers: [
+        DomicilioService,
+        { provide: InadService, useValue: mockInad },
+        { provide: IoServicesService, useValue: mockIoServices },
+        { provide: AnprService, useValue: mockAnpr },
+        { provide: RegistroImpreseService, useValue: mockRegistroImpreseUnused },
+      ],
+    }).compile();
+    service = module.get(DomicilioService);
+  });
+
+  const criteri = { cognome: "D'Addiego", nome: 'Mirko', sesso: 'M', dataNascita: '1988-09-06', comuneNascita: 'Vasto', provinciaNascita: 'CH' };
+
+  it('inoltra criteri/operatore/motivoRichiesta a AnprService e restituisce found:true con generalità', async () => {
+    mockAnpr.getGeneralitaByAnagrafica.mockResolvedValue({
+      found: true,
+      data: { idANPR: 'DO56003EY', generalita: { codiceFiscale: { codFiscale: 'DDDMRK88P06E372L' } }, residenza: [], infoSoggettoEnte: [] },
+    });
+
+    const result = await service.cercaPerAnagrafica(criteri, 'mario.rossi', 'pratica-esproprio-123');
+
+    expect(mockAnpr.getGeneralitaByAnagrafica).toHaveBeenCalledWith(criteri, 'mario.rossi', 'pratica-esproprio-123');
+    expect(result).toEqual({
+      success: true,
+      found: true,
+      idANPR: 'DO56003EY',
+      generalita: { codiceFiscale: { codFiscale: 'DDDMRK88P06E372L' } },
+      residenza: [],
+      infoSoggettoEnte: [],
+    });
+  });
+
+  it('restituisce found:false senza eccezione quando ANPR non trova corrispondenza', async () => {
+    mockAnpr.getGeneralitaByAnagrafica.mockResolvedValue({ found: false });
+
+    const result = await service.cercaPerAnagrafica(criteri, 'mario.rossi', 'pratica-x');
+
+    expect(result).toEqual({ success: true, found: false, idANPR: undefined, generalita: undefined, residenza: undefined, infoSoggettoEnte: undefined });
+  });
+
+  it('cattura errore (es. 400 EN148 per criteri mancanti) e lo espone come message, non propaga eccezione', async () => {
+    mockAnpr.getGeneralitaByAnagrafica.mockRejectedValue(new Error('ANPR C002 fallito: HTTP 400 — Indicare il sesso'));
+
+    const result = await service.cercaPerAnagrafica(criteri, 'mario.rossi', 'pratica-x');
+
+    expect(result).toEqual({ success: false, found: false, message: 'ANPR C002 fallito: HTTP 400 — Indicare il sesso' });
   });
 });
 

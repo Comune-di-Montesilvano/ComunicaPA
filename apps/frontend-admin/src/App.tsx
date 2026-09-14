@@ -1453,6 +1453,21 @@ export function App(): React.JSX.Element {
     };
     anprEsistenzaInVita?: { success: boolean; dataDecesso?: string; message?: string };
   } | null>(null);
+
+  // ── Helper "Non hai il codice fiscale?" — ricerca ANPR C002 per anagrafica ──
+  const [domicilioAnagraficaOpen, setDomicilioAnagraficaOpen] = useState(false);
+  const [domicilioAnagraficaForm, setDomicilioAnagraficaForm] = useState({
+    cognome: '', nome: '', sesso: '', dataNascita: '', comuneNascita: '', provinciaNascita: '', motivoRichiesta: '',
+  });
+  const [domicilioAnagraficaLoading, setDomicilioAnagraficaLoading] = useState(false);
+  const [domicilioAnagraficaError, setDomicilioAnagraficaError] = useState<string | null>(null);
+  const [domicilioAnagraficaResult, setDomicilioAnagraficaResult] = useState<{
+    success: boolean;
+    found: boolean;
+    idANPR?: string;
+    generalita?: { cognome?: string; nome?: string; codiceFiscale?: { codFiscale?: string; validitaCF?: string } };
+    message?: string;
+  } | null>(null);
   const [verificaInadBulkFile, setVerificaInadBulkFile] = useState<File | null>(null);
   const [verificaInadBulkHasHeaders, setVerificaInadBulkHasHeaders] = useState(true);
   const [verificaInadBulkHeaders, setVerificaInadBulkHeaders] = useState<string[]>([]);
@@ -2984,6 +2999,43 @@ export function App(): React.JSX.Element {
       });
     } finally {
       setDomicilioLoading(false);
+    }
+  };
+
+  // Ricerca ANPR C002 per anagrafica pura (senza CF) — helper "Non hai il
+  // codice fiscale?". Tutti i campi obbligatori (verificato dal vivo, vedi
+  // AnprService.getGeneralitaByAnagrafica): nessuna ricerca "parziale".
+  const runCercaDomicilioAnagrafica = async () => {
+    const f = domicilioAnagraficaForm;
+    if (!f.cognome.trim() || !f.nome.trim() || !f.sesso.trim() || !f.dataNascita.trim() || !f.comuneNascita.trim() || !f.motivoRichiesta.trim()) {
+      setDomicilioAnagraficaError('Cognome, nome, sesso, data di nascita, comune di nascita e motivo della ricerca sono tutti obbligatori — ANPR non ammette ricerche parziali per anagrafica.');
+      setDomicilioAnagraficaResult(null);
+      return;
+    }
+    setDomicilioAnagraficaError(null);
+    setDomicilioAnagraficaLoading(true);
+    setDomicilioAnagraficaResult(null);
+    try {
+      const res = await apiFetch('/domicilio/cerca-anagrafica', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cognome: f.cognome.trim(),
+          nome: f.nome.trim(),
+          sesso: f.sesso.trim(),
+          dataNascita: f.dataNascita.trim(),
+          comuneNascita: f.comuneNascita.trim(),
+          provinciaNascita: f.provinciaNascita.trim() || undefined,
+          motivoRichiesta: f.motivoRichiesta.trim(),
+        }),
+      });
+      const data = await res.json();
+      setDomicilioAnagraficaResult(data);
+    } catch (err: any) {
+      if (err instanceof ApiAuthError) return;
+      setDomicilioAnagraficaError(err.message || 'Errore di connessione durante la ricerca');
+    } finally {
+      setDomicilioAnagraficaLoading(false);
     }
   };
 
@@ -13230,7 +13282,119 @@ export function App(): React.JSX.Element {
                 {domicilioValidationError && (
                   <div className="small text-danger mt-2">{domicilioValidationError}</div>
                 )}
+                <button
+                  type="button"
+                  className="btn btn-link btn-sm p-0 mt-2 text-decoration-none"
+                  onClick={() => setDomicilioAnagraficaOpen(o => !o)}
+                >
+                  {domicilioAnagraficaOpen ? 'Nascondi ricerca per anagrafica' : 'Non hai il codice fiscale?'}
+                </button>
               </div>
+
+              {domicilioAnagraficaOpen && (
+                <div className="card shadow-sm p-4 mb-4 border-0 bg-white rounded-3 border-start border-4 border-info">
+                  <h6 className="fw-bold text-dark mb-1">Ricerca per anagrafica (senza Codice Fiscale)</h6>
+                  <p className="small text-muted mb-3">
+                    Cerca su ANPR (C002) con cognome, nome, sesso, data e comune di nascita — tutti obbligatori,
+                    nessuna ricerca parziale ammessa. Utile ad es. per procedure di esproprio quando il catasto
+                    non riporta il CF del soggetto.
+                  </p>
+                  <div className="alert alert-warning small py-2 px-3 mb-3">
+                    Il Ministero dell'Interno (D.M. 3 marzo 2023, art. 3 c. 3) segnala che l'accesso ad ANPR è
+                    previsto esclusivamente tramite ID ANPR — la ricerca per anagrafica è un fallback in via di
+                    dismissione, funzionante oggi ma non garantito nel tempo.
+                  </div>
+                  <div className="row g-2">
+                    <div className="col-md-4">
+                      <label className="form-label small fw-bold text-secondary text-uppercase tracking-wider">Cognome</label>
+                      <input className="form-control form-control-sm" value={domicilioAnagraficaForm.cognome}
+                        onChange={e => setDomicilioAnagraficaForm(f => ({ ...f, cognome: e.target.value }))} />
+                    </div>
+                    <div className="col-md-4">
+                      <label className="form-label small fw-bold text-secondary text-uppercase tracking-wider">Nome</label>
+                      <input className="form-control form-control-sm" value={domicilioAnagraficaForm.nome}
+                        onChange={e => setDomicilioAnagraficaForm(f => ({ ...f, nome: e.target.value }))} />
+                    </div>
+                    <div className="col-md-4">
+                      <label className="form-label small fw-bold text-secondary text-uppercase tracking-wider">Sesso</label>
+                      <select className="form-select form-select-sm" value={domicilioAnagraficaForm.sesso}
+                        onChange={e => setDomicilioAnagraficaForm(f => ({ ...f, sesso: e.target.value }))}>
+                        <option value="">Seleziona...</option>
+                        <option value="M">M</option>
+                        <option value="F">F</option>
+                      </select>
+                    </div>
+                    <div className="col-md-4">
+                      <label className="form-label small fw-bold text-secondary text-uppercase tracking-wider">Data di nascita</label>
+                      <input type="date" className="form-control form-control-sm" value={domicilioAnagraficaForm.dataNascita}
+                        onChange={e => setDomicilioAnagraficaForm(f => ({ ...f, dataNascita: e.target.value }))} />
+                    </div>
+                    <div className="col-md-4">
+                      <label className="form-label small fw-bold text-secondary text-uppercase tracking-wider">Comune di nascita</label>
+                      <input className="form-control form-control-sm" value={domicilioAnagraficaForm.comuneNascita}
+                        onChange={e => setDomicilioAnagraficaForm(f => ({ ...f, comuneNascita: e.target.value }))} />
+                    </div>
+                    <div className="col-md-4">
+                      <label className="form-label small fw-bold text-secondary text-uppercase tracking-wider">Provincia (sigla)</label>
+                      <input className="form-control form-control-sm" maxLength={2} value={domicilioAnagraficaForm.provinciaNascita}
+                        onChange={e => setDomicilioAnagraficaForm(f => ({ ...f, provinciaNascita: e.target.value.toUpperCase() }))} />
+                    </div>
+                    <div className="col-12">
+                      <label className="form-label small fw-bold text-secondary text-uppercase tracking-wider">Motivo della ricerca (n. pratica/protocollo)</label>
+                      <input className="form-control form-control-sm" placeholder="es. Esproprio n. 123/2026, prot. 4567"
+                        value={domicilioAnagraficaForm.motivoRichiesta}
+                        onChange={e => setDomicilioAnagraficaForm(f => ({ ...f, motivoRichiesta: e.target.value }))} />
+                    </div>
+                  </div>
+                  {domicilioAnagraficaError && <div className="small text-danger mt-2">{domicilioAnagraficaError}</div>}
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm px-4 fw-medium d-flex align-items-center gap-2"
+                      onClick={() => runCercaDomicilioAnagrafica()}
+                      disabled={domicilioAnagraficaLoading}
+                    >
+                      {domicilioAnagraficaLoading ? (
+                        <><Loader2 className="icon-spin" size={16} />Ricerca in corso...</>
+                      ) : (
+                        <><Search size={16} />Cerca per anagrafica</>
+                      )}
+                    </button>
+                  </div>
+
+                  {domicilioAnagraficaResult && (
+                    <div className={`mt-3 p-3 rounded-3 ${!domicilioAnagraficaResult.success ? 'bg-danger-subtle' : !domicilioAnagraficaResult.found ? 'bg-light' : 'bg-success-subtle'}`}>
+                      {!domicilioAnagraficaResult.success && (
+                        <p className="small text-danger mb-0">{formatExternalErrorMessage(domicilioAnagraficaResult.message)}</p>
+                      )}
+                      {domicilioAnagraficaResult.success && !domicilioAnagraficaResult.found && (
+                        <p className="small text-muted mb-0">Nessun soggetto trovato in ANPR con questi dati anagrafici.</p>
+                      )}
+                      {domicilioAnagraficaResult.success && domicilioAnagraficaResult.found && (
+                        <div className="d-flex flex-column gap-2">
+                          <span>
+                            <span className="fw-semibold">{domicilioAnagraficaResult.generalita?.nome} {domicilioAnagraficaResult.generalita?.cognome}</span>
+                            {' — CF: '}
+                            <span className="fw-bold">{domicilioAnagraficaResult.generalita?.codiceFiscale?.codFiscale}</span>
+                          </span>
+                          <button
+                            type="button"
+                            className="btn btn-outline-primary btn-sm align-self-start"
+                            onClick={() => {
+                              const cf = domicilioAnagraficaResult.generalita?.codiceFiscale?.codFiscale;
+                              if (!cf) return;
+                              setDomicilioAnagraficaOpen(false);
+                              runCercaDomicilio(cf);
+                            }}
+                          >
+                            Usa questo CF
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {domicilioResult && (() => {
                 if (domicilioResult.registroImprese) {

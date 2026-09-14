@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InadService, InadDigitalAddressElement } from '../inad/inad.service.js';
 import { IoServicesService } from '../../io-services/io-services.service.js';
 import { AnprService } from '../anpr/anpr.service.js';
-import type { AnprGeneralita, AnprResidenza, AnprInfoSoggettoEnte } from '../anpr/anpr.types.js';
+import type { AnprGeneralita, AnprResidenza, AnprInfoSoggettoEnte, AnprAnagraficaCriteri } from '../anpr/anpr.types.js';
 import { RegistroImpreseService, type RegistroImpreseImpresaData } from '../registro-imprese/registro-imprese.service.js';
 import { isPartitaIva } from '../tax-id.util.js';
 
@@ -126,6 +126,34 @@ export class DomicilioService {
     }
 
     return result;
+  }
+
+  /**
+   * Ricerca ANPR per anagrafica pura (senza CF) — helper "Non hai il codice
+   * fiscale?" nel pannello Verifica Anagrafica. Usa AnprService.
+   * getGeneralitaByAnagrafica (stesso C002, criteriRicerca alternativo).
+   * Non fa parte di cercaDomicilio(): qui l'unico obiettivo è recuperare il
+   * CF, non orchestrare INAD/App IO/residenza — l'operatore userà il CF
+   * trovato per lanciare una cercaDomicilio() normale.
+   */
+  async cercaPerAnagrafica(
+    criteri: AnprAnagraficaCriteri,
+    operatorUsername: string,
+    motivoRichiesta: string,
+  ): Promise<DomicilioAnprResult> {
+    try {
+      const anpr = await this.anprService.getGeneralitaByAnagrafica(criteri, operatorUsername, motivoRichiesta);
+      return {
+        success: true,
+        found: anpr.found,
+        idANPR: anpr.data?.idANPR,
+        generalita: anpr.data?.generalita,
+        residenza: anpr.data?.residenza,
+        infoSoggettoEnte: anpr.data?.infoSoggettoEnte,
+      };
+    } catch (error: any) {
+      return { success: false, found: false, message: error?.message ?? 'Errore sconosciuto' };
+    }
   }
 
   private async cercaDomicilioImpresa(partitaIva: string): Promise<DomicilioSearchResult> {
