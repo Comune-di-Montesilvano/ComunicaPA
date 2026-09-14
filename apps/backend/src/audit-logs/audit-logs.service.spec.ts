@@ -103,5 +103,35 @@ describe('AuditLogsService', () => {
         take: 50,
       });
     });
+
+    it('operatorFilter senza search: restringe a un solo operatore (registro completo NON accessibile a user)', async () => {
+      repo.findAndCount.mockResolvedValue([[], 0]);
+
+      await service.findAll({ operatorFilter: 'mario.rossi' });
+
+      expect(repo.findAndCount).toHaveBeenCalledWith({
+        where: { operator: 'mario.rossi' },
+        order: { createdAt: 'DESC' },
+        skip: 0,
+        take: 50,
+      });
+    });
+
+    it('operatorFilter con search: ogni ramo OR viene ristretto allo stesso operatore', async () => {
+      repo.findAndCount.mockResolvedValue([[], 0]);
+
+      await service.findAll({ search: 'Camp', operatorFilter: 'mario.rossi' });
+
+      expect(repo.findAndCount).toHaveBeenCalledWith({
+        where: [
+          { operator: 'mario.rossi' },
+          { campaignName: expect.any(Object), operator: 'mario.rossi' },
+          { action: expect.any(Object), operator: 'mario.rossi' },
+        ],
+        order: { createdAt: 'DESC' },
+        skip: 0,
+        take: 50,
+      });
+    });
   });
 });
