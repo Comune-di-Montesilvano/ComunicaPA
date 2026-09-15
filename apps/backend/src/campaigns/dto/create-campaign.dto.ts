@@ -1,4 +1,4 @@
-import { IsBoolean, IsEnum, IsNotEmpty, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsEnum, IsNotEmpty, IsObject, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import type { NotificationChannel } from '@comunicapa/shared-types';
 
 export class CreateCampaignDto {
@@ -22,4 +22,8 @@ export class CreateCampaignDto {
   @IsBoolean()
   @IsOptional()
   isLegalValue?: boolean;
+
+  @IsUUID()
+  @IsOptional()
+  groupId?: string;
 }
