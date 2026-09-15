@@ -7000,6 +7000,8 @@ export function App(): React.JSX.Element {
     setSingleInadForced(false);
     setSingleInadAddress('');
     setSingleAppIoActive(false);
+    setWizManualRows([]);
+    setWizManualEditingId(null);
   };
 
   const prefillWizardFrom = async (source: {
@@ -7118,7 +7120,7 @@ export function App(): React.JSX.Element {
 
           if (source.channelConfig?.wizSingleMode) {
             // wizCsvRows non è ancora aggiornato in questo punto della stessa closure
-            // (setState non è visibile nel render corrente) — rileggiamo la singola riga
+            // (setState non è visibile nel render corrente) — rileggiamo tutte le righe
             // direttamente dal CSV appena fetchato via un secondo parse locale, sola lettura.
             const text = await file.text();
             const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
@@ -7137,28 +7139,57 @@ export function App(): React.JSX.Element {
                 return result.map(v => v.replace(/^"(.*)"$/, '$1').replace(/""/g, '"'));
               };
               const headerCols = parseLine(lines[0]);
-              const rowVals = parseLine(lines[1]);
-              const row: Record<string, string> = {};
-              headerCols.forEach((h, i) => { row[h] = rowVals[i] || ''; });
-              setSingleCf(row['codice_fiscale'] || '');
-              // full_name è la sola colonna disponibile (cols/vals in
-              // handleWizSingleSubmit uniscono cognome+nome con un solo spazio,
-              // nessuna colonna separata) — non è possibile invertire lo split in
-              // modo affidabile (nomi con più parole). Ripristino conservativo:
-              // l'intero valore va in singleSurname, singleFirstName resta vuoto.
-              setSingleSurname(row['full_name'] || '');
-              setSingleFirstName('');
-              setSingleEmail(row['email'] || '');
-              setSinglePec(row['pec'] || '');
-              setSingleAddress(row['sd_indirizzo'] || '');
-              setSingleMunicipality(row['sd_comune'] || '');
-              setSingleZip(row['sd_cap'] || '');
-              setSingleProvince(row['sd_provincia'] || '');
-              setSingleCountry(row['sd_paese'] || 'Italia');
-              setSinglePaymentIuv(row['sd_iuv'] || '');
-              setSinglePaymentImporto(row['sd_importo'] || '');
-              setSinglePaymentScadenza(row['sd_scadenza'] || '');
               const attachmentEntries = (source.channelConfig?.attachments || []) as Array<{ key: string; label: string }>;
+              const restoredRows: ManualRow[] = lines.slice(1).map((line, idx) => {
+                const rowVals = parseLine(line);
+                const row: Record<string, string> = {};
+                headerCols.forEach((h, i) => { row[h] = rowVals[i] || ''; });
+                return {
+                  id: `row-resume-${idx}`,
+                  cf: row['codice_fiscale'] || '',
+                  // full_name è la sola colonna disponibile (handleWizManualSubmit
+                  // unisce cognome+nome con un solo spazio, nessuna colonna
+                  // separata) — non è possibile invertire lo split in modo
+                  // affidabile. Ripristino conservativo: l'intero valore va in
+                  // surname, firstName resta vuoto.
+                  surname: row['full_name'] || '',
+                  firstName: '',
+                  email: row['email'] || '',
+                  pec: row['pec'] || '',
+                  address: row['sd_indirizzo'] || '',
+                  municipality: row['sd_comune'] || '',
+                  zip: row['sd_cap'] || '',
+                  province: row['sd_provincia'] || '',
+                  country: row['sd_paese'] || 'Italia',
+                  paymentIuv: row['sd_iuv'] || '',
+                  paymentImporto: row['sd_importo'] || '',
+                  paymentScadenza: row['sd_scadenza'] || '',
+                  inadForced: false,
+                  inadAddress: '',
+                  registroImpreseNoPec: false,
+                  appIoActive: false,
+                  // File non ricostruibili da un percorso server (limite già
+                  // esistente per il caso singolo pre-refactor): l'operatore
+                  // ri-carica solo se vuole SOSTITUIRE l'allegato già presente
+                  // sul server per questa campagna.
+                  attachmentOverrides: {},
+                };
+              });
+              setWizManualRows(restoredRows);
+              setWizManualEditingId(null);
+              setSingleCf('');
+              setSingleSurname('');
+              setSingleFirstName('');
+              setSingleEmail('');
+              setSinglePec('');
+              setSingleAddress('');
+              setSingleMunicipality('');
+              setSingleZip('');
+              setSingleProvince('');
+              setSingleCountry('Italia');
+              setSinglePaymentIuv('');
+              setSinglePaymentImporto('');
+              setSinglePaymentScadenza('');
               setWizSingleAttachmentSlots(
                 attachmentEntries.map((a, i) => ({ id: `slot-resume-${i}`, label: a.label || `Allegato ${i + 1}`, file: null })),
               );
