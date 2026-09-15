@@ -1166,6 +1166,7 @@ interface Campaign {
   isTest: boolean;
   isLegalValue?: boolean;
   parentCampaignId: string | null;
+  groupId?: string | null;
   recipients?: Recipient[];
   attachmentExpiresAt?: string | null;
 }
@@ -1281,6 +1282,7 @@ type ExternalClientItem = {
 
 interface ManualRow {
   id: string;
+  channel: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL';
   cf: string;
   surname: string;
   firstName: string;
@@ -6469,6 +6471,7 @@ export function App(): React.JSX.Element {
 
   const buildManualRowFromForm = (id: string): ManualRow => ({
     id,
+    channel: wizChannel,
     cf: singleCf.toUpperCase(),
     surname: singleSurname.trim(),
     firstName: singleFirstName.trim(),
@@ -6532,6 +6535,7 @@ export function App(): React.JSX.Element {
   };
 
   const startEditManualRow = (row: ManualRow) => {
+    setWizChannel(row.channel);
     setSingleCf(row.cf);
     setSingleSurname(row.surname);
     setSingleFirstName(row.firstName);
@@ -7146,6 +7150,7 @@ export function App(): React.JSX.Element {
                 headerCols.forEach((h, i) => { row[h] = rowVals[i] || ''; });
                 return {
                   id: `row-resume-${idx}`,
+                  channel: source.channelType,
                   cf: row['codice_fiscale'] || '',
                   // full_name è la sola colonna disponibile (handleWizManualSubmit
                   // unisce cognome+nome con un solo spazio, nessuna colonna
