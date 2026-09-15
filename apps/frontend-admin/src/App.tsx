@@ -1489,17 +1489,23 @@ export function App(): React.JSX.Element {
           denominazione?: string; formaGiuridica?: string; cFiscale?: string; partitaIva?: string;
           cciaa?: string; nRea?: string; dtIscrizioneRi?: string; dtAttoCostituzione?: string; pec?: string;
           indirizzo?: { comune?: string; provincia?: string; toponimo?: string; via?: string; nCivico?: string; cap?: string; frazione?: string };
+          statoImpresa?: string; dtCancellazione?: string; causaleCessazione?: string;
+          fonte?: string; descrizioneTipoSoggetto?: string; descrizioneTipoImpresa?: string;
         };
-        attivita: { esercitata?: string; secondaria?: string; prevalente?: string; ateco: Array<{ codice?: string; descrizione?: string; importanza?: string }> };
-        persone: Array<{ nome?: string; cognome?: string; cFiscale?: string; dataNascita?: string; rappresentante: boolean; cariche: string[] }>;
+        attivita: { esercitata?: string; secondaria?: string; prevalente?: string; ateco: Array<{ codice?: string; descrizione?: string; importanza?: string }>; dtInizioAttivitaImpresa?: string };
+        persone: Array<{ nome?: string; cognome?: string; cFiscale?: string; dataNascita?: string; rappresentante: boolean; cariche: string[]; poteri: string[] }>;
         localizzazioni: Array<{
           tipo?: string; sottoTipi: string[]; dataApertura?: string;
           indirizzo?: { comune?: string; provincia?: string; toponimo?: string; via?: string; nCivico?: string; cap?: string; frazione?: string };
           attivitaEsercitata?: string; ateco: Array<{ codice?: string; descrizione?: string; importanza?: string }>;
         }>;
         soci: Array<{ denominazione?: string; cFiscale?: string; diritto?: string }>;
-        statuto: { durataSocieta?: string; sistemaAmministrazione?: string; formeAmministrative: string[]; collegioSindacale?: { effettivi?: string; supplenti?: string } };
+        statuto: {
+          durataSocieta?: string; sistemaAmministrazione?: string; formeAmministrative: string[]; collegioSindacale?: { effettivi?: string; supplenti?: string };
+          tipoProroga?: string; nAnniProrogaTacita?: string; dtPrimoEsercizio?: string; soggettoControlloContabile?: string;
+        };
         patrimonio?: { valuta?: string; deliberato?: string; sottoscritto?: string; versato?: string };
+        valoreNominaleConferimenti?: { valuta?: string; ammontare?: string };
       };
     };
     inad?: { success: boolean; found: boolean; digitalAddress?: Array<{ digitalAddress: string; practicedProfession?: string }>; message?: string };
@@ -4997,6 +5003,7 @@ export function App(): React.JSX.Element {
     const sections: Array<{ id: string; title: string }> = [
       { id: 'guida-cose', title: "Cos'è ComunicaPA" },
       { id: 'guida-anagrafica', title: 'Verifica Anagrafica e domicilio digitale' },
+      { id: 'guida-arricchimento', title: 'Arricchimento Tracciati' },
       { id: 'guida-dirottamento', title: 'Dirottamento automatico su domicilio digitale' },
       { id: 'guida-regole-canale', title: 'Regole per canale (allegato, oggetto/testo, App IO)' },
       { id: 'guida-wizard', title: 'Come lanciare un invio' },
@@ -5052,10 +5059,49 @@ export function App(): React.JSX.Element {
               Registro Imprese e — per le imprese — amministratori e soci, con i relativi CF/PIVA cliccabili
               per approfondire a cascata.
             </p>
-            <p className="text-muted mb-0">
+            <p className="text-muted mb-2">
               È utile anche senza dover inviare nulla: è il modo più rapido per un ufficio di sapere se un
               cittadino o un'impresa ha un domicilio digitale attivo e su quale canale sarebbe effettivamente
               raggiungibile, prima ancora di organizzare una comunicazione.
+            </p>
+            <p className="text-muted mb-2">
+              <strong>Attenzione:</strong> la ricerca per un'impresa avviene sempre per Codice Fiscale, mai
+              per Partita IVA — per la maggior parte delle imprese coincidono, ma non sempre (enti pubblici,
+              cooperative sociali...). Se inserendo la Partita IVA non trovi risultati, riprova con il Codice
+              Fiscale reale del soggetto. Se non conosci il Codice Fiscale, il link "Non hai il codice
+              fiscale?" permette di cercare per denominazione su Registro Imprese. Il Codice Fiscale di
+              un'impresa individuale ha lo stesso formato di quello di una persona fisica (16 caratteri): se
+              la ricerca automatica sbaglia soggetto, la checkbox "Forza ricerca come impresa" instrada la
+              query direttamente su Registro Imprese. Una scheda impresa mostra anche se è cessata/cancellata
+              (badge in alto a destra, con data e causale).
+            </p>
+            <p className="text-muted mb-0">
+              Se non hai il Codice Fiscale ma conosci nome, cognome e data di nascita, è disponibile una
+              ricerca ANPR per anagrafica (senza CF) direttamente dal pannello di Verifica Anagrafica.
+            </p>
+          </div>
+        </div>
+
+        <div id="guida-arricchimento" className="card shadow-sm border-0 rounded-3">
+          <div className="card-body p-4">
+            <h4 className="h5 fw-bold text-dark mb-3">Arricchimento Tracciati</h4>
+            <p className="text-muted mb-2">
+              Converte un tracciato Maggioli (CSV + allegati PDF, es. avvisi TARI) in un CSV pronto per
+              l'invio massivo: estrae automaticamente da ogni PDF l'indirizzo postale del destinatario e i
+              dati di pagamento pagoPA (numero avviso, importo, scadenza — anche con più rate sulla stessa
+              pagina), leggendo il codice a barre/QR del documento.
+            </p>
+            <p className="text-muted mb-2">
+              Se un PDF non permette l'estrazione automatica (indirizzo mancante, QR illeggibile), la riga
+              viene segnalata come warning e può essere corretta manualmente, riga per riga, senza dover
+              rifare l'intero caricamento. È possibile caricare più ZIP in sequenza per lo stesso tracciato
+              (es. file troppo grandi spezzati in più parti): i pezzi vengono uniti automaticamente in un
+              unico job.
+            </p>
+            <p className="text-muted mb-0">
+              A job completato, il bottone "Crea bozza campagna" apre il wizard di invio massivo con il CSV
+              arricchito già precaricato: stesse validazioni e stesso percorso guidato di un caricamento CSV
+              manuale, nessun passaggio saltato.
             </p>
           </div>
         </div>
@@ -14235,11 +14281,32 @@ export function App(): React.JSX.Element {
                     <div className={`card shadow-sm border-0 rounded-3 overflow-hidden ${
                       !ri.success ? 'border-start border-4 border-danger' : !ri.found ? 'border-start border-4 border-secondary' : 'border-start border-4 border-success'
                     }`}>
-                      <div className="card-header bg-light bg-gradient py-3 px-4 d-flex align-items-center gap-2 border-bottom-0">
-                        {!ri.success ? <AlertCircle className="text-danger" size={18} /> :
-                         !ri.found ? <XCircle className="text-secondary" size={18} /> :
-                         <CheckCircle2 className="text-success" size={18} />}
-                        <h6 className="fw-bold mb-0 text-dark">Registro Imprese</h6>
+                      <div className="card-header bg-light bg-gradient py-3 px-4 d-flex align-items-center justify-content-between border-bottom-0">
+                        <div className="d-flex align-items-center gap-2">
+                          {!ri.success ? <AlertCircle className="text-danger" size={18} /> :
+                           !ri.found ? <XCircle className="text-secondary" size={18} /> :
+                           <CheckCircle2 className="text-success" size={18} />}
+                          <h6 className="fw-bold mb-0 text-dark">Registro Imprese</h6>
+                        </div>
+                        {ri.success && ri.found && ri.data && (() => {
+                          // stato-impresa assente nell'XML per le imprese attive (verificato dal
+                          // vivo, es. Ferrari S.p.A.) — presente solo per le cessate/cancellate.
+                          const stato = ri.data.sede.statoImpresa;
+                          const attiva = !stato || stato.toUpperCase() === 'ATTIVA';
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.25rem' }}>
+                              <span className={`badge px-3 py-2 rounded-pill ${attiva ? 'bg-success-subtle text-success border border-success-subtle' : 'bg-danger-subtle text-danger border border-danger-subtle'}`}>
+                                {attiva ? 'ATTIVA' : stato}
+                              </span>
+                              {!attiva && ri.data.sede.dtCancellazione && (
+                                <span className="small text-muted">
+                                  Cancellata il {ri.data.sede.dtCancellazione}
+                                  {ri.data.sede.causaleCessazione && ` (${ri.data.sede.causaleCessazione})`}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                       <div className="card-body p-4 bg-white">
                         {!ri.success && <p className="small text-danger mb-0">{formatExternalErrorMessage(ri.message)}</p>}
@@ -14270,7 +14337,19 @@ export function App(): React.JSX.Element {
                                   {(d.sede.cFiscale || d.sede.partitaIva) && <span>CF/P.IVA: {d.sede.cFiscale || d.sede.partitaIva}</span>}
                                   {(d.sede.cciaa || d.sede.nRea) && <span>REA: {d.sede.cciaa} {d.sede.nRea}</span>}
                                   {indStr(ind) && <span>Sede: {indStr(ind)}</span>}
-                                  {d.sede.pec && <span>PEC: {d.sede.pec}</span>}
+                                  {d.sede.pec && (
+                                    <span className="d-flex align-items-center gap-1">
+                                      PEC: {d.sede.pec}
+                                      <button
+                                        type="button"
+                                        className="btn btn-sm btn-link p-0 ms-1"
+                                        title="Copia PEC"
+                                        onClick={() => navigator.clipboard.writeText(d.sede.pec!)}
+                                      >
+                                        <Copy size={13} />
+                                      </button>
+                                    </span>
+                                  )}
                                   {(d.sede.dtIscrizioneRi || d.sede.dtAttoCostituzione) && (
                                     <span>
                                       {d.sede.dtAttoCostituzione && `Costituita il ${d.sede.dtAttoCostituzione}`}
@@ -14311,6 +14390,12 @@ export function App(): React.JSX.Element {
                                           <span className="text-muted"> — <button type="button" className="btn btn-link btn-sm p-0 align-baseline" onClick={() => runCercaDomicilio(p.cFiscale)}>{p.cFiscale}</button></span>
                                         )}
                                         {p.cariche.length > 0 && <span className="text-muted"> ({p.cariche.join(', ')})</span>}
+                                        {p.poteri.length > 0 && (
+                                          <details className="mt-1">
+                                            <summary className="text-muted" style={{ cursor: 'pointer' }}>Poteri</summary>
+                                            <div className="text-muted mt-1" style={{ whiteSpace: 'pre-line' }}>{p.poteri.join('\n')}</div>
+                                          </details>
+                                        )}
                                       </li>
                                     ))}
                                   </ul>
@@ -14350,19 +14435,41 @@ export function App(): React.JSX.Element {
                                 </details>
                               )}
 
-                              {(d.statuto.durataSocieta || d.statuto.sistemaAmministrazione || d.statuto.formeAmministrative.length > 0 || d.patrimonio) && (
+                              {(d.statuto.durataSocieta || d.statuto.sistemaAmministrazione || d.statuto.formeAmministrative.length > 0 || d.patrimonio || d.valoreNominaleConferimenti || d.statuto.soggettoControlloContabile) && (
                                 <details className="border rounded p-2">
                                   <summary className="fw-semibold small text-dark" style={{ cursor: 'pointer' }}>Assetto societario e patrimonio</summary>
                                   <div className="mt-2 small d-flex flex-column gap-1">
-                                    {d.statuto.durataSocieta && <span>Durata società: fino al {d.statuto.durataSocieta}</span>}
+                                    {d.statuto.durataSocieta && (
+                                      <span>
+                                        Durata società: fino al {d.statuto.durataSocieta}
+                                        {d.statuto.tipoProroga && ` (${d.statuto.tipoProroga}${d.statuto.nAnniProrogaTacita ? `, ${d.statuto.nAnniProrogaTacita} anni` : ''})`}
+                                      </span>
+                                    )}
+                                    {d.statuto.dtPrimoEsercizio && <span>Primo esercizio: {d.statuto.dtPrimoEsercizio}</span>}
                                     {d.statuto.sistemaAmministrazione && <span>Sistema amministrazione: {d.statuto.sistemaAmministrazione}</span>}
                                     {d.statuto.formeAmministrative.length > 0 && <span>Forme amministrative: {d.statuto.formeAmministrative.join(', ')}</span>}
                                     {d.statuto.collegioSindacale && <span>Collegio sindacale: {d.statuto.collegioSindacale.effettivi} effettivi, {d.statuto.collegioSindacale.supplenti} supplenti</span>}
+                                    {d.statuto.soggettoControlloContabile && <span>Controllo contabile: {d.statuto.soggettoControlloContabile}</span>}
                                     {d.patrimonio && (
                                       <span>
                                         Capitale sociale: deliberato {d.patrimonio.deliberato} — sottoscritto {d.patrimonio.sottoscritto} — versato {d.patrimonio.versato} {d.patrimonio.valuta}
                                       </span>
                                     )}
+                                    {d.valoreNominaleConferimenti && (
+                                      <span>Valore nominale conferimenti: {d.valoreNominaleConferimenti.ammontare} {d.valoreNominaleConferimenti.valuta}</span>
+                                    )}
+                                  </div>
+                                </details>
+                              )}
+
+                              {(d.sede.fonte || d.sede.descrizioneTipoSoggetto || d.sede.descrizioneTipoImpresa || d.attivita.dtInizioAttivitaImpresa) && (
+                                <details className="border rounded p-2">
+                                  <summary className="fw-semibold small text-dark" style={{ cursor: 'pointer' }}>Altri dati</summary>
+                                  <div className="mt-2 small d-flex flex-column gap-1">
+                                    {d.sede.fonte && <span>Fonte: {d.sede.fonte}</span>}
+                                    {d.sede.descrizioneTipoSoggetto && <span>Tipo soggetto: {d.sede.descrizioneTipoSoggetto}</span>}
+                                    {d.sede.descrizioneTipoImpresa && <span>Tipo impresa: {d.sede.descrizioneTipoImpresa}</span>}
+                                    {d.attivita.dtInizioAttivitaImpresa && <span>Inizio attività: {d.attivita.dtInizioAttivitaImpresa}</span>}
                                   </div>
                                 </details>
                               )}

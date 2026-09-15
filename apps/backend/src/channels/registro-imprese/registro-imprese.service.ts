@@ -33,6 +33,9 @@ export interface RegistroImpresePersona {
   dataNascita?: string;
   rappresentante: boolean;
   cariche: string[];
+  // poteri-persona: testo libero (poteri/quota), uno per atto-conferimento-cariche
+  // che lo valorizza — non usato nel form, solo collapse "Altri dati".
+  poteri: string[];
 }
 
 export interface RegistroImpreseLocalizzazione {
@@ -62,12 +65,22 @@ export interface RegistroImpreseImpresaData {
     dtAttoCostituzione?: string;
     pec?: string;
     indirizzo?: RegistroImpreseIndirizzo;
+    statoImpresa?: string;
+    dtCancellazione?: string;
+    causaleCessazione?: string;
+    // Descrittivi extra su dati-identificativi, non usati nel form principale
+    // (vedi CLAUDE.md "Verifica Anagrafica") — mostrati solo in collapse "Altri dati".
+    fonte?: string;
+    descrizioneTipoSoggetto?: string;
+    descrizioneTipoImpresa?: string;
   };
   attivita: {
     esercitata?: string;
     secondaria?: string;
     prevalente?: string;
     ateco: RegistroImpreseAtecoVoce[];
+    // dt-inizio-attivita-impresa: data inizio attività (distinta da dt-atto-costituzione).
+    dtInizioAttivitaImpresa?: string;
   };
   persone: RegistroImpresePersona[];
   localizzazioni: RegistroImpreseLocalizzazione[];
@@ -77,12 +90,25 @@ export interface RegistroImpreseImpresaData {
     sistemaAmministrazione?: string;
     formeAmministrative: string[];
     collegioSindacale?: { effettivi?: string; supplenti?: string };
+    // Extra: proroga tacita statuto, primo esercizio, controllo contabile —
+    // presenti solo per alcune forme giuridiche (es. SPA), assenti per altre.
+    tipoProroga?: string;
+    nAnniProrogaTacita?: string;
+    dtPrimoEsercizio?: string;
+    soggettoControlloContabile?: string;
   };
   patrimonio?: {
     valuta?: string;
     deliberato?: string;
     sottoscritto?: string;
     versato?: string;
+  };
+  // Alternativa a `patrimonio` per società di persone (SAS/SNC): XML usa
+  // <valore-nominale-conferimenti> invece di <capitale-sociale>, verificato
+  // dal vivo (2026-09-15) — mai entrambi valorizzati sulla stessa impresa.
+  valoreNominaleConferimenti?: {
+    valuta?: string;
+    ammontare?: string;
   };
 }
 
@@ -262,11 +288,14 @@ function parseAteco(classificazioniEl: any): RegistroImpreseAtecoVoce[] {
 function parsePersona(el: any): RegistroImpresePersona {
   const pf = el['persona-fisica'] ?? {};
   const cariche: string[] = [];
+  const poteri: string[] = [];
   for (const atto of toArray(el['atti-conferimento-cariche']?.['atto-conferimento-cariche'])) {
     for (const carica of toArray(atto?.cariche?.carica)) {
       const label = textOf(carica);
       if (label) cariche.push(label);
     }
+    const poteriLabel = textOf(atto?.['poteri-persona']);
+    if (poteriLabel) poteri.push(poteriLabel);
   }
   return {
     nome: pf['@_nome'],
@@ -275,6 +304,7 @@ function parsePersona(el: any): RegistroImpresePersona {
     dataNascita: pf['estremi-nascita']?.['@_dt'],
     rappresentante: el['@_f-rappresentante-ri'] === 'S',
     cariche,
+    poteri,
   };
 }
 
@@ -322,7 +352,10 @@ function parseDettaglioImpresaXml(xml: string): RegistroImpreseImpresaData {
   const infoAttivita = root['info-attivita'] ?? {};
   const statuto = root['info-statuto'] ?? {};
   const amministrazione = root['amministrazione-controllo'] ?? {};
-  const patrimoniali = root['info-patrimoniali-finanziarie']?.['capitale-sociale'];
+  const patrimonialiRoot = root['info-patrimoniali-finanziarie'] ?? {};
+  const patrimoniali = patrimonialiRoot['capitale-sociale'];
+  const valoreNominale = patrimonialiRoot['valore-nominale-conferimenti'];
+  const durataSocieta = statuto['durata-societa'];
 
   return {
     sede: {
@@ -332,22 +365,31 @@ function parseDettaglioImpresaXml(xml: string): RegistroImpreseImpresaData {
       partitaIva: identificativi['@_partita-iva'],
       cciaa: identificativi['@_cciaa'],
       nRea: identificativi['@_n-rea'],
-      dtIscrizioneRi: identificativi['@_dt-iscrizione-ri'],
+      // dt-iscrizione-ri (imprese "di persone") vs dt-iscrizione-rea (SPA/SRL,
+      // verificato dal vivo su Ferrari S.p.A.) — mai entrambi presenti insieme.
+      dtIscrizioneRi: identificativi['@_dt-iscrizione-ri'] ?? identificativi['@_dt-iscrizione-rea'],
       dtAttoCostituzione: identificativi['@_dt-atto-costituzione'],
       pec: textOf(identificativi['indirizzo-posta-certificata'])?.toLowerCase(),
       indirizzo: parseIndirizzo(identificativi['indirizzo-localizzazione']),
+      statoImpresa: identificativi['@_stato-impresa'],
+      dtCancellazione: identificativi['@_dt-cancellazione'],
+      causaleCessazione: identificativi['@_causale-cess'],
+      fonte: identificativi['@_fonte'],
+      descrizioneTipoSoggetto: identificativi['@_descrizione-tipo-soggetto'],
+      descrizioneTipoImpresa: identificativi['@_descrizione-tipo-impresa'],
     },
     attivita: {
       esercitata: textOf(infoAttivita['attivita-esercitata']),
       secondaria: textOf(infoAttivita['attivita-secondaria-esercitata']),
       prevalente: textOf(infoAttivita['attivita-prevalente']),
       ateco: parseAteco(infoAttivita['classificazioni-ateco']),
+      dtInizioAttivitaImpresa: infoAttivita['@_dt-inizio-attivita-impresa'],
     },
     persone: toArray(root['persone-sede']?.persona).map(parsePersona),
     localizzazioni: toArray(root['localizzazioni']?.localizzazione).map(parseLocalizzazione),
     soci: toArray(root['elenco-soci']?.riquadri?.riquadro).flatMap((r: any) => toArray(r?.titolari?.titolare).map(parseSocio)),
     statuto: {
-      durataSocieta: statuto['durata-societa']?.['@_dt-termine'],
+      durataSocieta: durataSocieta?.['@_dt-termine'],
       sistemaAmministrazione: textOf(amministrazione['sistema-amministrazione']),
       formeAmministrative: toArray(amministrazione['forme-amministrative']?.['forma-amministrativa'])
         .map((f: any) => textOf(f))
@@ -358,6 +400,10 @@ function parseDettaglioImpresaXml(xml: string): RegistroImpreseImpresaData {
             supplenti: amministrazione['collegio-sindacale']['@_n-supplenti'],
           }
         : undefined,
+      tipoProroga: durataSocieta?.['@_tipo-proroga'],
+      nAnniProrogaTacita: durataSocieta?.['@_n-anni-proroga-tacita'],
+      dtPrimoEsercizio: durataSocieta?.['scadenza-esercizi']?.['@_dt-primo-esercizio'],
+      soggettoControlloContabile: textOf(amministrazione['soggetto-controllo-contabile']),
     },
     patrimonio: patrimoniali
       ? {
@@ -365,6 +411,12 @@ function parseDettaglioImpresaXml(xml: string): RegistroImpreseImpresaData {
           deliberato: patrimoniali['deliberato']?.['@_ammontare'],
           sottoscritto: patrimoniali['sottoscritto']?.['@_ammontare'],
           versato: patrimoniali['versato']?.['@_ammontare'],
+        }
+      : undefined,
+    valoreNominaleConferimenti: valoreNominale
+      ? {
+          valuta: valoreNominale['@_valuta'],
+          ammontare: valoreNominale['@_ammontare'],
         }
       : undefined,
   };

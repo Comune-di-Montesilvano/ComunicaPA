@@ -167,13 +167,98 @@ describe('RegistroImpreseService.dettaglioImpresa', () => {
     });
     expect(result.data?.attivita.ateco).toHaveLength(2);
     expect(result.data?.persone).toEqual([
-      { nome: 'MARIO', cognome: 'ESEMPIO', cFiscale: 'MRAEXP80A01H501U', dataNascita: '01/01/1980', rappresentante: true, cariche: ['AMMINISTRATORE UNICO'] },
+      { nome: 'MARIO', cognome: 'ESEMPIO', cFiscale: 'MRAEXP80A01H501U', dataNascita: '01/01/1980', rappresentante: true, cariche: ['AMMINISTRATORE UNICO'], poteri: [] },
     ]);
     expect(result.data?.localizzazioni).toHaveLength(1);
     expect(result.data?.localizzazioni[0]).toMatchObject({ sottoTipi: ['SEDE OPERATIVA'], attivitaEsercitata: 'CONSULENZA' });
     expect(result.data?.soci).toEqual([{ denominazione: 'SOCIO ESEMPIO S.R.L.', cFiscale: '12345678901', diritto: "PROPRIETA'" }]);
     expect(result.data?.statuto).toMatchObject({ durataSocieta: '31/12/2050', sistemaAmministrazione: 'AMMINISTRATORE UNICO', formeAmministrative: ['AMMINISTRATORE UNICO'] });
     expect(result.data?.patrimonio).toEqual({ valuta: 'EURO', deliberato: '10.000,00', sottoscritto: '10.000,00', versato: '10.000,00' });
+  });
+
+  it('estrae stato-impresa/dt-cancellazione/causale-cess per un\'impresa cessata (dati fittizi)', async () => {
+    // Forma confermata con chiamata reale (2026-09-15, CF cessato reale) — dati qui fittizi.
+    const xml =
+      '<?xml version="1.0" encoding="windows-1252"?>' +
+      '<blocchi-impresa>' +
+      '<dati-identificativi denominazione="ROSSI ESEMPIO S.A.S." c-fiscale="00000000001" partita-iva="00000000001" cciaa="PE" n-rea="1" ' +
+      'stato-impresa="CANCELLATA" dt-cancellazione="21/02/2019" c-causale-cess="SC" causale-cess="SCIOGLIMENTO">' +
+      '<forma-giuridica c="AS">SOCIETA\' IN ACCOMANDITA SEMPLICE</forma-giuridica>' +
+      '</dati-identificativi>' +
+      '</blocchi-impresa>';
+    mockFetch.mockResolvedValue({ ok: true, status: 200, headers: { get: () => null }, arrayBuffer: () => Promise.resolve(Buffer.from(xml, 'latin1')) });
+
+    const result = await service.dettaglioImpresa('00000000001');
+
+    expect(result.data?.sede).toMatchObject({
+      statoImpresa: 'CANCELLATA',
+      dtCancellazione: '21/02/2019',
+      causaleCessazione: 'SCIOGLIMENTO',
+    });
+  });
+
+  it('estrae valore-nominale-conferimenti per società di persone, non capitale-sociale (dati fittizi)', async () => {
+    // Forma confermata con chiamata reale (2026-09-15, CF SAS reale) — dati qui fittizi.
+    const xml =
+      '<?xml version="1.0" encoding="windows-1252"?>' +
+      '<blocchi-impresa>' +
+      '<dati-identificativi denominazione="ROSSI ESEMPIO S.A.S." c-fiscale="00000000001" partita-iva="00000000001" cciaa="PE" n-rea="1"/>' +
+      '<info-patrimoniali-finanziarie><valore-nominale-conferimenti c-valuta="EU" valuta="EURO" ammontare="6.500,00"/></info-patrimoniali-finanziarie>' +
+      '</blocchi-impresa>';
+    mockFetch.mockResolvedValue({ ok: true, status: 200, headers: { get: () => null }, arrayBuffer: () => Promise.resolve(Buffer.from(xml, 'latin1')) });
+
+    const result = await service.dettaglioImpresa('00000000001');
+
+    expect(result.data?.patrimonio).toBeUndefined();
+    expect(result.data?.valoreNominaleConferimenti).toEqual({ valuta: 'EURO', ammontare: '6.500,00' });
+  });
+
+  it('estrae dt-iscrizione-rea come fallback quando dt-iscrizione-ri è assente, fonte/tipo-soggetto/tipo-impresa, dt-inizio-attivita-impresa, poteri-persona e soggetto-controllo-contabile per una SPA (dati fittizi)', async () => {
+    // Forma confermata con chiamata reale (2026-09-15, CF SPA reale) — dati qui fittizi.
+    const xml = `<?xml version="1.0" encoding="windows-1252"?>
+<blocchi-impresa>
+<dati-identificativi c-fonte="RI" fonte="Registro Imprese" tipo-soggetto="I" descrizione-tipo-soggetto="Sede dell'impresa" tipo-impresa="SC" descrizione-tipo-impresa="Societa' di capitale" dt-iscrizione-rea="21/06/1960" denominazione="ROSSI ESEMPIO S.P.A." c-fiscale="00000000001" partita-iva="00000000001" cciaa="PE" n-rea="1">
+<forma-giuridica c="SP">SOCIETA' PER AZIONI</forma-giuridica>
+</dati-identificativi>
+<info-attivita dt-inizio-attivita-impresa="10/12/2009">
+<attivita-esercitata>COMMERCIO</attivita-esercitata>
+</info-attivita>
+<persone-sede>
+<persona f-rappresentante-ri="S">
+<persona-fisica cognome="ESEMPIO" nome="MARIO" c-fiscale="MRAEXP80A01H501U">
+<estremi-nascita dt="01/01/1980"/></persona-fisica>
+<atti-conferimento-cariche>
+<atto-conferimento-cariche>
+<cariche><carica c-carica="PCA">PRESIDENTE CONSIGLIO AMMINISTRAZIONE</carica></cariche>
+<poteri-persona p-poteri="14">RAPPRESENTANZA LEGALE DELLA SOCIETA' IN GIUDIZIO.</poteri-persona>
+</atto-conferimento-cariche>
+</atti-conferimento-cariche></persona>
+</persone-sede>
+<info-statuto>
+<durata-societa dt-termine="31/12/2050" c-tipo-proroga="SI" tipo-proroga="PROROGA TACITA" n-anni-proroga-tacita="5">
+<scadenza-esercizi dt-primo-esercizio="31/12/2009"/></durata-societa></info-statuto>
+<amministrazione-controllo>
+<soggetto-controllo-contabile c="S">SOCIETA' DI REVISIONE</soggetto-controllo-contabile>
+</amministrazione-controllo>
+</blocchi-impresa>`;
+    mockFetch.mockResolvedValue({ ok: true, status: 200, headers: { get: () => null }, arrayBuffer: () => Promise.resolve(Buffer.from(xml, 'latin1')) });
+
+    const result = await service.dettaglioImpresa('00000000001');
+
+    expect(result.data?.sede).toMatchObject({
+      dtIscrizioneRi: '21/06/1960',
+      fonte: 'Registro Imprese',
+      descrizioneTipoSoggetto: "Sede dell'impresa",
+      descrizioneTipoImpresa: "Societa' di capitale",
+    });
+    expect(result.data?.attivita.dtInizioAttivitaImpresa).toBe('10/12/2009');
+    expect(result.data?.persone[0].poteri).toEqual(["RAPPRESENTANZA LEGALE DELLA SOCIETA' IN GIUDIZIO."]);
+    expect(result.data?.statuto).toMatchObject({
+      tipoProroga: 'PROROGA TACITA',
+      nAnniProrogaTacita: '5',
+      dtPrimoEsercizio: '31/12/2009',
+      soggettoControlloContabile: "SOCIETA' DI REVISIONE",
+    });
   });
 });
 
