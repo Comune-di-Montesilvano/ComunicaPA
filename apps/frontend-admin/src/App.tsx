@@ -9635,6 +9635,82 @@ export function App(): React.JSX.Element {
                     </div>
                   )}
 
+                  {wizManualRows.length >= 20 && (
+                    <div className="alert alert-warning d-flex align-items-start gap-2 mb-3">
+                      <AlertCircle size={16} className="mt-1 flex-shrink-0" />
+                      <div>
+                        Hai già {wizManualRows.length} destinatari in lista. Per lotti di queste dimensioni conviene il caricamento da CSV (più veloce da correggere/riverificare) — puoi comunque continuare ad aggiungere righe da qui se preferisci.
+                      </div>
+                    </div>
+                  )}
+
+                  {wizManualRows.length > 0 && (
+                    <div className="card shadow-sm border-0 rounded-3 p-3 mb-3 bg-white">
+                      <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-2">
+                        Destinatari aggiunti ({wizManualRows.length})
+                      </h5>
+                      <div className="table-responsive">
+                        <table className="table table-sm align-middle mb-0">
+                          <thead>
+                            <tr>
+                              <th>CF/P.IVA</th>
+                              <th>Nominativo</th>
+                              <th>Canale effettivo</th>
+                              <th>Allegato</th>
+                              <th></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {wizManualRows.map(row => (
+                              <tr key={row.id}>
+                                <td className="font-monospace small">{row.cf}</td>
+                                <td>{[row.surname, row.firstName].filter(Boolean).join(' ')}</td>
+                                <td>
+                                  {row.inadForced ? (
+                                    <span className="badge bg-info-subtle text-info-emphasis">Dirottato su PEC (INAD)</span>
+                                  ) : (
+                                    <span className="text-muted small">{wizChannel}</span>
+                                  )}
+                                </td>
+                                <td>
+                                  {wizSingleAttachmentSlots.length === 0 ? (
+                                    <span className="text-muted small">—</span>
+                                  ) : (
+                                    wizSingleAttachmentSlots.map(slot => (
+                                      <div key={slot.id} className="d-flex align-items-center gap-1 mb-1">
+                                        <span className="small text-muted" style={{ minWidth: '90px' }}>{slot.label}:</span>
+                                        {row.attachmentOverrides[slot.id] ? (
+                                          <span className="small text-success">{row.attachmentOverrides[slot.id].name}</span>
+                                        ) : (
+                                          <span className="small text-muted">comune</span>
+                                        )}
+                                        <input
+                                          type="file"
+                                          accept=".pdf"
+                                          className="form-control form-control-sm"
+                                          style={{ maxWidth: '160px' }}
+                                          onChange={(e) => setManualRowOverride(row.id, slot.id, e.target.files?.[0] || null)}
+                                        />
+                                      </div>
+                                    ))
+                                  )}
+                                </td>
+                                <td className="text-end">
+                                  <button type="button" className="btn btn-sm btn-outline-secondary me-1" onClick={() => startEditManualRow(row)}>
+                                    <Pencil size={14} />
+                                  </button>
+                                  <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => removeManualRow(row.id)}>
+                                    <Trash2 size={14} />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
                   {/* SEZIONE 1: Dati Destinatario (A tutta larghezza) */}
                   <div className="card shadow-sm border-0 rounded-3 p-3 mb-3 bg-white">
                     <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-2">Dati Destinatario</h5>
