@@ -6598,7 +6598,7 @@ export function App(): React.JSX.Element {
       const vals: string[] = [row.cf, fullName, row.email, row.pec];
       if (needsWizSinglePhysicalAddress) vals.push(row.address, row.municipality, row.zip, row.province, row.country);
       if (wizPaymentEnabled) vals.push(row.paymentIuv, row.paymentImporto, row.paymentScadenza);
-      defaultSlotsWithFile.forEach((s, i) => {
+      defaultSlotsWithFile.forEach((s) => {
         const override = row.attachmentOverrides[s.id];
         const file = override || s.file!;
         if (override) filesToUpload.set(override.name, override);
