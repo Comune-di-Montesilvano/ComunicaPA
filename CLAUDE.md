@@ -11,7 +11,7 @@ ComunicaPA — HUB open-source per la trasmissione asincrona di comunicazioni ma
 **pnpm workspaces monorepo.** Tutto gira in Docker — nessun tool installato in locale (Node/pnpm non richiesti sull'host).
 
 ```
-apps/backend/          NestJS 10 + TypeScript — API REST, worker BullMQ (porta 8080)
+apps/backend/          NestJS 12 (ESM) + TypeScript — API REST, worker BullMQ (porta 8080)
 apps/frontend-admin/   React 19 + Vite 6 — Portale operatori PA (porta 3000)
 apps/frontend-citizen/ React 19 + Vite 6 — Portale cittadini (porta 3001)
 packages/shared-types/ @comunicapa/shared-types — interfacce TypeScript condivise
