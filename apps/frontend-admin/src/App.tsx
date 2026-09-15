@@ -5003,6 +5003,7 @@ export function App(): React.JSX.Element {
     const sections: Array<{ id: string; title: string }> = [
       { id: 'guida-cose', title: "Cos'è ComunicaPA" },
       { id: 'guida-anagrafica', title: 'Verifica Anagrafica e domicilio digitale' },
+      { id: 'guida-arricchimento', title: 'Arricchimento Tracciati' },
       { id: 'guida-dirottamento', title: 'Dirottamento automatico su domicilio digitale' },
       { id: 'guida-regole-canale', title: 'Regole per canale (allegato, oggetto/testo, App IO)' },
       { id: 'guida-wizard', title: 'Come lanciare un invio' },
@@ -5058,10 +5059,49 @@ export function App(): React.JSX.Element {
               Registro Imprese e — per le imprese — amministratori e soci, con i relativi CF/PIVA cliccabili
               per approfondire a cascata.
             </p>
-            <p className="text-muted mb-0">
+            <p className="text-muted mb-2">
               È utile anche senza dover inviare nulla: è il modo più rapido per un ufficio di sapere se un
               cittadino o un'impresa ha un domicilio digitale attivo e su quale canale sarebbe effettivamente
               raggiungibile, prima ancora di organizzare una comunicazione.
+            </p>
+            <p className="text-muted mb-2">
+              <strong>Attenzione:</strong> la ricerca per un'impresa avviene sempre per Codice Fiscale, mai
+              per Partita IVA — per la maggior parte delle imprese coincidono, ma non sempre (enti pubblici,
+              cooperative sociali...). Se inserendo la Partita IVA non trovi risultati, riprova con il Codice
+              Fiscale reale del soggetto. Se non conosci il Codice Fiscale, il link "Non hai il codice
+              fiscale?" permette di cercare per denominazione su Registro Imprese. Il Codice Fiscale di
+              un'impresa individuale ha lo stesso formato di quello di una persona fisica (16 caratteri): se
+              la ricerca automatica sbaglia soggetto, la checkbox "Forza ricerca come impresa" instrada la
+              query direttamente su Registro Imprese. Una scheda impresa mostra anche se è cessata/cancellata
+              (badge in alto a destra, con data e causale).
+            </p>
+            <p className="text-muted mb-0">
+              Se non hai il Codice Fiscale ma conosci nome, cognome e data di nascita, è disponibile una
+              ricerca ANPR per anagrafica (senza CF) direttamente dal pannello di Verifica Anagrafica.
+            </p>
+          </div>
+        </div>
+
+        <div id="guida-arricchimento" className="card shadow-sm border-0 rounded-3">
+          <div className="card-body p-4">
+            <h4 className="h5 fw-bold text-dark mb-3">Arricchimento Tracciati</h4>
+            <p className="text-muted mb-2">
+              Converte un tracciato Maggioli (CSV + allegati PDF, es. avvisi TARI) in un CSV pronto per
+              l'invio massivo: estrae automaticamente da ogni PDF l'indirizzo postale del destinatario e i
+              dati di pagamento pagoPA (numero avviso, importo, scadenza — anche con più rate sulla stessa
+              pagina), leggendo il codice a barre/QR del documento.
+            </p>
+            <p className="text-muted mb-2">
+              Se un PDF non permette l'estrazione automatica (indirizzo mancante, QR illeggibile), la riga
+              viene segnalata come warning e può essere corretta manualmente, riga per riga, senza dover
+              rifare l'intero caricamento. È possibile caricare più ZIP in sequenza per lo stesso tracciato
+              (es. file troppo grandi spezzati in più parti): i pezzi vengono uniti automaticamente in un
+              unico job.
+            </p>
+            <p className="text-muted mb-0">
+              A job completato, il bottone "Crea bozza campagna" apre il wizard di invio massivo con il CSV
+              arricchito già precaricato: stesse validazioni e stesso percorso guidato di un caricamento CSV
+              manuale, nessun passaggio saltato.
             </p>
           </div>
         </div>

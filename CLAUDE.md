@@ -889,6 +889,29 @@ pannello test Impostazioni → Registro Imprese) avvisano di questo nel testo,
 ma nessuna validazione automatica può distinguere i due casi (stesso formato
 11 cifre) — l'unico modo è provare entrambi se il primo tentativo fallisce.
 
+## Registro Imprese — stato impresa e campi alternativi per forma giuridica
+
+`dettaglio/codicefiscale` (XML) espone lo stato impresa come attributo
+`stato-impresa` su `dati-identificativi` — **assente per imprese attive**,
+presente solo per cessate/cancellate (verificato dal vivo: Ferrari S.p.A.
+attiva non ha l'attributo). Diverso dall'elemento `StatoImpresa` usato da
+`ricerca/denominazione` — bug reale corretto: mai mappato prima, "Cerca
+Domicilio" per CF non mostrava mai lo stato. `dt-iscrizione-ri` (società
+di persone) vs `dt-iscrizione-rea` (SPA/SRL) — nomi attributo diversi per
+la stessa data, un solo campo letto lasciava il dato assente per metà
+delle forme giuridiche. `info-patrimoniali-finanziarie`: `capitale-sociale`
+(SRL/SPA) vs `valore-nominale-conferimenti` (SAS/SNC) — strutture sorelle
+diverse, mai entrambe presenti sulla stessa impresa. Script debug dedicato
+(stesso pattern GlobalCom sopra): `apps/backend/src/debug/registro-imprese-dettaglio.cjs`.
+
+## Frontend admin — `.card-header .d-flex` forza sempre `flex-direction: row`
+
+`backoffice-shell.css` ha una regola `.card-header .d-flex { flex-direction:
+row !important; ... }` che si applica a QUALSIASI discendente `.d-flex`
+dentro un card-header, anche quando si vuole `flex-column` (es. badge stato
+sopra una caption). Le classi utility non bastano in quel contesto — usare
+uno `style` inline esplicito per bypassare la regola.
+
 ## ANPR C002 — pattern di sicurezza reale (verificato con dati veri, funzionante)
 
 Il servizio C002 "Servizio di comunicazione" (`AnprService`,
