@@ -194,7 +194,7 @@ describe('RegistroImpreseService.ricercaDenominazione', () => {
   });
 
   it('passa denominazione e siglaProvincia come query param', async () => {
-    mockFetch.mockResolvedValue({ ok: true, status: 200, headers: { get: () => null }, arrayBuffer: () => Promise.resolve(Buffer.from('<posizioni/>', 'latin1')) });
+    mockFetch.mockResolvedValue({ ok: true, status: 200, headers: { get: () => null }, arrayBuffer: () => Promise.resolve(Buffer.from('<ListaImpreseRI xmlns="http://it.registroimprese.pcad.ws"/>', 'latin1')) });
 
     await service.ricercaDenominazione('ACME', 'PE');
 
@@ -203,7 +203,7 @@ describe('RegistroImpreseService.ricercaDenominazione', () => {
   });
 
   it('omette siglaProvincia quando non fornita', async () => {
-    mockFetch.mockResolvedValue({ ok: true, status: 200, headers: { get: () => null }, arrayBuffer: () => Promise.resolve(Buffer.from('<posizioni/>', 'latin1')) });
+    mockFetch.mockResolvedValue({ ok: true, status: 200, headers: { get: () => null }, arrayBuffer: () => Promise.resolve(Buffer.from('<ListaImpreseRI xmlns="http://it.registroimprese.pcad.ws"/>', 'latin1')) });
 
     await service.ricercaDenominazione('ACME', undefined);
 
@@ -211,17 +211,32 @@ describe('RegistroImpreseService.ricercaDenominazione', () => {
     expect(url).toBe('https://pdnd.registroimprese.it/rest/pcad/v1/ricerca/denominazione?denominazione=ACME');
   });
 
-  it('parsa più occorrenze — dati fittizi (stesso schema attributi di dati-identificativi)', async () => {
+  it('parsa più occorrenze — schema confermato dal vivo (2026-09-15), dati fittizi', async () => {
     const xml =
-      '<?xml version="1.0" encoding="windows-1252"?>' +
-      '<posizioni>' +
-      '<posizione denominazione="ACME ESEMPIO SRL" c-fiscale="00000000001" cciaa="PE" n-rea="1" stato-impresa="ATTIVA">' +
-      '<forma-giuridica c="SR">SOCIETA\' A RESPONSABILITA\' LIMITATA</forma-giuridica>' +
-      '<indirizzo-posta-certificata>ACME@PEC.IT</indirizzo-posta-certificata>' +
-      '<indirizzo-localizzazione comune="PESCARA" provincia="PE" via="ESEMPIO" n-civico="1" cap="65100"/>' +
-      '</posizione>' +
-      '<posizione denominazione="ACME BIS SRL" c-fiscale="00000000002" cciaa="PE" n-rea="2"/>' +
-      '</posizioni>';
+      '<?xml version="1.0" encoding="ISO-8859-1"?>' +
+      '<ListaImpreseRI xmlns="http://it.registroimprese.pcad.ws">' +
+      '<Impresa>' +
+      '<ProgressivoImpresa>1</ProgressivoImpresa>' +
+      '<Cciaa>PE</Cciaa><NRea>1</NRea>' +
+      '<Denominazione>ACME ESEMPIO SRL</Denominazione>' +
+      '<NaturaGiuridica>SR</NaturaGiuridica>' +
+      '<DescNaturaGiuridica>SOCIETA\' A RESPONSABILITA\' LIMITATA</DescNaturaGiuridica>' +
+      '<CodiceFiscale>00000000001</CodiceFiscale>' +
+      '<StatoImpresa>Registrata</StatoImpresa>' +
+      '<IndirizzoSedeLegale>' +
+      '<ProvinciaSede>PE</ProvinciaSede><ComuneSede>PESCARA</ComuneSede>' +
+      '<ToponimoSede>VIA</ToponimoSede><ViaSede>ESEMPIO</ViaSede>' +
+      '<NcivicoSede>1</NcivicoSede><CapSede>65100</CapSede>' +
+      '</IndirizzoSedeLegale>' +
+      '<PEC>ACME@PEC.IT</PEC>' +
+      '</Impresa>' +
+      '<Impresa>' +
+      '<ProgressivoImpresa>2</ProgressivoImpresa>' +
+      '<Cciaa>PE</Cciaa><NRea>2</NRea>' +
+      '<Denominazione>ACME BIS SRL</Denominazione>' +
+      '<CodiceFiscale>00000000002</CodiceFiscale>' +
+      '</Impresa>' +
+      '</ListaImpreseRI>';
     mockFetch.mockResolvedValue({ ok: true, status: 200, headers: { get: () => null }, arrayBuffer: () => Promise.resolve(Buffer.from(xml, 'latin1')) });
 
     const result = await service.ricercaDenominazione('ACME', 'PE');
@@ -234,14 +249,14 @@ describe('RegistroImpreseService.ricercaDenominazione', () => {
       pec: 'acme@pec.it',
       cciaa: 'PE',
       nRea: '1',
-      statoImpresa: 'ATTIVA',
+      statoImpresa: 'Registrata',
       indirizzo: { comune: 'PESCARA', provincia: 'PE', via: 'ESEMPIO', cap: '65100' },
     });
     expect(result.posizioni[1]).toMatchObject({ denominazione: 'ACME BIS SRL', cFiscale: '00000000002' });
   });
 
   it('restituisce lista vuota quando nessuna impresa corrisponde (root senza figli)', async () => {
-    mockFetch.mockResolvedValue({ ok: true, status: 200, headers: { get: () => null }, arrayBuffer: () => Promise.resolve(Buffer.from('<posizioni/>', 'latin1')) });
+    mockFetch.mockResolvedValue({ ok: true, status: 200, headers: { get: () => null }, arrayBuffer: () => Promise.resolve(Buffer.from('<ListaImpreseRI xmlns="http://it.registroimprese.pcad.ws"/>', 'latin1')) });
 
     const result = await service.ricercaDenominazione('INESISTENTE', undefined);
 

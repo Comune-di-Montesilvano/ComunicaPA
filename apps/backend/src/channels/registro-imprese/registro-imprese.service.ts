@@ -208,11 +208,17 @@ export class RegistroImpreseService {
   }
 }
 
+// parseTagValue:false obbligatorio — il default (true) converte testo
+// numerico di un tag (NRea, CapSede, e soprattutto CodiceFiscale/PartitaIva
+// con zeri iniziali) in JS number, corrompendo il valore (zeri persi) e
+// facendo fallire textOf() (gestisce solo string/oggetto, mai number).
+// Scoperto sul vero XML di /ricerca/denominazione (2026-09-15).
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
   textNodeName: '#text',
   trimValues: true,
+  parseTagValue: false,
 });
 
 /** fast-xml-parser restituisce un oggetto per un solo figlio, un array se ripetuto — normalizza sempre ad array. */
@@ -365,30 +371,49 @@ function parseDettaglioImpresaXml(xml: string): RegistroImpreseImpresaData {
 }
 
 /**
- * Parsing best-effort per /ricerca/*: struttura reale confermabile solo al
- * primo test dal vivo (schema non documentato, vedi commento su
- * ricercaDenominazione). Ipotesi: root con occorrenze ripetute che portano
- * gli stessi attributi di dati-identificativi (denominazione, c-fiscale,
- * cciaa, n-rea, stato-impresa, indirizzo-posta-certificata,
- * indirizzo-localizzazione) — se la struttura reale differisce, questa
- * funzione va corretta senza toccare la firma pubblica del service.
+ * Parsing per /ricerca/*: struttura confermata con chiamata reale
+ * (2026-09-15, `ricerca/denominazione`) — a differenza di /dettaglio/* qui i
+ * dati sono elementi figli (PascalCase), MAI attributi:
+ *   <ListaImpreseRI xmlns="http://it.registroimprese.pcad.ws">
+ *     <Impresa>
+ *       <Cciaa/> <NRea/> <Denominazione/> <NaturaGiuridica/>
+ *       <DescNaturaGiuridica/> <CodiceFiscale/> <StatoImpresa/>
+ *       <IndirizzoSedeLegale>
+ *         <ProvinciaSede/> <ComuneSede/> <ToponimoSede/> <ViaSede/>
+ *         <NcivicoSede/> <CapSede/>
+ *       </IndirizzoSedeLegale>
+ *       <PEC/> (opzionale)
+ *     </Impresa>
+ *   </ListaImpreseRI>
+ * Nessuna evidenza (ancora) sulla struttura di /ricerca/codicefiscale e
+ * /ricerca/nrea — presumibilmente identica (stesso "ListaImpreseRI", stesso
+ * host), da confermare al primo uso reale.
  */
 function parseRicercaXml(xml: string): RegistroImpreseRicercaPosizione[] {
   const parsed = xmlParser.parse(xml);
-  const rootKey = Object.keys(parsed).find((k) => k !== '?xml');
-  const root = rootKey ? (parsed[rootKey] as any) : undefined;
-  if (!root) return [];
-  const candidateKeys = Object.keys(root).filter((k) => !k.startsWith('@_'));
-  const items = candidateKeys.length > 0 ? toArray(root[candidateKeys[0]]) : [];
+  const root = parsed['ListaImpreseRI'] ?? {};
+  const items = toArray(root['Impresa']);
 
-  return items.map((el: any) => ({
-    denominazione: el['@_denominazione'],
-    formaGiuridica: textOf(el['forma-giuridica']),
-    cFiscale: el['@_c-fiscale'],
-    pec: textOf(el['indirizzo-posta-certificata'])?.toLowerCase(),
-    cciaa: el['@_cciaa'],
-    nRea: el['@_n-rea'],
-    statoImpresa: el['@_stato-impresa'],
-    indirizzo: parseIndirizzo(el['indirizzo-localizzazione']),
-  }));
+  return items.map((el: any) => {
+    const indirizzoEl = el['IndirizzoSedeLegale'];
+    return {
+      denominazione: textOf(el['Denominazione']),
+      formaGiuridica: textOf(el['DescNaturaGiuridica']),
+      cFiscale: textOf(el['CodiceFiscale']),
+      pec: textOf(el['PEC'])?.toLowerCase(),
+      cciaa: textOf(el['Cciaa']),
+      nRea: textOf(el['NRea']),
+      statoImpresa: textOf(el['StatoImpresa']),
+      indirizzo: indirizzoEl
+        ? {
+            comune: textOf(indirizzoEl['ComuneSede']),
+            provincia: textOf(indirizzoEl['ProvinciaSede']),
+            toponimo: textOf(indirizzoEl['ToponimoSede']),
+            via: textOf(indirizzoEl['ViaSede']),
+            nCivico: textOf(indirizzoEl['NcivicoSede']),
+            cap: textOf(indirizzoEl['CapSede']),
+          }
+        : undefined,
+    };
+  });
 }
