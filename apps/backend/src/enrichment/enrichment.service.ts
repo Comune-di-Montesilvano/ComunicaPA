@@ -12,7 +12,7 @@ import {
   CampaignConversionStatus,
   TraceFormat,
 } from '../entities/enrichment-job.entity.js';
-import { parseMaggioliZip } from './maggioli-parser.js';
+import { mergeMaggioliZips } from './enrichment-zip-merge.util.js';
 import {
   ENRICHMENT_QUEUE,
   EnrichmentQueueJobData,
@@ -27,7 +27,10 @@ import { buildEnrichedCsv, buildEnrichedCsvHeaders, parseEnrichedCsv, type Enric
 import type { EnrichmentAddressOverride } from '../entities/enrichment-address-override.entity.js';
 
 export interface CreateEnrichmentJobParams {
-  zipPath: string;
+  /** Uno o più pezzi ZIP "attigui" dello stesso tracciato (vedi CLAUDE.md — tracciati spezzati per problemi di download). */
+  zipPaths: string[];
+  /** Nomi originali dei file in zipPaths, stesso ordine — usati nei messaggi di errore/validazione. */
+  zipFilenames: string[];
   sourceFilename: string;
   traceFormat: TraceFormat;
   searchPayments?: boolean;
@@ -46,13 +49,15 @@ export class EnrichmentService {
 
   async createJob(params: CreateEnrichmentJobParams): Promise<{ jobId?: string; blocked?: boolean; message?: string }> {
     let totalRecords: number;
+    let mergedZipBuffer: Buffer;
     try {
-      const zip = new AdmZip(readLargeFileSync(params.zipPath));
-      const { records } = parseMaggioliZip(zip);
-      if (records.length === 0) {
+      const zips = params.zipPaths.map((p) => new AdmZip(readLargeFileSync(p)));
+      const merged = mergeMaggioliZips(zips, params.zipFilenames);
+      if (merged.records.length === 0) {
         return { blocked: true, message: 'Il tracciato non contiene righe di dati' };
       }
-      totalRecords = records.length;
+      totalRecords = merged.records.length;
+      mergedZipBuffer = merged.zipBuffer;
     } catch (err: any) {
       return { blocked: true, message: err?.message ?? 'ZIP non leggibile' };
     }
@@ -75,7 +80,7 @@ export class EnrichmentService {
     );
 
     fs.mkdirSync(getEnrichmentDir(saved.id), { recursive: true });
-    fs.copyFileSync(params.zipPath, getEnrichmentSourceZip(saved.id));
+    fs.writeFileSync(getEnrichmentSourceZip(saved.id), mergedZipBuffer);
 
     await this.queue.add('enrich', { jobId: saved.id }, { jobId: saved.id });
     return { jobId: saved.id };

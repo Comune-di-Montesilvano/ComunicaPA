@@ -28,14 +28,38 @@ describe('EnrichmentController', () => {
     expect(() => controller.initUpload({ filename: 'x.zip', totalChunks: 0 })).toThrow();
   });
 
-  it('complete: traceFormat non valido → blocked (mai eccezione non-2xx)', async () => {
-    const result = await controller.completeUpload('upload-inesistente', { traceFormat: 'ALTRO' as any }, { user: { username: 'op' } } as any);
+  it('complete: batchId mancante/non valido → blocked (mai eccezione non-2xx)', async () => {
+    const result = await controller.completeUpload('upload-inesistente', { batchId: 'non-un-uuid' });
     expect(result.blocked).toBe(true);
   });
 
   it('complete: sessione upload inesistente → blocked', async () => {
-    const result = await controller.completeUpload('upload-inesistente', { traceFormat: TraceFormat.MAGGIOLI }, { user: { username: 'op' } } as any);
+    const result = await controller.completeUpload('upload-inesistente', { batchId: '11111111-1111-1111-1111-111111111111' });
     expect(result.blocked).toBe(true);
+  });
+
+  it('initBatch: ritorna un batchId', () => {
+    const result = controller.initBatch();
+    expect(result.batchId).toMatch(/^[0-9a-f]{8}-/i);
+  });
+
+  it('completeBatch: batchId non valido → blocked, createJob non chiamato', async () => {
+    const result = await controller.completeBatch('non-un-uuid', { traceFormat: TraceFormat.MAGGIOLI }, { user: { username: 'op' } } as any);
+    expect(result.blocked).toBe(true);
+    expect(svc.createJob).not.toHaveBeenCalled();
+  });
+
+  it('completeBatch: traceFormat non valido → blocked', async () => {
+    const { batchId } = controller.initBatch();
+    const result = await controller.completeBatch(batchId, { traceFormat: 'ALTRO' as any }, { user: { username: 'op' } } as any);
+    expect(result.blocked).toBe(true);
+  });
+
+  it('completeBatch: nessun file caricato nel batch → blocked', async () => {
+    const { batchId } = controller.initBatch();
+    const result = await controller.completeBatch(batchId, { traceFormat: TraceFormat.MAGGIOLI }, { user: { username: 'op' } } as any);
+    expect(result.blocked).toBe(true);
+    expect(svc.createJob).not.toHaveBeenCalled();
   });
 
   it('list ritorna {jobs}', async () => {

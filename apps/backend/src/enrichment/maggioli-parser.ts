@@ -151,7 +151,7 @@ export function parsePagIndice(text: string): MaggioliRecord[] {
   return records;
 }
 
-function decodeCsvBuffer(buf: Buffer): string {
+export function decodeCsvBuffer(buf: Buffer): string {
   const utf8 = buf.toString('utf-8');
   // Il replacement char indica byte non validi UTF-8: rubrica Maggioli a volte è latin-1
   return utf8.includes('�') ? buf.toString('latin1') : utf8;
