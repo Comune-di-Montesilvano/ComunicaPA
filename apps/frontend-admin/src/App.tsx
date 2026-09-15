@@ -6371,7 +6371,7 @@ export function App(): React.JSX.Element {
         if (ri.success && ri.found) {
           if (ri.denominazione) {
             setSingleSurname(ri.denominazione);
-            setWizName(`Invio singolo a ${ri.denominazione}`);
+            if (wizManualRows.length === 0) setWizName(`Invio singolo a ${ri.denominazione}`);
           }
           const sedeIndirizzo = ri.data?.sede?.indirizzo;
           if (sedeIndirizzo) {
@@ -6405,7 +6405,7 @@ export function App(): React.JSX.Element {
         if (g.cognome) setSingleSurname(g.cognome);
         if (g.nome) setSingleFirstName(g.nome);
         const nomeCompleto = [g.cognome, g.nome].filter(Boolean).join(' ');
-        if (nomeCompleto) setWizName(`Invio singolo a ${nomeCompleto}`);
+        if (nomeCompleto && wizManualRows.length === 0) setWizName(`Invio singolo a ${nomeCompleto}`);
       }
 
       const residenza = data?.anpr?.residenza?.[0];
@@ -9587,6 +9587,23 @@ export function App(): React.JSX.Element {
                     </button>
                   </div>
 
+                  {wizManualRows.length >= 1 && (
+                    <div className="mb-3" style={{ maxWidth: '420px' }}>
+                      <label className="form-label small fw-bold">Nome della Campagna *</label>
+                      <input
+                        type="text"
+                        className="form-control form-control-sm"
+                        placeholder="Es: Ordinanza 123/2026 — lotto SEND"
+                        value={wizName}
+                        onChange={e => setWizName(e.target.value)}
+                        required
+                      />
+                      <div className="form-text small text-muted">
+                        Da quando aggiungi più di un destinatario, il nome campagna va scelto a mano (come per l'invio massivo).
+                      </div>
+                    </div>
+                  )}
+
                   {/* SEZIONE 1: Dati Destinatario (A tutta larghezza) */}
                   <div className="card shadow-sm border-0 rounded-3 p-3 mb-3 bg-white">
                     <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-2">Dati Destinatario</h5>
@@ -9608,8 +9625,10 @@ export function App(): React.JSX.Element {
                             onChange={(e) => {
                               const v = e.target.value.toUpperCase();
                               setSingleCf(v);
-                              const fullName = [singleSurname.trim(), singleFirstName.trim()].filter(Boolean).join(' ');
-                              setWizName(fullName ? `Invio singolo a ${fullName}` : (v ? `Invio singolo a ${v}` : ''));
+                              if (wizManualRows.length === 0) {
+                                const fullName = [singleSurname.trim(), singleFirstName.trim()].filter(Boolean).join(' ');
+                                setWizName(fullName ? `Invio singolo a ${fullName}` : (v ? `Invio singolo a ${v}` : ''));
+                              }
                               if (v !== singleAnprCheckedCf) {
                                 setSingleInadForced(false);
                                 setSingleInadAddress('');
@@ -9643,8 +9662,10 @@ export function App(): React.JSX.Element {
                           onChange={(e) => {
                             const v = e.target.value;
                             setSingleSurname(v);
-                            const fullName = [v.trim(), singleFirstName.trim()].filter(Boolean).join(' ');
-                            setWizName(fullName ? `Invio singolo a ${fullName}` : (singleCf ? `Invio singolo a ${singleCf}` : ''));
+                            if (wizManualRows.length === 0) {
+                              const fullName = [v.trim(), singleFirstName.trim()].filter(Boolean).join(' ');
+                              setWizName(fullName ? `Invio singolo a ${fullName}` : (singleCf ? `Invio singolo a ${singleCf}` : ''));
+                            }
                           }}
                         />
                       </div>
@@ -9661,8 +9682,10 @@ export function App(): React.JSX.Element {
                           onChange={(e) => {
                             const v = e.target.value;
                             setSingleFirstName(v);
-                            const fullName = [singleSurname.trim(), v.trim()].filter(Boolean).join(' ');
-                            setWizName(fullName ? `Invio singolo a ${fullName}` : (singleCf ? `Invio singolo a ${singleCf}` : ''));
+                            if (wizManualRows.length === 0) {
+                              const fullName = [singleSurname.trim(), v.trim()].filter(Boolean).join(' ');
+                              setWizName(fullName ? `Invio singolo a ${fullName}` : (singleCf ? `Invio singolo a ${singleCf}` : ''));
+                            }
                           }}
                         />
                       </div>
