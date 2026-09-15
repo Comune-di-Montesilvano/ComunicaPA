@@ -9609,13 +9609,26 @@ export function App(): React.JSX.Element {
                       <h4 className="h5 fw-bold text-dark mb-1">Passo 1: Dettagli & Destinatario</h4>
                       <p className="small text-muted mb-0">Configura i dati anagrafici, il canale di invio e gli allegati per questo specifico destinatario.</p>
                     </div>
-                    <button
-                      className="btn btn-primary px-4 fw-medium d-flex align-items-center gap-2"
-                      onClick={() => handleWizManualSubmit(wizSingleNeedsTemplateStep ? 4 : 6)}
-                      disabled={isManualRowFormInvalid}
-                    >
-                      Avanti <ArrowRight size={16} />
-                    </button>
+                    <div className="d-flex align-items-center gap-2">
+                      <button
+                        className="btn btn-outline-primary px-3 fw-medium d-flex align-items-center gap-2"
+                        onClick={() => commitCurrentManualRow()}
+                        disabled={!singleCf.trim() || isManualRowFormInvalid}
+                        title={isManualRowFormInvalid ? 'Completa correttamente i dati del destinatario' : undefined}
+                      >
+                        <Plus size={16} /> Aggiungi destinatario
+                      </button>
+                      <button
+                        className="btn btn-primary px-4 fw-medium d-flex align-items-center gap-2"
+                        onClick={() => handleWizManualSubmit(wizSingleNeedsTemplateStep ? 4 : 6)}
+                        disabled={
+                          (wizManualRows.length === 0 && (!singleCf.trim() || isManualRowFormInvalid)) ||
+                          (wizManualRows.length >= 1 && !wizName.trim())
+                        }
+                      >
+                        Conferma e Invia <ArrowRight size={16} />
+                      </button>
+                    </div>
                   </div>
 
                   {wizManualRows.length >= 1 && (
@@ -10422,13 +10435,24 @@ export function App(): React.JSX.Element {
                     </div>
                   </div>
 
-                  <div className="mt-3 pt-2 d-flex justify-content-end">
+                  <div className="mt-3 pt-2 d-flex justify-content-end gap-2">
+                    <button
+                      className="btn btn-outline-primary px-3 fw-medium d-flex align-items-center gap-2"
+                      onClick={() => commitCurrentManualRow()}
+                      disabled={!singleCf.trim() || isManualRowFormInvalid}
+                      title={isManualRowFormInvalid ? 'Completa correttamente i dati del destinatario' : undefined}
+                    >
+                      <Plus size={16} /> Aggiungi destinatario
+                    </button>
                     <button
                       className="btn btn-primary px-4 fw-medium d-flex align-items-center gap-2"
                       onClick={() => handleWizManualSubmit(wizSingleNeedsTemplateStep ? 4 : 6)}
-                      disabled={isManualRowFormInvalid}
+                      disabled={
+                        (wizManualRows.length === 0 && (!singleCf.trim() || isManualRowFormInvalid)) ||
+                        (wizManualRows.length >= 1 && !wizName.trim())
+                      }
                     >
-                      Avanti <ArrowRight size={16} />
+                      Conferma e Invia <ArrowRight size={16} />
                     </button>
                   </div>
                 </div>
