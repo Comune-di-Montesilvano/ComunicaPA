@@ -13940,7 +13940,7 @@ export function App(): React.JSX.Element {
                   <input
                     type="text"
                     className="form-control border-start-0 ps-0 fw-semibold"
-                    placeholder="CF persona fisica o CF/Partita IVA persona giuridica"
+                    placeholder="CF persona fisica o CF persona giuridica"
                     maxLength={16}
                     style={{ letterSpacing: '0.5px' }}
                     value={domicilioCf}
