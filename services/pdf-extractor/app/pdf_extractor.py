@@ -43,6 +43,16 @@ class PdfExtractor:
         re.IGNORECASE,
     )
 
+    # Blocco intestazione (sempre presente in cima al documento, PF e PG):
+    # "NOME\nCodice Utente NNN\nVIA ... N\nCAP COMUNE PROV\nContribuente:..."
+    # Fallback finale, usato quando l'etichetta specifica (Residenza:/Sede:)
+    # è vuota — bug reale: "Residenza:\nMail:..." senza valore, indirizzo
+    # comunque presente in intestazione.
+    _RE_HEADER_BLOCK = re.compile(
+        r"(.+?)\n(\d{5})\s+(.+?)\s+([A-Z]{2})\s*\n\s*Contribuente\s*:",
+        re.IGNORECASE,
+    )
+
     # Template TARI saldo persona fisica: "Residenza:65010 SPOLTORE PE VIA
     # SANTA LUCIA 42 Oggetto:..." — stessa struttura one-line di _RE_SEDE_LABEL
     # (CAP comune provincia PRIMA della via) ma con label "Residenza" invece
@@ -152,6 +162,16 @@ class PdfExtractor:
                 cap=m.group(1).strip(),
                 comune=m.group(2).strip(),
                 provincia=m.group(3).strip(),
+                stato_estero="",
+            )
+
+        m = self._RE_HEADER_BLOCK.search(text)
+        if m:
+            return AddressData(
+                indirizzo=re.sub(r"\s+", " ", m.group(1)).strip(),
+                cap=m.group(2).strip(),
+                comune=m.group(3).strip(),
+                provincia=m.group(4).strip(),
                 stato_estero="",
             )
 
