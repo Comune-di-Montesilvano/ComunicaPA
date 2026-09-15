@@ -860,6 +860,23 @@ e hanno già causato invii falliti in produzione (CF troncato, markdown vuoto
 per App IO). Per riprendere una bozza: bottone "Riprendi wizard"
 (`handleResumeDraft`), non un importer dedicato.
 
+## Verifica Anagrafica — "Partita IVA" nella UI è in realtà ricerca per Codice Fiscale
+
+`DomicilioService.cercaDomicilio()` classifica un input di 11 cifre numeriche
+come "Partita IVA" (`isPartitaIva()`, `tax-id.util.ts` — solo classificazione
+di FORMATO) e lo passa a `RegistroImpreseService.dettaglioImpresa()`, che
+interroga **sempre** l'endpoint `/dettaglio/codicefiscale?codiceFiscale=...`
+— non esiste un endpoint di ricerca per Partita IVA in questa integrazione
+PDND. Per la maggior parte delle imprese Partita IVA e Codice Fiscale
+persona giuridica coincidono (stesso numero), ma non sempre — enti
+pubblici, cooperative sociali e altri soggetti possono avere un CF diverso
+dalla PIVA. Se l'operatore inserisce la PIVA e per quel soggetto differisce
+dal CF, la ricerca risponde "nessuna impresa trovata" — non un bug, va
+ripetuta con il CF reale del soggetto. UI (`view === 'cerca-domicilio'` e
+pannello test Impostazioni → Registro Imprese) avvisano di questo nel testo,
+ma nessuna validazione automatica può distinguere i due casi (stesso formato
+11 cifre) — l'unico modo è provare entrambi se il primo tentativo fallisce.
+
 ## ANPR C002 — pattern di sicurezza reale (verificato con dati veri, funzionante)
 
 Il servizio C002 "Servizio di comunicazione" (`AnprService`,
