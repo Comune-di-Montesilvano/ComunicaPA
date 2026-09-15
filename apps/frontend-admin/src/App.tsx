@@ -5197,13 +5197,18 @@ export function App(): React.JSX.Element {
             <h4 className="h5 fw-bold text-dark mb-3">Come lanciare un invio</h4>
             <p className="text-muted">
               Ogni campagna si crea dal wizard guidato — è l'unico percorso di creazione, garantisce le
-              validazioni corrette (formato CF/email, allegati obbligatori dove previsto).
+              validazioni corrette (formato CF/email, allegati obbligatori dove previsto). Due voci di menu,
+              a seconda di quanti destinatari e quanti canali servono:
             </p>
             <ol className="text-muted mb-0 ps-3">
-              <li className="mb-2"><strong>Invio singolo</strong> (un solo destinatario) o <strong>invio massivo</strong> (elenco da file CSV) — scelta dal menu "Nuovo Invio".</li>
-              <li className="mb-2">Scelta del canale e configurazione (allegati, oggetto/testo del messaggio).</li>
-              <li className="mb-2">Per l'invio massivo: caricamento del file e mappatura delle colonne (codice fiscale, nome, email/PEC, allegato...).</li>
-              <li className="mb-2">Riepilogo e verifica — è possibile inviare un invio di prova a un singolo destinatario prima del lancio definitivo.</li>
+              <li className="mb-2">
+                <strong>Invio Manuale</strong>: uno o più destinatari inseriti a mano, senza caricare un file.
+                Ogni riga può avere un canale diverso dalle altre (es. una PEC e due App IO nello stesso
+                lotto) — il sistema lancia una campagna per canale e le raggruppa insieme nella lista
+                "Campagne Massive", mostrate come un unico invio.
+              </li>
+              <li className="mb-2"><strong>Invio Massivo</strong>: elenco destinatari da file CSV, un solo canale per l'intero lancio — caricamento del file e mappatura delle colonne (codice fiscale, nome, email/PEC, allegato...).</li>
+              <li className="mb-2">In entrambi i casi: scelta/configurazione del canale (allegati, oggetto/testo del messaggio), poi riepilogo e verifica — è possibile inviare un invio di prova prima del lancio definitivo.</li>
               <li>Lancio della campagna: da qui in poi lo stato si segue dal dettaglio campagna o dalla lista "Campagne Massive".</li>
             </ol>
           </div>
