@@ -7395,7 +7395,7 @@ export function App(): React.JSX.Element {
       subject: wizSubject,
       body: wizBody,
       mailConfigId: wizMailConfigId,
-      protocolla: wizProtocolla,
+      protocolla: wizProtocolla || groupForcesProtocol(),
       wizStep: targetStep !== undefined ? targetStep : wizStep,
       wizRowCount: wizValidRows.length,
       wizSingleMode,
@@ -7541,7 +7541,8 @@ export function App(): React.JSX.Element {
             description: wizDesc,
             channelType: wizChannel,
             channelConfig,
-            isLegalValue: isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType) || wizIsLegalValue,
+            isLegalValue: isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType) || wizIsLegalValue || groupForcesLegalValue(),
+            groupId: wizGroupId ?? undefined,
           }),
         });
         if (!res.ok) throw new Error('Errore durante il salvataggio della bozza');
@@ -7556,7 +7557,7 @@ export function App(): React.JSX.Element {
             name: wizName,
             description: wizDesc,
             channelConfig,
-            isLegalValue: isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType) || wizIsLegalValue,
+            isLegalValue: isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType) || wizIsLegalValue || groupForcesLegalValue(),
           }),
         });
         if (!res.ok) throw new Error('Errore durante il salvataggio della bozza');
