@@ -13840,19 +13840,19 @@ export function App(): React.JSX.Element {
                   </h3>
                   <p className="small text-muted mb-0">
                     Persone fisiche (Codice Fiscale): ANPR (generalità e residenza), INAD (domicilio digitale) e App IO (servizi attivi).
-                    Persone giuridiche (Partita IVA): Registro Imprese (dati camerali, PEC).
+                    Persone giuridiche (Codice Fiscale): Registro Imprese (dati camerali, PEC) — la ricerca avviene per Codice Fiscale, non per Partita IVA: per la maggior parte delle imprese coincidono, ma per alcuni soggetti (es. enti pubblici, cooperative) possono essere diversi. Se la Partita IVA non dà esito, riprovare con il Codice Fiscale.
                   </p>
                 </div>
               </div>
 
               <div className="card shadow-sm p-4 mb-4 border-0 bg-white rounded-3">
-                <label className="form-label small fw-bold text-secondary text-uppercase tracking-wider">Codice Fiscale o Partita IVA</label>
+                <label className="form-label small fw-bold text-secondary text-uppercase tracking-wider">Codice Fiscale (persona fisica o giuridica)</label>
                 <div className="input-group input-group-sm" style={{ maxWidth: '600px' }}>
                   <span className="input-group-text bg-light border-end-0"><Contact size={16} className="text-muted" /></span>
                   <input
                     type="text"
                     className="form-control border-start-0 ps-0 fw-semibold"
-                    placeholder="CF persona fisica o Partita IVA"
+                    placeholder="CF persona fisica o CF/Partita IVA persona giuridica"
                     maxLength={16}
                     style={{ letterSpacing: '0.5px' }}
                     value={domicilioCf}
@@ -14008,7 +14008,7 @@ export function App(): React.JSX.Element {
                       </div>
                       <div className="card-body p-4 bg-white">
                         {!ri.success && <p className="small text-danger mb-0">{formatExternalErrorMessage(ri.message)}</p>}
-                        {ri.success && !ri.found && <p className="small text-muted mb-0">Nessuna impresa trovata per questa Partita IVA</p>}
+                        {ri.success && !ri.found && <p className="small text-muted mb-0">Nessuna impresa trovata: la ricerca avviene per Codice Fiscale, se il valore inserito è la Partita IVA e per questo soggetto è diversa dal CF riprovare con il Codice Fiscale</p>}
                         {ri.success && ri.found && !ri.data && (
                           <div className="d-flex flex-column gap-1">
                             {ri.denominazione && <span className="fw-semibold">{ri.denominazione}</span>}
@@ -15666,7 +15666,8 @@ export function App(): React.JSX.Element {
                               </fieldset>
                             ))}
                             <fieldset className="border rounded p-3">
-                              <legend className="float-none w-auto px-2 small fw-bold text-dark">Interroga Partita IVA (Produzione)</legend>
+                              <legend className="float-none w-auto px-2 small fw-bold text-dark">Interroga Codice Fiscale/Partita IVA (Produzione)</legend>
+                              <div className="form-text small text-muted mb-2">La ricerca avviene per Codice Fiscale — di norma coincide con la Partita IVA, ma non sempre (es. enti pubblici, cooperative).</div>
                               <input
                                 type="text"
                                 id="registro_imprese_dettaglio_piva"
@@ -15686,7 +15687,7 @@ export function App(): React.JSX.Element {
                               {settRegistroImpreseDettaglioResult && (
                                 <div className={`alert ${settRegistroImpreseDettaglioResult.success ? 'alert-success' : 'alert-danger'} mt-2 mb-0 small`} style={{ wordBreak: 'break-word' }}>
                                   {!settRegistroImpreseDettaglioResult.success && (settRegistroImpreseDettaglioResult.message || 'Errore sconosciuto')}
-                                  {settRegistroImpreseDettaglioResult.success && settRegistroImpreseDettaglioResult.found === false && 'Nessuna impresa trovata per questa Partita IVA.'}
+                                  {settRegistroImpreseDettaglioResult.success && settRegistroImpreseDettaglioResult.found === false && 'Nessuna impresa trovata: ricerca per Codice Fiscale, se diverso dalla Partita IVA inserita riprovare con il CF.'}
                                   {settRegistroImpreseDettaglioResult.success && settRegistroImpreseDettaglioResult.found && (
                                     <div className="d-flex flex-column gap-1">
                                       {settRegistroImpreseDettaglioResult.denominazione && <span className="fw-semibold">{settRegistroImpreseDettaglioResult.denominazione}</span>}
