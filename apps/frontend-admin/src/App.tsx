@@ -1308,6 +1308,22 @@ interface ManualRow {
   attachmentOverrides: Record<string, File>;
 }
 
+interface ManualChannelConfig {
+  mailConfigId: string;
+  taxonomyCode: string;
+  physicalCommunicationType: 'AR_REGISTERED_LETTER' | 'REGISTERED_LETTER_890';
+  postalServiceType: string;
+  postalReturnReceipt: boolean;
+  postalColorPrint: boolean;
+  postalDuplex: boolean;
+  postalAgolTipoNotificante: 'NonUtilizzato' | 'UfficialeGiudiziario' | 'Procuratore' | 'ParteIstante';
+  postalAgolSecondoTentativo: 'NonRichiedere' | 'Concordato' | 'Automatico';
+  postalAgolNomeNotificante: string;
+  postalAgolNumeroCronologico: string;
+  postalCodiceContratto: string;
+  ioServiceId: string;
+}
+
 const PIE_COLORS = ['var(--bi-navy)', 'var(--ms-purple-600)', 'var(--ms-gold-500)', 'var(--ms-green-600)', 'var(--bi-primary)'];
 
 // Colore stabile per chiave (mai per indice in array): un pie che si
@@ -1938,6 +1954,9 @@ export function App(): React.JSX.Element {
   // wizManualRows che si sta ri-editando (rimossa dalla lista finché non si
   // preme di nuovo "Aggiungi destinatario").
   const [wizManualEditingId, setWizManualEditingId] = useState<string | null>(null);
+  const [wizManualChannelConfigs, setWizManualChannelConfigs] = useState<
+    Partial<Record<'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL', ManualChannelConfig>>
+  >({});
 
   // Wizard States
   const [wizStep, setWizStep] = useState(1);
@@ -6517,6 +6536,48 @@ export function App(): React.JSX.Element {
   const isManualCfDuplicate = (cf: string, excludeId: string | null): boolean =>
     wizManualRows.some(r => r.id !== excludeId && r.cf === cf.toUpperCase());
 
+  const isFirstRowOfChannel = (channel: ManualRow['channel']): boolean =>
+    !wizManualChannelConfigs[channel];
+
+  const captureManualChannelConfig = (channel: ManualRow['channel']) => {
+    setWizManualChannelConfigs(prev => ({
+      ...prev,
+      [channel]: {
+        mailConfigId: wizMailConfigId,
+        taxonomyCode: wizTaxonomyCode,
+        physicalCommunicationType: wizPhysicalCommunicationType,
+        postalServiceType: wizPostalServiceType,
+        postalReturnReceipt: wizPostalReturnReceipt,
+        postalColorPrint: wizPostalColorPrint,
+        postalDuplex: wizPostalDuplex,
+        postalAgolTipoNotificante: wizPostalAgolTipoNotificante,
+        postalAgolSecondoTentativo: wizPostalAgolSecondoTentativo,
+        postalAgolNomeNotificante: wizPostalAgolNomeNotificante,
+        postalAgolNumeroCronologico: wizPostalAgolNumeroCronologico,
+        postalCodiceContratto: wizPostalCodiceContratto,
+        ioServiceId: wizAppIoServiceId,
+      },
+    }));
+  };
+
+  const applyManualChannelConfig = (channel: ManualRow['channel']) => {
+    const cfg = wizManualChannelConfigs[channel];
+    if (!cfg) return;
+    setWizMailConfigId(cfg.mailConfigId);
+    setWizTaxonomyCode(cfg.taxonomyCode);
+    setWizPhysicalCommunicationType(cfg.physicalCommunicationType);
+    setWizPostalServiceType(cfg.postalServiceType);
+    setWizPostalReturnReceipt(cfg.postalReturnReceipt);
+    setWizPostalColorPrint(cfg.postalColorPrint);
+    setWizPostalDuplex(cfg.postalDuplex);
+    setWizPostalAgolTipoNotificante(cfg.postalAgolTipoNotificante);
+    setWizPostalAgolSecondoTentativo(cfg.postalAgolSecondoTentativo);
+    setWizPostalAgolNomeNotificante(cfg.postalAgolNomeNotificante);
+    setWizPostalAgolNumeroCronologico(cfg.postalAgolNumeroCronologico);
+    setWizPostalCodiceContratto(cfg.postalCodiceContratto);
+    setWizAppIoServiceId(cfg.ioServiceId);
+  };
+
   const commitCurrentManualRow = (): boolean => {
     if (isManualRowFormInvalid) return false;
     const cf = singleCf.toUpperCase();
@@ -6524,6 +6585,7 @@ export function App(): React.JSX.Element {
       alert(`Codice Fiscale/P.IVA ${cf} già presente nella lista.`);
       return false;
     }
+    if (isFirstRowOfChannel(wizChannel)) captureManualChannelConfig(wizChannel);
     const id = wizManualEditingId ?? `row-${Date.now()}-${wizManualRows.length}`;
     const row = buildManualRowFromForm(id);
     setWizManualRows(prev => {
@@ -7006,6 +7068,7 @@ export function App(): React.JSX.Element {
     setSingleAppIoActive(false);
     setWizManualRows([]);
     setWizManualEditingId(null);
+    setWizManualChannelConfigs({});
   };
 
   const prefillWizardFrom = async (source: {
@@ -9718,7 +9781,7 @@ export function App(): React.JSX.Element {
                                   {row.inadForced ? (
                                     <span className="badge bg-info-subtle text-info-emphasis">Dirottato su PEC (INAD)</span>
                                   ) : (
-                                    <span className="text-muted small">{wizChannel}</span>
+                                    <span className="text-muted small">{row.channel}</span>
                                   )}
                                 </td>
                                 <td>
@@ -9873,6 +9936,7 @@ export function App(): React.JSX.Element {
                               if (newChan !== 'SEND' && newChan !== 'APP_IO' && !(wizAppIoMode !== 'none' && singleAppIoActive)) {
                                 setWizPaymentEnabled(false);
                               }
+                              if (!isFirstRowOfChannel(newChan)) applyManualChannelConfig(newChan);
                             }}
                           >
                             {(['EMAIL', 'PEC', 'APP_IO', 'SEND', 'POSTAL'] as const)
@@ -9943,7 +10007,13 @@ export function App(): React.JSX.Element {
                           </div>
                         )}
 
-                        {(wizChannel === 'EMAIL' || wizChannel === 'PEC') && (
+                        {!isFirstRowOfChannel(wizChannel) && (
+                          <div className="form-text small text-muted mb-3">
+                            Configurazione già impostata per questo canale (prima riga aggiunta) — verrà riusata.
+                          </div>
+                        )}
+
+                        {(wizChannel === 'EMAIL' || wizChannel === 'PEC') && isFirstRowOfChannel(wizChannel) && (
                           <div className="mb-3">
                             <label className="form-label small fw-bold text-dark mb-1">Server di Invio / Mittente *</label>
                             <SearchableSelect
@@ -9963,7 +10033,7 @@ export function App(): React.JSX.Element {
                           </div>
                         )}
 
-                        {wizChannel === 'APP_IO' && (
+                        {wizChannel === 'APP_IO' && isFirstRowOfChannel(wizChannel) && (
                           <div className="mb-3">
                             <label className="form-label small fw-bold text-dark mb-1">Servizio App IO Associato *</label>
                             <SearchableSelect
@@ -9976,7 +10046,7 @@ export function App(): React.JSX.Element {
                           </div>
                         )}
 
-                        {wizChannel === 'SEND' && (
+                        {wizChannel === 'SEND' && isFirstRowOfChannel(wizChannel) && (
                           <div className="d-flex flex-column gap-3">
                             <div>
                               <label className="form-label small fw-bold text-dark mb-1">Tassonomia SEND *</label>
@@ -10009,7 +10079,7 @@ export function App(): React.JSX.Element {
                           </div>
                         )}
 
-                        {wizChannel === 'POSTAL' && (() => {
+                        {wizChannel === 'POSTAL' && isFirstRowOfChannel(wizChannel) && (() => {
                           const activeProvider = postalProviders.find((p) => p.active);
                           const enabledTypes = activeProvider?.enabledServiceTypes ?? [];
                           const contrattiPerTipo = activeProvider?.contratti.filter((c) => wizPostalServiceType.startsWith(c.tipologia)) ?? [];
