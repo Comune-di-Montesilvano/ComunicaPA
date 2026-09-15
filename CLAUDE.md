@@ -150,6 +150,15 @@ docker compose exec backend node -e "const jwt=require('/app/node_modules/.pnpm/
 
 **Simulare un crash reale del backend per test (es. resume da checkpoint) — `docker kill` è bloccato dal classificatore di sicurezza di Claude Code.** Usare `docker compose restart backend`: il container non gestisce `SIGTERM` (nessun `enableShutdownHooks`), quindi il processo termina comunque bruscamente — stesso effetto pratico di un crash vero per testare codice di recovery, senza permessi distruttivi.
 
+**Test pdf-extractor (pytest) — deps NON nell'immagine dev, CI non le esegue.** `Dockerfile.dev` installa solo `requirements.txt` (prod), non `requirements-dev.txt`; `tests.yml` non gira affatto la suite Python. Per lanciarla: `docker cp services/pdf-extractor/requirements-dev.txt comunicapa-pdf-extractor-1:/svc/` + `docker cp services/pdf-extractor/tests comunicapa-pdf-extractor-1:/svc/tests` + `docker compose exec pdf-extractor pip install -r requirements-dev.txt` (una tantum, persiste finché il container non viene ricreato), poi `docker compose exec pdf-extractor python -m pytest tests/ -v`. Baseline: 1 fallimento noto pre-esistente (`test_extract_address_foreign_cap_embedded_in_street`), verificato anche su `main` pulito — non è una regressione.
+
+**Debug estrazione PDF/CSV reale fornito dall'utente**: `unzip -j <zip> "allegati/<file>.pdf" -d <scratch>` per estrarre un singolo file, `docker cp` dentro il container `pdf-extractor` (o `backend` per rubrica.csv/CSV), poi script Python/Node ad-hoc via `docker exec ... python -c "..."` per dumpare testo pagina/campi prima di scrivere un fix — verificare SEMPRE sul dato reale prima di ipotizzare la struttura da un riassunto o da un solo esempio. Pulire sempre i file temporanei dal container/host a fix completato.
+
+**Mai copiare valori reali dumpati (nome/CF/PIVA/PEC/email) in una fixture di test — nemmeno "solo per riprodurre la struttura del bug".**
+Quando si debugga un PDF/CSV reale fornito dall'utente, il testo dumpato va SEMPRE anonimizzato prima di incollarlo in una fixture — mai copiato verbatim. Ogni fixture che riproduce un bug trovato su un documento reale va scritta con dati fittizi (stesso pattern già in uso altrove nel file: `ROSSI MARIO`/`RSSMRA80A01H501U`, `ACME SRL`); il filename del documento (`DOC_NNNNNN_NNNNN.pdf`) non è PII e può restare come riferimento in un commento.
+
+**PyMuPDF (`fitz`) `get_text()` senza `sort=True` scrambla l'ordine di lettura su PDF multi-colonna.** Bug reale: un avviso con "1° RATA"/"2° RATA" affiancate sulla stessa pagina restituiva il testo in ordine "2° RATA" PRIMA di "1° RATA" — regex che cercano il primo match (prima rata, prima scadenza) prendevano il dato sbagliato senza errore visibile. Per qualunque testo PDF con possibile layout a colonne (side-by-side), usare `get_text(sort=True)` o verificare l'ordine con un dump diretto prima di scrivere regex posizionali.
+
 ## Configurazione runtime (settings in DB)
 
 `.env` contiene SOLO bootstrap (porte, postgres, secret, LDAP, `CITIZEN_ORIGIN`). Da `CITIZEN_ORIGIN` il backend deriva i link email/PEC (`<origine>/api/...`) e la Redirect URI OIDC — chiavi registry `system.*` marcate `bootstrapOnly`: risolte solo env→default, mai DB né UI. Tutto il resto (branding, SMTP, PEC, App IO, SEND, OIDC, retention) vive nella tabella `app_settings` — si configura dalla UI admin (menu Impostazioni). `AppSettingsService.get()` risolve cache→DB→env→default; i secret sono cifrati AES-256-GCM con chiave derivata da `JWT_SECRET` (cambiarlo = reinserire i secret da UI). Chiavi e fallback env: `apps/backend/src/settings/settings.registry.ts`.
@@ -256,6 +265,9 @@ resta sul vecchio codice finché qualcuno non fa pull+redeploy su Portainer.
 riuscita, non che prod la stia servendo.
 
 **Spostare un tag Git (delete+recreate) scollega la GitHub Release.**
+Prima di spostare: `gh release view <tag>` — se torna "release not found",
+nessuna Release è collegata e lo spostamento è sicuro senza bisogno di
+alcun fix successivo.
 Cancellare e ricreare un tag già associato a una Release lo trasforma in
 una release "draft"/`untagged-<sha>` (nascosta, scollegata). Fix: `gh
 release edit <tag> --tag <tag> --draft=false` — riattacca la release al
