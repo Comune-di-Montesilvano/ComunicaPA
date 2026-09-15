@@ -197,7 +197,7 @@ export class RegistroImpreseService {
       throw new Error(`Registro Imprese ricerca fallita: HTTP ${response.status} — ${text.slice(0, 500)}`);
     }
 
-    let posizioni: RegistroImpreseRicercaPosizione[] = [];
+    let posizioni: RegistroImpreseRicercaPosizione[];
     try {
       posizioni = parseRicercaXml(text);
     } catch {
