@@ -29,9 +29,16 @@ import {
   cleanupChunkedUpload,
   initChunkedUpload,
   isValidChunkIndex,
+  isValidUploadId,
   safeChunkUploadDir,
 } from '../campaigns/chunked-upload.util.js';
 import { getEnrichmentResultCsv } from './enrichment-paths.js';
+import {
+  addToUploadBatch,
+  cleanupUploadBatch,
+  initUploadBatch,
+  listUploadBatchFiles,
+} from './enrichment-batch-upload.util.js';
 
 @Controller('admin/enrichment')
 export class EnrichmentController {
@@ -86,30 +93,71 @@ export class EnrichmentController {
     return { ok: true };
   }
 
+  // ── Batch multi-ZIP: più pezzi "attigui" dello stesso tracciato Maggioli ──
+  // spezzato per problemi di download (vedi CLAUDE.md). Ogni pezzo passa dal
+  // chunked-upload standard (init/chunk sopra), poi `upload/complete/:uploadId`
+  // lo assembla e lo accoda al batch invece di creare subito il job — la
+  // creazione avviene una sola volta, con `upload/batch/:batchId/complete`,
+  // dopo che tutti i pezzi sono stati caricati.
+
+  @Post('upload/batch/init')
+  @Roles('user', 'admin')
+  initBatch(): { batchId: string } {
+    return { batchId: initUploadBatch() };
+  }
+
   @Post('upload/complete/:uploadId')
   @Roles('user', 'admin')
   @HttpCode(HttpStatus.OK)
   async completeUpload(
     @Param('uploadId') uploadId: string,
-    @Body() body: { traceFormat?: TraceFormat; searchPayments?: boolean },
-    @Req() req: Request & { user: JwtOperatorPayload },
-  ): Promise<{ jobId?: string; blocked?: boolean; message?: string }> {
+    @Body() body: { batchId?: string },
+  ): Promise<{ ok?: true; blocked?: boolean; message?: string }> {
     try {
-      if (!body.traceFormat || !Object.values(TraceFormat).includes(body.traceFormat)) {
-        return { blocked: true, message: 'Formato tracciato non riconosciuto' };
+      if (!body.batchId || !isValidUploadId(body.batchId)) {
+        return { blocked: true, message: 'batchId mancante o non valido' };
       }
       const { path, filename } = await assembleChunkedUpload(uploadId);
-      return await this.svc.createJob({
-        zipPath: path,
-        sourceFilename: filename,
-        traceFormat: body.traceFormat,
-        searchPayments: body.searchPayments ?? true,
-        createdBy: req.user.username,
-      });
+      addToUploadBatch(body.batchId, path, filename);
+      return { ok: true };
     } catch (err: any) {
       return { blocked: true, message: err?.message ?? 'Errore durante il riassemblaggio dello ZIP' };
     } finally {
       cleanupChunkedUpload(uploadId);
+    }
+  }
+
+  @Post('upload/batch/:batchId/complete')
+  @Roles('user', 'admin')
+  @HttpCode(HttpStatus.OK)
+  async completeBatch(
+    @Param('batchId') batchId: string,
+    @Body() body: { traceFormat?: TraceFormat; searchPayments?: boolean },
+    @Req() req: Request & { user: JwtOperatorPayload },
+  ): Promise<{ jobId?: string; blocked?: boolean; message?: string }> {
+    try {
+      if (!isValidUploadId(batchId)) {
+        return { blocked: true, message: 'batchId non valido' };
+      }
+      if (!body.traceFormat || !Object.values(TraceFormat).includes(body.traceFormat)) {
+        return { blocked: true, message: 'Formato tracciato non riconosciuto' };
+      }
+      const files = listUploadBatchFiles(batchId);
+      if (files.length === 0) {
+        return { blocked: true, message: 'Nessun file caricato per questo batch' };
+      }
+      const sourceFilename =
+        files.length === 1 ? files[0].filename : `${files.length} file: ${files.map((f) => f.filename).join(', ')}`.slice(0, 512);
+      return await this.svc.createJob({
+        zipPaths: files.map((f) => f.path),
+        zipFilenames: files.map((f) => f.filename),
+        sourceFilename,
+        traceFormat: body.traceFormat,
+        searchPayments: body.searchPayments ?? true,
+        createdBy: req.user.username,
+      });
+    } finally {
+      cleanupUploadBatch(batchId);
     }
   }
 

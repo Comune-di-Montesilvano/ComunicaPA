@@ -1593,7 +1593,7 @@ export function App(): React.JSX.Element {
     createdAt: string;
   }
   const [enrichJobs, setEnrichJobs] = useState<EnrichmentJobItem[]>([]);
-  const [enrichFile, setEnrichFile] = useState<File | null>(null);
+  const [enrichFiles, setEnrichFiles] = useState<File[]>([]);
   const [enrichSearchPayments, setEnrichSearchPayments] = useState(true);
   const [enrichUploading, setEnrichUploading] = useState(false);
   const [enrichUploadProgress, setEnrichUploadProgress] = useState(0);
@@ -3377,24 +3377,45 @@ export function App(): React.JSX.Element {
   }, [enrichJobs, enrichAwaitingConversionJobId]);
 
   const handleEnrichUpload = async () => {
-    if (!enrichFile || !token) return;
+    if (enrichFiles.length === 0 || !token) return;
     setEnrichUploading(true);
     setEnrichError(null);
     setEnrichUploadProgress(0);
     try {
-      const result = await uploadFileInChunks(
-        `${ADMIN_API_BASE}/enrichment/upload`,
-        token,
-        enrichFile,
-        enrichFile.name,
-        (loaded) => setEnrichUploadProgress(Math.round((loaded / enrichFile.size) * 100)),
-        undefined,
-        { traceFormat: 'MAGGIOLI', searchPayments: enrichSearchPayments },
-      );
+      const batchInitRes = await apiFetch('/enrichment/upload/batch/init', { method: 'POST' });
+      if (!batchInitRes.ok) throw new Error('Errore inizializzazione upload');
+      const { batchId } = await batchInitRes.json() as { batchId: string };
+
+      const totalSize = enrichFiles.reduce((sum, f) => sum + f.size, 0);
+      let loadedBefore = 0;
+      for (const file of enrichFiles) {
+        const baseLoaded = loadedBefore;
+        const result = await uploadFileInChunks(
+          `${ADMIN_API_BASE}/enrichment/upload`,
+          token,
+          file,
+          file.name,
+          (loaded) => setEnrichUploadProgress(Math.round(((baseLoaded + loaded) / totalSize) * 100)),
+          undefined,
+          { batchId },
+        );
+        if (result.blocked) {
+          throw new Error(result.message || `Errore caricamento "${file.name}"`);
+        }
+        loadedBefore += file.size;
+      }
+
+      const completeRes = await apiFetch(`/enrichment/upload/batch/${batchId}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ traceFormat: 'MAGGIOLI', searchPayments: enrichSearchPayments }),
+      });
+      if (!completeRes.ok) throw new Error('Errore completamento upload');
+      const result = await completeRes.json();
       if (result.blocked) {
         setEnrichError(result.message || 'Tracciato non valido');
       } else {
-        setEnrichFile(null);
+        setEnrichFiles([]);
         await fetchEnrichJobs();
         if (result.jobId) streamEnrichJobLog(result.jobId);
       }
@@ -14565,6 +14586,10 @@ export function App(): React.JSX.Element {
                 pag_indice.csv + cartella allegati/). I PDF vengono analizzati per
                 estrarre indirizzi e dati PagoPA; al termine puoi scaricare il CSV
                 arricchito o avviare direttamente una bozza di campagna nel wizard.
+                Se il download del tracciato è arrivato spezzato in più ZIP, puoi
+                selezionarli tutti insieme: verranno trattati come un unico tracciato
+                (devono avere lo stesso formato/intestazione colonne, altrimenti il
+                caricamento viene bloccato).
               </p>
 
               <div className="card shadow-sm p-4 mb-4">
@@ -14576,13 +14601,21 @@ export function App(): React.JSX.Element {
                   </select>
                 </div>
                 <div className="mb-3">
-                  <label className="form-label small fw-bold">File ZIP</label>
+                  <label className="form-label small fw-bold">File ZIP (uno o più pezzi dello stesso tracciato)</label>
                   <input
                     type="file"
                     accept=".zip"
+                    multiple
                     className="form-control form-control-sm"
-                    onChange={(e) => setEnrichFile(e.target.files?.[0] || null)}
+                    onChange={(e) => setEnrichFiles(Array.from(e.target.files || []))}
                   />
+                  {enrichFiles.length > 0 && (
+                    <ul className="small text-muted mb-0 mt-2 ps-3">
+                      {enrichFiles.map((f) => (
+                        <li key={f.name}>{f.name} ({(f.size / 1024 / 1024).toFixed(1)} MB)</li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
                 <div className="form-check mb-3">
                   <input
@@ -14600,7 +14633,7 @@ export function App(): React.JSX.Element {
                 <button
                   className="btn btn-primary btn-sm"
                   type="button"
-                  disabled={!enrichFile || enrichUploading}
+                  disabled={enrichFiles.length === 0 || enrichUploading}
                   onClick={handleEnrichUpload}
                 >
                   {enrichUploading ? (
