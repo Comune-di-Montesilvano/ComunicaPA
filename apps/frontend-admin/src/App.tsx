@@ -6536,6 +6536,12 @@ export function App(): React.JSX.Element {
   const isManualCfDuplicate = (cf: string, excludeId: string | null): boolean =>
     wizManualRows.some(r => r.id !== excludeId && r.cf === cf.toUpperCase());
 
+  const groupForcesLegalValue = (): boolean =>
+    wizManualRows.some(r => isChannelAlwaysLegalValue(r.channel, wizManualChannelConfigs[r.channel]?.postalServiceType));
+
+  const groupForcesProtocol = (): boolean =>
+    wizManualRows.some(r => r.channel === 'SEND');
+
   const isFirstRowOfChannel = (channel: ManualRow['channel']): boolean =>
     !wizManualChannelConfigs[channel];
 
