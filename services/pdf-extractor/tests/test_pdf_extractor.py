@@ -19,6 +19,14 @@ def test_extract_address_residenza_label(pdf_residenza_label):
     assert addr.indirizzo == "VIA DEI TEATINI 3"
 
 
+def test_extract_address_sede_label(pdf_sede_label):
+    addr = PdfExtractor(pdf_sede_label).extract_address()
+    assert addr.indirizzo == "VIA MARCO POLO 12"
+    assert addr.cap == "65126"
+    assert addr.comune == "PESCARA"
+    assert addr.provincia == "PE"
+
+
 def test_extract_address_missing_raises(pdf_no_address):
     with pytest.raises(AddressExtractionError):
         PdfExtractor(pdf_no_address).extract_address()
@@ -178,3 +186,17 @@ def test_extract_payment_rate_scadenze_non_ordinate_warning(pdf_rate_scadenze_no
     assert totale is None
     assert len(rate) == 2
     assert any("non in ordine crescente" in w for w in warnings)
+
+
+def test_extract_payment_due_rate_stessa_pagina(pdf_due_rate_stessa_pagina):
+    """Bug reale: 2 QR/etichette sulla stessa pagina — entrambe le rate vanno
+    estratte e abbinate correttamente nonostante il reading-order scramblato
+    (prima del fix: solo 1 rata estratta, warning falsi di incoerenza)."""
+    totale, rate, warnings = PdfExtractor(pdf_due_rate_stessa_pagina).extract_payment()
+    assert totale is None
+    assert len(rate) == 2
+    assert rate[0].numero_avviso == "301000000000000001"
+    assert rate[0].scadenza == "31/10/2026"
+    assert rate[1].numero_avviso == "301000000000000002"
+    assert rate[1].scadenza == "30/11/2026"
+    assert not any("QR ma" in w and "etichette rata" in w for w in warnings)

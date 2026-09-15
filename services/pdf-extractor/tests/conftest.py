@@ -34,6 +34,14 @@ def pdf_residenza_label() -> bytes:
 
 
 @pytest.fixture
+def pdf_sede_label() -> bytes:
+    """Template avviso PG: 'Sede:CAP comune provincia via' su una riga (verificato dal vivo)."""
+    return _make_pdf(
+        ["Contribuente:PIZZANUOVA SRLS\nSede:65126 PESCARA PE VIA MARCO POLO 12\nOggetto: Saldo TARI 2026\n"]
+    )
+
+
+@pytest.fixture
 def pdf_no_address() -> bytes:
     return _make_pdf(["Documento senza indirizzo utile\n"])
 
@@ -210,6 +218,36 @@ def _build_multi_page_pdf(pages_spec: list[tuple[str, str, str]]) -> bytes:
         buf = io.BytesIO()
         img.save(buf, format="PNG")
         page.insert_image(fitz.Rect(50, 150, 250, 350), stream=buf.getvalue())
+    out = doc.tobytes()
+    doc.close()
+    return out
+
+
+@pytest.fixture
+def pdf_due_rate_stessa_pagina() -> bytes:
+    """Bug reale (verificato dal vivo su tracciato 'TARI saldo'): 2 rate
+    affiancate sulla STESSA pagina, 2 QR distinti. Contenuto inserito in
+    ordine "2° prima di 1°" per riprodurre il reading-order scramblato che
+    get_text() (senza sort=True) produce su layout multi-colonna reali —
+    l'abbinamento QR<->etichetta deve comunque risultare corretto (1° QR
+    per bbox = 1° RATA in lettura visiva sort=True)."""
+    doc = fitz.open()
+    page = doc.new_page()
+    # 2° RATA (colonna destra) inserita PRIMA nello stream di contenuto.
+    page.insert_textbox(fitz.Rect(320, 50, 570, 90), "2° RATA entro il 30/11/2026\n", fontsize=11)
+    page.insert_textbox(fitz.Rect(320, 100, 570, 130), "CBILL\n", fontsize=11)
+    img2 = qrcode.make("PAGOPA|002|301000000000000002|00123456789|26200")
+    buf2 = io.BytesIO()
+    img2.save(buf2, format="PNG")
+    page.insert_image(fitz.Rect(320, 150, 520, 350), stream=buf2.getvalue())
+    # 1° RATA (colonna sinistra) inserita DOPO — nel documento reale finisce
+    # visivamente a sinistra ma più avanti nello stream.
+    page.insert_textbox(fitz.Rect(50, 50, 300, 90), "1° RATA entro il 31/10/2026\n", fontsize=11)
+    page.insert_textbox(fitz.Rect(50, 100, 300, 130), "CBILL\n", fontsize=11)
+    img1 = qrcode.make("PAGOPA|002|301000000000000001|00123456789|26200")
+    buf1 = io.BytesIO()
+    img1.save(buf1, format="PNG")
+    page.insert_image(fitz.Rect(50, 150, 250, 350), stream=buf1.getvalue())
     out = doc.tobytes()
     doc.close()
     return out
