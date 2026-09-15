@@ -7614,6 +7614,16 @@ export function App(): React.JSX.Element {
     setWizSingleAttachmentSlots(prev => prev.map(s => (s.id === id ? { ...s, ...patch } : s)));
   };
 
+  const setManualRowOverride = (rowId: string, slotId: string, file: File | null) => {
+    setWizManualRows(prev => prev.map(r => {
+      if (r.id !== rowId) return r;
+      const overrides = { ...r.attachmentOverrides };
+      if (file) overrides[slotId] = file;
+      else delete overrides[slotId];
+      return { ...r, attachmentOverrides: overrides };
+    }));
+  };
+
   const handleWizUploadAttachments = async (): Promise<void> => {
     setWizSending(true);
     try {
@@ -10067,9 +10077,14 @@ export function App(): React.JSX.Element {
                       {/* Allegati */}
                       <div className="card shadow-sm border-0 rounded-3 p-3 mb-3 bg-white">
                         <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-2">
-                          Allegati
+                          {wizManualRows.length >= 1 ? 'Allegati (comune a tutte le righe)' : 'Allegati'}
                           {(wizChannel === 'SEND' || wizChannel === 'POSTAL') && <span className="text-danger"> *</span>}
                         </h5>
+                        {wizManualRows.length >= 1 && (
+                          <p className="small text-muted mb-2">
+                            Questi file si applicano di default a ogni destinatario del lotto. Puoi caricare un file diverso per una singola riga già aggiunta dalla tabella sottostante (colonna "Allegato").
+                          </p>
+                        )}
 
                         {wizChannel === 'SEND' && (
                           <div className="alert alert-info d-flex align-items-start gap-2 mb-3">
