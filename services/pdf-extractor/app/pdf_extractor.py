@@ -43,6 +43,17 @@ class PdfExtractor:
         re.IGNORECASE,
     )
 
+    # Template TARI saldo persona fisica: "Residenza:65010 SPOLTORE PE VIA
+    # SANTA LUCIA 42 Oggetto:..." — stessa struttura one-line di _RE_SEDE_LABEL
+    # (CAP comune provincia PRIMA della via) ma con label "Residenza" invece
+    # di "Sede" e nessun "Mail:" a chiudere la riga (a differenza della
+    # variante multi-riga già coperta da _RE_RESIDENZA_LABEL) — verificato dal
+    # vivo, DOC_733465_147355.pdf.
+    _RE_RESIDENZA_INLINE_LABEL = re.compile(
+        r"Residenza\s*:\s*(\d{5})\s+(.+?)\s+([A-Z]{2})\s+(.+?)\s*(?:Oggetto\s*:|\n|$)",
+        re.IGNORECASE,
+    )
+
     # Regex testo per fallback (quando il QR non è leggibile)
     _RE_CBILL = re.compile(
         r"[A-Z0-9]{5}\s+((?:\d[\d ]{16,20}\d))\s+(\d{11})",
@@ -125,6 +136,16 @@ class PdfExtractor:
             )
 
         m = self._RE_SEDE_LABEL.search(text)
+        if m:
+            return AddressData(
+                indirizzo=re.sub(r"\s+", " ", m.group(4)).strip(),
+                cap=m.group(1).strip(),
+                comune=m.group(2).strip(),
+                provincia=m.group(3).strip(),
+                stato_estero="",
+            )
+
+        m = self._RE_RESIDENZA_INLINE_LABEL.search(text)
         if m:
             return AddressData(
                 indirizzo=re.sub(r"\s+", " ", m.group(4)).strip(),

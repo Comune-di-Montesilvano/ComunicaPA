@@ -42,6 +42,22 @@ def pdf_sede_label() -> bytes:
 
 
 @pytest.fixture
+def pdf_residenza_inline_label() -> bytes:
+    """Template TARI saldo persona fisica: 'Residenza:CAP comune provincia via'
+    su una riga sola (stessa struttura di Sede: ma per persona fisica, non PG)
+    — verificato dal vivo su un documento reale, nessun 'Mail:' a differenza
+    della variante multi-riga già coperta da pdf_residenza_label."""
+    return _make_pdf(
+        [
+            "ROSSI MARIO Codice Utente 999999 VIA SANTA LUCIA 42 65010 SPOLTORE PE "
+            "Contribuente:ROSSI MARIO nato il:01/01/1970 a PESCARA - PE "
+            "C.F.:RSSMRA70A01G482X Residenza:65010 SPOLTORE PE VIA SANTA LUCIA 42 "
+            "Oggetto: Saldo TARI 2026 - Avviso di pagamento\n"
+        ]
+    )
+
+
+@pytest.fixture
 def pdf_no_address() -> bytes:
     return _make_pdf(["Documento senza indirizzo utile\n"])
 
