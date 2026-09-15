@@ -1279,6 +1279,33 @@ type ExternalClientItem = {
   lastUsedAt: string | null;
 };
 
+interface ManualRow {
+  id: string;
+  cf: string;
+  surname: string;
+  firstName: string;
+  email: string;
+  pec: string;
+  address: string;
+  municipality: string;
+  zip: string;
+  province: string;
+  country: string;
+  paymentIuv: string;
+  paymentImporto: string;
+  paymentScadenza: string;
+  // Snapshot del risultato Verifica Anagrafica al momento dell'Aggiungi,
+  // per mostrare il badge dirottamento nella tabella senza dover rifare
+  // la query quando si sfoglia la lista.
+  inadForced: boolean;
+  inadAddress: string;
+  registroImpreseNoPec: boolean;
+  appIoActive: boolean;
+  // key = id dello slot in wizSingleAttachmentSlots, value = file diverso
+  // dal default per questa riga.
+  attachmentOverrides: Record<string, File>;
+}
+
 const PIE_COLORS = ['var(--bi-navy)', 'var(--ms-purple-600)', 'var(--ms-gold-500)', 'var(--ms-green-600)', 'var(--bi-primary)'];
 
 // Colore stabile per chiave (mai per indice in array): un pie che si
@@ -1904,6 +1931,11 @@ export function App(): React.JSX.Element {
   const [singleInadAddress, setSingleInadAddress] = useState('');
   const [singleRegistroImpreseNoPec, setSingleRegistroImpreseNoPec] = useState(false);
   const [singleAppIoActive, setSingleAppIoActive] = useState(false);
+  const [wizManualRows, setWizManualRows] = useState<ManualRow[]>([]);
+  // null = form sta componendo una riga NUOVA; altrimenti id della riga in
+  // wizManualRows che si sta ri-editando (rimossa dalla lista finché non si
+  // preme di nuovo "Aggiungi destinatario").
+  const [wizManualEditingId, setWizManualEditingId] = useState<string | null>(null);
 
   // Wizard States
   const [wizStep, setWizStep] = useState(1);
@@ -8490,7 +8522,7 @@ export function App(): React.JSX.Element {
             onClick={(e) => { e.preventDefault(); resetWizard(); setWizSingleMode(true); setView('invio-massivo-wizard'); }}
           >
             <Send />
-            <span>Invio Singolo</span>
+            <span>Invio Manuale</span>
           </a>
           <a
             className={`bo-nav-item ${view === 'invio-massivo-wizard' && !wizSingleMode ? 'is-active' : ''}`}
