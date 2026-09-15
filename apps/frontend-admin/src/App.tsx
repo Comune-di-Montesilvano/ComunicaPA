@@ -7138,6 +7138,9 @@ export function App(): React.JSX.Element {
     setWizManualRows([]);
     setWizManualEditingId(null);
     setWizManualChannelConfigs({});
+    setWizGroupChannels([]);
+    setWizGroupIndex(0);
+    setWizGroupId(null);
   };
 
   const prefillWizardFrom = async (source: {
@@ -11731,6 +11734,14 @@ export function App(): React.JSX.Element {
               {/* STEP 4: TEMPLATE & ANTEPRIMA */}
               {wizStep === 4 && (
                 <>
+                  {wizGroupChannels.length > 0 && (
+                    <div className="alert alert-info d-flex align-items-center gap-2 mb-3">
+                      <Info size={16} />
+                      <div>
+                        Lancio multicanale: canale <strong>{wizChannel}</strong> ({wizGroupIndex + 1} di {wizGroupChannels.length}) — {wizGroupChannels.join(', ')}.
+                      </div>
+                    </div>
+                  )}
                   <div className="mb-3 pb-3 border-bottom d-flex justify-content-between">
                     <button className="btn btn-outline-secondary" onClick={() => setWizStep(wizSingleMode ? 1 : 3)}>
                       <ArrowLeft className="me-1" size={16} /> Indietro
@@ -12289,6 +12300,15 @@ export function App(): React.JSX.Element {
               {wizStep === 6 && (
                 <div>
                   <h4 className="h6 fw-bold text-dark mb-3"><CheckCircle2 className="text-success me-2" size={16} />Passo {wizDisplayStep(6, wizSingleMode)}: Anteprima e Invio</h4>
+
+                  {wizGroupChannels.length > 0 && (
+                    <div className="alert alert-info d-flex align-items-center gap-2 mb-3">
+                      <Info size={16} />
+                      <div>
+                        Lancio multicanale: canale <strong>{wizChannel}</strong> ({wizGroupIndex + 1} di {wizGroupChannels.length}) — {wizGroupChannels.join(', ')}.
+                      </div>
+                    </div>
+                  )}
 
                   {wizChannel === 'SEND' && !wizSingleMode && (
                     <div className={`alert ${wizSignatureJobStatus?.status === 'done' && wizSignatureJobStatus.invalidCount === 0 ? 'alert-success' : 'alert-warning'} d-flex align-items-center gap-2 mb-3`}>
