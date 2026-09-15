@@ -43,6 +43,31 @@ def test_extract_address_residenza_vuota_fallback_header(pdf_residenza_vuota_fal
     assert addr.provincia == "PE"
 
 
+def test_extract_address_sede_label_cap_4_cifre(pdf_sede_label_cap_4_cifre):
+    addr = PdfExtractor(pdf_sede_label_cap_4_cifre).extract_address()
+    assert addr.cap == "06034"
+    assert addr.comune == "FOLIGNO"
+    assert addr.provincia == "PG"
+    assert addr.indirizzo == "VIA FEDELI 2/A"
+
+
+def test_extract_address_header_block_after_contribuente(pdf_header_block_after_contribuente):
+    addr = PdfExtractor(pdf_header_block_after_contribuente).extract_address()
+    assert addr.indirizzo == "VIA SILVINO DI GIOVANNI 12/16"
+    assert addr.cap == "65015"
+    assert addr.comune == "MONTESILVANO"
+    assert addr.provincia == "PE"
+
+
+def test_extract_address_residenza_estero_block(pdf_residenza_estero_block):
+    addr = PdfExtractor(pdf_residenza_estero_block).extract_address()
+    assert addr.comune == "LONDRA"
+    assert addr.stato_estero == "Regno Unito"
+    assert addr.cap == ""
+    assert addr.provincia == ""
+    assert "TEST HOUSE" in addr.indirizzo
+
+
 def test_extract_address_missing_raises(pdf_no_address):
     with pytest.raises(AddressExtractionError):
         PdfExtractor(pdf_no_address).extract_address()

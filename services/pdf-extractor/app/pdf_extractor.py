@@ -1,5 +1,6 @@
 import io
 import re
+import unicodedata
 from typing import Optional
 
 import pdfplumber
@@ -9,6 +10,83 @@ from app.models import AddressData, PaymentData
 
 class AddressExtractionError(Exception):
     pass
+
+
+# Elenco paesi (denominazione italiana) — copia di COUNTRIES in
+# packages/shared-types/src/index.ts (usato da matchCountry() lato
+# TS/frontend). Duplicato qui perché pdf-extractor è un microservizio
+# Python separato, nessun runtime condiviso col backend Node — mantenere
+# allineato se la lista TS cambia.
+_COUNTRIES = [
+    'Italia',
+    'Afghanistan', 'Albania', 'Algeria', 'Andorra', 'Angola', 'Antigua e Barbuda',
+    'Arabia Saudita', 'Argentina', 'Armenia', 'Australia', 'Austria', 'Azerbaigian',
+    'Bahamas', 'Bahrein', 'Bangladesh', 'Barbados', 'Belgio', 'Belize', 'Benin',
+    'Bhutan', 'Bielorussia', 'Birmania', 'Bolivia', 'Bosnia ed Erzegovina',
+    'Botswana', 'Brasile', 'Brunei', 'Bulgaria', 'Burkina Faso', 'Burundi',
+    'Cambogia', 'Camerun', 'Canada', 'Capo Verde', 'Ciad', 'Cile', 'Cina',
+    'Cipro', 'Città del Vaticano', 'Colombia', 'Comore', 'Corea del Nord',
+    'Corea del Sud', "Costa d'Avorio", 'Costa Rica', 'Croazia', 'Cuba',
+    'Danimarca', 'Dominica', 'Ecuador', 'Egitto', 'El Salvador',
+    'Emirati Arabi Uniti', 'Eritrea', 'Estonia', 'Eswatini', 'Etiopia', 'Figi',
+    'Filippine', 'Finlandia', 'Francia', 'Gabon', 'Gambia', 'Georgia',
+    'Germania', 'Ghana', 'Giamaica', 'Giappone', 'Gibuti', 'Giordania',
+    'Grecia', 'Grenada', 'Guatemala', 'Guinea', 'Guinea-Bissau',
+    'Guinea Equatoriale', 'Guyana', 'Haiti', 'Honduras', 'India', 'Indonesia',
+    'Iran', 'Iraq', 'Irlanda', 'Islanda', 'Isole Marshall', 'Isole Salomone',
+    'Israele', 'Kazakistan', 'Kenya', 'Kirghizistan', 'Kiribati', 'Kosovo',
+    'Kuwait', 'Laos', 'Lesotho', 'Lettonia', 'Libano', 'Liberia', 'Libia',
+    'Liechtenstein', 'Lituania', 'Lussemburgo', 'Macedonia del Nord',
+    'Madagascar', 'Malawi', 'Malaysia', 'Maldive', 'Mali', 'Malta', 'Marocco',
+    'Mauritania', 'Mauritius', 'Messico', 'Micronesia', 'Moldavia', 'Monaco',
+    'Mongolia', 'Montenegro', 'Mozambico', 'Namibia', 'Nauru', 'Nepal',
+    'Nicaragua', 'Niger', 'Nigeria', 'Norvegia', 'Nuova Zelanda', 'Oman',
+    'Paesi Bassi', 'Pakistan', 'Palau', 'Panama', 'Papua Nuova Guinea',
+    'Paraguay', 'Perù', 'Polonia', 'Portogallo', 'Qatar', 'Regno Unito',
+    'Repubblica Ceca', 'Repubblica Centrafricana', 'Repubblica del Congo',
+    'Repubblica Democratica del Congo', 'Repubblica Dominicana', 'Romania',
+    'Ruanda', 'Russia', 'Saint Kitts e Nevis', 'Saint Vincent e Grenadine',
+    'Samoa', 'San Marino', "Sant'Elena", 'Santa Lucia',
+    'São Tomé e Príncipe', 'Senegal', 'Serbia', 'Seychelles', 'Sierra Leone',
+    'Singapore', 'Siria', 'Slovacchia', 'Slovenia', 'Somalia', 'Spagna',
+    'Sri Lanka', "Stati Uniti d'America", 'Sudafrica', 'Sudan',
+    'Sudan del Sud', 'Suriname', 'Svezia', 'Svizzera', 'Tagikistan', 'Taiwan',
+    'Tanzania', 'Thailandia', 'Timor Est', 'Togo', 'Tonga',
+    'Trinidad e Tobago', 'Tunisia', 'Turchia', 'Turkmenistan', 'Tuvalu',
+    'Ucraina', 'Uganda', 'Ungheria', 'Uruguay', 'Uzbekistan', 'Vanuatu',
+    'Venezuela', 'Vietnam', 'Yemen', 'Zambia', 'Zimbabwe',
+]
+
+
+def _normalize_country(value: str) -> str:
+    """Stessa normalizzazione di normalizeCountryName() in index.ts —
+    lowercase, apostrofi rimossi, diacritici rimossi, spazi rimossi."""
+    s = value.strip().lower()
+    s = s.replace("'", "").replace("’", "")
+    s = unicodedata.normalize("NFD", s)
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return re.sub(r"\s+", "", s)
+
+
+_COUNTRY_INDEX = {_normalize_country(c): c for c in _COUNTRIES}
+
+
+def _match_country_suffix(line: str) -> Optional[tuple[str, str]]:
+    """Cerca il più lungo suffisso (per parole) di `line` che combacia con
+    un paese noto. Ritorna (comune, stato_canonico) o None se nessun paese
+    riconosciuto — usato per "Residenza:<comune> <stato>" senza CAP, dove
+    comune e stato sono scritti per intero sulla stessa riga senza un
+    separatore univoco tra i due."""
+    words = line.split()
+    for k in range(len(words), 0, -1):
+        candidate = " ".join(words[len(words) - k:])
+        norm = _normalize_country(candidate)
+        canonical = _COUNTRY_INDEX.get(norm)
+        if canonical:
+            comune = " ".join(words[: len(words) - k]).strip()
+            if comune:
+                return comune, canonical
+    return None
 
 
 class PdfExtractor:
@@ -38,18 +116,31 @@ class PdfExtractor:
     # Template avviso PG (es. Sede legale ditta/società):
     # "Sede:65126 PESCARA PE VIA MARCO POLO 12" — CAP comune provincia PRIMA
     # della via (ordine opposto a "Residente in:"), tutto su una riga.
+    # CAP a {4,5} cifre: bug reale (DOC_745021_149206.pdf, "Sede:6034 FOLIGNO
+    # PG...") — CAP italiano vero 06034, lo zero iniziale si perde a monte
+    # (probabile campo numerico nel sistema sorgente) — vedi _pad_cap.
     _RE_SEDE_LABEL = re.compile(
-        r"Sede\s*:\s*(\d{5})\s+(.+?)\s+([A-Z]{2})\s+(.+?)\s*(?:Oggetto\s*:|\n|$)",
+        r"Sede\s*:\s*(\d{4,5})\s+(.+?)\s+([A-Z]{2})\s+(.+?)\s*(?:Oggetto\s*:|\n|$)",
         re.IGNORECASE,
     )
 
     # Blocco intestazione (sempre presente in cima al documento, PF e PG):
     # "NOME\nCodice Utente NNN\nVIA ... N\nCAP COMUNE PROV\nContribuente:..."
-    # Fallback finale, usato quando l'etichetta specifica (Residenza:/Sede:)
-    # è vuota — bug reale: "Residenza:\nMail:..." senza valore, indirizzo
-    # comunque presente in intestazione.
+    # Fallback usato quando l'etichetta specifica (Residenza:/Sede:) è vuota
+    # — bug reale: "Residenza:\nMail:..." senza valore, indirizzo comunque
+    # presente in intestazione. CAP a {4,5} cifre, vedi _RE_SEDE_LABEL sopra.
     _RE_HEADER_BLOCK = re.compile(
-        r"(.+?)\n(\d{5})\s+(.+?)\s+([A-Z]{2})\s*\n\s*Contribuente\s*:",
+        r"(.+?)\n(\d{4,5})\s+(.+?)\s+([A-Z]{2})\s*\n\s*Contribuente\s*:",
+        re.IGNORECASE,
+    )
+
+    # Variante del blocco intestazione con via/CAP DOPO "Contribuente:NOME"
+    # invece che prima — bug reale (documento PG reale, dati anonimizzati):
+    # "Sede:" presente ma vuota, _RE_HEADER_BLOCK non matcha perché in questo
+    # documento l'ordine è invertito: "Contribuente:NOME\nVIA...\n
+    # CAP COMUNE PROV\nC.F.:...".
+    _RE_HEADER_BLOCK_AFTER_CONTRIBUENTE = re.compile(
+        r"Contribuente\s*:[^\n]*\n(.+?)\n(\d{4,5})\s+(.+?)\s+([A-Z]{2})\s*\n\s*C\.F\.\s*:",
         re.IGNORECASE,
     )
 
@@ -60,8 +151,20 @@ class PdfExtractor:
     # variante multi-riga già coperta da _RE_RESIDENZA_LABEL) — verificato dal
     # vivo, DOC_733465_147355.pdf.
     _RE_RESIDENZA_INLINE_LABEL = re.compile(
-        r"Residenza\s*:\s*(\d{5})\s+(.+?)\s+([A-Z]{2})\s+(.+?)\s*(?:Oggetto\s*:|\n|$)",
+        r"Residenza\s*:\s*(\d{4,5})\s+(.+?)\s+([A-Z]{2})\s+(.+?)\s*(?:Oggetto\s*:|\n|$)",
         re.IGNORECASE,
+    )
+
+    # "Residenza:<comune> <stato estero>\n<via, 1+ righe>\nOggetto:"/"Mail:" —
+    # variante ESTERA di _RE_RESIDENZA_INLINE_LABEL/_RE_RESIDENZA_LABEL: nessun
+    # CAP a inizio riga (le due sopra richiedono \d, non matchano), comune e
+    # stato scritti per intero sulla prima riga, via su 1+ righe successive.
+    # Verificato dal vivo su 6 documenti reali (Regno Unito, Stati Uniti
+    # d'America, Svizzera, Giappone, Malta, Germania) — vedi
+    # _match_country_suffix per il parsing comune/stato.
+    _RE_RESIDENZA_ESTERO_BLOCK = re.compile(
+        r"Residenza\s*:\s*(.+?)\s*\n(.*?)\n\s*(?:Oggetto\s*:|Mail\s*:)",
+        re.IGNORECASE | re.DOTALL,
     )
 
     # Regex testo per fallback (quando il QR non è leggibile)
@@ -97,6 +200,14 @@ class PdfExtractor:
 
     def _open(self):
         return pdfplumber.open(io.BytesIO(self._pdf_bytes))
+
+    @staticmethod
+    def _pad_cap(cap: str) -> str:
+        """CAP italiano sempre 5 cifre — un CAP a 4 cifre letto dal PDF ha
+        quasi certamente perso lo zero iniziale a monte (campo numerico nel
+        sistema sorgente, bug reale: 'FOLIGNO PG' CAP vero 06034, letto
+        '6034'). Zero-pad, non tocca CAP già a 5 cifre o non numerici."""
+        return cap.zfill(5) if cap.isdigit() and len(cap) < 5 else cap
 
     # ------------------------------------------------------------------
     # Indirizzo
@@ -149,7 +260,7 @@ class PdfExtractor:
         if m:
             return AddressData(
                 indirizzo=re.sub(r"\s+", " ", m.group(4)).strip(),
-                cap=m.group(1).strip(),
+                cap=self._pad_cap(m.group(1).strip()),
                 comune=m.group(2).strip(),
                 provincia=m.group(3).strip(),
                 stato_estero="",
@@ -159,17 +270,42 @@ class PdfExtractor:
         if m:
             return AddressData(
                 indirizzo=re.sub(r"\s+", " ", m.group(4)).strip(),
-                cap=m.group(1).strip(),
+                cap=self._pad_cap(m.group(1).strip()),
                 comune=m.group(2).strip(),
                 provincia=m.group(3).strip(),
                 stato_estero="",
             )
 
+        m = self._RE_RESIDENZA_ESTERO_BLOCK.search(text)
+        if m:
+            match = _match_country_suffix(re.sub(r"\s+", " ", m.group(1)).strip())
+            if match:
+                comune, stato = match
+                indirizzo = re.sub(r"\s+", " ", m.group(2)).strip()
+                if indirizzo:
+                    return AddressData(
+                        indirizzo=indirizzo,
+                        cap="",
+                        comune=comune,
+                        provincia="",
+                        stato_estero=stato,
+                    )
+
         m = self._RE_HEADER_BLOCK.search(text)
         if m:
             return AddressData(
                 indirizzo=re.sub(r"\s+", " ", m.group(1)).strip(),
-                cap=m.group(2).strip(),
+                cap=self._pad_cap(m.group(2).strip()),
+                comune=m.group(3).strip(),
+                provincia=m.group(4).strip(),
+                stato_estero="",
+            )
+
+        m = self._RE_HEADER_BLOCK_AFTER_CONTRIBUENTE.search(text)
+        if m:
+            return AddressData(
+                indirizzo=re.sub(r"\s+", " ", m.group(1)).strip(),
+                cap=self._pad_cap(m.group(2).strip()),
                 comune=m.group(3).strip(),
                 provincia=m.group(4).strip(),
                 stato_estero="",
