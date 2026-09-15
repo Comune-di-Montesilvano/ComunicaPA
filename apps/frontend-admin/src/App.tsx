@@ -1169,6 +1169,11 @@ interface Campaign {
   groupId?: string | null;
   recipients?: Recipient[];
   attachmentExpiresAt?: string | null;
+  // Presenti SOLO sulla riga sintetica generata da aggregateCampaignGroups()
+  // per un gruppo multicanale — mai su una Campaign reale dal backend.
+  isGroupAggregate?: boolean;
+  groupMemberIds?: string[];
+  groupChannels?: Array<'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL'>;
 }
 
 interface Recipient {
@@ -8250,8 +8255,50 @@ export function App(): React.JSX.Element {
     fetchRecipientsFilterOptions(id);
   };
 
+  // Un lancio multicanale (stesso group_id) conta come UNA campagna in
+  // lista — conteggi sommati, stato peggiore vince, canale = elenco dei
+  // canali coinvolti. Opera sull'elenco COMPLETO prima di filtro/ricerca/
+  // paginazione, così il raggruppamento è corretto indipendentemente da
+  // quale pagina/filtro l'operatore sta guardando (findAll() backend non
+  // pagina comunque, nessun cambio lato server oltre group_id).
+  const CAMPAIGN_STATUS_SEVERITY: Record<Campaign['status'], number> = {
+    failed: 6, running: 5, checking_inad: 4, queued: 3, draft: 2, completed: 1, cancelled: 0,
+  };
+
+  const aggregateCampaignGroups = (source: Campaign[]): Campaign[] => {
+    const byGroup = new Map<string, Campaign[]>();
+    const ungrouped: Campaign[] = [];
+    for (const c of source) {
+      if (!c.groupId) { ungrouped.push(c); continue; }
+      const list = byGroup.get(c.groupId) || [];
+      list.push(c);
+      byGroup.set(c.groupId, list);
+    }
+
+    const aggregates: Campaign[] = [];
+    for (const members of byGroup.values()) {
+      if (members.length === 1) { ungrouped.push(members[0]); continue; }
+      const sorted = [...members].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      const primary = sorted[0];
+      const worstStatus = sorted.reduce((worst, m) =>
+        CAMPAIGN_STATUS_SEVERITY[m.status] > CAMPAIGN_STATUS_SEVERITY[worst] ? m.status : worst, sorted[0].status);
+      aggregates.push({
+        ...primary,
+        status: worstStatus,
+        totalRecipients: sorted.reduce((sum, m) => sum + m.totalRecipients, 0),
+        sentCount: sorted.reduce((sum, m) => sum + m.sentCount, 0),
+        failedCount: sorted.reduce((sum, m) => sum + m.failedCount, 0),
+        isGroupAggregate: true,
+        groupMemberIds: sorted.map(m => m.id),
+        groupChannels: Array.from(new Set(sorted.map(m => m.channelType))),
+      });
+    }
+
+    return [...ungrouped, ...aggregates].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  };
+
   const getFilteredCampaigns = (): Campaign[] => {
-    let result = campaigns;
+    let result = aggregateCampaignGroups(campaigns);
 
     if (campaignSearch.trim()) {
       const q = campaignSearch.trim().toLowerCase();
@@ -8259,6 +8306,7 @@ export function App(): React.JSX.Element {
         c.name.toLowerCase().includes(q) ||
         (c.description || '').toLowerCase().includes(q) ||
         c.channelType.toLowerCase().includes(q) ||
+        (c.groupChannels || []).some(ch => ch.toLowerCase().includes(q)) ||
         c.status.toLowerCase().includes(q) ||
         c.id.toLowerCase().includes(q)
       );
@@ -9622,7 +9670,13 @@ export function App(): React.JSX.Element {
                                       </div>
                                     </td>
                                     <td style={cellStyle}>
-                                      <ChannelBadge channel={c.channelType} extra={c.channelConfig?.['serviceName'] as string | undefined} />
+                                      {c.isGroupAggregate && c.groupChannels ? (
+                                        <div className="d-flex gap-1 flex-wrap">
+                                          {c.groupChannels.map(ch => <ChannelBadge key={ch} channel={ch} />)}
+                                        </div>
+                                      ) : (
+                                        <ChannelBadge channel={c.channelType} extra={c.channelConfig?.['serviceName'] as string | undefined} />
+                                      )}
                                     </td>
                                     <td className="text-center fw-bold" style={cellStyle}>{c.totalRecipients}</td>
                                     <td className="text-center" style={cellStyle}>
@@ -16812,6 +16866,25 @@ export function App(): React.JSX.Element {
                             )}
                           </div>
                         </div>
+                        {campaign.groupId && (() => {
+                          const siblings = campaigns.filter(c => c.groupId === campaign.groupId && c.id !== campaign.id);
+                          if (siblings.length === 0) return null;
+                          return (
+                            <div className="mb-3 alert alert-light border d-flex flex-column gap-1 py-2 px-2">
+                              <strong className="small">Fa parte di un lancio multicanale:</strong>
+                              {siblings.map(s => (
+                                <a
+                                  key={s.id}
+                                  href="#"
+                                  className="small"
+                                  onClick={(e) => { e.preventDefault(); handleCampaignClick(s.id); }}
+                                >
+                                  {getChannelMeta(s.channelType).label} — {s.totalRecipients} destinatari — {s.status}
+                                </a>
+                              ))}
+                            </div>
+                          );
+                        })()}
                         <div className="mb-3">
                           <label className="text-muted small fw-semibold block">Canale</label>
                           <div>
