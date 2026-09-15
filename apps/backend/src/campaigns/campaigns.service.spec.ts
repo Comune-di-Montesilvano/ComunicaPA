@@ -225,6 +225,18 @@ describe('CampaignsService', () => {
     expect(mockCampaignRepo.create).toHaveBeenCalledWith(expect.objectContaining({ isLegalValue: false }));
   });
 
+  it('create: salva groupId quando presente nel dto', async () => {
+    const dto = { name: 'Test gruppo', channelType: 'SEND' as const, groupId: 'group-uuid-1' };
+    await service.create(dto, 'op1');
+    expect(mockCampaignRepo.create).toHaveBeenCalledWith(expect.objectContaining({ groupId: 'group-uuid-1' }));
+  });
+
+  it('create: groupId è null quando assente dal dto', async () => {
+    const dto = { name: 'Test singolo', channelType: 'EMAIL' as const };
+    await service.create(dto, 'op1');
+    expect(mockCampaignRepo.create).toHaveBeenCalledWith(expect.objectContaining({ groupId: null }));
+  });
+
   describe('setExternalClientId', () => {
     it('aggiorna la colonna externalClientId sulla campagna', async () => {
       await service.setExternalClientId('camp-1', 'client-1');

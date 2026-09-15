@@ -1166,8 +1166,14 @@ interface Campaign {
   isTest: boolean;
   isLegalValue?: boolean;
   parentCampaignId: string | null;
+  groupId?: string | null;
   recipients?: Recipient[];
   attachmentExpiresAt?: string | null;
+  // Presenti SOLO sulla riga sintetica generata da aggregateCampaignGroups()
+  // per un gruppo multicanale — mai su una Campaign reale dal backend.
+  isGroupAggregate?: boolean;
+  groupMemberIds?: string[];
+  groupChannels?: Array<'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL'>;
 }
 
 interface Recipient {
@@ -1278,6 +1284,50 @@ type ExternalClientItem = {
   createdAt: string;
   lastUsedAt: string | null;
 };
+
+interface ManualRow {
+  id: string;
+  channel: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL';
+  cf: string;
+  surname: string;
+  firstName: string;
+  email: string;
+  pec: string;
+  address: string;
+  municipality: string;
+  zip: string;
+  province: string;
+  country: string;
+  paymentIuv: string;
+  paymentImporto: string;
+  paymentScadenza: string;
+  // Snapshot del risultato Verifica Anagrafica al momento dell'Aggiungi,
+  // per mostrare il badge dirottamento nella tabella senza dover rifare
+  // la query quando si sfoglia la lista.
+  inadForced: boolean;
+  inadAddress: string;
+  registroImpreseNoPec: boolean;
+  appIoActive: boolean;
+  // key = id dello slot in wizSingleAttachmentSlots, value = file diverso
+  // dal default per questa riga.
+  attachmentOverrides: Record<string, File>;
+}
+
+interface ManualChannelConfig {
+  mailConfigId: string;
+  taxonomyCode: string;
+  physicalCommunicationType: 'AR_REGISTERED_LETTER' | 'REGISTERED_LETTER_890';
+  postalServiceType: string;
+  postalReturnReceipt: boolean;
+  postalColorPrint: boolean;
+  postalDuplex: boolean;
+  postalAgolTipoNotificante: 'NonUtilizzato' | 'UfficialeGiudiziario' | 'Procuratore' | 'ParteIstante';
+  postalAgolSecondoTentativo: 'NonRichiedere' | 'Concordato' | 'Automatico';
+  postalAgolNomeNotificante: string;
+  postalAgolNumeroCronologico: string;
+  postalCodiceContratto: string;
+  ioServiceId: string;
+}
 
 const PIE_COLORS = ['var(--bi-navy)', 'var(--ms-purple-600)', 'var(--ms-gold-500)', 'var(--ms-green-600)', 'var(--bi-primary)'];
 
@@ -1904,6 +1954,17 @@ export function App(): React.JSX.Element {
   const [singleInadAddress, setSingleInadAddress] = useState('');
   const [singleRegistroImpreseNoPec, setSingleRegistroImpreseNoPec] = useState(false);
   const [singleAppIoActive, setSingleAppIoActive] = useState(false);
+  const [wizManualRows, setWizManualRows] = useState<ManualRow[]>([]);
+  // null = form sta componendo una riga NUOVA; altrimenti id della riga in
+  // wizManualRows che si sta ri-editando (rimossa dalla lista finché non si
+  // preme di nuovo "Aggiungi destinatario").
+  const [wizManualEditingId, setWizManualEditingId] = useState<string | null>(null);
+  const [wizManualChannelConfigs, setWizManualChannelConfigs] = useState<
+    Partial<Record<'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL', ManualChannelConfig>>
+  >({});
+  const [wizGroupChannels, setWizGroupChannels] = useState<ManualRow['channel'][]>([]);
+  const [wizGroupIndex, setWizGroupIndex] = useState(0);
+  const [wizGroupId, setWizGroupId] = useState<string | null>(null);
 
   // Wizard States
   const [wizStep, setWizStep] = useState(1);
@@ -6339,7 +6400,7 @@ export function App(): React.JSX.Element {
         if (ri.success && ri.found) {
           if (ri.denominazione) {
             setSingleSurname(ri.denominazione);
-            setWizName(`Invio singolo a ${ri.denominazione}`);
+            if (wizManualRows.length === 0) setWizName(`Invio singolo a ${ri.denominazione}`);
           }
           const sedeIndirizzo = ri.data?.sede?.indirizzo;
           if (sedeIndirizzo) {
@@ -6373,7 +6434,7 @@ export function App(): React.JSX.Element {
         if (g.cognome) setSingleSurname(g.cognome);
         if (g.nome) setSingleFirstName(g.nome);
         const nomeCompleto = [g.cognome, g.nome].filter(Boolean).join(' ');
-        if (nomeCompleto) setWizName(`Invio singolo a ${nomeCompleto}`);
+        if (nomeCompleto && wizManualRows.length === 0) setWizName(`Invio singolo a ${nomeCompleto}`);
       }
 
       const residenza = data?.anpr?.residenza?.[0];
@@ -6435,41 +6496,205 @@ export function App(): React.JSX.Element {
 
   const needsWizSinglePhysicalAddress = wizChannel === 'POSTAL' || wizChannel === 'SEND';
 
-  const handleWizSingleSubmit = async (targetStep: number = 4) => {
-    if (!isValidCfOrPiva(singleCf)) {
-      alert('Codice Fiscale/P.IVA non valido: 16 caratteri alfanumerici o 11 cifre.');
-      return;
-    }
-    if (!singleSurname.trim()) {
-      alert('Cognome/Ragione Sociale obbligatorio.');
-      return;
-    }
+  const buildManualRowFromForm = (id: string): ManualRow => ({
+    id,
+    channel: wizChannel,
+    cf: singleCf.toUpperCase(),
+    surname: singleSurname.trim(),
+    firstName: singleFirstName.trim(),
+    email: singleEmail,
+    pec: singlePec,
+    address: singleAddress,
+    municipality: singleMunicipality,
+    zip: singleZip,
+    province: singleProvince,
+    country: singleCountry,
+    paymentIuv: singlePaymentIuv,
+    paymentImporto: singlePaymentImporto,
+    paymentScadenza: singlePaymentScadenza,
+    inadForced: singleInadForced,
+    inadAddress: singleInadAddress,
+    registroImpreseNoPec: singleRegistroImpreseNoPec,
+    appIoActive: singleAppIoActive,
+    attachmentOverrides: {},
+  });
 
-    const fullName = [singleSurname.trim(), singleFirstName.trim()].filter(Boolean).join(' ');
-    const cols: string[] = ['codice_fiscale', 'full_name', 'email', 'pec'];
-    const vals: string[] = [singleCf.toUpperCase(), fullName, singleEmail, singlePec];
+  const clearManualRowForm = () => {
+    setSingleCf('');
+    setSingleSurname('');
+    setSingleFirstName('');
+    setSingleEmail('');
+    setSinglePec('');
+    setSingleAddress('');
+    setSingleMunicipality('');
+    setSingleZip('');
+    setSingleProvince('');
+    setSingleCountry('Italia');
+    setSinglePaymentIuv('');
+    setSinglePaymentImporto('');
+    setSinglePaymentScadenza('');
+    setSingleAnprCheckedCf(null);
+    setSingleInadForced(false);
+    setSingleInadAddress('');
+    setSingleRegistroImpreseNoPec(false);
+    setSingleAppIoActive(false);
+    setWizManualEditingId(null);
+  };
 
-    if (needsWizSinglePhysicalAddress) {
-      cols.push('sd_indirizzo', 'sd_comune', 'sd_cap', 'sd_provincia', 'sd_paese');
-      vals.push(singleAddress, singleMunicipality, singleZip, singleProvince, singleCountry);
+  const isManualCfDuplicate = (cf: string, excludeId: string | null): boolean =>
+    wizManualRows.some(r => r.id !== excludeId && r.cf === cf.toUpperCase());
+
+  const groupForcesLegalValue = (): boolean =>
+    wizManualRows.some(r => isChannelAlwaysLegalValue(r.channel, wizManualChannelConfigs[r.channel]?.postalServiceType));
+
+  const groupForcesProtocol = (): boolean =>
+    wizManualRows.some(r => r.channel === 'SEND');
+
+  const isFirstRowOfChannel = (channel: ManualRow['channel']): boolean =>
+    !wizManualChannelConfigs[channel];
+
+  const captureManualChannelConfig = (channel: ManualRow['channel']) => {
+    setWizManualChannelConfigs(prev => ({
+      ...prev,
+      [channel]: {
+        mailConfigId: wizMailConfigId,
+        taxonomyCode: wizTaxonomyCode,
+        physicalCommunicationType: wizPhysicalCommunicationType,
+        postalServiceType: wizPostalServiceType,
+        postalReturnReceipt: wizPostalReturnReceipt,
+        postalColorPrint: wizPostalColorPrint,
+        postalDuplex: wizPostalDuplex,
+        postalAgolTipoNotificante: wizPostalAgolTipoNotificante,
+        postalAgolSecondoTentativo: wizPostalAgolSecondoTentativo,
+        postalAgolNomeNotificante: wizPostalAgolNomeNotificante,
+        postalAgolNumeroCronologico: wizPostalAgolNumeroCronologico,
+        postalCodiceContratto: wizPostalCodiceContratto,
+        ioServiceId: wizAppIoServiceId,
+      },
+    }));
+  };
+
+  const applyManualChannelConfig = (channel: ManualRow['channel']) => {
+    const cfg = wizManualChannelConfigs[channel];
+    if (!cfg) return;
+    setWizMailConfigId(cfg.mailConfigId);
+    setWizTaxonomyCode(cfg.taxonomyCode);
+    setWizPhysicalCommunicationType(cfg.physicalCommunicationType);
+    setWizPostalServiceType(cfg.postalServiceType);
+    setWizPostalReturnReceipt(cfg.postalReturnReceipt);
+    setWizPostalColorPrint(cfg.postalColorPrint);
+    setWizPostalDuplex(cfg.postalDuplex);
+    setWizPostalAgolTipoNotificante(cfg.postalAgolTipoNotificante);
+    setWizPostalAgolSecondoTentativo(cfg.postalAgolSecondoTentativo);
+    setWizPostalAgolNomeNotificante(cfg.postalAgolNomeNotificante);
+    setWizPostalAgolNumeroCronologico(cfg.postalAgolNumeroCronologico);
+    setWizPostalCodiceContratto(cfg.postalCodiceContratto);
+    setWizAppIoServiceId(cfg.ioServiceId);
+  };
+
+  const commitCurrentManualRow = (): boolean => {
+    if (isManualRowFormInvalid) return false;
+    const cf = singleCf.toUpperCase();
+    if (isManualCfDuplicate(cf, wizManualEditingId)) {
+      alert(`Codice Fiscale/P.IVA ${cf} già presente nella lista.`);
+      return false;
     }
-    if (wizPaymentEnabled) {
-      cols.push('sd_iuv', 'sd_importo', 'sd_scadenza');
-      vals.push(singlePaymentIuv, singlePaymentImporto, singlePaymentScadenza);
-    }
-    const attachmentSlotsWithFile = wizSingleAttachmentSlots.filter(s => s.file);
-    attachmentSlotsWithFile.forEach((s, i) => {
-      cols.push(`sd_allegato_${i + 1}`);
-      vals.push(s.file!.name);
+    if (isFirstRowOfChannel(wizChannel)) captureManualChannelConfig(wizChannel);
+    const id = wizManualEditingId ?? `row-${Date.now()}-${wizManualRows.length}`;
+    const row = buildManualRowFromForm(id);
+    setWizManualRows(prev => {
+      const withoutEditing = prev.filter(r => r.id !== wizManualEditingId);
+      return [...withoutEditing, row];
     });
+    clearManualRowForm();
+    return true;
+  };
+
+  const startEditManualRow = (row: ManualRow) => {
+    setWizChannel(row.channel);
+    setSingleCf(row.cf);
+    setSingleSurname(row.surname);
+    setSingleFirstName(row.firstName);
+    setSingleEmail(row.email);
+    setSinglePec(row.pec);
+    setSingleAddress(row.address);
+    setSingleMunicipality(row.municipality);
+    setSingleZip(row.zip);
+    setSingleProvince(row.province);
+    setSingleCountry(row.country);
+    setSinglePaymentIuv(row.paymentIuv);
+    setSinglePaymentImporto(row.paymentImporto);
+    setSinglePaymentScadenza(row.paymentScadenza);
+    setSingleInadForced(row.inadForced);
+    setSingleInadAddress(row.inadAddress);
+    setSingleRegistroImpreseNoPec(row.registroImpreseNoPec);
+    setSingleAppIoActive(row.appIoActive);
+    setWizManualRows(prev => prev.filter(r => r.id !== row.id));
+    setWizManualEditingId(row.id);
+  };
+
+  const removeManualRow = (id: string) => {
+    setWizManualRows(prev => prev.filter(r => r.id !== id));
+    if (wizManualEditingId === id) clearManualRowForm();
+  };
+
+  // Costruisce il CSV virtuale per UN bucket-canale, sincronizza la bozza
+  // campagna (crea/patcha) e carica gli allegati — riusata sia dal primo
+  // bucket (handleWizManualSubmit, dal form) sia dall'avanzamento al bucket
+  // successivo di un gruppo multicanale (handleWizLaunch, dopo il lancio
+  // riuscito del bucket precedente). `channel`/`rows`/`targetStep` sono
+  // sempre parametri espliciti, mai letti da state asincrono nello stesso
+  // tick — stesso principio della stale-closure fix sopra.
+  const syncManualBucket = async (
+    channel: ManualRow['channel'],
+    rows: ManualRow[],
+    targetStep: number,
+    isGrouped: boolean,
+    forceNewCampaign?: boolean,
+    // Sempre passato esplicitamente dal chiamante (mai letto da wizGroupId
+    // di stato qui dentro) — stesso principio di `channel`: subito dopo un
+    // eventuale setWizGroupId() nello stesso tick, lo stato non è ancora
+    // visibile in questa chiusura.
+    groupId?: string,
+  ): Promise<boolean> => {
+    setWizChannel(channel);
+    if (!isFirstRowOfChannel(channel)) applyManualChannelConfig(channel);
+
+    const effectiveChannel = (row: ManualRow): ManualRow['channel'] => (row.inadForced ? 'PEC' : row.channel);
+    const bucketRows = isGrouped ? rows.filter(r => effectiveChannel(r) === channel) : rows;
+    const bucketNeedsPhysicalAddress = channel === 'POSTAL' || channel === 'SEND';
+
+    const cols: string[] = ['codice_fiscale', 'full_name', 'email', 'pec'];
+    if (bucketNeedsPhysicalAddress) cols.push('sd_indirizzo', 'sd_comune', 'sd_cap', 'sd_provincia', 'sd_paese');
+    if (wizPaymentEnabled) cols.push('sd_iuv', 'sd_importo', 'sd_scadenza');
+    const defaultSlotsWithFile = wizSingleAttachmentSlots.filter(s => s.file);
+    defaultSlotsWithFile.forEach((_s, i) => cols.push(`sd_allegato_${i + 1}`));
 
     const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
-    const csvContent = `${cols.join(',')}\n${vals.map(esc).join(',')}`;
-    const file = new File([csvContent], 'destinatario.csv', { type: 'text/csv' });
+    const lines = [cols.join(',')];
+    const filesToUpload = new Map<string, File>();
+    defaultSlotsWithFile.forEach(s => filesToUpload.set(s.file!.name, s.file!));
+
+    bucketRows.forEach(row => {
+      const fullName = [row.surname, row.firstName].filter(Boolean).join(' ');
+      const vals: string[] = [row.cf, fullName, row.email, row.pec];
+      if (bucketNeedsPhysicalAddress) vals.push(row.address, row.municipality, row.zip, row.province, row.country);
+      if (wizPaymentEnabled) vals.push(row.paymentIuv, row.paymentImporto, row.paymentScadenza);
+      defaultSlotsWithFile.forEach((s) => {
+        const override = row.attachmentOverrides[s.id];
+        const file = override || s.file!;
+        if (override) filesToUpload.set(override.name, override);
+        vals.push(file.name);
+      });
+      lines.push(vals.map(esc).join(','));
+    });
+
+    const csvContent = lines.join('\n');
+    const file = new File([csvContent], 'destinatari.csv', { type: 'text/csv' });
     setWizCsvFile(file);
     await parseCsvFile(file, true);
 
-    if (needsWizSinglePhysicalAddress) {
+    if (bucketNeedsPhysicalAddress) {
       setWizPostalAddressColumn('sd_indirizzo');
       setWizPostalMunicipalityColumn('sd_comune');
       setWizPostalZipColumn('sd_cap');
@@ -6482,34 +6707,93 @@ export function App(): React.JSX.Element {
       setWizPaymentAmountType('euro');
       setWizPaymentDueDateCol('sd_scadenza');
     }
-    const newWizAttachments = attachmentSlotsWithFile.map((s, i) => ({ key: `sd_allegato_${i + 1}`, label: s.label || `Allegato ${i + 1}` }));
+    const newWizAttachments = defaultSlotsWithFile.map((s, i) => ({ key: `sd_allegato_${i + 1}`, label: s.label || `Allegato ${i + 1}` }));
     setWizAttachments(newWizAttachments);
-    setWizPdfFiles(attachmentSlotsWithFile.map(s => s.file!));
+    const uploadFiles = Array.from(filesToUpload.values());
+    setWizPdfFiles(uploadFiles);
 
-    // csvContent è già nella forma normalizzata attesa da /recipients/upload
-    // (codice_fiscale, full_name, email, pec, ...extra) — passato come override
-    // per non dipendere da wizValidRows, che a questo punto del tick non ha
-    // ancora recepito l'aggiornamento di wizCsvRows (vedi commento su
-    // syncWizDraftAndRecipients).
     const recipientsCsvBlobOverride = new Blob([csvContent], { type: 'text/csv' });
-    const campaignId = await syncWizDraftAndRecipients(targetStep, newWizAttachments, recipientsCsvBlobOverride);
-    if (!campaignId) return;
+    const campaignId = await syncWizDraftAndRecipients(targetStep, newWizAttachments, recipientsCsvBlobOverride, forceNewCampaign, groupId, channel);
+    if (!campaignId) return false;
 
-    // Carica subito gli allegati reali sul server (invece di rimandarlo a
-    // "Avvia Test"/"Conferma ed Avvia"): senza upload immediato, l'anteprima
-    // allegato allo Step 3 (Anteprima e Invio) cerca il file sul disco del
-    // server prima che sia mai stato caricato — 404 "Allegato non trovato".
     try {
-      if (!(await ensureWizSingleAttachmentsUploaded(campaignId, attachmentSlotsWithFile.map(s => s.file!)))) return;
+      if (!(await ensureWizSingleAttachmentsUploaded(campaignId, uploadFiles))) return false;
     } catch (err: any) {
       alert(err.message || 'Errore durante il caricamento degli allegati.');
-      return;
+      return false;
     }
 
     setWizStep(targetStep);
+    return true;
   };
 
-  const wizSingleSubmitDisabled =
+  const handleWizManualSubmit = async (explicitTargetStep?: number) => {
+    // Se il form corrente ha dati validi, committalo come ultima riga —
+    // preserva l'esperienza "riempi una volta, clicca un bottone" per il
+    // caso a 1 destinatario (nessun bisogno di premere "Aggiungi" a parte).
+    // `rows` va costruito localmente (mai da wizManualRows subito dopo
+    // commitCurrentManualRow): setWizManualRows è asincrono, la closure di
+    // questa funzione vedrebbe ancora l'array PRIMA del commit nello stesso
+    // tick — stesso bug di stale closure già noto altrove in questo file
+    // (vedi commento gemello su wizValidRows/handleWizSingleSubmit).
+    let rows = wizManualRows;
+    if (singleCf.trim() && !isManualRowFormInvalid) {
+      if (isFirstRowOfChannel(wizChannel)) captureManualChannelConfig(wizChannel);
+      const cf = singleCf.toUpperCase();
+      if (isManualCfDuplicate(cf, wizManualEditingId)) {
+        alert(`Codice Fiscale/P.IVA ${cf} già presente nella lista.`);
+        return;
+      }
+      const id = wizManualEditingId ?? `row-${Date.now()}-${wizManualRows.length}`;
+      const newRow = buildManualRowFromForm(id);
+      rows = [...wizManualRows.filter(r => r.id !== wizManualEditingId), newRow];
+      setWizManualRows(rows);
+      clearManualRowForm();
+    } else if (singleCf.trim() && isManualRowFormInvalid) {
+      alert('Completa correttamente i dati del destinatario corrente prima di procedere, oppure svuota il Codice Fiscale se vuoi inviare solo le righe già aggiunte.');
+      return;
+    }
+
+    if (rows.length === 0) {
+      alert('Aggiungi almeno un destinatario prima di procedere.');
+      return;
+    }
+    if (rows.length >= 2 && !wizName.trim()) {
+      alert('Inserisci il nome della campagna prima di procedere.');
+      return;
+    }
+
+    // Canale effettivo: un dirottamento INAD manda sempre la riga sul bucket
+    // PEC, indipendente dal canale scelto dall'operatore per quella riga.
+    const effectiveChannel = (row: ManualRow): ManualRow['channel'] => (row.inadForced ? 'PEC' : row.channel);
+    const distinctChannels = Array.from(new Set(rows.map(effectiveChannel)));
+
+    // groupId calcolato localmente (mai da wizGroupId di stato subito dopo
+    // averlo appena impostato — stessa stale closure di `rows` sopra):
+    // un setWizGroupId() qui non sarebbe ancora leggibile da questa stessa
+    // chiusura sincrona.
+    const effectiveGroupId = distinctChannels.length > 1 ? (wizGroupId ?? crypto.randomUUID()) : wizGroupId ?? undefined;
+    if (distinctChannels.length > 1 && !wizGroupId) {
+      setWizGroupChannels(distinctChannels);
+      setWizGroupIndex(0);
+      setWizGroupId(effectiveGroupId!);
+    }
+    const activeGroupChannels = distinctChannels.length > 1 ? distinctChannels : [];
+    const currentBucketChannel = activeGroupChannels.length > 0 ? activeGroupChannels[0] : wizChannel;
+    // explicitTargetStep arriva SOLO dal click su una tab della step-bar
+    // (navigazione esplicita dell'operatore verso uno step preciso) — va
+    // sempre onorato. Omesso (bottoni "Aggiungi"/"Conferma e Invia"), si
+    // ricalcola sul canale reale di QUESTO bucket: il valore che il
+    // chiamante avrebbe calcolato da wizChannel al momento del click può
+    // non coincidere col bucket effettivamente in lavorazione qui (ordine
+    // bucket ≠ canale del form al click).
+    const bucketNeedsTemplateStep = currentBucketChannel === 'EMAIL' || currentBucketChannel === 'PEC' || currentBucketChannel === 'APP_IO';
+    const resolvedTargetStep = explicitTargetStep ?? (bucketNeedsTemplateStep ? 4 : 6);
+
+    await syncManualBucket(currentBucketChannel, rows, resolvedTargetStep, activeGroupChannels.length > 0, undefined, effectiveGroupId);
+  };
+
+  const isManualRowFormInvalid =
     !singleCf.trim() ||
     !singleSurname.trim() ||
     (wizChannel === 'EMAIL' && (!singleEmail.trim() || !isValidEmailFormat(singleEmail))) ||
@@ -6856,6 +7140,12 @@ export function App(): React.JSX.Element {
     setSingleInadForced(false);
     setSingleInadAddress('');
     setSingleAppIoActive(false);
+    setWizManualRows([]);
+    setWizManualEditingId(null);
+    setWizManualChannelConfigs({});
+    setWizGroupChannels([]);
+    setWizGroupIndex(0);
+    setWizGroupId(null);
   };
 
   const prefillWizardFrom = async (source: {
@@ -6974,7 +7264,7 @@ export function App(): React.JSX.Element {
 
           if (source.channelConfig?.wizSingleMode) {
             // wizCsvRows non è ancora aggiornato in questo punto della stessa closure
-            // (setState non è visibile nel render corrente) — rileggiamo la singola riga
+            // (setState non è visibile nel render corrente) — rileggiamo tutte le righe
             // direttamente dal CSV appena fetchato via un secondo parse locale, sola lettura.
             const text = await file.text();
             const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
@@ -6993,28 +7283,58 @@ export function App(): React.JSX.Element {
                 return result.map(v => v.replace(/^"(.*)"$/, '$1').replace(/""/g, '"'));
               };
               const headerCols = parseLine(lines[0]);
-              const rowVals = parseLine(lines[1]);
-              const row: Record<string, string> = {};
-              headerCols.forEach((h, i) => { row[h] = rowVals[i] || ''; });
-              setSingleCf(row['codice_fiscale'] || '');
-              // full_name è la sola colonna disponibile (cols/vals in
-              // handleWizSingleSubmit uniscono cognome+nome con un solo spazio,
-              // nessuna colonna separata) — non è possibile invertire lo split in
-              // modo affidabile (nomi con più parole). Ripristino conservativo:
-              // l'intero valore va in singleSurname, singleFirstName resta vuoto.
-              setSingleSurname(row['full_name'] || '');
-              setSingleFirstName('');
-              setSingleEmail(row['email'] || '');
-              setSinglePec(row['pec'] || '');
-              setSingleAddress(row['sd_indirizzo'] || '');
-              setSingleMunicipality(row['sd_comune'] || '');
-              setSingleZip(row['sd_cap'] || '');
-              setSingleProvince(row['sd_provincia'] || '');
-              setSingleCountry(row['sd_paese'] || 'Italia');
-              setSinglePaymentIuv(row['sd_iuv'] || '');
-              setSinglePaymentImporto(row['sd_importo'] || '');
-              setSinglePaymentScadenza(row['sd_scadenza'] || '');
               const attachmentEntries = (source.channelConfig?.attachments || []) as Array<{ key: string; label: string }>;
+              const restoredRows: ManualRow[] = lines.slice(1).map((line, idx) => {
+                const rowVals = parseLine(line);
+                const row: Record<string, string> = {};
+                headerCols.forEach((h, i) => { row[h] = rowVals[i] || ''; });
+                return {
+                  id: `row-resume-${idx}`,
+                  channel: source.channelType,
+                  cf: row['codice_fiscale'] || '',
+                  // full_name è la sola colonna disponibile (handleWizManualSubmit
+                  // unisce cognome+nome con un solo spazio, nessuna colonna
+                  // separata) — non è possibile invertire lo split in modo
+                  // affidabile. Ripristino conservativo: l'intero valore va in
+                  // surname, firstName resta vuoto.
+                  surname: row['full_name'] || '',
+                  firstName: '',
+                  email: row['email'] || '',
+                  pec: row['pec'] || '',
+                  address: row['sd_indirizzo'] || '',
+                  municipality: row['sd_comune'] || '',
+                  zip: row['sd_cap'] || '',
+                  province: row['sd_provincia'] || '',
+                  country: row['sd_paese'] || 'Italia',
+                  paymentIuv: row['sd_iuv'] || '',
+                  paymentImporto: row['sd_importo'] || '',
+                  paymentScadenza: row['sd_scadenza'] || '',
+                  inadForced: false,
+                  inadAddress: '',
+                  registroImpreseNoPec: false,
+                  appIoActive: false,
+                  // File non ricostruibili da un percorso server (limite già
+                  // esistente per il caso singolo pre-refactor): l'operatore
+                  // ri-carica solo se vuole SOSTITUIRE l'allegato già presente
+                  // sul server per questa campagna.
+                  attachmentOverrides: {},
+                };
+              });
+              setWizManualRows(restoredRows);
+              setWizManualEditingId(null);
+              setSingleCf('');
+              setSingleSurname('');
+              setSingleFirstName('');
+              setSingleEmail('');
+              setSinglePec('');
+              setSingleAddress('');
+              setSingleMunicipality('');
+              setSingleZip('');
+              setSingleProvince('');
+              setSingleCountry('Italia');
+              setSinglePaymentIuv('');
+              setSinglePaymentImporto('');
+              setSinglePaymentScadenza('');
               setWizSingleAttachmentSlots(
                 attachmentEntries.map((a, i) => ({ id: `slot-resume-${i}`, label: a.label || `Allegato ${i + 1}`, file: null })),
               );
@@ -7094,12 +7414,22 @@ export function App(): React.JSX.Element {
     // stantio (bug reale: wizard singolo, allegato configurato ma mai scritto
     // in channelConfig al primo "Avanti").
     attachmentsOverride?: Array<{ key: string; label: string }>,
+    // channelOverride: canale REALE da usare per decidere quali campi
+    // includere in channelConfig — mai wizChannel da solo. setWizChannel()
+    // è asincrono: un chiamante che l'ha appena invocato nello stesso tick
+    // (syncManualBucket, avanzamento bucket gruppo multicanale) leggerebbe
+    // qui ancora il canale del bucket PRECEDENTE (stessa classe di bug
+    // stale-closure già nota altrove in questo file — verificato dal vivo:
+    // senza questo parametro, il channelType salvato in DB per un lancio
+    // di gruppo risultava quello del bucket precedente, non quello reale).
+    channelOverride?: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL',
   ): Record<string, any> => {
+    const effectiveWizChannel = channelOverride ?? wizChannel;
     const cfg: Record<string, any> = {
       subject: wizSubject,
       body: wizBody,
       mailConfigId: wizMailConfigId,
-      protocolla: wizProtocolla,
+      protocolla: wizProtocolla || groupForcesProtocol(),
       wizStep: targetStep !== undefined ? targetStep : wizStep,
       wizRowCount: wizValidRows.length,
       wizSingleMode,
@@ -7108,7 +7438,7 @@ export function App(): React.JSX.Element {
       cfg.wizCsvFilename = wizCsvFile.name;
       cfg.wizCsvHasHeaders = wizCsvHasHeaders;
     }
-    if (wizChannel === 'SEND') {
+    if (effectiveWizChannel === 'SEND') {
       cfg.taxonomyCode = wizTaxonomyCode;
       cfg.physicalCommunicationType = wizPhysicalCommunicationType;
       // Facoltativo per SEND (fallback PN se non risolve un domicilio
@@ -7128,7 +7458,7 @@ export function App(): React.JSX.Element {
         };
       }
     }
-    if (wizChannel === 'POSTAL') {
+    if (effectiveWizChannel === 'POSTAL') {
       cfg.postalServiceType = wizPostalServiceType;
       cfg.postalReturnReceipt = wizPostalReturnReceipt;
       cfg.postalColorPrint = wizPostalColorPrint;
@@ -7158,7 +7488,7 @@ export function App(): React.JSX.Element {
     const effectiveAttachmentsForConfig = attachmentsOverride !== undefined ? attachmentsOverride : wizAttachments;
     if (effectiveAttachmentsForConfig.length > 0) cfg.attachments = effectiveAttachmentsForConfig;
     if (wizMapping.codice_fiscale) cfg.csvMapping = wizMapping;
-    if (wizChannel === 'APP_IO') {
+    if (effectiveWizChannel === 'APP_IO') {
       cfg.ioServiceId = wizAppIoServiceId;
     }
     if (wizAppIoMode !== 'none' && wizAppIoServiceId) {
@@ -7227,25 +7557,43 @@ export function App(): React.JSX.Element {
     // indietro. Passare qui il blob CSV già pronto bypassa la dipendenza da
     // wizValidRows per questa chiamata.
     recipientsCsvBlobOverride?: Blob,
+    // true SOLO quando il chiamante sa di dover creare una campagna
+    // NUOVA anche se wizCampaignId in stato riflette ancora quella del
+    // bucket precedente (avanzamento gruppo multicanale, handleWizLaunch
+    // → syncManualBucket): un setWizCampaignId(null) appena chiamato non è
+    // ancora visibile in questa stessa chiusura sincrona (nessun nuovo
+    // render tra la chiamata e l'await successivo) — stesso principio di
+    // stale closure già noto altrove in questo file.
+    forceNewCampaign?: boolean,
+    // Stesso principio di forceNewCampaign/channelOverride sopra: wizGroupId
+    // appena impostato con setWizGroupId() nello stesso tick (prima riga di
+    // un gruppo multicanale, handleWizManualSubmit) non è ancora leggibile
+    // dalla chiusura di questa funzione — va passato esplicitamente.
+    groupIdOverride?: string,
+    channelOverride?: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL',
   ): Promise<string | null> => {
     if (!wizName) {
       alert('Inserisci almeno il nome della campagna prima di salvare la bozza.');
       return null;
     }
     setWizDraftSaving(true);
-    let activeCampaignId = wizCampaignId;
+    const effectiveWizChannel = channelOverride ?? wizChannel;
+    const effectiveGroupId = groupIdOverride ?? wizGroupId;
+    const startingCampaignId = forceNewCampaign ? null : wizCampaignId;
+    let activeCampaignId = startingCampaignId;
     try {
-      const channelConfig = buildWizChannelConfigDraft(targetStep, attachmentsOverride);
-      if (!wizCampaignId) {
+      const channelConfig = buildWizChannelConfigDraft(targetStep, attachmentsOverride, channelOverride);
+      if (!startingCampaignId) {
         const res = await apiFetch('/campaigns', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             name: wizName,
             description: wizDesc,
-            channelType: wizChannel,
+            channelType: effectiveWizChannel,
             channelConfig,
-            isLegalValue: isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType) || wizIsLegalValue,
+            isLegalValue: isChannelAlwaysLegalValue(effectiveWizChannel, wizPostalServiceType) || wizIsLegalValue || groupForcesLegalValue(),
+            groupId: effectiveGroupId ?? undefined,
           }),
         });
         if (!res.ok) throw new Error('Errore durante il salvataggio della bozza');
@@ -7253,14 +7601,14 @@ export function App(): React.JSX.Element {
         activeCampaignId = created.id;
         setWizCampaignId(created.id);
       } else {
-        const res = await apiFetch(`/campaigns/${wizCampaignId}`, {
+        const res = await apiFetch(`/campaigns/${startingCampaignId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             name: wizName,
             description: wizDesc,
             channelConfig,
-            isLegalValue: isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType) || wizIsLegalValue,
+            isLegalValue: isChannelAlwaysLegalValue(effectiveWizChannel, wizPostalServiceType) || wizIsLegalValue || groupForcesLegalValue(),
           }),
         });
         if (!res.ok) throw new Error('Errore durante il salvataggio della bozza');
@@ -7491,6 +7839,16 @@ export function App(): React.JSX.Element {
     setWizSingleAttachmentSlots(prev => prev.map(s => (s.id === id ? { ...s, ...patch } : s)));
   };
 
+  const setManualRowOverride = (rowId: string, slotId: string, file: File | null) => {
+    setWizManualRows(prev => prev.map(r => {
+      if (r.id !== rowId) return r;
+      const overrides = { ...r.attachmentOverrides };
+      if (file) overrides[slotId] = file;
+      else delete overrides[slotId];
+      return { ...r, attachmentOverrides: overrides };
+    }));
+  };
+
   const handleWizUploadAttachments = async (): Promise<void> => {
     setWizSending(true);
     try {
@@ -7639,7 +7997,7 @@ export function App(): React.JSX.Element {
       }
 
       if (wizChannel !== 'SEND') {
-        channelConfig.protocolla = wizProtocolla;
+        channelConfig.protocolla = wizProtocolla || groupForcesProtocol();
       }
 
       // Sempre impostato, qualunque canale: backend legge wizSingleMode per
@@ -7678,7 +8036,7 @@ export function App(): React.JSX.Element {
             name: wizName,
             description: wizDesc || wizSubject || wizName,
             channelConfig,
-            isLegalValue: isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType) || wizIsLegalValue,
+            isLegalValue: isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType) || wizIsLegalValue || groupForcesLegalValue(),
           }),
         });
         if (!patchRes.ok) throw new Error('Errore durante l\'aggiornamento della bozza');
@@ -7695,7 +8053,8 @@ export function App(): React.JSX.Element {
             description: wizDesc || wizSubject || wizName,
             channelType: wizChannel,
             channelConfig,
-            isLegalValue: isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType) || wizIsLegalValue,
+            isLegalValue: isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType) || wizIsLegalValue || groupForcesLegalValue(),
+            groupId: wizGroupId ?? undefined,
           }),
         });
         if (!res.ok) throw new Error('Errore durante la creazione della campagna');
@@ -7744,14 +8103,37 @@ export function App(): React.JSX.Element {
         throw new Error(launchData.message || 'Impossibile avviare la campagna.');
       }
 
-      resetWizard();
-
-      fetchCampaigns();
-      setView('dashboard');
-
-      alert('Campagna creata e avviata con successo! I messaggi sono in coda.');
       if (launchData?.signatureWarning) {
         alert(`Attenzione: ${launchData.signatureWarning}`);
+      }
+
+      const hasNextBucket = wizGroupChannels.length > 0 && wizGroupIndex < wizGroupChannels.length - 1;
+      if (hasNextBucket) {
+        const justLaunchedChannel = wizChannel;
+        const nextIndex = wizGroupIndex + 1;
+        const nextChannel = wizGroupChannels[nextIndex];
+        setWizGroupIndex(nextIndex);
+        setWizSubject('');
+        setWizBody('');
+        // syncManualBucket costruisce già il CSV/allegati/bozza del prossimo
+        // bucket — senza questa chiamata esplicita lo step Template si
+        // apriva con "0 destinatari" (bug reale, trovato in verifica
+        // browser): saltare direttamente a setWizStep senza ricostruire il
+        // CSV lasciava wizValidRows vuoto per il canale successivo, mai
+        // popolato perché la costruzione avveniva solo dal form (Step 1),
+        // mai attraversato per i bucket 2+.
+        const needsTemplateStep = nextChannel === 'EMAIL' || nextChannel === 'PEC' || nextChannel === 'APP_IO';
+        await syncManualBucket(nextChannel, wizManualRows, needsTemplateStep ? 4 : 6, true, true, wizGroupId ?? undefined);
+        alert(`Canale "${justLaunchedChannel}" del gruppo lanciato. Procedi con il prossimo canale: "${nextChannel}".`);
+      } else {
+        resetWizard();
+        fetchCampaigns();
+        setView('dashboard');
+        alert(
+          wizGroupChannels.length > 0
+            ? 'Gruppo multicanale completato: tutte le campagne sono state avviate.'
+            : 'Campagna creata e avviata con successo! I messaggi sono in coda.'
+        );
       }
     } catch (err: any) {
       alert(err.message || 'Errore durante l\'invio della campagna.');
@@ -7873,8 +8255,50 @@ export function App(): React.JSX.Element {
     fetchRecipientsFilterOptions(id);
   };
 
+  // Un lancio multicanale (stesso group_id) conta come UNA campagna in
+  // lista — conteggi sommati, stato peggiore vince, canale = elenco dei
+  // canali coinvolti. Opera sull'elenco COMPLETO prima di filtro/ricerca/
+  // paginazione, così il raggruppamento è corretto indipendentemente da
+  // quale pagina/filtro l'operatore sta guardando (findAll() backend non
+  // pagina comunque, nessun cambio lato server oltre group_id).
+  const CAMPAIGN_STATUS_SEVERITY: Record<Campaign['status'], number> = {
+    failed: 6, running: 5, checking_inad: 4, queued: 3, draft: 2, completed: 1, cancelled: 0,
+  };
+
+  const aggregateCampaignGroups = (source: Campaign[]): Campaign[] => {
+    const byGroup = new Map<string, Campaign[]>();
+    const ungrouped: Campaign[] = [];
+    for (const c of source) {
+      if (!c.groupId) { ungrouped.push(c); continue; }
+      const list = byGroup.get(c.groupId) || [];
+      list.push(c);
+      byGroup.set(c.groupId, list);
+    }
+
+    const aggregates: Campaign[] = [];
+    for (const members of byGroup.values()) {
+      if (members.length === 1) { ungrouped.push(members[0]); continue; }
+      const sorted = [...members].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      const primary = sorted[0];
+      const worstStatus = sorted.reduce((worst, m) =>
+        CAMPAIGN_STATUS_SEVERITY[m.status] > CAMPAIGN_STATUS_SEVERITY[worst] ? m.status : worst, sorted[0].status);
+      aggregates.push({
+        ...primary,
+        status: worstStatus,
+        totalRecipients: sorted.reduce((sum, m) => sum + m.totalRecipients, 0),
+        sentCount: sorted.reduce((sum, m) => sum + m.sentCount, 0),
+        failedCount: sorted.reduce((sum, m) => sum + m.failedCount, 0),
+        isGroupAggregate: true,
+        groupMemberIds: sorted.map(m => m.id),
+        groupChannels: Array.from(new Set(sorted.map(m => m.channelType))),
+      });
+    }
+
+    return [...ungrouped, ...aggregates].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  };
+
   const getFilteredCampaigns = (): Campaign[] => {
-    let result = campaigns;
+    let result = aggregateCampaignGroups(campaigns);
 
     if (campaignSearch.trim()) {
       const q = campaignSearch.trim().toLowerCase();
@@ -7882,6 +8306,7 @@ export function App(): React.JSX.Element {
         c.name.toLowerCase().includes(q) ||
         (c.description || '').toLowerCase().includes(q) ||
         c.channelType.toLowerCase().includes(q) ||
+        (c.groupChannels || []).some(ch => ch.toLowerCase().includes(q)) ||
         c.status.toLowerCase().includes(q) ||
         c.id.toLowerCase().includes(q)
       );
@@ -8490,7 +8915,7 @@ export function App(): React.JSX.Element {
             onClick={(e) => { e.preventDefault(); resetWizard(); setWizSingleMode(true); setView('invio-massivo-wizard'); }}
           >
             <Send />
-            <span>Invio Singolo</span>
+            <span>Invio Manuale</span>
           </a>
           <a
             className={`bo-nav-item ${view === 'invio-massivo-wizard' && !wizSingleMode ? 'is-active' : ''}`}
@@ -9245,7 +9670,13 @@ export function App(): React.JSX.Element {
                                       </div>
                                     </td>
                                     <td style={cellStyle}>
-                                      <ChannelBadge channel={c.channelType} extra={c.channelConfig?.['serviceName'] as string | undefined} />
+                                      {c.isGroupAggregate && c.groupChannels ? (
+                                        <div className="d-flex gap-1 flex-wrap">
+                                          {c.groupChannels.map(ch => <ChannelBadge key={ch} channel={ch} />)}
+                                        </div>
+                                      ) : (
+                                        <ChannelBadge channel={c.channelType} extra={c.channelConfig?.['serviceName'] as string | undefined} />
+                                      )}
                                     </td>
                                     <td className="text-center fw-bold" style={cellStyle}>{c.totalRecipients}</td>
                                     <td className="text-center" style={cellStyle}>
@@ -9424,7 +9855,7 @@ export function App(): React.JSX.Element {
                             // syncWizDraftAndRecipients da solo non lo fa. Senza passare da qui,
                             // un click in avanti sulla tab-bar dopo un'edit allo Step 1 perdeva
                             // silenziosamente la modifica (finding 3 review finale).
-                            await handleWizSingleSubmit(n);
+                            await handleWizManualSubmit(n);
                           } else if (await syncWizDraftAndRecipients(n)) {
                             setWizStep(n);
                           }
@@ -9455,14 +9886,134 @@ export function App(): React.JSX.Element {
                       <h4 className="h5 fw-bold text-dark mb-1">Passo 1: Dettagli & Destinatario</h4>
                       <p className="small text-muted mb-0">Configura i dati anagrafici, il canale di invio e gli allegati per questo specifico destinatario.</p>
                     </div>
-                    <button
-                      className="btn btn-primary px-4 fw-medium d-flex align-items-center gap-2"
-                      onClick={() => handleWizSingleSubmit(wizSingleNeedsTemplateStep ? 4 : 6)}
-                      disabled={wizSingleSubmitDisabled}
-                    >
-                      Avanti <ArrowRight size={16} />
-                    </button>
+                    <div className="d-flex align-items-center gap-2">
+                      <button
+                        className="btn btn-outline-primary px-3 fw-medium d-flex align-items-center gap-2"
+                        onClick={() => commitCurrentManualRow()}
+                        disabled={!singleCf.trim() || isManualRowFormInvalid}
+                        title={isManualRowFormInvalid ? 'Completa correttamente i dati del destinatario' : undefined}
+                      >
+                        <Plus size={16} /> Aggiungi destinatario
+                      </button>
+                      <button
+                        className="btn btn-primary px-4 fw-medium d-flex align-items-center gap-2"
+                        onClick={() => handleWizManualSubmit()}
+                        disabled={
+                          (wizManualRows.length === 0 && (!singleCf.trim() || isManualRowFormInvalid)) ||
+                          (wizManualRows.length >= 1 && !wizName.trim())
+                        }
+                      >
+                        Conferma e Invia <ArrowRight size={16} />
+                      </button>
+                    </div>
                   </div>
+
+                  {wizManualRows.length >= 1 && (
+                    <div className="mb-3" style={{ maxWidth: '420px' }}>
+                      <label className="form-label small fw-bold">Nome della Campagna *</label>
+                      <input
+                        type="text"
+                        className="form-control form-control-sm"
+                        placeholder="Es: Ordinanza 123/2026 — lotto SEND"
+                        value={wizName}
+                        onChange={e => setWizName(e.target.value)}
+                        required
+                      />
+                      <div className="form-text small text-muted">
+                        Da quando aggiungi più di un destinatario, il nome campagna va scelto a mano (come per l'invio massivo).
+                      </div>
+                    </div>
+                  )}
+
+                  {wizManualRows.length >= 20 && (
+                    <div className="alert alert-warning d-flex align-items-start gap-2 mb-3">
+                      <AlertCircle size={16} className="mt-1 flex-shrink-0" />
+                      <div>
+                        Hai già {wizManualRows.length} destinatari in lista. Per lotti di queste dimensioni conviene il caricamento da CSV (più veloce da correggere/riverificare) — puoi comunque continuare ad aggiungere righe da qui se preferisci.
+                      </div>
+                    </div>
+                  )}
+
+                  {(() => {
+                    const hasDiverted = wizManualRows.some(r => r.inadForced);
+                    const hasNonPec = wizManualRows.some(r => r.channel !== 'PEC' && !r.inadForced);
+                    if (!hasDiverted || !hasNonPec) return null;
+                    return (
+                      <div className="alert alert-warning d-flex align-items-start gap-2 mb-3">
+                        <AlertCircle size={16} className="mt-1 flex-shrink-0" />
+                        <div>
+                          Il lotto ha destinatari con domicili digitali eterogenei (alcuni dirottati da INAD su PEC, altri no) — valuta SEND: gestisce entrambi i casi in un solo canale, senza dividere il lancio in più bucket.
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {wizManualRows.length > 0 && (
+                    <div className="card shadow-sm border-0 rounded-3 p-3 mb-3 bg-white">
+                      <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-2">
+                        Destinatari aggiunti ({wizManualRows.length})
+                      </h5>
+                      <div className="table-responsive">
+                        <table className="table table-sm align-middle mb-0">
+                          <thead>
+                            <tr>
+                              <th>CF/P.IVA</th>
+                              <th>Nominativo</th>
+                              <th>Canale effettivo</th>
+                              <th>Allegato</th>
+                              <th></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {wizManualRows.map(row => (
+                              <tr key={row.id}>
+                                <td className="font-monospace small">{row.cf}</td>
+                                <td>{[row.surname, row.firstName].filter(Boolean).join(' ')}</td>
+                                <td>
+                                  {row.inadForced ? (
+                                    <span className="badge bg-info-subtle text-info-emphasis">Dirottato su PEC (INAD)</span>
+                                  ) : (
+                                    <span className="text-muted small">{row.channel}</span>
+                                  )}
+                                </td>
+                                <td>
+                                  {wizSingleAttachmentSlots.length === 0 ? (
+                                    <span className="text-muted small">—</span>
+                                  ) : (
+                                    wizSingleAttachmentSlots.map(slot => (
+                                      <div key={slot.id} className="d-flex align-items-center gap-1 mb-1">
+                                        <span className="small text-muted" style={{ minWidth: '90px' }}>{slot.label}:</span>
+                                        {row.attachmentOverrides[slot.id] ? (
+                                          <span className="small text-success">{row.attachmentOverrides[slot.id].name}</span>
+                                        ) : (
+                                          <span className="small text-muted">comune</span>
+                                        )}
+                                        <input
+                                          type="file"
+                                          accept=".pdf"
+                                          className="form-control form-control-sm"
+                                          style={{ maxWidth: '160px' }}
+                                          onChange={(e) => setManualRowOverride(row.id, slot.id, e.target.files?.[0] || null)}
+                                        />
+                                      </div>
+                                    ))
+                                  )}
+                                </td>
+                                <td className="text-end">
+                                  <button type="button" className="btn btn-sm btn-outline-secondary me-1" onClick={() => startEditManualRow(row)}>
+                                    <Pencil size={14} />
+                                  </button>
+                                  <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => removeManualRow(row.id)}>
+                                    <Trash2 size={14} />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
 
                   {/* SEZIONE 1: Dati Destinatario (A tutta larghezza) */}
                   <div className="card shadow-sm border-0 rounded-3 p-3 mb-3 bg-white">
@@ -9485,8 +10036,10 @@ export function App(): React.JSX.Element {
                             onChange={(e) => {
                               const v = e.target.value.toUpperCase();
                               setSingleCf(v);
-                              const fullName = [singleSurname.trim(), singleFirstName.trim()].filter(Boolean).join(' ');
-                              setWizName(fullName ? `Invio singolo a ${fullName}` : (v ? `Invio singolo a ${v}` : ''));
+                              if (wizManualRows.length === 0) {
+                                const fullName = [singleSurname.trim(), singleFirstName.trim()].filter(Boolean).join(' ');
+                                setWizName(fullName ? `Invio singolo a ${fullName}` : (v ? `Invio singolo a ${v}` : ''));
+                              }
                               if (v !== singleAnprCheckedCf) {
                                 setSingleInadForced(false);
                                 setSingleInadAddress('');
@@ -9520,8 +10073,10 @@ export function App(): React.JSX.Element {
                           onChange={(e) => {
                             const v = e.target.value;
                             setSingleSurname(v);
-                            const fullName = [v.trim(), singleFirstName.trim()].filter(Boolean).join(' ');
-                            setWizName(fullName ? `Invio singolo a ${fullName}` : (singleCf ? `Invio singolo a ${singleCf}` : ''));
+                            if (wizManualRows.length === 0) {
+                              const fullName = [v.trim(), singleFirstName.trim()].filter(Boolean).join(' ');
+                              setWizName(fullName ? `Invio singolo a ${fullName}` : (singleCf ? `Invio singolo a ${singleCf}` : ''));
+                            }
                           }}
                         />
                       </div>
@@ -9538,8 +10093,10 @@ export function App(): React.JSX.Element {
                           onChange={(e) => {
                             const v = e.target.value;
                             setSingleFirstName(v);
-                            const fullName = [singleSurname.trim(), v.trim()].filter(Boolean).join(' ');
-                            setWizName(fullName ? `Invio singolo a ${fullName}` : (singleCf ? `Invio singolo a ${singleCf}` : ''));
+                            if (wizManualRows.length === 0) {
+                              const fullName = [singleSurname.trim(), v.trim()].filter(Boolean).join(' ');
+                              setWizName(fullName ? `Invio singolo a ${fullName}` : (singleCf ? `Invio singolo a ${singleCf}` : ''));
+                            }
                           }}
                         />
                       </div>
@@ -9571,6 +10128,7 @@ export function App(): React.JSX.Element {
                               if (newChan !== 'SEND' && newChan !== 'APP_IO' && !(wizAppIoMode !== 'none' && singleAppIoActive)) {
                                 setWizPaymentEnabled(false);
                               }
+                              if (!isFirstRowOfChannel(newChan)) applyManualChannelConfig(newChan);
                             }}
                           >
                             {(['EMAIL', 'PEC', 'APP_IO', 'SEND', 'POSTAL'] as const)
@@ -9641,7 +10199,13 @@ export function App(): React.JSX.Element {
                           </div>
                         )}
 
-                        {(wizChannel === 'EMAIL' || wizChannel === 'PEC') && (
+                        {!isFirstRowOfChannel(wizChannel) && (
+                          <div className="form-text small text-muted mb-3">
+                            Configurazione già impostata per questo canale (prima riga aggiunta) — verrà riusata.
+                          </div>
+                        )}
+
+                        {(wizChannel === 'EMAIL' || wizChannel === 'PEC') && isFirstRowOfChannel(wizChannel) && (
                           <div className="mb-3">
                             <label className="form-label small fw-bold text-dark mb-1">Server di Invio / Mittente *</label>
                             <SearchableSelect
@@ -9661,7 +10225,7 @@ export function App(): React.JSX.Element {
                           </div>
                         )}
 
-                        {wizChannel === 'APP_IO' && (
+                        {wizChannel === 'APP_IO' && isFirstRowOfChannel(wizChannel) && (
                           <div className="mb-3">
                             <label className="form-label small fw-bold text-dark mb-1">Servizio App IO Associato *</label>
                             <SearchableSelect
@@ -9674,7 +10238,7 @@ export function App(): React.JSX.Element {
                           </div>
                         )}
 
-                        {wizChannel === 'SEND' && (
+                        {wizChannel === 'SEND' && isFirstRowOfChannel(wizChannel) && (
                           <div className="d-flex flex-column gap-3">
                             <div>
                               <label className="form-label small fw-bold text-dark mb-1">Tassonomia SEND *</label>
@@ -9707,7 +10271,7 @@ export function App(): React.JSX.Element {
                           </div>
                         )}
 
-                        {wizChannel === 'POSTAL' && (() => {
+                        {wizChannel === 'POSTAL' && isFirstRowOfChannel(wizChannel) && (() => {
                           const activeProvider = postalProviders.find((p) => p.active);
                           const enabledTypes = activeProvider?.enabledServiceTypes ?? [];
                           const contrattiPerTipo = activeProvider?.contratti.filter((c) => wizPostalServiceType.startsWith(c.tipologia)) ?? [];
@@ -9921,9 +10485,14 @@ export function App(): React.JSX.Element {
                       {/* Allegati */}
                       <div className="card shadow-sm border-0 rounded-3 p-3 mb-3 bg-white">
                         <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-2">
-                          Allegati
+                          {wizManualRows.length >= 1 ? 'Allegati (comune a tutte le righe)' : 'Allegati'}
                           {(wizChannel === 'SEND' || wizChannel === 'POSTAL') && <span className="text-danger"> *</span>}
                         </h5>
+                        {wizManualRows.length >= 1 && (
+                          <p className="small text-muted mb-2">
+                            Questi file si applicano di default a ogni destinatario del lotto. Puoi caricare un file diverso per una singola riga già aggiunta dalla tabella sottostante (colonna "Allegato").
+                          </p>
+                        )}
 
                         {wizChannel === 'SEND' && (
                           <div className="alert alert-info d-flex align-items-start gap-2 mb-3">
@@ -10164,13 +10733,24 @@ export function App(): React.JSX.Element {
                     </div>
                   </div>
 
-                  <div className="mt-3 pt-2 d-flex justify-content-end">
+                  <div className="mt-3 pt-2 d-flex justify-content-end gap-2">
+                    <button
+                      className="btn btn-outline-primary px-3 fw-medium d-flex align-items-center gap-2"
+                      onClick={() => commitCurrentManualRow()}
+                      disabled={!singleCf.trim() || isManualRowFormInvalid}
+                      title={isManualRowFormInvalid ? 'Completa correttamente i dati del destinatario' : undefined}
+                    >
+                      <Plus size={16} /> Aggiungi destinatario
+                    </button>
                     <button
                       className="btn btn-primary px-4 fw-medium d-flex align-items-center gap-2"
-                      onClick={() => handleWizSingleSubmit(wizSingleNeedsTemplateStep ? 4 : 6)}
-                      disabled={wizSingleSubmitDisabled}
+                      onClick={() => handleWizManualSubmit()}
+                      disabled={
+                        (wizManualRows.length === 0 && (!singleCf.trim() || isManualRowFormInvalid)) ||
+                        (wizManualRows.length >= 1 && !wizName.trim())
+                      }
                     >
-                      Avanti <ArrowRight size={16} />
+                      Conferma e Invia <ArrowRight size={16} />
                     </button>
                   </div>
                 </div>
@@ -11222,6 +11802,14 @@ export function App(): React.JSX.Element {
               {/* STEP 4: TEMPLATE & ANTEPRIMA */}
               {wizStep === 4 && (
                 <>
+                  {wizGroupChannels.length > 0 && (
+                    <div className="alert alert-info d-flex align-items-center gap-2 mb-3">
+                      <Info size={16} />
+                      <div>
+                        Lancio multicanale: canale <strong>{wizChannel}</strong> ({wizGroupIndex + 1} di {wizGroupChannels.length}) — {wizGroupChannels.join(', ')}.
+                      </div>
+                    </div>
+                  )}
                   <div className="mb-3 pb-3 border-bottom d-flex justify-content-between">
                     <button className="btn btn-outline-secondary" onClick={() => setWizStep(wizSingleMode ? 1 : 3)}>
                       <ArrowLeft className="me-1" size={16} /> Indietro
@@ -11780,6 +12368,15 @@ export function App(): React.JSX.Element {
               {wizStep === 6 && (
                 <div>
                   <h4 className="h6 fw-bold text-dark mb-3"><CheckCircle2 className="text-success me-2" size={16} />Passo {wizDisplayStep(6, wizSingleMode)}: Anteprima e Invio</h4>
+
+                  {wizGroupChannels.length > 0 && (
+                    <div className="alert alert-info d-flex align-items-center gap-2 mb-3">
+                      <Info size={16} />
+                      <div>
+                        Lancio multicanale: canale <strong>{wizChannel}</strong> ({wizGroupIndex + 1} di {wizGroupChannels.length}) — {wizGroupChannels.join(', ')}.
+                      </div>
+                    </div>
+                  )}
 
                   {wizChannel === 'SEND' && !wizSingleMode && (
                     <div className={`alert ${wizSignatureJobStatus?.status === 'done' && wizSignatureJobStatus.invalidCount === 0 ? 'alert-success' : 'alert-warning'} d-flex align-items-center gap-2 mb-3`}>
@@ -16269,6 +16866,25 @@ export function App(): React.JSX.Element {
                             )}
                           </div>
                         </div>
+                        {campaign.groupId && (() => {
+                          const siblings = campaigns.filter(c => c.groupId === campaign.groupId && c.id !== campaign.id);
+                          if (siblings.length === 0) return null;
+                          return (
+                            <div className="mb-3 alert alert-light border d-flex flex-column gap-1 py-2 px-2">
+                              <strong className="small">Fa parte di un lancio multicanale:</strong>
+                              {siblings.map(s => (
+                                <a
+                                  key={s.id}
+                                  href="#"
+                                  className="small"
+                                  onClick={(e) => { e.preventDefault(); handleCampaignClick(s.id); }}
+                                >
+                                  {getChannelMeta(s.channelType).label} — {s.totalRecipients} destinatari — {s.status}
+                                </a>
+                              ))}
+                            </div>
+                          );
+                        })()}
                         <div className="mb-3">
                           <label className="text-muted small fw-semibold block">Canale</label>
                           <div>

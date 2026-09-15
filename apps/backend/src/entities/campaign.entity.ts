@@ -79,6 +79,9 @@ export class Campaign {
   @Column({ type: 'uuid', name: 'external_client_id', nullable: true })
   externalClientId!: string | null;
 
+  @Column({ type: 'uuid', name: 'group_id', nullable: true })
+  groupId!: string | null;
+
   @OneToMany('Recipient', 'campaign')
   recipients!: Recipient[];
 }

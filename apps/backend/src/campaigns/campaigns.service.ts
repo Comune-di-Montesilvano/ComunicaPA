@@ -360,6 +360,7 @@ export class CampaignsService {
       status: CampaignStatus.DRAFT,
       createdBy,
       isLegalValue: dto.isLegalValue ?? false,
+      groupId: dto.groupId ?? null,
     });
     return this.campaignRepo.save(campaign);
   }
