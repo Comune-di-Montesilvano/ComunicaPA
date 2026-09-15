@@ -58,9 +58,26 @@ Importo/Scadenza`) esiste già nel form singolo.
   generato; le Strategy che non supportano pagoPA (tutto tranne
   SEND/APP_IO) le ignorano — nessun cambio a quel meccanismo, già
   vero oggi.
-- **Protocollazione e valore legale**: scelti una volta sul form (non
-  per riga), propagati a tutte le sotto-campagne generate dal gruppo —
-  vedi sotto.
+- **Config specifica di canale (mailConfigId, taxonomyCode/
+  physicalCommunicationType, postalServiceType/postalReturnReceipt/
+  postalColorPrint/postalDuplex, ioServiceId)**: catturata nel form
+  solo quando si aggiunge la **prima riga di un canale non ancora
+  presente nel lotto** — i campi di config canale compaiono insieme ai
+  campi destinatario in quel momento, salvati come default per quel
+  canale (`wizManualChannelConfigs[canale]`). Righe successive dello
+  stesso canale non li richiedono più (nascosti, riusano il default
+  salvato) — evita di dover attraversare uno step "Template" separato
+  per ogni canale coinvolto.
+- **Protocollazione e valore legale**: non scelti manualmente una
+  tantum — ricalcolati **reattivamente** in base ai canali
+  effettivamente presenti nel lotto, stessa utility già esistente
+  (`isChannelAlwaysLegalValue`) e stessa logica di protocollo
+  obbligatorio per SEND già in vigore oggi (`assertSendProtocolConfigured`).
+  Aggiungere una riga SEND attiva valore-legale/protocollo per l'intero
+  gruppo; rimuovere l'ultima riga SEND li fa tornare allo stato
+  riflesso dai canali rimanenti — nessun flag "sticky" separato da
+  gestire, stesso comportamento reattivo già presente altrove nel
+  wizard.
 
 ## Multicanale via campaign group
 
@@ -88,8 +105,9 @@ Un solo click di conferma nel form "Invio Manuale" crea e lancia **N
 campagne single-channel esistenti**, invariate (`Campaign`,
 `channelConfig`, `*Strategy`, `launch()` — zero modifiche), una per
 ogni canale effettivo presente tra le righe del lotto (dopo eventuale
-dirottamento INAD). Le N campagne condividono un nuovo campo di
-collegamento.
+dirottamento INAD), usando per ciascuna il `channelConfig` costruito
+dal default di canale catturato in fase di inserimento righe (vedi
+sopra). Le N campagne condividono un nuovo campo di collegamento.
 
 **Migration**: `campaigns.group_id uuid NULL` + indice. Nessun altro
 cambio al data model. Non "campaign type" (un enum non basta a
@@ -151,27 +169,36 @@ stesura di questa spec.
   client-side (o raggruppare lato server, da decidere in fase di
   piano).
 
-## Da approfondire in fase di sviluppo
+## Decisioni tecniche (risolte in fase di brainstorming pre-piano)
 
-- Struttura esatta dello stato React per `wizManualRows` (shape
-  dell'oggetto riga, come si integra con gli stati `wizSingle*`/
-  `wizPdfFiles`/`wizSingleAttachmentSlots` esistenti).
-- Se il campo "Allegato comune" va gestito come file unico riusato per
-  ogni riga senza override, o richiede comunque un piccolo ZIP anche
-  nel caso "tutti uguali" (verificare il contratto esatto
-  dell'endpoint upload allegati massivo).
-- Dove/come mostrare il nudge informativo "destinatari con domicili
-  digitali eterogenei nel lotto — valuta SEND, gestisce entrambi i casi
-  in un solo canale" (non bloccante, solo suggerimento quando si rileva
-  mix di righe con/senza dirottamento INAD verso canali diversi).
-- Raggruppamento per `group_id` lato server (endpoint dedicato) vs
-  lato client (fetch normale + raggruppa in memoria) per l'elenco
-  campagne — impatta se serve un nuovo endpoint o basta il campo in
-  più sulla risposta esistente.
-- Ordine/atomicità del lancio delle N campagne del gruppo (sequenziale
-  vs parallelo) — impatta la UX di attesa sul click "Conferma e Invia"
-  quando N è alto (fino a 20 righe, ma tipicamente pochi canali
-  distinti).
+- **Allegato comune**: nessun bisogno di ZIP per il caso "tutti
+  uguali". L'endpoint `attachments/upload` già accetta upload di file
+  singoli per nome; la risoluzione allegato per destinatario
+  (`resolveCustomAttachmentFilename`/matching per colonna-nome-file,
+  vedi CLAUDE.md "Allegati e co-consegna App IO") già permette a più
+  righe CSV di referenziare lo **stesso filename** — l'allegato comune
+  è quindi un solo file caricato una volta, referenziato dalla colonna
+  `sd_allegato_1` di ogni riga senza override; una riga con override
+  referenzia invece il proprio filename distinto, caricato a parte.
+  Nessun cambio al meccanismo attachment esistente.
+- **Raggruppamento `group_id` in elenco campagne**: lato client. Il
+  campo si aggiunge automaticamente alla risposta di `GET
+  admin/campaigns` (il controller fa spread dell'entity intera, vedi
+  `campaigns.controller.ts:70`) — nessun endpoint dedicato, il
+  frontend raggruppa in memoria dopo il fetch esistente.
+- **Ordine di lancio delle N campagne del gruppo**: sequenziale (una
+  `create → upload CSV → upload allegati → launch` alla volta,
+  attendendo il completamento prima di passare al canale successivo).
+  Evita N upload paralleli sullo stesso allegato comune e mantiene un
+  solo progress indicator alla volta, coerente con l'UX esistente del
+  wizard singolo (un solo `wizUploadProgress` globale).
+- Struttura stato React `wizManualRows`/`wizManualChannelConfigs`:
+  definita nel piano di implementazione (task dedicato), non più punto
+  aperto di spec.
+- Nudge INAD eterogeneo: banner non bloccante sopra la tabella righe,
+  mostrato quando l'insieme delle righe accumulate include sia righe
+  con `inadCheck.diverted === true` sia righe con canale diverso da
+  quello dirottato — dettaglio implementativo nel piano.
 
 ## Fuori perimetro (non in questa feature)
 
