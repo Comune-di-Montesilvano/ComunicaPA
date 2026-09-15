@@ -6,6 +6,7 @@ import { AuditLogsService } from '../../audit-logs/audit-logs.service.js';
 import { DomicilioService } from './domicilio.service.js';
 import { CercaDomicilioDto } from './dto/cerca-domicilio.dto.js';
 import { CercaDomicilioAnagraficaDto } from './dto/cerca-domicilio-anagrafica.dto.js';
+import { CercaDomicilioDenominazioneDto } from './dto/cerca-domicilio-denominazione.dto.js';
 
 @Controller('admin/domicilio')
 export class DomicilioController {
@@ -63,6 +64,29 @@ export class DomicilioController {
         motivoRichiesta: dto.motivoRichiesta,
         found: result.found,
         codiceFiscaleTrovato: result.generalita?.codiceFiscale?.codFiscale,
+      },
+    });
+    return result;
+  }
+
+  /**
+   * Helper "Non hai il codice fiscale?" → modalità Impresa — ricerca
+   * Registro Imprese per denominazione. Audit log su denominazione/provincia
+   * cercate + esito, stesso principio di cerca-anagrafica sopra (nessun CF
+   * in input, va tracciato cosa è stato cercato).
+   */
+  @Post('cerca-denominazione')
+  @Roles('user', 'admin')
+  @HttpCode(HttpStatus.OK)
+  async cercaDenominazione(@Body() dto: CercaDomicilioDenominazioneDto, @Req() req: Request & { user: JwtOperatorPayload }) {
+    const result = await this.domicilioService.cercaPerDenominazione(dto.denominazione, dto.siglaProvincia);
+    await this.auditLogsService.log({
+      operator: req.user.username,
+      action: 'DOMICILIO_SEARCH_DENOMINAZIONE',
+      details: {
+        denominazione: dto.denominazione,
+        siglaProvincia: dto.siglaProvincia,
+        found: result.posizioni.length,
       },
     });
     return result;

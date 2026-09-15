@@ -1541,6 +1541,19 @@ export function App(): React.JSX.Element {
     generalita?: { cognome?: string; nome?: string; codiceFiscale?: { codFiscale?: string; validitaCF?: string } };
     message?: string;
   } | null>(null);
+  const [domicilioRicercaTipo, setDomicilioRicercaTipo] = useState<'fisica' | 'impresa'>('fisica');
+  const [domicilioImpresaForm, setDomicilioImpresaForm] = useState({ denominazione: '', siglaProvincia: '' });
+  const [domicilioImpresaLoading, setDomicilioImpresaLoading] = useState(false);
+  const [domicilioImpresaError, setDomicilioImpresaError] = useState<string | null>(null);
+  const [domicilioImpresaResult, setDomicilioImpresaResult] = useState<{
+    success: boolean;
+    posizioni: Array<{
+      denominazione?: string; formaGiuridica?: string; cFiscale?: string; pec?: string;
+      cciaa?: string; nRea?: string; statoImpresa?: string;
+      indirizzo?: { comune?: string; provincia?: string; via?: string; nCivico?: string; cap?: string };
+    }>;
+    message?: string;
+  } | null>(null);
   const [verificaInadBulkFile, setVerificaInadBulkFile] = useState<File | null>(null);
   const [verificaInadBulkHasHeaders, setVerificaInadBulkHasHeaders] = useState(true);
   const [verificaInadBulkHeaders, setVerificaInadBulkHeaders] = useState<string[]>([]);
@@ -3123,6 +3136,35 @@ export function App(): React.JSX.Element {
     }
   };
 
+  const runCercaDomicilioImpresa = async () => {
+    const f = domicilioImpresaForm;
+    if (f.denominazione.trim().length < 2) {
+      setDomicilioImpresaError('Denominazione: minimo 2 caratteri.');
+      setDomicilioImpresaResult(null);
+      return;
+    }
+    setDomicilioImpresaError(null);
+    setDomicilioImpresaLoading(true);
+    setDomicilioImpresaResult(null);
+    try {
+      const res = await apiFetch('/domicilio/cerca-denominazione', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          denominazione: f.denominazione.trim(),
+          siglaProvincia: f.siglaProvincia.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      setDomicilioImpresaResult(data);
+    } catch (err: any) {
+      if (err instanceof ApiAuthError) return;
+      setDomicilioImpresaError(err.message || 'Errore di connessione durante la ricerca');
+    } finally {
+      setDomicilioImpresaLoading(false);
+    }
+  };
+
   const parseVerificaInadBulkHeaders = (file: File, hasHeaders: boolean) => {
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -3491,6 +3533,29 @@ export function App(): React.JSX.Element {
         body: JSON.stringify({ codiceFiscale: enrichAddressEditCf }),
       });
       const data = await res.json();
+      // Persona giuridica (PIVA/CF 11 cifre) — backend instrada su Registro
+      // Imprese, mai su ANPR: leggere data.registroImprese, non data.anpr.
+      if (/^\d{11}$/.test(enrichAddressEditCf.trim())) {
+        const ri = data?.registroImprese;
+        const ind = ri?.data?.sede?.indirizzo;
+        if (ri?.success && ri?.found && ind) {
+          const via = [ind.toponimo, ind.via].filter(Boolean).join(' ');
+          setEnrichAddressEditFields((f) => ({
+            ...f,
+            indirizzo: [via, ind.nCivico].filter(Boolean).join(', '),
+            cap: ind.cap || '',
+            comune: ind.comune || '',
+            provincia: ind.provincia || '',
+            stato_estero: '',
+            ...(f.pec !== undefined ? { pec: ri.pec || '' } : {}),
+          }));
+        } else if (ri?.success && !ri?.found) {
+          alert('Registro Imprese: nessuna impresa trovata per questo Codice Fiscale/Partita IVA.');
+        } else {
+          alert(formatExternalErrorMessage(ri?.message));
+        }
+        return;
+      }
       const residenza = data?.anpr?.residenza?.[0];
       if (data?.anpr?.success && data?.anpr?.found && residenza?.indirizzo) {
         const ind = residenza.indirizzo;
@@ -13863,7 +13928,7 @@ export function App(): React.JSX.Element {
                   </h3>
                   <p className="small text-muted mb-0">
                     Persone fisiche (Codice Fiscale): ANPR (generalità e residenza), INAD (domicilio digitale) e App IO (servizi attivi).
-                    Persone giuridiche (Codice Fiscale): Registro Imprese (dati camerali, PEC) — la ricerca avviene per Codice Fiscale, non per Partita IVA: per la maggior parte delle imprese coincidono, ma per alcuni soggetti (es. enti pubblici, cooperative) possono essere diversi. Se la Partita IVA non dà esito, riprovare con il Codice Fiscale.
+                    Persone giuridiche (Codice Fiscale): Registro Imprese (dati camerali, PEC) — la ricerca avviene per Codice Fiscale, non per Partita IVA: per la maggior parte delle imprese coincidono, ma per alcuni soggetti (es. enti pubblici, cooperative) possono essere diversi. Se la Partita IVA non dà esito, usa "Non hai il codice fiscale?" → Impresa per cercare per denominazione.
                   </p>
                 </div>
               </div>
@@ -13913,7 +13978,26 @@ export function App(): React.JSX.Element {
 
               {domicilioAnagraficaOpen && (
                 <div className="card shadow-sm p-4 mb-4 border-0 bg-white rounded-3 border-start border-4 border-info">
-                  <h6 className="fw-bold text-dark mb-1">Ricerca per anagrafica (senza Codice Fiscale)</h6>
+                  <h6 className="fw-bold text-dark mb-2">Non hai il codice fiscale?</h6>
+                  <div className="btn-group btn-group-sm mb-3" role="group">
+                    <button
+                      type="button"
+                      className={`btn ${domicilioRicercaTipo === 'fisica' ? 'btn-primary' : 'btn-outline-primary'}`}
+                      onClick={() => setDomicilioRicercaTipo('fisica')}
+                    >
+                      Persona fisica
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn ${domicilioRicercaTipo === 'impresa' ? 'btn-primary' : 'btn-outline-primary'}`}
+                      onClick={() => setDomicilioRicercaTipo('impresa')}
+                    >
+                      Impresa
+                    </button>
+                  </div>
+
+                  {domicilioRicercaTipo === 'fisica' && (
+                  <>
                   <p className="small text-muted mb-3">
                     Cerca su ANPR (C002) con cognome, nome, sesso, data e comune di nascita — tutti obbligatori,
                     nessuna ricerca parziale ammessa. Utile ad es. per procedure di esproprio quando il catasto
@@ -14012,6 +14096,98 @@ export function App(): React.JSX.Element {
                         </div>
                       )}
                     </div>
+                  )}
+                  </>
+                  )}
+
+                  {domicilioRicercaTipo === 'impresa' && (
+                  <>
+                  <p className="small text-muted mb-3">
+                    Cerca su Registro Imprese per denominazione — utile quando la Partita IVA non corrisponde al
+                    Codice Fiscale del soggetto (nessun endpoint la risolve direttamente) o quando semplicemente
+                    non si dispone del CF.
+                  </p>
+                  <div className="row g-2">
+                    <div className="col-md-8">
+                      <label className="form-label small fw-bold text-secondary text-uppercase tracking-wider">Denominazione</label>
+                      <input className="form-control form-control-sm" placeholder="min 2 caratteri" value={domicilioImpresaForm.denominazione}
+                        onChange={e => setDomicilioImpresaForm(f => ({ ...f, denominazione: e.target.value }))}
+                        onKeyDown={e => { if (e.key === 'Enter') runCercaDomicilioImpresa(); }} />
+                    </div>
+                    <div className="col-md-4">
+                      <label className="form-label small fw-bold text-secondary text-uppercase tracking-wider">Provincia (sigla, opzionale)</label>
+                      <input className="form-control form-control-sm" maxLength={2} value={domicilioImpresaForm.siglaProvincia}
+                        onChange={e => setDomicilioImpresaForm(f => ({ ...f, siglaProvincia: e.target.value.toUpperCase() }))} />
+                    </div>
+                  </div>
+                  {domicilioImpresaError && <div className="small text-danger mt-2">{domicilioImpresaError}</div>}
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm px-4 fw-medium d-flex align-items-center gap-2"
+                      onClick={() => runCercaDomicilioImpresa()}
+                      disabled={domicilioImpresaLoading}
+                    >
+                      {domicilioImpresaLoading ? (
+                        <><Loader2 className="icon-spin" size={16} />Ricerca in corso...</>
+                      ) : (
+                        <><Search size={16} />Cerca per denominazione</>
+                      )}
+                    </button>
+                  </div>
+
+                  {domicilioImpresaResult && (
+                    <div className={`mt-3 p-3 rounded-3 ${!domicilioImpresaResult.success ? 'bg-danger-subtle' : domicilioImpresaResult.posizioni.length === 0 ? 'bg-light' : 'bg-success-subtle'}`}>
+                      {!domicilioImpresaResult.success && (
+                        <p className="small text-danger mb-0">{formatExternalErrorMessage(domicilioImpresaResult.message)}</p>
+                      )}
+                      {domicilioImpresaResult.success && domicilioImpresaResult.posizioni.length === 0 && (
+                        <p className="small text-muted mb-0">Nessuna impresa trovata con questa denominazione.</p>
+                      )}
+                      {domicilioImpresaResult.success && domicilioImpresaResult.posizioni.length > 0 && (
+                        <div className="table-responsive">
+                          <table className="table table-sm mb-0">
+                            <thead>
+                              <tr className="small text-muted text-uppercase">
+                                <th>Denominazione</th>
+                                <th>Forma giuridica</th>
+                                <th>Comune</th>
+                                <th>CF</th>
+                                <th>Stato</th>
+                                <th></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {domicilioImpresaResult.posizioni.map((p, i) => (
+                                <tr key={i}>
+                                  <td className="small fw-semibold">{p.denominazione || '—'}</td>
+                                  <td className="small">{p.formaGiuridica || '—'}</td>
+                                  <td className="small">{p.indirizzo?.comune || '—'}</td>
+                                  <td className="small fw-bold">{p.cFiscale || '—'}</td>
+                                  <td className="small">{p.statoImpresa || '—'}</td>
+                                  <td>
+                                    <button
+                                      type="button"
+                                      className="btn btn-outline-primary btn-sm"
+                                      disabled={!p.cFiscale}
+                                      onClick={() => {
+                                        if (!p.cFiscale) return;
+                                        setDomicilioAnagraficaOpen(false);
+                                        runCercaDomicilio(p.cFiscale);
+                                      }}
+                                    >
+                                      Usa questo CF
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  </>
                   )}
                 </div>
               )}
@@ -14520,12 +14696,12 @@ export function App(): React.JSX.Element {
                                     title={committed ? '' : 'In attesa di checkpoint (salvataggio ogni 100 righe)'}
                                     onClick={() => openEnrichAddressEdit(job.id, g.pdf)}
                                   >
-                                    {corrected ? 'Modifica correzione' : 'Correggi indirizzo'}
+                                    {corrected ? 'Modifica correzione' : 'Correggi dati'}
                                   </button>
                                 </div>
                                 {editingThisRow && (
                                   <div className="border rounded p-3 mt-2 bg-light">
-                                    <h6 className="small fw-bold mb-2">Correggi indirizzo — {enrichAddressEditPdf}</h6>
+                                    <h6 className="small fw-bold mb-2">Correggi dati — {enrichAddressEditPdf}</h6>
                                     {enrichAddressEditLoading ? (
                                       <div className="small text-muted"><Loader2 className="icon-spin me-1" size={16} />Caricamento...</div>
                                     ) : (
@@ -14538,7 +14714,9 @@ export function App(): React.JSX.Element {
                                           onClick={runEnrichAddressAnprCheck}
                                         >
                                           {enrichAddressEditAnprLoading ? (
-                                            <><Loader2 className="icon-spin me-1" size={16} />Verifica ANPR...</>
+                                            <><Loader2 className="icon-spin me-1" size={16} />Verifica in corso...</>
+                                          ) : /^\d{11}$/.test((enrichAddressEditCf || '').trim()) ? (
+                                            'Carica da Registro Imprese'
                                           ) : (
                                             'Carica da ANPR'
                                           )}

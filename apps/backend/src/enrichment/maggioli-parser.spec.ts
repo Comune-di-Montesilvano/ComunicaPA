@@ -19,6 +19,13 @@ const RUBRICA_ROW_SHORT = 'id;pec@pec.it;;N;C;RSSMRA80A01H501U;;NOME;1;01/01/202
 // 10=numProvv, 11=giorno, 12=mese, 13=anno, 14=oggetto, 15-16=vuoti, 17=filename
 const RUBRICA_ROW_TARI_SALDO =
   '708806;rsu;D;beta@pec.it;0;;;00000000002;;BETA SRLS;708806;25;8;2026;SALDO TARI 2026;;;DOC_708806_161219.pdf';
+// Stessa variante "TARI saldo", ma canale email invece di PEC — 16 campi
+// invece di 18: la data è già un unico campo dd/mm/aaaa (non spezzata in
+// giorno;mese;anno), quindi oggetto/filename scalano di 2 posizioni.
+// 0=id, 1=tributo, 2=flag, 3=email, 4=flag2, 5=nome, 6=cognome, 7=cf, 8=vuoto,
+// 9=nominativo, 10=numProvv, 11=dataEmissione, 12=oggetto, 13-14=vuoti, 15=filename
+const RUBRICA_ROW_TARI_SALDO_MAIL =
+  '733460;rsu;D;gamma@example.com;1;GIULIA;GAMMA;GMMGLI80A01H501U;;GAMMA GIULIA;733460;25/08/2026;SALDO TARI 2026;;;DOC_733460_16514.pdf';
 
 const PAG_INDICE = [
   "'nome file;'destinatario;'cod. fisc. dest;'indirizzo;'indirizzo parte 2;'localita;'comune;'stato estero;'Ocr int;'Ocr rid;'Num. provv;'Data emissione;'ocr notifica",
@@ -84,6 +91,21 @@ describe('parseRubricaPec', () => {
       dataEmissione: '25/8/2026',
       oggetto: 'SALDO TARI 2026',
       pdfFilename: 'DOC_708806_161219.pdf',
+    });
+  });
+
+  it('variante TARI saldo MAIL a 16 campi (data non spezzata): filename/oggetto letti dalla posizione corretta', () => {
+    const records = parseRubricaPec(RUBRICA_ROW_TARI_SALDO_MAIL);
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      pec: 'gamma@example.com',
+      codiceFiscale: 'GMMGLI80A01H501U',
+      tipo: 'PF',
+      nominativo: 'GAMMA GIULIA',
+      numeroProvvedimento: '733460',
+      dataEmissione: '25/08/2026',
+      oggetto: 'SALDO TARI 2026',
+      pdfFilename: 'DOC_733460_16514.pdf',
     });
   });
 });

@@ -176,3 +176,87 @@ describe('RegistroImpreseService.dettaglioImpresa', () => {
     expect(result.data?.patrimonio).toEqual({ valuta: 'EURO', deliberato: '10.000,00', sottoscritto: '10.000,00', versato: '10.000,00' });
   });
 });
+
+describe('RegistroImpreseService.ricercaDenominazione', () => {
+  let service: RegistroImpreseService;
+
+  beforeEach(async () => {
+    mockFetch.mockClear();
+    mockPdndAuth.getVoucher.mockClear();
+    const module = await Test.createTestingModule({
+      providers: [
+        RegistroImpreseService,
+        { provide: AppSettingsService, useValue: mockSettings },
+        { provide: PdndAuthService, useValue: mockPdndAuth },
+      ],
+    }).compile();
+    service = module.get(RegistroImpreseService);
+  });
+
+  it('passa denominazione e siglaProvincia come query param', async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, headers: { get: () => null }, arrayBuffer: () => Promise.resolve(Buffer.from('<posizioni/>', 'latin1')) });
+
+    await service.ricercaDenominazione('ACME', 'PE');
+
+    const [url] = mockFetch.mock.calls[0];
+    expect(url).toBe('https://pdnd.registroimprese.it/rest/pcad/v1/ricerca/denominazione?denominazione=ACME&siglaProvincia=PE');
+  });
+
+  it('omette siglaProvincia quando non fornita', async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, headers: { get: () => null }, arrayBuffer: () => Promise.resolve(Buffer.from('<posizioni/>', 'latin1')) });
+
+    await service.ricercaDenominazione('ACME', undefined);
+
+    const [url] = mockFetch.mock.calls[0];
+    expect(url).toBe('https://pdnd.registroimprese.it/rest/pcad/v1/ricerca/denominazione?denominazione=ACME');
+  });
+
+  it('parsa più occorrenze — dati fittizi (stesso schema attributi di dati-identificativi)', async () => {
+    const xml =
+      '<?xml version="1.0" encoding="windows-1252"?>' +
+      '<posizioni>' +
+      '<posizione denominazione="ACME ESEMPIO SRL" c-fiscale="00000000001" cciaa="PE" n-rea="1" stato-impresa="ATTIVA">' +
+      '<forma-giuridica c="SR">SOCIETA\' A RESPONSABILITA\' LIMITATA</forma-giuridica>' +
+      '<indirizzo-posta-certificata>ACME@PEC.IT</indirizzo-posta-certificata>' +
+      '<indirizzo-localizzazione comune="PESCARA" provincia="PE" via="ESEMPIO" n-civico="1" cap="65100"/>' +
+      '</posizione>' +
+      '<posizione denominazione="ACME BIS SRL" c-fiscale="00000000002" cciaa="PE" n-rea="2"/>' +
+      '</posizioni>';
+    mockFetch.mockResolvedValue({ ok: true, status: 200, headers: { get: () => null }, arrayBuffer: () => Promise.resolve(Buffer.from(xml, 'latin1')) });
+
+    const result = await service.ricercaDenominazione('ACME', 'PE');
+
+    expect(result.posizioni).toHaveLength(2);
+    expect(result.posizioni[0]).toMatchObject({
+      denominazione: 'ACME ESEMPIO SRL',
+      formaGiuridica: "SOCIETA' A RESPONSABILITA' LIMITATA",
+      cFiscale: '00000000001',
+      pec: 'acme@pec.it',
+      cciaa: 'PE',
+      nRea: '1',
+      statoImpresa: 'ATTIVA',
+      indirizzo: { comune: 'PESCARA', provincia: 'PE', via: 'ESEMPIO', cap: '65100' },
+    });
+    expect(result.posizioni[1]).toMatchObject({ denominazione: 'ACME BIS SRL', cFiscale: '00000000002' });
+  });
+
+  it('restituisce lista vuota quando nessuna impresa corrisponde (root senza figli)', async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, headers: { get: () => null }, arrayBuffer: () => Promise.resolve(Buffer.from('<posizioni/>', 'latin1')) });
+
+    const result = await service.ricercaDenominazione('INESISTENTE', undefined);
+
+    expect(result.posizioni).toEqual([]);
+  });
+
+  it('lancia RegistroImpreseRateLimitError su 429', async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 429, headers: { get: (h: string) => (h === 'Retry-After' ? '15' : null) }, arrayBuffer: () => Promise.resolve(Buffer.from('', 'latin1')) });
+
+    await expect(service.ricercaDenominazione('ACME', undefined)).rejects.toThrow(RegistroImpreseRateLimitError);
+  });
+
+  it('lancia errore leggibile su altri status HTTP', async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 400, headers: { get: () => null }, arrayBuffer: () => Promise.resolve(Buffer.from('denominazione troppo corta', 'latin1')) });
+
+    await expect(service.ricercaDenominazione('A', undefined)).rejects.toThrow(/Registro Imprese ricerca fallita: HTTP 400/);
+  });
+});
