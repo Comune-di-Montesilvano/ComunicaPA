@@ -9880,6 +9880,20 @@ export function App(): React.JSX.Element {
                     </div>
                   )}
 
+                  {(() => {
+                    const hasDiverted = wizManualRows.some(r => r.inadForced);
+                    const hasNonPec = wizManualRows.some(r => r.channel !== 'PEC' && !r.inadForced);
+                    if (!hasDiverted || !hasNonPec) return null;
+                    return (
+                      <div className="alert alert-warning d-flex align-items-start gap-2 mb-3">
+                        <AlertCircle size={16} className="mt-1 flex-shrink-0" />
+                        <div>
+                          Il lotto ha destinatari con domicili digitali eterogenei (alcuni dirottati da INAD su PEC, altri no) — valuta SEND: gestisce entrambi i casi in un solo canale, senza dividere il lancio in più bucket.
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   {wizManualRows.length > 0 && (
                     <div className="card shadow-sm border-0 rounded-3 p-3 mb-3 bg-white">
                       <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-2">
