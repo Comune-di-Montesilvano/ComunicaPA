@@ -15,6 +15,8 @@ import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.s
 import { RegistroImpreseService } from '../channels/registro-imprese/registro-imprese.service.js';
 import { RegistroImpreseVerifyQueueService } from '../channels/registro-imprese/registro-imprese-verify-queue.service.js';
 import { PostalAuthorizedUsersService } from '../postal-authorized-users/postal-authorized-users.service.js';
+import { SignatureVerificationBulkService } from '../signature-verification/signature-verification-bulk.service.js';
+import { SignatureVerificationService } from '../signature-verification/signature-verification.service.js';
 
 describe('CampaignsService - Cost and Savings', () => {
   let service: CampaignsService;
@@ -33,6 +35,8 @@ describe('CampaignsService - Cost and Savings', () => {
       providers: [
         CampaignsService,
         { provide: PostalAuthorizedUsersService, useValue: { isAuthorized: vi.fn().mockResolvedValue(true) } },
+        { provide: SignatureVerificationBulkService, useValue: { getLatestStatus: vi.fn().mockResolvedValue({ status: 'done', totalRows: 0, validCount: 0, invalidCount: 0, errorMessage: null }) } },
+        { provide: SignatureVerificationService, useValue: { verify: vi.fn().mockResolvedValue({ valid: true, reason: null }) } },
         { provide: getRepositoryToken(Campaign), useValue: campaignRepo },
         { provide: getRepositoryToken(Recipient), useValue: recipientRepo },
         { provide: getRepositoryToken(NotificationAttempt), useValue: attemptRepo },

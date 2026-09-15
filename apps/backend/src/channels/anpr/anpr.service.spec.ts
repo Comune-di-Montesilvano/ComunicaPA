@@ -128,6 +128,96 @@ describe('AnprService.getResidenza', () => {
   });
 });
 
+describe('AnprService.getGeneralitaByAnagrafica', () => {
+  let service: AnprService;
+
+  beforeEach(async () => {
+    mockFetch.mockClear();
+    mockPdndAuth.getVoucherWithDigest.mockClear();
+    mockPdndAuth.signAgidJwt.mockClear();
+    const module = await Test.createTestingModule({
+      providers: [
+        AnprService,
+        { provide: AppSettingsService, useValue: mockSettings },
+        { provide: PdndAuthService, useValue: mockPdndAuth },
+      ],
+    }).compile();
+    service = module.get(AnprService);
+  });
+
+  const criteri = {
+    cognome: "D'Addiego",
+    nome: 'Mirko',
+    sesso: 'M',
+    dataNascita: '1988-09-06',
+    comuneNascita: 'Vasto',
+    provinciaNascita: 'CH',
+  };
+
+  it('costruisce criteriRicerca con tutti e 5 i campi e passa il motivoRichiesta esplicito', async () => {
+    const body = {
+      idOperazioneANPR: 'op-3',
+      listaSoggetti: {
+        datiSoggetto: [
+          {
+            generalita: { codiceFiscale: { codFiscale: 'DDDMRK88P06E372L', validitaCF: '1' }, cognome: "D'ADDIEGO", nome: 'MIRKO' },
+            identificativi: { idANPR: 'DO56003EY' },
+            infoSoggettoEnte: [],
+          },
+        ],
+      },
+    };
+    mockFetch.mockResolvedValue({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(body)) });
+
+    const result = await service.getGeneralitaByAnagrafica(criteri, 'mario.rossi', 'pratica-esproprio-123');
+
+    expect(result.found).toBe(true);
+    expect(result.data?.generalita.codiceFiscale?.codFiscale).toBe('DDDMRK88P06E372L');
+
+    const [, init] = mockFetch.mock.calls[0];
+    const sentBody = JSON.parse(init.body);
+    expect(sentBody.criteriRicerca).toEqual({
+      cognome: "D'Addiego",
+      nome: 'Mirko',
+      sesso: 'M',
+      datiNascita: { dataEvento: '1988-09-06', luogoNascita: { comune: { nomeComune: 'Vasto', siglaProvinciaIstat: 'CH' } } },
+    });
+    expect(sentBody.datiRichiesta.motivoRichiesta).toBe('pratica-esproprio-123');
+    expect(sentBody.datiRichiesta.casoUso).toBe('C002');
+  });
+
+  it('omette siglaProvinciaIstat quando provinciaNascita non è fornita', async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, text: () => Promise.resolve('{"listaSoggetti":{"datiSoggetto":[]}}') });
+
+    await service.getGeneralitaByAnagrafica({ ...criteri, provinciaNascita: undefined }, 'mario.rossi', 'pratica-x');
+
+    const [, init] = mockFetch.mock.calls[0];
+    const sentBody = JSON.parse(init.body);
+    expect(sentBody.criteriRicerca.datiNascita.luogoNascita.comune).toEqual({ nomeComune: 'Vasto' });
+  });
+
+  it('propaga l\'errore leggibile (incl. EN148) su HTTP 400 quando mancano criteri obbligatori', async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 400,
+      text: () =>
+        Promise.resolve(
+          '{"listaErrori":[{"codiceErroreAnomalia":"EN148","testoErroreAnomalia":"Indicare il sesso","tipoErroreAnomalia":"E"}]}',
+        ),
+    });
+
+    await expect(service.getGeneralitaByAnagrafica(criteri, 'mario.rossi', 'pratica-x')).rejects.toThrow(/ANPR C002 fallito: HTTP 400/);
+  });
+
+  it('restituisce found:false quando nessun soggetto corrisponde', async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, text: () => Promise.resolve('{"listaSoggetti":{"datiSoggetto":[]}}') });
+
+    const result = await service.getGeneralitaByAnagrafica(criteri, 'mario.rossi', 'pratica-x');
+
+    expect(result).toEqual({ found: false });
+  });
+});
+
 describe('AnprService.getEsistenzaInVita', () => {
   let service: AnprService;
 

@@ -4,7 +4,14 @@ import { decode as jwtDecodeComplete } from 'jsonwebtoken';
 import { AppSettingsService } from '../../settings/app-settings.service.js';
 import type { SettingKey } from '../../settings/settings.registry.js';
 import { PdndAuthService } from '../../pdnd/pdnd-auth.service.js';
-import type { AnprResidenzaResult, AnprGeneralita, AnprResidenza, AnprInfoSoggettoEnte, AnprEsistenzaInVitaResult } from './anpr.types.js';
+import type {
+  AnprResidenzaResult,
+  AnprGeneralita,
+  AnprResidenza,
+  AnprInfoSoggettoEnte,
+  AnprEsistenzaInVitaResult,
+  AnprAnagraficaCriteri,
+} from './anpr.types.js';
 
 const ANPR_C002_BASE_URL =
   'https://modipa.anpr.interno.it/govway/rest/in/MinInternoPortaANPR-PDND/C002-servizioComunicazione/v1';
@@ -77,6 +84,52 @@ export class AnprService {
   ) {}
 
   async getResidenza(codiceFiscale: string, operatorUsername: string): Promise<AnprResidenzaResult> {
+    return this.queryC002({ codiceFiscale }, operatorUsername, 'comunicapa-cerca-domicilio');
+  }
+
+  /**
+   * Ricerca C002 per anagrafica pura (senza CF/idANPR) — stesso servizio di
+   * getResidenza(), criteriRicerca alternativo. Verificato dal vivo (mai dal
+   * solo yaml): ANPR richiede SEMPRE tutti e 5 i campi insieme
+   * (cognome+nome+sesso+dataNascita+comune di nascita), altrimenti HTTP 400
+   * EN148 "Indicare il sesso/la data di nascita/i dati di nascita/il luogo
+   * di nascita" — nessuna ricerca "parziale" ammessa. La risposta include
+   * sempre un warning ministeriale (listaAnomalie, EN148, tipo "W": DM
+   * Interno 3/3/2023 art.3 c.3, invita a usare idANPR) — non bloccante ma
+   * segnala che questo fallback per anagrafica è in via di dismissione lato
+   * erogatore, propagato as-is al chiamante.
+   *
+   * motivoRichiesta qui è passato dal chiamante (mai una costante fissa come
+   * in getResidenza): una ricerca senza CF deve sempre riferirsi a una
+   * pratica reale (es. n. procedimento esproprio) per essere tracciabile.
+   */
+  async getGeneralitaByAnagrafica(
+    criteri: AnprAnagraficaCriteri,
+    operatorUsername: string,
+    motivoRichiesta: string,
+  ): Promise<AnprResidenzaResult> {
+    const criteriRicerca: Record<string, unknown> = {
+      cognome: criteri.cognome,
+      nome: criteri.nome,
+      sesso: criteri.sesso,
+      datiNascita: {
+        dataEvento: criteri.dataNascita,
+        luogoNascita: {
+          comune: {
+            nomeComune: criteri.comuneNascita,
+            ...(criteri.provinciaNascita ? { siglaProvinciaIstat: criteri.provinciaNascita } : {}),
+          },
+        },
+      },
+    };
+    return this.queryC002(criteriRicerca, operatorUsername, motivoRichiesta);
+  }
+
+  private async queryC002(
+    criteriRicerca: Record<string, unknown>,
+    operatorUsername: string,
+    motivoRichiesta: string,
+  ): Promise<AnprResidenzaResult> {
     const [purposeId, userLocation, loA] = await Promise.all([
       this.settings.get<string>('anpr.c002.purposeId' as SettingKey),
       this.settings.get<string>('anpr.trackingUserLocation' as SettingKey),
@@ -108,10 +161,10 @@ export class AnprService {
     const idOperazioneClient = `${Date.now()}${randomUUID().replace(/-/g, '').slice(0, 6)}`;
     const body = {
       idOperazioneClient,
-      criteriRicerca: { codiceFiscale },
+      criteriRicerca,
       datiRichiesta: {
         dataRiferimentoRichiesta: new Date().toISOString().slice(0, 10),
-        motivoRichiesta: 'comunicapa-cerca-domicilio',
+        motivoRichiesta,
         casoUso: 'C002',
       },
     };

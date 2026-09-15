@@ -34,6 +34,8 @@ export interface RecipientStatDto {
   costCents?: number | null;
   /** Esito ultima verifica INAD — `diverted` guida il filtro client-side del bottone "Rimanda a questi N" (widget multicanale). */
   inadCheck?: { found: boolean; diverted: boolean } | null;
+  /** Esito verifica firma digitale allegato (solo campagne SEND). */
+  signatureCheck?: { valid: boolean; reason: string | null } | null;
 }
 
 export interface RecipientStatsPageDto {
