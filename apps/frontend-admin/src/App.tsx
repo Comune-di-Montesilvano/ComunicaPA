@@ -1957,6 +1957,9 @@ export function App(): React.JSX.Element {
   const [wizManualChannelConfigs, setWizManualChannelConfigs] = useState<
     Partial<Record<'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL', ManualChannelConfig>>
   >({});
+  const [wizGroupChannels, setWizGroupChannels] = useState<ManualRow['channel'][]>([]);
+  const [wizGroupIndex, setWizGroupIndex] = useState(0);
+  const [wizGroupId, setWizGroupId] = useState<string | null>(null);
 
   // Wizard States
   const [wizStep, setWizStep] = useState(1);
@@ -6630,18 +6633,33 @@ export function App(): React.JSX.Element {
     if (wizManualEditingId === id) clearManualRowForm();
   };
 
-  const handleWizManualSubmit = async (targetStep: number = 4) => {
+  const handleWizManualSubmit = async (explicitTargetStep?: number) => {
     // Se il form corrente ha dati validi, committalo come ultima riga —
     // preserva l'esperienza "riempi una volta, clicca un bottone" per il
     // caso a 1 destinatario (nessun bisogno di premere "Aggiungi" a parte).
+    // `rows` va costruito localmente (mai da wizManualRows subito dopo
+    // commitCurrentManualRow): setWizManualRows è asincrono, la closure di
+    // questa funzione vedrebbe ancora l'array PRIMA del commit nello stesso
+    // tick — stesso bug di stale closure già noto altrove in questo file
+    // (vedi commento gemello su wizValidRows/handleWizSingleSubmit).
+    let rows = wizManualRows;
     if (singleCf.trim() && !isManualRowFormInvalid) {
-      if (!commitCurrentManualRow()) return; // dedup bloccante, messaggio già mostrato
+      if (isFirstRowOfChannel(wizChannel)) captureManualChannelConfig(wizChannel);
+      const cf = singleCf.toUpperCase();
+      if (isManualCfDuplicate(cf, wizManualEditingId)) {
+        alert(`Codice Fiscale/P.IVA ${cf} già presente nella lista.`);
+        return;
+      }
+      const id = wizManualEditingId ?? `row-${Date.now()}-${wizManualRows.length}`;
+      const newRow = buildManualRowFromForm(id);
+      rows = [...wizManualRows.filter(r => r.id !== wizManualEditingId), newRow];
+      setWizManualRows(rows);
+      clearManualRowForm();
     } else if (singleCf.trim() && isManualRowFormInvalid) {
       alert('Completa correttamente i dati del destinatario corrente prima di procedere, oppure svuota il Codice Fiscale se vuoi inviare solo le righe già aggiunte.');
       return;
     }
 
-    const rows = wizManualRows;
     if (rows.length === 0) {
       alert('Aggiungi almeno un destinatario prima di procedere.');
       return;
@@ -6651,8 +6669,37 @@ export function App(): React.JSX.Element {
       return;
     }
 
+    // Canale effettivo: un dirottamento INAD manda sempre la riga sul bucket
+    // PEC, indipendente dal canale scelto dall'operatore per quella riga.
+    const effectiveChannel = (row: ManualRow): ManualRow['channel'] => (row.inadForced ? 'PEC' : row.channel);
+    const distinctChannels = Array.from(new Set(rows.map(effectiveChannel)));
+
+    if (distinctChannels.length > 1 && !wizGroupId) {
+      setWizGroupChannels(distinctChannels);
+      setWizGroupIndex(0);
+      setWizGroupId(crypto.randomUUID());
+    }
+    const activeGroupChannels = distinctChannels.length > 1 ? distinctChannels : [];
+    const currentBucketChannel = activeGroupChannels.length > 0 ? activeGroupChannels[0] : wizChannel;
+    setWizChannel(currentBucketChannel);
+    if (!isFirstRowOfChannel(currentBucketChannel)) applyManualChannelConfig(currentBucketChannel);
+    // explicitTargetStep arriva SOLO dal click su una tab della step-bar
+    // (navigazione esplicita dell'operatore verso uno step preciso) — va
+    // sempre onorato. Omesso (bottoni "Aggiungi"/"Conferma e Invia"), si
+    // ricalcola sul canale reale di QUESTO bucket: il valore che il
+    // chiamante avrebbe calcolato da wizChannel al momento del click può
+    // non coincidere col bucket effettivamente in lavorazione qui (ordine
+    // bucket ≠ canale del form al click).
+    const bucketNeedsTemplateStep = currentBucketChannel === 'EMAIL' || currentBucketChannel === 'PEC' || currentBucketChannel === 'APP_IO';
+    const resolvedTargetStep = explicitTargetStep ?? (bucketNeedsTemplateStep ? 4 : 6);
+
+    const bucketRows = activeGroupChannels.length > 0
+      ? rows.filter(r => effectiveChannel(r) === currentBucketChannel)
+      : rows;
+    const bucketNeedsPhysicalAddress = currentBucketChannel === 'POSTAL' || currentBucketChannel === 'SEND';
+
     const cols: string[] = ['codice_fiscale', 'full_name', 'email', 'pec'];
-    if (needsWizSinglePhysicalAddress) cols.push('sd_indirizzo', 'sd_comune', 'sd_cap', 'sd_provincia', 'sd_paese');
+    if (bucketNeedsPhysicalAddress) cols.push('sd_indirizzo', 'sd_comune', 'sd_cap', 'sd_provincia', 'sd_paese');
     if (wizPaymentEnabled) cols.push('sd_iuv', 'sd_importo', 'sd_scadenza');
     const defaultSlotsWithFile = wizSingleAttachmentSlots.filter(s => s.file);
     defaultSlotsWithFile.forEach((_s, i) => cols.push(`sd_allegato_${i + 1}`));
@@ -6665,10 +6712,10 @@ export function App(): React.JSX.Element {
     const filesToUpload = new Map<string, File>();
     defaultSlotsWithFile.forEach(s => filesToUpload.set(s.file!.name, s.file!));
 
-    rows.forEach(row => {
+    bucketRows.forEach(row => {
       const fullName = [row.surname, row.firstName].filter(Boolean).join(' ');
       const vals: string[] = [row.cf, fullName, row.email, row.pec];
-      if (needsWizSinglePhysicalAddress) vals.push(row.address, row.municipality, row.zip, row.province, row.country);
+      if (bucketNeedsPhysicalAddress) vals.push(row.address, row.municipality, row.zip, row.province, row.country);
       if (wizPaymentEnabled) vals.push(row.paymentIuv, row.paymentImporto, row.paymentScadenza);
       defaultSlotsWithFile.forEach((s) => {
         const override = row.attachmentOverrides[s.id];
@@ -6684,7 +6731,7 @@ export function App(): React.JSX.Element {
     setWizCsvFile(file);
     await parseCsvFile(file, true);
 
-    if (needsWizSinglePhysicalAddress) {
+    if (bucketNeedsPhysicalAddress) {
       setWizPostalAddressColumn('sd_indirizzo');
       setWizPostalMunicipalityColumn('sd_comune');
       setWizPostalZipColumn('sd_cap');
@@ -6708,7 +6755,7 @@ export function App(): React.JSX.Element {
     // ancora recepito l'aggiornamento di wizCsvRows (vedi commento su
     // syncWizDraftAndRecipients).
     const recipientsCsvBlobOverride = new Blob([csvContent], { type: 'text/csv' });
-    const campaignId = await syncWizDraftAndRecipients(targetStep, newWizAttachments, recipientsCsvBlobOverride);
+    const campaignId = await syncWizDraftAndRecipients(resolvedTargetStep, newWizAttachments, recipientsCsvBlobOverride);
     if (!campaignId) return;
 
     // Carica subito gli allegati reali sul server (invece di rimandarlo a
@@ -6722,7 +6769,7 @@ export function App(): React.JSX.Element {
       return;
     }
 
-    setWizStep(targetStep);
+    setWizStep(resolvedTargetStep);
   };
 
   const isManualRowFormInvalid =
@@ -9725,7 +9772,7 @@ export function App(): React.JSX.Element {
                       </button>
                       <button
                         className="btn btn-primary px-4 fw-medium d-flex align-items-center gap-2"
-                        onClick={() => handleWizManualSubmit(wizSingleNeedsTemplateStep ? 4 : 6)}
+                        onClick={() => handleWizManualSubmit()}
                         disabled={
                           (wizManualRows.length === 0 && (!singleCf.trim() || isManualRowFormInvalid)) ||
                           (wizManualRows.length >= 1 && !wizName.trim())
@@ -10558,7 +10605,7 @@ export function App(): React.JSX.Element {
                     </button>
                     <button
                       className="btn btn-primary px-4 fw-medium d-flex align-items-center gap-2"
-                      onClick={() => handleWizManualSubmit(wizSingleNeedsTemplateStep ? 4 : 6)}
+                      onClick={() => handleWizManualSubmit()}
                       disabled={
                         (wizManualRows.length === 0 && (!singleCf.trim() || isManualRowFormInvalid)) ||
                         (wizManualRows.length >= 1 && !wizName.trim())
