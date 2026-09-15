@@ -45,6 +45,25 @@ export function parseRubricaPec(text: string): MaggioliRecord[] {
     const line = rawLine.trim();
     if (!line) continue;
     const fields = line.split(';');
+    // Variante "TARI saldo": 18 campi, id;tributo;flag;pec;flag2;nome;cognome;cf;;nominativo;
+    // numProvv;giorno;mese;anno;oggetto;;;filename — vs il formato standard a 14 campi sotto.
+    if (fields.length >= 18) {
+      records.push({
+        pec: fields[3].trim(),
+        codiceFiscale: fields[7].trim(),
+        tipo: tipoFromCf(fields[7]),
+        nominativo: fields[9].trim(),
+        numeroProvvedimento: fields[10].trim(),
+        dataEmissione: [fields[11], fields[12], fields[13]].map((f) => f.trim()).join('/'),
+        oggetto: fields[14].trim(),
+        pdfFilename: fields[17].trim(),
+        csvAddress: null,
+        csvNumeroAvviso: '',
+        csvNumeroAvvisoAlt: '',
+        ocrNotifica: '',
+      });
+      continue;
+    }
     while (fields.length < 14) fields.push('');
     records.push({
       pec: fields[1].trim(),

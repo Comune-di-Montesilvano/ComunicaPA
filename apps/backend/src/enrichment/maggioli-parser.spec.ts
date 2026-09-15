@@ -14,6 +14,11 @@ const RUBRICA_ROW_PG =
   '36043|ici|P;acme@pec.it;;;;00123456789;;ACME SRL;19009033;13/03/2026;Oggetto PG;;;PROVV_36043_1.pdf';
 // Riga corta (meno di 14 campi): va paddata, non crashare
 const RUBRICA_ROW_SHORT = 'id;pec@pec.it;;N;C;RSSMRA80A01H501U;;NOME;1;01/01/2026';
+// Variante "TARI saldo" a 18 campi (tributo/flag in testa, data spezzata gg/mm/aaaa):
+// 0=id, 1=tributo, 2=flag, 3=pec, 4=flag2, 5=nome, 6=cognome, 7=cf, 8=vuoto, 9=nominativo,
+// 10=numProvv, 11=giorno, 12=mese, 13=anno, 14=oggetto, 15-16=vuoti, 17=filename
+const RUBRICA_ROW_TARI_SALDO =
+  '708806;rsu;D;pizzanuova@pec.it;0;;;2333900682;;PIZZANUOVA SRLS;708806;25;8;2026;SALDO TARI 2026;;;DOC_708806_161219.pdf';
 
 const PAG_INDICE = [
   "'nome file;'destinatario;'cod. fisc. dest;'indirizzo;'indirizzo parte 2;'localita;'comune;'stato estero;'Ocr int;'Ocr rid;'Num. provv;'Data emissione;'ocr notifica",
@@ -65,6 +70,21 @@ describe('parseRubricaPec', () => {
   it('ocrNotifica sempre vuota (il formato rubrica PEC non la contiene mai)', () => {
     const records = parseRubricaPec(RUBRICA_ROW_PF);
     expect(records[0].ocrNotifica).toBe('');
+  });
+
+  it('variante TARI saldo a 18 campi: filename/pec/cf letti dalla posizione corretta', () => {
+    const records = parseRubricaPec(RUBRICA_ROW_TARI_SALDO);
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      pec: 'pizzanuova@pec.it',
+      codiceFiscale: '2333900682',
+      tipo: 'PG',
+      nominativo: 'PIZZANUOVA SRLS',
+      numeroProvvedimento: '708806',
+      dataEmissione: '25/8/2026',
+      oggetto: 'SALDO TARI 2026',
+      pdfFilename: 'DOC_708806_161219.pdf',
+    });
   });
 });
 
