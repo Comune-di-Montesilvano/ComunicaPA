@@ -6633,6 +6633,95 @@ export function App(): React.JSX.Element {
     if (wizManualEditingId === id) clearManualRowForm();
   };
 
+  // Costruisce il CSV virtuale per UN bucket-canale, sincronizza la bozza
+  // campagna (crea/patcha) e carica gli allegati — riusata sia dal primo
+  // bucket (handleWizManualSubmit, dal form) sia dall'avanzamento al bucket
+  // successivo di un gruppo multicanale (handleWizLaunch, dopo il lancio
+  // riuscito del bucket precedente). `channel`/`rows`/`targetStep` sono
+  // sempre parametri espliciti, mai letti da state asincrono nello stesso
+  // tick — stesso principio della stale-closure fix sopra.
+  const syncManualBucket = async (
+    channel: ManualRow['channel'],
+    rows: ManualRow[],
+    targetStep: number,
+    isGrouped: boolean,
+    forceNewCampaign?: boolean,
+    // Sempre passato esplicitamente dal chiamante (mai letto da wizGroupId
+    // di stato qui dentro) — stesso principio di `channel`: subito dopo un
+    // eventuale setWizGroupId() nello stesso tick, lo stato non è ancora
+    // visibile in questa chiusura.
+    groupId?: string,
+  ): Promise<boolean> => {
+    setWizChannel(channel);
+    if (!isFirstRowOfChannel(channel)) applyManualChannelConfig(channel);
+
+    const effectiveChannel = (row: ManualRow): ManualRow['channel'] => (row.inadForced ? 'PEC' : row.channel);
+    const bucketRows = isGrouped ? rows.filter(r => effectiveChannel(r) === channel) : rows;
+    const bucketNeedsPhysicalAddress = channel === 'POSTAL' || channel === 'SEND';
+
+    const cols: string[] = ['codice_fiscale', 'full_name', 'email', 'pec'];
+    if (bucketNeedsPhysicalAddress) cols.push('sd_indirizzo', 'sd_comune', 'sd_cap', 'sd_provincia', 'sd_paese');
+    if (wizPaymentEnabled) cols.push('sd_iuv', 'sd_importo', 'sd_scadenza');
+    const defaultSlotsWithFile = wizSingleAttachmentSlots.filter(s => s.file);
+    defaultSlotsWithFile.forEach((_s, i) => cols.push(`sd_allegato_${i + 1}`));
+
+    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
+    const lines = [cols.join(',')];
+    const filesToUpload = new Map<string, File>();
+    defaultSlotsWithFile.forEach(s => filesToUpload.set(s.file!.name, s.file!));
+
+    bucketRows.forEach(row => {
+      const fullName = [row.surname, row.firstName].filter(Boolean).join(' ');
+      const vals: string[] = [row.cf, fullName, row.email, row.pec];
+      if (bucketNeedsPhysicalAddress) vals.push(row.address, row.municipality, row.zip, row.province, row.country);
+      if (wizPaymentEnabled) vals.push(row.paymentIuv, row.paymentImporto, row.paymentScadenza);
+      defaultSlotsWithFile.forEach((s) => {
+        const override = row.attachmentOverrides[s.id];
+        const file = override || s.file!;
+        if (override) filesToUpload.set(override.name, override);
+        vals.push(file.name);
+      });
+      lines.push(vals.map(esc).join(','));
+    });
+
+    const csvContent = lines.join('\n');
+    const file = new File([csvContent], 'destinatari.csv', { type: 'text/csv' });
+    setWizCsvFile(file);
+    await parseCsvFile(file, true);
+
+    if (bucketNeedsPhysicalAddress) {
+      setWizPostalAddressColumn('sd_indirizzo');
+      setWizPostalMunicipalityColumn('sd_comune');
+      setWizPostalZipColumn('sd_cap');
+      setWizPostalProvinceColumn('sd_provincia');
+      setWizPostalCountryColumn('sd_paese');
+    }
+    if (wizPaymentEnabled) {
+      setWizPaymentNoticeCol('sd_iuv');
+      setWizPaymentAmountCol('sd_importo');
+      setWizPaymentAmountType('euro');
+      setWizPaymentDueDateCol('sd_scadenza');
+    }
+    const newWizAttachments = defaultSlotsWithFile.map((s, i) => ({ key: `sd_allegato_${i + 1}`, label: s.label || `Allegato ${i + 1}` }));
+    setWizAttachments(newWizAttachments);
+    const uploadFiles = Array.from(filesToUpload.values());
+    setWizPdfFiles(uploadFiles);
+
+    const recipientsCsvBlobOverride = new Blob([csvContent], { type: 'text/csv' });
+    const campaignId = await syncWizDraftAndRecipients(targetStep, newWizAttachments, recipientsCsvBlobOverride, forceNewCampaign, groupId, channel);
+    if (!campaignId) return false;
+
+    try {
+      if (!(await ensureWizSingleAttachmentsUploaded(campaignId, uploadFiles))) return false;
+    } catch (err: any) {
+      alert(err.message || 'Errore durante il caricamento degli allegati.');
+      return false;
+    }
+
+    setWizStep(targetStep);
+    return true;
+  };
+
   const handleWizManualSubmit = async (explicitTargetStep?: number) => {
     // Se il form corrente ha dati validi, committalo come ultima riga —
     // preserva l'esperienza "riempi una volta, clicca un bottone" per il
@@ -6674,15 +6763,18 @@ export function App(): React.JSX.Element {
     const effectiveChannel = (row: ManualRow): ManualRow['channel'] => (row.inadForced ? 'PEC' : row.channel);
     const distinctChannels = Array.from(new Set(rows.map(effectiveChannel)));
 
+    // groupId calcolato localmente (mai da wizGroupId di stato subito dopo
+    // averlo appena impostato — stessa stale closure di `rows` sopra):
+    // un setWizGroupId() qui non sarebbe ancora leggibile da questa stessa
+    // chiusura sincrona.
+    const effectiveGroupId = distinctChannels.length > 1 ? (wizGroupId ?? crypto.randomUUID()) : wizGroupId ?? undefined;
     if (distinctChannels.length > 1 && !wizGroupId) {
       setWizGroupChannels(distinctChannels);
       setWizGroupIndex(0);
-      setWizGroupId(crypto.randomUUID());
+      setWizGroupId(effectiveGroupId!);
     }
     const activeGroupChannels = distinctChannels.length > 1 ? distinctChannels : [];
     const currentBucketChannel = activeGroupChannels.length > 0 ? activeGroupChannels[0] : wizChannel;
-    setWizChannel(currentBucketChannel);
-    if (!isFirstRowOfChannel(currentBucketChannel)) applyManualChannelConfig(currentBucketChannel);
     // explicitTargetStep arriva SOLO dal click su una tab della step-bar
     // (navigazione esplicita dell'operatore verso uno step preciso) — va
     // sempre onorato. Omesso (bottoni "Aggiungi"/"Conferma e Invia"), si
@@ -6693,83 +6785,7 @@ export function App(): React.JSX.Element {
     const bucketNeedsTemplateStep = currentBucketChannel === 'EMAIL' || currentBucketChannel === 'PEC' || currentBucketChannel === 'APP_IO';
     const resolvedTargetStep = explicitTargetStep ?? (bucketNeedsTemplateStep ? 4 : 6);
 
-    const bucketRows = activeGroupChannels.length > 0
-      ? rows.filter(r => effectiveChannel(r) === currentBucketChannel)
-      : rows;
-    const bucketNeedsPhysicalAddress = currentBucketChannel === 'POSTAL' || currentBucketChannel === 'SEND';
-
-    const cols: string[] = ['codice_fiscale', 'full_name', 'email', 'pec'];
-    if (bucketNeedsPhysicalAddress) cols.push('sd_indirizzo', 'sd_comune', 'sd_cap', 'sd_provincia', 'sd_paese');
-    if (wizPaymentEnabled) cols.push('sd_iuv', 'sd_importo', 'sd_scadenza');
-    const defaultSlotsWithFile = wizSingleAttachmentSlots.filter(s => s.file);
-    defaultSlotsWithFile.forEach((_s, i) => cols.push(`sd_allegato_${i + 1}`));
-
-    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
-    const lines = [cols.join(',')];
-    // Nome file per (riga, slot): override della riga se presente, altrimenti
-    // il default comune dello slot — stesso filename riusato su più righe è
-    // già supportato dalla risoluzione allegato esistente lato backend.
-    const filesToUpload = new Map<string, File>();
-    defaultSlotsWithFile.forEach(s => filesToUpload.set(s.file!.name, s.file!));
-
-    bucketRows.forEach(row => {
-      const fullName = [row.surname, row.firstName].filter(Boolean).join(' ');
-      const vals: string[] = [row.cf, fullName, row.email, row.pec];
-      if (bucketNeedsPhysicalAddress) vals.push(row.address, row.municipality, row.zip, row.province, row.country);
-      if (wizPaymentEnabled) vals.push(row.paymentIuv, row.paymentImporto, row.paymentScadenza);
-      defaultSlotsWithFile.forEach((s) => {
-        const override = row.attachmentOverrides[s.id];
-        const file = override || s.file!;
-        if (override) filesToUpload.set(override.name, override);
-        vals.push(file.name);
-      });
-      lines.push(vals.map(esc).join(','));
-    });
-
-    const csvContent = lines.join('\n');
-    const file = new File([csvContent], 'destinatari.csv', { type: 'text/csv' });
-    setWizCsvFile(file);
-    await parseCsvFile(file, true);
-
-    if (bucketNeedsPhysicalAddress) {
-      setWizPostalAddressColumn('sd_indirizzo');
-      setWizPostalMunicipalityColumn('sd_comune');
-      setWizPostalZipColumn('sd_cap');
-      setWizPostalProvinceColumn('sd_provincia');
-      setWizPostalCountryColumn('sd_paese');
-    }
-    if (wizPaymentEnabled) {
-      setWizPaymentNoticeCol('sd_iuv');
-      setWizPaymentAmountCol('sd_importo');
-      setWizPaymentAmountType('euro');
-      setWizPaymentDueDateCol('sd_scadenza');
-    }
-    const newWizAttachments = defaultSlotsWithFile.map((s, i) => ({ key: `sd_allegato_${i + 1}`, label: s.label || `Allegato ${i + 1}` }));
-    setWizAttachments(newWizAttachments);
-    const uploadFiles = Array.from(filesToUpload.values());
-    setWizPdfFiles(uploadFiles);
-
-    // csvContent è già nella forma normalizzata attesa da /recipients/upload
-    // (codice_fiscale, full_name, email, pec, ...extra) — passato come override
-    // per non dipendere da wizValidRows, che a questo punto del tick non ha
-    // ancora recepito l'aggiornamento di wizCsvRows (vedi commento su
-    // syncWizDraftAndRecipients).
-    const recipientsCsvBlobOverride = new Blob([csvContent], { type: 'text/csv' });
-    const campaignId = await syncWizDraftAndRecipients(resolvedTargetStep, newWizAttachments, recipientsCsvBlobOverride);
-    if (!campaignId) return;
-
-    // Carica subito gli allegati reali sul server (invece di rimandarlo a
-    // "Avvia Test"/"Conferma ed Avvia"): senza upload immediato, l'anteprima
-    // allegato allo Step 3 (Anteprima e Invio) cerca il file sul disco del
-    // server prima che sia mai stato caricato — 404 "Allegato non trovato".
-    try {
-      if (!(await ensureWizSingleAttachmentsUploaded(campaignId, uploadFiles))) return;
-    } catch (err: any) {
-      alert(err.message || 'Errore durante il caricamento degli allegati.');
-      return;
-    }
-
-    setWizStep(resolvedTargetStep);
+    await syncManualBucket(currentBucketChannel, rows, resolvedTargetStep, activeGroupChannels.length > 0, undefined, effectiveGroupId);
   };
 
   const isManualRowFormInvalid =
@@ -7390,7 +7406,17 @@ export function App(): React.JSX.Element {
     // stantio (bug reale: wizard singolo, allegato configurato ma mai scritto
     // in channelConfig al primo "Avanti").
     attachmentsOverride?: Array<{ key: string; label: string }>,
+    // channelOverride: canale REALE da usare per decidere quali campi
+    // includere in channelConfig — mai wizChannel da solo. setWizChannel()
+    // è asincrono: un chiamante che l'ha appena invocato nello stesso tick
+    // (syncManualBucket, avanzamento bucket gruppo multicanale) leggerebbe
+    // qui ancora il canale del bucket PRECEDENTE (stessa classe di bug
+    // stale-closure già nota altrove in questo file — verificato dal vivo:
+    // senza questo parametro, il channelType salvato in DB per un lancio
+    // di gruppo risultava quello del bucket precedente, non quello reale).
+    channelOverride?: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL',
   ): Record<string, any> => {
+    const effectiveWizChannel = channelOverride ?? wizChannel;
     const cfg: Record<string, any> = {
       subject: wizSubject,
       body: wizBody,
@@ -7404,7 +7430,7 @@ export function App(): React.JSX.Element {
       cfg.wizCsvFilename = wizCsvFile.name;
       cfg.wizCsvHasHeaders = wizCsvHasHeaders;
     }
-    if (wizChannel === 'SEND') {
+    if (effectiveWizChannel === 'SEND') {
       cfg.taxonomyCode = wizTaxonomyCode;
       cfg.physicalCommunicationType = wizPhysicalCommunicationType;
       // Facoltativo per SEND (fallback PN se non risolve un domicilio
@@ -7424,7 +7450,7 @@ export function App(): React.JSX.Element {
         };
       }
     }
-    if (wizChannel === 'POSTAL') {
+    if (effectiveWizChannel === 'POSTAL') {
       cfg.postalServiceType = wizPostalServiceType;
       cfg.postalReturnReceipt = wizPostalReturnReceipt;
       cfg.postalColorPrint = wizPostalColorPrint;
@@ -7454,7 +7480,7 @@ export function App(): React.JSX.Element {
     const effectiveAttachmentsForConfig = attachmentsOverride !== undefined ? attachmentsOverride : wizAttachments;
     if (effectiveAttachmentsForConfig.length > 0) cfg.attachments = effectiveAttachmentsForConfig;
     if (wizMapping.codice_fiscale) cfg.csvMapping = wizMapping;
-    if (wizChannel === 'APP_IO') {
+    if (effectiveWizChannel === 'APP_IO') {
       cfg.ioServiceId = wizAppIoServiceId;
     }
     if (wizAppIoMode !== 'none' && wizAppIoServiceId) {
@@ -7523,26 +7549,43 @@ export function App(): React.JSX.Element {
     // indietro. Passare qui il blob CSV già pronto bypassa la dipendenza da
     // wizValidRows per questa chiamata.
     recipientsCsvBlobOverride?: Blob,
+    // true SOLO quando il chiamante sa di dover creare una campagna
+    // NUOVA anche se wizCampaignId in stato riflette ancora quella del
+    // bucket precedente (avanzamento gruppo multicanale, handleWizLaunch
+    // → syncManualBucket): un setWizCampaignId(null) appena chiamato non è
+    // ancora visibile in questa stessa chiusura sincrona (nessun nuovo
+    // render tra la chiamata e l'await successivo) — stesso principio di
+    // stale closure già noto altrove in questo file.
+    forceNewCampaign?: boolean,
+    // Stesso principio di forceNewCampaign/channelOverride sopra: wizGroupId
+    // appena impostato con setWizGroupId() nello stesso tick (prima riga di
+    // un gruppo multicanale, handleWizManualSubmit) non è ancora leggibile
+    // dalla chiusura di questa funzione — va passato esplicitamente.
+    groupIdOverride?: string,
+    channelOverride?: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL',
   ): Promise<string | null> => {
     if (!wizName) {
       alert('Inserisci almeno il nome della campagna prima di salvare la bozza.');
       return null;
     }
     setWizDraftSaving(true);
-    let activeCampaignId = wizCampaignId;
+    const effectiveWizChannel = channelOverride ?? wizChannel;
+    const effectiveGroupId = groupIdOverride ?? wizGroupId;
+    const startingCampaignId = forceNewCampaign ? null : wizCampaignId;
+    let activeCampaignId = startingCampaignId;
     try {
-      const channelConfig = buildWizChannelConfigDraft(targetStep, attachmentsOverride);
-      if (!wizCampaignId) {
+      const channelConfig = buildWizChannelConfigDraft(targetStep, attachmentsOverride, channelOverride);
+      if (!startingCampaignId) {
         const res = await apiFetch('/campaigns', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             name: wizName,
             description: wizDesc,
-            channelType: wizChannel,
+            channelType: effectiveWizChannel,
             channelConfig,
-            isLegalValue: isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType) || wizIsLegalValue || groupForcesLegalValue(),
-            groupId: wizGroupId ?? undefined,
+            isLegalValue: isChannelAlwaysLegalValue(effectiveWizChannel, wizPostalServiceType) || wizIsLegalValue || groupForcesLegalValue(),
+            groupId: effectiveGroupId ?? undefined,
           }),
         });
         if (!res.ok) throw new Error('Errore durante il salvataggio della bozza');
@@ -7550,14 +7593,14 @@ export function App(): React.JSX.Element {
         activeCampaignId = created.id;
         setWizCampaignId(created.id);
       } else {
-        const res = await apiFetch(`/campaigns/${wizCampaignId}`, {
+        const res = await apiFetch(`/campaigns/${startingCampaignId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             name: wizName,
             description: wizDesc,
             channelConfig,
-            isLegalValue: isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType) || wizIsLegalValue || groupForcesLegalValue(),
+            isLegalValue: isChannelAlwaysLegalValue(effectiveWizChannel, wizPostalServiceType) || wizIsLegalValue || groupForcesLegalValue(),
           }),
         });
         if (!res.ok) throw new Error('Errore durante il salvataggio della bozza');
@@ -7946,7 +7989,7 @@ export function App(): React.JSX.Element {
       }
 
       if (wizChannel !== 'SEND') {
-        channelConfig.protocolla = wizProtocolla;
+        channelConfig.protocolla = wizProtocolla || groupForcesProtocol();
       }
 
       // Sempre impostato, qualunque canale: backend legge wizSingleMode per
@@ -7985,7 +8028,7 @@ export function App(): React.JSX.Element {
             name: wizName,
             description: wizDesc || wizSubject || wizName,
             channelConfig,
-            isLegalValue: isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType) || wizIsLegalValue,
+            isLegalValue: isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType) || wizIsLegalValue || groupForcesLegalValue(),
           }),
         });
         if (!patchRes.ok) throw new Error('Errore durante l\'aggiornamento della bozza');
@@ -8002,7 +8045,8 @@ export function App(): React.JSX.Element {
             description: wizDesc || wizSubject || wizName,
             channelType: wizChannel,
             channelConfig,
-            isLegalValue: isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType) || wizIsLegalValue,
+            isLegalValue: isChannelAlwaysLegalValue(wizChannel, wizPostalServiceType) || wizIsLegalValue || groupForcesLegalValue(),
+            groupId: wizGroupId ?? undefined,
           }),
         });
         if (!res.ok) throw new Error('Errore durante la creazione della campagna');
@@ -8051,14 +8095,37 @@ export function App(): React.JSX.Element {
         throw new Error(launchData.message || 'Impossibile avviare la campagna.');
       }
 
-      resetWizard();
-
-      fetchCampaigns();
-      setView('dashboard');
-
-      alert('Campagna creata e avviata con successo! I messaggi sono in coda.');
       if (launchData?.signatureWarning) {
         alert(`Attenzione: ${launchData.signatureWarning}`);
+      }
+
+      const hasNextBucket = wizGroupChannels.length > 0 && wizGroupIndex < wizGroupChannels.length - 1;
+      if (hasNextBucket) {
+        const justLaunchedChannel = wizChannel;
+        const nextIndex = wizGroupIndex + 1;
+        const nextChannel = wizGroupChannels[nextIndex];
+        setWizGroupIndex(nextIndex);
+        setWizSubject('');
+        setWizBody('');
+        // syncManualBucket costruisce già il CSV/allegati/bozza del prossimo
+        // bucket — senza questa chiamata esplicita lo step Template si
+        // apriva con "0 destinatari" (bug reale, trovato in verifica
+        // browser): saltare direttamente a setWizStep senza ricostruire il
+        // CSV lasciava wizValidRows vuoto per il canale successivo, mai
+        // popolato perché la costruzione avveniva solo dal form (Step 1),
+        // mai attraversato per i bucket 2+.
+        const needsTemplateStep = nextChannel === 'EMAIL' || nextChannel === 'PEC' || nextChannel === 'APP_IO';
+        await syncManualBucket(nextChannel, wizManualRows, needsTemplateStep ? 4 : 6, true, true, wizGroupId ?? undefined);
+        alert(`Canale "${justLaunchedChannel}" del gruppo lanciato. Procedi con il prossimo canale: "${nextChannel}".`);
+      } else {
+        resetWizard();
+        fetchCampaigns();
+        setView('dashboard');
+        alert(
+          wizGroupChannels.length > 0
+            ? 'Gruppo multicanale completato: tutte le campagne sono state avviate.'
+            : 'Campagna creata e avviata con successo! I messaggi sono in coda.'
+        );
       }
     } catch (err: any) {
       alert(err.message || 'Errore durante l\'invio della campagna.');
