@@ -64,6 +64,29 @@ export function parseRubricaPec(text: string): MaggioliRecord[] {
       });
       continue;
     }
+    // Stessa variante "TARI saldo", canale email (16 campi): stesso layout di
+    // sopra ma con la data già un unico campo dd/mm/aaaa invece di
+    // giorno;mese;anno separati — oggetto/filename scalano di 2 posizioni
+    // (index 14→12, 17→15). Bug reale: senza questo branch la riga cadeva
+    // nel ramo a 14 campi sotto, leggendo pdfFilename da un indice vuoto —
+    // "allegato non trovato" per ogni riga del tracciato.
+    if (fields.length === 16) {
+      records.push({
+        pec: fields[3].trim(),
+        codiceFiscale: fields[7].trim(),
+        tipo: tipoFromCf(fields[7]),
+        nominativo: fields[9].trim(),
+        numeroProvvedimento: fields[10].trim(),
+        dataEmissione: fields[11].trim(),
+        oggetto: fields[12].trim(),
+        pdfFilename: fields[15].trim(),
+        csvAddress: null,
+        csvNumeroAvviso: '',
+        csvNumeroAvvisoAlt: '',
+        ocrNotifica: '',
+      });
+      continue;
+    }
     while (fields.length < 14) fields.push('');
     records.push({
       pec: fields[1].trim(),

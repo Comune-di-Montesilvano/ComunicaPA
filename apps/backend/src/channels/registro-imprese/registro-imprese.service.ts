@@ -94,6 +94,22 @@ export interface RegistroImpreseDettaglioResult {
   data?: RegistroImpreseImpresaData;
 }
 
+export interface RegistroImpreseRicercaPosizione {
+  denominazione?: string;
+  formaGiuridica?: string;
+  cFiscale?: string;
+  pec?: string;
+  cciaa?: string;
+  nRea?: string;
+  statoImpresa?: string;
+  indirizzo?: RegistroImpreseIndirizzo;
+}
+
+export interface RegistroImpreseRicercaResult {
+  raw: string;
+  posizioni: RegistroImpreseRicercaPosizione[];
+}
+
 /**
  * Integrazione Registro Imprese (PCAD-PDND, Unioncamere) — sostituisce
  * INIPEC come fonte del domicilio digitale d'impresa. Risposta XML (nessuno
@@ -148,6 +164,47 @@ export class RegistroImpreseService {
     }
 
     return { found: true, raw: text, pec: data?.sede.pec, denominazione: data?.sede.denominazione, data };
+  }
+
+  /**
+   * GET /ricerca/denominazione — a differenza di dettaglioImpresa() può
+   * restituire più occorrenze (fino a 200, nessun ordine garantito, vedi
+   * Allegato Tecnico PCAD §4.2.1/§5.2.2). Ogni posizione include già CF/PEC:
+   * per l'uso "trova CF da denominazione" non serve una dettaglio() successiva.
+   * Struttura XML non documentata nello spec OpenAPI (schema generico
+   * "http://it.registroimprese.pcad.ws", stesso caveat di dettaglioImpresa)
+   * — parsing best-effort sugli stessi nomi tag/attributi del dettaglio
+   * (dati-identificativi), da confermare al primo test reale.
+   */
+  async ricercaDenominazione(
+    denominazione: string,
+    siglaProvincia: string | undefined,
+    env: PdndEnvironment = 'prod',
+  ): Promise<RegistroImpreseRicercaResult> {
+    const voucher = await this.getVoucher(env);
+    const params = new URLSearchParams({ denominazione });
+    if (siglaProvincia) params.set('siglaProvincia', siglaProvincia);
+    const url = `${REGISTRO_IMPRESE_BASE_URL[env]}/rest/pcad/v1/ricerca/denominazione?${params.toString()}`;
+    const response = await fetch(url, { headers: { Authorization: `Bearer ${voucher}` } });
+    const text = new TextDecoder('windows-1252').decode(await response.arrayBuffer());
+
+    if (response.status === 429) {
+      const retryAfterHeader = response.headers.get('Retry-After');
+      const retryAfterSeconds = retryAfterHeader ? Number(retryAfterHeader) : undefined;
+      throw new RegistroImpreseRateLimitError(retryAfterSeconds);
+    }
+    if (!response.ok) {
+      throw new Error(`Registro Imprese ricerca fallita: HTTP ${response.status} — ${text.slice(0, 500)}`);
+    }
+
+    let posizioni: RegistroImpreseRicercaPosizione[] = [];
+    try {
+      posizioni = parseRicercaXml(text);
+    } catch {
+      posizioni = [];
+    }
+
+    return { raw: text, posizioni };
   }
 }
 
@@ -305,4 +362,33 @@ function parseDettaglioImpresaXml(xml: string): RegistroImpreseImpresaData {
         }
       : undefined,
   };
+}
+
+/**
+ * Parsing best-effort per /ricerca/*: struttura reale confermabile solo al
+ * primo test dal vivo (schema non documentato, vedi commento su
+ * ricercaDenominazione). Ipotesi: root con occorrenze ripetute che portano
+ * gli stessi attributi di dati-identificativi (denominazione, c-fiscale,
+ * cciaa, n-rea, stato-impresa, indirizzo-posta-certificata,
+ * indirizzo-localizzazione) — se la struttura reale differisce, questa
+ * funzione va corretta senza toccare la firma pubblica del service.
+ */
+function parseRicercaXml(xml: string): RegistroImpreseRicercaPosizione[] {
+  const parsed = xmlParser.parse(xml);
+  const rootKey = Object.keys(parsed).find((k) => k !== '?xml');
+  const root = rootKey ? (parsed[rootKey] as any) : undefined;
+  if (!root) return [];
+  const candidateKeys = Object.keys(root).filter((k) => !k.startsWith('@_'));
+  const items = candidateKeys.length > 0 ? toArray(root[candidateKeys[0]]) : [];
+
+  return items.map((el: any) => ({
+    denominazione: el['@_denominazione'],
+    formaGiuridica: textOf(el['forma-giuridica']),
+    cFiscale: el['@_c-fiscale'],
+    pec: textOf(el['indirizzo-posta-certificata'])?.toLowerCase(),
+    cciaa: el['@_cciaa'],
+    nRea: el['@_n-rea'],
+    statoImpresa: el['@_stato-impresa'],
+    indirizzo: parseIndirizzo(el['indirizzo-localizzazione']),
+  }));
 }

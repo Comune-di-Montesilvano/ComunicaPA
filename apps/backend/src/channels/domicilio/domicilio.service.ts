@@ -3,7 +3,7 @@ import { InadService, InadDigitalAddressElement } from '../inad/inad.service.js'
 import { IoServicesService } from '../../io-services/io-services.service.js';
 import { AnprService } from '../anpr/anpr.service.js';
 import type { AnprGeneralita, AnprResidenza, AnprInfoSoggettoEnte, AnprAnagraficaCriteri } from '../anpr/anpr.types.js';
-import { RegistroImpreseService, type RegistroImpreseImpresaData } from '../registro-imprese/registro-imprese.service.js';
+import { RegistroImpreseService, type RegistroImpreseImpresaData, type RegistroImpreseRicercaPosizione } from '../registro-imprese/registro-imprese.service.js';
 import { isPartitaIva } from '../tax-id.util.js';
 
 export interface DomicilioInadResult {
@@ -41,6 +41,12 @@ export interface DomicilioRegistroImpreseResult {
   pec?: string;
   denominazione?: string;
   data?: RegistroImpreseImpresaData;
+  message?: string;
+}
+
+export interface DomicilioRicercaDenominazioneResult {
+  success: boolean;
+  posizioni: RegistroImpreseRicercaPosizione[];
   message?: string;
 }
 
@@ -153,6 +159,21 @@ export class DomicilioService {
       };
     } catch (error: any) {
       return { success: false, found: false, message: error?.message ?? 'Errore sconosciuto' };
+    }
+  }
+
+  /**
+   * Helper "Non hai il codice fiscale?" → modalità Impresa: ricerca per
+   * denominazione (Registro Imprese), non fa parte di cercaDomicilio() per
+   * lo stesso motivo di cercaPerAnagrafica() — qui si vuole solo il CF,
+   * l'operatore lancerà poi una cercaDomicilio() normale con l'esito scelto.
+   */
+  async cercaPerDenominazione(denominazione: string, siglaProvincia: string | undefined): Promise<DomicilioRicercaDenominazioneResult> {
+    try {
+      const risultato = await this.registroImpreseService.ricercaDenominazione(denominazione, siglaProvincia);
+      return { success: true, posizioni: risultato.posizioni };
+    } catch (error: any) {
+      return { success: false, posizioni: [], message: error?.message ?? 'Errore sconosciuto' };
     }
   }
 

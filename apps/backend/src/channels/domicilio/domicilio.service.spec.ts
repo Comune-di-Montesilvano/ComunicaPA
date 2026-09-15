@@ -8,7 +8,7 @@ import { RegistroImpreseService } from '../registro-imprese/registro-imprese.ser
 const mockInad = { extractDigitalAddress: jest.fn() };
 const mockIoServices = { verifyProfile: jest.fn() };
 const mockAnpr = { getResidenza: jest.fn(), getEsistenzaInVita: jest.fn(), getGeneralitaByAnagrafica: jest.fn() };
-const mockRegistroImpreseUnused = { dettaglioImpresa: jest.fn() };
+const mockRegistroImpreseUnused = { dettaglioImpresa: jest.fn(), ricercaDenominazione: jest.fn() };
 
 describe('DomicilioService.cercaDomicilio', () => {
   let service: DomicilioService;
@@ -203,5 +203,42 @@ describe('DomicilioService.cercaDomicilio — Partita IVA', () => {
     const result = await service.cercaDomicilio('12345678901', 'mario.rossi');
 
     expect(result.registroImprese).toEqual({ success: false, found: false, message: 'Registro Imprese: limite richieste superato' });
+  });
+});
+
+describe('DomicilioService.cercaPerDenominazione', () => {
+  let service: DomicilioService;
+  const mockRegistroImprese = { dettaglioImpresa: jest.fn(), ricercaDenominazione: jest.fn() };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const module = await Test.createTestingModule({
+      providers: [
+        DomicilioService,
+        { provide: InadService, useValue: mockInad },
+        { provide: IoServicesService, useValue: mockIoServices },
+        { provide: AnprService, useValue: mockAnpr },
+        { provide: RegistroImpreseService, useValue: mockRegistroImprese },
+      ],
+    }).compile();
+    service = module.get(DomicilioService);
+  });
+
+  it('inoltra denominazione/siglaProvincia e restituisce le posizioni trovate', async () => {
+    const posizioni = [{ denominazione: 'ACME SRL', cFiscale: '00000000001', pec: 'acme@pec.it' }];
+    mockRegistroImprese.ricercaDenominazione.mockResolvedValue({ raw: '<xml/>', posizioni });
+
+    const result = await service.cercaPerDenominazione('ACME', 'PE');
+
+    expect(mockRegistroImprese.ricercaDenominazione).toHaveBeenCalledWith('ACME', 'PE');
+    expect(result).toEqual({ success: true, posizioni });
+  });
+
+  it('cattura un errore (es. 429) e lo espone come message, non propaga eccezione', async () => {
+    mockRegistroImprese.ricercaDenominazione.mockRejectedValue(new Error('Registro Imprese: limite richieste superato'));
+
+    const result = await service.cercaPerDenominazione('ACME', undefined);
+
+    expect(result).toEqual({ success: false, posizioni: [], message: 'Registro Imprese: limite richieste superato' });
   });
 });
