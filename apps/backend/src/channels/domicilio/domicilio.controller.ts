@@ -20,11 +20,11 @@ export class DomicilioController {
   @HttpCode(HttpStatus.OK)
   async cerca(@Body() dto: CercaDomicilioDto, @Req() req: Request & { user: JwtOperatorPayload }) {
     const cf = dto.codiceFiscale.toUpperCase().trim();
-    const result = await this.domicilioService.cercaDomicilio(cf, req.user.username);
+    const result = await this.domicilioService.cercaDomicilio(cf, req.user.username, dto.forzaImpresa === true);
     await this.auditLogsService.log({
       operator: req.user.username,
       action: 'DOMICILIO_SEARCH',
-      details: { codiceFiscale: cf },
+      details: { codiceFiscale: cf, forzaImpresa: dto.forzaImpresa === true },
     });
     return result;
   }
