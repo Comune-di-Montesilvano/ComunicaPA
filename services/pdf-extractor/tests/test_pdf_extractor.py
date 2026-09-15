@@ -35,6 +35,14 @@ def test_extract_address_residenza_inline_label(pdf_residenza_inline_label):
     assert addr.provincia == "PE"
 
 
+def test_extract_address_residenza_vuota_fallback_header(pdf_residenza_vuota_fallback_header):
+    addr = PdfExtractor(pdf_residenza_vuota_fallback_header).extract_address()
+    assert addr.indirizzo == "VIA VALLE D'AOSTA 9"
+    assert addr.cap == "65015"
+    assert addr.comune == "MONTESILVANO"
+    assert addr.provincia == "PE"
+
+
 def test_extract_address_missing_raises(pdf_no_address):
     with pytest.raises(AddressExtractionError):
         PdfExtractor(pdf_no_address).extract_address()

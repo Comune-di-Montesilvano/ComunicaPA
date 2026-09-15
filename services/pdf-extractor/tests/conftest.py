@@ -58,6 +58,24 @@ def pdf_residenza_inline_label() -> bytes:
 
 
 @pytest.fixture
+def pdf_residenza_vuota_fallback_header() -> bytes:
+    """Bug reale: 'Residenza:' presente ma VUOTA ('Residenza:\\nMail:...',
+    nessun valore prima di 'Mail:') — né _RE_RESIDENZA_LABEL né
+    _RE_RESIDENZA_INLINE_LABEL matchano (nessuna cifra dopo i due punti).
+    L'indirizzo vero resta comunque nel blocco intestazione, prima di
+    'Contribuente:' — verificato dal vivo, DOC_733580_160297.pdf."""
+    return _make_pdf(
+        [
+            "CIESZKOWSKI ARTUR PIOTR\nCodice Utente 160297\nVIA VALLE D'AOSTA 9\n"
+            "65015 MONTESILVANO PE\nContribuente:CIESZKOWSKI ARTUR PIOTR\n"
+            "nato il:14/11/1982 a BUGAJ - POLONIA\nC.F.:CSZRRP82S14Z127R\n"
+            "Residenza:\nMail:artur.cieszowski@gmail.com\n"
+            "Oggetto: Saldo TARI 2026 - Avviso di pagamento\n"
+        ]
+    )
+
+
+@pytest.fixture
 def pdf_no_address() -> bytes:
     return _make_pdf(["Documento senza indirizzo utile\n"])
 
