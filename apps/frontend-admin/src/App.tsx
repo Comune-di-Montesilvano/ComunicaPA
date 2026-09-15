@@ -6467,6 +6467,97 @@ export function App(): React.JSX.Element {
 
   const needsWizSinglePhysicalAddress = wizChannel === 'POSTAL' || wizChannel === 'SEND';
 
+  const buildManualRowFromForm = (id: string): ManualRow => ({
+    id,
+    cf: singleCf.toUpperCase(),
+    surname: singleSurname.trim(),
+    firstName: singleFirstName.trim(),
+    email: singleEmail,
+    pec: singlePec,
+    address: singleAddress,
+    municipality: singleMunicipality,
+    zip: singleZip,
+    province: singleProvince,
+    country: singleCountry,
+    paymentIuv: singlePaymentIuv,
+    paymentImporto: singlePaymentImporto,
+    paymentScadenza: singlePaymentScadenza,
+    inadForced: singleInadForced,
+    inadAddress: singleInadAddress,
+    registroImpreseNoPec: singleRegistroImpreseNoPec,
+    appIoActive: singleAppIoActive,
+    attachmentOverrides: {},
+  });
+
+  const clearManualRowForm = () => {
+    setSingleCf('');
+    setSingleSurname('');
+    setSingleFirstName('');
+    setSingleEmail('');
+    setSinglePec('');
+    setSingleAddress('');
+    setSingleMunicipality('');
+    setSingleZip('');
+    setSingleProvince('');
+    setSingleCountry('Italia');
+    setSinglePaymentIuv('');
+    setSinglePaymentImporto('');
+    setSinglePaymentScadenza('');
+    setSingleAnprCheckedCf(null);
+    setSingleInadForced(false);
+    setSingleInadAddress('');
+    setSingleRegistroImpreseNoPec(false);
+    setSingleAppIoActive(false);
+    setWizManualEditingId(null);
+  };
+
+  const isManualCfDuplicate = (cf: string, excludeId: string | null): boolean =>
+    wizManualRows.some(r => r.id !== excludeId && r.cf === cf.toUpperCase());
+
+  const commitCurrentManualRow = (): boolean => {
+    if (isManualRowFormInvalid) return false;
+    const cf = singleCf.toUpperCase();
+    if (isManualCfDuplicate(cf, wizManualEditingId)) {
+      alert(`Codice Fiscale/P.IVA ${cf} già presente nella lista.`);
+      return false;
+    }
+    const id = wizManualEditingId ?? `row-${Date.now()}-${wizManualRows.length}`;
+    const row = buildManualRowFromForm(id);
+    setWizManualRows(prev => {
+      const withoutEditing = prev.filter(r => r.id !== wizManualEditingId);
+      return [...withoutEditing, row];
+    });
+    clearManualRowForm();
+    return true;
+  };
+
+  const startEditManualRow = (row: ManualRow) => {
+    setSingleCf(row.cf);
+    setSingleSurname(row.surname);
+    setSingleFirstName(row.firstName);
+    setSingleEmail(row.email);
+    setSinglePec(row.pec);
+    setSingleAddress(row.address);
+    setSingleMunicipality(row.municipality);
+    setSingleZip(row.zip);
+    setSingleProvince(row.province);
+    setSingleCountry(row.country);
+    setSinglePaymentIuv(row.paymentIuv);
+    setSinglePaymentImporto(row.paymentImporto);
+    setSinglePaymentScadenza(row.paymentScadenza);
+    setSingleInadForced(row.inadForced);
+    setSingleInadAddress(row.inadAddress);
+    setSingleRegistroImpreseNoPec(row.registroImpreseNoPec);
+    setSingleAppIoActive(row.appIoActive);
+    setWizManualRows(prev => prev.filter(r => r.id !== row.id));
+    setWizManualEditingId(row.id);
+  };
+
+  const removeManualRow = (id: string) => {
+    setWizManualRows(prev => prev.filter(r => r.id !== id));
+    if (wizManualEditingId === id) clearManualRowForm();
+  };
+
   const handleWizSingleSubmit = async (targetStep: number = 4) => {
     if (!isValidCfOrPiva(singleCf)) {
       alert('Codice Fiscale/P.IVA non valido: 16 caratteri alfanumerici o 11 cifre.');
@@ -6541,7 +6632,7 @@ export function App(): React.JSX.Element {
     setWizStep(targetStep);
   };
 
-  const wizSingleSubmitDisabled =
+  const isManualRowFormInvalid =
     !singleCf.trim() ||
     !singleSurname.trim() ||
     (wizChannel === 'EMAIL' && (!singleEmail.trim() || !isValidEmailFormat(singleEmail))) ||
@@ -9490,7 +9581,7 @@ export function App(): React.JSX.Element {
                     <button
                       className="btn btn-primary px-4 fw-medium d-flex align-items-center gap-2"
                       onClick={() => handleWizSingleSubmit(wizSingleNeedsTemplateStep ? 4 : 6)}
-                      disabled={wizSingleSubmitDisabled}
+                      disabled={isManualRowFormInvalid}
                     >
                       Avanti <ArrowRight size={16} />
                     </button>
@@ -10200,7 +10291,7 @@ export function App(): React.JSX.Element {
                     <button
                       className="btn btn-primary px-4 fw-medium d-flex align-items-center gap-2"
                       onClick={() => handleWizSingleSubmit(wizSingleNeedsTemplateStep ? 4 : 6)}
-                      disabled={wizSingleSubmitDisabled}
+                      disabled={isManualRowFormInvalid}
                     >
                       Avanti <ArrowRight size={16} />
                     </button>
