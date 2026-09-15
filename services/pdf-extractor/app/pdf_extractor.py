@@ -35,6 +35,14 @@ class PdfExtractor:
         re.IGNORECASE | re.DOTALL,
     )
 
+    # Template avviso PG (es. Sede legale ditta/società):
+    # "Sede:65126 PESCARA PE VIA MARCO POLO 12" — CAP comune provincia PRIMA
+    # della via (ordine opposto a "Residente in:"), tutto su una riga.
+    _RE_SEDE_LABEL = re.compile(
+        r"Sede\s*:\s*(\d{5})\s+(.+?)\s+([A-Z]{2})\s+(.+?)\s*(?:Oggetto\s*:|\n|$)",
+        re.IGNORECASE,
+    )
+
     # Regex testo per fallback (quando il QR non è leggibile)
     _RE_CBILL = re.compile(
         r"[A-Z0-9]{5}\s+((?:\d[\d ]{16,20}\d))\s+(\d{11})",
@@ -52,6 +60,16 @@ class PdfExtractor:
     # Regex per classificazione pagina pagamento
     _RE_RATA_UNICA = re.compile(r"RATA\s+UNICA", re.IGNORECASE)
     _RE_RATA_N = re.compile(r"(\d+)\s*°?\s*RATA", re.IGNORECASE)
+
+    # Etichetta + scadenza abbinate (usata SOLO quando una pagina contiene più
+    # di un QR — es. "1° RATA"/"2° RATA" affiancate sulla stessa pagina): la
+    # data nella stessa etichetta evita di doverla recuperare a parte da un
+    # match "entro" generico sull'intera pagina, che con più rate sulla
+    # stessa pagina non è più univoco.
+    _RE_RATA_LABEL_WITH_DATE = re.compile(
+        r"(RATA\s+UNICA|(\d+)\s*°?\s*RATA)\b(?:\s*di\s*[\d.,]+\s*€?)?\s*entro\s+(?:il\s+)?(\d{1,2}/\d{1,2}/\d{4})",
+        re.IGNORECASE,
+    )
 
     def __init__(self, pdf_bytes: bytes):
         self._pdf_bytes = pdf_bytes
@@ -100,6 +118,16 @@ class PdfExtractor:
             indirizzo = re.sub(r"\s+", " ", m.group(4)).strip()
             return AddressData(
                 indirizzo=indirizzo,
+                cap=m.group(1).strip(),
+                comune=m.group(2).strip(),
+                provincia=m.group(3).strip(),
+                stato_estero="",
+            )
+
+        m = self._RE_SEDE_LABEL.search(text)
+        if m:
+            return AddressData(
+                indirizzo=re.sub(r"\s+", " ", m.group(4)).strip(),
                 cap=m.group(1).strip(),
                 comune=m.group(2).strip(),
                 provincia=m.group(3).strip(),
@@ -248,13 +276,24 @@ class PdfExtractor:
             codes = qr_decode(img)
         return codes
 
-    def _extract_payment_from_page_qr(self, doc, page_idx: int) -> tuple[Optional[PaymentData], list[str]]:
-        """QR di UNA pagina specifica: immagini embedded poi rendering 3x/4x."""
+    def _extract_payment_from_page_qr(
+        self, doc, page_idx: int, max_results: Optional[int] = 1
+    ) -> tuple[list["PaymentData"], list[str]]:
+        """QR di una pagina: immagini embedded poi rendering 3x/4x.
+
+        `max_results=1` (default, comportamento storico): si ferma al primo
+        QR valido trovato tra le immagini embedded, poi fallback rendering
+        se nessuna ha funzionato. `max_results=None`: raccoglie TUTTI i QR
+        embedded della pagina (una pagina con più rate affiancate, es.
+        "1° RATA"/"2° RATA", ne contiene più di uno) — nessun fallback
+        rendering in questo caso (il rendering intero pagina non permette
+        di isolare QR multipli)."""
         from PIL import Image
         import fitz
 
         warnings: list[str] = []
         page = doc[page_idx]
+        results: list[PaymentData] = []
 
         images = page.get_images(full=True)
         try:
@@ -277,9 +316,15 @@ class PdfExtractor:
                 for code in self._decode_qr(img):
                     result = self._parse_pagopa_qr(code.data.decode("utf-8"))
                     if result:
-                        return result, warnings
+                        results.append(result)
+                        break
             except Exception:
                 continue
+            if max_results is not None and len(results) >= max_results:
+                return results, warnings
+
+        if results:
+            return results, warnings
 
         for zoom in (3, 4):
             try:
@@ -288,12 +333,15 @@ class PdfExtractor:
                 for code in self._decode_qr(img):
                     result = self._parse_pagopa_qr(code.data.decode("utf-8"))
                     if result:
-                        return result, warnings
+                        results.append(result)
+                        if max_results is not None and len(results) >= max_results:
+                            return results, warnings
             except Exception as e:
                 warnings.append(f"Pagina {page_idx}: rendering {zoom}x fallito — {e}")
 
-        warnings.append(f"Pagina {page_idx}: QR PagoPA non decodificato")
-        return None, warnings
+        if not results:
+            warnings.append(f"Pagina {page_idx}: QR PagoPA non decodificato")
+        return results, warnings
 
     def _extract_payment_from_text(self) -> Optional[PaymentData]:
         """Fallback: estrae dati PagoPA via regex sul testo del PDF."""
@@ -353,31 +401,64 @@ class PdfExtractor:
                 warnings.append("Nessuna pagina PagoPA (CBILL) individuata")
             else:
                 for page_idx in cbill_pages:
-                    text = doc[page_idx].get_text() or ""
-                    kind, n = self._classify_payment_page(text)
-                    payment, page_warnings = self._extract_payment_from_page_qr(doc, page_idx)
+                    payments, page_warnings = self._extract_payment_from_page_qr(doc, page_idx, max_results=None)
                     warnings.extend(page_warnings)
-                    if payment is None:
+                    if not payments:
                         continue
-                    if not payment.scadenza:
-                        # Il QR PagoPA non porta la scadenza: recuperata dal
-                        # testo della STESSA pagina (non dal testo globale,
-                        # che confonderebbe le scadenze di rate diverse).
-                        m_sc = self._RE_SCADENZA.search(text)
-                        if m_sc:
-                            payment.scadenza = m_sc.group(1)
-                    if kind == "unica":
-                        totale = payment
-                    elif kind == "rata" and n is not None:
-                        rate_by_index[n] = payment
-                    else:
-                        # Indice non numerabile in modo affidabile (nessuna
-                        # etichetta "N RATA"): tenuta in una lista separata,
-                        # sempre accodata in fondo a `rate` — non può mai
-                        # collidere con l'indice di una rata numerata reale
-                        # trovata prima o dopo nel loop.
-                        unknown_rate.append(payment)
-                        warnings.append(f"Pagina {page_idx}: etichetta rata non riconosciuta, aggiunta in coda a rate")
+
+                    if len(payments) == 1:
+                        # Percorso storico: una rata/etichetta per pagina.
+                        text = doc[page_idx].get_text() or ""
+                        kind, n = self._classify_payment_page(text)
+                        payment = payments[0]
+                        if not payment.scadenza:
+                            # Il QR PagoPA non porta la scadenza: recuperata dal
+                            # testo della STESSA pagina (non dal testo globale,
+                            # che confonderebbe le scadenze di rate diverse).
+                            m_sc = self._RE_SCADENZA.search(text)
+                            if m_sc:
+                                payment.scadenza = m_sc.group(1)
+                        if kind == "unica":
+                            totale = payment
+                        elif kind == "rata" and n is not None:
+                            rate_by_index[n] = payment
+                        else:
+                            # Indice non numerabile in modo affidabile (nessuna
+                            # etichetta "N RATA"): tenuta in una lista separata,
+                            # sempre accodata in fondo a `rate` — non può mai
+                            # collidere con l'indice di una rata numerata reale
+                            # trovata prima o dopo nel loop.
+                            unknown_rate.append(payment)
+                            warnings.append(f"Pagina {page_idx}: etichetta rata non riconosciuta, aggiunta in coda a rate")
+                        continue
+
+                    # Più QR sulla stessa pagina (es. "1° RATA"/"2° RATA"
+                    # affiancate): il testo non sortato scrambla l'ordine di
+                    # lettura su layout multi-colonna (bug reale verificato:
+                    # get_text() senza sort=True restituiva la 2° RATA PRIMA
+                    # della 1°) — sort=True ripristina l'ordine visivo, e
+                    # ogni etichetta porta con sé la propria scadenza (niente
+                    # più un unico match "entro" per l'intera pagina, non più
+                    # univoco con più rate sulla stessa pagina). Abbinamento
+                    # posizionale: N-esimo QR (ordinato per bbox) <-> N-esima
+                    # etichetta (ordinata per posizione nel testo).
+                    sorted_text = doc[page_idx].get_text(sort=True) or ""
+                    labels = self._RE_RATA_LABEL_WITH_DATE.findall(sorted_text)
+                    if len(labels) != len(payments):
+                        warnings.append(
+                            f"Pagina {page_idx}: {len(payments)} QR ma {len(labels)} etichette rata — "
+                            "abbinamento non affidabile, rate aggiunte in coda senza scadenza/indice"
+                        )
+                        unknown_rate.extend(payments)
+                        continue
+                    for payment, (label, n_str, scadenza) in zip(payments, labels):
+                        payment.scadenza = scadenza
+                        if label.strip().upper().startswith("RATA UNICA"):
+                            totale = payment
+                        elif n_str:
+                            rate_by_index[int(n_str)] = payment
+                        else:
+                            unknown_rate.append(payment)
         except Exception as e:
             warnings.append(f"Estrazione QR fallita: {e}")
 
