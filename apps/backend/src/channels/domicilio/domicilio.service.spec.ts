@@ -204,6 +204,28 @@ describe('DomicilioService.cercaDomicilio — Partita IVA', () => {
 
     expect(result.registroImprese).toEqual({ success: false, found: false, message: 'Registro Imprese: limite richieste superato' });
   });
+
+  it('con forzaImpresa=true interroga Registro Imprese anche per un CF in formato persona fisica (impresa individuale)', async () => {
+    mockRegistroImprese.dettaglioImpresa.mockResolvedValue({ found: true, raw: '<xml/>', pec: 'rossi@pec.it', denominazione: 'ROSSI MARIO' });
+
+    const result = await service.cercaDomicilio('RSSMRA80A01H501U', 'mario.rossi', true);
+
+    expect(result.registroImprese).toEqual({ success: true, found: true, pec: 'rossi@pec.it', denominazione: 'ROSSI MARIO' });
+    expect(result.inad).toBeUndefined();
+    expect(mockInad.extractDigitalAddress).not.toHaveBeenCalled();
+    expect(mockRegistroImprese.dettaglioImpresa).toHaveBeenCalledWith('RSSMRA80A01H501U');
+  });
+
+  it('senza forzaImpresa un CF persona fisica prosegue sul ramo ANPR/INAD/AppIO (default false)', async () => {
+    mockInad.extractDigitalAddress.mockResolvedValue({ found: false });
+    mockIoServices.verifyProfile.mockResolvedValue({ success: true, active: false, message: 'non attivo' });
+    mockAnpr.getResidenza.mockResolvedValue({ found: false });
+
+    const result = await service.cercaDomicilio('RSSMRA80A01H501U', 'mario.rossi');
+
+    expect(result.registroImprese).toBeUndefined();
+    expect(mockRegistroImprese.dettaglioImpresa).not.toHaveBeenCalled();
+  });
 });
 
 describe('DomicilioService.cercaPerDenominazione', () => {

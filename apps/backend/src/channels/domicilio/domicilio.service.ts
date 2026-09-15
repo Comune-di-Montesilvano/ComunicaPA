@@ -82,8 +82,8 @@ export class DomicilioService {
     private readonly registroImpreseService: RegistroImpreseService,
   ) {}
 
-  async cercaDomicilio(codiceFiscale: string, operatorUsername: string): Promise<DomicilioSearchResult> {
-    if (isPartitaIva(codiceFiscale)) {
+  async cercaDomicilio(codiceFiscale: string, operatorUsername: string, forzaImpresa = false): Promise<DomicilioSearchResult> {
+    if (isPartitaIva(codiceFiscale) || forzaImpresa) {
       return this.cercaDomicilioImpresa(codiceFiscale);
     }
 

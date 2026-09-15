@@ -1479,6 +1479,7 @@ export function App(): React.JSX.Element {
   const [domicilioCf, setDomicilioCf] = useState('');
   const [domicilioValidationError, setDomicilioValidationError] = useState<string | null>(null);
   const [domicilioLoading, setDomicilioLoading] = useState(false);
+  const [domicilioForzaImpresa, setDomicilioForzaImpresa] = useState(false);
   const [domicilioResult, setDomicilioResult] = useState<{
     codiceFiscale: string;
     registroImprese?: {
@@ -3065,9 +3066,11 @@ export function App(): React.JSX.Element {
     setVerificaBulkSubmitError(null);
   };
 
-  const runCercaDomicilio = async (cfOverride?: string) => {
+  const runCercaDomicilio = async (cfOverride?: string, forzaImpresaOverride?: boolean) => {
     const cf = (cfOverride ?? domicilioCf).toUpperCase().trim();
     if (cfOverride !== undefined) setDomicilioCf(cf);
+    const forzaImpresa = forzaImpresaOverride ?? domicilioForzaImpresa;
+    if (forzaImpresaOverride !== undefined) setDomicilioForzaImpresa(forzaImpresaOverride);
     if (!cf) return;
     if (!isValidCfOrPiva(cf)) {
       setDomicilioValidationError('Formato non valido: Codice Fiscale persona fisica (16 caratteri alfanumerici) o Partita IVA (11 cifre).');
@@ -3081,7 +3084,7 @@ export function App(): React.JSX.Element {
       const res = await apiFetch('/domicilio/cerca', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ codiceFiscale: cf }),
+        body: JSON.stringify({ codiceFiscale: cf, forzaImpresa }),
       });
       const data = await res.json();
       setDomicilioResult(data);
@@ -9063,7 +9066,7 @@ export function App(): React.JSX.Element {
           <a
             className={`bo-nav-item ${view === 'cerca-domicilio' ? 'is-active' : ''}`}
             href="#"
-            onClick={(e) => { e.preventDefault(); setView('cerca-domicilio'); setDomicilioCf(''); setDomicilioResult(null); }}
+            onClick={(e) => { e.preventDefault(); setView('cerca-domicilio'); setDomicilioCf(''); setDomicilioResult(null); setDomicilioForzaImpresa(false); }}
           >
             <MapPin />
             <span>Verifica Anagrafica</span>
@@ -13988,6 +13991,18 @@ export function App(): React.JSX.Element {
                 {domicilioValidationError && (
                   <div className="small text-danger mt-2">{domicilioValidationError}</div>
                 )}
+                <div className="form-check mt-2">
+                  <input
+                    type="checkbox"
+                    className="form-check-input"
+                    id="domicilioForzaImpresa"
+                    checked={domicilioForzaImpresa}
+                    onChange={e => setDomicilioForzaImpresa(e.target.checked)}
+                  />
+                  <label className="form-check-label small text-muted" htmlFor="domicilioForzaImpresa">
+                    Cerca come impresa individuale — il CF ha lo stesso formato di un CF persona fisica (16 caratteri), non rilevabile automaticamente: forza la ricerca su Registro Imprese invece di ANPR/INAD/App IO.
+                  </label>
+                </div>
                 <button
                   type="button"
                   className="btn btn-link btn-sm p-0 mt-2 text-decoration-none"
@@ -14109,7 +14124,7 @@ export function App(): React.JSX.Element {
                               const cf = domicilioAnagraficaResult.generalita?.codiceFiscale?.codFiscale;
                               if (!cf) return;
                               setDomicilioAnagraficaOpen(false);
-                              runCercaDomicilio(cf);
+                              runCercaDomicilio(cf, false);
                             }}
                           >
                             Usa questo CF
@@ -14194,7 +14209,7 @@ export function App(): React.JSX.Element {
                                       onClick={() => {
                                         if (!p.cFiscale) return;
                                         setDomicilioAnagraficaOpen(false);
-                                        runCercaDomicilio(p.cFiscale);
+                                        runCercaDomicilio(p.cFiscale, true);
                                       }}
                                     >
                                       Usa questo CF
