@@ -18,7 +18,7 @@ const RUBRICA_ROW_SHORT = 'id;pec@pec.it;;N;C;RSSMRA80A01H501U;;NOME;1;01/01/202
 // 0=id, 1=tributo, 2=flag, 3=pec, 4=flag2, 5=nome, 6=cognome, 7=cf, 8=vuoto, 9=nominativo,
 // 10=numProvv, 11=giorno, 12=mese, 13=anno, 14=oggetto, 15-16=vuoti, 17=filename
 const RUBRICA_ROW_TARI_SALDO =
-  '708806;rsu;D;pizzanuova@pec.it;0;;;2333900682;;PIZZANUOVA SRLS;708806;25;8;2026;SALDO TARI 2026;;;DOC_708806_161219.pdf';
+  '708806;rsu;D;beta@pec.it;0;;;00000000002;;BETA SRLS;708806;25;8;2026;SALDO TARI 2026;;;DOC_708806_161219.pdf';
 
 const PAG_INDICE = [
   "'nome file;'destinatario;'cod. fisc. dest;'indirizzo;'indirizzo parte 2;'localita;'comune;'stato estero;'Ocr int;'Ocr rid;'Num. provv;'Data emissione;'ocr notifica",
@@ -76,10 +76,10 @@ describe('parseRubricaPec', () => {
     const records = parseRubricaPec(RUBRICA_ROW_TARI_SALDO);
     expect(records).toHaveLength(1);
     expect(records[0]).toMatchObject({
-      pec: 'pizzanuova@pec.it',
-      codiceFiscale: '2333900682',
+      pec: 'beta@pec.it',
+      codiceFiscale: '00000000002',
       tipo: 'PG',
-      nominativo: 'PIZZANUOVA SRLS',
+      nominativo: 'BETA SRLS',
       numeroProvvedimento: '708806',
       dataEmissione: '25/8/2026',
       oggetto: 'SALDO TARI 2026',

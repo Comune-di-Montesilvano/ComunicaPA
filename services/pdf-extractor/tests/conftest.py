@@ -35,9 +35,9 @@ def pdf_residenza_label() -> bytes:
 
 @pytest.fixture
 def pdf_sede_label() -> bytes:
-    """Template avviso PG: 'Sede:CAP comune provincia via' su una riga (verificato dal vivo)."""
+    """Template avviso PG: 'Sede:CAP comune provincia via' su una riga (verificato dal vivo, dati anonimizzati)."""
     return _make_pdf(
-        ["Contribuente:PIZZANUOVA SRLS\nSede:65126 PESCARA PE VIA MARCO POLO 12\nOggetto: Saldo TARI 2026\n"]
+        ["Contribuente:ACME SRLS\nSede:65126 PESCARA PE VIA MARCO POLO 12\nOggetto: Saldo TARI 2026\n"]
     )
 
 
@@ -63,13 +63,53 @@ def pdf_residenza_vuota_fallback_header() -> bytes:
     nessun valore prima di 'Mail:') — né _RE_RESIDENZA_LABEL né
     _RE_RESIDENZA_INLINE_LABEL matchano (nessuna cifra dopo i due punti).
     L'indirizzo vero resta comunque nel blocco intestazione, prima di
-    'Contribuente:' — verificato dal vivo, DOC_733580_160297.pdf."""
+    'Contribuente:' — verificato dal vivo su un documento reale, dati
+    anonimizzati (nome/CF/email fittizi, struttura invariata)."""
     return _make_pdf(
         [
-            "CIESZKOWSKI ARTUR PIOTR\nCodice Utente 160297\nVIA VALLE D'AOSTA 9\n"
-            "65015 MONTESILVANO PE\nContribuente:CIESZKOWSKI ARTUR PIOTR\n"
-            "nato il:14/11/1982 a BUGAJ - POLONIA\nC.F.:CSZRRP82S14Z127R\n"
-            "Residenza:\nMail:artur.cieszowski@gmail.com\n"
+            "KOWALSKI JAN\nCodice Utente 160297\nVIA VALLE D'AOSTA 9\n"
+            "65015 MONTESILVANO PE\nContribuente:KOWALSKI JAN\n"
+            "nato il:14/11/1982 a VARSAVIA - POLONIA\nC.F.:KWLJAN82S14Z127R\n"
+            "Residenza:\nMail:test@example.com\n"
+            "Oggetto: Saldo TARI 2026 - Avviso di pagamento\n"
+        ]
+    )
+
+
+@pytest.fixture
+def pdf_sede_label_cap_4_cifre() -> bytes:
+    """Bug reale (PG con CAP a 4 cifre nel template 'Sede:', dati
+    anonimizzati): '6034' invece di '06034' — Foligno PG — lo zero iniziale
+    si perde a monte, va zero-paddato a 5."""
+    return _make_pdf(
+        ["Contribuente:TEST UTILITY SPA\nSede:6034 FOLIGNO PG VIA FEDELI 2/A\nOggetto: Saldo TARI 2026\n"]
+    )
+
+
+@pytest.fixture
+def pdf_header_block_after_contribuente() -> bytes:
+    """Bug reale (PG, dati anonimizzati): 'Sede:' presente ma vuota, e a
+    differenza di pdf_residenza_vuota_fallback_header qui via/CAP stanno
+    DOPO 'Contribuente:NOME', non prima."""
+    return _make_pdf(
+        [
+            "TEST ASSICURAZIONI SNC\nCodice Utente 151422\nContribuente:TEST ASSICURAZIONI SNC DI BIANCHI E ROSSI\n"
+            "VIA SILVINO DI GIOVANNI 12/16\n65015 MONTESILVANO PE\nC.F.:00000000001 P.Iva:00000000001\n"
+            "Sede:\nOggetto: Saldo TARI 2026 - Avviso di pagamento\n"
+        ]
+    )
+
+
+@pytest.fixture
+def pdf_residenza_estero_block() -> bytes:
+    """Bug reale (PF residente all'estero, dati anonimizzati): 'Residenza:'
+    con comune+stato scritti per intero (nessun CAP numerico), via su righe
+    successive — variante estera di pdf_residenza_inline_label."""
+    return _make_pdf(
+        [
+            "VERDI ANNA\nCodice Utente 75135\nContribuente:VERDI ANNA\n"
+            "C.F.:VRDANN96P46Z127S\nResidenza:LONDRA REGNO UNITO\n"
+            "FLAT 19/ TEST HOUSE/ EXAMPLE\nGARDENS ESTATE\n"
             "Oggetto: Saldo TARI 2026 - Avviso di pagamento\n"
         ]
     )
