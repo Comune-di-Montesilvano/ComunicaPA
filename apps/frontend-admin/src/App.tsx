@@ -6558,37 +6558,57 @@ export function App(): React.JSX.Element {
     if (wizManualEditingId === id) clearManualRowForm();
   };
 
-  const handleWizSingleSubmit = async (targetStep: number = 4) => {
-    if (!isValidCfOrPiva(singleCf)) {
-      alert('Codice Fiscale/P.IVA non valido: 16 caratteri alfanumerici o 11 cifre.');
-      return;
-    }
-    if (!singleSurname.trim()) {
-      alert('Cognome/Ragione Sociale obbligatorio.');
+  const handleWizManualSubmit = async (targetStep: number = 4) => {
+    // Se il form corrente ha dati validi, committalo come ultima riga —
+    // preserva l'esperienza "riempi una volta, clicca un bottone" per il
+    // caso a 1 destinatario (nessun bisogno di premere "Aggiungi" a parte).
+    if (singleCf.trim() && !isManualRowFormInvalid) {
+      if (!commitCurrentManualRow()) return; // dedup bloccante, messaggio già mostrato
+    } else if (singleCf.trim() && isManualRowFormInvalid) {
+      alert('Completa correttamente i dati del destinatario corrente prima di procedere, oppure svuota il Codice Fiscale se vuoi inviare solo le righe già aggiunte.');
       return;
     }
 
-    const fullName = [singleSurname.trim(), singleFirstName.trim()].filter(Boolean).join(' ');
+    const rows = wizManualRows;
+    if (rows.length === 0) {
+      alert('Aggiungi almeno un destinatario prima di procedere.');
+      return;
+    }
+    if (rows.length >= 2 && !wizName.trim()) {
+      alert('Inserisci il nome della campagna prima di procedere.');
+      return;
+    }
+
     const cols: string[] = ['codice_fiscale', 'full_name', 'email', 'pec'];
-    const vals: string[] = [singleCf.toUpperCase(), fullName, singleEmail, singlePec];
-
-    if (needsWizSinglePhysicalAddress) {
-      cols.push('sd_indirizzo', 'sd_comune', 'sd_cap', 'sd_provincia', 'sd_paese');
-      vals.push(singleAddress, singleMunicipality, singleZip, singleProvince, singleCountry);
-    }
-    if (wizPaymentEnabled) {
-      cols.push('sd_iuv', 'sd_importo', 'sd_scadenza');
-      vals.push(singlePaymentIuv, singlePaymentImporto, singlePaymentScadenza);
-    }
-    const attachmentSlotsWithFile = wizSingleAttachmentSlots.filter(s => s.file);
-    attachmentSlotsWithFile.forEach((s, i) => {
-      cols.push(`sd_allegato_${i + 1}`);
-      vals.push(s.file!.name);
-    });
+    if (needsWizSinglePhysicalAddress) cols.push('sd_indirizzo', 'sd_comune', 'sd_cap', 'sd_provincia', 'sd_paese');
+    if (wizPaymentEnabled) cols.push('sd_iuv', 'sd_importo', 'sd_scadenza');
+    const defaultSlotsWithFile = wizSingleAttachmentSlots.filter(s => s.file);
+    defaultSlotsWithFile.forEach((_s, i) => cols.push(`sd_allegato_${i + 1}`));
 
     const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
-    const csvContent = `${cols.join(',')}\n${vals.map(esc).join(',')}`;
-    const file = new File([csvContent], 'destinatario.csv', { type: 'text/csv' });
+    const lines = [cols.join(',')];
+    // Nome file per (riga, slot): override della riga se presente, altrimenti
+    // il default comune dello slot — stesso filename riusato su più righe è
+    // già supportato dalla risoluzione allegato esistente lato backend.
+    const filesToUpload = new Map<string, File>();
+    defaultSlotsWithFile.forEach(s => filesToUpload.set(s.file!.name, s.file!));
+
+    rows.forEach(row => {
+      const fullName = [row.surname, row.firstName].filter(Boolean).join(' ');
+      const vals: string[] = [row.cf, fullName, row.email, row.pec];
+      if (needsWizSinglePhysicalAddress) vals.push(row.address, row.municipality, row.zip, row.province, row.country);
+      if (wizPaymentEnabled) vals.push(row.paymentIuv, row.paymentImporto, row.paymentScadenza);
+      defaultSlotsWithFile.forEach((s, i) => {
+        const override = row.attachmentOverrides[s.id];
+        const file = override || s.file!;
+        if (override) filesToUpload.set(override.name, override);
+        vals.push(file.name);
+      });
+      lines.push(vals.map(esc).join(','));
+    });
+
+    const csvContent = lines.join('\n');
+    const file = new File([csvContent], 'destinatari.csv', { type: 'text/csv' });
     setWizCsvFile(file);
     await parseCsvFile(file, true);
 
@@ -6605,9 +6625,10 @@ export function App(): React.JSX.Element {
       setWizPaymentAmountType('euro');
       setWizPaymentDueDateCol('sd_scadenza');
     }
-    const newWizAttachments = attachmentSlotsWithFile.map((s, i) => ({ key: `sd_allegato_${i + 1}`, label: s.label || `Allegato ${i + 1}` }));
+    const newWizAttachments = defaultSlotsWithFile.map((s, i) => ({ key: `sd_allegato_${i + 1}`, label: s.label || `Allegato ${i + 1}` }));
     setWizAttachments(newWizAttachments);
-    setWizPdfFiles(attachmentSlotsWithFile.map(s => s.file!));
+    const uploadFiles = Array.from(filesToUpload.values());
+    setWizPdfFiles(uploadFiles);
 
     // csvContent è già nella forma normalizzata attesa da /recipients/upload
     // (codice_fiscale, full_name, email, pec, ...extra) — passato come override
@@ -6623,7 +6644,7 @@ export function App(): React.JSX.Element {
     // allegato allo Step 3 (Anteprima e Invio) cerca il file sul disco del
     // server prima che sia mai stato caricato — 404 "Allegato non trovato".
     try {
-      if (!(await ensureWizSingleAttachmentsUploaded(campaignId, attachmentSlotsWithFile.map(s => s.file!)))) return;
+      if (!(await ensureWizSingleAttachmentsUploaded(campaignId, uploadFiles))) return;
     } catch (err: any) {
       alert(err.message || 'Errore durante il caricamento degli allegati.');
       return;
@@ -9557,7 +9578,7 @@ export function App(): React.JSX.Element {
                             // syncWizDraftAndRecipients da solo non lo fa. Senza passare da qui,
                             // un click in avanti sulla tab-bar dopo un'edit allo Step 1 perdeva
                             // silenziosamente la modifica (finding 3 review finale).
-                            await handleWizSingleSubmit(n);
+                            await handleWizManualSubmit(n);
                           } else if (await syncWizDraftAndRecipients(n)) {
                             setWizStep(n);
                           }
@@ -9590,7 +9611,7 @@ export function App(): React.JSX.Element {
                     </div>
                     <button
                       className="btn btn-primary px-4 fw-medium d-flex align-items-center gap-2"
-                      onClick={() => handleWizSingleSubmit(wizSingleNeedsTemplateStep ? 4 : 6)}
+                      onClick={() => handleWizManualSubmit(wizSingleNeedsTemplateStep ? 4 : 6)}
                       disabled={isManualRowFormInvalid}
                     >
                       Avanti <ArrowRight size={16} />
@@ -10328,7 +10349,7 @@ export function App(): React.JSX.Element {
                   <div className="mt-3 pt-2 d-flex justify-content-end">
                     <button
                       className="btn btn-primary px-4 fw-medium d-flex align-items-center gap-2"
-                      onClick={() => handleWizSingleSubmit(wizSingleNeedsTemplateStep ? 4 : 6)}
+                      onClick={() => handleWizManualSubmit(wizSingleNeedsTemplateStep ? 4 : 6)}
                       disabled={isManualRowFormInvalid}
                     >
                       Avanti <ArrowRight size={16} />
