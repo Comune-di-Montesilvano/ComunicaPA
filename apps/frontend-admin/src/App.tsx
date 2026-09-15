@@ -13846,13 +13846,13 @@ export function App(): React.JSX.Element {
               </div>
 
               <div className="card shadow-sm p-4 mb-4 border-0 bg-white rounded-3">
-                <label className="form-label small fw-bold text-secondary text-uppercase tracking-wider">Codice Fiscale o Partita IVA</label>
+                <label className="form-label small fw-bold text-secondary text-uppercase tracking-wider">Codice Fiscale (persona fisica o giuridica)</label>
                 <div className="input-group input-group-sm" style={{ maxWidth: '600px' }}>
                   <span className="input-group-text bg-light border-end-0"><Contact size={16} className="text-muted" /></span>
                   <input
                     type="text"
                     className="form-control border-start-0 ps-0 fw-semibold"
-                    placeholder="CF persona fisica o Partita IVA"
+                    placeholder="CF persona fisica o CF/Partita IVA persona giuridica"
                     maxLength={16}
                     style={{ letterSpacing: '0.5px' }}
                     value={domicilioCf}
