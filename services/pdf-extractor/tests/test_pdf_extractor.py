@@ -27,6 +27,14 @@ def test_extract_address_sede_label(pdf_sede_label):
     assert addr.provincia == "PE"
 
 
+def test_extract_address_residenza_inline_label(pdf_residenza_inline_label):
+    addr = PdfExtractor(pdf_residenza_inline_label).extract_address()
+    assert addr.indirizzo == "VIA SANTA LUCIA 42"
+    assert addr.cap == "65010"
+    assert addr.comune == "SPOLTORE"
+    assert addr.provincia == "PE"
+
+
 def test_extract_address_missing_raises(pdf_no_address):
     with pytest.raises(AddressExtractionError):
         PdfExtractor(pdf_no_address).extract_address()
