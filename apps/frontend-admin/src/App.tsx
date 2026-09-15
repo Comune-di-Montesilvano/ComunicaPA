@@ -1076,6 +1076,29 @@ async function uploadFileInChunks(
   return completeRes.json();
 }
 
+// Più warning di arricchimento sulla stessa riga/PDF (es. "Indirizzo non
+// estratto" + "Città mancante" + "Provincia mancante") vanno mostrati come
+// un solo blocco con un solo form "Correggi indirizzo" — raggruppa per
+// `pdf` preservando l'ordine di prima apparizione (openEnrichAddressEdit
+// identifica la riga editabile solo per `pdf`, quindi il raggruppamento
+// usa la stessa chiave, nessuna assunzione nuova).
+function groupWarningsByPdf(
+  warnings: Array<{ row: number; pdf: string; message: string }>,
+): Array<{ row: number; pdf: string; messages: string[] }> {
+  const groups: Array<{ row: number; pdf: string; messages: string[] }> = [];
+  const indexByPdf = new Map<string, number>();
+  for (const w of warnings) {
+    const idx = indexByPdf.get(w.pdf);
+    if (idx !== undefined) {
+      groups[idx].messages.push(w.message);
+    } else {
+      indexByPdf.set(w.pdf, groups.length);
+      groups.push({ row: w.row, pdf: w.pdf, messages: [w.message] });
+    }
+  }
+  return groups;
+}
+
 // Codice Fiscale (16 alfanumerici) o Partita IVA (11 cifre) — stesso vincolo
 // già applicato riga per riga nella validazione CSV del wizard massivo.
 function isValidCfOrPiva(value: string): boolean {
@@ -14472,14 +14495,19 @@ export function App(): React.JSX.Element {
                     {enrichDetailJobId === job.id && (
                       <ul className="small text-muted mt-2 mb-0 list-unstyled">
                         {job.warnings && job.warnings.length > 0 ? (
-                          job.warnings.map((w, i) => {
-                            const committed = job.status === 'done' || w.row <= (job.checkpointRow ?? 0);
-                            const corrected = enrichCorrectedPdfs[job.id]?.has(w.pdf) ?? false;
-                            const editingThisRow = enrichAddressEditJobId === job.id && enrichAddressEditPdf === w.pdf;
+                          // Più warning sulla stessa riga/PDF (es. "Indirizzo non
+                          // estratto" + "Città mancante" + "Provincia mancante")
+                          // vanno accorpati in un solo <li> con un solo form
+                          // "Correggi indirizzo" — altrimenti il form si ripete
+                          // identico una volta per warning sulla stessa riga.
+                          groupWarningsByPdf(job.warnings).map((g, i) => {
+                            const committed = job.status === 'done' || g.row <= (job.checkpointRow ?? 0);
+                            const corrected = enrichCorrectedPdfs[job.id]?.has(g.pdf) ?? false;
+                            const editingThisRow = enrichAddressEditJobId === job.id && enrichAddressEditPdf === g.pdf;
                             return (
                               <li key={i} className="mb-1">
                                 <div className="d-flex align-items-center gap-2">
-                                  <span>Riga {w.row} — {w.pdf}: {w.message}</span>
+                                  <span>Riga {g.row} — {g.pdf}: {g.messages.join(' | ')}</span>
                                   {corrected ? (
                                     <span className="badge bg-success-subtle text-success-emphasis border">
                                       <CheckCircle2 className="me-1" size={12} />Corretto
@@ -14490,7 +14518,7 @@ export function App(): React.JSX.Element {
                                     type="button"
                                     disabled={!committed}
                                     title={committed ? '' : 'In attesa di checkpoint (salvataggio ogni 100 righe)'}
-                                    onClick={() => openEnrichAddressEdit(job.id, w.pdf)}
+                                    onClick={() => openEnrichAddressEdit(job.id, g.pdf)}
                                   >
                                     {corrected ? 'Modifica correzione' : 'Correggi indirizzo'}
                                   </button>
