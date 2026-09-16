@@ -45,6 +45,41 @@ describe('NotificationQueuesService.getJobsDetail', () => {
   });
 });
 
+describe('NotificationQueuesService.getLastFailedAt', () => {
+  async function buildService(getFailed: ReturnType<typeof jest.fn>) {
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        NotificationQueuesService,
+        { provide: getQueueToken(CHANNEL_QUEUES.EMAIL), useValue: { getFailed } },
+        { provide: getQueueToken(CHANNEL_QUEUES.PEC), useValue: {} },
+        { provide: getQueueToken(CHANNEL_QUEUES.APP_IO), useValue: {} },
+        { provide: getQueueToken(CHANNEL_QUEUES.POSTAL), useValue: {} },
+        { provide: getQueueToken(PROTOCOLLAZIONE_QUEUE), useValue: {} },
+      ],
+    }).compile();
+    return moduleRef.get(NotificationQueuesService);
+  }
+
+  it("ritorna l'ISO timestamp del job fallito più recente", async () => {
+    const getFailed = jest.fn().mockResolvedValue([{ finishedOn: 1700000000000 }]);
+    const service = await buildService(getFailed);
+
+    const result = await service.getLastFailedAt('EMAIL');
+
+    expect(getFailed).toHaveBeenCalledWith(0, 0);
+    expect(result).toBe(new Date(1700000000000).toISOString());
+  });
+
+  it('ritorna null se non ci sono job falliti', async () => {
+    const getFailed = jest.fn().mockResolvedValue([]);
+    const service = await buildService(getFailed);
+
+    const result = await service.getLastFailedAt('EMAIL');
+
+    expect(result).toBeNull();
+  });
+});
+
 describe('NotificationQueuesService.getJob', () => {
   it('recupera un job per id dalla coda del canale corretto', async () => {
     const mockJob = { id: 'attempt-123', remove: jest.fn() };

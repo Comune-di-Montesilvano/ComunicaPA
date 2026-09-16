@@ -1,10 +1,13 @@
 import { Controller, Get, Post, Param, Query, HttpStatus, HttpCode, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { InjectQueue } from '@nestjs/bullmq';
+import type { Queue } from 'bullmq';
 import { Not, IsNull, Repository } from 'typeorm';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { NotificationQueuesService } from '../queue/notification-queues.service.js';
 import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service.js';
 import { ENGINE_NAMES, type EngineName } from '../queue/notification-job.types.js';
+import { ENRICHMENT_QUEUE } from '../enrichment/enrichment-job.types.js';
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity.js';
 import { Campaign, CampaignStatus } from '../entities/campaign.entity.js';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity.js';
@@ -18,6 +21,7 @@ export class EnginesController {
   constructor(
     private readonly queues: NotificationQueuesService,
     private readonly postalStatusSync: PostalStatusSyncService,
+    @InjectQueue(ENRICHMENT_QUEUE) private readonly enrichmentQueue: Queue,
     @InjectRepository(NotificationAttempt)
     private readonly attemptRepo: Repository<NotificationAttempt>,
     @InjectRepository(Campaign)
@@ -30,16 +34,18 @@ export class EnginesController {
   @Roles('admin', 'user')
   async list() {
     const engines: Array<{
-      channel: EngineName | 'INAD';
+      channel: EngineName | 'INAD' | 'ENRICHMENT';
       queueName: string;
       paused: boolean;
       pausable: boolean;
       counts: Record<string, number>;
+      lastFailedAt: string | null;
     }> = await Promise.all(
       ENGINE_NAMES.map(async (name) => {
-        const [paused, counts] = await Promise.all([
+        const [paused, counts, lastFailedAt] = await Promise.all([
           this.queues.isPaused(name),
           this.queues.getJobCounts(name),
+          this.queues.getLastFailedAt(name),
         ]);
         return {
           channel: name,
@@ -47,6 +53,7 @@ export class EnginesController {
           paused,
           pausable: true,
           counts,
+          lastFailedAt,
         };
       }),
     );
@@ -70,6 +77,20 @@ export class EnginesController {
         waiting: inadCheckingCampaigns,
         paused: 0,
       },
+      lastFailedAt: null,
+    });
+
+    const [enrichmentCounts, enrichmentFailedJobs] = await Promise.all([
+      this.enrichmentQueue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed'),
+      this.enrichmentQueue.getFailed(0, 0),
+    ]);
+    engines.push({
+      channel: 'ENRICHMENT',
+      queueName: ENRICHMENT_QUEUE,
+      paused: false,
+      pausable: false,
+      counts: enrichmentCounts as Record<string, number>,
+      lastFailedAt: enrichmentFailedJobs[0]?.finishedOn ? new Date(enrichmentFailedJobs[0].finishedOn).toISOString() : null,
     });
 
     return { engines };

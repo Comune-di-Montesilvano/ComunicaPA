@@ -1400,6 +1400,11 @@ export function App(): React.JSX.Element {
   const [tmplAppIoBody, setTmplAppIoBody] = useState<string>('');
   const [appVersion, setAppVersion] = useState<string>('');
   const [isLdapMock, setIsLdapMock] = useState<boolean>(false);
+  const [onlineCount, setOnlineCount] = useState<number | null>(null);
+  const [recentActivityCampaigns, setRecentActivityCampaigns] = useState<any[]>([]);
+  const [recentActivityLoading, setRecentActivityLoading] = useState(false);
+  const [recentActivityError, setRecentActivityError] = useState<string | null>(null);
+  const [backendStatus, setBackendStatus] = useState<'checking' | 'online' | 'offline'>('checking');
   const [brandLogoUrl, setBrandLogoUrl] = useState<string | null>(null);
   const [brandName, setBrandName] = useState<string>('ComunicaPA');
   const [brandSubtitle, setBrandSubtitle] = useState<string>('Amministrazione & Gestione Invii');
@@ -1921,19 +1926,32 @@ export function App(): React.JSX.Element {
     if (view === 'dashboard' && token) {
       fetchDashboardStats();
       fetchEngines();
+      fetchOnlineCount();
+      fetchRecentActivity();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, token]);
 
   useEffect(() => {
-    fetch(`${API_BASE}/version`)
-      .then((r) => r.json())
-      .then((d: { version?: string; isLdapMock?: boolean }) => {
-        setAppVersion(d.version ?? 'dev');
-        setIsLdapMock(d.isLdapMock ?? false);
-      })
-      .catch(() => setAppVersion('dev'));
+    const checkBackend = () => {
+      fetch(`${API_BASE}/version`)
+        .then((r) => {
+          if (!r.ok) throw new Error('not ok');
+          return r.json();
+        })
+        .then((d: { version?: string; isLdapMock?: boolean }) => {
+          setAppVersion(d.version ?? 'dev');
+          setIsLdapMock(d.isLdapMock ?? false);
+          setBackendStatus('online');
+        })
+        .catch(() => setBackendStatus('offline'));
+    };
+    checkBackend();
+    const intervalId = setInterval(checkBackend, 15000);
+    return () => clearInterval(intervalId);
+  }, []);
 
+  useEffect(() => {
     fetch(`${API_BASE}/branding`)
       .then((r) => r.json())
       .then((b: { name?: string; subtitle?: string; logoUrl?: string | null; faviconUrl?: string | null }) => {
@@ -2618,6 +2636,8 @@ export function App(): React.JSX.Element {
     const timer = setInterval(() => {
       fetchDashboardStats();
       fetchEngines();
+      fetchOnlineCount();
+      fetchRecentActivity();
     }, 5000);
     return () => clearInterval(timer);
   }, [token, view]);
@@ -2851,7 +2871,11 @@ export function App(): React.JSX.Element {
       setCanUsePostal(!!data.canUsePostal);
       setView('dashboard');
     } catch (err: any) {
-      setLoginError(err.message || 'Errore durante il login');
+      if (err instanceof TypeError) {
+        setLoginError('Impossibile contattare il server. Verificare che il backend sia avviato.');
+      } else {
+        setLoginError(err.message || 'Errore durante il login');
+      }
     } finally {
       setLoginLoading(false);
     }
@@ -2887,6 +2911,17 @@ export function App(): React.JSX.Element {
     }
     return res;
   };
+
+  useEffect(() => {
+    if (!token) return;
+    const sendHeartbeat = () => {
+      apiFetch('/presence/heartbeat', { method: 'POST' }).catch(() => {});
+    };
+    sendHeartbeat();
+    const timer = setInterval(sendHeartbeat, 60000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   const downloadTextFile = (filename: string, content: string) => {
     const blob = new Blob([content], { type: 'application/x-pem-file' });
@@ -8747,6 +8782,32 @@ export function App(): React.JSX.Element {
     }
   };
 
+  const fetchOnlineCount = async () => {
+    try {
+      const res = await apiFetch('/presence/online');
+      if (res.ok) {
+        const data = await res.json();
+        setOnlineCount(data.count);
+      }
+    } catch {
+      // silenzioso: badge informativo, mai stato di errore visibile
+    }
+  };
+
+  const fetchRecentActivity = async () => {
+    setRecentActivityLoading(true);
+    setRecentActivityError(null);
+    try {
+      const res = await apiFetch('/campaigns/recent-activity');
+      if (!res.ok) throw new Error('Impossibile caricare le campagne recenti.');
+      setRecentActivityCampaigns(await res.json());
+    } catch (err) {
+      if (!(err instanceof ApiAuthError)) setRecentActivityError('Impossibile caricare le campagne recenti.');
+    } finally {
+      setRecentActivityLoading(false);
+    }
+  };
+
   const handleExportNeverDownloaded = async () => {
     try {
       const params = new URLSearchParams();
@@ -8972,6 +9033,11 @@ export function App(): React.JSX.Element {
             <p className="login-subtitle">{brandSubtitle || 'Amministrazione & Gestione Invii'}</p>
           </div>
           <div className="login-body">
+            {backendStatus === 'offline' && (
+              <div className="login-error-alert" role="alert">
+                <AlertTriangle /> Backend non raggiungibile. Attendere l'avvio dello stack o verificare i log.
+              </div>
+            )}
             <form onSubmit={handleLogin}>
               {loginError && (
                 <div className="login-error-alert" role="alert">
@@ -9191,8 +9257,11 @@ export function App(): React.JSX.Element {
         </nav>
 
         <div className="bo-sidebar-meta mt-auto">
-          <span className="bo-sidebar-status-dot active"></span>
-          <span>Online{import.meta.env.DEV ? ' (Dev Mode)' : ''}</span>
+          <span className={`bo-sidebar-status-dot ${backendStatus}`}></span>
+          <span>
+            {backendStatus === 'online' ? 'Online' : backendStatus === 'offline' ? 'Offline' : 'Verifica...'}
+            {import.meta.env.DEV ? ' (Dev Mode)' : ''}
+          </span>
           {appVersion && (
             <a
               className="bo-sidebar-version"
@@ -9278,7 +9347,10 @@ export function App(): React.JSX.Element {
                         <div className="d-flex align-items-center gap-2 mb-1">
                           <h1 className="h4 mb-0 fw-bold text-dark">Ciao, {displayName || username}! 👋</h1>
                           <span className="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1 small d-inline-flex align-items-center gap-1">
-                            <span className="spinner-grow spinner-grow-sm text-success" style={{ width: '6px', height: '6px' }} /> Operativo
+                            <span className="spinner-grow spinner-grow-sm text-success" style={{ width: '6px', height: '6px' }} />
+                            {onlineCount !== null
+                              ? `${onlineCount} ${onlineCount === 1 ? 'operatore online' : 'operatori online'}`
+                              : 'Operativo'}
                           </span>
                         </div>
                         <p className="mb-0 text-muted small">
@@ -9393,7 +9465,10 @@ export function App(): React.JSX.Element {
                   return c.failedCount / c.totalRecipients > 0.1;
                 });
                 const pausedEngines = engines.filter((e) => e.paused);
-                const failingEngines = engines.filter((e) => (e.counts?.failed ?? 0) > 0);
+                const sevenDaysAgoMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
+                const failingEngines = engines.filter(
+                  (e) => (e.counts?.failed ?? 0) > 0 && e.lastFailedAt && new Date(e.lastFailedAt).getTime() >= sevenDaysAgoMs,
+                );
                 const hasAlerts = failingCampaigns.length > 0 || pausedEngines.length > 0 || failingEngines.length > 0;
                 if (!hasAlerts) return null;
 
@@ -9580,15 +9655,24 @@ export function App(): React.JSX.Element {
                 <div className="col-lg-8">
                   <div className="card shadow-sm h-100">
                     <div className="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
-                      <h3 className="h6 mb-0 fw-bold text-dark"><History className="me-2 text-primary" />Attività Recenti</h3>
+                      <h3 className="h6 mb-0 fw-bold text-dark"><History className="me-2 text-primary" />Campagne recenti</h3>
                       <div className="d-flex align-items-center gap-2">
-                        <button className="btn btn-outline-secondary btn-sm border-0" onClick={fetchCampaigns}><RefreshCw /></button>
+                        <button className="btn btn-outline-secondary btn-sm border-0" onClick={fetchRecentActivity}><RefreshCw /></button>
                         <button className="btn btn-link btn-sm" onClick={() => setView('invio-massivo')}>Vedi tutte</button>
                       </div>
                     </div>
                     <div className="card-body p-0">
-                      {campaigns.length === 0 ? (
-                        <div className="text-center py-5 text-muted">Nessuna attività registrata.</div>
+                      {recentActivityError ? (
+                        <div className="text-center py-5 text-danger small">
+                          {recentActivityError}
+                          <div className="mt-2">
+                            <button className="btn btn-sm btn-outline-secondary" onClick={fetchRecentActivity}>Riprova</button>
+                          </div>
+                        </div>
+                      ) : recentActivityLoading && recentActivityCampaigns.length === 0 ? (
+                        <div className="text-center py-5 text-muted"><Loader2 className="icon-spin" size={20} /></div>
+                      ) : recentActivityCampaigns.length === 0 ? (
+                        <div className="text-center py-5 text-muted">Nessuna campagna attiva o aggiornata negli ultimi 7 giorni.</div>
                       ) : (
                         <div className="table-responsive">
                           <table className="table table-hover align-middle mb-0" style={{ fontSize: '0.84rem' }}>
@@ -9598,15 +9682,17 @@ export function App(): React.JSX.Element {
                                 <th>Canale</th>
                                 <th>Stato</th>
                                 <th className="text-end">Successi</th>
+                                <th>Ultimo aggiornamento</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {campaigns.filter(c => !c.isTest).slice(0, 5).map((c) => (
+                              {recentActivityCampaigns.map((c) => (
                                 <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => handleCampaignClick(c.id)}>
                                   <td className="fw-bold text-primary">{c.name}</td>
                                   <td><ChannelBadge channel={c.channelType} /></td>
                                   <td><StatusBadge status={c.status} /></td>
                                   <td className="text-end fw-bold">{c.sentCount} / {c.totalRecipients}</td>
+                                  <td className="text-muted small">{new Date(c.lastActivityAt).toLocaleString('it-IT')}</td>
                                 </tr>
                               ))}
                             </tbody>

@@ -1681,6 +1681,63 @@ export class CampaignsService {
     return { sentCount, combinations, postalNoDigitalDownloaded };
   }
 
+  async getRecentActivity(): Promise<Array<{
+    id: string;
+    name: string;
+    channelType: string;
+    status: string;
+    totalRecipients: number;
+    sentCount: number;
+    failedCount: number;
+    lastActivityAt: string;
+  }>> {
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const rows = await this.campaignRepo
+      .createQueryBuilder('c')
+      .select('c.id', 'id')
+      .addSelect('c.name', 'name')
+      .addSelect('c.channelType', 'channelType')
+      .addSelect('c.status', 'status')
+      .addSelect('c.totalRecipients', 'totalRecipients')
+      .addSelect('c.sentCount', 'sentCount')
+      .addSelect('c.failedCount', 'failedCount')
+      .addSelect(
+        `GREATEST(
+          c.updatedAt,
+          COALESCE((SELECT MAX(na.send_status_updated_at) FROM notification_attempts na
+                      INNER JOIN recipients r ON r.id = na.recipient_id WHERE r.campaign_id = c.id), c.updatedAt),
+          COALESCE((SELECT MAX(na.postal_status_updated_at) FROM notification_attempts na
+                      INNER JOIN recipients r ON r.id = na.recipient_id WHERE r.campaign_id = c.id), c.updatedAt)
+        )`,
+        'lastActivityAt',
+      )
+      .where("c.isTest = false AND c.status != 'draft'")
+      .andWhere(
+        `(c.status IN (:...activeStatuses) OR EXISTS (
+          SELECT 1 FROM notification_attempts na
+          INNER JOIN recipients r ON r.id = na.recipient_id
+          WHERE r.campaign_id = c.id
+            AND (na.send_status_updated_at >= :since OR na.postal_status_updated_at >= :since)
+        ))`,
+        { activeStatuses: [CampaignStatus.QUEUED, CampaignStatus.RUNNING], since },
+      )
+      .orderBy('"lastActivityAt"', 'DESC')
+      .limit(15)
+      .getRawMany();
+
+    return rows.map((r: any) => ({
+      id: r.id,
+      name: r.name,
+      channelType: r.channelType,
+      status: r.status,
+      totalRecipients: Number(r.totalRecipients),
+      sentCount: Number(r.sentCount),
+      failedCount: Number(r.failedCount),
+      lastActivityAt: r.lastActivityAt,
+    }));
+  }
+
   async getGlobalStats(dateFrom?: string, dateTo?: string): Promise<GlobalStatsDto> {
     const range = buildDateRangeWhere('c', dateFrom, dateTo);
 

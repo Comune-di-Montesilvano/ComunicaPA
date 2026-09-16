@@ -8,3 +8,6 @@ docs
 .serena
 .claude
 apps/backend/src/debug
+/tinn
+.playwright-mcp
+.pnpm-store
