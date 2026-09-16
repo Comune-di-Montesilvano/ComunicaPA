@@ -14,3 +14,14 @@
 export function isPartitaIva(value: string): boolean {
   return /^\d{11}$/.test(value.trim());
 }
+
+/**
+ * Formato valido per CF persona fisica (16 alfanumerici) o PIVA/CF persona
+ * giuridica (11 cifre) — stesso regex già in uso lato frontend (App.tsx,
+ * isValidCfOrPiva locale, mai condivisa fino ad ora). Solo controllo di
+ * FORMATO, nessun checksum — stesso principio di isPartitaIva sopra.
+ */
+export function isValidCfOrPiva(value: string): boolean {
+  const v = value.trim();
+  return /^[A-Z0-9]{16}$/i.test(v) || /^\d{11}$/.test(v);
+}
