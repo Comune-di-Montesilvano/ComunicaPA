@@ -33,6 +33,7 @@ describe('EnrichmentService', () => {
       findByJob: jest.fn(async () => []),
       applyOverrides: jest.fn((rows: any) => rows),
       upsert: jest.fn(async () => ({ id: 'o1' })),
+      dismiss: jest.fn(async () => ({ id: 'o1', dismissed: true })),
     };
     service = new EnrichmentService(repo, queue, convertCampaignQueue, overrideService);
   });
@@ -127,6 +128,27 @@ describe('EnrichmentService', () => {
     const out = new AdmZip(buf as Buffer);
     expect(out.getEntry('arricchito.csv')).toBeTruthy();
     expect(out.getEntries()).toHaveLength(1);
+  });
+
+  describe('getCorrectedPdfs', () => {
+    it('ritorna, per ogni pdf con override, se è corretto o solo ignorato', async () => {
+      overrideService.findByJob.mockResolvedValue([
+        { pdfFilename: 'PROVV_1.pdf', dismissed: false },
+        { pdfFilename: 'PROVV_2.pdf', dismissed: true },
+      ]);
+      const result = await service.getCorrectedPdfs('job-uuid-1');
+      expect(result).toEqual([
+        { pdfFilename: 'PROVV_1.pdf', dismissed: false },
+        { pdfFilename: 'PROVV_2.pdf', dismissed: true },
+      ]);
+    });
+  });
+
+  describe('dismissWarning', () => {
+    it('delega a overrideService.dismiss con l\'operatore corrente', async () => {
+      await service.dismissWarning('job-uuid-1', 'PROVV_1.pdf', 'op');
+      expect(overrideService.dismiss).toHaveBeenCalledWith('job-uuid-1', 'PROVV_1.pdf', 'op');
+    });
   });
 
   describe('requestCampaignConversion', () => {

@@ -30,6 +30,17 @@ describe('EnrichmentAddressOverrideService', () => {
     expect(repo.upsert).toHaveBeenLastCalledWith(expect.objectContaining({ extraFields: null }), ['jobId', 'pdfFilename']);
   });
 
+  it('dismiss scrive solo i campi dismissed*, senza toccare indirizzo/correctedBy', async () => {
+    await service.dismiss('j1', 'PROVV_1.pdf', 'op');
+    expect(repo.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ jobId: 'j1', pdfFilename: 'PROVV_1.pdf', dismissed: true, dismissedBy: 'op' }),
+      ['jobId', 'pdfFilename'],
+    );
+    const savedEntity = repo.upsert.mock.calls[0][0];
+    expect(savedEntity).not.toHaveProperty('indirizzo');
+    expect(savedEntity).not.toHaveProperty('correctedBy');
+  });
+
   it('findByJob ritorna tutti gli override del job', async () => {
     repo.find.mockResolvedValue([{ pdfFilename: 'PROVV_1.pdf' }]);
     const result = await service.findByJob('j1');
