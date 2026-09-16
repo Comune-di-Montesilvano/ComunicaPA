@@ -1404,6 +1404,7 @@ export function App(): React.JSX.Element {
   const [recentActivityCampaigns, setRecentActivityCampaigns] = useState<any[]>([]);
   const [recentActivityLoading, setRecentActivityLoading] = useState(false);
   const [recentActivityError, setRecentActivityError] = useState<string | null>(null);
+  const [backendStatus, setBackendStatus] = useState<'checking' | 'online' | 'offline'>('checking');
   const [brandLogoUrl, setBrandLogoUrl] = useState<string | null>(null);
   const [brandName, setBrandName] = useState<string>('ComunicaPA');
   const [brandSubtitle, setBrandSubtitle] = useState<string>('Amministrazione & Gestione Invii');
@@ -1932,14 +1933,25 @@ export function App(): React.JSX.Element {
   }, [view, token]);
 
   useEffect(() => {
-    fetch(`${API_BASE}/version`)
-      .then((r) => r.json())
-      .then((d: { version?: string; isLdapMock?: boolean }) => {
-        setAppVersion(d.version ?? 'dev');
-        setIsLdapMock(d.isLdapMock ?? false);
-      })
-      .catch(() => setAppVersion('dev'));
+    const checkBackend = () => {
+      fetch(`${API_BASE}/version`)
+        .then((r) => {
+          if (!r.ok) throw new Error('not ok');
+          return r.json();
+        })
+        .then((d: { version?: string; isLdapMock?: boolean }) => {
+          setAppVersion(d.version ?? 'dev');
+          setIsLdapMock(d.isLdapMock ?? false);
+          setBackendStatus('online');
+        })
+        .catch(() => setBackendStatus('offline'));
+    };
+    checkBackend();
+    const intervalId = setInterval(checkBackend, 15000);
+    return () => clearInterval(intervalId);
+  }, []);
 
+  useEffect(() => {
     fetch(`${API_BASE}/branding`)
       .then((r) => r.json())
       .then((b: { name?: string; subtitle?: string; logoUrl?: string | null; faviconUrl?: string | null }) => {
@@ -2859,7 +2871,11 @@ export function App(): React.JSX.Element {
       setCanUsePostal(!!data.canUsePostal);
       setView('dashboard');
     } catch (err: any) {
-      setLoginError(err.message || 'Errore durante il login');
+      if (err instanceof TypeError) {
+        setLoginError('Impossibile contattare il server. Verificare che il backend sia avviato.');
+      } else {
+        setLoginError(err.message || 'Errore durante il login');
+      }
     } finally {
       setLoginLoading(false);
     }
@@ -9017,6 +9033,11 @@ export function App(): React.JSX.Element {
             <p className="login-subtitle">{brandSubtitle || 'Amministrazione & Gestione Invii'}</p>
           </div>
           <div className="login-body">
+            {backendStatus === 'offline' && (
+              <div className="login-error-alert" role="alert">
+                <AlertTriangle /> Backend non raggiungibile. Attendere l'avvio dello stack o verificare i log.
+              </div>
+            )}
             <form onSubmit={handleLogin}>
               {loginError && (
                 <div className="login-error-alert" role="alert">
@@ -9236,8 +9257,11 @@ export function App(): React.JSX.Element {
         </nav>
 
         <div className="bo-sidebar-meta mt-auto">
-          <span className="bo-sidebar-status-dot active"></span>
-          <span>Online{import.meta.env.DEV ? ' (Dev Mode)' : ''}</span>
+          <span className={`bo-sidebar-status-dot ${backendStatus}`}></span>
+          <span>
+            {backendStatus === 'online' ? 'Online' : backendStatus === 'offline' ? 'Offline' : 'Verifica...'}
+            {import.meta.env.DEV ? ' (Dev Mode)' : ''}
+          </span>
           {appVersion && (
             <a
               className="bo-sidebar-version"
