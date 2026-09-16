@@ -7,7 +7,7 @@ import { COUNTRIES, matchCountry, isValidCap } from '@comunicapa/shared-types';
 import { LineChart, Line, PieChart, Pie, Cell, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import {
   Mail, MailOpen, MailCheck, Mails, Smartphone, Send, HelpCircle,
-  Hourglass, Truck, Inbox, Ban, Eye, CalendarCheck, Banknote, UserX, X, Clock,
+  Hourglass, Truck, Inbox, Ban, Eye, EyeOff, CalendarCheck, Banknote, UserX, X, Clock,
   RotateCcw, ChevronLeft, ChevronRight, Loader2, Download,
   Pause, Check, MapPin, Settings2, Printer, ThumbsUp, RotateCw,
   CheckCircle2, XCircle, AlertTriangle, AlertCircle, Trash2,
@@ -1099,6 +1099,23 @@ function groupWarningsByPdf(
   return groups;
 }
 
+// Divide le righe raggruppate in "da sistemare" e "risolte" (corrette o
+// ignorate) in base allo stato di risoluzione per pdf — usato sia per il
+// conteggio del badge "Avvisi (N)" sia per le due sezioni del pannello.
+function splitWarningGroupsByResolution(
+  warnings: Array<{ row: number; pdf: string; message: string }>,
+  resolutionByPdf: Record<string, 'corrected' | 'dismissed'>,
+): {
+  unresolved: Array<{ row: number; pdf: string; messages: string[] }>;
+  resolved: Array<{ row: number; pdf: string; messages: string[] }>;
+} {
+  const groups = groupWarningsByPdf(warnings);
+  return {
+    unresolved: groups.filter((g) => !resolutionByPdf[g.pdf]),
+    resolved: groups.filter((g) => resolutionByPdf[g.pdf]),
+  };
+}
+
 // Codice Fiscale (16 alfanumerici) o Partita IVA (11 cifre) — stesso vincolo
 // già applicato riga per riga nella validazione CSV del wizard massivo.
 function isValidCfOrPiva(value: string): boolean {
@@ -1647,9 +1664,12 @@ export function App(): React.JSX.Element {
   const [enrichAddressEditAnprLoading, setEnrichAddressEditAnprLoading] = useState(false);
   const [enrichAddressEditSaving, setEnrichAddressEditSaving] = useState(false);
   const [enrichAddressEditError, setEnrichAddressEditError] = useState<string | null>(null);
-  // pdf corretti in questa sessione (per job) — solo per evidenza visiva "Corretto",
-  // non persistito lato client: al refresh torna a leggersi da row.override via GET.
-  const [enrichCorrectedPdfs, setEnrichCorrectedPdfs] = useState<Record<string, Set<string>>>({});
+  // Stato di risoluzione per pdf (per job) — riconciliato dal server via
+  // GET overrides, mai solo ottimistico: 'corrected' (dati modificati) vs
+  // 'dismissed' (avviso ignorato senza toccare i dati) sono due concetti
+  // distinti sulla stessa riga (jobId+pdfFilename).
+  const [enrichWarningResolution, setEnrichWarningResolution] = useState<Record<string, Record<string, 'corrected' | 'dismissed'>>>({});
+  const [enrichResolvedSectionOpen, setEnrichResolvedSectionOpen] = useState<Record<string, boolean>>({});
 
   const runNotificationSearch = async (page = searchPage) => {
     setSearchLoading(true);
@@ -3409,6 +3429,18 @@ export function App(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, token]);
 
+  // Badge "Avvisi (N)" deve contare solo le righe NON risolte fin da subito
+  // (senza aspettare che l'operatore apra il pannello) — fetch eager degli
+  // override per ogni job con warningCount>0 non ancora riconciliato.
+  useEffect(() => {
+    for (const job of enrichJobs) {
+      if (job.warningCount > 0 && !(job.id in enrichWarningResolution)) {
+        fetchEnrichOverrides(job.id);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enrichJobs]);
+
   // Reagisce al completamento (in background) della conversione in campagna
   // richiesta da handleEnrichCreateCampaignConfirm: apre il wizard su
   // successo, mostra l'errore su fallimento.
@@ -3515,24 +3547,44 @@ export function App(): React.JSX.Element {
     }
   };
 
-  // `enrichCorrectedPdfs` è ottimistico (settato solo al salvataggio riuscito
-  // in questa sessione) — un remount/refresh lo azzera anche se la
-  // correzione resta salvata in DB (override table). Ad apertura pannello
-  // avvisi, riconcilia col server invece di fidarsi solo dello stato locale.
+  // `enrichWarningResolution` va sempre riconciliato dal server (mai solo
+  // ottimistico): un remount/refresh lo azzera anche se correzione/dismiss
+  // restano salvati in DB (override table).
+  const fetchEnrichOverrides = async (jobId: string) => {
+    try {
+      const res = await apiFetch(`/enrichment/jobs/${jobId}/overrides`);
+      const body = await res.json();
+      if (res.ok && Array.isArray(body.pdfs)) {
+        const map: Record<string, 'corrected' | 'dismissed'> = {};
+        for (const p of body.pdfs as Array<{ pdfFilename: string; dismissed: boolean }>) {
+          map[p.pdfFilename] = p.dismissed ? 'dismissed' : 'corrected';
+        }
+        setEnrichWarningResolution((prev) => ({ ...prev, [jobId]: map }));
+      }
+    } catch {
+      // best-effort — il badge resta quello già in stato locale (vuoto al primo giro)
+    }
+  };
+
   const openEnrichWarnings = async (jobId: string) => {
     if (enrichDetailJobId === jobId) {
       setEnrichDetailJobId(null);
       return;
     }
     setEnrichDetailJobId(jobId);
+    await fetchEnrichOverrides(jobId);
+  };
+
+  const handleEnrichDismissWarning = async (jobId: string, pdfFilename: string) => {
     try {
-      const res = await apiFetch(`/enrichment/jobs/${jobId}/overrides`);
-      const body = await res.json();
-      if (res.ok && Array.isArray(body.pdfs)) {
-        setEnrichCorrectedPdfs((prev) => ({ ...prev, [jobId]: new Set(body.pdfs) }));
-      }
+      const res = await apiFetch(`/enrichment/jobs/${jobId}/rows/${encodeURIComponent(pdfFilename)}/dismiss`, { method: 'POST' });
+      if (!res.ok) throw new Error();
+      setEnrichWarningResolution((prev) => ({
+        ...prev,
+        [jobId]: { ...(prev[jobId] || {}), [pdfFilename]: 'dismissed' },
+      }));
     } catch {
-      // best-effort — il badge resta quello ottimistico/vuoto già in stato locale
+      alert('Errore durante l\'operazione. Riprova.');
     }
   };
 
@@ -3696,11 +3748,10 @@ export function App(): React.JSX.Element {
         // form, la correzione è comunque salvata in DB e riapplicabile con
         // "Rigenera CSV" manualmente.
       }
-      setEnrichCorrectedPdfs((prev) => {
-        const jobSet = new Set(prev[enrichAddressEditJobId] ?? []);
-        jobSet.add(enrichAddressEditPdf);
-        return { ...prev, [enrichAddressEditJobId]: jobSet };
-      });
+      setEnrichWarningResolution((prev) => ({
+        ...prev,
+        [enrichAddressEditJobId]: { ...(prev[enrichAddressEditJobId] || {}), [enrichAddressEditPdf]: 'corrected' },
+      }));
       closeEnrichAddressEdit();
     } catch {
       setEnrichAddressEditError('Errore durante il salvataggio dell\'indirizzo');
@@ -14904,15 +14955,18 @@ export function App(): React.JSX.Element {
                           )}
                         </>
                       )}
-                      {job.warningCount > 0 && (
-                        <button
-                          className="btn btn-sm btn-outline-warning"
-                          type="button"
-                          onClick={() => openEnrichWarnings(job.id)}
-                        >
-                          {enrichDetailJobId === job.id ? 'Nascondi avvisi' : `Avvisi (${job.warningCount})`}
-                        </button>
-                      )}
+                      {job.warningCount > 0 && (() => {
+                        const unresolvedCount = splitWarningGroupsByResolution(job.warnings || [], enrichWarningResolution[job.id] || {}).unresolved.length;
+                        return (
+                          <button
+                            className="btn btn-sm btn-outline-warning"
+                            type="button"
+                            onClick={() => openEnrichWarnings(job.id)}
+                          >
+                            {enrichDetailJobId === job.id ? 'Nascondi avvisi' : `Avvisi (${unresolvedCount})`}
+                          </button>
+                        );
+                      })()}
                       {role === 'admin' && (
                         <button className="btn btn-sm btn-outline-danger" type="button" onClick={() => handleEnrichDelete(job.id)}>
                           <Trash2 className="me-1" size={16} />
@@ -14921,98 +14975,141 @@ export function App(): React.JSX.Element {
                       )}
                     </div>
 
-                    {enrichDetailJobId === job.id && (
-                      <ul className="small text-muted mt-2 mb-0 list-unstyled">
-                        {job.warnings && job.warnings.length > 0 ? (
-                          // Più warning sulla stessa riga/PDF (es. "Indirizzo non
-                          // estratto" + "Città mancante" + "Provincia mancante")
-                          // vanno accorpati in un solo <li> con un solo form
-                          // "Correggi indirizzo" — altrimenti il form si ripete
-                          // identico una volta per warning sulla stessa riga.
-                          groupWarningsByPdf(job.warnings).map((g, i) => {
-                            const committed = job.status === 'done' || g.row <= (job.checkpointRow ?? 0);
-                            const corrected = enrichCorrectedPdfs[job.id]?.has(g.pdf) ?? false;
-                            const editingThisRow = enrichAddressEditJobId === job.id && enrichAddressEditPdf === g.pdf;
-                            return (
-                              <li key={i} className="mb-1">
-                                <div className="d-flex align-items-center gap-2">
-                                  <span>Riga {g.row} — {g.pdf}: {g.messages.join(' | ')}</span>
-                                  {corrected ? (
-                                    <span className="badge bg-success-subtle text-success-emphasis border">
-                                      <CheckCircle2 className="me-1" size={12} />Corretto
-                                    </span>
-                                  ) : null}
-                                  <button
-                                    className="btn btn-sm btn-link p-0"
-                                    type="button"
-                                    disabled={!committed}
-                                    title={committed ? '' : 'In attesa di checkpoint (salvataggio ogni 100 righe)'}
-                                    onClick={() => openEnrichAddressEdit(job.id, g.pdf)}
-                                  >
-                                    {corrected ? 'Modifica correzione' : 'Correggi dati'}
-                                  </button>
-                                </div>
-                                {editingThisRow && (
-                                  <div className="border rounded p-3 mt-2 bg-light">
-                                    <h6 className="small fw-bold mb-2">Correggi dati — {enrichAddressEditPdf}</h6>
-                                    {enrichAddressEditLoading ? (
-                                      <div className="small text-muted"><Loader2 className="icon-spin me-1" size={16} />Caricamento...</div>
-                                    ) : (
-                                      <>
-                                        <div className="mb-2 small text-muted">CF: {enrichAddressEditCf || '—'}</div>
-                                        <button
-                                          className="btn btn-sm btn-outline-primary mb-3"
-                                          type="button"
-                                          disabled={!enrichAddressEditCf || enrichAddressEditAnprLoading}
-                                          onClick={runEnrichAddressAnprCheck}
-                                        >
-                                          {enrichAddressEditAnprLoading ? (
-                                            <><Loader2 className="icon-spin me-1" size={16} />Verifica in corso...</>
-                                          ) : /^\d{11}$/.test((enrichAddressEditCf || '').trim()) ? (
-                                            'Carica da Registro Imprese'
-                                          ) : (
-                                            'Carica da ANPR'
-                                          )}
-                                        </button>
-                                        {/* Form dinamico: tutte le colonne del job (indirizzo + dati pagamento/rate
-                                            inclusi) — caso PDF illeggibile, nessun dato estratto, l'operatore deve
-                                            poter compilare tutto a mano, non solo l'indirizzo. */}
-                                        <div className="row g-2 mb-2">
-                                          {enrichAddressEditHeaders
-                                            .filter((h) => h !== 'allegato' && h !== 'codice_fiscale')
-                                            .map((h) => (
-                                              <div className="col-md-3" key={h}>
-                                                <label className="form-label small fw-bold">{enrichHeaderLabel(h)}</label>
-                                                <input
-                                                  type="text"
-                                                  className="form-control form-control-sm"
-                                                  value={enrichAddressEditFields[h] ?? ''}
-                                                  onChange={(e) => setEnrichAddressEditFields((f) => ({ ...f, [h]: e.target.value }))}
-                                                />
-                                              </div>
-                                            ))}
-                                        </div>
-                                        {enrichAddressEditError && <div className="alert alert-danger small">{enrichAddressEditError}</div>}
-                                        <div className="d-flex gap-2">
-                                          <button className="btn btn-sm btn-primary" type="button" disabled={enrichAddressEditSaving} onClick={handleSaveEnrichAddress}>
-                                            {enrichAddressEditSaving ? <><Loader2 className="icon-spin me-1" size={16} />Salvataggio...</> : 'Salva correzione'}
-                                          </button>
-                                          <button className="btn btn-sm btn-outline-secondary" type="button" disabled={enrichAddressEditSaving} onClick={closeEnrichAddressEdit}>
-                                            Annulla
-                                          </button>
-                                        </div>
-                                      </>
-                                    )}
-                                  </div>
+                    {enrichDetailJobId === job.id && (() => {
+                      const jobResolution = enrichWarningResolution[job.id] || {};
+                      const { unresolved, resolved } = splitWarningGroupsByResolution(job.warnings || [], jobResolution);
+                      // Più warning sulla stessa riga/PDF (es. "Indirizzo non
+                      // estratto" + "Città mancante" + "Provincia mancante")
+                      // vanno accorpati in un solo <li> con un solo form
+                      // "Correggi indirizzo" — altrimenti il form si ripete
+                      // identico una volta per warning sulla stessa riga.
+                      const renderWarningRow = (g: { row: number; pdf: string; messages: string[] }) => {
+                        const committed = job.status === 'done' || g.row <= (job.checkpointRow ?? 0);
+                        const resolution = jobResolution[g.pdf];
+                        const editingThisRow = enrichAddressEditJobId === job.id && enrichAddressEditPdf === g.pdf;
+                        return (
+                          <li key={g.pdf} className="mb-1">
+                            <div className="d-flex align-items-center gap-2 flex-wrap">
+                              <span>Riga {g.row} — {g.pdf}: {g.messages.join(' | ')}</span>
+                              {resolution === 'corrected' && (
+                                <span className="badge bg-success-subtle text-success-emphasis border">
+                                  <CheckCircle2 className="me-1" size={12} />Corretto
+                                </span>
+                              )}
+                              {resolution === 'dismissed' && (
+                                <span className="badge bg-secondary-subtle text-secondary-emphasis border">
+                                  <EyeOff className="me-1" size={12} />Ignorato
+                                </span>
+                              )}
+                              <button
+                                className="btn btn-sm btn-link p-0"
+                                type="button"
+                                disabled={!committed}
+                                title={committed ? '' : 'In attesa di checkpoint (salvataggio ogni 100 righe)'}
+                                onClick={() => openEnrichAddressEdit(job.id, g.pdf)}
+                              >
+                                {resolution === 'corrected' ? 'Modifica correzione' : 'Correggi dati'}
+                              </button>
+                              {!resolution && (
+                                <button
+                                  className="btn btn-sm btn-link p-0 text-muted"
+                                  type="button"
+                                  disabled={!committed}
+                                  title="Segna come ok senza modificare i dati (es. falso positivo)"
+                                  onClick={() => handleEnrichDismissWarning(job.id, g.pdf)}
+                                >
+                                  Ignora
+                                </button>
+                              )}
+                            </div>
+                            {editingThisRow && (
+                              <div className="border rounded p-3 mt-2 bg-light">
+                                <h6 className="small fw-bold mb-2">Correggi dati — {enrichAddressEditPdf}</h6>
+                                {enrichAddressEditLoading ? (
+                                  <div className="small text-muted"><Loader2 className="icon-spin me-1" size={16} />Caricamento...</div>
+                                ) : (
+                                  <>
+                                    <div className="mb-2 small text-muted">CF: {enrichAddressEditCf || '—'}</div>
+                                    <button
+                                      className="btn btn-sm btn-outline-primary mb-3"
+                                      type="button"
+                                      disabled={!enrichAddressEditCf || enrichAddressEditAnprLoading}
+                                      onClick={runEnrichAddressAnprCheck}
+                                    >
+                                      {enrichAddressEditAnprLoading ? (
+                                        <><Loader2 className="icon-spin me-1" size={16} />Verifica in corso...</>
+                                      ) : /^\d{11}$/.test((enrichAddressEditCf || '').trim()) ? (
+                                        'Carica da Registro Imprese'
+                                      ) : (
+                                        'Carica da ANPR'
+                                      )}
+                                    </button>
+                                    {/* Form dinamico: tutte le colonne del job (indirizzo + dati pagamento/rate
+                                        inclusi) — caso PDF illeggibile, nessun dato estratto, l'operatore deve
+                                        poter compilare tutto a mano, non solo l'indirizzo. */}
+                                    <div className="row g-2 mb-2">
+                                      {enrichAddressEditHeaders
+                                        .filter((h) => h !== 'allegato' && h !== 'codice_fiscale')
+                                        .map((h) => (
+                                          <div className="col-md-3" key={h}>
+                                            <label className="form-label small fw-bold">{enrichHeaderLabel(h)}</label>
+                                            <input
+                                              type="text"
+                                              className="form-control form-control-sm"
+                                              value={enrichAddressEditFields[h] ?? ''}
+                                              onChange={(e) => setEnrichAddressEditFields((f) => ({ ...f, [h]: e.target.value }))}
+                                            />
+                                          </div>
+                                        ))}
+                                    </div>
+                                    {enrichAddressEditError && <div className="alert alert-danger small">{enrichAddressEditError}</div>}
+                                    <div className="d-flex gap-2">
+                                      <button className="btn btn-sm btn-primary" type="button" disabled={enrichAddressEditSaving} onClick={handleSaveEnrichAddress}>
+                                        {enrichAddressEditSaving ? <><Loader2 className="icon-spin me-1" size={16} />Salvataggio...</> : 'Salva correzione'}
+                                      </button>
+                                      <button className="btn btn-sm btn-outline-secondary" type="button" disabled={enrichAddressEditSaving} onClick={closeEnrichAddressEdit}>
+                                        Annulla
+                                      </button>
+                                    </div>
+                                  </>
                                 )}
-                              </li>
-                            );
-                          })
-                        ) : (
-                          <li className="fst-italic text-muted">Sincronizzazione avvisi in corso...</li>
-                        )}
-                      </ul>
-                    )}
+                              </div>
+                            )}
+                          </li>
+                        );
+                      };
+                      return (
+                        <ul className="small text-muted mt-2 mb-0 list-unstyled">
+                          {job.warnings && job.warnings.length > 0 ? (
+                            <>
+                              {unresolved.length > 0 ? (
+                                unresolved.map((g) => renderWarningRow(g))
+                              ) : resolved.length > 0 ? (
+                                <li className="fst-italic text-success">Tutti gli avvisi sono stati sistemati.</li>
+                              ) : null}
+                              {resolved.length > 0 && (
+                                <li className="mt-2" style={{ listStyle: 'none' }}>
+                                  <button
+                                    className="btn btn-sm btn-link p-0 text-muted"
+                                    type="button"
+                                    onClick={() => setEnrichResolvedSectionOpen((prev) => ({ ...prev, [job.id]: !prev[job.id] }))}
+                                  >
+                                    {enrichResolvedSectionOpen[job.id] ? 'Nascondi' : 'Mostra'} risolti ({resolved.length})
+                                  </button>
+                                  {enrichResolvedSectionOpen[job.id] && (
+                                    <ul className="list-unstyled mt-1">
+                                      {resolved.map((g) => renderWarningRow(g))}
+                                    </ul>
+                                  )}
+                                </li>
+                              )}
+                            </>
+                          ) : (
+                            <li className="fst-italic text-muted">Sincronizzazione avvisi in corso...</li>
+                          )}
+                        </ul>
+                      );
+                    })()}
 
                     {enrichLiveLogs[job.id]?.length > 0 && (
                       <div className="border rounded p-3 mt-2 bg-light">
