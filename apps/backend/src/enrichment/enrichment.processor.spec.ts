@@ -3,8 +3,15 @@ import * as os from 'os';
 import { join } from 'path';
 import AdmZip from 'adm-zip';
 import type { Job } from 'bullmq';
+import { vi } from 'vitest';
 import { EnrichmentJobStatus, TraceFormat } from '../entities/enrichment-job.entity.js';
 import { getEnrichmentAttachmentsDir, getEnrichmentCheckpoint, getEnrichmentDir, getEnrichmentResultCsv, getEnrichmentSourceZip } from './enrichment-paths.js';
+
+const runZipMergeWorkerMock = vi.fn();
+vi.mock('./enrichment-zip-merge-worker-runner.js', () => ({
+  runZipMergeWorker: (...args: unknown[]) => runZipMergeWorkerMock(...args),
+}));
+
 import { EnrichmentProcessor } from './enrichment.processor.js';
 
 const RUBRICA = [
@@ -49,6 +56,7 @@ function setupJobDirPagIndiceConOcr(jobId: string): void {
 describe('EnrichmentProcessor', () => {
   let tmpDir: string;
   let repo: any;
+  let queue: any;
   let client: any;
   let events: any;
   let overrideService: any;
@@ -70,6 +78,8 @@ describe('EnrichmentProcessor', () => {
       findOneBy: jest.fn(async () => ({ ...record })),
       update: jest.fn(async () => undefined),
     };
+    queue = { add: jest.fn(async () => undefined) };
+    runZipMergeWorkerMock.mockReset();
     client = {
       extract: jest.fn(async () => ({
         address: { indirizzo: 'VIA ROMA 1', cap: '00100', comune: 'ROMA', provincia: 'RM', stato_estero: '' },
@@ -83,7 +93,7 @@ describe('EnrichmentProcessor', () => {
     events = { emitLog: jest.fn(), emitTerminal: jest.fn() };
     overrideService = { findByJob: jest.fn(async () => []), applyOverrides: jest.fn((rows: any) => rows) };
     campaignsService = { create: jest.fn(async () => ({ id: 'camp-1' })) };
-    processor = new EnrichmentProcessor(repo, client, events, overrideService, campaignsService);
+    processor = new EnrichmentProcessor(repo, queue, client, events, overrideService, campaignsService);
   });
 
   afterEach(() => {
@@ -92,6 +102,47 @@ describe('EnrichmentProcessor', () => {
   });
 
   const fakeJob = { data: { jobId: 'j1' }, log: jest.fn(async () => undefined) } as unknown as Job<any>;
+
+  describe('processMergeBatch', () => {
+    const mergeJob = {
+      name: 'merge-batch',
+      data: { jobId: 'j1', batchId: 'batch-1', zipPaths: ['/tmp/a.zip'], zipFilenames: ['a.zip'] },
+    } as unknown as Job<any>;
+
+    it('merge riuscito: totalRecords aggiornato, job "enrich" accodato', async () => {
+      runZipMergeWorkerMock.mockResolvedValue({ totalRecords: 2 });
+
+      await processor.process(mergeJob);
+
+      expect(runZipMergeWorkerMock).toHaveBeenCalledWith(
+        expect.objectContaining({ zipPaths: ['/tmp/a.zip'], zipFilenames: ['a.zip'] }),
+      );
+      const finalUpdate = repo.update.mock.calls.at(-1)![1];
+      expect(finalUpdate).toEqual(expect.objectContaining({ status: EnrichmentJobStatus.QUEUED, totalRecords: 2 }));
+      expect(queue.add).toHaveBeenCalledWith('enrich', { jobId: 'j1' }, { jobId: 'j1' });
+    });
+
+    it('merge con zero record → job FAILED, nessun job "enrich" accodato', async () => {
+      runZipMergeWorkerMock.mockResolvedValue({ totalRecords: 0 });
+
+      await processor.process(mergeJob);
+
+      const finalUpdate = repo.update.mock.calls.at(-1)![1];
+      expect(finalUpdate.status).toBe(EnrichmentJobStatus.FAILED);
+      expect(queue.add).not.toHaveBeenCalled();
+    });
+
+    it('merge fallito (worker rigetta) → job FAILED con errorMessage, nessun job "enrich" accodato', async () => {
+      runZipMergeWorkerMock.mockRejectedValue(new Error('ZIP non leggibile'));
+
+      await processor.process(mergeJob);
+
+      const finalUpdate = repo.update.mock.calls.at(-1)![1];
+      expect(finalUpdate.status).toBe(EnrichmentJobStatus.FAILED);
+      expect(finalUpdate.errorMessage).toBe('ZIP non leggibile');
+      expect(queue.add).not.toHaveBeenCalled();
+    });
+  });
 
   it('elabora il ZIP: CSV scritto, riga con PDF mancante = warning, stato DONE', async () => {
     await processor.process(fakeJob);

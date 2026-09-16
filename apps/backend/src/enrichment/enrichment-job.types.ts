@@ -12,3 +12,12 @@ export interface ConvertCampaignQueueJobData {
   channelType: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL';
   createdBy: string;
 }
+
+export const MERGE_BATCH_JOB_NAME = 'merge-batch';
+
+export interface MergeBatchQueueJobData {
+  jobId: string;
+  batchId: string;
+  zipPaths: string[];
+  zipFilenames: string[];
+}

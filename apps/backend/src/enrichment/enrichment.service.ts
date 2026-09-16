@@ -12,22 +12,22 @@ import {
   CampaignConversionStatus,
   TraceFormat,
 } from '../entities/enrichment-job.entity.js';
-import { mergeMaggioliZips } from './enrichment-zip-merge.util.js';
 import {
   ENRICHMENT_QUEUE,
   EnrichmentQueueJobData,
   CONVERT_CAMPAIGN_JOB_NAME,
   ConvertCampaignQueueJobData,
+  MERGE_BATCH_JOB_NAME,
+  MergeBatchQueueJobData,
 } from './enrichment-job.types.js';
-import { getEnrichmentAttachmentsDir, getEnrichmentDir, getEnrichmentResultCsv, getEnrichmentSourceZip } from './enrichment-paths.js';
-import { readLargeFileSync } from './large-file-read.util.js';
-import { writeLargeFileSync } from './large-file-write.util.js';
+import { getEnrichmentAttachmentsDir, getEnrichmentDir, getEnrichmentResultCsv } from './enrichment-paths.js';
 import { EnrichmentAddressOverrideService, type AddressOverrideInput } from './enrichment-address-override.service.js';
 import { readCheckpointSync } from './enrichment-checkpoint.util.js';
 import { buildEnrichedCsv, buildEnrichedCsvHeaders, parseEnrichedCsv, type EnrichedRow } from './enriched-csv.util.js';
 import type { EnrichmentAddressOverride } from '../entities/enrichment-address-override.entity.js';
 
-export interface CreateEnrichmentJobParams {
+export interface EnqueueBatchMergeParams {
+  batchId: string;
   /** Uno o più pezzi ZIP "attigui" dello stesso tracciato (vedi CLAUDE.md — tracciati spezzati per problemi di download). */
   zipPaths: string[];
   /** Nomi originali dei file in zipPaths, stesso ordine — usati nei messaggi di errore/validazione. */
@@ -44,32 +44,29 @@ export class EnrichmentService {
     @InjectRepository(EnrichmentJob)
     private readonly jobRepo: Repository<EnrichmentJob>,
     @InjectQueue(ENRICHMENT_QUEUE)
-    private readonly queue: Queue<EnrichmentQueueJobData | ConvertCampaignQueueJobData>,
+    private readonly queue: Queue<EnrichmentQueueJobData | ConvertCampaignQueueJobData | MergeBatchQueueJobData>,
     private readonly overrideService: EnrichmentAddressOverrideService,
   ) {}
 
-  async createJob(params: CreateEnrichmentJobParams): Promise<{ jobId?: string; blocked?: boolean; message?: string }> {
-    let totalRecords: number;
-    let mergedZipBuffer: Buffer;
-    try {
-      const zips = params.zipPaths.map((p) => new AdmZip(readLargeFileSync(p)));
-      const merged = mergeMaggioliZips(zips, params.zipFilenames);
-      if (merged.records.length === 0) {
-        return { blocked: true, message: 'Il tracciato non contiene righe di dati' };
-      }
-      totalRecords = merged.records.length;
-      mergedZipBuffer = merged.zipBuffer;
-    } catch (err: any) {
-      return { blocked: true, message: err?.message ?? 'ZIP non leggibile' };
-    }
-
+  /**
+   * Il merge multi-ZIP (unzip + re-zip, CPU-bound, fino a diversi GB) va
+   * SEMPRE su job BullMQ/worker_thread (vedi `enrichment.processor.ts`
+   * `processMergeBatch` + `enrichment-zip-merge-worker-runner.ts`), mai
+   * dentro questa richiesta HTTP — bug reale corretto: la vecchia `createJob`
+   * sincrona bloccava l'event loop per l'intera durata del merge (RangeError
+   * su fs.writeFileSync oltre 2GiB scoperto per primo, ma il blocco
+   * dell'event loop restava comunque anche a scrittura corretta), causando
+   * crash/freeze del container anche in produzione. Qui si crea solo il
+   * record QUEUED e si accoda — niente più lavoro pesante in questa richiesta.
+   */
+  async enqueueBatchMerge(params: EnqueueBatchMergeParams): Promise<{ jobId: string }> {
     const saved = await this.jobRepo.save(
       this.jobRepo.create({
         status: EnrichmentJobStatus.QUEUED,
         traceFormat: params.traceFormat,
         searchPayments: params.searchPayments ?? true,
         sourceFilename: params.sourceFilename,
-        totalRecords,
+        totalRecords: 0,
         processedRecords: 0,
         warningCount: 0,
         warnings: [],
@@ -80,10 +77,11 @@ export class EnrichmentService {
       }),
     );
 
-    fs.mkdirSync(getEnrichmentDir(saved.id), { recursive: true });
-    writeLargeFileSync(getEnrichmentSourceZip(saved.id), mergedZipBuffer);
-
-    await this.queue.add('enrich', { jobId: saved.id }, { jobId: saved.id });
+    await this.queue.add(
+      MERGE_BATCH_JOB_NAME,
+      { jobId: saved.id, batchId: params.batchId, zipPaths: params.zipPaths, zipFilenames: params.zipFilenames },
+      { jobId: saved.id },
+    );
     return { jobId: saved.id };
   }
 

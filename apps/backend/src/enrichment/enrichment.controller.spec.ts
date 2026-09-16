@@ -8,7 +8,7 @@ describe('EnrichmentController', () => {
 
   beforeEach(() => {
     svc = {
-      createJob: jest.fn(async () => ({ jobId: 'j1' })),
+      enqueueBatchMerge: jest.fn(async () => ({ jobId: 'j1' })),
       listJobs: jest.fn(async () => []),
       getJob: jest.fn(async () => ({ id: 'j1' })),
       deleteJob: jest.fn(async () => ({})),
@@ -43,10 +43,10 @@ describe('EnrichmentController', () => {
     expect(result.batchId).toMatch(/^[0-9a-f]{8}-/i);
   });
 
-  it('completeBatch: batchId non valido → blocked, createJob non chiamato', async () => {
+  it('completeBatch: batchId non valido → blocked, enqueueBatchMerge non chiamato', async () => {
     const result = await controller.completeBatch('non-un-uuid', { traceFormat: TraceFormat.MAGGIOLI }, { user: { username: 'op' } } as any);
     expect(result.blocked).toBe(true);
-    expect(svc.createJob).not.toHaveBeenCalled();
+    expect(svc.enqueueBatchMerge).not.toHaveBeenCalled();
   });
 
   it('completeBatch: traceFormat non valido → blocked', async () => {
@@ -59,7 +59,28 @@ describe('EnrichmentController', () => {
     const { batchId } = controller.initBatch();
     const result = await controller.completeBatch(batchId, { traceFormat: TraceFormat.MAGGIOLI }, { user: { username: 'op' } } as any);
     expect(result.blocked).toBe(true);
-    expect(svc.createJob).not.toHaveBeenCalled();
+    expect(svc.enqueueBatchMerge).not.toHaveBeenCalled();
+  });
+
+  it('completeBatch: input validi → enqueueBatchMerge chiamato, ritorna jobId subito (nessun merge sincrono)', async () => {
+    const { batchId } = controller.initBatch();
+    // Simula un file già assemblato nel batch (bypassando l'upload chunked reale).
+    const { addToUploadBatch } = await import('./enrichment-batch-upload.util.js');
+    const fs = await import('fs');
+    const os = await import('os');
+    const path = await import('path');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ctrl-batch-'));
+    const zipPath = path.join(tmp, 'a.zip');
+    fs.writeFileSync(zipPath, 'fake-zip-content');
+    addToUploadBatch(batchId, zipPath, 'a.zip');
+
+    const result = await controller.completeBatch(batchId, { traceFormat: TraceFormat.MAGGIOLI }, { user: { username: 'op' } } as any);
+
+    expect(result).toEqual({ jobId: 'j1' });
+    expect(svc.enqueueBatchMerge).toHaveBeenCalledWith(
+      expect.objectContaining({ batchId, zipFilenames: ['a.zip'], traceFormat: TraceFormat.MAGGIOLI }),
+    );
+    fs.rmSync(tmp, { recursive: true, force: true });
   });
 
   it('list ritorna {jobs}', async () => {

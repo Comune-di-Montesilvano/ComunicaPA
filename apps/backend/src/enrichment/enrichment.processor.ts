@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Processor, WorkerHost } from '@nestjs/bullmq';
-import type { Job } from 'bullmq';
+import { InjectQueue, Processor, WorkerHost } from '@nestjs/bullmq';
+import type { Job, Queue } from 'bullmq';
 import * as fs from 'fs';
 import { basename, join } from 'path';
 import AdmZip from 'adm-zip';
@@ -18,6 +18,8 @@ import {
   EnrichmentQueueJobData,
   CONVERT_CAMPAIGN_JOB_NAME,
   ConvertCampaignQueueJobData,
+  MERGE_BATCH_JOB_NAME,
+  MergeBatchQueueJobData,
 } from './enrichment-job.types.js';
 import { getEnrichmentAttachmentsDir, getEnrichmentDir, getEnrichmentResultCsv, getEnrichmentSourceZip } from './enrichment-paths.js';
 import { readLargeFileSync } from './large-file-read.util.js';
@@ -29,6 +31,8 @@ import { EnrichmentAddressOverrideService } from './enrichment-address-override.
 import { readCheckpointSync, writeCheckpointSync, deleteCheckpointSync } from './enrichment-checkpoint.util.js';
 import { CampaignsService } from '../campaigns/campaigns.service.js';
 import { getUploadsDir } from '../attachments/attachment-paths.js';
+import { cleanupUploadBatch } from './enrichment-batch-upload.util.js';
+import { runZipMergeWorker } from './enrichment-zip-merge-worker-runner.js';
 
 const PROGRESS_UPDATE_EVERY = 10;
 const CHECKPOINT_EVERY = 100;
@@ -41,6 +45,8 @@ export class EnrichmentProcessor extends WorkerHost {
   constructor(
     @InjectRepository(EnrichmentJob)
     private readonly jobRepo: Repository<EnrichmentJob>,
+    @InjectQueue(ENRICHMENT_QUEUE)
+    private readonly queue: Queue<EnrichmentQueueJobData | ConvertCampaignQueueJobData | MergeBatchQueueJobData>,
     private readonly extractor: PdfExtractorClient,
     private readonly events: EnrichmentEventsService,
     private readonly overrideService: EnrichmentAddressOverrideService,
@@ -49,11 +55,46 @@ export class EnrichmentProcessor extends WorkerHost {
     super();
   }
 
-  async process(job: Job<EnrichmentQueueJobData | ConvertCampaignQueueJobData>): Promise<void> {
+  async process(job: Job<EnrichmentQueueJobData | ConvertCampaignQueueJobData | MergeBatchQueueJobData>): Promise<void> {
     if (job.name === CONVERT_CAMPAIGN_JOB_NAME) {
       return this.processConvertCampaign(job as Job<ConvertCampaignQueueJobData>);
     }
+    if (job.name === MERGE_BATCH_JOB_NAME) {
+      return this.processMergeBatch(job as Job<MergeBatchQueueJobData>);
+    }
     return this.processEnrich(job as Job<EnrichmentQueueJobData>);
+  }
+
+  /**
+   * Merge multi-ZIP (unzip + re-zip, CPU-bound) offload su worker_thread
+   * separato (`runZipMergeWorker`) — anche dentro un job BullMQ, questo
+   * processo Node ha un solo event loop condiviso con l'HTTP server (nessun
+   * worker separato, vedi CLAUDE.md sezione SSE) — mettere il merge in coda
+   * SENZA worker_thread sposterebbe solo QUANDO si blocca, non risolverebbe
+   * il blocco stesso per la durata del merge.
+   */
+  private async processMergeBatch(job: Job<MergeBatchQueueJobData>): Promise<void> {
+    const { jobId, batchId, zipPaths, zipFilenames } = job.data;
+    try {
+      await this.jobRepo.update(jobId, { status: EnrichmentJobStatus.PROCESSING });
+      const outputPath = getEnrichmentSourceZip(jobId);
+      fs.mkdirSync(getEnrichmentDir(jobId), { recursive: true });
+      const { totalRecords } = await runZipMergeWorker({ zipPaths, zipFilenames, outputPath });
+      if (totalRecords === 0) {
+        await this.jobRepo.update(jobId, {
+          status: EnrichmentJobStatus.FAILED,
+          errorMessage: 'Il tracciato non contiene righe di dati',
+        });
+        return;
+      }
+      await this.jobRepo.update(jobId, { status: EnrichmentJobStatus.QUEUED, totalRecords });
+      await this.queue.add('enrich', { jobId }, { jobId });
+    } catch (err: any) {
+      this.logger.error(`Merge batch fallito per EnrichmentJob ${jobId}: ${err.message}`);
+      await this.jobRepo.update(jobId, { status: EnrichmentJobStatus.FAILED, errorMessage: err.message });
+    } finally {
+      cleanupUploadBatch(batchId);
+    }
   }
 
   /**

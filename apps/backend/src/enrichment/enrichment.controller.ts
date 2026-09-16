@@ -135,20 +135,27 @@ export class EnrichmentController {
     @Body() body: { traceFormat?: TraceFormat; searchPayments?: boolean },
     @Req() req: Request & { user: JwtOperatorPayload },
   ): Promise<{ jobId?: string; blocked?: boolean; message?: string }> {
+    if (!isValidUploadId(batchId)) {
+      return { blocked: true, message: 'batchId non valido' };
+    }
+    if (!body.traceFormat || !Object.values(TraceFormat).includes(body.traceFormat)) {
+      cleanupUploadBatch(batchId);
+      return { blocked: true, message: 'Formato tracciato non riconosciuto' };
+    }
+    const files = listUploadBatchFiles(batchId);
+    if (files.length === 0) {
+      cleanupUploadBatch(batchId);
+      return { blocked: true, message: 'Nessun file caricato per questo batch' };
+    }
+    const sourceFilename =
+      files.length === 1 ? files[0].filename : `${files.length} file: ${files.map((f) => f.filename).join(', ')}`.slice(0, 512);
+    // Merge ZIP (CPU-bound, fino a diversi GB) va su job BullMQ/worker_thread,
+    // mai qui — vedi commento su EnrichmentService.enqueueBatchMerge. Il batch
+    // dir viene ripulito dal processor a job concluso (successo o fallimento),
+    // non qui: i file servono ancora al worker dopo che questa richiesta torna.
     try {
-      if (!isValidUploadId(batchId)) {
-        return { blocked: true, message: 'batchId non valido' };
-      }
-      if (!body.traceFormat || !Object.values(TraceFormat).includes(body.traceFormat)) {
-        return { blocked: true, message: 'Formato tracciato non riconosciuto' };
-      }
-      const files = listUploadBatchFiles(batchId);
-      if (files.length === 0) {
-        return { blocked: true, message: 'Nessun file caricato per questo batch' };
-      }
-      const sourceFilename =
-        files.length === 1 ? files[0].filename : `${files.length} file: ${files.map((f) => f.filename).join(', ')}`.slice(0, 512);
-      return await this.svc.createJob({
+      return await this.svc.enqueueBatchMerge({
+        batchId,
         zipPaths: files.map((f) => f.path),
         zipFilenames: files.map((f) => f.filename),
         sourceFilename,
@@ -156,8 +163,9 @@ export class EnrichmentController {
         searchPayments: body.searchPayments ?? true,
         createdBy: req.user.username,
       });
-    } finally {
+    } catch (err: any) {
       cleanupUploadBatch(batchId);
+      return { blocked: true, message: err?.message ?? 'Errore durante la creazione del job' };
     }
   }
 

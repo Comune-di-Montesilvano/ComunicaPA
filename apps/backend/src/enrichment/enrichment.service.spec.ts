@@ -8,18 +8,6 @@ import { EnrichmentService } from './enrichment.service.js';
 import { getEnrichmentAttachmentsDir, getEnrichmentDir, getEnrichmentResultCsv } from './enrichment-paths.js';
 import { buildEnrichedCsv, buildEnrichedCsvHeaders } from './enriched-csv.util.js';
 
-const RUBRICA_ROW =
-  'id;pec@pec.it;;MARIO;ROSSI;RSSMRA80A01H501U;;ROSSI MARIO;1;13/03/2026;Oggetto;;;PROVV_1.pdf';
-
-function makeZipFile(dir: string, withRubrica = true): string {
-  const zip = new AdmZip();
-  if (withRubrica) zip.addFile('rubrica.csv', Buffer.from(RUBRICA_ROW, 'utf-8'));
-  zip.addFile('allegati/PROVV_1.pdf', Buffer.from('%PDF-fake'));
-  const p = join(dir, 'input.zip');
-  zip.writeZip(p);
-  return p;
-}
-
 describe('EnrichmentService', () => {
   let tmpDir: string;
   let repo: any;
@@ -52,10 +40,14 @@ describe('EnrichmentService', () => {
     delete process.env['ATTACHMENTS_PATH'];
   });
 
-  it('createJob: salva record, copia source.zip, accoda con jobId = id record', async () => {
-    const zipPath = makeZipFile(tmpDir);
-    const result = await service.createJob({
-      zipPaths: [zipPath],
+  // Validazione del merge ZIP in sé (formati incompatibili, PDF omonimi, ecc.)
+  // è testata a livello di funzione pura in enrichment-zip-merge.util.spec.ts —
+  // enqueueBatchMerge non fa più merge sincrono qui (spostato su worker_thread
+  // via job BullMQ 'merge-batch', vedi enrichment.processor.spec.ts).
+  it('enqueueBatchMerge: salva record QUEUED con totalRecords=0, accoda merge-batch con jobId = id record', async () => {
+    const result = await service.enqueueBatchMerge({
+      batchId: 'batch-1',
+      zipPaths: ['/tmp/a.zip'],
       zipFilenames: ['Postalizzazione_114012.zip'],
       sourceFilename: 'Postalizzazione_114012.zip',
       traceFormat: TraceFormat.MAGGIOLI,
@@ -64,72 +56,13 @@ describe('EnrichmentService', () => {
 
     expect(result.jobId).toBe('job-uuid-1');
     expect(repo.create).toHaveBeenCalledWith(
-      expect.objectContaining({ totalRecords: 1, status: EnrichmentJobStatus.QUEUED }),
+      expect.objectContaining({ totalRecords: 0, status: EnrichmentJobStatus.QUEUED }),
     );
-    expect(queue.add).toHaveBeenCalledWith('enrich', { jobId: 'job-uuid-1' }, { jobId: 'job-uuid-1' });
-    const sourceZip = join(tmpDir, 'attachments', 'enrichment', 'job-uuid-1', 'source.zip');
-    expect(fs.existsSync(sourceZip)).toBe(true);
-  });
-
-  it('createJob: ZIP senza rubrica → blocked, nessun record', async () => {
-    const zipPath = makeZipFile(tmpDir, false);
-    const result = await service.createJob({
-      zipPaths: [zipPath], zipFilenames: ['x.zip'], sourceFilename: 'x.zip', traceFormat: TraceFormat.MAGGIOLI, createdBy: 'debug',
-    });
-    expect(result.blocked).toBe(true);
-    expect(repo.save).not.toHaveBeenCalled();
-  });
-
-  it('createJob: ZIP con zero record → blocked', async () => {
-    const zip = new AdmZip();
-    zip.addFile('rubrica.csv', Buffer.from('', 'utf-8'));
-    const p = join(tmpDir, 'empty.zip');
-    zip.writeZip(p);
-    const result = await service.createJob({
-      zipPaths: [p], zipFilenames: ['x.zip'], sourceFilename: 'x.zip', traceFormat: TraceFormat.MAGGIOLI, createdBy: 'debug',
-    });
-    expect(result.blocked).toBe(true);
-  });
-
-  it('createJob: due ZIP validi → merge, totalRecords sommato', async () => {
-    const zipPath1 = makeZipFile(tmpDir);
-    const dir2 = fs.mkdtempSync(join(os.tmpdir(), 'enrich-test-2-'));
-    const zip2 = new AdmZip();
-    zip2.addFile('rubrica.csv', Buffer.from(RUBRICA_ROW.replace('PROVV_1.pdf', 'PROVV_2.pdf'), 'utf-8'));
-    zip2.addFile('allegati/PROVV_2.pdf', Buffer.from('%PDF-fake'));
-    const zipPath2 = join(dir2, 'input2.zip');
-    zip2.writeZip(zipPath2);
-
-    const result = await service.createJob({
-      zipPaths: [zipPath1, zipPath2],
-      zipFilenames: ['pezzo1.zip', 'pezzo2.zip'],
-      sourceFilename: '2 file: pezzo1.zip, pezzo2.zip',
-      traceFormat: TraceFormat.MAGGIOLI,
-      createdBy: 'debug',
-    });
-
-    expect(result.jobId).toBe('job-uuid-1');
-    expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ totalRecords: 2 }));
-    const merged = new AdmZip(fs.readFileSync(join(tmpDir, 'attachments', 'enrichment', 'job-uuid-1', 'source.zip')));
-    expect(merged.getEntry('allegati/PROVV_1.pdf')).toBeTruthy();
-    expect(merged.getEntry('allegati/PROVV_2.pdf')).toBeTruthy();
-    fs.rmSync(dir2, { recursive: true, force: true });
-  });
-
-  it('createJob: PDF omonimo tra due pezzi → blocked', async () => {
-    const zipPath1 = makeZipFile(tmpDir);
-    const dir2 = fs.mkdtempSync(join(os.tmpdir(), 'enrich-test-3-'));
-    const zipPath2 = makeZipFile(dir2); // stesso PROVV_1.pdf
-    const result = await service.createJob({
-      zipPaths: [zipPath1, zipPath2],
-      zipFilenames: ['pezzo1.zip', 'pezzo2.zip'],
-      sourceFilename: 'x',
-      traceFormat: TraceFormat.MAGGIOLI,
-      createdBy: 'debug',
-    });
-    expect(result.blocked).toBe(true);
-    expect(result.message).toContain('PROVV_1.pdf');
-    fs.rmSync(dir2, { recursive: true, force: true });
+    expect(queue.add).toHaveBeenCalledWith(
+      'merge-batch',
+      { jobId: 'job-uuid-1', batchId: 'batch-1', zipPaths: ['/tmp/a.zip'], zipFilenames: ['Postalizzazione_114012.zip'] },
+      { jobId: 'job-uuid-1' },
+    );
   });
 
   it('deleteJob: PROCESSING → eliminazione forzata comunque permessa (endpoint admin-only, unica via d\'uscita per un job bloccato)', async () => {
