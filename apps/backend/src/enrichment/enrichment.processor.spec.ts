@@ -3,15 +3,8 @@ import * as os from 'os';
 import { join } from 'path';
 import AdmZip from 'adm-zip';
 import type { Job } from 'bullmq';
-import { vi } from 'vitest';
 import { EnrichmentJobStatus, TraceFormat } from '../entities/enrichment-job.entity.js';
-import { getEnrichmentAttachmentsDir, getEnrichmentCheckpoint, getEnrichmentDir, getEnrichmentResultCsv, getEnrichmentSourceZip } from './enrichment-paths.js';
-
-const runZipMergeWorkerMock = vi.fn();
-vi.mock('./enrichment-zip-merge-worker-runner.js', () => ({
-  runZipMergeWorker: (...args: unknown[]) => runZipMergeWorkerMock(...args),
-}));
-
+import { getEnrichmentAttachmentsDir, getEnrichmentCheckpoint, getEnrichmentDir, getEnrichmentResultCsv, getEnrichmentSourcesDir } from './enrichment-paths.js';
 import { EnrichmentProcessor } from './enrichment.processor.js';
 
 const RUBRICA = [
@@ -19,12 +12,15 @@ const RUBRICA = [
   'id;pec2@pec.it;;LUIGI;VERDI;VRDLGU70A01H501X;;VERDI LUIGI;2;13/03/2026;Oggetto 2;;;PROVV_MANCANTE.pdf',
 ].join('\n');
 
+/** Scrive un pezzo ZIP direttamente nella cartella sorgenti permanente del job — stesso stato che
+ * `processMergeBatch` produce da un batch upload reale (vedi `moveSourcesIntoJob`). */
 function setupJobDir(jobId: string): void {
   const zip = new AdmZip();
   zip.addFile('rubrica.csv', Buffer.from(RUBRICA, 'utf-8'));
   zip.addFile('allegati/PROVV_1.pdf', Buffer.from('%PDF-1'));
-  fs.mkdirSync(getEnrichmentDir(jobId), { recursive: true });
-  zip.writeZip(getEnrichmentSourceZip(jobId));
+  const dir = getEnrichmentSourcesDir(jobId);
+  fs.mkdirSync(dir, { recursive: true });
+  zip.writeZip(join(dir, '0000_pezzo.zip'));
 }
 
 const PAG_INDICE = [
@@ -36,8 +32,9 @@ function setupJobDirPagIndice(jobId: string): void {
   const zip = new AdmZip();
   zip.addFile('pag_indice.csv', Buffer.from(PAG_INDICE, 'utf-8'));
   zip.addFile('allegati/PROVV_1.pdf', Buffer.from('%PDF-1'));
-  fs.mkdirSync(getEnrichmentDir(jobId), { recursive: true });
-  zip.writeZip(getEnrichmentSourceZip(jobId));
+  const dir = getEnrichmentSourcesDir(jobId);
+  fs.mkdirSync(dir, { recursive: true });
+  zip.writeZip(join(dir, '0000_pezzo.zip'));
 }
 
 const PAG_INDICE_CON_OCR = [
@@ -49,8 +46,9 @@ function setupJobDirPagIndiceConOcr(jobId: string): void {
   const zip = new AdmZip();
   zip.addFile('pag_indice.csv', Buffer.from(PAG_INDICE_CON_OCR, 'utf-8'));
   zip.addFile('allegati/PROVV_1.pdf', Buffer.from('%PDF-1'));
-  fs.mkdirSync(getEnrichmentDir(jobId), { recursive: true });
-  zip.writeZip(getEnrichmentSourceZip(jobId));
+  const dir = getEnrichmentSourcesDir(jobId);
+  fs.mkdirSync(dir, { recursive: true });
+  zip.writeZip(join(dir, '0000_pezzo.zip'));
 }
 
 describe('EnrichmentProcessor', () => {
@@ -79,7 +77,6 @@ describe('EnrichmentProcessor', () => {
       update: jest.fn(async () => undefined),
     };
     queue = { add: jest.fn(async () => undefined) };
-    runZipMergeWorkerMock.mockReset();
     client = {
       extract: jest.fn(async () => ({
         address: { indirizzo: 'VIA ROMA 1', cap: '00100', comune: 'ROMA', provincia: 'RM', stato_estero: '' },
@@ -90,7 +87,7 @@ describe('EnrichmentProcessor', () => {
         warnings: [],
       })),
     };
-    events = { emitLog: jest.fn(), emitTerminal: jest.fn() };
+    events = { emitLog: jest.fn(), emitTerminal: jest.fn(), emitStage: jest.fn() };
     overrideService = { findByJob: jest.fn(async () => []), applyOverrides: jest.fn((rows: any) => rows) };
     campaignsService = { create: jest.fn(async () => ({ id: 'camp-1' })) };
     processor = new EnrichmentProcessor(repo, queue, client, events, overrideService, campaignsService);
@@ -104,54 +101,77 @@ describe('EnrichmentProcessor', () => {
   const fakeJob = { data: { jobId: 'j1' }, log: jest.fn(async () => undefined) } as unknown as Job<any>;
 
   describe('processMergeBatch', () => {
-    const mergeJob = {
-      name: 'merge-batch',
-      data: { jobId: 'j1', batchId: 'batch-1', zipPaths: ['/tmp/a.zip'], zipFilenames: ['a.zip'] },
-    } as unknown as Job<any>;
+    // Nessun worker_thread/ZIP ricostruito: processMergeBatch sposta solo i
+    // pezzi originali (fs) e fonde i CSV (testo, mergeMaggioliCsv) — qui si
+    // testa con veri file su disco, non serve mockare nulla oltre repo/queue.
+    let batchDir: string;
 
-    it('merge riuscito: totalRecords aggiornato, job "enrich" accodato', async () => {
-      runZipMergeWorkerMock.mockResolvedValue({ totalRecords: 2 });
+    function writeBatchPiece(index: number, filename: string, pdfName: string, id: string): string {
+      const zip = new AdmZip();
+      zip.addFile('rubrica.csv', Buffer.from(`${id};pec@pec.it;;MARIO;ROSSI;RSSMRA80A01H501U;;ROSSI MARIO;1;13/03/2026;Oggetto;;;${pdfName}`, 'utf-8'));
+      zip.addFile(`allegati/${pdfName}`, Buffer.from('%PDF-1'));
+      const p = join(batchDir, `${index}_${filename}`);
+      zip.writeZip(p);
+      return p;
+    }
+
+    beforeEach(() => {
+      batchDir = fs.mkdtempSync(join(os.tmpdir(), 'enrich-batch-'));
+      // Il beforeEach esterno ha già popolato le sorgenti di 'j1' via setupJobDir —
+      // irrilevante per questi test, che verificano il merge da zero.
+      fs.rmSync(getEnrichmentSourcesDir('j1'), { recursive: true, force: true });
+    });
+
+    afterEach(() => {
+      fs.rmSync(batchDir, { recursive: true, force: true });
+    });
+
+    it('merge riuscito: pezzi spostati nelle sorgenti permanenti, totalRecords aggiornato, job "enrich" accodato', async () => {
+      const p1 = writeBatchPiece(0, 'a.zip', 'A.pdf', '1');
+      const p2 = writeBatchPiece(1, 'b.zip', 'B.pdf', '2');
+      const mergeJob = {
+        name: 'merge-batch',
+        data: { jobId: 'j1', batchId: 'batch-1', zipPaths: [p1, p2], zipFilenames: ['a.zip', 'b.zip'] },
+      } as unknown as Job<any>;
 
       await processor.process(mergeJob);
 
-      expect(runZipMergeWorkerMock).toHaveBeenCalledWith(
-        expect.objectContaining({ zipPaths: ['/tmp/a.zip'], zipFilenames: ['a.zip'] }),
-      );
+      expect(fs.existsSync(p1)).toBe(false); // spostato, non più nel batch dir
+      const sources = fs.readdirSync(getEnrichmentSourcesDir('j1'));
+      expect(sources).toHaveLength(2);
       const finalUpdate = repo.update.mock.calls.at(-1)![1];
       expect(finalUpdate).toEqual(expect.objectContaining({ status: EnrichmentJobStatus.QUEUED, totalRecords: 2 }));
       expect(queue.add).toHaveBeenCalledWith('enrich', { jobId: 'j1' }, { jobId: 'j1' });
     });
 
-    it('feedback anticipato: onProgress (fase CSV, prima dei PDF) aggiorna già totalRecords', async () => {
-      runZipMergeWorkerMock.mockImplementation(async (input: any) => {
-        input.onProgress?.(2); // simula il messaggio 'csv-merged' del worker, prima della fase lenta
-        return { totalRecords: 2 };
-      });
-
-      await processor.process(mergeJob);
-
-      const progressUpdate = repo.update.mock.calls.find((c: any) => c[1].totalRecords === 2 && !('status' in c[1]));
-      expect(progressUpdate).toBeTruthy();
-    });
-
-    it('merge con zero record → job FAILED, nessun job "enrich" accodato', async () => {
-      runZipMergeWorkerMock.mockResolvedValue({ totalRecords: 0 });
+    it('ZIP senza rubrica/pag_indice → job FAILED, nessun job "enrich" accodato', async () => {
+      const empty = new AdmZip();
+      const p = join(batchDir, '0_vuoto.zip');
+      empty.writeZip(p);
+      const mergeJob = {
+        name: 'merge-batch',
+        data: { jobId: 'j1', batchId: 'batch-1', zipPaths: [p], zipFilenames: ['vuoto.zip'] },
+      } as unknown as Job<any>;
 
       await processor.process(mergeJob);
 
       const finalUpdate = repo.update.mock.calls.at(-1)![1];
       expect(finalUpdate.status).toBe(EnrichmentJobStatus.FAILED);
+      expect(finalUpdate.errorMessage).toContain('vuoto.zip');
       expect(queue.add).not.toHaveBeenCalled();
     });
 
-    it('merge fallito (worker rigetta) → job FAILED con errorMessage, nessun job "enrich" accodato', async () => {
-      runZipMergeWorkerMock.mockRejectedValue(new Error('ZIP non leggibile'));
+    it('ZIP realmente illeggibile (path inesistente) → job FAILED con errorMessage', async () => {
+      const mergeJob = {
+        name: 'merge-batch',
+        data: { jobId: 'j1', batchId: 'batch-1', zipPaths: [join(batchDir, 'assente.zip')], zipFilenames: ['assente.zip'] },
+      } as unknown as Job<any>;
 
       await processor.process(mergeJob);
 
       const finalUpdate = repo.update.mock.calls.at(-1)![1];
       expect(finalUpdate.status).toBe(EnrichmentJobStatus.FAILED);
-      expect(finalUpdate.errorMessage).toBe('ZIP non leggibile');
+      expect(finalUpdate.errorMessage).toBeTruthy();
       expect(queue.add).not.toHaveBeenCalled();
     });
   });
@@ -179,18 +199,18 @@ describe('EnrichmentProcessor', () => {
     );
   });
 
-  it('scompatta il PDF valido su disco (allegati/ piatta) durante l\'estrazione ed elimina source.zip a fine job riuscito', async () => {
+  it('scompatta il PDF valido su disco (allegati/ piatta) durante l\'estrazione ed elimina le sorgenti a fine job riuscito', async () => {
     await processor.process(fakeJob);
 
     expect(fs.existsSync(join(getEnrichmentAttachmentsDir('j1'), 'PROVV_1.pdf'))).toBe(true);
     // PDF_MANCANTE non esiste nello ZIP: nessun file scompattato per quella riga
     expect(fs.existsSync(join(getEnrichmentAttachmentsDir('j1'), 'PROVV_MANCANTE.pdf'))).toBe(false);
-    // source.zip non serve più dopo un job DONE: i PDF sono già su disco
-    expect(fs.existsSync(getEnrichmentSourceZip('j1'))).toBe(false);
+    // le sorgenti non servono più dopo un job DONE: i PDF sono già su disco
+    expect(fs.existsSync(getEnrichmentSourcesDir('j1'))).toBe(false);
   });
 
-  it('errore fatale (source.zip assente): nessun tentativo di eliminarlo di nuovo, nessun throw aggiuntivo', async () => {
-    fs.rmSync(getEnrichmentSourceZip('j1'), { force: true });
+  it('errore fatale (sorgenti assenti): nessun tentativo di eliminarle di nuovo, nessun throw aggiuntivo', async () => {
+    fs.rmSync(getEnrichmentSourcesDir('j1'), { recursive: true, force: true });
     await expect(processor.process(fakeJob)).resolves.toBeUndefined();
     const finalUpdate = repo.update.mock.calls.at(-1)![1];
     expect(finalUpdate.status).toBe(EnrichmentJobStatus.FAILED);
@@ -205,8 +225,8 @@ describe('EnrichmentProcessor', () => {
     );
   });
 
-  it('errore fatale (source.zip assente) → stato FAILED con errorMessage, niente throw', async () => {
-    fs.rmSync(getEnrichmentSourceZip('j1'), { force: true });
+  it('errore fatale (sorgenti assenti) → stato FAILED con errorMessage, niente throw', async () => {
+    fs.rmSync(getEnrichmentSourcesDir('j1'), { recursive: true, force: true });
     await processor.process(fakeJob);
     const finalUpdate = repo.update.mock.calls.at(-1)![1];
     expect(finalUpdate.status).toBe(EnrichmentJobStatus.FAILED);
@@ -344,7 +364,7 @@ describe('EnrichmentProcessor', () => {
   });
 
   it('errore fatale: emette evento terminale error invece di done', async () => {
-    fs.rmSync(getEnrichmentSourceZip('j1'));
+    fs.rmSync(getEnrichmentSourcesDir('j1'), { recursive: true });
     await processor.process(fakeJob);
     expect(events.emitTerminal).toHaveBeenCalledWith('j1', expect.objectContaining({ type: 'error' }));
     expect(events.emitTerminal).not.toHaveBeenCalledWith('j1', { type: 'done' });
@@ -388,7 +408,7 @@ describe('EnrichmentProcessor', () => {
   });
 
   it('a completamento (FAILED) il checkpoint viene cancellato dal disco', async () => {
-    fs.rmSync(getEnrichmentSourceZip('j1'));
+    fs.rmSync(getEnrichmentSourcesDir('j1'), { recursive: true });
     await processor.process(fakeJob);
     expect(fs.existsSync(getEnrichmentCheckpoint('j1'))).toBe(false);
   });

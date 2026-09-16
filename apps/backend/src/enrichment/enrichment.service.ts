@@ -49,14 +49,16 @@ export class EnrichmentService {
   ) {}
 
   /**
-   * Il merge multi-ZIP (unzip + re-zip, CPU-bound, fino a diversi GB) va
-   * SEMPRE su job BullMQ/worker_thread (vedi `enrichment.processor.ts`
-   * `processMergeBatch` + `enrichment-zip-merge-worker-runner.ts`), mai
-   * dentro questa richiesta HTTP — bug reale corretto: la vecchia `createJob`
-   * sincrona bloccava l'event loop per l'intera durata del merge (RangeError
-   * su fs.writeFileSync oltre 2GiB scoperto per primo, ma il blocco
-   * dell'event loop restava comunque anche a scrittura corretta), causando
-   * crash/freeze del container anche in produzione. Qui si crea solo il
+   * Il merge multi-ZIP va SEMPRE su job BullMQ (vedi `enrichment.processor.ts`
+   * `processMergeBatch`), mai dentro questa richiesta HTTP — due bug reali
+   * corretti in sequenza: prima un RangeError su `fs.writeFileSync` oltre
+   * 2GiB (ricostruendo un ZIP merged sincrono), poi — anche dopo l'offload
+   * su worker_thread — un OOM/freeze dell'intero host, perché adm-zip tiene
+   * in RAM OGNI PDF decompresso più il nuovo ZIP compresso simultaneamente.
+   * Fix definitivo: nessun ZIP merged fisico, `processMergeBatch` sposta solo
+   * i pezzi originali su disco (`getEnrichmentSourcesDir`) e fonde i CSV
+   * (testo, mai un PDF toccato) — `processEnrich` decomprime un PDF alla
+   * volta, come già faceva per il caso a singolo file. Qui si crea solo il
    * record QUEUED e si accoda — niente più lavoro pesante in questa richiesta.
    */
   async enqueueBatchMerge(params: EnqueueBatchMergeParams): Promise<{ jobId: string }> {
@@ -77,10 +79,17 @@ export class EnrichmentService {
       }),
     );
 
+    // opts.jobId volutamente DIVERSO da saved.id (jobId nel payload, usato per
+    // i lookup EnrichmentJob) — bug reale trovato/corretto: BullMQ deduplica
+    // per jobId nell'intera coda, indipendente dal job NAME. Riusare saved.id
+    // anche qui avrebbe reso il successivo `queue.add('enrich', ..., { jobId:
+    // saved.id })` (sotto, in processMergeBatch) un no-op silenzioso — nessun
+    // errore, il job 'enrich' semplicemente non parte mai (stesso gotcha già
+    // documentato in CLAUDE.md, qui capitato dal vivo).
     await this.queue.add(
       MERGE_BATCH_JOB_NAME,
       { jobId: saved.id, batchId: params.batchId, zipPaths: params.zipPaths, zipFilenames: params.zipFilenames },
-      { jobId: saved.id },
+      { jobId: `merge-${saved.id}` },
     );
     return { jobId: saved.id };
   }

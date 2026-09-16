@@ -44,7 +44,7 @@ describe('EnrichmentService', () => {
   // è testata a livello di funzione pura in enrichment-zip-merge.util.spec.ts —
   // enqueueBatchMerge non fa più merge sincrono qui (spostato su worker_thread
   // via job BullMQ 'merge-batch', vedi enrichment.processor.spec.ts).
-  it('enqueueBatchMerge: salva record QUEUED con totalRecords=0, accoda merge-batch con jobId = id record', async () => {
+  it('enqueueBatchMerge: salva record QUEUED con totalRecords=0, accoda merge-batch con jobId BullMQ DIVERSO da EnrichmentJob.id', async () => {
     const result = await service.enqueueBatchMerge({
       batchId: 'batch-1',
       zipPaths: ['/tmp/a.zip'],
@@ -58,10 +58,14 @@ describe('EnrichmentService', () => {
     expect(repo.create).toHaveBeenCalledWith(
       expect.objectContaining({ totalRecords: 0, status: EnrichmentJobStatus.QUEUED }),
     );
+    // jobId BullMQ del merge-batch NON deve coincidere con EnrichmentJob.id:
+    // il successivo queue.add('enrich', ..., { jobId: EnrichmentJob.id }) in
+    // processMergeBatch sarebbe altrimenti un no-op silenzioso (dedup BullMQ
+    // per jobId nell'intera coda, indipendente dal job name) — bug reale.
     expect(queue.add).toHaveBeenCalledWith(
       'merge-batch',
       { jobId: 'job-uuid-1', batchId: 'batch-1', zipPaths: ['/tmp/a.zip'], zipFilenames: ['Postalizzazione_114012.zip'] },
-      { jobId: 'job-uuid-1' },
+      expect.objectContaining({ jobId: expect.not.stringMatching(/^job-uuid-1$/) }),
     );
   });
 

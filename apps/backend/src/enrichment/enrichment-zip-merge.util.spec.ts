@@ -1,5 +1,5 @@
 import AdmZip from 'adm-zip';
-import { mergeMaggioliZips, mergeMaggioliCsv, buildMergedZipBuffer } from './enrichment-zip-merge.util.js';
+import { mergeMaggioliCsv } from './enrichment-zip-merge.util.js';
 
 const RUBRICA_ROW = (id: string, pdf: string) =>
   `${id};pec@pec.it;;MARIO;ROSSI;RSSMRA80A01H501U;;ROSSI MARIO;1;13/03/2026;Oggetto;;;${pdf}`;
@@ -26,19 +26,15 @@ function makePagIndiceZip(header: string, pdfName: string, cf: string): AdmZip {
   return zip;
 }
 
-describe('mergeMaggioliZips', () => {
-  it('merge di più rubrica.csv: concatena i record e gli allegati', () => {
+describe('mergeMaggioliCsv', () => {
+  it('merge di più rubrica.csv: concatena i record, mai un PDF decompresso', () => {
     const zips = [makeRubricaZip('A.pdf'), makeRubricaZip('B.pdf')];
-    const result = mergeMaggioliZips(zips, ['pezzo1.zip', 'pezzo2.zip']);
+    const result = mergeMaggioliCsv(zips, ['pezzo1.zip', 'pezzo2.zip']);
 
     expect(result.records).toHaveLength(2);
     expect(result.records.map((r) => r.pdfFilename)).toEqual(['A.pdf', 'B.pdf']);
-
-    const merged = new AdmZip(result.zipBuffer);
-    expect(merged.getEntry('allegati/A.pdf')).toBeTruthy();
-    expect(merged.getEntry('allegati/B.pdf')).toBeTruthy();
-    const csv = merged.getEntry('rubrica.csv')!.getData().toString('utf-8');
-    expect(csv.split('\n')).toHaveLength(2);
+    expect(result.entryName).toBe('rubrica.csv');
+    expect(result.mergedCsvText.split('\n')).toHaveLength(2);
   });
 
   it('merge di più pag_indice.csv con header identico: header scritto una sola volta', () => {
@@ -46,19 +42,17 @@ describe('mergeMaggioliZips', () => {
       makePagIndiceZip(PAG_INDICE_HEADER, 'A.pdf', 'AAAAAA00A00A000A'),
       makePagIndiceZip(PAG_INDICE_HEADER, 'B.pdf', 'BBBBBB00A00A000B'),
     ];
-    const result = mergeMaggioliZips(zips, ['pezzo1.zip', 'pezzo2.zip']);
+    const result = mergeMaggioliCsv(zips, ['pezzo1.zip', 'pezzo2.zip']);
 
     expect(result.records).toHaveLength(2);
-    const merged = new AdmZip(result.zipBuffer);
-    const csv = merged.getEntry('pag_indice.csv')!.getData().toString('utf-8');
-    const lines = csv.split('\n');
+    const lines = result.mergedCsvText.split('\n');
     expect(lines).toHaveLength(3); // header + 2 righe dati
     expect(lines[0]).toBe(PAG_INDICE_HEADER);
   });
 
   it('formati diversi tra i pezzi (rubrica vs pag_indice) → errore bloccante', () => {
     const zips = [makeRubricaZip('A.pdf'), makePagIndiceZip(PAG_INDICE_HEADER, 'B.pdf', 'BBBBBB00A00A000B')];
-    expect(() => mergeMaggioliZips(zips, ['pezzo1.zip', 'pezzo2.zip'])).toThrow(/stesso formato/);
+    expect(() => mergeMaggioliCsv(zips, ['pezzo1.zip', 'pezzo2.zip'])).toThrow(/stesso formato/);
   });
 
   it('header pag_indice.csv diverso tra i pezzi → errore bloccante', () => {
@@ -67,17 +61,17 @@ describe('mergeMaggioliZips', () => {
       makePagIndiceZip(PAG_INDICE_HEADER, 'A.pdf', 'AAAAAA00A00A000A'),
       makePagIndiceZip(altHeader, 'B.pdf', 'BBBBBB00A00A000B'),
     ];
-    expect(() => mergeMaggioliZips(zips, ['pezzo1.zip', 'pezzo2.zip'])).toThrow(/[Ii]ntestazione/);
+    expect(() => mergeMaggioliCsv(zips, ['pezzo1.zip', 'pezzo2.zip'])).toThrow(/[Ii]ntestazione/);
   });
 
   it('PDF omonimo tra pezzi diversi → errore bloccante', () => {
     const zips = [makeRubricaZip('DUPLICATO.pdf'), makeRubricaZip('DUPLICATO.pdf', '2')];
-    expect(() => mergeMaggioliZips(zips, ['pezzo1.zip', 'pezzo2.zip'])).toThrow(/DUPLICATO\.pdf/);
+    expect(() => mergeMaggioliCsv(zips, ['pezzo1.zip', 'pezzo2.zip'])).toThrow(/DUPLICATO\.pdf/);
   });
 
   it('singolo ZIP (caso non-merge): comportamento invariato', () => {
     const zips = [makeRubricaZip('A.pdf')];
-    const result = mergeMaggioliZips(zips, ['solo.zip']);
+    const result = mergeMaggioliCsv(zips, ['solo.zip']);
     expect(result.records).toHaveLength(1);
   });
 
@@ -85,23 +79,6 @@ describe('mergeMaggioliZips', () => {
     const empty = new AdmZip();
     empty.addFile('allegati/x.pdf', Buffer.from('x'));
     const zips = [makeRubricaZip('A.pdf'), empty];
-    expect(() => mergeMaggioliZips(zips, ['pezzo1.zip', 'vuoto.zip'])).toThrow(/vuoto\.zip/);
-  });
-
-  it('mergeMaggioliCsv + buildMergedZipBuffer separati: stesso risultato di mergeMaggioliZips', () => {
-    const zips = [makeRubricaZip('A.pdf'), makeRubricaZip('B.pdf')];
-    const filenames = ['pezzo1.zip', 'pezzo2.zip'];
-
-    const { records, mergedCsvText, entryName } = mergeMaggioliCsv(zips, filenames);
-    expect(records).toHaveLength(2);
-    expect(entryName).toBe('rubrica.csv');
-
-    const zipBuffer = buildMergedZipBuffer(zips, entryName, mergedCsvText);
-    const merged = new AdmZip(zipBuffer);
-    expect(merged.getEntry('allegati/A.pdf')).toBeTruthy();
-    expect(merged.getEntry('allegati/B.pdf')).toBeTruthy();
-
-    const combined = mergeMaggioliZips(zips, filenames);
-    expect(combined.records).toEqual(records);
+    expect(() => mergeMaggioliCsv(zips, ['pezzo1.zip', 'vuoto.zip'])).toThrow(/vuoto\.zip/);
   });
 });
