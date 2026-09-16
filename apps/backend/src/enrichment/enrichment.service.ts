@@ -208,9 +208,18 @@ export class EnrichmentService {
    * mostrare il badge "Corretto" anche dopo un refresh/riapertura del
    * dettaglio (lo stato locale ottimistico da solo si perde a ogni remount).
    */
-  async getCorrectedPdfs(jobId: string): Promise<string[]> {
+  async getCorrectedPdfs(jobId: string): Promise<Array<{ pdfFilename: string; dismissed: boolean }>> {
     const overrides = await this.overrideService.findByJob(jobId);
-    return overrides.map((o) => o.pdfFilename);
+    return overrides.map((o) => ({ pdfFilename: o.pdfFilename, dismissed: o.dismissed }));
+  }
+
+  /**
+   * "Ignora" un avviso senza modificare alcun dato (falso positivo, es. un
+   * "PagoPA mancante" che in realtà è corretto così). Stessa chiave
+   * (jobId+pdfFilename) di saveRowOverride — vedi EnrichmentAddressOverrideService.dismiss.
+   */
+  async dismissWarning(jobId: string, pdfFilename: string, dismissedBy: string): Promise<void> {
+    await this.overrideService.dismiss(jobId, pdfFilename, dismissedBy);
   }
 
   async getRow(jobId: string, pdfFilename: string): Promise<{

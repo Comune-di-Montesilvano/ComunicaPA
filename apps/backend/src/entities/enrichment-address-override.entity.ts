@@ -51,9 +51,24 @@ export class EnrichmentAddressOverride {
   @Column({ name: 'extra_fields', type: 'jsonb', nullable: true })
   extraFields!: Record<string, string> | null;
 
-  @Column({ name: 'corrected_by', type: 'varchar', length: 256 })
-  correctedBy!: string;
+  // Nullable: una riga può esistere solo per un dismiss (nessuna correzione
+  // dati), vedi `dismissed` sotto — in quel caso non c'è un "correttore".
+  @Column({ name: 'corrected_by', type: 'varchar', length: 256, nullable: true })
+  correctedBy!: string | null;
 
   @CreateDateColumn({ name: 'corrected_at' })
   correctedAt!: Date;
+
+  // Avviso "smarcato" dall'operatore senza modificare alcun dato (es. un
+  // falso positivo — "PagoPA mancante" ma la riga non ha davvero un PagoPA
+  // da notificare). Stessa riga/chiave (jobId+pdfFilename) di una eventuale
+  // correzione: upsert parziale, i due concetti coesistono senza conflitto.
+  @Column({ type: 'boolean', default: false })
+  dismissed!: boolean;
+
+  @Column({ name: 'dismissed_by', type: 'varchar', length: 256, nullable: true })
+  dismissedBy!: string | null;
+
+  @Column({ name: 'dismissed_at', type: 'timestamptz', nullable: true })
+  dismissedAt!: Date | null;
 }

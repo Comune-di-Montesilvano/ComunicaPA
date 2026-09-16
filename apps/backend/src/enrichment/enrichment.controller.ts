@@ -295,6 +295,18 @@ export class EnrichmentController {
     return this.svc.saveRowOverride(id, pdfFilename, body, req.user.username);
   }
 
+  @Post('jobs/:id/rows/:pdfFilename/dismiss')
+  @Roles('user', 'admin')
+  @HttpCode(HttpStatus.OK)
+  async dismissWarning(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('pdfFilename') pdfFilename: string,
+    @Req() req: Request & { user: JwtOperatorPayload },
+  ) {
+    await this.svc.dismissWarning(id, pdfFilename, req.user.username);
+    return { success: true };
+  }
+
   @Post('jobs/:id/regenerate-csv')
   @Roles('user', 'admin')
   @HttpCode(HttpStatus.OK)

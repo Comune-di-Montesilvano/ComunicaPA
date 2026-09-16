@@ -43,6 +43,20 @@ export class EnrichmentAddressOverrideService {
     return (await this.repo.findOneBy({ jobId, pdfFilename }))!;
   }
 
+  /**
+   * "Smarca" un avviso senza modificare alcun dato (es. falso positivo —
+   * "PagoPA mancante" ma la riga non ne ha davvero uno). Upsert parziale:
+   * scrive solo i campi dismissed*, mai indirizzo/correctedBy — se la stessa
+   * riga ha già una correzione salvata, resta intatta.
+   */
+  async dismiss(jobId: string, pdfFilename: string, dismissedBy: string): Promise<EnrichmentAddressOverride> {
+    await this.repo.upsert(
+      { jobId, pdfFilename, dismissed: true, dismissedBy, dismissedAt: new Date() },
+      ['jobId', 'pdfFilename'],
+    );
+    return (await this.repo.findOneBy({ jobId, pdfFilename }))!;
+  }
+
   findByJob(jobId: string): Promise<EnrichmentAddressOverride[]> {
     return this.repo.find({ where: { jobId } });
   }

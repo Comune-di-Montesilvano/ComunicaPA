@@ -15,6 +15,7 @@ describe('EnrichmentController', () => {
       buildResultZip: jest.fn(async () => Buffer.from('zip')),
       getRow: jest.fn(async () => ({ pdfFilename: 'PROVV_1.pdf', codiceFiscale: 'X', headers: ['indirizzo'], row: {}, override: null })),
       saveRowOverride: jest.fn(async () => ({})),
+      dismissWarning: jest.fn(async () => undefined),
       regenerateCsv: jest.fn(async () => ({})),
     };
     events = {
@@ -176,6 +177,12 @@ describe('EnrichmentController', () => {
     );
     expect(svc.saveRowOverride).toHaveBeenCalledWith('j1', 'PROVV_1.pdf', { indirizzo: 'VIA NUOVA', cap: '00100', comune: 'ROMA', provincia: 'RM' }, 'op');
     expect(result.blocked).toBeUndefined();
+  });
+
+  it('POST rows/:pdfFilename/dismiss: passa operatore al service', async () => {
+    const result = await controller.dismissWarning('j1', 'PROVV_1.pdf', { user: { username: 'op' } } as any);
+    expect(svc.dismissWarning).toHaveBeenCalledWith('j1', 'PROVV_1.pdf', 'op');
+    expect(result).toEqual({ success: true });
   });
 
   it('POST regenerate-csv delega al service', async () => {
