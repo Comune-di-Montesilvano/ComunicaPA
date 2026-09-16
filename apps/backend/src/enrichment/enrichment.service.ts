@@ -21,6 +21,7 @@ import {
 } from './enrichment-job.types.js';
 import { getEnrichmentAttachmentsDir, getEnrichmentDir, getEnrichmentResultCsv, getEnrichmentSourceZip } from './enrichment-paths.js';
 import { readLargeFileSync } from './large-file-read.util.js';
+import { writeLargeFileSync } from './large-file-write.util.js';
 import { EnrichmentAddressOverrideService, type AddressOverrideInput } from './enrichment-address-override.service.js';
 import { readCheckpointSync } from './enrichment-checkpoint.util.js';
 import { buildEnrichedCsv, buildEnrichedCsvHeaders, parseEnrichedCsv, type EnrichedRow } from './enriched-csv.util.js';
@@ -80,7 +81,7 @@ export class EnrichmentService {
     );
 
     fs.mkdirSync(getEnrichmentDir(saved.id), { recursive: true });
-    fs.writeFileSync(getEnrichmentSourceZip(saved.id), mergedZipBuffer);
+    writeLargeFileSync(getEnrichmentSourceZip(saved.id), mergedZipBuffer);
 
     await this.queue.add('enrich', { jobId: saved.id }, { jobId: saved.id });
     return { jobId: saved.id };
