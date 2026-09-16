@@ -1616,12 +1616,18 @@ export function App(): React.JSX.Element {
   // il wizard o mostra l'errore (vedi useEffect più sotto).
   const [enrichAwaitingConversionJobId, setEnrichAwaitingConversionJobId] = useState<string | null>(null);
   interface EnrichLogEntry {
+    type?: 'log';
     row: number;
     pdf: string;
     detail: 'full' | 'summary';
     payload: Record<string, unknown>;
   }
-  const [enrichLiveLogs, setEnrichLiveLogs] = useState<Record<string, EnrichLogEntry[]>>({});
+  interface EnrichStageEntry {
+    type: 'stage';
+    message: string;
+  }
+  type EnrichLiveEntry = EnrichLogEntry | EnrichStageEntry;
+  const [enrichLiveLogs, setEnrichLiveLogs] = useState<Record<string, EnrichLiveEntry[]>>({});
   const [enrichStreamingJobId, setEnrichStreamingJobId] = useState<string | null>(null);
 
   const [enrichAddressEditJobId, setEnrichAddressEditJobId] = useState<string | null>(null);
@@ -3336,7 +3342,7 @@ export function App(): React.JSX.Element {
           }
           setEnrichLiveLogs((prev) => ({
             ...prev,
-            [jobId]: [...(prev[jobId] || []), json as EnrichLogEntry],
+            [jobId]: [...(prev[jobId] || []), json as EnrichLiveEntry],
           }));
         }
       }
@@ -14927,7 +14933,9 @@ export function App(): React.JSX.Element {
                           Log elaborazione {enrichStreamingJobId === job.id && <span className="badge bg-info-subtle text-info-emphasis ms-1">live</span>}
                         </h6>
                         {enrichLiveLogs[job.id].map((entry, i) =>
-                          entry.detail === 'full' ? (
+                          entry.type === 'stage' ? (
+                            <div key={i} className="small text-primary fst-italic mb-1">{entry.message}</div>
+                          ) : entry.detail === 'full' ? (
                             <div key={i} className="border rounded p-2 mb-2 bg-white">
                               <strong className="small">Riga {entry.row} — {entry.pdf}</strong>
                               <pre className="small mb-0 mt-1" style={{ whiteSpace: 'pre-wrap' }}>

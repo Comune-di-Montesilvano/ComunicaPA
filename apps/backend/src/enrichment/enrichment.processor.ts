@@ -21,9 +21,10 @@ import {
   MERGE_BATCH_JOB_NAME,
   MergeBatchQueueJobData,
 } from './enrichment-job.types.js';
-import { getEnrichmentAttachmentsDir, getEnrichmentDir, getEnrichmentResultCsv, getEnrichmentSourceZip } from './enrichment-paths.js';
+import { getEnrichmentAttachmentsDir, getEnrichmentDir, getEnrichmentResultCsv, getEnrichmentSourcesDir } from './enrichment-paths.js';
 import { readLargeFileSync } from './large-file-read.util.js';
-import { parseMaggioliZip, type MaggioliRecord } from './maggioli-parser.js';
+import { mergeMaggioliCsv } from './enrichment-zip-merge.util.js';
+import type { MaggioliRecord } from './maggioli-parser.js';
 import { buildEnrichedCsv, buildEnrichedCsvHeaders, type EnrichedRow } from './enriched-csv.util.js';
 import { PdfExtractorClient, type ExtractedPaymentDetail } from './pdf-extractor.client.js';
 import { EnrichmentEventsService } from './enrichment-events.service.js';
@@ -32,7 +33,7 @@ import { readCheckpointSync, writeCheckpointSync, deleteCheckpointSync } from '.
 import { CampaignsService } from '../campaigns/campaigns.service.js';
 import { getUploadsDir } from '../attachments/attachment-paths.js';
 import { cleanupUploadBatch } from './enrichment-batch-upload.util.js';
-import { runZipMergeWorker } from './enrichment-zip-merge-worker-runner.js';
+import { listEnrichmentSources, moveSourcesIntoJob } from './enrichment-sources.util.js';
 
 const PROGRESS_UPDATE_EVERY = 10;
 const CHECKPOINT_EVERY = 100;
@@ -66,37 +67,42 @@ export class EnrichmentProcessor extends WorkerHost {
   }
 
   /**
-   * Merge multi-ZIP (unzip + re-zip, CPU-bound) offload su worker_thread
-   * separato (`runZipMergeWorker`) — anche dentro un job BullMQ, questo
-   * processo Node ha un solo event loop condiviso con l'HTTP server (nessun
-   * worker separato, vedi CLAUDE.md sezione SSE) — mettere il merge in coda
-   * SENZA worker_thread sposterebbe solo QUANDO si blocca, non risolverebbe
-   * il blocco stesso per la durata del merge.
+   * NIENTE PIÙ ricostruzione di un ZIP merged: bug reale, un ZIP secondo
+   * ricompattato con adm-zip (tutto in RAM: decomprime OGNI PDF, poi
+   * ricomprime tutto in un nuovo buffer) teneva simultaneamente in memoria
+   * tutti i PDF decompressi più il nuovo ZIP compresso — su batch multi-GB
+   * ha causato OOM/freeze dell'intero host (non solo il container), anche
+   * dopo l'offload su worker_thread (quello risolveva solo il blocco
+   * dell'event loop, non il picco di memoria). Qui si spostano solo i pezzi
+   * ZIP originali nella cartella permanente del job (fs.renameSync/copy, I/O
+   * a livello OS, nessun buffer in RAM) e si fa il merge dei soli CSV
+   * (mergeMaggioliCsv, testo, mai un PDF toccato) — `processEnrich` apre i
+   * pezzi al volo e decomprime un PDF alla volta, esattamente come già
+   * faceva per il caso a singolo file.
    */
   private async processMergeBatch(job: Job<MergeBatchQueueJobData>): Promise<void> {
     const { jobId, batchId, zipPaths, zipFilenames } = job.data;
     try {
       await this.jobRepo.update(jobId, { status: EnrichmentJobStatus.PROCESSING });
-      const outputPath = getEnrichmentSourceZip(jobId);
-      fs.mkdirSync(getEnrichmentDir(jobId), { recursive: true });
-      const { totalRecords } = await runZipMergeWorker({
-        zipPaths,
-        zipFilenames,
-        outputPath,
-        // Feedback immediato: totalRecords noto dopo la sola fase CSV (veloce),
-        // ben prima che il worker finisca di spacchettare/ricomprimere i PDF.
-        onProgress: (count) => {
-          void this.jobRepo.update(jobId, { totalRecords: count });
-        },
-      });
-      if (totalRecords === 0) {
+      this.events.emitStage(jobId, 'Copia pezzi ZIP in corso...');
+      moveSourcesIntoJob(jobId, zipPaths, zipFilenames);
+
+      this.events.emitStage(jobId, 'Fusione CSV in corso...');
+      const sources = listEnrichmentSources(jobId);
+      const zips = sources.map((s) => new AdmZip(readLargeFileSync(s.path)));
+      const { records } = mergeMaggioliCsv(
+        zips,
+        sources.map((s) => s.filename),
+      );
+
+      if (records.length === 0) {
         await this.jobRepo.update(jobId, {
           status: EnrichmentJobStatus.FAILED,
           errorMessage: 'Il tracciato non contiene righe di dati',
         });
         return;
       }
-      await this.jobRepo.update(jobId, { status: EnrichmentJobStatus.QUEUED, totalRecords });
+      await this.jobRepo.update(jobId, { status: EnrichmentJobStatus.QUEUED, totalRecords: records.length, errorMessage: null });
       await this.queue.add('enrich', { jobId }, { jobId });
     } catch (err: any) {
       this.logger.error(`Merge batch fallito per EnrichmentJob ${jobId}: ${err.message}`);
@@ -167,9 +173,20 @@ export class EnrichmentProcessor extends WorkerHost {
 
     try {
       await this.jobRepo.update(jobId, { status: EnrichmentJobStatus.PROCESSING });
+      this.events.emitStage(jobId, 'Estrazione ZIP e ricerca abbinamenti PDF...');
 
-      const zip = new AdmZip(readLargeFileSync(getEnrichmentSourceZip(jobId)));
-      const { records } = parseMaggioliZip(zip);
+      // Più pezzi ZIP restano file indipendenti (vedi getEnrichmentSourcesDir) —
+      // niente merged.zip: ognuno tiene solo i propri byte compressi in
+      // memoria, un PDF alla volta viene decompresso più sotto per riga.
+      const sources = listEnrichmentSources(jobId);
+      if (sources.length === 0) {
+        throw new Error('Nessun file sorgente trovato per il job');
+      }
+      const zips = sources.map((s) => new AdmZip(readLargeFileSync(s.path)));
+      const { records } = mergeMaggioliCsv(
+        zips,
+        sources.map((s) => s.filename),
+      );
       const attachmentsDir = getEnrichmentAttachmentsDir(jobId);
       fs.mkdirSync(attachmentsDir, { recursive: true });
 
@@ -185,7 +202,7 @@ export class EnrichmentProcessor extends WorkerHost {
         const row = this.baseRow(rec);
         let rateCount = 0;
 
-        const entry = rec.pdfFilename ? zip.getEntry(`allegati/${rec.pdfFilename}`) : null;
+        const entry = rec.pdfFilename ? zips.map((z) => z.getEntry(`allegati/${rec.pdfFilename}`)).find(Boolean) ?? null : null;
         if (!entry) {
           warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: 'PDF non trovato nel ZIP' });
           await job.log(`Riga ${rowNum}: PDF "${rec.pdfFilename}" non trovato nel ZIP`);
@@ -331,10 +348,10 @@ export class EnrichmentProcessor extends WorkerHost {
         completedAt: new Date(),
       });
       deleteCheckpointSync(jobId);
-      // source.zip non serve più: i PDF validi sono già su disco in
-      // allegati/, il CSV risultato è scritto. Solo sul percorso di
-      // successo — un job FAILED deve poterlo rileggere in un retry/resume.
-      fs.rmSync(getEnrichmentSourceZip(jobId), { force: true });
+      // I pezzi ZIP sorgente non servono più: i PDF validi sono già su disco
+      // in allegati/, il CSV risultato è scritto. Solo sul percorso di
+      // successo — un job FAILED deve poterli rileggere in un retry/resume.
+      fs.rmSync(getEnrichmentSourcesDir(jobId), { recursive: true, force: true });
       this.events.emitTerminal(jobId, { type: 'done' });
       this.logger.log(`EnrichmentJob ${jobId} completato: ${records.length} righe, ${warnings.length} warning`);
     } catch (err: any) {

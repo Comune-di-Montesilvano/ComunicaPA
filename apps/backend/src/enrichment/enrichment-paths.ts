@@ -5,8 +5,19 @@ export function getEnrichmentDir(jobId: string): string {
   return join(getAttachmentsRoot(), 'enrichment', jobId);
 }
 
-export function getEnrichmentSourceZip(jobId: string): string {
-  return join(getEnrichmentDir(jobId), 'source.zip');
+/**
+ * Pezzi ZIP originali del tracciato (1 o più, "attigui" per tracciati
+ * spezzati — vedi CLAUDE.md), spostati qui da `processMergeBatch` invece di
+ * essere ricompattati in un unico ZIP merged: ricostruire un secondo ZIP
+ * decomprimendo+ricomprimendo ogni PDF (adm-zip, tutto in RAM) per poi
+ * ririleggerlo subito dopo in `processEnrich` raddoppiava il lavoro e — su
+ * batch multi-GB — teneva simultaneamente in memoria TUTTI i PDF decompressi
+ * più il nuovo ZIP compresso, causando OOM/freeze dell'intero host (bug
+ * reale). `processEnrich` ora apre questi pezzi direttamente e decomprime un
+ * PDF alla volta, esattamente come già faceva per il caso a singolo file.
+ */
+export function getEnrichmentSourcesDir(jobId: string): string {
+  return join(getEnrichmentDir(jobId), 'sources');
 }
 
 export function getEnrichmentResultCsv(jobId: string): string {

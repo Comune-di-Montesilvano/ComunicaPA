@@ -14,7 +14,13 @@ export interface EnrichmentTerminalEvent {
   message?: string;
 }
 
-export type EnrichmentStreamEvent = EnrichmentLogEvent | EnrichmentTerminalEvent;
+/** Messaggio di fase, non legato a una riga specifica (es. "Fusione CSV in corso"). */
+export interface EnrichmentStageEvent {
+  type: 'stage';
+  message: string;
+}
+
+export type EnrichmentStreamEvent = EnrichmentLogEvent | EnrichmentTerminalEvent | EnrichmentStageEvent;
 
 /**
  * Bridge in-memory tra il worker BullMQ (EnrichmentProcessor) e l'endpoint
@@ -41,6 +47,10 @@ export class EnrichmentEventsService {
 
   emitTerminal(jobId: string, event: EnrichmentTerminalEvent): void {
     this.emitter.emit(jobId, event);
+  }
+
+  emitStage(jobId: string, message: string): void {
+    this.emitter.emit(jobId, { type: 'stage', message } satisfies EnrichmentStageEvent);
   }
 
   subscribe(jobId: string, onEvent: (e: EnrichmentStreamEvent) => void): () => void {

@@ -5,16 +5,15 @@ import { decodeCsvBuffer, parseMaggioliZip, type MaggioliRecord } from './maggio
  * Tracciati Maggioli a volte arrivano spezzati in più ZIP per problemi di
  * download (vedi CLAUDE.md). Ogni pezzo ha una propria rubrica.csv/
  * pag_indice.csv + allegati/ (righe/destinatari diversi) — questa funzione
- * li tratta come un unico tracciato: valida che siano compatibili (stesso
- * formato, stesso header per pag_indice.csv, nessun PDF omonimo tra pezzi
- * diversi) e produce un unico ZIP merged, così EnrichmentProcessor continua
- * a leggere un solo source.zip come per un job a singolo file.
+ * valida che siano compatibili (stesso formato, stesso header per
+ * pag_indice.csv, nessun PDF omonimo tra pezzi diversi) e concatena i CSV.
+ *
+ * Volutamente SOLO testo, mai un PDF toccato — non esiste più (bug reale,
+ * causa OOM/freeze host su batch multi-GB) una funzione gemella che
+ * ricostruisce un secondo ZIP fisico coi PDF: `EnrichmentProcessor` lascia i
+ * pezzi ZIP originali sul disco e ne decomprime un PDF alla volta al momento
+ * dell'estrazione (vedi `getEnrichmentSourcesDir`), mai tutti insieme.
  */
-
-export interface MergedZipResult {
-  records: MaggioliRecord[];
-  zipBuffer: Buffer;
-}
 
 export interface MergedCsvResult {
   records: MaggioliRecord[];
@@ -22,13 +21,7 @@ export interface MergedCsvResult {
   entryName: 'rubrica.csv' | 'pag_indice.csv';
 }
 
-/**
- * Fase veloce (solo testo, nessun PDF toccato): valida compatibilità tra i
- * pezzi e concatena i CSV. Separata da `buildMergedZipBuffer` (lenta,
- * CPU-bound) per poter dare feedback (`totalRecords`) all'operatore subito,
- * prima di spacchettare/ricomprimere i PDF — vedi `enrichment.worker.ts`.
- * Lancia un Error col messaggio (in italiano) da mostrare come `blocked`.
- */
+/** Lancia un Error col messaggio (in italiano) da mostrare come `blocked`. */
 export function mergeMaggioliCsv(zips: AdmZip[], filenames: string[]): MergedCsvResult {
   const entryNames = zips.map((zip) => {
     if (zip.getEntry('pag_indice.csv')) return 'pag_indice.csv' as const;
@@ -90,31 +83,4 @@ export function mergeMaggioliCsv(zips: AdmZip[], filenames: string[]): MergedCsv
   }
 
   return { records, mergedCsvText, entryName };
-}
-
-/**
- * Fase lenta (CPU-bound): decompressione di ogni PDF + ricompressione
- * dell'intero ZIP merged. Separata da `mergeMaggioliCsv` apposta — vedi sopra.
- */
-export function buildMergedZipBuffer(
-  zips: AdmZip[],
-  entryName: 'rubrica.csv' | 'pag_indice.csv',
-  mergedCsvText: string,
-): Buffer {
-  const merged = new AdmZip();
-  merged.addFile(entryName, Buffer.from(mergedCsvText, 'utf-8'));
-  for (const zip of zips) {
-    for (const entry of zip.getEntries()) {
-      if (entry.isDirectory || !entry.entryName.startsWith('allegati/')) continue;
-      merged.addFile(entry.entryName, entry.getData());
-    }
-  }
-  return merged.toBuffer();
-}
-
-/** Composizione delle due fasi sopra — usata dove il feedback intermedio non serve (es. test). */
-export function mergeMaggioliZips(zips: AdmZip[], filenames: string[]): MergedZipResult {
-  const { records, mergedCsvText, entryName } = mergeMaggioliCsv(zips, filenames);
-  const zipBuffer = buildMergedZipBuffer(zips, entryName, mergedCsvText);
-  return { records, zipBuffer };
 }

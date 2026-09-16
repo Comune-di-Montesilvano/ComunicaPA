@@ -148,6 +148,8 @@ docker compose exec backend node -e "const jwt=require('/app/node_modules/.pnpm/
 
 **Test rapido di un endpoint autenticato senza frontend**: nessun `curl` nel container backend — usare `node -e` con `fetch()` verso `http://localhost:8080/...` e il token JWT generato con lo snippet sopra. Utile per lanciare/testare una campagna reale da riga di comando durante il debug.
 
+**E2E chunked-upload via script Node standalone**: per testare end-to-end un endpoint che usa `chunked-upload.util.ts` (init/chunk/complete) serve chunking client-side reale — rispettare `MAX_CHUNK_SIZE_BYTES`, un chunk singolo troppo grande dà 413 silenzioso lato test, non un errore ovvio. Script con `fetch`+`FormData` nativi, JWT dallo snippet sopra, lanciato con `docker compose exec backend node /app/apps/backend/script.mjs` (deve vivere sotto `/app`, non `/tmp`, per la risoluzione moduli `node_modules`) e `MSYS_NO_PATHCONV=1` per gli argomenti path assoluti da Git Bash Windows.
+
 **Simulare un crash reale del backend per test (es. resume da checkpoint) — `docker kill` è bloccato dal classificatore di sicurezza di Claude Code.** Usare `docker compose restart backend`: il container non gestisce `SIGTERM` (nessun `enableShutdownHooks`), quindi il processo termina comunque bruscamente — stesso effetto pratico di un crash vero per testare codice di recovery, senza permessi distruttivi.
 
 **Test pdf-extractor (pytest) — deps NON nell'immagine dev, CI non le esegue.** `Dockerfile.dev` installa solo `requirements.txt` (prod), non `requirements-dev.txt`; `tests.yml` non gira affatto la suite Python. Per lanciarla: `docker cp services/pdf-extractor/requirements-dev.txt comunicapa-pdf-extractor-1:/svc/` + `docker cp services/pdf-extractor/tests comunicapa-pdf-extractor-1:/svc/tests` + `docker compose exec pdf-extractor pip install -r requirements-dev.txt` (una tantum, persiste finché il container non viene ricreato), poi `docker compose exec pdf-extractor python -m pytest tests/ -v`. Baseline: 1 fallimento noto pre-esistente (`test_extract_address_foreign_cap_embedded_in_street`), verificato anche su `main` pulito — non è una regressione.
@@ -521,6 +523,15 @@ sul job esistente. Ogni futuro endpoint che fa unzip/IO pesante va valutato
 con lo stesso criterio, non solo "rischia il timeout proxy?" ma anche
 "blocca l'app intera nel frattempo?".
 
+**worker_thread/BullMQ spostano SOLO il blocco dell'event loop, mai un
+picco di memoria.** Bug reale: offload del merge multi-ZIP (adm-zip) su
+worker_thread — l'event loop restava libero, ma adm-zip tiene comunque in
+RAM OGNI PDF decompresso + il nuovo ZIP compresso simultaneamente, causando
+OOM/swap thrashing dell'intero host (Docker Desktop/WSL2 incluso, non solo
+il container). Fix vero: evitare di materializzare tutto in memoria insieme
+(vedi "Arricchimento tracciati" sotto) — spostare il lavoro su un altro
+thread/coda non basta se quel lavoro alloca comunque tutto insieme.
+
 ## Log debug/verbose — gotcha
 
 Il logger NestJS di default (`NestFactory.create`) esclude i livelli
@@ -775,6 +786,14 @@ caso produce due processor concorrenti sullo stesso job applicativo
 toccare, lascialo al recovery automatico; `completed/failed/assente` →
 `.remove()` esplicito poi `add()` con lo stesso jobId (ripristina la dedup
 come rete di sicurezza).
+
+**Il dedup per jobId vale nell'INTERA coda, non per singolo job NAME.**
+Due job type diversi (es. `merge-batch` poi `enrich`) che riusano lo stesso
+jobId nella stessa coda collidono: il secondo `queue.add()` è no-op
+silenzioso anche se il job name è diverso — bug reale, l'`enrich` non
+partiva mai dopo un `merge-batch` completato con lo stesso jobId. Se due
+fasi diverse dello stesso record applicativo usano job BullMQ separati,
+dare loro jobId distinti (es. prefisso `merge-${id}`), non lo stesso id.
 
 ## Cron/coda con batch fisso — round-robin obbligatorio, mai ORDER BY statico
 
@@ -1635,6 +1654,18 @@ Motori e non partecipa a pausa/riprendi condivisi. Riusa comunque lo stesso
 pattern verificato altrove: stato terminale (`DONE`/`FAILED`) scritto
 PRIMA di uscire dal job, mai un job che finisce silenziosamente in stato
 intermedio.
+
+**Merge multi-ZIP — mai ricostruire un ZIP fisico coi PDF, solo il CSV.**
+`adm-zip` è tutto in-RAM: `entry.getData()` decomprime, `addFile()`
+accumula, `toBuffer()` ricomprime tutto insieme — per un batch multi-GB
+questo tiene simultaneamente in memoria OGNI PDF decompresso + il nuovo ZIP
+compresso (OOM reale, host compreso, non solo il container). Fix: i pezzi
+ZIP originali restano file indipendenti su disco
+(`getEnrichmentSourcesDir`, spostati con `fs.renameSync`/copy — I/O a
+livello OS, mai un buffer in RAM), solo i CSV vengono fusi
+(`mergeMaggioliCsv`, testo, mai un PDF toccato) — `processEnrich` apre i
+pezzi al volo e decomprime un PDF alla volta, come già faceva per il caso a
+singolo file.
 
 **`deleteJob` NON blocca su stato `PROCESSING`** (deviazione deliberata dal
 pattern altrove in questo repo, dove un blocco su stato intermedio è la
