@@ -16,8 +16,20 @@ export interface MergedZipResult {
   zipBuffer: Buffer;
 }
 
-/** Lancia un Error col messaggio (in italiano) da mostrare all'operatore come `blocked`. */
-export function mergeMaggioliZips(zips: AdmZip[], filenames: string[]): MergedZipResult {
+export interface MergedCsvResult {
+  records: MaggioliRecord[];
+  mergedCsvText: string;
+  entryName: 'rubrica.csv' | 'pag_indice.csv';
+}
+
+/**
+ * Fase veloce (solo testo, nessun PDF toccato): valida compatibilità tra i
+ * pezzi e concatena i CSV. Separata da `buildMergedZipBuffer` (lenta,
+ * CPU-bound) per poter dare feedback (`totalRecords`) all'operatore subito,
+ * prima di spacchettare/ricomprimere i PDF — vedi `enrichment.worker.ts`.
+ * Lancia un Error col messaggio (in italiano) da mostrare come `blocked`.
+ */
+export function mergeMaggioliCsv(zips: AdmZip[], filenames: string[]): MergedCsvResult {
   const entryNames = zips.map((zip) => {
     if (zip.getEntry('pag_indice.csv')) return 'pag_indice.csv' as const;
     if (zip.getEntry('rubrica.csv')) return 'rubrica.csv' as const;
@@ -77,6 +89,18 @@ export function mergeMaggioliZips(zips: AdmZip[], filenames: string[]): MergedZi
     records.push(...zipRecords);
   }
 
+  return { records, mergedCsvText, entryName };
+}
+
+/**
+ * Fase lenta (CPU-bound): decompressione di ogni PDF + ricompressione
+ * dell'intero ZIP merged. Separata da `mergeMaggioliCsv` apposta — vedi sopra.
+ */
+export function buildMergedZipBuffer(
+  zips: AdmZip[],
+  entryName: 'rubrica.csv' | 'pag_indice.csv',
+  mergedCsvText: string,
+): Buffer {
   const merged = new AdmZip();
   merged.addFile(entryName, Buffer.from(mergedCsvText, 'utf-8'));
   for (const zip of zips) {
@@ -85,6 +109,12 @@ export function mergeMaggioliZips(zips: AdmZip[], filenames: string[]): MergedZi
       merged.addFile(entry.entryName, entry.getData());
     }
   }
+  return merged.toBuffer();
+}
 
-  return { records, zipBuffer: merged.toBuffer() };
+/** Composizione delle due fasi sopra — usata dove il feedback intermedio non serve (es. test). */
+export function mergeMaggioliZips(zips: AdmZip[], filenames: string[]): MergedZipResult {
+  const { records, mergedCsvText, entryName } = mergeMaggioliCsv(zips, filenames);
+  const zipBuffer = buildMergedZipBuffer(zips, entryName, mergedCsvText);
+  return { records, zipBuffer };
 }

@@ -4,7 +4,7 @@ import { dirname } from 'path';
 import AdmZip from 'adm-zip';
 import { readLargeFileSync } from './large-file-read.util.js';
 import { writeLargeFileSync } from './large-file-write.util.js';
-import { mergeMaggioliZips } from './enrichment-zip-merge.util.js';
+import { mergeMaggioliCsv, buildMergedZipBuffer } from './enrichment-zip-merge.util.js';
 
 /**
  * Entry point eseguito su worker_thread separato (vedi `enrichment-zip-merge-worker-runner.ts`).
@@ -25,10 +25,19 @@ const { zipPaths, zipFilenames, outputPath } = workerData as MergeWorkerInput;
 
 try {
   const zips = zipPaths.map((p) => new AdmZip(readLargeFileSync(p)));
-  const { records, zipBuffer } = mergeMaggioliZips(zips, zipFilenames);
+  // Fase 1 (veloce, solo testo): appena si conosce totalRecords lo si manda
+  // subito al thread principale — l'operatore vede il conteggio corretto
+  // senza aspettare la fase 2 (decompressione/ricompressione PDF, molto più
+  // lenta su batch multi-GB). Vedi enrichment.processor.ts `processMergeBatch`.
+  const { records, mergedCsvText, entryName } = mergeMaggioliCsv(zips, zipFilenames);
+  parentPort?.postMessage({ ok: true, phase: 'csv-merged', totalRecords: records.length });
+
+  // Fase 2 (lenta, CPU-bound): qui non c'è modo di cedere ulteriormente —
+  // adm-zip non espone un'API a chunk per decompressione/ricompressione.
+  const zipBuffer = buildMergedZipBuffer(zips, entryName, mergedCsvText);
   fs.mkdirSync(dirname(outputPath), { recursive: true });
   writeLargeFileSync(outputPath, zipBuffer);
-  parentPort?.postMessage({ ok: true, totalRecords: records.length });
+  parentPort?.postMessage({ ok: true, phase: 'done', totalRecords: records.length });
 } catch (err: any) {
   parentPort?.postMessage({ ok: false, message: err?.message ?? 'Errore durante il merge ZIP' });
 }
