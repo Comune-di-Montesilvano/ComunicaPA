@@ -115,6 +115,7 @@ export const CHANNELS_REGISTRY: Record<string, ChannelMetaConfig> = {
 export const ENGINE_LABELS: Record<string, string> = Object.fromEntries(
   Object.entries(CHANNELS_REGISTRY).map(([key, meta]) => [key, meta.label])
 );
+ENGINE_LABELS.ENRICHMENT = 'Arricchimento Tracciati';
 
 export function getChannelMeta(channel?: string | null): ChannelMetaConfig {
   const normKey = (channel || '').toUpperCase();
