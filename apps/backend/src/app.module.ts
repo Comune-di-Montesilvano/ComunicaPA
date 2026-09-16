@@ -24,6 +24,7 @@ import { EnrichmentModule } from './enrichment/enrichment.module.js';
 import { NotificationsSearchModule } from './notifications-search/notifications-search.module.js';
 import { TemplatesModule } from './templates/templates.module.js';
 import { AuditLogsModule } from './audit-logs/audit-logs.module.js';
+import { PresenceModule } from './presence/presence.module.js';
 import { ExternalApiModule } from './external-api/external-api.module.js';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard.js';
 import { RolesGuard } from './auth/guards/roles.guard.js';
@@ -56,6 +57,7 @@ import configuration from './config/configuration.js';
     NotificationsSearchModule,
     TemplatesModule,
     AuditLogsModule,
+    PresenceModule,
     ExternalApiModule,
   ],
   controllers: [AppController],
