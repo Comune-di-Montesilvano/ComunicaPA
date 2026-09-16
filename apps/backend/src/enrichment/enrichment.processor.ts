@@ -79,7 +79,16 @@ export class EnrichmentProcessor extends WorkerHost {
       await this.jobRepo.update(jobId, { status: EnrichmentJobStatus.PROCESSING });
       const outputPath = getEnrichmentSourceZip(jobId);
       fs.mkdirSync(getEnrichmentDir(jobId), { recursive: true });
-      const { totalRecords } = await runZipMergeWorker({ zipPaths, zipFilenames, outputPath });
+      const { totalRecords } = await runZipMergeWorker({
+        zipPaths,
+        zipFilenames,
+        outputPath,
+        // Feedback immediato: totalRecords noto dopo la sola fase CSV (veloce),
+        // ben prima che il worker finisca di spacchettare/ricomprimere i PDF.
+        onProgress: (count) => {
+          void this.jobRepo.update(jobId, { totalRecords: count });
+        },
+      });
       if (totalRecords === 0) {
         await this.jobRepo.update(jobId, {
           status: EnrichmentJobStatus.FAILED,

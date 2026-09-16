@@ -122,6 +122,18 @@ describe('EnrichmentProcessor', () => {
       expect(queue.add).toHaveBeenCalledWith('enrich', { jobId: 'j1' }, { jobId: 'j1' });
     });
 
+    it('feedback anticipato: onProgress (fase CSV, prima dei PDF) aggiorna già totalRecords', async () => {
+      runZipMergeWorkerMock.mockImplementation(async (input: any) => {
+        input.onProgress?.(2); // simula il messaggio 'csv-merged' del worker, prima della fase lenta
+        return { totalRecords: 2 };
+      });
+
+      await processor.process(mergeJob);
+
+      const progressUpdate = repo.update.mock.calls.find((c: any) => c[1].totalRecords === 2 && !('status' in c[1]));
+      expect(progressUpdate).toBeTruthy();
+    });
+
     it('merge con zero record → job FAILED, nessun job "enrich" accodato', async () => {
       runZipMergeWorkerMock.mockResolvedValue({ totalRecords: 0 });
 
