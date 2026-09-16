@@ -1401,6 +1401,9 @@ export function App(): React.JSX.Element {
   const [appVersion, setAppVersion] = useState<string>('');
   const [isLdapMock, setIsLdapMock] = useState<boolean>(false);
   const [onlineCount, setOnlineCount] = useState<number | null>(null);
+  const [recentActivityCampaigns, setRecentActivityCampaigns] = useState<any[]>([]);
+  const [recentActivityLoading, setRecentActivityLoading] = useState(false);
+  const [recentActivityError, setRecentActivityError] = useState<string | null>(null);
   const [brandLogoUrl, setBrandLogoUrl] = useState<string | null>(null);
   const [brandName, setBrandName] = useState<string>('ComunicaPA');
   const [brandSubtitle, setBrandSubtitle] = useState<string>('Amministrazione & Gestione Invii');
@@ -1923,6 +1926,7 @@ export function App(): React.JSX.Element {
       fetchDashboardStats();
       fetchEngines();
       fetchOnlineCount();
+      fetchRecentActivity();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, token]);
@@ -2621,6 +2625,7 @@ export function App(): React.JSX.Element {
       fetchDashboardStats();
       fetchEngines();
       fetchOnlineCount();
+      fetchRecentActivity();
     }, 5000);
     return () => clearInterval(timer);
   }, [token, view]);
@@ -8773,6 +8778,20 @@ export function App(): React.JSX.Element {
     }
   };
 
+  const fetchRecentActivity = async () => {
+    setRecentActivityLoading(true);
+    setRecentActivityError(null);
+    try {
+      const res = await apiFetch('/campaigns/recent-activity');
+      if (!res.ok) throw new Error('Impossibile caricare le campagne recenti.');
+      setRecentActivityCampaigns(await res.json());
+    } catch (err) {
+      if (!(err instanceof ApiAuthError)) setRecentActivityError('Impossibile caricare le campagne recenti.');
+    } finally {
+      setRecentActivityLoading(false);
+    }
+  };
+
   const handleExportNeverDownloaded = async () => {
     try {
       const params = new URLSearchParams();
@@ -9612,15 +9631,24 @@ export function App(): React.JSX.Element {
                 <div className="col-lg-8">
                   <div className="card shadow-sm h-100">
                     <div className="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
-                      <h3 className="h6 mb-0 fw-bold text-dark"><History className="me-2 text-primary" />Attività Recenti</h3>
+                      <h3 className="h6 mb-0 fw-bold text-dark"><History className="me-2 text-primary" />Campagne recenti</h3>
                       <div className="d-flex align-items-center gap-2">
-                        <button className="btn btn-outline-secondary btn-sm border-0" onClick={fetchCampaigns}><RefreshCw /></button>
+                        <button className="btn btn-outline-secondary btn-sm border-0" onClick={fetchRecentActivity}><RefreshCw /></button>
                         <button className="btn btn-link btn-sm" onClick={() => setView('invio-massivo')}>Vedi tutte</button>
                       </div>
                     </div>
                     <div className="card-body p-0">
-                      {campaigns.length === 0 ? (
-                        <div className="text-center py-5 text-muted">Nessuna attività registrata.</div>
+                      {recentActivityError ? (
+                        <div className="text-center py-5 text-danger small">
+                          {recentActivityError}
+                          <div className="mt-2">
+                            <button className="btn btn-sm btn-outline-secondary" onClick={fetchRecentActivity}>Riprova</button>
+                          </div>
+                        </div>
+                      ) : recentActivityLoading && recentActivityCampaigns.length === 0 ? (
+                        <div className="text-center py-5 text-muted"><Loader2 className="icon-spin" size={20} /></div>
+                      ) : recentActivityCampaigns.length === 0 ? (
+                        <div className="text-center py-5 text-muted">Nessuna campagna attiva o aggiornata negli ultimi 7 giorni.</div>
                       ) : (
                         <div className="table-responsive">
                           <table className="table table-hover align-middle mb-0" style={{ fontSize: '0.84rem' }}>
@@ -9630,15 +9658,17 @@ export function App(): React.JSX.Element {
                                 <th>Canale</th>
                                 <th>Stato</th>
                                 <th className="text-end">Successi</th>
+                                <th>Ultimo aggiornamento</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {campaigns.filter(c => !c.isTest).slice(0, 5).map((c) => (
+                              {recentActivityCampaigns.map((c) => (
                                 <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => handleCampaignClick(c.id)}>
                                   <td className="fw-bold text-primary">{c.name}</td>
                                   <td><ChannelBadge channel={c.channelType} /></td>
                                   <td><StatusBadge status={c.status} /></td>
                                   <td className="text-end fw-bold">{c.sentCount} / {c.totalRecipients}</td>
+                                  <td className="text-muted small">{new Date(c.lastActivityAt).toLocaleString('it-IT')}</td>
                                 </tr>
                               ))}
                             </tbody>
