@@ -45,6 +45,11 @@ export class NotificationQueuesService {
     return this.getQueue(channel).getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed') as Promise<Record<string, number>>;
   }
 
+  async getLastFailedAt(channel: EngineName): Promise<string | null> {
+    const [job] = await this.getQueue(channel).getFailed(0, 0);
+    return job?.finishedOn ? new Date(job.finishedOn).toISOString() : null;
+  }
+
   isPaused(channel: EngineName): Promise<boolean> {
     return this.getQueue(channel).isPaused();
   }
