@@ -70,6 +70,11 @@ export class CampaignsController {
     return campaigns.map((c) => ({ ...c, createdByDisplayName: displayNames[c.createdBy] }));
   }
 
+  @Get('recent-activity')
+  getRecentActivity() {
+    return this.campaignsService.getRecentActivity();
+  }
+
   @Get(':id')
   async findOne(@Param('id', ParseUUIDPipe) id: string): Promise<CampaignWithOwnerDisplay> {
     const campaign = await this.campaignsService.findOne(id);
