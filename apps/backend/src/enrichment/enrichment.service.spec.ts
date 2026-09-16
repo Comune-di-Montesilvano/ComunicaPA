@@ -12,6 +12,7 @@ describe('EnrichmentService', () => {
   let tmpDir: string;
   let repo: any;
   let queue: any;
+  let convertCampaignQueue: any;
   let overrideService: any;
   let service: EnrichmentService;
 
@@ -27,13 +28,14 @@ describe('EnrichmentService', () => {
       update: jest.fn(async () => undefined),
     };
     queue = { add: jest.fn(async () => undefined) };
+    convertCampaignQueue = { add: jest.fn(async () => undefined) };
     overrideService = {
       findByJob: jest.fn(async () => []),
       applyOverrides: jest.fn((rows: any) => rows),
       upsert: jest.fn(async () => ({ id: 'o1' })),
       dismiss: jest.fn(async () => ({ id: 'o1', dismissed: true })),
     };
-    service = new EnrichmentService(repo, queue, overrideService);
+    service = new EnrichmentService(repo, queue, convertCampaignQueue, overrideService);
   });
 
   afterEach(() => {
@@ -170,18 +172,19 @@ describe('EnrichmentService', () => {
         campaignConversionStatus: 'pending',
         campaignConversionError: null,
       });
-      expect(queue.add).toHaveBeenCalledWith(
+      expect(convertCampaignQueue.add).toHaveBeenCalledWith(
         'convert-campaign',
         { jobId: 'job-uuid-1', name: 'Campagna X', channelType: 'PEC', createdBy: 'op' },
         { jobId: 'convert-campaign-job-uuid-1' },
       );
+      expect(queue.add).not.toHaveBeenCalled();
     });
 
     it('job non DONE → blocked, nessun accodamento', async () => {
       repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.PROCESSING, campaignId: null, campaignConversionStatus: null });
       const result = await service.requestCampaignConversion('j1', { name: 'X', channelType: 'PEC' }, 'op');
       expect(result.blocked).toBe(true);
-      expect(queue.add).not.toHaveBeenCalled();
+      expect(convertCampaignQueue.add).not.toHaveBeenCalled();
     });
 
     it('job già convertito → blocked', async () => {
@@ -194,7 +197,7 @@ describe('EnrichmentService', () => {
       repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.DONE, campaignId: null, campaignConversionStatus: 'processing' });
       const result = await service.requestCampaignConversion('j1', { name: 'X', channelType: 'PEC' }, 'op');
       expect(result.blocked).toBe(true);
-      expect(queue.add).not.toHaveBeenCalled();
+      expect(convertCampaignQueue.add).not.toHaveBeenCalled();
     });
   });
 
