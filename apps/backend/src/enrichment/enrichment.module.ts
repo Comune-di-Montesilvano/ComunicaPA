@@ -7,17 +7,18 @@ import { EnrichmentService } from './enrichment.service.js';
 import { EnrichmentController } from './enrichment.controller.js';
 import { PdfExtractorClient } from './pdf-extractor.client.js';
 import { EnrichmentProcessor } from './enrichment.processor.js';
+import { ConvertCampaignProcessor } from './convert-campaign.processor.js';
 import { EnrichmentRetentionService } from './enrichment-retention.service.js';
 import { EnrichmentEventsService } from './enrichment-events.service.js';
 import { EnrichmentResumeService } from './enrichment-resume.service.js';
 import { EnrichmentAddressOverrideService } from './enrichment-address-override.service.js';
-import { ENRICHMENT_QUEUE } from './enrichment-job.types.js';
+import { ENRICHMENT_QUEUE, CONVERT_CAMPAIGN_QUEUE } from './enrichment-job.types.js';
 import { CampaignsModule } from '../campaigns/campaigns.module.js';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([EnrichmentJob, EnrichmentAddressOverride]),
-    BullModule.registerQueue({ name: ENRICHMENT_QUEUE }),
+    BullModule.registerQueue({ name: ENRICHMENT_QUEUE }, { name: CONVERT_CAMPAIGN_QUEUE }),
     CampaignsModule,
   ],
   controllers: [EnrichmentController],
@@ -25,6 +26,7 @@ import { CampaignsModule } from '../campaigns/campaigns.module.js';
     EnrichmentService,
     PdfExtractorClient,
     EnrichmentProcessor,
+    ConvertCampaignProcessor,
     EnrichmentRetentionService,
     EnrichmentEventsService,
     EnrichmentResumeService,

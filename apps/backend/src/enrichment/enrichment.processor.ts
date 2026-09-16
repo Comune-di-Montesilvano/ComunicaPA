@@ -10,18 +10,18 @@ import { matchCountry, isValidCap } from '@comunicapa/shared-types';
 import {
   EnrichmentJob,
   EnrichmentJobStatus,
-  CampaignConversionStatus,
   EnrichmentWarning,
 } from '../entities/enrichment-job.entity.js';
 import {
   ENRICHMENT_QUEUE,
   EnrichmentQueueJobData,
-  CONVERT_CAMPAIGN_JOB_NAME,
-  ConvertCampaignQueueJobData,
   MERGE_BATCH_JOB_NAME,
   MergeBatchQueueJobData,
+  CONVERT_CAMPAIGN_QUEUE,
+  CONVERT_CAMPAIGN_JOB_NAME,
+  ConvertCampaignQueueJobData,
 } from './enrichment-job.types.js';
-import { getEnrichmentAttachmentsDir, getEnrichmentDir, getEnrichmentResultCsv, getEnrichmentSourcesDir } from './enrichment-paths.js';
+import { getEnrichmentAttachmentsDir, getEnrichmentResultCsv, getEnrichmentSourcesDir } from './enrichment-paths.js';
 import { readLargeFileSync } from './large-file-read.util.js';
 import { mergeMaggioliCsv } from './enrichment-zip-merge.util.js';
 import type { MaggioliRecord } from './maggioli-parser.js';
@@ -30,8 +30,6 @@ import { PdfExtractorClient, type ExtractedPaymentDetail } from './pdf-extractor
 import { EnrichmentEventsService } from './enrichment-events.service.js';
 import { EnrichmentAddressOverrideService } from './enrichment-address-override.service.js';
 import { readCheckpointSync, writeCheckpointSync, deleteCheckpointSync } from './enrichment-checkpoint.util.js';
-import { CampaignsService } from '../campaigns/campaigns.service.js';
-import { getUploadsDir } from '../attachments/attachment-paths.js';
 import { cleanupUploadBatch } from './enrichment-batch-upload.util.js';
 import { listEnrichmentSources, moveSourcesIntoJob } from './enrichment-sources.util.js';
 
@@ -47,18 +45,25 @@ export class EnrichmentProcessor extends WorkerHost {
     @InjectRepository(EnrichmentJob)
     private readonly jobRepo: Repository<EnrichmentJob>,
     @InjectQueue(ENRICHMENT_QUEUE)
-    private readonly queue: Queue<EnrichmentQueueJobData | ConvertCampaignQueueJobData | MergeBatchQueueJobData>,
+    private readonly queue: Queue<EnrichmentQueueJobData | MergeBatchQueueJobData>,
     private readonly extractor: PdfExtractorClient,
     private readonly events: EnrichmentEventsService,
     private readonly overrideService: EnrichmentAddressOverrideService,
-    private readonly campaignsService: CampaignsService,
+    @InjectQueue(CONVERT_CAMPAIGN_QUEUE)
+    private readonly convertCampaignQueue: Queue<ConvertCampaignQueueJobData>,
   ) {
     super();
   }
 
-  async process(job: Job<EnrichmentQueueJobData | ConvertCampaignQueueJobData | MergeBatchQueueJobData>): Promise<void> {
+  async process(job: Job<EnrichmentQueueJobData | MergeBatchQueueJobData | ConvertCampaignQueueJobData>): Promise<void> {
     if (job.name === CONVERT_CAMPAIGN_JOB_NAME) {
-      return this.processConvertCampaign(job as Job<ConvertCampaignQueueJobData>);
+      // Shim di migrazione deploy: un job 'convert-campaign' rimasto in
+      // waiting/active su questa coda da prima che questo tipo di job
+      // fosse spostato su CONVERT_CAMPAIGN_QUEUE (BullMQ persiste i job in
+      // Redis, sopravvivono al restart del processo) — rispedirlo sulla
+      // coda dedicata invece di trattarlo come 'enrich' con dati diversi.
+      await this.convertCampaignQueue.add(CONVERT_CAMPAIGN_JOB_NAME, job.data as ConvertCampaignQueueJobData, { jobId: String(job.id) });
+      return;
     }
     if (job.name === MERGE_BATCH_JOB_NAME) {
       return this.processMergeBatch(job as Job<MergeBatchQueueJobData>);
@@ -109,57 +114,6 @@ export class EnrichmentProcessor extends WorkerHost {
       await this.jobRepo.update(jobId, { status: EnrichmentJobStatus.FAILED, errorMessage: err.message });
     } finally {
       cleanupUploadBatch(batchId);
-    }
-  }
-
-  /**
-   * Lavoro pesante di "Crea bozza campagna" spostato qui da EnrichmentService:
-   * unzip del source.zip (fino a centinaia di MB) + scrittura di migliaia di
-   * PDF su disco, mai dentro la richiesta HTTP originale (vedi commento in
-   * EnrichmentService.requestCampaignConversion — rischio timeout proxy +
-   * event loop Node affamato per qualunque richiesta concorrente).
-   */
-  private async processConvertCampaign(job: Job<ConvertCampaignQueueJobData>): Promise<void> {
-    const { jobId, name, channelType, createdBy } = job.data;
-    try {
-      await this.jobRepo.update(jobId, { campaignConversionStatus: CampaignConversionStatus.PROCESSING });
-
-      const campaign = await this.campaignsService.create(
-        {
-          name,
-          channelType,
-          channelConfig: { wizCsvFilename: 'arricchito.csv', wizCsvHasHeaders: true, wizStep: 1 },
-        },
-        createdBy,
-      );
-
-      const uploadsDir = getUploadsDir(campaign.id);
-      fs.mkdirSync(uploadsDir, { recursive: true });
-      fs.copyFileSync(getEnrichmentResultCsv(jobId), join(uploadsDir, 'draft_recipients.csv'));
-
-      // PDF già scompattati su disco da processEnrich (allegati/ piatta) —
-      // nessun re-parsing di source.zip qui (già cancellato a fine
-      // arricchimento riuscita, vedi processEnrich): un PDF assente da questa
-      // cartella significa semplicemente che l'estrazione lo aveva già
-      // segnalato come illeggibile in un warning, niente di nuovo da gestire.
-      const attachmentsDir = getEnrichmentAttachmentsDir(jobId);
-      if (fs.existsSync(attachmentsDir)) {
-        for (const filename of fs.readdirSync(attachmentsDir)) {
-          fs.copyFileSync(join(attachmentsDir, filename), join(uploadsDir, filename));
-        }
-      }
-
-      await this.jobRepo.update(jobId, {
-        campaignId: campaign.id,
-        campaignConversionStatus: CampaignConversionStatus.DONE,
-      });
-      fs.rmSync(getEnrichmentDir(jobId), { recursive: true, force: true });
-    } catch (err: any) {
-      this.logger.error(`Conversione in campagna fallita per EnrichmentJob ${jobId}: ${err.message}`);
-      await this.jobRepo.update(jobId, {
-        campaignConversionStatus: CampaignConversionStatus.FAILED,
-        campaignConversionError: err.message,
-      });
     }
   }
 

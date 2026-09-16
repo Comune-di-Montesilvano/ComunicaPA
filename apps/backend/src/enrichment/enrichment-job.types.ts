@@ -4,6 +4,15 @@ export interface EnrichmentQueueJobData {
   jobId: string;
 }
 
+/**
+ * Coda separata da ENRICHMENT_QUEUE: leggere/copiare file già finalizzati
+ * di un EnrichmentJob DONE (nessuna PDF extraction, nessun adm-zip) non deve
+ * mai aspettare un enrichment pesante in corso su un job diverso — bug reale:
+ * "crea bozza campagna" restava in coda finché un job indipendente non finiva
+ * (worker unico, concurrency di default 1, stessa coda per entrambi).
+ */
+export const CONVERT_CAMPAIGN_QUEUE = 'enrichment-convert-campaign-jobs';
+
 export const CONVERT_CAMPAIGN_JOB_NAME = 'convert-campaign';
 
 export interface ConvertCampaignQueueJobData {

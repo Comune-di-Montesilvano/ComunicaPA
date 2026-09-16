@@ -15,6 +15,7 @@ import {
 import {
   ENRICHMENT_QUEUE,
   EnrichmentQueueJobData,
+  CONVERT_CAMPAIGN_QUEUE,
   CONVERT_CAMPAIGN_JOB_NAME,
   ConvertCampaignQueueJobData,
   MERGE_BATCH_JOB_NAME,
@@ -44,7 +45,9 @@ export class EnrichmentService {
     @InjectRepository(EnrichmentJob)
     private readonly jobRepo: Repository<EnrichmentJob>,
     @InjectQueue(ENRICHMENT_QUEUE)
-    private readonly queue: Queue<EnrichmentQueueJobData | ConvertCampaignQueueJobData | MergeBatchQueueJobData>,
+    private readonly queue: Queue<EnrichmentQueueJobData | MergeBatchQueueJobData>,
+    @InjectQueue(CONVERT_CAMPAIGN_QUEUE)
+    private readonly convertCampaignQueue: Queue<ConvertCampaignQueueJobData>,
     private readonly overrideService: EnrichmentAddressOverrideService,
   ) {}
 
@@ -186,7 +189,7 @@ export class EnrichmentService {
       campaignConversionError: null,
     });
     const data: ConvertCampaignQueueJobData = { jobId, name: params.name, channelType: params.channelType, createdBy };
-    await this.queue.add(CONVERT_CAMPAIGN_JOB_NAME, data, { jobId: `${CONVERT_CAMPAIGN_JOB_NAME}-${jobId}` });
+    await this.convertCampaignQueue.add(CONVERT_CAMPAIGN_JOB_NAME, data, { jobId: `${CONVERT_CAMPAIGN_JOB_NAME}-${jobId}` });
     return { accepted: true };
   }
 

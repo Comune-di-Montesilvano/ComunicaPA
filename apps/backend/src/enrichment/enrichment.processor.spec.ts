@@ -58,7 +58,7 @@ describe('EnrichmentProcessor', () => {
   let client: any;
   let events: any;
   let overrideService: any;
-  let campaignsService: any;
+  let convertCampaignQueue: any;
   let processor: EnrichmentProcessor;
   const record = {
     id: 'j1',
@@ -89,8 +89,8 @@ describe('EnrichmentProcessor', () => {
     };
     events = { emitLog: jest.fn(), emitTerminal: jest.fn(), emitStage: jest.fn() };
     overrideService = { findByJob: jest.fn(async () => []), applyOverrides: jest.fn((rows: any) => rows) };
-    campaignsService = { create: jest.fn(async () => ({ id: 'camp-1' })) };
-    processor = new EnrichmentProcessor(repo, queue, client, events, overrideService, campaignsService);
+    convertCampaignQueue = { add: jest.fn(async () => undefined) };
+    processor = new EnrichmentProcessor(repo, queue, client, events, overrideService, convertCampaignQueue);
   });
 
   afterEach(() => {
@@ -413,63 +413,30 @@ describe('EnrichmentProcessor', () => {
     expect(fs.existsSync(getEnrichmentCheckpoint('j1'))).toBe(false);
   });
 
-  describe('convert-campaign (crea bozza campagna da job)', () => {
-    // Lavoro pesante spostato qui da EnrichmentService per non bloccare
-    // l'event loop Node dentro la richiesta HTTP (vedi CLAUDE.md/commit fix
-    // "Unexpected token '<'" — timeout proxy esterno + affamamento richieste
-    // concorrenti).
-    const convertJob = { name: 'convert-campaign', data: { jobId: 'job-uuid-1', name: 'Campagna X', channelType: 'PEC', createdBy: 'op' } } as unknown as Job<any>;
+  describe('convert-campaign legacy (shim di migrazione deploy)', () => {
+    // Un job 'convert-campaign' può restare in waiting/active su
+    // ENRICHMENT_QUEUE al momento di un deploy che sposta questo tipo di job
+    // sulla coda dedicata CONVERT_CAMPAIGN_QUEUE (vedi convert-campaign.processor.ts) —
+    // BullMQ persiste i job in Redis, sopravvivono al restart del processo.
+    // Senza questo shim, il process() di default lo tratterebbe come un
+    // job 'enrich' con dati completamente diversi (jobId,name,channelType,
+    // createdBy invece di solo jobId), corrompendo lo stato del job originale.
+    const legacyConvertJob = {
+      id: 'convert-campaign-job-uuid-1',
+      name: 'convert-campaign',
+      data: { jobId: 'job-uuid-1', name: 'Campagna X', channelType: 'PEC', createdBy: 'op' },
+    } as unknown as Job<any>;
 
-    function setupDoneJob(): void {
-      // PDF già scompattati su disco da processEnrich (allegati/ piatta) —
-      // convert-campaign non riparsa più source.zip (vedi enrichment-paths.ts).
-      repo.findOneBy.mockResolvedValue({ id: 'job-uuid-1', status: EnrichmentJobStatus.DONE, campaignId: null });
-      fs.mkdirSync(getEnrichmentAttachmentsDir('job-uuid-1'), { recursive: true });
-      fs.writeFileSync(join(getEnrichmentAttachmentsDir('job-uuid-1'), 'PROVV_1.pdf'), '%PDF-fake');
-      fs.writeFileSync(getEnrichmentResultCsv('job-uuid-1'), '"codice_fiscale"\n"RSSMRA80A01H501U"');
-    }
+    it('rispedisce il job sulla coda dedicata invece di processarlo come enrich', async () => {
+      await processor.process(legacyConvertJob);
 
-    it('crea la campagna, copia CSV+PDF in uploadsDir, marca DONE, elimina i file del job', async () => {
-      setupDoneJob();
-      await processor.process(convertJob);
-
-      expect(campaignsService.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          name: 'Campagna X',
-          channelType: 'PEC',
-          channelConfig: expect.objectContaining({ wizCsvFilename: 'arricchito.csv', wizCsvHasHeaders: true }),
-        }),
-        'op',
+      expect(convertCampaignQueue.add).toHaveBeenCalledWith(
+        'convert-campaign',
+        legacyConvertJob.data,
+        { jobId: legacyConvertJob.id },
       );
-      const uploadsDir = join(tmpDir, 'uploads', 'camp-1');
-      expect(fs.existsSync(join(uploadsDir, 'draft_recipients.csv'))).toBe(true);
-      expect(fs.existsSync(join(uploadsDir, 'PROVV_1.pdf'))).toBe(true);
-
-      const updates = repo.update.mock.calls.map((c: any[]) => c[1]);
-      expect(updates).toContainEqual({ campaignConversionStatus: 'processing' });
-      expect(updates.at(-1)).toEqual({ campaignId: 'camp-1', campaignConversionStatus: 'done' });
-      expect(fs.existsSync(getEnrichmentDir('job-uuid-1'))).toBe(false);
-    });
-
-    it('nessuna cartella allegati (job senza PDF o pre-refactor) → solo il CSV copiato, nessun errore', async () => {
-      repo.findOneBy.mockResolvedValue({ id: 'job-uuid-1', status: EnrichmentJobStatus.DONE, campaignId: null });
-      fs.mkdirSync(getEnrichmentDir('job-uuid-1'), { recursive: true });
-      fs.writeFileSync(getEnrichmentResultCsv('job-uuid-1'), '"codice_fiscale"\n"RSSMRA80A01H501U"');
-
-      await processor.process(convertJob);
-
-      const uploadsDir = join(tmpDir, 'uploads', 'camp-1');
-      expect(fs.existsSync(join(uploadsDir, 'draft_recipients.csv'))).toBe(true);
-      const updates = repo.update.mock.calls.map((c: any[]) => c[1]);
-      expect(updates.at(-1)).toEqual({ campaignId: 'camp-1', campaignConversionStatus: 'done' });
-    });
-
-    it('errore durante la conversione → campaignConversionStatus=failed con errore, mai un throw', async () => {
-      repo.findOneBy.mockResolvedValue({ id: 'job-uuid-1', status: EnrichmentJobStatus.DONE, campaignId: null });
-      // result.csv assente → copyFileSync lancia
-      await expect(processor.process(convertJob)).resolves.toBeUndefined();
-      const updates = repo.update.mock.calls.map((c: any[]) => c[1]);
-      expect(updates.at(-1)).toEqual(expect.objectContaining({ campaignConversionStatus: 'failed' }));
+      expect(repo.findOneBy).not.toHaveBeenCalled();
+      expect(repo.update).not.toHaveBeenCalled();
     });
   });
 
