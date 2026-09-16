@@ -663,6 +663,7 @@ export class CampaignsService {
     }
 
     let channelOverrides: Map<string, NotificationChannel> | undefined;
+    let sendableRecipients = recipients;
     // Wizard singolo: l'operatore verifica il domicilio digitale a mano (step1,
     // "Carica dati ANPR") e sceglie il canale di conseguenza — nessun check
     // INAD automatico "a sorpresa" al lancio come per le campagne massive
@@ -674,14 +675,22 @@ export class CampaignsService {
       (await this.settings.get<boolean>('inad.checkEnabled'));
     if (inadCheckEnabled) {
       if (recipients.length < INAD_BULK_THRESHOLD) {
-        channelOverrides = await this.runInadExtractLoop(campaign, recipients);
+        const result = await this.runInadExtractLoop(campaign, recipients);
+        channelOverrides = result.channelOverrides;
+        // I destinatari finiti in PENDING_REVIEW (PEC difforme da Registro
+        // Imprese, mai auto-applicata) restano fuori da questo lancio — il
+        // resto della campagna procede regolarmente, verranno accodati dal
+        // resolve-endpoint quando l'operatore decide.
+        if (result.pendingReviewIds.size > 0) {
+          sendableRecipients = recipients.filter((r) => !result.pendingReviewIds.has(r.id));
+        }
       } else {
         const { launched } = await this.startInadBulkCheck(campaign, recipients);
         return { launched, campaignId, signatureWarning };
       }
     }
 
-    const { launched } = await this.createAttemptsAndEnqueue(campaign, recipients, channelOverrides);
+    const { launched } = await this.createAttemptsAndEnqueue(campaign, sendableRecipients, channelOverrides);
     return { launched, campaignId, signatureWarning };
   }
 
@@ -794,8 +803,11 @@ export class CampaignsService {
       !isWizSingleMode &&
       child.channelType !== 'SEND' &&
       (await this.settings.get<boolean>('inad.checkEnabled'));
+    // blockPecReview=false: un invio di prova è un singolo destinatario
+    // sintetico, non deve restare bloccato in PENDING_REVIEW in attesa di
+    // una decisione operatore (quel pannello esiste solo per campagne reali).
     const channelOverrides = inadCheckEnabled
-      ? await this.runInadExtractLoop(child, [{ id: savedRecipient.id }])
+      ? (await this.runInadExtractLoop(child, [{ id: savedRecipient.id }], false)).channelOverrides
       : undefined;
 
     const { launched } = await this.createAttemptsAndEnqueue(child, [{ id: savedRecipient.id }], channelOverrides);
@@ -822,15 +834,27 @@ export class CampaignsService {
    * RegistroImpreseVerifyProcessor) anche in caso di verifica massiva
    * concorrente dall'ad-hoc "Verifica INAD Massiva".
    */
+  /**
+   * `blockPecReview` (default true) gate solo per campagne PEC su PIVA con
+   * `diverted`: non sovrascrive `recipient.pec`, mette il destinatario in
+   * PENDING_REVIEW (invio bloccato finché l'operatore non decide, vedi
+   * resolvePecReview) invece di applicare in automatico la PEC trovata da
+   * Registro Imprese — a differenza di INAD (persona fisica) e dello
+   * switch-canale EMAIL/POSTAL/APP_IO→PEC, sempre auto-applicati. Disattivato
+   * per l'invio di prova (`launchTestSend`): un singolo destinatario
+   * sintetico non deve restare bloccato in attesa di revisione operatore.
+   */
   private async runInadExtractLoop(
     campaign: Campaign,
     recipients: Array<{ id: string }>,
-  ): Promise<Map<string, NotificationChannel>> {
+    blockPecReview = true,
+  ): Promise<{ channelOverrides: Map<string, NotificationChannel>; pendingReviewIds: Set<string> }> {
     const fullRecipients = await this.recipientRepo.find({
       where: { id: In(recipients.map((r) => r.id)) },
       select: { id: true, codiceFiscale: true, pec: true, email: true },
     });
     const channelOverrides = new Map<string, NotificationChannel>();
+    const pendingReviewIds = new Set<string>();
     const CONCURRENCY = 5;
     for (let i = 0; i < fullRecipients.length; i += CONCURRENCY) {
       const batch = fullRecipients.slice(i, i + CONCURRENCY);
@@ -840,7 +864,9 @@ export class CampaignsService {
           const originalAddress = campaign.channelType === 'PEC' ? recipient.pec : recipient.email;
           let found: boolean;
           let digitalAddress: string | null;
+          let isPiva = false;
           if (isPartitaIva(recipient.codiceFiscale)) {
+            isPiva = true;
             try {
               const result = await this.registroImpreseService.dettaglioImpresa(recipient.codiceFiscale);
               found = result.found;
@@ -861,6 +887,7 @@ export class CampaignsService {
             digitalAddress = found ? result.data!.digitalAddress[0].digitalAddress : null;
           }
           const diverted = found && digitalAddress !== recipient.pec;
+          const needsReview = blockPecReview && diverted && isPiva && campaign.channelType === 'PEC';
           await this.recipientRepo.update(
             { id: recipient.id },
             {
@@ -869,18 +896,21 @@ export class CampaignsService {
                 diverted,
                 originalChannel: campaign.channelType,
                 originalAddress,
+                foundAddress: needsReview ? digitalAddress : undefined,
                 checkedAt: new Date().toISOString(),
               },
-              ...(diverted ? { pec: digitalAddress } : {}),
+              ...(needsReview ? { status: RecipientStatus.PENDING_REVIEW } : diverted ? { pec: digitalAddress } : {}),
             },
           );
-          if (diverted) {
+          if (needsReview) {
+            pendingReviewIds.add(recipient.id);
+          } else if (diverted) {
             channelOverrides.set(recipient.id, 'PEC');
           }
         }),
       );
     }
-    return channelOverrides;
+    return { channelOverrides, pendingReviewIds };
   }
 
   /**
@@ -2092,6 +2122,73 @@ export class CampaignsService {
     }
 
     return { requeued: true, attemptId };
+  }
+
+  /**
+   * Destinatari fermi in PENDING_REVIEW per la campagna (PEC su PIVA con PEC
+   * Registro Imprese difforme da quella su file, mai auto-applicata — vedi
+   * runInadExtractLoop/RegistroImpreseVerifyProcessor). Solo lettura,
+   * l'operatore decide con resolvePecReview.
+   */
+  async getPendingPecReview(campaignId: string): Promise<Array<{
+    recipientId: string;
+    fullName: string | null;
+    codiceFiscale: string;
+    pecOriginale: string | null;
+    pecTrovata: string | null;
+  }>> {
+    const recipients = await this.recipientRepo.find({
+      where: { campaignId, status: RecipientStatus.PENDING_REVIEW },
+      select: { id: true, fullName: true, codiceFiscale: true, pec: true, inadCheck: true },
+    });
+    return recipients.map((r) => ({
+      recipientId: r.id,
+      fullName: r.fullName,
+      codiceFiscale: r.codiceFiscale,
+      pecOriginale: r.inadCheck?.originalAddress ?? r.pec,
+      pecTrovata: r.inadCheck?.foundAddress ?? null,
+    }));
+  }
+
+  /**
+   * Decisione operatore su un destinatario PENDING_REVIEW: mantenere la PEC
+   * già su file o usare quella trovata da Registro Imprese. In entrambi i
+   * casi sblocca l'invio (status torna PENDING, poi createAttemptsAndEnqueue
+   * lo porta a QUEUED come un lancio normale per questo solo destinatario) —
+   * mai un retry: è il PRIMO attempt per questo destinatario.
+   */
+  async resolvePecReview(campaignId: string, recipientId: string, useFoundAddress: boolean): Promise<{ requeued: true }> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+
+    const recipient = await this.recipientRepo.findOne({ where: { id: recipientId } });
+    if (!recipient || recipient.campaignId !== campaignId) {
+      throw new NotFoundException(`Recipient ${recipientId} non trovato in questa campagna`);
+    }
+    if (recipient.status !== RecipientStatus.PENDING_REVIEW) {
+      throw new BadRequestException('Destinatario non in attesa di revisione PEC');
+    }
+
+    const foundAddress = recipient.inadCheck?.foundAddress ?? null;
+    await this.recipientRepo.update(
+      { id: recipientId },
+      {
+        status: RecipientStatus.PENDING,
+        ...(useFoundAddress && foundAddress ? { pec: foundAddress } : {}),
+      },
+    );
+
+    await this.createAttemptsAndEnqueue(campaign, [{ id: recipientId }]);
+
+    // Stesso pattern di retryRecipient: se il resto della campagna era già
+    // arrivato a COMPLETED/FAILED mentre questo destinatario restava in
+    // attesa di revisione, riaprirla — checkAndComplete la richiuderà da
+    // sola quando anche questo attempt sarà terminale.
+    if (campaign.status === CampaignStatus.COMPLETED || campaign.status === CampaignStatus.FAILED) {
+      await this.campaignRepo.update({ id: campaignId }, { status: CampaignStatus.QUEUED, completedAt: null });
+    }
+
+    return { requeued: true };
   }
 
   /**

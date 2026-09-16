@@ -129,6 +129,23 @@ describe('RegistroImpreseVerifyProcessor.process — VERIFY_PIVA_CAMPAIGN_JOB_NA
     );
   });
 
+  it('campagna PEC (originalChannel="PEC") con PEC diversa: PENDING_REVIEW, mai sovrascrive recipient.pec', async () => {
+    mockRegistroImprese.dettaglioImpresa.mockResolvedValue({ found: true, raw: '<xml/>', pec: 'tributi@bancaesempio.it' });
+    const jobDataPec = { ...jobData, originalChannel: 'PEC', recipientPec: 'originale@pec.it' };
+
+    await processor.process({ name: VERIFY_PIVA_CAMPAIGN_JOB_NAME, data: jobDataPec } as any);
+
+    expect(mockRecipientRepo.update).toHaveBeenCalledWith(
+      { id: 'rec-1' },
+      expect.objectContaining({
+        status: 'pending_review',
+        inadCheck: expect.objectContaining({ found: true, diverted: true, foundAddress: 'tributi@bancaesempio.it' }),
+      }),
+    );
+    const [, patch] = mockRecipientRepo.update.mock.calls[0];
+    expect(patch.pec).toBeUndefined();
+  });
+
   it('non scrive pec (diverted:false) se la PEC trovata coincide con recipient.pec (confronto SEMPRE su recipient.pec, mai su originalAddress)', async () => {
     mockRegistroImprese.dettaglioImpresa.mockResolvedValue({ found: true, raw: '<xml/>', pec: 'vecchia@pec.it' });
     const jobDataWithPec = { ...jobData, recipientPec: 'vecchia@pec.it' };

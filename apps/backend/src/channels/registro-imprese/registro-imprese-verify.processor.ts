@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import type { Job } from 'bullmq';
 import { InadVerificationJob } from '../../entities/inad-verification-job.entity.js';
-import { Recipient } from '../../entities/recipient.entity.js';
+import { Recipient, RecipientStatus } from '../../entities/recipient.entity.js';
 import {
   REGISTRO_IMPRESE_QUEUE,
   VERIFY_PIVA_JOB_NAME,
@@ -110,6 +110,11 @@ export class RegistroImpreseVerifyProcessor extends WorkerHost {
     // SEMPRE recipient.pec grezzo, mai originalAddress (che per canali
     // diversi da PEC è recipient.email, un campo audit-only).
     const diverted = found && pec !== recipientPec;
+    // Campagna PEC su PIVA (Registro Imprese) con diverted: mai auto-applicare
+    // la PEC trovata (a differenza di INAD/switch-canale) — invio bloccato in
+    // PENDING_REVIEW finché l'operatore non decide, vedi resolvePecReview e
+    // stesso gate in runInadExtractLoop (percorso sincrono).
+    const needsReview = diverted && originalChannel === 'PEC';
 
     await this.recipientRepo.update(
       { id: recipientId },
@@ -119,9 +124,10 @@ export class RegistroImpreseVerifyProcessor extends WorkerHost {
           diverted,
           originalChannel,
           originalAddress,
+          foundAddress: needsReview ? pec : undefined,
           checkedAt: new Date().toISOString(),
         },
-        ...(diverted ? { pec } : {}),
+        ...(needsReview ? { status: RecipientStatus.PENDING_REVIEW } : diverted ? { pec } : {}),
       },
     );
   }

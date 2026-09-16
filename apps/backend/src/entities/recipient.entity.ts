@@ -17,6 +17,8 @@ export enum RecipientStatus {
   FAILED = 'failed',
   SKIPPED = 'skipped',
   CANCELLED = 'cancelled',
+  /** Campagna PEC, PIVA (Registro Imprese) con PEC trovata diversa da quella su file — invio bloccato finché l'operatore non decide quale usare (vedi resolvePecReview). */
+  PENDING_REVIEW = 'pending_review',
 }
 
 @Entity('recipients')
@@ -49,6 +51,13 @@ export class Recipient {
     diverted: boolean;
     originalChannel: string | null;
     originalAddress: string | null;
+    /**
+     * PEC trovata da Registro Imprese non ancora applicata — valorizzato SOLO
+     * per campagne PEC su PIVA con diverted:true (status PENDING_REVIEW):
+     * qui NON si sovrascrive mai recipient.pec in automatico, a differenza di
+     * INAD/switch-canale. Vedi resolvePecReview.
+     */
+    foundAddress?: string | null;
     checkedAt: string;
   } | null;
 
