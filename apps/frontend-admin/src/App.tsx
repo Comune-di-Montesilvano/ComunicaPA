@@ -14787,7 +14787,8 @@ export function App(): React.JSX.Element {
                       <span className="small text-muted">{new Date(job.createdAt).toLocaleString('it-IT')}</span>
                       <span className="small">
                         {job.status === 'queued' && 'In coda'}
-                        {job.status === 'processing' && `Elaborazione ${job.processedRecords}/${job.totalRecords}`}
+                        {job.status === 'processing' && job.totalRecords === 0 && 'Preparazione file in corso...'}
+                        {job.status === 'processing' && job.totalRecords > 0 && `Elaborazione ${job.processedRecords}/${job.totalRecords}`}
                         {job.status === 'done' && `Completato (${job.totalRecords} righe${job.warningCount ? `, ${job.warningCount} avvisi` : ''})`}
                         {job.status === 'failed' && `Fallito: ${job.errorMessage}`}
                       </span>
