@@ -167,6 +167,16 @@ class PdfExtractor:
         re.IGNORECASE | re.DOTALL,
     )
 
+    # Etichetta CF/PIVA: "C.F.:<CF16>" (persona fisica) oppure
+    # "C.F.: P.Iva:<piva11>" (persona giuridica, label P.Iva subito dopo
+    # C.F. sulla stessa riga) — verificato dal vivo su documento reale.
+    # Il gruppo "P.Iva:" opzionale copre entrambi i formati con la stessa
+    # regex: se assente, il valore catturato è comunque quello dopo "C.F.:".
+    _RE_CF_LABEL = re.compile(
+        r"C\.F\.\s*:\s*(?:P\.?\s*Iva\s*:\s*)?([A-Z0-9]{11,16})",
+        re.IGNORECASE,
+    )
+
     # Regex testo per fallback (quando il QR non è leggibile)
     _RE_CBILL = re.compile(
         r"[A-Z0-9]{5}\s+((?:\d[\d ]{16,20}\d))\s+(\d{11})",
@@ -314,6 +324,17 @@ class PdfExtractor:
         raise AddressExtractionError(
             f"Pattern 'Residente in:' non trovato. Testo pagina 0:\n{text[:500]}"
         )
+
+    def extract_fiscal_code(self) -> Optional[str]:
+        """Estrae CF/PIVA dal testo pagina 0 — fallback per righe dove il CSV
+        del tracciato riporta un CF/PIVA malformato in modo non recuperabile
+        dal solo zero-pad (vedi normalizeCodiceFiscale lato Node)."""
+        with self._open() as pdf:
+            if not pdf.pages:
+                return None
+            text = pdf.pages[0].extract_text() or ""
+        m = self._RE_CF_LABEL.search(text)
+        return m.group(1).upper() if m else None
 
     @staticmethod
     def _parse_foreign_address(line: str) -> Optional["AddressData"]:

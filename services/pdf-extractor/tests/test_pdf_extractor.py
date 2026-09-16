@@ -241,3 +241,18 @@ def test_extract_payment_due_rate_stessa_pagina(pdf_due_rate_stessa_pagina):
     assert rate[1].numero_avviso == "301000000000000002"
     assert rate[1].scadenza == "30/11/2026"
     assert not any("QR ma" in w and "etichette rata" in w for w in warnings)
+
+
+def test_extract_fiscal_code_persona_fisica(pdf_residenza_inline_label):
+    cf = PdfExtractor(pdf_residenza_inline_label).extract_fiscal_code()
+    assert cf == "RSSMRA70A01G482X"
+
+
+def test_extract_fiscal_code_persona_giuridica(pdf_cf_persona_giuridica):
+    cf = PdfExtractor(pdf_cf_persona_giuridica).extract_fiscal_code()
+    assert cf == "01234567890"
+
+
+def test_extract_fiscal_code_assente(pdf_no_address):
+    cf = PdfExtractor(pdf_no_address).extract_fiscal_code()
+    assert cf is None
