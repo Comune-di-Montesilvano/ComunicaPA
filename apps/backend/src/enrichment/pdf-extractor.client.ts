@@ -26,6 +26,7 @@ export interface ExtractedPayment {
 export interface ExtractResult {
   address: ExtractedAddress | null;
   payment: ExtractedPayment | null;
+  fiscalCode: string | null;
   warnings: string[];
 }
 
