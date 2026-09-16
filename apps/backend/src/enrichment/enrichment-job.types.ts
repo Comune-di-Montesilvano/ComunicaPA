@@ -20,6 +20,8 @@ export interface ConvertCampaignQueueJobData {
   name: string;
   channelType: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL';
   createdBy: string;
+  /** Separa i destinatari senza dati PagoPa (numero_avviso/importo/scadenza tutte vuote) in una seconda bozza campagna dedicata. */
+  splitMissingPayment?: boolean;
 }
 
 export const MERGE_BATCH_JOB_NAME = 'merge-batch';

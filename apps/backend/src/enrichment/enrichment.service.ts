@@ -167,7 +167,7 @@ export class EnrichmentService {
    */
   async requestCampaignConversion(
     jobId: string,
-    params: { name: string; channelType: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL' },
+    params: { name: string; channelType: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL'; splitMissingPayment?: boolean },
     createdBy: string,
   ): Promise<{ accepted?: boolean; blocked?: boolean; message?: string }> {
     const job = await this.getJob(jobId);
@@ -188,7 +188,13 @@ export class EnrichmentService {
       campaignConversionStatus: CampaignConversionStatus.PENDING,
       campaignConversionError: null,
     });
-    const data: ConvertCampaignQueueJobData = { jobId, name: params.name, channelType: params.channelType, createdBy };
+    const data: ConvertCampaignQueueJobData = {
+      jobId,
+      name: params.name,
+      channelType: params.channelType,
+      createdBy,
+      splitMissingPayment: params.splitMissingPayment,
+    };
     await this.convertCampaignQueue.add(CONVERT_CAMPAIGN_JOB_NAME, data, { jobId: `${CONVERT_CAMPAIGN_JOB_NAME}-${jobId}` });
     return { accepted: true };
   }

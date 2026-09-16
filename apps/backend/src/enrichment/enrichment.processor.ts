@@ -312,12 +312,21 @@ export class EnrichmentProcessor extends WorkerHost {
       const headers = buildEnrichedCsvHeaders(maxRate);
       fs.writeFileSync(getEnrichmentResultCsv(jobId), buildEnrichedCsv(headers, finalRows), 'utf-8');
 
+      // "Un PagoPa a 0 non esiste": numero_avviso/importo/scadenza sono sempre
+      // valorizzate insieme o mai (vedi riga 203-206 sopra) — basta controllare
+      // che siano tutte e tre vuote, niente warning testuale (che scatterebbe
+      // anche quando il CSV Maggioli fornisce un fallback valido).
+      const missingPaymentCount = record.searchPayments
+        ? finalRows.filter((r) => !r.numero_avviso && !r.importo && !r.scadenza).length
+        : 0;
+
       await this.jobRepo.update(jobId, {
         status: EnrichmentJobStatus.DONE,
         processedRecords: records.length,
         checkpointRow: records.length,
         warningCount: warnings.length,
         warnings,
+        missingPaymentCount,
         completedAt: new Date(),
       });
       deleteCheckpointSync(jobId);

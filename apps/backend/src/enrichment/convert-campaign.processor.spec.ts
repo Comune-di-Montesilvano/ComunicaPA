@@ -35,7 +35,7 @@ describe('ConvertCampaignProcessor', () => {
   function setupDoneJob(): void {
     fs.mkdirSync(getEnrichmentAttachmentsDir('job-uuid-1'), { recursive: true });
     fs.writeFileSync(join(getEnrichmentAttachmentsDir('job-uuid-1'), 'PROVV_1.pdf'), '%PDF-fake');
-    fs.writeFileSync(getEnrichmentResultCsv('job-uuid-1'), '"codice_fiscale"\n"RSSMRA80A01H501U"');
+    fs.writeFileSync(getEnrichmentResultCsv('job-uuid-1'), '"codice_fiscale";"allegato"\n"RSSMRA80A01H501U";"PROVV_1.pdf"');
   }
 
   it('crea la campagna, copia CSV+PDF in uploadsDir, marca DONE, elimina i file del job', async () => {
@@ -56,8 +56,36 @@ describe('ConvertCampaignProcessor', () => {
 
     const updates = repo.update.mock.calls.map((c: any[]) => c[1]);
     expect(updates).toContainEqual({ campaignConversionStatus: 'processing' });
-    expect(updates.at(-1)).toEqual({ campaignId: 'camp-1', campaignConversionStatus: 'done' });
+    expect(updates.at(-1)).toEqual({ campaignId: 'camp-1', secondaryCampaignId: null, campaignConversionStatus: 'done' });
     expect(fs.existsSync(getEnrichmentDir('job-uuid-1'))).toBe(false);
+  });
+
+  it('splitMissingPayment: separa in due bozze (con/senza PagoPa), copia solo i PDF di competenza', async () => {
+    fs.mkdirSync(getEnrichmentAttachmentsDir('job-uuid-1'), { recursive: true });
+    fs.writeFileSync(join(getEnrichmentAttachmentsDir('job-uuid-1'), 'A.pdf'), '%PDF-fake-a');
+    fs.writeFileSync(join(getEnrichmentAttachmentsDir('job-uuid-1'), 'B.pdf'), '%PDF-fake-b');
+    fs.writeFileSync(
+      getEnrichmentResultCsv('job-uuid-1'),
+      [
+        '"codice_fiscale";"allegato";"numero_avviso";"importo";"scadenza"',
+        '"RSSMRA80A01H501U";"A.pdf";"301000000000000000";"100,00";"31/12/2026"',
+        '"VRDLGU80A01H501U";"B.pdf";"";"";""',
+      ].join('\n'),
+    );
+    campaignsService.create = jest.fn(async (dto: any) => ({ id: dto.name.includes('Senza PagoPa') ? 'camp-senza' : 'camp-pagopa' }));
+
+    const splitJob = { data: { ...convertJob.data, splitMissingPayment: true } } as unknown as Job<any>;
+    await processor.process(splitJob);
+
+    const uploadsPagoPa = join(tmpDir, 'uploads', 'camp-pagopa');
+    const uploadsSenza = join(tmpDir, 'uploads', 'camp-senza');
+    expect(fs.existsSync(join(uploadsPagoPa, 'A.pdf'))).toBe(true);
+    expect(fs.existsSync(join(uploadsPagoPa, 'B.pdf'))).toBe(false);
+    expect(fs.existsSync(join(uploadsSenza, 'B.pdf'))).toBe(true);
+    expect(fs.existsSync(join(uploadsSenza, 'A.pdf'))).toBe(false);
+
+    const updates = repo.update.mock.calls.map((c: any[]) => c[1]);
+    expect(updates.at(-1)).toEqual({ campaignId: 'camp-pagopa', secondaryCampaignId: 'camp-senza', campaignConversionStatus: 'done' });
   });
 
   it('nessuna cartella allegati (job senza PDF o pre-refactor) → solo il CSV copiato, nessun errore', async () => {
@@ -69,7 +97,7 @@ describe('ConvertCampaignProcessor', () => {
     const uploadsDir = join(tmpDir, 'uploads', 'camp-1');
     expect(fs.existsSync(join(uploadsDir, 'draft_recipients.csv'))).toBe(true);
     const updates = repo.update.mock.calls.map((c: any[]) => c[1]);
-    expect(updates.at(-1)).toEqual({ campaignId: 'camp-1', campaignConversionStatus: 'done' });
+    expect(updates.at(-1)).toEqual({ campaignId: 'camp-1', secondaryCampaignId: null, campaignConversionStatus: 'done' });
   });
 
   it('errore durante la conversione → campaignConversionStatus=failed con errore, mai un throw', async () => {
