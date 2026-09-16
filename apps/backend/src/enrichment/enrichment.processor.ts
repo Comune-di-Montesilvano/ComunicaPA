@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import { basename, join } from 'path';
 import AdmZip from 'adm-zip';
 import { matchCountry, isValidCap } from '@comunicapa/shared-types';
+import { isValidCfOrPiva } from '../channels/tax-id.util.js';
 import {
   EnrichmentJob,
   EnrichmentJobStatus,
@@ -155,6 +156,7 @@ export class EnrichmentProcessor extends WorkerHost {
         const rowNum = i + 1;
         const row = this.baseRow(rec);
         let rateCount = 0;
+        let result: Awaited<ReturnType<PdfExtractorClient['extract']>> | undefined;
 
         const entry = rec.pdfFilename ? zips.map((z) => z.getEntry(`allegati/${rec.pdfFilename}`)).find(Boolean) ?? null : null;
         if (!entry) {
@@ -178,7 +180,7 @@ export class EnrichmentProcessor extends WorkerHost {
             // caricato dall'operatore, dato comunque non fidato per
             // costruire un path — previene un valore tipo "../../altra/x.pdf".
             fs.writeFileSync(join(attachmentsDir, basename(rec.pdfFilename)), pdfBuffer);
-            const result = await this.extractor.extract(pdfBuffer, rec.pdfFilename, {
+            result = await this.extractor.extract(pdfBuffer, rec.pdfFilename, {
               searchPayments: record.searchPayments ?? true,
             });
             for (const w of result.warnings) {
@@ -268,6 +270,23 @@ export class EnrichmentProcessor extends WorkerHost {
         }
         if (!isForeignRow && (row.cap || '').trim() && !isValidCap(row.cap || '')) {
           warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: 'CAP non valido (richieste 5 cifre)' });
+        }
+
+        const csvCf = (row.codice_fiscale || '').trim();
+        if (!csvCf) {
+          warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: 'Codice Fiscale/Partita IVA mancante' });
+        } else if (!isValidCfOrPiva(csvCf)) {
+          const pdfCf = result?.fiscalCode ? result.fiscalCode.trim() : '';
+          if (pdfCf && isValidCfOrPiva(pdfCf)) {
+            row.codice_fiscale = pdfCf;
+            warnings.push({
+              row: rowNum,
+              pdf: rec.pdfFilename,
+              message: `Codice Fiscale/Partita IVA CSV non valido ("${csvCf}") — sostituito con valore estratto dal PDF`,
+            });
+          } else {
+            warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: `Codice Fiscale/Partita IVA non valido ("${csvCf}")` });
+          }
         }
 
         rows.push(row);

@@ -101,6 +101,15 @@ def pdf_header_block_after_contribuente() -> bytes:
 
 
 @pytest.fixture
+def pdf_cf_persona_giuridica() -> bytes:
+    """Template PG: 'C.F.: P.Iva:<piva>' (label C.F. seguita da P.Iva sulla
+    stessa riga) — formato osservato dal vivo, dati anonimizzati."""
+    return _make_pdf(
+        ["Contribuente:ACME SRL\nC.F.: P.Iva:01234567890\nSede:65126 PESCARA PE VIA MARCO POLO 12\nOggetto: Saldo TARI 2026\n"]
+    )
+
+
+@pytest.fixture
 def pdf_residenza_estero_block() -> bytes:
     """Bug reale (PF residente all'estero, dati anonimizzati): 'Residenza:'
     con comune+stato scritti per intero (nessun CAP numerico), via su righe

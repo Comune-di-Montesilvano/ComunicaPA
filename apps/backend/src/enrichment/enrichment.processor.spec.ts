@@ -84,6 +84,7 @@ describe('EnrichmentProcessor', () => {
           totale: { numero_avviso: '301000000000000001', numero_avviso_alternativo: '', cf_ente: '000', importo: '761,00', scadenza: '31/12/2026' },
           rate: [],
         },
+        fiscalCode: null,
         warnings: [],
       })),
     };
@@ -540,6 +541,115 @@ describe('EnrichmentProcessor', () => {
         .filter((w: any) => w.pdf === 'PROVV_1.pdf')
         .map((w: any) => w.message);
       expect(validationMessages).toEqual([]);
+    });
+  });
+
+  describe('validazione Codice Fiscale/Partita IVA', () => {
+    function setupJobDirWithCf(jobId: string, cf: string): void {
+      const rubrica = [
+        `id;pec1@pec.it;;MARIO;ROSSI;${cf};;ROSSI MARIO;1;13/03/2026;Oggetto 1;;;PROVV_1.pdf`,
+      ].join('\n');
+      const zip = new AdmZip();
+      zip.addFile('rubrica.csv', Buffer.from(rubrica, 'utf-8'));
+      zip.addFile('allegati/PROVV_1.pdf', Buffer.from('%PDF-1'));
+      const dir = getEnrichmentSourcesDir(jobId);
+      fs.rmSync(dir, { recursive: true, force: true });
+      fs.mkdirSync(dir, { recursive: true });
+      zip.writeZip(join(dir, '0000_pezzo.zip'));
+    }
+
+    it('CF vuoto → warning "mancante", nessun fallback tentato', async () => {
+      setupJobDirWithCf('j1', '');
+      client.extract.mockResolvedValue({
+        address: { indirizzo: 'VIA ROMA 1', cap: '00100', comune: 'ROMA', provincia: 'RM', stato_estero: '' },
+        payment: null,
+        fiscalCode: null,
+        warnings: [],
+      });
+
+      await processor.process(fakeJob);
+
+      const finalUpdate = repo.update.mock.calls.at(-1)![1];
+      expect(finalUpdate.warnings).toEqual(
+        expect.arrayContaining([expect.objectContaining({ message: 'Codice Fiscale/Partita IVA mancante' })]),
+      );
+    });
+
+    it('CF invalido nel CSV, PDF ne estrae uno valido → auto-sostituito + warning', async () => {
+      setupJobDirWithCf('j1', 'CFINVALIDO');
+      client.extract.mockResolvedValue({
+        address: { indirizzo: 'VIA ROMA 1', cap: '00100', comune: 'ROMA', provincia: 'RM', stato_estero: '' },
+        payment: null,
+        fiscalCode: 'RSSMRA80A01H501U',
+        warnings: [],
+      });
+
+      await processor.process(fakeJob);
+
+      const finalUpdate = repo.update.mock.calls.at(-1)![1];
+      expect(finalUpdate.warnings).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            message: 'Codice Fiscale/Partita IVA CSV non valido ("CFINVALIDO") — sostituito con valore estratto dal PDF',
+          }),
+        ]),
+      );
+      const csv = fs.readFileSync(getEnrichmentResultCsv('j1'), 'utf-8');
+      expect(csv).toContain('RSSMRA80A01H501U');
+      expect(csv).not.toContain('CFINVALIDO');
+    });
+
+    it('CF invalido nel CSV, PDF non ne estrae uno valido → solo warning, riga invariata', async () => {
+      setupJobDirWithCf('j1', 'CFINVALIDO');
+      client.extract.mockResolvedValue({
+        address: { indirizzo: 'VIA ROMA 1', cap: '00100', comune: 'ROMA', provincia: 'RM', stato_estero: '' },
+        payment: null,
+        fiscalCode: null,
+        warnings: [],
+      });
+
+      await processor.process(fakeJob);
+
+      const finalUpdate = repo.update.mock.calls.at(-1)![1];
+      expect(finalUpdate.warnings).toEqual(
+        expect.arrayContaining([expect.objectContaining({ message: 'Codice Fiscale/Partita IVA non valido ("CFINVALIDO")' })]),
+      );
+      const csv = fs.readFileSync(getEnrichmentResultCsv('j1'), 'utf-8');
+      expect(csv).toContain('CFINVALIDO');
+    });
+
+    it('CF valido nel CSV → nessun warning CF/PIVA, anche se il PDF non estrae nulla', async () => {
+      setupJobDirWithCf('j1', 'RSSMRA80A01H501U');
+      client.extract.mockResolvedValue({
+        address: { indirizzo: 'VIA ROMA 1', cap: '00100', comune: 'ROMA', provincia: 'RM', stato_estero: '' },
+        payment: null,
+        fiscalCode: null,
+        warnings: [],
+      });
+
+      await processor.process(fakeJob);
+
+      const finalUpdate = repo.update.mock.calls.at(-1)![1];
+      expect(finalUpdate.warnings).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ message: expect.stringContaining('Codice Fiscale') })]),
+      );
+    });
+
+    it('PDF non trovato nello ZIP → warning CF/PIVA comunque valutato su riga base (nessun fallback disponibile)', async () => {
+      const rubrica = 'id;pec1@pec.it;;MARIO;ROSSI;CFINVALIDO;;ROSSI MARIO;1;13/03/2026;Oggetto 1;;;MANCANTE.pdf';
+      const zip = new AdmZip();
+      zip.addFile('rubrica.csv', Buffer.from(rubrica, 'utf-8'));
+      const dir = getEnrichmentSourcesDir('j1');
+      fs.rmSync(dir, { recursive: true, force: true });
+      fs.mkdirSync(dir, { recursive: true });
+      zip.writeZip(join(dir, '0000_pezzo.zip'));
+
+      await processor.process(fakeJob);
+
+      const finalUpdate = repo.update.mock.calls.at(-1)![1];
+      expect(finalUpdate.warnings).toEqual(
+        expect.arrayContaining([expect.objectContaining({ message: 'Codice Fiscale/Partita IVA non valido ("CFINVALIDO")' })]),
+      );
     });
   });
 });

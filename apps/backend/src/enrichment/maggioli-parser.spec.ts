@@ -108,6 +108,35 @@ describe('parseRubricaPec', () => {
       pdfFilename: 'DOC_733460_16514.pdf',
     });
   });
+
+  it('PIVA a 10 cifre nel formato PG (14 campi) viene zero-paddata a 11', () => {
+    const row = '36044;beta@pec.it;;;;2333900682;;BETA SRL;19009034;13/03/2026;Oggetto PG;;;PROVV_36044_1.pdf';
+    const records = parseRubricaPec(row);
+    expect(records[0].codiceFiscale).toBe('02333900682');
+    expect(records[0].tipo).toBe('PG');
+  });
+
+  it('PIVA già a 11 cifre resta invariata', () => {
+    const records = parseRubricaPec(RUBRICA_ROW_PG);
+    expect(records[0].codiceFiscale).toBe('00123456789');
+  });
+
+  it('CF persona fisica (16 alfanumerici) non viene toccato dallo zero-pad', () => {
+    const records = parseRubricaPec(RUBRICA_ROW_PF);
+    expect(records[0].codiceFiscale).toBe('RSSMRA80A01H501U');
+  });
+
+  it('variante TARI saldo 18 campi: PIVA a 10 cifre zero-paddata', () => {
+    const row = '708806;rsu;D;pizzanuova@pec.it;0;;;2333900682;;PIZZANUOVA SRLS;708806;25;8;2026;SALDO TARI 2026;;;DOC_708806_161219.pdf';
+    const records = parseRubricaPec(row);
+    expect(records[0].codiceFiscale).toBe('02333900682');
+  });
+
+  it('variante TARI saldo 16 campi (email): PIVA a 10 cifre zero-paddata', () => {
+    const row = '733460;rsu;D;gamma@example.com;1;;;2333900682;;GAMMA SRL;733460;25/08/2026;SALDO TARI 2026;;;DOC_733460_16514.pdf';
+    const records = parseRubricaPec(row);
+    expect(records[0].codiceFiscale).toBe('02333900682');
+  });
 });
 
 describe('parsePagIndice', () => {
@@ -139,6 +168,15 @@ describe('parsePagIndice', () => {
     const records = parsePagIndice(PAG_INDICE_SENZA_OCR);
     expect(records[0].ocrNotifica).toBe('');
     expect(records[0].numeroProvvedimento).toBe('42');
+  });
+
+  it('PIVA a 10 cifre in "cod. fisc. dest" viene zero-paddata a 11', () => {
+    const csv = [
+      "'nome file;'destinatario;'cod. fisc. dest;'indirizzo;'indirizzo parte 2;'localita;'comune;'stato estero;'Ocr int;'Ocr rid;'Num. provv;'Data emissione;'ocr notifica",
+      "'DOC_3.pdf;'GAMMA SRL;'2333900682;'VIA MILANO 5;';'00067 MORLUPO RM;';';'301000000000000002;'RAV124;'98;'01/02/2026;'5890000000049996",
+    ].join('\n');
+    const records = parsePagIndice(csv);
+    expect(records[0].codiceFiscale).toBe('02333900682');
   });
 });
 

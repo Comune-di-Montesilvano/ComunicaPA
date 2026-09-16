@@ -31,6 +31,7 @@ async def extract(file: UploadFile, search_payments: bool = True):
     warnings: list[str] = []
     address = None
     payment_body = None
+    fiscal_code = None
 
     try:
         extractor = PdfExtractor(pdf_bytes)
@@ -38,6 +39,11 @@ async def extract(file: UploadFile, search_payments: bool = True):
             address = extractor.extract_address()
         except AddressExtractionError as e:
             warnings.append(f"Indirizzo non estratto: {str(e)[:300]}")
+
+        try:
+            fiscal_code = extractor.extract_fiscal_code()
+        except Exception as e:
+            warnings.append(f"Estrazione CF/PIVA fallita: {e}")
 
         if search_payments:
             totale, rate, pay_warnings = extractor.extract_payment()
@@ -55,5 +61,6 @@ async def extract(file: UploadFile, search_payments: bool = True):
     return {
         "address": asdict(address) if address else None,
         "payment": payment_body,
+        "fiscalCode": fiscal_code,
         "warnings": warnings,
     }

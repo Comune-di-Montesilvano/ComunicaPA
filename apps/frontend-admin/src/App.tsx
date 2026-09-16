@@ -3600,7 +3600,6 @@ export function App(): React.JSX.Element {
         setEnrichAddressEditError(row.message || 'Riga non trovata');
         return;
       }
-      setEnrichAddressEditCf(row.codiceFiscale || '');
       const headers: string[] = row.headers || [];
       const currentRow: Record<string, string> = row.row || {};
       const override = row.override;
@@ -3619,6 +3618,10 @@ export function App(): React.JSX.Element {
       }
       setEnrichAddressEditHeaders(headers);
       setEnrichAddressEditFields(fields);
+      // Valore riconciliato (override se presente), non il CSV grezzo —
+      // altrimenti riaprire una riga già corretta mostra il vecchio CF nel
+      // testo di stato pur avendo il campo form già aggiornato.
+      setEnrichAddressEditCf(fields['codice_fiscale'] || row.codiceFiscale || '');
     } catch {
       setEnrichAddressEditError('Errore durante il caricamento della riga');
     } finally {
@@ -3647,18 +3650,19 @@ export function App(): React.JSX.Element {
   // runAddressEditAnprCheck (correzione indirizzo POSTAL) — qui adattata ai
   // nomi colonna del CSV arricchito (indirizzo/cap/comune/provincia/statoEstero).
   const runEnrichAddressAnprCheck = async () => {
-    if (!enrichAddressEditCf) return;
+    const cf = (enrichAddressEditFields['codice_fiscale'] || '').trim();
+    if (!cf || !isValidCfOrPiva(cf)) return;
     setEnrichAddressEditAnprLoading(true);
     try {
       const res = await apiFetch('/domicilio/cerca', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ codiceFiscale: enrichAddressEditCf }),
+        body: JSON.stringify({ codiceFiscale: cf }),
       });
       const data = await res.json();
       // Persona giuridica (PIVA/CF 11 cifre) — backend instrada su Registro
       // Imprese, mai su ANPR: leggere data.registroImprese, non data.anpr.
-      if (/^\d{11}$/.test(enrichAddressEditCf.trim())) {
+      if (/^\d{11}$/.test(cf)) {
         const ri = data?.registroImprese;
         const ind = ri?.data?.sede?.indirizzo;
         if (ri?.success && ri?.found && ind) {
@@ -15033,12 +15037,12 @@ export function App(): React.JSX.Element {
                                     <button
                                       className="btn btn-sm btn-outline-primary mb-3"
                                       type="button"
-                                      disabled={!enrichAddressEditCf || enrichAddressEditAnprLoading}
+                                      disabled={!isValidCfOrPiva(enrichAddressEditFields['codice_fiscale'] || '') || enrichAddressEditAnprLoading}
                                       onClick={runEnrichAddressAnprCheck}
                                     >
                                       {enrichAddressEditAnprLoading ? (
                                         <><Loader2 className="icon-spin me-1" size={16} />Verifica in corso...</>
-                                      ) : /^\d{11}$/.test((enrichAddressEditCf || '').trim()) ? (
+                                      ) : /^\d{11}$/.test((enrichAddressEditFields['codice_fiscale'] || '').trim()) ? (
                                         'Carica da Registro Imprese'
                                       ) : (
                                         'Carica da ANPR'
@@ -15049,7 +15053,7 @@ export function App(): React.JSX.Element {
                                         poter compilare tutto a mano, non solo l'indirizzo. */}
                                     <div className="row g-2 mb-2">
                                       {enrichAddressEditHeaders
-                                        .filter((h) => h !== 'allegato' && h !== 'codice_fiscale')
+                                        .filter((h) => h !== 'allegato')
                                         .map((h) => (
                                           <div className="col-md-3" key={h}>
                                             <label className="form-label small fw-bold">{enrichHeaderLabel(h)}</label>

@@ -71,3 +71,21 @@ def test_extract_search_payments_false(pdf_no_address):
     # No payment warning because search_payments is false
     assert not any("PagoPA" in w for w in body["warnings"])
 
+
+
+def test_extract_includes_fiscal_code(pdf_residenza_inline_label):
+    res = client.post(
+        "/extract",
+        files={"file": ("doc.pdf", pdf_residenza_inline_label, "application/pdf")},
+    )
+    assert res.status_code == 200
+    assert res.json()["fiscalCode"] == "RSSMRA70A01G482X"
+
+
+def test_extract_fiscal_code_null_quando_assente(pdf_no_address):
+    res = client.post(
+        "/extract",
+        files={"file": ("doc.pdf", pdf_no_address, "application/pdf")},
+    )
+    assert res.status_code == 200
+    assert res.json()["fiscalCode"] is None

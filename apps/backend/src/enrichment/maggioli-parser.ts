@@ -39,6 +39,20 @@ function tipoFromCf(cf: string): 'PF' | 'PG' {
   return cf.trim().length === 16 ? 'PF' : 'PG';
 }
 
+/**
+ * Una PIVA italiana valida è SEMPRE 11 cifre numeriche; un CF persona
+ * fisica è SEMPRE 16 alfanumerici — non esiste un identificativo valido di
+ * esattamente 10 cifre numeriche in questo dominio. Un valore CSV a 10
+ * cifre numeriche è quindi un caso non ambiguo di zero iniziale perso a
+ * monte (stesso ragionamento già in uso per il CAP, vedi _pad_cap in
+ * pdf_extractor.py) — zero-pad silenzioso, nessun warning: il pattern è
+ * altrettanto non ambiguo.
+ */
+function normalizeCodiceFiscale(value: string): string {
+  const v = value.trim();
+  return /^\d{10}$/.test(v) ? v.padStart(11, '0') : v;
+}
+
 export function parseRubricaPec(text: string): MaggioliRecord[] {
   const records: MaggioliRecord[] = [];
   for (const rawLine of text.split(/\r?\n/)) {
@@ -50,8 +64,8 @@ export function parseRubricaPec(text: string): MaggioliRecord[] {
     if (fields.length >= 18) {
       records.push({
         pec: fields[3].trim(),
-        codiceFiscale: fields[7].trim(),
-        tipo: tipoFromCf(fields[7]),
+        codiceFiscale: normalizeCodiceFiscale(fields[7]),
+        tipo: tipoFromCf(normalizeCodiceFiscale(fields[7])),
         nominativo: fields[9].trim(),
         numeroProvvedimento: fields[10].trim(),
         dataEmissione: [fields[11], fields[12], fields[13]].map((f) => f.trim()).join('/'),
@@ -73,8 +87,8 @@ export function parseRubricaPec(text: string): MaggioliRecord[] {
     if (fields.length === 16) {
       records.push({
         pec: fields[3].trim(),
-        codiceFiscale: fields[7].trim(),
-        tipo: tipoFromCf(fields[7]),
+        codiceFiscale: normalizeCodiceFiscale(fields[7]),
+        tipo: tipoFromCf(normalizeCodiceFiscale(fields[7])),
         nominativo: fields[9].trim(),
         numeroProvvedimento: fields[10].trim(),
         dataEmissione: fields[11].trim(),
@@ -90,8 +104,8 @@ export function parseRubricaPec(text: string): MaggioliRecord[] {
     while (fields.length < 14) fields.push('');
     records.push({
       pec: fields[1].trim(),
-      codiceFiscale: fields[5].trim(),
-      tipo: tipoFromCf(fields[5]),
+      codiceFiscale: normalizeCodiceFiscale(fields[5]),
+      tipo: tipoFromCf(normalizeCodiceFiscale(fields[5])),
       nominativo: fields[7].trim(),
       numeroProvvedimento: fields[8].trim(),
       dataEmissione: fields[9].trim(),
@@ -129,8 +143,8 @@ export function parsePagIndice(text: string): MaggioliRecord[] {
 
     records.push({
       pec: '',
-      codiceFiscale: (row['cod. fisc. dest'] ?? '').trim(),
-      tipo: tipoFromCf(row['cod. fisc. dest'] ?? ''),
+      codiceFiscale: normalizeCodiceFiscale(row['cod. fisc. dest'] ?? ''),
+      tipo: tipoFromCf(normalizeCodiceFiscale(row['cod. fisc. dest'] ?? '')),
       nominativo: (row['destinatario'] ?? '').trim(),
       numeroProvvedimento: (row['Num. provv'] ?? '').trim(),
       dataEmissione: (row['Data emissione'] ?? '').trim(),
