@@ -25,7 +25,8 @@ import {
 } from './enrichment-job.types.js';
 import { getEnrichmentAttachmentsDir, getEnrichmentDir, getEnrichmentResultCsv } from './enrichment-paths.js';
 import { EnrichmentAddressOverrideService, type AddressOverrideInput } from './enrichment-address-override.service.js';
-import { readCheckpointSync } from './enrichment-checkpoint.util.js';
+import { readCheckpointSync, writeCheckpointSync } from './enrichment-checkpoint.util.js';
+import { validateRowContentWarnings } from './enrichment-row-validation.util.js';
 import { buildEnrichedCsv, buildEnrichedCsvHeaders, parseEnrichedCsv, type EnrichedRow } from './enriched-csv.util.js';
 import type { EnrichmentAddressOverride } from '../entities/enrichment-address-override.entity.js';
 
@@ -340,23 +341,38 @@ export class EnrichmentService {
   }
 
   /**
-   * Solo per job DONE: ri-richiama pdf-extractor per le righe con warning
-   * "Estrazione fallita: ..." (fallimento TRANSITORIO della chiamata, es.
-   * pdf-extractor irraggiungibile perché il backend/servizio è stato
-   * riavviato a metà job) — MAI per "PDF non trovato nel ZIP" (file
-   * genuinamente assente, un retry non risolverebbe nulla). Il PDF è già su
-   * disco in allegati/ anche per le righe fallite (scritto PRIMA della
-   * chiamata all'estrattore, vedi enrichment.processor.ts) — nessun bisogno
-   * di riaprire i pezzi ZIP originali, già cancellati a job riuscito.
+   * Ri-richiama pdf-extractor per le righe con warning "Estrazione fallita:
+   * ..." (fallimento TRANSITORIO della chiamata, es. pdf-extractor
+   * irraggiungibile perché il backend/servizio è stato riavviato a metà
+   * job) — MAI per "PDF non trovato nel ZIP" (file genuinamente assente, un
+   * retry non risolverebbe nulla). Il PDF è già su disco in allegati/ anche
+   * per le righe fallite (scritto PRIMA della chiamata all'estrattore, vedi
+   * enrichment.processor.ts) — nessun bisogno di riaprire i pezzi ZIP
+   * originali.
    *
-   * Limite noto: se la riga aveva più rate di quelle già presenti nell'header
-   * CSV (calcolato una volta sola a fine job sul massimo trovato), le rate
-   * oltre l'header esistente vengono scartate silenziosamente da
-   * buildEnrichedCsv (colonna non presente) — caso raro su un retry di una
-   * singola riga fallita, non gestito qui.
+   * Funziona sia a job DONE (ripatcha il CSV finale) sia a job PROCESSING
+   * (ripatcha il checkpoint e riaccoda subito, senza aspettare la fine —
+   * vedi retryFailedPdfsWhileProcessing).
+   *
+   * Ogni riga riprovata ricalcola TUTTI i warning di contenuto
+   * (validateRowContentWarnings), non solo quello di estrazione — bug reale
+   * corretto prima del deploy: la prima versione scartava senza
+   * ricontrollare un warning indipendente sulla stessa riga (es. "Città
+   * mancante"), che spariva silenziosamente anche se il dato restava
+   * davvero mancante.
+   *
+   * Limite noto (solo path DONE): se la riga aveva più rate di quelle già
+   * presenti nell'header CSV (calcolato una volta sola a fine job sul
+   * massimo trovato), le rate oltre l'header esistente vengono scartate
+   * silenziosamente da buildEnrichedCsv (colonna non presente) — caso raro,
+   * non gestito qui. Il path PROCESSING non ha questo limite (aggiorna
+   * anche `maxRate` sul checkpoint).
    */
   async retryFailedPdfs(jobId: string): Promise<{ blocked?: boolean; message?: string; retried?: number; succeeded?: number; stillFailing?: number }> {
     const job = await this.getJob(jobId);
+    if (job.status === EnrichmentJobStatus.PROCESSING) {
+      return this.retryFailedPdfsWhileProcessing(job);
+    }
     if (job.status !== EnrichmentJobStatus.DONE) {
       return { blocked: true, message: 'Il job non è completato: nessuna riga da riprovare' };
     }
@@ -387,11 +403,14 @@ export class EnrichmentService {
       const pdfPath = pdfFilename ? join(attachmentsDir, basename(pdfFilename)) : '';
       if (!row || !pdfFilename || !fs.existsSync(pdfPath)) {
         newWarnings.push({ row: rowNum, pdf: pdfFilename, message: 'Estrazione fallita: PDF non più disponibile su disco per il retry' });
+        if (row) newWarnings.push(...validateRowContentWarnings(row, rowNum, pdfFilename, null));
         continue;
       }
+      let extractedFiscalCode: string | null = null;
       try {
         const pdfBuffer = fs.readFileSync(pdfPath);
         const result = await this.extractor.extract(pdfBuffer, pdfFilename, { searchPayments: job.searchPayments });
+        extractedFiscalCode = result.fiscalCode;
         for (const w of result.warnings) {
           newWarnings.push({ row: rowNum, pdf: pdfFilename, message: w });
         }
@@ -419,6 +438,7 @@ export class EnrichmentService {
       } catch (err: any) {
         newWarnings.push({ row: rowNum, pdf: pdfFilename, message: `Estrazione fallita: ${err.message}` });
       }
+      newWarnings.push(...validateRowContentWarnings(row, rowNum, pdfFilename, extractedFiscalCode));
     }
 
     const overrides = await this.overrideService.findByJob(jobId);
@@ -432,6 +452,96 @@ export class EnrichmentService {
       ? patched.filter((r) => !r.numero_avviso || !r.importo).length
       : 0;
     await this.jobRepo.update(jobId, { warnings, warningCount: warnings.length, missingPaymentCount });
+
+    return { retried: failedRowNumbers.size, succeeded, stillFailing: failedRowNumbers.size - succeeded };
+  }
+
+  /**
+   * "Ferma e correggi ora": job ancora PROCESSING, l'operatore non vuole
+   * aspettare la fine per riprovare le righe già marcate "Estrazione
+   * fallita" nel checkpoint — richiesta esplicita, accettando di perdere il
+   * progresso non ancora salvato a checkpoint (scritto ogni 100 righe) se il
+   * job era ancora realmente attivo. Rimuove SEMPRE il job BullMQ esistente
+   * prima di ripatchare (stesso principio di EnrichmentResumeService: un
+   * loop ancora vivo che scrivesse un altro checkpoint dopo il nostro lo
+   * sovrascriverebbe silenziosamente — rimuovere il job non può fermare un
+   * `for` già in esecuzione, ma è la stessa richiesta esplicita
+   * dell'operatore, non un'azione silenziosa) e riaccoda con lo stesso jobId
+   * per riprendere da `checkpoint.lastRow` una volta ripatchato.
+   */
+  private async retryFailedPdfsWhileProcessing(
+    job: EnrichmentJob,
+  ): Promise<{ blocked?: boolean; message?: string; retried?: number; succeeded?: number; stillFailing?: number }> {
+    const checkpoint = readCheckpointSync(job.id);
+    if (!checkpoint) {
+      return { blocked: true, message: 'Nessun checkpoint disponibile: il job non ha ancora processato righe' };
+    }
+    const failedRowNumbers = new Set(
+      checkpoint.warnings.filter((w) => w.message.startsWith('Estrazione fallita:')).map((w) => w.row),
+    );
+    if (failedRowNumbers.size === 0) {
+      return { retried: 0, succeeded: 0, stillFailing: 0 };
+    }
+
+    const existing = await this.queue.getJob(job.id);
+    if (existing) await existing.remove();
+
+    const attachmentsDir = getEnrichmentAttachmentsDir(job.id);
+    const untouchedWarnings = checkpoint.warnings.filter((w) => !failedRowNumbers.has(w.row));
+    const newWarnings: EnrichmentWarning[] = [];
+    let maxRate = checkpoint.maxRate;
+    let succeeded = 0;
+
+    for (const rowNum of failedRowNumbers) {
+      const row = checkpoint.rows[rowNum - 1];
+      const pdfFilename = row?.allegato ?? '';
+      const pdfPath = pdfFilename ? join(attachmentsDir, basename(pdfFilename)) : '';
+      if (!row || !pdfFilename || !fs.existsSync(pdfPath)) {
+        newWarnings.push({ row: rowNum, pdf: pdfFilename, message: 'Estrazione fallita: PDF non più disponibile su disco per il retry' });
+        if (row) newWarnings.push(...validateRowContentWarnings(row, rowNum, pdfFilename, null));
+        continue;
+      }
+      let extractedFiscalCode: string | null = null;
+      try {
+        const pdfBuffer = fs.readFileSync(pdfPath);
+        const result = await this.extractor.extract(pdfBuffer, pdfFilename, { searchPayments: job.searchPayments });
+        extractedFiscalCode = result.fiscalCode;
+        for (const w of result.warnings) {
+          newWarnings.push({ row: rowNum, pdf: pdfFilename, message: w });
+        }
+        if (!row.indirizzo && result.address) {
+          row.indirizzo = result.address.indirizzo;
+          row.cap = result.address.cap;
+          row.comune = result.address.comune;
+          row.provincia = result.address.provincia;
+          row.stato_estero = result.address.stato_estero;
+        }
+        if (result.payment?.totale) {
+          row.numero_avviso = result.payment.totale.numero_avviso || row.numero_avviso;
+          row.numero_avviso_alternativo = result.payment.totale.numero_avviso_alternativo || row.numero_avviso_alternativo;
+          row.importo = result.payment.totale.importo;
+          row.scadenza = result.payment.totale.scadenza;
+        }
+        if (result.payment?.rate?.length) {
+          maxRate = Math.max(maxRate, result.payment.rate.length);
+          result.payment.rate.forEach((rata, idx) => {
+            const n = idx + 1;
+            row[`rata${n}_numero_avviso`] = rata.numero_avviso;
+            row[`rata${n}_importo`] = rata.importo;
+            row[`rata${n}_scadenza`] = rata.scadenza;
+          });
+        }
+        succeeded++;
+      } catch (err: any) {
+        newWarnings.push({ row: rowNum, pdf: pdfFilename, message: `Estrazione fallita: ${err.message}` });
+      }
+      newWarnings.push(...validateRowContentWarnings(row, rowNum, pdfFilename, extractedFiscalCode));
+    }
+
+    const warnings = [...untouchedWarnings, ...newWarnings];
+    writeCheckpointSync(job.id, { ...checkpoint, warnings, maxRate });
+    await this.jobRepo.update(job.id, { warnings, warningCount: warnings.length });
+    await this.queue.add('enrich', { jobId: job.id }, { jobId: job.id });
 
     return { retried: failedRowNumbers.size, succeeded, stillFailing: failedRowNumbers.size - succeeded };
   }

@@ -6,8 +6,7 @@ import type { Job, Queue } from 'bullmq';
 import * as fs from 'fs';
 import { basename, join } from 'path';
 import AdmZip from 'adm-zip';
-import { matchCountry, isValidCap, abbreviateLongMunicipality } from '@comunicapa/shared-types';
-import { isValidCfOrPiva } from '../channels/tax-id.util.js';
+import { validateRowContentWarnings } from './enrichment-row-validation.util.js';
 import {
   EnrichmentJob,
   EnrichmentJobStatus,
@@ -180,9 +179,13 @@ export class EnrichmentProcessor extends WorkerHost {
             // caricato dall'operatore, dato comunque non fidato per
             // costruire un path — previene un valore tipo "../../altra/x.pdf".
             fs.writeFileSync(join(attachmentsDir, basename(rec.pdfFilename)), pdfBuffer);
-            result = await this.extractor.extract(pdfBuffer, rec.pdfFilename, {
-              searchPayments: record.searchPayments ?? true,
-            });
+            result = await this.extractWithRetry(
+              pdfBuffer,
+              rec.pdfFilename,
+              record.searchPayments ?? true,
+              rowNum,
+              job,
+            );
             for (const w of result.warnings) {
               warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: w });
             }
@@ -251,51 +254,10 @@ export class EnrichmentProcessor extends WorkerHost {
         // "PDF non trovato"/"Estrazione fallita" — l'operatore corregge via
         // EnrichmentAddressOverrideService quando vuole. Applicate
         // incondizionatamente: row esiste sempre (baseRow), anche quando il
-        // PDF è mancante o l'estrazione è fallita.
-        const paeseRaw = (row.stato_estero || '').trim();
-        const matchedCountry = paeseRaw ? matchCountry(paeseRaw) : null;
-        const isForeignRow = !!matchedCountry && matchedCountry !== 'Italia';
-        if (paeseRaw && !matchedCountry) {
-          warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: `Paese "${paeseRaw}" non riconosciuto` });
-        }
-        const comuneTrimmed = (row.comune || '').trim();
-        if (!comuneTrimmed) {
-          warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: 'Città mancante' });
-        } else if (comuneTrimmed.length > 30) {
-          const abbreviated = abbreviateLongMunicipality(comuneTrimmed);
-          if (abbreviated.length <= 30) {
-            // Uno dei 5 comuni italiani noti oltre soglia (vedi
-            // abbreviateLongMunicipality) — nessun troncamento cieco a metà
-            // parola, nessun warning: la forma abbreviata è già valida.
-            row.comune = abbreviated;
-          } else {
-            warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: `Città troppo lunga (${comuneTrimmed.length} caratteri, max 30)` });
-            row.comune = comuneTrimmed.slice(0, 30);
-          }
-        }
-        if (!isForeignRow && !(row.provincia || '').trim()) {
-          warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: 'Provincia mancante' });
-        }
-        if (!isForeignRow && (row.cap || '').trim() && !isValidCap(row.cap || '')) {
-          warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: 'CAP non valido (richieste 5 cifre)' });
-        }
-
-        const csvCf = (row.codice_fiscale || '').trim();
-        if (!csvCf) {
-          warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: 'Codice Fiscale/Partita IVA mancante' });
-        } else if (!isValidCfOrPiva(csvCf)) {
-          const pdfCf = result?.fiscalCode ? result.fiscalCode.trim() : '';
-          if (pdfCf && isValidCfOrPiva(pdfCf)) {
-            row.codice_fiscale = pdfCf;
-            warnings.push({
-              row: rowNum,
-              pdf: rec.pdfFilename,
-              message: `Codice Fiscale/Partita IVA CSV non valido ("${csvCf}") — sostituito con valore estratto dal PDF`,
-            });
-          } else {
-            warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: `Codice Fiscale/Partita IVA non valido ("${csvCf}")` });
-          }
-        }
+        // PDF è mancante o l'estrazione è fallita. Funzione condivisa con
+        // EnrichmentService.retryFailedPdfs, che deve ricalcolarle sulla riga
+        // ripatchata — non solo il warning "Estrazione fallita".
+        warnings.push(...validateRowContentWarnings(row, rowNum, rec.pdfFilename, result?.fiscalCode ?? null));
 
         rows.push(row);
 
@@ -361,6 +323,51 @@ export class EnrichmentProcessor extends WorkerHost {
       deleteCheckpointSync(jobId);
       this.events.emitTerminal(jobId, { type: 'error', message: err.message });
     }
+  }
+
+  /** Backoff prima di ogni retry — 3 tentativi aggiuntivi oltre al primo. */
+  private static readonly EXTRACT_RETRY_DELAYS_MS = [2000, 5000, 10000];
+
+  /**
+   * Retry inline SOLO per errori di rete/connessione verso pdf-extractor
+   * (es. `fetch failed` — servizio irraggiungibile perché riavviato a metà
+   * job, sintomo reale osservato dal vivo: 1142 righe fallite su una
+   * campagna Postalizzazione per un redeploy in corso). Mai per un errore
+   * applicativo del singolo PDF (es. HTTP 4xx/5xx da pdf-extractor su un
+   * file corrotto) — riprovare non cambierebbe l'esito, solo rallenterebbe
+   * il job. Fallito anche dopo i retry, torna al chiamante come prima
+   * (stesso try/catch esterno, stesso warning "Estrazione fallita").
+   */
+  private async extractWithRetry(
+    pdfBuffer: Buffer,
+    filename: string,
+    searchPayments: boolean,
+    rowNum: number,
+    job: Job<EnrichmentQueueJobData>,
+  ): Promise<Awaited<ReturnType<PdfExtractorClient['extract']>>> {
+    const delays = EnrichmentProcessor.EXTRACT_RETRY_DELAYS_MS;
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= delays.length; attempt++) {
+      try {
+        return await this.extractor.extract(pdfBuffer, filename, { searchPayments });
+      } catch (err: any) {
+        lastError = err;
+        if (attempt === delays.length || !this.isTransientExtractorError(err)) break;
+        const delayMs = delays[attempt];
+        await job.log(`Riga ${rowNum}: estrazione fallita (tentativo ${attempt + 1}/${delays.length + 1}) — ${err.message}, retry tra ${delayMs / 1000}s`);
+        await this.sleep(delayMs);
+      }
+    }
+    throw lastError;
+  }
+
+  private isTransientExtractorError(err: unknown): boolean {
+    const message = String((err as Error)?.message ?? '');
+    return /fetch failed|ECONNREFUSED|ECONNRESET|ETIMEDOUT/i.test(message);
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private baseRow(rec: MaggioliRecord): EnrichedRow {

@@ -7,6 +7,7 @@ import { EnrichmentJobStatus, TraceFormat } from '../entities/enrichment-job.ent
 import { EnrichmentService } from './enrichment.service.js';
 import { getEnrichmentAttachmentsDir, getEnrichmentDir, getEnrichmentResultCsv } from './enrichment-paths.js';
 import { buildEnrichedCsv, buildEnrichedCsvHeaders } from './enriched-csv.util.js';
+import { writeCheckpointSync } from './enrichment-checkpoint.util.js';
 
 describe('EnrichmentService', () => {
   let tmpDir: string;
@@ -28,7 +29,7 @@ describe('EnrichmentService', () => {
       delete: jest.fn(async () => undefined),
       update: jest.fn(async () => undefined),
     };
-    queue = { add: jest.fn(async () => undefined) };
+    queue = { add: jest.fn(async () => undefined), getJob: jest.fn(async () => null) };
     convertCampaignQueue = { add: jest.fn(async () => undefined) };
     overrideService = {
       findByJob: jest.fn(async () => []),
@@ -338,7 +339,10 @@ describe('EnrichmentService', () => {
       fs.writeFileSync(join(getEnrichmentAttachmentsDir('j1'), 'PROVV_1.pdf'), '%PDF-fake');
       fs.writeFileSync(
         getEnrichmentResultCsv('j1'),
-        buildEnrichedCsv(buildEnrichedCsvHeaders(0), [{ allegato: 'PROVV_1.pdf', numero_avviso: 'CSV-FALLBACK', importo: '', indirizzo: '' }]),
+        buildEnrichedCsv(buildEnrichedCsvHeaders(0), [{
+          allegato: 'PROVV_1.pdf', numero_avviso: 'CSV-FALLBACK', importo: '', indirizzo: '',
+          comune: 'TERAMO', provincia: 'TE', codice_fiscale: 'RSSMRA80A01H501U',
+        }]),
       );
       extractor.extract.mockResolvedValue({
         address: { indirizzo: 'VIA NUOVA', cap: '64100', comune: 'TERAMO', provincia: 'TE', stato_estero: '' },
@@ -367,7 +371,10 @@ describe('EnrichmentService', () => {
       fs.mkdirSync(getEnrichmentDir('j1'), { recursive: true });
       fs.mkdirSync(getEnrichmentAttachmentsDir('j1'), { recursive: true });
       fs.writeFileSync(join(getEnrichmentAttachmentsDir('j1'), 'PROVV_1.pdf'), '%PDF-fake');
-      fs.writeFileSync(getEnrichmentResultCsv('j1'), buildEnrichedCsv(buildEnrichedCsvHeaders(0), [{ allegato: 'PROVV_1.pdf' }]));
+      fs.writeFileSync(
+        getEnrichmentResultCsv('j1'),
+        buildEnrichedCsv(buildEnrichedCsvHeaders(0), [{ allegato: 'PROVV_1.pdf', comune: 'TERAMO', provincia: 'TE', codice_fiscale: 'RSSMRA80A01H501U' }]),
+      );
       extractor.extract.mockRejectedValue(new Error('fetch failed'));
       overrideService.findByJob.mockResolvedValue([]);
       overrideService.applyOverrides.mockImplementation((rows: any[]) => rows);
@@ -396,6 +403,107 @@ describe('EnrichmentService', () => {
 
       expect(extractor.extract).not.toHaveBeenCalled();
       expect(result).toEqual({ retried: 1, succeeded: 0, stillFailing: 1 });
+    });
+
+    it('un warning indipendente sulla stessa riga (es. "Città mancante") resta se il dato è ancora davvero mancante dopo il retry — non sparisce solo perché la riga aveva anche "Estrazione fallita"', async () => {
+      repo.findOneBy.mockResolvedValue({
+        id: 'j1', status: EnrichmentJobStatus.DONE, searchPayments: true,
+        warnings: [
+          { row: 1, pdf: 'PROVV_1.pdf', message: 'Estrazione fallita: fetch failed' },
+          { row: 1, pdf: 'PROVV_1.pdf', message: 'Città mancante' },
+        ],
+      });
+      fs.mkdirSync(getEnrichmentDir('j1'), { recursive: true });
+      fs.mkdirSync(getEnrichmentAttachmentsDir('j1'), { recursive: true });
+      fs.writeFileSync(join(getEnrichmentAttachmentsDir('j1'), 'PROVV_1.pdf'), '%PDF-fake');
+      fs.writeFileSync(
+        getEnrichmentResultCsv('j1'),
+        buildEnrichedCsv(buildEnrichedCsvHeaders(0), [{ allegato: 'PROVV_1.pdf', provincia: 'TE', codice_fiscale: 'RSSMRA80A01H501U' }]),
+      );
+      // Estrazione riesce ma il PDF non contiene un indirizzo (comune resta vuoto).
+      extractor.extract.mockResolvedValue({
+        address: null,
+        payment: { totale: { numero_avviso: '301000000000000000', numero_avviso_alternativo: '', cf_ente: '', importo: '50,00', scadenza: '31/12/2026' }, rate: [] },
+        fiscalCode: null,
+        warnings: [],
+      });
+      overrideService.findByJob.mockResolvedValue([]);
+      overrideService.applyOverrides.mockImplementation((rows: any[]) => rows);
+
+      const result = await service.retryFailedPdfs('j1');
+
+      expect(result.succeeded).toBe(1); // l'estrazione stessa è riuscita...
+      expect(repo.update).toHaveBeenCalledWith('j1', {
+        warnings: [{ row: 1, pdf: 'PROVV_1.pdf', message: 'Città mancante' }], // ...ma il warning di contenuto resta, ricalcolato da zero
+        warningCount: 1,
+        missingPaymentCount: 0,
+      });
+    });
+  });
+
+  describe('retryFailedPdfs — job ancora PROCESSING ("Ferma e correggi ora")', () => {
+    it('nessun checkpoint → blocked', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.PROCESSING });
+      const result = await service.retryFailedPdfs('j1');
+      expect(result.blocked).toBe(true);
+    });
+
+    it('nessun warning "Estrazione fallita" nel checkpoint → nessuna azione, job non riaccodato', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.PROCESSING, searchPayments: true });
+      fs.mkdirSync(getEnrichmentDir('j1'), { recursive: true });
+      writeCheckpointSync('j1', { lastRow: 5, rows: [{ allegato: 'A.pdf' }], warnings: [], maxRate: 0 });
+
+      const result = await service.retryFailedPdfs('j1');
+
+      expect(result).toEqual({ retried: 0, succeeded: 0, stillFailing: 0 });
+      expect(queue.add).not.toHaveBeenCalled();
+    });
+
+    it('ripatcha il checkpoint, rimuove il job BullMQ esistente (qualunque stato) e riaccoda per riprendere', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.PROCESSING, searchPayments: true });
+      fs.mkdirSync(getEnrichmentDir('j1'), { recursive: true });
+      fs.mkdirSync(getEnrichmentAttachmentsDir('j1'), { recursive: true });
+      fs.writeFileSync(join(getEnrichmentAttachmentsDir('j1'), 'PROVV_1.pdf'), '%PDF-fake');
+      writeCheckpointSync('j1', {
+        lastRow: 5,
+        rows: [{ allegato: 'PROVV_1.pdf', comune: 'TERAMO', provincia: 'TE', codice_fiscale: 'RSSMRA80A01H501U', indirizzo: '' }],
+        warnings: [{ row: 1, pdf: 'PROVV_1.pdf', message: 'Estrazione fallita: fetch failed' }],
+        maxRate: 0,
+      });
+      const removeMock = jest.fn(async () => undefined);
+      queue.getJob.mockResolvedValue({ remove: removeMock });
+      extractor.extract.mockResolvedValue({
+        address: { indirizzo: 'VIA NUOVA', cap: '64100', comune: 'TERAMO', provincia: 'TE', stato_estero: '' },
+        payment: { totale: { numero_avviso: '301000000000000000', numero_avviso_alternativo: '', cf_ente: '', importo: '50,00', scadenza: '31/12/2026' }, rate: [] },
+        fiscalCode: null,
+        warnings: [],
+      });
+
+      const result = await service.retryFailedPdfs('j1');
+
+      expect(removeMock).toHaveBeenCalled();
+      expect(queue.add).toHaveBeenCalledWith('enrich', { jobId: 'j1' }, { jobId: 'j1' });
+      expect(result).toEqual({ retried: 1, succeeded: 1, stillFailing: 0 });
+      expect(repo.update).toHaveBeenCalledWith('j1', { warnings: [], warningCount: 0 });
+    });
+
+    it('estrazione ancora fallita: aggiorna il warning nel checkpoint, riaccoda comunque per riprendere da lastRow', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.PROCESSING, searchPayments: true });
+      fs.mkdirSync(getEnrichmentDir('j1'), { recursive: true });
+      fs.mkdirSync(getEnrichmentAttachmentsDir('j1'), { recursive: true });
+      fs.writeFileSync(join(getEnrichmentAttachmentsDir('j1'), 'PROVV_1.pdf'), '%PDF-fake');
+      writeCheckpointSync('j1', {
+        lastRow: 5,
+        rows: [{ allegato: 'PROVV_1.pdf', comune: 'TERAMO', provincia: 'TE', codice_fiscale: 'RSSMRA80A01H501U' }],
+        warnings: [{ row: 1, pdf: 'PROVV_1.pdf', message: 'Estrazione fallita: fetch failed' }],
+        maxRate: 0,
+      });
+      extractor.extract.mockRejectedValue(new Error('fetch failed'));
+
+      const result = await service.retryFailedPdfs('j1');
+
+      expect(result).toEqual({ retried: 1, succeeded: 0, stillFailing: 1 });
+      expect(queue.add).toHaveBeenCalledWith('enrich', { jobId: 'j1' }, { jobId: 'j1' });
     });
   });
 });
