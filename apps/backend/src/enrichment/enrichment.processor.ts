@@ -6,7 +6,7 @@ import type { Job, Queue } from 'bullmq';
 import * as fs from 'fs';
 import { basename, join } from 'path';
 import AdmZip from 'adm-zip';
-import { matchCountry, isValidCap } from '@comunicapa/shared-types';
+import { matchCountry, isValidCap, abbreviateLongMunicipality } from '@comunicapa/shared-types';
 import { isValidCfOrPiva } from '../channels/tax-id.util.js';
 import {
   EnrichmentJob,
@@ -262,8 +262,16 @@ export class EnrichmentProcessor extends WorkerHost {
         if (!comuneTrimmed) {
           warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: 'Città mancante' });
         } else if (comuneTrimmed.length > 30) {
-          warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: `Città troppo lunga (${comuneTrimmed.length} caratteri, max 30)` });
-          row.comune = comuneTrimmed.slice(0, 30);
+          const abbreviated = abbreviateLongMunicipality(comuneTrimmed);
+          if (abbreviated.length <= 30) {
+            // Uno dei 5 comuni italiani noti oltre soglia (vedi
+            // abbreviateLongMunicipality) — nessun troncamento cieco a metà
+            // parola, nessun warning: la forma abbreviata è già valida.
+            row.comune = abbreviated;
+          } else {
+            warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: `Città troppo lunga (${comuneTrimmed.length} caratteri, max 30)` });
+            row.comune = comuneTrimmed.slice(0, 30);
+          }
         }
         if (!isForeignRow && !(row.provincia || '').trim()) {
           warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: 'Provincia mancante' });

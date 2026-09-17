@@ -1,4 +1,4 @@
-import { COUNTRIES, matchCountry, isValidCap } from './index';
+import { COUNTRIES, matchCountry, isValidCap, abbreviateLongMunicipality } from './index';
 
 describe('COUNTRIES', () => {
   it('include Italia e una selezione di paesi esteri comuni', () => {
@@ -72,5 +72,42 @@ describe('isValidCap', () => {
 
   it('ignora spazi superflui', () => {
     expect(isValidCap('  65015  ')).toBe(true);
+  });
+});
+
+describe('abbreviateLongMunicipality', () => {
+  it('ritorna invariato un nome già entro 30 caratteri', () => {
+    expect(abbreviateLongMunicipality('MONTESILVANO')).toBe('MONTESILVANO');
+  });
+
+  it('abbrevia i 5 comuni italiani noti oltre 30 caratteri', () => {
+    expect(abbreviateLongMunicipality('SAN VALENTINO IN ABRUZZO CITERIORE')).toBe('SAN VALENTINO IN ABRUZZO');
+    expect(abbreviateLongMunicipality('PRIMIERO SAN MARTINO DI CASTROZZA')).toBe('PRIMIERO SAN MARTINO CASTROZZA');
+    expect(abbreviateLongMunicipality('CASTROCARO TERME E TERRA DEL SOLE')).toBe('CASTROCARO TERME E TERRA SOLE');
+    expect(abbreviateLongMunicipality("SANT'ANDREA APOSTOLO DELLO IONIO")).toBe("SANT'ANDREA APOSTOLO IONIO");
+    expect(abbreviateLongMunicipality('VILLA SANTA LUCIA DEGLI ABRUZZI')).toBe('VILLA SANTA LUCIA ABRUZZI');
+  });
+
+  it('ogni forma abbreviata sta entro 30 caratteri', () => {
+    const abbreviated = [
+      abbreviateLongMunicipality('SAN VALENTINO IN ABRUZZO CITERIORE'),
+      abbreviateLongMunicipality('PRIMIERO SAN MARTINO DI CASTROZZA'),
+      abbreviateLongMunicipality('CASTROCARO TERME E TERRA DEL SOLE'),
+      abbreviateLongMunicipality("SANT'ANDREA APOSTOLO DELLO IONIO"),
+      abbreviateLongMunicipality('VILLA SANTA LUCIA DEGLI ABRUZZI'),
+    ];
+    for (const name of abbreviated) {
+      expect(name.length).toBeLessThanOrEqual(30);
+    }
+  });
+
+  it('è case/accento/apostrofo-insensitive nel riconoscere il comune', () => {
+    expect(abbreviateLongMunicipality('san valentino in abruzzo citeriore')).toBe('SAN VALENTINO IN ABRUZZO');
+    expect(abbreviateLongMunicipality('SANT’ANDREA APOSTOLO DELLO IONIO')).toBe("SANT'ANDREA APOSTOLO IONIO");
+  });
+
+  it('un nome oltre 30 caratteri ma non mappato torna invariato (nessun troncamento inventato)', () => {
+    const longUnknown = 'COMUNE INESISTENTE MOLTO LUNGO DAVVERO';
+    expect(abbreviateLongMunicipality(longUnknown)).toBe(longUnknown);
   });
 });

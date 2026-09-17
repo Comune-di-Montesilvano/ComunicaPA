@@ -317,6 +317,37 @@ describe('EnrichmentProcessor', () => {
     expect(finalUpdate.missingPaymentCount).toBe(1);
   });
 
+  it('comune > 30 caratteri tra i 5 noti (GlobalCom rifiuta): abbreviato in automatico, nessun warning', async () => {
+    client.extract.mockResolvedValueOnce({
+      address: { indirizzo: 'VIA ROMA 1', cap: '65015', comune: 'SAN VALENTINO IN ABRUZZO CITERIORE', provincia: 'PE', stato_estero: '' },
+      payment: { totale: { numero_avviso: '1', numero_avviso_alternativo: '', cf_ente: '000', importo: '10,00', scadenza: '01/01/2027' }, rate: [] },
+      warnings: [],
+    });
+
+    await processor.process(fakeJob);
+
+    const csv = fs.readFileSync(getEnrichmentResultCsv('j1'), 'utf-8');
+    expect(csv).toContain('"SAN VALENTINO IN ABRUZZO"');
+    expect(csv).not.toContain('Città troppo lunga');
+  });
+
+  it('comune > 30 caratteri NON tra i 5 noti: warning + troncamento cieco a 30 come prima (nessuna abbreviazione inventata)', async () => {
+    const longUnknown = 'COMUNE INESISTENTE MOLTO LUNGO DAVVERO';
+    client.extract.mockResolvedValueOnce({
+      address: { indirizzo: 'VIA ROMA 1', cap: '65015', comune: longUnknown, provincia: 'PE', stato_estero: '' },
+      payment: { totale: { numero_avviso: '1', numero_avviso_alternativo: '', cf_ente: '000', importo: '10,00', scadenza: '01/01/2027' }, rate: [] },
+      warnings: [],
+    });
+
+    await processor.process(fakeJob);
+
+    const csv = fs.readFileSync(getEnrichmentResultCsv('j1'), 'utf-8');
+    expect(csv).toContain(`"${longUnknown.slice(0, 30)}"`);
+    const updates = repo.update.mock.calls.map((c: any[]) => c[1]);
+    const finalUpdate = updates.find((u: any) => u.status === 'done');
+    expect(finalUpdate.warnings.some((w: any) => w.message.includes('Città troppo lunga'))).toBe(true);
+  });
+
   it('external_id: usa "ocr notifica" quando presente nel tracciato pag_indice', async () => {
     fs.rmSync(getEnrichmentDir('j1'), { recursive: true, force: true });
     setupJobDirPagIndiceConOcr('j1');

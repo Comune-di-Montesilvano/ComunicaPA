@@ -138,3 +138,53 @@ export function matchCountry(raw: string): string | null {
 export function isValidCap(value: string): boolean {
   return /^\d{5}$/.test(value.trim());
 }
+
+/**
+ * Solo 5 comuni italiani esistenti superano 30 caratteri (limite lato
+ * server GlobalCom per il campo Città/Comune — verificato dal vivo
+ * scaricando il WSDL reale: nessun maxLength nello schema, il vincolo non è
+ * documentato da nessuna parte, scoperto solo dall'errore applicativo).
+ * NESSUNA fonte ufficiale di abbreviazione trovata (Poste Italiane non ne
+ * pubblica una) — forme scelte qui droppando solo articoli/preposizioni
+ * (mai un troncamento a metà parola), NON verificate contro un elenco
+ * ufficiale GlobalCom/Poste: se il provider rifiuta comunque una di queste
+ * forme, l'operatore corregge a mano (percorso "Correggi dati" già
+ * esistente in Arricchimento Tracciati, o modifica manuale del CSV).
+ */
+const LONG_MUNICIPALITY_ABBREVIATIONS: Record<string, string> = {
+  'SAN VALENTINO IN ABRUZZO CITERIORE': 'SAN VALENTINO IN ABRUZZO',
+  'PRIMIERO SAN MARTINO DI CASTROZZA': 'PRIMIERO SAN MARTINO CASTROZZA',
+  'CASTROCARO TERME E TERRA DEL SOLE': 'CASTROCARO TERME E TERRA SOLE',
+  "SANT'ANDREA APOSTOLO DELLO IONIO": "SANT'ANDREA APOSTOLO IONIO",
+  'VILLA SANTA LUCIA DEGLI ABRUZZI': 'VILLA SANTA LUCIA ABRUZZI',
+};
+
+function normalizeMunicipalityKey(value: string): string {
+  return value
+    .trim()
+    .toUpperCase()
+    .replace(/['’]/g, '') // apostrofo dritto o tipografico, stesso principio di normalizeCountryName
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '') // rimuove diacritici
+    .replace(/\s+/g, ' ');
+}
+
+// Object.keys() invece di Object.entries(): il lib target di questo
+// pacchetto (tsconfig.base.json) non include ES2017, Object.entries non è
+// disponibile (bug reale, preso in CI: TS2550).
+const LONG_MUNICIPALITY_INDEX: Map<string, string> = new Map(
+  Object.keys(LONG_MUNICIPALITY_ABBREVIATIONS).map((k) => [normalizeMunicipalityKey(k), LONG_MUNICIPALITY_ABBREVIATIONS[k]]),
+);
+
+/**
+ * Se `name` supera 30 caratteri ed è uno dei 5 comuni noti, ritorna la
+ * forma abbreviata (≤ 30 caratteri). Altrimenti ritorna `name` invariato —
+ * il chiamante mantiene il proprio warning/blocco esistente per qualunque
+ * altro caso oltre soglia (nome comune non ancora mappato, o non un vero
+ * comune italiano).
+ */
+export function abbreviateLongMunicipality(name: string): string {
+  const trimmed = name.trim();
+  if (trimmed.length <= 30) return trimmed;
+  return LONG_MUNICIPALITY_INDEX.get(normalizeMunicipalityKey(trimmed)) ?? trimmed;
+}
