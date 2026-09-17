@@ -42,11 +42,17 @@ export class ConvertCampaignProcessor extends WorkerHost {
       let secondaryCampaignId: string | null = null;
 
       if (splitMissingPayment) {
-        // Stessa regola di enrichment.processor.ts (missingPaymentCount): un
-        // PagoPa non esiste mai "a metà" — numero_avviso/importo/scadenza sono
-        // sempre valorizzate insieme o mai.
-        const withPayment = rows.filter((r) => r.numero_avviso || r.importo || r.scadenza);
-        const withoutPayment = rows.filter((r) => !r.numero_avviso && !r.importo && !r.scadenza);
+        // Stessa regola di enrichment.processor.ts (missingPaymentCount):
+        // dati obbligatori sono numero_avviso e importo (scadenza non
+        // vincolante) — numero_avviso da solo può essere un fallback dal CSV
+        // Maggioli anche senza PagoPa reale nel PDF (baseRow(), mai un
+        // fallback per importo). Basta quindi uno dei due vuoto per
+        // considerare la riga "senza PagoPa" — un AND su tutte e tre le
+        // colonne darebbe falsi negativi su righe con solo il numero_avviso
+        // residuo dal tracciato.
+        const missing = (r: EnrichedRow) => !r.numero_avviso || !r.importo;
+        const withPayment = rows.filter((r) => !missing(r));
+        const withoutPayment = rows.filter(missing);
 
         if (withPayment.length > 0 && withoutPayment.length > 0) {
           campaignId = await this.createDraftCampaign(`${name} — PagoPa`, channelType, createdBy, headers, withPayment, attachmentsDir);

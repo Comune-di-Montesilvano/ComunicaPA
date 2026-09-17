@@ -324,9 +324,13 @@ export class EnrichmentService {
     // dell'introduzione di missingPaymentCount resta a 0 (default migration)
     // per sempre altrimenti — "Rigenera CSV" è l'unica azione che un job
     // già DONE può ripetere, quindi è anche l'occasione per recuperare il
-    // dato senza dover rilanciare l'intera estrazione.
+    // dato senza dover rilanciare l'intera estrazione. Dati obbligatori:
+    // numero_avviso e importo (scadenza non vincolante) — uno dei due vuoto
+    // basta, mai un AND su tutte e tre (numero_avviso può restare un
+    // fallback CSV anche senza PagoPa reale, vedi stessa nota in
+    // enrichment.processor.ts).
     const missingPaymentCount = job.searchPayments
-      ? patched.filter((r) => !r.numero_avviso && !r.importo && !r.scadenza).length
+      ? patched.filter((r) => !r.numero_avviso || !r.importo).length
       : 0;
     await this.jobRepo.update(jobId, { missingPaymentCount });
     return {};

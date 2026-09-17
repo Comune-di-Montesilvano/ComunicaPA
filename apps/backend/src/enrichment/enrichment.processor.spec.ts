@@ -297,6 +297,26 @@ describe('EnrichmentProcessor', () => {
     expect(lines[1]).toContain('"RAV999"');
   });
 
+  it('missingPaymentCount: numero_avviso da fallback CSV ma nessun PagoPa reale nel PDF (importo vuoto) conta come "senza PagoPa"', async () => {
+    // Bug reale: baseRow() valorizza sempre numero_avviso dal CSV Maggioli
+    // (pag_indice), anche quando il PDF non ha alcun PagoPa reale — un AND
+    // su tutte e tre le colonne (numero_avviso/importo/scadenza) dava falso
+    // negativo qui, la riga non veniva mai contata come "senza PagoPa".
+    try { fs.rmSync(getEnrichmentDir('j1'), { recursive: true, force: true }); } catch {}
+    setupJobDirPagIndice('j1');
+    client.extract.mockResolvedValue({
+      address: { indirizzo: 'VIA PDF ESTRATTA 99', cap: '99999', comune: 'ALTROVE', provincia: 'XX', stato_estero: '' },
+      payment: null,
+      warnings: ['Dati PagoPA non trovati nel PDF'],
+    });
+
+    await processor.process(fakeJob);
+
+    const updates = repo.update.mock.calls.map((c: any[]) => c[1]);
+    const finalUpdate = updates.find((u: any) => u.status === 'done');
+    expect(finalUpdate.missingPaymentCount).toBe(1);
+  });
+
   it('external_id: usa "ocr notifica" quando presente nel tracciato pag_indice', async () => {
     fs.rmSync(getEnrichmentDir('j1'), { recursive: true, force: true });
     setupJobDirPagIndiceConOcr('j1');
