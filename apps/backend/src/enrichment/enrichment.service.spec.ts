@@ -487,6 +487,35 @@ describe('EnrichmentService', () => {
       expect(repo.update).toHaveBeenCalledWith('j1', { warnings: [], warningCount: 0 });
     });
 
+    it('job BullMQ ancora active (remove() lancia "locked by another worker") → non esplode, prosegue comunque', async () => {
+      // Bug reale in prod: existing.remove() non gestito ha dato 500 al primo
+      // click reale — il job era ancora active (worker realmente in corso),
+      // BullMQ (nessuna opzione force in questa versione) lancia sempre in
+      // quel caso, mai un no-op silenzioso.
+      repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.PROCESSING, searchPayments: true });
+      fs.mkdirSync(getEnrichmentDir('j1'), { recursive: true });
+      fs.mkdirSync(getEnrichmentAttachmentsDir('j1'), { recursive: true });
+      fs.writeFileSync(join(getEnrichmentAttachmentsDir('j1'), 'PROVV_1.pdf'), '%PDF-fake');
+      writeCheckpointSync('j1', {
+        lastRow: 5,
+        rows: [{ allegato: 'PROVV_1.pdf', comune: 'TERAMO', provincia: 'TE', codice_fiscale: 'RSSMRA80A01H501U', indirizzo: '' }],
+        warnings: [{ row: 1, pdf: 'PROVV_1.pdf', message: 'Estrazione fallita: fetch failed' }],
+        maxRate: 0,
+      });
+      queue.getJob.mockResolvedValue({
+        remove: jest.fn(async () => { throw new Error('Job j1 could not be removed because it is locked by another worker'); }),
+      });
+      extractor.extract.mockResolvedValue({
+        address: { indirizzo: 'VIA NUOVA', cap: '64100', comune: 'TERAMO', provincia: 'TE', stato_estero: '' },
+        payment: { totale: { numero_avviso: '301000000000000000', numero_avviso_alternativo: '', cf_ente: '', importo: '50,00', scadenza: '31/12/2026' }, rate: [] },
+        fiscalCode: null,
+        warnings: [],
+      });
+
+      await expect(service.retryFailedPdfs('j1')).resolves.toEqual({ retried: 1, succeeded: 1, stillFailing: 0 });
+      expect(queue.add).toHaveBeenCalledWith('enrich', { jobId: 'j1' }, { jobId: 'j1' });
+    });
+
     it('estrazione ancora fallita: aggiorna il warning nel checkpoint, riaccoda comunque per riprendere da lastRow', async () => {
       repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.PROCESSING, searchPayments: true });
       fs.mkdirSync(getEnrichmentDir('j1'), { recursive: true });
