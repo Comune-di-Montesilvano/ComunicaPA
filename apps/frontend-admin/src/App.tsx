@@ -2699,6 +2699,26 @@ export function App(): React.JSX.Element {
       if (isRunningStatus || (hasAsyncDeliveryTracking && campaign.status === 'completed')) {
         timer = setInterval(() => {
           fetchCampaignDetail(selectedCampaignId);
+          // Bug reale (confronto fatto tra i fetch di handleCampaignClick e
+          // questo polling): il commento sopra promette l'aggiornamento di
+          // "pannelli di breakdown/statistiche", ma quasi NESSUNO di questi
+          // pannelli era mai stato aggiunto qui — tutti restavano fermi allo
+          // snapshot iniziale finché l'operatore non usciva e rientrava nel
+          // dettaglio campagna. Stesso gate isRunningStatus/hasAsyncDeliveryTracking
+          // di sopra: proprio i pannelli SEND/POSTAL (stage counts, send/postal
+          // status breakdown) sono quelli con più bisogno di restare live dopo
+          // il completamento, esattamente il caso che questo gate copre.
+          fetchChannelBreakdown(selectedCampaignId);
+          fetchFailureGroups(selectedCampaignId);
+          fetchEffectiveChannelBreakdown(selectedCampaignId);
+          fetchCampaignSendStageCounts(selectedCampaignId);
+          fetchSendStatusBreakdown(selectedCampaignId);
+          fetchPostalStatusBreakdown(selectedCampaignId);
+          fetchPostalDeliveryStatusBreakdown(selectedCampaignId);
+          fetchCampaignCost(selectedCampaignId);
+          fetchCampaignCostSavings(selectedCampaignId);
+          fetchCampaignPaymentTotal(selectedCampaignId);
+          fetchDownloadCombinationStats(selectedCampaignId);
         }, 5000);
       }
     }
@@ -8659,6 +8679,13 @@ export function App(): React.JSX.Element {
     setRecipientsStatusFilter('');
     setRecipientsDeliveryStatusFilter('');
     setRecipientsPostalDeliveryStatusFilter('');
+    // Bug reale segnalato dal vivo: questi due restavano impostati passando
+    // da una campagna all'altra (es. "Tipo invio" con un tag specifico
+    // della campagna precedente) — la nuova campagna mostrava "Nessun
+    // destinatario associato" perché il filtro non trovava mai match,
+    // scambiato per una perdita di dati reale.
+    setRecipientsTagsFilter([]);
+    setRecipientsDownloadFilter('');
     setRecipientsSortBy('alphabetical');
     setRecipientsSortDir('ASC');
     setRecipientsFilterOptions(null);
@@ -17572,8 +17599,10 @@ export function App(): React.JSX.Element {
                                       className="text-decoration-none fw-semibold"
                                       onClick={(e) => {
                                         e.preventDefault();
-                                        setSelectedCampaignId(log.campaignId);
-                                        setView('campaign-detail');
+                                        // Bug reale: bypassava handleCampaignClick, nessun filtro
+                                        // destinatari resettato — stesso sintomo "0 destinatari"
+                                        // di una campagna precedente con un filtro attivo.
+                                        handleCampaignClick(log.campaignId!);
                                       }}
                                     >
                                       {log.campaignName || 'Visualizza Dettaglio'}
