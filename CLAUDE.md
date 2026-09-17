@@ -544,6 +544,21 @@ sul job esistente. Ogni futuro endpoint che fa unzip/IO pesante va valutato
 con lo stesso criterio, non solo "rischia il timeout proxy?" ma anche
 "blocca l'app intera nel frattempo?".
 
+**Un loop sincrono di chiamate HTTP esterne per riga (non solo unzip/scrittura
+file) scatena lo stesso timeout.** Bug reale: endpoint "Riprova righe
+fallite" su ~1142 righe, una chiamata pdf-extractor ciascuna dentro la
+richiesta — 504 dal reverse proxy esterno. Stesso fix: l'endpoint fa solo
+check economici e accoda un job BullMQ, la logica pesante gira nel processor
+in background (riusa la STESSA coda/stesso processor del job originale se
+serve serializzare — vedi "Arricchimento tracciati" sotto — non serve
+sempre una coda dedicata).
+
+**`bullmq` `Job.remove()` (questa versione, nessuna opzione `force`) lancia
+se il job è `active`/lockato da un worker**, mai un no-op silenzioso — un
+endpoint che rimuove un job per poi riaccodarlo deve avvolgerlo in
+try/catch, altrimenti un click su un job realmente in corso produce un 500
+non gestito (bug reale, visto dal vivo).
+
 **worker_thread/BullMQ spostano SOLO il blocco dell'event loop, mai un
 picco di memoria.** Bug reale: offload del merge multi-ZIP (adm-zip) su
 worker_thread — l'event loop restava libero, ma adm-zip tiene comunque in
@@ -1790,6 +1805,16 @@ Motori e non partecipa a pausa/riprendi condivisi. Riusa comunque lo stesso
 pattern verificato altrove: stato terminale (`DONE`/`FAILED`) scritto
 PRIMA di uscire dal job, mai un job che finisce silenziosamente in stato
 intermedio.
+
+**"Retry righe fallite"/"resume" — quando SERVE serializzare con il job
+originale, riusa la STESSA `ENRICHMENT_QUEUE`, mai una coda dedicata.**
+Contro-esempio a "crea bozza campagna" (coda separata apposta per NON
+aspettare un job pesante indipendente): qui la concurrency=1 della coda è
+la garanzia voluta, non un limite — un job "retry" che patcha il checkpoint
+deve aspettare che l'eventuale job 'enrich' originale finisca/venga
+riconosciuto stalled da BullMQ prima di partire, altrimenti due writer
+concorrenti sullo stesso checkpoint. Job name diverso ma jobId con prefisso
+diverso dall'originale (mai lo stesso, dedup BullMQ per l'intera coda).
 
 **Merge multi-ZIP — mai ricostruire un ZIP fisico coi PDF, solo il CSV.**
 `adm-zip` è tutto in-RAM: `entry.getData()` decomprime, `addFile()`
