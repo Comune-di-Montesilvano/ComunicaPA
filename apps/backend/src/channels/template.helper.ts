@@ -42,6 +42,28 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
+/**
+ * Colonne che finiscono per "importo" (`importo`, `rataN_importo`, la
+ * colonna diretta pagoPA) arrivano dal CSV/PDF come stringa italiana SENZA
+ * separatore delle migliaia (es. "1386,00" — così le estrae pdf_extractor,
+ * il QR/testo del PagoPA non lo include) — bug reale segnalato dal vivo:
+ * nel template compare grezzo, mai riformattato. Stesso principio del
+ * gotcha CLAUDE.md su `useGrouping: true`/`formatEuroCents()`, applicato
+ * qui in fase di sostituzione placeholder. Match solo sul SUFFISSO della
+ * chiave (mai un `includes`): una colonna come "Pagamento: importo
+ * notifica" non deve essere toccata, resta testo libero dell'operatore.
+ * Fail-safe: un valore non numerico (vuoto, testo) torna invariato.
+ */
+function formatAmountIfImportoColumn(key: string, raw: string): string {
+  if (!/importo$/i.test(key.trim())) return raw;
+  const trimmed = raw.trim();
+  if (!trimmed) return raw;
+  const normalized = trimmed.replace(/\./g, '').replace(',', '.');
+  const n = Number(normalized);
+  if (!Number.isFinite(n)) return raw;
+  return n.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: true });
+}
+
 export function processTemplate(
   bodyTemplate: string,
   recipient: Recipient,
@@ -123,7 +145,7 @@ export function processTemplate(
     if (recipient.extraData) {
       for (const [exKey, exVal] of Object.entries(recipient.extraData)) {
         if (exKey.toLowerCase() === k) {
-          return escapeHtml(String(exVal ?? ''));
+          return escapeHtml(formatAmountIfImportoColumn(exKey, String(exVal ?? '')));
         }
       }
     }
@@ -164,7 +186,7 @@ export function processTemplate(
     if (recipient.extraData) {
       for (const [exKey, exVal] of Object.entries(recipient.extraData)) {
         if (exKey.toLowerCase() === k) {
-          return escapeHtml(String(exVal ?? ''));
+          return escapeHtml(formatAmountIfImportoColumn(exKey, String(exVal ?? '')));
         }
       }
     }
