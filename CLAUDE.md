@@ -195,6 +195,15 @@ un id fisso: lasciarlo autogenerato e leggere sempre `ORDER BY
 `database.module.ts` — mancare `entities:` fa fallire silenziosamente
 l'injection del Repository per quella entity, nessun errore a compile-time.
 
+## Redis — AOF obbligatorio (`--appendonly yes`), mai solo RDB di default per una coda BullMQ in produzione
+
+`redis:7-alpine` di default fa solo snapshot RDB periodici (finestra
+minima "60s/10000 scritture") — un container recreate (Portainer
+"Recreate" sullo stack) tra due snapshot perde i job BullMQ accodati.
+Incidente reale ripetuto due volte in una sessione (coda PEC svuotata,
+poi un job di arricchimento). Fix: `command: redis-server --appendonly
+yes` sul servizio in `docker-compose.yml` — persiste ogni scrittura.
+
 ## Topologia API — gotcha
 
 Le route operatore sono segmentate sotto `admin/*` (`admin/campaigns`, `admin/settings`, `admin/auth`, `admin/notifications-search`...), quelle cittadino sotto `citizen/*` (`citizen/auth`, `citizen/notifications`...). Restano bare solo `public/download/*` e le route di root (`/version`, `/branding`). In produzione il nginx di ogni frontend proxya `/api/` verso `backend:8080` **strippando il prefisso** (same-origin, niente CORS, backend mai esposto dal proxy esterno). In dev il browser chiama direttamente `http://localhost:8080`. `API_BASE` arriva a runtime da `/config.js` (dev: `public/config.js`; prod: generato dall'entrypoint nginx da `API_BASE`, default `/api`); il frontend admin usa `ADMIN_API_BASE = \`${API_BASE}/admin\`` per tutte le chiamate autenticate operatore.
@@ -365,6 +374,18 @@ questo pacchetto o ai Dockerfile che lo buildano, verificare SEMPRE
 buildando l'immagine di produzione reale in locale** (`docker build -f
 apps/<app>/Dockerfile .`, non solo `Dockerfile.dev`) — il dev bind-mount ha
 già mascherato due bug di produzione consecutivi in questa storia.
+
+## `packages/shared-types` — ts-jest usa una lib vecchia (~ES2016), niente Object.entries/altri builtin ES2017+
+
+Il pacchetto non ha un `tsconfig.json` bare (solo `tsconfig.cjs.json`/
+`tsconfig.esm.json`) — ts-jest senza `jest.config` esplicito non eredita
+`tsconfig.base.json` (target ES2022), usa un default più basso. Bug reale
+preso in CI: `Object.entries()` in `index.ts` compilava pulito ovunque
+tranne che nel test run (`TS2550`). Verificato isolando la compilazione
+con `--lib es2016`: `Object.keys()` + accesso per chiave, stesso
+risultato, compila pulito. Prima di usare un builtin ES2017+ (Object.entries/
+values, Array.flatMap, ecc.) in questo pacchetto, verificare con lo stesso
+isolamento o preferire l'equivalente ES2016.
 
 ## Backend NestJS v12 (ESM) — migrazione completata
 
@@ -1594,6 +1615,18 @@ risultato della strategy. Un design doc ha assunto una volta che questo
 andasse nella strategy stessa — sbagliato, verificato solo leggendo il
 codice reale, non lo spec di progettazione.
 
+## `NotificationAttempt.responsePayload` — chiavi generiche (`messageId`/`id`) sono per canale, mai per "il messaggio App IO"
+
+`pec.strategy.ts`/`email.strategy.ts` scrivono `messageId: info.messageId`
+(Message-ID SMTP, mai pensato per essere mostrato) nello STESSO
+`responsePayload` che porta anche `appIo: {messageId: ...}` quando c'è
+co-consegna. Un fallback generico che legge `responsePayload.messageId`/
+`.id` senza scoparlo a `channelType==='APP_IO'` mostra l'SMTP Message-ID
+sotto l'etichetta "ID Messaggio App IO" — bug reale, confermato dal vivo
+con query dirette sul DB (un solo attempt, nessuna riga fantasma).
+Qualunque nuovo canale che scrive `responsePayload.messageId`/`.id` per
+tracking proprio deve essere consapevole che quella chiave è condivisa.
+
 ## Stato business null vs attempt fallito pre-provider — gotcha
 
 Per i canali con stato business esterno (`sendStatus`/`postalStatus`, SEND
@@ -1894,6 +1927,18 @@ statistiche/destinatari (fetchati una sola volta al click) — un nuovo
 pannello nel dettaglio campagna va aggiunto anche al polling esistente, non
 solo al caricamento iniziale.
 
+**Il commento sopra era più aspirazionale che vero.** Il `useEffect` di
+polling 5s ha un commento che promette l'aggiornamento di "pannelli di
+breakdown/statistiche", ma chiamava solo `fetchCampaignDetail` — quasi
+NESSUNO degli altri fetch fatti da `handleCampaignClick` all'ingresso
+(channelBreakdown, failureGroups, effectiveChannelBreakdown, sendStageCounts,
+send/postal status breakdown, cost, paymentTotal, downloadCombinations) era
+mai stato aggiunto al poll — tutti fermi allo snapshot iniziale finché
+l'operatore non usciva e rientrava. Quando aggiungi/tocchi un pannello di
+dettaglio campagna, diffa esplicitamente la lista dei fetch in
+`handleCampaignClick` contro quelli nel/nei `useEffect` di polling — non
+fidarti di un commento che dice già "lo fa".
+
 Stessa istanza trovata anche fuori dal dettaglio campagna: il modale
 "Dettaglio Notifica" (`openNotificationDetail`, apribile dalla ricerca
 notifiche globale) fetchava una volta sola all'apertura — lo stato di un
@@ -1931,6 +1976,20 @@ compromesso, preferibile a un click che non aggiorna nulla. Debounce 300ms
 mantenuto SOLO sul campo di ricerca testuale libera, mai su
 pagina/filtri/ordinamento (0ms, l'operatore si aspetta risposta immediata
 al click).
+
+**Dettaglio campagna — navigazione SOLO via `handleCampaignClick`, mai
+`setSelectedCampaignId`/`setView` inline.** Un secondo punto di ingresso al
+dettaglio campagna (link "Visualizza Dettaglio" nell'Audit Log) chiamava
+`setSelectedCampaignId`+`setView` direttamente, bypassando
+`handleCampaignClick` — nessun filtro destinatari resettato. Bug reale
+gemello: `handleCampaignClick` stesso non resettava
+`recipientsTagsFilter`/`recipientsDownloadFilter` — un filtro "Tipo invio"
+rimasto attivo dalla campagna precedente faceva mostrare "Nessun
+destinatario associato" sulla campagna nuova, letto (erroneamente) come
+dato perso. Ogni nuovo stato `recipients*Filter` va aggiunto al reset di
+`handleCampaignClick`; ogni nuovo punto che apre il dettaglio campagna deve
+chiamare `handleCampaignClick`, mai reimplementare un sottoinsieme della
+navigazione a mano.
 
 ## External API (`external-api/`) — due gotcha reali, non presi dalla suite unit
 
