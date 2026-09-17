@@ -319,6 +319,16 @@ export class EnrichmentService {
     const tmpPath = `${csvPath}.tmp`;
     fs.writeFileSync(tmpPath, buildEnrichedCsv(headers, patched), 'utf-8');
     fs.renameSync(tmpPath, csvPath);
+
+    // Ricalcolo qui, non solo a fine processEnrich: un job DONE prima
+    // dell'introduzione di missingPaymentCount resta a 0 (default migration)
+    // per sempre altrimenti — "Rigenera CSV" è l'unica azione che un job
+    // già DONE può ripetere, quindi è anche l'occasione per recuperare il
+    // dato senza dover rilanciare l'intera estrazione.
+    const missingPaymentCount = job.searchPayments
+      ? patched.filter((r) => !r.numero_avviso && !r.importo && !r.scadenza).length
+      : 0;
+    await this.jobRepo.update(jobId, { missingPaymentCount });
     return {};
   }
 
