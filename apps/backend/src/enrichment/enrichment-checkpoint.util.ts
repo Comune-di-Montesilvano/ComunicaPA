@@ -8,6 +8,16 @@ export interface EnrichmentCheckpoint {
   rows: EnrichedRow[];
   warnings: EnrichmentWarning[];
   maxRate: number;
+  /**
+   * Numeri di riga (1-based) con "Estrazione fallita" da rielaborare DOPO
+   * che il passaggio principale (da lastRow in poi) è arrivato in fondo —
+   * l'ordine delle righe nel CSV finale non conta, quindi non serve
+   * riavvolgere lastRow e rifare tutte le righe buone nel mezzo per
+   * riprovare solo quelle fallite. Popolato da
+   * EnrichmentService.retryFailedPdfs, consumato e svuotato via via da
+   * EnrichmentProcessor.processEnrich.
+   */
+  retryRows?: number[];
 }
 
 /**
