@@ -3898,15 +3898,10 @@ export function App(): React.JSX.Element {
       const res = await apiFetch(`/enrichment/jobs/${jobId}/retry-failed-pdfs`, { method: 'POST' });
       const body = await res.json();
       if (body.blocked) { alert(body.message); return; }
-      if (body.queued === false) { alert('Nessuna riga con "Estrazione fallita" da riprovare.'); return; }
-      // Avviato in background (mai sincrono nella richiesta: su centinaia di
-      // righe superava il timeout del proxy esterno, 504 reale in prod) —
-      // ascolta lo stream esistente per il refresh automatico a completamento
-      // (stesso evento "done"/"error" già gestito per il job principale).
-      alert('Retry avviato in background: i warning si aggiorneranno automaticamente a completamento.');
-      streamEnrichJobLog(jobId);
+      await fetchEnrichJobs();
+      alert(`Checkpoint riportato a riga ${body.rewoundToRow}: il job riprenderà da lì rielaborando anche le righe fallite.`);
     } catch {
-      alert('Errore durante l\'avvio del retry delle righe fallite');
+      alert('Errore durante il retry delle righe fallite');
     }
   };
 
@@ -15241,8 +15236,8 @@ export function App(): React.JSX.Element {
                           onClick={() => handleEnrichRetryFailedPdfs(job.id)}
                           title={
                             job.status === 'processing'
-                              ? "Ferma e correggi ora: riprova subito le righe con 'Estrazione fallita' senza aspettare la fine del job (può perdere il progresso non ancora salvato a checkpoint se il job è ancora attivo)"
-                              : "Ri-richiama pdf-extractor per le righe con 'Estrazione fallita' (fallimento transitorio, es. servizio riavviato a metà job) — non per 'PDF non trovato nel ZIP'"
+                              ? "Riporta il checkpoint a prima della prima riga con 'Estrazione fallita': il job le rielabora da capo al prossimo giro (rielabora anche le righe buone nel mezzo)"
+                              : "Job già completato: nessun modo automatico di rielaborare solo le righe fallite — correggi a mano via 'Correggi dati' o rilancia l'intero job"
                           }
                         >
                           Riprova righe fallite

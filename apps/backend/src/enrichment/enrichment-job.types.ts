@@ -24,21 +24,6 @@ export interface ConvertCampaignQueueJobData {
   splitMissingPayment?: boolean;
 }
 
-/**
- * Stessa coda/stesso EnrichmentQueueJobData di 'enrich' (solo jobId) — mai
- * su una coda separata: la concurrency=1 di ENRICHMENT_QUEUE è qui una
- * garanzia voluta, non un limite da aggirare. Se il job 'enrich' originale
- * è ancora davvero active, questo job aspetta semplicemente il suo turno
- * (nessun secondo writer concorrente sul checkpoint); se il worker è morto
- * (redeploy), lo stalled-job recovery di BullMQ libera lo slot entro
- * ~stalledInterval prima che questo parta. Introdotto perché il retry
- * sincrono dentro l'handler HTTP (1142 righe, una chiamata pdf-extractor
- * ciascuna) superava il timeout del reverse proxy esterno (504) — stesso
- * principio "lavoro pesante mai dentro la richiesta HTTP" già in vigore per
- * "crea bozza campagna".
- */
-export const RETRY_FAILED_PDFS_JOB_NAME = 'retry-failed-pdfs';
-
 export const MERGE_BATCH_JOB_NAME = 'merge-batch';
 
 export interface MergeBatchQueueJobData {
