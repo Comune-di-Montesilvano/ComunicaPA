@@ -767,6 +767,24 @@ UI per sempre, nonostante il lavoro reale ancora in corso. Fix: se
 `QUEUED` (`completedAt: null`) — `checkAndComplete()` la richiuderà da sola
 quando anche l'ultimo retry sarà terminale.
 
+## Metodo bulk privato chiamato con un sottoinsieme — ogni mutazione va scoped, mai alla campagna intera
+
+`CampaignsService.createAttemptsAndEnqueue()` chiudeva con un update di stato
+`{ campaignId, status: PENDING } → QUEUED` **non scoped** ai `recipients`
+passati al metodo — innocuo quando il chiamante passa sempre "tutti i PENDING
+della campagna" (`launch()`/`finalizeInadCheck()`), ma un nuovo chiamante con
+un array di un solo destinatario (`resolvePecReview()`, vedi sotto) flippava
+a QUEUED anche altri PENDING indipendenti della stessa campagna **senza mai
+creargli un attempt/job reale** — incidente vero: 3199 destinatari PEC
+"fantasma" (QUEUED, zero job in coda, zero log, campagna bloccata a metà per
+ore, nessuna traccia diagnosticabile finché non si è contato manualmente via
+SQL). Fix: `{ id: In(recipients.map(r => r.id)), status: PENDING }`. Ogni
+futuro metodo bulk-oriented richiamabile con un sottoinsieme va verificato
+per lo stesso rischio — mai un WHERE che si allarga oltre gli id passati.
+Riparazione di righe già corrotte da prima del deploy della fix:
+`apps/backend/src/debug/repair-ghost-queued-recipients.cjs` (dry-run di
+default, `--apply` per scrivere).
+
 ## BullMQ — `queue.add()` con jobId esistente è no-op silenzioso, mai un errore
 
 Riaggiungere un job con lo stesso `opts.jobId` di uno già presente in Redis
@@ -794,6 +812,16 @@ silenzioso anche se il job name è diverso — bug reale, l'`enrich` non
 partiva mai dopo un `merge-batch` completato con lo stesso jobId. Se due
 fasi diverse dello stesso record applicativo usano job BullMQ separati,
 dare loro jobId distinti (es. prefisso `merge-${id}`), non lo stesso id.
+
+## BullMQ `queue.getJobs(['completed'|'failed'], ...)` — ordine non garantito "più recenti prima"
+
+Nessun campo data mostrato in UI + ordine non ordinato ha causato una diagnosi
+reale sbagliata durante un incidente live (un errore SMTP di una campagna di
+3 mesi prima scambiato per l'errore della campagna corrente, perché in cima
+alla lista). `NotificationQueuesService.getJobsDetail()` ora ordina
+esplicitamente per `finishedOn ?? timestamp` DESC — qualunque nuovo punto
+che legge `getJobs()` su questi due stati deve fare lo stesso, mai assumere
+che il primo risultato sia il più recente.
 
 ## Cron/coda con batch fisso — round-robin obbligatorio, mai ORDER BY statico
 
@@ -1352,6 +1380,22 @@ corrette. `apps/backend/src/debug/` è escluso da `.dockerignore`
 (nessun `allowJs`) non lo compilerebbe comunque. Qualunque futuro script
 di debug backend va in questa cartella, stesso trattamento.
 
+**Debug live in produzione via console Portainer (niente accesso docker CLI
+da host, solo console-exec sul container) — niente heredoc, one-liner con
+quote non annidate.** `node <<'EOF' ... EOF` spesso non funziona in quella
+console (non è un vero terminale interattivo, l'input multi-riga si perde
+silenziosamente — sintomo "non vedo nulla", nessun errore). Usare un
+one-liner `node -e '...'` con apici ESTERNI singoli e stringhe JS SOLO in
+doppi apici (mai annidare lo stesso tipo di apice — rotto 2 volte dal vivo
+prima di arrivare alla forma corretta, es. un backtick SQL con `'queued'`
+dentro chiudeva prematuramente l'apice esterno). Verificare il comando
+scrivendolo su file e rileggendolo prima di darlo all'operatore, mai
+fidarsi dell'escaping a mente. `pg`/`bullmq`/`ioredis` sono dipendenze
+dirette di `apps/backend/package.json` — `require()` diretto funziona
+anche nel container prod (niente bisogno del percorso
+`.pnpm/node_modules/` che serve invece per una dipendenza transitiva come
+`jsonwebtoken`, vedi sopra "Token operatore admin").
+
 **`StatoConsegna` vuoto è a volte un dato mancante lato GlobalCom stesso,
 non un bug nostro.** Verificato dal vivo con lo script di debug sopra su 3
 IDPRO reali (`RaccomandataMarket4`, sia esteri che italiani, spediti 5+
@@ -1606,6 +1650,31 @@ estendendo il check al percorso async per Registro Imprese (job BullMQ per PIVA)
 confrontare contro `originalAddress` — avrebbe cambiato silenziosamente il comportamento esistente. Diff riga per
 riga contro l'originale quando si porta business logic su un path parallelo, non riscrivere "equivalente".
 
+**Eccezione al comportamento sopra — campagna PEC su PIVA (Registro
+Imprese): `diverted` NON auto-applica più `recipient.pec`.** Solo per
+`campaign.channelType === 'PEC'` + PIVA + `diverted:true`, il destinatario
+va in `RecipientStatus.PENDING_REVIEW` (PEC trovata salvata in
+`inadCheck.foundAddress`, mai scritta su `recipient.pec`) invece
+dell'auto-apply — INAD su persona fisica e lo switch di canale
+EMAIL/POSTAL/APP_IO→PEC restano auto-applicati come sempre. Motivo: una
+PEC "tributi@..." espressamente dedicata su file non va persa in favore
+di quella generica del Registro Imprese senza che l'operatore se ne
+accorga. Pannello "PEC difformi da verificare" in dettaglio campagna,
+risoluzione via `resolvePecReview()` (due scelte: mantieni su file / usa
+trovata, entrambe sbloccano l'invio per quel solo destinatario — il resto
+della campagna procede regolarmente, mai un blocco sull'intera campagna).
+
+## Setting globale che condiziona una campagna — inferire "è girato?" dai dati, mai assumere 0 = mai eseguito
+
+`inad.checkEnabled` è un `AppSettingsService` globale, non salvato su
+`channelConfig` — a posteriori un `inadDiverted: 0` è ambiguo ("mai
+controllato" vs "controllato, nessun dirottamento", ambiguità reale
+segnalata dall'operatore in UI). `getChannelBreakdown()` deriva
+`inadCheckRan` da "almeno un destinatario ha `inadCheck` popolato" —
+stesso principio per qualunque altro setting globale non persistito
+per-campagna: inferire l'esecuzione dal side-effect sui dati, mai dal
+solo conteggio a zero.
+
 ## Matrice comportamenti campagne per canale — fonte di verità
 
 Riferimento completo, verificato contro il codice (non contro il manuale):
@@ -1729,6 +1798,17 @@ QR scansionato manualmente ≠ colonna CSV), il CSV resta solo fallback per
 righe senza dati pagamento estratti dal PDF. L'indirizzo fa l'opposto (CSV
 vince, PDF solo se `csvAddress` assente) — non generalizzare una priorità
 all'altra, sono decisioni indipendenti per campo.
+
+**"Senza PagoPa" — condizione OR su numero_avviso/importo, mai AND, mai
+scadenza.** Conseguenza diretta del fallback sopra: `numero_avviso` può
+restare valorizzato dal CSV Maggioli anche quando il PDF non ha PagoPa
+reale, mentre `importo` non ha mai un fallback CSV. Il criterio "riga senza
+PagoPa" dev'essere `!numero_avviso || !importo` (OR, dati obbligatori sono
+questi due, `scadenza` esclusa perché non vincolante) — un AND su tutte e
+tre le colonne (bug reale corretto 2 volte nella stessa sessione, in 3
+punti diversi: `missingPaymentCount`, split bozza in due campagne,
+ricalcolo in "Rigenera CSV") dà falsi negativi su ogni riga con solo il
+`numero_avviso` residuo dal tracciato.
 
 **Formato riga `rubrica.csv` (tracciato Maggioli) per costruire ZIP di test:**
 `id;pec@pec.it;;NOME;COGNOME;CODICE_FISCALE;;NOMINATIVO;numeroProvvedimento;
