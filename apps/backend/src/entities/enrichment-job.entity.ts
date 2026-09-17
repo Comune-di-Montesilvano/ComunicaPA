@@ -81,6 +81,14 @@ export class EnrichmentJob {
   @Column({ name: 'campaign_id', type: 'uuid', nullable: true })
   campaignId!: string | null;
 
+  /** Seconda bozza campagna creata quando "Crea bozza campagna" separa i destinatari senza dati PagoPa (splitMissingPayment). */
+  @Column({ name: 'secondary_campaign_id', type: 'uuid', nullable: true })
+  secondaryCampaignId!: string | null;
+
+  /** Righe con numero_avviso/importo/scadenza tutte vuote (nessun PagoPa trovato) — calcolato una volta a fine job, usato per proporre lo split in "Crea bozza campagna". */
+  @Column({ name: 'missing_payment_count', type: 'int', default: 0 })
+  missingPaymentCount!: number;
+
   @Column({ name: 'campaign_conversion_status', type: 'enum', enum: CampaignConversionStatus, nullable: true })
   campaignConversionStatus!: CampaignConversionStatus | null;
 

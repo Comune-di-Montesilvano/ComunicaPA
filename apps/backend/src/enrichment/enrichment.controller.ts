@@ -261,14 +261,18 @@ export class EnrichmentController {
   @HttpCode(HttpStatus.OK)
   createCampaign(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: { name?: string; channelType?: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL' },
+    @Body() body: { name?: string; channelType?: 'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL'; splitMissingPayment?: boolean },
     @Req() req: Request & { user: JwtOperatorPayload },
   ) {
     const name = body.name?.trim();
     if (!name || !body.channelType) {
       return { blocked: true, message: 'Nome campagna e canale richiesti' };
     }
-    return this.svc.requestCampaignConversion(id, { name, channelType: body.channelType }, req.user.username);
+    return this.svc.requestCampaignConversion(
+      id,
+      { name, channelType: body.channelType, splitMissingPayment: body.splitMissingPayment === true },
+      req.user.username,
+    );
   }
 
   @Get('jobs/:id/overrides')

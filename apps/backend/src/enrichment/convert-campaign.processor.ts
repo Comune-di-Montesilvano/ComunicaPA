@@ -10,6 +10,7 @@ import { CONVERT_CAMPAIGN_QUEUE, ConvertCampaignQueueJobData } from './enrichmen
 import { getEnrichmentAttachmentsDir, getEnrichmentDir, getEnrichmentResultCsv } from './enrichment-paths.js';
 import { CampaignsService } from '../campaigns/campaigns.service.js';
 import { getUploadsDir } from '../attachments/attachment-paths.js';
+import { buildEnrichedCsv, parseEnrichedCsv, type EnrichedRow } from './enriched-csv.util.js';
 
 /**
  * Coda dedicata (vedi CONVERT_CAMPAIGN_QUEUE in enrichment-job.types.ts) —
@@ -31,37 +32,37 @@ export class ConvertCampaignProcessor extends WorkerHost {
   }
 
   async process(job: Job<ConvertCampaignQueueJobData>): Promise<void> {
-    const { jobId, name, channelType, createdBy } = job.data;
+    const { jobId, name, channelType, createdBy, splitMissingPayment } = job.data;
     try {
       await this.jobRepo.update(jobId, { campaignConversionStatus: CampaignConversionStatus.PROCESSING });
 
-      const campaign = await this.campaignsService.create(
-        {
-          name,
-          channelType,
-          channelConfig: { wizCsvFilename: 'arricchito.csv', wizCsvHasHeaders: true, wizStep: 1 },
-        },
-        createdBy,
-      );
-
-      const uploadsDir = getUploadsDir(campaign.id);
-      fs.mkdirSync(uploadsDir, { recursive: true });
-      fs.copyFileSync(getEnrichmentResultCsv(jobId), join(uploadsDir, 'draft_recipients.csv'));
-
-      // PDF già scompattati su disco da processEnrich (allegati/ piatta) —
-      // nessun re-parsing di source.zip qui (già cancellato a fine
-      // arricchimento riuscita, vedi processEnrich): un PDF assente da questa
-      // cartella significa semplicemente che l'estrazione lo aveva già
-      // segnalato come illeggibile in un warning, niente di nuovo da gestire.
       const attachmentsDir = getEnrichmentAttachmentsDir(jobId);
-      if (fs.existsSync(attachmentsDir)) {
-        for (const filename of fs.readdirSync(attachmentsDir)) {
-          fs.copyFileSync(join(attachmentsDir, filename), join(uploadsDir, filename));
+      const { headers, rows } = parseEnrichedCsv(fs.readFileSync(getEnrichmentResultCsv(jobId), 'utf-8'));
+      let campaignId: string;
+      let secondaryCampaignId: string | null = null;
+
+      if (splitMissingPayment) {
+        // Stessa regola di enrichment.processor.ts (missingPaymentCount): un
+        // PagoPa non esiste mai "a metà" — numero_avviso/importo/scadenza sono
+        // sempre valorizzate insieme o mai.
+        const withPayment = rows.filter((r) => r.numero_avviso || r.importo || r.scadenza);
+        const withoutPayment = rows.filter((r) => !r.numero_avviso && !r.importo && !r.scadenza);
+
+        if (withPayment.length > 0 && withoutPayment.length > 0) {
+          campaignId = await this.createDraftCampaign(`${name} — PagoPa`, channelType, createdBy, headers, withPayment, attachmentsDir);
+          secondaryCampaignId = await this.createDraftCampaign(`${name} — Senza PagoPa`, channelType, createdBy, headers, withoutPayment, attachmentsDir);
+        } else {
+          // Una delle due partizioni è vuota (tutti o nessuno hanno PagoPa):
+          // niente da separare, stesso comportamento di sempre.
+          campaignId = await this.createDraftCampaign(name, channelType, createdBy, headers, rows, attachmentsDir);
         }
+      } else {
+        campaignId = await this.createDraftCampaign(name, channelType, createdBy, headers, rows, attachmentsDir);
       }
 
       await this.jobRepo.update(jobId, {
-        campaignId: campaign.id,
+        campaignId,
+        secondaryCampaignId,
         campaignConversionStatus: CampaignConversionStatus.DONE,
       });
       fs.rmSync(getEnrichmentDir(jobId), { recursive: true, force: true });
@@ -72,5 +73,44 @@ export class ConvertCampaignProcessor extends WorkerHost {
         campaignConversionError: err.message,
       });
     }
+  }
+
+  /**
+   * Scrive un CSV con la sola partizione di righe passata (l'intero set nel
+   * percorso senza split) e copia solo gli allegati referenziati da quelle
+   * righe (colonna `allegato`) — mai l'intera cartella: nel percorso split
+   * eviterebbe di duplicare su disco i PDF dell'altra partizione.
+   */
+  private async createDraftCampaign(
+    name: string,
+    channelType: ConvertCampaignQueueJobData['channelType'],
+    createdBy: string,
+    headers: string[],
+    rows: EnrichedRow[],
+    attachmentsDir: string,
+  ): Promise<string> {
+    const campaign = await this.campaignsService.create(
+      {
+        name,
+        channelType,
+        channelConfig: { wizCsvFilename: 'arricchito.csv', wizCsvHasHeaders: true, wizStep: 1 },
+      },
+      createdBy,
+    );
+
+    const uploadsDir = getUploadsDir(campaign.id);
+    fs.mkdirSync(uploadsDir, { recursive: true });
+    fs.writeFileSync(join(uploadsDir, 'draft_recipients.csv'), buildEnrichedCsv(headers, rows), 'utf-8');
+
+    const wantedFilenames = new Set(rows.map((r) => r.allegato).filter((f): f is string => !!f));
+    if (fs.existsSync(attachmentsDir)) {
+      for (const filename of fs.readdirSync(attachmentsDir)) {
+        if (wantedFilenames.has(filename)) {
+          fs.copyFileSync(join(attachmentsDir, filename), join(uploadsDir, filename));
+        }
+      }
+    }
+
+    return campaign.id;
   }
 }

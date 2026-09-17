@@ -1614,6 +1614,12 @@ export function App(): React.JSX.Element {
     warnings: Array<{ row: number; pdf: string; message: string }>;
     errorMessage: string | null;
     campaignId: string | null;
+    // Seconda bozza campagna creata quando "Crea bozza campagna" separa i
+    // destinatari senza dati PagoPa (splitMissingPayment).
+    secondaryCampaignId: string | null;
+    // Righe con numero_avviso/importo/scadenza tutte vuote — usato per
+    // proporre lo split in "Crea bozza campagna".
+    missingPaymentCount: number;
     // Conversione in campagna asincrona (coda BullMQ, mai dentro la richiesta
     // HTTP: unzip + scrittura di migliaia di PDF bloccherebbe l'event loop
     // Node abbastanza a lungo da far scattare il timeout del proxy esterno).
@@ -1631,6 +1637,7 @@ export function App(): React.JSX.Element {
   const [enrichCreateCampaignJobId, setEnrichCreateCampaignJobId] = useState<string | null>(null);
   const [enrichCampaignName, setEnrichCampaignName] = useState('');
   const [enrichCampaignChannel, setEnrichCampaignChannel] = useState<'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL'>('PEC');
+  const [enrichSplitMissingPayment, setEnrichSplitMissingPayment] = useState(true);
   const [enrichCampaignSubmitting, setEnrichCampaignSubmitting] = useState(false);
   const [enrichCampaignError, setEnrichCampaignError] = useState<string | null>(null);
   // Job la cui conversione in campagna è stata accodata: la UI aspetta che
@@ -3780,6 +3787,7 @@ export function App(): React.JSX.Element {
     setEnrichCreateCampaignJobId(job.id);
     setEnrichCampaignName(job.sourceFilename.replace(/\.zip$/i, ''));
     setEnrichCampaignChannel('PEC');
+    setEnrichSplitMissingPayment(true);
     setEnrichCampaignError(null);
   };
 
@@ -3796,7 +3804,11 @@ export function App(): React.JSX.Element {
       const res = await apiFetch(`/enrichment/jobs/${enrichCreateCampaignJobId}/create-campaign`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: enrichCampaignName.trim(), channelType: enrichCampaignChannel }),
+        body: JSON.stringify({
+          name: enrichCampaignName.trim(),
+          channelType: enrichCampaignChannel,
+          splitMissingPayment: enrichSplitMissingPayment,
+        }),
       });
       const body = await res.json();
       if (body.blocked) {
@@ -14934,7 +14946,33 @@ export function App(): React.JSX.Element {
                         {job.status === 'failed' && `Fallito: ${job.errorMessage}`}
                       </span>
                       {job.searchPayments === false && <span className="badge bg-secondary-subtle text-secondary border">Senza PagoPA</span>}
-                      {job.campaignId && <span className="badge bg-success-subtle text-success-emphasis border">Campagna creata</span>}
+                      {job.campaignId && !job.secondaryCampaignId && (
+                        <span
+                          className="badge bg-success-subtle text-success-emphasis border"
+                          role="button"
+                          onClick={() => handleCampaignClick(job.campaignId!)}
+                        >
+                          Campagna creata
+                        </span>
+                      )}
+                      {job.campaignId && job.secondaryCampaignId && (
+                        <>
+                          <span
+                            className="badge bg-success-subtle text-success-emphasis border"
+                            role="button"
+                            onClick={() => handleCampaignClick(job.campaignId!)}
+                          >
+                            Bozza PagoPa creata
+                          </span>
+                          <span
+                            className="badge bg-success-subtle text-success-emphasis border"
+                            role="button"
+                            onClick={() => handleCampaignClick(job.secondaryCampaignId!)}
+                          >
+                            Bozza Senza PagoPa creata
+                          </span>
+                        </>
+                      )}
                     </div>
                     <div className="d-flex gap-2 mt-2 flex-wrap">
                       {job.status === 'done' && !job.campaignId && (
@@ -15172,6 +15210,23 @@ export function App(): React.JSX.Element {
                               ))}
                           </select>
                         </div>
+                        {job.missingPaymentCount > 0 && (
+                          <div className="alert alert-warning small mb-2">
+                            <strong>{job.missingPaymentCount}</strong> destinatari senza dati PagoPa (probabile saldo zero) — probabilmente serve un testo diverso per loro.
+                            <div className="form-check mt-1">
+                              <input
+                                type="checkbox"
+                                className="form-check-input"
+                                id={`enrichSplitPaymentCheck-${job.id}`}
+                                checked={enrichSplitMissingPayment}
+                                onChange={(e) => setEnrichSplitMissingPayment(e.target.checked)}
+                              />
+                              <label className="form-check-label" htmlFor={`enrichSplitPaymentCheck-${job.id}`}>
+                                Separa in una bozza dedicata (potrai scrivere un template diverso per loro)
+                              </label>
+                            </div>
+                          </div>
+                        )}
                         {enrichCampaignError && <div className="alert alert-danger small">{enrichCampaignError}</div>}
                         <div className="d-flex gap-2">
                           <button
