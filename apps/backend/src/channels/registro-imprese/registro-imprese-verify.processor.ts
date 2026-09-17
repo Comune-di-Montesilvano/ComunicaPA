@@ -109,7 +109,12 @@ export class RegistroImpreseVerifyProcessor extends WorkerHost {
     // Stessa base di confronto del loop sincrono runInadExtractLoop:
     // SEMPRE recipient.pec grezzo, mai originalAddress (che per canali
     // diversi da PEC è recipient.email, un campo audit-only).
-    const diverted = found && pec !== recipientPec;
+    // found=true per PIVA significa solo "impresa trovata", MAI "ha una
+    // PEC" — result.pec può essere null anche a impresa trovata. Senza
+    // !!pec, un'impresa trovata-senza-PEC forzava comunque il canale a PEC
+    // (pec=null !== recipientPec) — bug reale gemello di quello in
+    // campaigns.service.ts runInadExtractLoop, stesso identico pattern.
+    const diverted = found && !!pec && pec !== recipientPec;
     // Campagna PEC su PIVA (Registro Imprese) con diverted: mai auto-applicare
     // la PEC trovata (a differenza di INAD/switch-canale) — invio bloccato in
     // PENDING_REVIEW finché l'operatore non decide, vedi resolvePecReview e

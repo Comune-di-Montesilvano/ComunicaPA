@@ -886,7 +886,15 @@ export class CampaignsService {
             found = result.found && (result.data?.digitalAddress?.length ?? 0) > 0;
             digitalAddress = found ? result.data!.digitalAddress[0].digitalAddress : null;
           }
-          const diverted = found && digitalAddress !== recipient.pec;
+          // Per PIVA (Registro Imprese) found=true significa solo "impresa
+          // trovata", MAI "ha una PEC" — result.pec può essere null anche a
+          // impresa trovata (es. ditta individuale, PEC non censita). Senza
+          // !!digitalAddress, un'impresa trovata-senza-PEC forzava comunque
+          // il canale a PEC (digitalAddress=null !== recipient.pec) — invio
+          // fallito "Recipient non ha indirizzo PEC" (bug reale, campagna
+          // EMAIL). Per INAD (persona fisica) found già implica un indirizzo
+          // non vuoto, questa guardia è ridondante ma innocua.
+          const diverted = found && !!digitalAddress && digitalAddress !== recipient.pec;
           const needsReview = blockPecReview && diverted && isPiva && campaign.channelType === 'PEC';
           await this.recipientRepo.update(
             { id: recipient.id },

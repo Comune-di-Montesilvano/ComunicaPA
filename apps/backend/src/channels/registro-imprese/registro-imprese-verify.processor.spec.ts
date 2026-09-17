@@ -129,6 +129,16 @@ describe('RegistroImpreseVerifyProcessor.process — VERIFY_PIVA_CAMPAIGN_JOB_NA
     );
   });
 
+  it('impresa trovata ma SENZA PEC censita → diverted:false, mai forzato a PEC (bug reale: found=true non implica PEC presente)', async () => {
+    mockRegistroImprese.dettaglioImpresa.mockResolvedValue({ found: true, raw: '<xml/>', pec: undefined });
+
+    await processor.process({ name: VERIFY_PIVA_CAMPAIGN_JOB_NAME, data: jobData } as any);
+
+    const [, update] = mockRecipientRepo.update.mock.calls[0];
+    expect(update.inadCheck).toEqual(expect.objectContaining({ found: true, diverted: false }));
+    expect(update).not.toHaveProperty('pec');
+  });
+
   it('campagna PEC (originalChannel="PEC") con PEC diversa: PENDING_REVIEW, mai sovrascrive recipient.pec', async () => {
     mockRegistroImprese.dettaglioImpresa.mockResolvedValue({ found: true, raw: '<xml/>', pec: 'tributi@bancaesempio.it' });
     const jobDataPec = { ...jobData, originalChannel: 'PEC', recipientPec: 'originale@pec.it' };
