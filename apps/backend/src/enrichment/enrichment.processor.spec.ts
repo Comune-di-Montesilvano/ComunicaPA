@@ -449,6 +449,58 @@ describe('EnrichmentProcessor', () => {
     expect(csv).toContain('GIA PROCESSATA');
   });
 
+  it('retryRows nel checkpoint: rielabora SOLO quelle righe dopo il passaggio principale, senza toccare le altre già buone', async () => {
+    const { writeCheckpointSync } = await import('./enrichment-checkpoint.util.js');
+    writeCheckpointSync('j1', {
+      lastRow: 2, // passaggio principale già completato per entrambe le righe
+      rows: [
+        { codice_fiscale: 'RSSMRA80A01H501U', allegato: 'PROVV_1.pdf', indirizzo: 'VECCHIO INDIRIZZO FALLITO' },
+        { codice_fiscale: 'VRDLGU70A01H501X', allegato: 'PROVV_MANCANTE.pdf', indirizzo: '' },
+      ],
+      warnings: [
+        { row: 1, pdf: 'PROVV_1.pdf', message: 'Estrazione fallita: fetch failed' },
+        { row: 2, pdf: 'PROVV_MANCANTE.pdf', message: 'PDF non trovato nel ZIP' },
+      ],
+      maxRate: 0,
+      retryRows: [1],
+    });
+
+    await processor.process(fakeJob);
+
+    // Riga 1 rielaborata: extract richiamato una volta (nessun errore stavolta, mock di default riuscito).
+    expect(client.extract).toHaveBeenCalledTimes(1);
+    const csv = fs.readFileSync(getEnrichmentResultCsv('j1'), 'utf-8');
+    expect(csv).toContain('VIA ROMA 1'); // indirizzo dal mock extract di successo
+    expect(csv).not.toContain('VECCHIO INDIRIZZO FALLITO');
+    const finalUpdate = repo.update.mock.calls.find(([, data]: any) => data.status === EnrichmentJobStatus.DONE)![1];
+    // Warning riga 1 sostituito (non più "Estrazione fallita"), riga 2 invariato.
+    expect(finalUpdate.warnings.some((w: any) => w.row === 1 && w.message.startsWith('Estrazione fallita'))).toBe(false);
+    expect(finalUpdate.warnings).toContainEqual({ row: 2, pdf: 'PROVV_MANCANTE.pdf', message: 'PDF non trovato nel ZIP' });
+  });
+
+  it('retryRows: allegato della riga non trovato tra i record attuali → salta con un warning nei log, mai un record sbagliato', async () => {
+    const { writeCheckpointSync } = await import('./enrichment-checkpoint.util.js');
+    writeCheckpointSync('j1', {
+      lastRow: 2,
+      rows: [
+        { codice_fiscale: 'RSSMRA80A01H501U', allegato: 'FILE_INESISTENTE.pdf', indirizzo: 'INVARIATO' },
+        { codice_fiscale: 'VRDLGU70A01H501X', allegato: 'PROVV_MANCANTE.pdf', indirizzo: '' },
+      ],
+      warnings: [{ row: 1, pdf: 'FILE_INESISTENTE.pdf', message: 'Estrazione fallita: fetch failed' }],
+      maxRate: 0,
+      retryRows: [1],
+    });
+
+    await processor.process(fakeJob);
+
+    // Nessun record in `records` (PROVV_1.pdf/PROVV_MANCANTE.pdf) combacia con
+    // "FILE_INESISTENTE.pdf" salvato in checkpoint.rows[0].allegato — mai
+    // scambiato per un altro record per posizione, la riga resta invariata.
+    expect(client.extract).not.toHaveBeenCalled();
+    const csv = fs.readFileSync(getEnrichmentResultCsv('j1'), 'utf-8');
+    expect(csv).toContain('INVARIATO');
+  });
+
   it('checkpoint corrotto: trattato come assente, elabora da riga 0', async () => {
     fs.writeFileSync(getEnrichmentCheckpoint('j1'), '{not valid json');
     await processor.process(fakeJob);

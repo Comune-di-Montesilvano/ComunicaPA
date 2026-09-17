@@ -151,112 +151,12 @@ export class EnrichmentProcessor extends WorkerHost {
       let maxRate = checkpoint?.maxRate ?? 0;
 
       for (let i = startIndex; i < records.length; i++) {
-        const rec = records[i];
         const rowNum = i + 1;
-        const row = this.baseRow(rec);
-        let rateCount = 0;
-        let result: Awaited<ReturnType<PdfExtractorClient['extract']>> | undefined;
-
-        const entry = rec.pdfFilename ? zips.map((z) => z.getEntry(`allegati/${rec.pdfFilename}`)).find(Boolean) ?? null : null;
-        if (!entry) {
-          warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: 'PDF non trovato nel ZIP' });
-          await job.log(`Riga ${rowNum}: PDF "${rec.pdfFilename}" non trovato nel ZIP`);
-          this.events.emitLog(jobId, {
-            row: rowNum,
-            pdf: rec.pdfFilename,
-            detail: rowNum === 1 ? 'full' : 'summary',
-            payload: { errore: 'PDF non trovato nel ZIP' },
-          });
-        } else {
-          try {
-            // Buffer letto una sola volta: scritto su disco (allegati/ piatta,
-            // niente più re-parsing di source.zip a valle per download ZIP e
-            // creazione bozza campagna) PRIMA di passarlo all'estrattore, così
-            // il file resta disponibile anche se l'estrazione fallisce (stesso
-            // comportamento di quando il PDF viveva solo dentro lo ZIP).
-            const pdfBuffer = entry.getData();
-            // basename(): rec.pdfFilename viene dalla colonna del CSV
-            // caricato dall'operatore, dato comunque non fidato per
-            // costruire un path — previene un valore tipo "../../altra/x.pdf".
-            fs.writeFileSync(join(attachmentsDir, basename(rec.pdfFilename)), pdfBuffer);
-            result = await this.extractWithRetry(
-              pdfBuffer,
-              rec.pdfFilename,
-              record.searchPayments ?? true,
-              rowNum,
-              job,
-            );
-            for (const w of result.warnings) {
-              warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: w });
-            }
-            if (!rec.csvAddress && result.address) {
-              row.indirizzo = result.address.indirizzo;
-              row.cap = result.address.cap;
-              row.comune = result.address.comune;
-              row.provincia = result.address.provincia;
-              row.stato_estero = result.address.stato_estero;
-            }
-            if (result.payment?.totale) {
-              // QR/testo del PDF vince sempre sul CSV: il tracciato Maggioli può
-              // avere un numero avviso disallineato dal vero IUV stampato/embeddato
-              // nella notifica (visto dal vivo — CSV riportava un valore che non
-              // corrispondeva al QR scansionato realmente sul foglio). Il CSV
-              // resta solo un fallback per righe dove l'estrazione non ha trovato
-              // alcun dato pagamento.
-              row.numero_avviso = result.payment.totale.numero_avviso || rec.csvNumeroAvviso;
-              row.numero_avviso_alternativo = result.payment.totale.numero_avviso_alternativo || rec.csvNumeroAvvisoAlt;
-              row.importo = result.payment.totale.importo;
-              row.scadenza = result.payment.totale.scadenza;
-            }
-            if (result.payment?.rate?.length) {
-              rateCount = result.payment.rate.length;
-              maxRate = Math.max(maxRate, rateCount);
-              result.payment.rate.forEach((rata: ExtractedPaymentDetail, idx: number) => {
-                const n = idx + 1;
-                row[`rata${n}_numero_avviso`] = rata.numero_avviso;
-                row[`rata${n}_importo`] = rata.importo;
-                row[`rata${n}_scadenza`] = rata.scadenza;
-              });
-            }
-
-            if (rowNum === 1 || result.warnings.length > 0) {
-              this.events.emitLog(jobId, {
-                row: rowNum,
-                pdf: rec.pdfFilename,
-                detail: rowNum === 1 ? 'full' : 'summary',
-                payload: rowNum === 1
-                  ? {
-                      indirizzo: result.address,
-                      pagamentoTotale: result.payment?.totale ?? null,
-                      rate: result.payment?.rate ?? [],
-                      warnings: result.warnings,
-                    }
-                  : {
-                      warnings: result.warnings,
-                    },
-              });
-            }
-          } catch (err: any) {
-            warnings.push({ row: rowNum, pdf: rec.pdfFilename, message: `Estrazione fallita: ${err.message}` });
-            await job.log(`Riga ${rowNum}: estrazione fallita — ${err.message}`);
-            this.events.emitLog(jobId, {
-              row: rowNum,
-              pdf: rec.pdfFilename,
-              detail: rowNum === 1 ? 'full' : 'summary',
-              payload: { errore: `Estrazione fallita: ${err.message}` },
-            });
-          }
-        }
-
-        // Stesse 3 regole del wizard campagne (Paese/Città/CAP, vedi
-        // docs/superpowers/specs/2026-07-29-arricchimento-validazione-design.md)
-        // applicate qui: mai bloccanti, solo warning informativi come
-        // "PDF non trovato"/"Estrazione fallita" — l'operatore corregge via
-        // EnrichmentAddressOverrideService quando vuole. Applicate
-        // incondizionatamente: row esiste sempre (baseRow), anche quando il
-        // PDF è mancante o l'estrazione è fallita.
-        warnings.push(...validateRowContentWarnings(row, rowNum, rec.pdfFilename, result?.fiscalCode ?? null));
-
+        const { row, warnings: rowWarnings, rateCount } = await this.extractRowData(
+          records[i], rowNum, zips, attachmentsDir, jobId, job, record.searchPayments ?? true,
+        );
+        warnings.push(...rowWarnings);
+        maxRate = Math.max(maxRate, rateCount);
         rows.push(row);
 
         if (rowNum % PROGRESS_UPDATE_EVERY === 0) {
@@ -270,9 +170,66 @@ export class EnrichmentProcessor extends WorkerHost {
         if (rowNum % CHECKPOINT_EVERY === 0) {
           const overrides = await this.overrideService.findByJob(jobId);
           const patchedRows = this.overrideService.applyOverrides(rows, overrides);
-          writeCheckpointSync(jobId, { lastRow: rowNum, rows: patchedRows, warnings: [...warnings], maxRate });
+          // retryRows riletto FRESCO da disco (mai la copia statica presa
+          // all'avvio del job) — un retry richiesto dall'operatore MENTRE il
+          // job è già in esecuzione (EnrichmentService.retryFailedPdfs scrive
+          // solo questo campo, mai lastRow/rows/warnings) va raccolto qui al
+          // prossimo giro di checkpoint, non perso sovrascrivendolo con un
+          // valore vecchio.
+          writeCheckpointSync(jobId, { lastRow: rowNum, rows: patchedRows, warnings: [...warnings], maxRate, retryRows: readCheckpointSync(jobId)?.retryRows });
           await this.jobRepo.update(jobId, { checkpointRow: rowNum });
         }
+      }
+
+      // Righe con "Estrazione fallita" da un retry richiesto dall'operatore
+      // (vedi EnrichmentService.retryFailedPdfs) — rielaborate QUI, dopo il
+      // passaggio principale, non riavvolgendo lastRow: l'ordine delle righe
+      // nel CSV finale non conta, riprocessare solo queste evita di rifare
+      // anche tutte le righe buone nel mezzo. Stessa identica logica di
+      // estrazione del passaggio principale (extractRowData), zero
+      // duplicazione — a differenza della versione precedente di questo
+      // meccanismo (v1.7.23-v1.7.26), che reimplementava tutto a mano.
+      //
+      // Rilettura FRESCA da disco ad ogni riga (mai uno snapshot preso una
+      // volta sola): un retry richiesto DURANTE questo stesso passaggio
+      // (l'operatore può cliccare di nuovo mentre il job sta già smaltendo
+      // la coda precedente) viene raccolto naturalmente al giro successivo,
+      // il loop termina solo quando la coda risulta davvero vuota.
+      //
+      // rowNum→pdfFilename→record, MAI records[rowNum-1] alla cieca: rowNum
+      // è solo la posizione nell'array `rows` del CSV (per sapere QUALE riga
+      // sostituire), il nome file PDF già salvato in checkpoint.rows è la
+      // fonte di verità su QUALE destinatario/record corrisponde davvero a
+      // quella riga. Se per qualunque motivo la posizione risultasse
+      // disallineata (fonti riordinate, dato corrotto), l'indice per nome
+      // file lo scopre subito invece di rielaborare in silenzio il record
+      // sbagliato.
+      const recordsByPdf = new Map(records.map((r) => [r.pdfFilename, r] as const));
+      for (;;) {
+        const pendingRetryRows = readCheckpointSync(jobId)?.retryRows ?? [];
+        if (pendingRetryRows.length === 0) break;
+        const rowNum = pendingRetryRows[0];
+        const expectedPdf = rows[rowNum - 1]?.allegato;
+        const rec = expectedPdf ? recordsByPdf.get(expectedPdf) : undefined;
+        if (!rec) {
+          this.logger.warn(`EnrichmentJob ${jobId}: retry riga ${rowNum} saltato — allegato "${expectedPdf}" non trovato tra i record attuali (fonti cambiate?)`);
+        } else {
+          const { row, warnings: rowWarnings, rateCount } = await this.extractRowData(
+            rec, rowNum, zips, attachmentsDir, jobId, job, record.searchPayments ?? true,
+          );
+          for (let k = warnings.length - 1; k >= 0; k--) {
+            if (warnings[k].row === rowNum) warnings.splice(k, 1);
+          }
+          warnings.push(...rowWarnings);
+          rows[rowNum - 1] = row;
+          maxRate = Math.max(maxRate, rateCount);
+        }
+        const remainingRetryRows = pendingRetryRows.filter((r) => r !== rowNum);
+
+        await this.jobRepo.update(jobId, { warningCount: warnings.length, warnings: [...warnings] });
+        const overrides = await this.overrideService.findByJob(jobId);
+        const patchedRows = this.overrideService.applyOverrides(rows, overrides);
+        writeCheckpointSync(jobId, { lastRow: records.length, rows: patchedRows, warnings: [...warnings], maxRate, retryRows: remainingRetryRows });
       }
 
       const overrides = await this.overrideService.findByJob(jobId);
@@ -321,6 +278,123 @@ export class EnrichmentProcessor extends WorkerHost {
       deleteCheckpointSync(jobId);
       this.events.emitTerminal(jobId, { type: 'error', message: err.message });
     }
+  }
+
+  /**
+   * Estrae+valida UNA riga — usata sia dal passaggio principale sequenziale
+   * sia dal passaggio di retry in coda (stessa identica logica, zero
+   * duplicazione). Pura rispetto agli array chiamante: nessuna scrittura su
+   * `rows`/`warnings` condivisi, il chiamante decide come inserire il
+   * risultato (push in sequenza, o sostituzione puntuale su retry).
+   */
+  private async extractRowData(
+    rec: MaggioliRecord,
+    rowNum: number,
+    zips: AdmZip[],
+    attachmentsDir: string,
+    jobId: string,
+    job: Job<EnrichmentQueueJobData>,
+    searchPayments: boolean,
+  ): Promise<{ row: EnrichedRow; warnings: EnrichmentWarning[]; rateCount: number }> {
+    const row = this.baseRow(rec);
+    const rowWarnings: EnrichmentWarning[] = [];
+    let rateCount = 0;
+    let result: Awaited<ReturnType<PdfExtractorClient['extract']>> | undefined;
+
+    const entry = rec.pdfFilename ? zips.map((z) => z.getEntry(`allegati/${rec.pdfFilename}`)).find(Boolean) ?? null : null;
+    if (!entry) {
+      rowWarnings.push({ row: rowNum, pdf: rec.pdfFilename, message: 'PDF non trovato nel ZIP' });
+      await job.log(`Riga ${rowNum}: PDF "${rec.pdfFilename}" non trovato nel ZIP`);
+      this.events.emitLog(jobId, {
+        row: rowNum,
+        pdf: rec.pdfFilename,
+        detail: rowNum === 1 ? 'full' : 'summary',
+        payload: { errore: 'PDF non trovato nel ZIP' },
+      });
+    } else {
+      try {
+        // Buffer letto una sola volta: scritto su disco (allegati/ piatta,
+        // niente più re-parsing di source.zip a valle per download ZIP e
+        // creazione bozza campagna) PRIMA di passarlo all'estrattore, così
+        // il file resta disponibile anche se l'estrazione fallisce (stesso
+        // comportamento di quando il PDF viveva solo dentro lo ZIP).
+        const pdfBuffer = entry.getData();
+        // basename(): rec.pdfFilename viene dalla colonna del CSV
+        // caricato dall'operatore, dato comunque non fidato per
+        // costruire un path — previene un valore tipo "../../altra/x.pdf".
+        fs.writeFileSync(join(attachmentsDir, basename(rec.pdfFilename)), pdfBuffer);
+        result = await this.extractWithRetry(pdfBuffer, rec.pdfFilename, searchPayments, rowNum, job);
+        for (const w of result.warnings) {
+          rowWarnings.push({ row: rowNum, pdf: rec.pdfFilename, message: w });
+        }
+        if (!rec.csvAddress && result.address) {
+          row.indirizzo = result.address.indirizzo;
+          row.cap = result.address.cap;
+          row.comune = result.address.comune;
+          row.provincia = result.address.provincia;
+          row.stato_estero = result.address.stato_estero;
+        }
+        if (result.payment?.totale) {
+          // QR/testo del PDF vince sempre sul CSV: il tracciato Maggioli può
+          // avere un numero avviso disallineato dal vero IUV stampato/embeddato
+          // nella notifica (visto dal vivo — CSV riportava un valore che non
+          // corrispondeva al QR scansionato realmente sul foglio). Il CSV
+          // resta solo un fallback per righe dove l'estrazione non ha trovato
+          // alcun dato pagamento.
+          row.numero_avviso = result.payment.totale.numero_avviso || rec.csvNumeroAvviso;
+          row.numero_avviso_alternativo = result.payment.totale.numero_avviso_alternativo || rec.csvNumeroAvvisoAlt;
+          row.importo = result.payment.totale.importo;
+          row.scadenza = result.payment.totale.scadenza;
+        }
+        if (result.payment?.rate?.length) {
+          rateCount = result.payment.rate.length;
+          result.payment.rate.forEach((rata: ExtractedPaymentDetail, idx: number) => {
+            const n = idx + 1;
+            row[`rata${n}_numero_avviso`] = rata.numero_avviso;
+            row[`rata${n}_importo`] = rata.importo;
+            row[`rata${n}_scadenza`] = rata.scadenza;
+          });
+        }
+
+        if (rowNum === 1 || result.warnings.length > 0) {
+          this.events.emitLog(jobId, {
+            row: rowNum,
+            pdf: rec.pdfFilename,
+            detail: rowNum === 1 ? 'full' : 'summary',
+            payload: rowNum === 1
+              ? {
+                  indirizzo: result.address,
+                  pagamentoTotale: result.payment?.totale ?? null,
+                  rate: result.payment?.rate ?? [],
+                  warnings: result.warnings,
+                }
+              : {
+                  warnings: result.warnings,
+                },
+          });
+        }
+      } catch (err: any) {
+        rowWarnings.push({ row: rowNum, pdf: rec.pdfFilename, message: `Estrazione fallita: ${err.message}` });
+        await job.log(`Riga ${rowNum}: estrazione fallita — ${err.message}`);
+        this.events.emitLog(jobId, {
+          row: rowNum,
+          pdf: rec.pdfFilename,
+          detail: rowNum === 1 ? 'full' : 'summary',
+          payload: { errore: `Estrazione fallita: ${err.message}` },
+        });
+      }
+    }
+
+    // Stesse 3 regole del wizard campagne (Paese/Città/CAP, vedi
+    // docs/superpowers/specs/2026-07-29-arricchimento-validazione-design.md)
+    // applicate qui: mai bloccanti, solo warning informativi come
+    // "PDF non trovato"/"Estrazione fallita" — l'operatore corregge via
+    // EnrichmentAddressOverrideService quando vuole. Applicate
+    // incondizionatamente: row esiste sempre (baseRow), anche quando il
+    // PDF è mancante o l'estrazione è fallita.
+    rowWarnings.push(...validateRowContentWarnings(row, rowNum, rec.pdfFilename, result?.fiscalCode ?? null));
+
+    return { row, warnings: rowWarnings, rateCount };
   }
 
   /** Backoff prima di ogni retry — 3 tentativi aggiuntivi oltre al primo. */

@@ -338,26 +338,33 @@ export class EnrichmentService {
 
   /**
    * "Riprova righe fallite" — SOLO per job ancora PROCESSING. Non ri-estrae
-   * nulla qui: riporta `checkpoint.lastRow` a subito prima della prima riga
-   * con warning "Estrazione fallita", troncando `rows`/`warnings` da lì in
-   * poi, e riaccoda 'enrich'. Il job stesso (già in esecuzione o ripreso)
-   * rielabora quelle righe DA CAPO con la sua identica logica normale
-   * (extractWithRetry con backoff automatico, validateRowContentWarnings) —
-   * zero duplicazione di logica di estrazione qui.
+   * nulla qui: segna i numeri di riga con "Estrazione fallita" nel
+   * checkpoint (`retryRows`) — il job (attivo o da riprendere) rielabora
+   * SOLO quelle righe, DOPO aver finito il passaggio principale. L'ordine
+   * delle righe nel CSV finale non conta, quindi non serve riavvolgere
+   * `lastRow` e rifare anche le righe buone nel mezzo (prima versione,
+   * scartata). Stessa identica logica di estrazione del passaggio
+   * principale (EnrichmentProcessor.extractRowData), zero duplicazione.
    *
-   * Costo esplicito e accettato: rielabora anche le righe buone tra la
-   * prima fallita e l'ultima già processata, non solo quelle fallite — è
-   * il prezzo di "come se non fossero mai state lette", scelta deliberata
-   * per restare semplice invece di un meccanismo di retry mirato riga per
-   * riga (la versione precedente, un mega-metodo che riscriveva a mano
-   * l'intera logica di estrazione/validazione già presente in
-   * enrichment.processor.ts — inutilmente complesso, mai più).
+   * Sicuro ANCHE se il job è realmente `active` in questo momento: qui si
+   * scrive solo `retryRows` (mai `lastRow`/`rows`/`warnings`, quelli restano
+   * di competenza esclusiva del loop in esecuzione) e il loop stesso rilegge
+   * `retryRows` da disco ad ogni checkpoint periodico (ogni 100 righe) invece
+   * di portarsi dietro una copia statica presa all'avvio — un eventuale
+   * "ultimo che scrive vince" tra questa scrittura e quella periodica del
+   * loop si autocorregge al giro di checkpoint successivo (rename atomico,
+   * mai un file corrotto, al massimo un giro di ritardo). Nessun bisogno di
+   * bloccare o di rimuovere/riaccodare il job se è già in esecuzione.
+   *
+   * Se il job NON è attivo (waiting/failed/stallo/assente) lo riaccoda
+   * esplicitamente, altrimenti resterebbe fermo in attesa di un resume che
+   * potrebbe non arrivare da solo in tempi brevi.
    *
    * Per un job già DONE non esiste "il prossimo giro": nessun ricalcolo
    * automatico possibile, l'operatore corregge a mano via "Correggi dati"
    * o rilancia l'intero job da capo.
    */
-  async retryFailedPdfs(jobId: string): Promise<{ blocked?: boolean; message?: string; rewoundToRow?: number }> {
+  async retryFailedPdfs(jobId: string): Promise<{ blocked?: boolean; message?: string; queuedRows?: number }> {
     const job = await this.getJob(jobId);
     if (job.status !== EnrichmentJobStatus.PROCESSING) {
       return {
@@ -375,40 +382,34 @@ export class EnrichmentService {
       .filter((w) => w.message.startsWith('Estrazione fallita:'))
       .map((w) => w.row);
     if (failedRows.length === 0) {
-      return { rewoundToRow: checkpoint.lastRow };
+      return { queuedRows: 0 };
     }
-    const rewindTo = Math.min(...failedRows) - 1;
+    // Merge con eventuali retryRows già pendenti (un retry precedente non
+    // ancora consumato dal job) — dedup, mai perdere righe già in coda.
+    const retryRows = [...new Set([...(checkpoint.retryRows ?? []), ...failedRows])];
+    writeCheckpointSync(jobId, { ...checkpoint, retryRows });
 
     const existing = await this.queue.getJob(jobId);
-    if (existing) {
-      const state = await existing.getState();
-      if (state === 'active') {
-        return {
-          blocked: true,
-          message: 'Il job è ancora attivo: aspetta che si fermi (o che venga rilevato come stallo dopo un riavvio) prima di riprovare, per non rischiare una corsa sullo stesso checkpoint.',
-        };
+    const state = existing ? await existing.getState() : null;
+    if (state !== 'active' && state !== 'waiting' && state !== 'delayed' && state !== 'waiting-children') {
+      // Nessun job vivo/in coda per questo jobId: senza un resume esplicito
+      // resterebbe fermo per sempre (nessun demone lo ripesca da solo se
+      // non è già PROCESSING+stallato — EnrichmentResumeService gira ogni
+      // 5 minuti, non serve aspettarlo se possiamo riaccodare subito).
+      if (existing) {
+        try {
+          await existing.remove();
+        } catch {
+          // Job.remove() lancia se nel frattempo è tornato `active` (nessuna
+          // opzione force in questa versione bullmq) — non bloccante, il
+          // successivo queue.add() con lo stesso jobId resta un no-op sicuro
+          // se il job esiste ancora (dedup BullMQ).
+        }
       }
-      try {
-        await existing.remove();
-      } catch {
-        // Job.remove() lancia se `active` (nessuna opzione force in questa
-        // versione bullmq) — già escluso sopra dal check su getState(), ma
-        // uno stato può cambiare tra le due chiamate: non bloccante, il
-        // successivo queue.add() con lo stesso jobId resta un no-op sicuro
-        // se il job esiste ancora (dedup BullMQ).
-      }
+      await this.queue.add('enrich', { jobId }, { jobId });
     }
 
-    writeCheckpointSync(jobId, {
-      lastRow: rewindTo,
-      rows: checkpoint.rows.slice(0, rewindTo),
-      warnings: checkpoint.warnings.filter((w) => w.row <= rewindTo),
-      maxRate: checkpoint.maxRate,
-    });
-    await this.jobRepo.update(jobId, { checkpointRow: rewindTo });
-    await this.queue.add('enrich', { jobId }, { jobId });
-
-    return { rewoundToRow: rewindTo };
+    return { queuedRows: retryRows.length };
   }
 
   private loadCurrentRows(job: EnrichmentJob): { headers: string[]; rows: EnrichedRow[] } {

@@ -3899,7 +3899,11 @@ export function App(): React.JSX.Element {
       const body = await res.json();
       if (body.blocked) { alert(body.message); return; }
       await fetchEnrichJobs();
-      alert(`Checkpoint riportato a riga ${body.rewoundToRow}: il job riprenderà da lì rielaborando anche le righe fallite.`);
+      alert(
+        body.queuedRows === 0
+          ? 'Nessuna riga con "Estrazione fallita" da riprovare.'
+          : `${body.queuedRows} righe accodate per il retry: verranno rielaborate dal job dopo aver finito il passaggio principale.`,
+      );
     } catch {
       alert('Errore durante il retry delle righe fallite');
     }
@@ -15236,7 +15240,7 @@ export function App(): React.JSX.Element {
                           onClick={() => handleEnrichRetryFailedPdfs(job.id)}
                           title={
                             job.status === 'processing'
-                              ? "Riporta il checkpoint a prima della prima riga con 'Estrazione fallita': il job le rielabora da capo al prossimo giro (rielabora anche le righe buone nel mezzo)"
+                              ? "Accoda le righe con 'Estrazione fallita' per essere rielaborate dal job dopo il passaggio principale — nessuna rilavorazione delle righe buone"
                               : "Job già completato: nessun modo automatico di rielaborare solo le righe fallite — correggi a mano via 'Correggi dati' o rilancia l'intero job"
                           }
                         >
