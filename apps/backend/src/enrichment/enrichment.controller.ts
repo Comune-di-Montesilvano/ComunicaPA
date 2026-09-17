@@ -317,4 +317,11 @@ export class EnrichmentController {
   regenerateCsv(@Param('id', ParseUUIDPipe) id: string) {
     return this.svc.regenerateCsv(id);
   }
+
+  @Post('jobs/:id/retry-failed-pdfs')
+  @Roles('user', 'admin')
+  @HttpCode(HttpStatus.OK)
+  retryFailedPdfs(@Param('id', ParseUUIDPipe) id: string) {
+    return this.svc.retryFailedPdfs(id);
+  }
 }

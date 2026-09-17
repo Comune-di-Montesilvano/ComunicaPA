@@ -3892,6 +3892,23 @@ export function App(): React.JSX.Element {
     }
   };
 
+  const handleEnrichRetryFailedPdfs = async (jobId: string) => {
+    if (!token) return;
+    try {
+      const res = await apiFetch(`/enrichment/jobs/${jobId}/retry-failed-pdfs`, { method: 'POST' });
+      const body = await res.json();
+      if (body.blocked) { alert(body.message); return; }
+      await fetchEnrichJobs();
+      alert(
+        body.retried === 0
+          ? 'Nessuna riga con "Estrazione fallita" da riprovare.'
+          : `Riprovate ${body.retried} righe: ${body.succeeded} riuscite, ${body.stillFailing} ancora fallite.`,
+      );
+    } catch {
+      alert('Errore durante il retry delle righe fallite');
+    }
+  };
+
   const handleEnrichCreateCampaignOpen = (job: EnrichmentJobItem) => {
     setEnrichCreateCampaignJobId(job.id);
     setEnrichCampaignName(job.sourceFilename.replace(/\.zip$/i, ''));
@@ -15205,6 +15222,16 @@ export function App(): React.JSX.Element {
                           <button className="btn btn-sm btn-outline-secondary" type="button" onClick={() => handleEnrichRegenerateCsv(job.id)}>
                             Rigenera CSV
                           </button>
+                          {(job.warnings ?? []).some((w) => w.message.startsWith('Estrazione fallita:')) && (
+                            <button
+                              className="btn btn-sm btn-outline-warning"
+                              type="button"
+                              onClick={() => handleEnrichRetryFailedPdfs(job.id)}
+                              title="Ri-richiama pdf-extractor per le righe con 'Estrazione fallita' (fallimento transitorio, es. servizio riavviato a metà job) — non per 'PDF non trovato nel ZIP'"
+                            >
+                              Riprova righe fallite
+                            </button>
+                          )}
                           {(job.campaignConversionStatus === 'pending' || job.campaignConversionStatus === 'processing') ? (
                             <button className="btn btn-sm btn-outline-primary" type="button" disabled>
                               <Loader2 className="icon-spin me-1" size={16} />Creazione bozza in corso...
