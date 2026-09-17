@@ -203,15 +203,28 @@ export class EnrichmentController {
     }
 
     await new Promise<void>((resolve) => {
+      // Heartbeat obbligatorio: senza eventi reali per un po' (righe senza
+      // warning, job lungo con emitLog raro — vedi enrichment.processor.ts,
+      // emette solo per rowNum===1 o warning presenti) la connessione resta
+      // muta e il reverse proxy esterno la chiude per timeout inattività —
+      // 504 reale in prod su un retry avviato mentre il job originale aveva
+      // ancora migliaia di righe da processare senza mai loggare nulla. Un
+      // commento SSE (riga che inizia con `:`) non è un evento per
+      // l'EventSource/reader lato client, serve solo a tenere viva la
+      // connessione attraverso il proxy.
+      const heartbeat = setInterval(() => res.write(': heartbeat\n\n'), 15_000);
+      const cleanup = () => clearInterval(heartbeat);
       const unsubscribe = this.events.subscribe(id, (event) => {
         res.write(`data: ${JSON.stringify(event)}\n\n`);
         if (event.type === 'done' || event.type === 'error') {
+          cleanup();
           unsubscribe();
           res.end();
           resolve();
         }
       });
       req.on('close', () => {
+        cleanup();
         unsubscribe();
         resolve();
       });

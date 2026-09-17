@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import { TraceFormat } from '../entities/enrichment-job.entity.js';
 import { EnrichmentController } from './enrichment.controller.js';
 
@@ -160,6 +161,32 @@ describe('EnrichmentController', () => {
     await streamPromise;
 
     expect(unsubscribe).toHaveBeenCalled();
+  });
+
+  it('stream: manda un heartbeat periodico per non far scadere il timeout del reverse proxy su job lunghi senza eventi', async () => {
+    vi.useFakeTimers();
+    try {
+      svc.getJob = jest.fn(async () => ({ id: 'j1', status: 'processing' }));
+      let capturedHandler: ((e: any) => void) | undefined;
+      events.subscribe = jest.fn((_jobId: string, handler: (e: any) => void) => {
+        capturedHandler = handler;
+        return jest.fn();
+      });
+      const req: any = { on: jest.fn() };
+      const res: any = { setHeader: jest.fn(), write: jest.fn(), end: jest.fn() };
+
+      const streamPromise = controller.streamJob('j1', req, res);
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(31_000); // due tick da 15s
+
+      expect(res.write).toHaveBeenCalledWith(': heartbeat\n\n');
+      expect(res.write.mock.calls.filter((c: any) => c[0] === ': heartbeat\n\n').length).toBeGreaterThanOrEqual(2);
+
+      capturedHandler?.({ type: 'done' });
+      await streamPromise;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('GET rows/:pdfFilename delega al service', async () => {
