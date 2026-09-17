@@ -312,12 +312,18 @@ export class EnrichmentProcessor extends WorkerHost {
       const headers = buildEnrichedCsvHeaders(maxRate);
       fs.writeFileSync(getEnrichmentResultCsv(jobId), buildEnrichedCsv(headers, finalRows), 'utf-8');
 
-      // "Un PagoPa a 0 non esiste": numero_avviso/importo/scadenza sono sempre
-      // valorizzate insieme o mai (vedi riga 203-206 sopra) — basta controllare
-      // che siano tutte e tre vuote, niente warning testuale (che scatterebbe
-      // anche quando il CSV Maggioli fornisce un fallback valido).
+      // "Un PagoPa a 0 non esiste": dati obbligatori sono numero_avviso e
+      // importo (scadenza non è vincolante). `numero_avviso` da solo può
+      // restare un fallback dal CSV Maggioli (baseRow(), riga 364) anche
+      // quando il PDF non ha alcun PagoPa reale — `importo` non ha mai un
+      // fallback CSV. Basta quindi uno dei due vuoto per contare la riga
+      // come "senza PagoPa" — un AND su tutte e tre le colonne (bug reale
+      // corretto) dava falsi negativi su righe con solo il numero_avviso
+      // residuo dal tracciato. Niente warning testuale ("Dati PagoPA non
+      // trovati nel PDF"): quello scatta prima del fallback CSV, stesso
+      // falso negativo.
       const missingPaymentCount = record.searchPayments
-        ? finalRows.filter((r) => !r.numero_avviso && !r.importo && !r.scadenza).length
+        ? finalRows.filter((r) => !r.numero_avviso || !r.importo).length
         : 0;
 
       await this.jobRepo.update(jobId, {
