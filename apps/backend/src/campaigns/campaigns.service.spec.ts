@@ -2824,6 +2824,44 @@ describe('CampaignsService.getFailures / retryRecipient', () => {
     expect(campaignRepoMock.update).toHaveBeenCalledWith({ id: 'c1' }, { status: CampaignStatus.QUEUED, completedAt: null });
   });
 
+  it('resolvePecReview accoda SOLO il destinatario risolto, mai altri PENDING della stessa campagna (bug reale: update di stato non scoped)', async () => {
+    campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'PEC', channelConfig: {} });
+    recipientRepoMock.findOne = jest.fn().mockResolvedValue({
+      id: 'r1',
+      campaignId: 'c1',
+      status: RecipientStatus.PENDING_REVIEW,
+      inadCheck: { found: true, diverted: true, originalChannel: 'PEC', originalAddress: 'originale@pec.it', foundAddress: 'trovata@pec.it', checkedAt: '2026-09-17T00:00:00.000Z' },
+    });
+    const insertExec = jest.fn().mockResolvedValue({ raw: [{ id: 'attempt-1' }] });
+    let insertedValues: any;
+    attemptRepoMock.createQueryBuilder.mockReturnValue({
+      insert: () => ({ into: () => ({ values: (v: any) => { insertedValues = v; return { returning: () => ({ execute: insertExec }) }; } }) }),
+    });
+    recipientRepoMock.update.mockResolvedValue({ affected: 1 });
+
+    const moduleRef = await buildModule();
+    const service = moduleRef.get(CampaignsService);
+
+    await service.resolvePecReview('c1', 'r1', true);
+
+    // Un solo attempt creato, per r1 soltanto (mai un altro destinatario
+    // PENDING preesistente per motivi indipendenti finirebbe qui dentro).
+    expect(insertedValues).toEqual([expect.objectContaining({ recipientId: 'r1', channelType: 'PEC' })]);
+    expect(queuesMock.addBulk).toHaveBeenCalledWith('PEC', [
+      expect.objectContaining({ data: expect.objectContaining({ recipientId: 'r1', attemptId: 'attempt-1' }) }),
+    ]);
+    // L'update finale di stato (PENDING->QUEUED) deve essere scoped a
+    // { id: In(['r1']) }, mai a { campaignId: 'c1' } da solo — quel filtro
+    // più largo flipperebbe QUALUNQUE altro destinatario PENDING della
+    // campagna senza avergli mai creato un attempt/job.
+    const statusUpdateCall = recipientRepoMock.update.mock.calls.find(
+      (call: any[]) => call[1]?.status === RecipientStatus.QUEUED,
+    );
+    expect(statusUpdateCall).toBeDefined();
+    expect(statusUpdateCall![0]).not.toEqual({ campaignId: 'c1', status: RecipientStatus.PENDING });
+    expect(statusUpdateCall![0].id).toEqual(In(['r1']));
+  });
+
   it('retryRecipient su campagna QUEUED/RUNNING non tocca campaign.status (già non terminale)', async () => {
     campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'EMAIL', status: CampaignStatus.RUNNING });
     recipientRepoMock.findOne = jest.fn().mockResolvedValue({ id: 'r1', campaignId: 'c1', status: RecipientStatus.FAILED });
