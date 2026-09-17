@@ -3,7 +3,7 @@ import MDEditor from '@uiw/react-md-editor';
 import { TemplateEditor } from './components/TemplateEditor';
 import { SearchableSelect } from './components/SearchableSelect';
 import { SEND_ENTITY_TYPES, SEND_TAXONOMY_CATALOG } from './data/sendTaxonomy';
-import { COUNTRIES, matchCountry, isValidCap } from '@comunicapa/shared-types';
+import { COUNTRIES, matchCountry, isValidCap, abbreviateLongMunicipality } from '@comunicapa/shared-types';
 import { LineChart, Line, PieChart, Pie, Cell, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import {
   Mail, MailOpen, MailCheck, Mails, Smartphone, Send, HelpCircle,
@@ -2564,7 +2564,8 @@ export function App(): React.JSX.Element {
   const [loadingEngines, setLoadingEngines] = useState(false);
   const [enginesError, setEnginesError] = useState<string | null>(null);
   const [engineJobsChannel, setEngineJobsChannel] = useState<string | null>(null);
-  const [engineJobs, setEngineJobs] = useState<Array<{ jobId: string; campaignId: string; recipientId: string; failedReason?: string; attemptsMade: number }>>([]);
+  const [engineJobsStatus, setEngineJobsStatus] = useState<'active' | 'waiting' | 'failed'>('failed');
+  const [engineJobs, setEngineJobs] = useState<Array<{ jobId: string; campaignId: string; campaignName: string | null; recipientId: string; failedReason?: string; attemptsMade: number; timestamp: number; finishedOn?: number }>>([]);
   const [expandedJobLogs, setExpandedJobLogs] = useState<{ jobId: string; logs: string[] } | null>(null);
   const [loadingJobLogs, setLoadingJobLogs] = useState(false);
   // Sidebar mobile (≤991px): il CSS la nasconde con translateX finché body non ha .bo-sidebar-open
@@ -2635,7 +2636,7 @@ export function App(): React.JSX.Element {
   const [recipientsTagsMenuOpen, setRecipientsTagsMenuOpen] = useState(false);
   const [recipientsDownloadFilter, setRecipientsDownloadFilter] = useState('');
   const [recipientsFilterOptions, setRecipientsFilterOptions] = useState<{ statuses: Array<string | { value: string; count: number }>; deliveryStatuses: Array<string | { value: string; count: number }>; postalDeliveryStatuses?: Array<string | { value: string; count: number }> } | null>(null);
-  const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number; inadDiverted: number } | null>(null);
+  const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number; inadDiverted: number; appIoMode: 'none' | 'parallel' | 'exclusive'; inadCheckRan: boolean } | null>(null);
   const [resendingOutcome, setResendingOutcome] = useState<string | null>(null);
   const [effectiveChannelBreakdown, setEffectiveChannelBreakdown] = useState<Record<string, number> | null>(null);
   const [campaignSendStageCounts, setCampaignSendStageCounts] = useState<{ queued: number; protocollato: number; inviato: number; fallito: number } | null>(null);
@@ -4565,10 +4566,19 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const handleViewEngineJobs = async (channel: string) => {
+  const handleViewEngineJobs = async (channel: string, status: 'active' | 'waiting' | 'failed' = engineJobsStatus) => {
+    // Riapre sullo stesso canale con lo status scelto (toggle "In corso"/"In
+    // attesa"/"Falliti") — mai un default fisso "failed": prima era l'unico
+    // stato visibile, impossibile vedere "cosa sta inviando adesso".
+    const closing = engineJobsChannel === channel && engineJobsStatus === status;
+    if (closing) {
+      setEngineJobsChannel(null);
+      return;
+    }
     setEngineJobsChannel(channel);
+    setEngineJobsStatus(status);
     setExpandedJobLogs(null);
-    const res = await fetch(`${ADMIN_API_BASE}/engines/${channel.toLowerCase()}/jobs?status=failed&limit=50`, {
+    const res = await fetch(`${ADMIN_API_BASE}/engines/${channel.toLowerCase()}/jobs?status=${status}&limit=50`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json();
@@ -6897,7 +6907,10 @@ export function App(): React.JSX.Element {
     email: singleEmail,
     pec: singlePec,
     address: singleAddress,
-    municipality: singleMunicipality,
+    // Uno dei 5 comuni italiani noti oltre 30 caratteri (vedi
+    // abbreviateLongMunicipality, @comunicapa/shared-types) → forma
+    // abbreviata applicata qui in modo trasparente, mai un blocco.
+    municipality: abbreviateLongMunicipality(singleMunicipality),
     zip: singleZip,
     province: singleProvince,
     country: singleCountry,
@@ -7191,7 +7204,7 @@ export function App(): React.JSX.Element {
     (wizChannel === 'EMAIL' && (!singleEmail.trim() || !isValidEmailFormat(singleEmail))) ||
     (wizChannel === 'PEC' && (!singlePec.trim() || !isValidEmailFormat(singlePec))) ||
     (needsWizSinglePhysicalAddress && (
-      !singleAddress.trim() || !singleMunicipality.trim() || singleMunicipality.trim().length > 30
+      !singleAddress.trim() || !singleMunicipality.trim() || abbreviateLongMunicipality(singleMunicipality.trim()).length > 30
       || ((!singleCountry || matchCountry(singleCountry) === 'Italia') && (!singleZip.trim() || !isValidCap(singleZip) || !singleProvince.trim()))
     )) ||
     ((wizChannel === 'SEND' || wizChannel === 'POSTAL') && wizSingleAttachmentSlots.filter(s => s.file).length === 0) ||
@@ -7319,8 +7332,16 @@ export function App(): React.JSX.Element {
             errors.push({ row: rowNum, field: 'Città', val: '', err: 'Città mancante (obbligatoria per Postalizzazione)' });
             isRowValid = false;
           } else if (wizPostalMunicipalityColumn && row[wizPostalMunicipalityColumn]?.trim().length > 30) {
-            errors.push({ row: rowNum, field: 'Città', val: row[wizPostalMunicipalityColumn], err: 'Città troppo lunga (massimo 30 caratteri per Postalizzazione)' });
-            isRowValid = false;
+            // Uno dei 5 comuni italiani noti oltre 30 caratteri (vedi
+            // abbreviateLongMunicipality, @comunicapa/shared-types) →
+            // sovrascrive la riga con la forma abbreviata, nessun errore.
+            const abbreviated = abbreviateLongMunicipality(row[wizPostalMunicipalityColumn].trim());
+            if (abbreviated.length <= 30) {
+              row[wizPostalMunicipalityColumn] = abbreviated;
+            } else {
+              errors.push({ row: rowNum, field: 'Città', val: row[wizPostalMunicipalityColumn], err: 'Città troppo lunga (massimo 30 caratteri per Postalizzazione)' });
+              isRowValid = false;
+            }
           }
           if (!isForeignRow && (!wizPostalProvinceColumn || !row[wizPostalProvinceColumn]?.trim())) {
             errors.push({ row: rowNum, field: 'Provincia', val: wizPostalProvinceColumn ? (row[wizPostalProvinceColumn] || '') : '', err: 'Provincia mancante (obbligatoria per indirizzi italiani in Postalizzazione)' });
@@ -17231,23 +17252,40 @@ export function App(): React.JSX.Element {
 
                                       {eng.pausable !== false && (
                                       <div className="mt-2">
-                                        <button
-                                          type="button"
-                                          className="btn btn-sm btn-outline-secondary"
-                                          onClick={() => handleViewEngineJobs(eng.channel)}
-                                        >
-                                          <List className="me-1" />Vedi job falliti
-                                        </button>
+                                        <div className="btn-group" role="group">
+                                          <button
+                                            type="button"
+                                            className={`btn btn-sm ${engineJobsChannel === eng.channel && engineJobsStatus === 'active' ? 'btn-primary' : 'btn-outline-secondary'}`}
+                                            onClick={() => handleViewEngineJobs(eng.channel, 'active')}
+                                          >
+                                            <List className="me-1" />In corso
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className={`btn btn-sm ${engineJobsChannel === eng.channel && engineJobsStatus === 'waiting' ? 'btn-primary' : 'btn-outline-secondary'}`}
+                                            onClick={() => handleViewEngineJobs(eng.channel, 'waiting')}
+                                          >
+                                            In attesa
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className={`btn btn-sm ${engineJobsChannel === eng.channel && engineJobsStatus === 'failed' ? 'btn-primary' : 'btn-outline-secondary'}`}
+                                            onClick={() => handleViewEngineJobs(eng.channel, 'failed')}
+                                          >
+                                            Falliti
+                                          </button>
+                                        </div>
                                         {engineJobsChannel === eng.channel && (
                                           <div className="table-responsive">
                                             <table className="table table-sm mt-2">
-                                              <thead><tr><th>Job</th><th>Campagna</th><th>Destinatario</th><th>Tentativi</th><th>Motivo</th><th>Log</th></tr></thead>
+                                              <thead><tr><th>Data</th><th>Job</th><th>Campagna</th><th>Destinatario</th><th>Tentativi</th><th>Motivo</th><th>Log</th></tr></thead>
                                               <tbody>
                                                 {engineJobs.map(j => (
                                                   <React.Fragment key={j.jobId}>
                                                     <tr>
+                                                      <td className="small text-nowrap">{new Date(j.finishedOn ?? j.timestamp).toLocaleString('it-IT')}</td>
                                                       <td className="font-monospace small">{j.jobId}</td>
-                                                      <td className="font-monospace small">{j.campaignId}</td>
+                                                      <td className="small">{j.campaignName ?? <span className="text-muted fst-italic">campagna eliminata</span>}</td>
                                                       <td className="font-monospace small">{j.recipientId}</td>
                                                       <td>{j.attemptsMade}</td>
                                                       <td className="small text-danger">{j.failedReason || '—'}</td>
@@ -17264,7 +17302,7 @@ export function App(): React.JSX.Element {
                                                     </tr>
                                                     {expandedJobLogs?.jobId === j.jobId && (
                                                       <tr>
-                                                        <td colSpan={6}>
+                                                        <td colSpan={7}>
                                                           {expandedJobLogs.logs.length === 0 ? (
                                                             <div className="text-muted small">Nessun log registrato per questo job.</div>
                                                           ) : (
@@ -17277,7 +17315,7 @@ export function App(): React.JSX.Element {
                                                     )}
                                                   </React.Fragment>
                                                 ))}
-                                                {engineJobs.length === 0 && <tr><td colSpan={6} className="text-center text-muted">Nessun job fallito</td></tr>}
+                                                {engineJobs.length === 0 && <tr><td colSpan={7} className="text-center text-muted">Nessun job</td></tr>}
                                               </tbody>
                                             </table>
                                           </div>
@@ -17891,54 +17929,83 @@ export function App(): React.JSX.Element {
                           // si popola solo quando un salvataggio di
                           // correzione cambia davvero subject/body.
                           const hasContentCorrection = Array.isArray(campaign.channelConfig?.contentHistory) && campaign.channelConfig.contentHistory.length > 0;
+                          // Le 5 righe di esito App IO hanno senso solo se un canale
+                          // secondario App IO è davvero configurato — altrimenti sono
+                          // sempre 0 e vanno lette come "non applicabile", non come
+                          // "App IO fallito per tutti" (ambiguità reale segnalata
+                          // dall'operatore). "Maggiori di 0" per non mostrare righe
+                          // vuote quando App IO è configurato ma ancora nessun esito.
+                          const showAppIoRows = channelBreakdown.appIoMode !== 'none';
+                          const appIoModeLabel = channelBreakdown.appIoMode === 'parallel' ? 'Parallela' : channelBreakdown.appIoMode === 'exclusive' ? 'Esclusiva' : 'Nessuna';
+                          const anyRowVisible =
+                            (showAppIoRows && (channelBreakdown.primaryOnly > 0 || channelBreakdown.both > 0 || channelBreakdown.appIoOnly > 0 || channelBreakdown.appIoDespitePrimaryFail > 0 || channelBreakdown.neither > 0)) ||
+                            channelBreakdown.inadCheckRan;
                           return (
                           <div className="mt-4 border-top pt-3">
                             <h4 className="small fw-bold mb-2">
                               <Smartphone className="me-1 text-primary" />Dettaglio Consegna Multicanale
                             </h4>
+                            <div className="small text-muted mb-2">
+                              App IO: <strong>{appIoModeLabel}</strong> · Verifica domicilio digitale (INAD/Registro Imprese): <strong>{channelBreakdown.inadCheckRan ? 'Eseguita' : 'Non eseguita'}</strong>
+                            </div>
+                            {!anyRowVisible && (
+                              <div className="small text-muted fst-italic">Nessun destinatario ancora classificato.</div>
+                            )}
                             <div className="small">
-                              <div className="d-flex justify-content-between mb-1">
-                                <span><Mail className="text-muted me-1" />Solo canale primario</span>
-                                <span className="fw-bold">{channelBreakdown.primaryOnly}</span>
-                              </div>
-                              <div className="d-flex justify-content-between align-items-center mb-1">
-                                <span><CheckCheck className="text-success me-1" />Anche App IO (parallela)</span>
-                                <span className="d-flex align-items-center gap-2">
-                                  <span className="fw-bold">{channelBreakdown.both}</span>
-                                  {channelBreakdown.both > 0 && hasContentCorrection && (
-                                    <button className="btn btn-sm btn-link p-0" type="button"
-                                      disabled={resendingOutcome === 'both'}
-                                      onClick={() => handleResendByOutcome(campaign.id, 'both', channelBreakdown.both)}>
-                                      {resendingOutcome === 'both' ? 'Invio...' : `Rimanda a questi ${channelBreakdown.both}`}
-                                    </button>
-                                  )}
-                                </span>
-                              </div>
-                              <div className="d-flex justify-content-between mb-1">
-                                <span><Smartphone className="text-success me-1" />Solo App IO (esclusiva)</span>
-                                <span className="fw-bold">{channelBreakdown.appIoOnly}</span>
-                              </div>
-                              <div className="d-flex justify-content-between mb-1">
-                                <span><AlertTriangle className="text-warning me-1" />App IO riuscito, primario fallito</span>
-                                <span className="fw-bold">{channelBreakdown.appIoDespitePrimaryFail}</span>
-                              </div>
-                              <div className="d-flex justify-content-between mb-1">
-                                <span><X className="text-danger me-1" />Nessuno dei due (fallito)</span>
-                                <span className="fw-bold">{channelBreakdown.neither}</span>
-                              </div>
-                              <div className="d-flex justify-content-between align-items-center">
-                                <span><ShieldCheck className="text-primary me-1" />Dirottato su PEC (domicilio digitale)</span>
-                                <span className="d-flex align-items-center gap-2">
-                                  <span className="fw-bold">{channelBreakdown.inadDiverted}</span>
-                                  {channelBreakdown.inadDiverted > 0 && hasContentCorrection && (
-                                    <button className="btn btn-sm btn-link p-0" type="button"
-                                      disabled={resendingOutcome === 'inadDiverted'}
-                                      onClick={() => handleResendByOutcome(campaign.id, 'inadDiverted', channelBreakdown.inadDiverted)}>
-                                      {resendingOutcome === 'inadDiverted' ? 'Invio...' : `Rimanda a questi ${channelBreakdown.inadDiverted}`}
-                                    </button>
-                                  )}
-                                </span>
-                              </div>
+                              {showAppIoRows && channelBreakdown.primaryOnly > 0 && (
+                                <div className="d-flex justify-content-between mb-1">
+                                  <span><Mail className="text-muted me-1" />Solo canale primario</span>
+                                  <span className="fw-bold">{channelBreakdown.primaryOnly}</span>
+                                </div>
+                              )}
+                              {showAppIoRows && channelBreakdown.both > 0 && (
+                                <div className="d-flex justify-content-between align-items-center mb-1">
+                                  <span><CheckCheck className="text-success me-1" />Anche App IO (parallela)</span>
+                                  <span className="d-flex align-items-center gap-2">
+                                    <span className="fw-bold">{channelBreakdown.both}</span>
+                                    {hasContentCorrection && (
+                                      <button className="btn btn-sm btn-link p-0" type="button"
+                                        disabled={resendingOutcome === 'both'}
+                                        onClick={() => handleResendByOutcome(campaign.id, 'both', channelBreakdown.both)}>
+                                        {resendingOutcome === 'both' ? 'Invio...' : `Rimanda a questi ${channelBreakdown.both}`}
+                                      </button>
+                                    )}
+                                  </span>
+                                </div>
+                              )}
+                              {showAppIoRows && channelBreakdown.appIoOnly > 0 && (
+                                <div className="d-flex justify-content-between mb-1">
+                                  <span><Smartphone className="text-success me-1" />Solo App IO (esclusiva)</span>
+                                  <span className="fw-bold">{channelBreakdown.appIoOnly}</span>
+                                </div>
+                              )}
+                              {showAppIoRows && channelBreakdown.appIoDespitePrimaryFail > 0 && (
+                                <div className="d-flex justify-content-between mb-1">
+                                  <span><AlertTriangle className="text-warning me-1" />App IO riuscito, primario fallito</span>
+                                  <span className="fw-bold">{channelBreakdown.appIoDespitePrimaryFail}</span>
+                                </div>
+                              )}
+                              {showAppIoRows && channelBreakdown.neither > 0 && (
+                                <div className="d-flex justify-content-between mb-1">
+                                  <span><X className="text-danger me-1" />Nessuno dei due (fallito)</span>
+                                  <span className="fw-bold">{channelBreakdown.neither}</span>
+                                </div>
+                              )}
+                              {channelBreakdown.inadCheckRan && (
+                                <div className="d-flex justify-content-between align-items-center">
+                                  <span><ShieldCheck className="text-primary me-1" />Dirottato su PEC (domicilio digitale)</span>
+                                  <span className="d-flex align-items-center gap-2">
+                                    <span className="fw-bold">{channelBreakdown.inadDiverted}</span>
+                                    {channelBreakdown.inadDiverted > 0 && hasContentCorrection && (
+                                      <button className="btn btn-sm btn-link p-0" type="button"
+                                        disabled={resendingOutcome === 'inadDiverted'}
+                                        onClick={() => handleResendByOutcome(campaign.id, 'inadDiverted', channelBreakdown.inadDiverted)}>
+                                        {resendingOutcome === 'inadDiverted' ? 'Invio...' : `Rimanda a questi ${channelBreakdown.inadDiverted}`}
+                                      </button>
+                                    )}
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           </div>
                           );

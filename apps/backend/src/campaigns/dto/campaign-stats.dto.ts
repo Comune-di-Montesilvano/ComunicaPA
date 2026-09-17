@@ -54,6 +54,10 @@ export interface ChannelBreakdownDto {
   neither: number;
   /** Destinatari con un dirottamento INAD reale (indirizzo trovato diverso da quello configurato). */
   inadDiverted: number;
+  /** Configurazione canale secondario App IO al lancio — mai inferibile dai soli conteggi (tutti zero può significare "non configurato" o "configurato ma nessun esito ancora"). */
+  appIoMode: 'none' | 'parallel' | 'exclusive';
+  /** true se il check domicilio digitale (INAD/Registro Imprese) è stato eseguito al lancio per almeno un destinatario — setting globale al momento del lancio, non salvato sulla campagna. */
+  inadCheckRan: boolean;
 }
 
 /** Conteggio destinatari SENT per canale effettivo di consegna (chiavi = NotificationChannel osservati). */

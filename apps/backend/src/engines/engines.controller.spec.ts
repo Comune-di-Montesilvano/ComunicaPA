@@ -25,7 +25,7 @@ describe('EnginesController', () => {
     getFailed: jest.fn().mockResolvedValue([]),
   };
   const mockAttemptRepo = { count: jest.fn(), createQueryBuilder: jest.fn() };
-  const mockCampaignRepo = { count: jest.fn().mockResolvedValue(0) };
+  const mockCampaignRepo = { count: jest.fn().mockResolvedValue(0), find: jest.fn().mockResolvedValue([]) };
   const mockRecipientRepo = { count: jest.fn().mockResolvedValue(0) };
   const mockPostalStatusSync = { getQueueHealth: jest.fn() };
 
@@ -98,10 +98,24 @@ describe('EnginesController', () => {
     expect(mockQueuesService.resume).toHaveBeenCalledWith('PEC');
   });
 
-  it('jobs() ritorna i job del canale richiesto', async () => {
+  it('jobs() ritorna i job del canale richiesto, arricchiti col nome campagna', async () => {
+    mockQueuesService.getJobsDetail.mockResolvedValueOnce([{ jobId: 'j1', campaignId: 'c1' }]);
+    mockCampaignRepo.find.mockResolvedValueOnce([{ id: 'c1', name: 'Saldo TARI 2026' }]);
+
     const result = await controller.jobs('email', 'failed', '10');
+
     expect(mockQueuesService.getJobsDetail).toHaveBeenCalledWith('EMAIL', 'failed', 10);
-    expect(result).toEqual({ channel: 'EMAIL', status: 'failed', jobs: [{ jobId: 'j1' }] });
+    expect(mockCampaignRepo.find).toHaveBeenCalledWith({ where: { id: expect.anything() }, select: { id: true, name: true } });
+    expect(result).toEqual({ channel: 'EMAIL', status: 'failed', jobs: [{ jobId: 'j1', campaignId: 'c1', campaignName: 'Saldo TARI 2026' }] });
+  });
+
+  it('jobs() con campagna non trovata (es. cancellata) ritorna campaignName null', async () => {
+    mockQueuesService.getJobsDetail.mockResolvedValueOnce([{ jobId: 'j1', campaignId: 'c-eliminata' }]);
+    mockCampaignRepo.find.mockResolvedValueOnce([]);
+
+    const result = await controller.jobs('email', 'failed', '10');
+
+    expect(result.jobs).toEqual([{ jobId: 'j1', campaignId: 'c-eliminata', campaignName: null }]);
   });
 
   it('jobs() rifiuta un canale sconosciuto', async () => {

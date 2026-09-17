@@ -35,7 +35,7 @@ import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.d
 import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util.js';
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto.js';
 import type { NotificationChannel, OperatorRole } from '@comunicapa/shared-types';
-import { matchCountry } from '@comunicapa/shared-types';
+import { matchCountry, abbreviateLongMunicipality } from '@comunicapa/shared-types';
 import { InadService } from '../channels/inad/inad.service.js';
 import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service.js';
 import { RegistroImpreseService } from '../channels/registro-imprese/registro-imprese.service.js';
@@ -1163,6 +1163,8 @@ export class CampaignsService {
     recipients: Array<{ id: string }>,
     channelOverrides?: Map<string, NotificationChannel>,
   ): Promise<{ launched: number }> {
+    if (recipients.length === 0) return { launched: 0 };
+
     // Bulk insert NotificationAttempts in chunks di 500
     const CHUNK = 500;
     const attemptIds: string[] = [];
@@ -1208,8 +1210,14 @@ export class CampaignsService {
       );
     }
 
+    // Scoped ai SOLI recipients passati qui, mai all'intera campagna: se
+    // esistono altri destinatari ancora PENDING per motivi indipendenti
+    // (es. PENDING_REVIEW risolto singolarmente via resolvePecReview,
+    // chiamata con un solo destinatario) un WHERE su tutta la campagna li
+    // flipperebbe a QUEUED senza mai aver creato un attempt/job per loro —
+    // bug reale: destinatari "fantasma" QUEUED senza invio reale in corso.
     await this.recipientRepo.update(
-      { campaignId: campaign.id, status: RecipientStatus.PENDING },
+      { id: In(recipients.map((r) => r.id)), status: RecipientStatus.PENDING },
       { status: RecipientStatus.QUEUED },
     );
 
@@ -1439,15 +1447,24 @@ export class CampaignsService {
       select: { id: true, status: true, inadCheck: true },
     });
 
-    const hasAppIo = !!resolveSecondaryAppIoConfig(campaign.channelConfig);
+    const appIoConfig = resolveSecondaryAppIoConfig(campaign.channelConfig);
+    const hasAppIo = !!appIoConfig;
+    const appIoMode: ChannelBreakdownDto['appIoMode'] = appIoConfig?.mode ?? 'none';
     // inadDiverted conta TUTTI i destinatari con un dirottamento INAD reale
     // (diverted:true), indipendentemente dallo stato — descrive una decisione
     // di instradamento presa al lancio, non un esito di invio, quindi include
     // anche i destinatari ancora PENDING (check bulk non ancora finalizzato).
     const inadDiverted = recipients.filter((r) => r.inadCheck?.diverted).length;
-    if (!hasAppIo && inadDiverted === 0) return null;
+    // inad.checkEnabled è un setting GLOBALE (non salvato sulla campagna) —
+    // l'unico modo per sapere a posteriori se il check è girato per QUESTA
+    // campagna è verificare se almeno un destinatario ha inadCheck popolato
+    // (found true o false, comunque scritto al lancio). Senza questo, un
+    // inadDiverted=0 è ambiguo: "mai controllato" o "controllato, nessun
+    // dirottamento" sono indistinguibili in UI.
+    const inadCheckRan = recipients.some((r) => r.inadCheck != null);
+    if (!hasAppIo && !inadCheckRan) return null;
 
-    const breakdown: ChannelBreakdownDto = { primaryOnly: 0, both: 0, appIoOnly: 0, appIoDespitePrimaryFail: 0, neither: 0, inadDiverted };
+    const breakdown: ChannelBreakdownDto = { primaryOnly: 0, both: 0, appIoOnly: 0, appIoDespitePrimaryFail: 0, neither: 0, inadDiverted, appIoMode, inadCheckRan };
     const toClassify = recipients.filter(
       (r) => r.status === RecipientStatus.SENT || r.status === RecipientStatus.FAILED,
     );
@@ -2220,7 +2237,12 @@ export class CampaignsService {
     if (!isForeign && !dto.province?.trim()) {
       throw new BadRequestException('La provincia è obbligatoria per gli indirizzi italiani');
     }
-    if (dto.municipality.trim().length > 30) {
+    // Uno dei 5 comuni italiani noti oltre 30 caratteri (vedi
+    // abbreviateLongMunicipality) → forma abbreviata applicata qui,
+    // nessun blocco. Qualunque altro caso oltre soglia resta bloccato
+    // come prima (nome comune non mappato).
+    dto.municipality = abbreviateLongMunicipality(dto.municipality.trim());
+    if (dto.municipality.length > 30) {
       throw new BadRequestException('La città non può superare i 30 caratteri');
     }
 
