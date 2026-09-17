@@ -2635,7 +2635,7 @@ export function App(): React.JSX.Element {
   const [recipientsTagsMenuOpen, setRecipientsTagsMenuOpen] = useState(false);
   const [recipientsDownloadFilter, setRecipientsDownloadFilter] = useState('');
   const [recipientsFilterOptions, setRecipientsFilterOptions] = useState<{ statuses: Array<string | { value: string; count: number }>; deliveryStatuses: Array<string | { value: string; count: number }>; postalDeliveryStatuses?: Array<string | { value: string; count: number }> } | null>(null);
-  const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number; inadDiverted: number } | null>(null);
+  const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number; inadDiverted: number; appIoMode: 'none' | 'parallel' | 'exclusive'; inadCheckRan: boolean } | null>(null);
   const [resendingOutcome, setResendingOutcome] = useState<string | null>(null);
   const [effectiveChannelBreakdown, setEffectiveChannelBreakdown] = useState<Record<string, number> | null>(null);
   const [campaignSendStageCounts, setCampaignSendStageCounts] = useState<{ queued: number; protocollato: number; inviato: number; fallito: number } | null>(null);
@@ -17891,54 +17891,83 @@ export function App(): React.JSX.Element {
                           // si popola solo quando un salvataggio di
                           // correzione cambia davvero subject/body.
                           const hasContentCorrection = Array.isArray(campaign.channelConfig?.contentHistory) && campaign.channelConfig.contentHistory.length > 0;
+                          // Le 5 righe di esito App IO hanno senso solo se un canale
+                          // secondario App IO è davvero configurato — altrimenti sono
+                          // sempre 0 e vanno lette come "non applicabile", non come
+                          // "App IO fallito per tutti" (ambiguità reale segnalata
+                          // dall'operatore). "Maggiori di 0" per non mostrare righe
+                          // vuote quando App IO è configurato ma ancora nessun esito.
+                          const showAppIoRows = channelBreakdown.appIoMode !== 'none';
+                          const appIoModeLabel = channelBreakdown.appIoMode === 'parallel' ? 'Parallela' : channelBreakdown.appIoMode === 'exclusive' ? 'Esclusiva' : 'Nessuna';
+                          const anyRowVisible =
+                            (showAppIoRows && (channelBreakdown.primaryOnly > 0 || channelBreakdown.both > 0 || channelBreakdown.appIoOnly > 0 || channelBreakdown.appIoDespitePrimaryFail > 0 || channelBreakdown.neither > 0)) ||
+                            channelBreakdown.inadCheckRan;
                           return (
                           <div className="mt-4 border-top pt-3">
                             <h4 className="small fw-bold mb-2">
                               <Smartphone className="me-1 text-primary" />Dettaglio Consegna Multicanale
                             </h4>
+                            <div className="small text-muted mb-2">
+                              App IO: <strong>{appIoModeLabel}</strong> · Verifica domicilio digitale (INAD/Registro Imprese): <strong>{channelBreakdown.inadCheckRan ? 'Eseguita' : 'Non eseguita'}</strong>
+                            </div>
+                            {!anyRowVisible && (
+                              <div className="small text-muted fst-italic">Nessun destinatario ancora classificato.</div>
+                            )}
                             <div className="small">
-                              <div className="d-flex justify-content-between mb-1">
-                                <span><Mail className="text-muted me-1" />Solo canale primario</span>
-                                <span className="fw-bold">{channelBreakdown.primaryOnly}</span>
-                              </div>
-                              <div className="d-flex justify-content-between align-items-center mb-1">
-                                <span><CheckCheck className="text-success me-1" />Anche App IO (parallela)</span>
-                                <span className="d-flex align-items-center gap-2">
-                                  <span className="fw-bold">{channelBreakdown.both}</span>
-                                  {channelBreakdown.both > 0 && hasContentCorrection && (
-                                    <button className="btn btn-sm btn-link p-0" type="button"
-                                      disabled={resendingOutcome === 'both'}
-                                      onClick={() => handleResendByOutcome(campaign.id, 'both', channelBreakdown.both)}>
-                                      {resendingOutcome === 'both' ? 'Invio...' : `Rimanda a questi ${channelBreakdown.both}`}
-                                    </button>
-                                  )}
-                                </span>
-                              </div>
-                              <div className="d-flex justify-content-between mb-1">
-                                <span><Smartphone className="text-success me-1" />Solo App IO (esclusiva)</span>
-                                <span className="fw-bold">{channelBreakdown.appIoOnly}</span>
-                              </div>
-                              <div className="d-flex justify-content-between mb-1">
-                                <span><AlertTriangle className="text-warning me-1" />App IO riuscito, primario fallito</span>
-                                <span className="fw-bold">{channelBreakdown.appIoDespitePrimaryFail}</span>
-                              </div>
-                              <div className="d-flex justify-content-between mb-1">
-                                <span><X className="text-danger me-1" />Nessuno dei due (fallito)</span>
-                                <span className="fw-bold">{channelBreakdown.neither}</span>
-                              </div>
-                              <div className="d-flex justify-content-between align-items-center">
-                                <span><ShieldCheck className="text-primary me-1" />Dirottato su PEC (domicilio digitale)</span>
-                                <span className="d-flex align-items-center gap-2">
-                                  <span className="fw-bold">{channelBreakdown.inadDiverted}</span>
-                                  {channelBreakdown.inadDiverted > 0 && hasContentCorrection && (
-                                    <button className="btn btn-sm btn-link p-0" type="button"
-                                      disabled={resendingOutcome === 'inadDiverted'}
-                                      onClick={() => handleResendByOutcome(campaign.id, 'inadDiverted', channelBreakdown.inadDiverted)}>
-                                      {resendingOutcome === 'inadDiverted' ? 'Invio...' : `Rimanda a questi ${channelBreakdown.inadDiverted}`}
-                                    </button>
-                                  )}
-                                </span>
-                              </div>
+                              {showAppIoRows && channelBreakdown.primaryOnly > 0 && (
+                                <div className="d-flex justify-content-between mb-1">
+                                  <span><Mail className="text-muted me-1" />Solo canale primario</span>
+                                  <span className="fw-bold">{channelBreakdown.primaryOnly}</span>
+                                </div>
+                              )}
+                              {showAppIoRows && channelBreakdown.both > 0 && (
+                                <div className="d-flex justify-content-between align-items-center mb-1">
+                                  <span><CheckCheck className="text-success me-1" />Anche App IO (parallela)</span>
+                                  <span className="d-flex align-items-center gap-2">
+                                    <span className="fw-bold">{channelBreakdown.both}</span>
+                                    {hasContentCorrection && (
+                                      <button className="btn btn-sm btn-link p-0" type="button"
+                                        disabled={resendingOutcome === 'both'}
+                                        onClick={() => handleResendByOutcome(campaign.id, 'both', channelBreakdown.both)}>
+                                        {resendingOutcome === 'both' ? 'Invio...' : `Rimanda a questi ${channelBreakdown.both}`}
+                                      </button>
+                                    )}
+                                  </span>
+                                </div>
+                              )}
+                              {showAppIoRows && channelBreakdown.appIoOnly > 0 && (
+                                <div className="d-flex justify-content-between mb-1">
+                                  <span><Smartphone className="text-success me-1" />Solo App IO (esclusiva)</span>
+                                  <span className="fw-bold">{channelBreakdown.appIoOnly}</span>
+                                </div>
+                              )}
+                              {showAppIoRows && channelBreakdown.appIoDespitePrimaryFail > 0 && (
+                                <div className="d-flex justify-content-between mb-1">
+                                  <span><AlertTriangle className="text-warning me-1" />App IO riuscito, primario fallito</span>
+                                  <span className="fw-bold">{channelBreakdown.appIoDespitePrimaryFail}</span>
+                                </div>
+                              )}
+                              {showAppIoRows && channelBreakdown.neither > 0 && (
+                                <div className="d-flex justify-content-between mb-1">
+                                  <span><X className="text-danger me-1" />Nessuno dei due (fallito)</span>
+                                  <span className="fw-bold">{channelBreakdown.neither}</span>
+                                </div>
+                              )}
+                              {channelBreakdown.inadCheckRan && (
+                                <div className="d-flex justify-content-between align-items-center">
+                                  <span><ShieldCheck className="text-primary me-1" />Dirottato su PEC (domicilio digitale)</span>
+                                  <span className="d-flex align-items-center gap-2">
+                                    <span className="fw-bold">{channelBreakdown.inadDiverted}</span>
+                                    {channelBreakdown.inadDiverted > 0 && hasContentCorrection && (
+                                      <button className="btn btn-sm btn-link p-0" type="button"
+                                        disabled={resendingOutcome === 'inadDiverted'}
+                                        onClick={() => handleResendByOutcome(campaign.id, 'inadDiverted', channelBreakdown.inadDiverted)}>
+                                        {resendingOutcome === 'inadDiverted' ? 'Invio...' : `Rimanda a questi ${channelBreakdown.inadDiverted}`}
+                                      </button>
+                                    )}
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           </div>
                           );

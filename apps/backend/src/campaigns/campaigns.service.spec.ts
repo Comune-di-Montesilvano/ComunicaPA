@@ -1582,6 +1582,8 @@ describe('CampaignsService', () => {
         appIoDespitePrimaryFail: 1,
         neither: 1,
         inadDiverted: 2,
+        appIoMode: 'parallel',
+        inadCheckRan: true,
       });
     });
 
@@ -1601,6 +1603,29 @@ describe('CampaignsService', () => {
         appIoDespitePrimaryFail: 0,
         neither: 0,
         inadDiverted: 1,
+        appIoMode: 'none',
+        inadCheckRan: true,
+      });
+    });
+
+    it('inadCheckRan true e inadDiverted 0 (INAD eseguito, nessun dirottamento) — distinto da "mai eseguito" (bug reale: prima indistinguibile in UI)', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelConfig: {} });
+      mockRecipientRepo.find.mockResolvedValueOnce([
+        { id: 'r1', status: RecipientStatus.SENT, inadCheck: { found: false, diverted: false } },
+      ]);
+      mockAttemptRepo.find.mockResolvedValueOnce([]);
+
+      const result = await service.getChannelBreakdown('uuid-1');
+
+      expect(result).toEqual({
+        primaryOnly: 1,
+        both: 0,
+        appIoOnly: 0,
+        appIoDespitePrimaryFail: 0,
+        neither: 0,
+        inadDiverted: 0,
+        appIoMode: 'none',
+        inadCheckRan: true,
       });
     });
   });
