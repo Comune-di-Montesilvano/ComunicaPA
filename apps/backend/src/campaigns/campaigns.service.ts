@@ -1163,6 +1163,8 @@ export class CampaignsService {
     recipients: Array<{ id: string }>,
     channelOverrides?: Map<string, NotificationChannel>,
   ): Promise<{ launched: number }> {
+    if (recipients.length === 0) return { launched: 0 };
+
     // Bulk insert NotificationAttempts in chunks di 500
     const CHUNK = 500;
     const attemptIds: string[] = [];
@@ -1208,8 +1210,14 @@ export class CampaignsService {
       );
     }
 
+    // Scoped ai SOLI recipients passati qui, mai all'intera campagna: se
+    // esistono altri destinatari ancora PENDING per motivi indipendenti
+    // (es. PENDING_REVIEW risolto singolarmente via resolvePecReview,
+    // chiamata con un solo destinatario) un WHERE su tutta la campagna li
+    // flipperebbe a QUEUED senza mai aver creato un attempt/job per loro —
+    // bug reale: destinatari "fantasma" QUEUED senza invio reale in corso.
     await this.recipientRepo.update(
-      { campaignId: campaign.id, status: RecipientStatus.PENDING },
+      { id: In(recipients.map((r) => r.id)), status: RecipientStatus.PENDING },
       { status: RecipientStatus.QUEUED },
     );
 
