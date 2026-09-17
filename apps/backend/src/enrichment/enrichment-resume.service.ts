@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
+import { Cron } from '@nestjs/schedule';
 import { Repository } from 'typeorm';
 import { Queue } from 'bullmq';
 import { EnrichmentJob, EnrichmentJobStatus } from '../entities/enrichment-job.entity.js';
@@ -40,6 +41,19 @@ import { readCheckpointSync } from './enrichment-checkpoint.util.js';
  *    mano `status='processing'` su un job BullMQ già completato — che non è
  *    la forma di un crash vero, dove il job resta `active`. Corretto:
  *    interrogare lo stato del job BullMQ esistente e agire di conseguenza.
+ *
+ * **Non basta girare solo al boot.** Se al momento del check il job BullMQ
+ * risulta ancora `active` (lock non scaduto, `stalledInterval` default 30s),
+ * il codice si fida dello stalled-job recovery automatico e non tocca nulla
+ * — corretto se quello poi lo riprende. Ma se BullMQ lo marca `failed` DOPO
+ * quel check (stall ripetuto oltre `maxStalledCount`, tipico con redeploy
+ * ravvicinati su un job lungo), nessuno lo ricontrolla più: il boot-time
+ * check è già passato, il record resta bloccato in PROCESSING per sempre
+ * nonostante BullMQ mostri il job come fallito (bug reale, osservato dal
+ * vivo — motore ENRICHMENT "Idle" con 1 fallito, job ancora
+ * "Elaborazione N/M" in UI). Stesso `@Cron` periodico, non solo
+ * `onModuleInit`, così la finestra di corsa si auto-ripara in pochi minuti
+ * invece di richiedere un altro riavvio.
  */
 @Injectable()
 export class EnrichmentResumeService implements OnModuleInit {
@@ -56,6 +70,7 @@ export class EnrichmentResumeService implements OnModuleInit {
     await this.resumeStuckJobs();
   }
 
+  @Cron('*/5 * * * *')
   async resumeStuckJobs(): Promise<void> {
     const stuck = await this.jobRepo.find({ where: { status: EnrichmentJobStatus.PROCESSING } });
     for (const job of stuck) {

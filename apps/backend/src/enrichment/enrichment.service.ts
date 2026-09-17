@@ -4,14 +4,16 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { Repository } from 'typeorm';
 import * as fs from 'fs';
-import { join } from 'path';
+import { join, basename } from 'path';
 import AdmZip from 'adm-zip';
 import {
   EnrichmentJob,
   EnrichmentJobStatus,
   CampaignConversionStatus,
   TraceFormat,
+  type EnrichmentWarning,
 } from '../entities/enrichment-job.entity.js';
+import { PdfExtractorClient } from './pdf-extractor.client.js';
 import {
   ENRICHMENT_QUEUE,
   EnrichmentQueueJobData,
@@ -49,6 +51,7 @@ export class EnrichmentService {
     @InjectQueue(CONVERT_CAMPAIGN_QUEUE)
     private readonly convertCampaignQueue: Queue<ConvertCampaignQueueJobData>,
     private readonly overrideService: EnrichmentAddressOverrideService,
+    private readonly extractor: PdfExtractorClient,
   ) {}
 
   /**
@@ -334,6 +337,103 @@ export class EnrichmentService {
       : 0;
     await this.jobRepo.update(jobId, { missingPaymentCount });
     return {};
+  }
+
+  /**
+   * Solo per job DONE: ri-richiama pdf-extractor per le righe con warning
+   * "Estrazione fallita: ..." (fallimento TRANSITORIO della chiamata, es.
+   * pdf-extractor irraggiungibile perché il backend/servizio è stato
+   * riavviato a metà job) — MAI per "PDF non trovato nel ZIP" (file
+   * genuinamente assente, un retry non risolverebbe nulla). Il PDF è già su
+   * disco in allegati/ anche per le righe fallite (scritto PRIMA della
+   * chiamata all'estrattore, vedi enrichment.processor.ts) — nessun bisogno
+   * di riaprire i pezzi ZIP originali, già cancellati a job riuscito.
+   *
+   * Limite noto: se la riga aveva più rate di quelle già presenti nell'header
+   * CSV (calcolato una volta sola a fine job sul massimo trovato), le rate
+   * oltre l'header esistente vengono scartate silenziosamente da
+   * buildEnrichedCsv (colonna non presente) — caso raro su un retry di una
+   * singola riga fallita, non gestito qui.
+   */
+  async retryFailedPdfs(jobId: string): Promise<{ blocked?: boolean; message?: string; retried?: number; succeeded?: number; stillFailing?: number }> {
+    const job = await this.getJob(jobId);
+    if (job.status !== EnrichmentJobStatus.DONE) {
+      return { blocked: true, message: 'Il job non è completato: nessuna riga da riprovare' };
+    }
+    const csvPath = getEnrichmentResultCsv(jobId);
+    if (!fs.existsSync(csvPath)) {
+      return { blocked: true, message: 'File risultato non più disponibile (retention scaduta?)' };
+    }
+
+    const failedRowNumbers = new Set(
+      job.warnings.filter((w) => w.message.startsWith('Estrazione fallita:')).map((w) => w.row),
+    );
+    if (failedRowNumbers.size === 0) {
+      return { retried: 0, succeeded: 0, stillFailing: 0 };
+    }
+
+    const { headers, rows } = parseEnrichedCsv(fs.readFileSync(csvPath, 'utf-8'));
+    const attachmentsDir = getEnrichmentAttachmentsDir(jobId);
+    // Warning non toccati da questo retry (righe diverse, o classi di errore
+    // diverse tipo "PDF non trovato") restano invariati; quelli delle righe
+    // riprovate vengono ricostruiti da zero sotto.
+    const untouchedWarnings = job.warnings.filter((w) => !failedRowNumbers.has(w.row));
+    const newWarnings: EnrichmentWarning[] = [];
+    let succeeded = 0;
+
+    for (const rowNum of failedRowNumbers) {
+      const row = rows[rowNum - 1];
+      const pdfFilename = row?.allegato ?? '';
+      const pdfPath = pdfFilename ? join(attachmentsDir, basename(pdfFilename)) : '';
+      if (!row || !pdfFilename || !fs.existsSync(pdfPath)) {
+        newWarnings.push({ row: rowNum, pdf: pdfFilename, message: 'Estrazione fallita: PDF non più disponibile su disco per il retry' });
+        continue;
+      }
+      try {
+        const pdfBuffer = fs.readFileSync(pdfPath);
+        const result = await this.extractor.extract(pdfBuffer, pdfFilename, { searchPayments: job.searchPayments });
+        for (const w of result.warnings) {
+          newWarnings.push({ row: rowNum, pdf: pdfFilename, message: w });
+        }
+        if (!row.indirizzo && result.address) {
+          row.indirizzo = result.address.indirizzo;
+          row.cap = result.address.cap;
+          row.comune = result.address.comune;
+          row.provincia = result.address.provincia;
+          row.stato_estero = result.address.stato_estero;
+        }
+        if (result.payment?.totale) {
+          row.numero_avviso = result.payment.totale.numero_avviso || row.numero_avviso;
+          row.numero_avviso_alternativo = result.payment.totale.numero_avviso_alternativo || row.numero_avviso_alternativo;
+          row.importo = result.payment.totale.importo;
+          row.scadenza = result.payment.totale.scadenza;
+        }
+        result.payment?.rate?.forEach((rata, idx) => {
+          const n = idx + 1;
+          if (!headers.includes(`rata${n}_numero_avviso`)) return; // vedi limite noto in cima al metodo
+          row[`rata${n}_numero_avviso`] = rata.numero_avviso;
+          row[`rata${n}_importo`] = rata.importo;
+          row[`rata${n}_scadenza`] = rata.scadenza;
+        });
+        succeeded++;
+      } catch (err: any) {
+        newWarnings.push({ row: rowNum, pdf: pdfFilename, message: `Estrazione fallita: ${err.message}` });
+      }
+    }
+
+    const overrides = await this.overrideService.findByJob(jobId);
+    const patched = this.overrideService.applyOverrides(rows, overrides);
+    const tmpPath = `${csvPath}.tmp`;
+    fs.writeFileSync(tmpPath, buildEnrichedCsv(headers, patched), 'utf-8');
+    fs.renameSync(tmpPath, csvPath);
+
+    const warnings = [...untouchedWarnings, ...newWarnings];
+    const missingPaymentCount = job.searchPayments
+      ? patched.filter((r) => !r.numero_avviso || !r.importo).length
+      : 0;
+    await this.jobRepo.update(jobId, { warnings, warningCount: warnings.length, missingPaymentCount });
+
+    return { retried: failedRowNumbers.size, succeeded, stillFailing: failedRowNumbers.size - succeeded };
   }
 
   private loadCurrentRows(job: EnrichmentJob): { headers: string[]; rows: EnrichedRow[] } {
