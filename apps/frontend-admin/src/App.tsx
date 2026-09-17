@@ -1117,6 +1117,54 @@ function splitWarningGroupsByResolution(
   };
 }
 
+// Classificazione per TIPO di avviso — il backend restituisce solo un
+// `message` in prosa libera (nessun campo type), qui si riconosce il tipo
+// per pattern sul prefisso testuale. Ordine = priorità di visualizzazione
+// (PagoPa/PDF prima, sono i più spesso "da decidere"; CF è quasi sempre già
+// auto-corretto dal PDF, informativo).
+const ENRICH_WARNING_CATEGORIES: Array<{
+  key: string;
+  label: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  badgeClass: string;
+  match: (message: string) => boolean;
+}> = [
+  { key: 'pdf', label: 'PDF/Estrazione', icon: AlertCircle, badgeClass: 'bg-danger-subtle text-danger-emphasis border', match: (m) => /pdf non trovato|estrazione fallita|pdf non elaborabile/i.test(m) },
+  { key: 'pagopa', label: 'PagoPa', icon: CreditCard, badgeClass: 'bg-warning-subtle text-warning-emphasis border', match: (m) => /pagopa|cbill|qr /i.test(m) },
+  { key: 'indirizzo', label: 'Indirizzo', icon: MapPin, badgeClass: 'bg-secondary-subtle text-secondary-emphasis border', match: (m) => /indirizzo|città|provincia|\bcap\b|paese/i.test(m) },
+  { key: 'cf', label: 'Codice Fiscale/Partita IVA', icon: Contact, badgeClass: 'bg-secondary-subtle text-secondary-emphasis border', match: (m) => /codice fiscale|partita iva/i.test(m) },
+];
+const ENRICH_WARNING_CATEGORY_OTHER = {
+  key: 'altro',
+  label: 'Altro',
+  icon: Info,
+  badgeClass: 'bg-secondary-subtle text-secondary-emphasis border',
+};
+
+// Un gruppo (riga/pdf) può avere più messaggi di categorie diverse (es.
+// "Provincia mancante" + "Codice Fiscale non valido" sulla stessa riga) —
+// compare in OGNI sezione pertinente, non solo nella prima che matcha:
+// l'operatore che apre "Indirizzo" deve vederlo anche se il problema
+// principale della riga è altrove.
+function groupEnrichWarningsByCategory(
+  groups: Array<{ row: number; pdf: string; messages: string[] }>,
+): Array<{ category: typeof ENRICH_WARNING_CATEGORIES[number] | typeof ENRICH_WARNING_CATEGORY_OTHER; groups: typeof groups }> {
+  const byKey = new Map<string, typeof groups>();
+  for (const g of groups) {
+    const matched = ENRICH_WARNING_CATEGORIES.filter((c) => g.messages.some((m) => c.match(m)));
+    const cats = matched.length > 0 ? matched : [ENRICH_WARNING_CATEGORY_OTHER];
+    for (const c of cats) {
+      const bucket = byKey.get(c.key) ?? [];
+      bucket.push(g);
+      byKey.set(c.key, bucket);
+    }
+  }
+  const ordered = [...ENRICH_WARNING_CATEGORIES, ENRICH_WARNING_CATEGORY_OTHER];
+  return ordered
+    .filter((c) => (byKey.get(c.key)?.length ?? 0) > 0)
+    .map((c) => ({ category: c, groups: byKey.get(c.key)! }));
+}
+
 // Codice Fiscale (16 alfanumerici) o Partita IVA (11 cifre) — stesso vincolo
 // già applicato riga per riga nella validazione CSV del wizard massivo.
 function isValidCfOrPiva(value: string): boolean {
@@ -1678,6 +1726,8 @@ export function App(): React.JSX.Element {
   // distinti sulla stessa riga (jobId+pdfFilename).
   const [enrichWarningResolution, setEnrichWarningResolution] = useState<Record<string, Record<string, 'corrected' | 'dismissed'>>>({});
   const [enrichResolvedSectionOpen, setEnrichResolvedSectionOpen] = useState<Record<string, boolean>>({});
+  // Toggle per sezione categoria avvisi, chiave `${jobId}__${unresolved|resolved}__${categoryKey}` — default aperto.
+  const [enrichWarningCategoryOpen, setEnrichWarningCategoryOpen] = useState<Record<string, boolean>>({});
 
   const runNotificationSearch = async (page = searchPage) => {
     setSearchLoading(true);
@@ -15083,14 +15133,19 @@ export function App(): React.JSX.Element {
                       // vanno accorpati in un solo <li> con un solo form
                       // "Correggi indirizzo" — altrimenti il form si ripete
                       // identico una volta per warning sulla stessa riga.
+                      // Riga card: "problema" (riga/pdf/badge stato, in
+                      // grassetto) separato visivamente dalla "descrizione"
+                      // (messaggio grezzo, sotto, più piccolo/muted) — prima
+                      // era tutto sulla stessa riga senza distinzione.
                       const renderWarningRow = (g: { row: number; pdf: string; messages: string[] }) => {
                         const committed = job.status === 'done' || g.row <= (job.checkpointRow ?? 0);
                         const resolution = jobResolution[g.pdf];
                         const editingThisRow = enrichAddressEditJobId === job.id && enrichAddressEditPdf === g.pdf;
                         return (
-                          <li key={g.pdf} className="mb-1">
-                            <div className="d-flex align-items-center gap-2 flex-wrap">
-                              <span>Riga {g.row} — {g.pdf}: {g.messages.join(' | ')}</span>
+                          <li key={g.pdf} className="mb-2 pb-2 border-bottom">
+                            <div className="d-flex align-items-center gap-2 flex-wrap mb-1">
+                              <span className="badge bg-light text-dark border font-monospace">Riga {g.row}</span>
+                              <span className="fw-bold small font-monospace">{g.pdf}</span>
                               {resolution === 'corrected' && (
                                 <span className="badge bg-success-subtle text-success-emphasis border">
                                   <CheckCircle2 className="me-1" size={12} />Corretto
@@ -15101,24 +15156,28 @@ export function App(): React.JSX.Element {
                                   <EyeOff className="me-1" size={12} />Ignorato
                                 </span>
                               )}
+                            </div>
+                            <div className="small text-muted mb-2">{g.messages.join(' | ')}</div>
+                            <div className="d-flex align-items-center gap-2 flex-wrap">
                               <button
-                                className="btn btn-sm btn-link p-0"
+                                className="btn btn-sm btn-outline-primary"
                                 type="button"
                                 disabled={!committed}
                                 title={committed ? '' : 'In attesa di checkpoint (salvataggio ogni 100 righe)'}
                                 onClick={() => openEnrichAddressEdit(job.id, g.pdf)}
                               >
+                                <Pencil className="me-1" size={14} />
                                 {resolution === 'corrected' ? 'Modifica correzione' : 'Correggi dati'}
                               </button>
                               {!resolution && (
                                 <button
-                                  className="btn btn-sm btn-link p-0 text-muted"
+                                  className="btn btn-sm btn-outline-secondary"
                                   type="button"
                                   disabled={!committed}
                                   title="Segna come ok senza modificare i dati (es. falso positivo)"
                                   onClick={() => handleEnrichDismissWarning(job.id, g.pdf)}
                                 >
-                                  Ignora
+                                  <EyeOff className="me-1" size={14} />Ignora
                                 </button>
                               )}
                             </div>
@@ -15178,17 +15237,48 @@ export function App(): React.JSX.Element {
                           </li>
                         );
                       };
+                      // Raggruppa per TIPO di avviso (PagoPa/Indirizzo/CF/PDF/Altro),
+                      // ogni categoria collassabile col proprio contatore — prima
+                      // era un'unica lista piatta, difficile scorrere con decine
+                      // di avvisi misti.
+                      const renderCategorySections = (groups: Array<{ row: number; pdf: string; messages: string[] }>, sectionKey: string) => {
+                        const byCategory = groupEnrichWarningsByCategory(groups);
+                        return byCategory.map(({ category, groups: catGroups }) => {
+                          const openKey = `${job.id}__${sectionKey}__${category.key}`;
+                          const isOpen = enrichWarningCategoryOpen[openKey] !== false; // default aperto
+                          const Icon = category.icon;
+                          return (
+                            <div key={category.key} className="mb-3">
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-light border d-inline-flex align-items-center gap-2 mb-2"
+                                onClick={() => setEnrichWarningCategoryOpen((prev) => ({ ...prev, [openKey]: !isOpen }))}
+                              >
+                                <Icon size={14} />
+                                <span className="fw-bold">{category.label}</span>
+                                <span className={`badge ${category.badgeClass}`}>{catGroups.length}</span>
+                                <span className="text-muted small">{isOpen ? 'Nascondi' : 'Mostra'}</span>
+                              </button>
+                              {isOpen && (
+                                <ul className="list-unstyled ps-2">
+                                  {catGroups.map((g) => renderWarningRow(g))}
+                                </ul>
+                              )}
+                            </div>
+                          );
+                        });
+                      };
                       return (
-                        <ul className="small text-muted mt-2 mb-0 list-unstyled">
+                        <div className="mt-2">
                           {job.warnings && job.warnings.length > 0 ? (
                             <>
                               {unresolved.length > 0 ? (
-                                unresolved.map((g) => renderWarningRow(g))
+                                renderCategorySections(unresolved, 'unresolved')
                               ) : resolved.length > 0 ? (
-                                <li className="fst-italic text-success">Tutti gli avvisi sono stati sistemati.</li>
+                                <div className="fst-italic text-success small">Tutti gli avvisi sono stati sistemati.</div>
                               ) : null}
                               {resolved.length > 0 && (
-                                <li className="mt-2" style={{ listStyle: 'none' }}>
+                                <div className="mt-2">
                                   <button
                                     className="btn btn-sm btn-link p-0 text-muted"
                                     type="button"
@@ -15197,17 +15287,17 @@ export function App(): React.JSX.Element {
                                     {enrichResolvedSectionOpen[job.id] ? 'Nascondi' : 'Mostra'} risolti ({resolved.length})
                                   </button>
                                   {enrichResolvedSectionOpen[job.id] && (
-                                    <ul className="list-unstyled mt-1">
-                                      {resolved.map((g) => renderWarningRow(g))}
-                                    </ul>
+                                    <div className="mt-2">
+                                      {renderCategorySections(resolved, 'resolved')}
+                                    </div>
                                   )}
-                                </li>
+                                </div>
                               )}
                             </>
                           ) : (
-                            <li className="fst-italic text-muted">Sincronizzazione avvisi in corso...</li>
+                            <div className="fst-italic text-muted small">Sincronizzazione avvisi in corso...</div>
                           )}
-                        </ul>
+                        </div>
                       );
                     })()}
 
