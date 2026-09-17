@@ -169,8 +169,11 @@ function normalizeMunicipalityKey(value: string): string {
     .replace(/\s+/g, ' ');
 }
 
+// Object.keys() invece di Object.entries(): il lib target di questo
+// pacchetto (tsconfig.base.json) non include ES2017, Object.entries non è
+// disponibile (bug reale, preso in CI: TS2550).
 const LONG_MUNICIPALITY_INDEX: Map<string, string> = new Map(
-  Object.entries(LONG_MUNICIPALITY_ABBREVIATIONS).map(([k, v]) => [normalizeMunicipalityKey(k), v]),
+  Object.keys(LONG_MUNICIPALITY_ABBREVIATIONS).map((k) => [normalizeMunicipalityKey(k), LONG_MUNICIPALITY_ABBREVIATIONS[k]]),
 );
 
 /**
