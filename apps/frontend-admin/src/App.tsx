@@ -2129,6 +2129,19 @@ export function App(): React.JSX.Element {
   const canSelectPostal = role === 'admin' || canUsePostal;
   const [wizAppIoServiceId, setWizAppIoServiceId] = useState('');
   const [wizCsvFile, setWizCsvFile] = useState<File | null>(null);
+  // Riferimento all'ultimo File già persistito con successo su
+  // draft-csv (per campagna) — evita di ri-caricare byte-per-byte lo
+  // stesso file identico ad ogni "avanti" del wizard. Bug reale: una
+  // bozza ripresa da arricchimento (CSV multi-MB, migliaia di righe)
+  // veniva ri-postata INTERAMENTE (non a chunk, a differenza
+  // dell'upload destinatari) ad ogni transizione di step, 413 dal
+  // reverse proxy esterno (~1MB) ripetuto in loop — il file su disco
+  // era già quello corretto (scritto direttamente da
+  // ConvertCampaignProcessor), il ri-upload era puro spreco anche
+  // quando riusciva. Confronto per REFERENZA dell'oggetto File (non
+  // dimensione/nome, per evitare falsi positivi): resta lo stesso solo
+  // se nessuno ha rifatto setWizCsvFile (nuova selezione manuale).
+  const wizCsvFileSyncedRef = useRef<{ campaignId: string; file: File } | null>(null);
   const [wizCsvHeaders, setWizCsvHeaders] = useState<string[]>([]);
   const [wizCsvRows, setWizCsvRows] = useState<Record<string, string>[]>([]);
   const [wizCsvHasHeaders, setWizCsvHasHeaders] = useState(true);
@@ -7626,6 +7639,11 @@ export function App(): React.JSX.Element {
           const blob = await res.blob();
           const file = new File([blob], source.channelConfig.wizCsvFilename, { type: 'text/csv' });
           setWizCsvFile(file);
+          // Appena fetchato dallo stesso endpoint su cui verrebbe ri-postato:
+          // già identico su disco, marcarlo "sincronizzato" evita un
+          // ri-upload byte-per-byte inutile (e potenzialmente 413 su CSV
+          // multi-MB da arricchimento) al primo "avanti" dopo la ripresa.
+          wizCsvFileSyncedRef.current = { campaignId: opts.campaignId, file };
           const parsedHeaders = await parseCsvFile(
             file,
             !!source.channelConfig.wizCsvHasHeaders,
@@ -7993,7 +8011,10 @@ export function App(): React.JSX.Element {
         if (!res.ok) throw new Error('Errore durante il salvataggio della bozza');
       }
 
-      if (wizCsvFile) {
+      const alreadySynced =
+        wizCsvFileSyncedRef.current?.campaignId === activeCampaignId &&
+        wizCsvFileSyncedRef.current?.file === wizCsvFile;
+      if (wizCsvFile && !alreadySynced) {
         const formData = new FormData();
         formData.append('file', wizCsvFile);
         const csvUploadRes = await fetch(`${ADMIN_API_BASE}/campaigns/${activeCampaignId}/recipients/draft-csv`, {
@@ -8002,6 +8023,7 @@ export function App(): React.JSX.Element {
           body: formData,
         });
         if (!csvUploadRes.ok) throw new Error('Errore durante il caricamento del file CSV in bozza');
+        wizCsvFileSyncedRef.current = { campaignId: activeCampaignId!, file: wizCsvFile };
       }
 
       if (recipientsCsvBlobOverride || (wizValidRows.length > 0 && wizMapping.codice_fiscale)) {
