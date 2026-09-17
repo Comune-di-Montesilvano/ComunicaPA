@@ -1285,6 +1285,31 @@ describe('CampaignsService', () => {
       void result;
     });
 
+    it('campagna EMAIL, PIVA trovata su Registro Imprese ma SENZA PEC: mai dirottato a PEC (bug reale: found=true non implica PEC presente)', async () => {
+      mockSettings.get.mockImplementation(async (key?: string) => (key === 'inad.checkEnabled' ? true : null));
+      const campaignEmail = { ...mockCampaign, id: 'c-inad-piva-nopec', channelType: 'EMAIL', channelConfig: {} };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaignEmail);
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: { extraData?: boolean } }) => {
+        if (select?.extraData) return Promise.resolve([]);
+        return Promise.resolve([{ id: 'r-piva', codiceFiscale: '01450570682', pec: null, email: 'a@gmail.com' }]);
+      });
+      // Impresa trovata (found:true) ma senza PEC censita — risposta reale
+      // Registro Imprese per ditte individuali/senza domicilio digitale.
+      mockRegistroImpreseService.dettaglioImpresa.mockResolvedValue({ found: true, pec: null });
+
+      await service.launch('c-inad-piva-nopec', ADMIN_REQUESTER);
+
+      expect(mockRecipientRepo.update).toHaveBeenCalledWith(
+        { id: 'r-piva' },
+        expect.objectContaining({ inadCheck: expect.objectContaining({ found: true, diverted: false }) }),
+      );
+      // Nessuna scrittura pec, nessun dirottamento: il destinatario resta EMAIL.
+      const updateCall = mockRecipientRepo.update.mock.calls.find((c: any) => c[0]?.id === 'r-piva');
+      expect(updateCall![1]).not.toHaveProperty('pec');
+      const insertBuilder = mockAttemptRepo.createQueryBuilder();
+      expect(insertBuilder.values).toHaveBeenCalledWith([expect.objectContaining({ recipientId: 'r-piva', channelType: 'EMAIL' })]);
+    });
+
     it('non fa alcun check INAD se il toggle è disattivato', async () => {
       mockSettings.get.mockImplementation(async () => false);
       const campaignEmail = { ...mockCampaign, id: 'c-inad-2', channelType: 'EMAIL', channelConfig: {} };
