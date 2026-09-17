@@ -322,6 +322,6 @@ export class EnrichmentController {
   @Roles('user', 'admin')
   @HttpCode(HttpStatus.OK)
   retryFailedPdfs(@Param('id', ParseUUIDPipe) id: string) {
-    return this.svc.retryFailedPdfs(id);
+    return this.svc.enqueueRetryFailedPdfs(id);
   }
 }

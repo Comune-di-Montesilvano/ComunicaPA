@@ -22,6 +22,7 @@ import {
   ConvertCampaignQueueJobData,
   MERGE_BATCH_JOB_NAME,
   MergeBatchQueueJobData,
+  RETRY_FAILED_PDFS_JOB_NAME,
 } from './enrichment-job.types.js';
 import { getEnrichmentAttachmentsDir, getEnrichmentDir, getEnrichmentResultCsv } from './enrichment-paths.js';
 import { EnrichmentAddressOverrideService, type AddressOverrideInput } from './enrichment-address-override.service.js';
@@ -338,6 +339,40 @@ export class EnrichmentService {
       : 0;
     await this.jobRepo.update(jobId, { missingPaymentCount });
     return {};
+  }
+
+  /**
+   * Entry point HTTP per "Riprova righe fallite" — solo check economici
+   * (nessuna chiamata pdf-extractor qui), poi accoda un job BullMQ che
+   * esegue `retryFailedPdfs()` in background. Bug reale in prod: farlo
+   * sincrono dentro la richiesta (1142 righe, una chiamata pdf-extractor
+   * ciascuna) superava il timeout del reverse proxy esterno (504).
+   */
+  async enqueueRetryFailedPdfs(jobId: string): Promise<{ blocked?: boolean; message?: string; queued?: boolean }> {
+    const job = await this.getJob(jobId);
+    if (job.status === EnrichmentJobStatus.PROCESSING) {
+      const checkpoint = readCheckpointSync(jobId);
+      if (!checkpoint) {
+        return { blocked: true, message: 'Nessun checkpoint disponibile: il job non ha ancora processato righe' };
+      }
+      if (!checkpoint.warnings.some((w) => w.message.startsWith('Estrazione fallita:'))) {
+        return { queued: false };
+      }
+    } else if (job.status === EnrichmentJobStatus.DONE) {
+      if (!fs.existsSync(getEnrichmentResultCsv(jobId))) {
+        return { blocked: true, message: 'File risultato non più disponibile (retention scaduta?)' };
+      }
+      if (!job.warnings.some((w) => w.message.startsWith('Estrazione fallita:'))) {
+        return { queued: false };
+      }
+    } else {
+      return { blocked: true, message: 'Il job non è completato: nessuna riga da riprovare' };
+    }
+    // Stessa coda/stesso jobId prefix diverso da 'enrich' — dedup BullMQ è
+    // per jobId nell'intera coda, mai riusare lo stesso id del job 'enrich'
+    // originale (collisione nota, vedi CLAUDE.md).
+    await this.queue.add(RETRY_FAILED_PDFS_JOB_NAME, { jobId }, { jobId: `retry-${jobId}` });
+    return { queued: true };
   }
 
   /**
