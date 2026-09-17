@@ -3898,14 +3898,15 @@ export function App(): React.JSX.Element {
       const res = await apiFetch(`/enrichment/jobs/${jobId}/retry-failed-pdfs`, { method: 'POST' });
       const body = await res.json();
       if (body.blocked) { alert(body.message); return; }
-      await fetchEnrichJobs();
-      alert(
-        body.retried === 0
-          ? 'Nessuna riga con "Estrazione fallita" da riprovare.'
-          : `Riprovate ${body.retried} righe: ${body.succeeded} riuscite, ${body.stillFailing} ancora fallite.`,
-      );
+      if (body.queued === false) { alert('Nessuna riga con "Estrazione fallita" da riprovare.'); return; }
+      // Avviato in background (mai sincrono nella richiesta: su centinaia di
+      // righe superava il timeout del proxy esterno, 504 reale in prod) —
+      // ascolta lo stream esistente per il refresh automatico a completamento
+      // (stesso evento "done"/"error" già gestito per il job principale).
+      alert('Retry avviato in background: i warning si aggiorneranno automaticamente a completamento.');
+      streamEnrichJobLog(jobId);
     } catch {
-      alert('Errore durante il retry delle righe fallite');
+      alert('Errore durante l\'avvio del retry delle righe fallite');
     }
   };
 

@@ -60,6 +60,7 @@ describe('EnrichmentProcessor', () => {
   let events: any;
   let overrideService: any;
   let convertCampaignQueue: any;
+  let enrichmentService: any;
   let processor: EnrichmentProcessor;
   const record = {
     id: 'j1',
@@ -92,7 +93,8 @@ describe('EnrichmentProcessor', () => {
     events = { emitLog: jest.fn(), emitTerminal: jest.fn(), emitStage: jest.fn() };
     overrideService = { findByJob: jest.fn(async () => []), applyOverrides: jest.fn((rows: any) => rows) };
     convertCampaignQueue = { add: jest.fn(async () => undefined) };
-    processor = new EnrichmentProcessor(repo, queue, client, events, overrideService, convertCampaignQueue);
+    enrichmentService = { retryFailedPdfs: jest.fn(async () => ({ retried: 0, succeeded: 0, stillFailing: 0 })) };
+    processor = new EnrichmentProcessor(repo, queue, client, events, overrideService, convertCampaignQueue, enrichmentService);
   });
 
   afterEach(() => {
@@ -513,6 +515,25 @@ describe('EnrichmentProcessor', () => {
       await processor.process(fakeJob);
 
       expect(client.extract).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('retry-failed-pdfs (job asincrono, mai sincrono in una richiesta HTTP)', () => {
+    const retryJob = { id: 'retry-j1', name: 'retry-failed-pdfs', data: { jobId: 'j1' } } as unknown as Job<any>;
+
+    it('delega a EnrichmentService.retryFailedPdfs ed emette l\'evento terminale "done"', async () => {
+      await processor.process(retryJob);
+
+      expect(enrichmentService.retryFailedPdfs).toHaveBeenCalledWith('j1');
+      expect(events.emitTerminal).toHaveBeenCalledWith('j1', { type: 'done' });
+    });
+
+    it('un errore emette l\'evento "error" e rilancia (BullMQ registra il job come fallito)', async () => {
+      enrichmentService.retryFailedPdfs.mockRejectedValueOnce(new Error('boom'));
+
+      await expect(processor.process(retryJob)).rejects.toThrow('boom');
+
+      expect(events.emitTerminal).toHaveBeenCalledWith('j1', { type: 'error', message: 'boom' });
     });
   });
 
