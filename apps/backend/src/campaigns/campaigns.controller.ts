@@ -698,6 +698,30 @@ export class CampaignsController {
     return result;
   }
 
+  @Get(':id/pending-pec-review')
+  getPendingPecReview(@Param('id', ParseUUIDPipe) id: string) {
+    return this.campaignsService.getPendingPecReview(id).then((recipients) => ({ recipients }));
+  }
+
+  @Post(':id/recipients/:recipientId/resolve-pec-review')
+  async resolvePecReview(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('recipientId', ParseUUIDPipe) recipientId: string,
+    @Body() body: { useFoundAddress?: boolean },
+    @Req() req: Request & { user: JwtOperatorPayload },
+  ) {
+    const result = await this.campaignsService.resolvePecReview(id, recipientId, body.useFoundAddress === true);
+    const campaign = await this.campaignsService.findOne(id).catch(() => null);
+    await this.auditLogsService.log({
+      campaignId: id,
+      campaignName: campaign ? campaign.name : null,
+      operator: req.user.username,
+      action: 'RETRY',
+      details: { recipientId, pecReviewResolved: true, useFoundAddress: body.useFoundAddress === true },
+    });
+    return result;
+  }
+
   @Patch(':id/recipients/:recipientId/address')
   async updateRecipientAddress(
     @Param('id', ParseUUIDPipe) id: string,

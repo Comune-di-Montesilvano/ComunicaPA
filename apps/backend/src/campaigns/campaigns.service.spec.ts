@@ -1250,6 +1250,41 @@ describe('CampaignsService', () => {
       expect(mockInadService.startBulkExtraction).not.toHaveBeenCalled();
     });
 
+    it('campagna PEC, destinatario PIVA con PEC Registro Imprese difforme: PENDING_REVIEW, mai sovrascrive recipient.pec, escluso dal lancio', async () => {
+      mockSettings.get.mockImplementation(async (key?: string) => (key === 'inad.checkEnabled' ? true : null));
+      const campaignPec = { ...mockCampaign, id: 'c-inad-piva', channelType: 'PEC', channelConfig: {} };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaignPec);
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: { extraData?: boolean } }) => {
+        if (select?.extraData) return Promise.resolve([]);
+        return Promise.resolve([
+          { id: 'r-piva', codiceFiscale: '12345678901', pec: 'originale@pec.it' },
+          { id: 'r-persona', codiceFiscale: 'RSSMRA80A01H501U', pec: 'persona@pec.it' },
+        ]);
+      });
+      mockRegistroImpreseService.dettaglioImpresa.mockResolvedValue({ found: true, pec: 'tributi@bancaesempio.it' });
+      mockInadService.extractDigitalAddress.mockResolvedValue({ found: false });
+
+      const result = await service.launch('c-inad-piva', ADMIN_REQUESTER);
+
+      expect(mockRecipientRepo.update).toHaveBeenCalledWith(
+        { id: 'r-piva' },
+        expect.objectContaining({
+          status: RecipientStatus.PENDING_REVIEW,
+          inadCheck: expect.objectContaining({ found: true, diverted: true, foundAddress: 'tributi@bancaesempio.it' }),
+        }),
+      );
+      // Mai sovrascritta: nessuna chiamata update per r-piva include pec.
+      for (const call of mockRecipientRepo.update.mock.calls) {
+        if (call[0]?.id === 'r-piva') {
+          expect(call[1]).not.toHaveProperty('pec');
+        }
+      }
+      // Solo r-persona viene accodato: r-piva resta fuori da questo lancio.
+      const insertBuilder = mockAttemptRepo.createQueryBuilder();
+      expect(insertBuilder.values).toHaveBeenCalledWith([expect.objectContaining({ recipientId: 'r-persona' })]);
+      void result;
+    });
+
     it('non fa alcun check INAD se il toggle è disattivato', async () => {
       mockSettings.get.mockImplementation(async () => false);
       const campaignEmail = { ...mockCampaign, id: 'c-inad-2', channelType: 'EMAIL', channelConfig: {} };

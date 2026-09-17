@@ -106,6 +106,7 @@ const POSTAL_DELIVERY_PENDING_SENTINEL = '__POSTAL_DELIVERY_PENDING__';
 const STATUS_META: Record<string, { label: string; badge: string }> = {
   draft: { label: 'Bozza', badge: 'bg-secondary' },
   pending: { label: 'In attesa', badge: 'bg-secondary' },
+  pending_review: { label: 'PEC da verificare', badge: 'bg-warning text-dark' },
   queued: { label: 'In coda', badge: 'bg-info' },
   processing: { label: 'In elaborazione', badge: 'bg-info' },
   running: { label: 'In corso', badge: 'bg-warning text-dark' },
@@ -2551,6 +2552,12 @@ export function App(): React.JSX.Element {
     failed: Array<{ recipientId: string; reason: string }>;
     errorMessage: string | null;
   } | null>(null);
+  // PEC difformi Registro Imprese (destinatari PENDING_REVIEW): pannello a
+  // parte, mai legato allo status campagna (può esistere anche a campagna
+  // già COMPLETED) — stesso principio "un pannello, un proprio polling" già
+  // in uso per gli altri pannelli di dettaglio campagna.
+  const [pendingPecReview, setPendingPecReview] = useState<Array<{ recipientId: string; fullName: string | null; codiceFiscale: string; pecOriginale: string | null; pecTrovata: string | null }>>([]);
+  const [pecReviewResolving, setPecReviewResolving] = useState<string | null>(null);
   const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number; costCents?: number | null; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; protocolNumber?: number | null; protocolYear?: number | null; inadCheck?: { found: boolean; diverted: boolean } | null; signatureCheck?: { valid: boolean; reason: string | null } | null }> } | null>(null);
   const [recipientsSearch, setRecipientsSearch] = useState('');
   const [recipientsPageNum, setRecipientsPageNum] = useState(1);
@@ -2633,6 +2640,19 @@ export function App(): React.JSX.Element {
     }
     return () => clearInterval(timer);
   }, [view, selectedCampaignId, campaign]);
+
+  // Pannello PEC difformi: proprio polling indipendente dallo status
+  // campagna (un PENDING_REVIEW può restare aperto anche a campagna
+  // COMPLETED — non è la stessa condizione del poller sopra).
+  useEffect(() => {
+    if (view !== 'campaign-detail' || !selectedCampaignId || campaign?.channelType !== 'PEC') {
+      setPendingPecReview([]);
+      return;
+    }
+    fetchPendingPecReview(selectedCampaignId);
+    const timer = setInterval(() => fetchPendingPecReview(selectedCampaignId), 3000);
+    return () => clearInterval(timer);
+  }, [view, selectedCampaignId, campaign?.channelType]);
 
   // Auto-refresh degli elenchi campagne (dashboard "Attività Recenti" e "Campagne
   // Massive"): fetchCampaigns() girava solo una volta al login ([token]) — una
@@ -3891,6 +3911,39 @@ export function App(): React.JSX.Element {
       setDetailError(err.message);
     } finally {
       setLoadingCampaignDetail(false);
+    }
+  };
+
+  const fetchPendingPecReview = async (id: string) => {
+    try {
+      const res = await apiFetch(`/campaigns/${id}/pending-pec-review`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setPendingPecReview(data.recipients ?? []);
+    } catch {
+      // best-effort, stesso principio del polling di dettaglio campagna
+    }
+  };
+
+  const handleResolvePecReview = async (campaignId: string, recipientId: string, useFoundAddress: boolean) => {
+    setPecReviewResolving(recipientId);
+    try {
+      const res = await apiFetch(`/campaigns/${campaignId}/recipients/${recipientId}/resolve-pec-review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ useFoundAddress }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        alert(body?.message || 'Errore durante la risoluzione del conflitto PEC.');
+        return;
+      }
+      setPendingPecReview((prev) => prev.filter((r) => r.recipientId !== recipientId));
+      fetchCampaignDetail(campaignId);
+    } catch {
+      alert('Errore di connessione durante la risoluzione del conflitto PEC.');
+    } finally {
+      setPecReviewResolving(null);
     }
   };
 
@@ -17972,6 +18025,60 @@ export function App(): React.JSX.Element {
                           >
                             <Pencil className="me-1" /> Riprendi wizard campagna
                           </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {pendingPecReview.length > 0 && (
+                      <div className="card shadow-sm mb-4 border-warning">
+                        <div className="card-header bg-warning-subtle py-3 border-bottom">
+                          <h3 className="h6 mb-0 fw-bold text-dark">
+                            <AlertTriangle className="me-2" />PEC difformi da verificare ({pendingPecReview.length})
+                          </h3>
+                          <p className="small text-muted mb-0 mt-1">
+                            Registro Imprese ha trovato una PEC diversa da quella già su file — invio bloccato finché non decidi quale usare.
+                          </p>
+                        </div>
+                        <div className="table-responsive">
+                          <table className="table table-sm mb-0 align-middle">
+                            <thead>
+                              <tr>
+                                <th>Nominativo</th>
+                                <th>Codice Fiscale</th>
+                                <th>PEC su file</th>
+                                <th>PEC trovata (Registro Imprese)</th>
+                                <th></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {pendingPecReview.map((r) => (
+                                <tr key={r.recipientId}>
+                                  <td>{r.fullName || '—'}</td>
+                                  <td>{r.codiceFiscale}</td>
+                                  <td className="small">{r.pecOriginale || '—'}</td>
+                                  <td className="small">{r.pecTrovata || '—'}</td>
+                                  <td className="text-nowrap">
+                                    <button
+                                      type="button"
+                                      className="btn btn-sm btn-outline-secondary me-2"
+                                      disabled={pecReviewResolving === r.recipientId}
+                                      onClick={() => handleResolvePecReview(campaign.id, r.recipientId, false)}
+                                    >
+                                      Mantieni PEC su file
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn btn-sm btn-primary"
+                                      disabled={pecReviewResolving === r.recipientId}
+                                      onClick={() => handleResolvePecReview(campaign.id, r.recipientId, true)}
+                                    >
+                                      Usa PEC trovata
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
                         </div>
                       </div>
                     )}
