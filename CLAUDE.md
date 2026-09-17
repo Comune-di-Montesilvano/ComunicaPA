@@ -745,6 +745,16 @@ quando la coda è condivisa tra più campagne dello stesso canale. Se aggiungi
 un nuovo punto che accoda job (`addBulk`), passa sempre `opts.jobId` con lo
 stesso attemptId, altrimenti quel job diventa invisibile a `cancel()`.
 
+**Ogni campo `channelConfig[...]` letto da una strategy di invio deve
+rispettare lo stesso branch su `campaign.channelType` di `mailConfigId`, non
+solo quello.** Bug reale: `PecStrategy` sceglieva correttamente
+`pecReserveMailConfigId` su dirottamento INAD (campagna EMAIL→PEC), ma
+leggeva comunque `channelConfig['from']` (indirizzo EMAIL configurato) come
+envelope MAIL FROM — mismatch con l'account PEC autenticato, il server PEC
+rigetta (`553 MAIL FROM does not match authenticated user name`). Fix:
+`from` usa `channelConfig['from']` solo se `campaign.channelType==='PEC'`,
+altrimenti sempre `smtp.fromAddress` della config risolta.
+
 **"Motore" ≠ canale**: `NotificationQueuesService`/`EnginesController` usano
 `EngineName` (`notification-job.types.ts`), non `NotificationChannel` — un
 motore può essere channel-agnostico (es. `PROTOCOLLAZIONE`, usato solo da
@@ -787,6 +797,22 @@ UI per sempre, nonostante il lavoro reale ancora in corso. Fix: se
 `campaign.status` è `COMPLETED`/`FAILED` al momento del retry, riportarlo a
 `QUEUED` (`completedAt: null`) — `checkAndComplete()` la richiuderà da sola
 quando anche l'ultimo retry sarà terminale.
+
+## Riconciliazione job orfani (`OrphanReconciliationService`)
+
+Attempt `status='queued'` il cui job BullMQ è andato perso (Redis riavviato
+prima dell'AOF, o race window scrittura DB/Redis non transazionale) —
+incidente reale: campagna PEC, 2557 attempt orfani, motore "idle" nonostante
+migliaia "in coda". Cron giornaliero (03:00) + bottone manuale "Job orfani"
+nel pannello Motori, sui 5 motori BullMQ reali (EMAIL/PEC/APP_IO/POSTAL/
+PROTOCOLLAZIONE). **La coda di destinazione si calcola dalla CAMPAGNA
+(channelType/protocolla), mai da `attempt.channelType` da solo** — un
+attempt dirottato da INAD (es. campagna EMAIL, attempt.channelType='PEC') va
+cercato/riparato nella coda EMAIL se la campagna non richiede
+protocollazione, stesso identico calcolo di
+`CampaignsService.createAttemptsAndEnqueue` (`engineName`). Fuori scope
+deliberato: registro imprese/verifica IO/firma/enrichment/bulk-retry (stesso
+schema BullMQ, tabelle/payload diversi, nessun incidente osservato lì).
 
 ## Metodo bulk privato chiamato con un sottoinsieme — ogni mutazione va scoped, mai alla campagna intera
 
@@ -1416,6 +1442,14 @@ dirette di `apps/backend/package.json` — `require()` diretto funziona
 anche nel container prod (niente bisogno del percorso
 `.pnpm/node_modules/` che serve invece per una dipendenza transitiva come
 `jsonwebtoken`, vedi sopra "Token operatore admin").
+
+**SQL con apostrofi in un one-liner Portainer**: usa quoting a dollaro Postgres
+(`$$valore$$`) al posto degli apici singoli — l'apice esterno del one-liner
+`node -e '...'` non ammette nessun apice singolo annidato, `$$...$$` lo aggira
+senza escaping. Pattern verificato dal vivo per diagnosticare attempt "queued"
+senza job BullMQ reale: query `pg` diretta + `bullmq`/`ioredis` per confrontare
+`notification_attempts.status` con `queue.getJob(id)` — stesso principio del
+repair script già noto, utile anche solo per la diagnosi senza riparare nulla.
 
 **`StatoConsegna` vuoto è a volte un dato mancante lato GlobalCom stesso,
 non un bug nostro.** Verificato dal vivo con lo script di debug sopra su 3

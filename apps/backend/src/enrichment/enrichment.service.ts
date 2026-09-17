@@ -484,7 +484,19 @@ export class EnrichmentService {
     }
 
     const existing = await this.queue.getJob(job.id);
-    if (existing) await existing.remove();
+    if (existing) {
+      try {
+        await existing.remove();
+      } catch {
+        // BullMQ Job.remove() lancia se il job è ancora `active` (lockato da
+        // un worker realmente in esecuzione — nessuna opzione `force` in
+        // questa versione) — bug reale: 500 non gestito al primo utilizzo
+        // reale in prod. L'operatore ha esplicitamente accettato questo caso
+        // (job ancora attivo): si prosegue comunque a ripatchare il
+        // checkpoint, il successivo queue.add() con lo stesso jobId resta un
+        // no-op sicuro se il job è davvero ancora vivo (dedup BullMQ).
+      }
+    }
 
     const attachmentsDir = getEnrichmentAttachmentsDir(job.id);
     const untouchedWarnings = checkpoint.warnings.filter((w) => !failedRowNumbers.has(w.row));
