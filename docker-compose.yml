@@ -26,6 +26,13 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    # AOF (append-only file): persiste ogni scrittura su disco, non solo gli
+    # snapshot RDB periodici (default immagine: "save 3600 1 300 100 60
+    # 10000", una finestra tra due snapshot in cui i job BullMQ accodati
+    # restano solo in RAM). Bug reale osservato dal vivo: un "Recreate" da
+    # Portainer sullo stack ha svuotato la coda PEC/Motori più volte —
+    # coerente con un riavvio che non rientra nella finestra di snapshot.
+    command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
     networks:
