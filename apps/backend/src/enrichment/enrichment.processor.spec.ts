@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { join } from 'path';
 import AdmZip from 'adm-zip';
+import { vi } from 'vitest';
 import type { Job } from 'bullmq';
 import { EnrichmentJobStatus, TraceFormat } from '../entities/enrichment-job.entity.js';
 import { getEnrichmentAttachmentsDir, getEnrichmentCheckpoint, getEnrichmentDir, getEnrichmentResultCsv, getEnrichmentSourcesDir } from './enrichment-paths.js';
@@ -463,6 +464,56 @@ describe('EnrichmentProcessor', () => {
     fs.rmSync(getEnrichmentSourcesDir('j1'), { recursive: true });
     await processor.process(fakeJob);
     expect(fs.existsSync(getEnrichmentCheckpoint('j1'))).toBe(false);
+  });
+
+  describe('retry inline su errore transitorio pdf-extractor', () => {
+    const successResult = {
+      address: { indirizzo: 'VIA ROMA 1', cap: '00100', comune: 'ROMA', provincia: 'RM', stato_estero: '' },
+      payment: { totale: { numero_avviso: '301000000000000001', numero_avviso_alternativo: '', cf_ente: '000', importo: '761,00', scadenza: '31/12/2026' }, rate: [] },
+      fiscalCode: null,
+      warnings: [],
+    };
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('"fetch failed" — riprova fino a 3 volte con backoff, riga marcata riuscita se poi va bene', async () => {
+      vi.useFakeTimers();
+      client.extract = jest.fn()
+        .mockRejectedValueOnce(new Error('fetch failed'))
+        .mockRejectedValueOnce(new Error('fetch failed'))
+        .mockResolvedValueOnce(successResult);
+
+      const promise = processor.process(fakeJob);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(client.extract).toHaveBeenCalledTimes(3);
+      const finalUpdate = repo.update.mock.calls.find(([, data]: any) => data.status === EnrichmentJobStatus.DONE)![1];
+      expect(finalUpdate.warnings.some((w: any) => w.row === 1 && w.message.startsWith('Estrazione fallita'))).toBe(false);
+    });
+
+    it('esaurisce i retry (4 fallimenti totali) → riga marcata "Estrazione fallita", job comunque completato', async () => {
+      vi.useFakeTimers();
+      client.extract = jest.fn().mockRejectedValue(new Error('fetch failed'));
+
+      const promise = processor.process(fakeJob);
+      await vi.runAllTimersAsync();
+      await promise;
+
+      expect(client.extract).toHaveBeenCalledTimes(4); // tentativo iniziale + 3 retry
+      const finalUpdate = repo.update.mock.calls.find(([, data]: any) => data.status === EnrichmentJobStatus.DONE)![1];
+      expect(finalUpdate.warnings).toContainEqual({ row: 1, pdf: 'PROVV_1.pdf', message: 'Estrazione fallita: fetch failed' });
+    });
+
+    it('errore non transitorio (es. HTTP applicativo pdf-extractor) → nessun retry, un solo tentativo', async () => {
+      client.extract = jest.fn().mockRejectedValue(new Error('pdf-extractor HTTP 500: internal error'));
+
+      await processor.process(fakeJob);
+
+      expect(client.extract).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('convert-campaign legacy (shim di migrazione deploy)', () => {

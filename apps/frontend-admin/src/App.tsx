@@ -15222,16 +15222,6 @@ export function App(): React.JSX.Element {
                           <button className="btn btn-sm btn-outline-secondary" type="button" onClick={() => handleEnrichRegenerateCsv(job.id)}>
                             Rigenera CSV
                           </button>
-                          {(job.warnings ?? []).some((w) => w.message.startsWith('Estrazione fallita:')) && (
-                            <button
-                              className="btn btn-sm btn-outline-warning"
-                              type="button"
-                              onClick={() => handleEnrichRetryFailedPdfs(job.id)}
-                              title="Ri-richiama pdf-extractor per le righe con 'Estrazione fallita' (fallimento transitorio, es. servizio riavviato a metà job) — non per 'PDF non trovato nel ZIP'"
-                            >
-                              Riprova righe fallite
-                            </button>
-                          )}
                           {(job.campaignConversionStatus === 'pending' || job.campaignConversionStatus === 'processing') ? (
                             <button className="btn btn-sm btn-outline-primary" type="button" disabled>
                               <Loader2 className="icon-spin me-1" size={16} />Creazione bozza in corso...
@@ -15242,6 +15232,20 @@ export function App(): React.JSX.Element {
                             </button>
                           )}
                         </>
+                      )}
+                      {(job.status === 'done' || job.status === 'processing') && job.warnings.some((w) => w.message.startsWith('Estrazione fallita:')) && (
+                        <button
+                          className="btn btn-sm btn-outline-warning"
+                          type="button"
+                          onClick={() => handleEnrichRetryFailedPdfs(job.id)}
+                          title={
+                            job.status === 'processing'
+                              ? "Ferma e correggi ora: riprova subito le righe con 'Estrazione fallita' senza aspettare la fine del job (può perdere il progresso non ancora salvato a checkpoint se il job è ancora attivo)"
+                              : "Ri-richiama pdf-extractor per le righe con 'Estrazione fallita' (fallimento transitorio, es. servizio riavviato a metà job) — non per 'PDF non trovato nel ZIP'"
+                          }
+                        >
+                          Riprova righe fallite
+                        </button>
                       )}
                       {job.warningCount > 0 && (() => {
                         const unresolvedCount = splitWarningGroupsByResolution(job.warnings || [], enrichWarningResolution[job.id] || {}).unresolved.length;
