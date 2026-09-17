@@ -2,7 +2,7 @@ import { Controller, Get, Post, Param, Query, HttpStatus, HttpCode, BadRequestEx
 import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
-import { Not, IsNull, Repository } from 'typeorm';
+import { Not, IsNull, In, Repository } from 'typeorm';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { NotificationQueuesService } from '../queue/notification-queues.service.js';
 import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service.js';
@@ -160,7 +160,18 @@ export class EnginesController {
       status as (typeof allowedStatuses)[number],
       Number.isInteger(parsedLimit) && parsedLimit > 0 ? parsedLimit : 50,
     );
-    return { channel: uc, status, jobs };
+    // Nome campagna risolto qui (unico punto con accesso al repo Campaign,
+    // NotificationQueuesService lavora solo su BullMQ) — batch su ID unici,
+    // mai una query per job: prima il pannello mostrava solo l'UUID grezzo,
+    // impossibile distinguere una campagna corrente da una di mesi fa senza
+    // andare a cercarla a mano.
+    const uniqueCampaignIds = [...new Set(jobs.map((j) => j.campaignId))];
+    const campaigns = uniqueCampaignIds.length
+      ? await this.campaignRepo.find({ where: { id: In(uniqueCampaignIds) }, select: { id: true, name: true } })
+      : [];
+    const nameById = new Map(campaigns.map((c) => [c.id, c.name]));
+    const jobsWithNames = jobs.map((j) => ({ ...j, campaignName: nameById.get(j.campaignId) ?? null }));
+    return { channel: uc, status, jobs: jobsWithNames };
   }
 
   @Get(':channel/jobs/:jobId/logs')

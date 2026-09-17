@@ -2564,7 +2564,8 @@ export function App(): React.JSX.Element {
   const [loadingEngines, setLoadingEngines] = useState(false);
   const [enginesError, setEnginesError] = useState<string | null>(null);
   const [engineJobsChannel, setEngineJobsChannel] = useState<string | null>(null);
-  const [engineJobs, setEngineJobs] = useState<Array<{ jobId: string; campaignId: string; recipientId: string; failedReason?: string; attemptsMade: number }>>([]);
+  const [engineJobsStatus, setEngineJobsStatus] = useState<'active' | 'waiting' | 'failed'>('failed');
+  const [engineJobs, setEngineJobs] = useState<Array<{ jobId: string; campaignId: string; campaignName: string | null; recipientId: string; failedReason?: string; attemptsMade: number; timestamp: number; finishedOn?: number }>>([]);
   const [expandedJobLogs, setExpandedJobLogs] = useState<{ jobId: string; logs: string[] } | null>(null);
   const [loadingJobLogs, setLoadingJobLogs] = useState(false);
   // Sidebar mobile (≤991px): il CSS la nasconde con translateX finché body non ha .bo-sidebar-open
@@ -4565,10 +4566,19 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const handleViewEngineJobs = async (channel: string) => {
+  const handleViewEngineJobs = async (channel: string, status: 'active' | 'waiting' | 'failed' = engineJobsStatus) => {
+    // Riapre sullo stesso canale con lo status scelto (toggle "In corso"/"In
+    // attesa"/"Falliti") — mai un default fisso "failed": prima era l'unico
+    // stato visibile, impossibile vedere "cosa sta inviando adesso".
+    const closing = engineJobsChannel === channel && engineJobsStatus === status;
+    if (closing) {
+      setEngineJobsChannel(null);
+      return;
+    }
     setEngineJobsChannel(channel);
+    setEngineJobsStatus(status);
     setExpandedJobLogs(null);
-    const res = await fetch(`${ADMIN_API_BASE}/engines/${channel.toLowerCase()}/jobs?status=failed&limit=50`, {
+    const res = await fetch(`${ADMIN_API_BASE}/engines/${channel.toLowerCase()}/jobs?status=${status}&limit=50`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json();
@@ -17231,23 +17241,40 @@ export function App(): React.JSX.Element {
 
                                       {eng.pausable !== false && (
                                       <div className="mt-2">
-                                        <button
-                                          type="button"
-                                          className="btn btn-sm btn-outline-secondary"
-                                          onClick={() => handleViewEngineJobs(eng.channel)}
-                                        >
-                                          <List className="me-1" />Vedi job falliti
-                                        </button>
+                                        <div className="btn-group" role="group">
+                                          <button
+                                            type="button"
+                                            className={`btn btn-sm ${engineJobsChannel === eng.channel && engineJobsStatus === 'active' ? 'btn-primary' : 'btn-outline-secondary'}`}
+                                            onClick={() => handleViewEngineJobs(eng.channel, 'active')}
+                                          >
+                                            <List className="me-1" />In corso
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className={`btn btn-sm ${engineJobsChannel === eng.channel && engineJobsStatus === 'waiting' ? 'btn-primary' : 'btn-outline-secondary'}`}
+                                            onClick={() => handleViewEngineJobs(eng.channel, 'waiting')}
+                                          >
+                                            In attesa
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className={`btn btn-sm ${engineJobsChannel === eng.channel && engineJobsStatus === 'failed' ? 'btn-primary' : 'btn-outline-secondary'}`}
+                                            onClick={() => handleViewEngineJobs(eng.channel, 'failed')}
+                                          >
+                                            Falliti
+                                          </button>
+                                        </div>
                                         {engineJobsChannel === eng.channel && (
                                           <div className="table-responsive">
                                             <table className="table table-sm mt-2">
-                                              <thead><tr><th>Job</th><th>Campagna</th><th>Destinatario</th><th>Tentativi</th><th>Motivo</th><th>Log</th></tr></thead>
+                                              <thead><tr><th>Data</th><th>Job</th><th>Campagna</th><th>Destinatario</th><th>Tentativi</th><th>Motivo</th><th>Log</th></tr></thead>
                                               <tbody>
                                                 {engineJobs.map(j => (
                                                   <React.Fragment key={j.jobId}>
                                                     <tr>
+                                                      <td className="small text-nowrap">{new Date(j.finishedOn ?? j.timestamp).toLocaleString('it-IT')}</td>
                                                       <td className="font-monospace small">{j.jobId}</td>
-                                                      <td className="font-monospace small">{j.campaignId}</td>
+                                                      <td className="small">{j.campaignName ?? <span className="text-muted fst-italic">campagna eliminata</span>}</td>
                                                       <td className="font-monospace small">{j.recipientId}</td>
                                                       <td>{j.attemptsMade}</td>
                                                       <td className="small text-danger">{j.failedReason || '—'}</td>
@@ -17264,7 +17291,7 @@ export function App(): React.JSX.Element {
                                                     </tr>
                                                     {expandedJobLogs?.jobId === j.jobId && (
                                                       <tr>
-                                                        <td colSpan={6}>
+                                                        <td colSpan={7}>
                                                           {expandedJobLogs.logs.length === 0 ? (
                                                             <div className="text-muted small">Nessun log registrato per questo job.</div>
                                                           ) : (
@@ -17277,7 +17304,7 @@ export function App(): React.JSX.Element {
                                                     )}
                                                   </React.Fragment>
                                                 ))}
-                                                {engineJobs.length === 0 && <tr><td colSpan={6} className="text-center text-muted">Nessun job fallito</td></tr>}
+                                                {engineJobs.length === 0 && <tr><td colSpan={7} className="text-center text-muted">Nessun job</td></tr>}
                                               </tbody>
                                             </table>
                                           </div>

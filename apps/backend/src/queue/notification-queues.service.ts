@@ -62,6 +62,15 @@ export class NotificationQueuesService {
     return this.getQueue(channel).resume();
   }
 
+  /**
+   * `queue.getJobs()` per 'completed'/'failed' legge da uno ZSET BullMQ il
+   * cui ordine non è garantito "più recenti prima" — ordinamento esplicito
+   * qui per rispondere senza ambiguità a "questi sono i job più vecchi o i
+   * più nuovi?" (richiesta reale: il pannello mostrava campagne vecchie di
+   * mesi in cima, indistinguibili da quelle della campagna corrente senza
+   * alcuna data visibile). `finishedOn` quando c'è (job concluso), altrimenti
+   * `timestamp` (creazione, per active/waiting/delayed).
+   */
   async getJobsDetail(
     channel: EngineName,
     status: 'failed' | 'completed' | 'active' | 'waiting' | 'delayed',
@@ -69,6 +78,7 @@ export class NotificationQueuesService {
   ): Promise<Array<{
     jobId: string;
     campaignId: string;
+    campaignName: string | null;
     recipientId: string;
     attemptId: string;
     failedReason?: string;
@@ -77,9 +87,11 @@ export class NotificationQueuesService {
     finishedOn?: number;
   }>> {
     const jobs = await this.getQueue(channel).getJobs([status], 0, limit - 1);
-    return jobs.map((job) => ({
+    const sorted = [...jobs].sort((a, b) => (b.finishedOn ?? b.timestamp) - (a.finishedOn ?? a.timestamp));
+    return sorted.map((job) => ({
       jobId: String(job.id),
       campaignId: job.data.campaignId,
+      campaignName: null, // risolto dal chiamante (EnginesController), unico punto con accesso al repo Campaign
       recipientId: job.data.recipientId,
       attemptId: job.data.attemptId,
       failedReason: job.failedReason,
