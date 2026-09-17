@@ -12,6 +12,7 @@ import {
   PostalNotificationProcessor,
 } from './channel-processors.js';
 import { NotificationQueuesService } from './notification-queues.service.js';
+import { OrphanReconciliationService } from './orphan-reconciliation.service.js';
 import { ProtocollazioneProcessor } from './protocollazione.processor.js';
 import { NotificationAttempt } from '../entities/notification-attempt.entity.js';
 import { Campaign } from '../entities/campaign.entity.js';
@@ -51,6 +52,7 @@ import { AttachmentModule } from '../attachments/attachment.module.js';
     PostalNotificationProcessor,
     ProtocollazioneProcessor,
     NotificationQueuesService,
+    OrphanReconciliationService,
     {
       provide: THROTTLE_REDIS,
       inject: [ConfigService],
@@ -58,6 +60,6 @@ import { AttachmentModule } from '../attachments/attachment.module.js';
         new Redis(config.get('redis.url', { infer: true }), { maxRetriesPerRequest: null }),
     },
   ],
-  exports: [BullModule, NotificationQueuesService, THROTTLE_REDIS],
+  exports: [BullModule, NotificationQueuesService, OrphanReconciliationService, THROTTLE_REDIS],
 })
 export class QueueModule {}

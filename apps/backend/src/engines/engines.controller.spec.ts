@@ -3,6 +3,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { getQueueToken } from '@nestjs/bullmq';
 import { EnginesController } from './engines.controller.js';
 import { NotificationQueuesService } from '../queue/notification-queues.service.js';
+import { OrphanReconciliationService } from '../queue/orphan-reconciliation.service.js';
 import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service.js';
 import { ENRICHMENT_QUEUE } from '../enrichment/enrichment-job.types.js';
 import { NotificationAttempt } from '../entities/notification-attempt.entity.js';
@@ -28,6 +29,7 @@ describe('EnginesController', () => {
   const mockCampaignRepo = { count: jest.fn().mockResolvedValue(0), find: jest.fn().mockResolvedValue([]) };
   const mockRecipientRepo = { count: jest.fn().mockResolvedValue(0) };
   const mockPostalStatusSync = { getQueueHealth: jest.fn() };
+  const mockOrphanReconciliation = { reconcileEngine: jest.fn().mockResolvedValue({ checked: 0, repaired: 0 }) };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -35,6 +37,7 @@ describe('EnginesController', () => {
       controllers: [EnginesController],
       providers: [
         { provide: NotificationQueuesService, useValue: mockQueuesService },
+        { provide: OrphanReconciliationService, useValue: mockOrphanReconciliation },
         { provide: PostalStatusSyncService, useValue: mockPostalStatusSync },
         { provide: getQueueToken(ENRICHMENT_QUEUE), useValue: mockEnrichmentQueue },
         { provide: getRepositoryToken(NotificationAttempt), useValue: mockAttemptRepo },
@@ -96,6 +99,18 @@ describe('EnginesController', () => {
     const res = await controller.resume('pec');
     expect(res).toEqual({ success: true, channel: 'PEC', paused: false });
     expect(mockQueuesService.resume).toHaveBeenCalledWith('PEC');
+  });
+
+  it('reconcileOrphans() ripara un canale valido', async () => {
+    mockOrphanReconciliation.reconcileEngine.mockResolvedValueOnce({ checked: 5, repaired: 2 });
+    const res = await controller.reconcileOrphans('pec');
+    expect(res).toEqual({ channel: 'PEC', checked: 5, repaired: 2 });
+    expect(mockOrphanReconciliation.reconcileEngine).toHaveBeenCalledWith('PEC');
+  });
+
+  it('reconcileOrphans() lancia BadRequestException per un canale non valido', async () => {
+    await expect(controller.reconcileOrphans('invalid')).rejects.toThrow(BadRequestException);
+    expect(mockOrphanReconciliation.reconcileEngine).not.toHaveBeenCalled();
   });
 
   it('jobs() ritorna i job del canale richiesto, arricchiti col nome campagna', async () => {

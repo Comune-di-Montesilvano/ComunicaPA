@@ -5,6 +5,7 @@ import type { Queue } from 'bullmq';
 import { Not, IsNull, In, Repository } from 'typeorm';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { NotificationQueuesService } from '../queue/notification-queues.service.js';
+import { OrphanReconciliationService } from '../queue/orphan-reconciliation.service.js';
 import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service.js';
 import { ENGINE_NAMES, type EngineName } from '../queue/notification-job.types.js';
 import { ENRICHMENT_QUEUE } from '../enrichment/enrichment-job.types.js';
@@ -20,6 +21,7 @@ function isEngineName(name: string): name is EngineName {
 export class EnginesController {
   constructor(
     private readonly queues: NotificationQueuesService,
+    private readonly orphanReconciliation: OrphanReconciliationService,
     private readonly postalStatusSync: PostalStatusSyncService,
     @InjectQueue(ENRICHMENT_QUEUE) private readonly enrichmentQueue: Queue,
     @InjectRepository(NotificationAttempt)
@@ -137,6 +139,18 @@ export class EnginesController {
     }
     await this.queues.resume(uc);
     return { success: true, channel: uc, paused: false };
+  }
+
+  @Post(':channel/reconcile-orphans')
+  @Roles('admin')
+  @HttpCode(HttpStatus.OK)
+  async reconcileOrphans(@Param('channel') channel: string) {
+    const uc = channel.toUpperCase();
+    if (!isEngineName(uc)) {
+      throw new BadRequestException(`Motore ${channel} non supportato`);
+    }
+    const result = await this.orphanReconciliation.reconcileEngine(uc);
+    return { channel: uc, ...result };
   }
 
   @Get(':channel/jobs')

@@ -4586,6 +4586,32 @@ export function App(): React.JSX.Element {
     }
   };
 
+  const handleReconcileOrphans = async (channel: string) => {
+    if (!token) return;
+    setLoadingEngines(true);
+    setEnginesError(null);
+    try {
+      const res = await fetch(`${ADMIN_API_BASE}/engines/${channel.toLowerCase()}/reconcile-orphans`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || 'Errore controllo job orfani');
+      }
+      await fetchEngines();
+      alert(
+        data.repaired > 0
+          ? `Controllati ${data.checked} attempt in coda: riparati ${data.repaired} job orfani (job BullMQ mancante, es. perso su riavvio Redis). Il motore riprenderà a processarli.`
+          : `Controllati ${data.checked} attempt in coda: nessun job orfano trovato.`,
+      );
+    } catch (err: any) {
+      setEnginesError(`Errore: ${err.message}`);
+    } finally {
+      setLoadingEngines(false);
+    }
+  };
+
   const handleViewEngineJobs = async (channel: string, status: 'active' | 'waiting' | 'failed' = engineJobsStatus) => {
     // Riapre sullo stesso canale con lo status scelto (toggle "In corso"/"In
     // attesa"/"Falliti") — mai un default fisso "failed": prima era l'unico
@@ -9115,7 +9141,9 @@ export function App(): React.JSX.Element {
       await fetchCampaignDetail(campaignId);
       const statusData = await fetchInadStatus(campaignId);
       if (statusData && statusData.batches.some((b) => !b.done && b.state !== 'DISPONIBILE')) {
-        const states = statusData.batches.map((b) => b.state || 'IN_ELABORAZIONE').join(', ');
+        const states = statusData.batches
+          .map((b) => (b.state === 'PRESA_IN_CARICO' ? 'Presa in carico' : 'In elaborazione'))
+          .join(', ');
         alert(`Verifica riprovata. INAD (AgID) sta ancora elaborando la richiesta (${states}). La campagna procederà automaticamente non appena INAD renderà disponibili i dati.`);
       }
     } catch (err: any) {
@@ -17314,6 +17342,15 @@ export function App(): React.JSX.Element {
                                           >
                                             Falliti
                                           </button>
+                                          <button
+                                            type="button"
+                                            className="btn btn-sm btn-outline-secondary"
+                                            onClick={() => handleReconcileOrphans(eng.channel)}
+                                            disabled={loadingEngines}
+                                            title="Ripara attempt rimasti in coda il cui job BullMQ è andato perso (es. Redis riavviato) — ri-accoda i job mancanti"
+                                          >
+                                            <Search className="me-1" size={14} />Job orfani
+                                          </button>
                                         </div>
                                         {engineJobsChannel === eng.channel && (
                                           <div className="table-responsive">
@@ -18202,7 +18239,8 @@ export function App(): React.JSX.Element {
                                               </span>
                                             ) : (
                                               <span className="badge bg-warning text-dark d-inline-flex align-items-center gap-1">
-                                                <Loader2 className="icon-spin" size={12} /> {b.state || 'IN_ELABORAZIONE'}
+                                                <Loader2 className="icon-spin" size={12} />{' '}
+                                                {b.state === 'PRESA_IN_CARICO' ? 'Presa in carico' : 'In elaborazione'}
                                               </span>
                                             )}
                                           </div>
