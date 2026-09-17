@@ -89,7 +89,10 @@ export class PecStrategy implements IChannelStrategy {
       },
     });
 
-    const from = (campaign.channelConfig?.['from'] as string) || smtp.fromAddress;
+    const configuredFrom = (
+      campaign.channelType === 'PEC' ? (campaign.channelConfig?.['from'] as string) : undefined
+    );
+    const from = configuredFrom || smtp.fromAddress;
     log(`Invio PEC a ${recipient.pec} via ${smtp.host}:${smtp.port} (from=${from}, subject="${subject}")`);
 
     const info = (await transporter.sendMail({
