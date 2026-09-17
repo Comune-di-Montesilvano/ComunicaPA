@@ -212,6 +212,69 @@ describe('NotificationsSearchService.getDetail', () => {
     });
   });
 
+  it('bug reale: il Message-ID SMTP di un attempt PEC non viene mai mostrato come ID messaggio App IO', async () => {
+    recipientRepoMock.findOne.mockResolvedValueOnce({
+      id: 'r1',
+      codiceFiscale: 'RSSMRA80A01H501X',
+      fullName: 'Mario Rossi',
+      email: null,
+      pec: 'mario@pec.it',
+      status: 'sent',
+      campaign: { id: 'c1', name: 'Avviso TARI PEC', channelType: 'PEC', postalServiceType: null, postalReturnReceipt: false },
+    });
+    attemptRepoMock.find.mockResolvedValueOnce([
+      {
+        attemptNumber: 1,
+        status: 'success',
+        channelType: 'PEC',
+        errorMessage: null,
+        sentAt: new Date('2026-09-17T09:24:22Z'),
+        createdAt: new Date('2026-09-17T09:24:20Z'),
+        // pec.strategy.ts salva qui il Message-ID SMTP della PEC stessa —
+        // chiave generica "messageId", MAI un ID App IO.
+        responsePayload: { messageId: '01M2Q-pec-smtp-message-id@pec.it' },
+        iun: null,
+        sendStatus: null,
+        sendStatusUpdatedAt: null,
+        protocolNumber: null,
+        protocolYear: null,
+        protocolledAt: null,
+        postalTrackingId: null,
+        postalStatus: null,
+        postalStatusUpdatedAt: null,
+      },
+      {
+        attemptNumber: 1,
+        status: 'success',
+        channelType: 'APP_IO',
+        errorMessage: null,
+        sentAt: new Date('2026-09-17T09:24:22Z'),
+        createdAt: new Date('2026-09-17T09:24:20Z'),
+        responsePayload: { messageId: '01M2Q-appio-real-message-id' },
+        iun: null,
+        sendStatus: null,
+        sendStatusUpdatedAt: null,
+        protocolNumber: null,
+        protocolYear: null,
+        protocolledAt: null,
+        postalTrackingId: null,
+        postalStatus: null,
+        postalStatusUpdatedAt: null,
+      },
+    ]);
+    campaignsServiceMock.renderMessageForRecipient.mockResolvedValueOnce({ subject: 'Ciao Mario', bodyHtml: '<p>Corpo</p>' });
+    downloadEventRepoMock.find.mockResolvedValueOnce([]);
+
+    const result = await service.getDetail('r1');
+
+    const [pecAttempt, appIoAttempt] = result.attempts;
+    expect(pecAttempt.channelType).toBe('PEC');
+    expect(pecAttempt.appIoMessageId).toBeNull();
+    expect(pecAttempt.appIo).toEqual({ attempted: false });
+    expect(appIoAttempt.channelType).toBe('APP_IO');
+    expect(appIoAttempt.appIoMessageId).toBe('01M2Q-appio-real-message-id');
+  });
+
   it('espone i dati di pagamento risolti (IUV/importo/scadenza) se la campagna ha paymentConfig abilitato', async () => {
     recipientRepoMock.findOne.mockResolvedValueOnce({
       id: 'r1',

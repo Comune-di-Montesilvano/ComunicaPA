@@ -13649,7 +13649,15 @@ export function App(): React.JSX.Element {
                                         <td className="small fw-mono">
                                           {(() => {
                                             if (a.protocolNumber) return protoStr;
-                                            const msgId = a.appIoMessageId || (a.appIo?.attempted && a.appIo.messageId ? a.appIo.messageId : null);
+                                            // Fallback all'ID App IO SOLO se questo attempt è App IO come
+                                            // canale primario (nessuna riga sintetica separata in quel
+                                            // caso, vedi sotto) — altrimenti la co-consegna ha già la sua
+                                            // riga dedicata subito dopo: bug reale corretto, la riga PEC/
+                                            // EMAIL/POSTAL/SEND mostrava lo stesso ID App IO spacciato per
+                                            // "Protocollo" solo perché quella campagna non ne ha uno vero.
+                                            const msgId = a.channelType === 'APP_IO'
+                                              ? (a.appIoMessageId || (a.appIo?.attempted && a.appIo.messageId ? a.appIo.messageId : null))
+                                              : null;
                                             if (!msgId) return protoStr;
                                             return (
                                               <span className="d-inline-flex align-items-center" title={`ID Messaggio App IO: ${msgId}`}>

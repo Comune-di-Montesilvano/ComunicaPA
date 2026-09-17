@@ -170,10 +170,20 @@ export class NotificationsSearchService {
         const fallbackProto = attempts.find((a) => a.protocolNumber !== null && a.protocolNumber !== undefined);
         return attempts.map((a) => {
           const appIoPayload = a.responsePayload?.['appIo'] as { success?: boolean; error?: string; messageId?: string; id?: string } | undefined;
-          const directMessageId = (a.responsePayload?.['messageId'] as string)
-            || (a.responsePayload?.['id'] as string)
-            || (a.responsePayload?.['appIoMessageId'] as string)
-            || undefined;
+          // Bug reale: `responsePayload.messageId`/`.id` sono chiavi generiche
+          // riusate da altri canali per il proprio tracking (es.
+          // pec.strategy.ts salva il Message-ID SMTP della PEC stessa in
+          // `messageId`) — leggerle senza scoparle a channelType==='APP_IO'
+          // mostrava il Message-ID SMTP della PEC come se fosse l'ID
+          // messaggio App IO nella colonna "Protocollo" dello storico
+          // tentativi. Il sotto-oggetto `appIo` (co-consegna) resta invece
+          // sempre legittimo qualunque sia il canale primario.
+          const directMessageId = a.channelType === 'APP_IO'
+            ? (a.responsePayload?.['messageId'] as string)
+              || (a.responsePayload?.['id'] as string)
+              || (a.responsePayload?.['appIoMessageId'] as string)
+              || undefined
+            : undefined;
           const appIoMsgId = appIoPayload?.messageId
             || appIoPayload?.id
             || directMessageId
