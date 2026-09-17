@@ -150,6 +150,24 @@ describe('processTemplate — carattere % letterale nel testo', () => {
     expect(result).toBe('Importo: 67,00');
   });
 
+  it('colonna "importo"/"rataN_importo": aggiunge il separatore delle migliaia (bug reale, mai formattato)', () => {
+    const recipient = { ...baseRecipient, extraData: { importo: '1386,00', rata1_importo: '380,50' } } as Recipient;
+    const result = processTemplate('Totale %%importo%%, rata %%rata1_importo%%', recipient, 'http://api.test', secret, exp);
+    expect(result).toBe('Totale 1.386,00, rata 380,50');
+  });
+
+  it('colonna che finisce per "importo" ma valore non numerico resta invariato (fail-safe)', () => {
+    const recipient = { ...baseRecipient, extraData: { importo: 'N/D' } } as Recipient;
+    const result = processTemplate('%%importo%%', recipient, 'http://api.test', secret, exp);
+    expect(result).toBe('N/D');
+  });
+
+  it('colonna che finisce per "importo" con {{key}} viene formattata allo stesso modo', () => {
+    const recipient = { ...baseRecipient, extraData: { rata2_importo: '190250,25' } } as Recipient;
+    const result = processTemplate('{{rata2_importo}}', recipient, 'http://api.test', secret, exp);
+    expect(result).toBe('190.250,25');
+  });
+
   it('risolve il token %%numero_protocollo%% se attaccato temporaneamente all\'oggetto recipient', () => {
     const recipient = { ...baseRecipient } as any;
     recipient.protocolNumber = '5566/2026';
