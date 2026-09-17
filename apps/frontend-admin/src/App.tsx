@@ -7972,7 +7972,12 @@ export function App(): React.JSX.Element {
       const fn = [fn1, fn2].filter(Boolean).join(' ');
 
       const email = row[wizMapping.email] || '';
-      const pec = row[wizMapping.pec] || '';
+      // wizMapping.pec può essere valorizzato dall'euristica automatica anche
+      // per canali diversi da PEC (nessun selettore mostrato per confermarlo/
+      // correggerlo in quel caso, vedi CLAUDE.md) — scrivere comunque quel
+      // valore su recipient.pec per un canale non-PEC ha già causato dati
+      // fuorvianti in UI su campagne EMAIL. Ignorarlo se il canale non è PEC.
+      const pec = wizChannel === 'PEC' ? (row[wizMapping.pec] || '') : '';
       const extra = extraHeaders.map(h => row[h] || '');
       return [cf, fn, email, pec, ...extra].map(val => `"${String(val).replace(/"/g, '""')}"`).join(',');
     });
