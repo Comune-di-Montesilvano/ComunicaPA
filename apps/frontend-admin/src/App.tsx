@@ -3,7 +3,7 @@ import MDEditor from '@uiw/react-md-editor';
 import { TemplateEditor } from './components/TemplateEditor';
 import { SearchableSelect } from './components/SearchableSelect';
 import { SEND_ENTITY_TYPES, SEND_TAXONOMY_CATALOG } from './data/sendTaxonomy';
-import { COUNTRIES, matchCountry, isValidCap } from '@comunicapa/shared-types';
+import { COUNTRIES, matchCountry, isValidCap, abbreviateLongMunicipality } from '@comunicapa/shared-types';
 import { LineChart, Line, PieChart, Pie, Cell, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import {
   Mail, MailOpen, MailCheck, Mails, Smartphone, Send, HelpCircle,
@@ -6907,7 +6907,10 @@ export function App(): React.JSX.Element {
     email: singleEmail,
     pec: singlePec,
     address: singleAddress,
-    municipality: singleMunicipality,
+    // Uno dei 5 comuni italiani noti oltre 30 caratteri (vedi
+    // abbreviateLongMunicipality, @comunicapa/shared-types) → forma
+    // abbreviata applicata qui in modo trasparente, mai un blocco.
+    municipality: abbreviateLongMunicipality(singleMunicipality),
     zip: singleZip,
     province: singleProvince,
     country: singleCountry,
@@ -7201,7 +7204,7 @@ export function App(): React.JSX.Element {
     (wizChannel === 'EMAIL' && (!singleEmail.trim() || !isValidEmailFormat(singleEmail))) ||
     (wizChannel === 'PEC' && (!singlePec.trim() || !isValidEmailFormat(singlePec))) ||
     (needsWizSinglePhysicalAddress && (
-      !singleAddress.trim() || !singleMunicipality.trim() || singleMunicipality.trim().length > 30
+      !singleAddress.trim() || !singleMunicipality.trim() || abbreviateLongMunicipality(singleMunicipality.trim()).length > 30
       || ((!singleCountry || matchCountry(singleCountry) === 'Italia') && (!singleZip.trim() || !isValidCap(singleZip) || !singleProvince.trim()))
     )) ||
     ((wizChannel === 'SEND' || wizChannel === 'POSTAL') && wizSingleAttachmentSlots.filter(s => s.file).length === 0) ||
@@ -7329,8 +7332,16 @@ export function App(): React.JSX.Element {
             errors.push({ row: rowNum, field: 'Città', val: '', err: 'Città mancante (obbligatoria per Postalizzazione)' });
             isRowValid = false;
           } else if (wizPostalMunicipalityColumn && row[wizPostalMunicipalityColumn]?.trim().length > 30) {
-            errors.push({ row: rowNum, field: 'Città', val: row[wizPostalMunicipalityColumn], err: 'Città troppo lunga (massimo 30 caratteri per Postalizzazione)' });
-            isRowValid = false;
+            // Uno dei 5 comuni italiani noti oltre 30 caratteri (vedi
+            // abbreviateLongMunicipality, @comunicapa/shared-types) →
+            // sovrascrive la riga con la forma abbreviata, nessun errore.
+            const abbreviated = abbreviateLongMunicipality(row[wizPostalMunicipalityColumn].trim());
+            if (abbreviated.length <= 30) {
+              row[wizPostalMunicipalityColumn] = abbreviated;
+            } else {
+              errors.push({ row: rowNum, field: 'Città', val: row[wizPostalMunicipalityColumn], err: 'Città troppo lunga (massimo 30 caratteri per Postalizzazione)' });
+              isRowValid = false;
+            }
           }
           if (!isForeignRow && (!wizPostalProvinceColumn || !row[wizPostalProvinceColumn]?.trim())) {
             errors.push({ row: rowNum, field: 'Provincia', val: wizPostalProvinceColumn ? (row[wizPostalProvinceColumn] || '') : '', err: 'Provincia mancante (obbligatoria per indirizzi italiani in Postalizzazione)' });

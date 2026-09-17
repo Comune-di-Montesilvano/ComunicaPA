@@ -35,7 +35,7 @@ import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.d
 import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util.js';
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto.js';
 import type { NotificationChannel, OperatorRole } from '@comunicapa/shared-types';
-import { matchCountry } from '@comunicapa/shared-types';
+import { matchCountry, abbreviateLongMunicipality } from '@comunicapa/shared-types';
 import { InadService } from '../channels/inad/inad.service.js';
 import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service.js';
 import { RegistroImpreseService } from '../channels/registro-imprese/registro-imprese.service.js';
@@ -2237,7 +2237,12 @@ export class CampaignsService {
     if (!isForeign && !dto.province?.trim()) {
       throw new BadRequestException('La provincia è obbligatoria per gli indirizzi italiani');
     }
-    if (dto.municipality.trim().length > 30) {
+    // Uno dei 5 comuni italiani noti oltre 30 caratteri (vedi
+    // abbreviateLongMunicipality) → forma abbreviata applicata qui,
+    // nessun blocco. Qualunque altro caso oltre soglia resta bloccato
+    // come prima (nome comune non mappato).
+    dto.municipality = abbreviateLongMunicipality(dto.municipality.trim());
+    if (dto.municipality.length > 30) {
       throw new BadRequestException('La città non può superare i 30 caratteri');
     }
 
