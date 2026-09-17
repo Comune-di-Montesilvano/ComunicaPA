@@ -3797,6 +3797,11 @@ export function App(): React.JSX.Element {
       const res = await apiFetch(`/enrichment/jobs/${jobId}/regenerate-csv`, { method: 'POST' });
       const body = await res.json();
       if (body.blocked) { alert(body.message); return; }
+      // missingPaymentCount/warningCount vengono ricalcolati lato server dal
+      // CSV appena rigenerato — senza un refetch qui restano quelli vecchi
+      // nello stato React (bug reale: checkbox split PagoPa mai comparsa
+      // dopo "Rigenera CSV", anche a fix backend deployato).
+      await fetchEnrichJobs();
       alert('CSV rigenerato con le correzioni applicate.');
     } catch {
       alert('Errore durante la rigenerazione del CSV');
