@@ -284,5 +284,23 @@ describe('EnrichmentService', () => {
       expect(csv).toContain('VIA CORRETTA');
       expect(csv).not.toContain('VIA VECCHIA');
     });
+
+    it('ricalcola missingPaymentCount dal CSV rigenerato (job pre-esistente, mai calcolato la prima volta)', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.DONE, searchPayments: true });
+      fs.mkdirSync(getEnrichmentDir('j1'), { recursive: true });
+      fs.writeFileSync(
+        getEnrichmentResultCsv('j1'),
+        buildEnrichedCsv(buildEnrichedCsvHeaders(0), [
+          { allegato: 'A.pdf', numero_avviso: '301000000000000000', importo: '100,00', scadenza: '31/12/2026' },
+          { allegato: 'B.pdf', numero_avviso: '', importo: '', scadenza: '' },
+        ]),
+      );
+      overrideService.findByJob.mockResolvedValue([]);
+      overrideService.applyOverrides.mockImplementation((rows: any[]) => rows);
+
+      await service.regenerateCsv('j1');
+
+      expect(repo.update).toHaveBeenCalledWith('j1', { missingPaymentCount: 1 });
+    });
   });
 });
