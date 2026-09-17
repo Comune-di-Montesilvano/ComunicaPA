@@ -1447,15 +1447,24 @@ export class CampaignsService {
       select: { id: true, status: true, inadCheck: true },
     });
 
-    const hasAppIo = !!resolveSecondaryAppIoConfig(campaign.channelConfig);
+    const appIoConfig = resolveSecondaryAppIoConfig(campaign.channelConfig);
+    const hasAppIo = !!appIoConfig;
+    const appIoMode: ChannelBreakdownDto['appIoMode'] = appIoConfig?.mode ?? 'none';
     // inadDiverted conta TUTTI i destinatari con un dirottamento INAD reale
     // (diverted:true), indipendentemente dallo stato — descrive una decisione
     // di instradamento presa al lancio, non un esito di invio, quindi include
     // anche i destinatari ancora PENDING (check bulk non ancora finalizzato).
     const inadDiverted = recipients.filter((r) => r.inadCheck?.diverted).length;
-    if (!hasAppIo && inadDiverted === 0) return null;
+    // inad.checkEnabled è un setting GLOBALE (non salvato sulla campagna) —
+    // l'unico modo per sapere a posteriori se il check è girato per QUESTA
+    // campagna è verificare se almeno un destinatario ha inadCheck popolato
+    // (found true o false, comunque scritto al lancio). Senza questo, un
+    // inadDiverted=0 è ambiguo: "mai controllato" o "controllato, nessun
+    // dirottamento" sono indistinguibili in UI.
+    const inadCheckRan = recipients.some((r) => r.inadCheck != null);
+    if (!hasAppIo && !inadCheckRan) return null;
 
-    const breakdown: ChannelBreakdownDto = { primaryOnly: 0, both: 0, appIoOnly: 0, appIoDespitePrimaryFail: 0, neither: 0, inadDiverted };
+    const breakdown: ChannelBreakdownDto = { primaryOnly: 0, both: 0, appIoOnly: 0, appIoDespitePrimaryFail: 0, neither: 0, inadDiverted, appIoMode, inadCheckRan };
     const toClassify = recipients.filter(
       (r) => r.status === RecipientStatus.SENT || r.status === RecipientStatus.FAILED,
     );
