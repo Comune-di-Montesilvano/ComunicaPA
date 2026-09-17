@@ -20,9 +20,7 @@ import {
   CONVERT_CAMPAIGN_QUEUE,
   CONVERT_CAMPAIGN_JOB_NAME,
   ConvertCampaignQueueJobData,
-  RETRY_FAILED_PDFS_JOB_NAME,
 } from './enrichment-job.types.js';
-import { EnrichmentService } from './enrichment.service.js';
 import { getEnrichmentAttachmentsDir, getEnrichmentResultCsv, getEnrichmentSourcesDir } from './enrichment-paths.js';
 import { readLargeFileSync } from './large-file-read.util.js';
 import { mergeMaggioliCsv } from './enrichment-zip-merge.util.js';
@@ -53,15 +51,11 @@ export class EnrichmentProcessor extends WorkerHost {
     private readonly overrideService: EnrichmentAddressOverrideService,
     @InjectQueue(CONVERT_CAMPAIGN_QUEUE)
     private readonly convertCampaignQueue: Queue<ConvertCampaignQueueJobData>,
-    private readonly enrichmentService: EnrichmentService,
   ) {
     super();
   }
 
   async process(job: Job<EnrichmentQueueJobData | MergeBatchQueueJobData | ConvertCampaignQueueJobData>): Promise<void> {
-    if (job.name === RETRY_FAILED_PDFS_JOB_NAME) {
-      return this.processRetryFailedPdfs(job as Job<EnrichmentQueueJobData>);
-    }
     if (job.name === CONVERT_CAMPAIGN_JOB_NAME) {
       // Shim di migrazione deploy: un job 'convert-campaign' rimasto in
       // waiting/active su questa coda da prima che questo tipo di job
@@ -75,24 +69,6 @@ export class EnrichmentProcessor extends WorkerHost {
       return this.processMergeBatch(job as Job<MergeBatchQueueJobData>);
     }
     return this.processEnrich(job as Job<EnrichmentQueueJobData>);
-  }
-
-  /**
-   * Esegue `EnrichmentService.retryFailedPdfs` in background — mai dentro la
-   * richiesta HTTP che l'ha innescata (vedi `enqueueRetryFailedPdfs`, 504 reale
-   * in prod). Stessa coda/concurrency=1 del job 'enrich': se quello è ancora
-   * davvero active, questo job aspetta semplicemente il suo turno.
-   */
-  private async processRetryFailedPdfs(job: Job<EnrichmentQueueJobData>): Promise<void> {
-    const { jobId } = job.data;
-    try {
-      await this.enrichmentService.retryFailedPdfs(jobId);
-      this.events.emitTerminal(jobId, { type: 'done' });
-    } catch (err: any) {
-      this.logger.error(`Retry PDF falliti per EnrichmentJob ${jobId}: ${err.message}`);
-      this.events.emitTerminal(jobId, { type: 'error', message: err.message });
-      throw err;
-    }
   }
 
   /**
@@ -278,9 +254,7 @@ export class EnrichmentProcessor extends WorkerHost {
         // "PDF non trovato"/"Estrazione fallita" — l'operatore corregge via
         // EnrichmentAddressOverrideService quando vuole. Applicate
         // incondizionatamente: row esiste sempre (baseRow), anche quando il
-        // PDF è mancante o l'estrazione è fallita. Funzione condivisa con
-        // EnrichmentService.retryFailedPdfs, che deve ricalcolarle sulla riga
-        // ripatchata — non solo il warning "Estrazione fallita".
+        // PDF è mancante o l'estrazione è fallita.
         warnings.push(...validateRowContentWarnings(row, rowNum, rec.pdfFilename, result?.fiscalCode ?? null));
 
         rows.push(row);
