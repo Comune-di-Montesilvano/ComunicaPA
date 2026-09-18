@@ -11,15 +11,19 @@ export class PresenceService {
   }
 
   getOnlineCount(): number {
+    return this.getOnlineUsernames().length;
+  }
+
+  getOnlineUsernames(): string[] {
     const now = Date.now();
-    let count = 0;
+    const online: string[] = [];
     for (const [username, seenAt] of this.lastSeen) {
       if (now - seenAt <= ONLINE_THRESHOLD_MS) {
-        count++;
+        online.push(username);
       } else {
         this.lastSeen.delete(username);
       }
     }
-    return count;
+    return online;
   }
 }

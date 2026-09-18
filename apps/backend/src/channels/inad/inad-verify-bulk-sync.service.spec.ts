@@ -84,6 +84,28 @@ describe('InadVerifyBulkSyncService.handleCron', () => {
     expect(failedCall).toBeUndefined();
   });
 
+  it('un item INAD presente in risposta ma senza digitalAddress popolato va in non-trovati, mai in trovati con colonna vuota', async () => {
+    mockJobRepo.find.mockResolvedValue([{
+      id: 'job-1', status: InadVerificationJobStatus.PROCESSING,
+      batches: [{ id: 'batch-1', size: 2, done: true }],
+      pivaTotal: 0, pivaDone: 0, pivaResults: {},
+      sourceCsv: 'cf\nRRANGL74M28R701V\nVRDGPP80A01H501X\n', hasHeaders: true, cfColumn: 'cf',
+    }]);
+    mockInad.getBulkResult.mockResolvedValue([
+      { codiceFiscale: 'RRANGL74M28R701V', since: '2020', digitalAddress: [{ digitalAddress: 'persona@pec.it', usageInfo: { motivation: 'CESSAZIONE_VOLONTARIA', dateEndValidity: '2020-01-01' } }] },
+      { codiceFiscale: 'VRDGPP80A01H501X', since: '2020', digitalAddress: [] },
+    ]);
+
+    await service.handleCron();
+
+    const call = mockJobRepo.update.mock.calls.find(([, patch]: any) => patch.status === InadVerificationJobStatus.DONE);
+    expect(call).toBeDefined();
+    const patch = call![1];
+    expect(patch.foundCount).toBe(1);
+    expect(patch.notFoundCount).toBe(1);
+    expect(patch.resultNotFoundCsv).toContain('VRDGPP80A01H501X');
+  });
+
   it('finalizza un job con sole Partite IVA (nessun batch INAD)', async () => {
     mockJobRepo.find.mockResolvedValue([{
       id: 'job-1', status: InadVerificationJobStatus.PROCESSING,
