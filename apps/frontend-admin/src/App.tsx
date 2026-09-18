@@ -212,6 +212,7 @@ function ChannelStatusBar({ breakdown, meta, pendingLabel }: { breakdown: Array<
 // GlobalCom) — 14 valori dell'enum GBCStatus.
 const POSTAL_STATUS_META: Record<string, { label: string; badge: string; icon: React.ComponentType<{ className?: string; size?: number }> }> = {
   FAILED: { label: 'Fallito', badge: 'bg-danger', icon: X },
+  AppIoSostituito: { label: 'Sostituito da App IO', badge: 'bg-info-subtle text-info-emphasis border', icon: Smartphone },
   Accettato: { label: 'Accettato', badge: 'bg-secondary-subtle text-secondary-emphasis border', icon: Inbox },
   Sospeso: { label: 'Sospeso', badge: 'bg-secondary-subtle text-secondary-emphasis border', icon: Pause },
   Verificato: { label: 'Verificato', badge: 'bg-info-subtle text-info-emphasis border', icon: Check },
