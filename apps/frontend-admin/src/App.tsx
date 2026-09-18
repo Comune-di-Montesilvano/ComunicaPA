@@ -10400,7 +10400,7 @@ export function App(): React.JSX.Element {
                                     <td className="text-center fw-bold" style={cellStyle}>{c.totalRecipients}</td>
                                     <td className="text-center" style={cellStyle}>
                                       <StatusBadge status={c.status} />
-                                      {c.status === 'running' && (
+                                      {(c.status === 'running' || c.status === 'queued') && (
                                         <div className="small text-muted mt-1">{c.sentCount} / {c.totalRecipients}</div>
                                       )}
                                     </td>
