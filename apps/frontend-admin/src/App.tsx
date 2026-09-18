@@ -171,23 +171,38 @@ type PhysicalAddressConfigColumns = {
   countryColumn?: string;
 };
 
-function ChannelStatusBar({ breakdown, meta, pendingLabel }: { breakdown: Array<{ status: string | null; count: number }>; meta: Record<string, StatusMeta>; pendingLabel: string }): React.JSX.Element {
+function ChannelStatusBar({ breakdown, meta, pendingLabel, colorMap }: { breakdown: Array<{ status: string | null; count: number }>; meta: Record<string, StatusMeta>; pendingLabel: string; colorMap?: Record<string, string> }): React.JSX.Element {
   const total = breakdown.reduce((sum, b) => sum + b.count, 0);
   if (total === 0) {
     return <div className="text-muted small">Nessun destinatario ancora processato.</div>;
   }
+  // Le classi badge di meta (es. POSTAL_STATUS_META) sono quasi tutte varianti
+  // "subtle" — pensate per un badge di testo piccolo, non per un segmento
+  // pieno di barra: affiancate diventano una macchia pastello indistinguibile
+  // (bug reale segnalato dal vivo: barra POSTAL "senza colori"). Con un
+  // colorMap esplicito (hex, stessa palette dei donut) il colore del
+  // segmento — E dell'icona in legenda, altrimenti sempre grigio/nero,
+  // nessuna associazione visiva col segmento — non dipende più dalla classe
+  // badge. Senza colorMap: comportamento invariato (badge-derived), per non
+  // toccare SEND che già usa classi solide.
+  const colorFor = (status: string | null): string | undefined => {
+    if (!colorMap) return undefined;
+    if (!status) return '#adb5bd';
+    return colorMap[status] ?? stableColorForKey(status);
+  };
   return (
     <div>
       <div className="d-flex rounded overflow-hidden" style={{ height: '20px' }}>
         {breakdown.map((b) => {
           const m = b.status ? meta[b.status] : null;
           const pct = (b.count / total) * 100;
-          const bgClass = (m ? m.badge.split(' ')[0] : 'bg-secondary');
+          const color = colorFor(b.status);
+          const bgClass = color ? undefined : (m ? m.badge.split(' ')[0] : 'bg-secondary');
           return (
             <div
               key={b.status ?? 'pending'}
               className={bgClass}
-              style={{ width: `${pct}%` }}
+              style={{ width: `${pct}%`, ...(color ? { backgroundColor: color } : {}) }}
               title={`${m ? m.label : pendingLabel}: ${b.count} (${pct.toFixed(0)}%)`}
             ></div>
           );
@@ -196,9 +211,10 @@ function ChannelStatusBar({ breakdown, meta, pendingLabel }: { breakdown: Array<
       <div className="d-flex flex-wrap gap-2 mt-2 small">
         {breakdown.map((b) => {
           const m = b.status ? meta[b.status] : null;
+          const color = colorFor(b.status);
           return (
             <span key={b.status ?? 'pending'} className="text-muted">
-              {(() => { const Icon = m ? m.icon : Hourglass; return <Icon className="me-1" size={14} />; })()}
+              {(() => { const Icon = m ? m.icon : Hourglass; return <Icon className="me-1" size={14} style={color ? { color } : undefined} />; })()}
               {m ? m.label : pendingLabel}: <strong>{b.count}</strong>
             </span>
           );
@@ -18084,7 +18100,7 @@ export function App(): React.JSX.Element {
                             <h4 className="small fw-bold mb-2">
                               <BarChart3 className="me-1 text-primary" />Andamento Invio POSTAL
                             </h4>
-                            <ChannelStatusBar breakdown={postalStatusBreakdown} meta={POSTAL_STATUS_META} pendingLabel="In corso" />
+                            <ChannelStatusBar breakdown={postalStatusBreakdown} meta={POSTAL_STATUS_META} pendingLabel="In corso" colorMap={POSTAL_STATUS_PIE_COLORS} />
                           </div>
                         )}
 
