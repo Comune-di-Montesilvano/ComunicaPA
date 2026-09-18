@@ -303,7 +303,7 @@ export class NotificationProcessor extends WorkerHost {
       throw primaryError;
     }
 
-    await this.completeSuccess(attemptId, recipientId, campaignId, campaign, responsePayload);
+    await this.completeSuccess(attemptId, recipientId, campaignId, campaign, responsePayload, skipPrimary && channel === 'POSTAL');
   }
 
   /**
@@ -320,6 +320,7 @@ export class NotificationProcessor extends WorkerHost {
     campaignId: string,
     campaign: Campaign,
     responsePayload: Record<string, any>,
+    postalSkippedForAppIo = false,
   ): Promise<void> {
     const retentionMaxDaysForExpiry = await this.settings.get<number>('retention.maxDays');
     const retentionDaysForExpiry = getEffectiveRetentionDays(campaign, retentionMaxDaysForExpiry);
@@ -329,6 +330,11 @@ export class NotificationProcessor extends WorkerHost {
       status: AttemptStatus.SUCCESS,
       sentAt: new Date(),
       responsePayload,
+      // Canale POSTAL saltato da un'App IO esclusiva riuscita: mai un IDPRO
+      // GlobalCom, mai spedito realmente — senza questo sentinel postalStatus
+      // resta NULL per sempre e la UI lo mostra come "In corso" indistinguibile
+      // da un invio davvero in transito (bug reale segnalato dal vivo).
+      ...(postalSkippedForAppIo ? { postalStatus: 'AppIoSostituito' } : {}),
     });
     await this.recipientRepo.update(recipientId, {
       status: RecipientStatus.SENT,

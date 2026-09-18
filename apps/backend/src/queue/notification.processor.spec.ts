@@ -334,6 +334,25 @@ describe('NotificationProcessor', () => {
       }));
     });
 
+    it('esclusiva App IO riuscita su POSTAL: postalStatus sentinel "AppIoSostituito", mai "In corso" per sempre', async () => {
+      mockCampaignRepo.findOne.mockResolvedValueOnce({
+        ...mockCampaignPostal,
+        channelConfig: { appIo: { mode: 'exclusive', ioServiceId: 'svc-1' } },
+      });
+      (global as any).fetch = jest.fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ sender_allowed: true }) }) // checkAppIoProfile
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'io-1' }) }); // send message
+
+      await processor.process(mockJob(postalData));
+
+      expect(mockPostalStrategy.send).not.toHaveBeenCalled();
+      expect(mockAttemptRepo.update).toHaveBeenCalledWith('att-1', expect.objectContaining({
+        status: AttemptStatus.SUCCESS,
+        postalStatus: 'AppIoSostituito',
+      }));
+      expect(mockAttemptRepo.update).not.toHaveBeenCalledWith('att-1', expect.objectContaining({ postalTrackingId: expect.anything() }));
+    });
+
     it('NON scrive postalTrackingId per canali diversi da POSTAL', async () => {
       await processor.process(mockJob(baseData));
 
