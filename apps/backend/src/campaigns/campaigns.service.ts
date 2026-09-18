@@ -71,6 +71,18 @@ export interface CampaignRequester {
  * prova dell'invio) — cancel() resta permesso: serve a fermare destinatari
  * ancora in coda per errore, senza toccare quelli già notificati.
  */
+/**
+ * AR (ricevuta di ritorno) è l'unico meccanismo che genera eventi di
+ * tracciamento fisico lato Poste — stessa condizione di ricevutaDiRitorno in
+ * postal.strategy.ts. Senza AR (Ordinaria, o Raccomandata senza checkbox)
+ * GlobalCom non avrà MAI uno StatoConsegna da riportare: "In corso"
+ * indefinito non è un bug del cron, è un limite strutturale del servizio.
+ */
+export function hasPostalArTracking(campaign: Pick<Campaign, 'channelConfig'>): boolean {
+  const servizio = String(campaign.channelConfig?.['postalServiceType'] ?? '');
+  return servizio.startsWith('Agol') || (servizio.startsWith('Raccomandata') && !!campaign.channelConfig?.['postalReturnReceipt']);
+}
+
 export function isCampaignLegalValue(campaign: Pick<Campaign, 'isLegalValue' | 'channelType' | 'channelConfig'>): boolean {
   if (campaign.isLegalValue) return true;
   if (campaign.channelType === 'SEND') return true;
@@ -2682,16 +2694,42 @@ export class CampaignsService {
       .andWhere(`la.channel_type = :campaignChannelType AND la.status = 'success' AND la.send_status IS NULL AND la.postal_status IS NULL`, { campaignChannelType: campaign.channelType })
       .getCount();
 
-    const pendingPostalDeliveryCount = await this.recipientRepo
+    // AR (ricevuta di ritorno) è l'unico meccanismo che genera eventi di
+    // tracciamento fisico lato Poste: Agol la forza sempre, Raccomandata solo
+    // col checkbox — stessa condizione di ricevutaDiRitorno in
+    // postal.strategy.ts. Senza AR (Ordinaria, o Raccomandata senza
+    // checkbox) un postal_delivery_status non arriverà MAI: quei destinatari
+    // vanno nel bucket "NonTracciato", mai nel bucket "In corso" (che implica
+    // un dato ancora atteso).
+    const arTracking = campaign.channelType === 'POSTAL' ? hasPostalArTracking(campaign) : true;
+
+    const pendingPostalDeliveryRow = await this.recipientRepo
       .createQueryBuilder('r')
       .leftJoin(
-        `(SELECT DISTINCT ON (recipient_id) recipient_id, postal_delivery_status, status, channel_type
+        `(SELECT DISTINCT ON (recipient_id) recipient_id, postal_delivery_status, postal_status, status, channel_type
           FROM notification_attempts ORDER BY recipient_id, attempt_number DESC)`,
         'la',
         'la.recipient_id = r.id',
       )
       .where('r.campaignId = :campaignId', { campaignId })
-      .andWhere(`la.channel_type = :campaignChannelType AND la.status != 'failed' AND la.postal_delivery_status IS NULL`, { campaignChannelType: campaign.channelType })
+      // Un attempt "Sostituito da App IO" (esclusiva riuscita, mai spedito a
+      // GlobalCom) non ha e non avrà mai un postal_delivery_status — va
+      // escluso da qui, ha il suo bucket dedicato sotto.
+      .andWhere(`la.channel_type = :campaignChannelType AND la.status != 'failed' AND la.postal_delivery_status IS NULL AND (la.postal_status IS NULL OR la.postal_status != 'AppIoSostituito')`, { campaignChannelType: campaign.channelType })
+      .getCount();
+    const pendingPostalDeliveryCount = arTracking ? pendingPostalDeliveryRow : 0;
+    const nonTracciatoCount = arTracking ? 0 : pendingPostalDeliveryRow;
+
+    const appIoSostituitoPostalDeliveryCount = await this.recipientRepo
+      .createQueryBuilder('r')
+      .leftJoin(
+        `(SELECT DISTINCT ON (recipient_id) recipient_id, postal_status, channel_type
+          FROM notification_attempts ORDER BY recipient_id, attempt_number DESC)`,
+        'la',
+        'la.recipient_id = r.id',
+      )
+      .where('r.campaignId = :campaignId', { campaignId })
+      .andWhere(`la.channel_type = :campaignChannelType AND la.postal_status = 'AppIoSostituito'`, { campaignChannelType: campaign.channelType })
       .getCount();
 
     return {
@@ -2702,7 +2740,9 @@ export class CampaignsService {
       ],
       postalDeliveryStatuses: [
         ...postalDeliveryRows.map((r) => ({ value: r.value, count: Number(r.count) })),
+        ...(nonTracciatoCount > 0 ? [{ value: 'NonTracciato', count: nonTracciatoCount }] : []),
         ...(pendingPostalDeliveryCount > 0 ? [{ value: POSTAL_DELIVERY_PENDING_SENTINEL, count: pendingPostalDeliveryCount }] : []),
+        ...(appIoSostituitoPostalDeliveryCount > 0 ? [{ value: 'AppIoSostituito', count: appIoSostituitoPostalDeliveryCount }] : []),
       ],
     };
   }
@@ -2891,7 +2931,7 @@ export class CampaignsService {
 
     const attempts = await this.attemptRepo.find({
       where: { recipientId: In(postalRecipientIds), channelType: 'POSTAL' },
-      select: { recipientId: true, attemptNumber: true, postalDeliveryStatus: true, status: true },
+      select: { recipientId: true, attemptNumber: true, postalDeliveryStatus: true, postalStatus: true, status: true },
     });
 
     const latestByRecipient = new Map<string, NotificationAttempt>();
@@ -2900,10 +2940,23 @@ export class CampaignsService {
       if (!current || a.attemptNumber > current.attemptNumber) latestByRecipient.set(a.recipientId, a);
     }
 
+    const arTracking = hasPostalArTracking(campaign);
     const counts = new Map<string | null, number>();
     for (const rId of postalRecipientIds) {
       const a = latestByRecipient.get(rId);
-      const key = !a ? null : (a.status === AttemptStatus.FAILED ? 'FAILED' : a.postalDeliveryStatus);
+      // Sostituito da App IO esclusiva: mai spedito a GlobalCom, nessun
+      // recapito Poste arriverà mai — va nel proprio bucket, mai in "In
+      // corso" (null), altrimenti resta bloccato lì per sempre. Stesso
+      // discorso per un servizio senza AR (Ordinaria): nessun evento di
+      // tracciamento fisico esisterà mai, "In corso" indefinito sarebbe
+      // fuorviante quanto il caso App IO — bucket "NonTracciato" dedicato.
+      const key = !a
+        ? null
+        : a.status === AttemptStatus.FAILED
+          ? 'FAILED'
+          : a.postalStatus === 'AppIoSostituito'
+            ? 'AppIoSostituito'
+            : (a.postalDeliveryStatus ?? (arTracking ? null : 'NonTracciato'));
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
 

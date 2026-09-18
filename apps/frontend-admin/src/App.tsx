@@ -237,6 +237,8 @@ function PostalStatusBadge({ status }: { status: string | null | undefined }): R
 }
 
 const POSTAL_DELIVERY_STATUS_META: Record<string, { label: string; badge: string; icon: React.ComponentType<{ className?: string; size?: number }> }> = {
+  AppIoSostituito: { label: 'Sostituito da App IO', badge: 'bg-info-subtle text-info-emphasis border', icon: Smartphone },
+  NonTracciato: { label: 'Non tracciato (nessuna AR)', badge: 'bg-light text-dark border', icon: HelpCircle },
   'Accettato online': { label: 'Accettato online', badge: 'bg-info-subtle text-info-emphasis border', icon: Inbox },
   'Consegnato': { label: 'Consegnato', badge: 'bg-success-subtle text-success-emphasis border', icon: CheckCircle2 },
   'Consegnato a persona abilitata': { label: 'Consegnato a persona abilitata', badge: 'bg-success-subtle text-success-emphasis border', icon: CheckCircle2 },
@@ -309,6 +311,8 @@ const POSTAL_STATUS_PIE_COLORS: Record<string, string> = {
 
 const POSTAL_DELIVERY_STATUS_PIE_COLORS: Record<string, string> = {
   FAILED: '#dc3545',
+  AppIoSostituito: '#0dcaf0',
+  NonTracciato: '#adb5bd',
   'Accettato online': '#0dcaf0',
   'Consegnato': '#198754',
   'Consegnato a persona abilitata': '#198754',
@@ -710,6 +714,30 @@ function postalBadgeExtra(channelConfig: Record<string, any> | undefined, fallba
   if (servizio.startsWith('Raccomandata')) return channelConfig?.['postalReturnReceipt'] ? 'Raccomandata AR' : 'Raccomandata';
   if (servizio.startsWith('Lettera')) return 'Ordinaria';
   return postalServiceTypeLabel(servizio);
+}
+
+// Chiave stabile "tipo campagna" per il filtro Lista Campagne — per POSTAL
+// distingue Ordinaria/Raccomandata senza AR (nessun tracciamento Poste
+// possibile, stesso bucket "NonTracciato" lato backend) da Raccomandata AR e
+// Atto giudiziario (Agol, AR sempre forzata) — stessa condizione di
+// ricevutaDiRitorno in postal.strategy.ts.
+function campaignTypeKey(c: Pick<Campaign, 'channelType' | 'channelConfig'>): string {
+  if (c.channelType !== 'POSTAL') return c.channelType;
+  const servizio = (c.channelConfig?.['postalServiceType'] as string) || 'Raccomandata';
+  if (servizio.startsWith('Agol')) return 'POSTAL_AGOL';
+  if (servizio.startsWith('Raccomandata')) return c.channelConfig?.['postalReturnReceipt'] ? 'POSTAL_AR' : 'POSTAL_ORDINARIA';
+  if (servizio.startsWith('Lettera')) return 'POSTAL_ORDINARIA';
+  return 'POSTAL_ALTRO';
+}
+
+function campaignTypeLabel(key: string): string {
+  switch (key) {
+    case 'POSTAL_ORDINARIA': return 'Postalizzazione — Ordinaria';
+    case 'POSTAL_AR': return 'Postalizzazione — Raccomandata AR';
+    case 'POSTAL_AGOL': return 'Postalizzazione — Atto giudiziario';
+    case 'POSTAL_ALTRO': return 'Postalizzazione — Altro';
+    default: return channelLabel(key);
+  }
 }
 
 const SEND_LEGAL_FACT_CATEGORY_LABELS: Record<string, string> = {
@@ -2073,6 +2101,7 @@ export function App(): React.JSX.Element {
 
   // Campaign list filter and pagination state
   const [campaignSearch, setCampaignSearch] = useState('');
+  const [campaignTypeFilter, setCampaignTypeFilter] = useState('');
   const [campaignStartDate, setCampaignStartDate] = useState('');
   const [campaignEndDate, setCampaignEndDate] = useState('');
   const [campaignPage, setCampaignPage] = useState(1);
@@ -8821,6 +8850,21 @@ export function App(): React.JSX.Element {
       result = result.filter(c => new Date(c.createdAt).getTime() <= endMs);
     }
 
+    if (campaignTypeFilter) {
+      result = result.filter(c => {
+        // Aggregato multicanale (stesso group_id): channelConfig del solo
+        // membro "primary" non basta a classificare il sottotipo postale di
+        // OGNI membro — match più permissivo sul solo canale, ignorando la
+        // distinzione Ordinaria/AR per questo caso raro.
+        if (c.isGroupAggregate && c.groupChannels) {
+          return campaignTypeFilter.startsWith('POSTAL')
+            ? c.groupChannels.includes('POSTAL')
+            : (c.groupChannels as string[]).includes(campaignTypeFilter);
+        }
+        return campaignTypeKey(c) === campaignTypeFilter;
+      });
+    }
+
     return result;
   };
 
@@ -10081,10 +10125,10 @@ export function App(): React.JSX.Element {
                       </div>
                     </div>
 
-                    {/* Filter Bar: Search and Date Range */}
+                    {/* Filter Bar: Search, Tipo campagna, Date Range */}
                     <div className="p-3 border-bottom bg-light-subtle">
                       <div className="row g-2 align-items-center">
-                        <div className="col-md-5">
+                        <div className="col-md-4">
                           <div className="input-group input-group-sm">
                             <span className="input-group-text bg-white border-end-0">
                               <Search size={14} className="text-muted" />
@@ -10114,6 +10158,23 @@ export function App(): React.JSX.Element {
                           </div>
                         </div>
                         <div className="col-md-3 col-6">
+                          <select
+                            className="form-select form-select-sm"
+                            value={campaignTypeFilter}
+                            onChange={(e) => {
+                              setCampaignTypeFilter(e.target.value);
+                              setCampaignPage(1);
+                            }}
+                          >
+                            <option value="">Tipo campagna: tutti</option>
+                            {Array.from(new Set(campaigns.map((c) => campaignTypeKey(c))))
+                              .sort((a, b) => campaignTypeLabel(a).localeCompare(campaignTypeLabel(b)))
+                              .map((key) => (
+                                <option key={key} value={key}>{campaignTypeLabel(key)}</option>
+                              ))}
+                          </select>
+                        </div>
+                        <div className="col-md-2 col-6">
                           <div className="input-group input-group-sm">
                             <span className="input-group-text bg-white small text-muted">Da:</span>
                             <input
@@ -10127,7 +10188,7 @@ export function App(): React.JSX.Element {
                             />
                           </div>
                         </div>
-                        <div className="col-md-3 col-6">
+                        <div className="col-md-2 col-6">
                           <div className="input-group input-group-sm">
                             <span className="input-group-text bg-white small text-muted">A:</span>
                             <input
@@ -10141,12 +10202,13 @@ export function App(): React.JSX.Element {
                             />
                           </div>
                         </div>
-                        {(campaignSearch || campaignStartDate || campaignEndDate) && (
+                        {(campaignSearch || campaignTypeFilter || campaignStartDate || campaignEndDate) && (
                           <div className="col-md-1 text-end">
                             <button
                               className="btn btn-sm btn-link text-decoration-none text-muted p-0 small"
                               onClick={() => {
                                 setCampaignSearch('');
+                                setCampaignTypeFilter('');
                                 setCampaignStartDate('');
                                 setCampaignEndDate('');
                                 setCampaignPage(1);
@@ -10236,12 +10298,18 @@ export function App(): React.JSX.Element {
                                           {c.groupChannels.map(ch => <ChannelBadge key={ch} channel={ch} />)}
                                         </div>
                                       ) : (
-                                        <ChannelBadge channel={c.channelType} extra={c.channelConfig?.['serviceName'] as string | undefined} />
+                                        <ChannelBadge
+                                          channel={c.channelType}
+                                          extra={c.channelType === 'POSTAL' ? postalBadgeExtra(c.channelConfig) : (c.channelConfig?.['serviceName'] as string | undefined)}
+                                        />
                                       )}
                                     </td>
                                     <td className="text-center fw-bold" style={cellStyle}>{c.totalRecipients}</td>
                                     <td className="text-center" style={cellStyle}>
                                       <StatusBadge status={c.status} />
+                                      {c.status === 'running' && (
+                                        <div className="small text-muted mt-1">{c.sentCount} / {c.totalRecipients}</div>
+                                      )}
                                     </td>
                                     <td className="text-muted" style={cellStyle}>{new Date(c.createdAt).toLocaleDateString('it-IT')}</td>
                                     <td className="text-end" style={cellStyle} onClick={(e) => e.stopPropagation()}>
