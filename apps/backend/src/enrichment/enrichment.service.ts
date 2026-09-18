@@ -174,9 +174,6 @@ export class EnrichmentService {
     if (job.status !== EnrichmentJobStatus.DONE) {
       return { blocked: true, message: 'Il job non è completato: nessun risultato da convertire' };
     }
-    if (job.campaignId) {
-      return { blocked: true, message: 'Job già convertito in campagna' };
-    }
     if (job.campaignConversionStatus === CampaignConversionStatus.PENDING || job.campaignConversionStatus === CampaignConversionStatus.PROCESSING) {
       return { blocked: true, message: 'Conversione in campagna già in corso' };
     }
@@ -195,7 +192,19 @@ export class EnrichmentService {
       createdBy,
       splitMissingPayment: params.splitMissingPayment,
     };
-    await this.convertCampaignQueue.add(CONVERT_CAMPAIGN_JOB_NAME, data, { jobId: `${CONVERT_CAMPAIGN_JOB_NAME}-${jobId}` });
+    const bullJobId = `${CONVERT_CAMPAIGN_JOB_NAME}-${jobId}`;
+    // Job può essere già in coda da una conversione precedente (completed/failed):
+    // riaggiungere con lo stesso jobId è no-op silenzioso in BullMQ, il job
+    // non riparte mai. Rimuovere prima se non è active/waiting/delayed (in
+    // quel caso lo stalled-job recovery lo gestisce da solo, non toccare).
+    const existingBullJob = await this.convertCampaignQueue.getJob(bullJobId);
+    if (existingBullJob) {
+      const state = await existingBullJob.getState();
+      if (state !== 'active' && state !== 'waiting' && state !== 'delayed') {
+        await existingBullJob.remove();
+      }
+    }
+    await this.convertCampaignQueue.add(CONVERT_CAMPAIGN_JOB_NAME, data, { jobId: bullJobId });
     return { accepted: true };
   }
 

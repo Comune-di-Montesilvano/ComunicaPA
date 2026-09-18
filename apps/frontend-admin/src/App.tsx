@@ -15211,7 +15211,7 @@ export function App(): React.JSX.Element {
                       )}
                     </div>
                     <div className="d-flex gap-2 mt-2 flex-wrap">
-                      {job.status === 'done' && !job.campaignId && (
+                      {job.status === 'done' && (
                         <>
                           <button className="btn btn-sm btn-outline-secondary" type="button" onClick={() => downloadEnrichResult(job.id, 'csv')}>
                             <FileSpreadsheet className="me-1" size={16} />Scarica CSV
@@ -15227,8 +15227,13 @@ export function App(): React.JSX.Element {
                               <Loader2 className="icon-spin me-1" size={16} />Creazione bozza in corso...
                             </button>
                           ) : (
-                            <button className="btn btn-sm btn-outline-primary" type="button" onClick={() => handleEnrichCreateCampaignOpen(job)}>
-                              <Plus className="me-1" size={16} />Crea bozza campagna
+                            <button
+                              className="btn btn-sm btn-outline-primary"
+                              type="button"
+                              onClick={() => handleEnrichCreateCampaignOpen(job)}
+                              title={job.campaignId ? 'Crea una nuova bozza indipendente dagli stessi dati arricchiti (es. per rilanciare dopo una campagna con impostazione sbagliata)' : undefined}
+                            >
+                              <Plus className="me-1" size={16} />{job.campaignId ? 'Crea nuova bozza campagna' : 'Crea bozza campagna'}
                             </button>
                           )}
                         </>

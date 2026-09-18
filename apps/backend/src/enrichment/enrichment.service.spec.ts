@@ -29,7 +29,7 @@ describe('EnrichmentService', () => {
       update: jest.fn(async () => undefined),
     };
     queue = { add: jest.fn(async () => undefined), getJob: jest.fn(async () => null) };
-    convertCampaignQueue = { add: jest.fn(async () => undefined) };
+    convertCampaignQueue = { add: jest.fn(async () => undefined), getJob: jest.fn(async () => null) };
     overrideService = {
       findByJob: jest.fn(async () => []),
       applyOverrides: jest.fn((rows: any) => rows),
@@ -188,10 +188,37 @@ describe('EnrichmentService', () => {
       expect(convertCampaignQueue.add).not.toHaveBeenCalled();
     });
 
-    it('job già convertito → blocked', async () => {
-      repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.DONE, campaignId: 'camp-old', campaignConversionStatus: 'done' });
-      const result = await service.requestCampaignConversion('j1', { name: 'X', channelType: 'PEC' }, 'op');
-      expect(result.blocked).toBe(true);
+    it('job già convertito in precedenza → permette una nuova bozza (rilancio dopo campagna sbagliata)', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 'job-uuid-1', status: EnrichmentJobStatus.DONE, campaignId: 'camp-old', campaignConversionStatus: 'done' });
+      const dir = join(tmpDir, 'attachments', 'enrichment', 'job-uuid-1');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(join(dir, 'result.csv'), '"codice_fiscale"\n"RSSMRA80A01H501U"');
+
+      const result = await service.requestCampaignConversion('job-uuid-1', { name: 'X', channelType: 'PEC' }, 'op');
+      expect(result.accepted).toBe(true);
+      expect(convertCampaignQueue.add).toHaveBeenCalled();
+    });
+
+    it('BullMQ job precedente ancora presente in stato completed → rimosso prima di riaggiungerlo (dedup jobId silenzioso)', async () => {
+      setupDoneJob();
+      const oldBullJob = { getState: jest.fn(async () => 'completed'), remove: jest.fn(async () => undefined) };
+      convertCampaignQueue.getJob = jest.fn(async () => oldBullJob);
+
+      const result = await service.requestCampaignConversion('job-uuid-1', { name: 'X', channelType: 'PEC' }, 'op');
+      expect(result.accepted).toBe(true);
+      expect(oldBullJob.remove).toHaveBeenCalled();
+      expect(convertCampaignQueue.add).toHaveBeenCalled();
+    });
+
+    it('BullMQ job precedente ancora active → non toccato, niente re-add duplicato (stalled recovery gestisce da solo)', async () => {
+      setupDoneJob();
+      const activeBullJob = { getState: jest.fn(async () => 'active'), remove: jest.fn(async () => undefined) };
+      convertCampaignQueue.getJob = jest.fn(async () => activeBullJob);
+
+      const result = await service.requestCampaignConversion('job-uuid-1', { name: 'X', channelType: 'PEC' }, 'op');
+      expect(result.accepted).toBe(true);
+      expect(activeBullJob.remove).not.toHaveBeenCalled();
+      expect(convertCampaignQueue.add).toHaveBeenCalled();
     });
 
     it('conversione già in corso (pending/processing) → blocked, nessun secondo job in coda', async () => {

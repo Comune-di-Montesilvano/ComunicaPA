@@ -38,7 +38,7 @@ describe('ConvertCampaignProcessor', () => {
     fs.writeFileSync(getEnrichmentResultCsv('job-uuid-1'), '"codice_fiscale";"allegato"\n"RSSMRA80A01H501U";"PROVV_1.pdf"');
   }
 
-  it('crea la campagna, copia CSV+PDF in uploadsDir, marca DONE, elimina i file del job', async () => {
+  it('crea la campagna, copia CSV+PDF in uploadsDir, marca DONE, NON elimina i file del job', async () => {
     setupDoneJob();
     await processor.process(convertJob);
 
@@ -57,7 +57,7 @@ describe('ConvertCampaignProcessor', () => {
     const updates = repo.update.mock.calls.map((c: any[]) => c[1]);
     expect(updates).toContainEqual({ campaignConversionStatus: 'processing' });
     expect(updates.at(-1)).toEqual({ campaignId: 'camp-1', secondaryCampaignId: null, campaignConversionStatus: 'done' });
-    expect(fs.existsSync(getEnrichmentDir('job-uuid-1'))).toBe(false);
+    expect(fs.existsSync(getEnrichmentDir('job-uuid-1'))).toBe(true);
   });
 
   it('splitMissingPayment: separa in due bozze (con/senza PagoPa), copia solo i PDF di competenza', async () => {
