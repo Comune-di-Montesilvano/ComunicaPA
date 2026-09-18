@@ -1467,6 +1467,7 @@ export function App(): React.JSX.Element {
   const [appVersion, setAppVersion] = useState<string>('');
   const [isLdapMock, setIsLdapMock] = useState<boolean>(false);
   const [onlineCount, setOnlineCount] = useState<number | null>(null);
+  const [onlineUsers, setOnlineUsers] = useState<{ username: string; displayName: string }[]>([]);
   const [recentActivityCampaigns, setRecentActivityCampaigns] = useState<any[]>([]);
   const [recentActivityLoading, setRecentActivityLoading] = useState(false);
   const [recentActivityError, setRecentActivityError] = useState<string | null>(null);
@@ -9082,6 +9083,10 @@ export function App(): React.JSX.Element {
         const data = await res.json();
         setOnlineCount(data.count);
       }
+      if (role === 'admin') {
+        const usersRes = await apiFetch('/presence/online-users');
+        if (usersRes.ok) setOnlineUsers(await usersRes.json());
+      }
     } catch {
       // silenzioso: badge informativo, mai stato di errore visibile
     }
@@ -9641,7 +9646,12 @@ export function App(): React.JSX.Element {
                       <div>
                         <div className="d-flex align-items-center gap-2 mb-1">
                           <h1 className="h4 mb-0 fw-bold text-dark">Ciao, {displayName || username}! 👋</h1>
-                          <span className="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1 small d-inline-flex align-items-center gap-1">
+                          <span
+                            className="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1 small d-inline-flex align-items-center gap-1"
+                            title={role === 'admin' && onlineUsers.length > 0
+                              ? onlineUsers.map((u) => u.displayName).join(', ')
+                              : undefined}
+                          >
                             <span className="spinner-grow spinner-grow-sm text-success" style={{ width: '6px', height: '6px' }} />
                             {onlineCount !== null
                               ? `${onlineCount} ${onlineCount === 1 ? 'operatore online' : 'operatori online'}`

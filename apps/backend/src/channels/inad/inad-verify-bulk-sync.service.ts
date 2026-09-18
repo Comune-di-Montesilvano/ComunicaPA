@@ -79,7 +79,8 @@ export class InadVerifyBulkSyncService {
         for (const batch of batches) {
           const items = await this.inadService.getBulkResult(batch.id);
           items.forEach((item) => {
-            const addresses = (item.digitalAddress ?? []).map((a) => a.digitalAddress).join('; ');
+            if (!item.digitalAddress || item.digitalAddress.length === 0) return;
+            const addresses = item.digitalAddress.map((a) => a.digitalAddress).join('; ');
             foundAddresses.set(item.codiceFiscale.toUpperCase(), addresses);
           });
         }
