@@ -15211,7 +15211,7 @@ export function App(): React.JSX.Element {
                       )}
                     </div>
                     <div className="d-flex gap-2 mt-2 flex-wrap">
-                      {job.status === 'done' && !job.campaignId && (
+                      {job.status === 'done' && (
                         <>
                           <button className="btn btn-sm btn-outline-secondary" type="button" onClick={() => downloadEnrichResult(job.id, 'csv')}>
                             <FileSpreadsheet className="me-1" size={16} />Scarica CSV
@@ -15227,8 +15227,13 @@ export function App(): React.JSX.Element {
                               <Loader2 className="icon-spin me-1" size={16} />Creazione bozza in corso...
                             </button>
                           ) : (
-                            <button className="btn btn-sm btn-outline-primary" type="button" onClick={() => handleEnrichCreateCampaignOpen(job)}>
-                              <Plus className="me-1" size={16} />Crea bozza campagna
+                            <button
+                              className="btn btn-sm btn-outline-primary"
+                              type="button"
+                              onClick={() => handleEnrichCreateCampaignOpen(job)}
+                              title={job.campaignId ? 'Crea una nuova bozza indipendente dagli stessi dati arricchiti (es. per rilanciare dopo una campagna con impostazione sbagliata)' : undefined}
+                            >
+                              <Plus className="me-1" size={16} />{job.campaignId ? 'Crea nuova bozza campagna' : 'Crea bozza campagna'}
                             </button>
                           )}
                         </>
@@ -18128,12 +18133,17 @@ export function App(): React.JSX.Element {
                               Destinatari con invio fallito ({failureGroups.reduce((sum, g) => sum + g.count, 0)}) — raggruppati per motivo
                             </h4>
                             <div className="table-responsive" style={{ maxHeight: 300, overflowY: 'auto' }}>
-                              <table className="table table-sm">
+                              <table className="table table-sm" style={{ tableLayout: 'fixed', minWidth: 480 }}>
+                                <colgroup>
+                                  <col style={{ width: '60%' }} />
+                                  <col style={{ width: '15%' }} />
+                                  <col style={{ width: '25%' }} />
+                                </colgroup>
                                 <thead><tr><th>MOTIVO ERRORE</th><th className="text-end">DESTINATARI</th><th></th></tr></thead>
                                 <tbody>
                                   {failureGroups.map((g) => (
                                     <tr key={g.errorMessage}>
-                                      <td style={{ maxWidth: 400 }} className="text-break small text-danger">{g.errorMessage}</td>
+                                      <td className="text-break small text-danger">{g.errorMessage}</td>
                                       <td className="text-end fw-bold small">{g.count}</td>
                                       <td className="text-end">
                                         <button

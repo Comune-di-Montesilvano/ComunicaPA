@@ -7,7 +7,7 @@ import * as fs from 'fs';
 import { join } from 'path';
 import { EnrichmentJob, CampaignConversionStatus } from '../entities/enrichment-job.entity.js';
 import { CONVERT_CAMPAIGN_QUEUE, ConvertCampaignQueueJobData } from './enrichment-job.types.js';
-import { getEnrichmentAttachmentsDir, getEnrichmentDir, getEnrichmentResultCsv } from './enrichment-paths.js';
+import { getEnrichmentAttachmentsDir, getEnrichmentResultCsv } from './enrichment-paths.js';
 import { CampaignsService } from '../campaigns/campaigns.service.js';
 import { getUploadsDir } from '../attachments/attachment-paths.js';
 import { buildEnrichedCsv, parseEnrichedCsv, type EnrichedRow } from './enriched-csv.util.js';
@@ -71,7 +71,9 @@ export class ConvertCampaignProcessor extends WorkerHost {
         secondaryCampaignId,
         campaignConversionStatus: CampaignConversionStatus.DONE,
       });
-      fs.rmSync(getEnrichmentDir(jobId), { recursive: true, force: true });
+      // Cartella job NON cancellata qui: va tenuta per permettere di rigenerare
+      // una nuova bozza (es. campagna lanciata con impostazione sbagliata) —
+      // ripulita solo da EnrichmentRetentionService dopo retentionDays.
     } catch (err: any) {
       this.logger.error(`Conversione in campagna fallita per EnrichmentJob ${jobId}: ${err.message}`);
       await this.jobRepo.update(jobId, {

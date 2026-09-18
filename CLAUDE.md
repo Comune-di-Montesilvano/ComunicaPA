@@ -829,6 +829,25 @@ protocollazione, stesso identico calcolo di
 deliberato: registro imprese/verifica IO/firma/enrichment/bulk-retry (stesso
 schema BullMQ, tabelle/payload diversi, nessun incidente osservato lì).
 
+**Esteso (incidente reale: Postgres riavviato durante invio) a due casi in
+più.** (1) Job BullMQ già terminale (`failed`/`completed`) ma attempt
+rimasto `queued` — la scrittura dello stato terminale era fallita a sua
+volta (stesso DB down), invisibile a "Job orfani" perché un job Redis
+esiste davvero: marcato FAILED (mai riaccodato con lo stesso jobId, dedup
+BullMQ silenzioso). (2) Attempt rimasto `status='processing'` (worker
+crashato mentre già in lavorazione) — query estesa a
+`status IN (queued, processing)`. Se per un `processing` il job è
+**assente**, l'invio potrebbe essere già partito: marcato FAILED con
+avviso di rischio doppio invio, mai riaccodato in automatico (diverso da
+`queued` assente, sempre sicuro da riaccodare).
+
+**Un `error_message` mostrato in "Destinatari con invio fallito" può
+essere un messaggio CONGELATO di un incidente passato** (riparazione
+manuale, o job BullMQ vecchio) — non assumere sia un errore live in corso
+solo perché il testo dice "database system is shutting down": controllare
+`created_at` prima di sospettare un'interruzione ancora attiva (falso
+allarme reale già capitato).
+
 ## Metodo bulk privato chiamato con un sottoinsieme — ogni mutazione va scoped, mai alla campagna intera
 
 `CampaignsService.createAttemptsAndEnqueue()` chiudeva con un update di stato
@@ -1020,6 +1039,17 @@ row !important; ... }` che si applica a QUALSIASI discendente `.d-flex`
 dentro un card-header, anche quando si vuole `flex-column` (es. badge stato
 sopra una caption). Le classi utility non bastano in quel contesto — usare
 uno `style` inline esplicito per bypassare la regola.
+
+## Frontend admin — tabella in un pannello stretto senza `table-layout: fixed` → wrap carattere per carattere
+
+Una `<td>` con solo `text-break`/`maxWidth` (nessuna larghezza minima) in
+un pannello narrow (es. sidebar dettaglio campagna) si schiaccia sotto la
+larghezza di una singola parola — Bootstrap `text-break` spezza a metà
+parola pur di stare nello spazio, producendo wrap illeggibile lettera per
+lettera (bug reale: colonna "Motivo errore" in "Destinatari con invio
+fallito"). Fix: `table-layout: fixed` + `<colgroup>` con percentuali
+esplicite + `minWidth` sulla tabella — il contenitore `table-responsive`
+scrolla orizzontalmente se serve, invece di schiacciare il testo.
 
 ## ANPR C002 — pattern di sicurezza reale (verificato con dati veri, funzionante)
 
@@ -1466,6 +1496,14 @@ senza job BullMQ reale: query `pg` diretta + `bullmq`/`ioredis` per confrontare
 `notification_attempts.status` con `queue.getJob(id)` — stesso principio del
 repair script già noto, utile anche solo per la diagnosi senza riparare nulla.
 
+**`$$...$$` è dollar-quoting SQL (per un valore letterale dentro il TESTO
+della query), non sintassi JavaScript** — va sempre dentro una stringa JS
+vera (`"SELECT ... WHERE x=$$val$$"`), mai scritto bare come
+`pg.query($$SELECT...$$)`: quello è un `SyntaxError: missing ) after
+argument list` immediato (rifatto una volta dal vivo). Più semplice e
+meno rischioso: query parametrizzate (`$1`/`$2` + array valori) invece di
+interpolare `$$...$$` nel testo SQL.
+
 **`StatoConsegna` vuoto è a volte un dato mancante lato GlobalCom stesso,
 non un bug nostro.** Verificato dal vivo con lo script di debug sopra su 3
 IDPRO reali (`RaccomandataMarket4`, sia esteri che italiani, spediti 5+
@@ -1652,6 +1690,12 @@ postal_status, postal_delivery_status)`. Qualunque nuova query paginata
 su `Recipient`/`NotificationAttempt` con filtro/ordinamento va verificata
 con `EXPLAIN` per lo stesso pattern prima di aggiungerla, non assumere che
 un indice esistente coincida per colonna d'ordine.
+
+**`notification_attempts` non ha `updated_at`, solo `created_at`.** Una
+query manuale/debug che assume anche un updated_at fallisce con
+`column na.updated_at does not exist` (Postgres suggerisce da solo
+`created_at`) — verificare sempre le colonne reali sull'entity prima di
+scrivere SQL ad-hoc contro questa tabella.
 
 ## Side-effect su NotificationAttempt dopo l'invio — solo in notification.processor.ts
 
@@ -1854,6 +1898,15 @@ esattamente come una ripresa bozza normale (`handleResumeDraft`),
 riusando le stesse validazioni CF/email/mappatura colonne del percorso
 wizard standard. Nessun bypass di quelle validazioni, coerente con la
 regola "creazione campagne — un solo percorso" sopra.
+
+**Un job di arricchimento può generare più bozze nel tempo, non solo una.**
+Prima di PR #132 era one-shot (cartella job cancellata subito dopo la
+prima conversione, seconda richiesta bloccata) — bug reale: campagna da
+18000 record lanciata con impostazione sbagliata, nessun modo di
+rilanciarla senza rifare l'intero arricchimento. Ora la cartella resta
+fino a retention scaduta e il bottone "Crea bozza campagna" (rinominato
+"Crea nuova bozza campagna" se già usato) resta sempre cliccabile — ogni
+click crea una campagna bozza NUOVA e indipendente dagli stessi dati.
 
 **Rate multiple PagoPA — classificazione via etichetta, mai ordine pagina.**
 `pdf_extractor.py` scansiona TUTTE le pagine con QR pagamento (non solo la
