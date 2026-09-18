@@ -50,7 +50,7 @@ export const CHANNELS_REGISTRY: Record<string, ChannelMetaConfig> = {
     label: 'App IO',
     shortLabel: 'App IO',
     badge: 'bg-primary text-white',
-    color: '#0066CC',
+    color: '#0B3EE3',
     bgLight: '#F0F7FF',
     logoUrl: EMBEDDED_LOGOS.APP_IO,
     icon: Smartphone,
