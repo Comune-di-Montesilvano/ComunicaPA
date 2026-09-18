@@ -2080,6 +2080,7 @@ export function App(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, token]);
 
+  const wasBackendOfflineRef = useRef(false);
   useEffect(() => {
     const checkBackend = () => {
       fetch(`${API_BASE}/version`)
@@ -2091,13 +2092,31 @@ export function App(): React.JSX.Element {
           setAppVersion(d.version ?? 'dev');
           setIsLdapMock(d.isLdapMock ?? false);
           setBackendStatus('online');
+          // Riconnessione dopo un down: i fetch falliti durante quella finestra
+          // (Impostazioni, config canali/motori per il wizard) sono rimasti
+          // fermi sull'ultimo stato — senza questo refetch un operatore che
+          // apre "Nuova Campagna" subito dopo un riavvio backend non vede
+          // alcun motore configurato, invio impossibile (bug reale segnalato
+          // dal vivo). Solo se token già presente (sennò niente da ricaricare).
+          if (wasBackendOfflineRef.current && token) {
+            fetchSettings();
+            fetchMailConfigs();
+            fetchPostalProviders();
+            fetchPostalAuthorizedUsers();
+            fetchIoServices();
+          }
+          wasBackendOfflineRef.current = false;
         })
-        .catch(() => setBackendStatus('offline'));
+        .catch(() => {
+          setBackendStatus('offline');
+          wasBackendOfflineRef.current = true;
+        });
     };
     checkBackend();
     const intervalId = setInterval(checkBackend, 15000);
     return () => clearInterval(intervalId);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   useEffect(() => {
     fetch(`${API_BASE}/branding`)
@@ -2959,8 +2978,11 @@ export function App(): React.JSX.Element {
     };
   }, [view, token, auditPage, auditSearch]);
 
-  // Carica le impostazioni persistite dal backend al login
-  useEffect(() => {
+  // Carica le impostazioni persistite dal backend — al login e a ogni
+  // riconnessione backend (vedi checkBackend sotto): senza refetch al
+  // ritorno online, la pagina Impostazioni resta bloccata sull'ultimo
+  // fetch fallito durante il down (bug reale segnalato dal vivo).
+  const fetchSettings = () => {
     if (!token) return;
     fetch(`${ADMIN_API_BASE}/settings`, { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => {
@@ -3037,7 +3059,8 @@ export function App(): React.JSX.Element {
         setSettCitizenPublicUrl(String(s['system.citizenPublicUrl'] ?? ''));
       })
       .catch(() => { /* backend non raggiungibile: la pagina resta editabile */ });
-  }, [token]);
+  };
+  useEffect(() => { fetchSettings(); }, [token]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -16021,6 +16044,12 @@ export function App(): React.JSX.Element {
           {/* VIEW: IMPOSTAZIONI */}
           {view === 'impostazioni' && (
             <div>
+              {backendStatus === 'offline' && (
+                <div className="alert alert-danger d-flex align-items-center gap-2 mb-3">
+                  <AlertTriangle size={16} />
+                  <strong>Backend non raggiungibile</strong> — le impostazioni mostrate potrebbero non essere aggiornate. Si ricaricano automaticamente appena la connessione torna disponibile.
+                </div>
+              )}
               {settingsSavedMessage && (
                 <div className={`alert ${settingsSavedMessage.error ? 'alert-danger' : 'alert-success'} d-flex align-items-center gap-2 mb-3`} style={{ position: 'fixed', top: '70px', right: '20px', zIndex: 2000, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
                   {settingsSavedMessage.error ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />}
