@@ -822,6 +822,10 @@ describe('CampaignsService', () => {
       ['where', 'andWhere'].forEach((m) => { notDownloadedQb[m] = jest.fn().mockReturnValue(notDownloadedQb); });
       notDownloadedQb.getCount = jest.fn().mockResolvedValue(0);
 
+      const divertedQb: any = {};
+      ['where', 'andWhere'].forEach((m) => { divertedQb[m] = jest.fn().mockReturnValue(divertedQb); });
+      divertedQb.getCount = jest.fn().mockResolvedValue(0);
+
       mockRecipientRepo.createQueryBuilder = jest.fn()
         .mockReturnValueOnce(statusQb)
         .mockReturnValueOnce(deliveryQb)
@@ -830,7 +834,8 @@ describe('CampaignsService', () => {
         .mockReturnValueOnce(pendingPostalDeliveryQb)
         .mockReturnValueOnce(appIoSostituitoQb)
         .mockReturnValueOnce(downloadComboQb)
-        .mockReturnValueOnce(notDownloadedQb);
+        .mockReturnValueOnce(notDownloadedQb)
+        .mockReturnValueOnce(divertedQb);
 
       const result = await service.getRecipientFilterOptions('uuid-1');
 
@@ -872,6 +877,10 @@ describe('CampaignsService', () => {
       ['where', 'andWhere'].forEach((m) => { notDownloadedQb[m] = jest.fn().mockReturnValue(notDownloadedQb); });
       notDownloadedQb.getCount = jest.fn().mockResolvedValue(0);
 
+      const divertedQb: any = {};
+      ['where', 'andWhere'].forEach((m) => { divertedQb[m] = jest.fn().mockReturnValue(divertedQb); });
+      divertedQb.getCount = jest.fn().mockResolvedValue(0);
+
       mockRecipientRepo.createQueryBuilder = jest.fn()
         .mockReturnValueOnce(statusQb)
         .mockReturnValueOnce(deliveryQb)
@@ -880,11 +889,68 @@ describe('CampaignsService', () => {
         .mockReturnValueOnce(pendingPostalDeliveryQb)
         .mockReturnValueOnce(appIoSostituitoQb)
         .mockReturnValueOnce(downloadComboQb)
-        .mockReturnValueOnce(notDownloadedQb);
+        .mockReturnValueOnce(notDownloadedQb)
+        .mockReturnValueOnce(divertedQb);
 
       const result = await service.getRecipientFilterOptions('uuid-1');
 
       expect(result.postalDeliveryStatuses).toEqual([{ value: '__POSTAL_DELIVERY_PENDING__', count: 4 }]);
+    });
+
+    it('bucket "DirottatoAPec" in ENTRAMBI deliveryStatuses (Stato documento) e postalDeliveryStatuses (Recapito Poste) — mai solo nei grafici', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'POSTAL' });
+
+      const statusQb: any = {};
+      ['select', 'addSelect', 'where', 'groupBy'].forEach((m) => { statusQb[m] = jest.fn().mockReturnValue(statusQb); });
+      statusQb.getRawMany = jest.fn().mockResolvedValue([]);
+
+      const deliveryQb: any = {};
+      ['select', 'addSelect', 'leftJoin', 'where', 'andWhere', 'groupBy'].forEach((m) => { deliveryQb[m] = jest.fn().mockReturnValue(deliveryQb); });
+      deliveryQb.getRawMany = jest.fn().mockResolvedValue([]);
+
+      const postalDeliveryQb: any = {};
+      ['select', 'addSelect', 'leftJoin', 'where', 'andWhere', 'groupBy'].forEach((m) => { postalDeliveryQb[m] = jest.fn().mockReturnValue(postalDeliveryQb); });
+      postalDeliveryQb.getRawMany = jest.fn().mockResolvedValue([]);
+
+      const pendingQb: any = {};
+      ['leftJoin', 'where', 'andWhere'].forEach((m) => { pendingQb[m] = jest.fn().mockReturnValue(pendingQb); });
+      pendingQb.getCount = jest.fn().mockResolvedValue(0);
+
+      const pendingPostalDeliveryQb: any = {};
+      ['leftJoin', 'where', 'andWhere'].forEach((m) => { pendingPostalDeliveryQb[m] = jest.fn().mockReturnValue(pendingPostalDeliveryQb); });
+      pendingPostalDeliveryQb.getCount = jest.fn().mockResolvedValue(0);
+
+      const appIoSostituitoQb: any = {};
+      ['leftJoin', 'where', 'andWhere'].forEach((m) => { appIoSostituitoQb[m] = jest.fn().mockReturnValue(appIoSostituitoQb); });
+      appIoSostituitoQb.getCount = jest.fn().mockResolvedValue(0);
+
+      const downloadComboQb: any = {};
+      ['select', 'addSelect', 'innerJoin', 'where', 'groupBy'].forEach((m) => { downloadComboQb[m] = jest.fn().mockReturnValue(downloadComboQb); });
+      downloadComboQb.getRawMany = jest.fn().mockResolvedValue([]);
+
+      const notDownloadedQb: any = {};
+      ['where', 'andWhere'].forEach((m) => { notDownloadedQb[m] = jest.fn().mockReturnValue(notDownloadedQb); });
+      notDownloadedQb.getCount = jest.fn().mockResolvedValue(0);
+
+      const divertedQb: any = {};
+      ['where', 'andWhere'].forEach((m) => { divertedQb[m] = jest.fn().mockReturnValue(divertedQb); });
+      divertedQb.getCount = jest.fn().mockResolvedValue(528);
+
+      mockRecipientRepo.createQueryBuilder = jest.fn()
+        .mockReturnValueOnce(statusQb)
+        .mockReturnValueOnce(deliveryQb)
+        .mockReturnValueOnce(postalDeliveryQb)
+        .mockReturnValueOnce(pendingQb)
+        .mockReturnValueOnce(pendingPostalDeliveryQb)
+        .mockReturnValueOnce(appIoSostituitoQb)
+        .mockReturnValueOnce(downloadComboQb)
+        .mockReturnValueOnce(notDownloadedQb)
+        .mockReturnValueOnce(divertedQb);
+
+      const result = await service.getRecipientFilterOptions('uuid-1');
+
+      expect(result.deliveryStatuses).toEqual(expect.arrayContaining([{ value: 'DirottatoAPec', count: 528 }]));
+      expect(result.postalDeliveryStatuses).toEqual(expect.arrayContaining([{ value: 'DirottatoAPec', count: 528 }]));
     });
   });
 
@@ -4094,7 +4160,7 @@ describe('CampaignsService.getPostalStatusBreakdown / getPostalReportRows', () =
       expect(result).toEqual([{ status: 'FAILED', count: 1 }]);
     });
 
-    it('esclude i destinatari dirottati INAD dai conteggi e include lo stato null per i destinatari POSTAL senza attempt o con postalStatus null', async () => {
+    it('bucket dedicato "DirottatoAPec" per i destinatari dirottati INAD, mai esclusi dal totale; stato null per i destinatari POSTAL senza attempt o con postalStatus null', async () => {
       campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'POSTAL' });
       recipientRepoMock.find.mockResolvedValue([
         { id: 'r-postal-1' },
@@ -4113,8 +4179,9 @@ describe('CampaignsService.getPostalStatusBreakdown / getPostalReportRows', () =
       expect(result).toEqual(expect.arrayContaining([
         { status: 'Consegnato', count: 1 },
         { status: null, count: 1 },
+        { status: 'DirottatoAPec', count: 1 },
       ]));
-      expect(result).toHaveLength(2);
+      expect(result).toHaveLength(3);
     });
 
     it('lancia NotFoundException se la campagna non esiste', async () => {

@@ -2470,6 +2470,16 @@ export class CampaignsService {
     if (status) {
       qb.andWhere('r.status = :status', { status });
     }
+    // Dirottato INAD: mai un postal_status/postal_delivery_status reale
+    // sull'attempt (che è su PEC, non POSTAL) — filtro diretto sul flag
+    // Recipient.inadCheck.diverted, stesso identico criterio usato per
+    // contarli in getRecipientFilterOptions. Esclude i due rami EXISTS
+    // sotto (mai valori reali per 'DirottatoAPec' su na.send_status/
+    // na.postal_status/na.postal_delivery_status — combinati in AND
+    // darebbero sempre zero risultati).
+    if (deliveryStatus === 'DirottatoAPec' || postalDeliveryStatus === 'DirottatoAPec') {
+      qb.andWhere(`(r.inad_check->>'diverted')::boolean = true`);
+    }
     if (deliveryStatus === PENDING_DELIVERY_STATUS_SENTINEL) {
       qb.andWhere(
         `EXISTS (
@@ -2480,7 +2490,7 @@ export class CampaignsService {
         )`,
         { campaignChannelType: campaign.channelType },
       );
-    } else if (deliveryStatus) {
+    } else if (deliveryStatus && deliveryStatus !== 'DirottatoAPec') {
       qb.andWhere(
         `EXISTS (
           SELECT 1 FROM notification_attempts na
@@ -2501,7 +2511,7 @@ export class CampaignsService {
         )`,
         { campaignChannelType: campaign.channelType },
       );
-    } else if (postalDeliveryStatus) {
+    } else if (postalDeliveryStatus && postalDeliveryStatus !== 'DirottatoAPec') {
       qb.andWhere(
         `EXISTS (
           SELECT 1 FROM notification_attempts na
@@ -2793,17 +2803,33 @@ export class CampaignsService {
       .andWhere('r.downloadCount = 0')
       .getCount();
 
+    // Dirottati INAD (attempt reale su PEC, mai su POSTAL): stesso bucket
+    // "DirottatoAPec" già usato in getPostalStatusBreakdown/
+    // getPostalDeliveryStatusBreakdown — un dirottato non ha e non avrà mai
+    // un postal_status/postal_delivery_status reale, quindi mai in
+    // deliveryRows/postalDeliveryRows (letti dall'attempt); è un flag sul
+    // Recipient, contato qui direttamente.
+    const divertedCount = campaign.channelType === 'POSTAL'
+      ? await this.recipientRepo
+        .createQueryBuilder('r')
+        .where('r.campaignId = :campaignId', { campaignId })
+        .andWhere(`(r.inad_check->>'diverted')::boolean = true`)
+        .getCount()
+      : 0;
+
     return {
       statuses: statusRows.map((r) => ({ value: r.value, count: Number(r.count) })),
       deliveryStatuses: [
         ...deliveryRows.map((r) => ({ value: r.value, count: Number(r.count) })),
         ...(pendingCount > 0 ? [{ value: PENDING_DELIVERY_STATUS_SENTINEL, count: pendingCount }] : []),
+        ...(divertedCount > 0 ? [{ value: 'DirottatoAPec', count: divertedCount }] : []),
       ],
       postalDeliveryStatuses: [
         ...postalDeliveryRows.map((r) => ({ value: r.value, count: Number(r.count) })),
         ...(nonTracciatoCount > 0 ? [{ value: 'NonTracciato', count: nonTracciatoCount }] : []),
         ...(pendingPostalDeliveryCount > 0 ? [{ value: POSTAL_DELIVERY_PENDING_SENTINEL, count: pendingPostalDeliveryCount }] : []),
         ...(appIoSostituitoPostalDeliveryCount > 0 ? [{ value: 'AppIoSostituito', count: appIoSostituitoPostalDeliveryCount }] : []),
+        ...(divertedCount > 0 ? [{ value: 'DirottatoAPec', count: divertedCount }] : []),
       ],
       downloadChannelCombos: [
         ...(notDownloadedCount > 0 ? [{ value: DOWNLOAD_NONE_SENTINEL, count: notDownloadedCount }] : []),
@@ -2920,12 +2946,16 @@ export class CampaignsService {
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
     const recipients = await this.recipientRepo.find({ where: { campaignId }, select: { id: true, inadCheck: true } });
-    const postalRecipients = recipients.filter((r) => !r.inadCheck?.diverted);
-    if (postalRecipients.length === 0) return [];
-    const postalRecipientIds = postalRecipients.map((r) => r.id);
+    if (recipients.length === 0) return [];
+    const recipientIds = recipients.map((r) => r.id);
+    // Dirottati INAD (attempt reale su PEC, mai su POSTAL): bucket dedicato,
+    // mai esclusi dal totale — prima sparivano del tutto dal grafico,
+    // "Totale" disallineato dal conteggio reale destinatari (bug reale
+    // segnalato dal vivo).
+    const divertedIds = new Set(recipients.filter((r) => r.inadCheck?.diverted).map((r) => r.id));
 
     const attempts = await this.attemptRepo.find({
-      where: { recipientId: In(postalRecipientIds), channelType: 'POSTAL' },
+      where: { recipientId: In(recipientIds), channelType: 'POSTAL' },
       select: { recipientId: true, attemptNumber: true, postalStatus: true, status: true },
     });
 
@@ -2936,9 +2966,13 @@ export class CampaignsService {
     }
 
     const counts = new Map<string | null, number>();
-    for (const rId of postalRecipientIds) {
-      const a = latestByRecipient.get(rId);
-      const key = !a ? null : (a.status === AttemptStatus.FAILED ? 'FAILED' : a.postalStatus);
+    for (const rId of recipientIds) {
+      const key = divertedIds.has(rId)
+        ? 'DirottatoAPec'
+        : (() => {
+            const a = latestByRecipient.get(rId);
+            return !a ? null : (a.status === AttemptStatus.FAILED ? 'FAILED' : a.postalStatus);
+          })();
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
 
@@ -2990,12 +3024,15 @@ export class CampaignsService {
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
     const recipients = await this.recipientRepo.find({ where: { campaignId }, select: { id: true, inadCheck: true } });
-    const postalRecipients = recipients.filter((r) => !r.inadCheck?.diverted);
-    if (postalRecipients.length === 0) return [];
-    const postalRecipientIds = postalRecipients.map((r) => r.id);
+    if (recipients.length === 0) return [];
+    const recipientIds = recipients.map((r) => r.id);
+    // Stesso principio di getPostalStatusBreakdown sopra: dirottati mai
+    // esclusi, bucket dedicato — un dirottato non avrà mai un recapito
+    // Poste (attempt reale su PEC), ma va comunque contato nel totale.
+    const divertedIds = new Set(recipients.filter((r) => r.inadCheck?.diverted).map((r) => r.id));
 
     const attempts = await this.attemptRepo.find({
-      where: { recipientId: In(postalRecipientIds), channelType: 'POSTAL' },
+      where: { recipientId: In(recipientIds), channelType: 'POSTAL' },
       select: { recipientId: true, attemptNumber: true, postalDeliveryStatus: true, postalStatus: true, status: true },
     });
 
@@ -3007,7 +3044,11 @@ export class CampaignsService {
 
     const arTracking = hasPostalArTracking(campaign);
     const counts = new Map<string | null, number>();
-    for (const rId of postalRecipientIds) {
+    for (const rId of recipientIds) {
+      if (divertedIds.has(rId)) {
+        counts.set('DirottatoAPec', (counts.get('DirottatoAPec') ?? 0) + 1);
+        continue;
+      }
       const a = latestByRecipient.get(rId);
       // Sostituito da App IO esclusiva: mai spedito a GlobalCom, nessun
       // recapito Poste arriverà mai — va nel proprio bucket, mai in "In
