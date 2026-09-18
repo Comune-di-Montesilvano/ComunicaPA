@@ -2809,12 +2809,25 @@ export function App(): React.JSX.Element {
           fetchCampaignCost(selectedCampaignId);
           fetchCampaignCostSavings(selectedCampaignId);
           fetchCampaignPaymentTotal(selectedCampaignId);
-          fetchDownloadCombinationStats(selectedCampaignId);
         }, 5000);
       }
     }
     return () => clearInterval(timer);
   }, [view, selectedCampaignId, campaign]);
+
+  // "Download per Canale": polling indipendente dallo status campagna, stesso
+  // principio del pannello PEC difformi sotto — un cittadino può scaricare
+  // l'allegato in qualunque momento durante la retention, su QUALUNQUE
+  // canale (non solo SEND/POSTAL come il gate hasAsyncDeliveryTracking sopra,
+  // pensato per lo stato di consegna, non per i download). Bug reale
+  // segnalato dal vivo: pannello fermo allo snapshot iniziale su una
+  // campagna EMAIL/PEC già completata, aggiornato solo uscendo e rientrando.
+  useEffect(() => {
+    if (view !== 'campaign-detail' || !selectedCampaignId) return undefined;
+    fetchDownloadCombinationStats(selectedCampaignId);
+    const timer = setInterval(() => fetchDownloadCombinationStats(selectedCampaignId), 5000);
+    return () => clearInterval(timer);
+  }, [view, selectedCampaignId]);
 
   // Pannello PEC difformi: proprio polling indipendente dallo status
   // campagna (un PENDING_REVIEW può restare aperto anche a campagna
@@ -2909,17 +2922,30 @@ export function App(): React.JSX.Element {
     const searchChanged = prevSearchRef.current !== recipientsSearch;
     prevSearchRef.current = recipientsSearch;
 
+    // Polling indipendente dallo status campagna, stesse ragioni di
+    // "Download per Canale" sopra — lo stato di un destinatario (Recapito
+    // Poste, esito consegna...) e i conteggi delle opzioni filtro possono
+    // cambiare in qualunque momento, non solo mentre la campagna è
+    // "in corso". L'intervallo vive DENTRO questo stesso effect (non uno
+    // separato) apposta: si resetta da solo a ogni cambio filtro/pagina/
+    // ordinamento, mai una chiusura stantia su valori vecchi.
+    const poll = () => {
+      fetchRecipientsPage(selectedCampaignId);
+      fetchRecipientsFilterOptions(selectedCampaignId);
+    };
+
     if (searchChanged && recipientsSearch.trim()) {
-      const handle = setTimeout(() => {
-        fetchRecipientsPage(selectedCampaignId);
-      }, 300);
+      const handle = setTimeout(poll, 300);
+      const timer = setInterval(poll, 5000);
       return () => {
         clearTimeout(handle);
+        clearInterval(timer);
       };
     }
 
-    fetchRecipientsPage(selectedCampaignId);
-    return undefined;
+    poll();
+    const timer = setInterval(poll, 5000);
+    return () => clearInterval(timer);
   }, [selectedCampaignId, view, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, recipientsDownloadChannelFilter, recipientsPostalDeliveryStatusFilter, recipientsSortBy, recipientsSortDir]);
 
   useEffect(() => {
