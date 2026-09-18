@@ -1896,14 +1896,38 @@ export function App(): React.JSX.Element {
 
   const runAddressEditAnprCheck = async () => {
     if (!notifDetail) return;
+    const cf = (notifDetail.recipient.codiceFiscale || '').trim();
     setAddressEditAnprLoading(true);
     try {
       const res = await apiFetch('/domicilio/cerca', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ codiceFiscale: notifDetail.recipient.codiceFiscale }),
+        body: JSON.stringify({ codiceFiscale: cf }),
       });
       const data = await res.json();
+      // Persona giuridica (PIVA/CF 11 cifre) — backend instrada su Registro
+      // Imprese, mai su ANPR: leggere data.registroImprese, non data.anpr
+      // (stesso pattern già corretto in runEnrichAddressAnprCheck).
+      if (/^\d{11}$/.test(cf)) {
+        const ri = data?.registroImprese;
+        const ind = ri?.data?.sede?.indirizzo;
+        if (ri?.success && ri?.found && ind) {
+          const via = [ind.toponimo, ind.via].filter(Boolean).join(' ');
+          setAddressEditForm(f => ({
+            ...f,
+            address: [via, ind.nCivico].filter(Boolean).join(', '),
+            municipality: ind.comune || '',
+            zip: ind.cap || '',
+            province: ind.provincia || '',
+            country: 'Italia',
+          }));
+        } else if (ri?.success && !ri?.found) {
+          alert('Registro Imprese: nessuna impresa trovata per questo Codice Fiscale/Partita IVA.');
+        } else {
+          alert(formatExternalErrorMessage(ri?.message));
+        }
+        return;
+      }
       const residenza = data?.anpr?.residenza?.[0];
       // generalita arriva sempre insieme a residenza/esistenza in vita
       // (stesso payload C002) — cognome+nome per prepopolare il nominativo,
@@ -14044,6 +14068,8 @@ export function App(): React.JSX.Element {
                                   >
                                     {addressEditAnprLoading ? (
                                       <><Loader2 className="icon-spin me-1" size={16} />Verifica in corso...</>
+                                    ) : /^\d{11}$/.test((notifDetail?.recipient.codiceFiscale || '').trim()) ? (
+                                      <><Search className="me-1" size={16} />Carica da Registro Imprese</>
                                     ) : (
                                       <><Search className="me-1" size={16} />Verifica ANPR</>
                                     )}
