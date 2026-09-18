@@ -842,6 +842,7 @@ export class CampaignsController {
     @Query('postalDeliveryStatus') postalDeliveryStatus?: string,
     @Query('sortBy') sortBy?: string,
     @Query('sortDir') sortDir?: string,
+    @Query('downloadChannels') downloadChannels?: string,
   ) {
     const parsedPage = parseInt(page ?? '1', 10);
     const parsedPageSize = parseInt(pageSize ?? '50', 10);
@@ -854,7 +855,7 @@ export class CampaignsController {
     }
 
     const parsedTags = tags ? tags.split(',').map((t) => t.trim()).filter(Boolean) : undefined;
-    return this.campaignsService.getRecipientStats(id, parsedPage, parsedPageSize, search, status, deliveryStatus, parsedTags, hasDownload, postalDeliveryStatus, sortBy, sortDir);
+    return this.campaignsService.getRecipientStats(id, parsedPage, parsedPageSize, search, status, deliveryStatus, parsedTags, hasDownload, postalDeliveryStatus, sortBy, sortDir, downloadChannels);
   }
 
   @Get(':id/stats/recipients/filter-options')

@@ -58,6 +58,11 @@ const PENDING_DELIVERY_STATUS_SENTINEL = '__PENDING__';
 // stessa definizione usata da getPostalDeliveryStatusBreakdown per il pie chart).
 const POSTAL_DELIVERY_PENDING_SENTINEL = '__POSTAL_DELIVERY_PENDING__';
 
+// Sentinella filtro "Download" per la combinazione canale — un destinatario
+// senza alcun DownloadEvent, mai un valore reale di channel quindi nessuna
+// collisione possibile.
+const DOWNLOAD_NONE_SENTINEL = '__DOWNLOAD_NONE__';
+
 export interface CampaignRequester {
   username: string;
   role: OperatorRole;
@@ -2445,6 +2450,7 @@ export class CampaignsService {
     postalDeliveryStatus?: string,
     sortBy?: string,
     sortDir?: string,
+    downloadChannels?: string,
   ): Promise<RecipientStatsPageDto> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
@@ -2522,6 +2528,17 @@ export class CampaignsService {
       qb.andWhere('r.download_count > 0');
     } else if (hasDownload === 'no') {
       qb.andWhere('r.download_count = 0');
+    }
+    if (downloadChannels === DOWNLOAD_NONE_SENTINEL) {
+      qb.andWhere('r.download_count = 0');
+    } else if (downloadChannels) {
+      // Combinazione ESATTA (mai "almeno"): un destinatario con App IO + PEC
+      // non deve comparire filtrando solo "App IO" — stesso criterio di
+      // aggregazione di getDownloadCombinationStats/getRecipientFilterOptions.
+      qb.andWhere(
+        `(SELECT string_agg(DISTINCT de.channel, '+' ORDER BY de.channel) FROM download_events de WHERE de.recipient_id = r.id) = :downloadChannels`,
+        { downloadChannels },
+      );
     }
 
     const dir = sortDir?.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
@@ -2658,6 +2675,7 @@ export class CampaignsService {
     statuses: Array<{ value: string; count: number }>;
     deliveryStatuses: Array<{ value: string; count: number }>;
     postalDeliveryStatuses: Array<{ value: string; count: number }>;
+    downloadChannelCombos: Array<{ value: string; count: number }>;
   }> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
@@ -2750,6 +2768,31 @@ export class CampaignsService {
       .andWhere(`la.channel_type = :campaignChannelType AND la.postal_status = 'AppIoSostituito'`, { campaignChannelType: campaign.channelType })
       .getCount();
 
+    // Combinazione canali di download per destinatario — stesso principio del
+    // grafico "Download Combinations" (getDownloadCombinationStats) ma qui
+    // per-destinatario e senza la logica "notificato/opzione digitale" (il
+    // filtro deve poter trovare QUALUNQUE destinatario con quella
+    // combinazione esatta, non solo quelli notificati con successo).
+    const downloadComboRows = await this.recipientRepo
+      .createQueryBuilder('r')
+      .select('combo.channels', 'value')
+      .addSelect('COUNT(*)', 'count')
+      .innerJoin(
+        `(SELECT de.recipient_id, string_agg(DISTINCT de.channel, '+' ORDER BY de.channel) AS channels
+          FROM download_events de GROUP BY de.recipient_id)`,
+        'combo',
+        'combo.recipient_id = r.id',
+      )
+      .where('r.campaignId = :campaignId', { campaignId })
+      .groupBy('combo.channels')
+      .getRawMany<{ value: string; count: string }>();
+
+    const notDownloadedCount = await this.recipientRepo
+      .createQueryBuilder('r')
+      .where('r.campaignId = :campaignId', { campaignId })
+      .andWhere('r.downloadCount = 0')
+      .getCount();
+
     return {
       statuses: statusRows.map((r) => ({ value: r.value, count: Number(r.count) })),
       deliveryStatuses: [
@@ -2761,6 +2804,10 @@ export class CampaignsService {
         ...(nonTracciatoCount > 0 ? [{ value: 'NonTracciato', count: nonTracciatoCount }] : []),
         ...(pendingPostalDeliveryCount > 0 ? [{ value: POSTAL_DELIVERY_PENDING_SENTINEL, count: pendingPostalDeliveryCount }] : []),
         ...(appIoSostituitoPostalDeliveryCount > 0 ? [{ value: 'AppIoSostituito', count: appIoSostituitoPostalDeliveryCount }] : []),
+      ],
+      downloadChannelCombos: [
+        ...(notDownloadedCount > 0 ? [{ value: DOWNLOAD_NONE_SENTINEL, count: notDownloadedCount }] : []),
+        ...downloadComboRows.map((r) => ({ value: r.value, count: Number(r.count) })),
       ],
     };
   }
