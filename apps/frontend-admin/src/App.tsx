@@ -9647,7 +9647,7 @@ export function App(): React.JSX.Element {
 
         <div className="bo-sidebar-meta mt-auto">
           <span className={`bo-sidebar-status-dot ${backendStatus}`}></span>
-          <span>
+          <span className={`bo-sidebar-meta-label ${backendStatus === 'offline' ? 'offline' : ''}`}>
             {backendStatus === 'online' ? 'Online' : backendStatus === 'offline' ? 'Offline' : 'Verifica...'}
             {import.meta.env.DEV ? ' (Dev Mode)' : ''}
           </span>
@@ -10798,7 +10798,7 @@ export function App(): React.JSX.Element {
                                 return defaultCfg?.id || '';
                               });
                               if (newChan === 'SEND') setWizProtocolla(true);
-                              if (newChan !== 'SEND' && newChan !== 'APP_IO' && !(wizAppIoMode !== 'none' && singleAppIoActive)) {
+                              if (newChan !== 'SEND' && newChan !== 'APP_IO' && wizAppIoMode === 'none') {
                                 setWizPaymentEnabled(false);
                               }
                               if (!isFirstRowOfChannel(newChan)) applyManualChannelConfig(newChan);
@@ -11235,17 +11235,29 @@ export function App(): React.JSX.Element {
                       <div className="card shadow-sm border-0 rounded-3 p-3 mb-3 bg-white">
                         <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-2">Opzioni di Invio</h5>
 
-                        {(wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && singleAppIoActive && (
+                        {(wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && (
                           <div className="card border-0 rounded-3 mb-2 shadow-sm" style={{ background: '#f8f9fc' }}>
                             <div className="card-body p-2">
                               <div className="d-flex align-items-center gap-2 mb-2">
                                 <img src={EMBEDDED_LOGOS.APP_IO} alt="App IO" style={{ height: '22px', width: 'auto' }} />
                                 <h6 className="fw-bold text-dark mb-0 small">Co-consegna su App IO</h6>
                               </div>
-                              <div className="alert alert-success border-0 bg-success-subtle text-success py-2 px-3 small d-flex align-items-center gap-2 mb-3">
-                                <CheckCircle2 size={16} />
-                                <span>Servizio App IO attivo per questo destinatario.</span>
-                              </div>
+                              {/* La disponibilità reale (checkProfile) si verifica solo al momento
+                                  dell'invio — mai gatare la sola VISIBILITÀ dell'opzione al pre-check
+                                  "Carica dati PDND" (stesso principio già in uso per il wizard massivo,
+                                  dove App IO parallela/esclusiva è sempre selezionabile a prescindere).
+                                  Il banner sotto resta solo un'informazione, se già disponibile. */}
+                              {singleAppIoActive ? (
+                                <div className="alert alert-success border-0 bg-success-subtle text-success py-2 px-3 small d-flex align-items-center gap-2 mb-3">
+                                  <CheckCircle2 size={16} />
+                                  <span>Servizio App IO attivo per questo destinatario.</span>
+                                </div>
+                              ) : (
+                                <div className="alert alert-secondary border-0 py-2 px-3 small d-flex align-items-center gap-2 mb-3">
+                                  <Info size={16} />
+                                  <span>Attivazione App IO non verificata per questo destinatario — in modalità Parallela l'invio su {channelLabel(wizChannel)} avviene comunque, App IO solo se il destinatario risulta effettivamente registrato al momento dell'invio.</span>
+                                </div>
+                              )}
                               <div className="mb-0">
                                 <label className="form-label small">Modalità Co-consegna</label>
                                 <select
@@ -11340,7 +11352,7 @@ export function App(): React.JSX.Element {
                           </div>
                         </div>
 
-                        {(wizChannel === 'SEND' || wizChannel === 'APP_IO' || (wizAppIoMode !== 'none' && singleAppIoActive)) && (
+                        {(wizChannel === 'SEND' || wizChannel === 'APP_IO' || wizAppIoMode !== 'none') && (
                           <div className="card border-0 rounded-3 mb-2 shadow-sm" style={{ background: '#f8f9fc' }}>
                             <div className="card-body p-2">
                               <div className="d-flex align-items-center gap-2 mb-2">

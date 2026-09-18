@@ -205,7 +205,20 @@ body.bo-shell {
 .bo-sidebar-status-dot.offline {
   background: #dc3545;
   box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.25);
-  animation: bo-status-dot-pulse 1.5s ease-in-out infinite;
+  animation: bo-status-dot-pulse 1.2s ease-in-out infinite;
+  position: relative;
+}
+
+/* Anello "ping" oltre al lampeggio del pallino — molto più visibile di un
+   semplice fade opacità su un dot di 8px, segnalato dal vivo come poco
+   evidente. */
+.bo-sidebar-status-dot.offline::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: #dc3545;
+  animation: bo-status-dot-ping 1.2s ease-out infinite;
 }
 
 .bo-sidebar-status-dot.checking {
@@ -213,9 +226,20 @@ body.bo-shell {
   box-shadow: 0 0 0 3px rgba(255, 193, 7, 0.2);
 }
 
+.bo-sidebar-meta-label.offline {
+  color: #ff6b7a;
+  font-weight: 700;
+  animation: bo-status-dot-pulse 1.2s ease-in-out infinite;
+}
+
 @keyframes bo-status-dot-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
+}
+
+@keyframes bo-status-dot-ping {
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(2.8); opacity: 0; }
 }
 
 .bo-sidebar-version {
