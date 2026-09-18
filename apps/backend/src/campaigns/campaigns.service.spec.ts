@@ -704,12 +704,17 @@ describe('CampaignsService', () => {
       ['leftJoin', 'where', 'andWhere'].forEach((m) => { pendingPostalDeliveryQb[m] = jest.fn().mockReturnValue(pendingPostalDeliveryQb); });
       pendingPostalDeliveryQb.getCount = jest.fn().mockResolvedValue(0);
 
+      const appIoSostituitoQb: any = {};
+      ['leftJoin', 'where', 'andWhere'].forEach((m) => { appIoSostituitoQb[m] = jest.fn().mockReturnValue(appIoSostituitoQb); });
+      appIoSostituitoQb.getCount = jest.fn().mockResolvedValue(0);
+
       mockRecipientRepo.createQueryBuilder = jest.fn()
         .mockReturnValueOnce(statusQb)
         .mockReturnValueOnce(deliveryQb)
         .mockReturnValueOnce(postalDeliveryQb)
         .mockReturnValueOnce(pendingQb)
-        .mockReturnValueOnce(pendingPostalDeliveryQb);
+        .mockReturnValueOnce(pendingPostalDeliveryQb)
+        .mockReturnValueOnce(appIoSostituitoQb);
 
       const result = await service.getRecipientFilterOptions('uuid-1');
 
@@ -718,6 +723,127 @@ describe('CampaignsService', () => {
         deliveryStatuses: [{ value: 'ACCEPTED', count: 12 }, { value: 'DELIVERED', count: 20 }],
         postalDeliveryStatuses: [{ value: 'CONSEGNATO', count: 15 }],
       });
+    });
+
+    it('aggiunge un bucket "AppIoSostituito" distinto quando alcuni destinatari POSTAL sono stati sostituiti da App IO esclusiva', async () => {
+      const statusQb: any = {};
+      ['select', 'addSelect', 'where', 'groupBy'].forEach((m) => { statusQb[m] = jest.fn().mockReturnValue(statusQb); });
+      statusQb.getRawMany = jest.fn().mockResolvedValue([]);
+
+      const deliveryQb: any = {};
+      ['select', 'addSelect', 'leftJoin', 'where', 'andWhere', 'groupBy'].forEach((m) => { deliveryQb[m] = jest.fn().mockReturnValue(deliveryQb); });
+      deliveryQb.getRawMany = jest.fn().mockResolvedValue([]);
+
+      const postalDeliveryQb: any = {};
+      ['select', 'addSelect', 'leftJoin', 'where', 'andWhere', 'groupBy'].forEach((m) => { postalDeliveryQb[m] = jest.fn().mockReturnValue(postalDeliveryQb); });
+      postalDeliveryQb.getRawMany = jest.fn().mockResolvedValue([{ value: 'Consegnato', count: '11' }]);
+
+      const pendingQb: any = {};
+      ['leftJoin', 'where', 'andWhere'].forEach((m) => { pendingQb[m] = jest.fn().mockReturnValue(pendingQb); });
+      pendingQb.getCount = jest.fn().mockResolvedValue(0);
+
+      const pendingPostalDeliveryQb: any = {};
+      ['leftJoin', 'where', 'andWhere'].forEach((m) => { pendingPostalDeliveryQb[m] = jest.fn().mockReturnValue(pendingPostalDeliveryQb); });
+      pendingPostalDeliveryQb.getCount = jest.fn().mockResolvedValue(0);
+
+      const appIoSostituitoQb: any = {};
+      ['leftJoin', 'where', 'andWhere'].forEach((m) => { appIoSostituitoQb[m] = jest.fn().mockReturnValue(appIoSostituitoQb); });
+      appIoSostituitoQb.getCount = jest.fn().mockResolvedValue(6);
+
+      mockRecipientRepo.createQueryBuilder = jest.fn()
+        .mockReturnValueOnce(statusQb)
+        .mockReturnValueOnce(deliveryQb)
+        .mockReturnValueOnce(postalDeliveryQb)
+        .mockReturnValueOnce(pendingQb)
+        .mockReturnValueOnce(pendingPostalDeliveryQb)
+        .mockReturnValueOnce(appIoSostituitoQb);
+
+      const result = await service.getRecipientFilterOptions('uuid-1');
+
+      expect(result.postalDeliveryStatuses).toEqual(expect.arrayContaining([
+        { value: 'Consegnato', count: 11 },
+        { value: 'AppIoSostituito', count: 6 },
+      ]));
+    });
+
+    it('bucket "NonTracciato" (mai "In corso") per una campagna Ordinaria: nessuna AR, nessun evento di consegna arriverà mai', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'POSTAL', channelConfig: { postalServiceType: 'Lettera' } });
+
+      const statusQb: any = {};
+      ['select', 'addSelect', 'where', 'groupBy'].forEach((m) => { statusQb[m] = jest.fn().mockReturnValue(statusQb); });
+      statusQb.getRawMany = jest.fn().mockResolvedValue([]);
+
+      const deliveryQb: any = {};
+      ['select', 'addSelect', 'leftJoin', 'where', 'andWhere', 'groupBy'].forEach((m) => { deliveryQb[m] = jest.fn().mockReturnValue(deliveryQb); });
+      deliveryQb.getRawMany = jest.fn().mockResolvedValue([]);
+
+      const postalDeliveryQb: any = {};
+      ['select', 'addSelect', 'leftJoin', 'where', 'andWhere', 'groupBy'].forEach((m) => { postalDeliveryQb[m] = jest.fn().mockReturnValue(postalDeliveryQb); });
+      postalDeliveryQb.getRawMany = jest.fn().mockResolvedValue([]);
+
+      const pendingQb: any = {};
+      ['leftJoin', 'where', 'andWhere'].forEach((m) => { pendingQb[m] = jest.fn().mockReturnValue(pendingQb); });
+      pendingQb.getCount = jest.fn().mockResolvedValue(0);
+
+      const pendingPostalDeliveryQb: any = {};
+      ['leftJoin', 'where', 'andWhere'].forEach((m) => { pendingPostalDeliveryQb[m] = jest.fn().mockReturnValue(pendingPostalDeliveryQb); });
+      pendingPostalDeliveryQb.getCount = jest.fn().mockResolvedValue(11);
+
+      const appIoSostituitoQb: any = {};
+      ['leftJoin', 'where', 'andWhere'].forEach((m) => { appIoSostituitoQb[m] = jest.fn().mockReturnValue(appIoSostituitoQb); });
+      appIoSostituitoQb.getCount = jest.fn().mockResolvedValue(0);
+
+      mockRecipientRepo.createQueryBuilder = jest.fn()
+        .mockReturnValueOnce(statusQb)
+        .mockReturnValueOnce(deliveryQb)
+        .mockReturnValueOnce(postalDeliveryQb)
+        .mockReturnValueOnce(pendingQb)
+        .mockReturnValueOnce(pendingPostalDeliveryQb)
+        .mockReturnValueOnce(appIoSostituitoQb);
+
+      const result = await service.getRecipientFilterOptions('uuid-1');
+
+      expect(result.postalDeliveryStatuses).toEqual([{ value: 'NonTracciato', count: 11 }]);
+    });
+
+    it('AR presente (Raccomandata + checkbox): resta bucket "In corso" (sentinel pending), mai NonTracciato', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'POSTAL', channelConfig: { postalServiceType: 'RaccomandataMarket', postalReturnReceipt: true } });
+
+      const statusQb: any = {};
+      ['select', 'addSelect', 'where', 'groupBy'].forEach((m) => { statusQb[m] = jest.fn().mockReturnValue(statusQb); });
+      statusQb.getRawMany = jest.fn().mockResolvedValue([]);
+
+      const deliveryQb: any = {};
+      ['select', 'addSelect', 'leftJoin', 'where', 'andWhere', 'groupBy'].forEach((m) => { deliveryQb[m] = jest.fn().mockReturnValue(deliveryQb); });
+      deliveryQb.getRawMany = jest.fn().mockResolvedValue([]);
+
+      const postalDeliveryQb: any = {};
+      ['select', 'addSelect', 'leftJoin', 'where', 'andWhere', 'groupBy'].forEach((m) => { postalDeliveryQb[m] = jest.fn().mockReturnValue(postalDeliveryQb); });
+      postalDeliveryQb.getRawMany = jest.fn().mockResolvedValue([]);
+
+      const pendingQb: any = {};
+      ['leftJoin', 'where', 'andWhere'].forEach((m) => { pendingQb[m] = jest.fn().mockReturnValue(pendingQb); });
+      pendingQb.getCount = jest.fn().mockResolvedValue(0);
+
+      const pendingPostalDeliveryQb: any = {};
+      ['leftJoin', 'where', 'andWhere'].forEach((m) => { pendingPostalDeliveryQb[m] = jest.fn().mockReturnValue(pendingPostalDeliveryQb); });
+      pendingPostalDeliveryQb.getCount = jest.fn().mockResolvedValue(4);
+
+      const appIoSostituitoQb: any = {};
+      ['leftJoin', 'where', 'andWhere'].forEach((m) => { appIoSostituitoQb[m] = jest.fn().mockReturnValue(appIoSostituitoQb); });
+      appIoSostituitoQb.getCount = jest.fn().mockResolvedValue(0);
+
+      mockRecipientRepo.createQueryBuilder = jest.fn()
+        .mockReturnValueOnce(statusQb)
+        .mockReturnValueOnce(deliveryQb)
+        .mockReturnValueOnce(postalDeliveryQb)
+        .mockReturnValueOnce(pendingQb)
+        .mockReturnValueOnce(pendingPostalDeliveryQb)
+        .mockReturnValueOnce(appIoSostituitoQb);
+
+      const result = await service.getRecipientFilterOptions('uuid-1');
+
+      expect(result.postalDeliveryStatuses).toEqual([{ value: '__POSTAL_DELIVERY_PENDING__', count: 4 }]);
     });
   });
 
@@ -3929,6 +4055,58 @@ describe('CampaignsService.getPostalStatusBreakdown / getPostalReportRows', () =
       const service = moduleRef.get(CampaignsService);
 
       await expect(service.getPostalStatusBreakdown('missing')).rejects.toThrow('Campaign missing not found');
+    });
+  });
+
+  describe('getPostalDeliveryStatusBreakdown', () => {
+    it('bucket separato "AppIoSostituito" per un attempt SUCCESS con postalStatus=AppIoSostituito, mai in "In corso" (null)', async () => {
+      campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'POSTAL' });
+      recipientRepoMock.find.mockResolvedValue([{ id: 'r-sostituito' }, { id: 'r-consegnato' }]);
+      attemptRepoMock.find.mockResolvedValue([
+        { recipientId: 'r-sostituito', attemptNumber: 1, status: AttemptStatus.SUCCESS, postalStatus: 'AppIoSostituito', postalDeliveryStatus: null },
+        { recipientId: 'r-consegnato', attemptNumber: 1, status: AttemptStatus.SUCCESS, postalStatus: 'Consegnato', postalDeliveryStatus: 'Consegnato' },
+      ]);
+
+      const moduleRef = await buildModule();
+      const service = moduleRef.get(CampaignsService);
+
+      const result = await service.getPostalDeliveryStatusBreakdown('c1');
+
+      expect(result).toEqual(expect.arrayContaining([
+        { status: 'AppIoSostituito', count: 1 },
+        { status: 'Consegnato', count: 1 },
+      ]));
+      expect(result).toHaveLength(2);
+    });
+
+    it('bucket "NonTracciato" per campagna Ordinaria (nessuna AR): mai "In corso" (null) per sempre', async () => {
+      campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'POSTAL', channelConfig: { postalServiceType: 'Lettera' } });
+      recipientRepoMock.find.mockResolvedValue([{ id: 'r1' }]);
+      attemptRepoMock.find.mockResolvedValue([
+        { recipientId: 'r1', attemptNumber: 1, status: AttemptStatus.SUCCESS, postalStatus: 'Confermato', postalDeliveryStatus: null },
+      ]);
+
+      const moduleRef = await buildModule();
+      const service = moduleRef.get(CampaignsService);
+
+      const result = await service.getPostalDeliveryStatusBreakdown('c1');
+
+      expect(result).toEqual([{ status: 'NonTracciato', count: 1 }]);
+    });
+
+    it('AR presente (Agol): resta "In corso" (null) in attesa del tracciamento reale, mai NonTracciato', async () => {
+      campaignRepoMock.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'POSTAL', channelConfig: { postalServiceType: 'AgolMarket' } });
+      recipientRepoMock.find.mockResolvedValue([{ id: 'r1' }]);
+      attemptRepoMock.find.mockResolvedValue([
+        { recipientId: 'r1', attemptNumber: 1, status: AttemptStatus.SUCCESS, postalStatus: 'Confermato', postalDeliveryStatus: null },
+      ]);
+
+      const moduleRef = await buildModule();
+      const service = moduleRef.get(CampaignsService);
+
+      const result = await service.getPostalDeliveryStatusBreakdown('c1');
+
+      expect(result).toEqual([{ status: null, count: 1 }]);
     });
   });
 
