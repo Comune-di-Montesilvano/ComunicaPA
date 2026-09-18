@@ -18133,12 +18133,17 @@ export function App(): React.JSX.Element {
                               Destinatari con invio fallito ({failureGroups.reduce((sum, g) => sum + g.count, 0)}) — raggruppati per motivo
                             </h4>
                             <div className="table-responsive" style={{ maxHeight: 300, overflowY: 'auto' }}>
-                              <table className="table table-sm">
+                              <table className="table table-sm" style={{ tableLayout: 'fixed', minWidth: 480 }}>
+                                <colgroup>
+                                  <col style={{ width: '60%' }} />
+                                  <col style={{ width: '15%' }} />
+                                  <col style={{ width: '25%' }} />
+                                </colgroup>
                                 <thead><tr><th>MOTIVO ERRORE</th><th className="text-end">DESTINATARI</th><th></th></tr></thead>
                                 <tbody>
                                   {failureGroups.map((g) => (
                                     <tr key={g.errorMessage}>
-                                      <td style={{ maxWidth: 400 }} className="text-break small text-danger">{g.errorMessage}</td>
+                                      <td className="text-break small text-danger">{g.errorMessage}</td>
                                       <td className="text-end fw-bold small">{g.count}</td>
                                       <td className="text-end">
                                         <button
