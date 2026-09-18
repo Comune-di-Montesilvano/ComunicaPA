@@ -2690,7 +2690,8 @@ export function App(): React.JSX.Element {
   const [recipientsTagsFilter, setRecipientsTagsFilter] = useState<string[]>([]);
   const [recipientsTagsMenuOpen, setRecipientsTagsMenuOpen] = useState(false);
   const [recipientsDownloadFilter, setRecipientsDownloadFilter] = useState('');
-  const [recipientsFilterOptions, setRecipientsFilterOptions] = useState<{ statuses: Array<string | { value: string; count: number }>; deliveryStatuses: Array<string | { value: string; count: number }>; postalDeliveryStatuses?: Array<string | { value: string; count: number }> } | null>(null);
+  const [recipientsDownloadChannelFilter, setRecipientsDownloadChannelFilter] = useState('');
+  const [recipientsFilterOptions, setRecipientsFilterOptions] = useState<{ statuses: Array<string | { value: string; count: number }>; deliveryStatuses: Array<string | { value: string; count: number }>; postalDeliveryStatuses?: Array<string | { value: string; count: number }>; downloadChannelCombos?: Array<{ value: string; count: number }> } | null>(null);
   const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number; inadDiverted: number; appIoMode: 'none' | 'parallel' | 'exclusive'; inadCheckRan: boolean } | null>(null);
   const [resendingOutcome, setResendingOutcome] = useState<string | null>(null);
   const [effectiveChannelBreakdown, setEffectiveChannelBreakdown] = useState<Record<string, number> | null>(null);
@@ -2884,7 +2885,7 @@ export function App(): React.JSX.Element {
 
     fetchRecipientsPage(selectedCampaignId);
     return undefined;
-  }, [selectedCampaignId, view, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter, recipientsSortBy, recipientsSortDir]);
+  }, [selectedCampaignId, view, recipientsPageNum, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, recipientsDownloadChannelFilter, recipientsPostalDeliveryStatusFilter, recipientsSortBy, recipientsSortDir]);
 
   useEffect(() => {
     if (token) {
@@ -8789,6 +8790,7 @@ export function App(): React.JSX.Element {
     // scambiato per una perdita di dati reale.
     setRecipientsTagsFilter([]);
     setRecipientsDownloadFilter('');
+    setRecipientsDownloadChannelFilter('');
     setRecipientsSortBy('alphabetical');
     setRecipientsSortDir('ASC');
     setRecipientsFilterOptions(null);
@@ -9071,6 +9073,7 @@ export function App(): React.JSX.Element {
     postalDeliveryStatusFilter: string = recipientsPostalDeliveryStatusFilter,
     sortBy: string = recipientsSortBy,
     sortDir: string = recipientsSortDir,
+    downloadChannelFilter: string = recipientsDownloadChannelFilter,
   ) => {
     try {
       const params = new URLSearchParams({ page: String(page), pageSize: String(RECIPIENTS_PAGE_SIZE) });
@@ -9080,6 +9083,7 @@ export function App(): React.JSX.Element {
       if (postalDeliveryStatusFilter) params.set('postalDeliveryStatus', postalDeliveryStatusFilter);
       if (tagsFilter.length > 0) params.set('tags', tagsFilter.join(','));
       if (downloadFilter) params.set('hasDownload', downloadFilter);
+      if (downloadChannelFilter) params.set('downloadChannels', downloadChannelFilter);
       if (sortBy) params.set('sortBy', sortBy);
       if (sortDir) params.set('sortDir', sortDir);
       const res = await apiFetch(`/campaigns/${campaignId}/stats/recipients?${params.toString()}`);
@@ -13908,7 +13912,11 @@ export function App(): React.JSX.Element {
                                         </>
                                       ) : (
                                         <>
-                                          <td className="small text-muted">—</td>
+                                          <td className="small">
+                                            {a.channelType === 'PEC' ? (
+                                              <span className="badge bg-info-subtle text-info-emphasis border"><MailOpen className="me-1" size={14} />Dirottato a PEC</span>
+                                            ) : '—'}
+                                          </td>
                                           <td className="small text-muted">—</td>
                                           <td className="small text-muted">—</td>
                                         </>
@@ -18674,6 +18682,28 @@ export function App(): React.JSX.Element {
                             <option value="yes">Con download</option>
                             <option value="no">Senza download</option>
                           </select>
+                          {recipientsFilterOptions?.downloadChannelCombos && recipientsFilterOptions.downloadChannelCombos.length > 0 && (
+                            <select
+                              className="form-select form-select-sm"
+                              style={{ maxWidth: 220 }}
+                              value={recipientsDownloadChannelFilter}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setRecipientsDownloadChannelFilter(val);
+                                setRecipientsPageNum(1);
+                                if (selectedCampaignId) {
+                                  fetchRecipientsPage(selectedCampaignId, 1, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter, recipientsSortBy, recipientsSortDir, val);
+                                }
+                              }}
+                            >
+                              <option value="">Canale download: tutti</option>
+                              {recipientsFilterOptions.downloadChannelCombos.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.value === '__DOWNLOAD_NONE__' ? 'Non scaricato' : opt.value.split('+').map((ch) => channelLabel(ch)).join(' + ')} ({opt.count})
+                                </option>
+                              ))}
+                            </select>
+                          )}
                           {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType !== 'SEND' && campaign.channelType !== 'POSTAL' && (
                             <button className="btn btn-sm btn-outline-primary py-1" onClick={handleExportDownloadReport} title="Esporta Report CSV">
                               <FileSpreadsheet className="me-1" /> Esporta Report Download
@@ -18991,7 +19021,7 @@ export function App(): React.JSX.Element {
                                           campaign.channelConfig?.['protocolla'] ? (
                                             <>
                                               <td className="small">{r.protocolNumber ? `${r.protocolNumber}/${r.protocolYear}` : '—'}</td>
-                                              <td className="small text-muted">—</td>
+                                              <td className="small"><span className="badge bg-info-subtle text-info-emphasis border"><MailOpen className="me-1" size={14} />Dirottato a PEC</span></td>
                                               <td className="small text-muted">—</td>
                                               <td className="small text-muted">—</td>
                                               {downloadCell}
@@ -18999,7 +19029,7 @@ export function App(): React.JSX.Element {
                                             </>
                                           ) : (
                                             <>
-                                              <td className="small text-muted">—</td>
+                                              <td className="small"><span className="badge bg-info-subtle text-info-emphasis border"><MailOpen className="me-1" size={14} />Dirottato a PEC</span></td>
                                               <td className="small text-muted">—</td>
                                               <td className="small text-muted">—</td>
                                               {downloadCell}

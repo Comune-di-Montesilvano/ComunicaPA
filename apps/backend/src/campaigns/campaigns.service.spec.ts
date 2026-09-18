@@ -708,13 +708,23 @@ describe('CampaignsService', () => {
       ['leftJoin', 'where', 'andWhere'].forEach((m) => { appIoSostituitoQb[m] = jest.fn().mockReturnValue(appIoSostituitoQb); });
       appIoSostituitoQb.getCount = jest.fn().mockResolvedValue(0);
 
+      const downloadComboQb: any = {};
+      ['select', 'addSelect', 'innerJoin', 'where', 'groupBy'].forEach((m) => { downloadComboQb[m] = jest.fn().mockReturnValue(downloadComboQb); });
+      downloadComboQb.getRawMany = jest.fn().mockResolvedValue([]);
+
+      const notDownloadedQb: any = {};
+      ['where', 'andWhere'].forEach((m) => { notDownloadedQb[m] = jest.fn().mockReturnValue(notDownloadedQb); });
+      notDownloadedQb.getCount = jest.fn().mockResolvedValue(0);
+
       mockRecipientRepo.createQueryBuilder = jest.fn()
         .mockReturnValueOnce(statusQb)
         .mockReturnValueOnce(deliveryQb)
         .mockReturnValueOnce(postalDeliveryQb)
         .mockReturnValueOnce(pendingQb)
         .mockReturnValueOnce(pendingPostalDeliveryQb)
-        .mockReturnValueOnce(appIoSostituitoQb);
+        .mockReturnValueOnce(appIoSostituitoQb)
+        .mockReturnValueOnce(downloadComboQb)
+        .mockReturnValueOnce(notDownloadedQb);
 
       const result = await service.getRecipientFilterOptions('uuid-1');
 
@@ -722,6 +732,7 @@ describe('CampaignsService', () => {
         statuses: [{ value: 'sent', count: 10 }, { value: 'failed', count: 5 }],
         deliveryStatuses: [{ value: 'ACCEPTED', count: 12 }, { value: 'DELIVERED', count: 20 }],
         postalDeliveryStatuses: [{ value: 'CONSEGNATO', count: 15 }],
+        downloadChannelCombos: [],
       });
     });
 
@@ -750,13 +761,23 @@ describe('CampaignsService', () => {
       ['leftJoin', 'where', 'andWhere'].forEach((m) => { appIoSostituitoQb[m] = jest.fn().mockReturnValue(appIoSostituitoQb); });
       appIoSostituitoQb.getCount = jest.fn().mockResolvedValue(6);
 
+      const downloadComboQb: any = {};
+      ['select', 'addSelect', 'innerJoin', 'where', 'groupBy'].forEach((m) => { downloadComboQb[m] = jest.fn().mockReturnValue(downloadComboQb); });
+      downloadComboQb.getRawMany = jest.fn().mockResolvedValue([]);
+
+      const notDownloadedQb: any = {};
+      ['where', 'andWhere'].forEach((m) => { notDownloadedQb[m] = jest.fn().mockReturnValue(notDownloadedQb); });
+      notDownloadedQb.getCount = jest.fn().mockResolvedValue(0);
+
       mockRecipientRepo.createQueryBuilder = jest.fn()
         .mockReturnValueOnce(statusQb)
         .mockReturnValueOnce(deliveryQb)
         .mockReturnValueOnce(postalDeliveryQb)
         .mockReturnValueOnce(pendingQb)
         .mockReturnValueOnce(pendingPostalDeliveryQb)
-        .mockReturnValueOnce(appIoSostituitoQb);
+        .mockReturnValueOnce(appIoSostituitoQb)
+        .mockReturnValueOnce(downloadComboQb)
+        .mockReturnValueOnce(notDownloadedQb);
 
       const result = await service.getRecipientFilterOptions('uuid-1');
 
@@ -793,13 +814,23 @@ describe('CampaignsService', () => {
       ['leftJoin', 'where', 'andWhere'].forEach((m) => { appIoSostituitoQb[m] = jest.fn().mockReturnValue(appIoSostituitoQb); });
       appIoSostituitoQb.getCount = jest.fn().mockResolvedValue(0);
 
+      const downloadComboQb: any = {};
+      ['select', 'addSelect', 'innerJoin', 'where', 'groupBy'].forEach((m) => { downloadComboQb[m] = jest.fn().mockReturnValue(downloadComboQb); });
+      downloadComboQb.getRawMany = jest.fn().mockResolvedValue([]);
+
+      const notDownloadedQb: any = {};
+      ['where', 'andWhere'].forEach((m) => { notDownloadedQb[m] = jest.fn().mockReturnValue(notDownloadedQb); });
+      notDownloadedQb.getCount = jest.fn().mockResolvedValue(0);
+
       mockRecipientRepo.createQueryBuilder = jest.fn()
         .mockReturnValueOnce(statusQb)
         .mockReturnValueOnce(deliveryQb)
         .mockReturnValueOnce(postalDeliveryQb)
         .mockReturnValueOnce(pendingQb)
         .mockReturnValueOnce(pendingPostalDeliveryQb)
-        .mockReturnValueOnce(appIoSostituitoQb);
+        .mockReturnValueOnce(appIoSostituitoQb)
+        .mockReturnValueOnce(downloadComboQb)
+        .mockReturnValueOnce(notDownloadedQb);
 
       const result = await service.getRecipientFilterOptions('uuid-1');
 
@@ -833,13 +864,23 @@ describe('CampaignsService', () => {
       ['leftJoin', 'where', 'andWhere'].forEach((m) => { appIoSostituitoQb[m] = jest.fn().mockReturnValue(appIoSostituitoQb); });
       appIoSostituitoQb.getCount = jest.fn().mockResolvedValue(0);
 
+      const downloadComboQb: any = {};
+      ['select', 'addSelect', 'innerJoin', 'where', 'groupBy'].forEach((m) => { downloadComboQb[m] = jest.fn().mockReturnValue(downloadComboQb); });
+      downloadComboQb.getRawMany = jest.fn().mockResolvedValue([]);
+
+      const notDownloadedQb: any = {};
+      ['where', 'andWhere'].forEach((m) => { notDownloadedQb[m] = jest.fn().mockReturnValue(notDownloadedQb); });
+      notDownloadedQb.getCount = jest.fn().mockResolvedValue(0);
+
       mockRecipientRepo.createQueryBuilder = jest.fn()
         .mockReturnValueOnce(statusQb)
         .mockReturnValueOnce(deliveryQb)
         .mockReturnValueOnce(postalDeliveryQb)
         .mockReturnValueOnce(pendingQb)
         .mockReturnValueOnce(pendingPostalDeliveryQb)
-        .mockReturnValueOnce(appIoSostituitoQb);
+        .mockReturnValueOnce(appIoSostituitoQb)
+        .mockReturnValueOnce(downloadComboQb)
+        .mockReturnValueOnce(notDownloadedQb);
 
       const result = await service.getRecipientFilterOptions('uuid-1');
 
