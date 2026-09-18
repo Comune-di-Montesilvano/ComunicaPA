@@ -19048,10 +19048,10 @@ export function App(): React.JSX.Element {
                           <div className="card-body">
                             {(() => {
                               const effectivePieData = Object.entries(effectiveChannelBreakdown)
-                                .map(([label, value]) => ({
-                                  label,
+                                .map(([key, value]) => ({
+                                  label: channelLabel(key),
                                   value,
-                                  color: EFFECTIVE_CHANNEL_COLORS[label] ?? stableColorForKey(label),
+                                  color: EFFECTIVE_CHANNEL_COLORS[key] ?? stableColorForKey(key),
                                 }))
                                 .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
                               return renderDonutCard("Canale Effettivo", effectivePieData, "Nessun dato", true);
