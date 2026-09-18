@@ -176,6 +176,17 @@ function ChannelStatusBar({ breakdown, meta, pendingLabel, colorMap }: { breakdo
   if (total === 0) {
     return <div className="text-muted small">Nessun destinatario ancora processato.</div>;
   }
+  // Bug reale segnalato dal vivo: l'ordine cambiava ad ogni poll — breakdown
+  // arriva da un Map lato backend (ordine di inserimento, non deterministico
+  // tra una query e l'altra), mai ordinato qui. Stesso criterio già usato
+  // dai donut (valore desc, poi label) per restare stabile.
+  const sortedBreakdown = [...breakdown].sort((a, b) => {
+    if (b.count !== a.count) return b.count - a.count;
+    const labelA = (a.status ? meta[a.status]?.label : null) ?? pendingLabel;
+    const labelB = (b.status ? meta[b.status]?.label : null) ?? pendingLabel;
+    return labelA.localeCompare(labelB);
+  });
+  breakdown = sortedBreakdown;
   // Le classi badge di meta (es. POSTAL_STATUS_META) sono quasi tutte varianti
   // "subtle" — pensate per un badge di testo piccolo, non per un segmento
   // pieno di barra: affiancate diventano una macchia pastello indistinguibile
@@ -229,6 +240,7 @@ function ChannelStatusBar({ breakdown, meta, pendingLabel, colorMap }: { breakdo
 const POSTAL_STATUS_META: Record<string, { label: string; badge: string; icon: React.ComponentType<{ className?: string; size?: number }> }> = {
   FAILED: { label: 'Fallito', badge: 'bg-danger', icon: X },
   AppIoSostituito: { label: 'Sostituito da App IO', badge: 'bg-info-subtle text-info-emphasis border', icon: Smartphone },
+  DirottatoAPec: { label: 'Sostituito da PEC', badge: 'bg-info-subtle text-info-emphasis border', icon: MailOpen },
   Accettato: { label: 'Accettato', badge: 'bg-secondary-subtle text-secondary-emphasis border', icon: Inbox },
   Sospeso: { label: 'Sospeso', badge: 'bg-secondary-subtle text-secondary-emphasis border', icon: Pause },
   Verificato: { label: 'Verificato', badge: 'bg-info-subtle text-info-emphasis border', icon: Check },
@@ -254,6 +266,7 @@ function PostalStatusBadge({ status }: { status: string | null | undefined }): R
 
 const POSTAL_DELIVERY_STATUS_META: Record<string, { label: string; badge: string; icon: React.ComponentType<{ className?: string; size?: number }> }> = {
   AppIoSostituito: { label: 'Sostituito da App IO', badge: 'bg-info-subtle text-info-emphasis border', icon: Smartphone },
+  DirottatoAPec: { label: 'Sostituito da PEC', badge: 'bg-info-subtle text-info-emphasis border', icon: MailOpen },
   NonTracciato: { label: 'Non tracciato (nessuna AR)', badge: 'bg-light text-dark border', icon: HelpCircle },
   'Accettato online': { label: 'Accettato online', badge: 'bg-info-subtle text-info-emphasis border', icon: Inbox },
   'Consegnato': { label: 'Consegnato', badge: 'bg-success-subtle text-success-emphasis border', icon: CheckCircle2 },
@@ -328,6 +341,7 @@ const POSTAL_STATUS_PIE_COLORS: Record<string, string> = {
 const POSTAL_DELIVERY_STATUS_PIE_COLORS: Record<string, string> = {
   FAILED: '#dc3545',
   AppIoSostituito: '#0dcaf0',
+  DirottatoAPec: '#6610f2',
   NonTracciato: '#adb5bd',
   'Accettato online': '#0dcaf0',
   'Consegnato': '#198754',
@@ -13991,7 +14005,7 @@ export function App(): React.JSX.Element {
                                         <>
                                           <td className="small">
                                             {a.channelType === 'PEC' ? (
-                                              <span className="badge bg-info-subtle text-info-emphasis border"><MailOpen className="me-1" size={14} />Dirottato a PEC</span>
+                                              <span className="badge bg-info-subtle text-info-emphasis border"><MailOpen className="me-1" size={14} />Sostituito da PEC</span>
                                             ) : '—'}
                                           </td>
                                           <td className="small text-muted">—</td>
@@ -18257,7 +18271,8 @@ export function App(): React.JSX.Element {
                               <Smartphone className="me-1 text-primary" />Dettaglio Consegna Multicanale
                             </h4>
                             <div className="small text-muted mb-2">
-                              App IO: <strong>{appIoModeLabel}</strong> · Verifica domicilio digitale (INAD/Registro Imprese): <strong>{channelBreakdown.inadCheckRan ? 'Eseguita' : 'Non eseguita'}</strong>
+                              <div>Modalità consegna App IO: <strong>{appIoModeLabel}</strong></div>
+                              <div>Verifica domicilio digitale (INAD/Registro Imprese): <strong>{channelBreakdown.inadCheckRan ? 'Eseguita' : 'Non eseguita'}</strong></div>
                             </div>
                             {!anyRowVisible && (
                               <div className="small text-muted fst-italic">Nessun destinatario ancora classificato.</div>
@@ -18265,7 +18280,7 @@ export function App(): React.JSX.Element {
                             <div className="small">
                               {showAppIoRows && channelBreakdown.primaryOnly > 0 && (
                                 <div className="d-flex justify-content-between mb-1">
-                                  <span><Mail className="text-muted me-1" />Solo canale primario</span>
+                                  <span><Mail className="text-muted me-1" />Solo {channelLabel(campaign.channelType)}</span>
                                   <span className="fw-bold">{channelBreakdown.primaryOnly}</span>
                                 </div>
                               )}
@@ -19104,7 +19119,7 @@ export function App(): React.JSX.Element {
                                           campaign.channelConfig?.['protocolla'] ? (
                                             <>
                                               <td className="small">{r.protocolNumber ? `${r.protocolNumber}/${r.protocolYear}` : '—'}</td>
-                                              <td className="small"><span className="badge bg-info-subtle text-info-emphasis border"><MailOpen className="me-1" size={14} />Dirottato a PEC</span></td>
+                                              <td className="small"><span className="badge bg-info-subtle text-info-emphasis border"><MailOpen className="me-1" size={14} />Sostituito da PEC</span></td>
                                               <td className="small text-muted">—</td>
                                               <td className="small text-muted">—</td>
                                               {downloadCell}
@@ -19112,7 +19127,7 @@ export function App(): React.JSX.Element {
                                             </>
                                           ) : (
                                             <>
-                                              <td className="small"><span className="badge bg-info-subtle text-info-emphasis border"><MailOpen className="me-1" size={14} />Dirottato a PEC</span></td>
+                                              <td className="small"><span className="badge bg-info-subtle text-info-emphasis border"><MailOpen className="me-1" size={14} />Sostituito da PEC</span></td>
                                               <td className="small text-muted">—</td>
                                               <td className="small text-muted">—</td>
                                               {downloadCell}
