@@ -19101,7 +19101,9 @@ export function App(): React.JSX.Element {
                                 .map((item) => ({
                                   label: item.status ? (POSTAL_STATUS_META[item.status]?.label ?? item.status) : 'In corso',
                                   value: item.count,
-                                  color: item.status ? (POSTAL_STATUS_PIE_COLORS[item.status] ?? stableColorForKey(item.status)) : '#6c757d',
+                                  // '#adb5bd' (grigio chiaro), mai '#6c757d' (Accettato/Sospeso/Eliminato) —
+                                  // stesso colore rendeva "In corso" e "Accettato" indistinguibili in legenda.
+                                  color: item.status ? (POSTAL_STATUS_PIE_COLORS[item.status] ?? stableColorForKey(item.status)) : '#adb5bd',
                                 }))
                                 .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
 
