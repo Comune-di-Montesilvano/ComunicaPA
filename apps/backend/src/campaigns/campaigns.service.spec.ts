@@ -1532,10 +1532,24 @@ describe('CampaignsService', () => {
         },
       };
       mockCampaignRepo.findOneBy.mockResolvedValue(campaignChecking);
-      mockRecipientRepo.find.mockResolvedValue([
-        { id: 'r1', codiceFiscale: 'CF1', pec: null, email: 'e1@x.it' },
-        { id: 'r2', codiceFiscale: 'CF2', pec: null, email: 'e2@x.it' },
-      ]);
+      // Tre find() distinti nello stesso metodo, select diversa: batchRecipients
+      // (codiceFiscale, per il match con getBulkResult), overriddenRecipients
+      // (inadCheck, per calcolare channelOverrides — riflette l'update scritto
+      // subito prima nello stesso metodo, qui simulato a mano) e allRecipients
+      // (solo id). Un mock unico piatto nasconderebbe il vero comportamento di
+      // channelOverrides — vedi bug corretto sotto.
+      mockRecipientRepo.find.mockImplementation(({ select }: { select?: Record<string, boolean> }) => {
+        if (select?.inadCheck) {
+          return Promise.resolve([
+            { id: 'r1', pec: 'trovato@pec.it', inadCheck: { diverted: true } },
+            { id: 'r2', pec: null, inadCheck: { diverted: false } },
+          ]);
+        }
+        return Promise.resolve([
+          { id: 'r1', codiceFiscale: 'CF1', pec: null, email: 'e1@x.it' },
+          { id: 'r2', codiceFiscale: 'CF2', pec: null, email: 'e2@x.it' },
+        ]);
+      });
       mockInadService.getBulkResult.mockResolvedValue([
         { codiceFiscale: 'CF1', since: '2026-01-01', digitalAddress: [{ digitalAddress: 'trovato@pec.it' }] },
         { codiceFiscale: 'CF2', since: '2026-01-01' },
@@ -1561,6 +1575,16 @@ describe('CampaignsService', () => {
         checking: CampaignStatus.CHECKING_INAD,
       });
       expect(mockAttemptRepo.createQueryBuilder).toHaveBeenCalled();
+      // Bug reale: engineName calcolato una sola volta per l'intero batch (solo
+      // campaign.channelType) infilava il job di un destinatario dirottato da
+      // INAD (r1 -> PEC) nella coda EMAIL della campagna — mai nella coda PEC
+      // reale. Ogni destinatario va accodato sulla SUA coda effettiva.
+      expect(mockQueue.addBulk).toHaveBeenCalledWith('PEC', [
+        expect.objectContaining({ data: expect.objectContaining({ recipientId: 'r1', channel: 'PEC' }) }),
+      ]);
+      expect(mockQueue.addBulk).toHaveBeenCalledWith('EMAIL', [
+        expect.objectContaining({ data: expect.objectContaining({ recipientId: 'r2', channel: 'EMAIL' }) }),
+      ]);
     });
 
     it('finalizeInadCheck non ricrea gli attempt se un altro invocatore ha già vinto la transizione a QUEUED (race)', async () => {
@@ -2750,8 +2774,12 @@ describe('CampaignsService', () => {
       expect(insertValues).toHaveBeenCalledWith([
         expect.objectContaining({ recipientId: 'recipient-test', channelType: 'PEC' }),
       ]);
+      // Il job va accodato sulla coda PEC reale (dirottamento INAD), mai sulla
+      // coda POSTAL della campagna — bug reale corretto: un dirottato restava
+      // incastrato dietro un motore POSTAL (es. GlobalCom fermo) invece di
+      // avanzare sulla coda PEC indipendente.
       expect(mockQueue.addBulk).toHaveBeenCalledWith(
-        'POSTAL',
+        'PEC',
         expect.arrayContaining([
           expect.objectContaining({ data: expect.objectContaining({ channel: 'PEC' }) }),
         ]),

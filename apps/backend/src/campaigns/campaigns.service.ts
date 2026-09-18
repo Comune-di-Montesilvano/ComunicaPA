@@ -22,7 +22,7 @@ import { Campaign, CampaignStatus } from '../entities/campaign.entity.js';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity.js';
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity.js';
 import { DownloadEvent } from '../entities/download-event.entity.js';
-import { NOTIFICATION_JOB_SEND } from '../queue/notification-job.types.js';
+import { NOTIFICATION_JOB_SEND, type EngineName } from '../queue/notification-job.types.js';
 import { NotificationQueuesService } from '../queue/notification-queues.service.js';
 import { resolveSecondaryAppIoConfig } from '../channels/secondary-channels.util.js';
 import { resolvePaymentData } from '../channels/payment-config.util.js';
@@ -34,7 +34,7 @@ import type { CampaignStatsDto, RecipientStatDto, RecipientStatsPageDto, Channel
 import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.dto.js';
 import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util.js';
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto.js';
-import type { NotificationChannel, OperatorRole } from '@comunicapa/shared-types';
+import type { NotificationChannel, NotificationJobData, OperatorRole } from '@comunicapa/shared-types';
 import { matchCountry, abbreviateLongMunicipality } from '@comunicapa/shared-types';
 import { InadService } from '../channels/inad/inad.service.js';
 import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service.js';
@@ -1212,12 +1212,24 @@ export class CampaignsService {
     // (sempre richiesta per SEND, enforced sopra) sì: motore dedicato con
     // coda/UI/log come gli altri canali.
     const JOB_CHUNK = 1000;
-    const engineName = (campaign.channelType === 'SEND' || campaign.channelConfig?.['protocolla'] === true) ? 'PROTOCOLLAZIONE' : campaign.channelType;
+    // La protocollazione è channel-agnostica (sempre richiesta per SEND, o
+    // via channelConfig.protocolla) — vale per l'intera campagna, mai
+    // sovrascritta da un dirottamento per singolo destinatario. Fuori da
+    // quel caso, la coda va calcolata PER DESTINATARIO: un dirottamento INAD
+    // (es. campagna POSTAL → attempt.channelType PEC) deve accodare sulla
+    // coda PEC, mai restare sulla coda POSTAL del canale di campagna — bug
+    // reale: PEC dirottate finivano nella coda POSTAL, bloccate dietro un
+    // GlobalCom fermo insieme ai destinatari POSTAL veri (stesso motore,
+    // stessa concurrency, nessun rapporto con la coda PEC reale).
+    const needsProtocollazione = campaign.channelType === 'SEND' || campaign.channelConfig?.['protocolla'] === true;
+    const engineFor = (recipientId: string): EngineName =>
+      needsProtocollazione ? 'PROTOCOLLAZIONE' : ((channelOverrides?.get(recipientId) ?? campaign.channelType) as EngineName);
     for (let i = 0; i < recipients.length; i += JOB_CHUNK) {
       const chunk = recipients.slice(i, i + JOB_CHUNK);
-      await this.notificationQueues.addBulk(
-        engineName,
-        chunk.map((r, idx) => ({
+      const byEngine = new Map<EngineName, Array<{ name: string; data: NotificationJobData; opts: { jobId: string } }>>();
+      chunk.forEach((r, idx) => {
+        const engine = engineFor(r.id);
+        const job = {
           name: NOTIFICATION_JOB_SEND,
           data: {
             campaignId: campaign.id,
@@ -1226,8 +1238,14 @@ export class CampaignsService {
             channel: channelOverrides?.get(r.id) ?? campaign.channelType,
           },
           opts: { jobId: attemptIds[i + idx] },
-        })),
-      );
+        };
+        const bucket = byEngine.get(engine);
+        if (bucket) bucket.push(job);
+        else byEngine.set(engine, [job]);
+      });
+      for (const [engine, jobs] of byEngine) {
+        await this.notificationQueues.addBulk(engine, jobs);
+      }
     }
 
     // Scoped ai SOLI recipients passati qui, mai all'intera campagna: se
