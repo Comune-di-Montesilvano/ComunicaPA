@@ -37,6 +37,7 @@ const mockMailConfigs = {
 const mockAttemptRepo = {
   update: jest.fn(),
   findOne: jest.fn(),
+  manager: null as unknown as { transaction: (cb: (manager: unknown) => Promise<void>) => Promise<void> },
 };
 
 const mockCampaignRepo = {
@@ -49,6 +50,27 @@ const mockRecipientRepo = {
   findOne: jest.fn(),
   update: jest.fn(),
   count: jest.fn(),
+};
+
+// completeSuccess() gira i 3 update (attempt/recipient/campaign) in
+// `this.attemptRepo.manager.transaction(...)` — il manager fittizio instrada
+// a update()/increment() dei mock repo esistenti per entity class, così le
+// asserzioni sotto (mockAttemptRepo.update/mockRecipientRepo.update/
+// mockCampaignRepo.increment) restano valide senza duplicare gli assert su
+// un secondo set di mock "manager".
+const fakeTransactionManager = {
+  update: (entity: unknown, id: unknown, data: unknown) => {
+    if (entity === NotificationAttempt) return mockAttemptRepo.update(id, data);
+    if (entity === Recipient) return mockRecipientRepo.update(id, data);
+    throw new Error(`fakeTransactionManager.update: entity inatteso ${String(entity)}`);
+  },
+  increment: (entity: unknown, where: unknown, field: unknown, val: unknown) => {
+    if (entity === Campaign) return mockCampaignRepo.increment(where, field, val);
+    throw new Error(`fakeTransactionManager.increment: entity inatteso ${String(entity)}`);
+  },
+};
+mockAttemptRepo.manager = {
+  transaction: async (cb: (manager: unknown) => Promise<void>) => cb(fakeTransactionManager),
 };
 
 const mockCampaignCompletion = { checkAndComplete: jest.fn().mockResolvedValue(undefined) };
