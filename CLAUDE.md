@@ -221,6 +221,23 @@ un major su un pacchetto con "fratelli" nello stesso `package.json`,
 allinearli tutti alla stessa major a mano, poi `pnpm install
 --lockfile-only` (pattern Docker già noto) e riverificare la build.
 
+**Bump TypeScript major (5→6, es. dependabot) — TS 6.0 cambia il default di
+`types` da "tutto `node_modules/@types`" a `[]`.** Rompe silenziosamente
+`tsc -p tsconfig.spec.json`/jest ovunque il codice usi globali ambient senza
+import esplicito (`describe`/`it`/`expect` di `@types/jest`, mai importati
+nei `.spec.ts` che girano su vitest con `globals:true`) — decine di file,
+zero errore a runtime, solo type-check. Fix: `"types": ["node", "jest"]`
+esplicito in `apps/backend/tsconfig.spec.json`; per
+`packages/shared-types` (niente tsconfig.json bare, ts-jest sui default)
+va nel `transform` di `jest.config.js`:
+`['ts-jest', { tsconfig: { types: ['jest', 'node'] } }]`. `@types/node`
+resta incluso com'era (pull-in transitivo via `/// <reference types="node"/>`
+di altri `@types` importati), non serve toccarlo nel tsconfig prod.
+**TS 7 resta bloccato a monte**: typescript-eslint 8.70 rifiuta
+esplicitamente la riscrittura tsgo (`typescript-eslint/typescript-eslint#10940`,
+ancora open) — peer range attuale `>=4.8.4 <6.1.0`, fermarsi a 6.x finché
+non c'è supporto.
+
 **Merge sequenziale di più PR dependabot**: dopo ogni merge, le PR
 successive passano da `mergeable:true` a `CONFLICTING`/`BEHIND` (lockfile
 cambiato) — un solo `@dependabot rebase` non basta se altre merge
