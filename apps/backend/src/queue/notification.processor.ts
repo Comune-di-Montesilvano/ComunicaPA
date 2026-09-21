@@ -313,6 +313,16 @@ export class NotificationProcessor extends WorkerHost {
    * perché va rieseguito anche dalla guardia di redelivery in process() quando un
    * run precedente ha ottenuto l'ack dal provider esterno ma non ha completato
    * questi aggiornamenti prima di un crash/stall del worker (vedi commento in process()).
+   *
+   * I primi 3 update girano in un'unica transazione — bug reale in produzione:
+   * scritti come 3 update separati, un crash del worker tra il primo (attempt
+   * → SUCCESS) e il terzo (sentCount++) faceva sì che la guardia di redelivery
+   * in process() (che short-circuita quando trova attempt.status===SUCCESS,
+   * assumendo che l'intera coda sia già stata completata) saltasse per sempre
+   * l'incremento di sentCount — recipient.status SENT corretto, ma
+   * campaigns.sent_count restava indietro di 1 silenziosamente, nessun errore.
+   * Con la transazione, o tutti e 3 gli update sono visibili insieme oppure
+   * nessuno lo è: la guardia non può più osservare uno stato intermedio.
    */
   private async completeSuccess(
     attemptId: string,
@@ -326,21 +336,23 @@ export class NotificationProcessor extends WorkerHost {
     const retentionDaysForExpiry = getEffectiveRetentionDays(campaign, retentionMaxDaysForExpiry);
     const attachmentExpiresAt = new Date(Date.now() + retentionDaysForExpiry * 86400 * 1000);
 
-    await this.attemptRepo.update(attemptId, {
-      status: AttemptStatus.SUCCESS,
-      sentAt: new Date(),
-      responsePayload,
-      // Canale POSTAL saltato da un'App IO esclusiva riuscita: mai un IDPRO
-      // GlobalCom, mai spedito realmente — senza questo sentinel postalStatus
-      // resta NULL per sempre e la UI lo mostra come "In corso" indistinguibile
-      // da un invio davvero in transito (bug reale segnalato dal vivo).
-      ...(postalSkippedForAppIo ? { postalStatus: 'AppIoSostituito' } : {}),
+    await this.attemptRepo.manager.transaction(async (manager) => {
+      await manager.update(NotificationAttempt, attemptId, {
+        status: AttemptStatus.SUCCESS,
+        sentAt: new Date(),
+        responsePayload,
+        // Canale POSTAL saltato da un'App IO esclusiva riuscita: mai un IDPRO
+        // GlobalCom, mai spedito realmente — senza questo sentinel postalStatus
+        // resta NULL per sempre e la UI lo mostra come "In corso" indistinguibile
+        // da un invio davvero in transito (bug reale segnalato dal vivo).
+        ...(postalSkippedForAppIo ? { postalStatus: 'AppIoSostituito' } : {}),
+      });
+      await manager.update(Recipient, recipientId, {
+        status: RecipientStatus.SENT,
+        attachmentExpiresAt,
+      });
+      await manager.increment(Campaign, { id: campaignId }, 'sentCount', 1);
     });
-    await this.recipientRepo.update(recipientId, {
-      status: RecipientStatus.SENT,
-      attachmentExpiresAt,
-    });
-    await this.campaignRepo.increment({ id: campaignId }, 'sentCount', 1);
     await this.campaignCompletion.checkAndComplete(campaignId);
   }
 
