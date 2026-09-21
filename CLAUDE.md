@@ -221,6 +221,23 @@ un major su un pacchetto con "fratelli" nello stesso `package.json`,
 allinearli tutti alla stessa major a mano, poi `pnpm install
 --lockfile-only` (pattern Docker già noto) e riverificare la build.
 
+**Bump TypeScript major (5→6, es. dependabot) — TS 6.0 cambia il default di
+`types` da "tutto `node_modules/@types`" a `[]`.** Rompe silenziosamente
+`tsc -p tsconfig.spec.json`/jest ovunque il codice usi globali ambient senza
+import esplicito (`describe`/`it`/`expect` di `@types/jest`, mai importati
+nei `.spec.ts` che girano su vitest con `globals:true`) — decine di file,
+zero errore a runtime, solo type-check. Fix: `"types": ["node", "jest"]`
+esplicito in `apps/backend/tsconfig.spec.json`; per
+`packages/shared-types` (niente tsconfig.json bare, ts-jest sui default)
+va nel `transform` di `jest.config.js`:
+`['ts-jest', { tsconfig: { types: ['jest', 'node'] } }]`. `@types/node`
+resta incluso com'era (pull-in transitivo via `/// <reference types="node"/>`
+di altri `@types` importati), non serve toccarlo nel tsconfig prod.
+**TS 7 resta bloccato a monte**: typescript-eslint 8.70 rifiuta
+esplicitamente la riscrittura tsgo (`typescript-eslint/typescript-eslint#10940`,
+ancora open) — peer range attuale `>=4.8.4 <6.1.0`, fermarsi a 6.x finché
+non c'è supporto.
+
 **Merge sequenziale di più PR dependabot**: dopo ogni merge, le PR
 successive passano da `mergeable:true` a `CONFLICTING`/`BEHIND` (lockfile
 cambiato) — un solo `@dependabot rebase` non basta se altre merge
@@ -784,6 +801,19 @@ terminale (FAILED) PRIMA di rilanciare l'errore — altrimenti BullMQ registra
 il job come fallito ma il destinatario resta bloccato in uno stato intermedio
 per sempre (nessun "Rimetti in coda" possibile, la UI non lo mostra tra i
 falliti).
+
+**`createAttemptsAndEnqueue` — la coda BullMQ va calcolata PER DESTINATARIO, mai
+una sola volta per l'intero batch.** Bug reale in produzione: `engineName`
+derivato solo da `campaign.channelType`, ignorando `channelOverrides`
+(dirottamento INAD) — un destinatario dirottato POSTAL→PEC finiva comunque
+accodato sulla coda POSTAL (con `job.data.channel` corretto, quindi la
+strategy giusta veniva chiamata, ma sullo stesso worker/concurrency del
+motore sbagliato). Se GlobalCom è fermo, anche i PEC dirottati restano
+bloccati dietro, indistinguibile da un problema PEC. Fix: raggruppare i job
+per motore effettivo (`channelOverrides.get(recipientId) ?? campaign.channelType`,
+protocollazione resta channel-agnostica) prima di `addBulk`. Diagnosticabile
+dal vivo verificando se l'attempt "queued" è realmente `waiting` nella coda
+giusta via `Queue.getJob(id)` (bullmq diretto, stesso pattern debug già noto).
 
 Quando aggiungi un nuovo stato "terminale" a `CampaignStatus`/`RecipientStatus`
 (es. `CANCELLED`), audit obbligatorio: TUTTI i metodi che mutano quel record
@@ -1488,6 +1518,13 @@ anche nel container prod (niente bisogno del percorso
 `.pnpm/node_modules/` che serve invece per una dipendenza transitiva come
 `jsonwebtoken`, vedi sopra "Token operatore admin").
 
+**Anche un one-liner SENZA apici problematici può spezzarsi se troppo
+lungo** (il client inserisce newline reali ai punti di wrap visivo, non
+solo un problema di quoting SQL). Se un comando da ~700+ caratteri fallisce
+con errori di sintassi strani su una riga che non c'entra, non è il
+codice: accorciare drasticamente (nomi variabili minimi, dividere in più
+comandi sequenziali) prima di sospettare altro.
+
 **SQL con apostrofi in un one-liner Portainer**: usa quoting a dollaro Postgres
 (`$$valore$$`) al posto degli apici singoli — l'apice esterno del one-liner
 `node -e '...'` non ammette nessun apice singolo annidato, `$$...$$` lo aggira
@@ -1697,6 +1734,14 @@ query manuale/debug che assume anche un updated_at fallisce con
 `created_at`) — verificare sempre le colonne reali sull'entity prima di
 scrivere SQL ad-hoc contro questa tabella.
 
+**`download_events` — nessun indice su `recipient_id` di default.**
+Qualunque query che filtra/aggrega per destinatario (combinazione canali
+download, filtro "Canale download") degenera in scan completo della
+tabella per riga senza indice — su campagne grandi (~19k destinatari)
+sembra "il filtro si applica solo al poll successivo" quando in realtà è
+solo lento oltre la finestra percepita come immediata.
+`CREATE INDEX IF NOT EXISTS ON download_events(recipient_id)`.
+
 ## Side-effect su NotificationAttempt dopo l'invio — solo in notification.processor.ts
 
 Le `*Strategy.send()` (`postal.strategy.ts`, `send-dispatch.service.ts`...)
@@ -1756,6 +1801,20 @@ anche quando lo erano).
 protocollo/iun/stato consegna anche quando il dato esisteva davvero in DB.
 Query su attempt per "ultimo tentativo per destinatario" non deve MAI
 filtrare su channelType, punto.
+
+**Quinta istanza — opposta stavolta, non un filtro sbagliato ma un'esclusione
+totale**: `getPostalStatusBreakdown`/`getPostalDeliveryStatusBreakdown`
+escludevano DEL TUTTO i destinatari dirottati INAD (mai un `postal_status`
+reale, filtrati a monte) — "Totale" nei grafici ("Andamento Invio POSTAL",
+"Stato Documento", "Recapito Poste") disallineato dal conteggio reale
+destinatari, nessuna indicazione che esistessero. Fix: bucket dedicato
+`DirottatoAPec` (mai `null`/escluso), stesso principio già in uso per
+`AppIoSostituito`/`NonTracciato`. Il filtro sul flag va fatto direttamente
+su `Recipient.inadCheck.diverted` (mai un valore reale su
+`notification_attempts.postal_status`/`postal_delivery_status`, l'attempt
+di un dirottato è su PEC non POSTAL) — sia per il conteggio in
+`getRecipientFilterOptions` sia per il filtro vero e proprio in
+`getRecipientStats`.
 
 **Priorità tra override**: se un destinatario è dirottato da INAD, l'App IO
 esclusiva (che salterebbe il canale primario) viene declassata a parallela
@@ -2102,6 +2161,28 @@ dato perso. Ogni nuovo stato `recipients*Filter` va aggiunto al reset di
 `handleCampaignClick`; ogni nuovo punto che apre il dettaglio campagna deve
 chiamare `handleCampaignClick`, mai reimplementare un sottoinsieme della
 navigazione a mano.
+
+**"Download per Canale" e la tabella Destinatari/filtri — stessa istanza
+ancora, trovata in sessione successiva.** `fetchDownloadCombinationStats`
+era dentro il blocco di polling gated su `hasAsyncDeliveryTracking` (solo
+SEND/POSTAL, pensato per lo stato di consegna) — restava fermo allo
+snapshot iniziale su una campagna EMAIL/PEC già completata, ma un
+cittadino può scaricare l'allegato in qualunque momento durante la
+retention, su qualunque canale. `fetchRecipientsPage`/
+`fetchRecipientsFilterOptions` non avevano MAI un intervallo, solo trigger
+esplicito su cambio filtro/pagina/ordinamento. Fix: poll dedicati
+indipendenti dallo status campagna — per la tabella destinatari,
+l'intervallo va messo DENTRO lo stesso `useEffect` che già gestisce il
+fetch su cambio filtro (mai un effect separato), così si resetta da solo
+a ogni dipendenza cambiata senza chiusura stantia su filtri/pagina vecchi.
+
+**Breakdown aggregato (`Array.from(map.entries())`) da un `Map` lato
+backend non ha ordine garantito tra una query e l'altra** — un componente
+che lo renderizza SENZA ordinare (es. `ChannelStatusBar`, la barra
+"Andamento Invio") cambia visibilmente ordine ad ogni poll, percepito
+come bug. I donut già ordinavano (valore desc, poi label) — replicare lo
+stesso criterio in ogni nuovo componente che consuma lo stesso tipo di
+dato.
 
 ## External API (`external-api/`) — due gotcha reali, non presi dalla suite unit
 
