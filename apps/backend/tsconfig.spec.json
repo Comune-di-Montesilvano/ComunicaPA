@@ -1,7 +1,15 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "noEmit": true
+    "noEmit": true,
+    // TS 6.0 di default risolve "types" a [] (prima era ogni pacchetto in
+    // node_modules/@types) — @types/jest fornisce describe/it/expect come
+    // globali ambient senza alcun import esplicito nei .spec.ts, quindi va
+    // richiamato qui esplicitamente. "node" replica lo stesso auto-include
+    // implicito di cui gode il tsconfig.json prod (via reference transitivi
+    // di altri @types), non necessario finora ma reso esplicito per non
+    // dipendere da quella catena solo per questo progetto di type-check.
+    "types": ["node", "jest"]
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
