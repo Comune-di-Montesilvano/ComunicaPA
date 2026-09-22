@@ -33,6 +33,7 @@ export const SETTING_DEFS = {
     ]),
   },
   'enrichment.retentionDays': { type: 'number', default: 30 },
+  'domicileVerification.retentionDays': { type: 'number', default: 7 },
   'smtp.host': { env: 'SMTP_HOST', type: 'string', default: 'localhost' },
   'smtp.port': { env: 'SMTP_PORT', type: 'number', default: 587 },
   'smtp.secure': { env: 'SMTP_SECURE', type: 'boolean', default: false },
