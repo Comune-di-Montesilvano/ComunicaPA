@@ -20,7 +20,7 @@ describe('buildDomicileVerificationCsvs', () => {
     expect(result.registroImpreseCsv).toContain('mario.registro@pec.it');
   });
 
-  it('CF fisico trovato solo su App IO: aggregato "non attivo" nega, "attivo" per il trovato', () => {
+  it('CF fisico trovato solo su App IO: aggregato "attivo" per il trovato, vuoto per il negativo (mai "non attivo")', () => {
     const result = buildDomicileVerificationCsvs({
       ...baseInput,
       inadFoundMap: {},
@@ -30,10 +30,10 @@ describe('buildDomicileVerificationCsvs', () => {
     expect(result.appIoCsv).toContain('RSSMRA85M01H501Z');
     expect(result.appIoCsv).not.toContain('VRDLGI80A01H501W');
     expect(result.aggregatoCsv).toMatch(/"RSSMRA85M01H501Z","Mario Rossi","","attivo"/);
-    expect(result.aggregatoCsv).toMatch(/"VRDLGI80A01H501W","Luigi Verdi","","non attivo"/);
+    expect(result.aggregatoCsv).toMatch(/"VRDLGI80A01H501W","Luigi Verdi","",""/);
   });
 
-  it('CF fisico senza nessun risultato: finisce in assenti, domicilio vuoto, App IO "non attivo"', () => {
+  it('CF fisico senza nessun risultato: finisce in assenti, domicilio vuoto, App IO vuoto (mai "non attivo")', () => {
     const result = buildDomicileVerificationCsvs({
       ...baseInput,
       inadFoundMap: {},
@@ -42,9 +42,10 @@ describe('buildDomicileVerificationCsvs', () => {
     });
     expect(result.assentiCsv).toContain('RSSMRA85M01H501Z');
     expect(result.assentiCsv).toContain('VRDLGI80A01H501W');
+    expect(result.aggregatoCsv).toMatch(/"RSSMRA85M01H501Z","Mario Rossi","",""/);
   });
 
-  it('PIVA trovata su Registro Imprese: colonna App IO sempre "n.d.", mai in assenti', () => {
+  it('PIVA trovata su Registro Imprese: colonna App IO sempre vuota (mai "n.d."), mai in assenti', () => {
     const result = buildDomicileVerificationCsvs({
       ...baseInput,
       inadFoundMap: {},
@@ -53,7 +54,21 @@ describe('buildDomicileVerificationCsvs', () => {
     });
     expect(result.registroImpreseCsv).toContain('acme@pec.it');
     expect(result.assentiCsv).not.toContain('12345678901');
-    expect(result.aggregatoCsv).toMatch(/"12345678901","Acme Srl","acme@pec\.it","n\.d\."/);
+    expect(result.aggregatoCsv).toMatch(/"12345678901","Acme Srl","acme@pec\.it",""/);
+  });
+
+  it('CF assente/malformato nel tracciato sorgente (dato mancante, non un bug di parsing): aggregato vuoto sempre, mai "n.d."', () => {
+    const result = buildDomicileVerificationCsvs({
+      sourceCsv: 'cf,nome\n,Riga senza CF\n',
+      hasHeaders: true,
+      cfColumn: 'cf',
+      inadFoundMap: {},
+      appIoResults: {},
+      registroImpreseResults: {},
+    });
+    expect(result.aggregatoCsv).toMatch(/"","Riga senza CF","",""/);
+    expect(result.aggregatoCsv).not.toContain('n.d.');
+    expect(result.assentiCsv).toContain('Riga senza CF');
   });
 
   it('PIVA non trovata (chiave assente da registroImpreseResults): finisce in assenti', () => {

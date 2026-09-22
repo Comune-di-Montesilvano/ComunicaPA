@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import { Cron } from '@nestjs/schedule';
 import { DomicileVerificationJob, DomicileVerificationJobStatus } from '../../entities/domicile-verification-job.entity.js';
 import { parseCsvContent } from '../../io-services/csv.util.js';
-import { InadService } from '../inad/inad.service.js';
+import { InadService, resolveInadDigitalAddress } from '../inad/inad.service.js';
 import { RegistroImpreseVerifyQueueService } from '../registro-imprese/registro-imprese-verify-queue.service.js';
 import { buildDomicileVerificationCsvs } from './domicile-verification-csv.util.js';
 import { DomicileVerificationEventsService } from './domicile-verification-events.service.js';
@@ -92,8 +92,12 @@ export class DomicileVerificationSyncService {
       for (const batch of batches) {
         const items = await this.inadService.getBulkResult(batch.id);
         items.forEach((item) => {
-          if (!item.digitalAddress || item.digitalAddress.length === 0) return;
-          map[item.codiceFiscale.toUpperCase()] = item.digitalAddress.map((a) => a.digitalAddress).join('; ');
+          // Stessa risoluzione di campaigns.service.ts runInadExtractLoop
+          // (resolveInadDigitalAddress, sempre il primo elemento) — prima
+          // qui si univano TUTTI gli indirizzi con "; ", stesso dato
+          // interpretato diversamente in due punti del codice.
+          const address = resolveInadDigitalAddress(item.digitalAddress);
+          if (address) map[item.codiceFiscale.toUpperCase()] = address;
         });
       }
       inadFoundMap = map;

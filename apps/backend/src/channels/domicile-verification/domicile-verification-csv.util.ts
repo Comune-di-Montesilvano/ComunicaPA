@@ -50,7 +50,11 @@ export function buildDomicileVerificationCsvs(input: DomicileVerificationCsvInpu
     const registroPec = input.registroImpreseResults[cf] || undefined;
 
     const domicilioDigitale = registroPec || inadAddress || '';
-    const appIoValue = cfFisico ? (appIoActive ? 'attivo' : 'non attivo') : 'n.d.';
+    // Vuoto sempre tranne quando attivo — mai "n.d."/"non attivo": una PIVA
+    // o una riga con CF assente/malformato (dato mancante nel tracciato
+    // sorgente, non un bug di parsing) non deve produrre un'etichetta che
+    // suggerisca "verificato e assente", solo "nessuna informazione".
+    const appIoValue = appIoActive ? 'attivo' : '';
 
     aggregatoRows.push({ ...row, [AGGREGATE_DOMICILIO_COLUMN]: domicilioDigitale, [AGGREGATE_APPIO_COLUMN]: appIoValue });
 
