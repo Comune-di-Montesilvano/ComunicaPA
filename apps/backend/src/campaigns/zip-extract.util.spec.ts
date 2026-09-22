@@ -1,7 +1,26 @@
 import * as fs from 'fs';
 import { join } from 'path';
 import AdmZip from 'adm-zip';
-import { extractZipWithYauzl } from './zip-extract.util.js';
+import { extractZipWithYauzl, flattenZipEntryName } from './zip-extract.util.js';
+
+describe('flattenZipEntryName', () => {
+  it('appiattisce un path Unix-style (già gestito da path.basename)', () => {
+    expect(flattenZipEntryName('cartella/sottocartella/avviso.pdf')).toBe('avviso.pdf');
+  });
+
+  it('appiattisce un path Windows-style con backslash (bug reale: path.basename() su Linux non le riconosce)', () => {
+    expect(flattenZipEntryName('sottocartella\\avviso.pdf')).toBe('avviso.pdf');
+    expect(flattenZipEntryName('cartella\\sottocartella\\avviso.pdf')).toBe('avviso.pdf');
+  });
+
+  it('gestisce un mix di separatori nello stesso path', () => {
+    expect(flattenZipEntryName('cartella/sotto\\avviso.pdf')).toBe('avviso.pdf');
+  });
+
+  it('un nome file senza sottocartelle resta invariato', () => {
+    expect(flattenZipEntryName('avviso.pdf')).toBe('avviso.pdf');
+  });
+});
 
 describe('extractZipWithYauzl', () => {
   const tmpDir = join(__dirname, '../../test-zip-extract-tmp');
@@ -52,4 +71,5 @@ describe('extractZipWithYauzl', () => {
   it('should propagate errors for non-existent zip files', async () => {
     await expect(extractZipWithYauzl(join(tmpDir, 'missing.zip'), destDir)).rejects.toThrow();
   });
+
 });

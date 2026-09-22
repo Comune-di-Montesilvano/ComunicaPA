@@ -3442,18 +3442,29 @@ export class CampaignsService {
       referencedLowerMap.set(ref.toLowerCase(), ref);
     }
 
+    // Safety promessa dal docstring ma mai implementata (bug reale trovato
+    // in E2E: caricando uno ZIP PRIMA che i Recipient fossero sincronizzati
+    // in DB — o con una mappatura colonna/allegatoKey che non combacia —
+    // `referenced` risultava vuoto e OGNI PDF estratto veniva scartato,
+    // svuotando silenziosamente la cartella: "caricati ok X, scartati Y"
+    // con Y=tutti, nessun file rimasto, anteprima vuota, nessun errore
+    // visibile). Con zero destinatari referenzianti non c'è nulla da
+    // scartare in sicurezza — meglio lasciare i file caricati (l'operatore
+    // può comunque vederli/eliminarli a mano) che perderli silenziosamente.
     let discarded = 0;
     const present = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
-    for (const f of present) {
-      if (f === 'draft_recipients.csv') continue;
-      const expectedName = referencedLowerMap.get(f.toLowerCase());
-      if (expectedName) {
-        if (f !== expectedName) {
-          fs.renameSync(join(dir, f), join(dir, expectedName));
+    if (referenced.size > 0) {
+      for (const f of present) {
+        if (f === 'draft_recipients.csv') continue;
+        const expectedName = referencedLowerMap.get(f.toLowerCase());
+        if (expectedName) {
+          if (f !== expectedName) {
+            fs.renameSync(join(dir, f), join(dir, expectedName));
+          }
+        } else {
+          fs.unlinkSync(join(dir, f));
+          discarded++;
         }
-      } else {
-        fs.unlinkSync(join(dir, f));
-        discarded++;
       }
     }
 
