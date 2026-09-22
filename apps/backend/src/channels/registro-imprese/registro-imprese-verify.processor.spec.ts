@@ -20,7 +20,7 @@ describe('RegistroImpreseVerifyProcessor.process', () => {
     await processor.process({ name: VERIFY_PIVA_JOB_NAME, data: { jobId: 'job-1', partitaIva: '12345678901' } } as any);
 
     expect(mockJobRepo.query).toHaveBeenCalledWith(
-      expect.stringContaining('UPDATE inad_verification_jobs'),
+      expect.stringContaining('UPDATE domicile_verification_jobs'),
       [JSON.stringify({ '12345678901': 'acme@pec.it' }), 1, 'job-1'],
     );
   });
@@ -78,7 +78,7 @@ describe('RegistroImpreseVerifyProcessor.onFailed', () => {
     expect(mockJobRepo.query).not.toHaveBeenCalled();
   });
 
-  it('scrive pec:null e incrementa piva_done quando i tentativi sono esauriti (esito finale)', async () => {
+  it('scrive pec:null e incrementa registro_imprese_done quando i tentativi sono esauriti (esito finale)', async () => {
     const job = {
       name: VERIFY_PIVA_JOB_NAME,
       data: { jobId: 'job-1', partitaIva: '12345678901' },
@@ -89,12 +89,12 @@ describe('RegistroImpreseVerifyProcessor.onFailed', () => {
     await processor.onFailed(job);
 
     expect(mockJobRepo.query).toHaveBeenCalledWith(
-      expect.stringContaining('piva_done = piva_done + 1'),
+      expect.stringContaining('registro_imprese_done = registro_imprese_done + 1'),
       [JSON.stringify({ '12345678901': null }), 'job-1'],
     );
-    // Non deve toccare piva_found_count: un esaurimento retry non è mai "trovato".
+    // Non deve toccare registro_imprese_found_count: un esaurimento retry non è mai "trovato".
     const [sql] = mockJobRepo.query.mock.calls[0];
-    expect(sql).not.toContain('piva_found_count');
+    expect(sql).not.toContain('registro_imprese_found_count');
   });
 
   it('ignora job undefined o di un tipo diverso', async () => {
