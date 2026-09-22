@@ -25,6 +25,14 @@ describe('csv.util', () => {
       expect(result.rows).toEqual([{ cf: 'RSSMRA85M01H501Z', nome: 'Rossi, Mario' }]);
     });
 
+    it('separatore ";" con importo in formato italiano non quotato non disallinea le colonne successive (bug reale: virgola decimale letta come delimitatore extra)', () => {
+      const csv = 'cf;nome;importo;nomefile\nRSSMRA85M01H501Z;Mario Rossi;27,00;bollettino_1.pdf';
+      const result = parseCsvContent(csv, true);
+      expect(result.rows).toEqual([
+        { cf: 'RSSMRA85M01H501Z', nome: 'Mario Rossi', importo: '27,00', nomefile: 'bollettino_1.pdf' },
+      ]);
+    });
+
     it('ignora righe vuote e ritorna rows vuoto per CSV vuoto', () => {
       expect(parseCsvContent('', true)).toEqual({ headers: [], rows: [] });
       expect(parseCsvContent('cf\n\n\n', true)).toEqual({ headers: ['cf'], rows: [] });
