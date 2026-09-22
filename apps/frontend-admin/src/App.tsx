@@ -1589,24 +1589,44 @@ export function App(): React.JSX.Element {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [notifDetail, notifDetailLoading]);
 
-  const [verificaBulkFile, setVerificaBulkFile] = useState<File | null>(null);
-  const [verificaBulkHasHeaders, setVerificaBulkHasHeaders] = useState(true);
-  const [verificaBulkHeaders, setVerificaBulkHeaders] = useState<string[]>([]);
-  const [verificaBulkCfColumn, setVerificaBulkCfColumn] = useState('');
-  const [verificaBulkServiceId, setVerificaBulkServiceId] = useState('');
-  const [verificaBulkJobId, setVerificaBulkJobId] = useState<string | null>(null);
-  const [verificaBulkStatus, setVerificaBulkStatus] = useState<{
+  interface DomicileVerificationStatus {
     status: 'queued' | 'processing' | 'done' | 'failed';
     totalRows: number;
-    processedRows: number;
-    presentCount: number;
-    absentCount: number;
+    cfFisicoTotal: number;
+    pivaTotal: number;
+    inadBatchesTotal: number;
+    inadBatchesDone: number;
+    inadFoundCount: number;
+    appIoDone: boolean;
+    appIoProcessedRows: number;
+    appIoPresentCount: number;
+    registroImpreseTotal: number;
+    registroImpreseDone: number;
+    registroImpreseFoundCount: number;
     errorMessage: string | null;
-  } | null>(null);
-  const [verificaBulkSubmitting, setVerificaBulkSubmitting] = useState(false);
-  const [verificaBulkSubmitError, setVerificaBulkSubmitError] = useState<string | null>(null);
+  }
+  interface DomicileVerificationJobSummary {
+    id: string;
+    status: 'queued' | 'processing' | 'done' | 'failed';
+    createdAt: string;
+    totalRows: number;
+    cfFisicoTotal: number;
+    pivaTotal: number;
+  }
 
-  // ── Verifica INAD (duplicato di Verifica App IO, ma su domicilio digitale INAD) ──
+  const [domicileVerifFile, setDomicileVerifFile] = useState<File | null>(null);
+  const [domicileVerifHasHeaders, setDomicileVerifHasHeaders] = useState(true);
+  const [domicileVerifHeaders, setDomicileVerifHeaders] = useState<string[]>([]);
+  const [domicileVerifCfColumn, setDomicileVerifCfColumn] = useState('');
+  const [domicileVerifServiceId, setDomicileVerifServiceId] = useState('');
+  const [domicileVerifJobId, setDomicileVerifJobId] = useState<string | null>(null);
+  const [domicileVerifStatus, setDomicileVerifStatus] = useState<DomicileVerificationStatus | null>(null);
+  const [domicileVerifSubmitting, setDomicileVerifSubmitting] = useState(false);
+  const [domicileVerifSubmitError, setDomicileVerifSubmitError] = useState<string | null>(null);
+  const [domicileVerifJobs, setDomicileVerifJobs] = useState<DomicileVerificationJobSummary[]>([]);
+  const [domicileVerifJobsLoading, setDomicileVerifJobsLoading] = useState(false);
+
+  // ── Verifica Anagrafica (Cerca Domicilio) — indipendente dal pannello massivo sopra ──
   const [domicilioCf, setDomicilioCf] = useState('');
   const [domicilioValidationError, setDomicilioValidationError] = useState<string | null>(null);
   const [domicilioLoading, setDomicilioLoading] = useState(false);
@@ -1692,22 +1712,6 @@ export function App(): React.JSX.Element {
     }>;
     message?: string;
   } | null>(null);
-  const [verificaInadBulkFile, setVerificaInadBulkFile] = useState<File | null>(null);
-  const [verificaInadBulkHasHeaders, setVerificaInadBulkHasHeaders] = useState(true);
-  const [verificaInadBulkHeaders, setVerificaInadBulkHeaders] = useState<string[]>([]);
-  const [verificaInadBulkCfColumn, setVerificaInadBulkCfColumn] = useState('');
-  const [verificaInadBulkJobId, setVerificaInadBulkJobId] = useState<string | null>(null);
-  const [verificaInadBulkStatus, setVerificaInadBulkStatus] = useState<{
-    status: 'queued' | 'processing' | 'done' | 'failed';
-    totalRows: number;
-    batchesTotal: number;
-    batchesDone: number;
-    foundCount: number;
-    notFoundCount: number;
-    errorMessage: string | null;
-  } | null>(null);
-  const [verificaInadBulkSubmitting, setVerificaInadBulkSubmitting] = useState(false);
-  const [verificaInadBulkSubmitError, setVerificaInadBulkSubmitError] = useState<string | null>(null);
 
   // ── Arricchimento tracciati ──
   interface EnrichmentJobItem {
@@ -3262,17 +3266,17 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     const def = ioServices.find(s => s.isDefault);
-    if (def) setVerificaBulkServiceId(def.id);
-    else if (ioServices.length > 0) setVerificaBulkServiceId(ioServices[0].id);
+    if (def) setDomicileVerifServiceId(def.id);
+    else if (ioServices.length > 0) setDomicileVerifServiceId(ioServices[0].id);
   }, [ioServices]);
 
-  const parseVerificaBulkHeaders = (file: File, hasHeaders: boolean) => {
+  const parseDomicileVerifHeaders = (file: File, hasHeaders: boolean) => {
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
       if (!text) return;
       const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
-      if (lines.length === 0) { setVerificaBulkHeaders([]); return; }
+      if (lines.length === 0) { setDomicileVerifHeaders([]); return; }
       const parseCsvLineLocal = (line: string) => {
         const result: string[] = [];
         let current = '';
@@ -3288,79 +3292,112 @@ export function App(): React.JSX.Element {
       };
       const firstLineCols = parseCsvLineLocal(lines[0]);
       const headers = hasHeaders ? firstLineCols : firstLineCols.map((_, idx) => `Colonna ${idx + 1}`);
-      setVerificaBulkHeaders(headers);
+      setDomicileVerifHeaders(headers);
       const guessed = headers.find(h => ['codicefiscale', 'cf'].includes(h.toLowerCase().replace(/[\s_-]/g, '')));
-      setVerificaBulkCfColumn(guessed || '');
+      setDomicileVerifCfColumn(guessed || '');
     };
     reader.readAsText(file);
   };
 
-  const handleVerificaBulkFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleDomicileVerifFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setVerificaBulkFile(file);
-    setVerificaBulkJobId(null);
-    setVerificaBulkStatus(null);
-    setVerificaBulkSubmitError(null);
-    parseVerificaBulkHeaders(file, verificaBulkHasHeaders);
+    setDomicileVerifFile(file);
+    setDomicileVerifJobId(null);
+    setDomicileVerifStatus(null);
+    setDomicileVerifSubmitError(null);
+    parseDomicileVerifHeaders(file, domicileVerifHasHeaders);
   };
 
-  const handleVerificaBulkSubmit = async () => {
-    if (!verificaBulkFile || !verificaBulkCfColumn || !verificaBulkServiceId) return;
-    setVerificaBulkSubmitting(true);
-    setVerificaBulkSubmitError(null);
+  const fetchDomicileVerifJobs = async () => {
+    setDomicileVerifJobsLoading(true);
+    try {
+      const res = await apiFetch('/domicile-verification/jobs');
+      const data = await res.json();
+      setDomicileVerifJobs(data.jobs || []);
+    } catch {
+      // storico non critico: silenzioso, l'operatore può comunque lanciare una nuova verifica
+    } finally {
+      setDomicileVerifJobsLoading(false);
+    }
+  };
+
+  const handleDomicileVerifSubmit = async () => {
+    if (!domicileVerifFile || !domicileVerifCfColumn || !domicileVerifServiceId) return;
+    setDomicileVerifSubmitting(true);
+    setDomicileVerifSubmitError(null);
     try {
       const data = await uploadFileInChunks(
-        `${ADMIN_API_BASE}/io-services/verify-bulk/upload`,
+        `${ADMIN_API_BASE}/domicile-verification/verify/upload`,
         token!,
-        verificaBulkFile,
-        verificaBulkFile.name,
+        domicileVerifFile,
+        domicileVerifFile.name,
         () => {},
         undefined,
         {
-          hasHeaders: verificaBulkHasHeaders,
-          cfColumn: verificaBulkCfColumn,
-          ioServiceId: verificaBulkServiceId,
+          hasHeaders: domicileVerifHasHeaders,
+          cfColumn: domicileVerifCfColumn,
+          ioServiceId: domicileVerifServiceId,
         },
       );
       if (data.blocked) {
-        setVerificaBulkSubmitError(data.message || 'Richiesta bloccata');
+        setDomicileVerifSubmitError(data.message || 'Richiesta bloccata');
         return;
       }
-      setVerificaBulkJobId(data.jobId);
-      setVerificaBulkStatus({ status: 'queued', totalRows: 0, processedRows: 0, presentCount: 0, absentCount: 0, errorMessage: null });
+      setDomicileVerifJobId(data.jobId);
+      setDomicileVerifStatus({
+        status: 'queued', totalRows: 0, cfFisicoTotal: 0, pivaTotal: 0,
+        inadBatchesTotal: 0, inadBatchesDone: 0, inadFoundCount: 0,
+        appIoDone: false, appIoProcessedRows: 0, appIoPresentCount: 0,
+        registroImpreseTotal: 0, registroImpreseDone: 0, registroImpreseFoundCount: 0,
+        errorMessage: null,
+      });
+      fetchDomicileVerifJobs();
     } catch (err: any) {
-      setVerificaBulkSubmitError(err.message || 'Errore di connessione');
+      setDomicileVerifSubmitError(err.message || 'Errore di connessione');
     } finally {
-      setVerificaBulkSubmitting(false);
+      setDomicileVerifSubmitting(false);
     }
   };
 
   useEffect(() => {
-    if (!verificaBulkJobId) return;
-    if (verificaBulkStatus?.status === 'done' || verificaBulkStatus?.status === 'failed') return;
+    if (!domicileVerifJobId) return;
+    if (domicileVerifStatus?.status === 'done' || domicileVerifStatus?.status === 'failed') return;
     const timer = setInterval(async () => {
       try {
-        const res = await apiFetch(`/io-services/verify-bulk/${verificaBulkJobId}`);
+        const res = await apiFetch(`/domicile-verification/jobs/${domicileVerifJobId}`);
         const data = await res.json();
-        setVerificaBulkStatus(data);
+        setDomicileVerifStatus(data);
+        if (data.status === 'done' || data.status === 'failed') fetchDomicileVerifJobs();
       } catch {
         // errore transitorio di polling: riprova al giro successivo
       }
-    }, 2000);
+    }, 5000);
     return () => clearInterval(timer);
-  }, [verificaBulkJobId, verificaBulkStatus?.status]);
+  }, [domicileVerifJobId, domicileVerifStatus?.status]);
 
-  const handleVerificaBulkDownload = async (variant: 'present' | 'absent') => {
-    if (!verificaBulkJobId) return;
+  const handleDomicileVerifOpenJob = async (jobId: string) => {
+    setDomicileVerifJobId(jobId);
+    setDomicileVerifSubmitError(null);
     try {
-      const res = await apiFetch(`/io-services/verify-bulk/${verificaBulkJobId}/${variant}.csv`);
+      const res = await apiFetch(`/domicile-verification/jobs/${jobId}`);
+      const data = await res.json();
+      setDomicileVerifStatus(data);
+    } catch (err: any) {
+      setDomicileVerifSubmitError(err.message || 'Errore nel recupero dello stato del job');
+    }
+  };
+
+  const handleDomicileVerifDownload = async (variant: 'assenti' | 'app-io' | 'inad' | 'registro-imprese' | 'aggregato') => {
+    if (!domicileVerifJobId) return;
+    try {
+      const res = await apiFetch(`/domicile-verification/jobs/${domicileVerifJobId}/${variant}.csv`);
       if (!res.ok) { alert('Errore durante il download'); return; }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.setAttribute('href', url);
-      link.setAttribute('download', `verifica_appio_${variant === 'present' ? 'presenti' : 'assenti'}.csv`);
+      link.setAttribute('download', `verifica_domicili_${variant}.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -3370,13 +3407,13 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const handleVerificaBulkReset = () => {
-    setVerificaBulkFile(null);
-    setVerificaBulkHeaders([]);
-    setVerificaBulkCfColumn('');
-    setVerificaBulkJobId(null);
-    setVerificaBulkStatus(null);
-    setVerificaBulkSubmitError(null);
+  const handleDomicileVerifReset = () => {
+    setDomicileVerifFile(null);
+    setDomicileVerifHeaders([]);
+    setDomicileVerifCfColumn('');
+    setDomicileVerifJobId(null);
+    setDomicileVerifStatus(null);
+    setDomicileVerifSubmitError(null);
   };
 
   const runCercaDomicilio = async (cfOverride?: string, forzaImpresaOverride?: boolean) => {
@@ -3479,118 +3516,6 @@ export function App(): React.JSX.Element {
     } finally {
       setDomicilioImpresaLoading(false);
     }
-  };
-
-  const parseVerificaInadBulkHeaders = (file: File, hasHeaders: boolean) => {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string;
-      if (!text) return;
-      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
-      if (lines.length === 0) { setVerificaInadBulkHeaders([]); return; }
-      const parseCsvLineLocal = (line: string) => {
-        const result: string[] = [];
-        let current = '';
-        let inQuotes = false;
-        for (let i = 0; i < line.length; i++) {
-          const char = line[i];
-          if (char === '"') inQuotes = !inQuotes;
-          else if ((char === ',' || char === ';') && !inQuotes) { result.push(current.trim()); current = ''; }
-          else current += char;
-        }
-        result.push(current.trim());
-        return result.map(col => col.replace(/^"(.*)"$/, '$1'));
-      };
-      const firstLineCols = parseCsvLineLocal(lines[0]);
-      const headers = hasHeaders ? firstLineCols : firstLineCols.map((_, idx) => `Colonna ${idx + 1}`);
-      setVerificaInadBulkHeaders(headers);
-      const guessed = headers.find(h => ['codicefiscale', 'cf'].includes(h.toLowerCase().replace(/[\s_-]/g, '')));
-      setVerificaInadBulkCfColumn(guessed || '');
-    };
-    reader.readAsText(file);
-  };
-
-  const handleVerificaInadBulkFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setVerificaInadBulkFile(file);
-    setVerificaInadBulkJobId(null);
-    setVerificaInadBulkStatus(null);
-    setVerificaInadBulkSubmitError(null);
-    parseVerificaInadBulkHeaders(file, verificaInadBulkHasHeaders);
-  };
-
-  const handleVerificaInadBulkSubmit = async () => {
-    if (!verificaInadBulkFile || !verificaInadBulkCfColumn) return;
-    setVerificaInadBulkSubmitting(true);
-    setVerificaInadBulkSubmitError(null);
-    try {
-      const data = await uploadFileInChunks(
-        `${ADMIN_API_BASE}/inad-verify/verify-bulk/upload`,
-        token!,
-        verificaInadBulkFile,
-        verificaInadBulkFile.name,
-        () => {},
-        undefined,
-        {
-          hasHeaders: verificaInadBulkHasHeaders,
-          cfColumn: verificaInadBulkCfColumn,
-        },
-      );
-      if (data.blocked) {
-        setVerificaInadBulkSubmitError(data.message || 'Richiesta bloccata');
-        return;
-      }
-      setVerificaInadBulkJobId(data.jobId);
-      setVerificaInadBulkStatus({ status: 'queued', totalRows: 0, batchesTotal: 0, batchesDone: 0, foundCount: 0, notFoundCount: 0, errorMessage: null });
-    } catch (err: any) {
-      setVerificaInadBulkSubmitError(err.message || 'Errore di connessione');
-    } finally {
-      setVerificaInadBulkSubmitting(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!verificaInadBulkJobId) return;
-    if (verificaInadBulkStatus?.status === 'done' || verificaInadBulkStatus?.status === 'failed') return;
-    const timer = setInterval(async () => {
-      try {
-        const res = await apiFetch(`/inad-verify/verify-bulk/${verificaInadBulkJobId}`);
-        const data = await res.json();
-        setVerificaInadBulkStatus(data);
-      } catch {
-        // errore transitorio di polling: riprova al giro successivo
-      }
-    }, 5000);
-    return () => clearInterval(timer);
-  }, [verificaInadBulkJobId, verificaInadBulkStatus?.status]);
-
-  const handleVerificaInadBulkDownload = async (variant: 'found' | 'notfound') => {
-    if (!verificaInadBulkJobId) return;
-    try {
-      const res = await apiFetch(`/inad-verify/verify-bulk/${verificaInadBulkJobId}/${variant}.csv`);
-      if (!res.ok) { alert('Errore durante il download'); return; }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.setAttribute('href', url);
-      link.setAttribute('download', `verifica_inad_${variant === 'found' ? 'trovati' : 'non_trovati'}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    } catch {
-      alert('Errore durante il download');
-    }
-  };
-
-  const handleVerificaInadBulkReset = () => {
-    setVerificaInadBulkFile(null);
-    setVerificaInadBulkHeaders([]);
-    setVerificaInadBulkCfColumn('');
-    setVerificaInadBulkJobId(null);
-    setVerificaInadBulkStatus(null);
-    setVerificaInadBulkSubmitError(null);
   };
 
   const fetchEnrichJobs = async (): Promise<EnrichmentJobItem[]> => {
