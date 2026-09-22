@@ -8420,11 +8420,6 @@ export function App(): React.JSX.Element {
       if (wizPdfFiles && wizPdfFiles.length > 0) {
         const lastAttachData = await uploadAttachmentFilesCore(campaignId, wizPdfFiles);
 
-        if (lastAttachData?.blocked) {
-          alert(lastAttachData.message || 'Upload allegati bloccato: verifica la mappatura CSV e i file caricati.');
-          return;
-        }
-
         const discardCount = lastAttachData?.discarded || 0;
         if (discardCount > 0) {
           alert(`Allegati caricati con successo.\nNota: ${discardCount} file non referenziati da alcun cittadino sono stati scartati.`);
