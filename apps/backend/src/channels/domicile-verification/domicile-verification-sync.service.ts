@@ -7,6 +7,7 @@ import { parseCsvContent } from '../../io-services/csv.util.js';
 import { InadService } from '../inad/inad.service.js';
 import { RegistroImpreseVerifyQueueService } from '../registro-imprese/registro-imprese-verify-queue.service.js';
 import { buildDomicileVerificationCsvs } from './domicile-verification-csv.util.js';
+import { DomicileVerificationEventsService } from './domicile-verification-events.service.js';
 
 const CF_FISICO_LENGTH = 16;
 
@@ -34,22 +35,42 @@ export class DomicileVerificationSyncService {
     private readonly jobRepo: Repository<DomicileVerificationJob>,
     private readonly inadService: InadService,
     private readonly registroImpreseQueue: RegistroImpreseVerifyQueueService,
-  ) {}
+    private readonly domicileEvents: DomicileVerificationEventsService,
+  ) {
+    // Trigger immediato quando App IO/Registro Imprese completano — senza
+    // questo l'ultima fonte a chiudersi resta invisibile fino al prossimo
+    // tick cron (fino a 5 minuti sprecati anche se tutto è già pronto).
+    this.domicileEvents.onJobProgress((jobId) => {
+      this.checkJobById(jobId).catch((err) => {
+        this.logger.warn(`Errore check on-demand DomicileVerificationJob ${jobId}: ${err instanceof Error ? err.message : err}`);
+      });
+    });
+  }
+
+  async checkJobById(jobId: string): Promise<void> {
+    const job = await this.jobRepo.findOneBy({ id: jobId });
+    if (!job || job.status !== DomicileVerificationJobStatus.PROCESSING) return;
+    await this.trySyncOne(job);
+  }
 
   @Cron('*/5 * * * *')
   async handleCron(): Promise<void> {
     const jobs = await this.jobRepo.find({ where: { status: DomicileVerificationJobStatus.PROCESSING } });
     for (const job of jobs) {
-      try {
-        await this.syncOne(job);
-      } catch (err) {
-        this.logger.warn(`Errore sync DomicileVerificationJob ${job.id}: ${err instanceof Error ? err.message : err}`);
-        await this.jobRepo.update(job.id, {
-          status: DomicileVerificationJobStatus.FAILED,
-          errorMessage: err instanceof Error ? err.message : 'Errore sconosciuto',
-          completedAt: new Date(),
-        });
-      }
+      await this.trySyncOne(job);
+    }
+  }
+
+  private async trySyncOne(job: DomicileVerificationJob): Promise<void> {
+    try {
+      await this.syncOne(job);
+    } catch (err) {
+      this.logger.warn(`Errore sync DomicileVerificationJob ${job.id}: ${err instanceof Error ? err.message : err}`);
+      await this.jobRepo.update(job.id, {
+        status: DomicileVerificationJobStatus.FAILED,
+        errorMessage: err instanceof Error ? err.message : 'Errore sconosciuto',
+        completedAt: new Date(),
+      });
     }
   }
 

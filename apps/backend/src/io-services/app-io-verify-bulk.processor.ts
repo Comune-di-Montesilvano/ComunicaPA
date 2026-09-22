@@ -8,6 +8,7 @@ import { IoServiceConfig } from '../entities/io-service-config.entity.js';
 import { IoServicesService } from './io-services.service.js';
 import { parseCsvContent } from './csv.util.js';
 import { APP_IO_VERIFY_BULK_QUEUE, AppIoVerifyBulkJobData } from './app-io-verify-bulk-job.types.js';
+import { DomicileVerificationEventsService } from '../channels/domicile-verification/domicile-verification-events.service.js';
 
 const PROGRESS_UPDATE_EVERY = 25;
 const CONCURRENCY = 5;
@@ -39,6 +40,7 @@ export class AppIoVerifyBulkProcessor extends WorkerHost {
     @InjectRepository(IoServiceConfig)
     private readonly ioServiceRepo: Repository<IoServiceConfig>,
     private readonly ioServices: IoServicesService,
+    private readonly domicileEvents: DomicileVerificationEventsService,
   ) {
     super();
   }
@@ -66,7 +68,7 @@ export class AppIoVerifyBulkProcessor extends WorkerHost {
       const runRow = async (row: Record<string, string>) => {
         const cf = (row[record.cfColumn] || '').trim().toUpperCase();
         if (cf.length === 16) {
-          let isPresent = false;
+          let isPresent: boolean;
           try {
             const result = await this.ioServices.verifyProfile(cf, record.ioServiceId);
             isPresent = isPresentResult(result);
@@ -77,7 +79,7 @@ export class AppIoVerifyBulkProcessor extends WorkerHost {
             isPresent = false;
           }
           results[cf] = isPresent;
-          isPresent ? present++ : absent++;
+          if (isPresent) present++; else absent++;
         }
         processed += 1;
         if (processed % PROGRESS_UPDATE_EVERY === 0) {
@@ -98,6 +100,10 @@ export class AppIoVerifyBulkProcessor extends WorkerHost {
         appIoResults: results,
       });
       this.logger.log(`DomicileVerificationJob ${jobId}: App IO completato — ${present} presenti, ${absent} assenti`);
+      // Trigger immediato — stesso motivo del Registro Imprese: senza
+      // questo, se INAD/Registro Imprese erano già pronti, il job padre
+      // resta PROCESSING fino al prossimo tick cron.
+      this.domicileEvents.notifyJobProgress(jobId);
     } catch (err: any) {
       this.logger.error(`DomicileVerificationJob ${jobId}: App IO fallito, job intero marcato FAILED — ${err.message}`);
       await this.jobRepo.update(jobId, {

@@ -14,6 +14,7 @@ import {
 } from './registro-imprese-job.types.js';
 import { RegistroImpreseService } from './registro-imprese.service.js';
 import { RegistroImpreseRateLimitError } from './registro-imprese-rate-limit.error.js';
+import { DomicileVerificationEventsService } from '../domicile-verification/domicile-verification-events.service.js';
 
 type AnyJobData = RegistroImpreseVerifyJobData | RegistroImpreseCampaignVerifyJobData;
 
@@ -43,6 +44,7 @@ export class RegistroImpreseVerifyProcessor extends WorkerHost {
     private readonly jobRepo: Repository<DomicileVerificationJob>,
     @InjectRepository(Recipient)
     private readonly recipientRepo: Repository<Recipient>,
+    private readonly domicileEvents: DomicileVerificationEventsService,
   ) {
     super();
   }
@@ -82,6 +84,10 @@ export class RegistroImpreseVerifyProcessor extends WorkerHost {
        WHERE id = $3`,
       [JSON.stringify({ [partitaIva]: pec }), found ? 1 : 0, jobId],
     );
+    // Trigger immediato: senza questo, se INAD/App IO erano già pronti prima
+    // di questo esito, il job padre resta PROCESSING fino al prossimo tick
+    // cron (fino a 5 minuti) nonostante tutte le fonti siano già complete.
+    this.domicileEvents.notifyJobProgress(jobId);
   }
 
   /**
@@ -168,5 +174,6 @@ export class RegistroImpreseVerifyProcessor extends WorkerHost {
        WHERE id = $2`,
       [JSON.stringify({ [partitaIva]: null }), jobId],
     );
+    this.domicileEvents.notifyJobProgress(jobId);
   }
 }

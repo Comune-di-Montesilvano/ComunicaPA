@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
 import { PdndModule } from '../../pdnd/pdnd.module.js';
+import { DomicileVerificationEventsModule } from '../domicile-verification/domicile-verification-events.module.js';
 import { DomicileVerificationJob } from '../../entities/domicile-verification-job.entity.js';
 import { Recipient } from '../../entities/recipient.entity.js';
 import { RegistroImpreseService } from './registro-imprese.service.js';
@@ -12,6 +13,7 @@ import { REGISTRO_IMPRESE_QUEUE } from './registro-imprese-job.types.js';
 @Module({
   imports: [
     PdndModule,
+    DomicileVerificationEventsModule,
     TypeOrmModule.forFeature([DomicileVerificationJob, Recipient]),
     BullModule.registerQueue({ name: REGISTRO_IMPRESE_QUEUE }),
   ],

@@ -1,16 +1,17 @@
 import { DomicileVerificationSyncService } from './domicile-verification-sync.service.js';
 import { DomicileVerificationJobStatus } from '../../entities/domicile-verification-job.entity.js';
 
-const mockJobRepo = { find: jest.fn(), update: jest.fn() };
+const mockJobRepo = { find: jest.fn(), update: jest.fn(), findOneBy: jest.fn() };
 const mockInad = { getBulkState: jest.fn(), getBulkResult: jest.fn() };
 const mockRegistroImpreseQueue = { enqueueVerify: jest.fn() };
+const mockDomicileEvents = { onJobProgress: jest.fn(), notifyJobProgress: jest.fn() };
 
 describe('DomicileVerificationSyncService.handleCron', () => {
   let service: DomicileVerificationSyncService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new DomicileVerificationSyncService(mockJobRepo as any, mockInad as any, mockRegistroImpreseQueue as any);
+    service = new DomicileVerificationSyncService(mockJobRepo as any, mockInad as any, mockRegistroImpreseQueue as any, mockDomicileEvents as any);
   });
 
   it('non finalizza se i batch INAD non sono ancora tutti pronti', async () => {
@@ -145,5 +146,55 @@ describe('DomicileVerificationSyncService.handleCron', () => {
     const call = mockJobRepo.update.mock.calls.find(([, patch]: any) => patch.status === DomicileVerificationJobStatus.FAILED);
     expect(call).toBeDefined();
     expect(call![1].errorMessage).toContain('INAD giù');
+  });
+});
+
+describe('DomicileVerificationSyncService — trigger on-demand (evento App IO/Registro Imprese)', () => {
+  it('il costruttore si sottoscrive all\'evento e richiama checkJobById col jobId ricevuto', () => {
+    const service = new DomicileVerificationSyncService(mockJobRepo as any, mockInad as any, mockRegistroImpreseQueue as any, mockDomicileEvents as any);
+    const spy = jest.spyOn(service, 'checkJobById').mockResolvedValue(undefined);
+
+    expect(mockDomicileEvents.onJobProgress).toHaveBeenCalledTimes(1);
+    const listener = mockDomicileEvents.onJobProgress.mock.calls[0][0];
+    listener('job-1');
+
+    expect(spy).toHaveBeenCalledWith('job-1');
+  });
+
+  describe('checkJobById', () => {
+    let service: DomicileVerificationSyncService;
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      service = new DomicileVerificationSyncService(mockJobRepo as any, mockInad as any, mockRegistroImpreseQueue as any, mockDomicileEvents as any);
+    });
+
+    it('ignora un job non trovato', async () => {
+      mockJobRepo.findOneBy.mockResolvedValue(null);
+      await service.checkJobById('job-x');
+      expect(mockJobRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('ignora un job non più PROCESSING (già DONE/FAILED)', async () => {
+      mockJobRepo.findOneBy.mockResolvedValue({ id: 'job-1', status: DomicileVerificationJobStatus.DONE });
+      await service.checkJobById('job-1');
+      expect(mockJobRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('sincronizza un job PROCESSING (stessa logica di handleCron)', async () => {
+      mockJobRepo.findOneBy.mockResolvedValue({
+        id: 'job-1', status: DomicileVerificationJobStatus.PROCESSING, createdAt: new Date(),
+        inadBatches: [], inadFetched: true, inadFoundMap: {},
+        cfFisicoTotal: 0, pivaTotal: 1, appIoDone: true, residualEnqueued: true,
+        registroImpreseTotal: 1, registroImpreseDone: 1,
+        registroImpreseResults: { '12345678901': 'acme@pec.it' }, appIoResults: {},
+        sourceCsv: 'cf\n12345678901\n', hasHeaders: true, cfColumn: 'cf',
+      });
+
+      await service.checkJobById('job-1');
+
+      const call = mockJobRepo.update.mock.calls.find(([, patch]: any) => patch.status === DomicileVerificationJobStatus.DONE);
+      expect(call).toBeDefined();
+    });
   });
 });
