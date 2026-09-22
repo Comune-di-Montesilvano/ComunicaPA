@@ -109,6 +109,7 @@ const STATUS_META: Record<string, { label: string; badge: string }> = {
   pending_review: { label: 'PEC da verificare', badge: 'bg-warning text-dark' },
   queued: { label: 'In coda', badge: 'bg-info' },
   processing: { label: 'In elaborazione', badge: 'bg-info' },
+  done: { label: 'Completata', badge: 'bg-success' },
   running: { label: 'In corso', badge: 'bg-warning text-dark' },
   checking_inad: { label: 'Verifica INAD', badge: 'bg-info' },
   sent: { label: 'Inviato', badge: 'bg-success' },
@@ -14455,7 +14456,7 @@ export function App(): React.JSX.Element {
                         {domicileVerifJobs.map(job => (
                           <tr key={job.id}>
                             <td className="small">{new Date(job.createdAt).toLocaleString('it-IT')}</td>
-                            <td className="small">{job.status}</td>
+                            <td><StatusBadge status={job.status} /></td>
                             <td className="small">{job.totalRows}</td>
                             <td className="small">{job.cfFisicoTotal}</td>
                             <td className="small">{job.pivaTotal}</td>
