@@ -27,8 +27,13 @@ export class RegistroImpreseVerifyQueueService {
   constructor(@InjectQueue(REGISTRO_IMPRESE_QUEUE) private readonly queue: Queue<AnyJobData>) {}
 
   async enqueueVerify(jobId: string, partitaIva: string): Promise<void> {
+    // Mai ":" come separatore: bullmq 6.x rifiuta un jobId custom con ":"
+    // a meno che split(':').length === 3 esatto (compatibilità repeatable
+    // jobs) — jobId qui è un UUID (nessun ":" dentro), quindi
+    // `${jobId}:${partitaIva}` fa sempre 2 parti e viene rigettato
+    // ("Custom Id cannot contain :"), bug reale trovato in E2E dal vivo.
     await this.queue.add(VERIFY_PIVA_JOB_NAME, { jobId, partitaIva }, {
-      jobId: `${jobId}:${partitaIva}`,
+      jobId: `${jobId}__${partitaIva}`,
       attempts: 8,
       backoff: { type: 'exponential', delay: 5000 },
     });
