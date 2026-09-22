@@ -60,6 +60,13 @@ export class AppIoVerifyBulkProcessor extends WorkerHost {
       }
 
       const parsed = parseCsvContent(record.sourceCsv, record.hasHeaders);
+      // Solo righe con CF plausibile (16 char) sono davvero verificabili —
+      // filtrate PRIMA del loop: appIoProcessedRows/appIoTotalEligible mai
+      // gonfiati con righe a CF assente/malformato mai realmente controllate
+      // (bug reale segnalato: barra progresso "2404/2404" su un CSV con
+      // solo 2096 CF fisici validi, fuorviante anche se nessuna chiamata di
+      // rete viene fatta per le righe scartate).
+      const eligibleRows = parsed.rows.filter((row) => (row[record.cfColumn] || '').trim().toUpperCase().length === 16);
       const results: Record<string, boolean> = {};
       let processed = 0;
       let present = 0;
@@ -67,34 +74,32 @@ export class AppIoVerifyBulkProcessor extends WorkerHost {
 
       const runRow = async (row: Record<string, string>) => {
         const cf = (row[record.cfColumn] || '').trim().toUpperCase();
-        if (cf.length === 16) {
-          let isPresent: boolean;
-          try {
-            const result = await this.ioServices.verifyProfile(cf, record.ioServiceId);
-            isPresent = isPresentResult(result);
-          } catch {
-            // Errore non gestito da verifyProfile (es. servizio eliminato a
-            // metà job): stesso trattamento degli errori di rete, la riga
-            // finisce tra gli assenti, il job intero non fallisce per questo.
-            isPresent = false;
-          }
-          results[cf] = isPresent;
-          if (isPresent) present++; else absent++;
+        let isPresent: boolean;
+        try {
+          const result = await this.ioServices.verifyProfile(cf, record.ioServiceId);
+          isPresent = isPresentResult(result);
+        } catch {
+          // Errore non gestito da verifyProfile (es. servizio eliminato a
+          // metà job): stesso trattamento degli errori di rete, la riga
+          // finisce tra gli assenti, il job intero non fallisce per questo.
+          isPresent = false;
         }
+        results[cf] = isPresent;
+        if (isPresent) present++; else absent++;
         processed += 1;
         if (processed % PROGRESS_UPDATE_EVERY === 0) {
           await this.jobRepo.update(jobId, { appIoProcessedRows: processed });
         }
       };
 
-      for (let i = 0; i < parsed.rows.length; i += CONCURRENCY) {
-        const batch = parsed.rows.slice(i, i + CONCURRENCY);
+      for (let i = 0; i < eligibleRows.length; i += CONCURRENCY) {
+        const batch = eligibleRows.slice(i, i + CONCURRENCY);
         await Promise.all(batch.map(runRow));
       }
 
       await this.jobRepo.update(jobId, {
         appIoDone: true,
-        appIoProcessedRows: parsed.rows.length,
+        appIoProcessedRows: eligibleRows.length,
         appIoPresentCount: present,
         appIoAbsentCount: absent,
         appIoResults: results,

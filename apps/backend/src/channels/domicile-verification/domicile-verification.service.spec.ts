@@ -22,7 +22,7 @@ describe('DomicileVerificationService.createJob', () => {
     service = new DomicileVerificationService(mockJobRepo as any, mockIoServiceRepo as any, mockInad as any, mockRegistroImpreseQueue as any, mockAppIoQueue as any);
   });
 
-  it('smista CF fisici (16 char) su App IO+INAD e Partite IVA (11 cifre) su Registro Imprese', async () => {
+  it('smista CF fisici (16 char) su App IO+INAD+Registro Imprese (in parallelo) e Partite IVA (11 cifre) su Registro Imprese', async () => {
     const csv = 'cf\nRRANGL74M28R701V\n12345678901\n98765432109\n';
     mockInad.startBulkExtraction.mockResolvedValue({ id: 'batch-1' });
 
@@ -31,11 +31,14 @@ describe('DomicileVerificationService.createJob', () => {
     expect(result.jobId).toBe('job-1');
     expect(mockAppIoQueue.add).toHaveBeenCalledWith('verify', { jobId: 'job-1' }, { jobId: 'job-1' });
     expect(mockInad.startBulkExtraction).toHaveBeenCalledWith(['RRANGL74M28R701V'], 'comunicapa-domicili-job-1');
+    // Registro Imprese: PIVA + il CF fisico, tutti accodati subito (in parallelo a INAD, non un residuo dopo)
     expect(mockRegistroImpreseQueue.enqueueVerify).toHaveBeenCalledWith('job-1', '12345678901');
     expect(mockRegistroImpreseQueue.enqueueVerify).toHaveBeenCalledWith('job-1', '98765432109');
+    expect(mockRegistroImpreseQueue.enqueueVerify).toHaveBeenCalledWith('job-1', 'RRANGL74M28R701V');
+    expect(mockRegistroImpreseQueue.enqueueVerify).toHaveBeenCalledTimes(3);
     expect(mockJobRepo.save).toHaveBeenCalledWith(expect.objectContaining({ cfFisicoTotal: 1, pivaTotal: 2, ioServiceId: 'svc-1' }));
     expect(mockJobRepo.update).toHaveBeenCalledWith('job-1', { inadBatches: [{ id: 'batch-1', size: 1, done: false }] });
-    expect(mockJobRepo.update).toHaveBeenCalledWith('job-1', { status: DomicileVerificationJobStatus.PROCESSING, registroImpreseTotal: 2 });
+    expect(mockJobRepo.update).toHaveBeenCalledWith('job-1', { status: DomicileVerificationJobStatus.PROCESSING, registroImpreseTotal: 3, residualEnqueued: true });
   });
 
   it('CSV di sole PIVA: nessun job App IO/INAD accodato', async () => {
@@ -47,7 +50,8 @@ describe('DomicileVerificationService.createJob', () => {
     expect(mockAppIoQueue.add).not.toHaveBeenCalled();
     expect(mockInad.startBulkExtraction).not.toHaveBeenCalled();
     expect(mockRegistroImpreseQueue.enqueueVerify).toHaveBeenCalledWith('job-1', '12345678901');
-    expect(mockJobRepo.update).toHaveBeenCalledWith('job-1', { status: DomicileVerificationJobStatus.PROCESSING, registroImpreseTotal: 1 });
+    expect(mockRegistroImpreseQueue.enqueueVerify).toHaveBeenCalledTimes(1);
+    expect(mockJobRepo.update).toHaveBeenCalledWith('job-1', { status: DomicileVerificationJobStatus.PROCESSING, registroImpreseTotal: 1, residualEnqueued: true });
   });
 
   it('blocca se il servizio App IO non esiste', async () => {
@@ -80,6 +84,7 @@ describe('DomicileVerificationService.createJob', () => {
   it('FAILED immediato se tutti i tentativi di enqueue falliscono', async () => {
     mockAppIoQueue.add.mockRejectedValue(new Error('coda giù'));
     mockInad.startBulkExtraction.mockRejectedValue(new Error('INAD giù'));
+    mockRegistroImpreseQueue.enqueueVerify.mockRejectedValue(new Error('registro giù'));
 
     const result = await service.createJob({ csvContent: 'cf\nRRANGL74M28R701V\n', hasHeaders: true, cfColumn: 'cf', ioServiceId: 'svc-1' });
 

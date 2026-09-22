@@ -11744,7 +11744,7 @@ export function App(): React.JSX.Element {
 
                   {(wizChannel === 'EMAIL' || wizChannel === 'POSTAL' || wizChannel === 'APP_IO') && (
                     <div className="mb-3">
-                      <label className="form-label small fw-bold">Mittente PEC di riserva (verifica INAD)</label>
+                      <label className="form-label small fw-bold">Mittente PEC di riserva (verifica domicilio digitale)</label>
                       <SearchableSelect
                         className="form-select form-select-sm"
                         value={wizPecReserveMailConfigId}
@@ -11755,7 +11755,7 @@ export function App(): React.JSX.Element {
                           .map(c => ({ value: c.id, label: `${c.name} (${c.fromAddress})`, isDefault: c.isDefault }))}
                       />
                       <div className="form-text small text-muted">
-                        Usato solo se un destinatario risulta avere un domicilio digitale INAD attivo: l'invio a quel destinatario passa automaticamente su PEC.
+                        Usato solo se un destinatario risulta avere un domicilio digitale attivo — verificato su INAD per i codici fiscali persona fisica, su Registro Imprese per le Partite IVA: l'invio a quel destinatario passa automaticamente su PEC.
                       </div>
                     </div>
                   )}
@@ -14366,9 +14366,9 @@ export function App(): React.JSX.Element {
                             <div className="progress mb-2" style={{ height: '8px' }}>
                               <div className="progress-bar" style={{ width: domicileVerifStatus.inadBatchesTotal > 0 ? `${Math.round((domicileVerifStatus.inadBatchesDone / domicileVerifStatus.inadBatchesTotal) * 100)}%` : '5%' }} />
                             </div>
-                            <p className="small text-muted mb-1">App IO: {domicileVerifStatus.appIoProcessedRows} / {domicileVerifStatus.totalRows} righe processate</p>
+                            <p className="small text-muted mb-1">App IO: {domicileVerifStatus.appIoProcessedRows} / {domicileVerifStatus.cfFisicoTotal} righe processate</p>
                             <div className="progress mb-2" style={{ height: '8px' }}>
-                              <div className="progress-bar" style={{ width: domicileVerifStatus.totalRows > 0 ? `${Math.round((domicileVerifStatus.appIoProcessedRows / domicileVerifStatus.totalRows) * 100)}%` : '5%' }} />
+                              <div className="progress-bar" style={{ width: domicileVerifStatus.cfFisicoTotal > 0 ? `${Math.round((domicileVerifStatus.appIoProcessedRows / domicileVerifStatus.cfFisicoTotal) * 100)}%` : '5%' }} />
                             </div>
                           </>
                         )}
@@ -16553,7 +16553,7 @@ export function App(): React.JSX.Element {
                                 onChange={(e) => setSettInadCheckEnabled(e.target.checked)}
                               />
                               <label className="form-check-label small fw-semibold" htmlFor="inad_check_enabled">
-                                Attiva verifica domicilio digitale INAD per le campagne (tranne SEND)
+                                Attiva verifica domicilio digitale (INAD + Registro Imprese per le Partite IVA) per le campagne (tranne SEND)
                               </label>
                             </div>
                             {([

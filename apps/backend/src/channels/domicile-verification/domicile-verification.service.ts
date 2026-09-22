@@ -176,6 +176,28 @@ export class DomicileVerificationService {
       }
     }
 
+    // Registro Imprese subito su TUTTI i CF fisici, in parallelo a
+    // INAD/App IO — non solo sui non-trovati-da-INAD. Registro Imprese è
+    // rate-limited a 5/sec (stesso limite indipendentemente da quanti CF
+    // si accodano), quindi aspettare l'esito INAD prima di iniziare non
+    // fa risparmiare chiamate reali (INAD trova in media una minoranza
+    // dei CF fisici, il residuo sarebbe quasi tutti comunque) — costa solo
+    // tempo morto in sequenza. Nessun residuo da accodare più tardi nel
+    // sync service: residualEnqueued parte già a true.
+    let cfRegistroSucceeded = 0;
+    for (const cf of cfFisici) {
+      attempts++;
+      try {
+        await this.registroImpreseQueue.enqueueVerify(saved.id, cf);
+        succeeded++;
+        cfRegistroSucceeded++;
+      } catch (err: any) {
+        lastError = err;
+        partialFailures.push(`CF ${cf} non accodato su Registro Imprese: ${err.message}`);
+        this.logger.warn(`Job ${saved.id}: enqueueVerify fallito per CF ${cf}: ${err.message}`);
+      }
+    }
+
     if (attempts > 0 && succeeded === 0) {
       await this.jobRepo.update(saved.id, {
         status: DomicileVerificationJobStatus.FAILED,
@@ -185,7 +207,8 @@ export class DomicileVerificationService {
     } else {
       await this.jobRepo.update(saved.id, {
         status: DomicileVerificationJobStatus.PROCESSING,
-        registroImpreseTotal: pivaSucceeded,
+        registroImpreseTotal: pivaSucceeded + cfRegistroSucceeded,
+        residualEnqueued: true,
         ...(partialFailures.length > 0 ? { errorMessage: partialFailures.join('; ') } : {}),
       });
     }

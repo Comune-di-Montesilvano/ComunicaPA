@@ -26,7 +26,7 @@ describe('RegistroImpreseService.dettaglioImpresa', () => {
     service = module.get(RegistroImpreseService);
   });
 
-  it('restituisce found:true e il raw XML quando risponde 200', async () => {
+  it('restituisce found:false e il raw XML quando risponde 200 ma senza schema/denominazione riconoscibile (mai "trovato" su un HTTP 200 vuoto)', async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       status: 200,
@@ -36,7 +36,10 @@ describe('RegistroImpreseService.dettaglioImpresa', () => {
 
     const result = await service.dettaglioImpresa('12345678901');
 
-    expect(result.found).toBe(true);
+    // Bug reale (E2E su dati prod): found era hardcoded true su ogni 200,
+    // anche senza denominazione riconosciuta — 449/2096 CF fisici segnati
+    // "trovati" su Registro Imprese, impossibile per persone fisiche.
+    expect(result.found).toBe(false);
     expect(result.raw).toBe('<impresa><denominazione>ACME SRL</denominazione></impresa>');
     expect(result.denominazione).toBeUndefined();
     expect(mockPdndAuth.getVoucher).toHaveBeenCalledWith('prod', 'purpose-ri-prod');
@@ -100,11 +103,70 @@ describe('RegistroImpreseService.dettaglioImpresa', () => {
     expect(result.pec).toBe('esempio@pec.it');
   });
 
-  it('lascia pec/denominazione undefined se lo schema atteso non è presente', async () => {
+  it('impresa cessata da più di un anno: found:true (impresa esiste) ma pec:undefined (non usabile)', async () => {
+    // Caso reale (impresa cancellata 2015, PEC ancora presente nel
+    // dettaglio ma quasi certamente disattivata) — dati qui fittizi.
+    const xml =
+      '<?xml version="1.0" encoding="windows-1252"?>' +
+      '<blocchi-impresa>' +
+      '<dati-identificativi denominazione="ROSSI ESEMPIO IMPRESA INDIVIDUALE" c-fiscale="00000000001" partita-iva="00000000001" cciaa="PE" n-rea="1" stato-impresa="CANCELLATA" dt-cancellazione="09/03/2015" causale-cess="CESSAZIONE DI OGNI ATTIVITA\'">' +
+      '<indirizzo-posta-certificata>ESEMPIO@PEC.IT</indirizzo-posta-certificata>' +
+      '</dati-identificativi>' +
+      '</blocchi-impresa>';
+    mockFetch.mockResolvedValue({ ok: true, status: 200, headers: { get: () => null }, arrayBuffer: () => Promise.resolve(Buffer.from(xml, 'latin1')) });
+
+    const result = await service.dettaglioImpresa('00000000001');
+
+    expect(result.found).toBe(true);
+    expect(result.denominazione).toBe('ROSSI ESEMPIO IMPRESA INDIVIDUALE');
+    expect(result.pec).toBeUndefined();
+    // Il dato grezzo resta comunque disponibile in .data per la UI "Cerca Domicilio"
+    expect(result.data?.sede.pec).toBe('esempio@pec.it');
+  });
+
+  it('impresa cessata da meno di un anno: pec resta valida', async () => {
+    const oneMonthAgo = new Date();
+    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+    const dd = String(oneMonthAgo.getDate()).padStart(2, '0');
+    const mm = String(oneMonthAgo.getMonth() + 1).padStart(2, '0');
+    const yyyy = oneMonthAgo.getFullYear();
+    const xml =
+      '<?xml version="1.0" encoding="windows-1252"?>' +
+      '<blocchi-impresa>' +
+      `<dati-identificativi denominazione="ROSSI ESEMPIO IMPRESA INDIVIDUALE" c-fiscale="00000000001" partita-iva="00000000001" cciaa="PE" n-rea="1" stato-impresa="CANCELLATA" dt-cancellazione="${dd}/${mm}/${yyyy}">` +
+      '<indirizzo-posta-certificata>ESEMPIO@PEC.IT</indirizzo-posta-certificata>' +
+      '</dati-identificativi>' +
+      '</blocchi-impresa>';
+    mockFetch.mockResolvedValue({ ok: true, status: 200, headers: { get: () => null }, arrayBuffer: () => Promise.resolve(Buffer.from(xml, 'latin1')) });
+
+    const result = await service.dettaglioImpresa('00000000001');
+
+    expect(result.found).toBe(true);
+    expect(result.pec).toBe('esempio@pec.it');
+  });
+
+  it('impresa cessata senza data di cancellazione nota: conservativo, pec non usabile', async () => {
+    const xml =
+      '<?xml version="1.0" encoding="windows-1252"?>' +
+      '<blocchi-impresa>' +
+      '<dati-identificativi denominazione="ROSSI ESEMPIO IMPRESA INDIVIDUALE" c-fiscale="00000000001" partita-iva="00000000001" cciaa="PE" n-rea="1" stato-impresa="CANCELLATA">' +
+      '<indirizzo-posta-certificata>ESEMPIO@PEC.IT</indirizzo-posta-certificata>' +
+      '</dati-identificativi>' +
+      '</blocchi-impresa>';
+    mockFetch.mockResolvedValue({ ok: true, status: 200, headers: { get: () => null }, arrayBuffer: () => Promise.resolve(Buffer.from(xml, 'latin1')) });
+
+    const result = await service.dettaglioImpresa('00000000001');
+
+    expect(result.found).toBe(true);
+    expect(result.pec).toBeUndefined();
+  });
+
+  it('found:false su risposta reale "nessuna impresa" (200 con <blocchi-impresa/> vuoto, mai 404 su questo endpoint)', async () => {
     mockFetch.mockResolvedValue({ ok: true, status: 200, headers: { get: () => null }, arrayBuffer: () => Promise.resolve(Buffer.from('<blocchi-impresa/>', 'latin1')) });
 
     const result = await service.dettaglioImpresa('00000000001');
 
+    expect(result.found).toBe(false);
     expect(result.denominazione).toBeUndefined();
     expect(result.pec).toBeUndefined();
   });

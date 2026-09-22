@@ -19,6 +19,21 @@ export interface InadExtractResult {
 
 export type InadBulkState = 'PRESA_IN_CARICO' | 'IN_ELABORAZIONE' | 'DISPONIBILE';
 
+/**
+ * Unico punto di verità per "quale indirizzo digitale usare" da un array
+ * InadDigitalAddressElement — sempre il primo elemento, mai una
+ * concatenazione di più indirizzi. Riusata sia da campaigns.service.ts
+ * (runInadExtractLoop, decide il canale reale) sia da
+ * DomicileVerificationSyncService (tracciato aggregato) — prima di questa
+ * estrazione le due implementazioni divergevano (una prendeva il primo
+ * elemento, l'altra li univa tutti con "; "), stesso dato interpretato in
+ * due modi diversi in punti diversi del codice.
+ */
+export function resolveInadDigitalAddress(digitalAddress: InadDigitalAddressElement[] | undefined): string | null {
+  if (!digitalAddress || digitalAddress.length === 0) return null;
+  return digitalAddress[0].digitalAddress || null;
+}
+
 export interface InadBulkResultItem {
   codiceFiscale: string;
   since: string;

@@ -59,9 +59,9 @@ describe('AppIoVerifyBulkProcessor', () => {
     const doneCall = jobRepoMock.update.mock.calls.find(([, patch]) => patch.appIoDone === true);
     expect(doneCall).toBeDefined();
     const [, patch] = doneCall;
-    expect(patch.appIoProcessedRows).toBe(3); // tutte le righe, incluso il CF corto
+    expect(patch.appIoProcessedRows).toBe(2); // solo le righe con CF plausibile, AAAAAA scartata a monte
     expect(patch.appIoPresentCount).toBe(1);
-    expect(patch.appIoAbsentCount).toBe(1); // AAAAAA non conta: non era un CF plausibile
+    expect(patch.appIoAbsentCount).toBe(1);
     expect(patch.appIoResults).toEqual({ RSSMRA85M01H501Z: true, VRDLGI80A01H501W: false });
     // Trigger immediato per DomicileVerificationSyncService — senza questo,
     // se INAD/Registro Imprese erano già pronti, il job padre resta
