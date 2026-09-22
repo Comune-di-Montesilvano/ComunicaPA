@@ -14366,9 +14366,9 @@ export function App(): React.JSX.Element {
                             <div className="progress mb-2" style={{ height: '8px' }}>
                               <div className="progress-bar" style={{ width: domicileVerifStatus.inadBatchesTotal > 0 ? `${Math.round((domicileVerifStatus.inadBatchesDone / domicileVerifStatus.inadBatchesTotal) * 100)}%` : '5%' }} />
                             </div>
-                            <p className="small text-muted mb-1">App IO: {domicileVerifStatus.appIoProcessedRows} / {domicileVerifStatus.totalRows} righe processate</p>
+                            <p className="small text-muted mb-1">App IO: {domicileVerifStatus.appIoProcessedRows} / {domicileVerifStatus.cfFisicoTotal} righe processate</p>
                             <div className="progress mb-2" style={{ height: '8px' }}>
-                              <div className="progress-bar" style={{ width: domicileVerifStatus.totalRows > 0 ? `${Math.round((domicileVerifStatus.appIoProcessedRows / domicileVerifStatus.totalRows) * 100)}%` : '5%' }} />
+                              <div className="progress-bar" style={{ width: domicileVerifStatus.cfFisicoTotal > 0 ? `${Math.round((domicileVerifStatus.appIoProcessedRows / domicileVerifStatus.cfFisicoTotal) * 100)}%` : '5%' }} />
                             </div>
                           </>
                         )}
