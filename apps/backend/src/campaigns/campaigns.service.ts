@@ -3413,14 +3413,33 @@ export class CampaignsService {
   /**
    * Post-processing degli allegati caricati:
    * 1. estrae i PDF dagli eventuali .zip (appiattendo i path) e rimuove gli zip;
-   * 2. elimina i PDF non referenziati da alcun destinatario (extraData/allegatoKey).
-   * Safety: se NESSUN destinatario referenzia un allegato, non scarta nulla
-   * (evita di svuotare la cartella in flussi senza mappatura allegato).
+   * 2. con mappatura allegati ESPLICITA (channelConfig.attachments non vuoto),
+   *    blocca l'intero upload se anche un solo destinatario non ha un
+   *    filename risolvibile per uno slot mappato, o se il file risolto non è
+   *    realmente presente tra quelli caricati — mai un invio parziale
+   *    "silenzioso" con alcuni destinatari orfani di allegato scoperti solo
+   *    al momento dell'invio reale (bug reale: mappatura su colonna svuotata
+   *    da un bug del parser CSV a monte, upload "riuscito" con 0 scartati
+   *    perché nessun destinatario referenziava nulla — nessun errore visibile
+   *    finché l'operatore non lanciava davvero la campagna);
+   * 3. altrimenti (nessuna mappatura esplicita, fallback legacy) elimina i
+   *    PDF non referenziati da alcun destinatario. Safety: se NESSUN
+   *    destinatario referenzia un allegato E non c'è mappatura esplicita,
+   *    non scarta nulla (evita di svuotare la cartella in flussi senza
+   *    mappatura allegato).
    */
   async finalizeAttachments(
     campaignId: string,
     files: Express.Multer.File[],
-  ): Promise<{ uploaded: number; discarded: number; attachmentsExpected: number; attachmentsPresent: number; filenames: string[] }> {
+  ): Promise<{
+    uploaded: number;
+    discarded: number;
+    attachmentsExpected: number;
+    attachmentsPresent: number;
+    filenames: string[];
+    blocked?: boolean;
+    message?: string;
+  }> {
     const dir = getUploadsDir(campaignId);
     fs.mkdirSync(dir, { recursive: true });
 
@@ -3431,12 +3450,62 @@ export class CampaignsService {
       fs.unlinkSync(file.path);
     }
 
-    // 2. Set dei filename referenziati dai destinatari
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+
+    // 2. Con mappatura esplicita, ogni destinatario deve avere un allegato
+    // risolvibile e realmente presente — altrimenti blocco totale.
+    const attachmentsConfig = resolveAttachmentsConfig(campaign.channelConfig);
+    if (attachmentsConfig.length > 0) {
+      const recipients = await this.recipientRepo.find({
+        where: { campaignId },
+        select: { extraData: true },
+      });
+      const presentNow = fs.existsSync(dir)
+        ? new Set(fs.readdirSync(dir).filter((f) => f !== 'draft_recipients.csv').map((f) => f.toLowerCase()))
+        : new Set<string>();
+
+      let missingCount = 0;
+      const samples: string[] = [];
+      for (const r of recipients) {
+        for (let index = 0; index < attachmentsConfig.length; index++) {
+          const filename = resolveCustomAttachmentFilename({
+            campaign,
+            extraData: r.extraData,
+          } as unknown as Recipient, index);
+          const problem = !filename
+            ? `nessun valore per la colonna "${attachmentsConfig[index].key}"`
+            : !presentNow.has(filename.toLowerCase())
+              ? `file "${filename}" non trovato tra quelli caricati`
+              : null;
+          if (problem) {
+            missingCount++;
+            if (samples.length < 3) samples.push(problem);
+          }
+        }
+      }
+
+      if (missingCount > 0) {
+        // Nessun file parzialmente accettato: pulisce la cartella (tranne la
+        // bozza destinatari) per permettere un retry pulito dopo il fix.
+        const leftover = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f !== 'draft_recipients.csv') : [];
+        for (const f of leftover) fs.unlinkSync(join(dir, f));
+        return {
+          uploaded: 0,
+          discarded: 0,
+          attachmentsExpected: 0,
+          attachmentsPresent: 0,
+          filenames: [],
+          blocked: true,
+          message: `Upload bloccato: ${missingCount} allegat${missingCount === 1 ? 'o' : 'i'} mancant${missingCount === 1 ? 'e' : 'i'} (es. ${samples.join('; ')}). Verifica la mappatura CSV e i file caricati.`,
+        };
+      }
+    }
+
+    // 3. Set dei filename referenziati dai destinatari (fallback legacy incluso)
     const referenced = await this.getReferencedAttachments(campaign);
 
-    // 3. Ridenominazione per case-insensitivity e scarto dei non referenziati
+    // Ridenominazione per case-insensitivity e scarto dei non referenziati
     const referencedLowerMap = new Map<string, string>();
     for (const ref of referenced) {
       referencedLowerMap.set(ref.toLowerCase(), ref);

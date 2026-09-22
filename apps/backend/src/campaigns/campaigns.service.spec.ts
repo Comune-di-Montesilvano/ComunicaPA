@@ -1150,6 +1150,39 @@ describe('CampaignsService', () => {
       expect(fs.existsSync(join(tmpDir, 'x.pdf'))).toBe(true);
     });
 
+    it('con mappatura esplicita blocca tutto se anche un solo destinatario ha la colonna mappata vuota (bug reale: parser CSV a monte svuotava la colonna, 0 scartati mascherava il problema)', async () => {
+      fs.writeFileSync(join(tmpDir, 'ok1.pdf'), '%PDF');
+      mockCampaignRepo.findOneBy.mockResolvedValue({
+        id: 'c1',
+        channelConfig: { attachments: [{ key: 'nomefile', label: 'Avviso' }] },
+      });
+      mockRecipientRepo.find.mockResolvedValue([
+        { extraData: { nomefile: 'ok1.pdf' } },
+        { extraData: { nomefile: '' } },
+      ]);
+
+      const result = await service.finalizeAttachments('c1', []);
+
+      expect(result.blocked).toBe(true);
+      expect(result.message).toContain('1 allegato mancante');
+      expect(fs.existsSync(join(tmpDir, 'ok1.pdf'))).toBe(false);
+    });
+
+    it('con mappatura esplicita blocca tutto se il file referenziato non è tra quelli caricati', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValue({
+        id: 'c1',
+        channelConfig: { attachments: [{ key: 'nomefile', label: 'Avviso' }] },
+      });
+      mockRecipientRepo.find.mockResolvedValue([
+        { extraData: { nomefile: 'assente.pdf' } },
+      ]);
+
+      const result = await service.finalizeAttachments('c1', []);
+
+      expect(result.blocked).toBe(true);
+      expect(result.message).toContain('non trovato tra quelli caricati');
+    });
+
     it('ridenomina i file per farli coincidere con il case-sensitivity referenziato nel CSV', async () => {
       fs.writeFileSync(join(tmpDir, 'ok_file.PDF'), '%PDF');
       mockCampaignRepo.findOneBy.mockResolvedValue({ id: 'c1', channelConfig: { allegatoKey: 'allegato' } });

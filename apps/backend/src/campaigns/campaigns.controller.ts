@@ -382,7 +382,7 @@ export class CampaignsController {
       campaignName: campaign ? campaign.name : null,
       operator: req.user.username,
       action: 'UPLOAD_ATTACHMENTS',
-      details: { uploaded: result.uploaded, discarded: result.discarded, fileCount: (files ?? []).length },
+      details: { uploaded: result.uploaded, discarded: result.discarded, fileCount: (files ?? []).length, blocked: result.blocked ?? false },
     });
     return {
       uploaded: result.uploaded,
@@ -390,6 +390,8 @@ export class CampaignsController {
       attachmentsExpected: result.attachmentsExpected,
       attachmentsPresent: result.attachmentsPresent,
       filenames: result.filenames,
+      blocked: result.blocked,
+      message: result.message,
       campaignId: id,
     };
   }
@@ -449,7 +451,7 @@ export class CampaignsController {
       await this.campaignsService.assertDraftForAttachments(id);
       const { path, filename } = await assembleChunkedUpload(uploadId);
 
-      let result: { uploaded: number; discarded: number; attachmentsExpected: number; attachmentsPresent: number; filenames: string[] };
+      let result: { uploaded: number; discarded: number; attachmentsExpected: number; attachmentsPresent: number; filenames: string[]; blocked?: boolean; message?: string };
       if (filename.toLowerCase().endsWith('.zip')) {
         const fakeFile = { path, originalname: filename } as Express.Multer.File;
         result = await this.campaignsService.finalizeAttachments(id, [fakeFile]);
@@ -474,7 +476,7 @@ export class CampaignsController {
         campaignName: campaign ? campaign.name : null,
         operator: req.user.username,
         action: 'UPLOAD_ATTACHMENTS',
-        details: { uploaded: result.uploaded, discarded: result.discarded, filename },
+        details: { uploaded: result.uploaded, discarded: result.discarded, filename, blocked: result.blocked ?? false },
       });
       return {
         uploaded: result.uploaded,
@@ -482,6 +484,8 @@ export class CampaignsController {
         attachmentsExpected: result.attachmentsExpected,
         attachmentsPresent: result.attachmentsPresent,
         filenames: result.filenames,
+        blocked: result.blocked,
+        message: result.message,
         campaignId: id,
       };
     } catch (err: any) {
