@@ -56,14 +56,19 @@ export function buildDomicileVerificationCsvs(input: DomicileVerificationCsvInpu
     // suggerisca "verificato e assente", solo "nessuna informazione".
     const appIoValue = appIoActive ? 'attivo' : '';
 
-    aggregatoRows.push({ ...row, [AGGREGATE_DOMICILIO_COLUMN]: domicilioDigitale, [AGGREGATE_APPIO_COLUMN]: appIoValue });
-
     if (inadAddress) inadRows.push({ ...row, [ADDRESS_COLUMN]: inadAddress });
     if (appIoActive) appIoRows.push({ ...row });
     if (registroPec) registroImpreseRows.push({ ...row, [PEC_COLUMN]: registroPec });
 
+    // Aggregato e assenti sono complementari (ogni riga in uno solo dei
+    // due, mai in entrambi): l'aggregato è il tracciato dei "trovati" —
+    // non un dump di tutte le righe con colonne vuote per gli assenti.
     const isAssente = cfFisico ? (!inadAddress && !appIoActive && !registroPec) : !registroPec;
-    if (isAssente) assentiRows.push({ ...row });
+    if (isAssente) {
+      assentiRows.push({ ...row });
+    } else {
+      aggregatoRows.push({ ...row, [AGGREGATE_DOMICILIO_COLUMN]: domicilioDigitale, [AGGREGATE_APPIO_COLUMN]: appIoValue });
+    }
   }
 
   return {
