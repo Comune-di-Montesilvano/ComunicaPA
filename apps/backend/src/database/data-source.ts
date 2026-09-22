@@ -12,8 +12,7 @@ import { Template } from '../entities/template.entity.js';
 import { DownloadEvent } from '../entities/download-event.entity.js';
 import { AuditLog } from '../entities/audit-log.entity.js';
 import { PostalProviderConfig } from '../entities/postal-provider-config.entity.js';
-import { AppIoVerificationJob } from '../entities/app-io-verification-job.entity.js';
-import { InadVerificationJob } from '../entities/inad-verification-job.entity.js';
+import { DomicileVerificationJob } from '../entities/domicile-verification-job.entity.js';
 import { EnrichmentJob } from '../entities/enrichment-job.entity.js';
 import { EnrichmentAddressOverride } from '../entities/enrichment-address-override.entity.js';
 import { OperatorDirectoryEntry } from '../entities/operator-directory-entry.entity.js';
@@ -28,6 +27,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 export default new DataSource({
   type: 'postgres',
   url: process.env['DATABASE_URL'],
-  entities: [Campaign, Recipient, NotificationAttempt, AppSetting, MailServerConfig, IoServiceConfig, Template, DownloadEvent, AuditLog, PostalProviderConfig, AppIoVerificationJob, InadVerificationJob, EnrichmentJob, EnrichmentAddressOverride, OperatorDirectoryEntry, CampaignBulkRetryJob],
+  entities: [Campaign, Recipient, NotificationAttempt, AppSetting, MailServerConfig, IoServiceConfig, Template, DownloadEvent, AuditLog, PostalProviderConfig, DomicileVerificationJob, EnrichmentJob, EnrichmentAddressOverride, OperatorDirectoryEntry, CampaignBulkRetryJob],
   migrations: [`${__dirname}/migrations/*.{ts,js}`],
 });
