@@ -39,7 +39,7 @@ export class DomicileVerificationSyncService {
   ) {
     // Trigger immediato quando App IO/Registro Imprese completano — senza
     // questo l'ultima fonte a chiudersi resta invisibile fino al prossimo
-    // tick cron (fino a 5 minuti sprecati anche se tutto è già pronto).
+    // tick cron (fino a 1 minuto sprecato anche se tutto è già pronto).
     this.domicileEvents.onJobProgress((jobId) => {
       this.checkJobById(jobId).catch((err) => {
         this.logger.warn(`Errore check on-demand DomicileVerificationJob ${jobId}: ${err instanceof Error ? err.message : err}`);
@@ -53,7 +53,7 @@ export class DomicileVerificationSyncService {
     await this.trySyncOne(job);
   }
 
-  @Cron('*/5 * * * *')
+  @Cron('* * * * *')
   async handleCron(): Promise<void> {
     const jobs = await this.jobRepo.find({ where: { status: DomicileVerificationJobStatus.PROCESSING } });
     for (const job of jobs) {
