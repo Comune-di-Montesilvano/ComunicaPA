@@ -43,10 +43,17 @@ export class NotificationsSearchController {
     return this.svc.getSendLegalFacts(recipientId);
   }
 
-  @Get(':recipientId/send-legal-facts/:legalFactId/download')
+  // legalFactId in query string, mai come path param: contiene "/" (es.
+  // "safestorage://PN_LEGAL_FACTS-...") — anche URL-encoded (%2F), il
+  // reverse proxy esterno di produzione rigetta gli slash codificati nel
+  // path con un 404 proprio, mai raggiungendo questo controller (routing
+  // Express/Nest locale gestisce %2F correttamente, verificato — non è un
+  // bug qui). Stesso pattern già in uso in citizen.controller.ts
+  // downloadSendDocument per lo stesso identico download.
+  @Get(':recipientId/send-legal-facts/download')
   async downloadSendLegalFact(
     @Param('recipientId', ParseUUIDPipe) recipientId: string,
-    @Param('legalFactId') legalFactId: string,
+    @Query('legalFactId') legalFactId: string,
     @Res() res: Response,
   ): Promise<void> {
     const result = await this.svc.downloadSendLegalFact(recipientId, legalFactId);

@@ -1862,7 +1862,7 @@ export function App(): React.JSX.Element {
   const downloadSendLegalFact = async (legalFactId: string) => {
     if (!notifDetail) return;
     try {
-      const res = await apiFetch(`/notifications-search/${notifDetail.recipient.id}/send-legal-facts/${encodeURIComponent(legalFactId)}/download`);
+      const res = await apiFetch(`/notifications-search/${notifDetail.recipient.id}/send-legal-facts/download?legalFactId=${encodeURIComponent(legalFactId)}`);
       if (!res.ok) {
         alert('Errore durante il download del documento.');
         return;
