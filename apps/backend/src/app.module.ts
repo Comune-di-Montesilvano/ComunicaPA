@@ -21,6 +21,7 @@ import { EnginesModule } from './engines/engines.module.js';
 import { IoServicesModule } from './io-services/io-services.module.js';
 import { DomicilioModule } from './channels/domicilio/domicilio.module.js';
 import { EnrichmentModule } from './enrichment/enrichment.module.js';
+import { DomicileVerificationModule } from './channels/domicile-verification/domicile-verification.module.js';
 import { NotificationsSearchModule } from './notifications-search/notifications-search.module.js';
 import { TemplatesModule } from './templates/templates.module.js';
 import { AuditLogsModule } from './audit-logs/audit-logs.module.js';
@@ -54,6 +55,7 @@ import configuration from './config/configuration.js';
     IoServicesModule,
     DomicilioModule,
     EnrichmentModule,
+    DomicileVerificationModule,
     NotificationsSearchModule,
     TemplatesModule,
     AuditLogsModule,
