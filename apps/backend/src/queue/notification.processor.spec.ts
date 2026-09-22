@@ -83,7 +83,7 @@ const mockPostalStrategy = {
   send: jest.fn(),
 };
 
-const mockStrategies = new Map([['EMAIL', mockStrategy], ['POSTAL', mockPostalStrategy]]);
+const mockStrategies = new Map([['EMAIL', mockStrategy], ['POSTAL', mockPostalStrategy], ['PEC', mockStrategy]]);
 
 const mockConfig = {
   get: (key: string) => {
@@ -549,6 +549,31 @@ describe('NotificationProcessor', () => {
       expect(mockStrategy.send).toHaveBeenCalled();
       expect(mockAttemptRepo.update).toHaveBeenCalledWith('att-1', expect.objectContaining({
         status: AttemptStatus.SUCCESS,
+      }));
+    });
+
+    it('canale primario App IO, destinatario dirottato su PEC da INAD: invia ENTRAMBI in parallelo (App IO è gratuito, il dirottamento non lo esclude come farebbe con POSTAL)', async () => {
+      mockCampaignRepo.findOne.mockResolvedValueOnce({
+        ...mockCampaign,
+        channelType: 'APP_IO',
+        channelConfig: { ioServiceId: 'svc-1', subject: 'Oggetto', body: 'Corpo' },
+      });
+      mockRecipientRepo.findOne.mockResolvedValueOnce({ ...mockRecipient, inadCheck: { found: true, diverted: true } });
+      (global as any).fetch = jest.fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ sender_allowed: true }) }) // checkAppIoProfile
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'io-1' }) }); // send message
+      mockStrategy.send.mockResolvedValueOnce({ messageId: 'msg-pec', responsePayload: {} });
+
+      await processor.process(mockJob({ ...baseData, channel: 'PEC' }));
+
+      // Il canale dirottato (PEC) NON deve mai essere saltato...
+      expect(mockStrategy.send).toHaveBeenCalled();
+      // ...e App IO va comunque tentato in parallelo, non saltato come per POSTAL.
+      expect(mockAttemptRepo.update).toHaveBeenCalledWith('att-1', expect.objectContaining({
+        status: AttemptStatus.SUCCESS,
+        responsePayload: expect.objectContaining({
+          appIo: { success: true, messageId: 'io-1' },
+        }),
       }));
     });
 

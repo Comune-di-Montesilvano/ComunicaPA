@@ -18,8 +18,12 @@ EMAIL · PEC · APP_IO · SEND · POSTAL
 
 ### 2. App IO secondaria
 Applicabile solo se canale primario ∈ {EMAIL, PEC, POSTAL} — `isMailChannel`
-in `notification.processor.ts:147`. Mai per APP_IO primario (ridondante), mai
-per SEND (escluso da `isMailChannel`, pipeline propria).
+in `notification.processor.ts:147`. Mai configurabile come co-delivery per
+APP_IO primario (ridondante — sarebbe App IO su se stesso), mai per SEND
+(escluso da `isMailChannel`, pipeline propria). Trigger indipendente e
+separato per l'invio parallelo App IO quando il canale primario È App IO
+e il destinatario è dirottato da INAD — vedi "Effetto per canale primario"
+sotto (`isPrimaryAppIoDivertedToPec`/`parallelAppIoApiKey`).
 
 Valori: `none` / `parallela` / `esclusiva`.
 
@@ -46,9 +50,19 @@ applicata lato UI wizard (gate template/body per POSTAL a step4 usa
 campagna.
 
 Effetto per canale primario:
-- **EMAIL / POSTAL / APP_IO**: se `diverted` → `NotificationAttempt.channelType`
+- **EMAIL / POSTAL**: se `diverted` → `NotificationAttempt.channelType`
   dirottato a PEC (skip invio via canale originale), `recipient.pec` valorizzato
-  con l'indirizzo INAD trovato.
+  con l'indirizzo INAD trovato. Per POSTAL lo skip è intenzionale (costo reale
+  per invio, risparmio).
+- **APP_IO**: stesso dirottamento `channelType`→PEC a livello di attempt, MA
+  App IO **resta comunque inviato in parallelo** — mai skip come per
+  POSTAL/EMAIL. Motivo: App IO non ha un costo per invio, nessuna ragione di
+  escluderlo. `notification.processor.ts` — trigger indipendente
+  `isPrimaryAppIoDivertedToPec` (campaign.channelType==='APP_IO' && channel
+  (reale, post-dirottamento)==='PEC' && recipient.inadCheck.diverted), risolve
+  l'api key da `channelConfig.ioServiceId` (config del canale primario, non la
+  co-delivery secondaria) e confluisce nello stesso blocco "co-delivery
+  parallela" via `parallelAppIoApiKey`.
 - **PEC**: se `diverted` → NON channelType override (già PEC), ma
   `recipient.pec` viene comunque sovrascritto con l'indirizzo INAD trovato
   (riga 415/531) — cambia indirizzo di invio, resta stesso canale. Non è un
@@ -98,7 +112,7 @@ canali. Regola completa, per canale, con citazioni esatte al codice:
 | EMAIL | none / parallela / esclusiva (→parallela se destinatario dirottato) | sì, → `channelType` PEC + `recipient.pec` = indirizzo INAD | opzionale | opzionale | subject+body entrambi obbligatori |
 | PEC | none / parallela / esclusiva (→parallela se destinatario dirottato) | sì, se PEC INAD diversa da quella configurata → solo `recipient.pec` sovrascritto (canale resta PEC, nessun override) | opzionale | opzionale | subject+body entrambi obbligatori |
 | POSTAL | none / parallela / esclusiva (→parallela se destinatario dirottato) | sì, → `channelType` PEC (skip stampa/spedizione cartacea) + `recipient.pec` = indirizzo INAD | opzionale | **obbligatorio** | subject **obbligatorio**, body **rifiutato** (contenuto reale è l'allegato) |
-| APP_IO | n/a (canale già App IO) | sì, → `channelType` PEC (skip invio App IO) + `recipient.pec` = indirizzo INAD | opzionale | opzionale | subject [10,120] + body [80,10000] entrambi obbligatori |
+| APP_IO | n/a (canale già App IO) | sì, → `channelType` PEC + `recipient.pec` = indirizzo INAD, ma App IO **resta inviato in parallelo** (gratuito, mai skip come POSTAL) | opzionale | opzionale | subject [10,120] + body [80,10000] entrambi obbligatori |
 | SEND | n/a (escluso da `isMailChannel`) | n/a (PN gestisce domicilio digitale via ANPR/INAD proprio) | **obbligatorio** | **obbligatorio** | subject **obbligatorio**, body **rifiutato** (n/a per SEND) |
 
 ¹ Solo modalità wizard singolo — dettaglio completo (gate reale, emptiness HTML, `secondaryAppIo`): [`2026-08-11-regole-subject-body-canale-design.md`](2026-08-11-regole-subject-body-canale-design.md).

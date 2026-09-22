@@ -274,10 +274,16 @@ Riassunto (dettaglio riga-per-riga nel file linkato):
 | EMAIL | none/parallela/esclusiva¹ | sì → `channelType`=PEC + `recipient.pec`=indirizzo INAD | opzionale | opzionale | subject+body obbligatori |
 | PEC | none/parallela/esclusiva¹ | sì, se PEC INAD diversa → solo `recipient.pec` sovrascritto (stesso canale) | opzionale | opzionale | subject+body obbligatori |
 | POSTAL | none/parallela/esclusiva¹ | sì → `channelType`=PEC + `recipient.pec`=indirizzo INAD (skip stampa) | opzionale | **obbligatorio** | subject obbligatorio, body **rifiutato** |
-| APP_IO | n/a | sì → `channelType`=PEC (skip invio App IO) | opzionale | opzionale | subject [10,120] + body [80,10000] obbligatori |
+| APP_IO | n/a | sì → `channelType`=PEC, ma App IO **resta inviato in parallelo** (mai skip)² | opzionale | opzionale | subject [10,120] + body [80,10000] obbligatori |
 | SEND | n/a (`isMailChannel` esclude SEND) | n/a (PN risolve da sé) | **obbligatorio** | **obbligatorio** | subject obbligatorio, body **rifiutato** |
 
 ¹ esclusiva → declassata a parallela per singolo destinatario se `diverted:true` (INAD vince sempre).
+
+² Diverso da POSTAL: POSTAL ha un costo reale per invio, quindi il
+dirottamento salta intenzionalmente la stampa (risparmio). App IO è
+gratuito — nessun motivo per escluderlo quando è il canale primario, va
+sempre inviato in aggiunta alla PEC dirottata (`notification.processor.ts`,
+`isPrimaryAppIoDivertedToPec`/`parallelAppIoApiKey`), non al posto di.
 
 Se aggiungi un nuovo canale, un nuovo asse (es. verifica toponomastica
 POSTAL, oggi non implementata) o cambi una di queste regole: aggiorna
