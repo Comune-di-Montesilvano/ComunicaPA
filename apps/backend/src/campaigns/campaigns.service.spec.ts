@@ -1136,14 +1136,18 @@ describe('CampaignsService', () => {
       expect(result.discarded).toBe(0);
     });
 
-    it('se nessun destinatario referenzia allegati scarta tutto', async () => {
+    it('se nessun destinatario referenzia allegati non scarta nulla (safety — bug reale corretto: il docstring lo prometteva, il codice non lo faceva)', async () => {
+      // Caso reale: upload di uno ZIP mentre i Recipient non sono ancora
+      // sincronizzati in DB (o mappatura colonna/allegatoKey che non
+      // combacia) — referenced vuoto svuotava silenziosamente la cartella,
+      // "caricati ok X, scartati Y" con Y=tutti, nessun errore visibile.
       fs.writeFileSync(join(tmpDir, 'x.pdf'), '%PDF');
       mockCampaignRepo.findOneBy.mockResolvedValue({ id: 'c1', channelConfig: {} });
       mockRecipientRepo.find.mockResolvedValue([{ extraData: { nota: 'senza pdf' } }]);
 
       const result = await service.finalizeAttachments('c1', []);
-      expect(result.discarded).toBe(1);
-      expect(fs.existsSync(join(tmpDir, 'x.pdf'))).toBe(false);
+      expect(result.discarded).toBe(0);
+      expect(fs.existsSync(join(tmpDir, 'x.pdf'))).toBe(true);
     });
 
     it('ridenomina i file per farli coincidere con il case-sensitivity referenziato nel CSV', async () => {

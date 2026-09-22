@@ -3,6 +3,20 @@ import { join, basename } from 'path';
 import * as yauzl from 'yauzl';
 
 /**
+ * Nome file "piatto" (senza sottocartelle) da un entry ZIP. Normalizza le
+ * backslash PRIMA di `basename()`: su Linux (container) `path.basename()`
+ * riconosce solo "/" come separatore — un entry ZIP con path stile Windows
+ * ("sottocartella\avviso.pdf", reale con alcuni tool di compressione
+ * Windows) resterebbe la stringa INTERA con la sottocartella dentro, mai
+ * combaciando col nome atteso nel CSV. Bug reale: uno ZIP con una
+ * sottocartella scartava il 100% dei PDF (nessun errore visibile, solo "N
+ * file scartati" con N = tutti).
+ */
+export function flattenZipEntryName(entryFileName: string): string {
+  return basename(entryFileName.replace(/\\/g, '/'));
+}
+
+/**
  * Extracts PDF files from a ZIP archive directly to the destination directory.
  * Avoids loading the whole file or extracted content into memory by using streams.
  * Uses a concurrency limit of 50 to extract files in parallel, avoiding 504 timeouts.
@@ -55,8 +69,8 @@ export function extractZipWithYauzl(filePath: string, destDir: string): Promise<
           return;
         }
 
-        // Neutralize path traversal by getting only the basename
-        const name = basename(entry.fileName);
+        // Neutralize path traversal by getting only the basename (vedi flattenZipEntryName sopra).
+        const name = flattenZipEntryName(entry.fileName);
         if (!name.toLowerCase().endsWith('.pdf')) {
           readNext();
           return;
