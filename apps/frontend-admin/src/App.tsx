@@ -12506,7 +12506,7 @@ export function App(): React.JSX.Element {
                   <div className="col-lg-6 border-end">
                     <h4 className="h6 fw-bold text-dark mb-3">{wizChannel === 'SEND' ? `Passo ${wizDisplayStep(4, wizSingleMode)}: Oggetto della Comunicazione` : `Passo ${wizDisplayStep(4, wizSingleMode)}: Scrittura Template & Jolly Fields`}</h4>
 
-                    {(wizChannel === 'EMAIL' || wizChannel === 'PEC' || (wizChannel === 'POSTAL' && (settInadCheckEnabled || !!wizPecReserveMailConfigId) && !wizSingleMode)) && templates.filter(t => t.type === 'MAIL').length > 0 && (
+                    {(wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'APP_IO' || (wizChannel === 'POSTAL' && (settInadCheckEnabled || !!wizPecReserveMailConfigId) && !wizSingleMode)) && templates.filter(t => t.type === 'MAIL').length > 0 && (
                       <div className="mb-3">
                         <label className="form-label small">Carica da template</label>
                         <select
@@ -12520,7 +12520,7 @@ export function App(): React.JSX.Element {
                             }
                           }}
                         >
-                          <option value="">-- Seleziona template Mail/PEC --</option>
+                          <option value="">-- Seleziona template --</option>
                           {templates.filter(t => t.type === 'MAIL').map(t => (
                             <option key={t.id} value={t.id}>{t.name}</option>
                           ))}
