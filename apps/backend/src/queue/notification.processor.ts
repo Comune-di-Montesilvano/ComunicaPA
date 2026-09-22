@@ -165,6 +165,32 @@ export class NotificationProcessor extends WorkerHost {
     const appIoMode: 'none' | 'parallel' | 'exclusive' =
       configuredAppIoMode === 'exclusive' && recipient.inadCheck?.diverted ? 'parallel' : configuredAppIoMode;
 
+    // Campagna con canale PRIMARIO App IO, destinatario dirottato su PEC da
+    // INAD (attempt.channelType già impostato a PEC a monte). App IO è
+    // gratuito — a differenza di POSTAL (costo reale, skip intenzionale per
+    // risparmio) il dirottamento non deve escludere il canale primario
+    // quando è gratis: invia PEC (canale dirottato) E App IO in parallelo,
+    // non l'uno al posto dell'altro. Indipendente da appIoMode/appIoConfig
+    // sopra (quelli riguardano solo la co-consegna SECONDARIA su un canale
+    // primario EMAIL/PEC/POSTAL) — qui App IO stesso è il canale primario.
+    const isPrimaryAppIoDivertedToPec = campaign.channelType === 'APP_IO' && channel === 'PEC' && !!recipient.inadCheck?.diverted;
+    const primaryAppIoResolved = isPrimaryAppIoDivertedToPec
+      ? await this.ioServices.resolveApiKey((campaign.channelConfig as Record<string, string>)['ioServiceId'])
+      : null;
+    if (isPrimaryAppIoDivertedToPec && !primaryAppIoResolved) {
+      this.logger.warn(
+        `Campagna ${campaignId} canale primario App IO, destinatario ${recipientId} dirottato su PEC da INAD, ma resolveApiKey non ha trovato un servizio App IO valido: App IO NON verrà tentato in parallelo alla PEC.`,
+      );
+    }
+    // Trigger unificato per il blocco "co-delivery parallela" sotto — le due
+    // sorgenti (secondaria configurata, o primaria dirottata) sono mutuamente
+    // esclusive in pratica: una campagna non può avere App IO sia come
+    // canale primario sia come co-consegna secondaria su se stessa.
+    const parallelAppIoApiKey: string | null =
+      (appIoMode === 'parallel' && isMailChannel && appIoResolved) ? appIoResolved.apiKey :
+      primaryAppIoResolved ? primaryAppIoResolved.apiKey :
+      null;
+
     // Gate anti-duplicato: retryRecipient() crea un NUOVO attempt con un
     // NUOVO jobId per ogni retry (es. correzione indirizzo POSTAL dopo un
     // errore GlobalCom) — job.attemptsMade riparte da 0 su quel job, quindi
@@ -253,16 +279,18 @@ export class NotificationProcessor extends WorkerHost {
       }
 
       // 2. Co-delivery PARALLELA (comportamento attuale, solo primo tentativo
-      // o retry con contenuto cambiato — vedi skipAppIoUnchanged sopra)
-      if (appIoMode === 'parallel' && isMailChannel && job.attemptsMade === 0 && !skipAppIoUnchanged) {
+      // o retry con contenuto cambiato — vedi skipAppIoUnchanged sopra).
+      // parallelAppIoApiKey copre sia la co-consegna secondaria configurata
+      // sia il caso "canale primario App IO dirottato su PEC da INAD" sopra.
+      if (parallelAppIoApiKey && job.attemptsMade === 0 && !skipAppIoUnchanged) {
         const hasAppIo = await this.appIoDelivery.checkProfile(
-          APP_IO_BASE_URL, appIoResolved!.apiKey, recipient.codiceFiscale, jobLog,
+          APP_IO_BASE_URL, parallelAppIoApiKey, recipient.codiceFiscale, jobLog,
         );
         if (hasAppIo) {
           this.logger.log(`Invio App IO parallelo per CF: ${recipient.codiceFiscale}`);
           jobLog(`Invio App IO parallelo per CF: ${recipient.codiceFiscale}`);
           const appIoResult = await this.appIoDelivery.sendMessage(campaign, recipient, {
-          apiKey: appIoResolved!.apiKey,
+          apiKey: parallelAppIoApiKey,
           baseUrl: APP_IO_BASE_URL,
           subjectOverride: (appIoConfig as { subjectOverride?: string } | undefined)?.subjectOverride,
           bodyOverride: (appIoConfig as { bodyOverride?: string } | undefined)?.bodyOverride,
@@ -273,7 +301,7 @@ export class NotificationProcessor extends WorkerHost {
             await this.recipientRepo.update(recipientId, { lastContentResendSignature: appIoContentSignature });
           }
         }
-      } else if (appIoMode === 'parallel' && isMailChannel && job.attemptsMade === 0 && skipAppIoUnchanged) {
+      } else if (parallelAppIoApiKey && job.attemptsMade === 0 && skipAppIoUnchanged) {
         jobLog(`App IO parallela saltata per CF ${recipient.codiceFiscale}: contenuto invariato dall'ultimo invio riuscito (retry attempt ${(recipient as any).attemptNumber}).`);
       }
     }
