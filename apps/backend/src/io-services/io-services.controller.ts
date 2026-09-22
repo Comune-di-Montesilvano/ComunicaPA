@@ -1,20 +1,11 @@
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Put, Res, UseInterceptors } from '@nestjs/common';
-import type { Response } from 'express';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import * as fs from 'fs';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Put } from '@nestjs/common';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { IoServicesService } from './io-services.service.js';
-import { AppIoVerifyBulkService } from './app-io-verify-bulk.service.js';
-import { CreateIoServiceDto, UpdateIoServiceDto, TestIoServiceDto, VerifyBulkCompleteDto } from './dto/io-service.dto.js';
-import { initChunkedUpload, safeChunkUploadDir, isValidChunkIndex, assembleChunkedUpload, cleanupChunkedUpload, MAX_CHUNK_SIZE_BYTES } from '../campaigns/chunked-upload.util.js';
+import { CreateIoServiceDto, UpdateIoServiceDto, TestIoServiceDto } from './dto/io-service.dto.js';
 
 @Controller('admin/io-services')
 export class IoServicesController {
-  constructor(
-    private readonly svc: IoServicesService,
-    private readonly bulkSvc: AppIoVerifyBulkService,
-  ) {}
+  constructor(private readonly svc: IoServicesService) {}
 
   @Get()
   @Roles('user', 'admin')
@@ -59,96 +50,5 @@ export class IoServicesController {
   @HttpCode(HttpStatus.OK)
   verifyProfile(@Body() body: { codiceFiscale: string }) {
     return this.svc.verifyProfile(body.codiceFiscale);
-  }
-
-  @Post('verify-bulk/upload/init')
-  @Roles('user', 'admin')
-  initVerifyBulkUpload(@Body() body: { filename?: string; totalChunks?: number }): { uploadId: string } {
-    const filename = body.filename?.trim();
-    const totalChunks = Number(body.totalChunks);
-    if (!filename || !Number.isInteger(totalChunks) || totalChunks < 1) {
-      throw new BadRequestException('filename e totalChunks (intero >= 1) richiesti');
-    }
-    return { uploadId: initChunkedUpload(filename, totalChunks) };
-  }
-
-  @Post('verify-bulk/upload/chunk/:uploadId/:index')
-  @Roles('user', 'admin')
-  @UseInterceptors(
-    FileInterceptor('chunk', {
-      storage: diskStorage({
-        destination: (req, _file, cb) => {
-          // safeChunkUploadDir() mai un throw: dentro un callback diskStorage
-          // sincrono un throw grezzo sfugge come uncaughtException e abbatte
-          // l'intero processo Node (nessun handler globale in questo repo —
-          // bug reale, review fix path-traversal external-api chunk()/complete()).
-          const dir = safeChunkUploadDir(req.params['uploadId']);
-          if (!dir || !fs.existsSync(dir)) {
-            cb(new BadRequestException('Sessione di upload non trovata o scaduta'), '');
-            return;
-          }
-          cb(null, dir);
-        },
-        filename: (req, _file, cb) => {
-          const index = req.params['index'];
-          if (!isValidChunkIndex(index)) {
-            cb(new BadRequestException('index non valido'), '');
-            return;
-          }
-          cb(null, `${index}.part`);
-        },
-      }),
-      limits: { fileSize: MAX_CHUNK_SIZE_BYTES },
-    }),
-  )
-  uploadVerifyBulkChunk(): { ok: true } {
-    return { ok: true };
-  }
-
-  @Post('verify-bulk/upload/complete/:uploadId')
-  @Roles('user', 'admin')
-  @HttpCode(HttpStatus.OK)
-  async completeVerifyBulkUpload(
-    @Param('uploadId') uploadId: string,
-    @Body() body: VerifyBulkCompleteDto,
-  ) {
-    try {
-      const { path } = await assembleChunkedUpload(uploadId);
-      const csvContent = await fs.promises.readFile(path, 'utf-8');
-      return await this.bulkSvc.createJob({
-        csvContent,
-        hasHeaders: body.hasHeaders,
-        cfColumn: body.cfColumn,
-        ioServiceId: body.ioServiceId,
-      });
-    } catch (err: any) {
-      return { blocked: true, message: err?.message ?? 'Errore durante il riassemblaggio del CSV' };
-    } finally {
-      cleanupChunkedUpload(uploadId);
-    }
-  }
-
-  @Get('verify-bulk/:id')
-  @Roles('user', 'admin')
-  getVerifyBulkStatus(@Param('id', ParseUUIDPipe) id: string) {
-    return this.bulkSvc.getStatus(id);
-  }
-
-  @Get('verify-bulk/:id/present.csv')
-  @Roles('user', 'admin')
-  async downloadVerifyBulkPresent(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response): Promise<void> {
-    const content = await this.bulkSvc.getResultCsv(id, 'present');
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="verifica_appio_presenti_${id.slice(0, 8)}.csv"`);
-    res.send(content);
-  }
-
-  @Get('verify-bulk/:id/absent.csv')
-  @Roles('user', 'admin')
-  async downloadVerifyBulkAbsent(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response): Promise<void> {
-    const content = await this.bulkSvc.getResultCsv(id, 'absent');
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="verifica_appio_assenti_${id.slice(0, 8)}.csv"`);
-    res.send(content);
   }
 }

@@ -1,9 +1,10 @@
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { AppIoVerifyBulkProcessor, isPresentResult } from './app-io-verify-bulk.processor.js';
-import { AppIoVerificationJob, AppIoVerificationJobStatus } from '../entities/app-io-verification-job.entity.js';
+import { DomicileVerificationJob, DomicileVerificationJobStatus } from '../entities/domicile-verification-job.entity.js';
 import { IoServiceConfig } from '../entities/io-service-config.entity.js';
 import { IoServicesService } from './io-services.service.js';
+import { DomicileVerificationEventsService } from '../channels/domicile-verification/domicile-verification-events.service.js';
 
 describe('isPresentResult', () => {
   it('presente solo se success && active && messaggio non contiene "disabilitati"', () => {
@@ -19,21 +20,23 @@ describe('AppIoVerifyBulkProcessor', () => {
   const jobRepoMock = { findOneBy: jest.fn(), update: jest.fn() };
   const ioServiceRepoMock = { findOneBy: jest.fn() };
   const ioServicesMock = { verifyProfile: jest.fn() };
+  const domicileEventsMock = { notifyJobProgress: jest.fn() };
 
   beforeEach(async () => {
     jest.clearAllMocks();
     const moduleRef = await Test.createTestingModule({
       providers: [
         AppIoVerifyBulkProcessor,
-        { provide: getRepositoryToken(AppIoVerificationJob), useValue: jobRepoMock },
+        { provide: getRepositoryToken(DomicileVerificationJob), useValue: jobRepoMock },
         { provide: getRepositoryToken(IoServiceConfig), useValue: ioServiceRepoMock },
         { provide: IoServicesService, useValue: ioServicesMock },
+        { provide: DomicileVerificationEventsService, useValue: domicileEventsMock },
       ],
     }).compile();
     processor = moduleRef.get(AppIoVerifyBulkProcessor);
   });
 
-  it('classifica presenti/assenti, scrive i CSV risultato e marca DONE', async () => {
+  it('classifica presenti/assenti sui soli CF plausibili (16 char), scrive appIoResults e marca appIoDone', async () => {
     jobRepoMock.findOneBy.mockResolvedValue({
       id: 'job-1',
       sourceCsv: 'cf,nome\nRSSMRA85M01H501Z,Mario Rossi\nAAAAAA,CF Corto\nVRDLGI80A01H501W,Luigi Verdi',
@@ -53,17 +56,20 @@ describe('AppIoVerifyBulkProcessor', () => {
     expect(ioServicesMock.verifyProfile).toHaveBeenCalledWith('RSSMRA85M01H501Z', 'svc-1');
     expect(ioServicesMock.verifyProfile).toHaveBeenCalledWith('VRDLGI80A01H501W', 'svc-1');
 
-    const doneCall = jobRepoMock.update.mock.calls.find(([, patch]) => patch.status === AppIoVerificationJobStatus.DONE);
+    const doneCall = jobRepoMock.update.mock.calls.find(([, patch]) => patch.appIoDone === true);
     expect(doneCall).toBeDefined();
     const [, patch] = doneCall;
-    expect(patch.presentCount).toBe(1);
-    expect(patch.absentCount).toBe(2);
-    expect(patch.resultPresentCsv).toContain('RSSMRA85M01H501Z');
-    expect(patch.resultAbsentCsv).toContain('AAAAAA');
-    expect(patch.resultAbsentCsv).toContain('VRDLGI80A01H501W');
+    expect(patch.appIoProcessedRows).toBe(3); // tutte le righe, incluso il CF corto
+    expect(patch.appIoPresentCount).toBe(1);
+    expect(patch.appIoAbsentCount).toBe(1); // AAAAAA non conta: non era un CF plausibile
+    expect(patch.appIoResults).toEqual({ RSSMRA85M01H501Z: true, VRDLGI80A01H501W: false });
+    // Trigger immediato per DomicileVerificationSyncService — senza questo,
+    // se INAD/Registro Imprese erano già pronti, il job padre resta
+    // PROCESSING fino al prossimo tick cron.
+    expect(domicileEventsMock.notifyJobProgress).toHaveBeenCalledWith('job-1');
   });
 
-  it('marca FAILED se il servizio App IO scelto non esiste più o non ha una chiave configurata (check pre-loop, nessuna riga processata)', async () => {
+  it('marca l\'intero DomicileVerificationJob FAILED se il servizio App IO scelto non esiste più o non ha una chiave configurata', async () => {
     jobRepoMock.findOneBy.mockResolvedValue({
       id: 'job-2',
       sourceCsv: 'cf\nRSSMRA85M01H501Z',
@@ -76,8 +82,11 @@ describe('AppIoVerifyBulkProcessor', () => {
     await processor.process({ data: { jobId: 'job-2' } } as any);
 
     expect(ioServicesMock.verifyProfile).not.toHaveBeenCalled();
-    const failedCall = jobRepoMock.update.mock.calls.find(([, patch]) => patch.status === AppIoVerificationJobStatus.FAILED);
+    const failedCall = jobRepoMock.update.mock.calls.find(([, patch]) => patch.status === DomicileVerificationJobStatus.FAILED);
     expect(failedCall).toBeDefined();
     expect(failedCall[1].errorMessage).toContain('svc-deleted');
+    // Nessun trigger su un fallimento hard: il job intero va FAILED, non
+    // ha senso far ricontrollare al sync service un job già chiuso.
+    expect(domicileEventsMock.notifyJobProgress).not.toHaveBeenCalled();
   });
 });

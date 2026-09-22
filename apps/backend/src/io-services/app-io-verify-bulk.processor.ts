@@ -3,11 +3,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import type { Job } from 'bullmq';
-import { AppIoVerificationJob, AppIoVerificationJobStatus } from '../entities/app-io-verification-job.entity.js';
+import { DomicileVerificationJob, DomicileVerificationJobStatus } from '../entities/domicile-verification-job.entity.js';
 import { IoServiceConfig } from '../entities/io-service-config.entity.js';
 import { IoServicesService } from './io-services.service.js';
-import { parseCsvContent, buildCsvContent } from './csv.util.js';
+import { parseCsvContent } from './csv.util.js';
 import { APP_IO_VERIFY_BULK_QUEUE, AppIoVerifyBulkJobData } from './app-io-verify-bulk-job.types.js';
+import { DomicileVerificationEventsService } from '../channels/domicile-verification/domicile-verification-events.service.js';
 
 const PROGRESS_UPDATE_EVERY = 25;
 const CONCURRENCY = 5;
@@ -19,17 +20,27 @@ export function isPresentResult(result: { success: boolean; active: boolean; mes
   return result.success && result.active && !result.message.includes('disabilitati');
 }
 
+/**
+ * Job unico sull'intero CSV del DomicileVerificationJob (App IO non ha un
+ * equivalente del batch INAD — un profilo alla volta via verifyProfile) —
+ * scrive SOLO i campi app_io_* del job padre, mai lo status complessivo
+ * (deciso da DomicileVerificationSyncService in base a tutte e 3 le fonti).
+ * Un errore hard (servizio App IO selezionato non trovato/senza chiave) fa
+ * fallire l'intero job padre: senza quel servizio non è possibile
+ * verificare nessun CF, non ha senso proseguire con le altre fonti.
+ */
 @Injectable()
 @Processor(APP_IO_VERIFY_BULK_QUEUE)
 export class AppIoVerifyBulkProcessor extends WorkerHost {
   private readonly logger = new Logger(AppIoVerifyBulkProcessor.name);
 
   constructor(
-    @InjectRepository(AppIoVerificationJob)
-    private readonly jobRepo: Repository<AppIoVerificationJob>,
+    @InjectRepository(DomicileVerificationJob)
+    private readonly jobRepo: Repository<DomicileVerificationJob>,
     @InjectRepository(IoServiceConfig)
     private readonly ioServiceRepo: Repository<IoServiceConfig>,
     private readonly ioServices: IoServicesService,
+    private readonly domicileEvents: DomicileVerificationEventsService,
   ) {
     super();
   }
@@ -38,11 +49,9 @@ export class AppIoVerifyBulkProcessor extends WorkerHost {
     const { jobId } = job.data;
     const record = await this.jobRepo.findOneBy({ id: jobId });
     if (!record) {
-      this.logger.warn(`AppIoVerificationJob ${jobId} non trovato — job BullMQ scartato`);
+      this.logger.warn(`DomicileVerificationJob ${jobId} non trovato — job App IO scartato`);
       return;
     }
-
-    await this.jobRepo.update(jobId, { status: AppIoVerificationJobStatus.PROCESSING });
 
     try {
       const service = await this.ioServiceRepo.findOneBy({ id: record.ioServiceId });
@@ -51,28 +60,30 @@ export class AppIoVerifyBulkProcessor extends WorkerHost {
       }
 
       const parsed = parseCsvContent(record.sourceCsv, record.hasHeaders);
-      const presentRows: Record<string, string>[] = [];
-      const absentRows: Record<string, string>[] = [];
+      const results: Record<string, boolean> = {};
       let processed = 0;
+      let present = 0;
+      let absent = 0;
 
       const runRow = async (row: Record<string, string>) => {
         const cf = (row[record.cfColumn] || '').trim().toUpperCase();
-        let present = false;
         if (cf.length === 16) {
+          let isPresent: boolean;
           try {
             const result = await this.ioServices.verifyProfile(cf, record.ioServiceId);
-            present = isPresentResult(result);
+            isPresent = isPresentResult(result);
           } catch {
             // Errore non gestito da verifyProfile (es. servizio eliminato a
             // metà job): stesso trattamento degli errori di rete, la riga
             // finisce tra gli assenti, il job intero non fallisce per questo.
-            present = false;
+            isPresent = false;
           }
+          results[cf] = isPresent;
+          if (isPresent) present++; else absent++;
         }
-        (present ? presentRows : absentRows).push(row);
         processed += 1;
         if (processed % PROGRESS_UPDATE_EVERY === 0) {
-          await this.jobRepo.update(jobId, { processedRows: processed });
+          await this.jobRepo.update(jobId, { appIoProcessedRows: processed });
         }
       };
 
@@ -82,19 +93,21 @@ export class AppIoVerifyBulkProcessor extends WorkerHost {
       }
 
       await this.jobRepo.update(jobId, {
-        status: AppIoVerificationJobStatus.DONE,
-        processedRows: parsed.rows.length,
-        presentCount: presentRows.length,
-        absentCount: absentRows.length,
-        resultPresentCsv: buildCsvContent(parsed.headers, presentRows),
-        resultAbsentCsv: buildCsvContent(parsed.headers, absentRows),
-        completedAt: new Date(),
+        appIoDone: true,
+        appIoProcessedRows: parsed.rows.length,
+        appIoPresentCount: present,
+        appIoAbsentCount: absent,
+        appIoResults: results,
       });
-      this.logger.log(`AppIoVerificationJob ${jobId} completato: ${presentRows.length} presenti, ${absentRows.length} assenti`);
+      this.logger.log(`DomicileVerificationJob ${jobId}: App IO completato — ${present} presenti, ${absent} assenti`);
+      // Trigger immediato — stesso motivo del Registro Imprese: senza
+      // questo, se INAD/Registro Imprese erano già pronti, il job padre
+      // resta PROCESSING fino al prossimo tick cron.
+      this.domicileEvents.notifyJobProgress(jobId);
     } catch (err: any) {
-      this.logger.error(`AppIoVerificationJob ${jobId} fallito: ${err.message}`);
+      this.logger.error(`DomicileVerificationJob ${jobId}: App IO fallito, job intero marcato FAILED — ${err.message}`);
       await this.jobRepo.update(jobId, {
-        status: AppIoVerificationJobStatus.FAILED,
+        status: DomicileVerificationJobStatus.FAILED,
         errorMessage: err.message,
         completedAt: new Date(),
       });

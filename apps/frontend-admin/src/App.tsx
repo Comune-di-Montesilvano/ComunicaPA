@@ -109,6 +109,7 @@ const STATUS_META: Record<string, { label: string; badge: string }> = {
   pending_review: { label: 'PEC da verificare', badge: 'bg-warning text-dark' },
   queued: { label: 'In coda', badge: 'bg-info' },
   processing: { label: 'In elaborazione', badge: 'bg-info' },
+  done: { label: 'Completata', badge: 'bg-success' },
   running: { label: 'In corso', badge: 'bg-warning text-dark' },
   checking_inad: { label: 'Verifica INAD', badge: 'bg-info' },
   sent: { label: 'Inviato', badge: 'bg-success' },
@@ -1513,7 +1514,7 @@ export function App(): React.JSX.Element {
   const [displayName, setDisplayName] = useState<string | null>(localStorage.getItem('comunicapa_display_name'));
   const [role, setRole] = useState<string | null>(localStorage.getItem('comunicapa_role'));
   const [canUsePostal, setCanUsePostal] = useState<boolean>(localStorage.getItem('comunicapa_can_use_postal') === 'true');
-  const [view, setView] = useState<'dashboard' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'notifiche-ricerca' | 'cerca-domicilio' | 'verifica-appio' | 'verifica-inad' | 'template-dashboard' | 'impostazioni' | 'campaign-detail' | 'audit-logs' | 'arricchimento' | 'guida'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'notifiche-ricerca' | 'cerca-domicilio' | 'verifica-domicili' | 'template-dashboard' | 'impostazioni' | 'campaign-detail' | 'audit-logs' | 'arricchimento' | 'guida'>('dashboard');
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [templates, setTemplates] = useState<TemplateItem[]>([]);
   const [editingTemplate, setEditingTemplate] = useState<Partial<TemplateItem> & { type: 'MAIL' | 'APP_IO' } | null>(null);
@@ -1589,24 +1590,44 @@ export function App(): React.JSX.Element {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [notifDetail, notifDetailLoading]);
 
-  const [verificaBulkFile, setVerificaBulkFile] = useState<File | null>(null);
-  const [verificaBulkHasHeaders, setVerificaBulkHasHeaders] = useState(true);
-  const [verificaBulkHeaders, setVerificaBulkHeaders] = useState<string[]>([]);
-  const [verificaBulkCfColumn, setVerificaBulkCfColumn] = useState('');
-  const [verificaBulkServiceId, setVerificaBulkServiceId] = useState('');
-  const [verificaBulkJobId, setVerificaBulkJobId] = useState<string | null>(null);
-  const [verificaBulkStatus, setVerificaBulkStatus] = useState<{
+  interface DomicileVerificationStatus {
     status: 'queued' | 'processing' | 'done' | 'failed';
     totalRows: number;
-    processedRows: number;
-    presentCount: number;
-    absentCount: number;
+    cfFisicoTotal: number;
+    pivaTotal: number;
+    inadBatchesTotal: number;
+    inadBatchesDone: number;
+    inadFoundCount: number;
+    appIoDone: boolean;
+    appIoProcessedRows: number;
+    appIoPresentCount: number;
+    registroImpreseTotal: number;
+    registroImpreseDone: number;
+    registroImpreseFoundCount: number;
     errorMessage: string | null;
-  } | null>(null);
-  const [verificaBulkSubmitting, setVerificaBulkSubmitting] = useState(false);
-  const [verificaBulkSubmitError, setVerificaBulkSubmitError] = useState<string | null>(null);
+  }
+  interface DomicileVerificationJobSummary {
+    id: string;
+    status: 'queued' | 'processing' | 'done' | 'failed';
+    createdAt: string;
+    totalRows: number;
+    cfFisicoTotal: number;
+    pivaTotal: number;
+  }
 
-  // ── Verifica INAD (duplicato di Verifica App IO, ma su domicilio digitale INAD) ──
+  const [domicileVerifFile, setDomicileVerifFile] = useState<File | null>(null);
+  const [domicileVerifHasHeaders, setDomicileVerifHasHeaders] = useState(true);
+  const [domicileVerifHeaders, setDomicileVerifHeaders] = useState<string[]>([]);
+  const [domicileVerifCfColumn, setDomicileVerifCfColumn] = useState('');
+  const [domicileVerifServiceId, setDomicileVerifServiceId] = useState('');
+  const [domicileVerifJobId, setDomicileVerifJobId] = useState<string | null>(null);
+  const [domicileVerifStatus, setDomicileVerifStatus] = useState<DomicileVerificationStatus | null>(null);
+  const [domicileVerifSubmitting, setDomicileVerifSubmitting] = useState(false);
+  const [domicileVerifSubmitError, setDomicileVerifSubmitError] = useState<string | null>(null);
+  const [domicileVerifJobs, setDomicileVerifJobs] = useState<DomicileVerificationJobSummary[]>([]);
+  const [domicileVerifJobsLoading, setDomicileVerifJobsLoading] = useState(false);
+
+  // ── Verifica Anagrafica (Cerca Domicilio) — indipendente dal pannello massivo sopra ──
   const [domicilioCf, setDomicilioCf] = useState('');
   const [domicilioValidationError, setDomicilioValidationError] = useState<string | null>(null);
   const [domicilioLoading, setDomicilioLoading] = useState(false);
@@ -1692,22 +1713,6 @@ export function App(): React.JSX.Element {
     }>;
     message?: string;
   } | null>(null);
-  const [verificaInadBulkFile, setVerificaInadBulkFile] = useState<File | null>(null);
-  const [verificaInadBulkHasHeaders, setVerificaInadBulkHasHeaders] = useState(true);
-  const [verificaInadBulkHeaders, setVerificaInadBulkHeaders] = useState<string[]>([]);
-  const [verificaInadBulkCfColumn, setVerificaInadBulkCfColumn] = useState('');
-  const [verificaInadBulkJobId, setVerificaInadBulkJobId] = useState<string | null>(null);
-  const [verificaInadBulkStatus, setVerificaInadBulkStatus] = useState<{
-    status: 'queued' | 'processing' | 'done' | 'failed';
-    totalRows: number;
-    batchesTotal: number;
-    batchesDone: number;
-    foundCount: number;
-    notFoundCount: number;
-    errorMessage: string | null;
-  } | null>(null);
-  const [verificaInadBulkSubmitting, setVerificaInadBulkSubmitting] = useState(false);
-  const [verificaInadBulkSubmitError, setVerificaInadBulkSubmitError] = useState<string | null>(null);
 
   // ── Arricchimento tracciati ──
   interface EnrichmentJobItem {
@@ -3262,17 +3267,17 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     const def = ioServices.find(s => s.isDefault);
-    if (def) setVerificaBulkServiceId(def.id);
-    else if (ioServices.length > 0) setVerificaBulkServiceId(ioServices[0].id);
+    if (def) setDomicileVerifServiceId(def.id);
+    else if (ioServices.length > 0) setDomicileVerifServiceId(ioServices[0].id);
   }, [ioServices]);
 
-  const parseVerificaBulkHeaders = (file: File, hasHeaders: boolean) => {
+  const parseDomicileVerifHeaders = (file: File, hasHeaders: boolean) => {
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
       if (!text) return;
       const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
-      if (lines.length === 0) { setVerificaBulkHeaders([]); return; }
+      if (lines.length === 0) { setDomicileVerifHeaders([]); return; }
       const parseCsvLineLocal = (line: string) => {
         const result: string[] = [];
         let current = '';
@@ -3288,79 +3293,112 @@ export function App(): React.JSX.Element {
       };
       const firstLineCols = parseCsvLineLocal(lines[0]);
       const headers = hasHeaders ? firstLineCols : firstLineCols.map((_, idx) => `Colonna ${idx + 1}`);
-      setVerificaBulkHeaders(headers);
+      setDomicileVerifHeaders(headers);
       const guessed = headers.find(h => ['codicefiscale', 'cf'].includes(h.toLowerCase().replace(/[\s_-]/g, '')));
-      setVerificaBulkCfColumn(guessed || '');
+      setDomicileVerifCfColumn(guessed || '');
     };
     reader.readAsText(file);
   };
 
-  const handleVerificaBulkFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleDomicileVerifFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setVerificaBulkFile(file);
-    setVerificaBulkJobId(null);
-    setVerificaBulkStatus(null);
-    setVerificaBulkSubmitError(null);
-    parseVerificaBulkHeaders(file, verificaBulkHasHeaders);
+    setDomicileVerifFile(file);
+    setDomicileVerifJobId(null);
+    setDomicileVerifStatus(null);
+    setDomicileVerifSubmitError(null);
+    parseDomicileVerifHeaders(file, domicileVerifHasHeaders);
   };
 
-  const handleVerificaBulkSubmit = async () => {
-    if (!verificaBulkFile || !verificaBulkCfColumn || !verificaBulkServiceId) return;
-    setVerificaBulkSubmitting(true);
-    setVerificaBulkSubmitError(null);
+  const fetchDomicileVerifJobs = async () => {
+    setDomicileVerifJobsLoading(true);
+    try {
+      const res = await apiFetch('/domicile-verification/jobs');
+      const data = await res.json();
+      setDomicileVerifJobs(data.jobs || []);
+    } catch {
+      // storico non critico: silenzioso, l'operatore può comunque lanciare una nuova verifica
+    } finally {
+      setDomicileVerifJobsLoading(false);
+    }
+  };
+
+  const handleDomicileVerifSubmit = async () => {
+    if (!domicileVerifFile || !domicileVerifCfColumn || !domicileVerifServiceId) return;
+    setDomicileVerifSubmitting(true);
+    setDomicileVerifSubmitError(null);
     try {
       const data = await uploadFileInChunks(
-        `${ADMIN_API_BASE}/io-services/verify-bulk/upload`,
+        `${ADMIN_API_BASE}/domicile-verification/verify/upload`,
         token!,
-        verificaBulkFile,
-        verificaBulkFile.name,
+        domicileVerifFile,
+        domicileVerifFile.name,
         () => {},
         undefined,
         {
-          hasHeaders: verificaBulkHasHeaders,
-          cfColumn: verificaBulkCfColumn,
-          ioServiceId: verificaBulkServiceId,
+          hasHeaders: domicileVerifHasHeaders,
+          cfColumn: domicileVerifCfColumn,
+          ioServiceId: domicileVerifServiceId,
         },
       );
       if (data.blocked) {
-        setVerificaBulkSubmitError(data.message || 'Richiesta bloccata');
+        setDomicileVerifSubmitError(data.message || 'Richiesta bloccata');
         return;
       }
-      setVerificaBulkJobId(data.jobId);
-      setVerificaBulkStatus({ status: 'queued', totalRows: 0, processedRows: 0, presentCount: 0, absentCount: 0, errorMessage: null });
+      setDomicileVerifJobId(data.jobId);
+      setDomicileVerifStatus({
+        status: 'queued', totalRows: 0, cfFisicoTotal: 0, pivaTotal: 0,
+        inadBatchesTotal: 0, inadBatchesDone: 0, inadFoundCount: 0,
+        appIoDone: false, appIoProcessedRows: 0, appIoPresentCount: 0,
+        registroImpreseTotal: 0, registroImpreseDone: 0, registroImpreseFoundCount: 0,
+        errorMessage: null,
+      });
+      fetchDomicileVerifJobs();
     } catch (err: any) {
-      setVerificaBulkSubmitError(err.message || 'Errore di connessione');
+      setDomicileVerifSubmitError(err.message || 'Errore di connessione');
     } finally {
-      setVerificaBulkSubmitting(false);
+      setDomicileVerifSubmitting(false);
     }
   };
 
   useEffect(() => {
-    if (!verificaBulkJobId) return;
-    if (verificaBulkStatus?.status === 'done' || verificaBulkStatus?.status === 'failed') return;
+    if (!domicileVerifJobId) return;
+    if (domicileVerifStatus?.status === 'done' || domicileVerifStatus?.status === 'failed') return;
     const timer = setInterval(async () => {
       try {
-        const res = await apiFetch(`/io-services/verify-bulk/${verificaBulkJobId}`);
+        const res = await apiFetch(`/domicile-verification/jobs/${domicileVerifJobId}`);
         const data = await res.json();
-        setVerificaBulkStatus(data);
+        setDomicileVerifStatus(data);
+        if (data.status === 'done' || data.status === 'failed') fetchDomicileVerifJobs();
       } catch {
         // errore transitorio di polling: riprova al giro successivo
       }
-    }, 2000);
+    }, 5000);
     return () => clearInterval(timer);
-  }, [verificaBulkJobId, verificaBulkStatus?.status]);
+  }, [domicileVerifJobId, domicileVerifStatus?.status]);
 
-  const handleVerificaBulkDownload = async (variant: 'present' | 'absent') => {
-    if (!verificaBulkJobId) return;
+  const handleDomicileVerifOpenJob = async (jobId: string) => {
+    setDomicileVerifJobId(jobId);
+    setDomicileVerifSubmitError(null);
     try {
-      const res = await apiFetch(`/io-services/verify-bulk/${verificaBulkJobId}/${variant}.csv`);
+      const res = await apiFetch(`/domicile-verification/jobs/${jobId}`);
+      const data = await res.json();
+      setDomicileVerifStatus(data);
+    } catch (err: any) {
+      setDomicileVerifSubmitError(err.message || 'Errore nel recupero dello stato del job');
+    }
+  };
+
+  const handleDomicileVerifDownload = async (variant: 'assenti' | 'app-io' | 'inad' | 'registro-imprese' | 'aggregato') => {
+    if (!domicileVerifJobId) return;
+    try {
+      const res = await apiFetch(`/domicile-verification/jobs/${domicileVerifJobId}/${variant}.csv`);
       if (!res.ok) { alert('Errore durante il download'); return; }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.setAttribute('href', url);
-      link.setAttribute('download', `verifica_appio_${variant === 'present' ? 'presenti' : 'assenti'}.csv`);
+      link.setAttribute('download', `verifica_domicili_${variant}.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -3370,13 +3408,13 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const handleVerificaBulkReset = () => {
-    setVerificaBulkFile(null);
-    setVerificaBulkHeaders([]);
-    setVerificaBulkCfColumn('');
-    setVerificaBulkJobId(null);
-    setVerificaBulkStatus(null);
-    setVerificaBulkSubmitError(null);
+  const handleDomicileVerifReset = () => {
+    setDomicileVerifFile(null);
+    setDomicileVerifHeaders([]);
+    setDomicileVerifCfColumn('');
+    setDomicileVerifJobId(null);
+    setDomicileVerifStatus(null);
+    setDomicileVerifSubmitError(null);
   };
 
   const runCercaDomicilio = async (cfOverride?: string, forzaImpresaOverride?: boolean) => {
@@ -3479,118 +3517,6 @@ export function App(): React.JSX.Element {
     } finally {
       setDomicilioImpresaLoading(false);
     }
-  };
-
-  const parseVerificaInadBulkHeaders = (file: File, hasHeaders: boolean) => {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string;
-      if (!text) return;
-      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
-      if (lines.length === 0) { setVerificaInadBulkHeaders([]); return; }
-      const parseCsvLineLocal = (line: string) => {
-        const result: string[] = [];
-        let current = '';
-        let inQuotes = false;
-        for (let i = 0; i < line.length; i++) {
-          const char = line[i];
-          if (char === '"') inQuotes = !inQuotes;
-          else if ((char === ',' || char === ';') && !inQuotes) { result.push(current.trim()); current = ''; }
-          else current += char;
-        }
-        result.push(current.trim());
-        return result.map(col => col.replace(/^"(.*)"$/, '$1'));
-      };
-      const firstLineCols = parseCsvLineLocal(lines[0]);
-      const headers = hasHeaders ? firstLineCols : firstLineCols.map((_, idx) => `Colonna ${idx + 1}`);
-      setVerificaInadBulkHeaders(headers);
-      const guessed = headers.find(h => ['codicefiscale', 'cf'].includes(h.toLowerCase().replace(/[\s_-]/g, '')));
-      setVerificaInadBulkCfColumn(guessed || '');
-    };
-    reader.readAsText(file);
-  };
-
-  const handleVerificaInadBulkFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setVerificaInadBulkFile(file);
-    setVerificaInadBulkJobId(null);
-    setVerificaInadBulkStatus(null);
-    setVerificaInadBulkSubmitError(null);
-    parseVerificaInadBulkHeaders(file, verificaInadBulkHasHeaders);
-  };
-
-  const handleVerificaInadBulkSubmit = async () => {
-    if (!verificaInadBulkFile || !verificaInadBulkCfColumn) return;
-    setVerificaInadBulkSubmitting(true);
-    setVerificaInadBulkSubmitError(null);
-    try {
-      const data = await uploadFileInChunks(
-        `${ADMIN_API_BASE}/inad-verify/verify-bulk/upload`,
-        token!,
-        verificaInadBulkFile,
-        verificaInadBulkFile.name,
-        () => {},
-        undefined,
-        {
-          hasHeaders: verificaInadBulkHasHeaders,
-          cfColumn: verificaInadBulkCfColumn,
-        },
-      );
-      if (data.blocked) {
-        setVerificaInadBulkSubmitError(data.message || 'Richiesta bloccata');
-        return;
-      }
-      setVerificaInadBulkJobId(data.jobId);
-      setVerificaInadBulkStatus({ status: 'queued', totalRows: 0, batchesTotal: 0, batchesDone: 0, foundCount: 0, notFoundCount: 0, errorMessage: null });
-    } catch (err: any) {
-      setVerificaInadBulkSubmitError(err.message || 'Errore di connessione');
-    } finally {
-      setVerificaInadBulkSubmitting(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!verificaInadBulkJobId) return;
-    if (verificaInadBulkStatus?.status === 'done' || verificaInadBulkStatus?.status === 'failed') return;
-    const timer = setInterval(async () => {
-      try {
-        const res = await apiFetch(`/inad-verify/verify-bulk/${verificaInadBulkJobId}`);
-        const data = await res.json();
-        setVerificaInadBulkStatus(data);
-      } catch {
-        // errore transitorio di polling: riprova al giro successivo
-      }
-    }, 5000);
-    return () => clearInterval(timer);
-  }, [verificaInadBulkJobId, verificaInadBulkStatus?.status]);
-
-  const handleVerificaInadBulkDownload = async (variant: 'found' | 'notfound') => {
-    if (!verificaInadBulkJobId) return;
-    try {
-      const res = await apiFetch(`/inad-verify/verify-bulk/${verificaInadBulkJobId}/${variant}.csv`);
-      if (!res.ok) { alert('Errore durante il download'); return; }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.setAttribute('href', url);
-      link.setAttribute('download', `verifica_inad_${variant === 'found' ? 'trovati' : 'non_trovati'}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    } catch {
-      alert('Errore durante il download');
-    }
-  };
-
-  const handleVerificaInadBulkReset = () => {
-    setVerificaInadBulkFile(null);
-    setVerificaInadBulkHeaders([]);
-    setVerificaInadBulkCfColumn('');
-    setVerificaInadBulkJobId(null);
-    setVerificaInadBulkStatus(null);
-    setVerificaInadBulkSubmitError(null);
   };
 
   const fetchEnrichJobs = async (): Promise<EnrichmentJobItem[]> => {
@@ -9647,20 +9573,12 @@ export function App(): React.JSX.Element {
             <span>Verifica Anagrafica</span>
           </a>
           <a
-            className={`bo-nav-item ${view === 'verifica-appio' ? 'is-active' : ''}`}
+            className={`bo-nav-item ${view === 'verifica-domicili' ? 'is-active' : ''}`}
             href="#"
-            onClick={(e) => { e.preventDefault(); setView('verifica-appio'); }}
+            onClick={(e) => { e.preventDefault(); setView('verifica-domicili'); fetchDomicileVerifJobs(); }}
           >
             <UserCheck />
-            <span>Verifica App IO</span>
-          </a>
-          <a
-            className={`bo-nav-item ${view === 'verifica-inad' ? 'is-active' : ''}`}
-            href="#"
-            onClick={(e) => { e.preventDefault(); setView('verifica-inad'); }}
-          >
-            <img src={EMBEDDED_LOGOS.INAD} alt="" style={{ width: 20, height: 20, objectFit: 'contain' }} />
-            <span>Verifica INAD</span>
+            <span>Verifica Domicili Digitali</span>
           </a>
           <a
             className={`bo-nav-item ${view === 'template-dashboard' ? 'is-active' : ''}`}
@@ -14359,237 +14277,201 @@ export function App(): React.JSX.Element {
             </div>
           )}
 
-          {view === 'verifica-appio' && (
-            <div style={{ maxWidth: '700px', margin: '0 auto' }}>
+          {view === 'verifica-domicili' && (
+            <div style={{ maxWidth: '900px', margin: '0 auto' }}>
               <h3 className="h5 fw-bold text-dark mb-3">
-                <UserCheck className="me-2" size={16} />Verifica massiva App IO
+                <UserCheck className="me-2" size={16} />Verifica Domicili Digitali
               </h3>
 
               <div className="card shadow-sm p-4 mb-4">
                 <p className="small text-muted mb-3">
-                  Carica un CSV con un elenco di codici fiscali: la verifica gira in background (può richiedere alcuni minuti su elenchi ampi) e produce due CSV scaricabili, con le stesse colonne del file originale — destinatari raggiungibili su App IO e tutti gli altri. Per una verifica puntuale su un singolo codice fiscale, usa "Cerca Domicilio" nel menu.
+                  Carica un CSV con un elenco di codici fiscali e/o partite IVA: la verifica gira in background (può richiedere diversi minuti su elenchi ampi — INAD batcha fino a 10 minuti) e resta in coda fino a 7 giorni, ritrovabile dallo storico qui sotto anche dopo aver chiuso la pagina. Verifica CF fisici su INAD e App IO; Registro Imprese subito per le Partite IVA e come fallback sui CF fisici che INAD non trova. Per una verifica puntuale su un singolo codice fiscale, usa "Verifica Anagrafica" nel menu.
                 </p>
 
-                  {!verificaBulkJobId && (
-                    <>
-                      <div className="mb-3">
-                        <label className="form-label small fw-bold">Servizio App IO da usare per la verifica</label>
-                        <SearchableSelect
-                          className="form-select form-select-sm"
-                          value={verificaBulkServiceId}
-                          onChange={setVerificaBulkServiceId}
-                          placeholder="-- Seleziona Servizio App IO --"
-                          options={ioServices.map(s => ({ value: s.id, label: s.nome, isDefault: s.isDefault }))}
-                        />
-                        <div className="form-text small text-muted">
-                          I messaggi abilitati/disabilitati sono specifici per servizio: usa lo stesso servizio che userai per l'invio reale, altrimenti il risultato non è affidabile.
-                        </div>
+                {!domicileVerifJobId && (
+                  <>
+                    <div className="mb-3">
+                      <label className="form-label small fw-bold">Servizio App IO da usare per la verifica</label>
+                      <SearchableSelect
+                        className="form-select form-select-sm"
+                        value={domicileVerifServiceId}
+                        onChange={setDomicileVerifServiceId}
+                        placeholder="-- Seleziona Servizio App IO --"
+                        options={ioServices.map(s => ({ value: s.id, label: s.nome, isDefault: s.isDefault }))}
+                      />
+                      <div className="form-text small text-muted">
+                        Richiesto anche per un CSV di sole Partite IVA (App IO non verrà comunque interrogato su quelle righe).
                       </div>
-
-                      <div className="mb-3">
-                        <div className="form-check form-check-inline">
-                          <input className="form-check-input" type="checkbox" id="verificaBulkHasHeaders" checked={verificaBulkHasHeaders}
-                            onChange={e => {
-                              setVerificaBulkHasHeaders(e.target.checked);
-                              if (verificaBulkFile) parseVerificaBulkHeaders(verificaBulkFile, e.target.checked);
-                            }} />
-                          <label className="form-check-label small" htmlFor="verificaBulkHasHeaders">Il file ha una riga di intestazione</label>
-                        </div>
-                      </div>
-
-                      <div className="mb-3">
-                        <label className="form-label small fw-bold">File CSV</label>
-                        <input type="file" accept=".csv" className="form-control form-control-sm" onChange={handleVerificaBulkFileChange} />
-                      </div>
-
-                      {verificaBulkHeaders.length > 0 && (
-                        <div className="mb-3">
-                          <label className="form-label small fw-bold">Colonna Codice Fiscale</label>
-                          <select className="form-select form-select-sm" value={verificaBulkCfColumn} onChange={e => setVerificaBulkCfColumn(e.target.value)}>
-                            <option value="">— seleziona —</option>
-                            {verificaBulkHeaders.map(h => <option key={h} value={h}>{h}</option>)}
-                          </select>
-                        </div>
-                      )}
-
-                      {verificaBulkSubmitError && (
-                        <div className="alert alert-danger small">{verificaBulkSubmitError}</div>
-                      )}
-
-                      <button
-                        className="btn btn-primary btn-sm"
-                        type="button"
-                        onClick={handleVerificaBulkSubmit}
-                        disabled={verificaBulkSubmitting || !verificaBulkFile || !verificaBulkCfColumn || !verificaBulkServiceId}
-                      >
-                        {verificaBulkSubmitting ? (
-                          <><Loader2 className="icon-spin me-1" size={16} />Avvio...</>
-                        ) : (
-                          <><Play className="me-1" size={16} />Avvia verifica</>
-                        )}
-                      </button>
-                    </>
-                  )}
-
-                  {verificaBulkJobId && verificaBulkStatus && (
-                    <div>
-                      {(verificaBulkStatus.status === 'queued' || verificaBulkStatus.status === 'processing') && (
-                        <>
-                          <p className="small text-muted mb-2">
-                            Verifica in corso: {verificaBulkStatus.processedRows} / {verificaBulkStatus.totalRows || '…'} righe processate.
-                          </p>
-                          <div className="progress" style={{ height: '8px' }}>
-                            <div
-                              className="progress-bar"
-                              style={{ width: verificaBulkStatus.totalRows > 0 ? `${Math.round((verificaBulkStatus.processedRows / verificaBulkStatus.totalRows) * 100)}%` : '5%' }}
-                            />
-                          </div>
-                        </>
-                      )}
-
-                      {verificaBulkStatus.status === 'done' && (
-                        <>
-                          <div className="alert alert-success small">
-                            Verifica completata: <strong>{verificaBulkStatus.presentCount}</strong> presenti, <strong>{verificaBulkStatus.absentCount}</strong> assenti.
-                          </div>
-                          <div className="d-flex gap-2 mb-3">
-                            <button className="btn btn-sm btn-outline-success" onClick={() => handleVerificaBulkDownload('present')}>
-                              <FileSpreadsheet className="me-1" size={16} />Scarica presenti
-                            </button>
-                            <button className="btn btn-sm btn-outline-secondary" onClick={() => handleVerificaBulkDownload('absent')}>
-                              <FileSpreadsheet className="me-1" size={16} />Scarica assenti
-                            </button>
-                          </div>
-                        </>
-                      )}
-
-                      {verificaBulkStatus.status === 'failed' && (
-                        <div className="alert alert-danger small">
-                          Verifica fallita: {verificaBulkStatus.errorMessage || 'errore sconosciuto'}
-                        </div>
-                      )}
-
-                      {(verificaBulkStatus.status === 'done' || verificaBulkStatus.status === 'failed') && (
-                        <button className="btn btn-sm btn-outline-primary" onClick={handleVerificaBulkReset}>
-                          <RotateCcw className="me-1" size={16} />Nuova verifica
-                        </button>
-                      )}
                     </div>
-                  )}
-                </div>
-            </div>
-          )}
 
-          {view === 'verifica-inad' && (
-            <div style={{ maxWidth: '700px', margin: '0 auto' }}>
-              <h3 className="h5 fw-bold text-dark mb-3">
-                <Contact className="me-2" size={16} />Verifica massiva INAD
-              </h3>
-
-              <div className="card shadow-sm p-4 mb-4">
-                <p className="small text-muted mb-3">
-                  Carica un CSV con un elenco di codici fiscali: la verifica gira in background su INAD (batch fino a 1000 CF, 5-10 minuti per elaborazione) e produce due CSV scaricabili, con le stesse colonne del file originale — destinatari con domicilio digitale trovato (con colonna aggiuntiva "domicilio_digitale_inad") e tutti gli altri. Per una verifica puntuale su un singolo codice fiscale, usa "Verifica Anagrafica" nel menu.
-                </p>
-
-                  {!verificaInadBulkJobId && (
-                    <>
-                      <div className="mb-3">
-                        <div className="form-check form-check-inline">
-                          <input className="form-check-input" type="checkbox" id="verificaInadBulkHasHeaders" checked={verificaInadBulkHasHeaders}
-                            onChange={e => {
-                              setVerificaInadBulkHasHeaders(e.target.checked);
-                              if (verificaInadBulkFile) parseVerificaInadBulkHeaders(verificaInadBulkFile, e.target.checked);
-                            }} />
-                          <label className="form-check-label small" htmlFor="verificaInadBulkHasHeaders">Il file ha una riga di intestazione</label>
-                        </div>
+                    <div className="mb-3">
+                      <div className="form-check form-check-inline">
+                        <input className="form-check-input" type="checkbox" id="domicileVerifHasHeaders" checked={domicileVerifHasHeaders}
+                          onChange={e => {
+                            setDomicileVerifHasHeaders(e.target.checked);
+                            if (domicileVerifFile) parseDomicileVerifHeaders(domicileVerifFile, e.target.checked);
+                          }} />
+                        <label className="form-check-label small" htmlFor="domicileVerifHasHeaders">Il file ha una riga di intestazione</label>
                       </div>
-
-                      <div className="mb-3">
-                        <label className="form-label small fw-bold">File CSV</label>
-                        <input type="file" accept=".csv" className="form-control form-control-sm" onChange={handleVerificaInadBulkFileChange} />
-                      </div>
-
-                      {verificaInadBulkHeaders.length > 0 && (
-                        <div className="mb-3">
-                          <label className="form-label small fw-bold">Colonna Codice Fiscale</label>
-                          <select className="form-select form-select-sm" value={verificaInadBulkCfColumn} onChange={e => setVerificaInadBulkCfColumn(e.target.value)}>
-                            <option value="">— seleziona —</option>
-                            {verificaInadBulkHeaders.map(h => <option key={h} value={h}>{h}</option>)}
-                          </select>
-                        </div>
-                      )}
-
-                      {verificaInadBulkSubmitError && (
-                        <div className="alert alert-danger small">{verificaInadBulkSubmitError}</div>
-                      )}
-
-                      <button
-                        className="btn btn-primary btn-sm"
-                        type="button"
-                        onClick={handleVerificaInadBulkSubmit}
-                        disabled={verificaInadBulkSubmitting || !verificaInadBulkFile || !verificaInadBulkCfColumn}
-                      >
-                        {verificaInadBulkSubmitting ? (
-                          <><Loader2 className="icon-spin me-1" size={16} />Avvio...</>
-                        ) : (
-                          <><Play className="me-1" size={16} />Avvia verifica</>
-                        )}
-                      </button>
-                    </>
-                  )}
-
-                  {verificaInadBulkJobId && verificaInadBulkStatus && (
-                    <div>
-                      {verificaInadBulkStatus.status !== 'failed' && verificaInadBulkStatus.errorMessage && (
-                        <div className="alert alert-warning small">
-                          Attenzione: {verificaInadBulkStatus.errorMessage}
-                        </div>
-                      )}
-
-                      {(verificaInadBulkStatus.status === 'queued' || verificaInadBulkStatus.status === 'processing') && (
-                        <>
-                          <p className="small text-muted mb-2">
-                            Verifica in corso: {verificaInadBulkStatus.batchesDone} / {verificaInadBulkStatus.batchesTotal || '…'} batch completati ({verificaInadBulkStatus.totalRows} righe totali).
-                          </p>
-                          <div className="progress" style={{ height: '8px' }}>
-                            <div
-                              className="progress-bar"
-                              style={{ width: verificaInadBulkStatus.batchesTotal > 0 ? `${Math.round((verificaInadBulkStatus.batchesDone / verificaInadBulkStatus.batchesTotal) * 100)}%` : '5%' }}
-                            />
-                          </div>
-                        </>
-                      )}
-
-                      {verificaInadBulkStatus.status === 'done' && (
-                        <>
-                          <div className="alert alert-success small">
-                            Verifica completata: <strong>{verificaInadBulkStatus.foundCount}</strong> trovati, <strong>{verificaInadBulkStatus.notFoundCount}</strong> non trovati.
-                          </div>
-                          <div className="d-flex gap-2 mb-3">
-                            <button className="btn btn-sm btn-outline-success" onClick={() => handleVerificaInadBulkDownload('found')}>
-                              <FileSpreadsheet className="me-1" size={16} />Scarica trovati
-                            </button>
-                            <button className="btn btn-sm btn-outline-secondary" onClick={() => handleVerificaInadBulkDownload('notfound')}>
-                              <FileSpreadsheet className="me-1" size={16} />Scarica non trovati
-                            </button>
-                          </div>
-                        </>
-                      )}
-
-                      {verificaInadBulkStatus.status === 'failed' && (
-                        <div className="alert alert-danger small">
-                          Verifica fallita: {verificaInadBulkStatus.errorMessage || 'errore sconosciuto'}
-                        </div>
-                      )}
-
-                      {(verificaInadBulkStatus.status === 'done' || verificaInadBulkStatus.status === 'failed') && (
-                        <button className="btn btn-sm btn-outline-primary" onClick={handleVerificaInadBulkReset}>
-                          <RotateCcw className="me-1" size={16} />Nuova verifica
-                        </button>
-                      )}
                     </div>
-                  )}
-                </div>
+
+                    <div className="mb-3">
+                      <label className="form-label small fw-bold">File CSV</label>
+                      <input type="file" accept=".csv" className="form-control form-control-sm" onChange={handleDomicileVerifFileChange} />
+                    </div>
+
+                    {domicileVerifHeaders.length > 0 && (
+                      <div className="mb-3">
+                        <label className="form-label small fw-bold">Colonna Codice Fiscale / Partita IVA</label>
+                        <select className="form-select form-select-sm" value={domicileVerifCfColumn} onChange={e => setDomicileVerifCfColumn(e.target.value)}>
+                          <option value="">— seleziona —</option>
+                          {domicileVerifHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                        </select>
+                      </div>
+                    )}
+
+                    {domicileVerifSubmitError && (
+                      <div className="alert alert-danger small">{domicileVerifSubmitError}</div>
+                    )}
+
+                    <button
+                      className="btn btn-primary btn-sm"
+                      type="button"
+                      onClick={handleDomicileVerifSubmit}
+                      disabled={domicileVerifSubmitting || !domicileVerifFile || !domicileVerifCfColumn || !domicileVerifServiceId}
+                    >
+                      {domicileVerifSubmitting ? (
+                        <><Loader2 className="icon-spin me-1" size={16} />Avvio...</>
+                      ) : (
+                        <><Play className="me-1" size={16} />Avvia verifica</>
+                      )}
+                    </button>
+                  </>
+                )}
+
+                {domicileVerifJobId && domicileVerifStatus && (
+                  <div>
+                    {domicileVerifStatus.status !== 'failed' && domicileVerifStatus.errorMessage && (
+                      <div className="alert alert-warning small">Attenzione: {domicileVerifStatus.errorMessage}</div>
+                    )}
+
+                    {(domicileVerifStatus.status === 'queued' || domicileVerifStatus.status === 'processing') && (
+                      <div className="mb-3">
+                        <p className="small text-muted mb-2">
+                          {domicileVerifStatus.totalRows} righe totali — {domicileVerifStatus.cfFisicoTotal} CF fisici, {domicileVerifStatus.pivaTotal} Partite IVA.
+                        </p>
+                        {domicileVerifStatus.cfFisicoTotal > 0 && (
+                          <>
+                            <p className="small text-muted mb-1">INAD: {domicileVerifStatus.inadBatchesDone} / {domicileVerifStatus.inadBatchesTotal || '…'} batch completati</p>
+                            <div className="progress mb-2" style={{ height: '8px' }}>
+                              <div className="progress-bar" style={{ width: domicileVerifStatus.inadBatchesTotal > 0 ? `${Math.round((domicileVerifStatus.inadBatchesDone / domicileVerifStatus.inadBatchesTotal) * 100)}%` : '5%' }} />
+                            </div>
+                            <p className="small text-muted mb-1">App IO: {domicileVerifStatus.appIoProcessedRows} / {domicileVerifStatus.totalRows} righe processate</p>
+                            <div className="progress mb-2" style={{ height: '8px' }}>
+                              <div className="progress-bar" style={{ width: domicileVerifStatus.totalRows > 0 ? `${Math.round((domicileVerifStatus.appIoProcessedRows / domicileVerifStatus.totalRows) * 100)}%` : '5%' }} />
+                            </div>
+                          </>
+                        )}
+                        {domicileVerifStatus.registroImpreseTotal > 0 && (
+                          <>
+                            <p className="small text-muted mb-1">Registro Imprese: {domicileVerifStatus.registroImpreseDone} / {domicileVerifStatus.registroImpreseTotal} verificate</p>
+                            <div className="progress mb-2" style={{ height: '8px' }}>
+                              <div className="progress-bar" style={{ width: `${Math.round((domicileVerifStatus.registroImpreseDone / domicileVerifStatus.registroImpreseTotal) * 100)}%` }} />
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    {domicileVerifStatus.status === 'done' && (
+                      <>
+                        <div className="alert alert-success small">
+                          Verifica completata: <strong>{domicileVerifStatus.inadFoundCount}</strong> trovati su INAD, <strong>{domicileVerifStatus.appIoPresentCount}</strong> presenti su App IO, <strong>{domicileVerifStatus.registroImpreseFoundCount}</strong> trovati su Registro Imprese.
+                        </div>
+                        <div className="d-flex gap-2 mb-3 flex-wrap">
+                          <button className="btn btn-sm btn-outline-primary" onClick={() => handleDomicileVerifDownload('aggregato')}>
+                            <FileSpreadsheet className="me-1" size={16} />Scarica aggregato
+                          </button>
+                          <button className="btn btn-sm btn-outline-secondary" onClick={() => handleDomicileVerifDownload('assenti')}>
+                            <FileSpreadsheet className="me-1" size={16} />Scarica assenti
+                          </button>
+                          {domicileVerifStatus.appIoPresentCount > 0 && (
+                            <button className="btn btn-sm btn-outline-success" onClick={() => handleDomicileVerifDownload('app-io')}>
+                              <FileSpreadsheet className="me-1" size={16} />Scarica App IO
+                            </button>
+                          )}
+                          {domicileVerifStatus.inadFoundCount > 0 && (
+                            <button className="btn btn-sm btn-outline-success" onClick={() => handleDomicileVerifDownload('inad')}>
+                              <FileSpreadsheet className="me-1" size={16} />Scarica INAD
+                            </button>
+                          )}
+                          {domicileVerifStatus.registroImpreseFoundCount > 0 && (
+                            <button className="btn btn-sm btn-outline-success" onClick={() => handleDomicileVerifDownload('registro-imprese')}>
+                              <FileSpreadsheet className="me-1" size={16} />Scarica Registro Imprese
+                            </button>
+                          )}
+                        </div>
+                      </>
+                    )}
+
+                    {domicileVerifStatus.status === 'failed' && (
+                      <div className="alert alert-danger small">
+                        Verifica fallita: {domicileVerifStatus.errorMessage || 'errore sconosciuto'}
+                      </div>
+                    )}
+
+                    {(domicileVerifStatus.status === 'done' || domicileVerifStatus.status === 'failed') && (
+                      <button className="btn btn-sm btn-outline-primary" onClick={handleDomicileVerifReset}>
+                        <RotateCcw className="me-1" size={16} />Nuova verifica
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="card shadow-sm p-4">
+                <h4 className="h6 fw-bold text-dark mb-3">
+                  <History className="me-2" size={16} />Storico verifiche
+                </h4>
+                {domicileVerifJobsLoading && domicileVerifJobs.length === 0 && (
+                  <p className="small text-muted mb-0"><Loader2 className="icon-spin me-1" size={14} />Caricamento…</p>
+                )}
+                {!domicileVerifJobsLoading && domicileVerifJobs.length === 0 && (
+                  <p className="small text-muted mb-0">Nessuna verifica ancora eseguita.</p>
+                )}
+                {domicileVerifJobs.length > 0 && (
+                  <div className="table-responsive">
+                    <table className="table table-sm">
+                      <thead>
+                        <tr>
+                          <th>Data</th>
+                          <th>Stato</th>
+                          <th>Righe</th>
+                          <th>CF fisici</th>
+                          <th>Partite IVA</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {domicileVerifJobs.map(job => (
+                          <tr key={job.id}>
+                            <td className="small">{new Date(job.createdAt).toLocaleString('it-IT')}</td>
+                            <td><StatusBadge status={job.status} /></td>
+                            <td className="small">{job.totalRows}</td>
+                            <td className="small">{job.cfFisicoTotal}</td>
+                            <td className="small">{job.pivaTotal}</td>
+                            <td>
+                              <button className="btn btn-sm btn-outline-secondary" onClick={() => handleDomicileVerifOpenJob(job.id)}>
+                                Apri
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

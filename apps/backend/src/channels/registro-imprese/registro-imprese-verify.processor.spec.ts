@@ -5,13 +5,14 @@ import { VERIFY_PIVA_JOB_NAME, VERIFY_PIVA_CAMPAIGN_JOB_NAME } from './registro-
 const mockRegistroImprese = { dettaglioImpresa: jest.fn() };
 const mockJobRepo = { query: jest.fn() };
 const mockRecipientRepo = { update: jest.fn() };
+const mockDomicileEvents = { notifyJobProgress: jest.fn() };
 
 describe('RegistroImpreseVerifyProcessor.process', () => {
   let processor: RegistroImpreseVerifyProcessor;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    processor = new RegistroImpreseVerifyProcessor(mockRegistroImprese as any, mockJobRepo as any, mockRecipientRepo as any);
+    processor = new RegistroImpreseVerifyProcessor(mockRegistroImprese as any, mockJobRepo as any, mockRecipientRepo as any, mockDomicileEvents as any);
   });
 
   it('scrive found:true e la PEC su esito positivo', async () => {
@@ -20,9 +21,13 @@ describe('RegistroImpreseVerifyProcessor.process', () => {
     await processor.process({ name: VERIFY_PIVA_JOB_NAME, data: { jobId: 'job-1', partitaIva: '12345678901' } } as any);
 
     expect(mockJobRepo.query).toHaveBeenCalledWith(
-      expect.stringContaining('UPDATE inad_verification_jobs'),
+      expect.stringContaining('UPDATE domicile_verification_jobs'),
       [JSON.stringify({ '12345678901': 'acme@pec.it' }), 1, 'job-1'],
     );
+    // Trigger immediato per DomicileVerificationSyncService — senza questo,
+    // se INAD/App IO erano già pronti, il job padre resta PROCESSING fino
+    // al prossimo tick cron.
+    expect(mockDomicileEvents.notifyJobProgress).toHaveBeenCalledWith('job-1');
   });
 
   it('scrive found:false (pec null) quando l\'impresa non è trovata', async () => {
@@ -62,7 +67,7 @@ describe('RegistroImpreseVerifyProcessor.onFailed', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    processor = new RegistroImpreseVerifyProcessor(mockRegistroImprese as any, mockJobRepo as any, mockRecipientRepo as any);
+    processor = new RegistroImpreseVerifyProcessor(mockRegistroImprese as any, mockJobRepo as any, mockRecipientRepo as any, mockDomicileEvents as any);
   });
 
   it('non scrive nulla se il job ritenterà ancora (attemptsMade < attempts)', async () => {
@@ -78,7 +83,7 @@ describe('RegistroImpreseVerifyProcessor.onFailed', () => {
     expect(mockJobRepo.query).not.toHaveBeenCalled();
   });
 
-  it('scrive pec:null e incrementa piva_done quando i tentativi sono esauriti (esito finale)', async () => {
+  it('scrive pec:null e incrementa registro_imprese_done quando i tentativi sono esauriti (esito finale)', async () => {
     const job = {
       name: VERIFY_PIVA_JOB_NAME,
       data: { jobId: 'job-1', partitaIva: '12345678901' },
@@ -89,12 +94,12 @@ describe('RegistroImpreseVerifyProcessor.onFailed', () => {
     await processor.onFailed(job);
 
     expect(mockJobRepo.query).toHaveBeenCalledWith(
-      expect.stringContaining('piva_done = piva_done + 1'),
+      expect.stringContaining('registro_imprese_done = registro_imprese_done + 1'),
       [JSON.stringify({ '12345678901': null }), 'job-1'],
     );
-    // Non deve toccare piva_found_count: un esaurimento retry non è mai "trovato".
+    // Non deve toccare registro_imprese_found_count: un esaurimento retry non è mai "trovato".
     const [sql] = mockJobRepo.query.mock.calls[0];
-    expect(sql).not.toContain('piva_found_count');
+    expect(sql).not.toContain('registro_imprese_found_count');
   });
 
   it('ignora job undefined o di un tipo diverso', async () => {
@@ -110,7 +115,7 @@ describe('RegistroImpreseVerifyProcessor.process — VERIFY_PIVA_CAMPAIGN_JOB_NA
 
   beforeEach(() => {
     jest.clearAllMocks();
-    processor = new RegistroImpreseVerifyProcessor(mockRegistroImprese as any, mockJobRepo as any, mockRecipientRepo as any);
+    processor = new RegistroImpreseVerifyProcessor(mockRegistroImprese as any, mockJobRepo as any, mockRecipientRepo as any, mockDomicileEvents as any);
   });
 
   const jobData = { campaignId: 'camp-1', recipientId: 'rec-1', partitaIva: '12345678901', originalChannel: 'EMAIL', originalAddress: 'destinatario@esempio.it', recipientPec: null };
@@ -127,6 +132,8 @@ describe('RegistroImpreseVerifyProcessor.process — VERIFY_PIVA_CAMPAIGN_JOB_NA
         pec: 'nuova@pec.it',
       }),
     );
+    // Branch campagna: mai un DomicileVerificationJob coinvolto, nessun trigger.
+    expect(mockDomicileEvents.notifyJobProgress).not.toHaveBeenCalled();
   });
 
   it('impresa trovata ma SENZA PEC censita → diverted:false, mai forzato a PEC (bug reale: found=true non implica PEC presente)', async () => {

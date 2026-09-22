@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import type { Job } from 'bullmq';
-import { InadVerificationJob } from '../../entities/inad-verification-job.entity.js';
+import { DomicileVerificationJob } from '../../entities/domicile-verification-job.entity.js';
 import { Recipient, RecipientStatus } from '../../entities/recipient.entity.js';
 import {
   REGISTRO_IMPRESE_QUEUE,
@@ -14,6 +14,7 @@ import {
 } from './registro-imprese-job.types.js';
 import { RegistroImpreseService } from './registro-imprese.service.js';
 import { RegistroImpreseRateLimitError } from './registro-imprese-rate-limit.error.js';
+import { DomicileVerificationEventsService } from '../domicile-verification/domicile-verification-events.service.js';
 
 type AnyJobData = RegistroImpreseVerifyJobData | RegistroImpreseCampaignVerifyJobData;
 
@@ -21,8 +22,9 @@ type AnyJobData = RegistroImpreseVerifyJobData | RegistroImpreseCampaignVerifyJo
  * Stessa coda/worker per due job.name diversi (stesso rate limiter 5/sec
  * verso Registro Imprese, mai superato anche se i due percorsi corrono in
  * parallelo — vedi CLAUDE.md "queue.add() con jobId esistente"):
- * - VERIFY_PIVA_JOB_NAME: 1 job = 1 Partita IVA per l'ad-hoc "Verifica INAD
- *   Massiva" — scrive su inad_verification_jobs.piva_results (UPDATE jsonb
+ * - VERIFY_PIVA_JOB_NAME: 1 job = 1 Partita IVA (o 1 CF fisico residuo) per
+ *   "Verifica Domicili Digitali" — scrive su
+ *   domicile_verification_jobs.registro_imprese_results (UPDATE jsonb
  *   concat, mai read-modify-write — job paralleli sullo stesso job padre).
  * - VERIFY_PIVA_CAMPAIGN_JOB_NAME: 1 job = 1 destinatario di una campagna
  *   massiva in CHECKING_INAD — scrive direttamente su recipients.inad_check/
@@ -38,10 +40,11 @@ export class RegistroImpreseVerifyProcessor extends WorkerHost {
 
   constructor(
     private readonly registroImpreseService: RegistroImpreseService,
-    @InjectRepository(InadVerificationJob)
-    private readonly jobRepo: Repository<InadVerificationJob>,
+    @InjectRepository(DomicileVerificationJob)
+    private readonly jobRepo: Repository<DomicileVerificationJob>,
     @InjectRepository(Recipient)
     private readonly recipientRepo: Repository<Recipient>,
+    private readonly domicileEvents: DomicileVerificationEventsService,
   ) {
     super();
   }
@@ -74,13 +77,17 @@ export class RegistroImpreseVerifyProcessor extends WorkerHost {
     }
 
     await this.jobRepo.query(
-      `UPDATE inad_verification_jobs
-       SET piva_results = COALESCE(piva_results, '{}'::jsonb) || $1::jsonb,
-           piva_done = piva_done + 1,
-           piva_found_count = piva_found_count + $2
+      `UPDATE domicile_verification_jobs
+       SET registro_imprese_results = COALESCE(registro_imprese_results, '{}'::jsonb) || $1::jsonb,
+           registro_imprese_done = registro_imprese_done + 1,
+           registro_imprese_found_count = registro_imprese_found_count + $2
        WHERE id = $3`,
       [JSON.stringify({ [partitaIva]: pec }), found ? 1 : 0, jobId],
     );
+    // Trigger immediato: senza questo, se INAD/App IO erano già pronti prima
+    // di questo esito, il job padre resta PROCESSING fino al prossimo tick
+    // cron (fino a 5 minuti) nonostante tutte le fonti siano già complete.
+    this.domicileEvents.notifyJobProgress(jobId);
   }
 
   /**
@@ -144,8 +151,8 @@ export class RegistroImpreseVerifyProcessor extends WorkerHost {
    * scrive mai piva_done su RegistroImpreseRateLimitError, la riscrive solo
    * process() su esito/errore generico o questo handler sull'esaurimento
    * finale — mai entrambi per lo stesso tentativo). Solo VERIFY_PIVA_JOB_NAME
-   * ha bisogno di questo: il completamento del job padre (InadVerificationJob)
-   * dipende dal contatore piva_done, mai incrementato su un throw ripetuto.
+   * ha bisogno di questo: il completamento del job padre (DomicileVerificationJob)
+   * dipende dal contatore registro_imprese_done, mai incrementato su un throw ripetuto.
    * VERIFY_PIVA_CAMPAIGN_JOB_NAME non serve qui — il poller tratta 'failed'
    * come concluso a prescindere (RegistroImpreseVerifyQueueService.isCampaignJobDone),
    * nessun contatore da sbloccare.
@@ -161,11 +168,12 @@ export class RegistroImpreseVerifyProcessor extends WorkerHost {
       `Verifica Registro Imprese esaurita per ${partitaIva} (job ${jobId}) dopo ${job.attemptsMade} tentativi: trattata come non trovata per sbloccare il job padre.`,
     );
     await this.jobRepo.query(
-      `UPDATE inad_verification_jobs
-       SET piva_results = COALESCE(piva_results, '{}'::jsonb) || $1::jsonb,
-           piva_done = piva_done + 1
+      `UPDATE domicile_verification_jobs
+       SET registro_imprese_results = COALESCE(registro_imprese_results, '{}'::jsonb) || $1::jsonb,
+           registro_imprese_done = registro_imprese_done + 1
        WHERE id = $2`,
       [JSON.stringify({ [partitaIva]: null }), jobId],
     );
+    this.domicileEvents.notifyJobProgress(jobId);
   }
 }
