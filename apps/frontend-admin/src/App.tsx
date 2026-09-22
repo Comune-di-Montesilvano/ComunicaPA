@@ -13966,8 +13966,13 @@ export function App(): React.JSX.Element {
                                     </tr>
                                   )}
                                   {/* Co-consegna App IO come tentativo a parte: non ha senso quando
-                                      App IO è già il canale primario della campagna. */}
-                                  {notifDetail.campaign.channelType !== 'APP_IO' && a.appIo.attempted && (
+                                      QUESTO attempt è già su App IO — ma con App IO canale primario
+                                      + destinatario dirottato da INAD (attempt.channelType diventa
+                                      PEC), la co-consegna App IO in parallelo È un tentativo separato
+                                      reale e va mostrata (bug reale: gate sulla campagna nascondeva
+                                      anche un fallimento App IO — es. pagoPA intestato ad altro ente —
+                                      che restava invisibile, "muore silente"). */}
+                                  {a.channelType !== 'APP_IO' && a.appIo.attempted && (
                                     <tr>
                                       <td>{a.attemptNumber}</td>
                                       <td><StatusBadge status={a.appIo.success ? 'success' : 'failed'} /></td>
@@ -18601,7 +18606,11 @@ export function App(): React.JSX.Element {
                             const tagOptions: Array<{ id: string; label: string }> = [
                               { id: 'diverted', label: 'Dirottato domicilio digitale' },
                               { id: 'primary', label: getChannelMeta(campaign.channelType).label },
-                              ...(campaign.channelType !== 'APP_IO' ? [{ id: 'appio', label: 'App IO (co-consegna)' }] : []),
+                              // Anche per campagne canale primario App IO: un destinatario dirottato
+                              // da INAD riceve App IO come tentativo SEPARATO in parallelo alla PEC
+                              // (vedi notification.processor.ts, isPrimaryAppIoDivertedToPec) — non
+                              // più un caso ridondante da escludere.
+                              { id: 'appio', label: 'App IO (co-consegna)' },
                             ];
                             return (
                               <div className="dropdown">
