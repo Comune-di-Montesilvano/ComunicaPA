@@ -36,7 +36,7 @@ import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } fro
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto.js';
 import type { NotificationChannel, NotificationJobData, OperatorRole } from '@comunicapa/shared-types';
 import { matchCountry, abbreviateLongMunicipality } from '@comunicapa/shared-types';
-import { InadService } from '../channels/inad/inad.service.js';
+import { InadService, resolveInadDigitalAddress } from '../channels/inad/inad.service.js';
 import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service.js';
 import { RegistroImpreseService } from '../channels/registro-imprese/registro-imprese.service.js';
 import { RegistroImpreseVerifyQueueService } from '../channels/registro-imprese/registro-imprese-verify-queue.service.js';
@@ -893,15 +893,15 @@ export class CampaignsService {
               return;
             }
           } else {
-            let result: { found: boolean; data?: { digitalAddress: Array<{ digitalAddress: string }> } };
+            let result: Awaited<ReturnType<InadService['extractDigitalAddress']>>;
             try {
               result = await this.inadService.extractDigitalAddress(recipient.codiceFiscale);
             } catch (err) {
               this.logger.warn(`Check INAD fallito per destinatario ${recipient.id} (CF ${recipient.codiceFiscale}): ${err instanceof Error ? err.message : err}`);
               return;
             }
-            found = result.found && (result.data?.digitalAddress?.length ?? 0) > 0;
-            digitalAddress = found ? result.data!.digitalAddress[0].digitalAddress : null;
+            digitalAddress = result.found ? resolveInadDigitalAddress(result.data?.digitalAddress) : null;
+            found = digitalAddress !== null;
           }
           // Per PIVA (Registro Imprese) found=true significa solo "impresa
           // trovata", MAI "ha una PEC" — result.pec può essere null anche a

@@ -3,13 +3,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Cron } from '@nestjs/schedule';
 import { DomicileVerificationJob, DomicileVerificationJobStatus } from '../../entities/domicile-verification-job.entity.js';
-import { parseCsvContent } from '../../io-services/csv.util.js';
-import { InadService } from '../inad/inad.service.js';
-import { RegistroImpreseVerifyQueueService } from '../registro-imprese/registro-imprese-verify-queue.service.js';
+import { InadService, resolveInadDigitalAddress } from '../inad/inad.service.js';
 import { buildDomicileVerificationCsvs } from './domicile-verification-csv.util.js';
 import { DomicileVerificationEventsService } from './domicile-verification-events.service.js';
-
-const CF_FISICO_LENGTH = 16;
 
 /** Rete di sicurezza: un job bloccato oltre questa soglia (una fonte mai
  * completa per un bug non ancora scoperto) va chiuso esplicitamente FAILED
@@ -18,13 +14,11 @@ const CF_FISICO_LENGTH = 16;
 const STALE_AFTER_HOURS = 24;
 
 /**
- * Poll periodico dei 3 job PROCESSING — un job è completo solo quando TUTTE
- * e 3 le fonti lo sono: INAD (batch pronti + fetch fatto), App IO (job
+ * Poll periodico dei job PROCESSING — un job è completo solo quando TUTTE e
+ * 3 le fonti lo sono: INAD (batch pronti + fetch fatto), App IO (job
  * singolo con appIoDone), Registro Imprese (registroImpreseDone >=
- * registroImpreseTotal, MA solo dopo che il residuo sui CF fisici non
- * trovati da INAD è stato accodato — residualEnqueued — altrimenti il gate
- * potrebbe risultare vero prematuramente con registroImpreseTotal ancora
- * al solo conteggio PIVA).
+ * registroImpreseTotal — accodato per intero già a creazione job, in
+ * parallelo a INAD/App IO, mai un residuo da accodare qui).
  */
 @Injectable()
 export class DomicileVerificationSyncService {
@@ -34,12 +28,11 @@ export class DomicileVerificationSyncService {
     @InjectRepository(DomicileVerificationJob)
     private readonly jobRepo: Repository<DomicileVerificationJob>,
     private readonly inadService: InadService,
-    private readonly registroImpreseQueue: RegistroImpreseVerifyQueueService,
     private readonly domicileEvents: DomicileVerificationEventsService,
   ) {
     // Trigger immediato quando App IO/Registro Imprese completano — senza
     // questo l'ultima fonte a chiudersi resta invisibile fino al prossimo
-    // tick cron (fino a 5 minuti sprecati anche se tutto è già pronto).
+    // tick cron (fino a 1 minuto sprecato anche se tutto è già pronto).
     this.domicileEvents.onJobProgress((jobId) => {
       this.checkJobById(jobId).catch((err) => {
         this.logger.warn(`Errore check on-demand DomicileVerificationJob ${jobId}: ${err instanceof Error ? err.message : err}`);
@@ -53,7 +46,7 @@ export class DomicileVerificationSyncService {
     await this.trySyncOne(job);
   }
 
-  @Cron('*/5 * * * *')
+  @Cron('* * * * *')
   async handleCron(): Promise<void> {
     const jobs = await this.jobRepo.find({ where: { status: DomicileVerificationJobStatus.PROCESSING } });
     for (const job of jobs) {
@@ -92,8 +85,12 @@ export class DomicileVerificationSyncService {
       for (const batch of batches) {
         const items = await this.inadService.getBulkResult(batch.id);
         items.forEach((item) => {
-          if (!item.digitalAddress || item.digitalAddress.length === 0) return;
-          map[item.codiceFiscale.toUpperCase()] = item.digitalAddress.map((a) => a.digitalAddress).join('; ');
+          // Stessa risoluzione di campaigns.service.ts runInadExtractLoop
+          // (resolveInadDigitalAddress, sempre il primo elemento) — prima
+          // qui si univano TUTTI gli indirizzi con "; ", stesso dato
+          // interpretato diversamente in due punti del codice.
+          const address = resolveInadDigitalAddress(item.digitalAddress);
+          if (address) map[item.codiceFiscale.toUpperCase()] = address;
         });
       }
       inadFoundMap = map;
@@ -102,33 +99,12 @@ export class DomicileVerificationSyncService {
       patch.inadFetched = true;
     }
 
-    let residualEnqueued = job.residualEnqueued;
-    let registroImpreseTotal = job.registroImpreseTotal;
-    if (inadAllReady && inadFetched && !residualEnqueued) {
-      const parsed = parseCsvContent(job.sourceCsv, job.hasHeaders);
-      const cfFisici = Array.from(new Set(
-        parsed.rows
-          .map((row) => (row[job.cfColumn] || '').trim().toUpperCase())
-          .filter((cf) => cf.length === CF_FISICO_LENGTH),
-      ));
-      const residuo = cfFisici.filter((cf) => inadFoundMap[cf] === undefined);
-      let enqueued = 0;
-      for (const cf of residuo) {
-        try {
-          await this.registroImpreseQueue.enqueueVerify(job.id, cf);
-          enqueued++;
-        } catch (err: any) {
-          this.logger.warn(`Job ${job.id}: enqueue residuo Registro Imprese fallito per ${cf}: ${err.message}`);
-        }
-      }
-      registroImpreseTotal = job.registroImpreseTotal + enqueued;
-      residualEnqueued = true;
-      patch.residualEnqueued = true;
-      patch.registroImpreseTotal = registroImpreseTotal;
-    }
-
+    // Registro Imprese è accodato per intero (PIVA + tutti i CF fisici) già
+    // a creazione job (DomicileVerificationService.createJob), in parallelo
+    // a INAD/App IO — nessun residuo da accodare qui. registroImpreseTotal
+    // non cambia più dopo la creazione.
     const appIoReady = job.cfFisicoTotal === 0 || job.appIoDone;
-    const registroImpreseReady = residualEnqueued && job.registroImpreseDone >= registroImpreseTotal;
+    const registroImpreseReady = job.registroImpreseDone >= job.registroImpreseTotal;
     const complete = inadAllReady && inadFetched && appIoReady && registroImpreseReady;
 
     if (!complete) {
@@ -137,7 +113,7 @@ export class DomicileVerificationSyncService {
         await this.jobRepo.update(job.id, {
           ...patch,
           status: DomicileVerificationJobStatus.FAILED,
-          errorMessage: `Verifica interrotta: non completata entro ${STALE_AFTER_HOURS}h (INAD pronto: ${inadAllReady}, App IO pronto: ${appIoReady}, Registro Imprese ${job.registroImpreseDone}/${registroImpreseTotal}).`,
+          errorMessage: `Verifica interrotta: non completata entro ${STALE_AFTER_HOURS}h (INAD pronto: ${inadAllReady}, App IO pronto: ${appIoReady}, Registro Imprese ${job.registroImpreseDone}/${job.registroImpreseTotal}).`,
           completedAt: new Date(),
         });
         this.logger.warn(`DomicileVerificationJob ${job.id} marcato FAILED per stallo (>${STALE_AFTER_HOURS}h in PROCESSING).`);

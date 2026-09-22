@@ -184,12 +184,28 @@ export class RegistroImpreseService {
     try {
       data = parseDettaglioImpresaXml(text);
     } catch {
-      // XML malformato/inatteso: found resta true (la chiamata HTTP è andata a
-      // buon fine), ma nessun dato strutturato — raw resta comunque disponibile.
+      // XML malformato/inatteso: nessun dato strutturato, found resta false
+      // (vedi sotto) — raw resta comunque disponibile.
       data = undefined;
     }
 
-    return { found: true, raw: text, pec: data?.sede.pec, denominazione: data?.sede.denominazione, data };
+    // Bug reale trovato in E2E su dati prod (449/2096 CF fisici "trovati",
+    // impossibile per persone fisiche): questo endpoint risponde HTTP 200
+    // anche per un CF senza impresa associata, con un XML VUOTO
+    // (`<blocchi-impresa/>`, nessun elemento dati-identificativi) — mai un
+    // 404. `found: true` incondizionato su ogni 200 marcava "trovata"
+    // anche l'assenza totale di dati. denominazione è l'unico attributo
+    // sempre presente su un'impresa reale (verificato su tutti gli esempi
+    // reali raccolti finora) — usarlo come criterio di "trovato" invece
+    // dello status HTTP da solo.
+    const found = !!data?.sede.denominazione;
+    // Un'impresa cessata da anni può comunque avere una PEC "trovata" nello
+    // XML — ma quella casella è quasi certamente disattivata/non
+    // monitorata. Segnalato dal vivo su un caso reale (impresa cancellata
+    // 2015, PEC ancora presente nel dettaglio). Valida solo se attiva
+    // (nessun stato-impresa) o cessata da meno di un anno.
+    const pec = found && isPecStillUsable(data!.sede) ? data?.sede.pec : undefined;
+    return { found, raw: text, pec, denominazione: data?.sede.denominazione, data };
   }
 
   /**
@@ -345,6 +361,27 @@ function parseSocio(el: any): RegistroImpreseSocio {
  * Ogni accesso è difensivo (campo assente ⇒ undefined) — lo schema non è
  * documentato nello spec OpenAPI, solo confermato empiricamente.
  */
+/**
+ * `dt-cancellazione` in formato "DD/MM/YYYY" (stesso formato di
+ * dt-iscrizione-ri/dt-atto-costituzione, verificato sugli esempi reali).
+ * Nessuno stato-impresa (attiva) ⇒ sempre valida. Cessata ⇒ valida solo se
+ * cancellata da meno di un anno — altrimenti la PEC è quasi certamente
+ * disattivata/non monitorata. Data assente o non parsabile su un'impresa
+ * cessata ⇒ conservativo, mai valida (non rischiare l'invio a una PEC
+ * morta senza potervi confermare la recency).
+ */
+function isPecStillUsable(sede: { statoImpresa?: string; dtCancellazione?: string }): boolean {
+  if (!sede.statoImpresa) return true;
+  if (!sede.dtCancellazione) return false;
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(sede.dtCancellazione);
+  if (!match) return false;
+  const [, day, month, year] = match;
+  const cancellationDate = new Date(Number(year), Number(month) - 1, Number(day));
+  const oneYearAgo = new Date();
+  oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+  return cancellationDate >= oneYearAgo;
+}
+
 function parseDettaglioImpresaXml(xml: string): RegistroImpreseImpresaData {
   const parsed = xmlParser.parse(xml);
   const root = parsed['blocchi-impresa'] ?? {};
