@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
-import type { Job } from 'bullmq';
+import { DelayedError, type Job } from 'bullmq';
 import { DomicileVerificationJob } from '../../entities/domicile-verification-job.entity.js';
 import { Recipient, RecipientStatus } from '../../entities/recipient.entity.js';
 import {
@@ -49,16 +49,33 @@ export class RegistroImpreseVerifyProcessor extends WorkerHost {
     super();
   }
 
-  async process(job: Job<AnyJobData>): Promise<void> {
+  async process(job: Job<AnyJobData>, token?: string): Promise<void> {
     if (job.name === VERIFY_PIVA_JOB_NAME) {
-      return this.processAdHocVerify(job as Job<RegistroImpreseVerifyJobData>);
+      return this.processAdHocVerify(job as Job<RegistroImpreseVerifyJobData>, token);
     }
     if (job.name === VERIFY_PIVA_CAMPAIGN_JOB_NAME) {
-      return this.processCampaignVerify(job as Job<RegistroImpreseCampaignVerifyJobData>);
+      return this.processCampaignVerify(job as Job<RegistroImpreseCampaignVerifyJobData>, token);
     }
   }
 
-  private async processAdHocVerify(job: Job<RegistroImpreseVerifyJobData>): Promise<void> {
+  /**
+   * Rate limit PDND (429) è per definizione transitorio, mai un dato reale
+   * sulla PIVA interrogata — a differenza di un errore generico (PIVA
+   * invalida, bug), che va comunque marcato "non trovato" e chiuso subito
+   * (vedi sotto). Un `throw` semplice consumerebbe un tentativo (attempts:8,
+   * backoff esponenziale) e dopo ~10.5 min il job si arrenderebbe scrivendo
+   * un FALSO negativo (`pec: null` per una PIVA mai realmente verificata).
+   * `job.moveToDelayed()` + `DelayedError` è il pattern BullMQ nativo per
+   * "riprova più tardi senza consumare un tentativo" — indefinito, mai
+   * un'esaurimento per il solo motivo del rate limit.
+   */
+  private async deferForRateLimit(job: Job<AnyJobData>, token: string | undefined, err: RegistroImpreseRateLimitError): Promise<never> {
+    const delayMs = (err.retryAfterSeconds ?? 30) * 1000;
+    await job.moveToDelayed(Date.now() + delayMs, token);
+    throw new DelayedError();
+  }
+
+  private async processAdHocVerify(job: Job<RegistroImpreseVerifyJobData>, token?: string): Promise<void> {
     const { jobId, partitaIva } = job.data;
 
     let pec: string | null;
@@ -69,7 +86,7 @@ export class RegistroImpreseVerifyProcessor extends WorkerHost {
       pec = result.pec ?? null;
     } catch (error) {
       if (error instanceof RegistroImpreseRateLimitError) {
-        throw error; // BullMQ ritenta con backoff esponenziale (opts su queue.add)
+        return this.deferForRateLimit(job, token, error);
       }
       this.logger.warn(`Verifica Registro Imprese fallita per ${partitaIva} (job ${jobId}): ${error instanceof Error ? error.message : error}`);
       found = false;
@@ -97,7 +114,7 @@ export class RegistroImpreseVerifyProcessor extends WorkerHost {
    * equivale a "nessun override, resta sul canale originale" — stesso
    * comportamento del catch in runInadExtractLoop per un CF persona fisica.
    */
-  private async processCampaignVerify(job: Job<RegistroImpreseCampaignVerifyJobData>): Promise<void> {
+  private async processCampaignVerify(job: Job<RegistroImpreseCampaignVerifyJobData>, token?: string): Promise<void> {
     const { recipientId, partitaIva, originalChannel, originalAddress, recipientPec } = job.data;
 
     let result: { found: boolean; pec?: string } | undefined;
@@ -105,7 +122,7 @@ export class RegistroImpreseVerifyProcessor extends WorkerHost {
       result = await this.registroImpreseService.dettaglioImpresa(partitaIva);
     } catch (error) {
       if (error instanceof RegistroImpreseRateLimitError) {
-        throw error;
+        return this.deferForRateLimit(job, token, error);
       }
       this.logger.warn(`Verifica Registro Imprese fallita per destinatario ${recipientId} (PIVA ${partitaIva}): ${error instanceof Error ? error.message : error}`);
       return;

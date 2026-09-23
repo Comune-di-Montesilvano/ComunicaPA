@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { InadService } from './inad.service.js';
+import { InadService, InadQuotaExceededError } from './inad.service.js';
 import { AppSettingsService } from '../../settings/app-settings.service.js';
 import { PdndAuthService } from '../../pdnd/pdnd-auth.service.js';
 
@@ -65,6 +65,31 @@ describe('InadService.extractDigitalAddress', () => {
   it('propaga l\'errore se il purposeId prod non è configurato', async () => {
     mockSettings.get.mockResolvedValueOnce(undefined);
     await expect(service.extractDigitalAddress('RRANGL74M28R701V')).rejects.toThrow();
+  });
+
+  it('lancia InadQuotaExceededError su 401 con detail "numero massimo chiamate giornaliere"', async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 401,
+      text: () => Promise.resolve('{"status":401,"type":"UNAUTHORIZED","detail":"Superato il numero massimo chiamate giornaliere per fruitore"}'),
+    });
+
+    await expect(service.extractDigitalAddress('RRANGL74M28R701V')).rejects.toThrow(InadQuotaExceededError);
+  });
+
+  it('un 401 generico (voucher/config) resta un Error normale, non InadQuotaExceededError', async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 401,
+      text: () => Promise.resolve('{"status":401,"type":"UNAUTHORIZED","detail":"Voucher non valido"}'),
+    });
+
+    await expect(service.extractDigitalAddress('RRANGL74M28R701V')).rejects.toThrow(/INAD extract fallito: HTTP 401/);
+    try {
+      await service.extractDigitalAddress('RRANGL74M28R701V');
+    } catch (err) {
+      expect(err).not.toBeInstanceOf(InadQuotaExceededError);
+    }
   });
 });
 
@@ -148,5 +173,33 @@ describe('InadService — metodi bulk', () => {
     expect(result[1].digitalAddress).toBeUndefined();
     const [url] = mockFetch.mock.calls[0];
     expect(url).toBe('https://api.inad.gov.it/rest/inad/v1/domiciliodigitale/listDigitalAddress/response/abc-123');
+  });
+
+  it('startBulkExtraction lancia InadQuotaExceededError su 401 quota-esaurita', async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 401,
+      headers: { get: () => null },
+      text: () => Promise.resolve('{"status":401,"type":"UNAUTHORIZED","detail":"Superato il numero massimo chiamate giornaliere per fruitore"}'),
+    });
+    await expect(service.startBulkExtraction(['CF1'], 'rif')).rejects.toThrow(InadQuotaExceededError);
+  });
+
+  it('getBulkState lancia InadQuotaExceededError su 401 quota-esaurita', async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 401,
+      text: () => Promise.resolve('{"status":401,"type":"UNAUTHORIZED","detail":"Superato il numero massimo chiamate giornaliere per fruitore"}'),
+    });
+    await expect(service.getBulkState('abc-123')).rejects.toThrow(InadQuotaExceededError);
+  });
+
+  it('getBulkResult lancia InadQuotaExceededError su 401 quota-esaurita', async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 401,
+      text: () => Promise.resolve('{"status":401,"type":"UNAUTHORIZED","detail":"Superato il numero massimo chiamate giornaliere per fruitore"}'),
+    });
+    await expect(service.getBulkResult('abc-123')).rejects.toThrow(InadQuotaExceededError);
   });
 });

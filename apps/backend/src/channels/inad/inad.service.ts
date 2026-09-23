@@ -20,6 +20,34 @@ export interface InadExtractResult {
 export type InadBulkState = 'PRESA_IN_CARICO' | 'IN_ELABORAZIONE' | 'DISPONIBILE';
 
 /**
+ * 401 specifico di quota giornaliera INAD esaurita ("Superato il numero
+ * massimo chiamate giornaliere per fruitore") — distinto da un 401 generico
+ * (voucher/config rotta, che deve continuare a fallire rumorosamente). I
+ * chiamanti (campaigns.service.ts, inad-check-sync.service.ts,
+ * domicile-verification-sync.service.ts) lo trattano come "riprova più
+ * tardi", mai come errore bloccante definitivo.
+ */
+export class InadQuotaExceededError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InadQuotaExceededError';
+  }
+}
+
+function isQuotaExceededBody(text: string): boolean {
+  try {
+    const parsed = JSON.parse(text);
+    return (
+      parsed?.status === 401 &&
+      typeof parsed?.detail === 'string' &&
+      parsed.detail.toLowerCase().includes('numero massimo chiamate giornaliere')
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Unico punto di verità per "quale indirizzo digitale usare" da un array
  * InadDigitalAddressElement — sempre il primo elemento, mai una
  * concatenazione di più indirizzi. Riusata sia da campaigns.service.ts
@@ -70,6 +98,9 @@ export class InadService {
     }
     const text = await response.text();
     if (!response.ok) {
+      if (response.status === 401 && isQuotaExceededBody(text)) {
+        throw new InadQuotaExceededError(`INAD quota giornaliera esaurita: ${text.slice(0, 300)}`);
+      }
       throw new Error(`INAD extract fallito: HTTP ${response.status} — ${text.slice(0, 500)}`);
     }
     let data: InadExtractResult['data'];
@@ -90,6 +121,9 @@ export class InadService {
     });
     const text = await response.text();
     if (!response.ok) {
+      if (response.status === 401 && isQuotaExceededBody(text)) {
+        throw new InadQuotaExceededError(`INAD quota giornaliera esaurita: ${text.slice(0, 300)}`);
+      }
       throw new Error(`INAD bulk fallito: HTTP ${response.status} — ${text.slice(0, 500)}`);
     }
     const location = response.headers.get('location');
@@ -108,6 +142,9 @@ export class InadService {
     });
     const text = await response.text();
     if (!response.ok && response.status !== 303) {
+      if (response.status === 401 && isQuotaExceededBody(text)) {
+        throw new InadQuotaExceededError(`INAD quota giornaliera esaurita: ${text.slice(0, 300)}`);
+      }
       throw new Error(`INAD bulk state fallito: HTTP ${response.status} — ${text.slice(0, 500)}`);
     }
     let data: { state: InadBulkState };
@@ -126,6 +163,9 @@ export class InadService {
     });
     const text = await response.text();
     if (!response.ok) {
+      if (response.status === 401 && isQuotaExceededBody(text)) {
+        throw new InadQuotaExceededError(`INAD quota giornaliera esaurita: ${text.slice(0, 300)}`);
+      }
       throw new Error(`INAD bulk result fallito: HTTP ${response.status} — ${text.slice(0, 500)}`);
     }
     let data: { list: InadBulkResultItem[] };

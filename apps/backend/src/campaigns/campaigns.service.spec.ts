@@ -11,7 +11,7 @@ import { NotificationAttempt, AttemptStatus } from '../entities/notification-att
 import { DownloadEvent } from '../entities/download-event.entity.js';
 import { NotificationQueuesService } from '../queue/notification-queues.service.js';
 import { AppSettingsService } from '../settings/app-settings.service.js';
-import { InadService } from '../channels/inad/inad.service.js';
+import { InadService, InadQuotaExceededError } from '../channels/inad/inad.service.js';
 import { RegistroImpreseService } from '../channels/registro-imprese/registro-imprese.service.js';
 import { RegistroImpreseVerifyQueueService } from '../channels/registro-imprese/registro-imprese-verify-queue.service.js';
 import { PostalAuthorizedUsersService } from '../postal-authorized-users/postal-authorized-users.service.js';
@@ -1520,6 +1520,40 @@ describe('CampaignsService', () => {
       expect(mockInadService.startBulkExtraction).not.toHaveBeenCalled();
     });
 
+    it('quota INAD esaurita (401) sotto soglia: mai invio senza protezione, campagna va in CHECKING_INAD con batch non sottomesso', async () => {
+      mockSettings.get.mockImplementation(async (key?: string) => (key === 'inad.checkEnabled' ? true : null));
+      const campaignEmail = { ...mockCampaign, id: 'c-inad-quota', channelType: 'EMAIL', channelConfig: {} };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaignEmail);
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: { extraData?: boolean } }) => {
+        if (select?.extraData) return Promise.resolve([]);
+        return Promise.resolve([
+          { id: 'r1', codiceFiscale: 'CF1', pec: null },
+          { id: 'r2', codiceFiscale: 'CF2', pec: null },
+        ]);
+      });
+      mockInadService.extractDigitalAddress.mockRejectedValue(
+        new InadQuotaExceededError('INAD quota giornaliera esaurita'),
+      );
+      mockInadService.startBulkExtraction.mockRejectedValue(
+        new InadQuotaExceededError('INAD quota giornaliera esaurita'),
+      );
+
+      const result = await service.launch('c-inad-quota', ADMIN_REQUESTER);
+
+      expect(result.launched).toBe(0);
+      expect(mockCampaignRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: CampaignStatus.CHECKING_INAD,
+          channelConfig: expect.objectContaining({
+            inadCheck: expect.objectContaining({
+              batches: [expect.objectContaining({ id: null, done: false })],
+            }),
+          }),
+        }),
+      );
+      expect(mockAttemptRepo.createQueryBuilder).not.toHaveBeenCalled();
+    });
+
     it('campagna PEC, destinatario PIVA con PEC Registro Imprese difforme: PENDING_REVIEW, mai sovrascrive recipient.pec, escluso dal lancio', async () => {
       mockSettings.get.mockImplementation(async (key?: string) => (key === 'inad.checkEnabled' ? true : null));
       const campaignPec = { ...mockCampaign, id: 'c-inad-piva', channelType: 'PEC', channelConfig: {} };
@@ -1659,6 +1693,34 @@ describe('CampaignsService', () => {
         expect.objectContaining({ status: CampaignStatus.CHECKING_INAD }),
       );
       expect(mockAttemptRepo.createQueryBuilder).not.toHaveBeenCalled();
+    });
+
+    it('quota INAD esaurita (401) sopra soglia: mai launch() in errore, batch non sottomessi marcati id:null', async () => {
+      mockSettings.get.mockImplementation(async (key?: string) => (key === 'inad.checkEnabled' ? true : null));
+      const campaignEmail = { ...mockCampaign, id: 'c-bulk-quota', channelType: 'EMAIL', channelConfig: {} };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaignEmail);
+      const manyRecipients = Array.from({ length: 150 }, (_, i) => ({ id: `r${i}`, codiceFiscale: `CF${i}` }));
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: { extraData?: boolean } }) => {
+        if (select?.extraData) return Promise.resolve([]);
+        return Promise.resolve(manyRecipients);
+      });
+      mockInadService.startBulkExtraction.mockRejectedValue(
+        new InadQuotaExceededError('INAD quota giornaliera esaurita'),
+      );
+
+      const result = await service.launch('c-bulk-quota', ADMIN_REQUESTER);
+
+      expect(result.launched).toBe(0);
+      expect(mockCampaignRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: CampaignStatus.CHECKING_INAD,
+          channelConfig: expect.objectContaining({
+            inadCheck: expect.objectContaining({
+              batches: [expect.objectContaining({ id: null, recipientIds: manyRecipients.map((r) => r.id), done: false })],
+            }),
+          }),
+        }),
+      );
     });
 
     it('finalizeInadCheck applica i risultati e lancia createAttemptsAndEnqueue', async () => {
@@ -1814,6 +1876,30 @@ describe('CampaignsService', () => {
       await expect(service.finalizeInadCheck('c-bulk-notready')).resolves.not.toThrow();
 
       expect(mockInadService.getBulkState).toHaveBeenCalledWith('batch-notready');
+      expect(mockInadService.getBulkResult).not.toHaveBeenCalled();
+      expect(mockAttemptRepo.createQueryBuilder).not.toHaveBeenCalled();
+      expect(mockCampaignRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('batch non ancora sottomesso (id: null, quota INAD esaurita al lancio) è trattato come non pronto, mai getBulkState(null)', async () => {
+      const campaignChecking = {
+        ...mockCampaign,
+        id: 'c-bulk-unsent',
+        channelType: 'EMAIL',
+        status: CampaignStatus.CHECKING_INAD,
+        channelConfig: {
+          inadCheck: {
+            mechanism: 'bulk',
+            batches: [{ id: null, recipientIds: ['r1', 'r2'], done: false }],
+            requestedAt: '2026-01-01T00:00:00Z',
+          },
+        },
+      };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaignChecking);
+
+      await expect(service.finalizeInadCheck('c-bulk-unsent')).resolves.not.toThrow();
+
+      expect(mockInadService.getBulkState).not.toHaveBeenCalled();
       expect(mockInadService.getBulkResult).not.toHaveBeenCalled();
       expect(mockAttemptRepo.createQueryBuilder).not.toHaveBeenCalled();
       expect(mockCampaignRepo.save).not.toHaveBeenCalled();

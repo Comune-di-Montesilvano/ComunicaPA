@@ -1,3 +1,4 @@
+import { DelayedError } from 'bullmq';
 import { RegistroImpreseVerifyProcessor } from './registro-imprese-verify.processor.js';
 import { RegistroImpreseRateLimitError } from './registro-imprese-rate-limit.error.js';
 import { VERIFY_PIVA_JOB_NAME, VERIFY_PIVA_CAMPAIGN_JOB_NAME } from './registro-imprese-job.types.js';
@@ -52,13 +53,31 @@ describe('RegistroImpreseVerifyProcessor.process', () => {
     );
   });
 
-  it('rilancia RegistroImpreseRateLimitError (BullMQ deve ritentare con backoff)', async () => {
+  it('rate limit (429): rinvia il job col job.moveToDelayed (mai un tentativo consumato) e lancia DelayedError', async () => {
     mockRegistroImprese.dettaglioImpresa.mockRejectedValue(new RegistroImpreseRateLimitError(30));
+    const moveToDelayed = jest.fn().mockResolvedValue(undefined);
+    const job = { name: VERIFY_PIVA_JOB_NAME, data: { jobId: 'job-1', partitaIva: '12345678901' }, moveToDelayed } as any;
+    const before = Date.now();
 
-    await expect(
-      processor.process({ name: VERIFY_PIVA_JOB_NAME, data: { jobId: 'job-1', partitaIva: '12345678901' } } as any),
-    ).rejects.toThrow(RegistroImpreseRateLimitError);
+    await expect(processor.process(job, 'token-1')).rejects.toThrow(DelayedError);
+
+    expect(moveToDelayed).toHaveBeenCalledTimes(1);
+    const [timestamp, token] = moveToDelayed.mock.calls[0];
+    expect(timestamp).toBeGreaterThanOrEqual(before + 30_000);
+    expect(token).toBe('token-1');
     expect(mockJobRepo.query).not.toHaveBeenCalled();
+  });
+
+  it('rate limit senza Retry-After: usa un fallback di 30s', async () => {
+    mockRegistroImprese.dettaglioImpresa.mockRejectedValue(new RegistroImpreseRateLimitError(undefined));
+    const moveToDelayed = jest.fn().mockResolvedValue(undefined);
+    const job = { name: VERIFY_PIVA_JOB_NAME, data: { jobId: 'job-1', partitaIva: '12345678901' }, moveToDelayed } as any;
+    const before = Date.now();
+
+    await expect(processor.process(job, 'token-1')).rejects.toThrow(DelayedError);
+
+    const [timestamp] = moveToDelayed.mock.calls[0];
+    expect(timestamp).toBeGreaterThanOrEqual(before + 30_000);
   });
 });
 
@@ -184,10 +203,14 @@ describe('RegistroImpreseVerifyProcessor.process — VERIFY_PIVA_CAMPAIGN_JOB_NA
     expect(mockRecipientRepo.update).not.toHaveBeenCalled();
   });
 
-  it('rilancia RegistroImpreseRateLimitError (BullMQ deve ritentare)', async () => {
+  it('rate limit (429): rinvia il job col job.moveToDelayed, mai un aggiornamento sul destinatario', async () => {
     mockRegistroImprese.dettaglioImpresa.mockRejectedValue(new RegistroImpreseRateLimitError(30));
+    const moveToDelayed = jest.fn().mockResolvedValue(undefined);
+    const job = { name: VERIFY_PIVA_CAMPAIGN_JOB_NAME, data: jobData, moveToDelayed } as any;
 
-    await expect(processor.process({ name: VERIFY_PIVA_CAMPAIGN_JOB_NAME, data: jobData } as any)).rejects.toThrow(RegistroImpreseRateLimitError);
+    await expect(processor.process(job, 'token-1')).rejects.toThrow(DelayedError);
+
+    expect(moveToDelayed).toHaveBeenCalledTimes(1);
     expect(mockRecipientRepo.update).not.toHaveBeenCalled();
   });
 });

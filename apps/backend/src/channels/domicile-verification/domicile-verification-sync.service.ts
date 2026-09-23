@@ -3,15 +3,18 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Cron } from '@nestjs/schedule';
 import { DomicileVerificationJob, DomicileVerificationJobStatus } from '../../entities/domicile-verification-job.entity.js';
-import { InadService, resolveInadDigitalAddress } from '../inad/inad.service.js';
+import { InadService, InadQuotaExceededError, resolveInadDigitalAddress } from '../inad/inad.service.js';
 import { buildDomicileVerificationCsvs } from './domicile-verification-csv.util.js';
 import { DomicileVerificationEventsService } from './domicile-verification-events.service.js';
 
 /** Rete di sicurezza: un job bloccato oltre questa soglia (una fonte mai
  * completa per un bug non ancora scoperto) va chiuso esplicitamente FAILED
  * invece di restare in PROCESSING per sempre — stesso principio già in uso
- * su InadVerifyBulkSyncService. */
-const STALE_AFTER_HOURS = 24;
+ * su InadVerifyBulkSyncService. Esteso da 24 a 48h: una campagna reale ha
+ * atteso oltre 24h per colpa della sola quota giornaliera INAD (comunque
+ * mai soggetta a questo timeout, vedi sotto) — margine di sicurezza più
+ * ampio per i casi genuinamente bloccati (bug, non quota). */
+const STALE_AFTER_HOURS = 48;
 
 /**
  * Poll periodico dei job PROCESSING — un job è completo solo quando TUTTE e
@@ -69,10 +72,22 @@ export class DomicileVerificationSyncService {
 
   private async syncOne(job: DomicileVerificationJob): Promise<void> {
     const batches = job.inadBatches;
+    // Quota giornaliera INAD esaurita (401): non deve mai far fallire il job
+    // (era il bug reale — un solo 401 su getBulkState marcava FAILED per
+    // sempre entro 5 minuti dal lancio, vedi CLAUDE.md). Batch resta
+    // done:false, si riprova al prossimo tick — e quotaBlocked disattiva
+    // anche il fallback anti-stallo (sotto) per questo giro, un blocco solo
+    // di quota non deve mai contare come "stallo genuino".
+    let quotaBlocked = false;
     for (const batch of batches) {
       if (batch.done) continue;
-      const state = await this.inadService.getBulkState(batch.id);
-      if (state === 'DISPONIBILE') batch.done = true;
+      try {
+        const state = await this.inadService.getBulkState(batch.id);
+        if (state === 'DISPONIBILE') batch.done = true;
+      } catch (err) {
+        if (!(err instanceof InadQuotaExceededError)) throw err;
+        quotaBlocked = true;
+      }
     }
     const inadAllReady = batches.every((b) => b.done);
 
@@ -82,21 +97,28 @@ export class DomicileVerificationSyncService {
     let inadFetched = job.inadFetched;
     if (inadAllReady && !inadFetched) {
       const map: Record<string, string> = {};
-      for (const batch of batches) {
-        const items = await this.inadService.getBulkResult(batch.id);
-        items.forEach((item) => {
-          // Stessa risoluzione di campaigns.service.ts runInadExtractLoop
-          // (resolveInadDigitalAddress, sempre il primo elemento) — prima
-          // qui si univano TUTTI gli indirizzi con "; ", stesso dato
-          // interpretato diversamente in due punti del codice.
-          const address = resolveInadDigitalAddress(item.digitalAddress);
-          if (address) map[item.codiceFiscale.toUpperCase()] = address;
-        });
+      try {
+        for (const batch of batches) {
+          const items = await this.inadService.getBulkResult(batch.id);
+          items.forEach((item) => {
+            // Stessa risoluzione di campaigns.service.ts runInadExtractLoop
+            // (resolveInadDigitalAddress, sempre il primo elemento) — prima
+            // qui si univano TUTTI gli indirizzi con "; ", stesso dato
+            // interpretato diversamente in due punti del codice.
+            const address = resolveInadDigitalAddress(item.digitalAddress);
+            if (address) map[item.codiceFiscale.toUpperCase()] = address;
+          });
+        }
+        inadFoundMap = map;
+        inadFetched = true;
+        patch.inadFoundMap = inadFoundMap;
+        patch.inadFetched = true;
+      } catch (err) {
+        if (!(err instanceof InadQuotaExceededError)) throw err;
+        quotaBlocked = true;
+        // inadFetched resta false: ritenteremo il fetch completo al
+        // prossimo tick (nessun risultato parziale persistito).
       }
-      inadFoundMap = map;
-      inadFetched = true;
-      patch.inadFoundMap = inadFoundMap;
-      patch.inadFetched = true;
     }
 
     // Registro Imprese è accodato per intero (PIVA + tutti i CF fisici) già
@@ -109,7 +131,7 @@ export class DomicileVerificationSyncService {
 
     if (!complete) {
       const ageHours = (Date.now() - new Date(job.createdAt as any).getTime()) / 3_600_000;
-      if (ageHours > STALE_AFTER_HOURS) {
+      if (!quotaBlocked && ageHours > STALE_AFTER_HOURS) {
         await this.jobRepo.update(job.id, {
           ...patch,
           status: DomicileVerificationJobStatus.FAILED,
