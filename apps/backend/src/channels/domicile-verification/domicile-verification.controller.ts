@@ -94,6 +94,13 @@ export class DomicileVerificationController {
     return this.svc.getStatus(id);
   }
 
+  @Post('jobs/:id/skip-inad')
+  @Roles('admin')
+  async skipInad(@Param('id', ParseUUIDPipe) id: string): Promise<{ ok: true }> {
+    await this.svc.skipInad(id);
+    return { ok: true };
+  }
+
   @Get('jobs/:id/assenti.csv')
   @Roles('user', 'admin')
   async downloadAssenti(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response): Promise<void> {

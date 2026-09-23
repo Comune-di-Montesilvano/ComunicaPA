@@ -1,5 +1,6 @@
 import { DomicileVerificationSyncService } from './domicile-verification-sync.service.js';
 import { DomicileVerificationJobStatus } from '../../entities/domicile-verification-job.entity.js';
+import { InadQuotaExceededError } from '../inad/inad.service.js';
 
 const mockJobRepo = { find: jest.fn(), update: jest.fn(), findOneBy: jest.fn() };
 const mockInad = { getBulkState: jest.fn(), getBulkResult: jest.fn() };
@@ -124,9 +125,24 @@ describe('DomicileVerificationSyncService.handleCron', () => {
     expect(patch.completedAt).toBeInstanceOf(Date);
   });
 
-  it('marca FAILED un job bloccato in PROCESSING da più di 24h', async () => {
+  it('non marca FAILED un job bloccato da 30h (sotto la soglia estesa a 48h)', async () => {
     mockJobRepo.find.mockResolvedValue([{
-      id: 'job-1', status: DomicileVerificationJobStatus.PROCESSING, createdAt: new Date(Date.now() - 25 * 3600 * 1000),
+      id: 'job-1', status: DomicileVerificationJobStatus.PROCESSING, createdAt: new Date(Date.now() - 30 * 3600 * 1000),
+      inadBatches: [{ id: 'batch-1', size: 1, done: false }], inadFetched: false, inadFoundMap: {},
+      cfFisicoTotal: 1, pivaTotal: 0, appIoDone: false,
+      registroImpreseTotal: 1, registroImpreseDone: 0,
+      sourceCsv: 'cf\nRRANGL74M28R701V\n', hasHeaders: true, cfColumn: 'cf',
+    }]);
+    mockInad.getBulkState.mockResolvedValue('IN_ELABORAZIONE');
+
+    await service.handleCron();
+
+    expect(mockJobRepo.update).not.toHaveBeenCalledWith('job-1', expect.objectContaining({ status: DomicileVerificationJobStatus.FAILED }));
+  });
+
+  it('marca FAILED un job bloccato in PROCESSING da più di 48h', async () => {
+    mockJobRepo.find.mockResolvedValue([{
+      id: 'job-1', status: DomicileVerificationJobStatus.PROCESSING, createdAt: new Date(Date.now() - 49 * 3600 * 1000),
       inadBatches: [{ id: 'batch-1', size: 1, done: false }], inadFetched: false, inadFoundMap: {},
       cfFisicoTotal: 1, pivaTotal: 0, appIoDone: false,
       registroImpreseTotal: 1, registroImpreseDone: 0,
@@ -138,7 +154,40 @@ describe('DomicileVerificationSyncService.handleCron', () => {
 
     const call = mockJobRepo.update.mock.calls.find(([, patch]: any) => patch.status === DomicileVerificationJobStatus.FAILED);
     expect(call).toBeDefined();
-    expect(call![1].errorMessage).toContain('24');
+    expect(call![1].errorMessage).toContain('48');
+  });
+
+  it('quota INAD esaurita (401) su getBulkState: mai FAILED, anche oltre 48h — resta PROCESSING, ritenta al prossimo tick', async () => {
+    mockJobRepo.find.mockResolvedValue([{
+      id: 'job-1', status: DomicileVerificationJobStatus.PROCESSING, createdAt: new Date(Date.now() - 49 * 3600 * 1000),
+      inadBatches: [{ id: 'batch-1', size: 1, done: false }], inadFetched: false, inadFoundMap: {},
+      cfFisicoTotal: 1, pivaTotal: 0, appIoDone: true,
+      registroImpreseTotal: 0, registroImpreseDone: 0,
+      sourceCsv: 'cf\nRRANGL74M28R701V\n', hasHeaders: true, cfColumn: 'cf',
+    }]);
+    mockInad.getBulkState.mockRejectedValue(new InadQuotaExceededError('quota esaurita'));
+
+    await service.handleCron();
+
+    expect(mockJobRepo.update).not.toHaveBeenCalledWith('job-1', expect.objectContaining({ status: DomicileVerificationJobStatus.FAILED }));
+    expect(mockJobRepo.update).not.toHaveBeenCalledWith('job-1', expect.objectContaining({ status: DomicileVerificationJobStatus.DONE }));
+  });
+
+  it('quota INAD esaurita (401) su getBulkResult: batch resta non-done, mai FAILED', async () => {
+    mockJobRepo.find.mockResolvedValue([{
+      id: 'job-1', status: DomicileVerificationJobStatus.PROCESSING, createdAt: new Date(),
+      inadBatches: [{ id: 'batch-1', size: 1, done: false }], inadFetched: false, inadFoundMap: {},
+      cfFisicoTotal: 1, pivaTotal: 0, appIoDone: true,
+      registroImpreseTotal: 0, registroImpreseDone: 0,
+      sourceCsv: 'cf\nRRANGL74M28R701V\n', hasHeaders: true, cfColumn: 'cf',
+    }]);
+    mockInad.getBulkState.mockResolvedValue('DISPONIBILE');
+    mockInad.getBulkResult.mockRejectedValue(new InadQuotaExceededError('quota esaurita'));
+
+    await service.handleCron();
+
+    expect(mockJobRepo.update).not.toHaveBeenCalledWith('job-1', expect.objectContaining({ status: DomicileVerificationJobStatus.FAILED }));
+    expect(mockJobRepo.update).not.toHaveBeenCalledWith('job-1', expect.objectContaining({ status: DomicileVerificationJobStatus.DONE }));
   });
 
   it('un errore imprevisto durante il sync marca il job FAILED (mai un job bloccato senza spiegazione)', async () => {

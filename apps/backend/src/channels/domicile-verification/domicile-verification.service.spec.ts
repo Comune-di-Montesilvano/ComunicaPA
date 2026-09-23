@@ -94,6 +94,40 @@ describe('DomicileVerificationService.createJob', () => {
   });
 });
 
+describe('DomicileVerificationService.skipInad', () => {
+  let service: DomicileVerificationService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new DomicileVerificationService(mockJobRepo as any, mockIoServiceRepo as any, mockInad as any, mockRegistroImpreseQueue as any, mockAppIoQueue as any);
+  });
+
+  it('marca tutti i batch INAD pending come done e inadFetched, senza toccare i risultati già trovati', async () => {
+    mockJobRepo.findOneBy.mockResolvedValue({
+      id: 'job-1',
+      status: DomicileVerificationJobStatus.PROCESSING,
+      inadBatches: [{ id: 'b1', size: 2, done: false }, { id: 'b2', size: 1, done: true }],
+    });
+
+    await service.skipInad('job-1');
+
+    expect(mockJobRepo.update).toHaveBeenCalledWith('job-1', {
+      inadBatches: [{ id: 'b1', size: 2, done: true }, { id: 'b2', size: 1, done: true }],
+      inadFetched: true,
+    });
+  });
+
+  it('lancia 404 se il job non esiste', async () => {
+    mockJobRepo.findOneBy.mockResolvedValue(null);
+    await expect(service.skipInad('job-x')).rejects.toThrow('non trovato');
+  });
+
+  it('lancia BadRequest se il job non è PROCESSING (es. già DONE/FAILED)', async () => {
+    mockJobRepo.findOneBy.mockResolvedValue({ id: 'job-1', status: DomicileVerificationJobStatus.DONE, inadBatches: [] });
+    await expect(service.skipInad('job-1')).rejects.toThrow('non è in elaborazione');
+  });
+});
+
 describe('DomicileVerificationService.getResultCsv', () => {
   let service: DomicileVerificationService;
 

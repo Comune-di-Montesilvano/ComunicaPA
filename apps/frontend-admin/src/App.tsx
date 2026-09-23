@@ -1623,6 +1623,7 @@ export function App(): React.JSX.Element {
   const [domicileVerifJobId, setDomicileVerifJobId] = useState<string | null>(null);
   const [domicileVerifStatus, setDomicileVerifStatus] = useState<DomicileVerificationStatus | null>(null);
   const [domicileVerifSubmitting, setDomicileVerifSubmitting] = useState(false);
+  const [domicileVerifSkipping, setDomicileVerifSkipping] = useState(false);
   const [domicileVerifSubmitError, setDomicileVerifSubmitError] = useState<string | null>(null);
   const [domicileVerifJobs, setDomicileVerifJobs] = useState<DomicileVerificationJobSummary[]>([]);
   const [domicileVerifJobsLoading, setDomicileVerifJobsLoading] = useState(false);
@@ -3405,6 +3406,21 @@ export function App(): React.JSX.Element {
       URL.revokeObjectURL(url);
     } catch {
       alert('Errore durante il download');
+    }
+  };
+
+  const handleDomicileVerifSkipInad = async () => {
+    if (!domicileVerifJobId) return;
+    if (!confirm('Abbandonare la verifica INAD per i codici fiscali ancora in coda? Verranno trattati come "non trovati" — App IO e Registro Imprese proseguono normalmente.')) return;
+    setDomicileVerifSkipping(true);
+    try {
+      const res = await apiFetch(`/domicile-verification/jobs/${domicileVerifJobId}/skip-inad`, { method: 'POST' });
+      if (!res.ok) { alert('Errore durante lo skip della verifica INAD'); return; }
+      await handleDomicileVerifOpenJob(domicileVerifJobId);
+    } catch {
+      alert('Errore durante lo skip della verifica INAD');
+    } finally {
+      setDomicileVerifSkipping(false);
     }
   };
 
@@ -14384,6 +14400,15 @@ export function App(): React.JSX.Element {
                               <div className="progress-bar" style={{ width: `${Math.round((domicileVerifStatus.registroImpreseDone / domicileVerifStatus.registroImpreseTotal) * 100)}%` }} />
                             </div>
                           </>
+                        )}
+                        {domicileVerifStatus.cfFisicoTotal > 0 && domicileVerifStatus.inadBatchesDone < domicileVerifStatus.inadBatchesTotal && (
+                          <button
+                            className="btn btn-sm btn-outline-danger mt-1"
+                            disabled={domicileVerifSkipping}
+                            onClick={handleDomicileVerifSkipInad}
+                          >
+                            {domicileVerifSkipping ? 'Salto in corso…' : 'Salta verifica INAD'}
+                          </button>
                         )}
                       </div>
                     )}

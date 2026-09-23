@@ -36,7 +36,7 @@ import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } fro
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto.js';
 import type { NotificationChannel, NotificationJobData, OperatorRole } from '@comunicapa/shared-types';
 import { matchCountry, abbreviateLongMunicipality } from '@comunicapa/shared-types';
-import { InadService, resolveInadDigitalAddress } from '../channels/inad/inad.service.js';
+import { InadService, InadQuotaExceededError, resolveInadDigitalAddress } from '../channels/inad/inad.service.js';
 import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service.js';
 import { RegistroImpreseService } from '../channels/registro-imprese/registro-imprese.service.js';
 import { RegistroImpreseVerifyQueueService } from '../channels/registro-imprese/registro-imprese-verify-queue.service.js';
@@ -693,6 +693,14 @@ export class CampaignsService {
     if (inadCheckEnabled) {
       if (recipients.length < INAD_BULK_THRESHOLD) {
         const result = await this.runInadExtractLoop(campaign, recipients);
+        if (result.quotaExceeded) {
+          // Quota giornaliera INAD esaurita a metà loop: mai proseguire
+          // l'invio senza protezione per i destinatari non ancora
+          // controllati — stesso meccanismo differito del percorso bulk
+          // (CHECKING_INAD, retry automatico via InadCheckSyncService).
+          const { launched } = await this.startInadBulkCheck(campaign, recipients);
+          return { launched, campaignId, signatureWarning };
+        }
         channelOverrides = result.channelOverrides;
         // I destinatari finiti in PENDING_REVIEW (PEC difforme da Registro
         // Imprese, mai auto-applicata) restano fuori da questo lancio — il
@@ -865,15 +873,17 @@ export class CampaignsService {
     campaign: Campaign,
     recipients: Array<{ id: string }>,
     blockPecReview = true,
-  ): Promise<{ channelOverrides: Map<string, NotificationChannel>; pendingReviewIds: Set<string> }> {
+  ): Promise<{ channelOverrides: Map<string, NotificationChannel>; pendingReviewIds: Set<string>; quotaExceeded: boolean }> {
     const fullRecipients = await this.recipientRepo.find({
       where: { id: In(recipients.map((r) => r.id)) },
       select: { id: true, codiceFiscale: true, pec: true, email: true },
     });
     const channelOverrides = new Map<string, NotificationChannel>();
     const pendingReviewIds = new Set<string>();
+    let quotaExceeded = false;
     const CONCURRENCY = 5;
     for (let i = 0; i < fullRecipients.length; i += CONCURRENCY) {
+      if (quotaExceeded) break;
       const batch = fullRecipients.slice(i, i + CONCURRENCY);
       await Promise.all(
         batch.map(async (recipient) => {
@@ -897,6 +907,15 @@ export class CampaignsService {
             try {
               result = await this.inadService.extractDigitalAddress(recipient.codiceFiscale);
             } catch (err) {
+              if (err instanceof InadQuotaExceededError) {
+                // Quota giornaliera esaurita: non ha senso continuare a
+                // chiamare INAD per gli altri destinatari (falliranno tutti
+                // identicamente) — il chiamante (launch()) converte l'intero
+                // lancio nel percorso bulk differito invece di proseguire
+                // senza protezione.
+                quotaExceeded = true;
+                return;
+              }
               this.logger.warn(`Check INAD fallito per destinatario ${recipient.id} (CF ${recipient.codiceFiscale}): ${err instanceof Error ? err.message : err}`);
               return;
             }
@@ -935,7 +954,7 @@ export class CampaignsService {
         }),
       );
     }
-    return { channelOverrides, pendingReviewIds };
+    return { channelOverrides, pendingReviewIds, quotaExceeded };
   }
 
   /**
@@ -960,14 +979,31 @@ export class CampaignsService {
     const pivaRecipients = fullRecipients.filter((r) => r.codiceFiscale && isPartitaIva(r.codiceFiscale));
 
     const BATCH = 1000;
-    const batches: Array<{ id: string; recipientIds: string[]; done: boolean }> = [];
+    const batches: Array<{ id: string | null; recipientIds: string[]; done: boolean }> = [];
+    // Quota giornaliera INAD esaurita: al primo 401 di questo tipo, tutti i
+    // chunk restanti (compreso quello corrente) vengono marcati "non ancora
+    // sottomessi" (id: null) invece di far fallire l'intero launch() — verranno
+    // sottomessi da InadCheckSyncService al prossimo tick cron, quando la
+    // quota si sarà liberata. Un'altra causa di errore (config PDND rotta,
+    // rete giù) resta bloccante come oggi.
+    let quotaExceeded = false;
     for (let i = 0; i < cfRecipients.length; i += BATCH) {
       const chunk = cfRecipients.slice(i, i + BATCH);
-      const { id } = await this.inadService.startBulkExtraction(
-        chunk.map((r) => r.codiceFiscale!),
-        `comunicapa-campagna-${campaign.id}`,
-      );
-      batches.push({ id, recipientIds: chunk.map((r) => r.id), done: false });
+      if (quotaExceeded) {
+        batches.push({ id: null, recipientIds: chunk.map((r) => r.id), done: false });
+        continue;
+      }
+      try {
+        const { id } = await this.inadService.startBulkExtraction(
+          chunk.map((r) => r.codiceFiscale!),
+          `comunicapa-campagna-${campaign.id}`,
+        );
+        batches.push({ id, recipientIds: chunk.map((r) => r.id), done: false });
+      } catch (err) {
+        if (!(err instanceof InadQuotaExceededError)) throw err;
+        quotaExceeded = true;
+        batches.push({ id: null, recipientIds: chunk.map((r) => r.id), done: false });
+      }
     }
 
     for (const recipient of pivaRecipients) {
@@ -1016,7 +1052,7 @@ export class CampaignsService {
     if (!campaign || campaign.status !== CampaignStatus.CHECKING_INAD) return;
 
     const inadCheck = campaign.channelConfig?.['inadCheck'] as
-      | { mechanism: 'bulk'; batches: Array<{ id: string; recipientIds: string[]; done: boolean }>; pivaRecipientIds?: string[]; requestedAt: string }
+      | { mechanism: 'bulk'; batches: Array<{ id: string | null; recipientIds: string[]; done: boolean }>; pivaRecipientIds?: string[]; requestedAt: string }
       | undefined;
     if (!inadCheck) return;
     const pivaRecipientIds = inadCheck.pivaRecipientIds ?? [];
@@ -1039,6 +1075,12 @@ export class CampaignsService {
     // ad ogni chiamata successiva. Stessa difesa per i job PIVA (Registro
     // Imprese): se anche uno solo non è ancora 'completed'/'failed', abortisci.
     for (const batch of pendingBatches) {
+      // Batch non ancora sottomesso a INAD (quota giornaliera esaurita al
+      // lancio/al retry precedente) — trattato come "non pronto", stesso
+      // abort dei batch IN_ELABORAZIONE: nessun getBulkState(null).
+      if (!batch.id) {
+        return;
+      }
       const state = await this.inadService.getBulkState(batch.id);
       if (state !== 'DISPONIBILE') {
         return;
@@ -1050,8 +1092,10 @@ export class CampaignsService {
     }
 
     // Fase 2: tutti i batch pending sono DISPONIBILE — procedi a processarli.
+    // batch.id è garantito non-null qui: la Fase 1 sopra ha già abortito
+    // (return) se anche un solo batch pending aveva id null.
     for (const batch of pendingBatches) {
-      const result = await this.inadService.getBulkResult(batch.id);
+      const result = await this.inadService.getBulkResult(batch.id!);
       const resultByCf = new Map(result.map((r) => [r.codiceFiscale, r]));
       const batchRecipients = await this.recipientRepo.find({
         where: { id: In(batch.recipientIds) },

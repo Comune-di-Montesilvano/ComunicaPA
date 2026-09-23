@@ -2,14 +2,16 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { InadCheckSyncService } from './inad-check-sync.service.js';
 import { Campaign, CampaignStatus } from '../entities/campaign.entity.js';
-import { InadService } from '../channels/inad/inad.service.js';
+import { Recipient } from '../entities/recipient.entity.js';
+import { InadService, InadQuotaExceededError } from '../channels/inad/inad.service.js';
 import { RegistroImpreseVerifyQueueService } from '../channels/registro-imprese/registro-imprese-verify-queue.service.js';
 import { CampaignsService } from './campaigns.service.js';
 
 describe('InadCheckSyncService', () => {
   let service: InadCheckSyncService;
-  const mockCampaignRepo = { find: jest.fn() };
-  const mockInadService = { getBulkState: jest.fn() };
+  const mockCampaignRepo = { find: jest.fn(), save: jest.fn() };
+  const mockRecipientRepo = { find: jest.fn() };
+  const mockInadService = { getBulkState: jest.fn(), startBulkExtraction: jest.fn() };
   const mockRegistroImpreseVerifyQueue = { isCampaignJobDone: jest.fn() };
   const mockCampaignsService = { finalizeInadCheck: jest.fn() };
 
@@ -19,6 +21,7 @@ describe('InadCheckSyncService', () => {
       providers: [
         InadCheckSyncService,
         { provide: getRepositoryToken(Campaign), useValue: mockCampaignRepo },
+        { provide: getRepositoryToken(Recipient), useValue: mockRecipientRepo },
         { provide: InadService, useValue: mockInadService },
         { provide: RegistroImpreseVerifyQueueService, useValue: mockRegistroImpreseVerifyQueue },
         { provide: CampaignsService, useValue: mockCampaignsService },
@@ -128,6 +131,51 @@ describe('InadCheckSyncService', () => {
     await service.handleCron();
 
     expect(mockRegistroImpreseVerifyQueue.isCampaignJobDone).not.toHaveBeenCalled();
+    expect(mockCampaignsService.finalizeInadCheck).not.toHaveBeenCalled();
+  });
+
+  it('ri-sottomette un batch non ancora inviato (id:null, quota esaurita al lancio) e salva l\'id assegnato', async () => {
+    const campaign = {
+      id: 'c-unsent',
+      status: CampaignStatus.CHECKING_INAD,
+      channelConfig: { inadCheck: { mechanism: 'bulk', batches: [{ id: null, recipientIds: ['r1', 'r2'], done: false }] } },
+    };
+    mockCampaignRepo.find.mockResolvedValue([campaign]);
+    mockRecipientRepo.find.mockResolvedValue([{ codiceFiscale: 'CF1' }, { codiceFiscale: 'CF2' }]);
+    mockInadService.startBulkExtraction.mockResolvedValue({ id: 'batch-new' });
+
+    await service.handleCron();
+
+    expect(mockRecipientRepo.find).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: expect.anything() } }),
+    );
+    expect(mockInadService.startBulkExtraction).toHaveBeenCalledWith(['CF1', 'CF2'], 'comunicapa-campagna-c-unsent');
+    expect(mockCampaignRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channelConfig: expect.objectContaining({
+          inadCheck: expect.objectContaining({ batches: [expect.objectContaining({ id: 'batch-new', done: false })] }),
+        }),
+      }),
+    );
+    // Appena sottomesso, poll stato nello stesso giro (mock non configurato -> non DISPONIBILE): nessun finalize.
+    expect(mockInadService.getBulkState).toHaveBeenCalledWith('batch-new');
+    expect(mockCampaignsService.finalizeInadCheck).not.toHaveBeenCalled();
+  });
+
+  it('quota ancora esaurita alla ri-sottomissione: batch resta id:null, nessun crash, nessun save', async () => {
+    mockCampaignRepo.find.mockResolvedValue([
+      {
+        id: 'c-still-blocked',
+        status: CampaignStatus.CHECKING_INAD,
+        channelConfig: { inadCheck: { mechanism: 'bulk', batches: [{ id: null, recipientIds: ['r1'], done: false }] } },
+      },
+    ]);
+    mockRecipientRepo.find.mockResolvedValue([{ codiceFiscale: 'CF1' }]);
+    mockInadService.startBulkExtraction.mockRejectedValue(new InadQuotaExceededError('ancora esaurita'));
+
+    await expect(service.handleCron()).resolves.not.toThrow();
+
+    expect(mockCampaignRepo.save).not.toHaveBeenCalled();
     expect(mockCampaignsService.finalizeInadCheck).not.toHaveBeenCalled();
   });
 });

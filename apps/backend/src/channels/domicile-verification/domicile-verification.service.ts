@@ -249,6 +249,25 @@ export class DomicileVerificationService {
     }));
   }
 
+  /**
+   * Valvola di sfogo operatore: abbandona i batch INAD ancora pending
+   * (marcati done, mai un risultato per i CF non ancora verificati — stessa
+   * semantica del fallback anti-stallo 48h, ma su richiesta esplicita invece
+   * che dopo un'attesa lunga). App IO/Registro Imprese non toccati: se non
+   * sono ancora pronti, il job resta PROCESSING finché non lo sono anche
+   * loro (DomicileVerificationSyncService li considera normalmente al
+   * prossimo tick).
+   */
+  async skipInad(jobId: string): Promise<void> {
+    const job = await this.jobRepo.findOneBy({ id: jobId });
+    if (!job) throw new NotFoundException(`Job di verifica ${jobId} non trovato`);
+    if (job.status !== DomicileVerificationJobStatus.PROCESSING) {
+      throw new BadRequestException('Il job non è in elaborazione');
+    }
+    const inadBatches = job.inadBatches.map((b) => ({ ...b, done: true }));
+    await this.jobRepo.update(jobId, { inadBatches, inadFetched: true });
+  }
+
   async getResultCsv(jobId: string, variant: DomicileVerificationCsvVariant): Promise<string> {
     const job = await this.jobRepo.findOneBy({ id: jobId });
     if (!job) throw new NotFoundException(`Job di verifica ${jobId} non trovato`);
