@@ -5,6 +5,7 @@ describe('normalizeTaxId', () => {
     expect(normalizeTaxId('TINIT-rssmra85m01h501z')).toBe('RSSMRA85M01H501Z');
     expect(normalizeTaxId(' VATIT-01234567890 ')).toBe('01234567890');
     expect(normalizeTaxId('01234567890')).toBe('01234567890');
+    expect(normalizeTaxId('PG:IT-01234567890')).toBe('01234567890');
     expect(normalizeTaxId('')).toBe('');
   });
 });

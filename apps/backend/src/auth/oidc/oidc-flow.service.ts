@@ -144,9 +144,11 @@ export class OidcFlowService implements OnModuleDestroy {
   }
 
   /**
-   * Errore restituito dal proxy sul redirect (es. `access_denied` dall'IdP per
-   * identità non del tipo atteso): nel flusso impresa lo stesso messaggio
-   * guidato dei claim mancanti, mai una pagina di errore generica.
+   * Errore restituito dal proxy sul redirect: per le anomalie SPID (es. 30,
+   * identità non del tipo atteso) il pa-sso-proxy torna al client con
+   * `error=access_denied`, `error_description` e lo `state` originale. Nel
+   * flusso impresa lo stesso messaggio guidato dei claim mancanti, mai una
+   * pagina di errore generica.
    */
   async resolveProviderError(state: string, cookieState: string | undefined, error: string): Promise<OidcCallbackErrorDto> {
     const { accessType } = await this.consumeState(state, cookieState);
@@ -324,8 +326,10 @@ export class OidcFlowService implements OnModuleDestroy {
       const companyName = extractClaimString(mergedClaims['company_name'] ?? '').trim();
       const registeredOffice = extractClaimString(mergedClaims['registered_office'] ?? '').trim();
       if (!ivaCode || !companyName || !registeredOffice) {
-        // Utente passato da CIE o IdP senza identità persona giuridica: nessuna
-        // sessione impresa e nessun degrado silenzioso a persona fisica.
+        // Il pa-sso-proxy (>= v0.9.5) blocca già CIE/eIDAS nel flusso impresa
+        // con una propria pagina d'errore: qui resta la difesa per un IdP SPID
+        // che non invia i claim aziendali. Nessuna sessione impresa e nessun
+        // degrado silenzioso a persona fisica.
         this.logger.warn(`Accesso impresa senza claim aziendali completi (provider: ${provider}): sessione non creata`);
         return { error: 'legal_entity_required', message: LEGAL_ENTITY_REQUIRED_MESSAGE };
       }

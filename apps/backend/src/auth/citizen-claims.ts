@@ -28,9 +28,14 @@ export interface CitizenSessionContext {
   registeredOffice?: string;
 }
 
-/** Rimuove i prefissi SPID (`TINIT-` sul codice fiscale, `VATIT-` sulla P.IVA). */
+/**
+ * Rimuove i prefissi SPID: `TINIT-` sul codice fiscale, `VATIT-` sulla P.IVA,
+ * `PG:IT-` (formato citato dal pa-sso-proxy per identità persona giuridica).
+ * Il proxy inoltra i valori dell'IdP così come arrivano (lo stripping lo fa
+ * solo per eIDAS), quindi la normalizzazione spetta a noi.
+ */
 export function normalizeTaxId(raw: string): string {
-  return raw.trim().toUpperCase().replace(/^(TIN|VAT)[A-Z]{2}-/, '');
+  return raw.trim().toUpperCase().replace(/^(TIN|VAT)[A-Z]{2}-/, '').replace(/^PG:[A-Z]{2}-/, '');
 }
 
 /**
