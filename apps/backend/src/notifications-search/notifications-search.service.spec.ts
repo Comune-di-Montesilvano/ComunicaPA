@@ -63,6 +63,16 @@ describe('NotificationsSearchService.search', () => {
     );
   });
 
+  it('filtro campagna: cerca per id (anche parziale) o nome campagna, case-insensitive', async () => {
+    qbMock.getManyAndCount.mockResolvedValue([[], 0]);
+    await service.search({ campaignId: '  Avviso TARI ', page: 1, pageSize: 20 });
+
+    expect(qbMock.andWhere).toHaveBeenCalledWith(
+      '(CAST(campaign.id AS text) ILIKE :campaignQ OR campaign.name ILIKE :campaignQ)',
+      { campaignQ: '%Avviso TARI%' },
+    );
+  });
+
   it('mappa i risultati nel formato atteso', async () => {
     qbMock.getManyAndCount.mockResolvedValue([[
       {

@@ -95,7 +95,15 @@ export class SendStatusSyncService {
       .createQueryBuilder('attempt')
       .where('attempt.channel_type = :ch', { ch: 'SEND' })
       .andWhere('attempt.iun IS NOT NULL')
-      .andWhere('(attempt.send_status IS NULL OR attempt.send_status NOT IN (:...terminal) OR attempt.cost_cents IS NULL)', { terminal: TERMINAL_STATUSES })
+      // Terminali ripescati anche se il costo è stato calcolato PRIMA dell'ultimo
+      // cambio stato: il costo cartaceo compare in timeline solo dopo (bug reale:
+      // tutte le SEND ferme alla sola base fee). Ricalcolate una volta, poi
+      // cost_calculated_at >= send_status_updated_at le esclude di nuovo.
+      .andWhere(
+        '(attempt.send_status IS NULL OR attempt.send_status NOT IN (:...terminal) OR attempt.cost_cents IS NULL'
+          + ' OR attempt.cost_calculated_at IS NULL OR attempt.cost_calculated_at < attempt.send_status_updated_at)',
+        { terminal: TERMINAL_STATUSES },
+      )
       .orderBy('attempt.created_at', 'ASC')
       .take(BATCH_SIZE)
       .getMany();
@@ -124,12 +132,24 @@ export class SendStatusSyncService {
           changed = true;
         }
 
-        if (attempt.costCents === null) {
-          const analog = extractSendAnalogCost(data);
-          const baseFeeCents = await this.baseFee.resolve(envKey, baseUrl, apiKey, voucher, null, null);
+        // Costo ricalcolato ogni volta che la timeline porta un costo cartaceo
+        // diverso da quello salvato — non solo alla prima sincronizzazione:
+        // l'invio analogico (e il suo analogCost) arriva giorni dopo l'accettazione.
+        const analog = extractSendAnalogCost(data);
+        const storedBreakdown = attempt.costBreakdown as { baseFeeCents?: number; analogEvents?: Array<{ analogCostCents: number }> } | null;
+        const storedAnalogCents = (storedBreakdown?.analogEvents ?? []).reduce((sum, e) => sum + (e.analogCostCents ?? 0), 0);
+        if (attempt.costCents === null || analog.analogCostCents !== storedAnalogCents) {
+          const baseFeeCents = typeof storedBreakdown?.baseFeeCents === 'number'
+            ? storedBreakdown.baseFeeCents
+            : await this.baseFee.resolve(envKey, baseUrl, apiKey, voucher, null, null);
           attempt.costCents = baseFeeCents + analog.analogCostCents;
           attempt.costCalculatedAt = new Date();
           attempt.costBreakdown = { baseFeeCents, analogEvents: analog.events };
+          changed = true;
+        } else if (!attempt.costCalculatedAt || (attempt.sendStatusUpdatedAt && attempt.costCalculatedAt < attempt.sendStatusUpdatedAt)) {
+          // Verificato, nessuna variazione: avanza solo il timestamp così
+          // l'attempt terminale esce dal batch invece di essere ripescato per sempre.
+          attempt.costCalculatedAt = new Date();
           changed = true;
         }
 

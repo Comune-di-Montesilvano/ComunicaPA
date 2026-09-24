@@ -33,6 +33,7 @@ import type { TestSendDto } from './dto/test-send.dto.js';
 import type { CampaignStatsDto, RecipientStatDto, RecipientStatsPageDto, ChannelBreakdownDto, EffectiveChannelBreakdownDto, DownloadCombinationDto, DownloadCombinationStatsDto, FailureRowDto, FailureGroupDto, DownloadReportDto, SendStatusBreakdownDto, SendReportDto, SendReportRowDto, PostalStatusBreakdownDto, PostalReportDto, PostalReportRowDto, CampaignCostDto, CampaignCostSavingsDto, CampaignPaymentTotalDto, ExternalDeliveryStatusDto } from './dto/campaign-stats.dto.js';
 import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.dto.js';
 import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util.js';
+import { buildCostAnalytics, type CostAnalyticsDto, type CostAttemptRow } from './cost-analytics.util.js';
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto.js';
 import type { NotificationChannel, NotificationJobData, OperatorRole } from '@comunicapa/shared-types';
 import { matchCountry, abbreviateLongMunicipality } from '@comunicapa/shared-types';
@@ -97,6 +98,12 @@ export function isCampaignLegalValue(campaign: Pick<Campaign, 'isLegalValue' | '
   }
   return false;
 }
+
+// "Ha scaricato" = almeno un DownloadEvent, mai recipient.downloadCount: quel
+// contatore lo incrementa solo il link pubblico email/PEC, non il Portale
+// Cittadino né App IO (bug reale: Statistiche sottostimavano i download e
+// gonfiavano "Mai scaricato"). Stesso criterio di getDownloadCombinationStats.
+const HAS_DOWNLOAD_SQL = 'EXISTS (SELECT 1 FROM download_events de_x WHERE de_x.recipient_id = r.id)';
 
 @Injectable()
 export class CampaignsService {
@@ -1875,60 +1882,48 @@ export class CampaignsService {
   async getGlobalStats(dateFrom?: string, dateTo?: string): Promise<GlobalStatsDto> {
     const range = buildDateRangeWhere('c', dateFrom, dateTo);
 
-    const totalsRow = await this.campaignRepo
-      .createQueryBuilder('c')
-      .select('COALESCE(SUM(c.totalRecipients), 0)', 'totalRecipients')
-      .addSelect('COALESCE(SUM(c.sentCount), 0)', 'totalSent')
-      .addSelect('COALESCE(SUM(c.failedCount), 0)', 'totalFailed')
-      .where(range.sql, range.params)
-      .andWhere('c.isTest = false')
-      .getRawOne<{ totalRecipients: string; totalSent: string; totalFailed: string }>();
-
-    const totalDownloaded = await this.recipientRepo
+    // Conteggi dallo stato ATTUALE dei destinatari, mai dai contatori
+    // campaign.sentCount/failedCount: quelli sono incrementi per tentativo
+    // (retry, rinvii, correzioni contenuto) e possono superare il numero di
+    // destinatari (visto dal vivo: 9 "inviati" su 3 destinatari).
+    const sentParam = { sentStatus: RecipientStatus.SENT, failedStatus: RecipientStatus.FAILED };
+    const recipientsInRange = () => this.recipientRepo
       .createQueryBuilder('r')
       .innerJoin('r.campaign', 'c')
-      .where('r.downloadCount > 0')
-      .andWhere(range.sql, range.params)
-      .andWhere('c.isTest = false')
-      .getCount();
-
-    const sentTrendRows = await this.campaignRepo
-      .createQueryBuilder('c')
-      .select("to_char(date_trunc('month', c.createdAt), 'YYYY-MM')", 'month')
-      .addSelect('COALESCE(SUM(c.sentCount), 0)', 'sent')
       .where(range.sql, range.params)
-      .andWhere('c.isTest = false')
+      .andWhere('c.isTest = false');
+
+    const totalsRow = await recipientsInRange()
+      .select('COUNT(*)', 'totalRecipients')
+      .addSelect('COUNT(*) FILTER (WHERE r.status = :sentStatus)', 'totalSent')
+      .addSelect('COUNT(*) FILTER (WHERE r.status = :failedStatus)', 'totalFailed')
+      .addSelect(`COUNT(*) FILTER (WHERE ${HAS_DOWNLOAD_SQL})`, 'totalDownloaded')
+      .setParameters(sentParam)
+      .getRawOne<{ totalRecipients: string; totalSent: string; totalFailed: string; totalDownloaded: string }>();
+    const totalDownloaded = Number(totalsRow?.totalDownloaded ?? 0);
+
+    const monthlyRows = await recipientsInRange()
+      .select("to_char(date_trunc('month', c.createdAt), 'YYYY-MM')", 'month')
+      .addSelect('COUNT(*) FILTER (WHERE r.status = :sentStatus)', 'sent')
+      .addSelect(`COUNT(*) FILTER (WHERE ${HAS_DOWNLOAD_SQL})`, 'downloaded')
+      .setParameters(sentParam)
       .groupBy("date_trunc('month', c.createdAt)")
       .orderBy("date_trunc('month', c.createdAt)", 'ASC')
-      .getRawMany<{ month: string; sent: string }>();
+      .getRawMany<{ month: string; sent: string; downloaded: string }>();
 
-    const dailyTrendRows = await this.campaignRepo
-      .createQueryBuilder('c')
+    const dailyTrendRows = await recipientsInRange()
       .select("to_char(date_trunc('day', c.createdAt), 'YYYY-MM-DD')", 'date')
-      .addSelect('COALESCE(SUM(c.sentCount), 0)', 'sent')
-      .addSelect('COALESCE(SUM(c.failedCount), 0)', 'failed')
-      .where(range.sql, range.params)
-      .andWhere('c.isTest = false')
+      .addSelect('COUNT(*) FILTER (WHERE r.status = :sentStatus)', 'sent')
+      .addSelect('COUNT(*) FILTER (WHERE r.status = :failedStatus)', 'failed')
+      .setParameters(sentParam)
       .groupBy("date_trunc('day', c.createdAt)")
       .orderBy("date_trunc('day', c.createdAt)", 'ASC')
       .getRawMany<{ date: string; sent: string; failed: string }>();
 
-    const downloadedTrendRows = await this.recipientRepo
-      .createQueryBuilder('r')
-      .innerJoin('r.campaign', 'c')
-      .select("to_char(date_trunc('month', c.createdAt), 'YYYY-MM')", 'month')
-      .addSelect('COUNT(*) FILTER (WHERE r.downloadCount > 0)', 'downloaded')
-      .where(range.sql, range.params)
-      .andWhere('c.isTest = false')
-      .groupBy("date_trunc('month', c.createdAt)")
-      .getRawMany<{ month: string; downloaded: string }>();
-
-    const channelRows = await this.campaignRepo
-      .createQueryBuilder('c')
+    const channelRows = await recipientsInRange()
       .select('c.channelType', 'channel')
-      .addSelect('COALESCE(SUM(c.sentCount), 0)', 'sent')
-      .where(range.sql, range.params)
-      .andWhere('c.isTest = false')
+      .addSelect('COUNT(*) FILTER (WHERE r.status = :sentStatus)', 'sent')
+      .setParameters(sentParam)
       .groupBy('c.channelType')
       .getRawMany<{ channel: string; sent: string }>();
 
@@ -1937,7 +1932,8 @@ export class CampaignsService {
       .innerJoin('de.recipient', 'r')
       .innerJoin('r.campaign', 'c')
       .select('de.channel', 'channel')
-      .addSelect('COUNT(*)', 'count')
+      // Destinatari distinti: lo stesso cittadino che riscarica non conta doppio.
+      .addSelect('COUNT(DISTINCT de.recipientId)', 'count')
       .where(range.sql, range.params)
       .andWhere('c.isTest = false')
       .groupBy('de.channel')
@@ -1948,18 +1944,26 @@ export class CampaignsService {
       .leftJoin('c.recipients', 'r')
       .select('c.id', 'campaignId')
       .addSelect('c.name', 'campaignName')
-      .addSelect('c.totalRecipients', 'totalRecipients')
-      .addSelect('COUNT(*) FILTER (WHERE r.downloadCount > 0)', 'downloadedCount')
-      .where('c.totalRecipients > 0')
-      .andWhere(range.sql, range.params)
+      .addSelect('COUNT(r.id)', 'totalRecipients')
+      .addSelect('COUNT(r.id) FILTER (WHERE r.status = :sentStatus)', 'sentCount')
+      .addSelect(`COUNT(r.id) FILTER (WHERE ${HAS_DOWNLOAD_SQL})`, 'downloadedCount')
+      .setParameters(sentParam)
+      .where(range.sql, range.params)
       .andWhere('c.isTest = false')
+      // Invii singoli (wizard "destinatario singolo"): un tasso 0%/100% su un
+      // solo destinatario non dice nulla e inquinava la classifica.
+      .andWhere("(c.channelConfig ->> 'wizSingleMode') IS DISTINCT FROM 'true'")
       .groupBy('c.id')
-      .getRawMany<{ campaignId: string; campaignName: string; totalRecipients: string; downloadedCount: string }>();
+      // Anche per numero reale di destinatari, non solo il flag: campagne da 1
+      // destinatario create prima del flag (test, E2E) non fanno testo.
+      .having('COUNT(r.id) FILTER (WHERE r.status = :sentStatus) > 0')
+      .andHaving('COUNT(r.id) > 1')
+      .getRawMany<{ campaignId: string; campaignName: string; totalRecipients: string; sentCount: string; downloadedCount: string }>();
 
     const neverDownloadedCount = await this.recipientRepo
       .createQueryBuilder('r')
       .innerJoin('r.campaign', 'c')
-      .where('r.downloadCount = 0')
+      .where(`NOT ${HAS_DOWNLOAD_SQL}`)
       .andWhere('r.status = :status', { status: RecipientStatus.SENT })
       .andWhere(range.sql, range.params)
       .andWhere('c.isTest = false')
@@ -1976,6 +1980,47 @@ export class CampaignsService {
       .andWhere('c.isTest = false')
       .getRawOne<{ totalCostCents: string }>();
 
+    const totalSavingCents = await this.computeSendSavingCents(range);
+
+    const totalRecipients = Number(totalsRow?.totalRecipients ?? 0);
+    const totalSent = Number(totalsRow?.totalSent ?? 0);
+    const totalFailed = Number(totalsRow?.totalFailed ?? 0);
+
+    return {
+      totals: {
+        totalRecipients,
+        totalSent,
+        totalFailed,
+        totalDownloaded,
+        // Sugli inviati con successo, mai sul totale: un fallito non ha mai
+        // ricevuto un link da scaricare (stesso criterio del dettaglio campagna).
+        downloadPercentage: computeDownloadPercentage(totalDownloaded, totalSent),
+        totalCostCents: Number(costRow?.totalCostCents ?? 0),
+        totalSavingCents,
+      },
+      monthlyTrend: mergeMonthlyTrend(monthlyRows, monthlyRows),
+      dailyTrend: dailyTrendRows.map((r) => ({ date: r.date, sent: Number(r.sent), failed: Number(r.failed) })),
+      channelTotals: channelRows.map((r) => ({ channel: r.channel, sent: Number(r.sent) })),
+      downloadChannelTotals: downloadChannelRows.map((r) => ({ channel: r.channel, count: Number(r.count) })),
+      campaignLeaderboard: leaderboardRows
+        .map((r) => ({
+          campaignId: r.campaignId,
+          campaignName: r.campaignName,
+          totalRecipients: Number(r.totalRecipients),
+          sentCount: Number(r.sentCount),
+          downloadPercentage: computeDownloadPercentage(Number(r.downloadedCount), Number(r.sentCount)),
+        }))
+        // Ordinamento totale (mai solo per %): a parità di tasso l'ordine
+        // SQL non è garantito e le righe saltavano a ogni refresh.
+        .sort((a, b) => b.downloadPercentage - a.downloadPercentage
+          || b.sentCount - a.sentCount
+          || a.campaignName.localeCompare(b.campaignName, 'it')),
+      neverDownloadedCount,
+    };
+  }
+
+  /** Risparmio SEND stimato nel periodo: costo nominale (base fee digitale) meno costo reale, per campagna. */
+  private async computeSendSavingCents(range: { sql: string; params: Record<string, string> }): Promise<number> {
     const savingRow = await this.recipientRepo
       .createQueryBuilder('r')
       .innerJoin('r.campaign', 'c')
@@ -1990,40 +2035,57 @@ export class CampaignsService {
       .getRawMany<{ campaignId: string; actualCostCents: string; recipientCount: string }>();
 
     const nominalBaseFeeCents = await this.settings.get<number>('send.digitalBaseFeeCents');
-    const totalSavingCents = savingRow.reduce((sum, row) => {
+    return savingRow.reduce((sum, row) => {
       const nominal = nominalBaseFeeCents * Number(row.recipientCount);
       const saving = nominal - Number(row.actualCostCents);
       return saving > 0 ? sum + saving : sum;
     }, 0);
+  }
 
-    const totalRecipients = Number(totalsRow?.totalRecipients ?? 0);
-    const totalSent = Number(totalsRow?.totalSent ?? 0);
-    const totalFailed = Number(totalsRow?.totalFailed ?? 0);
+  /**
+   * Analisi costi SEND/POSTAL del periodo (vista Statistiche): digitale vs
+   * cartaceo, componenti GlobalCom, trend mensile, campagne più costose,
+   * risparmio stimato. Aggregazione in cost-analytics.util.ts (pura, testata).
+   */
+  async getCostAnalytics(dateFrom?: string, dateTo?: string): Promise<CostAnalyticsDto> {
+    const range = buildDateRangeWhere('c', dateFrom, dateTo);
 
-    return {
-      totals: {
-        totalRecipients,
-        totalSent,
-        totalFailed,
-        totalDownloaded,
-        downloadPercentage: computeDownloadPercentage(totalDownloaded, totalRecipients),
-        totalCostCents: Number(costRow?.totalCostCents ?? 0),
-        totalSavingCents,
-      },
-      monthlyTrend: mergeMonthlyTrend(sentTrendRows, downloadedTrendRows),
-      dailyTrend: dailyTrendRows.map((r) => ({ date: r.date, sent: Number(r.sent), failed: Number(r.failed) })),
-      channelTotals: channelRows.map((r) => ({ channel: r.channel, sent: Number(r.sent) })),
-      downloadChannelTotals: downloadChannelRows.map((r) => ({ channel: r.channel, count: Number(r.count) })),
-      campaignLeaderboard: leaderboardRows
-        .map((r) => ({
-          campaignId: r.campaignId,
-          campaignName: r.campaignName,
-          totalRecipients: Number(r.totalRecipients),
-          downloadPercentage: computeDownloadPercentage(Number(r.downloadedCount), Number(r.totalRecipients)),
-        }))
-        .sort((a, b) => b.downloadPercentage - a.downloadPercentage),
-      neverDownloadedCount,
-    };
+    const rows = await this.attemptRepo
+      .createQueryBuilder('a')
+      .innerJoin('a.recipient', 'r')
+      .innerJoin('r.campaign', 'c')
+      .select('a.channelType', 'channelType')
+      .addSelect('a.status', 'status')
+      .addSelect('a.costCents', 'costCents')
+      .addSelect('a.costBreakdown', 'costBreakdown')
+      .addSelect('a.sendDigitalDomicile', 'sendDigitalDomicile')
+      .addSelect('a.postalStatus', 'postalStatus')
+      .addSelect('c.id', 'campaignId')
+      .addSelect('c.name', 'campaignName')
+      .addSelect("to_char(date_trunc('month', c.createdAt), 'YYYY-MM')", 'month')
+      .where('a.channelType IN (:...channels)', { channels: ['SEND', 'POSTAL'] })
+      .andWhere(range.sql, range.params)
+      .andWhere('c.isTest = false')
+      .getRawMany<CostAttemptRow & { costCents: number | string | null }>();
+
+    // POSTAL mai spediti perché dirottati su PEC da INAD, per campagna: il
+    // risparmio si stima col costo medio di spedizione DELLA STESSA campagna.
+    const divertedRows = await this.recipientRepo
+      .createQueryBuilder('r')
+      .innerJoin('r.campaign', 'c')
+      .select('c.id', 'campaignId')
+      .addSelect('COUNT(*)', 'diverted')
+      .where("c.channelType = 'POSTAL'")
+      .andWhere("(r.inadCheck ->> 'diverted') = 'true'")
+      .andWhere(range.sql, range.params)
+      .andWhere('c.isTest = false')
+      .groupBy('c.id')
+      .getRawMany<{ campaignId: string; diverted: string }>();
+
+    return buildCostAnalytics(
+      rows.map((r) => ({ ...r, costCents: r.costCents === null ? null : Number(r.costCents) })),
+      { postalDivertedByCampaign: Object.fromEntries(divertedRows.map((d) => [d.campaignId, Number(d.diverted)])) },
+    );
   }
 
   async getNeverDownloadedRecipients(dateFrom?: string, dateTo?: string): Promise<NeverDownloadedRowDto[]> {
@@ -2031,9 +2093,10 @@ export class CampaignsService {
     const rows = await this.recipientRepo
       .createQueryBuilder('r')
       .innerJoinAndSelect('r.campaign', 'c')
-      .where('r.downloadCount = 0')
+      .where(`NOT ${HAS_DOWNLOAD_SQL}`)
       .andWhere('r.status = :status', { status: RecipientStatus.SENT })
       .andWhere(range.sql, range.params)
+      .andWhere('c.isTest = false')
       .orderBy('r.createdAt', 'DESC')
       .getMany();
 

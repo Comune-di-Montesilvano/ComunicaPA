@@ -110,3 +110,18 @@ dello schema `NotificationStatus` — verificare sempre lo spec raw, non un
 riassunto, prima di aggiungere/rimuovere valori da `TERMINAL_STATUSES`
 (`send-status-sync.service.ts`) o da `SEND_STATUS_META` (`App.tsx`).
 
+
+## SEND — costo cartaceo (analogCost) arriva DOPO il primo calcolo
+
+Il costo SEND (`paFee` + somma `analogCost` degli eventi
+`SEND_ANALOG_DOMICILE`/`SEND_SIMPLE_REGISTERED_LETTER` della timeline) era
+calcolato una sola volta (`costCents === null`), alla prima sync dopo
+`ACCEPTED` — ma l'evento cartaceo compare minuti/giorni dopo, insieme al
+passaggio a `DELIVERING` (verificato su IUN reale: ACCEPTED 11:26, analogCost
+493 alle 11:30). Risultato: tutte le SEND in prod ferme a 1€. Ora
+`SendStatusSyncService` ricalcola se l'analogCost in timeline differisce da
+quello salvato e ripesca i terminali con `cost_calculated_at <
+send_status_updated_at` (auto-recupero dei record già chiusi dopo il deploy).
+Importi al netto IVA (PN espone `vat` a parte). Script debug:
+`docker compose exec backend node src/debug/send-notification-costi.cjs <IUN>`
+(stampa solo stato/timeline/costi, nessun dato personale).

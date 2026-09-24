@@ -177,3 +177,17 @@ come bug. I donut già ordinavano (valore desc, poi label) — replicare lo
 stesso criterio in ogni nuovo componente che consuma lo stesso tipo di
 dato.
 
+
+## `no-bootstrap-compat.css` — una utility Bootstrap non definita è un no-op silenzioso
+
+L'admin NON carica Bootstrap: le classi utility esistono solo se replicate in
+`no-bootstrap-compat.css`. Bug reale: `align-items-end` assente → flex torna a
+`stretch` e un bottone accanto a campi con label si allungava a tutta
+altezza. Prima di usare una utility nuova: `grep "\.nome-classe" apps/frontend-admin/src/assets/css/`.
+Aggiungerla lì attiva anche tutti gli usi già presenti nel codice che finora
+erano no-op — verificare a schermo le altre viste che la usano.
+
+**Statistiche** vivono in `components/StatisticsView.tsx` (stato/fetch/poll
+propri, CSS `.stx-*` in `statistics.css`). Palette grafici fissa per entità
+(`CHANNEL_COLOR`), validata con la skill dataviz: i colori del registro canali
+sono pensati per badge/loghi, non per grafici (PEC e App IO quasi identici).

@@ -2252,7 +2252,7 @@ describe('CampaignsService', () => {
   describe('getGlobalStats', () => {
     function makeQb(terminal: { rawOne?: any; rawMany?: any[]; count?: number }) {
       const qb: any = {};
-      ['select', 'addSelect', 'innerJoin', 'leftJoin', 'where', 'andWhere', 'groupBy', 'orderBy'].forEach((m) => {
+      ['select', 'addSelect', 'innerJoin', 'leftJoin', 'where', 'andWhere', 'groupBy', 'orderBy', 'having', 'andHaving', 'setParameters'].forEach((m) => {
         qb[m] = jest.fn().mockReturnValue(qb);
       });
       qb.getRawOne = jest.fn().mockResolvedValue(terminal.rawOne);
@@ -2261,29 +2261,42 @@ describe('CampaignsService', () => {
       return qb;
     }
 
-    it('assembla il DTO combinando tutte le query aggregate nell\'ordine atteso', async () => {
-      mockCampaignRepo.createQueryBuilder = jest
-        .fn()
-        .mockReturnValueOnce(makeQb({ rawOne: { totalRecipients: '100', totalSent: '90', totalFailed: '10' } }))
-        .mockReturnValueOnce(makeQb({ rawMany: [{ month: '2026-06', sent: '50' }, { month: '2026-07', sent: '40' }] }))
-        .mockReturnValueOnce(makeQb({ rawMany: [{ date: '2026-07-05', sent: '12', failed: '2' }] }))
-        .mockReturnValueOnce(makeQb({ rawMany: [{ channel: 'EMAIL', sent: '90' }] }))
-        .mockReturnValueOnce(makeQb({ rawMany: [{ campaignId: 'c1', campaignName: 'Tari', totalRecipients: '100', downloadedCount: '60' }] }));
-
+    // Ordine di creazione dei query builder in getGlobalStats:
+    // recipientRepo → totals, monthly, daily, channel, neverDownloaded, saving
+    // campaignRepo → leaderboard · downloadEventRepo → downloadChannel · attemptRepo → cost
+    function wire(opts: {
+      totals?: any; monthly?: any[]; daily?: any[]; channel?: any[]; never?: number; saving?: any[];
+      leaderboard?: any[]; downloadChannel?: any[]; cost?: any;
+    }, track?: any[]) {
+      const mk = (t: { rawOne?: any; rawMany?: any[]; count?: number }) => {
+        const qb = makeQb(t);
+        track?.push(qb);
+        return qb;
+      };
       mockRecipientRepo.createQueryBuilder = jest
         .fn()
-        .mockReturnValueOnce(makeQb({ count: 60 }))
-        .mockReturnValueOnce(makeQb({ rawMany: [{ month: '2026-06', downloaded: '30' }] }))
-        .mockReturnValueOnce(makeQb({ count: 15 }))
-        .mockReturnValueOnce(makeQb({ rawMany: [] }));
+        .mockImplementationOnce(() => mk({ rawOne: opts.totals }))
+        .mockImplementationOnce(() => mk({ rawMany: opts.monthly ?? [] }))
+        .mockImplementationOnce(() => mk({ rawMany: opts.daily ?? [] }))
+        .mockImplementationOnce(() => mk({ rawMany: opts.channel ?? [] }))
+        .mockImplementationOnce(() => mk({ count: opts.never ?? 0 }))
+        .mockImplementationOnce(() => mk({ rawMany: opts.saving ?? [] }));
+      mockCampaignRepo.createQueryBuilder = jest.fn().mockImplementationOnce(() => mk({ rawMany: opts.leaderboard ?? [] }));
+      mockDownloadEventRepo.createQueryBuilder = jest.fn().mockImplementationOnce(() => mk({ rawMany: opts.downloadChannel ?? [] }));
+      mockAttemptRepo.createQueryBuilder = jest.fn().mockImplementationOnce(() => mk({ rawOne: opts.cost }));
+    }
 
-      mockDownloadEventRepo.createQueryBuilder = jest
-        .fn()
-        .mockReturnValueOnce(makeQb({ rawMany: [{ channel: 'EMAIL', count: '55' }] }));
-
-      mockAttemptRepo.createQueryBuilder = jest
-        .fn()
-        .mockReturnValueOnce(makeQb({ rawOne: { totalCostCents: '2431' } }));
+    it('assembla il DTO dai conteggi sullo stato attuale dei destinatari', async () => {
+      wire({
+        totals: { totalRecipients: '100', totalSent: '90', totalFailed: '10', totalDownloaded: '60' },
+        monthly: [{ month: '2026-06', sent: '50', downloaded: '30' }, { month: '2026-07', sent: '40', downloaded: '0' }],
+        daily: [{ date: '2026-07-05', sent: '12', failed: '2' }],
+        channel: [{ channel: 'EMAIL', sent: '90' }],
+        never: 15,
+        leaderboard: [{ campaignId: 'c1', campaignName: 'Tari', totalRecipients: '100', sentCount: '90', downloadedCount: '60' }],
+        downloadChannel: [{ channel: 'EMAIL', count: '55' }],
+        cost: { totalCostCents: '2431' },
+      });
 
       const result = await service.getGlobalStats('2026-06-01', '2026-07-08');
 
@@ -2292,7 +2305,9 @@ describe('CampaignsService', () => {
         totalSent: 90,
         totalFailed: 10,
         totalDownloaded: 60,
-        downloadPercentage: 60,
+        // Percentuale sugli inviati con successo (90), mai sul totale: i
+        // falliti non hanno mai ricevuto un link da scaricare.
+        downloadPercentage: 67,
         totalCostCents: 2431,
         totalSavingCents: 0,
       });
@@ -2300,33 +2315,50 @@ describe('CampaignsService', () => {
         { month: '2026-06', sent: 50, downloaded: 30 },
         { month: '2026-07', sent: 40, downloaded: 0 },
       ]);
-      expect(result.dailyTrend).toEqual([
-        { date: '2026-07-05', sent: 12, failed: 2 },
-      ]);
+      expect(result.dailyTrend).toEqual([{ date: '2026-07-05', sent: 12, failed: 2 }]);
       expect(result.channelTotals).toEqual([{ channel: 'EMAIL', sent: 90 }]);
       expect(result.downloadChannelTotals).toEqual([{ channel: 'EMAIL', count: 55 }]);
       expect(result.campaignLeaderboard).toEqual([
-        { campaignId: 'c1', campaignName: 'Tari', totalRecipients: 100, downloadPercentage: 60 },
+        { campaignId: 'c1', campaignName: 'Tari', totalRecipients: 100, sentCount: 90, downloadPercentage: 67 },
       ]);
       expect(result.neverDownloadedCount).toBe(15);
     });
 
+    it('bug reale: "scaricato" = esiste un DownloadEvent (Portale/App IO inclusi), mai recipient.downloadCount', async () => {
+      const qbs: any[] = [];
+      wire({ totals: { totalRecipients: '0', totalSent: '0', totalFailed: '0', totalDownloaded: '0' } }, qbs);
+
+      await service.getGlobalStats();
+
+      const allSql = qbs.flatMap((qb) => [...qb.select.mock.calls, ...qb.addSelect.mock.calls, ...qb.where.mock.calls, ...qb.andWhere.mock.calls])
+        .map((c: unknown[]) => String(c[0]));
+      expect(allSql.some((sql) => /downloadCount/.test(sql))).toBe(false);
+      expect(allSql.some((sql) => /download_events/.test(sql))).toBe(true);
+    });
+
+    it('classifica: esclude invii singoli, ordina stabile (% desc, inviati desc, nome) a parità di tasso', async () => {
+      const qbs: any[] = [];
+      wire({
+        leaderboard: [
+          { campaignId: 'c-b', campaignName: 'Beta', totalRecipients: '10', sentCount: '10', downloadedCount: '5' },
+          { campaignId: 'c-a', campaignName: 'Alfa', totalRecipients: '10', sentCount: '10', downloadedCount: '5' },
+          { campaignId: 'c-big', campaignName: 'Zeta', totalRecipients: '200', sentCount: '200', downloadedCount: '100' },
+          { campaignId: 'c-top', campaignName: 'Top', totalRecipients: '4', sentCount: '4', downloadedCount: '4' },
+        ],
+      }, qbs);
+
+      const result = await service.getGlobalStats();
+
+      expect(result.campaignLeaderboard.map((c) => c.campaignId)).toEqual(['c-top', 'c-big', 'c-a', 'c-b']);
+      const leaderboardQb = mockCampaignRepo.createQueryBuilder.mock.results[0].value;
+      const whereClauses = [...leaderboardQb.where.mock.calls, ...leaderboardQb.andWhere.mock.calls].map((c: unknown[]) => c[0]);
+      expect(whereClauses).toContain("(c.channelConfig ->> 'wizSingleMode') IS DISTINCT FROM 'true'");
+      expect(leaderboardQb.having).toHaveBeenCalledWith('COUNT(r.id) FILTER (WHERE r.status = :sentStatus) > 0');
+      expect(leaderboardQb.andHaving).toHaveBeenCalledWith('COUNT(r.id) > 1');
+    });
+
     it('ritorna totali a zero quando non ci sono campagne nel periodo', async () => {
-      mockCampaignRepo.createQueryBuilder = jest
-        .fn()
-        .mockReturnValueOnce(makeQb({ rawOne: undefined }))
-        .mockReturnValueOnce(makeQb({ rawMany: [] }))
-        .mockReturnValueOnce(makeQb({ rawMany: [] }))
-        .mockReturnValueOnce(makeQb({ rawMany: [] }))
-        .mockReturnValueOnce(makeQb({ rawMany: [] }));
-      mockRecipientRepo.createQueryBuilder = jest
-        .fn()
-        .mockReturnValueOnce(makeQb({ count: 0 }))
-        .mockReturnValueOnce(makeQb({ rawMany: [] }))
-        .mockReturnValueOnce(makeQb({ count: 0 }))
-        .mockReturnValueOnce(makeQb({ rawMany: [] }));
-      mockDownloadEventRepo.createQueryBuilder = jest.fn().mockReturnValueOnce(makeQb({ rawMany: [] }));
-      mockAttemptRepo.createQueryBuilder = jest.fn().mockReturnValueOnce(makeQb({ rawOne: undefined }));
+      wire({ totals: undefined, cost: undefined });
 
       const result = await service.getGlobalStats();
 
@@ -2344,75 +2376,17 @@ describe('CampaignsService', () => {
       expect(result.campaignLeaderboard).toEqual([]);
     });
 
-    it('esclude sempre le campagne isTest=true da ognuna delle 11 query aggregate', async () => {
-      const createdQbs: any[] = [];
-      const trackedMakeQb = (terminal: { rawOne?: any; rawMany?: any[]; count?: number }) => {
-        const qb = makeQb(terminal);
-        createdQbs.push(qb);
-        return qb;
-      };
-
-      mockCampaignRepo.createQueryBuilder = jest
-        .fn()
-        .mockImplementationOnce(() => trackedMakeQb({ rawOne: { totalRecipients: '0', totalSent: '0', totalFailed: '0' } })) // totalsRow
-        .mockImplementationOnce(() => trackedMakeQb({ rawMany: [] })) // sentTrendRows
-        .mockImplementationOnce(() => trackedMakeQb({ rawMany: [] })) // dailyTrendRows
-        .mockImplementationOnce(() => trackedMakeQb({ rawMany: [] })) // channelRows
-        .mockImplementationOnce(() => trackedMakeQb({ rawMany: [] })); // leaderboardRows
-
-      mockRecipientRepo.createQueryBuilder = jest
-        .fn()
-        .mockImplementationOnce(() => trackedMakeQb({ count: 0 })) // totalDownloaded
-        .mockImplementationOnce(() => trackedMakeQb({ rawMany: [] })) // downloadedTrendRows
-        .mockImplementationOnce(() => trackedMakeQb({ count: 0 })) // neverDownloadedCount
-        .mockImplementationOnce(() => trackedMakeQb({ rawMany: [] })); // savingRow
-
-      mockDownloadEventRepo.createQueryBuilder = jest
-        .fn()
-        .mockImplementationOnce(() => trackedMakeQb({ rawMany: [] })); // downloadChannelRows
-
-      mockAttemptRepo.createQueryBuilder = jest
-        .fn()
-        .mockImplementationOnce(() => trackedMakeQb({ rawOne: { totalCostCents: '0' } })); // costRow
+    it('esclude sempre le campagne isTest=true da ognuna delle 9 query aggregate', async () => {
+      const qbs: any[] = [];
+      wire({ totals: { totalRecipients: '0', totalSent: '0', totalFailed: '0', totalDownloaded: '0' }, cost: { totalCostCents: '0' } }, qbs);
 
       await service.getGlobalStats();
 
-      expect(createdQbs).toHaveLength(11);
-      const [
-        totalsRowQb,
-        totalDownloadedQb,
-        sentTrendQb,
-        dailyTrendQb,
-        downloadedTrendQb,
-        channelQb,
-        downloadChannelQb,
-        leaderboardQb,
-        neverDownloadedQb,
-        costRowQb,
-        savingRowQb,
-      ] = createdQbs;
-
-      const names = [
-        ['totalsRow', totalsRowQb],
-        ['totalDownloaded', totalDownloadedQb],
-        ['sentTrendRows', sentTrendQb],
-        ['dailyTrendRows', dailyTrendQb],
-        ['downloadedTrendRows', downloadedTrendQb],
-        ['channelRows', channelQb],
-        ['downloadChannelRows', downloadChannelQb],
-        ['leaderboardRows', leaderboardQb],
-        ['neverDownloadedCount', neverDownloadedQb],
-        ['costRow', costRowQb],
-        ['savingRow', savingRowQb],
-      ] as const;
-
-      for (const [name, qb] of names) {
+      expect(qbs).toHaveLength(9);
+      qbs.forEach((qb, i) => {
         const andWhereCalls = qb.andWhere.mock.calls.map((c: unknown[]) => c[0]);
-        expect({ queryBuilder: name, hasIsTestFilter: andWhereCalls.includes('c.isTest = false') }).toEqual({
-          queryBuilder: name,
-          hasIsTestFilter: true,
-        });
-      }
+        expect({ query: i, hasIsTestFilter: andWhereCalls.includes('c.isTest = false') }).toEqual({ query: i, hasIsTestFilter: true });
+      });
     });
   });
 
@@ -2446,6 +2420,8 @@ describe('CampaignsService', () => {
         },
       ]);
       expect(qb.andWhere).toHaveBeenCalledWith('r.status = :status', { status: RecipientStatus.SENT });
+      // Stesso perimetro del contatore neverDownloadedCount: niente campagne di test.
+      expect(qb.andWhere).toHaveBeenCalledWith('c.isTest = false');
     });
   });
 
