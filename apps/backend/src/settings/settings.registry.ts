@@ -90,6 +90,10 @@ export const SETTING_DEFS = {
 
   // INAD: solo purposeId (client PDND condiviso via pdnd.*).
   'inad.checkEnabled': { type: 'boolean', default: false },
+  // Verifica consegna POSTAL su tracking pubblico Poste Italiane per gli
+  // invii che GlobalCom chiude come NonConsegnato — kill-switch se
+  // l'endpoint (non documentato) di poste.it cambia o va giù.
+  'postalPosteTracking.enabled': { type: 'boolean', default: true },
   'inad.test.purposeId': { type: 'string', default: '' },
   'inad.prod.purposeId': { type: 'string', default: '' },
   // Registro Imprese (PCAD-PDND, Unioncamere) — fonte del domicilio digitale
