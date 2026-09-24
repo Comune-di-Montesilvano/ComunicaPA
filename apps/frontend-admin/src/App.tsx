@@ -270,6 +270,7 @@ const POSTAL_DELIVERY_STATUS_META: Record<string, { label: string; badge: string
   AppIoSostituito: { label: 'Sostituito da App IO', badge: 'bg-info-subtle text-info-emphasis border', icon: Smartphone },
   DirottatoAPec: { label: 'Sostituito da PEC', badge: 'bg-info-subtle text-info-emphasis border', icon: MailOpen },
   NonTracciato: { label: 'Non tracciato (nessuna AR)', badge: 'bg-light text-dark border', icon: HelpCircle },
+  ConsegnatoVerificaPoste: { label: 'Consegnato (verifica Poste)', badge: 'bg-success-subtle text-success-emphasis border border-success', icon: CheckCircle2 },
   'Accettato online': { label: 'Accettato online', badge: 'bg-info-subtle text-info-emphasis border', icon: Inbox },
   'Consegnato': { label: 'Consegnato', badge: 'bg-success-subtle text-success-emphasis border', icon: CheckCircle2 },
   'Consegnato a persona abilitata': { label: 'Consegnato a persona abilitata', badge: 'bg-success-subtle text-success-emphasis border', icon: CheckCircle2 },
@@ -322,6 +323,25 @@ function PostalDeliveryStatusBadge({
   );
 }
 
+// GlobalCom NonConsegnato ma consegnato secondo il tracking Poste: badge
+// dedicato con lo stato GlobalCom originale nel tooltip (la discrepanza
+// resta visibile, vedi spec 2026-09-24-postal-verifica-poste-design.md).
+function PostalDeliveryWithPosteBadge({ postalStatus, postalDeliveryStatus, postalDeliveryCode, posteVerificationStatus, posteDeliveredAt }: {
+  postalStatus?: string | null;
+  postalDeliveryStatus?: string | null;
+  postalDeliveryCode?: number | null;
+  posteVerificationStatus?: string | null;
+  posteDeliveredAt?: string | null;
+}): React.JSX.Element {
+  if (postalStatus === 'NonConsegnato' && posteVerificationStatus === 'delivered') {
+    const meta = POSTAL_DELIVERY_STATUS_META['ConsegnatoVerificaPoste']!;
+    const Icon = meta.icon;
+    const title = `GlobalCom: ${postalDeliveryStatus ?? 'Non consegnato'} — Poste: consegnato${posteDeliveredAt ? ` il ${new Date(posteDeliveredAt).toLocaleString('it-IT')}` : ''}`;
+    return <span className={`badge ${meta.badge}`} title={title}><Icon className="me-1" size={14} />{meta.label}</span>;
+  }
+  return <PostalDeliveryStatusBadge status={postalDeliveryStatus} code={postalDeliveryCode} />;
+}
+
 const POSTAL_STATUS_PIE_COLORS: Record<string, string> = {
   FAILED: '#dc3545',
   Accettato: '#6c757d',
@@ -345,6 +365,7 @@ const POSTAL_DELIVERY_STATUS_PIE_COLORS: Record<string, string> = {
   AppIoSostituito: '#0dcaf0',
   DirottatoAPec: '#6610f2',
   NonTracciato: '#adb5bd',
+  ConsegnatoVerificaPoste: '#20c997',
   'Accettato online': '#0dcaf0',
   'Consegnato': '#198754',
   'Consegnato a persona abilitata': '#198754',
@@ -1502,17 +1523,18 @@ export function App(): React.JSX.Element {
   const [searchCampaignId, setSearchCampaignId] = useState('');
   const [searchChannel, setSearchChannel] = useState('');
   const [searchStatus, setSearchStatus] = useState('');
+  const [searchPosteVerification, setSearchPosteVerification] = useState('');
   const [searchDateFrom, setSearchDateFrom] = useState('');
   const [searchDateTo, setSearchDateTo] = useState('');
   const [searchPage, setSearchPage] = useState(1);
   const SEARCH_PAGE_SIZE = 50;
-  const [searchResults, setSearchResults] = useState<Array<{ recipientId: string; campaignId: string; campaignName: string; codiceFiscale: string; fullName: string | null; channelType: string; status: string; createdAt: string }>>([]);
+  const [searchResults, setSearchResults] = useState<Array<{ recipientId: string; campaignId: string; campaignName: string; codiceFiscale: string; fullName: string | null; channelType: string; status: string; createdAt: string; posteVerificationStatus?: string | null }>>([]);
   const [searchTotal, setSearchTotal] = useState(0);
   const [searchLoading, setSearchLoading] = useState(false);
   const [notifDetail, setNotifDetail] = useState<{
     recipient: { id: string; codiceFiscale: string; fullName: string | null; email: string | null; pec: string | null; status: string; physicalAddress: { address: string; municipality: string; zip?: string; province?: string; foreignState?: string | null } | null };
     campaign: { id: string; name: string; channelType: string; postalServiceType?: string | null; postalReturnReceipt?: boolean };
-    attempts: Array<{ attemptNumber: number; status: string; channelType: string; errorMessage: string | null; sentAt: string | null; createdAt: string; appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null; messageId?: string | null }; appIoMessageId?: string | null; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalTrackingId?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; postalStatusHistory?: Array<{ stato: string; rilevatoIl: string; codiceErrore?: string; descrizione?: string; statoConsegna?: string; codiceConsegna?: number }> | null; protocolNumber?: number | null; protocolYear?: number | null; protocolledAt?: string | null; costCents?: number | null; costCalculatedAt?: string | null; costBreakdown?: Record<string, unknown> | null }>;
+    attempts: Array<{ attemptNumber: number; status: string; channelType: string; errorMessage: string | null; sentAt: string | null; createdAt: string; appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null; messageId?: string | null }; appIoMessageId?: string | null; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalTrackingId?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; postalStatusHistory?: Array<{ stato: string; rilevatoIl: string; codiceErrore?: string; descrizione?: string; statoConsegna?: string; codiceConsegna?: number }> | null; posteVerification?: { status: 'pending' | 'delivered' | 'returned' | 'gave_up'; trackingCode: string; checkCount: number; maxChecks: number; nextCheckAt: string | null; lastCheckedAt: string | null; lastError: string | null; deliveredAt: string | null; movements: Array<{ at: string; luogo: string; statoLavorazione: string; box: string; flagRitorno: boolean }> } | null; protocolNumber?: number | null; protocolYear?: number | null; protocolledAt?: string | null; costCents?: number | null; costCalculatedAt?: string | null; costBreakdown?: Record<string, unknown> | null }>;
     preview: { subject: string; bodyHtml?: string; bodyMarkdown?: string };
     appIoPreview: { subject: string; bodyHtml?: string; bodyMarkdown?: string } | null;
     downloads: Array<{ channel: string; attachmentIndex: number; downloadedAt: string }>;
@@ -1530,6 +1552,8 @@ export function App(): React.JSX.Element {
   const [addressEditSaving, setAddressEditSaving] = useState(false);
   const [postalStatusRefreshing, setPostalStatusRefreshing] = useState(false);
   const [postalErrorsResetting, setPostalErrorsResetting] = useState(false);
+  const [posteChecking, setPosteChecking] = useState(false);
+  const [posteRun, setPosteRun] = useState<{ running: boolean; total: number; done: number; delivered: number; returned: number; errors: number; aborted: boolean } | null>(null);
   const [trackingIdEditOpenFor, setTrackingIdEditOpenFor] = useState<number | null>(null);
   const [trackingIdEditValue, setTrackingIdEditValue] = useState('');
   const [trackingIdEditSaving, setTrackingIdEditSaving] = useState(false);
@@ -1759,6 +1783,7 @@ export function App(): React.JSX.Element {
       if (searchCampaignId) params.set('campaignId', searchCampaignId);
       if (searchChannel) params.set('channelType', searchChannel);
       if (searchStatus) params.set('status', searchStatus);
+      if (searchPosteVerification) params.set('posteVerification', searchPosteVerification);
       if (searchDateFrom) params.set('dateFrom', searchDateFrom);
       if (searchDateTo) params.set('dateTo', searchDateTo);
       params.set('page', String(page));
@@ -2013,6 +2038,24 @@ export function App(): React.JSX.Element {
       if (!(err instanceof ApiAuthError)) alert('Errore durante l\'aggancio dell\'IDPRO.');
     } finally {
       setTrackingIdEditSaving(false);
+    }
+  };
+
+  const handlePosteCheckRecipient = async () => {
+    if (!notifDetail) return;
+    setPosteChecking(true);
+    try {
+      const res = await apiFetch(`/campaigns/${notifDetail.campaign.id}/recipients/${notifDetail.recipient.id}/postal/poste-check`, { method: 'POST' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert(body.message || 'Errore durante la verifica su Poste.');
+        return;
+      }
+      await openNotificationDetail(notifDetail.recipient.id);
+    } catch (err) {
+      if (!(err instanceof ApiAuthError)) alert('Errore durante la verifica su Poste.');
+    } finally {
+      setPosteChecking(false);
     }
   };
 
@@ -2568,6 +2611,7 @@ export function App(): React.JSX.Element {
   const [settPdndTestResult, setSettPdndTestResult] = useState<{ env: 'test' | 'prod'; ok: boolean; message: string } | null>(null);
 
   const [settInadCheckEnabled, setSettInadCheckEnabled] = useState(false);
+  const [settPostalPosteTrackingEnabled, setSettPostalPosteTrackingEnabled] = useState(true);
   const [settInadTestPurposeId, setSettInadTestPurposeId] = useState('');
   const [settInadProdPurposeId, setSettInadProdPurposeId] = useState('');
   const [settInadTesting, setSettInadTesting] = useState<'test' | 'prod' | null>(null);
@@ -2682,7 +2726,7 @@ export function App(): React.JSX.Element {
   // in uso per gli altri pannelli di dettaglio campagna.
   const [pendingPecReview, setPendingPecReview] = useState<Array<{ recipientId: string; fullName: string | null; codiceFiscale: string; pecOriginale: string | null; pecTrovata: string | null }>>([]);
   const [pecReviewResolving, setPecReviewResolving] = useState<string | null>(null);
-  const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number; costCents?: number | null; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; protocolNumber?: number | null; protocolYear?: number | null; inadCheck?: { found: boolean; diverted: boolean } | null; signatureCheck?: { valid: boolean; reason: string | null } | null }> } | null>(null);
+  const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number; costCents?: number | null; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; posteVerificationStatus?: string | null; posteDeliveredAt?: string | null; protocolNumber?: number | null; protocolYear?: number | null; inadCheck?: { found: boolean; diverted: boolean } | null; signatureCheck?: { valid: boolean; reason: string | null } | null }> } | null>(null);
   const [recipientsSearch, setRecipientsSearch] = useState('');
   const [recipientsPageNum, setRecipientsPageNum] = useState(1);
   const [recipientsStatusFilter, setRecipientsStatusFilter] = useState('');
@@ -3024,6 +3068,7 @@ export function App(): React.JSX.Element {
         setSettPdndProdKid(String(s['pdnd.prod.kid'] ?? ''));
         setSettPdndProdPrivateKey(String(s['pdnd.prod.privateKey'] ?? ''));
         setSettInadCheckEnabled(Boolean(s['inad.checkEnabled']));
+        setSettPostalPosteTrackingEnabled(s['postalPosteTracking.enabled'] !== false);
         setSettInadTestPurposeId(String(s['inad.test.purposeId'] ?? ''));
         setSettInadProdPurposeId(String(s['inad.prod.purposeId'] ?? ''));
         setSettRegistroImpreseTestPurposeId(String(s['registroImprese.test.purposeId'] ?? ''));
@@ -4359,6 +4404,7 @@ export function App(): React.JSX.Element {
     'pdnd.prod.kid': settPdndProdKid,
     'pdnd.prod.privateKey': settPdndProdPrivateKey,
     'inad.checkEnabled': settInadCheckEnabled,
+    'postalPosteTracking.enabled': settPostalPosteTrackingEnabled,
     'inad.test.purposeId': settInadTestPurposeId,
     'inad.prod.purposeId': settInadProdPurposeId,
     'registroImprese.test.purposeId': settRegistroImpreseTestPurposeId,
@@ -5685,6 +5731,13 @@ export function App(): React.JSX.Element {
 
     return (
       <div className="d-flex flex-column gap-4">
+        <div className="form-check form-switch mb-0">
+          <input className="form-check-input" type="checkbox" role="switch" id="postal_poste_tracking_enabled"
+            checked={settPostalPosteTrackingEnabled} onChange={(e) => setSettPostalPosteTrackingEnabled(e.target.checked)} />
+          <label className="form-check-label small fw-semibold" htmlFor="postal_poste_tracking_enabled">
+            Verifica consegna su tracking Poste Italiane per le raccomandate che GlobalCom dà come Non consegnate (controllo giornaliero, max 90 giorni) — salva con "Salva Impostazioni" in fondo alla pagina
+          </label>
+        </div>
         {postalProviderMsg && (
           <div className={`alert ${postalProviderMsg.error ? 'alert-danger' : 'alert-success'} d-flex align-items-center gap-2 mb-0`}>
             {postalProviderMsg.error ? <AlertTriangle /> : <CheckCircle2 />}
@@ -6676,6 +6729,46 @@ export function App(): React.JSX.Element {
       URL.revokeObjectURL(url);
     } catch {
       alert('Errore durante il download del report');
+    }
+  };
+
+  const handlePosteCheckCampaign = async () => {
+    if (!campaign) return;
+    const campaignId = campaign.id;
+    try {
+      const res = await apiFetch(`/campaigns/${campaignId}/postal/poste-check`, { method: 'POST' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert(body.message || "Errore durante l'avvio della verifica su Poste.");
+        return;
+      }
+      const { total } = await res.json();
+      if (total === 0) {
+        alert('Nessuna notifica Non consegnata da verificare su Poste.');
+        return;
+      }
+      setPosteRun({ running: true, total, done: 0, delivered: 0, returned: 0, errors: 0, aborted: false });
+      const timer = setInterval(async () => {
+        try {
+          const r = await apiFetch(`/campaigns/${campaignId}/postal/poste-check`);
+          if (!r.ok) return;
+          const state = await r.json();
+          setPosteRun(state);
+          if (!state.running) {
+            clearInterval(timer);
+            alert(`Verifica su Poste completata: ${state.delivered} consegnate secondo Poste, ${state.returned} restituite, ${state.errors} errori${state.aborted ? ' (interrotta: troppi errori consecutivi da Poste)' : ''}.`);
+            setPosteRun(null);
+            fetchCampaignDetail(campaignId);
+            fetchRecipientsPage(campaignId);
+            fetchRecipientsFilterOptions(campaignId);
+            fetchPostalDeliveryStatusBreakdown(campaignId);
+          }
+        } catch {
+          // Tick saltato: riprova al prossimo.
+        }
+      }, 3000);
+    } catch (err) {
+      if (!(err instanceof ApiAuthError)) alert("Errore durante l'avvio della verifica su Poste.");
     }
   };
 
@@ -12985,6 +13078,17 @@ export function App(): React.JSX.Element {
                       <option value="skipped">Saltato</option>
                     </select>
                   </div>
+                  <div style={{ flex: '1 1 170px', minWidth: 0 }}>
+                    <label className="form-label small text-muted mb-1" htmlFor="ns-poste">Verifica Poste</label>
+                    <select id="ns-poste" className="form-select form-select-sm" value={searchPosteVerification} onChange={e => setSearchPosteVerification(e.target.value)}>
+                      <option value="">Tutte</option>
+                      <option value="delivered">Consegnate secondo Poste (discrepanza GlobalCom)</option>
+                      <option value="returned">Restituite al mittente</option>
+                      <option value="pending">In verifica</option>
+                      <option value="gave_up">Verifica esaurita</option>
+                      <option value="any">Con qualunque verifica Poste</option>
+                    </select>
+                  </div>
                   <div style={{ flex: '1 1 140px', minWidth: 0 }}>
                     <label className="form-label small text-muted mb-1" htmlFor="ns-date-from">Dal</label>
                     <input id="ns-date-from" type="date" className="form-control form-control-sm" value={searchDateFrom} onChange={e => setSearchDateFrom(e.target.value)} />
@@ -13023,7 +13127,12 @@ export function App(): React.JSX.Element {
                           <td className="small">{r.fullName || '—'}</td>
                           <td className="small">{r.campaignName}</td>
                           <td><ChannelBadge channel={r.channelType} /></td>
-                          <td><StatusBadge status={r.status} /></td>
+                          <td>
+                            <StatusBadge status={r.status} />
+                            {r.posteVerificationStatus === 'delivered' && <span className="badge bg-success-subtle text-success-emphasis border border-success ms-1" title="GlobalCom: Non consegnato — Poste: consegnato">Consegnato (verifica Poste)</span>}
+                            {r.posteVerificationStatus === 'returned' && <span className="badge bg-secondary-subtle text-secondary-emphasis border ms-1">Poste: restituita</span>}
+                            {(r.posteVerificationStatus === 'pending' || r.posteVerificationStatus === 'gave_up') && <span className="badge bg-light text-dark border ms-1">{r.posteVerificationStatus === 'pending' ? 'Poste: in verifica' : 'Poste: verifica esaurita'}</span>}
+                          </td>
                           <td className="small text-muted">{new Date(r.createdAt).toLocaleString('it-IT')}</td>
                         </tr>
                       ))}
@@ -13146,6 +13255,40 @@ export function App(): React.JSX.Element {
                                 {postalStatusRefreshing ? <Loader2 className="icon-spin me-1" size={14} /> : <RefreshCw className="me-1" size={14} />}
                                 Ricontrolla stato GlobalCom
                               </button>
+                            );
+                          })()}
+                          {(() => {
+                            const lastPostal = [...notifDetail.attempts].filter(a => a.channelType === 'POSTAL').sort((a, b) => b.attemptNumber - a.attemptNumber)[0];
+                            if (!lastPostal) return null;
+                            const pv = lastPostal.posteVerification;
+                            const canCheck = !!pv || (lastPostal.postalStatus === 'NonConsegnato' && !!lastPostal.postalAcceptanceId);
+                            if (!canCheck) return null;
+                            const statusLabel = !pv ? 'Non ancora verificata'
+                              : pv.status === 'delivered' ? `Consegnata${pv.deliveredAt ? ` il ${new Date(pv.deliveredAt).toLocaleString('it-IT')}` : ''}`
+                              : pv.status === 'returned' ? 'Restituita al mittente'
+                              : pv.status === 'gave_up' ? `Verifica esaurita (${pv.checkCount}/${pv.maxChecks})`
+                              : `In verifica (${pv.checkCount}/${pv.maxChecks})${pv.nextCheckAt ? ` — prossimo controllo ${new Date(pv.nextCheckAt).toLocaleString('it-IT')}` : ''}`;
+                            return (
+                              <div className="border rounded p-2 mt-2 small">
+                                <div className="d-flex align-items-center justify-content-between gap-2">
+                                  <div>
+                                    <span className="fw-semibold">Verifica Poste</span>{pv && <span className="text-muted ms-2">{pv.trackingCode}</span>}
+                                    <div>{statusLabel}</div>
+                                    {pv?.lastError && <div className="text-danger">Ultimo errore: {pv.lastError}</div>}
+                                  </div>
+                                  <button type="button" className="btn btn-sm btn-outline-secondary text-nowrap" disabled={posteChecking} onClick={handlePosteCheckRecipient}>
+                                    {posteChecking ? <Loader2 className="icon-spin me-1" size={14} /> : <RefreshCw className="me-1" size={14} />}
+                                    Verifica ora su Poste
+                                  </button>
+                                </div>
+                                {pv && pv.movements.length > 0 && (
+                                  <ul className="list-unstyled mb-0 mt-2">
+                                    {pv.movements.map((m, i) => (
+                                      <li key={i} className="text-muted">{m.at ? new Date(m.at).toLocaleString('it-IT') : '—'} · {m.luogo || '—'} · fase {m.box}{m.flagRitorno ? ' · ritorno al mittente' : ''}</li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
                             );
                           })()}
                         </div>
@@ -17953,6 +18096,17 @@ export function App(): React.JSX.Element {
                                   Riattiva errori GlobalCom
                                 </button>
                               )}
+                              {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType === 'POSTAL' && (postalStatusBreakdown ?? []).some(b => b.status === 'NonConsegnato' && b.count > 0) && (
+                                <button
+                                  className="btn btn-sm d-inline-flex align-items-center text-nowrap btn-outline-success"
+                                  disabled={!!posteRun?.running}
+                                  onClick={handlePosteCheckCampaign}
+                                  title="Controlla subito sul tracking di Poste Italiane le raccomandate che GlobalCom dà come Non consegnate (il postino può aver consegnato in un secondo passaggio). Lanciabile a qualsiasi ora, oltre al controllo automatico giornaliero."
+                                >
+                                  {posteRun?.running ? <Loader2 className="icon-spin me-1" size={14} /> : <Truck className="me-1" size={14} />}
+                                  {posteRun?.running ? `Verifica su Poste ${posteRun.done}/${posteRun.total}` : 'Verifica su Poste'}
+                                </button>
+                              )}
                               <button
                                 className="btn btn-sm d-inline-flex align-items-center text-nowrap btn-outline-secondary"
                                 onClick={() => {
@@ -18505,7 +18659,7 @@ export function App(): React.JSX.Element {
                                           <>
                                             <td className="small">{r.protocolNumber ? `${r.protocolNumber}/${r.protocolYear}` : '—'}</td>
                                             <td className="small"><PostalStatusBadge status={r.postalStatus} /></td>
-                                            <td className="small"><PostalDeliveryStatusBadge status={r.postalDeliveryStatus} code={r.postalDeliveryCode} /></td>
+                                            <td className="small"><PostalDeliveryWithPosteBadge postalStatus={r.postalStatus} postalDeliveryStatus={r.postalDeliveryStatus} postalDeliveryCode={r.postalDeliveryCode} posteVerificationStatus={r.posteVerificationStatus} posteDeliveredAt={r.posteDeliveredAt} /></td>
                                             <td className="small text-muted">{r.postalStatusUpdatedAt ? new Date(r.postalStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
                                             {downloadCell}
                                             {costCell}
@@ -18513,7 +18667,7 @@ export function App(): React.JSX.Element {
                                         ) : (
                                           <>
                                             <td className="small"><PostalStatusBadge status={r.postalStatus} /></td>
-                                            <td className="small"><PostalDeliveryStatusBadge status={r.postalDeliveryStatus} code={r.postalDeliveryCode} /></td>
+                                            <td className="small"><PostalDeliveryWithPosteBadge postalStatus={r.postalStatus} postalDeliveryStatus={r.postalDeliveryStatus} postalDeliveryCode={r.postalDeliveryCode} posteVerificationStatus={r.posteVerificationStatus} posteDeliveredAt={r.posteDeliveredAt} /></td>
                                             <td className="small text-muted">{r.postalStatusUpdatedAt ? new Date(r.postalStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
                                             {downloadCell}
                                             {costCell}
