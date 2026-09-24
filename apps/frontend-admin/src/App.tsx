@@ -1553,7 +1553,7 @@ export function App(): React.JSX.Element {
   const [postalStatusRefreshing, setPostalStatusRefreshing] = useState(false);
   const [postalErrorsResetting, setPostalErrorsResetting] = useState(false);
   const [posteChecking, setPosteChecking] = useState(false);
-  const [posteRun, setPosteRun] = useState<{ running: boolean; total: number; done: number; delivered: number; returned: number; errors: number; aborted: boolean } | null>(null);
+  const [posteRun, setPosteRun] = useState<{ campaignId: string; running: boolean; total: number; done: number; delivered: number; returned: number; errors: number; aborted: boolean } | null>(null);
   const [trackingIdEditOpenFor, setTrackingIdEditOpenFor] = useState<number | null>(null);
   const [trackingIdEditValue, setTrackingIdEditValue] = useState('');
   const [trackingIdEditSaving, setTrackingIdEditSaving] = useState(false);
@@ -2040,6 +2040,61 @@ export function App(): React.JSX.Element {
       setTrackingIdEditSaving(false);
     }
   };
+
+  // Verifica su Poste in corso (run in memoria lato backend): alla apertura
+  // di una campagna si rilegge lo stato, così avanzamento e riepilogo finale
+  // sopravvivono a reload/navigazione e un run di un'altra campagna non
+  // resta mai attaccato al bottone di quella aperta.
+  useEffect(() => {
+    if (!selectedCampaignId || !token) return;
+    let cancelled = false;
+    apiFetch(`/campaigns/${selectedCampaignId}/postal/poste-check`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((state) => {
+        if (cancelled) return;
+        setPosteRun(state?.running ? { ...state, campaignId: selectedCampaignId } : null);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCampaignId, token]);
+
+  // Polling avanzamento solo per la campagna aperta: cleanup su cambio
+  // campagna/fine run; qualunque errore (401, 4xx/5xx, rete) ferma il timer.
+  useEffect(() => {
+    if (!posteRun?.running || posteRun.campaignId !== selectedCampaignId) return;
+    const campaignId = posteRun.campaignId;
+    let stopped = false;
+    const timer = setInterval(async () => {
+      try {
+        const r = await apiFetch(`/campaigns/${campaignId}/postal/poste-check`);
+        if (stopped) return;
+        if (!r.ok) {
+          clearInterval(timer);
+          setPosteRun(null);
+          return;
+        }
+        const state = await r.json();
+        if (stopped) return;
+        if (state.running) {
+          setPosteRun({ ...state, campaignId });
+          return;
+        }
+        clearInterval(timer);
+        setPosteRun(null);
+        alert(`Verifica su Poste completata: ${state.delivered} consegnate secondo Poste, ${state.returned} restituite, ${state.errors} errori${state.aborted ? ' (interrotta: troppi errori consecutivi da Poste)' : ''}.`);
+        fetchCampaignDetail(campaignId);
+        fetchRecipientsPage(campaignId);
+        fetchRecipientsFilterOptions(campaignId);
+        fetchPostalDeliveryStatusBreakdown(campaignId);
+      } catch {
+        clearInterval(timer);
+        if (!stopped) setPosteRun(null);
+      }
+    }, 3000);
+    return () => { stopped = true; clearInterval(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [posteRun?.running, posteRun?.campaignId, selectedCampaignId]);
 
   const handlePosteCheckRecipient = async () => {
     if (!notifDetail) return;
@@ -6747,26 +6802,8 @@ export function App(): React.JSX.Element {
         alert('Nessuna notifica Non consegnata da verificare su Poste.');
         return;
       }
-      setPosteRun({ running: true, total, done: 0, delivered: 0, returned: 0, errors: 0, aborted: false });
-      const timer = setInterval(async () => {
-        try {
-          const r = await apiFetch(`/campaigns/${campaignId}/postal/poste-check`);
-          if (!r.ok) return;
-          const state = await r.json();
-          setPosteRun(state);
-          if (!state.running) {
-            clearInterval(timer);
-            alert(`Verifica su Poste completata: ${state.delivered} consegnate secondo Poste, ${state.returned} restituite, ${state.errors} errori${state.aborted ? ' (interrotta: troppi errori consecutivi da Poste)' : ''}.`);
-            setPosteRun(null);
-            fetchCampaignDetail(campaignId);
-            fetchRecipientsPage(campaignId);
-            fetchRecipientsFilterOptions(campaignId);
-            fetchPostalDeliveryStatusBreakdown(campaignId);
-          }
-        } catch {
-          // Tick saltato: riprova al prossimo.
-        }
-      }, 3000);
+      // Il polling dell'avanzamento lo fa l'useEffect legato a selectedCampaignId.
+      setPosteRun({ campaignId, running: true, total, done: 0, delivered: 0, returned: 0, errors: 0, aborted: false });
     } catch (err) {
       if (!(err instanceof ApiAuthError)) alert("Errore durante l'avvio della verifica su Poste.");
     }
@@ -18099,12 +18136,12 @@ export function App(): React.JSX.Element {
                               {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType === 'POSTAL' && (postalStatusBreakdown ?? []).some(b => b.status === 'NonConsegnato' && b.count > 0) && (
                                 <button
                                   className="btn btn-sm d-inline-flex align-items-center text-nowrap btn-outline-success"
-                                  disabled={!!posteRun?.running}
+                                  disabled={!!posteRun?.running && posteRun.campaignId === campaign.id}
                                   onClick={handlePosteCheckCampaign}
                                   title="Controlla subito sul tracking di Poste Italiane le raccomandate che GlobalCom dà come Non consegnate (il postino può aver consegnato in un secondo passaggio). Lanciabile a qualsiasi ora, oltre al controllo automatico giornaliero."
                                 >
-                                  {posteRun?.running ? <Loader2 className="icon-spin me-1" size={14} /> : <Truck className="me-1" size={14} />}
-                                  {posteRun?.running ? `Verifica su Poste ${posteRun.done}/${posteRun.total}` : 'Verifica su Poste'}
+                                  {posteRun?.running && posteRun.campaignId === campaign.id ? <Loader2 className="icon-spin me-1" size={14} /> : <Truck className="me-1" size={14} />}
+                                  {posteRun?.running && posteRun.campaignId === campaign.id ? `Verifica su Poste ${posteRun.done}/${posteRun.total}` : 'Verifica su Poste'}
                                 </button>
                               )}
                               <button
