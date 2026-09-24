@@ -276,3 +276,25 @@ secondo servizio `GBCCap.asmx` (stesso host, `gbcweb/GBCCap.asmx?wsdl`) con
 `CittaDaCap`, `ListaCAPDaCitta`, `ListaVieDaCAP` e la lista `DUG`
 (VIA/VIALE/...) per normalizzare le vie: base per una verifica indirizzi
 pre-invio, da chiamare per tupla (via, città, CAP) deduplicata, mai per riga.
+
+**Verifica consegna su tracking Poste (`channels/postal/poste-tracking/`)**:
+GlobalCom smette di tracciare al primo `NonConsegnato` (es. "Indirizzo
+errato o inesatto"), ma Poste può consegnare giorni dopo (caso reale
+verificato: KO GlobalCom al 12/08, consegna Poste al 04/09). Cron giornaliero
+04:00 + tasto campagna/notifica interrogano l'endpoint JSON pubblico e NON
+documentato di "Cerca spedizioni" (`POST
+https://www.poste.it/online/dovequando/DQ-REST/ricercasemplice`, body
+`{"tipoRichiedente":"WEB","codiceSpedizione":"<IDAccettazione>","periodoRicerca":1}`)
+con `postal_acceptance_id`. Risultato in `postal_poste_tracking`, mai nei
+campi `postal_*`. Solo `esitoRicerca "3"` + `stato "5"` senza `flagRitorno`
+è mappato a consegnato (unico caso verificato); ogni altro valore resta
+`pending` con risposta grezza in `last_response` — per allargare la
+mappatura, leggere quelle righe reali prima di ipotizzare. Codici a 10 cifre
+(vettori diversi da Poste) tornano `esitoRicerca "1"`: mai tracciabili,
+finiscono `gave_up` dopo 90 giorni. `statoLavorazione` è un frammento
+("in data"): l'etichetta completa la compone il frontend poste.it da
+`box`. Kill-switch: `postalPosteTracking.enabled`. Endpoint che cambia →
+circuit breaker (5 errori consecutivi), nessuna riga marcata finale per
+errori. Letture in `CampaignsService`/`NotificationsSearchService` via repo
+`@Optional()`: una nuova spec che le testa deve fornire il repo
+`PostalPosteTracking`, altrimenti le letture tornano vuote in silenzio.
