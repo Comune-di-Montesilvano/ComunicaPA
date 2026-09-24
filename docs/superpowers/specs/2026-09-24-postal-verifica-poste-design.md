@@ -137,16 +137,21 @@ Costante `MAX_POSTE_CHECKS = 90`.
 
 ### Ingresso
 
-1. **Da sync GlobalCom.** In `PostalStatusSyncService.syncOne` (e nei path
-   manuali `refreshOne` / `resetPostalErrorsForRecheck` che riusano lo stesso codice),
-   quando l'attempt risulta `postal_status = 'NonConsegnato'` e
-   `postal_acceptance_id` non vuoto, si fa un upsert
-   `INSERT ... ON CONFLICT (attempt_id) DO NOTHING` con `status='pending'`,
-   `next_check_at = now()`. Mai reset di una riga esistente.
-2. **Backfill.** Lo stesso upsert gira all'avvio del cron giornaliero su
-   tutti gli attempt `postal_status='NonConsegnato' AND postal_acceptance_id
-   IS NOT NULL` senza riga: copre lo storico già presente e ogni path di
-   ingresso eventualmente mancato. Nessuna migration dati separata.
+Nessun hook nel sync GlobalCom (`PostalStatusSyncService` resta intatto):
+l'ingresso è un **backfill idempotente**
+(`INSERT ... SELECT ... ON CONFLICT (attempt_id) DO NOTHING`, `status='pending'`,
+`next_check_at = now()`, mai reset di una riga esistente) sugli attempt
+`channel_type='POSTAL' AND postal_status='NonConsegnato' AND
+postal_acceptance_id` non vuoto, **solo ultimo attempt del destinatario**
+(nessun attempt con `attempt_number` maggiore). Gira:
+
+1. all'avvio di ogni giro del cron giornaliero (tutte le campagne) — copre
+   anche lo storico già presente, nessuna migration dati separata;
+2. all'avvio del run manuale di campagna (ristretto alla campagna);
+3. nel controllo manuale per notifica, la riga si crea al volo se manca.
+
+Il ritardo massimo di ingresso è quindi un giorno, irrilevante con un
+controllo al giorno.
 
 Se GlobalCom in seguito cambia lo stato dell'attempt (es. riaccodamento o
 ricontrollo che esce da `NonConsegnato`), la riga resta ma il cron la
@@ -304,22 +309,31 @@ costanti nel codice (YAGNI).
 
 ## Componenti
 
-- `channels/postal/poste-tracking-client.service.ts` — solo HTTP + parsing
-  della risposta in un tipo normalizzato (`PosteTrackingResult`). Nessun
+Modulo nuovo `channels/postal/poste-tracking/` (`PosteTrackingModule`,
+registrato in `app.module.ts`), autonomo: nessuna nuova dipendenza nel
+costruttore di `CampaignsService`/`CampaignsController` (evita di toccare
+la decina di spec che li istanziano).
+
+- `poste-tracking-mapping.util.ts` — funzioni pure: parsing risposta
+  (`parsePosteResponse`), esito (`mapPosteOutcome`), ultimo movimento,
+  `PosteTrackingError`.
+- `poste-tracking-client.service.ts` — solo HTTP verso Poste. Nessun
   accesso DB.
-- `channels/postal/poste-tracking-mapping.util.ts` — funzione pura risposta
-  → esito (`delivered` / `returned` / `pending`) + data di consegna.
-- `channels/postal/poste-postal-tracking.service.ts` — ingresso/backfill,
-  cron, `checkOne`, run per campagna, circuit breaker.
+- `poste-postal-tracking.service.ts` — backfill, cron, `checkOne`, run per
+  campagna, circuit breaker, controllo per notifica.
+- `poste-tracking.controller.ts` — endpoint manuali sotto `admin/campaigns`.
+- `poste-tracking-effective.util.ts` — bucket sintetico, predicato/SQL
+  dello stato effettivo, etichette, DTO `PosteVerificationDto`.
 - `entities/postal-poste-tracking.entity.ts` + migration
   `CreatePostalPosteTracking`.
-- `campaigns/poste-tracking-effective.util.ts` — predicato/SQL dello stato
-  effettivo.
-- Modifiche: `postal-status-sync.service.ts` (hook di ingresso),
-  `campaigns.service.ts`, `campaigns.controller.ts`, `postal-report-csv.util.ts`,
+- Letture in `CampaignsService` e `NotificationsSearchService` tramite
+  repository `PostalPosteTracking` iniettato con `@Optional()`: senza repo
+  (spec esistenti) le letture tornano vuote.
+- Modifiche: `campaigns.service.ts`, `postal-report-csv.util.ts`,
   `dto/campaign-stats.dto.ts`, `notifications-search/*`,
-  `settings.registry.ts`, `frontend-admin`, `docs/claude/postal-globalcom.md`
-  (nota sull'endpoint Poste e sui suoi gotcha).
+  `settings.registry.ts`, `database.module.ts`/`data-source.ts`,
+  `frontend-admin`, `docs/claude/postal-globalcom.md` (nota sull'endpoint
+  Poste e sui suoi gotcha).
 
 ## Test
 
@@ -336,8 +350,6 @@ costanti nel codice (YAGNI).
   non più `NonConsegnato`; run manuale di campagna ignora `next_check_at`,
   non incrementa `check_count`, `409` su run già in corso, stato run
   (`done/total`, conteggi esiti) aggiornato.
-- `postal-status-sync.service.spec.ts`: transizione a `NonConsegnato` con
-  codice → riga creata; senza codice → nessuna riga.
 - `campaigns.service.spec.ts`: breakdown e opzioni filtro con bucket
   `ConsegnatoVerificaPoste` e decremento del bucket GlobalCom originale;
   filtro lista su bucket nuovo e su valore GlobalCom originale.
