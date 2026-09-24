@@ -1,9 +1,23 @@
 import { escapeCsvField } from './csv.util.js';
 import type { PostalReportDto, PostalReportRowDto } from './dto/campaign-stats.dto.js';
 import { postalStatusLabel, POSTAL_STATUS_HISTORY_COLUMNS } from './postal-status-labels.util.js';
+import { posteVerificationLabel } from '../channels/postal/poste-tracking/poste-tracking-effective.util.js';
 
 function formatDate(iso: string | undefined): string {
   return iso ? new Date(iso).toLocaleString('it-IT', { timeZone: 'Europe/Rome' }) : '';
+}
+
+// Verifica consegna su tracking Poste — sempre presenti, dopo le colonne
+// GlobalCom e prima di quelle condizionali (Esito App IO / External ID).
+const POSTE_HEADERS = ['Verifica Poste', 'Data Consegna (Poste)', 'Ultimo Movimento Poste', 'Discrepanza GlobalCom/Poste'];
+
+function posteFields(r: PostalReportRowDto): string[] {
+  return [
+    posteVerificationLabel(r.posteVerification),
+    formatDate(r.posteVerification?.deliveredAt ?? undefined),
+    r.posteVerification?.lastMovement ?? '',
+    r.posteDiscrepancy ? 'SI' : '',
+  ];
 }
 
 function appIoOutcomeLabel(outcome: PostalReportRowDto['appIoOutcome']): string {
@@ -12,7 +26,7 @@ function appIoOutcomeLabel(outcome: PostalReportRowDto['appIoOutcome']): string 
 }
 
 export function buildPostalReportAttualeCsv(report: PostalReportDto): string {
-  const headers = ['Codice Fiscale', 'Nominativo', 'IDPRO', 'Stato Documento', 'Data Stato', 'Stato Consegna Poste', 'Codice Consegna', 'Data Consegna Poste', 'ID Accettazione Poste', 'Codice Errore', 'Descrizione Errore'];
+  const headers = ['Codice Fiscale', 'Nominativo', 'IDPRO', 'Stato Documento', 'Data Stato', 'Stato Consegna Poste', 'Codice Consegna', 'Data Consegna Poste', 'ID Accettazione Poste', 'Codice Errore', 'Descrizione Errore', ...POSTE_HEADERS];
   if (report.hasAppIoCoDelivery) headers.push('Esito App IO');
   if (report.hasExternalId) headers.push('External ID');
 
@@ -32,6 +46,7 @@ export function buildPostalReportAttualeCsv(report: PostalReportDto): string {
       r.postalAcceptanceId ?? '',
       r.codiceErrore ?? '',
       r.descrizioneErrore ?? '',
+      ...posteFields(r),
     ];
     if (report.hasAppIoCoDelivery) fields.push(appIoOutcomeLabel(r.appIoOutcome));
     if (report.hasExternalId) fields.push(r.externalId ?? '');
@@ -45,6 +60,7 @@ export function buildPostalReportStoricoCsv(report: PostalReportDto): string {
   const headers = [
     'Codice Fiscale', 'Nominativo', 'IDPRO', 'Stato Consegna Poste', 'Codice Consegna', 'Data Consegna Poste', 'ID Accettazione Poste', 'Codice Errore', 'Descrizione Errore',
     ...POSTAL_STATUS_HISTORY_COLUMNS.map((c) => c.header),
+    ...POSTE_HEADERS,
   ];
   if (report.hasAppIoCoDelivery) headers.push('Esito App IO');
   if (report.hasExternalId) headers.push('External ID');
@@ -67,6 +83,7 @@ export function buildPostalReportStoricoCsv(report: PostalReportDto): string {
       r.codiceErrore ?? '',
       r.descrizioneErrore ?? '',
       ...POSTAL_STATUS_HISTORY_COLUMNS.map((c) => formatDate(firstOccurrenceByStatus.get(c.status))),
+      ...posteFields(r),
     ];
     if (report.hasAppIoCoDelivery) fields.push(appIoOutcomeLabel(r.appIoOutcome));
     if (report.hasExternalId) fields.push(r.externalId ?? '');

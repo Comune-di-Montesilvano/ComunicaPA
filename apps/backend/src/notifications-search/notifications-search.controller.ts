@@ -1,7 +1,7 @@
 import { Controller, Get, Param, ParseIntPipe, ParseUUIDPipe, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { Roles } from '../auth/decorators/roles.decorator.js';
-import { NotificationsSearchService } from './notifications-search.service.js';
+import { NotificationsSearchService, POSTE_VERIFICATION_FILTERS, type PosteVerificationFilter } from './notifications-search.service.js';
 
 @Controller('admin/notifications-search')
 @Roles('user', 'admin')
@@ -19,6 +19,7 @@ export class NotificationsSearchController {
     @Query('dateTo') dateTo?: string,
     @Query('page') page = '1',
     @Query('pageSize') pageSize = '50',
+    @Query('posteVerification') posteVerification?: string,
   ) {
     return this.svc.search({
       query,
@@ -28,6 +29,7 @@ export class NotificationsSearchController {
       status,
       dateFrom,
       dateTo,
+      posteVerification: POSTE_VERIFICATION_FILTERS.includes(posteVerification as PosteVerificationFilter) ? (posteVerification as PosteVerificationFilter) : undefined,
       page: Math.max(1, parseInt(page, 10) || 1),
       pageSize: Math.min(200, Math.max(1, parseInt(pageSize, 10) || 50)),
     });

@@ -31,6 +31,9 @@ export interface RecipientStatDto {
   postalDeliveryCode?: number | null;
   postalDeliveryDate?: Date | null;
   postalAcceptanceId?: string | null;
+  /** Verifica consegna su tracking Poste (ultimo attempt POSTAL), vedi poste-tracking-effective.util.ts. */
+  posteVerificationStatus?: string | null;
+  posteDeliveredAt?: Date | null;
   costCents?: number | null;
   /** Esito ultima verifica INAD — `diverted` guida il filtro client-side del bottone "Rimanda a questi N" (widget multicanale). */
   inadCheck?: { found: boolean; diverted: boolean } | null;
@@ -175,6 +178,10 @@ export interface PostalReportRowDto {
   /** null se la campagna non ha co-consegna App IO configurata. */
   appIoOutcome: { success: boolean; error: string | null } | null;
   externalId: string | null;
+  /** Verifica consegna su tracking Poste dell'ultimo attempt, null se nessuna riga. */
+  posteVerification: { status: string; checkCount: number; deliveredAt: string | null; lastMovement: string } | null;
+  /** GlobalCom NonConsegnato ma Poste consegnato (stesso criterio del bucket ConsegnatoVerificaPoste). */
+  posteDiscrepancy: boolean;
 }
 
 export interface PostalReportDto {
