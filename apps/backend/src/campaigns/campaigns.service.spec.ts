@@ -4494,6 +4494,8 @@ describe('CampaignsService.getPostalStatusBreakdown / getPostalReportRows', () =
         descrizioneErrore: '',
         appIoOutcome: null,
         externalId: null,
+        posteVerification: null,
+        posteDiscrepancy: false,
       }]);
     });
 
