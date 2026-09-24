@@ -2555,6 +2555,36 @@ export class CampaignsService {
         )`,
         { campaignChannelType: campaign.channelType },
       );
+    } else if (postalDeliveryStatus === 'AppIoSostituito') {
+      // Bucket sintetico (getRecipientFilterOptions): postal_status='AppIoSostituito',
+      // mai un postal_delivery_status reale (mai spedito a GlobalCom) — il
+      // ramo generico sotto (match su na.postal_delivery_status) darebbe
+      // sempre zero risultati per questo valore, stesso identico criterio
+      // usato per calcolare il conteggio nel dropdown.
+      qb.andWhere(
+        `EXISTS (
+          SELECT 1 FROM notification_attempts na
+          WHERE na.recipient_id = r.id
+            AND na.attempt_number = (SELECT MAX(na2.attempt_number) FROM notification_attempts na2 WHERE na2.recipient_id = r.id)
+            AND na.channel_type = :campaignChannelType AND na.postal_status = 'AppIoSostituito'
+        )`,
+        { campaignChannelType: campaign.channelType },
+      );
+    } else if (postalDeliveryStatus === 'NonTracciato') {
+      // Bucket sintetico: nessuna AR configurata, postal_delivery_status
+      // resta sempre NULL per design (mai un evento di tracciamento fisico
+      // possibile) — stesso criterio di pendingPostalDeliveryRow in
+      // getRecipientFilterOptions, mai il match letterale sotto.
+      qb.andWhere(
+        `EXISTS (
+          SELECT 1 FROM notification_attempts na
+          WHERE na.recipient_id = r.id
+            AND na.attempt_number = (SELECT MAX(na2.attempt_number) FROM notification_attempts na2 WHERE na2.recipient_id = r.id)
+            AND na.channel_type = :campaignChannelType AND na.status != 'failed' AND na.postal_delivery_status IS NULL
+            AND (na.postal_status IS NULL OR na.postal_status != 'AppIoSostituito')
+        )`,
+        { campaignChannelType: campaign.channelType },
+      );
     } else if (postalDeliveryStatus && postalDeliveryStatus !== 'DirottatoAPec') {
       qb.andWhere(
         `EXISTS (
@@ -3122,11 +3152,18 @@ export class CampaignsService {
 
     const attempts = await this.attemptRepo.find({
       where: { recipientId: In(recipientIds), channelType: In(['SEND', 'POSTAL']) },
-      select: { recipientId: true, channelType: true, costCents: true, status: true },
+      select: { recipientId: true, channelType: true, costCents: true, status: true, postalStatus: true },
     });
 
     const byChannelMap = new Map<string, { totalCostCents: number; uncalculatedCount: number }>();
     for (const a of attempts) {
+      // Sostituito da App IO esclusiva (postalStatus sentinel
+      // 'AppIoSostituito', notification.processor.ts): mai spedito a
+      // GlobalCom, mai avrà un costo — non è "non ancora calcolato" (che
+      // implica un costo in arrivo), va escluso del tutto da entrambi i
+      // conteggi. Bug reale segnalato: gonfiava "non calcolati" per ogni
+      // destinatario dirottato su App IO esclusiva.
+      if (a.postalStatus === 'AppIoSostituito') continue;
       const entry = byChannelMap.get(a.channelType) ?? { totalCostCents: 0, uncalculatedCount: 0 };
       // costCents === 0 trattato come "non ancora calcolato" alla pari di
       // NULL (stesso placeholder GlobalCom durante la lavorazione già noto
