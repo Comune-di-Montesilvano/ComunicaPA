@@ -193,3 +193,14 @@ riconciliare stato locale con DB. Pattern generale: uno stato React
 Set/flag "visivo" con commento che promette un fallback server-side va
 grep-verificato sul setter effettivo, mai dato per buono dal commento.
 
+
+
+**Backlog — terzo formato ZIP Maggioli, mai implementato.** Campione reale
+con entry `pag_indice_service.txt`: testo **pipe-delimited (`|`) senza
+header**, che contiene indirizzo, PEC/email e OCR nello stesso record.
+Mappatura dedotta dal campione e confermata (indici 1-based dopo split su
+`|`): 3 OCR (16 cifre), 4 numero provvedimento, 7 nome file PDF,
+9 nominativo, 10 CF/PIVA, 11 comune, 12 CAP, 13 provincia, 14 indirizzo,
+52 email/PEC. Anche l'export esiti nel formato Maggioli ("Importazione
+Notifiche"/"Mancate Notifiche", TXT a larghezza fissa verso Sicr@Web) resta
+da fare.

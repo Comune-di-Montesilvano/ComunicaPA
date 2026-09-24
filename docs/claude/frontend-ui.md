@@ -191,3 +191,5 @@ erano no-op — verificare a schermo le altre viste che la usano.
 propri, CSS `.stx-*` in `statistics.css`). Palette grafici fissa per entità
 (`CHANNEL_COLOR`), validata con la skill dataviz: i colori del registro canali
 sono pensati per badge/loghi, non per grafici (PEC e App IO quasi identici).
+
+**React Compiler lint — `new Date()`/`Date.now()` nel render è un errore** (`Cannot call impure function during render`): tenere "adesso" in uno stato aggiornato dal poll (`const [now, setNow] = useState(() => new Date())`) e passarlo agli helper, mai leggere l'orologio nel corpo del componente/useMemo.

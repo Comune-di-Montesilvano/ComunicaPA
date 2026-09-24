@@ -95,8 +95,8 @@ Opzionale per tutti i canali, nessun impatto su comportamento invio/canale.
   dal canale primario. Bloccato sia UI wizard (step4) che backend
   (`checkAttachmentsBlocking`). POSTAL/SEND esclusi da questa regola: per
   loro il corpo non è mai il contenuto reale (POSTAL) o l'allegato è già
-  l'unico contenuto (SEND). Vedi
-  `docs/superpowers/specs/2026-07-23-blocco-allegati-senza-placeholder-design.md`.
+  l'unico contenuto (SEND). Implementazione: `checkAttachmentsBlocking`
+  (backend) e gate step4 del wizard.
 
 ### 7. Contenuto testuale (subject/body)
 Obbligatorietà e vincoli di lunghezza divergono per canale, e il gate wizard

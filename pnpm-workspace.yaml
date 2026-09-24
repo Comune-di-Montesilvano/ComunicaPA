@@ -2,6 +2,6 @@ packages:
   - 'apps/*'
   - 'packages/*'
 allowBuilds:
-  '@nestjs/core': set this to true or false
-  esbuild: set this to true or false
-  msgpackr-extract: set this to true or false
+  '@nestjs/core': false
+  esbuild: true
+  msgpackr-extract: false

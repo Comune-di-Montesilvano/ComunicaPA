@@ -22,6 +22,8 @@ a.textContent.trim() === 'Arricchimento Tracciati'); link?.click(); }` —
 bypassa il controllo di interattività del tool `click` che su questi
 elementi non lo soddisfa mai.
 
+**Verificare a schermo una lista vuota in dev** (es. "Campagne recenti"): in `evaluate_script` sostituire temporaneamente `window.fetch` per l'URL interessato con `new Response(JSON.stringify(rows))`, cliccare il bottone di refresh, ripristinare `fetch` — dati solo client, nessuna scrittura su DB, spariscono al poll successivo.
+
 ## Audit log — ogni endpoint che consulta un registro PA esterno deve loggare
 
 `AuditLogsService.log()` non è solo per le azioni su Campaign — qualunque
@@ -127,3 +129,14 @@ citizen) — creato via API: `POST /api/0/teams/<org>/<team>/projects/`
 (serve lo slug del team, non solo dell'org — `GET
 /api/0/organizations/<org>/teams/` per trovarlo), poi DSN da `GET
 /api/0/projects/<org>/<project>/keys/`.
+
+
+## Operatori online (presence) — stato in RAM, istanza singola
+
+`PresenceService`: `Map` username → ultimo heartbeat in RAM (nessun Redis,
+nessuna persistenza), `POST admin/presence/heartbeat` ogni 60 s dal frontend,
+`GET admin/presence/online` conta gli heartbeat degli ultimi 90 s. JWT stateless:
+contare i token attivi è impossibile, da qui l'heartbeat. Come il bridge SSE
+dei log arricchimento, funziona solo con **un solo processo backend**: con
+più repliche servirebbe Redis. Un fallimento dell'endpoint non deve mai
+mostrare errori, solo il badge senza numero.

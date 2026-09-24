@@ -114,3 +114,15 @@ va rivista qualunque soglia extract/bulk basata su questi numeri.
 `/extract` ha limite **giornaliero condiviso** (1000-2000 richieste/die,
 non nello spec OpenAPI) — non usare in loop su campagne grandi.
 
+
+
+**Spec INAD** (verificata su raw YAML AgID, `AgID/INAD_API_Extraction`):
+autenticazione **solo** bearer voucher PDND (nessun `x-api-key`, a
+differenza di SEND); `GET /extract/{cf}` richiede il query param
+`practicalReference` (riferimento del procedimento); **404 = nessun domicilio
+digitale**, esito legittimo e non un errore.
+
+**INIPEC abbandonato**: il domicilio digitale d'impresa passa da Registro
+Imprese (PDND). Lo scaffolding `InipecModule`/`InipecService` mai registrato
+è stato rimosso; restano solo le chiavi settings e il test connessione
+`inipec` in Impostazioni.

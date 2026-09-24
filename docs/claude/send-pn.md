@@ -125,3 +125,28 @@ send_status_updated_at` (auto-recupero dei record già chiusi dopo il deploy).
 Importi al netto IVA (PN espone `vat` a parte). Script debug:
 `docker compose exec backend node src/debug/send-notification-costi.cjs <IUN>`
 (stampa solo stato/timeline/costi, nessun dato personale).
+
+
+## SEND — costi e scelte di prodotto (listino PagoPA)
+
+Listino ufficiale in vigore dal 1/2/2024
+(`https://notifichedigitali.pagopa.it/static/documents/Prezzi%20Ente%202024.pdf`):
+la notifica costa **1,00 € + IVA sempre** (gestione piattaforma, addebitata
+qualunque sia l'esito); il cartaceo si aggiunge solo se il recapito
+digitale fallisce. **A/R costa sistematicamente meno di 890** a parità di
+peso (es. Abruzzo, fino a 20 g: 890 ≈ 8,47 € contro A/R ≈ 2,70–3,46 €), per
+questo `physicalCommunicationType` ha default `AR_REGISTERED_LETTER`. Le
+tariffe cartacee variano per regione/lotto: mai cifre regionali hardcoded in
+UI (il progetto è riusabile da altri enti), solo la struttura e il link al
+listino.
+
+**Tassonomia**: i codici che finiscono per `P` sono per notifiche con
+pagamento, quelli in `N` senza — il wizard filtra la select su questo
+suffisso in base al checkbox "Integrazione pagamenti".
+
+**Pipeline a demoni, non BullMQ**: SEND non ha coda (`launch()` crea solo
+l'attempt `QUEUED`, i demoni `@Cron` protocollazione → invio lo raccolgono).
+L'upload degli allegati avviene **solo nel demone di invio**, mai in quello
+di protocollazione: gli URL S3 presigned di PN scadono dopo 1 h e tra i due
+stadi può passare tempo. Il PDF è rigenerato (deterministico) in ciascuno
+stadio.
