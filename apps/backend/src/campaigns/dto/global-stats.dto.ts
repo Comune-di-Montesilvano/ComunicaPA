@@ -34,6 +34,7 @@ export interface CampaignLeaderboardEntryDto {
   campaignId: string;
   campaignName: string;
   totalRecipients: number;
+  sentCount: number;
   downloadPercentage: number;
 }
 

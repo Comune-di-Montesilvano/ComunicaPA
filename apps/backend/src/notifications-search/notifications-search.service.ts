@@ -60,8 +60,14 @@ export class NotificationsSearchService {
         { q },
       );
     }
-    if (filters.campaignId) {
-      qb.andWhere('recipient.campaignId = :campaignId', { campaignId: filters.campaignId });
+    // Campo "Campagna" libero: id (anche parziale) o nome. CAST a text perché
+    // un confronto diretto su colonna uuid con un valore non-UUID fa fallire Postgres.
+    const campaignText = filters.campaignId?.trim();
+    if (campaignText) {
+      qb.andWhere(
+        '(CAST(campaign.id AS text) ILIKE :campaignQ OR campaign.name ILIKE :campaignQ)',
+        { campaignQ: `%${campaignText}%` },
+      );
     }
     if (filters.status) {
       qb.andWhere('recipient.status = :status', { status: filters.status });

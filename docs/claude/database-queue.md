@@ -102,3 +102,20 @@ sembra "il filtro si applica solo al poll successivo" quando in realtà è
 solo lento oltre la finestra percepita come immediata.
 `CREATE INDEX IF NOT EXISTS ON download_events(recipient_id)`.
 
+
+## Contatori denormalizzati — mai usarli per statistiche
+
+**`campaign.sentCount`/`failedCount` sono incrementi per TENTATIVO, non per
+destinatario** (`notification.processor.ts`, `send-dispatch.service.ts`,
+retry/rinvii/correzioni contenuto): possono superare il numero di
+destinatari (visto dal vivo: 9 "inviati" su 3 destinatari). Qualunque KPI,
+percentuale o classifica va contata da `recipients.status` (stato attuale),
+come fa ora `getGlobalStats`.
+
+**`recipient.downloadCount` lo incrementa SOLO il link pubblico email/PEC**
+(`public-download.controller.ts`) — i download da Portale Cittadino e App IO
+scrivono solo un `DownloadEvent`. "Ha scaricato" = `EXISTS download_events`
+(costante `HAS_DOWNLOAD_SQL` in `campaigns.service.ts`), mai
+`downloadCount > 0`. Residuo noto non ancora corretto: il conteggio
+"Senza download" dei filtri destinatari nel dettaglio campagna
+(`getRecipientFilterOptions`) usa ancora `downloadCount = 0`.

@@ -40,7 +40,7 @@ export function mergeMonthlyTrend(
 }
 
 export function computeDownloadPercentage(downloaded: number, total: number): number {
-  return total > 0 ? Math.round((downloaded / total) * 100) : 0;
+  return total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : 0;
 }
 
 export interface DateRangeWhere {

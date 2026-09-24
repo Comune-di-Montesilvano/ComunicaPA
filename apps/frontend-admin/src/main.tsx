@@ -5,6 +5,7 @@ import './assets/css/tokens.css'
 import './assets/css/no-bootstrap-compat.css'
 import './assets/css/backoffice-shell.css'
 import './assets/css/app.css'
+import './assets/css/statistics.css'
 import { App } from './App'
 import { ErrorBoundary } from './ErrorBoundary'
 

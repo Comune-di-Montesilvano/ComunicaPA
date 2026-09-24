@@ -662,6 +662,14 @@ export class CampaignsController {
     return this.campaignsService.getGlobalStats(dateFrom, dateTo);
   }
 
+  @Get('stats/costs')
+  getCostAnalytics(
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ) {
+    return this.campaignsService.getCostAnalytics(dateFrom, dateTo);
+  }
+
   @Get('stats/global/never-downloaded.csv')
   async exportNeverDownloadedCsv(
     @Query('dateFrom') dateFrom: string | undefined,

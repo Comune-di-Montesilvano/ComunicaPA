@@ -2,9 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import MDEditor from '@uiw/react-md-editor';
 import { TemplateEditor } from './components/TemplateEditor';
 import { SearchableSelect } from './components/SearchableSelect';
+import { StatisticsView } from './components/StatisticsView';
+import { DashboardView } from './components/DashboardView';
 import { SEND_ENTITY_TYPES, SEND_TAXONOMY_CATALOG } from './data/sendTaxonomy';
 import { COUNTRIES, matchCountry, isValidCap, abbreviateLongMunicipality } from '@comunicapa/shared-types';
-import { LineChart, Line, PieChart, Pie, Cell, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import {
   Mail, MailOpen, MailCheck, Mails, Smartphone, Send, HelpCircle,
   Hourglass, Truck, Inbox, Ban, Eye, EyeOff, CalendarCheck, Banknote, UserX, X, Clock,
@@ -14,12 +16,12 @@ import {
   Plus, Server, User, TestTube, ToggleRight, ToggleLeft, Pencil, AtSign, Gauge,
   ArrowLeft, ArrowRight, Menu, Building2, Megaphone, LineChart as LineChartIcon, PieChart as PieChartIcon,
   Copy, CreditCard, FileSpreadsheet, FileText, Save, History, Info, Link, List,
-  Lock, Wand2, Search, Network, Reply, LogOut, SlidersHorizontal,
+  Lock, Wand2, Search, Reply, LogOut, SlidersHorizontal,
   RefreshCw, Tag, UserCheck, Sparkles,
-  CheckCheck, Shield, Paperclip, Upload, Filter, Award, ExternalLink, Contact,
+  CheckCheck, Shield, Paperclip, Upload, Filter, ExternalLink, Contact,
   Play, FileArchive, Keyboard, Key,
   Minus, Star, Stamp, CircleUserRound, BarChart3, ShieldCheck, Rocket, ArrowDown, ArrowUp, ArrowUpDown,
-  Users, Euro,
+  Users, Euro, ChevronDown,
 } from 'lucide-react';
 
 declare global {
@@ -31,7 +33,7 @@ declare global {
 const API_BASE = window.__COMUNICAPA_CONFIG__?.apiBase ?? 'http://localhost:8080';
 const ADMIN_API_BASE = `${API_BASE}/admin`;
 
-import { CHANNELS_REGISTRY, EMBEDDED_LOGOS, ENGINE_LABELS, getChannelMeta, channelLabel } from './data/channels';
+import { CHANNELS_REGISTRY, EMBEDDED_LOGOS, getChannelMeta, channelLabel } from './data/channels';
 
 // ---------------------------------------------------------------------------
 // Definizione centralizzata delle voci di navigazione della pagina Impostazioni.
@@ -795,52 +797,6 @@ function formatEuroCents(cents: number): string {
   // recenti) non applica il separatore delle migliaia, restituendo "2941,12"
   // invece di "2.941,12" (bug reale segnalato dal vivo).
   return `${(cents / 100).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: true })} €`;
-}
-
-// Le label di default di recharts Pie disegnano linea + testo fuori dal
-// raggio esterno: con più fette o nomi lunghi (combinazioni canali) finiscono
-// tagliate dal ResponsiveContainer. Mostriamo la percentuale dentro la fetta;
-// i nomi completi restano in Legend/tabella sotto.
-function renderPiePercentLabel(props: any): React.ReactNode {
-  const { cx, cy, midAngle, innerRadius, outerRadius, percent } = props;
-  if (!percent || percent < 0.04) return null;
-  const RADIAN = Math.PI / 180;
-  const radius = innerRadius + (outerRadius - innerRadius) * 0.6;
-  const x = cx + radius * Math.cos(-midAngle * RADIAN);
-  const y = cy + radius * Math.sin(-midAngle * RADIAN);
-  return (
-    <text x={x} y={y} fill="#fff" textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={600}>
-      {`${Math.round(percent * 100)}%`}
-    </text>
-  );
-}
-
-function renderPieLegendPills(data: Array<{ label: string; value: number; color: string }>): React.ReactNode {
-  if (!data || data.length === 0) return null;
-  const total = data.reduce((acc, d) => acc + (d.value || 0), 0);
-  return (
-    <div className="d-flex flex-wrap justify-content-center gap-1 mt-2 px-1 text-center">
-      {data.map((item, idx) => {
-        const pct = total > 0 ? Math.round(((item.value || 0) / total) * 100) : 0;
-        return (
-          <span
-            key={`pill-${idx}-${item.label}`}
-            className="d-inline-flex align-items-center bg-light border rounded-pill px-2 py-0.5 text-nowrap me-1 mb-1 shadow-sm"
-            title={`${item.label}: ${item.value} (${pct}%)`}
-            style={{ fontSize: '0.72rem', lineHeight: '1.2' }}
-          >
-            <span
-              className="rounded-circle me-1 flex-shrink-0"
-              style={{ width: 7, height: 7, backgroundColor: item.color }}
-            />
-            <span className="text-secondary me-1">{item.label}</span>
-            <span className="text-dark fw-bold me-1">{item.value}</span>
-            <span className="text-muted" style={{ fontSize: '0.68rem' }}>({pct}%)</span>
-          </span>
-        );
-      })}
-    </div>
-  );
 }
 
 function renderDonutCard(
@@ -1744,6 +1700,7 @@ export function App(): React.JSX.Element {
   }
   const [enrichJobs, setEnrichJobs] = useState<EnrichmentJobItem[]>([]);
   const [enrichFiles, setEnrichFiles] = useState<File[]>([]);
+  const [enrichDragOver, setEnrichDragOver] = useState(false);
   const [enrichSearchPayments, setEnrichSearchPayments] = useState(true);
   const [enrichUploading, setEnrichUploading] = useState(false);
   const [enrichUploadProgress, setEnrichUploadProgress] = useState(0);
@@ -2088,11 +2045,7 @@ export function App(): React.JSX.Element {
   }, [view, token]);
 
   useEffect(() => {
-    if (view === 'statistiche' && token) {
-      fetchGlobalStats();
-    }
     if (view === 'dashboard' && token) {
-      fetchDashboardStats();
       fetchEngines();
       fetchOnlineCount();
       fetchRecentActivity();
@@ -2744,9 +2697,42 @@ export function App(): React.JSX.Element {
   // primario, non dirottato), "appio" (co-consegna App IO tentata).
   const [recipientsTagsFilter, setRecipientsTagsFilter] = useState<string[]>([]);
   const [recipientsTagsMenuOpen, setRecipientsTagsMenuOpen] = useState(false);
+  const recipientsTagsMenuRef = useRef<HTMLDivElement>(null);
+  // Freccetta del pannello filtri destinatari allineata al centro del bottone "Filtri".
+  const recipientsFiltersBtnRef = useRef<HTMLButtonElement>(null);
+  const recipientsFiltersBoxRef = useRef<HTMLDivElement>(null);
+  const [recipientsFiltersCaretLeft, setRecipientsFiltersCaretLeft] = useState<number | null>(null);
+  useEffect(() => {
+    if (!recipientsTagsMenuOpen) return;
+    const onDocMouseDown = (e: MouseEvent) => {
+      if (recipientsTagsMenuRef.current && !recipientsTagsMenuRef.current.contains(e.target as Node)) {
+        setRecipientsTagsMenuOpen(false);
+      }
+    };
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') setRecipientsTagsMenuOpen(false); };
+    document.addEventListener('mousedown', onDocMouseDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onDocMouseDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [recipientsTagsMenuOpen]);
   const [recipientsDownloadFilter, setRecipientsDownloadFilter] = useState('');
   const [recipientsDownloadChannelFilter, setRecipientsDownloadChannelFilter] = useState('');
   const [recipientsFiltersPanelOpen, setRecipientsFiltersPanelOpen] = useState(false);
+  useEffect(() => {
+    if (!recipientsFiltersPanelOpen) return;
+    const measure = () => {
+      const btn = recipientsFiltersBtnRef.current;
+      const box = recipientsFiltersBoxRef.current;
+      if (!btn || !box) return;
+      const b = btn.getBoundingClientRect();
+      setRecipientsFiltersCaretLeft(b.left + b.width / 2 - box.getBoundingClientRect().left);
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [recipientsFiltersPanelOpen]);
   const [recipientsFilterOptions, setRecipientsFilterOptions] = useState<{ statuses: Array<string | { value: string; count: number }>; deliveryStatuses: Array<string | { value: string; count: number }>; postalDeliveryStatuses?: Array<string | { value: string; count: number }>; downloadChannelCombos?: Array<{ value: string; count: number }> } | null>(null);
   const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number; inadDiverted: number; appIoMode: 'none' | 'parallel' | 'exclusive'; inadCheckRan: boolean } | null>(null);
   const [resendingOutcome, setResendingOutcome] = useState<string | null>(null);
@@ -2765,30 +2751,7 @@ export function App(): React.JSX.Element {
   const [contentCorrectionBody, setContentCorrectionBody] = useState('');
   const [contentCorrectionSaving, setContentCorrectionSaving] = useState(false);
   const [contentCorrectionError, setContentCorrectionError] = useState<string | null>(null);
-  const [statsDateFrom, setStatsDateFrom] = useState(() => {
-    const d = new Date();
-    d.setMonth(d.getMonth() - 6);
-    return d.toISOString().slice(0, 10);
-  });
-  const [statsDateTo, setStatsDateTo] = useState(() => new Date().toISOString().slice(0, 10));
-  const [globalStats, setGlobalStats] = useState<{
-    totals: { totalRecipients: number; totalSent: number; totalFailed: number; totalDownloaded: number; downloadPercentage: number; totalCostCents: number; totalSavingCents: number };
-    monthlyTrend: Array<{ month: string; sent: number; downloaded: number }>;
-    channelTotals: Array<{ channel: string; sent: number }>;
-    downloadChannelTotals: Array<{ channel: string; count: number }>;
-    campaignLeaderboard: Array<{ campaignId: string; campaignName: string; totalRecipients: number; downloadPercentage: number }>;
-    neverDownloadedCount: number;
-  } | null>(null);
-  const [globalStatsLoading, setGlobalStatsLoading] = useState(false);
 
-  // Dashboard: KPI/trend a finestra fissa 30gg, disaccoppiati dallo state
-  // statsDateFrom/statsDateTo della vista Statistiche (quello è modificabile
-  // dall'operatore e non deve influenzare i numeri mostrati in dashboard).
-  const [dashboardStats, setDashboardStats] = useState<{
-    totals: { totalRecipients: number; totalSent: number; totalFailed: number; totalDownloaded: number; downloadPercentage: number; totalCostCents: number; totalSavingCents: number };
-    dailyTrend: Array<{ date: string; sent: number; failed: number }>;
-  } | null>(null);
-  const [dashboardStatsLoading, setDashboardStatsLoading] = useState(false);
 
 
   // Auto-refresh campaign detail if running/queued. Aggiorna anche i pannelli
@@ -2876,21 +2839,10 @@ export function App(): React.JSX.Element {
     return () => clearInterval(timer);
   }, [token, view]);
 
-  // Stesso problema per la vista Statistiche/Dashboard: fetchGlobalStats girava solo
-  // all'ingresso nella vista, mai più — restava ferma allo snapshot iniziale
-  // mentre le campagne in corso avanzavano lato server.
-  useEffect(() => {
-    if (!token || view !== 'statistiche') return;
-    const timer = setInterval(() => {
-      fetchGlobalStats();
-    }, 5000);
-    return () => clearInterval(timer);
-  }, [token, view]);
 
   useEffect(() => {
     if (!token || view !== 'dashboard') return;
     const timer = setInterval(() => {
-      fetchDashboardStats();
       fetchEngines();
       fetchOnlineCount();
       fetchRecentActivity();
@@ -9160,38 +9112,6 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const fetchGlobalStats = async () => {
-    setGlobalStatsLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (statsDateFrom) params.set('dateFrom', statsDateFrom);
-      if (statsDateTo) params.set('dateTo', statsDateTo);
-      const res = await apiFetch(`/campaigns/stats/global?${params.toString()}`);
-      if (res.ok) setGlobalStats(await res.json());
-    } catch (err) {
-      if (!(err instanceof ApiAuthError)) throw err;
-    } finally {
-      setGlobalStatsLoading(false);
-    }
-  };
-
-  const fetchDashboardStats = async () => {
-    setDashboardStatsLoading(true);
-    try {
-      const dateFrom = new Date();
-      dateFrom.setDate(dateFrom.getDate() - 29);
-      const params = new URLSearchParams();
-      params.set('dateFrom', dateFrom.toISOString().slice(0, 10));
-      params.set('dateTo', new Date().toISOString().slice(0, 10));
-      const res = await apiFetch(`/campaigns/stats/global?${params.toString()}`);
-      if (res.ok) setDashboardStats(await res.json());
-    } catch (err) {
-      if (!(err instanceof ApiAuthError)) throw err;
-    } finally {
-      setDashboardStatsLoading(false);
-    }
-  };
-
   const fetchOnlineCount = async () => {
     try {
       const res = await apiFetch('/presence/online');
@@ -9219,28 +9139,6 @@ export function App(): React.JSX.Element {
       if (!(err instanceof ApiAuthError)) setRecentActivityError('Impossibile caricare le campagne recenti.');
     } finally {
       setRecentActivityLoading(false);
-    }
-  };
-
-  const handleExportNeverDownloaded = async () => {
-    try {
-      const params = new URLSearchParams();
-      if (statsDateFrom) params.set('dateFrom', statsDateFrom);
-      if (statsDateTo) params.set('dateTo', statsDateTo);
-      const res = await apiFetch(`/campaigns/stats/global/never-downloaded.csv?${params.toString()}`);
-      if (!res.ok) {
-        alert('Impossibile esportare il report.');
-        return;
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'mai_scaricato.csv';
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      if (!(err instanceof ApiAuthError)) throw err;
     }
   };
 
@@ -9742,427 +9640,27 @@ export function App(): React.JSX.Element {
 
           {/* VIEW: DASHBOARD */}
           {view === 'dashboard' && (
-            <div>
-              <div className="card shadow-sm border-0 mb-4 overflow-hidden" style={{ background: 'linear-gradient(180deg, #F8FAFC 0%, #FFFFFF 100%)', border: '1px solid var(--ms-slate-200)' }}>
-                <div style={{ height: '4px', background: 'linear-gradient(90deg, #0066CC 0%, #003366 100%)' }} />
-                <div className="card-body p-4">
-                  <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-3">
-                    <div className="d-flex align-items-center gap-3">
-                      <div className="rounded-circle p-3 d-flex align-items-center justify-content-center" style={{ backgroundColor: 'rgba(0, 102, 204, 0.1)', color: 'var(--bi-primary)' }}>
-                        <Building2 size={28} />
-                      </div>
-                      <div>
-                        <div className="d-flex align-items-center gap-2 mb-1">
-                          <h1 className="h4 mb-0 fw-bold text-dark">Ciao, {displayName || username}! 👋</h1>
-                          <span
-                            className="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1 small d-inline-flex align-items-center gap-1"
-                            title={role === 'admin' && onlineUsers.length > 0
-                              ? onlineUsers.map((u) => u.displayName).join(', ')
-                              : undefined}
-                          >
-                            <span className="spinner-grow spinner-grow-sm text-success" style={{ width: '6px', height: '6px' }} />
-                            {onlineCount !== null
-                              ? `${onlineCount} ${onlineCount === 1 ? 'operatore online' : 'operatori online'}`
-                              : 'Operativo'}
-                          </span>
-                        </div>
-                        <p className="mb-0 text-muted small">
-                          Hub Comunicazioni — <strong>{settEntityName}</strong>
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="d-flex align-items-center gap-2 flex-wrap">
-                      <button
-                        className="btn btn-primary d-inline-flex align-items-center gap-2 px-3 py-2 shadow-sm fw-semibold"
-                        onClick={() => setView('invio-massivo-wizard')}
-                      >
-                        <Plus size={18} />
-                        Nuova Campagna
-                      </button>
-                      <button
-                        className="btn btn-outline-secondary d-inline-flex align-items-center gap-2 px-3 py-2 fw-medium"
-                        onClick={() => setView('notifiche-ricerca')}
-                      >
-                        <Search size={18} />
-                        Cerca Notifiche
-                      </button>
-                    </div>
-                  </div>
-
-                  <hr className="my-3 text-muted opacity-25" />
-
-                  <div className="row g-3 pt-1">
-                    <div className="col-12 col-sm-6 col-lg-3">
-                      <div className="d-flex align-items-center gap-2 text-dark small fw-medium mb-1">
-                        <Server size={16} className="text-primary" />
-                        <span>Stato Connettori</span>
-                      </div>
-                      <div className="d-flex align-items-center justify-content-between">
-                        <span className="text-muted small">
-                          {engines.filter((e) => !e.paused).length} su {engines.length} motori attivi
-                        </span>
-                        <button
-                          className="btn btn-link btn-sm p-0 text-decoration-none small fw-semibold"
-                          onClick={() => {
-                            setView('impostazioni');
-                            setActiveSettingsTab('motori');
-                            fetchEngines();
-                          }}
-                        >
-                          Gestisci &rarr;
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="col-12 col-sm-6 col-lg-3">
-                      <div className="d-flex align-items-center gap-2 text-dark small fw-medium mb-1">
-                        <Megaphone size={16} className="text-primary" />
-                        <span>Attività Campagne</span>
-                      </div>
-                      <div className="d-flex align-items-center justify-content-between">
-                        <span className="text-muted small">
-                          {campaigns.filter((c) => !c.isTest).length} campagne totali
-                        </span>
-                        <span className="badge bg-light text-dark border">
-                          {dashboardStats ? `${dashboardStats.totals.totalSent.toLocaleString('it-IT')} invii (30gg)` : '…'}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="col-12 col-sm-6 col-lg-3">
-                      <div className="d-flex align-items-center gap-2 text-dark small fw-medium mb-1">
-                        <ShieldCheck size={16} className="text-success" />
-                        <span>Affidabilità Consegna</span>
-                      </div>
-                      <div className="d-flex align-items-center justify-content-between">
-                        <span className="text-muted small">
-                          Tasso di successo:
-                        </span>
-                        <strong className="text-success small fw-bold">
-                          {dashboardStats && dashboardStats.totals.totalSent > 0
-                            ? `${(
-                                (1 - dashboardStats.totals.totalFailed / dashboardStats.totals.totalSent) *
-                                100
-                              ).toFixed(1)}%`
-                            : '100%'}
-                        </strong>
-                      </div>
-                    </div>
-
-                    <div className="col-12 col-sm-6 col-lg-3">
-                      <div className="d-flex align-items-center gap-2 text-dark small fw-medium mb-1">
-                        <Download size={16} className="text-info" />
-                        <span>Download Digitale</span>
-                      </div>
-                      <div className="d-flex align-items-center justify-content-between">
-                        <span className="text-muted small" title={`Solo per campagne digitali (${channelLabel('APP_IO')}, ${channelLabel('PEC')}, ${channelLabel('EMAIL')}) negli ultimi 30 giorni`}>
-                          {channelLabel('APP_IO')}, {channelLabel('PEC')}, {channelLabel('EMAIL')} (30gg)
-                        </span>
-                        <strong className="text-info small fw-bold">
-                          {dashboardStats ? `${dashboardStats.totals.downloadPercentage}%` : '…'}
-                        </strong>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {(() => {
-                const thirtyDaysAgo = new Date();
-                thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-                const failingCampaigns = campaigns.filter((c) => {
-                  if (c.isTest) return false;
-                  if (new Date(c.createdAt) < thirtyDaysAgo) return false;
-                  if (c.totalRecipients < 5) return false;
-                  return c.failedCount / c.totalRecipients > 0.1;
-                });
-                const pausedEngines = engines.filter((e) => e.paused);
-                const sevenDaysAgoMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
-                const failingEngines = engines.filter(
-                  (e) => (e.counts?.failed ?? 0) > 0 && e.lastFailedAt && new Date(e.lastFailedAt).getTime() >= sevenDaysAgoMs,
-                );
-                const hasAlerts = failingCampaigns.length > 0 || pausedEngines.length > 0 || failingEngines.length > 0;
-                if (!hasAlerts) return null;
-
-                const totalAlerts = failingCampaigns.length + pausedEngines.length + failingEngines.length;
-
-                return (
-                  <div className="card shadow-sm border-0 mb-3 overflow-hidden" style={{ borderLeft: '4px solid #f59e0b' }}>
-                    <div className="card-header border-0 py-2 px-3 d-flex align-items-center justify-content-between" style={{ backgroundColor: '#fffbe6' }}>
-                      <div className="d-flex align-items-center gap-2">
-                        <AlertTriangle size={16} className="text-warning" />
-                        <h3 className="h6 mb-0 fw-bold text-dark small">Da attenzionare</h3>
-                      </div>
-                      <span className="badge bg-warning text-dark px-2 py-0.5 rounded-pill small fw-semibold" style={{ fontSize: '0.75rem' }}>
-                        {totalAlerts} {totalAlerts === 1 ? 'avviso' : 'avvisi'}
-                      </span>
-                    </div>
-                    <div className="card-body p-0">
-                      <div className="list-group list-group-flush">
-                        {failingCampaigns.map((c) => (
-                          <div
-                            key={c.id}
-                            className="list-group-item list-group-item-action d-flex align-items-center justify-content-between py-2 px-3"
-                            style={{ cursor: 'pointer', transition: 'all 0.15s ease-in-out' }}
-                            onClick={() => handleCampaignClick(c.id)}
-                          >
-                            <div className="d-flex align-items-center gap-2 small">
-                              <span className="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-0.5 fw-semibold" style={{ fontSize: '0.7rem' }}>
-                                Campagna
-                              </span>
-                              <span className="text-dark fw-medium">
-                                <strong className="text-primary">{c.name}</strong>
-                              </span>
-                              <span className="text-muted">—</span>
-                              <span className="badge bg-danger text-white rounded-pill px-2 py-0.5" style={{ fontSize: '0.7rem' }}>
-                                {Math.round((c.failedCount / c.totalRecipients) * 100)}% falliti
-                              </span>
-                            </div>
-                            <span className="btn btn-sm btn-light border text-dark d-inline-flex align-items-center gap-1 rounded-pill px-2.5 py-0.5 fw-semibold small shadow-2xs" style={{ fontSize: '0.75rem' }}>
-                              Vedi <ChevronRight size={13} className="text-secondary" />
-                            </span>
-                          </div>
-                        ))}
-
-                        {pausedEngines.map((e) => (
-                          <div
-                            key={`paused-${e.channel}`}
-                            className="list-group-item list-group-item-action d-flex align-items-center justify-content-between py-2 px-3"
-                            style={{ cursor: 'pointer', transition: 'all 0.15s ease-in-out' }}
-                            onClick={() => {
-                              setView('impostazioni');
-                              setActiveSettingsTab('motori');
-                              fetchEngines();
-                            }}
-                          >
-                            <div className="d-flex align-items-center gap-2 small">
-                              <span className="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill px-2 py-0.5 fw-semibold" style={{ fontSize: '0.7rem' }}>
-                                Motore
-                              </span>
-                              <span className="text-dark fw-medium">
-                                <strong>{ENGINE_LABELS[e.channel] ?? e.channel}</strong>
-                              </span>
-                              <span className="text-muted">—</span>
-                              <span className="badge bg-warning text-dark rounded-pill px-2 py-0.5" style={{ fontSize: '0.7rem' }}>
-                                In pausa
-                              </span>
-                            </div>
-                            <span className="btn btn-sm btn-light border text-dark d-inline-flex align-items-center gap-1 rounded-pill px-2.5 py-0.5 fw-semibold small shadow-2xs" style={{ fontSize: '0.75rem' }}>
-                              Riattiva <ChevronRight size={13} className="text-secondary" />
-                            </span>
-                          </div>
-                        ))}
-
-                        {failingEngines.map((e) => (
-                          <div
-                            key={`failed-${e.channel}`}
-                            className="list-group-item list-group-item-action d-flex align-items-center justify-content-between py-2 px-3"
-                            style={{ cursor: 'pointer', transition: 'all 0.15s ease-in-out' }}
-                            onClick={() => {
-                              setView('impostazioni');
-                              setActiveSettingsTab('motori');
-                              fetchEngines();
-                            }}
-                          >
-                            <div className="d-flex align-items-center gap-2 small">
-                              <span className="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-0.5 fw-semibold" style={{ fontSize: '0.7rem' }}>
-                                Motore
-                              </span>
-                              <span className="text-dark fw-medium">
-                                <strong>{ENGINE_LABELS[e.channel] ?? e.channel}</strong>
-                              </span>
-                              <span className="text-muted">—</span>
-                              <span className="badge bg-danger text-white rounded-pill px-2 py-0.5" style={{ fontSize: '0.7rem' }}>
-                                {e.counts?.failed} job falliti
-                              </span>
-                            </div>
-                            <span className="btn btn-sm btn-light border text-dark d-inline-flex align-items-center gap-1 rounded-pill px-2.5 py-0.5 fw-semibold small shadow-2xs" style={{ fontSize: '0.75rem' }}>
-                              Risolvi <ChevronRight size={13} className="text-secondary" />
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              <div className="row g-3 mb-4">
-                <div className="col-md-3">
-                  <div className="card shadow-sm h-100" style={{ borderLeft: '4px solid var(--bi-primary)' }}>
-                    <div className="card-body d-flex align-items-center gap-3">
-                      <div className="bg-light text-primary rounded p-3" style={{ fontSize: '1.4rem' }}><Megaphone /></div>
-                      <div>
-                        <span className="text-muted small block">Messaggi Inviati (30gg)</span>
-                        <div className="h4 mb-0 fw-bold">{dashboardStats ? dashboardStats.totals.totalSent : '…'}</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="col-md-3">
-                  <div className="card shadow-sm h-100" style={{ borderLeft: '4px solid var(--ms-green-600)' }}>
-                    <div className="card-body d-flex align-items-center gap-3">
-                      <div className="bg-light text-success rounded p-3" style={{ fontSize: '1.4rem' }}><CheckCircle2 /></div>
-                      <div>
-                        <span className="text-muted small block">Destinatari (30gg)</span>
-                        <div className="h4 mb-0 fw-bold">{dashboardStats ? dashboardStats.totals.totalRecipients : '…'}</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="col-md-3">
-                  <div className={`card shadow-sm h-100 ${dashboardStats && dashboardStats.totals.totalFailed > 0 ? 'border-danger' : ''}`} style={{ borderLeft: '4px solid var(--it-red)' }}>
-                    <div className="card-body d-flex align-items-center gap-3">
-                      <div className="bg-light text-danger rounded p-3" style={{ fontSize: '1.4rem' }}><XCircle /></div>
-                      <div>
-                        <span className="text-muted small block">Spedizioni Fallite (30gg)</span>
-                        <div className={`h4 mb-0 fw-bold ${dashboardStats && dashboardStats.totals.totalFailed > 0 ? 'text-danger' : ''}`}>{dashboardStats ? dashboardStats.totals.totalFailed : '…'}</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="col-md-3">
-                  <div className="card shadow-sm h-100" style={{ borderLeft: '4px solid var(--ms-purple-600)' }}>
-                    <div className="card-body d-flex align-items-center gap-3">
-                      <div className="bg-light text-primary rounded p-3" style={{ fontSize: '1.4rem' }}><Euro /></div>
-                      <div>
-                        <span className="text-muted small block">Costo Totale (30gg)</span>
-                        <div className="h4 mb-0 fw-bold">{dashboardStats ? formatEuroCents(dashboardStats.totals.totalCostCents) : '…'}</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="row g-3 mb-4">
-                <div className="col-12">
-                  <div className="card shadow-sm">
-                    <div className="card-header bg-white py-3 border-bottom">
-                      <h3 className="h6 mb-0 fw-bold text-dark"><LineChartIcon className="me-2 text-primary" size={16} />Andamento invii/falliti (ultimi 30gg)</h3>
-                    </div>
-                    <div className="card-body">
-                      {dashboardStatsLoading && !dashboardStats ? (
-                        <div className="text-center py-5 text-muted"><Loader2 className="icon-spin mb-3" size={24} /></div>
-                      ) : dashboardStats && dashboardStats.dailyTrend.length === 0 ? (
-                        <div className="text-center py-5 text-muted">Nessun invio negli ultimi 30 giorni.</div>
-                      ) : (
-                        <ResponsiveContainer width="100%" height={220}>
-                          <LineChart data={dashboardStats?.dailyTrend ?? []}>
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey="date" fontSize={11} />
-                            <YAxis allowDecimals={false} />
-                            <Tooltip />
-                            <Legend />
-                            <Line type="monotone" dataKey="sent" name="Invii" stroke="var(--bi-primary)" strokeWidth={2} />
-                            <Line type="monotone" dataKey="failed" name="Falliti" stroke="var(--it-red)" strokeWidth={2} />
-                          </LineChart>
-                        </ResponsiveContainer>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="row g-3">
-                <div className="col-lg-8">
-                  <div className="card shadow-sm h-100">
-                    <div className="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
-                      <h3 className="h6 mb-0 fw-bold text-dark"><History className="me-2 text-primary" />Campagne recenti</h3>
-                      <div className="d-flex align-items-center gap-2">
-                        <button className="btn btn-outline-secondary btn-sm border-0" onClick={fetchRecentActivity}><RefreshCw /></button>
-                        <button className="btn btn-link btn-sm" onClick={() => setView('invio-massivo')}>Vedi tutte</button>
-                      </div>
-                    </div>
-                    <div className="card-body p-0">
-                      {recentActivityError ? (
-                        <div className="text-center py-5 text-danger small">
-                          {recentActivityError}
-                          <div className="mt-2">
-                            <button className="btn btn-sm btn-outline-secondary" onClick={fetchRecentActivity}>Riprova</button>
-                          </div>
-                        </div>
-                      ) : recentActivityLoading && recentActivityCampaigns.length === 0 ? (
-                        <div className="text-center py-5 text-muted"><Loader2 className="icon-spin" size={20} /></div>
-                      ) : recentActivityCampaigns.length === 0 ? (
-                        <div className="text-center py-5 text-muted">Nessuna campagna attiva o aggiornata negli ultimi 7 giorni.</div>
-                      ) : (
-                        <div className="table-responsive">
-                          <table className="table table-hover align-middle mb-0" style={{ fontSize: '0.84rem' }}>
-                            <thead className="table-light">
-                              <tr>
-                                <th>Nome Campagna</th>
-                                <th>Canale</th>
-                                <th>Stato</th>
-                                <th className="text-end">Successi</th>
-                                <th>Ultimo aggiornamento</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {recentActivityCampaigns.map((c) => (
-                                <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => handleCampaignClick(c.id)}>
-                                  <td className="fw-bold text-primary">{c.name}</td>
-                                  <td><ChannelBadge channel={c.channelType} /></td>
-                                  <td><StatusBadge status={c.status} /></td>
-                                  <td className="text-end fw-bold">{c.sentCount} / {c.totalRecipients}</td>
-                                  <td className="text-muted small">{new Date(c.lastActivityAt).toLocaleString('it-IT')}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="col-lg-4">
-                  <div className="card shadow-sm h-100">
-                    <div className="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
-                      <h3 className="h6 mb-0 fw-bold text-dark"><Network className="me-2 text-primary" />Stato Motori</h3>
-                      <button className="btn btn-link btn-sm" onClick={() => { setView('impostazioni'); setActiveSettingsTab('motori'); fetchEngines(); }}>Dettaglio</button>
-                    </div>
-                    <div className="card-body">
-                      {(() => {
-                        const displayEngines = [...engines];
-                        if (!displayEngines.some((e) => (e.channel || '').toUpperCase() === 'SEND')) {
-                          const sendWaiting = sendStageCounts?.protocollato ?? 0;
-                          displayEngines.push({
-                            channel: 'SEND',
-                            paused: false,
-                            counts: {
-                              waiting: sendWaiting,
-                              active: 0,
-                              delayed: 0,
-                              failed: sendStageCounts?.fallito ?? 0,
-                              completed: sendStageCounts?.inviato ?? 0,
-                            },
-                          });
-                        }
-                        if (displayEngines.length === 0) {
-                          return <div className="text-center py-3 text-muted small">Caricamento...</div>;
-                        }
-                        return displayEngines.map((eng) => {
-                          const waiting = (eng.counts?.waiting ?? 0) + (eng.counts?.active ?? 0) + (eng.counts?.delayed ?? 0);
-                          return (
-                            <div key={eng.channel} className="d-flex align-items-center justify-content-between mb-2 pb-2 border-bottom">
-                              <span className="small fw-bold">{ENGINE_LABELS[eng.channel] ?? eng.channel}</span>
-                              {eng.paused ? (
-                                <span className="badge bg-warning text-dark">IN PAUSA</span>
-                              ) : waiting > 0 ? (
-                                <span className="badge bg-info text-white">ATTIVO ({waiting} in coda)</span>
-                              ) : (
-                                <span className="badge bg-success">ATTIVO</span>
-                              )}
-                            </div>
-                          );
-                        });
-                      })()}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <DashboardView
+              apiFetch={apiFetch}
+              formatEuroCents={formatEuroCents}
+              userName={displayName || username || ''}
+              entityName={settEntityName}
+              onlineCount={onlineCount}
+              onlineUserNames={role === 'admin' ? onlineUsers.map((u) => u.displayName) : []}
+              engines={engines}
+              sendStageCounts={sendStageCounts}
+              campaigns={campaigns}
+              recent={recentActivityCampaigns}
+              recentLoading={recentActivityLoading}
+              recentError={recentActivityError}
+              onRefreshRecent={fetchRecentActivity}
+              onNewCampaign={() => setView('invio-massivo-wizard')}
+              onSearch={() => setView('notifiche-ricerca')}
+              onOpenStatistics={() => setView('statistiche')}
+              onOpenCampaign={handleCampaignClick}
+              onOpenEngines={() => { setView('impostazioni'); setActiveSettingsTab('motori'); fetchEngines(); }}
+              onSeeAllCampaigns={() => setView('invio-massivo')}
+            />
           )}
 
               {/* VIEW: INVIO MASSIVO */}
@@ -13453,239 +12951,38 @@ export function App(): React.JSX.Element {
 
           {/* VIEW: STATISTICHE */}
           {view === 'statistiche' && (
-            <div>
-              <div className="card shadow-sm p-3 mb-3">
-                <div className="row g-2 align-items-end">
-                  <div className="col-md-3">
-                    <label className="form-label small mb-1">Da</label>
-                    <input type="date" className="form-control form-control-sm" value={statsDateFrom} onChange={e => setStatsDateFrom(e.target.value)} />
-                  </div>
-                  <div className="col-md-3">
-                    <label className="form-label small mb-1">A</label>
-                    <input type="date" className="form-control form-control-sm" value={statsDateTo} onChange={e => setStatsDateTo(e.target.value)} />
-                  </div>
-                  <div className="col-md-2">
-                    <button className="btn btn-primary btn-sm w-100" onClick={fetchGlobalStats} disabled={globalStatsLoading}>
-                      <Filter className="me-1" size={16} />Applica
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {globalStatsLoading && !globalStats ? (
-                <div className="text-center text-muted py-5">Caricamento statistiche…</div>
-              ) : globalStats && (
-                <>
-                  <div className="row g-3 mb-4">
-                    <div className="col-md-6 col-lg-3">
-                      <div className="card shadow-sm text-center p-3">
-                        <span className="text-muted small">Notifiche Totali</span>
-                        <h3 className="h2 mb-0 fw-bold text-primary">{globalStats.totals.totalRecipients}</h3>
-                      </div>
-                    </div>
-                    <div className="col-md-6 col-lg-3">
-                      <div className="card shadow-sm text-center p-3">
-                        <span className="text-muted small">Invii Avvenuti (Successo)</span>
-                        <h3 className="h2 mb-0 fw-bold text-success">{globalStats.totals.totalSent}</h3>
-                      </div>
-                    </div>
-                    <div className="col-md-6 col-lg-3">
-                      <div className="card shadow-sm text-center p-3">
-                        <span className="text-muted small">Fallimenti totali</span>
-                        <h3 className="h2 mb-0 fw-bold text-danger">{globalStats.totals.totalFailed}</h3>
-                      </div>
-                    </div>
-                    <div className="col-md-6 col-lg-3">
-                      <div className="card shadow-sm text-center p-3">
-                        <span className="text-muted small">% Download</span>
-                        <h3 className="h2 mb-0 fw-bold text-warning">{globalStats.totals.downloadPercentage}%</h3>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="row g-3 mb-4">
-                    <div className="col-md-6">
-                      <div className="card shadow-sm text-center p-3">
-                        <span className="text-muted small">Costo Totale (SEND + POSTAL)</span>
-                        <h3 className="h2 mb-0 fw-bold text-primary">{formatEuroCents(globalStats.totals.totalCostCents)}</h3>
-                      </div>
-                    </div>
-                    <div className="col-md-6">
-                      <div className="card shadow-sm text-center p-3">
-                        <span className="text-muted small">Risparmio da Dirottamento (stimato)</span>
-                        <h3 className="h2 mb-0 fw-bold text-success">{formatEuroCents(globalStats.totals.totalSavingCents)}</h3>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="row g-3">
-                    <div className="col-md-8">
-                      <div className="card shadow-sm">
-                        <div className="card-header bg-white py-3 border-bottom">
-                          <h3 className="h6 mb-0 fw-bold text-dark"><LineChartIcon className="me-2 text-primary" size={16} />Andamento Invii e Download</h3>
-                        </div>
-                        <div className="card-body">
-                          <ResponsiveContainer width="100%" height={260}>
-                            <LineChart data={globalStats.monthlyTrend}>
-                              <CartesianGrid strokeDasharray="3 3" />
-                              <XAxis dataKey="month" fontSize={11} />
-                              <YAxis allowDecimals={false} />
-                              <Tooltip />
-                              <Legend />
-                              <Line type="monotone" dataKey="sent" name="Invii" stroke="var(--bi-primary)" strokeWidth={2} />
-                              <Line type="monotone" dataKey="downloaded" name="Download" stroke="var(--ms-green-600)" strokeWidth={2} />
-                            </LineChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="col-md-4">
-                      <div className="card shadow-sm">
-                        <div className="card-header bg-white py-3 border-bottom">
-                          <h3 className="h6 mb-0 fw-bold text-dark"><PieChartIcon className="me-2 text-primary" size={16} />Ripartizione Invii per Canale</h3>
-                        </div>
-                        <div className="card-body">
-                          {(() => {
-                            const sortedChannelTotals = [...globalStats.channelTotals]
-                              .map((ct) => ({ label: ct.channel, value: ct.sent, color: stableColorForKey(ct.channel) }))
-                              .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
-                            return (
-                              <>
-                                <ResponsiveContainer width="100%" height={160}>
-                                  <PieChart>
-                                    <Pie data={sortedChannelTotals} dataKey="value" nameKey="label" outerRadius={65} label={renderPiePercentLabel} labelLine={false}>
-                                      {sortedChannelTotals.map((entry) => (
-                                        <Cell key={entry.label} fill={entry.color} />
-                                      ))}
-                                    </Pie>
-                                    <Tooltip />
-                                  </PieChart>
-                                </ResponsiveContainer>
-                                {renderPieLegendPills(sortedChannelTotals)}
-                              </>
-                            );
-                          })()}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="row g-3 mt-1">
-                    <div className="col-md-8">
-                      <div className="card shadow-sm">
-                        <div className="card-header bg-white py-3 border-bottom">
-                          <h3 className="h6 mb-0 fw-bold text-dark"><Award className="me-2 text-primary" size={16} />Classifica Campagne per Tasso Download</h3>
-                        </div>
-                        <div className="card-body p-0">
-                          <div className="table-responsive">
-                            <table className="table table-sm mb-0">
-                              <thead><tr><th>Campagna</th><th className="text-end">Destinatari</th><th className="text-end">% Download</th></tr></thead>
-                              <tbody>
-                                {globalStats.campaignLeaderboard.slice(0, 5).map(c => (
-                                  <tr key={c.campaignId} style={{ cursor: 'pointer' }} onClick={() => handleCampaignClick(c.campaignId)}>
-                                    <td>{c.campaignName}</td>
-                                    <td className="text-end">{c.totalRecipients}</td>
-                                    <td className="text-end fw-bold text-success">{c.downloadPercentage}%</td>
-                                  </tr>
-                                ))}
-                                {globalStats.campaignLeaderboard.length === 0 && (
-                                  <tr><td colSpan={3} className="text-center text-muted py-3">Nessuna campagna nel periodo selezionato</td></tr>
-                                )}
-                              </tbody>
-                            </table>
-                          </div>
-                          {globalStats.campaignLeaderboard.length > 5 && (
-                            <>
-                              <div className="px-3 py-2 small text-muted border-top">Peggiori 5</div>
-                              <div className="table-responsive">
-                                <table className="table table-sm mb-0">
-                                  <tbody>
-                                    {globalStats.campaignLeaderboard.slice(Math.max(5, globalStats.campaignLeaderboard.length - 5)).reverse().map(c => (
-                                      <tr key={c.campaignId} style={{ cursor: 'pointer' }} onClick={() => handleCampaignClick(c.campaignId)}>
-                                        <td>{c.campaignName}</td>
-                                        <td className="text-end">{c.totalRecipients}</td>
-                                        <td className="text-end fw-bold text-danger">{c.downloadPercentage}%</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="col-md-4">
-                      <div className="card shadow-sm">
-                        <div className="card-header bg-white py-3 border-bottom">
-                          <h3 className="h6 mb-0 fw-bold text-dark"><AlertTriangle className="me-2 text-warning" size={16} />Mai Scaricato</h3>
-                        </div>
-                        <div className="card-body text-center">
-                          <h3 className="h2 fw-bold text-danger">{globalStats.neverDownloadedCount}</h3>
-                          <p className="small text-muted">Destinatari con invio riuscito ma nessun download nel periodo selezionato.</p>
-                          <button className="btn btn-outline-danger btn-sm" onClick={handleExportNeverDownloaded}>
-                            <FileSpreadsheet className="me-1" size={16} />Esporta CSV
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="row g-3 mt-1">
-                    <div className="col-md-4">
-                      <div className="card shadow-sm h-100">
-                        <div className="card-header bg-white py-3 border-bottom">
-                          <h3 className="h6 mb-0 fw-bold text-dark"><Download className="me-2 text-primary" size={16} />Download per Canale</h3>
-                        </div>
-                        <div className="card-body">
-                          {globalStats.downloadChannelTotals.length === 0 ? (
-                            <p className="small text-muted mb-0">Nessun download nel periodo selezionato.</p>
-                          ) : (
-                            <ul className="list-unstyled mb-0">
-                              {[...globalStats.downloadChannelTotals].sort((a, b) => b.count - a.count).map((row) => {
-                                const meta = getChannelMeta(row.channel);
-                                return (
-                                  <li key={row.channel} className="d-flex justify-content-between align-items-center mb-2">
-                                    <span className={`badge ${meta.badge}`}>{meta.label}</span>
-                                    <span className="fw-bold">{row.count}</span>
-                                  </li>
-                                );
-                              })}
-                            </ul>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
+            <StatisticsView apiFetch={apiFetch} onOpenCampaign={handleCampaignClick} formatEuroCents={formatEuroCents} />
           )}
 
           {view === 'notifiche-ricerca' && (
             <div>
               <h3 className="h5 fw-bold text-dark mb-3"><Search className="me-2" size={16} />Ricerca Notifiche</h3>
-              <div className="card shadow-sm p-3 mb-3">
-                <div className="row g-2 mb-2">
-                  <div className="col-md-4">
-                    <input className="form-control form-control-sm" placeholder="Cerca (CF, Nome, Email, PEC, IUN...)" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+              <form
+                className="card shadow-sm p-3 mb-3"
+                onSubmit={(e) => { e.preventDefault(); runNotificationSearch(1); }}
+              >
+                <div className="d-flex align-items-end flex-wrap gap-2">
+                  <div style={{ flex: '2 1 260px', minWidth: 0 }}>
+                    <label className="form-label small text-muted mb-1" htmlFor="ns-query">Ricerca</label>
+                    <input id="ns-query" className="form-control form-control-sm" placeholder="CF, nome, email, PEC, IUN..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
                   </div>
-                  <div className="col-md-2">
-                    <input className="form-control form-control-sm" placeholder="ID Campagna" value={searchCampaignId} onChange={e => setSearchCampaignId(e.target.value)} />
+                  <div style={{ flex: '1 1 150px', minWidth: 0 }}>
+                    <label className="form-label small text-muted mb-1" htmlFor="ns-campaign">Campagna</label>
+                    <input id="ns-campaign" className="form-control form-control-sm" placeholder="ID o nome campagna" value={searchCampaignId} onChange={e => setSearchCampaignId(e.target.value)} />
                   </div>
-                  <div className="col-md-3">
-                    <select className="form-select form-select-sm" value={searchChannel} onChange={e => setSearchChannel(e.target.value)}>
-                      <option value="">Tutti i canali</option>
+                  <div style={{ flex: '1 1 150px', minWidth: 0 }}>
+                    <label className="form-label small text-muted mb-1" htmlFor="ns-channel">Canale</label>
+                    <select id="ns-channel" className="form-select form-select-sm" value={searchChannel} onChange={e => setSearchChannel(e.target.value)}>
+                      <option value="">Tutti</option>
                       {(['EMAIL', 'PEC', 'APP_IO', 'SEND', 'POSTAL'] as const).map(k => (
                         <option key={k} value={k}>{getChannelMeta(k).label}</option>
                       ))}
                     </select>
                   </div>
-                  <div className="col-md-3">
-                    <select className="form-select form-select-sm" value={searchStatus} onChange={e => setSearchStatus(e.target.value)}>
-                      <option value="">Tutti gli stati</option>
+                  <div style={{ flex: '1 1 130px', minWidth: 0 }}>
+                    <label className="form-label small text-muted mb-1" htmlFor="ns-status">Stato</label>
+                    <select id="ns-status" className="form-select form-select-sm" value={searchStatus} onChange={e => setSearchStatus(e.target.value)}>
+                      <option value="">Tutti</option>
                       <option value="pending">In attesa</option>
                       <option value="queued">In coda</option>
                       <option value="sent">Inviato</option>
@@ -13693,22 +12990,33 @@ export function App(): React.JSX.Element {
                       <option value="skipped">Saltato</option>
                     </select>
                   </div>
-                </div>
-                <div className="row g-2">
-                  <div className="col-md-3">
-                    <input type="date" className="form-control form-control-sm" value={searchDateFrom} onChange={e => setSearchDateFrom(e.target.value)} title="Data da" />
+                  <div style={{ flex: '1 1 140px', minWidth: 0 }}>
+                    <label className="form-label small text-muted mb-1" htmlFor="ns-date-from">Dal</label>
+                    <input id="ns-date-from" type="date" className="form-control form-control-sm" value={searchDateFrom} onChange={e => setSearchDateFrom(e.target.value)} />
                   </div>
-                  <div className="col-md-3">
-                    <input type="date" className="form-control form-control-sm" value={searchDateTo} onChange={e => setSearchDateTo(e.target.value)} title="Data a" />
+                  <div style={{ flex: '1 1 140px', minWidth: 0 }}>
+                    <label className="form-label small text-muted mb-1" htmlFor="ns-date-to">Al</label>
+                    <input id="ns-date-to" type="date" className="form-control form-control-sm" value={searchDateTo} min={searchDateFrom || undefined} onChange={e => setSearchDateTo(e.target.value)} />
                   </div>
-                  <div className="col-md-4"></div>
-                  <div className="col-md-2">
-                    <button className="btn btn-primary btn-sm w-100" onClick={() => runNotificationSearch(1)} disabled={searchLoading}>
-                      <Search className="me-1" size={16} />Cerca
+                  <div className="d-flex gap-2 flex-shrink-0">
+                    <button type="submit" className="btn btn-primary btn-sm d-inline-flex align-items-center text-nowrap px-3" disabled={searchLoading}>
+                      {searchLoading ? <Loader2 className="icon-spin me-1" size={14} /> : <Search className="me-1" size={14} />}Cerca
                     </button>
+                    {(searchQuery || searchCampaignId || searchChannel || searchStatus || searchDateFrom || searchDateTo) && (
+                      <button
+                        type="button"
+                        className="btn btn-outline-secondary btn-sm d-inline-flex align-items-center text-nowrap"
+                        onClick={() => {
+                          setSearchQuery(''); setSearchCampaignId(''); setSearchChannel('');
+                          setSearchStatus(''); setSearchDateFrom(''); setSearchDateTo('');
+                        }}
+                      >
+                        <X className="me-1" size={14} />Azzera
+                      </button>
+                    )}
                   </div>
                 </div>
-              </div>
+              </form>
               <div className="card shadow-sm">
                 <div className="table-responsive">
                   <table className="table table-sm mb-0">
@@ -15237,148 +14545,194 @@ export function App(): React.JSX.Element {
           )}
 
           {view === 'arricchimento' && (
-            <div style={{ maxWidth: '900px', margin: '0 auto' }}>
-              <h3 className="h5 fw-bold text-dark mb-3">
-                <Sparkles className="me-2" size={16} />Arricchimento Tracciati
-              </h3>
-              <p className="small text-muted mb-4">
-                Carica lo ZIP di postalizzazione (formato Maggioli: rubrica.csv o
-                pag_indice.csv + cartella allegati/). I PDF vengono analizzati per
-                estrarre indirizzi e dati PagoPA; al termine puoi scaricare il CSV
-                arricchito o avviare direttamente una bozza di campagna nel wizard.
-                Se il download del tracciato è arrivato spezzato in più ZIP, puoi
-                selezionarli tutti insieme: verranno trattati come un unico tracciato
-                (devono avere lo stesso formato/intestazione colonne, altrimenti il
-                caricamento viene bloccato).
-              </p>
-
-              <div className="card shadow-sm p-4 mb-4">
-                <h6 className="fw-bold mb-3">Nuovo arricchimento</h6>
-                <div className="mb-3">
-                  <label className="form-label small fw-bold">Formato tracciato</label>
-                  <select className="form-select form-select-sm" value="MAGGIOLI" disabled>
-                    <option value="MAGGIOLI">Tracciato Maggioli (ZIP)</option>
-                  </select>
+            <div className="stx" style={{ maxWidth: '1100px', margin: '0 auto' }}>
+              <div className="stx-card">
+                <div className="stx-card-head">
+                  <h3 className="stx-card-title"><Sparkles size={16} />Nuovo arricchimento</h3>
+                  <span className="stx-card-hint">Tracciato Maggioli · rubrica.csv o pag_indice.csv + cartella allegati/</span>
                 </div>
-                <div className="mb-3">
-                  <label className="form-label small fw-bold">File ZIP (uno o più pezzi dello stesso tracciato)</label>
-                  <input
-                    type="file"
-                    accept=".zip"
-                    multiple
-                    className="form-control form-control-sm"
-                    onChange={(e) => setEnrichFiles(Array.from(e.target.files || []))}
-                  />
-                  {enrichFiles.length > 0 && (
-                    <ul className="small text-muted mb-0 mt-2 ps-3">
-                      {enrichFiles.map((f) => (
-                        <li key={f.name}>{f.name} ({(f.size / 1024 / 1024).toFixed(1)} MB)</li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-                <div className="form-check mb-3">
-                  <input
-                    type="checkbox"
-                    className="form-check-input"
-                    id="enrichSearchPaymentsCheck"
-                    checked={enrichSearchPayments}
-                    onChange={(e) => setEnrichSearchPayments(e.target.checked)}
-                  />
-                  <label className="form-check-label small" htmlFor="enrichSearchPaymentsCheck">
-                    Ricerca dati PagoPA / pagamenti nei PDF
+                <div className="stx-card-body">
+                  <p className="stx-note" style={{ marginTop: 0, marginBottom: '0.75rem', alignItems: 'flex-start' }}>
+                    <Info size={13} style={{ flexShrink: 0, marginTop: 2 }} />
+                    <span>
+                      I PDF vengono analizzati per estrarre indirizzi e dati PagoPA; al termine scarichi il CSV arricchito o
+                      crei direttamente una bozza di campagna. Tracciato spezzato in più ZIP? Selezionali insieme: vengono
+                      uniti in un unico tracciato (stesso formato e stesse colonne, altrimenti il caricamento viene bloccato).
+                    </span>
+                  </p>
+                  <label
+                    className={`stx-drop ${enrichDragOver ? 'is-over' : ''} ${enrichFiles.length > 0 ? 'has-files' : ''}`}
+                    onDragOver={(e) => { e.preventDefault(); setEnrichDragOver(true); }}
+                    onDragLeave={() => setEnrichDragOver(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setEnrichDragOver(false);
+                      const zips = Array.from(e.dataTransfer.files || []).filter((f) => f.name.toLowerCase().endsWith('.zip'));
+                      if (zips.length > 0) setEnrichFiles(zips);
+                    }}
+                  >
+                    <input
+                      type="file"
+                      accept=".zip"
+                      multiple
+                      className="visually-hidden"
+                      onChange={(e) => setEnrichFiles(Array.from(e.target.files || []))}
+                    />
+                    <FileArchive size={26} />
+                    {enrichFiles.length === 0 ? (
+                      <>
+                        <strong>Trascina qui gli ZIP del tracciato</strong>
+                        <span>oppure clicca per sceglierli · uno o più pezzi dello stesso tracciato</span>
+                      </>
+                    ) : (
+                      <>
+                        <strong>{enrichFiles.length === 1 ? '1 file selezionato' : `${enrichFiles.length} file selezionati`} · {(enrichFiles.reduce((sum, f) => sum + f.size, 0) / 1024 / 1024).toFixed(1)} MB</strong>
+                        <span className="stx-drop-files">
+                          {enrichFiles.map((f) => <span key={f.name}>{f.name}</span>)}
+                        </span>
+                        <span>clicca per cambiare selezione</span>
+                      </>
+                    )}
                   </label>
-                </div>
-                {enrichError && <div className="alert alert-danger small">{enrichError}</div>}
-                <button
-                  className="btn btn-primary btn-sm"
-                  type="button"
-                  disabled={enrichFiles.length === 0 || enrichUploading}
-                  onClick={handleEnrichUpload}
-                >
-                  {enrichUploading ? (
-                    <><Loader2 className="icon-spin me-1" size={16} />Caricamento {enrichUploadProgress}%...</>
-                  ) : (
-                    <><Play className="me-1" size={16} />Avvia arricchimento</>
+                  <div className="stx-upload-bar">
+                    <div className="form-check mb-0">
+                      <input
+                        type="checkbox"
+                        className="form-check-input"
+                        id="enrichSearchPaymentsCheck"
+                        checked={enrichSearchPayments}
+                        onChange={(e) => setEnrichSearchPayments(e.target.checked)}
+                      />
+                      <label className="form-check-label small" htmlFor="enrichSearchPaymentsCheck">
+                        Cerca dati PagoPA / pagamenti nei PDF
+                      </label>
+                    </div>
+                    <button
+                      className="btn btn-primary btn-sm d-inline-flex align-items-center text-nowrap px-3"
+                      type="button"
+                      disabled={enrichFiles.length === 0 || enrichUploading}
+                      onClick={handleEnrichUpload}
+                    >
+                      {enrichUploading ? (
+                        <><Loader2 className="icon-spin me-1" size={15} />Caricamento {enrichUploadProgress}%…</>
+                      ) : (
+                        <><Play className="me-1" size={15} />Avvia arricchimento</>
+                      )}
+                    </button>
+                  </div>
+                  {enrichUploading && (
+                    <div className="stx-bar-track" style={{ marginTop: '0.6rem' }}>
+                      <div className="stx-bar-fill" style={{ width: `${enrichUploadProgress}%`, background: 'var(--bo-accent, #17324d)' }} />
+                    </div>
                   )}
-                </button>
+                  {enrichError && <div className="alert alert-danger small mt-3 mb-0">{enrichError}</div>}
+                </div>
               </div>
 
-              <div className="card shadow-sm p-4 mb-4">
-                <h6 className="fw-bold mb-3">Job di arricchimento</h6>
-                {enrichJobs.length === 0 && <p className="small text-muted mb-0">Nessun job presente.</p>}
-                {enrichJobs.map((job) => (
-                  <div key={job.id} className="border-bottom pb-2 mb-2">
-                    <div className="d-flex align-items-center gap-3 flex-wrap">
-                      <strong>{job.sourceFilename}</strong>
-                      <span className="small text-muted">{new Date(job.createdAt).toLocaleString('it-IT')}</span>
-                      <span className="small">
-                        {job.status === 'queued' && 'In coda'}
-                        {job.status === 'processing' && job.totalRecords === 0 && 'Preparazione file in corso...'}
-                        {job.status === 'processing' && job.totalRecords > 0 && `Elaborazione ${job.processedRecords}/${job.totalRecords}`}
-                        {job.status === 'done' && `Completato (${job.totalRecords} righe${job.warningCount ? `, ${job.warningCount} avvisi` : ''})`}
-                        {job.status === 'failed' && `Fallito: ${job.errorMessage}`}
-                      </span>
-                      {job.searchPayments === false && <span className="badge bg-secondary-subtle text-secondary border">Senza PagoPA</span>}
-                      {job.campaignId && !job.secondaryCampaignId && (
-                        <span
-                          className="badge bg-success-subtle text-success-emphasis border"
-                          role="button"
-                          onClick={() => handleCampaignClick(job.campaignId!)}
-                        >
-                          Campagna creata
-                        </span>
-                      )}
-                      {job.campaignId && job.secondaryCampaignId && (
-                        <>
-                          <span
-                            className="badge bg-success-subtle text-success-emphasis border"
-                            role="button"
-                            onClick={() => handleCampaignClick(job.campaignId!)}
-                          >
-                            Bozza PagoPa creata
-                          </span>
-                          <span
-                            className="badge bg-success-subtle text-success-emphasis border"
-                            role="button"
-                            onClick={() => handleCampaignClick(job.secondaryCampaignId!)}
-                          >
-                            Bozza Senza PagoPa creata
-                          </span>
-                        </>
-                      )}
+              <div className="stx-card">
+                <div className="stx-card-head">
+                  <h3 className="stx-card-title"><History size={16} />Job di arricchimento</h3>
+                  <span className="stx-card-hint">{enrichJobs.length === 1 ? '1 job' : `${enrichJobs.length} job`} · conservati fino alla scadenza della retention</span>
+                </div>
+                {enrichJobs.length === 0 && <div className="stx-card-body"><div className="stx-empty">Nessun job presente. Carica uno ZIP qui sopra per iniziare.</div></div>}
+                {enrichJobs.map((job) => {
+                  // "2 file: A.zip, B.zip" (merge multi-ZIP) → titolo + elenco pezzi.
+                  const multi = /^(\d+) file: (.*)$/.exec(job.sourceFilename);
+                  const pieces = multi ? multi[2].split(', ') : [job.sourceFilename];
+                  const progress = job.totalRecords > 0 ? Math.min(100, Math.round((job.processedRecords / job.totalRecords) * 100)) : 0;
+                  const status =
+                    job.status === 'done' ? { label: 'Completato', tone: 'is-ok' }
+                      : job.status === 'failed' ? { label: 'Fallito', tone: 'is-bad' }
+                        : job.status === 'processing' ? { label: job.totalRecords > 0 ? `In elaborazione · ${progress}%` : 'Preparazione file…', tone: 'is-run' }
+                          : { label: 'In coda', tone: 'is-idle' };
+                  const unresolvedCount = job.warningCount > 0
+                    ? splitWarningGroupsByResolution(job.warnings || [], enrichWarningResolution[job.id] || {}).unresolved.length
+                    : 0;
+                  const converting = job.campaignConversionStatus === 'pending' || job.campaignConversionStatus === 'processing';
+                  return (
+                  <div key={job.id} className={`stx-job ${enrichDetailJobId === job.id ? 'is-open' : ''}`}>
+                    <div className="stx-job-head">
+                      <div className="stx-job-icon"><FileArchive size={18} /></div>
+                      <div className="stx-job-main">
+                        <div className="stx-job-title" title={pieces.join('\n')}>
+                          {multi ? `${multi[1]} ZIP uniti · ${pieces[0]}${pieces.length > 1 ? ` + ${pieces.length - 1}` : ''}` : job.sourceFilename}
+                        </div>
+                        <div className="stx-job-meta">
+                          <span>{new Date(job.createdAt).toLocaleString('it-IT', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                          {job.totalRecords > 0 && <span>{job.totalRecords.toLocaleString('it-IT')} righe</span>}
+                          {job.warningCount > 0 && <span>{job.warningCount.toLocaleString('it-IT')} avvisi</span>}
+                          {job.searchPayments === false && <span>senza ricerca PagoPA</span>}
+                        </div>
+                      </div>
+                      <span className={`stx-status ${status.tone}`}>{status.label}</span>
                     </div>
-                    <div className="d-flex gap-2 mt-2 flex-wrap">
+
+                    {job.status === 'processing' && job.totalRecords > 0 && (
+                      <div className="stx-job-progress" title={`${job.processedRecords}/${job.totalRecords} righe`}>
+                        <div className="stx-bar-track"><div className="stx-bar-fill" style={{ width: `${progress}%`, background: '#2a78d6' }} /></div>
+                        <small>{job.processedRecords.toLocaleString('it-IT')} / {job.totalRecords.toLocaleString('it-IT')} righe</small>
+                      </div>
+                    )}
+                    {job.status === 'failed' && job.errorMessage && (
+                      <div className="stx-job-error"><XCircle size={14} />{job.errorMessage}</div>
+                    )}
+
+                    {job.campaignId && (
+                      <div className="stx-job-links">
+                        <span className="stx-job-links-label">Bozze create</span>
+                        {job.secondaryCampaignId ? (
+                          <>
+                            <button type="button" className="stx-link-chip" onClick={() => handleCampaignClick(job.campaignId!)}>
+                              <CreditCard size={13} />Con PagoPA<ChevronRight size={13} />
+                            </button>
+                            <button type="button" className="stx-link-chip" onClick={() => handleCampaignClick(job.secondaryCampaignId!)}>
+                              <FileText size={13} />Senza PagoPA<ChevronRight size={13} />
+                            </button>
+                          </>
+                        ) : (
+                          <button type="button" className="stx-link-chip" onClick={() => handleCampaignClick(job.campaignId!)}>
+                            <Megaphone size={13} />Campagna<ChevronRight size={13} />
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="stx-job-actions">
                       {job.status === 'done' && (
-                        <>
-                          <button className="btn btn-sm btn-outline-secondary" type="button" onClick={() => downloadEnrichResult(job.id, 'csv')}>
-                            <FileSpreadsheet className="me-1" size={16} />Scarica CSV
+                        converting ? (
+                          <button className="btn btn-sm btn-primary d-inline-flex align-items-center text-nowrap" type="button" disabled>
+                            <Loader2 className="icon-spin me-1" size={15} />Creazione bozza…
                           </button>
-                          <button className="btn btn-sm btn-outline-secondary" type="button" onClick={() => downloadEnrichResult(job.id, 'zip')}>
-                            <FileArchive className="me-1" size={16} />Scarica ZIP
+                        ) : (
+                          <button
+                            className="btn btn-sm btn-primary d-inline-flex align-items-center text-nowrap"
+                            type="button"
+                            onClick={() => handleEnrichCreateCampaignOpen(job)}
+                            title={job.campaignId ? 'Crea una nuova bozza indipendente dagli stessi dati arricchiti (es. per rilanciare dopo una campagna con impostazione sbagliata)' : undefined}
+                          >
+                            <Plus className="me-1" size={15} />{job.campaignId ? 'Nuova bozza' : 'Crea bozza campagna'}
                           </button>
-                          <button className="btn btn-sm btn-outline-secondary" type="button" onClick={() => handleEnrichRegenerateCsv(job.id)}>
-                            Rigenera CSV
+                        )
+                      )}
+                      {job.status === 'done' && (
+                        <div className="btn-group" role="group" aria-label="Scarica risultato">
+                          <button className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center text-nowrap" type="button" onClick={() => downloadEnrichResult(job.id, 'csv')}>
+                            <FileSpreadsheet className="me-1" size={15} />CSV
                           </button>
-                          {(job.campaignConversionStatus === 'pending' || job.campaignConversionStatus === 'processing') ? (
-                            <button className="btn btn-sm btn-outline-primary" type="button" disabled>
-                              <Loader2 className="icon-spin me-1" size={16} />Creazione bozza in corso...
-                            </button>
-                          ) : (
-                            <button
-                              className="btn btn-sm btn-outline-primary"
-                              type="button"
-                              onClick={() => handleEnrichCreateCampaignOpen(job)}
-                              title={job.campaignId ? 'Crea una nuova bozza indipendente dagli stessi dati arricchiti (es. per rilanciare dopo una campagna con impostazione sbagliata)' : undefined}
-                            >
-                              <Plus className="me-1" size={16} />{job.campaignId ? 'Crea nuova bozza campagna' : 'Crea bozza campagna'}
-                            </button>
-                          )}
-                        </>
+                          <button className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center text-nowrap" type="button" onClick={() => downloadEnrichResult(job.id, 'zip')}>
+                            <FileArchive className="me-1" size={15} />ZIP
+                          </button>
+                        </div>
+                      )}
+                      {job.status === 'done' && (
+                        <button className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center text-nowrap" type="button" onClick={() => handleEnrichRegenerateCsv(job.id)}
+                          title="Rigenera il CSV applicando le correzioni salvate">
+                          <RotateCw className="me-1" size={15} />Rigenera CSV
+                        </button>
                       )}
                       {(job.status === 'done' || job.status === 'processing') && job.warnings.some((w) => w.message.startsWith('Estrazione fallita:')) && (
                         <button
-                          className="btn btn-sm btn-outline-warning"
+                          className="btn btn-sm btn-outline-warning d-inline-flex align-items-center text-nowrap"
                           type="button"
                           onClick={() => handleEnrichRetryFailedPdfs(job.id)}
                           title={
@@ -15387,29 +14741,34 @@ export function App(): React.JSX.Element {
                               : "Job già completato: nessun modo automatico di rielaborare solo le righe fallite — correggi a mano via 'Correggi dati' o rilancia l'intero job"
                           }
                         >
-                          Riprova righe fallite
+                          <RotateCcw className="me-1" size={15} />Riprova righe fallite
                         </button>
                       )}
-                      {job.warningCount > 0 && (() => {
-                        const unresolvedCount = splitWarningGroupsByResolution(job.warnings || [], enrichWarningResolution[job.id] || {}).unresolved.length;
-                        return (
-                          <button
-                            className="btn btn-sm btn-outline-warning"
-                            type="button"
-                            onClick={() => openEnrichWarnings(job.id)}
-                          >
-                            {enrichDetailJobId === job.id ? 'Nascondi avvisi' : `Avvisi (${unresolvedCount})`}
-                          </button>
-                        );
-                      })()}
+                      {job.warningCount > 0 && (
+                        <button
+                          className={`btn btn-sm d-inline-flex align-items-center text-nowrap ${enrichDetailJobId === job.id ? 'btn-secondary' : unresolvedCount > 0 ? 'btn-outline-warning' : 'btn-outline-secondary'}`}
+                          type="button"
+                          aria-expanded={enrichDetailJobId === job.id}
+                          onClick={() => openEnrichWarnings(job.id)}
+                        >
+                          {unresolvedCount > 0 ? <AlertTriangle className="me-1" size={15} /> : <CheckCircle2 className="me-1" size={15} />}
+                          {enrichDetailJobId === job.id ? 'Nascondi avvisi' : unresolvedCount > 0 ? `${unresolvedCount} avvisi da gestire` : 'Avvisi gestiti'}
+                        </button>
+                      )}
                       {role === 'admin' && (
-                        <button className="btn btn-sm btn-outline-danger" type="button" onClick={() => handleEnrichDelete(job.id)}>
-                          <Trash2 className="me-1" size={16} />
+                        <button
+                          className="btn btn-sm btn-outline-danger d-inline-flex align-items-center text-nowrap stx-push-right"
+                          type="button"
+                          onClick={() => handleEnrichDelete(job.id)}
+                          title={job.status === 'processing' ? 'Elimina forzando un job rimasto bloccato in elaborazione' : 'Elimina job e file'}
+                        >
+                          <Trash2 className="me-1" size={15} />
                           {job.status === 'processing' ? 'Elimina (forza)' : 'Elimina'}
                         </button>
                       )}
                     </div>
 
+                    <div className="stx-job-panels">
                     {enrichDetailJobId === job.id && (() => {
                       const jobResolution = enrichWarningResolution[job.id] || {};
                       const { unresolved, resolved } = splitWarningGroupsByResolution(job.warnings || [], jobResolution);
@@ -15685,9 +15044,11 @@ export function App(): React.JSX.Element {
                         </div>
                       </div>
                     )}
+                    </div>
 
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -18534,79 +17895,117 @@ export function App(): React.JSX.Element {
                     )}
 
                     <div className="card shadow-sm">
-                      <div className="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
-                        <h3 className="h6 mb-0 fw-bold text-dark">
-                          <Users className="me-2" />Destinatari Caricati ({recipientsPage?.total ?? campaign.totalRecipients})
-                        </h3>
-                        <div className="d-flex align-items-center flex-wrap gap-2">
-                          <input
-                            type="text"
-                            className="form-control form-control-sm"
-                            style={{ maxWidth: 260 }}
-                            placeholder="Cerca per nominativo o CF..."
-                            value={recipientsSearch}
-                            onChange={(e) => { setRecipientsSearch(e.target.value); setRecipientsPageNum(1); }}
-                          />
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-outline-secondary"
-                            onClick={() => setRecipientsFiltersPanelOpen((o) => !o)}
-                          >
-                            <Filter className="me-1" size={14} />Filtri
-                            {recipientsActiveFilterCount > 0 && (
-                              <span className="badge bg-primary rounded-pill ms-1">{recipientsActiveFilterCount}</span>
-                            )}
-                          </button>
-                          {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType !== 'SEND' && campaign.channelType !== 'POSTAL' && (
-                            <button className="btn btn-sm btn-outline-primary py-1" onClick={handleExportDownloadReport} title="Esporta Report CSV">
-                              <FileSpreadsheet className="me-1" /> Esporta Report Download
-                            </button>
-                          )}
-                          {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType === 'SEND' && (
-                            <div className="btn-group" role="group">
-                              <button className="btn btn-sm btn-outline-primary py-1" onClick={() => handleExportSendReport('attuale')} title="Esporta stato attuale">
-                                <FileSpreadsheet className="me-1" /> Attuale
+                        <div className="card-header bg-white py-3 border-bottom">
+                          <h3 className="h6 mb-3 fw-bold text-dark d-flex align-items-center">
+                            <Users size={18} className="me-2" />Destinatari Caricati ({recipientsPage?.total ?? campaign.totalRecipients})
+                          </h3>
+                          <div className="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                            <div className="d-flex align-items-center gap-2">
+                              <input
+                                type="text"
+                                className="form-control form-control-sm flex-shrink-0"
+                                style={{ width: 320 }}
+                                placeholder="Cerca per nominativo o CF..."
+                                value={recipientsSearch}
+                                onChange={(e) => { setRecipientsSearch(e.target.value); setRecipientsPageNum(1); }}
+                              />
+                              <button
+                                type="button"
+                                className={`btn btn-sm d-inline-flex align-items-center text-nowrap ${recipientsFiltersPanelOpen ? 'btn-secondary' : 'btn-outline-secondary'}`}
+                                ref={recipientsFiltersBtnRef}
+                                aria-expanded={recipientsFiltersPanelOpen}
+                                onClick={() => setRecipientsFiltersPanelOpen((o) => !o)}
+                              >
+                                <Filter className="me-1" size={14} />Filtri
+                                {recipientsActiveFilterCount > 0 && (
+                                  <span className="badge bg-primary rounded-pill ms-1">{recipientsActiveFilterCount}</span>
+                                )}
                               </button>
-                              <button className="btn btn-sm btn-outline-primary py-1" onClick={() => handleExportSendReport('storico')} title="Esporta storico completo">
-                                <History className="me-1" /> Storico
+                              {recipientsActiveFilterCount > 0 && (
+                                <button
+                                  type="button"
+                                  className="btn btn-sm d-inline-flex align-items-center text-nowrap btn-outline-danger"
+                                  onClick={handleResetRecipientFilters}
+                                >
+                                  <X className="me-1" size={14} />Reset filtri
+                                </button>
+                              )}
+                            </div>
+                            <div className="d-flex align-items-center flex-wrap gap-2">
+                              {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType !== 'SEND' && campaign.channelType !== 'POSTAL' && (
+                                <button className="btn btn-sm d-inline-flex align-items-center text-nowrap btn-outline-primary" onClick={handleExportDownloadReport} title="Esporta Report CSV">
+                                  <FileSpreadsheet className="me-1" size={14} />Esporta Report Download
+                                </button>
+                              )}
+                              {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType === 'SEND' && (
+                                <div className="btn-group" role="group">
+                                  <button className="btn btn-sm d-inline-flex align-items-center text-nowrap btn-outline-primary" onClick={() => handleExportSendReport('attuale')} title="Esporta stato attuale">
+                                    <FileSpreadsheet className="me-1" size={14} />Attuale
+                                  </button>
+                                  <button className="btn btn-sm d-inline-flex align-items-center text-nowrap btn-outline-primary" onClick={() => handleExportSendReport('storico')} title="Esporta storico completo">
+                                    <History className="me-1" size={14} />Storico
+                                  </button>
+                                </div>
+                              )}
+                              {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType === 'POSTAL' && (
+                                <div className="btn-group" role="group">
+                                  <button className="btn btn-sm d-inline-flex align-items-center text-nowrap btn-outline-primary" onClick={() => handleExportPostalReport('attuale')} title="Esporta stato attuale">
+                                    <FileSpreadsheet className="me-1" size={14} />Attuale
+                                  </button>
+                                  <button className="btn btn-sm d-inline-flex align-items-center text-nowrap btn-outline-primary" onClick={() => handleExportPostalReport('storico')} title="Esporta storico completo">
+                                    <History className="me-1" size={14} />Storico
+                                  </button>
+                                </div>
+                              )}
+                              {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType === 'POSTAL' && (
+                                <button
+                                  className="btn btn-sm d-inline-flex align-items-center text-nowrap btn-outline-warning"
+                                  disabled={postalErrorsResetting}
+                                  onClick={handleResetPostalErrorsForRecheck}
+                                  title="Resetta le raccomandate in Errore che hai già corretto a mano su GlobalCom, così il ricontrollo automatico (ogni minuto) le ripesca da sole — salta quelle mai davvero arrivate a GlobalCom, per quelle serve un vero reinvio dal Dettaglio Notifica"
+                                >
+                                  {postalErrorsResetting ? <Loader2 className="icon-spin me-1" size={14} /> : <RefreshCw className="me-1" size={14} />}
+                                  Riattiva errori GlobalCom
+                                </button>
+                              )}
+                              <button
+                                className="btn btn-sm d-inline-flex align-items-center text-nowrap btn-outline-secondary"
+                                onClick={() => {
+                                  fetchCampaignDetail(campaign.id);
+                                  fetchRecipientsPage(campaign.id);
+                                }}
+                                title="Aggiorna esiti"
+                                aria-label="Aggiorna esiti"
+                              >
+                                <RefreshCw size={14} />
                               </button>
                             </div>
-                          )}
-                          {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType === 'POSTAL' && (
-                            <div className="btn-group" role="group">
-                              <button className="btn btn-sm btn-outline-primary py-1" onClick={() => handleExportPostalReport('attuale')} title="Esporta stato attuale">
-                                <FileSpreadsheet className="me-1" /> Attuale
-                              </button>
-                              <button className="btn btn-sm btn-outline-primary py-1" onClick={() => handleExportPostalReport('storico')} title="Esporta storico completo">
-                                <History className="me-1" /> Storico
-                              </button>
-                            </div>
-                          )}
-                          {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType === 'POSTAL' && (
-                            <button
-                              className="btn btn-sm btn-outline-warning py-1"
-                              disabled={postalErrorsResetting}
-                              onClick={handleResetPostalErrorsForRecheck}
-                              title="Resetta le raccomandate in Errore che hai già corretto a mano su GlobalCom, così il ricontrollo automatico (ogni minuto) le ripesca da sole — salta quelle mai davvero arrivate a GlobalCom, per quelle serve un vero reinvio dal Dettaglio Notifica"
-                            >
-                              {postalErrorsResetting ? <Loader2 className="icon-spin me-1" size={14} /> : <RefreshCw className="me-1" size={14} />}
-                              Riattiva controllo errori GlobalCom
-                            </button>
-                          )}
-                          <button
-                            className="btn btn-outline-secondary btn-sm border-0"
-                            onClick={() => {
-                              fetchCampaignDetail(campaign.id);
-                              fetchRecipientsPage(campaign.id);
-                            }}
-                            title="Aggiorna esiti"
-                          >
-                            <RefreshCw />
-                          </button>
+                          </div>
                         </div>
-                      </div>
                       {recipientsFiltersPanelOpen && (
-                        <div className="px-3 py-2 border-bottom bg-light d-flex align-items-center flex-wrap gap-2">
+                        <div className="px-3 pt-2 pb-3 border-bottom bg-white">
+                          <div
+                            ref={recipientsFiltersBoxRef}
+                            className="rounded border p-3"
+                            style={{ position: 'relative', background: '#f4f7fb', boxShadow: 'inset 4px 0 0 var(--bs-primary, #0066cc)' }}
+                          >
+                          {recipientsFiltersCaretLeft != null && (
+                            <span
+                              aria-hidden="true"
+                              style={{
+                                position: 'absolute',
+                                top: -7,
+                                left: recipientsFiltersCaretLeft - 6,
+                                width: 12,
+                                height: 12,
+                                background: '#f4f7fb',
+                                borderTop: '1px solid var(--bs-border-color, #dee2e6)',
+                                borderLeft: '1px solid var(--bs-border-color, #dee2e6)',
+                                transform: 'rotate(45deg)',
+                              }}
+                            />
+                          )}
+                          <div className="d-flex align-items-end flex-nowrap gap-2">
                           {(() => {
                             const getSortedFilterOptions = (
                               rawList: Array<string | { value: string; count: number }> | undefined,
@@ -18642,69 +18041,78 @@ export function App(): React.JSX.Element {
 
                             return (
                               <>
-                                <select
-                                  className="form-select form-select-sm"
-                                  style={{ maxWidth: 210 }}
-                                  value={recipientsStatusFilter}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    setRecipientsStatusFilter(val);
-                                    setRecipientsPageNum(1);
-                                    if (selectedCampaignId) {
-                                      fetchRecipientsPage(selectedCampaignId, 1, recipientsSearch, val, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter, recipientsSortBy, recipientsSortDir);
-                                    }
-                                  }}
-                                >
-                                  <option value="">Stato notifica: tutti</option>
-                                  {statusOptions.map((opt) => (
-                                    <option key={opt.value} value={opt.value}>
-                                      {opt.label}{opt.count != null ? ` (${opt.count})` : ''}
-                                    </option>
-                                  ))}
-                                </select>
-                                {(campaign.channelType === 'SEND' || campaign.channelType === 'POSTAL') && (
+                                <div style={{ flex: '1 1 0', minWidth: 0 }}>
+                                  <label className="form-label small text-muted mb-1" htmlFor="rf-status">Stato notifica</label>
                                   <select
                                     className="form-select form-select-sm"
-                                    style={{ maxWidth: 240 }}
-                                    value={recipientsDeliveryStatusFilter}
+                                    id="rf-status"
+                                    value={recipientsStatusFilter}
                                     onChange={(e) => {
                                       const val = e.target.value;
-                                      setRecipientsDeliveryStatusFilter(val);
+                                      setRecipientsStatusFilter(val);
                                       setRecipientsPageNum(1);
                                       if (selectedCampaignId) {
-                                        fetchRecipientsPage(selectedCampaignId, 1, recipientsSearch, recipientsStatusFilter, val, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter, recipientsSortBy, recipientsSortDir);
+                                        fetchRecipientsPage(selectedCampaignId, 1, recipientsSearch, val, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter, recipientsSortBy, recipientsSortDir);
                                       }
                                     }}
                                   >
-                                    <option value="">Stato documento: tutti</option>
-                                    {deliveryStatusOptions.map((opt) => (
+                                    <option value="">Tutti</option>
+                                    {statusOptions.map((opt) => (
                                       <option key={opt.value} value={opt.value}>
                                         {opt.label}{opt.count != null ? ` (${opt.count})` : ''}
                                       </option>
                                     ))}
                                   </select>
+                                </div>
+                                {(campaign.channelType === 'SEND' || campaign.channelType === 'POSTAL') && (
+                                  <div style={{ flex: '1 1 0', minWidth: 0 }}>
+                                    <label className="form-label small text-muted mb-1" htmlFor="rf-postal-status">Stato documento</label>
+                                    <select
+                                      className="form-select form-select-sm"
+                                      id="rf-postal-status"
+                                      value={recipientsDeliveryStatusFilter}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setRecipientsDeliveryStatusFilter(val);
+                                        setRecipientsPageNum(1);
+                                        if (selectedCampaignId) {
+                                          fetchRecipientsPage(selectedCampaignId, 1, recipientsSearch, recipientsStatusFilter, val, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter, recipientsSortBy, recipientsSortDir);
+                                        }
+                                      }}
+                                    >
+                                      <option value="">Tutti</option>
+                                      {deliveryStatusOptions.map((opt) => (
+                                        <option key={opt.value} value={opt.value}>
+                                          {opt.label}{opt.count != null ? ` (${opt.count})` : ''}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
                                 )}
                                 {campaign.channelType === 'POSTAL' && postalDeliveryStatusOptions.length > 0 && (
-                                  <select
-                                    className="form-select form-select-sm"
-                                    style={{ maxWidth: 270 }}
-                                    value={recipientsPostalDeliveryStatusFilter}
-                                    onChange={(e) => {
-                                      const val = e.target.value;
-                                      setRecipientsPostalDeliveryStatusFilter(val);
-                                      setRecipientsPageNum(1);
-                                      if (selectedCampaignId) {
-                                        fetchRecipientsPage(selectedCampaignId, 1, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, val, recipientsSortBy, recipientsSortDir);
-                                      }
-                                    }}
-                                  >
-                                    <option value="">Recapito Poste: tutti</option>
-                                    {postalDeliveryStatusOptions.map((opt) => (
-                                      <option key={opt.value} value={opt.value}>
-                                        {opt.label}{opt.count != null ? ` (${opt.count})` : ''}
-                                      </option>
-                                    ))}
-                                  </select>
+                                  <div style={{ flex: '1 1 0', minWidth: 0 }}>
+                                    <label className="form-label small text-muted mb-1" htmlFor="rf-postal-delivery">Recapito Poste</label>
+                                    <select
+                                      className="form-select form-select-sm"
+                                      id="rf-postal-delivery"
+                                      value={recipientsPostalDeliveryStatusFilter}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setRecipientsPostalDeliveryStatusFilter(val);
+                                        setRecipientsPageNum(1);
+                                        if (selectedCampaignId) {
+                                          fetchRecipientsPage(selectedCampaignId, 1, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, val, recipientsSortBy, recipientsSortDir);
+                                        }
+                                      }}
+                                    >
+                                      <option value="">Tutti</option>
+                                      {postalDeliveryStatusOptions.map((opt) => (
+                                        <option key={opt.value} value={opt.value}>
+                                          {opt.label}{opt.count != null ? ` (${opt.count})` : ''}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
                                 )}
                               </>
                             );
@@ -18719,19 +18127,33 @@ export function App(): React.JSX.Element {
                               // più un caso ridondante da escludere.
                               { id: 'appio', label: 'App IO (co-consegna)' },
                             ];
+                            const selectedTagLabels = tagOptions.filter((o) => recipientsTagsFilter.includes(o.id)).map((o) => o.label);
+                            const tagsSummary = selectedTagLabels.length === 0
+                              ? 'Tutti'
+                              : selectedTagLabels.length === 1 ? selectedTagLabels[0] : `${selectedTagLabels.length} selezionati`;
                             return (
-                              <div className="dropdown">
+                              <div ref={recipientsTagsMenuRef} style={{ position: 'relative', flex: '1 1 0', minWidth: 0 }}>
+                                <label className="form-label small text-muted mb-1" htmlFor="rf-tags">Tipo invio</label>
                                 <button
                                   type="button"
-                                  className="btn btn-sm btn-outline-secondary dropdown-toggle"
+                                  className="form-control form-control-sm text-start text-truncate"
+                                  style={{ width: '100%', position: 'relative', paddingRight: 28 }}
+                                  aria-haspopup="listbox"
+                                  aria-expanded={recipientsTagsMenuOpen}
+                                  id="rf-tags"
+                                  title={selectedTagLabels.join(', ') || 'Tutti'}
                                   onClick={() => setRecipientsTagsMenuOpen((o) => !o)}
                                 >
-                                  Tipo invio{recipientsTagsFilter.length > 0 ? ` (${recipientsTagsFilter.length})` : ': tutti'}
+                                  {tagsSummary}
+                                  <ChevronDown size={14} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)' }} />
                                 </button>
                                 {recipientsTagsMenuOpen && (
-                                  <div className="dropdown-menu show p-2" style={{ minWidth: 220 }}>
+                                  <div
+                                    className="bg-white border rounded shadow-sm p-2"
+                                    style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 1050, minWidth: 240 }}
+                                  >
                                     {tagOptions.map((opt) => (
-                                      <div className="form-check" key={opt.id}>
+                                      <div className="form-check py-1" key={opt.id}>
                                         <input
                                           type="checkbox"
                                           className="form-check-input"
@@ -18761,54 +18183,53 @@ export function App(): React.JSX.Element {
                               </div>
                             );
                           })()}
-                          <select
-                            className="form-select form-select-sm"
-                            style={{ maxWidth: 160 }}
-                            value={recipientsDownloadFilter}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setRecipientsDownloadFilter(val);
-                              setRecipientsPageNum(1);
-                              if (selectedCampaignId) {
-                                fetchRecipientsPage(selectedCampaignId, 1, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, val, recipientsPostalDeliveryStatusFilter, recipientsSortBy, recipientsSortDir);
-                              }
-                            }}
-                          >
-                            <option value="">Download: tutti</option>
-                            <option value="yes">Con download</option>
-                            <option value="no">Senza download</option>
-                          </select>
-                          {recipientsFilterOptions?.downloadChannelCombos && recipientsFilterOptions.downloadChannelCombos.length > 0 && (
+                          <div style={{ flex: '1 1 0', minWidth: 0 }}>
+                            <label className="form-label small text-muted mb-1" htmlFor="rf-download">Download</label>
                             <select
                               className="form-select form-select-sm"
-                              style={{ maxWidth: 220 }}
-                              value={recipientsDownloadChannelFilter}
+                              id="rf-download"
+                              value={recipientsDownloadFilter}
                               onChange={(e) => {
                                 const val = e.target.value;
-                                setRecipientsDownloadChannelFilter(val);
+                                setRecipientsDownloadFilter(val);
                                 setRecipientsPageNum(1);
                                 if (selectedCampaignId) {
-                                  fetchRecipientsPage(selectedCampaignId, 1, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter, recipientsSortBy, recipientsSortDir, val);
+                                  fetchRecipientsPage(selectedCampaignId, 1, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, val, recipientsPostalDeliveryStatusFilter, recipientsSortBy, recipientsSortDir);
                                 }
                               }}
                             >
-                              <option value="">Canale download: tutti</option>
-                              {recipientsFilterOptions.downloadChannelCombos.map((opt) => (
-                                <option key={opt.value} value={opt.value}>
-                                  {opt.value === '__DOWNLOAD_NONE__' ? 'Non scaricato' : opt.value.split('+').map((ch) => channelLabel(ch)).join(' + ')} ({opt.count})
-                                </option>
-                              ))}
+                              <option value="">Tutti</option>
+                              <option value="yes">Con download</option>
+                              <option value="no">Senza download</option>
                             </select>
+                          </div>
+                          {recipientsFilterOptions?.downloadChannelCombos && recipientsFilterOptions.downloadChannelCombos.length > 0 && (
+                            <div style={{ flex: '1 1 0', minWidth: 0 }}>
+                              <label className="form-label small text-muted mb-1" htmlFor="rf-download-channel">Canale download</label>
+                              <select
+                                className="form-select form-select-sm"
+                                id="rf-download-channel"
+                                value={recipientsDownloadChannelFilter}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setRecipientsDownloadChannelFilter(val);
+                                  setRecipientsPageNum(1);
+                                  if (selectedCampaignId) {
+                                    fetchRecipientsPage(selectedCampaignId, 1, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, recipientsPostalDeliveryStatusFilter, recipientsSortBy, recipientsSortDir, val);
+                                  }
+                                }}
+                              >
+                                <option value="">Tutti</option>
+                                {recipientsFilterOptions.downloadChannelCombos.map((opt) => (
+                                  <option key={opt.value} value={opt.value}>
+                                    {opt.value === '__DOWNLOAD_NONE__' ? 'Non scaricato' : opt.value.split('+').map((ch) => channelLabel(ch)).join(' + ')} ({opt.count})
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
                           )}
-                          {recipientsActiveFilterCount > 0 && (
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-outline-danger ms-auto"
-                              onClick={handleResetRecipientFilters}
-                            >
-                              <X className="me-1" size={14} />Reset filtri
-                            </button>
-                          )}
+                          </div>
+                          </div>
                         </div>
                       )}
                       <div className="card-body p-0">

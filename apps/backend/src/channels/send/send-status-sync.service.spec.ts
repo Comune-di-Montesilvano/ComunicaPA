@@ -182,13 +182,78 @@ describe('SendStatusSyncService', () => {
   });
 
   it('updateStatuses: non ricalcola il costo se già presente e lo stato non cambia', async () => {
-    const attempt: any = { id: 'a1', iun: 'IUN-123', sendStatus: 'DELIVERED', costCents: 1070 };
+    const attempt: any = {
+      id: 'a1', iun: 'IUN-123', sendStatus: 'DELIVERED', costCents: 1070,
+      costBreakdown: { baseFeeCents: 100, analogEvents: [{ productType: 'AR', analogCostCents: 970, envelopeWeight: 20, numberOfPages: 2 }] },
+      costCalculatedAt: new Date('2026-01-12T10:00:00Z'),
+      sendStatusUpdatedAt: new Date('2026-01-12T09:00:00Z'),
+    };
     mockRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
-    mockFetch.mockResolvedValue({ ok: true, text: () => Promise.resolve(JSON.stringify({ notificationStatus: 'DELIVERED' })) });
+    mockFetch.mockResolvedValue({ ok: true, text: () => Promise.resolve(JSON.stringify({
+      notificationStatus: 'DELIVERED',
+      timeline: [{ category: 'SEND_ANALOG_DOMICILE', details: { productType: 'AR', analogCost: 970, envelopeWeight: 20, numberOfPages: 2 } }],
+    })) });
 
     await service.updateStatuses();
 
     expect(mockRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('bug reale: ricalcola il costo quando l\'invio cartaceo compare DOPO il primo calcolo (tutte le SEND ferme a 1€)', async () => {
+    mockSendBaseFee.resolve.mockClear();
+    const attempt: any = {
+      id: 'a1', iun: 'IUN-123', sendStatus: 'DELIVERING', costCents: 100,
+      costBreakdown: { baseFeeCents: 100, analogEvents: [] },
+      costCalculatedAt: new Date('2026-01-10T10:00:00Z'),
+      sendStatusUpdatedAt: new Date('2026-01-10T10:00:00Z'),
+    };
+    mockRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
+    mockFetch.mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve(JSON.stringify({
+        notificationStatus: 'DELIVERED',
+        timeline: [
+          { category: 'SEND_ANALOG_DOMICILE', details: { productType: 'AR', analogCost: 970, envelopeWeight: 20, numberOfPages: 2 } },
+        ],
+      })),
+    });
+
+    await service.updateStatuses();
+
+    expect(attempt.costCents).toBe(1070);
+    expect(attempt.costBreakdown.analogEvents).toHaveLength(1);
+    // Base fee già nota nel breakdown: nessuna nuova chiamata a PN per risolverla.
+    expect(mockSendBaseFee.resolve).not.toHaveBeenCalled();
+    expect(attempt.costCalculatedAt.getTime()).toBeGreaterThan(new Date('2026-01-10T10:00:00Z').getTime());
+    expect(mockRepo.save).toHaveBeenCalledWith(attempt);
+  });
+
+  it('ripesca gli attempt terminali col costo calcolato prima dell\'ultimo cambio stato (recupero SEND già chiuse a 1€)', async () => {
+    const qb = makeQueryBuilder([]);
+    mockRepo.createQueryBuilder.mockReturnValue(qb);
+
+    await service.updateStatuses();
+
+    const includesStaleCost = qb.andWhere.mock.calls.some(([sql]: [string]) =>
+      /cost_calculated_at\s*<\s*attempt\.send_status_updated_at/i.test(sql));
+    expect(includesStaleCost).toBe(true);
+  });
+
+  it('attempt ripescato come "costo stantio" ma senza variazioni: aggiorna solo cost_calculated_at, così esce dal batch', async () => {
+    const attempt: any = {
+      id: 'a1', iun: 'IUN-123', sendStatus: 'VIEWED', costCents: 100,
+      costBreakdown: { baseFeeCents: 100, analogEvents: [] },
+      costCalculatedAt: new Date('2026-01-10T10:00:00Z'),
+      sendStatusUpdatedAt: new Date('2026-01-12T10:00:00Z'),
+    };
+    mockRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
+    mockFetch.mockResolvedValue({ ok: true, text: () => Promise.resolve(JSON.stringify({ notificationStatus: 'VIEWED', timeline: [] })) });
+
+    await service.updateStatuses();
+
+    expect(attempt.costCents).toBe(100);
+    expect(attempt.costCalculatedAt.getTime()).toBeGreaterThanOrEqual(attempt.sendStatusUpdatedAt.getTime());
+    expect(mockRepo.save).toHaveBeenCalledWith(attempt);
   });
 
   it('handleCron chiama sia resolveMissingIun che updateStatuses', async () => {
