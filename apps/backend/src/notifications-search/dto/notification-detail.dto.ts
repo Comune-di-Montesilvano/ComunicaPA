@@ -1,5 +1,6 @@
 import type { PreviewMessageResult } from '../../campaigns/dto/preview-message.dto.js';
 import type { ResolvedPaymentData } from '../../channels/payment-config.util.js';
+import type { PosteVerificationDto } from '../../channels/postal/poste-tracking/poste-tracking-effective.util.js';
 
 export interface AttemptDetailDto {
   attemptNumber: number;
@@ -24,6 +25,8 @@ export interface AttemptDetailDto {
   postalDeliveryDate?: string | null;
   postalAcceptanceId?: string | null;
   postalStatusHistory: Array<{ stato: string; rilevatoIl: string; codiceErrore?: string; descrizione?: string; statoConsegna?: string; codiceConsegna?: number }> | null;
+  /** Solo attempt POSTAL: verifica consegna su tracking Poste, null se nessuna riga. */
+  posteVerification?: PosteVerificationDto | null;
   costCents?: number | null;
   costCalculatedAt?: string | null;
   costBreakdown?: Record<string, unknown> | null;

@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Recipient } from '../entities/recipient.entity.js';
 import { NotificationAttempt } from '../entities/notification-attempt.entity.js';
 import { DownloadEvent } from '../entities/download-event.entity.js';
@@ -9,6 +9,11 @@ import { SendLegalFactsService, type SendLegalFactItem, type SendLegalFactDownlo
 import { AttachmentService, resolveAttachmentsConfig, resolveAttachmentLabel, resolveCustomAttachmentFilename } from '../attachments/attachment.service.js';
 import { resolvePhysicalAddress, resolvePaymentData } from '../channels/payment-config.util.js';
 import type { NotificationDetailDto } from './dto/notification-detail.dto.js';
+import { PostalPosteTracking } from '../entities/postal-poste-tracking.entity.js';
+import { posteDeliveredSql, toPosteVerificationDto } from '../channels/postal/poste-tracking/poste-tracking-effective.util.js';
+
+export type PosteVerificationFilter = 'delivered' | 'returned' | 'pending' | 'gave_up' | 'any';
+export const POSTE_VERIFICATION_FILTERS: readonly PosteVerificationFilter[] = ['delivered', 'returned', 'pending', 'gave_up', 'any'];
 
 export interface SearchFilters {
   codiceFiscale?: string;
@@ -18,6 +23,7 @@ export interface SearchFilters {
   status?: string;
   dateFrom?: string;
   dateTo?: string;
+  posteVerification?: PosteVerificationFilter;
   page: number;
   pageSize: number;
 }
@@ -31,6 +37,8 @@ export interface SearchRowDto {
   channelType: string;
   status: string;
   createdAt: string;
+  /** Verifica consegna su tracking Poste dell'ultimo attempt; delivered solo se GlobalCom è ancora NonConsegnato. */
+  posteVerificationStatus: string | null;
 }
 
 @Injectable()
@@ -45,6 +53,9 @@ export class NotificationsSearchService {
     private readonly campaignsService: CampaignsService,
     private readonly sendLegalFacts: SendLegalFactsService,
     private readonly attachmentService: AttachmentService,
+    // @Optional: spec esistenti senza questo repo → nessuna info verifica Poste.
+    @Optional() @InjectRepository(PostalPosteTracking)
+    private readonly posteTrackingRepo?: Repository<PostalPosteTracking>,
   ) {}
 
   async search(filters: SearchFilters): Promise<{ rows: SearchRowDto[]; total: number }> {
@@ -81,12 +92,25 @@ export class NotificationsSearchService {
     if (filters.dateTo) {
       qb.andWhere('recipient.createdAt < (:dateTo::date + interval \'1 day\')', { dateTo: filters.dateTo });
     }
+    if (filters.posteVerification) {
+      const latestAttempt = 'na.attempt_number = (SELECT MAX(na2.attempt_number) FROM notification_attempts na2 WHERE na2.recipient_id = recipient.id)';
+      if (filters.posteVerification === 'delivered') {
+        // Discrepanza: stesso predicato del bucket ConsegnatoVerificaPoste.
+        qb.andWhere(`EXISTS (SELECT 1 FROM notification_attempts na WHERE na.recipient_id = recipient.id AND ${latestAttempt} AND ${posteDeliveredSql('na')})`);
+      } else {
+        qb.andWhere(
+          `EXISTS (SELECT 1 FROM notification_attempts na JOIN postal_poste_tracking ppt2 ON ppt2.attempt_id = na.id WHERE na.recipient_id = recipient.id AND ${latestAttempt}${filters.posteVerification === 'any' ? '' : ' AND ppt2.status = :pv'})`,
+          { pv: filters.posteVerification },
+        );
+      }
+    }
 
     qb.orderBy('recipient.createdAt', 'DESC')
       .skip((filters.page - 1) * filters.pageSize)
       .take(filters.pageSize);
 
     const [rows, total] = await qb.getManyAndCount();
+    const posteByRecipient = await this.loadLatestPosteStatus(rows.map((r) => r.id));
 
     return {
       rows: rows.map((r) => ({
@@ -98,9 +122,30 @@ export class NotificationsSearchService {
         channelType: r.campaign.channelType,
         status: r.status,
         createdAt: r.createdAt.toISOString(),
+        posteVerificationStatus: posteByRecipient.get(r.id) ?? null,
       })),
       total,
     };
+  }
+
+  /** Stato verifica Poste dell'ultimo attempt per destinatario; delivered conta solo se GlobalCom è ancora NonConsegnato. */
+  private async loadLatestPosteStatus(recipientIds: string[]): Promise<Map<string, string>> {
+    if (!this.posteTrackingRepo || recipientIds.length === 0) return new Map();
+    const rows: Array<{ recipientId: string; status: string | null; postalStatus: string | null }> = (await this.posteTrackingRepo.query(
+      `SELECT DISTINCT ON (na.recipient_id) na.recipient_id AS "recipientId", ppt.status AS "status", na.postal_status AS "postalStatus"
+       FROM notification_attempts na
+       LEFT JOIN postal_poste_tracking ppt ON ppt.attempt_id = na.id
+       WHERE na.recipient_id = ANY($1::uuid[])
+       ORDER BY na.recipient_id, na.attempt_number DESC`,
+      [recipientIds],
+    )) ?? [];
+    const map = new Map<string, string>();
+    for (const r of rows) {
+      if (!r.status) continue;
+      if (r.status === 'delivered' && r.postalStatus !== 'NonConsegnato') continue;
+      map.set(r.recipientId, r.status);
+    }
+    return map;
   }
 
   async getDetail(recipientId: string): Promise<NotificationDetailDto> {
@@ -114,6 +159,12 @@ export class NotificationsSearchService {
       where: { recipientId },
       order: { attemptNumber: 'ASC' },
     });
+
+    const postalAttemptIds = attempts.filter((a) => a.channelType === 'POSTAL').map((a) => a.id);
+    const posteRows = this.posteTrackingRepo && postalAttemptIds.length > 0
+      ? ((await this.posteTrackingRepo.find({ where: { attemptId: In(postalAttemptIds) } })) ?? [])
+      : [];
+    const posteByAttempt = new Map(posteRows.map((p) => [p.attemptId, p]));
 
     const downloads = await this.downloadEventRepo.find({
       where: { recipientId },
@@ -225,6 +276,9 @@ export class NotificationsSearchService {
             postalDeliveryDate: a.postalDeliveryDate ? a.postalDeliveryDate.toISOString() : null,
             postalAcceptanceId: a.postalAcceptanceId ?? null,
             postalStatusHistory: a.postalStatusHistory ?? null,
+            ...(a.channelType === 'POSTAL'
+              ? { posteVerification: posteByAttempt.has(a.id) ? toPosteVerificationDto(posteByAttempt.get(a.id)!) : null }
+              : {}),
             costCents: a.costCents ?? null,
             costCalculatedAt: a.costCalculatedAt ? a.costCalculatedAt.toISOString() : null,
             costBreakdown: a.costBreakdown ?? null,
