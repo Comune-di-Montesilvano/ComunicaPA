@@ -1,7 +1,8 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import type { JwtOperatorPayload, CitizenTokenClaims } from '@comunicapa/shared-types';
+import type { JwtOperatorPayload } from '@comunicapa/shared-types';
+import { normalizeTaxId, type CitizenSessionClaims } from './citizen-claims.js';
 import { LdapService } from './ldap/ldap.service.js';
 import { OperatorDirectoryService } from '../operator-directory/operator-directory.service.js';
 import { PostalAuthorizedUsersService } from '../postal-authorized-users/postal-authorized-users.service.js';
@@ -53,16 +54,29 @@ export class AuthService {
     codiceFiscale: string;
     name?: string;
     email?: string;
+    accessType?: 'PF' | 'PG';
+    ivaCode?: string;
+    companyName?: string;
+    registeredOffice?: string;
   }): Promise<{ access_token: string }> {
     // Simulatore consentito solo in sviluppo locale, come le credenziali operatore mock
     if (this.config.get('ldap.host', { infer: true }) !== 'mock') {
       throw new ForbiddenException('Login simulato disabilitato: usare SPID/CIE');
     }
-    const payload: Omit<CitizenTokenClaims, 'iat' | 'exp'> = {
+    const isCompany = dto.accessType === 'PG' && !!dto.ivaCode;
+    const payload: Omit<CitizenSessionClaims, 'iat' | 'exp'> = {
       sub: dto.codiceFiscale,
       codiceFiscale: dto.codiceFiscale.toUpperCase().trim(),
       name: dto.name || 'Cittadino Simulato',
       email: dto.email || 'cittadino@example.com',
+      ...(isCompany
+        ? {
+          accessType: 'PG' as const,
+          ivaCode: normalizeTaxId(dto.ivaCode!),
+          companyName: dto.companyName || 'Impresa Simulata SRL',
+          registeredOffice: dto.registeredOffice || 'Via Roma 1, 65015 Montesilvano (PE)',
+        }
+        : {}),
     };
 
     const token = this.jwtService.sign(payload);

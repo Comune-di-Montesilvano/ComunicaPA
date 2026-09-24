@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
-import { BadGatewayException, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
+import { createHash } from 'crypto';
+import { BadGatewayException, BadRequestException, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { OidcFlowService } from './oidc-flow.service.js';
 
 // vitest 5: una const top-level referenziata dentro una factory vi.mock()
@@ -26,7 +27,7 @@ vi.mock('ioredis', () => {
 });
 
 describe('OidcFlowService', () => {
-  const values = new Map<string, string>([
+  const values = new Map<string, unknown>([
     ['oidc.issuer', 'https://sso.ente.it'],
     ['oidc.clientId', 'client-abc'],
     ['oidc.clientSecret', ''],
@@ -43,6 +44,8 @@ describe('OidcFlowService', () => {
     values.set('oidc.clientId', 'client-abc');
     values.set('oidc.clientSecret', '');
     values.set('system.citizenPublicUrl', 'https://comunicapa.ente.it');
+    values.delete('oidc.legalEntityEnabled');
+    values.delete('oidc.legalEntityScope');
     service = new OidcFlowService(settingsMock as never, configMock as never);
     fetchMock = jest.spyOn(global, 'fetch');
   });
@@ -115,6 +118,7 @@ describe('OidcFlowService', () => {
         cf: '',
         name: '',
         provider: 'Identità Digitale',
+        accessType: 'PF',
       },
     });
     expect(redisMock.getdel).toHaveBeenCalledWith('oidc:state:state-1');
@@ -173,5 +177,124 @@ describe('OidcFlowService', () => {
     await expect(service.exchangeCode('code-1', 'state-1', 'state-1')).rejects.toThrow(
       BadGatewayException,
     );
+  });
+
+  // ─── Accesso per conto di impresa (SPID persona giuridica, scope legal_entity) ───
+
+  function fakeIdToken(payload: Record<string, unknown>): string {
+    const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');
+    return `${b64({ alg: 'RS256' })}.${b64(payload)}.firma`;
+  }
+
+  function mockTokenAndUserinfo(idTokenPayload: Record<string, unknown>, userinfo: Record<string, unknown>): string {
+    const idToken = fakeIdToken(idTokenPayload);
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ id_token: idToken, access_token: 'opaque-access' }) } as never);
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => userinfo } as never);
+    return idToken;
+  }
+
+  const sessionKeyOf = (token: string) => `oidc:session:${createHash('sha256').update(token).digest('hex')}`;
+
+  it('buildAuthorizationUrl PF: scope invariato e tipo di accesso salvato con lo state', async () => {
+    mockDiscoveryOk();
+    const { url } = await service.buildAuthorizationUrl('PF');
+
+    expect(new URL(url).searchParams.get('scope')).toBe('openid profile email');
+    const stored = JSON.parse(redisMock.set.mock.calls[0][1]);
+    expect(stored.accessType).toBe('PF');
+    expect(stored.verifier).toEqual(expect.any(String));
+  });
+
+  it('buildAuthorizationUrl PG: aggiunge lo scope legal_entity solo nel flusso impresa', async () => {
+    values.set('oidc.legalEntityEnabled', true as never);
+    values.set('oidc.legalEntityScope', 'legal_entity');
+    mockDiscoveryOk();
+    const { url } = await service.buildAuthorizationUrl('PG');
+
+    expect(new URL(url).searchParams.get('scope')).toBe('openid profile email legal_entity');
+    expect(JSON.parse(redisMock.set.mock.calls[0][1]).accessType).toBe('PG');
+  });
+
+  it('buildAuthorizationUrl PG: rifiutato se la funzione è disattivata nelle impostazioni', async () => {
+    values.set('oidc.legalEntityEnabled', false as never);
+    await expect(service.buildAuthorizationUrl('PG')).rejects.toThrow(BadRequestException);
+  });
+
+  it('exchangeCode PG con claim aziendali: sessione impresa con P.IVA e CF normalizzati, legata al token', async () => {
+    redisMock.getdel.mockResolvedValueOnce(JSON.stringify({ verifier: 'v-1', accessType: 'PG' }));
+    mockDiscoveryOk();
+    const token = mockTokenAndUserinfo(
+      { sub: 'persona-1', exp: Math.floor(Date.now() / 1000) + 3600 },
+      {
+        fiscal_number: 'TINIT-RSSMRA85M01H501Z', given_name: 'Mario', family_name: 'Rossi',
+        company_name: 'ACME SRL', iva_code: 'VATIT-01234567890', registered_office: 'Via Roma 1, 65015 Montesilvano',
+      },
+    );
+
+    const result = await service.exchangeCode('code-1', 'state-1', 'state-1');
+
+    expect(result).toEqual({
+      access_token: token,
+      claims: {
+        cf: 'RSSMRA85M01H501Z', name: 'Mario Rossi', provider: 'Identità Digitale',
+        accessType: 'PG', ivaCode: '01234567890', companyName: 'ACME SRL', registeredOffice: 'Via Roma 1, 65015 Montesilvano',
+      },
+    });
+    const sessionCall = redisMock.set.mock.calls.find((c: unknown[]) => c[0] === sessionKeyOf(token));
+    expect(sessionCall).toBeDefined();
+    expect(JSON.parse(sessionCall![1])).toMatchObject({ accessType: 'PG', codiceFiscale: 'RSSMRA85M01H501Z', ivaCode: '01234567890' });
+    // Mai più il contesto indicizzato per persona: si mescolerebbe con una sessione PF della stessa persona.
+    expect(redisMock.set.mock.calls.some((c: unknown[]) => String(c[0]).startsWith('oidc:claims:'))).toBe(false);
+  });
+
+  it('exchangeCode PG senza claim aziendali (es. passato da CIE): nessuna sessione impresa, esito legal_entity_required', async () => {
+    redisMock.getdel.mockResolvedValueOnce(JSON.stringify({ verifier: 'v-1', accessType: 'PG' }));
+    mockDiscoveryOk();
+    mockTokenAndUserinfo({ sub: 'persona-1' }, { fiscal_number: 'TINIT-RSSMRA85M01H501Z' });
+
+    const result = await service.exchangeCode('code-1', 'state-1', 'state-1');
+
+    expect(result).toEqual({ error: 'legal_entity_required', message: expect.stringContaining('SPID') });
+    expect(redisMock.set).not.toHaveBeenCalled();
+  });
+
+  it('exchangeCode PF: eventuali claim aziendali ricevuti vengono ignorati', async () => {
+    redisMock.getdel.mockResolvedValueOnce(JSON.stringify({ verifier: 'v-1', accessType: 'PF' }));
+    mockDiscoveryOk();
+    const token = mockTokenAndUserinfo(
+      { sub: 'persona-1' },
+      { fiscal_number: 'TINIT-RSSMRA85M01H501Z', company_name: 'ACME SRL', iva_code: 'VATIT-01234567890' },
+    );
+
+    const result = await service.exchangeCode('code-1', 'state-1', 'state-1');
+
+    expect(result).toEqual({ access_token: token, claims: { cf: 'RSSMRA85M01H501Z', name: '', provider: 'Identità Digitale', accessType: 'PF' } });
+    const sessionCall = redisMock.set.mock.calls.find((c: unknown[]) => c[0] === sessionKeyOf(token));
+    expect(JSON.parse(sessionCall![1])).toEqual({ accessType: 'PF', codiceFiscale: 'RSSMRA85M01H501Z', name: '', provider: 'Identità Digitale' });
+  });
+
+  it('exchangeCode: il tipo di accesso viene dallo state salvato (state legacy senza tipo = PF), mai dalla richiesta', async () => {
+    redisMock.getdel.mockResolvedValueOnce('verifier-legacy');
+    mockDiscoveryOk();
+    mockTokenAndUserinfo({ sub: 'persona-1' }, { fiscal_number: 'RSSMRA85M01H501Z', company_name: 'ACME SRL', iva_code: '01234567890' });
+
+    const result = await service.exchangeCode('code-1', 'state-1', 'state-1');
+
+    expect('claims' in result && result.claims?.accessType).toBe('PF');
+    expect(fetchMock.mock.calls[1][1].body.get('code_verifier')).toBe('verifier-legacy');
+  });
+
+  it('resolveProviderError: errore del proxy su un flusso impresa → legal_entity_required, cittadino → provider_error', async () => {
+    redisMock.getdel.mockResolvedValueOnce(JSON.stringify({ verifier: 'v', accessType: 'PG' }));
+    await expect(service.resolveProviderError('state-1', 'state-1', 'access_denied')).resolves.toEqual({
+      error: 'legal_entity_required', message: expect.stringContaining('SPID'),
+    });
+
+    redisMock.getdel.mockResolvedValueOnce(JSON.stringify({ verifier: 'v', accessType: 'PF' }));
+    await expect(service.resolveProviderError('state-2', 'state-2', 'access_denied')).resolves.toEqual({
+      error: 'provider_error', message: expect.stringContaining('access_denied'),
+    });
+
+    await expect(service.resolveProviderError('state-3', 'altro', 'access_denied')).rejects.toThrow(UnauthorizedException);
   });
 });

@@ -23,6 +23,10 @@ packages/shared-types/ @comunicapa/shared-types — interfacce TypeScript condiv
 
 **Proxy OIDC (pa-sso-proxy):** issuer = root del proxy (senza `/OIDC`), discovery in `/.well-known/openid-configuration`, endpoint sotto `/OIDC/` (`authorization`, `token`, `jwks`, `end_session`). Supporta SOLO `client_secret_basic` (secret nel body → 401 con pagina HTML). Claims id_token: `fiscal_number` = `TINIT-<CF>` (prefisso `TIN`+paese da strippare), `given_name`/`family_name` (spesso senza `name`), claim URI eIDAS `https://attributes.eid.gov.it/fiscal_number`.
 
+**Sessione cittadino = id_token del proxy + contesto su Redis `oidc:session:<sha256(token)>`** (tipo accesso, CF, eventuale impresa), scritto al callback da `OidcFlowService`. Con `oidc.jwksUri` configurato il contesto è obbligatorio: token senza contesto (Redis svuotato) → 401 e nuovo login, mai identità ricostruita dal solo token. Mai indicizzare per `sub`: la stessa persona può avere una sessione da cittadino e una per conto di impresa insieme.
+
+**Accesso per conto di impresa (SPID persona giuridica)**: flag `oidc.legalEntityEnabled` da Impostazioni → OIDC; `oidc/start?type=pg` aggiunge lo scope `legal_entity` (IdP senza identità PG → errore SPID, quindi solo su scelta esplicita). Il tipo PF/PG si salva con lo `state` e al callback si rilegge solo da lì. Claim `company_name`/`iva_code` (`VATIT-` da strippare)/`registered_office` obbligatori, altrimenti esito 200 `{ error: 'legal_entity_required' }` e nessuna sessione (CIE non li invia mai). Nel flusso impresa i destinatari si cercano per P.IVA (`recipientKeyOf`, `auth/citizen-claims.ts`), mai per il CF della persona. Simulatore dev: checkbox "per conto di un'impresa" nel login mock.
+
 ## Dev Environment
 
 Tutti i comandi si eseguono con Docker Compose. Copiare `.env.example` in `.env` prima del primo avvio.

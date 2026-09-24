@@ -278,6 +278,22 @@ export function App(): React.JSX.Element {
   const [cf, setCf] = useState<string | null>(localStorage.getItem('comunicapa_citizen_cf'));
   const [name, setName] = useState<string | null>(localStorage.getItem('comunicapa_citizen_name'));
   const [provider, setProvider] = useState<string>(localStorage.getItem('comunicapa_citizen_provider') || 'Identità Digitale');
+  // Accesso per conto di un'impresa (SPID persona giuridica): impresa per cui
+  // si opera. Solo visualizzazione: il filtro reale per P.IVA lo fa il backend
+  // dal contesto di sessione, mai da questo valore.
+  const [company, setCompany] = useState<{ ivaCode: string; companyName: string; registeredOffice?: string } | null>(() => {
+    try {
+      const raw = localStorage.getItem('comunicapa_citizen_company');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [legalEntityEnabled, setLegalEntityEnabled] = useState(false);
+  const [legalEntityError, setLegalEntityError] = useState<string | null>(null);
+  const [mockAsCompany, setMockAsCompany] = useState(false);
+  const [mockIvaCode, setMockIvaCode] = useState('01234567890');
+  const [mockCompanyName, setMockCompanyName] = useState('ACME SRL');
   const [entityName, setEntityName] = useState('Ente');
   const [brandLogoUrl, setBrandLogoUrl] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState<string | null>(null);
@@ -381,6 +397,8 @@ export function App(): React.JSX.Element {
     localStorage.removeItem('comunicapa_citizen_cf');
     localStorage.removeItem('comunicapa_citizen_name');
     localStorage.removeItem('comunicapa_citizen_provider');
+    localStorage.removeItem('comunicapa_citizen_company');
+    setCompany(null);
     setToken(null);
     setCf(null);
     setName(null);
@@ -464,9 +482,10 @@ export function App(): React.JSX.Element {
 
     fetch(`${API_BASE}/citizen/auth/config`)
       .then((r) => r.json())
-      .then((c: { mode?: 'oidc' | 'mock'; logoutUrl?: string | null }) => {
+      .then((c: { mode?: 'oidc' | 'mock'; logoutUrl?: string | null; legalEntityEnabled?: boolean }) => {
         setAuthMode(c.mode === 'mock' ? 'mock' : 'oidc');
         setOidcLogoutUrl(c.logoutUrl ?? null);
+        setLegalEntityEnabled(!!c.legalEntityEnabled);
       })
       .catch(() => setAuthMode('oidc'));
 
@@ -485,29 +504,46 @@ export function App(): React.JSX.Element {
     const oidcError = params.get('error');
     window.history.replaceState({}, '', '/');
 
-    if (oidcError || !code || !state) {
+    if (!state || (!oidcError && !code)) {
       setLoginError(oidcError ? `Accesso negato dal provider: ${oidcError}` : 'Risposta OIDC incompleta');
       setOidcExchanging(false);
       return;
     }
 
+    // Anche l'errore del proxy passa dal backend: solo lui sa (dallo state
+    // salvato) se era un accesso per conto di impresa, e sceglie il messaggio.
     fetch(`${API_BASE}/citizen/auth/oidc/callback`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code, state }),
+      body: JSON.stringify(oidcError ? { state, error: oidcError } : { code, state }),
     })
       .then(async (r) => {
         if (!r.ok) {
           const err = (await r.json().catch(() => ({}))) as { message?: string };
           throw new Error(err.message ?? 'Scambio del codice OIDC fallito');
         }
-        return r.json() as Promise<{
-          access_token: string;
-          claims?: { cf: string; name: string; provider: string };
-        }>;
+        return r.json() as Promise<
+          | {
+            access_token: string;
+            claims?: { cf: string; name: string; provider: string; accessType?: 'PF' | 'PG'; ivaCode?: string; companyName?: string; registeredOffice?: string };
+          }
+          | { error: 'legal_entity_required' | 'provider_error'; message: string }
+        >;
       })
       .then((d) => {
+        if ('error' in d) {
+          // Nessuna sessione creata: mai degradare in silenzio a persona fisica.
+          if (d.error === 'legal_entity_required') setLegalEntityError(d.message);
+          else setLoginError(d.message);
+          return;
+        }
         const claims = d.claims || decodeJwtClaims(d.access_token);
+        const companyClaims = d.claims?.accessType === 'PG' && d.claims.ivaCode
+          ? { ivaCode: d.claims.ivaCode, companyName: d.claims.companyName || '', registeredOffice: d.claims.registeredOffice }
+          : null;
+        if (companyClaims) localStorage.setItem('comunicapa_citizen_company', JSON.stringify(companyClaims));
+        else localStorage.removeItem('comunicapa_citizen_company');
+        setCompany(companyClaims);
         localStorage.setItem('comunicapa_citizen_token', d.access_token);
         localStorage.setItem('comunicapa_citizen_cf', claims.cf);
         localStorage.setItem('comunicapa_citizen_name', claims.name);
@@ -590,6 +626,7 @@ export function App(): React.JSX.Element {
           codiceFiscale: targetCf,
           name: targetName,
           email: targetEmail,
+          ...(mockAsCompany ? { accessType: 'PG', ivaCode: mockIvaCode, companyName: mockCompanyName } : {}),
         }),
       });
 
@@ -600,6 +637,10 @@ export function App(): React.JSX.Element {
       localStorage.setItem('comunicapa_citizen_cf', targetCf.toUpperCase());
       localStorage.setItem('comunicapa_citizen_name', targetName);
       localStorage.setItem('comunicapa_citizen_provider', provider.toUpperCase());
+      const simulatedCompany = mockAsCompany ? { ivaCode: mockIvaCode, companyName: mockCompanyName } : null;
+      if (simulatedCompany) localStorage.setItem('comunicapa_citizen_company', JSON.stringify(simulatedCompany));
+      else localStorage.removeItem('comunicapa_citizen_company');
+      setCompany(simulatedCompany);
       
       setToken(data.access_token);
       setCf(targetCf.toUpperCase());
@@ -613,9 +654,10 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const handleOidcLogin = () => {
+  const handleOidcLogin = (accessType: 'PF' | 'PG' = 'PF') => {
     setLoginError(null);
-    navigateTo(`${API_BASE}/citizen/auth/oidc/start`);
+    setLegalEntityError(null);
+    navigateTo(`${API_BASE}/citizen/auth/oidc/start${accessType === 'PG' ? '?type=pg' : ''}`);
   };
 
   const handleDownloadAttachment = async (notifId: string, attachmentIndex: number) => {
@@ -793,13 +835,39 @@ export function App(): React.JSX.Element {
                 </div>
               )}
 
-              {!oidcExchanging && authMode === 'oidc' && (
+              {!oidcExchanging && authMode === 'oidc' && legalEntityError && (
+                <div className="login-legal-error" role="alert">
+                  <p><i className="fas fa-building-circle-exclamation" aria-hidden="true"></i> {legalEntityError}</p>
+                  <div className="login-legal-actions">
+                    <button type="button" className="login-btn" onClick={() => handleOidcLogin('PG')}>
+                      <i className="fas fa-rotate-right" aria-hidden="true"></i> Riprova
+                    </button>
+                    <button type="button" className="login-btn login-btn-secondary" onClick={() => handleOidcLogin('PF')}>
+                      <i className="fas fa-user" aria-hidden="true"></i> Accedi come cittadino
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {!oidcExchanging && authMode === 'oidc' && !legalEntityError && (
                 <>
-                  {/* La scelta SPID/CIE avviene sul proxy OIDC: qui un solo bottone */}
-                  <button className="login-btn" onClick={handleOidcLogin}>
+                  {/* La scelta SPID/CIE avviene sul proxy OIDC */}
+                  <button className="login-btn" onClick={() => handleOidcLogin('PF')}>
                     <i className="fas fa-user-shield" aria-hidden="true"></i>
-                    Accedi con identità digitale
+                    Accedi come cittadino
                   </button>
+                  {legalEntityEnabled && (
+                    <>
+                      <button className="login-btn login-btn-secondary" onClick={() => handleOidcLogin('PG')} style={{ marginTop: 'var(--sp-3, 12px)' }}>
+                        <i className="fas fa-building" aria-hidden="true"></i>
+                        Accedi per conto di un'impresa
+                      </button>
+                      <p className="login-legal-help">
+                        Serve un'identità SPID per uso professionale della persona giuridica (non tutti i gestori SPID la
+                        offrono ancora). La CIE non è utilizzabile per questo accesso.
+                      </p>
+                    </>
+                  )}
                 </>
               )}
 
@@ -840,6 +908,31 @@ export function App(): React.JSX.Element {
                     </label>
                   </div>
                 </div>
+
+                <div className="form-check mt-3">
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    id="mock_as_company"
+                    checked={mockAsCompany}
+                    onChange={(e) => setMockAsCompany(e.target.checked)}
+                  />
+                  <label className="form-check-label" htmlFor="mock_as_company" style={{ cursor: 'pointer' }}>
+                    Accedi per conto di un'impresa (SPID persona giuridica simulato)
+                  </label>
+                </div>
+                {mockAsCompany && (
+                  <div className="row g-2 mt-1">
+                    <div className="col-sm-5">
+                      <input type="text" className="form-control form-control-sm" placeholder="P.IVA" maxLength={11}
+                        value={mockIvaCode} onChange={(e) => setMockIvaCode(e.target.value.replace(/\D/g, ''))} />
+                    </div>
+                    <div className="col-sm-7">
+                      <input type="text" className="form-control form-control-sm" placeholder="Ragione sociale"
+                        value={mockCompanyName} onChange={(e) => setMockCompanyName(e.target.value)} />
+                    </div>
+                  </div>
+                )}
 
                 {selectedCf === 'custom' && (
                   <div className="row g-2 mt-2">
@@ -972,11 +1065,17 @@ export function App(): React.JSX.Element {
                 onClick={(e) => { e.stopPropagation(); setUserMenuOpen((o) => !o); }}
               >
                 <span className="avatar">{(name || cf || '?').slice(0, 2).toUpperCase()}</span>
-                <span className="d-none d-md-inline">{name || cf}</span>
+                <span className="d-none d-md-inline">
+                  {name || cf}
+                  {company && <span className="fo-user-company">per conto di {company.companyName}</span>}
+                </span>
                 <i className="fas fa-chevron-down chev" aria-hidden="true"></i>
               </button>
               {userMenuOpen && (
                 <div className="fo-user-dropdown">
+                  {company && (
+                    <div className="cf-row">Per conto di<br /><strong>{company.companyName}</strong><br /><code>P.IVA {company.ivaCode}</code></div>
+                  )}
                   <div className="cf-row">Codice fiscale<br /><code>{cf}</code></div>
                   <button type="button" onClick={() => { setActiveTab('profile'); setUserMenuOpen(false); }}>
                     <i className="far fa-user" aria-hidden="true"></i> Il mio profilo
@@ -1587,6 +1686,24 @@ export function App(): React.JSX.Element {
               </span>
             </div>
 
+            {company && (
+              <>
+                <div className="avviso-row">
+                  <span className="k">Operi per conto di</span>
+                  <span className="v"><strong>{company.companyName}</strong></span>
+                </div>
+                <div className="avviso-row">
+                  <span className="k">Partita IVA</span>
+                  <span className="v ms-mono">{company.ivaCode}</span>
+                </div>
+                {company.registeredOffice && (
+                  <div className="avviso-row">
+                    <span className="k">Sede legale</span>
+                    <span className="v">{company.registeredOffice}</span>
+                  </div>
+                )}
+              </>
+            )}
             <div className="avviso-row">
               <span className="k">Codice Fiscale</span>
               <span className="v ms-mono">{cf}</span>

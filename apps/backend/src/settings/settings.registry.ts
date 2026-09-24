@@ -143,6 +143,11 @@ export const SETTING_DEFS = {
   'oidc.clientId': { env: 'OIDC_CLIENT_ID', type: 'string', default: '' },
   'oidc.clientSecret': { env: 'OIDC_CLIENT_SECRET', type: 'string', secret: true, default: '' },
   'oidc.logoutUrl': { env: 'OIDC_LOGOUT_URL', type: 'string', default: '' },
+  // Accesso SPID "persona giuridica" (scope legal_entity del pa-sso-proxy):
+  // spegnibile da UI senza deploy. Richiede la funzione attiva lato proxy e
+  // lo scope consentito a questo client, altrimenti authorize → invalid_scope.
+  'oidc.legalEntityEnabled': { type: 'boolean', default: false },
+  'oidc.legalEntityScope': { type: 'string', default: 'legal_entity' },
 } as const satisfies Record<string, SettingDef>;
 
 export type SettingKey = keyof typeof SETTING_DEFS;

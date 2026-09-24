@@ -1,5 +1,6 @@
 import {
   BadGatewayException,
+  BadRequestException,
   Injectable,
   Logger,
   OnModuleDestroy,
@@ -11,6 +12,7 @@ import { createHash, randomBytes } from 'crypto';
 import { Redis } from 'ioredis';
 import type { AppConfiguration } from '../../config/configuration.js';
 import { AppSettingsService } from '../../settings/app-settings.service.js';
+import { normalizeTaxId, type CitizenAccessType, type CitizenSessionContext } from '../citizen-claims.js';
 
 interface OidcEndpoints {
   authorizationEndpoint: string;
@@ -19,6 +21,34 @@ interface OidcEndpoints {
 
 const STATE_TTL_SECONDS = 300;
 const DISCOVERY_CACHE_MS = 10 * 60 * 1000;
+const SESSION_FALLBACK_TTL_SECONDS = 8 * 3600;
+
+export const LEGAL_ENTITY_REQUIRED_MESSAGE =
+  "Per accedere per conto di un'impresa usa SPID con un'identità per uso professionale della persona giuridica. "
+  + "CIE e le identità SPID personali non contengono i dati dell'impresa.";
+
+export interface OidcCitizenClaimsDto {
+  cf: string;
+  name: string;
+  provider: string;
+  accessType: CitizenAccessType;
+  ivaCode?: string;
+  companyName?: string;
+  registeredOffice?: string;
+}
+
+/** Esito "previsto" del callback: 200 con codice, mai un 4xx (il reverse proxy di produzione sostituisce il body dei non-2xx). */
+export interface OidcCallbackErrorDto {
+  error: 'legal_entity_required' | 'provider_error';
+  message: string;
+}
+
+export type OidcCallbackResultDto = { access_token: string; claims: OidcCitizenClaimsDto } | OidcCallbackErrorDto;
+
+/** Chiave Redis del contesto di sessione: hash del token, mai il `sub` (condiviso tra sessione PF e PG della stessa persona). */
+export function sessionKeyForToken(token: string): string {
+  return `oidc:session:${createHash('sha256').update(token).digest('hex')}`;
+}
 
 export function extractClaimString(val: unknown): string {
   if (Array.isArray(val)) {
@@ -54,8 +84,28 @@ export class OidcFlowService implements OnModuleDestroy {
     await this.redis.quit().catch(() => undefined);
   }
 
-  /** Costruisce l'URL di authorize e registra state+verifier su Redis. Restituisce anche lo state per il cookie HTTP-Only anti-CSRF. */
-  async buildAuthorizationUrl(): Promise<{ url: string; state: string }> {
+  /**
+   * Costruisce l'URL di authorize e registra state + verifier + tipo di accesso
+   * su Redis. Il tipo di accesso (PF/PG) viene riletto SOLO da qui al callback,
+   * mai da un parametro della richiesta di ritorno. Restituisce anche lo state
+   * per il cookie HTTP-Only anti-CSRF.
+   */
+  async buildAuthorizationUrl(accessType: CitizenAccessType = 'PF'): Promise<{ url: string; state: string }> {
+    let scope = 'openid profile email';
+    if (accessType === 'PG') {
+      // Lo scope legal_entity fa chiedere all'IdP un'identità persona
+      // giuridica: chi ha solo quella personale riceve un errore SPID, quindi
+      // va usato solo su scelta esplicita e solo se abilitato dall'admin.
+      const [enabled, legalEntityScope] = await Promise.all([
+        this.settings.get<boolean>('oidc.legalEntityEnabled'),
+        this.settings.get<string>('oidc.legalEntityScope'),
+      ]);
+      if (!enabled) {
+        throw new BadRequestException("Accesso per conto di un'impresa non abilitato");
+      }
+      scope = `${scope} ${legalEntityScope || 'legal_entity'}`;
+    }
+
     const { issuer, clientId, redirectUri } = await this.requireConfig();
     const endpoints = await this.discoverEndpoints(issuer);
 
@@ -63,41 +113,61 @@ export class OidcFlowService implements OnModuleDestroy {
     const verifier = randomBytes(48).toString('base64url');
     const challenge = createHash('sha256').update(verifier).digest('base64url');
 
-    await this.redis.set(`oidc:state:${state}`, verifier, 'EX', STATE_TTL_SECONDS);
+    await this.redis.set(`oidc:state:${state}`, JSON.stringify({ verifier, accessType }), 'EX', STATE_TTL_SECONDS);
 
     const url = new URL(endpoints.authorizationEndpoint);
     url.searchParams.set('response_type', 'code');
     url.searchParams.set('client_id', clientId);
     url.searchParams.set('redirect_uri', redirectUri);
-    url.searchParams.set('scope', 'openid profile email');
+    url.searchParams.set('scope', scope);
     url.searchParams.set('state', state);
     url.searchParams.set('code_challenge', challenge);
     url.searchParams.set('code_challenge_method', 'S256');
     return { url: url.toString(), state };
   }
 
-  async exchangeCode(
-    code: string,
-    state: string,
-    cookieState?: string,
-  ): Promise<{
-    access_token: string;
-    claims?: { cf: string; name: string; provider: string };
-  }> {
-    if (!code || !state) {
-      throw new UnauthorizedException('code e state richiesti');
-    }
-
+  /** Consuma (una sola volta) lo state salvato: verifier PKCE + tipo di accesso richiesto all'avvio. */
+  private async consumeState(state: string, cookieState?: string): Promise<{ verifier: string; accessType: CitizenAccessType }> {
     if (!cookieState || cookieState !== state) {
       throw new UnauthorizedException(
         'Sessione di login non valida o CSRF rilevato: lo state non corrisponde al cookie di sessione',
       );
     }
-
-    const verifier = await this.redis.getdel(`oidc:state:${state}`);
-    if (!verifier) {
+    const raw = await this.redis.getdel(`oidc:state:${state}`);
+    if (!raw) {
       throw new UnauthorizedException('Sessione di login scaduta o non valida: riprova');
     }
+    // State scritti prima di questa versione: solo il verifier, sempre PF.
+    if (!raw.startsWith('{')) return { verifier: raw, accessType: 'PF' };
+    const parsed = JSON.parse(raw) as { verifier: string; accessType?: CitizenAccessType };
+    return { verifier: parsed.verifier, accessType: parsed.accessType === 'PG' ? 'PG' : 'PF' };
+  }
+
+  /**
+   * Errore restituito dal proxy sul redirect: per le anomalie SPID (es. 30,
+   * identità non del tipo atteso) il pa-sso-proxy torna al client con
+   * `error=access_denied`, `error_description` e lo `state` originale. Nel
+   * flusso impresa lo stesso messaggio guidato dei claim mancanti, mai una
+   * pagina di errore generica.
+   */
+  async resolveProviderError(state: string, cookieState: string | undefined, error: string): Promise<OidcCallbackErrorDto> {
+    const { accessType } = await this.consumeState(state, cookieState);
+    if (accessType === 'PG') {
+      return { error: 'legal_entity_required', message: LEGAL_ENTITY_REQUIRED_MESSAGE };
+    }
+    return { error: 'provider_error', message: `Accesso negato dal provider: ${error}` };
+  }
+
+  async exchangeCode(
+    code: string,
+    state: string,
+    cookieState?: string,
+  ): Promise<OidcCallbackResultDto> {
+    if (!code || !state) {
+      throw new UnauthorizedException('code e state richiesti');
+    }
+
+    const { verifier, accessType } = await this.consumeState(state, cookieState);
 
     const { issuer, clientId, clientSecret, redirectUri } = await this.requireConfig();
     const endpoints = await this.discoverEndpoints(issuer);
@@ -202,8 +272,8 @@ export class OidcFlowService implements OnModuleDestroy {
         mergedClaims['fiscalNumber'] ??
         mergedClaims['fiscalCode'] ??
         '',
-    ).toUpperCase();
-    const codiceFiscale = rawFiscal.replace(/^TIN[A-Z]{2}-/, '');
+    );
+    const codiceFiscale = normalizeTaxId(rawFiscal);
 
     const givenName = extractClaimString(
       mergedClaims['given_name'] ??
@@ -248,25 +318,39 @@ export class OidcFlowService implements OnModuleDestroy {
       }
     }
 
-    const sub = String(decodedPayload.sub ?? '');
-    if (sub) {
-      await this.redis.set(
-        `oidc:claims:${sub}`,
-        JSON.stringify({ codiceFiscale, name, provider }),
-        'EX',
-        3600 * 8, // 8 ore
-      ).catch((err: unknown) => {
-        this.logger.warn(`Errore nel salvataggio dei claims su Redis: ${String(err)}`);
-      });
+    // Claim aziendali (scope legal_entity): letti SOLO nel flusso impresa;
+    // nel flusso cittadino vengono ignorati anche se il proxy li inviasse.
+    let company: Pick<CitizenSessionContext, 'ivaCode' | 'companyName' | 'registeredOffice'> = {};
+    if (accessType === 'PG') {
+      const ivaCode = normalizeTaxId(extractClaimString(mergedClaims['iva_code'] ?? ''));
+      const companyName = extractClaimString(mergedClaims['company_name'] ?? '').trim();
+      const registeredOffice = extractClaimString(mergedClaims['registered_office'] ?? '').trim();
+      if (!ivaCode || !companyName || !registeredOffice) {
+        // Il pa-sso-proxy (>= v0.9.5) blocca già CIE/eIDAS nel flusso impresa
+        // con una propria pagina d'errore: qui resta la difesa per un IdP SPID
+        // che non invia i claim aziendali. Nessuna sessione impresa e nessun
+        // degrado silenzioso a persona fisica.
+        this.logger.warn(`Accesso impresa senza claim aziendali completi (provider: ${provider}): sessione non creata`);
+        return { error: 'legal_entity_required', message: LEGAL_ENTITY_REQUIRED_MESSAGE };
+      }
+      company = { ivaCode, companyName, registeredOffice };
+    }
+
+    const context: CitizenSessionContext = { accessType, codiceFiscale, name, provider, ...company };
+    const exp = Number(decodedPayload.exp);
+    const ttl = Number.isFinite(exp) ? Math.max(60, Math.floor(exp - Date.now() / 1000)) : SESSION_FALLBACK_TTL_SECONDS;
+    try {
+      await this.redis.set(sessionKeyForToken(token), JSON.stringify(context), 'EX', ttl);
+    } catch (err) {
+      // Senza contesto il token verrebbe rifiutato alla prima richiesta:
+      // meglio fallire subito il login con un messaggio chiaro.
+      this.logger.error(`Impossibile salvare il contesto di sessione OIDC: ${String(err)}`);
+      throw new ServiceUnavailableException('Accesso momentaneamente non disponibile: riprova tra poco');
     }
 
     return {
       access_token: token,
-      claims: {
-        cf: codiceFiscale,
-        name,
-        provider,
-      },
+      claims: { cf: codiceFiscale, name, provider, ...context.accessType === 'PG' ? { accessType, ...company } : { accessType } },
     };
   }
 
