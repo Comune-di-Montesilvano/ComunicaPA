@@ -175,26 +175,26 @@ Quando si debugga un PDF/CSV reale fornito dall'utente, il testo dumpato va SEMP
 ## Documentazione dettagliata
 
 Il resto delle note (gotcha, incidenti reali, pattern verificati) è
-spezzettato per argomento sotto `docs/claude/` — auto-caricato da Claude
-Code via `@import`. Consultare il file pertinente prima di toccare quella
-parte di codice.
+spezzettato per argomento sotto `docs/claude/` — NON auto-caricato (niente
+`@import`, per non gonfiare il contesto). Prima di toccare una parte di
+codice, leggere con Read SOLO il file pertinente dall'indice sotto.
 
-- @docs/claude/ci-cd-deps.md — CI/CD (workflow, protezione main, release/tag), Dependabot bump a scaglioni
-- @docs/claude/build-toolchain.md — pnpm v11 in Docker, `@comunicapa/shared-types` dual build CJS/ESM, backend NestJS v12 ESM, audit costruttori/spec
-- @docs/claude/database-queue.md — Migration DB/enum Postgres, Redis AOF, TypeORM select/relations e leftJoinAndSelect bug, query paginate destinatari
-- @docs/claude/bullmq-jobs.md — pattern jobId=attemptId, riconciliazione job orfani, dedup BullMQ, cron round-robin, side-effect post-invio
-- @docs/claude/campaigns-wizard.md — ownership campagne, operator_directory, placeholder template, wizard sync bozza/Recipient, routing INAD per canale
-- @docs/claude/attachments-appio.md — allegati obbligatori SEND/POSTAL, co-consegna App IO, etichetta dinamica
-- @docs/claude/enrichment.md — Arricchimento Tracciati (ZIP Maggioli, pdf-extractor, merge multi-ZIP, resume)
-- @docs/claude/send-pn.md — SEND: autenticazione PN (PDND + x-api-key), stati notifica (sendStatus)
-- @docs/claude/postal-globalcom.md — POSTAL: GlobalCom SOAP (login, invio, stato, Agol, script debug)
-- @docs/claude/anpr-inad-registro.md — ANPR C002, INAD, Registro Imprese (stato impresa, encoding XML)
-- @docs/claude/pades-signature.md — verifica firma digitale PDF (PAdES) con node-forge
-- @docs/claude/protocollo-tinn.md — Protocollo Informatico TINN (SOAP Login/Inserimento/Protocollazione, Segnatura, DST)
-- @docs/claude/external-api-module.md — `external-api/` — exports moduli Nest, `@HttpCode` su POST
-- @docs/claude/http-proxy-perf.md — reverse proxy esterno (limite body/HTML error), event loop bloccato, multer diskStorage
-- @docs/claude/observability.md — log debug/verbose, audit log, Sentry/GlitchTip
-- @docs/claude/frontend-ui.md — registro canali/loghi, CSS gotcha, formattazione importi, form non annidate, polling stato server
+- `docs/claude/ci-cd-deps.md` — CI/CD (workflow, protezione main, release/tag), Dependabot bump a scaglioni
+- `docs/claude/build-toolchain.md` — pnpm v11 in Docker, `@comunicapa/shared-types` dual build CJS/ESM, backend NestJS v12 ESM, audit costruttori/spec
+- `docs/claude/database-queue.md` — Migration DB/enum Postgres, Redis AOF, TypeORM select/relations e leftJoinAndSelect bug, query paginate destinatari
+- `docs/claude/bullmq-jobs.md` — pattern jobId=attemptId, riconciliazione job orfani, dedup BullMQ, cron round-robin, side-effect post-invio
+- `docs/claude/campaigns-wizard.md` — ownership campagne, operator_directory, placeholder template, wizard sync bozza/Recipient, routing INAD per canale
+- `docs/claude/attachments-appio.md` — allegati obbligatori SEND/POSTAL, co-consegna App IO, etichetta dinamica
+- `docs/claude/enrichment.md` — Arricchimento Tracciati (ZIP Maggioli, pdf-extractor, merge multi-ZIP, resume)
+- `docs/claude/send-pn.md` — SEND: autenticazione PN (PDND + x-api-key), stati notifica (sendStatus)
+- `docs/claude/postal-globalcom.md` — POSTAL: GlobalCom SOAP (login, invio, stato, Agol, script debug)
+- `docs/claude/anpr-inad-registro.md` — ANPR C002, INAD, Registro Imprese (stato impresa, encoding XML)
+- `docs/claude/pades-signature.md` — verifica firma digitale PDF (PAdES) con node-forge
+- `docs/claude/protocollo-tinn.md` — Protocollo Informatico TINN (SOAP Login/Inserimento/Protocollazione, Segnatura, DST)
+- `docs/claude/external-api-module.md` — `external-api/` — exports moduli Nest, `@HttpCode` su POST
+- `docs/claude/http-proxy-perf.md` — reverse proxy esterno (limite body/HTML error), event loop bloccato, multer diskStorage
+- `docs/claude/observability.md` — log debug/verbose, audit log, Sentry/GlitchTip
+- `docs/claude/frontend-ui.md` — registro canali/loghi, CSS gotcha, formattazione importi, form non annidate, polling stato server
 
 ## Topologia API — gotcha
 
