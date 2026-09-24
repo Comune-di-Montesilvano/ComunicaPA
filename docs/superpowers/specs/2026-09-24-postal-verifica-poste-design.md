@@ -196,12 +196,24 @@ dopo. Nessuna riga marcata finale per errori.
   (nessun riavvio automatico dei 90 controlli). Righe già `delivered`/
   `returned`: ricontrollo eseguito, esito aggiornato solo se cambia.
   Risponde con lo stato aggiornato della riga.
-- **Per campagna**: `POST admin/campaigns/:id/postal/poste-check`.
-  Esegue il backfill ristretto alla campagna, poi `checkOne` sequenziale
-  (stessa pausa 2 s) su tutte le righe `pending`/`gave_up` della campagna,
-  in background (la richiesta risponde subito `202` con il numero di
+- **Per campagna — tasto "Verifica su Poste"**: `POST admin/campaigns/:id/postal/poste-check`.
+  Lanciabile **a qualsiasi ora**, indipendente dal cron e da
+  `next_check_at` (ignorato: si controllano subito tutte le righe
+  candidate, anche quelle già controllate oggi dal cron). Esegue il
+  backfill ristretto alla campagna, poi `checkOne` sequenziale (stessa
+  pausa 2 s) su tutte le righe `pending`/`gave_up` della campagna, in
+  background (la richiesta risponde subito `202` con il numero di
   candidati). Un secondo avvio mentre ne gira uno sulla stessa campagna →
-  `409`.
+  `409`. Stato del run in memoria per campagna
+  (`GET admin/campaigns/:id/postal/poste-check` → `running`, `total`,
+  `done`, `delivered`, `returned`, `errors`, `startedAt`, `finishedAt`),
+  letto dalla UI col pattern di polling esistente per mostrare
+  avanzamento ed esito finale.
+- **Controlli manuali e quota dei 90**: un controllo manuale (notifica o
+  campagna) aggiorna esito/movimenti/`last_checked_at` ma **non**
+  incrementa `check_count` e non sposta `next_check_at` — la quota dei 90
+  misura solo i giorni di cron, così premere il tasto più volte non
+  accorcia la finestra di verifica automatica.
 - Permessi: tutti gli operatori (è sola lettura esterna, stesso principio
   di "Ricontrolla stato").
 - Con `postalPosteTracking.enabled = false` gli endpoint manuali
@@ -271,9 +283,12 @@ GlobalCom dice `NonConsegnato`, Poste dice consegnato).
   prossimo controllo, ultimo errore, lista movimenti (data, luogo, fase),
   codice tracking, bottone "Verifica ora".
 - Pagina campagna POSTAL: bottone "Verifica su Poste" accanto a "Ricontrolla
-  stato", visibile solo se esistono attempt `NonConsegnato`; dopo l'avvio
-  mostra il numero di candidati; il refresh del risultato segue il pattern
-  di polling esistente (`docs/claude/frontend-ui.md`).
+  stato", sempre cliccabile (a qualsiasi ora) quando la campagna ha attempt
+  `NonConsegnato`; disabilitato con spinner mentre il run è in corso;
+  mostra avanzamento `done/total` e a fine run un riepilogo ("N consegnate
+  secondo Poste, M restituite, K errori"), poi ricarica breakdown e lista
+  destinatari. Polling sul `GET` di stato secondo il pattern esistente
+  (`docs/claude/frontend-ui.md`).
 - Ricerca globale: select "Verifica Poste" con le voci del query param
   `posteVerification`; colonna/badge nella lista risultati.
 - Impostazioni → Postalizzazione: toggle "Verifica consegna su tracking
@@ -318,7 +333,9 @@ costanti nel codice (YAGNI).
   non incrementa `check_count` ma aggiorna `last_checked_at`; 90° controllo
   senza esito → `gave_up`; circuit breaker a 5 errori consecutivi; kill-switch;
   manuale su `gave_up` resta `gave_up` senza esito finale; esclusione attempt
-  non più `NonConsegnato`.
+  non più `NonConsegnato`; run manuale di campagna ignora `next_check_at`,
+  non incrementa `check_count`, `409` su run già in corso, stato run
+  (`done/total`, conteggi esiti) aggiornato.
 - `postal-status-sync.service.spec.ts`: transizione a `NonConsegnato` con
   codice → riga creata; senza codice → nessuna riga.
 - `campaigns.service.spec.ts`: breakdown e opzioni filtro con bucket
