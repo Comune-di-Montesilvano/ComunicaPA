@@ -22,6 +22,8 @@ a.textContent.trim() === 'Arricchimento Tracciati'); link?.click(); }` —
 bypassa il controllo di interattività del tool `click` che su questi
 elementi non lo soddisfa mai.
 
+**Verificare a schermo una lista vuota in dev** (es. "Campagne recenti"): in `evaluate_script` sostituire temporaneamente `window.fetch` per l'URL interessato con `new Response(JSON.stringify(rows))`, cliccare il bottone di refresh, ripristinare `fetch` — dati solo client, nessuna scrittura su DB, spariscono al poll successivo.
+
 ## Audit log — ogni endpoint che consulta un registro PA esterno deve loggare
 
 `AuditLogsService.log()` non è solo per le azioni su Campaign — qualunque

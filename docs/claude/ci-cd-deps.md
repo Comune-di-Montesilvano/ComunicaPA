@@ -96,3 +96,5 @@ volte anche `gh release edit --help`) vengono bloccati dal classificatore
 di sicurezza di Claude Code (cancellazione irreversibile) — preferire
 sempre il fix non distruttivo sopra.
 
+
+**Procedura release**: bump `publiccode.yml` (`softwareVersion` + `releaseDate`) DENTRO la PR della feature (niente PR di solo bump), merge squash, poi `git tag -a vX.Y.Z` sul commit di merge + `git push origin vX.Y.Z`. GitHub Release creata solo occasionalmente (non a ogni tag).
