@@ -178,6 +178,10 @@ export interface PostalReportRowDto {
   /** null se la campagna non ha co-consegna App IO configurata. */
   appIoOutcome: { success: boolean; error: string | null } | null;
   externalId: string | null;
+  /** Verifica consegna su tracking Poste dell'ultimo attempt, null se nessuna riga. */
+  posteVerification: { status: string; checkCount: number; deliveredAt: string | null; lastMovement: string } | null;
+  /** GlobalCom NonConsegnato ma Poste consegnato (stesso criterio del bucket ConsegnatoVerificaPoste). */
+  posteDiscrepancy: boolean;
 }
 
 export interface PostalReportDto {

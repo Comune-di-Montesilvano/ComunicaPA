@@ -47,7 +47,7 @@ import { SignatureVerificationService } from '../signature-verification/signatur
 import { SignatureVerificationJobStatus } from '../entities/signature-verification-job.entity.js';
 import { isPartitaIva } from '../channels/tax-id.util.js';
 import { PostalPosteTracking } from '../entities/postal-poste-tracking.entity.js';
-import { POSTE_DELIVERED_BUCKET, isPosteDeliveredOverride, posteDeliveredSql } from '../channels/postal/poste-tracking/poste-tracking-effective.util.js';
+import { POSTE_DELIVERED_BUCKET, formatLastMovement, isPosteDeliveredOverride, posteDeliveredSql } from '../channels/postal/poste-tracking/poste-tracking-effective.util.js';
 
 const INAD_BULK_THRESHOLD = 100;
 // Sentinella filtro "Stato Consegna" per attempt SUCCESS senza send_status/postal_status
@@ -3474,11 +3474,13 @@ export class CampaignsService {
       // stesso vincolo già documentato in getChannelBreakdown()/getSendReportRows().
       if (a.attemptNumber === 1) firstByRecipient.set(a.recipientId, a);
     }
+    const posteByAttempt = await this.loadPosteTrackingByAttempt([...latestByRecipient.values()].map((a) => a.id));
 
     const hasAppIoCoDelivery = !!resolveSecondaryAppIoConfig(campaign.channelConfig);
 
     const rows: PostalReportRowDto[] = recipients.map((r) => {
       const latest = latestByRecipient.get(r.id);
+      const poste = latest ? posteByAttempt.get(latest.id) : undefined;
       const first = firstByRecipient.get(r.id);
       const appIo = hasAppIoCoDelivery
         ? ((first?.responsePayload as Record<string, unknown> | undefined)?.['appIo'] as { success?: boolean; error?: string } | undefined)
@@ -3499,6 +3501,10 @@ export class CampaignsService {
         descrizioneErrore: (latestPayload?.['descrizione'] as string | undefined) ?? null,
         appIoOutcome: appIo ? { success: !!appIo.success, error: appIo.error ?? null } : null,
         externalId: resolveExternalId(campaign, r),
+        posteVerification: poste
+          ? { status: poste.status, checkCount: poste.checkCount, deliveredAt: poste.deliveredAt ? poste.deliveredAt.toISOString() : null, lastMovement: formatLastMovement(poste.movements) }
+          : null,
+        posteDiscrepancy: isPosteDeliveredOverride(latest?.postalStatus, poste?.status),
       };
     });
 
