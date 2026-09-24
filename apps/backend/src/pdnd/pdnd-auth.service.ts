@@ -14,7 +14,7 @@ interface CachedVoucher {
 /**
  * Client PDND condiviso: le credenziali (client_id/kid/chiave privata) sono
  * uniche per ente, ma un client può essere associato a più finalità
- * ("purpose") — SEND, e in futuro INAD/INIPEC. Il purposeId arriva quindi dal
+ * ("purpose") — SEND, INAD, ANPR, Registro Imprese. Il purposeId arriva quindi dal
  * chiamante invece di essere letto internamente.
  */
 @Injectable()

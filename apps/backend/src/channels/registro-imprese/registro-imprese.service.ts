@@ -138,7 +138,7 @@ export interface RegistroImpreseRicercaResult {
 
 /**
  * Integrazione Registro Imprese (PCAD-PDND, Unioncamere) — sostituisce
- * INIPEC come fonte del domicilio digitale d'impresa. Risposta XML (nessuno
+ * INIPEC (abbandonato) come fonte del domicilio digitale d'impresa. Risposta XML (nessuno
  * schema nello spec OpenAPI, solo {type:"string"}) — struttura confermata con
  * chiamata reale del 2026-09-05 (vedi mapImpresaData sotto e
  * docs/superpowers/specs/2026-08-11-registro-imprese-pdnd-design.md).

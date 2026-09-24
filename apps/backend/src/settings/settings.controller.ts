@@ -145,7 +145,7 @@ export class SettingsController {
     // endpoint per validare il client da solo. Qui si verifica quindi solo in
     // locale che le credenziali siano compilate e la chiave privata sia
     // effettivamente una chiave RSA valida — nessuna chiamata a PDND. Il test
-    // reale del voucher va fatto dal tab del servizio (SEND/INAD/INIPEC) con
+    // reale del voucher va fatto dal tab del servizio (SEND/INAD/Registro Imprese) con
     // il relativo Purpose ID.
     const prefix = `pdnd.${env}`;
     const [tokenUrl, audience, clientId, kid, privateKey] = await Promise.all([
@@ -166,7 +166,7 @@ export class SettingsController {
     } catch (error: any) {
       return { success: false, message: `Chiave privata non valida: ${error.message}` };
     }
-    return { success: true, message: 'Configurazione locale valida: campi compilati e chiave privata corretta. Per verificare il voucher reale usa "Test connessione" nel tab del servizio (SEND/INAD/INIPEC).' };
+    return { success: true, message: 'Configurazione locale valida: campi compilati e chiave privata corretta. Per verificare il voucher reale usa "Test connessione" nel tab del servizio (SEND/INAD/Registro Imprese).' };
   }
 
   @Post('send/:env/test-connection')
@@ -262,12 +262,6 @@ export class SettingsController {
     }
   }
 
-  @Post('inipec/:env/test-connection')
-  @HttpCode(HttpStatus.OK)
-  async testInipecConnection(@Param('env') env: string) {
-    return this.testServicePurposeConnection(env, 'inipec');
-  }
-
   @Post('registro-imprese/:env/test-connection')
   @HttpCode(HttpStatus.OK)
   async testRegistroImpreseConnection(@Param('env') env: string) {
@@ -313,7 +307,7 @@ export class SettingsController {
     }
   }
 
-  private async testServicePurposeConnection(env: string, service: 'send' | 'inad' | 'inipec' | 'registroImprese') {
+  private async testServicePurposeConnection(env: string, service: 'send' | 'inad' | 'registroImprese') {
     if (env !== 'test' && env !== 'prod') {
       throw new BadRequestException('Ambiente non valido: usare "test" o "prod"');
     }

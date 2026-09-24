@@ -123,6 +123,5 @@ differenza di SEND); `GET /extract/{cf}` richiede il query param
 digitale**, esito legittimo e non un errore.
 
 **INIPEC abbandonato**: il domicilio digitale d'impresa passa da Registro
-Imprese (PDND). Lo scaffolding `InipecModule`/`InipecService` mai registrato
-è stato rimosso; restano solo le chiavi settings e il test connessione
-`inipec` in Impostazioni.
+Imprese (PDND). Rimossi modulo, chiavi settings `inipec.*` (migration
+`RemoveInipecSettings`), tab Impostazioni e test connessione.

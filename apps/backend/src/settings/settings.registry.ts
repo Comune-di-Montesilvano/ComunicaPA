@@ -88,18 +88,12 @@ export const SETTING_DEFS = {
   'pdnd.prod.kid': { type: 'string', default: '' },
   'pdnd.prod.privateKey': { type: 'string', secret: true, default: '' },
 
-  // INAD/INIPEC: scaffolding in attesa di approvazione PDND e specifiche di
-  // integrazione. Solo purposeId per ora (client PDND condiviso via pdnd.*).
-  // Se in futuro serve un baseUrl API dedicato, aggiungere qui
-  // 'inad.{test,prod}.baseUrl' / 'inipec.{test,prod}.baseUrl' — non anticipato
-  // ora perché endpoint non ancora noti.
+  // INAD: solo purposeId (client PDND condiviso via pdnd.*).
   'inad.checkEnabled': { type: 'boolean', default: false },
   'inad.test.purposeId': { type: 'string', default: '' },
   'inad.prod.purposeId': { type: 'string', default: '' },
-  'inipec.test.purposeId': { type: 'string', default: '' },
-  'inipec.prod.purposeId': { type: 'string', default: '' },
-  // Registro Imprese (PCAD-PDND, Unioncamere) — sostituisce INIPEC come
-  // fonte del domicilio digitale d'impresa. Base URL fisse (vedi
+  // Registro Imprese (PCAD-PDND, Unioncamere) — fonte del domicilio digitale
+  // d'impresa (INIPEC abbandonato e rimosso). Base URL fisse (vedi
   // RegistroImpreseService), solo purposeId configurabile.
   'registroImprese.test.purposeId': { type: 'string', default: '' },
   'registroImprese.prod.purposeId': { type: 'string', default: '' },
