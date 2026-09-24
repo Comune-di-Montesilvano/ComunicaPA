@@ -253,3 +253,26 @@ torna vuoto anche da loro, è un problema esterno (stesso tipo già noto per
 l'errore `-1`), segnalare a supporto GlobalCom con gli IDPRO, nessuna
 azione lato codice possibile.
 
+
+
+**Documento GlobalCom in errore/`Eliminato`: mai riaccodarlo a mano.**
+Confermato dal supporto GlobalCom: lo riaccodano loro se serve, e il nuovo
+invio arriva sotto un nuovo IDPRO (`lista_riaccodamenti_documento`) che il
+sistema registra come presa d'atto, senza reinviare nulla lato nostro.
+
+**Limiti lunghezza nominativo**: GlobalCom `Denominazione1` max 44
+caratteri (nominativi tipo "COLLETTIVAMENTE AGLI EREDI DI ..." lo superano:
+viene spezzato su `Denominazione2` da `denominazione.util.ts`); SEND `denomination` max 88 caratteri.
+
+**Chi può avviare un invio POSTAL** (costo reale per spedizione): sempre gli
+`admin`, più gli `user` presenti in `postal_authorized_users` (CRUD in
+Impostazioni → Postalizzazione). Il controllo copre solo l'avvio
+(`launch()`/`launchTestSend()`); retry, correzione indirizzo e correzione
+contenuto su una campagna già avviata restano permessi a tutti. Il gate nel
+wizard è solo UX, quello vero è server-side.
+
+**Backlog mai implementato — verifica CAP/stradario**: GlobalCom espone un
+secondo servizio `GBCCap.asmx` (stesso host, `gbcweb/GBCCap.asmx?wsdl`) con
+`CittaDaCap`, `ListaCAPDaCitta`, `ListaVieDaCAP` e la lista `DUG`
+(VIA/VIALE/...) per normalizzare le vie: base per una verifica indirizzi
+pre-invio, da chiamare per tupla (via, città, CAP) deduplicata, mai per riga.

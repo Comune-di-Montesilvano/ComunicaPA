@@ -290,3 +290,18 @@ POSTAL, oggi non implementata) o cambi una di queste regole: aggiorna
 PRIMA il file linkato, poi il codice — è la fonte di verità che evita di
 dover rileggere 5 file diversi per capire "cosa succede se combino X con Y".
 
+
+
+## Campagne a valore legale — bloccano annulla/elimina, mai il retry
+
+`isCampaignLegalValue()` = flag `isLegalValue` (checkbox wizard step 1)
+**oppure** canale sempre legale (SEND, POSTAL Agol — calcolato, nessun
+backfill necessario). Blocca `cancel()`/`remove()`
+(`BadRequestException`), ma **mai** `retryRecipient()`/bulk retry: il retry è
+l'unico modo per portare a termine un invio legale fallito.
+
+**Correzione contenuto** (`campaign-content-correction.service.ts`):
+merge-patch di `channelConfig.subject/body` (mai replace, perderebbe gli altri
+campi) e reinvio solo su EMAIL/PEC/APP_IO — **mai** un secondo invio
+POSTAL/SEND (spedizione fisica/legale). Sempre azione esplicita
+dell'operatore, mai un demone.

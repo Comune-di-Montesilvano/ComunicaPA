@@ -127,3 +127,14 @@ citizen) — creato via API: `POST /api/0/teams/<org>/<team>/projects/`
 (serve lo slug del team, non solo dell'org — `GET
 /api/0/organizations/<org>/teams/` per trovarlo), poi DSN da `GET
 /api/0/projects/<org>/<project>/keys/`.
+
+
+## Operatori online (presence) — stato in RAM, istanza singola
+
+`PresenceService`: `Map` username → ultimo heartbeat in RAM (nessun Redis,
+nessuna persistenza), `POST admin/presence/heartbeat` ogni 60 s dal frontend,
+`GET admin/presence/online` conta gli heartbeat degli ultimi 90 s. JWT stateless:
+contare i token attivi è impossibile, da qui l'heartbeat. Come il bridge SSE
+dei log arricchimento, funziona solo con **un solo processo backend**: con
+più repliche servirebbe Redis. Un fallimento dell'endpoint non deve mai
+mostrare errori, solo il badge senza numero.

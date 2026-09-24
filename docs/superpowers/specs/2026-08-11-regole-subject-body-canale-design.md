@@ -8,7 +8,7 @@ Stato: documentazione di riferimento (non normativa per il codice — audit di a
 Fissare in un solo posto obbligatorietà e vincoli di `subject`/`body` per
 ciascun canale primario, in modalità **wizard singolo** (`channelConfig.wizSingleMode
 === true`) — il percorso a cui mappa sia l'invio singolo da wizard admin sia
-ogni chiamata dell'[API esterna caricamento puntuale](2026-08-10-external-api-caricamento-puntuale-design.md).
+ogni chiamata dell'API esterna caricamento puntuale (`external-api/`, vedi `docs/claude/external-api-module.md`).
 Verificato contro il codice reale (`App.tsx`, `create-external-notification.dto.ts`),
 non contro un riassunto del comportamento atteso.
 

@@ -184,6 +184,7 @@ parte di codice.
 - @docs/claude/postal-globalcom.md — POSTAL: GlobalCom SOAP (login, invio, stato, Agol, script debug)
 - @docs/claude/anpr-inad-registro.md — ANPR C002, INAD, Registro Imprese (stato impresa, encoding XML)
 - @docs/claude/pades-signature.md — verifica firma digitale PDF (PAdES) con node-forge
+- @docs/claude/protocollo-tinn.md — Protocollo Informatico TINN (SOAP Login/Inserimento/Protocollazione, Segnatura, DST)
 - @docs/claude/external-api-module.md — `external-api/` — exports moduli Nest, `@HttpCode` su POST
 - @docs/claude/http-proxy-perf.md — reverse proxy esterno (limite body/HTML error), event loop bloccato, multer diskStorage
 - @docs/claude/observability.md — log debug/verbose, audit log, Sentry/GlitchTip
