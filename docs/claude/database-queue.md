@@ -114,8 +114,10 @@ come fa ora `getGlobalStats`.
 
 **`recipient.downloadCount` lo incrementa SOLO il link pubblico email/PEC**
 (`public-download.controller.ts`) — i download da Portale Cittadino e App IO
-scrivono solo un `DownloadEvent`. "Ha scaricato" = `EXISTS download_events`
-(costante `HAS_DOWNLOAD_SQL` in `campaigns.service.ts`), mai
-`downloadCount > 0`. Residuo noto non ancora corretto: il conteggio
-"Senza download" dei filtri destinatari nel dettaglio campagna
-(`getRecipientFilterOptions`) usa ancora `downloadCount = 0`.
+scrivono solo un `DownloadEvent`. "Ha scaricato" = contatore > 0 **oppure**
+`EXISTS download_events` (costante `HAS_DOWNLOAD_SQL` in
+`campaigns.service.ts`, il contatore resta in OR per download precedenti alla
+tabella eventi); numero download mostrato = il maggiore tra le due fonti
+(`DOWNLOAD_COUNT_SQL`). Usarle ovunque: Statistiche, filtri/ordinamento/
+colonna del dettaglio campagna, report CSV download — mai `downloadCount`
+da solo.

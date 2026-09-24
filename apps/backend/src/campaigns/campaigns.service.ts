@@ -99,11 +99,16 @@ export function isCampaignLegalValue(campaign: Pick<Campaign, 'isLegalValue' | '
   return false;
 }
 
-// "Ha scaricato" = almeno un DownloadEvent, mai recipient.downloadCount: quel
-// contatore lo incrementa solo il link pubblico email/PEC, non il Portale
-// Cittadino né App IO (bug reale: Statistiche sottostimavano i download e
-// gonfiavano "Mai scaricato"). Stesso criterio di getDownloadCombinationStats.
-const HAS_DOWNLOAD_SQL = 'EXISTS (SELECT 1 FROM download_events de_x WHERE de_x.recipient_id = r.id)';
+// "Ha scaricato" = contatore del link pubblico > 0 OPPURE almeno un
+// DownloadEvent. recipient.downloadCount lo incrementa solo il link email/PEC
+// (public-download.controller.ts): Portale Cittadino e App IO scrivono solo
+// il DownloadEvent (bug reale: Statistiche e filtro "Senza download" del
+// dettaglio campagna contavano come mai scaricati destinatari che avevano
+// scaricato dal portale). Il contatore resta in OR per i download registrati
+// prima della tabella eventi o con inserimento evento fallito (try/catch).
+const HAS_DOWNLOAD_SQL = '(r.download_count > 0 OR EXISTS (SELECT 1 FROM download_events de_x WHERE de_x.recipient_id = r.id))';
+// Numero di download mostrato/ordinabile: stesso principio, il maggiore tra i due.
+const DOWNLOAD_COUNT_SQL = 'GREATEST(r.download_count, (SELECT COUNT(*) FROM download_events de_y WHERE de_y.recipient_id = r.id))'
 
 @Injectable()
 export class CampaignsService {
@@ -2672,12 +2677,12 @@ export class CampaignsService {
       );
     }
     if (hasDownload === 'yes') {
-      qb.andWhere('r.download_count > 0');
+      qb.andWhere(HAS_DOWNLOAD_SQL);
     } else if (hasDownload === 'no') {
-      qb.andWhere('r.download_count = 0');
+      qb.andWhere(`NOT ${HAS_DOWNLOAD_SQL}`);
     }
     if (downloadChannels === DOWNLOAD_NONE_SENTINEL) {
-      qb.andWhere('r.download_count = 0');
+      qb.andWhere(`NOT ${HAS_DOWNLOAD_SQL}`);
     } else if (downloadChannels) {
       // Combinazione ESATTA (mai "almeno"): un destinatario con App IO + PEC
       // non deve comparire filtrando solo "App IO" — stesso criterio di
@@ -2749,7 +2754,7 @@ export class CampaignsService {
       );
       if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
     } else if (sortBy === 'download') {
-      qb.orderBy('r.downloadCount', dir);
+      qb.orderBy(DOWNLOAD_COUNT_SQL, dir);
       if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
     } else if (sortBy === 'cost') {
       qb.orderBy(
@@ -2789,7 +2794,16 @@ export class CampaignsService {
           }
         }
       }
+      // Download mostrati in colonna: il maggiore tra contatore del link e
+      // DownloadEvent (Portale/App IO non toccano il contatore).
+      const downloadEvents = (await this.downloadEventRepo.find({
+        where: { recipientId: In(recipientIds) },
+        select: { recipientId: true },
+      })) || [];
+      const eventsByRecipient = new Map<string, number>();
+      for (const e of downloadEvents) eventsByRecipient.set(e.recipientId, (eventsByRecipient.get(e.recipientId) ?? 0) + 1);
       for (const item of items) {
+        item.downloadCount = Math.max(item.downloadCount ?? 0, eventsByRecipient.get(item.id) ?? 0);
         const latest = latestByRecipient.get(item.id);
         if (latest) {
           item.iun = latest.iun;
@@ -2937,7 +2951,7 @@ export class CampaignsService {
     const notDownloadedCount = await this.recipientRepo
       .createQueryBuilder('r')
       .where('r.campaignId = :campaignId', { campaignId })
-      .andWhere('r.downloadCount = 0')
+      .andWhere(`NOT ${HAS_DOWNLOAD_SQL}`)
       .getCount();
 
     // Dirottati INAD (attempt reale su PEC, mai su POSTAL): stesso bucket
@@ -2981,20 +2995,39 @@ export class CampaignsService {
 
     const rows = await this.recipientRepo.find({
       where: { campaignId },
-      select: { codiceFiscale: true, fullName: true, email: true, pec: true, status: true, downloadCount: true, lastDownloadedAt: true, extraData: true },
+      select: { id: true, codiceFiscale: true, fullName: true, email: true, pec: true, status: true, downloadCount: true, lastDownloadedAt: true, extraData: true },
       order: { createdAt: 'ASC' },
     });
 
-    return { hasExternalId: rows.some((r) => resolveExternalId(campaign, r) !== null), rows: rows.map((r) => ({
-      codiceFiscale: r.codiceFiscale,
-      fullName: r.fullName,
-      email: r.email,
-      pec: r.pec,
-      status: r.status,
-      downloadCount: r.downloadCount,
-      lastDownloadedAt: r.lastDownloadedAt ? r.lastDownloadedAt.toISOString() : null,
-      externalId: resolveExternalId(campaign, r),
-    })) };
+    // Download da Portale Cittadino/App IO scrivono solo DownloadEvent (il
+    // contatore del recipient lo aggiorna solo il link email/PEC): numero e
+    // data ultimo download = il maggiore tra le due fonti.
+    const eventRows = await this.downloadEventRepo
+      .createQueryBuilder('de')
+      .innerJoin('de.recipient', 'r')
+      .select('de.recipientId', 'recipientId')
+      .addSelect('COUNT(*)', 'count')
+      .addSelect('MAX(de.downloadedAt)', 'last')
+      .where('r.campaignId = :campaignId', { campaignId })
+      .groupBy('de.recipientId')
+      .getRawMany<{ recipientId: string; count: string; last: Date | string | null }>();
+    const eventsByRecipient = new Map(eventRows.map((e) => [e.recipientId, e]));
+
+    return { hasExternalId: rows.some((r) => resolveExternalId(campaign, r) !== null), rows: rows.map((r) => {
+      const ev = eventsByRecipient.get(r.id);
+      const evLast = ev?.last ? new Date(ev.last) : null;
+      const last = [r.lastDownloadedAt, evLast].filter((d): d is Date => !!d).sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
+      return {
+        codiceFiscale: r.codiceFiscale,
+        fullName: r.fullName,
+        email: r.email,
+        pec: r.pec,
+        status: r.status,
+        downloadCount: Math.max(r.downloadCount ?? 0, Number(ev?.count ?? 0)),
+        lastDownloadedAt: last ? last.toISOString() : null,
+        externalId: resolveExternalId(campaign, r),
+      };
+    }) };
   }
 
   async getSendStatusBreakdown(campaignId: string): Promise<SendStatusBreakdownDto[]> {

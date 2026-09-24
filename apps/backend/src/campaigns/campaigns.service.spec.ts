@@ -99,7 +99,7 @@ describe('CampaignsService', () => {
       execute: jest.fn().mockResolvedValue({ raw: [] }),
     }),
   };
-  const mockDownloadEventRepo = { createQueryBuilder: jest.fn() };
+  const mockDownloadEventRepo = { createQueryBuilder: jest.fn(), find: jest.fn().mockResolvedValue([]) };
   const mockQueue = { addBulk: jest.fn().mockResolvedValue(undefined), getJob: jest.fn() };
   const mockSettings = {
     get: jest.fn(async (_key?: string): Promise<any> => null),
@@ -701,7 +701,7 @@ describe('CampaignsService', () => {
     expect(qb.andWhere).toHaveBeenCalledWith(expect.stringContaining('COALESCE'));
   });
 
-  it('getRecipientStats applica hasDownload=yes/no su download_count', async () => {
+  it('bug reale: hasDownload yes/no e "Senza download" contano anche i DownloadEvent (Portale, App IO), non solo download_count', async () => {
     const qb: any = {};
     ['select', 'where', 'andWhere', 'orderBy', 'addOrderBy', 'skip', 'take'].forEach((m) => {
       qb[m] = jest.fn().mockReturnValue(qb);
@@ -709,11 +709,37 @@ describe('CampaignsService', () => {
     qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
     mockRecipientRepo.createQueryBuilder = jest.fn().mockReturnValue(qb);
 
+    const hasDownload = '(r.download_count > 0 OR EXISTS (SELECT 1 FROM download_events de_x WHERE de_x.recipient_id = r.id))';
+
     await service.getRecipientStats('uuid-1', 1, 20, undefined, undefined, undefined, undefined, 'yes');
-    expect(qb.andWhere).toHaveBeenCalledWith('r.download_count > 0');
+    expect(qb.andWhere).toHaveBeenLastCalledWith(hasDownload);
 
     await service.getRecipientStats('uuid-1', 1, 20, undefined, undefined, undefined, undefined, 'no');
-    expect(qb.andWhere).toHaveBeenCalledWith('r.download_count = 0');
+    expect(qb.andWhere).toHaveBeenLastCalledWith(`NOT ${hasDownload}`);
+
+    await service.getRecipientStats('uuid-1', 1, 20, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, '__DOWNLOAD_NONE__');
+    expect(qb.andWhere).toHaveBeenLastCalledWith(`NOT ${hasDownload}`);
+  });
+
+  it('getRecipientStats mostra come download il massimo tra download_count e numero di DownloadEvent', async () => {
+    const qb: any = {};
+    ['select', 'where', 'andWhere', 'orderBy', 'addOrderBy', 'skip', 'take'].forEach((m) => {
+      qb[m] = jest.fn().mockReturnValue(qb);
+    });
+    qb.getManyAndCount = jest.fn().mockResolvedValue([[
+      { id: 'r-portale', downloadCount: 0 },
+      { id: 'r-link', downloadCount: 2 },
+    ], 2]);
+    mockRecipientRepo.createQueryBuilder = jest.fn().mockReturnValue(qb);
+    mockAttemptRepo.find = jest.fn().mockResolvedValue([]);
+    mockDownloadEventRepo.find = jest.fn().mockResolvedValue([
+      { recipientId: 'r-portale' }, { recipientId: 'r-portale' }, { recipientId: 'r-portale' },
+      { recipientId: 'r-link' },
+    ]);
+
+    const page = await service.getRecipientStats('uuid-1', 1, 20);
+
+    expect(page.items.map((i) => i.downloadCount)).toEqual([3, 2]);
   });
 
   describe('CampaignsService.getRecipientFilterOptions', () => {
@@ -768,6 +794,10 @@ describe('CampaignsService', () => {
         postalDeliveryStatuses: [{ value: 'CONSEGNATO', count: 15 }],
         downloadChannelCombos: [],
       });
+      // "Senza download" coerente con le combinazioni canale: niente eventi e contatore a zero.
+      expect(notDownloadedQb.andWhere).toHaveBeenCalledWith(
+        'NOT (r.download_count > 0 OR EXISTS (SELECT 1 FROM download_events de_x WHERE de_x.recipient_id = r.id))',
+      );
     });
 
     it('aggiunge un bucket "AppIoSostituito" distinto quando alcuni destinatari POSTAL sono stati sostituiti da App IO esclusiva', async () => {
@@ -3732,6 +3762,10 @@ describe('CampaignsService.getFailuresByReason', () => {
 describe('CampaignsService.getDownloadReportRows', () => {
   it('mappa i destinatari della campagna nel formato report', async () => {
     const recipientRepoMock = { find: jest.fn() };
+    const eventsQb: any = {};
+    ['innerJoin', 'select', 'addSelect', 'where', 'groupBy'].forEach((m) => { eventsQb[m] = jest.fn().mockReturnValue(eventsQb); });
+    eventsQb.getRawMany = jest.fn().mockResolvedValue([]);
+    const downloadEventRepoMock = { createQueryBuilder: jest.fn().mockReturnValue(eventsQb) };
     const moduleRef: TestingModule = await Test.createTestingModule({
       providers: [
         CampaignsService,
@@ -3741,7 +3775,7 @@ describe('CampaignsService.getDownloadReportRows', () => {
         { provide: getRepositoryToken(Campaign), useValue: { findOneBy: jest.fn().mockResolvedValue({ id: 'c1', channelConfig: {} }) } },
         { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
         { provide: getRepositoryToken(NotificationAttempt), useValue: {} },
-        { provide: getRepositoryToken(DownloadEvent), useValue: {} },
+        { provide: getRepositoryToken(DownloadEvent), useValue: downloadEventRepoMock },
         { provide: NotificationQueuesService, useValue: {} },
         { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
         { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
@@ -3770,7 +3804,7 @@ describe('CampaignsService.getDownloadReportRows', () => {
 
     expect(recipientRepoMock.find).toHaveBeenCalledWith({
       where: { campaignId: 'c1' },
-      select: { codiceFiscale: true, fullName: true, email: true, pec: true, status: true, downloadCount: true, lastDownloadedAt: true, extraData: true },
+      select: { id: true, codiceFiscale: true, fullName: true, email: true, pec: true, status: true, downloadCount: true, lastDownloadedAt: true, extraData: true },
       order: { createdAt: 'ASC' },
     });
     expect(result).toEqual({
@@ -3792,6 +3826,10 @@ describe('CampaignsService.getDownloadReportRows', () => {
 
   it('espone externalId risolto da resolveExternalId e imposta hasExternalId', async () => {
     const recipientRepoMock = { find: jest.fn() };
+    const eventsQb: any = {};
+    ['innerJoin', 'select', 'addSelect', 'where', 'groupBy'].forEach((m) => { eventsQb[m] = jest.fn().mockReturnValue(eventsQb); });
+    eventsQb.getRawMany = jest.fn().mockResolvedValue([]);
+    const downloadEventRepoMock = { createQueryBuilder: jest.fn().mockReturnValue(eventsQb) };
     const moduleRef: TestingModule = await Test.createTestingModule({
       providers: [
         CampaignsService,
@@ -3801,7 +3839,7 @@ describe('CampaignsService.getDownloadReportRows', () => {
         { provide: getRepositoryToken(Campaign), useValue: { findOneBy: jest.fn().mockResolvedValue({ id: 'c1', channelConfig: { csvMapping: { externalId: 'id_pratica' } } }) } },
         { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
         { provide: getRepositoryToken(NotificationAttempt), useValue: {} },
-        { provide: getRepositoryToken(DownloadEvent), useValue: {} },
+        { provide: getRepositoryToken(DownloadEvent), useValue: downloadEventRepoMock },
         { provide: NotificationQueuesService, useValue: {} },
         { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
         { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
@@ -3821,6 +3859,50 @@ describe('CampaignsService.getDownloadReportRows', () => {
 
     expect(result.hasExternalId).toBe(true);
     expect(result.rows[0].externalId).toBe('X-1');
+  });
+
+  it('bug reale: conta anche i download da Portale/App IO (solo DownloadEvent) e ne usa la data più recente', async () => {
+    const recipientRepoMock = { find: jest.fn() };
+    const eventsQb: any = {};
+    ['innerJoin', 'select', 'addSelect', 'where', 'groupBy'].forEach((m) => { eventsQb[m] = jest.fn().mockReturnValue(eventsQb); });
+    eventsQb.getRawMany = jest.fn().mockResolvedValue([
+      { recipientId: 'r-portale', count: '2', last: new Date('2026-09-10T08:00:00Z') },
+      { recipientId: 'r-link', count: '1', last: new Date('2026-07-01T10:00:00Z') },
+    ]);
+    const downloadEventRepoMock = { createQueryBuilder: jest.fn().mockReturnValue(eventsQb) };
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      providers: [
+        CampaignsService,
+        { provide: SignatureVerificationBulkService, useValue: mockSignatureVerificationBulkService },
+        { provide: SignatureVerificationService, useValue: mockSignatureVerificationService },
+        { provide: PostalAuthorizedUsersService, useValue: mockPostalAuthorizedUsersService },
+        { provide: getRepositoryToken(Campaign), useValue: { findOneBy: jest.fn().mockResolvedValue({ id: 'c1', channelConfig: {} }) } },
+        { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
+        { provide: getRepositoryToken(NotificationAttempt), useValue: {} },
+        { provide: getRepositoryToken(DownloadEvent), useValue: downloadEventRepoMock },
+        { provide: NotificationQueuesService, useValue: {} },
+        { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
+        { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
+        { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
+        { provide: PostalStatusSyncService, useValue: { refreshOne: jest.fn() } },
+        { provide: RegistroImpreseService, useValue: { dettaglioImpresa: jest.fn() } },
+        { provide: RegistroImpreseVerifyQueueService, useValue: { enqueueCampaignVerify: jest.fn(), isCampaignJobDone: jest.fn() } },
+      ],
+    }).compile();
+    const service = moduleRef.get(CampaignsService);
+
+    recipientRepoMock.find.mockResolvedValueOnce([
+      { id: 'r-portale', codiceFiscale: 'AAA1', fullName: 'Mario Rossi', email: null, pec: null, status: RecipientStatus.SENT, downloadCount: 0, lastDownloadedAt: null, extraData: {} },
+      { id: 'r-link', codiceFiscale: 'BBB2', fullName: 'Luigi Verdi', email: null, pec: null, status: RecipientStatus.SENT, downloadCount: 3, lastDownloadedAt: new Date('2026-08-01T10:00:00Z'), extraData: {} },
+    ]);
+
+    const result = await service.getDownloadReportRows('c1');
+
+    expect(result.rows.map((r) => [r.downloadCount, r.lastDownloadedAt])).toEqual([
+      [2, '2026-09-10T08:00:00.000Z'],
+      [3, '2026-08-01T10:00:00.000Z'],
+    ]);
+    expect(eventsQb.where).toHaveBeenCalledWith('r.campaignId = :campaignId', { campaignId: 'c1' });
   });
 });
 
