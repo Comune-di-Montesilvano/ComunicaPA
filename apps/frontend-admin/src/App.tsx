@@ -39,7 +39,7 @@ import { CHANNELS_REGISTRY, EMBEDDED_LOGOS, getChannelMeta, channelLabel } from 
 // Definizione centralizzata delle voci di navigazione della pagina Impostazioni.
 // Le voci canale leggono icona, logo e label direttamente da CHANNELS_REGISTRY.
 // ---------------------------------------------------------------------------
-type SettingsTab = 'personalizzazione' | 'smtp' | 'pec' | 'app-io' | 'pdnd' | 'send' | 'inad' | 'inipec' | 'anpr' | 'protocollo' | 'postalizzazione' | 'external-api' | 'oidc' | 'motori';
+type SettingsTab = 'personalizzazione' | 'smtp' | 'pec' | 'app-io' | 'pdnd' | 'send' | 'inad' | 'anpr' | 'protocollo' | 'postalizzazione' | 'external-api' | 'oidc' | 'motori';
 type SettingsNavSection = { section: string };
 type SettingsNavItem = {
   tab: SettingsTab;
@@ -62,7 +62,6 @@ const SETTINGS_NAV: Array<SettingsNavSection | SettingsNavItem> = [
   { tab: 'send',             channelKey: 'SEND',           logoSrc: EMBEDDED_LOGOS.SEND,    label: _sm('SEND').label,     logoHeight: 12 },
   { tab: 'inad',             channelKey: 'INAD',           logoSrc: EMBEDDED_LOGOS.INAD,    label: _sm('INAD').label,     logoHeight: 16 },
   { tab: 'anpr',             icon: MapPin,                 label: 'ANPR (C002/C019)' },
-  { tab: 'inipec',           icon: Contact,                label: 'INIPEC' },
   { tab: 'protocollo',       channelKey: 'PROTOCOLLAZIONE', icon: _sm('PROTOCOLLAZIONE').icon, label: _sm('PROTOCOLLAZIONE').label },
   { tab: 'postalizzazione',  channelKey: 'POSTAL',          icon: _sm('POSTAL').icon,          label: _sm('POSTAL').label },
   { tab: 'external-api',     icon: Lock,                    label: 'API Esterne' },
@@ -2578,8 +2577,6 @@ export function App(): React.JSX.Element {
   const [settInadExtractResult, setSettInadExtractResult] = useState<
     { success: boolean; found?: boolean; data?: { codiceFiscale: string; since: string; digitalAddress: Array<{ digitalAddress: string; practicedProfession?: string; usageInfo: { motivation: string; dateEndValidity: string } }> }; message?: string } | null
   >(null);
-  const [settInipecTestPurposeId, setSettInipecTestPurposeId] = useState('');
-  const [settInipecProdPurposeId, setSettInipecProdPurposeId] = useState('');
   const [settRegistroImpreseTestPurposeId, setSettRegistroImpreseTestPurposeId] = useState('');
   const [settRegistroImpreseProdPurposeId, setSettRegistroImpreseProdPurposeId] = useState('');
   const [settAnprC002PurposeId, setSettAnprC002PurposeId] = useState('');
@@ -2588,8 +2585,6 @@ export function App(): React.JSX.Element {
   const [settAnprTracingLoA, setSettAnprTracingLoA] = useState('');
   const [settAnprTesting, setSettAnprTesting] = useState<'c002' | 'c019' | null>(null);
   const [settAnprTestResult, setSettAnprTestResult] = useState<{ key: 'c002' | 'c019'; ok: boolean; message: string } | null>(null);
-  const [settInipecTesting, setSettInipecTesting] = useState<'test' | 'prod' | null>(null);
-  const [settInipecTestResult, setSettInipecTestResult] = useState<{ env: 'test' | 'prod'; ok: boolean; message: string } | null>(null);
   const [settRegistroImpreseTesting, setSettRegistroImpreseTesting] = useState<'test' | 'prod' | null>(null);
   const [settRegistroImpreseTestResult, setSettRegistroImpreseTestResult] = useState<{ env: 'test' | 'prod'; ok: boolean; message: string } | null>(null);
   const [settRegistroImpreseDettaglioPiva, setSettRegistroImpreseDettaglioPiva] = useState('');
@@ -3031,8 +3026,6 @@ export function App(): React.JSX.Element {
         setSettInadCheckEnabled(Boolean(s['inad.checkEnabled']));
         setSettInadTestPurposeId(String(s['inad.test.purposeId'] ?? ''));
         setSettInadProdPurposeId(String(s['inad.prod.purposeId'] ?? ''));
-        setSettInipecTestPurposeId(String(s['inipec.test.purposeId'] ?? ''));
-        setSettInipecProdPurposeId(String(s['inipec.prod.purposeId'] ?? ''));
         setSettRegistroImpreseTestPurposeId(String(s['registroImprese.test.purposeId'] ?? ''));
         setSettRegistroImpreseProdPurposeId(String(s['registroImprese.prod.purposeId'] ?? ''));
         setSettAnprC002PurposeId(String(s['anpr.c002.purposeId'] ?? ''));
@@ -4368,8 +4361,6 @@ export function App(): React.JSX.Element {
     'inad.checkEnabled': settInadCheckEnabled,
     'inad.test.purposeId': settInadTestPurposeId,
     'inad.prod.purposeId': settInadProdPurposeId,
-    'inipec.test.purposeId': settInipecTestPurposeId,
-    'inipec.prod.purposeId': settInipecProdPurposeId,
     'registroImprese.test.purposeId': settRegistroImpreseTestPurposeId,
     'registroImprese.prod.purposeId': settRegistroImpreseProdPurposeId,
     'anpr.c002.purposeId': settAnprC002PurposeId,
@@ -4555,8 +4546,6 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const handleTestInipecConnection = (env: 'test' | 'prod') =>
-    runPdndTest(`/settings/inipec/${env}/test-connection`, env, setSettInipecTesting, setSettInipecTestResult);
 
   const handleTestRegistroImpreseConnection = (env: 'test' | 'prod') =>
     runPdndTest(`/settings/registro-imprese/${env}/test-connection`, env, setSettRegistroImpreseTesting, setSettRegistroImpreseTestResult);
@@ -15456,7 +15445,6 @@ export function App(): React.JSX.Element {
                         {activeSettingsTab === 'send' && 'Integrazione SEND (Digital Delivery)'}
                         {activeSettingsTab === 'inad' && 'Integrazione INAD (Indice Nazionale Domicili Digitali)'}
                         {activeSettingsTab === 'anpr' && 'Integrazione ANPR (C002 - Comunicazione, C019 - Esistenza in Vita)'}
-                        {activeSettingsTab === 'inipec' && 'Integrazione INIPEC'}
                         {activeSettingsTab === 'protocollo' && 'Connettore Protocollo Informatico'}
                         {activeSettingsTab === 'postalizzazione' && 'Postalizzazione Cartacea Istituzionale'}
                         {activeSettingsTab === 'external-api' && 'API Esterne — Caricamento Puntuale'}
@@ -15561,7 +15549,7 @@ export function App(): React.JSX.Element {
                           <div>
                             <div className="alert alert-info small mb-3">
                               Client PDND condiviso: le credenziali qui sotto vengono usate da tutte le
-                              integrazioni PDND (SEND, e in futuro INAD/INIPEC). Ogni integrazione ha
+                              integrazioni PDND (SEND, INAD, ANPR, Registro Imprese). Ogni integrazione ha
                               il proprio Purpose ID configurato nella sua scheda dedicata.
                             </div>
                             {([
@@ -15693,7 +15681,7 @@ export function App(): React.JSX.Element {
                                 >
                                   {settPdndTesting === e.prefix ? 'Verifica in corso…' : 'Verifica configurazione (locale)'}
                                 </button>
-                                <div className="form-text small text-muted">Salva le impostazioni e verifica in locale che i campi siano compilati e la chiave privata sia valida. PDND rilascia voucher solo per client+finalità insieme: il test reale va fatto dal tab del servizio (SEND/INAD/INIPEC).</div>
+                                <div className="form-text small text-muted">Salva le impostazioni e verifica in locale che i campi siano compilati e la chiave privata sia valida. PDND rilascia voucher solo per client+finalità insieme: il test reale va fatto dal tab del servizio (SEND/INAD/Registro Imprese).</div>
                                 {settPdndTestResult?.env === e.prefix && (
                                   <div className={`alert ${settPdndTestResult.ok ? 'alert-success' : 'alert-danger'} mt-2 mb-0 small`} style={{ wordBreak: 'break-word' }}>
                                     {settPdndTestResult.message}
@@ -16190,50 +16178,6 @@ export function App(): React.JSX.Element {
                               </div>
                               <div className="form-text small text-muted">Condiviso tra C002 e C019 (stesso claim Agid-JWT-TrackingEvidence). Valori di default non ancora verificati contro un ambiente PDND reale.</div>
                             </fieldset>
-                          </div>
-                        )}
-
-                        {activeSettingsTab === 'inipec' && (
-                          <div>
-                            <div className="alert alert-warning small mb-3">
-                              Integrazione INIPEC in attesa di approvazione PDND: le specifiche non sono
-                              ancora definite. Solo il Purpose ID è configurabile per ora.
-                            </div>
-                            {([
-                              { label: 'Collaudo (UAT)', prefix: 'test' as const,
-                                purposeId: settInipecTestPurposeId, setPurposeId: setSettInipecTestPurposeId },
-                              { label: 'Produzione', prefix: 'prod' as const,
-                                purposeId: settInipecProdPurposeId, setPurposeId: setSettInipecProdPurposeId },
-                            ]).map((e) => (
-                              <fieldset key={e.prefix} className="border rounded p-3 mb-3">
-                                <legend className="float-none w-auto px-2 small fw-bold text-dark">{e.label}</legend>
-                                <div className="mb-1">
-                                  <label className="form-label small fw-semibold text-muted" htmlFor={`inipec_${e.prefix}_purposeid`}>Purpose ID</label>
-                                  <input
-                                    type="text"
-                                    id={`inipec_${e.prefix}_purposeid`}
-                                    className="form-control form-control-sm"
-                                    value={e.purposeId}
-                                    onChange={(ev) => e.setPurposeId(ev.target.value)}
-                                  />
-                                </div>
-                                <hr className="my-3" />
-                                <button
-                                  type="button"
-                                  className="btn btn-primary btn-sm"
-                                  disabled={settInipecTesting === e.prefix}
-                                  onClick={() => handleTestInipecConnection(e.prefix)}
-                                >
-                                  {settInipecTesting === e.prefix ? 'Test in corso…' : 'Test connessione (voucher PDND)'}
-                                </button>
-                                <div className="form-text small text-muted">Salva le impostazioni e prova a ottenere un voucher PDND reale con client PDND + Purpose ID INIPEC.</div>
-                                {settInipecTestResult?.env === e.prefix && (
-                                  <div className={`alert ${settInipecTestResult.ok ? 'alert-success' : 'alert-danger'} mt-2 mb-0 small`} style={{ wordBreak: 'break-word' }}>
-                                    {settInipecTestResult.message}
-                                  </div>
-                                )}
-                              </fieldset>
-                            ))}
                           </div>
                         )}
 
