@@ -124,6 +124,30 @@ describe('PostePostalTrackingService', () => {
       expect(r.status).toBe('gave_up');
     });
 
+    it('riga già delivered + risposta pending: conserva movimenti e risposta (prova di consegna)', async () => {
+      client.track.mockResolvedValue(NOT_FOUND);
+      const movements = DELIVERED.movements;
+      const lastResponse = { esitoRicerca: '3', stato: '5' };
+      const r = row({ status: 'delivered', deliveredAt: new Date('2026-09-04T08:06:00Z'), movements, lastResponse, posteStato: '5', posteEsitoRicerca: '3', nextCheckAt: null });
+      expect(await service.checkOne(r, 'manual')).toBe('delivered');
+      expect(r.movements).toBe(movements);
+      expect(r.lastResponse).toBe(lastResponse);
+      expect(r.posteStato).toBe('5');
+      expect(r.deliveredAt?.toISOString()).toBe('2026-09-04T08:06:00.000Z');
+      expect(r.lastCheckedAt).toBeInstanceOf(Date);
+    });
+
+    it('ricarica la riga prima di applicare l\'esito: snapshot vecchio non riporta indietro un delivered', async () => {
+      client.track.mockResolvedValue(NOT_FOUND);
+      const stale = row({ id: 't9', status: 'pending', checkCount: 4 });
+      repo.findOneBy.mockResolvedValue(row({ id: 't9', status: 'delivered', checkCount: 4, nextCheckAt: null, deliveredAt: new Date('2026-09-04T08:06:00Z') }));
+      expect(await service.checkOne(stale, 'cron')).toBe('delivered');
+      expect(repo.findOneBy).toHaveBeenCalledWith({ id: 't9' });
+      expect(stale.status).toBe('delivered');
+      expect(stale.checkCount).toBe(4);
+      expect(stale.nextCheckAt).toBeNull();
+    });
+
     it('su gave_up con consegna → delivered', async () => {
       client.track.mockResolvedValue(DELIVERED);
       const r = row({ status: 'gave_up', checkCount: 90, nextCheckAt: null });

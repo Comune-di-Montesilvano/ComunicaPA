@@ -88,6 +88,11 @@ export class PostePostalTrackingService {
   }
 
   async checkOne(row: PostalPosteTracking, mode: 'cron' | 'manual'): Promise<CheckResult> {
+    // Cron e run manuale caricano i candidati all'inizio e li salvano anche
+    // ore dopo: senza rileggere, uno snapshot vecchio riporterebbe a
+    // pending una riga nel frattempo marcata delivered dall'altro giro.
+    const fresh = await this.repo.findOneBy({ id: row.id });
+    if (fresh) Object.assign(row, fresh);
     const now = new Date();
     row.lastCheckedAt = now;
     let resp: PosteTrackingResponse;
@@ -101,12 +106,19 @@ export class PostePostalTrackingService {
     }
 
     row.lastError = null;
+    const { outcome, deliveredAt } = mapPosteOutcome(resp);
+    // Riga già finale e Poste non dà un esito nuovo (es. spedizione purgata
+    // dal tracking, esitoRicerca "1"): movimenti e risposta salvati sono la
+    // prova della consegna/ritorno, mai sovrascritti da una risposta vuota.
+    if ((row.status === 'delivered' || row.status === 'returned') && outcome === 'pending') {
+      await this.repo.save(row);
+      return row.status;
+    }
     row.posteStato = resp.stato;
     row.posteEsitoRicerca = resp.esitoRicerca;
     row.posteProduct = resp.tipoProdotto;
     row.movements = resp.movements;
     row.lastResponse = resp.raw;
-    const { outcome, deliveredAt } = mapPosteOutcome(resp);
     if (mode === 'cron') row.checkCount += 1;
 
     if (outcome !== 'pending') {
