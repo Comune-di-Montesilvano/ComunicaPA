@@ -638,6 +638,40 @@ describe('CampaignsService', () => {
     );
   });
 
+  it('getRecipientStats applica il filtro postalDeliveryStatus="AppIoSostituito" su na.postal_status, mai su na.postal_delivery_status (sempre NULL per questo bucket)', async () => {
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'POSTAL' });
+    const qb: any = {};
+    ['select', 'where', 'andWhere', 'orderBy', 'addOrderBy', 'skip', 'take'].forEach((m) => {
+      qb[m] = jest.fn().mockReturnValue(qb);
+    });
+    qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
+    mockRecipientRepo.createQueryBuilder = jest.fn().mockReturnValue(qb);
+
+    await service.getRecipientStats('uuid-1', 1, 20, undefined, undefined, undefined, undefined, undefined, 'AppIoSostituito');
+
+    expect(qb.andWhere).toHaveBeenCalledWith(
+      expect.stringContaining(`na.postal_status = 'AppIoSostituito'`),
+      { campaignChannelType: 'POSTAL' },
+    );
+  });
+
+  it('getRecipientStats applica il filtro postalDeliveryStatus="NonTracciato" (nessuna AR: postal_delivery_status resta sempre NULL)', async () => {
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'POSTAL' });
+    const qb: any = {};
+    ['select', 'where', 'andWhere', 'orderBy', 'addOrderBy', 'skip', 'take'].forEach((m) => {
+      qb[m] = jest.fn().mockReturnValue(qb);
+    });
+    qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
+    mockRecipientRepo.createQueryBuilder = jest.fn().mockReturnValue(qb);
+
+    await service.getRecipientStats('uuid-1', 1, 20, undefined, undefined, undefined, undefined, undefined, 'NonTracciato');
+
+    expect(qb.andWhere).toHaveBeenCalledWith(
+      expect.stringContaining('na.postal_delivery_status IS NULL'),
+      { campaignChannelType: 'POSTAL' },
+    );
+  });
+
   it('getRecipientStats applica i tag "diverted"+"appio" come due andWhere separati (AND, non OR)', async () => {
     const qb: any = {};
     ['select', 'where', 'andWhere', 'orderBy', 'addOrderBy', 'skip', 'take'].forEach((m) => {

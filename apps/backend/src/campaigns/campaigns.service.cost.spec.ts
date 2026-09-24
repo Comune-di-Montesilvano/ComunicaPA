@@ -91,6 +91,26 @@ describe('CampaignsService - Cost and Savings', () => {
       expect(result.byChannel).toEqual([{ channel: 'POSTAL', totalCostCents: 620, uncalculatedCount: 1 }]);
     });
 
+    it('esclude gli attempt POSTAL sostituiti da App IO esclusiva (mai spediti, mai un costo GlobalCom) sia dal totale sia dai "non calcolati"', async () => {
+      campaignRepo.findOneBy.mockResolvedValue({ id: 'c1' });
+      recipientRepo.find.mockResolvedValue([{ id: 'r1' }, { id: 'r2' }]);
+      attemptRepo.find.mockResolvedValue([
+        { recipientId: 'r1', channelType: 'POSTAL', costCents: 620, status: 'success', postalStatus: 'Confermato' },
+        // r2: App IO esclusiva riuscita, POSTAL mai spedito — sentinel
+        // postalStatus='AppIoSostituito' (notification.processor.ts). Non
+        // un dato "non ancora calcolato" (non lo sarà MAI, non passa da
+        // GlobalCom) — va escluso del tutto, non contato tra i "non
+        // calcolati" (bug reale segnalato: dirottati via App IO esclusiva
+        // gonfiavano il conteggio "non calcolati" del costo campagna).
+        { recipientId: 'r2', channelType: 'POSTAL', costCents: null, status: 'success', postalStatus: 'AppIoSostituito' },
+      ]);
+
+      const result = await service.getCampaignCost('c1');
+
+      expect(result.totalCostCents).toBe(620);
+      expect(result.byChannel).toEqual([{ channel: 'POSTAL', totalCostCents: 620, uncalculatedCount: 0 }]);
+    });
+
     it('lancia NotFoundException se la campagna non esiste', async () => {
       campaignRepo.findOneBy.mockResolvedValue(null);
 

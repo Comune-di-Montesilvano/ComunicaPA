@@ -2746,6 +2746,7 @@ export function App(): React.JSX.Element {
   const [recipientsTagsMenuOpen, setRecipientsTagsMenuOpen] = useState(false);
   const [recipientsDownloadFilter, setRecipientsDownloadFilter] = useState('');
   const [recipientsDownloadChannelFilter, setRecipientsDownloadChannelFilter] = useState('');
+  const [recipientsFiltersPanelOpen, setRecipientsFiltersPanelOpen] = useState(false);
   const [recipientsFilterOptions, setRecipientsFilterOptions] = useState<{ statuses: Array<string | { value: string; count: number }>; deliveryStatuses: Array<string | { value: string; count: number }>; postalDeliveryStatuses?: Array<string | { value: string; count: number }>; downloadChannelCombos?: Array<{ value: string; count: number }> } | null>(null);
   const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number; inadDiverted: number; appIoMode: 'none' | 'parallel' | 'exclusive'; inadCheckRan: boolean } | null>(null);
   const [resendingOutcome, setResendingOutcome] = useState<string | null>(null);
@@ -6643,6 +6644,27 @@ export function App(): React.JSX.Element {
     );
   };
 
+
+  const recipientsActiveFilterCount = [
+    recipientsStatusFilter,
+    recipientsDeliveryStatusFilter,
+    recipientsPostalDeliveryStatusFilter,
+    recipientsDownloadFilter,
+    recipientsDownloadChannelFilter,
+  ].filter(Boolean).length + (recipientsTagsFilter.length > 0 ? 1 : 0);
+
+  const handleResetRecipientFilters = () => {
+    setRecipientsStatusFilter('');
+    setRecipientsDeliveryStatusFilter('');
+    setRecipientsPostalDeliveryStatusFilter('');
+    setRecipientsTagsFilter([]);
+    setRecipientsDownloadFilter('');
+    setRecipientsDownloadChannelFilter('');
+    setRecipientsPageNum(1);
+    if (selectedCampaignId) {
+      fetchRecipientsPage(selectedCampaignId, 1, recipientsSearch, '', '', [], '', '', recipientsSortBy, recipientsSortDir, '');
+    }
+  };
 
   const handleExportDownloadReport = async () => {
     if (!campaign) return;
@@ -18525,6 +18547,66 @@ export function App(): React.JSX.Element {
                             value={recipientsSearch}
                             onChange={(e) => { setRecipientsSearch(e.target.value); setRecipientsPageNum(1); }}
                           />
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-secondary"
+                            onClick={() => setRecipientsFiltersPanelOpen((o) => !o)}
+                          >
+                            <Filter className="me-1" size={14} />Filtri
+                            {recipientsActiveFilterCount > 0 && (
+                              <span className="badge bg-primary rounded-pill ms-1">{recipientsActiveFilterCount}</span>
+                            )}
+                          </button>
+                          {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType !== 'SEND' && campaign.channelType !== 'POSTAL' && (
+                            <button className="btn btn-sm btn-outline-primary py-1" onClick={handleExportDownloadReport} title="Esporta Report CSV">
+                              <FileSpreadsheet className="me-1" /> Esporta Report Download
+                            </button>
+                          )}
+                          {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType === 'SEND' && (
+                            <div className="btn-group" role="group">
+                              <button className="btn btn-sm btn-outline-primary py-1" onClick={() => handleExportSendReport('attuale')} title="Esporta stato attuale">
+                                <FileSpreadsheet className="me-1" /> Attuale
+                              </button>
+                              <button className="btn btn-sm btn-outline-primary py-1" onClick={() => handleExportSendReport('storico')} title="Esporta storico completo">
+                                <History className="me-1" /> Storico
+                              </button>
+                            </div>
+                          )}
+                          {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType === 'POSTAL' && (
+                            <div className="btn-group" role="group">
+                              <button className="btn btn-sm btn-outline-primary py-1" onClick={() => handleExportPostalReport('attuale')} title="Esporta stato attuale">
+                                <FileSpreadsheet className="me-1" /> Attuale
+                              </button>
+                              <button className="btn btn-sm btn-outline-primary py-1" onClick={() => handleExportPostalReport('storico')} title="Esporta storico completo">
+                                <History className="me-1" /> Storico
+                              </button>
+                            </div>
+                          )}
+                          {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType === 'POSTAL' && (
+                            <button
+                              className="btn btn-sm btn-outline-warning py-1"
+                              disabled={postalErrorsResetting}
+                              onClick={handleResetPostalErrorsForRecheck}
+                              title="Resetta le raccomandate in Errore che hai già corretto a mano su GlobalCom, così il ricontrollo automatico (ogni minuto) le ripesca da sole — salta quelle mai davvero arrivate a GlobalCom, per quelle serve un vero reinvio dal Dettaglio Notifica"
+                            >
+                              {postalErrorsResetting ? <Loader2 className="icon-spin me-1" size={14} /> : <RefreshCw className="me-1" size={14} />}
+                              Riattiva controllo errori GlobalCom
+                            </button>
+                          )}
+                          <button
+                            className="btn btn-outline-secondary btn-sm border-0"
+                            onClick={() => {
+                              fetchCampaignDetail(campaign.id);
+                              fetchRecipientsPage(campaign.id);
+                            }}
+                            title="Aggiorna esiti"
+                          >
+                            <RefreshCw />
+                          </button>
+                        </div>
+                      </div>
+                      {recipientsFiltersPanelOpen && (
+                        <div className="px-3 py-2 border-bottom bg-light d-flex align-items-center flex-wrap gap-2">
                           {(() => {
                             const getSortedFilterOptions = (
                               rawList: Array<string | { value: string; count: number }> | undefined,
@@ -18718,54 +18800,17 @@ export function App(): React.JSX.Element {
                               ))}
                             </select>
                           )}
-                          {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType !== 'SEND' && campaign.channelType !== 'POSTAL' && (
-                            <button className="btn btn-sm btn-outline-primary py-1" onClick={handleExportDownloadReport} title="Esporta Report CSV">
-                              <FileSpreadsheet className="me-1" /> Esporta Report Download
-                            </button>
-                          )}
-                          {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType === 'SEND' && (
-                            <div className="btn-group" role="group">
-                              <button className="btn btn-sm btn-outline-primary py-1" onClick={() => handleExportSendReport('attuale')} title="Esporta stato attuale">
-                                <FileSpreadsheet className="me-1" /> Attuale
-                              </button>
-                              <button className="btn btn-sm btn-outline-primary py-1" onClick={() => handleExportSendReport('storico')} title="Esporta storico completo">
-                                <History className="me-1" /> Storico
-                              </button>
-                            </div>
-                          )}
-                          {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType === 'POSTAL' && (
-                            <div className="btn-group" role="group">
-                              <button className="btn btn-sm btn-outline-primary py-1" onClick={() => handleExportPostalReport('attuale')} title="Esporta stato attuale">
-                                <FileSpreadsheet className="me-1" /> Attuale
-                              </button>
-                              <button className="btn btn-sm btn-outline-primary py-1" onClick={() => handleExportPostalReport('storico')} title="Esporta storico completo">
-                                <History className="me-1" /> Storico
-                              </button>
-                            </div>
-                          )}
-                          {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType === 'POSTAL' && (
+                          {recipientsActiveFilterCount > 0 && (
                             <button
-                              className="btn btn-sm btn-outline-warning py-1"
-                              disabled={postalErrorsResetting}
-                              onClick={handleResetPostalErrorsForRecheck}
-                              title="Resetta le raccomandate in Errore che hai già corretto a mano su GlobalCom, così il ricontrollo automatico (ogni minuto) le ripesca da sole — salta quelle mai davvero arrivate a GlobalCom, per quelle serve un vero reinvio dal Dettaglio Notifica"
+                              type="button"
+                              className="btn btn-sm btn-outline-danger ms-auto"
+                              onClick={handleResetRecipientFilters}
                             >
-                              {postalErrorsResetting ? <Loader2 className="icon-spin me-1" size={14} /> : <RefreshCw className="me-1" size={14} />}
-                              Riattiva controllo errori GlobalCom
+                              <X className="me-1" size={14} />Reset filtri
                             </button>
                           )}
-                          <button
-                            className="btn btn-outline-secondary btn-sm border-0"
-                            onClick={() => {
-                              fetchCampaignDetail(campaign.id);
-                              fetchRecipientsPage(campaign.id);
-                            }}
-                            title="Aggiorna esiti"
-                          >
-                            <RefreshCw />
-                          </button>
                         </div>
-                      </div>
+                      )}
                       <div className="card-body p-0">
                         {!recipientsPage || recipientsPage.items.length === 0 ? (
                           <div className="text-center py-5 text-muted">Nessun destinatario associato a questa campagna.</div>
