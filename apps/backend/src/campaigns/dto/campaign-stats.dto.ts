@@ -31,6 +31,9 @@ export interface RecipientStatDto {
   postalDeliveryCode?: number | null;
   postalDeliveryDate?: Date | null;
   postalAcceptanceId?: string | null;
+  /** Verifica consegna su tracking Poste (ultimo attempt POSTAL), vedi poste-tracking-effective.util.ts. */
+  posteVerificationStatus?: string | null;
+  posteDeliveredAt?: Date | null;
   costCents?: number | null;
   /** Esito ultima verifica INAD — `diverted` guida il filtro client-side del bottone "Rimanda a questi N" (widget multicanale). */
   inadCheck?: { found: boolean; diverted: boolean } | null;

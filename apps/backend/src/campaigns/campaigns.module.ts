@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { PostalPosteTracking } from '../entities/postal-poste-tracking.entity.js';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
 import { Campaign } from '../entities/campaign.entity.js';
@@ -23,7 +24,7 @@ import { CAMPAIGN_BULK_RETRY_QUEUE } from './campaign-bulk-retry-job.types.js';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Campaign, Recipient, NotificationAttempt, DownloadEvent, CampaignBulkRetryJob]),
+    TypeOrmModule.forFeature([Campaign, Recipient, NotificationAttempt, DownloadEvent, CampaignBulkRetryJob, PostalPosteTracking]),
     QueueModule,
     AuditLogsModule,
     InadModule,

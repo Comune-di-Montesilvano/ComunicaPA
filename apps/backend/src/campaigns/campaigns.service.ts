@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Not, IsNull, Repository } from 'typeorm';
 import { createReadStream } from 'fs';
@@ -46,6 +46,8 @@ import { SignatureVerificationBulkService } from '../signature-verification/sign
 import { SignatureVerificationService } from '../signature-verification/signature-verification.service.js';
 import { SignatureVerificationJobStatus } from '../entities/signature-verification-job.entity.js';
 import { isPartitaIva } from '../channels/tax-id.util.js';
+import { PostalPosteTracking } from '../entities/postal-poste-tracking.entity.js';
+import { POSTE_DELIVERED_BUCKET, isPosteDeliveredOverride, posteDeliveredSql } from '../channels/postal/poste-tracking/poste-tracking-effective.util.js';
 
 const INAD_BULK_THRESHOLD = 100;
 // Sentinella filtro "Stato Consegna" per attempt SUCCESS senza send_status/postal_status
@@ -141,6 +143,10 @@ export class CampaignsService {
     private readonly postalAuthorizedUsers: PostalAuthorizedUsersService,
     private readonly signatureVerificationBulk: SignatureVerificationBulkService,
     private readonly signatureVerification: SignatureVerificationService,
+    // @Optional: le spec esistenti istanziano CampaignsService senza questo
+    // repo — senza, le letture verifica Poste tornano vuote (nessun override).
+    @Optional() @InjectRepository(PostalPosteTracking)
+    private readonly posteTrackingRepo?: Repository<PostalPosteTracking>,
   ) {}
 
   findAll(): Promise<Campaign[]> {
@@ -2653,6 +2659,16 @@ export class CampaignsService {
         )`,
         { campaignChannelType: campaign.channelType },
       );
+    } else if (postalDeliveryStatus === POSTE_DELIVERED_BUCKET) {
+      // Bucket sintetico verifica Poste — mai un postal_delivery_status reale.
+      qb.andWhere(
+        `EXISTS (
+          SELECT 1 FROM notification_attempts na
+          WHERE na.recipient_id = r.id
+            AND na.attempt_number = (SELECT MAX(na2.attempt_number) FROM notification_attempts na2 WHERE na2.recipient_id = r.id)
+            AND ${posteDeliveredSql('na')}
+        )`,
+      );
     } else if (postalDeliveryStatus && postalDeliveryStatus !== 'DirottatoAPec') {
       qb.andWhere(
         `EXISTS (
@@ -2660,6 +2676,7 @@ export class CampaignsService {
           WHERE na.recipient_id = r.id
             AND na.attempt_number = (SELECT MAX(na2.attempt_number) FROM notification_attempts na2 WHERE na2.recipient_id = r.id)
             AND na.postal_delivery_status = :postalDeliveryStatus
+            AND NOT ${posteDeliveredSql('na')}
         )`,
         { postalDeliveryStatus },
       );
@@ -2802,6 +2819,9 @@ export class CampaignsService {
       })) || [];
       const eventsByRecipient = new Map<string, number>();
       for (const e of downloadEvents) eventsByRecipient.set(e.recipientId, (eventsByRecipient.get(e.recipientId) ?? 0) + 1);
+      const posteByAttempt = await this.loadPosteTrackingByAttempt(
+        [...latestByRecipient.values()].filter((a) => a.channelType === 'POSTAL').map((a) => a.id),
+      );
       for (const item of items) {
         item.downloadCount = Math.max(item.downloadCount ?? 0, eventsByRecipient.get(item.id) ?? 0);
         const latest = latestByRecipient.get(item.id);
@@ -2819,6 +2839,9 @@ export class CampaignsService {
           item.postalDeliveryCode = latest.postalDeliveryCode;
           item.postalDeliveryDate = latest.postalDeliveryDate;
           item.postalAcceptanceId = latest.postalAcceptanceId;
+          const poste = posteByAttempt.get(latest.id);
+          item.posteVerificationStatus = poste?.status ?? null;
+          item.posteDeliveredAt = poste?.deliveredAt ?? null;
           item.costCents = latest.costCents ?? null;
         }
       }
@@ -2864,19 +2887,22 @@ export class CampaignsService {
       .groupBy('COALESCE(la.send_status, la.postal_status)')
       .getRawMany<{ value: string; count: string }>();
 
+    // Bucket sintetico verifica Poste: stesso predicato di posteDeliveredSql,
+    // così il conteggio del valore GlobalCom originale scala da solo.
+    const postalDeliveryValueSql = `CASE WHEN ${posteDeliveredSql('la')} THEN '${POSTE_DELIVERED_BUCKET}' ELSE la.postal_delivery_status END`;
     const postalDeliveryRows = await this.recipientRepo
       .createQueryBuilder('r')
-      .select('la.postal_delivery_status', 'value')
+      .select(postalDeliveryValueSql, 'value')
       .addSelect('COUNT(r.id)', 'count')
       .leftJoin(
-        `(SELECT DISTINCT ON (recipient_id) recipient_id, postal_delivery_status
+        `(SELECT DISTINCT ON (recipient_id) id, recipient_id, postal_status, postal_delivery_status
           FROM notification_attempts ORDER BY recipient_id, attempt_number DESC)`,
         'la',
         'la.recipient_id = r.id',
       )
       .where('r.campaignId = :campaignId', { campaignId })
       .andWhere('la.postal_delivery_status IS NOT NULL')
-      .groupBy('la.postal_delivery_status')
+      .groupBy(postalDeliveryValueSql)
       .getRawMany<{ value: string; count: string }>();
 
     const pendingCount = await this.recipientRepo
@@ -3189,6 +3215,13 @@ export class CampaignsService {
     };
   }
 
+  /** Righe verifica Poste per attempt id — mappa vuota senza repo o senza id. */
+  private async loadPosteTrackingByAttempt(attemptIds: string[]): Promise<Map<string, PostalPosteTracking>> {
+    if (!this.posteTrackingRepo || attemptIds.length === 0) return new Map();
+    const rows = (await this.posteTrackingRepo.find({ where: { attemptId: In(attemptIds) } })) ?? [];
+    return new Map(rows.map((r) => [r.attemptId, r]));
+  }
+
   async getPostalDeliveryStatusBreakdown(campaignId: string): Promise<PostalStatusBreakdownDto[]> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
@@ -3203,7 +3236,7 @@ export class CampaignsService {
 
     const attempts = await this.attemptRepo.find({
       where: { recipientId: In(recipientIds), channelType: 'POSTAL' },
-      select: { recipientId: true, attemptNumber: true, postalDeliveryStatus: true, postalStatus: true, status: true },
+      select: { id: true, recipientId: true, attemptNumber: true, postalDeliveryStatus: true, postalStatus: true, status: true },
     });
 
     const latestByRecipient = new Map<string, NotificationAttempt>();
@@ -3211,6 +3244,7 @@ export class CampaignsService {
       const current = latestByRecipient.get(a.recipientId);
       if (!current || a.attemptNumber > current.attemptNumber) latestByRecipient.set(a.recipientId, a);
     }
+    const posteByAttempt = await this.loadPosteTrackingByAttempt([...latestByRecipient.values()].map((a) => a.id));
 
     const arTracking = hasPostalArTracking(campaign);
     const counts = new Map<string | null, number>();
@@ -3232,7 +3266,9 @@ export class CampaignsService {
           ? 'FAILED'
           : a.postalStatus === 'AppIoSostituito'
             ? 'AppIoSostituito'
-            : (a.postalDeliveryStatus ?? (arTracking ? null : 'NonTracciato'));
+            : isPosteDeliveredOverride(a.postalStatus, posteByAttempt.get(a.id)?.status)
+              ? POSTE_DELIVERED_BUCKET
+              : (a.postalDeliveryStatus ?? (arTracking ? null : 'NonTracciato'));
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
 
