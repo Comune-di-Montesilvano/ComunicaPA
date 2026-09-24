@@ -1,6 +1,6 @@
 import { Controller, Get, HttpCode, HttpStatus, NotFoundException, Param, ParseIntPipe, ParseUUIDPipe, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
-import type { CitizenTokenClaims } from '@comunicapa/shared-types';
+import { recipientKeyOf, type CitizenSessionClaims } from '../auth/citizen-claims.js';
 import { OidcAuthGuard } from '../auth/guards/oidc-auth.guard.js';
 import { Public } from '../auth/decorators/public.decorator.js';
 import { CitizenService } from './citizen.service.js';
@@ -22,39 +22,39 @@ export class CitizenController {
   ) {}
 
   @Get('notifications')
-  findAll(@Req() req: { user: CitizenTokenClaims }) {
-    return this.citizenService.findAllForCitizen(req.user.codiceFiscale);
+  findAll(@Req() req: { user: CitizenSessionClaims }) {
+    return this.citizenService.findAllForCitizen(recipientKeyOf(req.user));
   }
 
   @Get('notifications/:id')
   findOne(
     @Param('id', ParseUUIDPipe) id: string,
-    @Req() req: { user: CitizenTokenClaims },
+    @Req() req: { user: CitizenSessionClaims },
   ) {
-    return this.citizenService.findOneForCitizen(id, req.user.codiceFiscale);
+    return this.citizenService.findOneForCitizen(id, recipientKeyOf(req.user));
   }
 
   @Post('notifications/:id/download')
   @HttpCode(HttpStatus.OK)
   markDownloaded(
     @Param('id', ParseUUIDPipe) id: string,
-    @Req() req: { user: CitizenTokenClaims },
+    @Req() req: { user: CitizenSessionClaims },
   ) {
-    return this.citizenService.markAsDownloaded(id, req.user.codiceFiscale);
+    return this.citizenService.markAsDownloaded(id, recipientKeyOf(req.user));
   }
 
   @Get('notifications/:id/attachment/:index')
   async downloadAttachment(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('index', ParseIntPipe) index: number,
-    @Req() req: { user: CitizenTokenClaims },
+    @Req() req: { user: CitizenSessionClaims },
     @Res() res: Response,
   ) {
     // 1. Registra il download nel DB
-    await this.citizenService.markAsDownloaded(id, req.user.codiceFiscale, index);
+    await this.citizenService.markAsDownloaded(id, recipientKeyOf(req.user), index);
 
     // 2. Genera il PDF
-    const pdfBuffer = await this.citizenService.generateAttachmentPdf(id, req.user.codiceFiscale, index);
+    const pdfBuffer = await this.citizenService.generateAttachmentPdf(id, recipientKeyOf(req.user), index);
 
     // 3. Spedisce il file
     res.setHeader('Content-Type', 'application/pdf');
@@ -71,9 +71,9 @@ export class CitizenController {
   @Get('notifications/:id/send-legal-facts')
   async listSendLegalFacts(
     @Param('id', ParseUUIDPipe) id: string,
-    @Req() req: { user: CitizenTokenClaims },
+    @Req() req: { user: CitizenSessionClaims },
   ) {
-    const notif = await this.citizenService.findOneForCitizen(id, req.user.codiceFiscale);
+    const notif = await this.citizenService.findOneForCitizen(id, recipientKeyOf(req.user));
     if (!notif.iun) return [];
     return this.sendLegalFactsService.listLegalFacts(notif.iun);
   }
@@ -88,7 +88,7 @@ export class CitizenController {
     @Param('id', ParseUUIDPipe) id: string,
     @Query('iun') iun: string,
     @Query('legalFactId') legalFactId: string,
-    @Req() req: { user: CitizenTokenClaims },
+    @Req() req: { user: CitizenSessionClaims },
     @Res() res: Response,
   ) {
     if (!iun || !legalFactId) {
@@ -96,10 +96,10 @@ export class CitizenController {
     }
 
     // Verifica che il recipient appartiene al cittadino autenticato
-    await this.citizenService.findOneForCitizen(id, req.user.codiceFiscale);
+    await this.citizenService.findOneForCitizen(id, recipientKeyOf(req.user));
 
     // Registra il download
-    await this.citizenService.markAsDownloaded(id, req.user.codiceFiscale, 0);
+    await this.citizenService.markAsDownloaded(id, recipientKeyOf(req.user), 0);
 
     // Scarica il documento legale da SEND
     const result = await this.sendLegalFactsService.downloadLegalFact(iun, legalFactId);

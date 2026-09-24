@@ -4,8 +4,9 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { passportJwtSecret } from 'jwks-rsa';
 import { Redis } from 'ioredis';
-import { extractClaimString } from '../oidc/oidc-flow.service.js';
-import type { CitizenTokenClaims } from '@comunicapa/shared-types';
+import type { Request } from 'express';
+import { extractClaimString, sessionKeyForToken } from '../oidc/oidc-flow.service.js';
+import { normalizeTaxId, type CitizenSessionClaims, type CitizenSessionContext } from '../citizen-claims.js';
 import type { AppConfiguration } from '../../config/configuration.js';
 import { AppSettingsService } from '../../settings/app-settings.service.js';
 
@@ -38,6 +39,8 @@ export class OidcCitizenStrategy extends PassportStrategy(Strategy, 'oidc-citize
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
+      // Serve il token grezzo per ritrovare il contesto di sessione (chiave = hash del token).
+      passReqToCallback: true,
       algorithms: ['RS256', 'HS256'],
       secretOrKeyProvider: (
         req: unknown,
@@ -92,7 +95,7 @@ export class OidcCitizenStrategy extends PassportStrategy(Strategy, 'oidc-citize
     this.settings = settings;
   }
 
-  async validate(payload: Record<string, unknown>): Promise<CitizenTokenClaims> {
+  async validate(req: Request, payload: Record<string, unknown>): Promise<CitizenSessionClaims> {
     if (process.env.LOG_LEVEL?.toLowerCase() === 'debug') {
       Logger.debug(`OidcCitizenStrategy.validate payload: ${JSON.stringify(payload)}`, OidcCitizenStrategy.name);
     }
@@ -117,6 +120,16 @@ export class OidcCitizenStrategy extends PassportStrategy(Strategy, 'oidc-citize
     }
 
     const sub = String(payload['sub'] ?? '');
+
+    // Token reali del proxy (verificati via JWKS): identità e tipo di accesso
+    // vengono SOLO dal contesto salvato al callback, legato a questo token.
+    // I claim del token non bastano: non dicono se la sessione è da cittadino
+    // o per conto di un'impresa, e i dati aziendali non vanno mai presi da lì.
+    const jwksUri = await this.settings.get<string>('oidc.jwksUri');
+    if (jwksUri) {
+      return this.claimsFromSessionContext(req, sub, payload);
+    }
+
     let cachedClaims: { codiceFiscale?: string; name?: string } | null = null;
     if (sub) {
       try {
@@ -172,11 +185,68 @@ export class OidcCitizenStrategy extends PassportStrategy(Strategy, 'oidc-citize
         : (extractClaimString(payload['name'] ?? '') ||
            [givenName, familyName].filter(Boolean).join(' ')));
 
+    // Senza JWKS (simulatore dev, token firmato dal backend con JWT_SECRET):
+    // i dati impresa, se presenti, li abbiamo scritti noi nel token.
+    const isCompany = payload['accessType'] === 'PG' && !!payload['ivaCode'];
     return {
       sub: String(payload['sub'] ?? ''),
       codiceFiscale,
       email: payload['email'] ? String(payload['email']) : undefined,
       name: name || undefined,
+      accessType: isCompany ? 'PG' : 'PF',
+      ...(isCompany
+        ? {
+          ivaCode: normalizeTaxId(String(payload['ivaCode'])),
+          companyName: payload['companyName'] ? String(payload['companyName']) : undefined,
+          registeredOffice: payload['registeredOffice'] ? String(payload['registeredOffice']) : undefined,
+        }
+        : {}),
     };
+  }
+
+  private async claimsFromSessionContext(req: Request, sub: string, payload: Record<string, unknown>): Promise<CitizenSessionClaims> {
+    const token = ExtractJwt.fromAuthHeaderAsBearerToken()(req) ?? '';
+    const email = payload['email'] ? String(payload['email']) : undefined;
+
+    let context: CitizenSessionContext | null = null;
+    try {
+      const raw = token ? await this.redis.get(sessionKeyForToken(token)) : null;
+      if (raw) context = JSON.parse(raw) as CitizenSessionContext;
+    } catch (err) {
+      Logger.warn(`Errore lettura contesto sessione OIDC da Redis: ${String(err)}`, OidcCitizenStrategy.name);
+    }
+
+    if (context) {
+      const isCompany = context.accessType === 'PG';
+      return {
+        sub,
+        codiceFiscale: context.codiceFiscale,
+        email,
+        name: context.name || undefined,
+        accessType: isCompany ? 'PG' : 'PF',
+        ...(isCompany ? { ivaCode: context.ivaCode, companyName: context.companyName, registeredOffice: context.registeredOffice } : {}),
+      };
+    }
+
+    // Transitorio: token emessi prima di questa versione hanno solo la cache
+    // per persona `oidc:claims:<sub>` (mai più scritta dai nuovi login, scade
+    // entro 8 ore dal deploy). Solo come cittadino: una sessione impresa ha
+    // sempre il contesto per token, quindi non può finire qui.
+    try {
+      const legacy = sub ? await this.redis.get(`oidc:claims:${sub}`) : null;
+      if (legacy) {
+        const cached = JSON.parse(legacy) as { codiceFiscale?: string; name?: string };
+        if (cached.codiceFiscale) {
+          return { sub, codiceFiscale: normalizeTaxId(cached.codiceFiscale), email, name: cached.name || undefined, accessType: 'PF' };
+        }
+      }
+    } catch (err) {
+      Logger.warn(`Errore lettura claims OIDC legacy da Redis: ${String(err)}`, OidcCitizenStrategy.name);
+    }
+
+    // Contesto perso (Redis svuotato/ricreato): mai ricostruire l'identità
+    // dal solo token, rischieremmo di degradare una sessione impresa a
+    // cittadino senza che l'utente lo sappia. Nuovo login obbligatorio.
+    throw new UnauthorizedException('Sessione scaduta: effettua di nuovo l\'accesso');
   }
 }

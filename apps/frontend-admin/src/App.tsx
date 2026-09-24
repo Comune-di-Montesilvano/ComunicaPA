@@ -2606,6 +2606,8 @@ export function App(): React.JSX.Element {
   const [settOidcClientId, setSettOidcClientId] = useState('');
   const [settOidcClientSecret, setSettOidcClientSecret] = useState('');
   const [settOidcLogoutUrl, setSettOidcLogoutUrl] = useState('');
+  const [settOidcLegalEntityEnabled, setSettOidcLegalEntityEnabled] = useState(false);
+  const [settOidcLegalEntityScope, setSettOidcLegalEntityScope] = useState('legal_entity');
   const [settCitizenPublicUrl, setSettCitizenPublicUrl] = useState('');
 
   const [settProtoProvider, setSettProtoProvider] = useState('tinn');
@@ -3055,6 +3057,8 @@ export function App(): React.JSX.Element {
         setSettOidcClientId(String(s['oidc.clientId'] ?? ''));
         setSettOidcClientSecret(String(s['oidc.clientSecret'] ?? ''));
         setSettOidcLogoutUrl(String(s['oidc.logoutUrl'] ?? ''));
+        setSettOidcLegalEntityEnabled(Boolean(s['oidc.legalEntityEnabled']));
+        setSettOidcLegalEntityScope(String(s['oidc.legalEntityScope'] || 'legal_entity'));
         setSettCitizenPublicUrl(String(s['system.citizenPublicUrl'] ?? ''));
       })
       .catch(() => { /* backend non raggiungibile: la pagina resta editabile */ });
@@ -4390,6 +4394,8 @@ export function App(): React.JSX.Element {
     'oidc.clientId': settOidcClientId,
     'oidc.clientSecret': settOidcClientSecret,
     'oidc.logoutUrl': settOidcLogoutUrl,
+    'oidc.legalEntityEnabled': settOidcLegalEntityEnabled,
+    'oidc.legalEntityScope': settOidcLegalEntityScope.trim() || 'legal_entity',
   });
 
   const handleSaveSettings = async (e: React.FormEvent) => {
@@ -16410,6 +16416,41 @@ export function App(): React.JSX.Element {
                                 onChange={(e) => setSettOidcLogoutUrl(e.target.value)}
                               />
                               <div className="form-text small text-muted">End session endpoint del provider, usato per terminare la sessione SPID/CIE al logout.</div>
+                            </div>
+                            <div className="col-12">
+                              <div className="border rounded p-3" style={{ background: '#fafbfc' }}>
+                                <div className="form-check mb-1">
+                                  <input
+                                    type="checkbox"
+                                    className="form-check-input"
+                                    id="oidc_legal_entity_enabled"
+                                    checked={settOidcLegalEntityEnabled}
+                                    onChange={(e) => setSettOidcLegalEntityEnabled(e.target.checked)}
+                                  />
+                                  <label className="form-check-label small fw-bold text-dark" htmlFor="oidc_legal_entity_enabled">
+                                    Accesso SPID per conto di un'impresa (persona giuridica)
+                                  </label>
+                                </div>
+                                <div className="form-text small text-muted mb-2">
+                                  Mostra nel portale cittadino il pulsante "Accedi per conto di un'impresa", che richiede al proxy
+                                  un'identità SPID per uso professionale della persona giuridica (Avviso AgID n.18) e filtra le
+                                  notifiche per P.IVA. Prima di attivarlo: nel proxy abilitare "Persona giuridica" nelle impostazioni
+                                  ente e aggiungere lo scope qui sotto agli scope consentiti di questo client, altrimenti il login
+                                  impresa fallisce con <code>invalid_scope</code>. Si può spegnere in qualunque momento senza deploy.
+                                </div>
+                                {settOidcLegalEntityEnabled && (
+                                  <div style={{ maxWidth: 320 }}>
+                                    <label className="form-label small fw-bold text-dark" htmlFor="oidc_legal_entity_scope">Scope persona giuridica</label>
+                                    <input
+                                      type="text"
+                                      id="oidc_legal_entity_scope"
+                                      className="form-control form-control-sm font-monospace"
+                                      value={settOidcLegalEntityScope}
+                                      onChange={(e) => setSettOidcLegalEntityScope(e.target.value)}
+                                    />
+                                  </div>
+                                )}
+                              </div>
                             </div>
                             <div className="col-12">
                               <div className="border border-primary rounded p-3 mt-2" style={{background:'#f4f8fd'}}>

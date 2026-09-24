@@ -1266,6 +1266,15 @@ footer.site-footer a:hover {
 .login-btn:hover { background: #0059b3; transform: translateY(-1px); }
 .login-btn:focus-visible { outline: 3px solid var(--ms-gold-500); outline-offset: 2px; }
 .login-btn:disabled { opacity: .65; cursor: wait; transform: none; }
+.login-btn-secondary { background: #fff; color: #0066cc; border: 2px solid #0066cc; }
+.login-btn-secondary:hover { background: #f0f6fd; }
+.login-legal-help { margin: 8px 2px 0; font-size: 12px; line-height: 1.5; color: #64748b; }
+.login-legal-error {
+  padding: 14px 16px; border-radius: 6px; background: #fff7e6; border: 1px solid #f3dfae; color: #7a4f00;
+}
+.login-legal-error p { margin: 0 0 12px; font-size: 13px; line-height: 1.5; }
+.login-legal-actions { display: flex; flex-direction: column; gap: 8px; }
+.fo-user-company { display: block; font-size: 11px; font-weight: 600; color: #64748b; line-height: 1.2; }
 .login-card-foot {
   padding: 12px 24px; background: #f8fafc; border-top: 1px solid #e2e8f0;
   font-size: 12px; line-height: 1.5; color: #64748b;
