@@ -109,6 +109,21 @@ describe('CampaignsService - stato Letto (canali digitali)', () => {
     expect(String(statusQb.groupBy.mock.calls[0][0])).toBe(selectExpr);
   });
 
+  it('riga destinatario: data invio, tentativi, errore ultimo tentativo e primo download (link o evento)', async () => {
+    digital();
+    const qb = makeQb({ many: [{ id: 'r1', downloadCount: 1, firstDownloadedAt: new Date('2026-09-10T10:00:00Z') }, { id: 'r2', downloadCount: 0, firstDownloadedAt: null }], count: 2 });
+    recipientRepo.createQueryBuilder.mockReturnValue(qb);
+    attemptRepo.find.mockResolvedValue([
+      { id: 'a1', recipientId: 'r1', attemptNumber: 1, channelType: 'EMAIL', status: 'success', sentAt: new Date('2026-09-09T08:00:00Z'), errorMessage: null },
+      { id: 'a2', recipientId: 'r2', attemptNumber: 1, channelType: 'EMAIL', status: 'failed', sentAt: null, errorMessage: 'timeout' },
+      { id: 'a3', recipientId: 'r2', attemptNumber: 2, channelType: 'EMAIL', status: 'failed', sentAt: null, errorMessage: '550 mailbox unavailable' },
+    ]);
+    downloadEventRepo.find.mockResolvedValue([{ recipientId: 'r1', downloadedAt: new Date('2026-09-09T20:00:00Z') }]);
+    const page = await service.getRecipientStats('c1', 1, 50);
+    expect(page.items[0]).toMatchObject({ sentAt: new Date('2026-09-09T08:00:00Z'), attemptsCount: 1, lastError: null, firstReadAt: new Date('2026-09-09T20:00:00Z') });
+    expect(page.items[1]).toMatchObject({ sentAt: null, attemptsCount: 2, lastError: '550 mailbox unavailable', firstReadAt: null });
+  });
+
   it('opzioni filtro stato su POSTAL: r.status semplice', async () => {
     const qbs: any[] = [];
     recipientRepo.createQueryBuilder.mockImplementation(() => { const q = makeQb(); qbs.push(q); return q; });

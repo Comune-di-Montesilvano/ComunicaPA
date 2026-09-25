@@ -34,6 +34,14 @@ export interface RecipientStatDto {
   /** Verifica consegna su tracking Poste (ultimo attempt POSTAL), vedi poste-tracking-effective.util.ts. */
   posteVerificationStatus?: string | null;
   posteDeliveredAt?: Date | null;
+  /** Invio dell'ultimo tentativo. */
+  sentAt?: Date | null;
+  /** Numero di tentativi di invio. */
+  attemptsCount?: number;
+  /** Motivo dell'ultimo tentativo se fallito. */
+  lastError?: string | null;
+  /** Primo download da qualunque fonte: per i canali digitali è la data di lettura. */
+  firstReadAt?: Date | null;
   costCents?: number | null;
   /** Esito ultima verifica INAD — `diverted` guida il filtro client-side del bottone "Rimanda a questi N" (widget multicanale). */
   inadCheck?: { found: boolean; diverted: boolean } | null;
