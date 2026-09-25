@@ -280,8 +280,9 @@ pre-invio, da chiamare per tupla (via, città, CAP) deduplicata, mai per riga.
 **Verifica consegna su tracking Poste (`channels/postal/poste-tracking/`)**:
 GlobalCom smette di tracciare al primo `NonConsegnato` (es. "Indirizzo
 errato o inesatto"), ma Poste può consegnare giorni dopo (caso reale
-verificato: KO GlobalCom al 12/08, consegna Poste al 04/09). Cron giornaliero
-04:00 + tasto campagna/notifica interrogano l'endpoint JSON pubblico e NON
+verificato: KO GlobalCom al 12/08, consegna Poste al 04/09). Coda unica "a
+goccia" (cron ogni 5 minuti, tasto campagna = priorità nella stessa coda,
+mai giri paralleli) + tasto notifica interrogano l'endpoint JSON pubblico e NON
 documentato di "Cerca spedizioni" (`POST
 https://www.poste.it/online/dovequando/DQ-REST/ricercasemplice`, body
 `{"tipoRichiedente":"WEB","codiceSpedizione":"<IDAccettazione>","periodoRicerca":1}`)
@@ -298,3 +299,14 @@ circuit breaker (5 errori consecutivi), nessuna riga marcata finale per
 errori. Letture in `CampaignsService`/`NotificationsSearchService` via repo
 `@Optional()`: una nuova spec che le testa deve fornire il repo
 `PostalPosteTracking`, altrimenti le letture tornano vuote in silenzio.
+
+**poste.it limita le richieste rispondendo HTTP 400, non 429.** Visto in
+produzione (v1.8.2, 900 notifiche): a 2 s tra le chiamate, dopo ~20 richieste
+dallo stesso IP ogni chiamata torna 400; gli stessi codici, richiesti a mano
+poco dopo uno alla volta, rispondono 200 con dati validi — quindi un 400 NON
+significa "codice non valido". Ogni 4xx/HTML = `blocked`: non consuma
+controlli, non sposta `next_check_at`, 2 di fila mettono la coda in pausa
+(`postalPosteTracking.cooldownMinutes`, default 30, raddoppia fino a 4 h).
+Pausa tra chiamate `postalPosteTracking.intervalSeconds` (default 15 +
+jitter 30%). Data esito (`outcome_at`) = data dell'ultimo movimento, per
+consegnate e restituite (`flagRitorno`, anche "in restituzione" `stato 3`).
