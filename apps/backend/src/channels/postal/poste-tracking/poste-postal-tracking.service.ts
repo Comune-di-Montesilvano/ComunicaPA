@@ -99,6 +99,11 @@ export class PostePostalTrackingService {
     return this.intervalSeconds * 1000;
   }
 
+  private async staleDays(): Promise<number> {
+    const d = Math.floor(Number(await this.settings.get<number>('postalPosteTracking.staleDays')));
+    return Number.isFinite(d) && d > 0 ? d : 30;
+  }
+
   private async baseCooldownMs(): Promise<number> {
     const m = Number(await this.settings.get<number>('postalPosteTracking.cooldownMinutes'));
     return (Number.isFinite(m) && m > 0 ? m : 30) * 60_000;
@@ -118,6 +123,8 @@ export class PostePostalTrackingService {
    * un reinvio successivo rende il vecchio NonConsegnato irrilevante.
    */
   async backfill(campaignId?: string): Promise<number> {
+    // staleDays è un intero validato (mai input utente grezzo nel testo SQL).
+    const staleDays = await this.staleDays();
     const params: unknown[] = campaignId ? [campaignId] : [];
     const rows = await this.repo.query(
       `INSERT INTO postal_poste_tracking (attempt_id, tracking_code, status, next_check_at, tracking_until)
@@ -125,7 +132,14 @@ export class PostePostalTrackingService {
        FROM notification_attempts na
        JOIN recipients r ON r.id = na.recipient_id
        WHERE na.channel_type = 'POSTAL'
-         AND na.postal_status = 'NonConsegnato'
+         -- NonConsegnato terminale, oppure invio "fermo": GlobalCom non lo dà
+         -- consegnato e non lo aggiorna da staleDays giorni (smette di seguirlo
+         -- senza stato finale, es. Confermato/Accettato per settimane).
+         AND (
+           na.postal_status = 'NonConsegnato'
+           OR (COALESCE(na.postal_status, '') <> 'Consegnato'
+               AND COALESCE(na.postal_status_updated_at, na.sent_at, na.created_at) < now() - interval '${staleDays} days')
+         )
          AND na.postal_acceptance_id IS NOT NULL AND na.postal_acceptance_id <> ''
          AND COALESCE(na.sent_at, na.created_at) > now() - interval '90 days'
          AND NOT EXISTS (SELECT 1 FROM notification_attempts newer WHERE newer.recipient_id = na.recipient_id AND newer.attempt_number > na.attempt_number)
@@ -234,7 +248,7 @@ export class PostePostalTrackingService {
       .innerJoin(NotificationAttempt, 'a', 'a.id = t.attempt_id')
       .where("t.status = 'pending'")
       .andWhere('t.next_check_at <= now()')
-      .andWhere("a.postal_status = 'NonConsegnato'")
+      .andWhere("COALESCE(a.postal_status, '') <> 'Consegnato'")
       .orderBy(NEVER_CHECKED_FIRST_SQL, 'ASC')
       .addOrderBy('t.last_checked_at', 'ASC', 'NULLS FIRST')
       .addOrderBy('t.created_at', 'ASC')
@@ -334,8 +348,8 @@ export class PostePostalTrackingService {
 
     let row = await this.repo.findOneBy({ attemptId: attempt.id });
     if (!row) {
-      if (attempt.postalStatus !== 'NonConsegnato' || !attempt.postalAcceptanceId) {
-        throw new BadRequestException('Verifica Poste disponibile solo per notifiche Non consegnate con codice di accettazione Poste');
+      if (attempt.postalStatus === 'Consegnato' || !attempt.postalAcceptanceId) {
+        throw new BadRequestException('Verifica Poste disponibile solo per notifiche non ancora consegnate secondo GlobalCom e con codice di accettazione Poste');
       }
       const notifiedAt = attempt.sentAt ?? attempt.createdAt;
       row = await this.repo.save(this.repo.create({
@@ -369,7 +383,7 @@ export class PostePostalTrackingService {
       .innerJoin(Recipient, 'r', 'r.id = a.recipient_id')
       .where('r.campaign_id = :campaignId', { campaignId })
       .andWhere("t.status IN ('pending', 'gave_up')")
-      .andWhere("a.postal_status = 'NonConsegnato'")
+      .andWhere("COALESCE(a.postal_status, '') <> 'Consegnato'")
       .orderBy(NEVER_CHECKED_FIRST_SQL, 'ASC')
       .addOrderBy('t.last_checked_at', 'ASC', 'NULLS FIRST')
       .addOrderBy('t.created_at', 'ASC')

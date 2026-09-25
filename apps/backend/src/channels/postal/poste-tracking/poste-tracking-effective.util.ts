@@ -44,13 +44,14 @@ export function toPosteVerificationDto(row: PostalPosteTracking): PosteVerificat
  */
 export const POSTE_DELIVERED_BUCKET = 'ConsegnatoVerificaPoste';
 
+/** Poste dice consegnata mentre GlobalCom dice qualunque cosa diversa da consegnato (NonConsegnato o invio fermo). */
 export function isPosteDeliveredOverride(postalStatus: string | null | undefined, posteStatus: string | null | undefined): boolean {
-  return postalStatus === 'NonConsegnato' && posteStatus === 'delivered';
+  return posteStatus === 'delivered' && postalStatus !== 'Consegnato';
 }
 
 /** Stesso predicato in SQL, su un alias di notification_attempts che espone id e postal_status. */
 export function posteDeliveredSql(alias: string): string {
-  return `(${alias}.postal_status = 'NonConsegnato' AND EXISTS (SELECT 1 FROM postal_poste_tracking ppt WHERE ppt.attempt_id = ${alias}.id AND ppt.status = 'delivered'))`;
+  return `(COALESCE(${alias}.postal_status, '') <> 'Consegnato' AND EXISTS (SELECT 1 FROM postal_poste_tracking ppt WHERE ppt.attempt_id = ${alias}.id AND ppt.status = 'delivered'))`;
 }
 
 function formatDay(d: string | Date): string {

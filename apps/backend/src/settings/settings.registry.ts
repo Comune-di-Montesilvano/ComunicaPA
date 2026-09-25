@@ -99,6 +99,8 @@ export const SETTING_DEFS = {
   'postalPosteTracking.intervalSeconds': { type: 'number', default: 15 },
   // Pausa iniziale quando Poste blocca; raddoppia a ogni nuovo blocco fino a 4 ore.
   'postalPosteTracking.cooldownMinutes': { type: 'number', default: 30 },
+  // Invio "fermo": GlobalCom non lo dà consegnato e non lo aggiorna da N giorni → entra nella verifica Poste.
+  'postalPosteTracking.staleDays': { type: 'number', default: 30 },
   'inad.test.purposeId': { type: 'string', default: '' },
   'inad.prod.purposeId': { type: 'string', default: '' },
   // Registro Imprese (PCAD-PDND, Unioncamere) — fonte del domicilio digitale

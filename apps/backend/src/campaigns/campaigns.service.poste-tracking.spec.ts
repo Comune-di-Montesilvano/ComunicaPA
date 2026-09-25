@@ -108,7 +108,7 @@ describe('CampaignsService - verifica Poste', () => {
     recipientRepo.createQueryBuilder.mockReturnValue(qb2);
     await service.getRecipientStats('c1', 1, 50, undefined, undefined, undefined, undefined, undefined, 'Indirizzo errato o inesatto');
     const generic = qb2.andWhere.mock.calls.map((c: any[]) => String(c[0])).find((s: string) => s.includes(':postalDeliveryStatus'));
-    expect(generic).toContain("AND NOT (na.postal_status = 'NonConsegnato'");
+    expect(generic).toContain("AND NOT (COALESCE(na.postal_status, '') <> 'Consegnato'");
   });
 
   it('lista: espone stato verifica Poste sull\'ultimo attempt POSTAL', async () => {

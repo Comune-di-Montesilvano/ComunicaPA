@@ -326,3 +326,14 @@ espressione SQL fallisce (`"COALESCE(t" alias was not found`). Bug reale v1.8.3:
 coda automatica ferma a ogni tick (solo i run di campagna, che usano `getMany()`
 senza take, funzionavano). I mock dei test non lo vedono: verificare sempre la
 query su Postgres reale (log del tick in dev).
+
+**Candidati verifica Poste = NonConsegnato O invio "fermo"**: oltre al
+`NonConsegnato` terminale, entra ogni ultimo attempt con codice di
+accettazione che GlobalCom non dà `Consegnato` e non aggiorna da
+`postalPosteTracking.staleDays` giorni (default 30, su
+`COALESCE(postal_status_updated_at, sent_at, created_at)`). Caso reale:
+`Confermato`/recapito "Accettato" fermo dal 04/08, consegnata su Poste. Senza
+soglia entrerebbero tutte le raccomandate in viaggio (migliaia) contro il
+limite di ~20 richieste di Poste. Discrepanza/override = Poste `delivered` e
+GlobalCom qualunque stato ≠ `Consegnato`. Finestra = 90 giorni dalla data
+notifica (`tracking_until`), non 90 risposte.

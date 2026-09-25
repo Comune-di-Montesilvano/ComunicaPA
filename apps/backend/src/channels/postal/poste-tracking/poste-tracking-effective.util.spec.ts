@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { POSTE_DELIVERED_BUCKET, isPosteDeliveredOverride, posteDeliveredSql, posteVerificationLabel, formatLastMovement, toPosteVerificationDto, posteSummaryOf } from './poste-tracking-effective.util.js';
 
 describe('poste-tracking-effective', () => {
-  it('override solo con GlobalCom NonConsegnato e Poste delivered', () => {
+  it('override: Poste delivered e GlobalCom qualunque stato diverso da consegnato', () => {
+    expect(isPosteDeliveredOverride('Confermato', 'delivered')).toBe(true);
+    expect(isPosteDeliveredOverride(null, 'delivered')).toBe(true);
     expect(POSTE_DELIVERED_BUCKET).toBe('ConsegnatoVerificaPoste');
     expect(isPosteDeliveredOverride('NonConsegnato', 'delivered')).toBe(true);
     expect(isPosteDeliveredOverride('Consegnato', 'delivered')).toBe(false);
@@ -12,7 +14,7 @@ describe('poste-tracking-effective', () => {
 
   it('SQL sull\'alias passato', () => {
     const sql = posteDeliveredSql('na');
-    expect(sql).toContain("na.postal_status = 'NonConsegnato'");
+    expect(sql).toContain("COALESCE(na.postal_status, '') <> 'Consegnato'");
     expect(sql).toContain('ppt.attempt_id = na.id');
     expect(sql).toContain("ppt.status = 'delivered'");
   });

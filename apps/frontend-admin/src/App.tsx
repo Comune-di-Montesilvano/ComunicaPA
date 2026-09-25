@@ -333,10 +333,10 @@ function PostalDeliveryWithPosteBadge({ postalStatus, postalDeliveryStatus, post
   posteVerificationStatus?: string | null;
   posteDeliveredAt?: string | null;
 }): React.JSX.Element {
-  if (postalStatus === 'NonConsegnato' && posteVerificationStatus === 'delivered') {
+  if (postalStatus !== 'Consegnato' && posteVerificationStatus === 'delivered') {
     const meta = POSTAL_DELIVERY_STATUS_META['ConsegnatoVerificaPoste']!;
     const Icon = meta.icon;
-    const title = `GlobalCom: ${postalDeliveryStatus ?? 'Non consegnato'} — Poste: consegnato${posteDeliveredAt ? ` il ${new Date(posteDeliveredAt).toLocaleString('it-IT')}` : ''}`;
+    const title = `GlobalCom: ${postalDeliveryStatus ?? postalStatus ?? 'Non consegnato'} — Poste: consegnato${posteDeliveredAt ? ` il ${new Date(posteDeliveredAt).toLocaleString('it-IT')}` : ''}`;
     return <span className={`badge ${meta.badge}`} title={title}><Icon className="me-1" size={14} />{meta.label}</span>;
   }
   return <PostalDeliveryStatusBadge status={postalDeliveryStatus} code={postalDeliveryCode} />;
@@ -2683,6 +2683,7 @@ export function App(): React.JSX.Element {
   const [settPostalPosteTrackingEnabled, setSettPostalPosteTrackingEnabled] = useState(true);
   const [settPostalPosteIntervalSeconds, setSettPostalPosteIntervalSeconds] = useState('15');
   const [settPostalPosteCooldownMinutes, setSettPostalPosteCooldownMinutes] = useState('30');
+  const [settPostalPosteStaleDays, setSettPostalPosteStaleDays] = useState('30');
   const [settInadTestPurposeId, setSettInadTestPurposeId] = useState('');
   const [settInadProdPurposeId, setSettInadProdPurposeId] = useState('');
   const [settInadTesting, setSettInadTesting] = useState<'test' | 'prod' | null>(null);
@@ -3142,6 +3143,7 @@ export function App(): React.JSX.Element {
         setSettPostalPosteTrackingEnabled(s['postalPosteTracking.enabled'] !== false);
         setSettPostalPosteIntervalSeconds(String(s['postalPosteTracking.intervalSeconds'] ?? '15'));
         setSettPostalPosteCooldownMinutes(String(s['postalPosteTracking.cooldownMinutes'] ?? '30'));
+        setSettPostalPosteStaleDays(String(s['postalPosteTracking.staleDays'] ?? '30'));
         setSettInadTestPurposeId(String(s['inad.test.purposeId'] ?? ''));
         setSettInadProdPurposeId(String(s['inad.prod.purposeId'] ?? ''));
         setSettRegistroImpreseTestPurposeId(String(s['registroImprese.test.purposeId'] ?? ''));
@@ -4480,6 +4482,7 @@ export function App(): React.JSX.Element {
     'postalPosteTracking.enabled': settPostalPosteTrackingEnabled,
     'postalPosteTracking.intervalSeconds': Number(settPostalPosteIntervalSeconds) || 15,
     'postalPosteTracking.cooldownMinutes': Number(settPostalPosteCooldownMinutes) || 30,
+    'postalPosteTracking.staleDays': Number(settPostalPosteStaleDays) || 30,
     'inad.test.purposeId': settInadTestPurposeId,
     'inad.prod.purposeId': settInadProdPurposeId,
     'registroImprese.test.purposeId': settRegistroImpreseTestPurposeId,
@@ -5824,6 +5827,11 @@ export function App(): React.JSX.Element {
               <label className="form-label small fw-semibold" htmlFor="postal_poste_cooldown">Pausa quando Poste blocca (minuti)</label>
               <input id="postal_poste_cooldown" type="number" min={1} className="form-control form-control-sm" value={settPostalPosteCooldownMinutes} onChange={(e) => setSettPostalPosteCooldownMinutes(e.target.value)} />
               <div className="form-text small">Raddoppia a ogni nuovo blocco, fino a 4 ore; poi la verifica riprende da sola.</div>
+            </div>
+            <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+              <label className="form-label small fw-semibold" htmlFor="postal_poste_stale">Verifica anche gli invii fermi da (giorni)</label>
+              <input id="postal_poste_stale" type="number" min={1} className="form-control form-control-sm" value={settPostalPosteStaleDays} onChange={(e) => setSettPostalPosteStaleDays(e.target.value)} />
+              <div className="form-text small">Oltre ai Non consegnati: invii che GlobalCom non dà consegnati e non aggiorna da questi giorni.</div>
             </div>
           </div>
         )}
@@ -13332,7 +13340,7 @@ export function App(): React.JSX.Element {
                             const lastPostal = [...notifDetail.attempts].filter(a => a.channelType === 'POSTAL').sort((a, b) => b.attemptNumber - a.attemptNumber)[0];
                             if (!lastPostal) return null;
                             const pv = lastPostal.posteVerification;
-                            const canCheck = !!pv || (lastPostal.postalStatus === 'NonConsegnato' && !!lastPostal.postalAcceptanceId);
+                            const canCheck = !!pv || (lastPostal.postalStatus !== 'Consegnato' && !!lastPostal.postalAcceptanceId);
                             if (!canCheck) return null;
                             const statusLabel = !pv ? 'Non ancora verificata'
                               : pv.status === 'delivered' ? `Consegnata${(pv.outcomeAt ?? pv.deliveredAt) ? ` il ${new Date((pv.outcomeAt ?? pv.deliveredAt)!).toLocaleString('it-IT')}` : ''}`

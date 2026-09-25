@@ -50,7 +50,7 @@ describe('PostePostalTrackingService', () => {
     attemptRepo = { findOne: vi.fn() };
     recipientRepo = { findOne: vi.fn() };
     client = { track: vi.fn() };
-    settingsValues = { 'postalPosteTracking.enabled': true, 'postalPosteTracking.intervalSeconds': 15, 'postalPosteTracking.cooldownMinutes': 30 };
+    settingsValues = { 'postalPosteTracking.enabled': true, 'postalPosteTracking.intervalSeconds': 15, 'postalPosteTracking.cooldownMinutes': 30, 'postalPosteTracking.staleDays': 30 };
     const settings = { get: vi.fn(async (k: string) => settingsValues[k]) };
     service = new PostePostalTrackingService(repo, attemptRepo, recipientRepo, client as any, settings as any);
     sleep = vi.fn().mockResolvedValue(undefined);
@@ -66,6 +66,9 @@ describe('PostePostalTrackingService', () => {
       expect(sql).toContain("COALESCE(na.sent_at, na.created_at) > now() - interval '90 days'");
       expect(sql).toContain('ON CONFLICT (attempt_id) DO NOTHING');
       expect(sql).toContain("na.postal_status = 'NonConsegnato'");
+      // Anche invii fermi: GlobalCom non consegnato e senza aggiornamenti da 30 giorni (Impostazioni).
+      expect(sql).toContain("COALESCE(na.postal_status, '') <> 'Consegnato'");
+      expect(sql).toContain("< now() - interval '30 days'");
       expect(sql).toContain('newer.attempt_number > na.attempt_number');
       expect(repo.query.mock.calls[0][1]).toEqual([]);
     });
@@ -300,7 +303,7 @@ describe('PostePostalTrackingService', () => {
       }
       const qb = repo.createQueryBuilder.mock.results[0].value;
       const where = [qb.where, qb.andWhere].flatMap((f: any) => f.mock.calls.map((c: any[]) => c[0])).join(' ');
-      expect(where).toContain("a.postal_status = 'NonConsegnato'");
+      expect(where).toContain("COALESCE(a.postal_status, '') <> 'Consegnato'");
       expect(where).toContain('t.next_check_at <= now()');
     });
 
@@ -383,7 +386,21 @@ describe('PostePostalTrackingService', () => {
       expect(result).toBe('delivered');
     });
 
-    it('400 se l\'ultimo attempt non è NonConsegnato e non ha riga', async () => {
+    it('invio fermo (GlobalCom Confermato) senza riga: la crea e controlla', async () => {
+      recipientRepo.findOne.mockResolvedValue({ id: 'r1', campaignId: 'c1' });
+      attemptRepo.findOne.mockResolvedValue({ id: 'a1', channelType: 'POSTAL', postalStatus: 'Confermato', postalAcceptanceId: 'RN000000000IT', sentAt: new Date(), createdAt: new Date() });
+      client.track.mockResolvedValue(DELIVERED);
+      const { result } = await service.checkRecipientNow('c1', 'r1');
+      expect(result).toBe('delivered');
+    });
+
+    it('soglia "fermo" da Impostazioni nel backfill', async () => {
+      settingsValues['postalPosteTracking.staleDays'] = 45;
+      await service.backfill();
+      expect(repo.query.mock.calls[0][0]).toContain("< now() - interval '45 days'");
+    });
+
+    it('400 se GlobalCom dà già consegnato e non c\'è riga', async () => {
       recipientRepo.findOne.mockResolvedValue({ id: 'r1', campaignId: 'c1' });
       attemptRepo.findOne.mockResolvedValue({ id: 'a1', channelType: 'POSTAL', postalStatus: 'Consegnato', postalAcceptanceId: 'RN000000000IT' });
       await expect(service.checkRecipientNow('c1', 'r1')).rejects.toBeInstanceOf(BadRequestException);
