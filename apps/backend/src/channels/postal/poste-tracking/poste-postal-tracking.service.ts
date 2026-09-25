@@ -43,6 +43,21 @@ export interface PosteCampaignRunState {
   finishedAt: string | null;
 }
 
+export interface PosteQueueHealth {
+  enabled: boolean;
+  processing: boolean;
+  blockedUntil: string | null;
+  pending: number;
+  dueNow: number;
+  delivered: number;
+  returned: number;
+  gaveUp: number;
+  intervalSeconds: number;
+  activeCampaignRuns: number;
+  lastTickAt: string | null;
+  lastTickChecks: number;
+}
+
 interface CampaignRun {
   queue: string[];
   total: number;
@@ -75,6 +90,8 @@ export class PostePostalTrackingService {
   private readonly campaignRuns = new Map<string, CampaignRun>();
   /** Ultimo intervallo letto dalle Impostazioni, per la stima del tempo residuo. */
   private intervalSeconds = 15;
+  private lastTickAt: Date | null = null;
+  private lastTickChecks = 0;
   /** Sovrascrivibile nei test. */
   protected sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -291,6 +308,8 @@ export class PostePostalTrackingService {
     try {
       await this.backfill();
       const interval = await this.intervalMs();
+      this.lastTickAt = new Date();
+      this.lastTickChecks = 0;
       let calledBefore = false;
       let networkErrors = 0;
       for (;;) {
@@ -301,7 +320,10 @@ export class PostePostalTrackingService {
           await this.sleep(interval + Math.floor(Math.random() * interval * JITTER_RATIO));
         }
         const result = await this.checkOne(work.row, work.mode);
-        if (result !== 'skipped') calledBefore = true;
+        if (result !== 'skipped') {
+          calledBefore = true;
+          this.lastTickChecks++;
+        }
         if (result === 'blocked') {
           this.consecutiveBlocks++;
           if (this.consecutiveBlocks >= BLOCK_THRESHOLD) {
@@ -402,6 +424,30 @@ export class PostePostalTrackingService {
     });
     if (rows.length > 0) void this.tick();
     return { total: rows.length };
+  }
+
+  /** Salute della coda per la tab Motori: stesso ruolo di PostalStatusSyncService.getQueueHealth. */
+  async getQueueHealth(): Promise<PosteQueueHealth> {
+    const rows: Array<{ status: string; n: number; due: number }> = (await this.repo.query(
+      `SELECT status, COUNT(*)::int AS n,
+              COUNT(*) FILTER (WHERE status = 'pending' AND next_check_at <= now())::int AS due
+       FROM postal_poste_tracking GROUP BY status`,
+    )) ?? [];
+    const by = (s: string) => rows.find((r) => r.status === s);
+    return {
+      enabled: await this.isEnabled(),
+      processing: this.processing,
+      blockedUntil: this.getBlockedUntil()?.toISOString() ?? null,
+      pending: Number(by('pending')?.n ?? 0),
+      dueNow: Number(by('pending')?.due ?? 0),
+      delivered: Number(by('delivered')?.n ?? 0),
+      returned: Number(by('returned')?.n ?? 0),
+      gaveUp: Number(by('gave_up')?.n ?? 0),
+      intervalSeconds: this.intervalSeconds,
+      activeCampaignRuns: [...this.campaignRuns.values()].filter((r) => !r.finishedAt).length,
+      lastTickAt: this.lastTickAt?.toISOString() ?? null,
+      lastTickChecks: this.lastTickChecks,
+    };
   }
 
   getCampaignRun(campaignId: string): PosteCampaignRunState {

@@ -2749,6 +2749,7 @@ export function App(): React.JSX.Element {
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>('personalizzazione');
   const [engines, setEngines] = useState<any[]>([]);
   const [sendStageCounts, setSendStageCounts] = useState<{ protocollato: number; inviato: number; fallito: number } | null>(null);
+  const [posteQueueHealth, setPosteQueueHealth] = useState<{ enabled: boolean; processing: boolean; blockedUntil: string | null; pending: number; dueNow: number; delivered: number; returned: number; gaveUp: number; intervalSeconds: number; activeCampaignRuns: number; lastTickAt: string | null; lastTickChecks: number } | null>(null);
   const [postalQueueHealth, setPostalQueueHealth] = useState<{ candidatesCount: number; oldestCandidateAgeMinutes: number | null; verifiedCount: number; errorCount: number } | null>(null);
   const [loadingEngines, setLoadingEngines] = useState(false);
   const [enginesError, setEnginesError] = useState<string | null>(null);
@@ -4742,6 +4743,14 @@ export function App(): React.JSX.Element {
       if (res.ok) setPostalQueueHealth(await res.json());
     } catch {
       // silenzioso: pannello secondario, non deve bloccare/segnalare errore sulla tab Motori
+    }
+    try {
+      const res = await fetch(`${ADMIN_API_BASE}/engines/poste/queue-health`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) setPosteQueueHealth(await res.json());
+    } catch {
+      // silenzioso, come sopra
     }
   };
 
@@ -17237,6 +17246,61 @@ export function App(): React.JSX.Element {
                                               <div>
                                                 <div className={`fw-bold ${postalQueueHealth.errorCount > 0 ? 'text-danger' : 'text-muted'}`}>{postalQueueHealth.errorCount}</div>
                                                 <div className="text-muted" style={{ fontSize: '0.7rem' }}>Errore</div>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      );
+                                    })()}
+                                    {eng.channel === 'POSTAL' && posteQueueHealth && (() => {
+                                      const h = posteQueueHealth;
+                                      const paused = !!h.blockedUntil;
+                                      const hhmm = (iso: string) => new Date(iso).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+                                      const status = !h.enabled ? 'Disattivata in Impostazioni'
+                                        : paused ? `Poste limita le richieste: ripresa alle ${hhmm(h.blockedUntil!)}`
+                                        : h.processing ? `In corso: un controllo ogni ${h.intervalSeconds} secondi circa`
+                                        : 'In attesa del prossimo giro (ogni 5 minuti)';
+                                      return (
+                                        <div className={`card border shadow-sm ${paused ? 'border-warning' : 'border-light'}`}>
+                                          <div className="card-body p-3">
+                                            <div className="d-flex align-items-center gap-3 mb-2">
+                                              <div className="d-flex align-items-center justify-content-center rounded" style={{ width: 44, height: 44, flexShrink: 0, background: paused ? '#fff' : '#8E6F1F', border: paused ? '2px solid #B45309' : undefined }}>
+                                                <Truck size={22} className={paused ? 'text-warning' : 'text-white'} />
+                                              </div>
+                                              <div>
+                                                <div className="fw-bold text-dark">Verifica su Poste</div>
+                                                <div className="text-muted small">{status}{h.activeCampaignRuns > 0 ? ` — ${h.activeCampaignRuns} ${h.activeCampaignRuns === 1 ? 'campagna' : 'campagne'} in verifica manuale` : ''}</div>
+                                              </div>
+                                              {paused && (
+                                                <span className="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-auto">
+                                                  <Clock className="me-1" size={14} />In pausa
+                                                </span>
+                                              )}
+                                            </div>
+                                            <div className="d-flex flex-wrap gap-3 text-center">
+                                              <div>
+                                                <div className="fw-bold text-primary">{h.dueNow.toLocaleString('it-IT')}</div>
+                                                <div className="text-muted" style={{ fontSize: '0.7rem' }}>Da controllare adesso</div>
+                                              </div>
+                                              <div>
+                                                <div className="fw-bold text-dark">{h.pending.toLocaleString('it-IT')}</div>
+                                                <div className="text-muted" style={{ fontSize: '0.7rem' }}>In verifica</div>
+                                              </div>
+                                              <div>
+                                                <div className="fw-bold text-success">{h.delivered.toLocaleString('it-IT')}</div>
+                                                <div className="text-muted" style={{ fontSize: '0.7rem' }}>Consegnate</div>
+                                              </div>
+                                              <div>
+                                                <div className="fw-bold text-warning-emphasis">{h.returned.toLocaleString('it-IT')}</div>
+                                                <div className="text-muted" style={{ fontSize: '0.7rem' }}>Restituite</div>
+                                              </div>
+                                              <div>
+                                                <div className="fw-bold text-muted">{h.gaveUp.toLocaleString('it-IT')}</div>
+                                                <div className="text-muted" style={{ fontSize: '0.7rem' }}>Concluse (90 giorni)</div>
+                                              </div>
+                                              <div>
+                                                <div className="fw-bold text-muted">{h.lastTickAt ? hhmm(h.lastTickAt) : '—'}</div>
+                                                <div className="text-muted" style={{ fontSize: '0.7rem' }}>Ultimo giro{h.lastTickAt ? ` (${h.lastTickChecks} controlli)` : ''}</div>
                                               </div>
                                             </div>
                                           </div>

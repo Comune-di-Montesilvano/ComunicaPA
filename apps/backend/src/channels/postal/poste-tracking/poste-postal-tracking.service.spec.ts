@@ -375,6 +375,32 @@ describe('PostePostalTrackingService', () => {
     });
   });
 
+  describe('salute della coda (tab Motori)', () => {
+    it('conteggi per stato, dovuti adesso, pausa e ultimo giro', async () => {
+      repo.query.mockResolvedValue([
+        { status: 'pending', n: 120, due: 40 },
+        { status: 'delivered', n: 7, due: 0 },
+        { status: 'returned', n: 3, due: 0 },
+        { status: 'gave_up', n: 2, due: 0 },
+      ]);
+      (service as any).blockedUntil = new Date(Date.now() + 600_000);
+      const h = await service.getQueueHealth();
+      expect(h).toMatchObject({ enabled: true, pending: 120, dueNow: 40, delivered: 7, returned: 3, gaveUp: 2, processing: false, intervalSeconds: 15, activeCampaignRuns: 0 });
+      expect(h.blockedUntil).not.toBeNull();
+      expect(h.lastTickAt).toBeNull();
+    });
+
+    it('ultimo giro registrato dopo un tick', async () => {
+      add(row({ id: 't1' }));
+      client.track.mockResolvedValue(NOT_FOUND);
+      await service.tick();
+      repo.query.mockResolvedValue([]);
+      const h = await service.getQueueHealth();
+      expect(h.lastTickAt).not.toBeNull();
+      expect(h.lastTickChecks).toBe(1);
+    });
+  });
+
   describe('checkRecipientNow', () => {
     it('crea la riga al volo se manca e controlla subito', async () => {
       recipientRepo.findOne.mockResolvedValue({ id: 'r1', campaignId: 'c1' });
