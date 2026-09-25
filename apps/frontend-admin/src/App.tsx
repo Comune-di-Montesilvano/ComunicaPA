@@ -1534,7 +1534,7 @@ export function App(): React.JSX.Element {
   const [notifDetail, setNotifDetail] = useState<{
     recipient: { id: string; codiceFiscale: string; fullName: string | null; email: string | null; pec: string | null; status: string; physicalAddress: { address: string; municipality: string; zip?: string; province?: string; foreignState?: string | null } | null };
     campaign: { id: string; name: string; channelType: string; postalServiceType?: string | null; postalReturnReceipt?: boolean };
-    attempts: Array<{ attemptNumber: number; status: string; channelType: string; errorMessage: string | null; sentAt: string | null; createdAt: string; appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null; messageId?: string | null }; appIoMessageId?: string | null; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalTrackingId?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; postalStatusHistory?: Array<{ stato: string; rilevatoIl: string; codiceErrore?: string; descrizione?: string; statoConsegna?: string; codiceConsegna?: number }> | null; posteVerification?: { status: 'pending' | 'delivered' | 'returned' | 'gave_up'; trackingCode: string; checkCount: number; maxChecks: number; nextCheckAt: string | null; lastCheckedAt: string | null; lastError: string | null; deliveredAt: string | null; movements: Array<{ at: string; luogo: string; statoLavorazione: string; box: string; flagRitorno: boolean }> } | null; protocolNumber?: number | null; protocolYear?: number | null; protocolledAt?: string | null; costCents?: number | null; costCalculatedAt?: string | null; costBreakdown?: Record<string, unknown> | null }>;
+    attempts: Array<{ attemptNumber: number; status: string; channelType: string; errorMessage: string | null; sentAt: string | null; createdAt: string; appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null; messageId?: string | null }; appIoMessageId?: string | null; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalTrackingId?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; postalStatusHistory?: Array<{ stato: string; rilevatoIl: string; codiceErrore?: string; descrizione?: string; statoConsegna?: string; codiceConsegna?: number }> | null; posteVerification?: { status: 'pending' | 'delivered' | 'returned' | 'gave_up'; trackingCode: string; checkCount: number; maxChecks: number; nextCheckAt: string | null; lastCheckedAt: string | null; lastError: string | null; deliveredAt: string | null; outcomeAt?: string | null; movements: Array<{ at: string; luogo: string; statoLavorazione: string; box: string; flagRitorno: boolean }> } | null; protocolNumber?: number | null; protocolYear?: number | null; protocolledAt?: string | null; costCents?: number | null; costCalculatedAt?: string | null; costBreakdown?: Record<string, unknown> | null }>;
     preview: { subject: string; bodyHtml?: string; bodyMarkdown?: string };
     appIoPreview: { subject: string; bodyHtml?: string; bodyMarkdown?: string } | null;
     downloads: Array<{ channel: string; attachmentIndex: number; downloadedAt: string }>;
@@ -1553,7 +1553,7 @@ export function App(): React.JSX.Element {
   const [postalStatusRefreshing, setPostalStatusRefreshing] = useState(false);
   const [postalErrorsResetting, setPostalErrorsResetting] = useState(false);
   const [posteChecking, setPosteChecking] = useState(false);
-  const [posteRun, setPosteRun] = useState<{ campaignId: string; running: boolean; total: number; done: number; delivered: number; returned: number; errors: number; aborted: boolean } | null>(null);
+  const [posteRun, setPosteRun] = useState<{ campaignId: string; running: boolean; total: number; done: number; delivered: number; returned: number; errors: number; remaining?: number; etaSeconds?: number; blockedUntil?: string | null } | null>(null);
   const [trackingIdEditOpenFor, setTrackingIdEditOpenFor] = useState<number | null>(null);
   const [trackingIdEditValue, setTrackingIdEditValue] = useState('');
   const [trackingIdEditSaving, setTrackingIdEditSaving] = useState(false);
@@ -2065,7 +2065,12 @@ export function App(): React.JSX.Element {
     if (!posteRun?.running || posteRun.campaignId !== selectedCampaignId) return;
     const campaignId = posteRun.campaignId;
     let stopped = false;
+    // Un tick alla volta: se una GET dura più dell'intervallo, due tick
+    // vedevano entrambi il run finito → avviso di fine mostrato due volte.
+    let inFlight = false;
     const timer = setInterval(async () => {
+      if (inFlight || stopped) return;
+      inFlight = true;
       try {
         const r = await apiFetch(`/campaigns/${campaignId}/postal/poste-check`);
         if (stopped) return;
@@ -2080,9 +2085,10 @@ export function App(): React.JSX.Element {
           setPosteRun({ ...state, campaignId });
           return;
         }
+        stopped = true;
         clearInterval(timer);
         setPosteRun(null);
-        alert(`Verifica su Poste completata: ${state.delivered} consegnate secondo Poste, ${state.returned} restituite, ${state.errors} errori${state.aborted ? ' (interrotta: troppi errori consecutivi da Poste)' : ''}.`);
+        alert(`Verifica su Poste completata: ${state.delivered} consegnate secondo Poste, ${state.returned} restituite, ${state.errors} errori.`);
         fetchCampaignDetail(campaignId);
         fetchRecipientsPage(campaignId);
         fetchRecipientsFilterOptions(campaignId);
@@ -2090,6 +2096,8 @@ export function App(): React.JSX.Element {
       } catch {
         clearInterval(timer);
         if (!stopped) setPosteRun(null);
+      } finally {
+        inFlight = false;
       }
     }, 3000);
     return () => { stopped = true; clearInterval(timer); };
@@ -2667,6 +2675,8 @@ export function App(): React.JSX.Element {
 
   const [settInadCheckEnabled, setSettInadCheckEnabled] = useState(false);
   const [settPostalPosteTrackingEnabled, setSettPostalPosteTrackingEnabled] = useState(true);
+  const [settPostalPosteIntervalSeconds, setSettPostalPosteIntervalSeconds] = useState('15');
+  const [settPostalPosteCooldownMinutes, setSettPostalPosteCooldownMinutes] = useState('30');
   const [settInadTestPurposeId, setSettInadTestPurposeId] = useState('');
   const [settInadProdPurposeId, setSettInadProdPurposeId] = useState('');
   const [settInadTesting, setSettInadTesting] = useState<'test' | 'prod' | null>(null);
@@ -3124,6 +3134,8 @@ export function App(): React.JSX.Element {
         setSettPdndProdPrivateKey(String(s['pdnd.prod.privateKey'] ?? ''));
         setSettInadCheckEnabled(Boolean(s['inad.checkEnabled']));
         setSettPostalPosteTrackingEnabled(s['postalPosteTracking.enabled'] !== false);
+        setSettPostalPosteIntervalSeconds(String(s['postalPosteTracking.intervalSeconds'] ?? '15'));
+        setSettPostalPosteCooldownMinutes(String(s['postalPosteTracking.cooldownMinutes'] ?? '30'));
         setSettInadTestPurposeId(String(s['inad.test.purposeId'] ?? ''));
         setSettInadProdPurposeId(String(s['inad.prod.purposeId'] ?? ''));
         setSettRegistroImpreseTestPurposeId(String(s['registroImprese.test.purposeId'] ?? ''));
@@ -4460,6 +4472,8 @@ export function App(): React.JSX.Element {
     'pdnd.prod.privateKey': settPdndProdPrivateKey,
     'inad.checkEnabled': settInadCheckEnabled,
     'postalPosteTracking.enabled': settPostalPosteTrackingEnabled,
+    'postalPosteTracking.intervalSeconds': Number(settPostalPosteIntervalSeconds) || 15,
+    'postalPosteTracking.cooldownMinutes': Number(settPostalPosteCooldownMinutes) || 30,
     'inad.test.purposeId': settInadTestPurposeId,
     'inad.prod.purposeId': settInadProdPurposeId,
     'registroImprese.test.purposeId': settRegistroImpreseTestPurposeId,
@@ -5793,6 +5807,20 @@ export function App(): React.JSX.Element {
             Verifica consegna su tracking Poste Italiane per le raccomandate che GlobalCom dà come Non consegnate (controllo giornaliero, max 90 giorni) — salva con "Salva Impostazioni" in fondo alla pagina
           </label>
         </div>
+        {settPostalPosteTrackingEnabled && (
+          <div className="d-flex flex-wrap gap-3">
+            <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+              <label className="form-label small fw-semibold" htmlFor="postal_poste_interval">Pausa tra due chiamate a Poste (secondi)</label>
+              <input id="postal_poste_interval" type="number" min={1} className="form-control form-control-sm" value={settPostalPosteIntervalSeconds} onChange={(e) => setSettPostalPosteIntervalSeconds(e.target.value)} />
+              <div className="form-text small">Poste blocca le richieste troppo ravvicinate (a 2 secondi blocca dopo circa 20 chiamate).</div>
+            </div>
+            <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+              <label className="form-label small fw-semibold" htmlFor="postal_poste_cooldown">Pausa quando Poste blocca (minuti)</label>
+              <input id="postal_poste_cooldown" type="number" min={1} className="form-control form-control-sm" value={settPostalPosteCooldownMinutes} onChange={(e) => setSettPostalPosteCooldownMinutes(e.target.value)} />
+              <div className="form-text small">Raddoppia a ogni nuovo blocco, fino a 4 ore; poi la verifica riprende da sola.</div>
+            </div>
+          </div>
+        )}
         {postalProviderMsg && (
           <div className={`alert ${postalProviderMsg.error ? 'alert-danger' : 'alert-success'} d-flex align-items-center gap-2 mb-0`}>
             {postalProviderMsg.error ? <AlertTriangle /> : <CheckCircle2 />}
@@ -6803,7 +6831,7 @@ export function App(): React.JSX.Element {
         return;
       }
       // Il polling dell'avanzamento lo fa l'useEffect legato a selectedCampaignId.
-      setPosteRun({ campaignId, running: true, total, done: 0, delivered: 0, returned: 0, errors: 0, aborted: false });
+      setPosteRun({ campaignId, running: true, total, done: 0, delivered: 0, returned: 0, errors: 0, remaining: total });
     } catch (err) {
       if (!(err instanceof ApiAuthError)) alert("Errore durante l'avvio della verifica su Poste.");
     }
@@ -13301,8 +13329,8 @@ export function App(): React.JSX.Element {
                             const canCheck = !!pv || (lastPostal.postalStatus === 'NonConsegnato' && !!lastPostal.postalAcceptanceId);
                             if (!canCheck) return null;
                             const statusLabel = !pv ? 'Non ancora verificata'
-                              : pv.status === 'delivered' ? `Consegnata${pv.deliveredAt ? ` il ${new Date(pv.deliveredAt).toLocaleString('it-IT')}` : ''}`
-                              : pv.status === 'returned' ? 'Restituita al mittente'
+                              : pv.status === 'delivered' ? `Consegnata${(pv.outcomeAt ?? pv.deliveredAt) ? ` il ${new Date((pv.outcomeAt ?? pv.deliveredAt)!).toLocaleString('it-IT')}` : ''}`
+                              : pv.status === 'returned' ? `Restituita al mittente${pv.outcomeAt ? ` il ${new Date(pv.outcomeAt).toLocaleString('it-IT')}` : ''}`
                               : pv.status === 'gave_up' ? `Verifica esaurita (${pv.checkCount}/${pv.maxChecks})`
                               : `In verifica (${pv.checkCount}/${pv.maxChecks})${pv.nextCheckAt ? ` — prossimo controllo ${new Date(pv.nextCheckAt).toLocaleString('it-IT')}` : ''}`;
                             return (
@@ -13434,7 +13462,13 @@ export function App(): React.JSX.Element {
                                             <PostalDeliveryStatusBadge status={a.postalDeliveryStatus} code={a.postalDeliveryCode} acceptanceId={a.postalAcceptanceId} />
                                             {a.postalDeliveryDate && (
                                               <div className="text-muted" style={{ fontSize: '0.75rem' }}>
-                                                {new Date(a.postalDeliveryDate).toLocaleString('it-IT')}
+                                                Esito GlobalCom: {new Date(a.postalDeliveryDate).toLocaleString('it-IT')}
+                                              </div>
+                                            )}
+                                            {(a.posteVerification?.status === 'delivered' || a.posteVerification?.status === 'returned') && (
+                                              <div className={a.posteVerification.status === 'delivered' ? 'text-success' : 'text-muted'} style={{ fontSize: '0.75rem' }}>
+                                                Esito Poste: {a.posteVerification.status === 'delivered' ? 'consegnata' : 'restituita al mittente'}
+                                                {(a.posteVerification.outcomeAt ?? a.posteVerification.deliveredAt) && ` il ${new Date((a.posteVerification.outcomeAt ?? a.posteVerification.deliveredAt)!).toLocaleString('it-IT')}`}
                                               </div>
                                             )}
                                           </td>
@@ -18141,7 +18175,11 @@ export function App(): React.JSX.Element {
                                   title="Controlla subito sul tracking di Poste Italiane le raccomandate che GlobalCom dà come Non consegnate (il postino può aver consegnato in un secondo passaggio). Lanciabile a qualsiasi ora, oltre al controllo automatico giornaliero."
                                 >
                                   {posteRun?.running && posteRun.campaignId === campaign.id ? <Loader2 className="icon-spin me-1" size={14} /> : <Truck className="me-1" size={14} />}
-                                  {posteRun?.running && posteRun.campaignId === campaign.id ? `Verifica su Poste ${posteRun.done}/${posteRun.total}` : 'Verifica su Poste'}
+                                  {posteRun?.running && posteRun.campaignId === campaign.id
+                                    ? (posteRun.blockedUntil
+                                        ? `Verifica su Poste ${posteRun.done}/${posteRun.total} — Poste limita le richieste, ripresa alle ${new Date(posteRun.blockedUntil).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`
+                                        : `Verifica su Poste ${posteRun.done}/${posteRun.total}${posteRun.etaSeconds ? ` — circa ${posteRun.etaSeconds >= 3600 ? `${Math.floor(posteRun.etaSeconds / 3600)} h ${Math.round((posteRun.etaSeconds % 3600) / 60)} min` : `${Math.max(1, Math.round(posteRun.etaSeconds / 60))} min`}` : ''}`)
+                                    : 'Verifica su Poste'}
                                 </button>
                               )}
                               <button
