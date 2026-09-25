@@ -1,0 +1,142 @@
+/* Dettaglio notifica — verdetto + percorso.
+   Colori dai token del design system (stemma): ogni fonte ha colore e forma
+   propri, così il percorso si legge anche senza colori (forme distinte). */
+
+.nd-scope {
+  --nd-ink: #1F2A37;
+  --nd-muted: #5B6675;
+  --nd-rail: #D5DAE3;
+  --nd-invio: var(--ms-purple-600, #4A2A6E);
+  --nd-protocollo: #5B6675;
+  --nd-globalcom: #1F4E79;
+  --nd-poste: var(--ms-gold-700, #8E6F1F);
+  --nd-send: #0B6E6E;
+  --nd-appio: #0066CC;
+  --nd-cittadino: var(--ms-green-600, #2E7D32);
+  --nd-ok: var(--ms-green-700, #1B5E20);
+  --nd-ko: #B42318;
+  --nd-warn: #9A4D00;
+}
+
+/* ---------- Intestazione ---------- */
+.nd-scope .nd-who { font-size: 1.35rem; font-weight: 700; color: var(--nd-ink); line-height: 1.2; margin: 0; }
+.nd-scope .nd-who-meta { color: var(--nd-muted); font-size: 0.875rem; margin: 0.15rem 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.6rem; }
+.nd-scope .nd-cf { font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+
+/* ---------- Verdetto: l'unico elemento forte ---------- */
+.nd-verdict {
+  border-left: 4px solid var(--nd-rail);
+  padding: 0.25rem 0 0.25rem 1rem;
+  margin: 0 0 1.5rem;
+}
+.nd-verdict.nd-tone-ok { border-left-color: var(--nd-ok); }
+.nd-verdict.nd-tone-ko { border-left-color: var(--nd-ko); }
+.nd-verdict.nd-tone-warn { border-left-color: var(--nd-warn); }
+.nd-verdict-headline {
+  font-family: 'Lora', Georgia, serif;
+  font-weight: 600;
+  font-size: 1.75rem;
+  line-height: 1.15;
+  color: var(--nd-ink);
+  margin: 0;
+}
+.nd-verdict-meta { color: var(--nd-muted); margin: 0.2rem 0 0; font-variant-numeric: tabular-nums; }
+.nd-verdict-note { margin: 0.5rem 0 0; color: var(--nd-ink); max-width: 70ch; }
+.nd-verdict-note-alert { color: var(--nd-warn); display: flex; gap: 0.4rem; align-items: baseline; font-weight: 600; }
+
+/* ---------- Griglia percorso / colonna dati ---------- */
+.nd-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; margin-bottom: 1.5rem; }
+@media (min-width: 992px) {
+  .nd-grid { grid-template-columns: minmax(0, 1fr) 17.5rem; gap: 2.5rem; }
+}
+.nd-section-title { font-size: 0.95rem; font-weight: 700; color: var(--nd-ink); margin: 0 0 0.75rem; }
+
+/* ---------- Percorso ---------- */
+.nd-timeline { list-style: none; margin: 0; padding: 0; }
+.nd-event {
+  display: grid;
+  grid-template-columns: 5.75rem 1.25rem minmax(0, 1fr);
+  column-gap: 0.5rem;
+  position: relative;
+  padding-bottom: 0.9rem;
+}
+.nd-event::before { /* rail */
+  content: '';
+  position: absolute;
+  left: calc(5.75rem + 0.5rem + 0.625rem - 1px);
+  top: 0.9rem;
+  bottom: -0.1rem;
+  width: 2px;
+  background: var(--nd-rail);
+}
+.nd-event:last-child::before { display: none; }
+.nd-when { text-align: right; font-variant-numeric: tabular-nums; font-size: 0.8rem; color: var(--nd-muted); line-height: 1.35; padding-top: 0.05rem; }
+.nd-day { display: block; color: var(--nd-ink); font-weight: 600; }
+.nd-time { display: block; }
+.nd-what { display: flex; flex-direction: column; min-width: 0; line-height: 1.35; }
+.nd-title { color: var(--nd-ink); font-weight: 600; }
+.nd-source { font-size: 0.78rem; color: var(--nd-muted); }
+.nd-detail { font-size: 0.85rem; color: var(--nd-muted); overflow-wrap: anywhere; }
+.nd-tone-ko .nd-title, .nd-tone-ko .nd-detail { color: var(--nd-ko); }
+.nd-tone-ok .nd-title { color: var(--nd-ok); }
+.nd-tone-warn .nd-title { color: var(--nd-warn); }
+
+/* Segni per fonte: forma + colore (leggibili anche in scala di grigi). */
+.nd-marker {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  margin: 0.3rem auto 0;
+  background: var(--nd-src, var(--nd-muted));
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 0 0 3px #fff;
+}
+.nd-src-invio { --nd-src: var(--nd-invio); }
+.nd-src-protocollo { --nd-src: var(--nd-protocollo); }
+.nd-src-globalcom { --nd-src: var(--nd-globalcom); }
+.nd-src-poste { --nd-src: var(--nd-poste); }
+.nd-src-send { --nd-src: var(--nd-send); }
+.nd-src-appio { --nd-src: var(--nd-appio); }
+.nd-src-cittadino { --nd-src: var(--nd-cittadino); }
+.nd-src-invio .nd-marker, .nd-src-appio .nd-marker { border-radius: 50%; }
+.nd-src-protocollo .nd-marker { width: 0.8rem; height: 0.45rem; margin-top: 0.42rem; }
+.nd-src-globalcom .nd-marker { border-radius: 1px; }
+.nd-src-poste .nd-marker { transform: rotate(45deg) scale(0.85); }
+.nd-src-send .nd-marker, .nd-src-cittadino .nd-marker {
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  box-shadow: none;
+}
+.nd-tone-ko.nd-event .nd-marker { background: var(--nd-ko); }
+
+.nd-legend { list-style: none; display: flex; flex-wrap: wrap; gap: 0.35rem 1rem; padding: 0.75rem 0 0; margin: 0.25rem 0 0; border-top: 1px solid var(--nd-rail); font-size: 0.78rem; color: var(--nd-muted); }
+.nd-legend li { display: inline-flex; align-items: center; gap: 0.4rem; }
+.nd-legend .nd-marker { margin: 0; box-shadow: none; }
+.nd-empty { color: var(--nd-muted); }
+
+/* ---------- Colonna dati ---------- */
+.nd-side { display: flex; flex-direction: column; gap: 1.25rem; font-size: 0.9rem; }
+.nd-side h4 { font-size: 0.8rem; font-weight: 700; color: var(--nd-muted); margin: 0 0 0.3rem; }
+.nd-side p { margin: 0; color: var(--nd-ink); overflow-wrap: anywhere; }
+.nd-side .nd-kv { font-variant-numeric: tabular-nums; }
+.nd-actions { display: flex; flex-direction: column; gap: 0.5rem; }
+.nd-actions .btn { justify-content: flex-start; }
+.nd-attachment { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+
+/* ---------- Pannelli richiudibili ---------- */
+.nd-more { border-top: 1px solid var(--nd-rail); padding: 0.75rem 0; }
+.nd-more > summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--nd-ink);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.nd-more > summary::-webkit-details-marker { display: none; }
+.nd-more > summary::before { content: '▸'; color: var(--nd-muted); transition: transform 0.15s ease; }
+.nd-more[open] > summary::before { transform: rotate(90deg); }
+.nd-more > summary:focus-visible { outline: 2px solid var(--nd-invio); outline-offset: 3px; border-radius: 2px; }
+.nd-more-body { padding-top: 0.75rem; }
+@media (prefers-reduced-motion: reduce) { .nd-more > summary::before { transition: none; } }
