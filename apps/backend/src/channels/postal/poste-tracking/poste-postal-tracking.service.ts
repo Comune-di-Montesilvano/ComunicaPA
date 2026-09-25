@@ -9,9 +9,7 @@ import { AppSettingsService } from '../../../settings/app-settings.service.js';
 import { captureException } from '../../../common/sentry.util.js';
 import { PosteTrackingClient } from './poste-tracking-client.service.js';
 import { mapPosteOutcome, PosteTrackingError, type PosteTrackingResponse } from './poste-tracking-mapping.util.js';
-import { POSTE_MAX_CHECKS } from './poste-tracking-effective.util.js';
-
-export const MAX_POSTE_CHECKS = POSTE_MAX_CHECKS;
+import { POSTE_TRACKING_DAYS } from './poste-tracking-effective.util.js';
 const NETWORK_ERROR_THRESHOLD = 5;
 const BLOCK_THRESHOLD = 2;
 const MAX_COOLDOWN_MS = 4 * 60 * 60_000;
@@ -122,13 +120,14 @@ export class PostePostalTrackingService {
   async backfill(campaignId?: string): Promise<number> {
     const params: unknown[] = campaignId ? [campaignId] : [];
     const rows = await this.repo.query(
-      `INSERT INTO postal_poste_tracking (attempt_id, tracking_code, status, next_check_at)
-       SELECT na.id, na.postal_acceptance_id, 'pending', now()
+      `INSERT INTO postal_poste_tracking (attempt_id, tracking_code, status, next_check_at, tracking_until)
+       SELECT na.id, na.postal_acceptance_id, 'pending', now(), COALESCE(na.sent_at, na.created_at) + interval '90 days'
        FROM notification_attempts na
        JOIN recipients r ON r.id = na.recipient_id
        WHERE na.channel_type = 'POSTAL'
          AND na.postal_status = 'NonConsegnato'
          AND na.postal_acceptance_id IS NOT NULL AND na.postal_acceptance_id <> ''
+         AND COALESCE(na.sent_at, na.created_at) > now() - interval '90 days'
          AND NOT EXISTS (SELECT 1 FROM notification_attempts newer WHERE newer.recipient_id = na.recipient_id AND newer.attempt_number > na.attempt_number)
          ${campaignId ? 'AND r.campaign_id = $1' : ''}
        ON CONFLICT (attempt_id) DO NOTHING
@@ -144,6 +143,14 @@ export class PostePostalTrackingService {
     const fresh = await this.repo.findOneBy({ id: row.id });
     if (fresh) Object.assign(row, fresh);
     const now = new Date();
+    // Finestra di 90 giorni dalla notifica chiusa: il cron smette senza
+    // chiamare Poste (il tasto manuale resta sempre disponibile).
+    if (mode === 'cron' && row.status === 'pending' && this.windowClosed(row, now)) {
+      row.status = 'gave_up';
+      row.nextCheckAt = null;
+      await this.repo.save(row);
+      return 'gave_up';
+    }
     // Ultimo controllo riuscito (nessun errore) da meno di 23 ore: niente
     // chiamata. Un tentativo bloccato/fallito non conta, si può riprovare.
     if (row.lastCheckedAt && !row.lastError && now.getTime() - row.lastCheckedAt.getTime() < MIN_RECHECK_MS) {
@@ -151,11 +158,12 @@ export class PostePostalTrackingService {
         // Il controllo del giorno l'ha già fatto qualcun altro (tasto/campagna):
         // il giorno conta, prossimo controllo a 24 ore da quello.
         row.checkCount += 1;
-        if (row.status === 'pending' && row.checkCount >= MAX_POSTE_CHECKS) {
+        const next = new Date(row.lastCheckedAt.getTime() + DAY_MS);
+        if (row.status === 'pending' && this.windowClosed(row, next)) {
           row.status = 'gave_up';
           row.nextCheckAt = null;
         } else {
-          row.nextCheckAt = new Date(row.lastCheckedAt.getTime() + DAY_MS);
+          row.nextCheckAt = next;
         }
         await this.repo.save(row);
       }
@@ -197,11 +205,13 @@ export class PostePostalTrackingService {
       row.deliveredAt = outcome === 'delivered' ? outcomeAt : null;
       row.nextCheckAt = null;
     } else if (mode === 'cron') {
-      if (row.checkCount >= MAX_POSTE_CHECKS) {
+      // Il prossimo controllo cadrebbe oltre la finestra: questo era l'ultimo.
+      const next = new Date(now.getTime() + DAY_MS);
+      if (this.windowClosed(row, next)) {
         row.status = 'gave_up';
         row.nextCheckAt = null;
       } else {
-        row.nextCheckAt = new Date(now.getTime() + DAY_MS);
+        row.nextCheckAt = next;
       }
     }
     await this.repo.save(row);
@@ -234,6 +244,11 @@ export class PostePostalTrackingService {
       .limit(1)
       .getOne();
     return row ? { row, mode: 'cron' } : null;
+  }
+
+  /** Righe pre-migrazione senza tracking_until: ripiego sul vecchio limite di 90 controlli. */
+  private windowClosed(row: PostalPosteTracking, at: Date): boolean {
+    return row.trackingUntil ? at.getTime() >= row.trackingUntil.getTime() : row.checkCount >= POSTE_TRACKING_DAYS;
   }
 
   private isRecentlyChecked(row: PostalPosteTracking): boolean {
@@ -322,7 +337,15 @@ export class PostePostalTrackingService {
       if (attempt.postalStatus !== 'NonConsegnato' || !attempt.postalAcceptanceId) {
         throw new BadRequestException('Verifica Poste disponibile solo per notifiche Non consegnate con codice di accettazione Poste');
       }
-      row = await this.repo.save(this.repo.create({ attemptId: attempt.id, trackingCode: attempt.postalAcceptanceId, status: 'pending', checkCount: 0, nextCheckAt: new Date() }));
+      const notifiedAt = attempt.sentAt ?? attempt.createdAt;
+      row = await this.repo.save(this.repo.create({
+        attemptId: attempt.id,
+        trackingCode: attempt.postalAcceptanceId,
+        status: 'pending',
+        checkCount: 0,
+        nextCheckAt: new Date(),
+        trackingUntil: notifiedAt ? new Date(notifiedAt.getTime() + POSTE_TRACKING_DAYS * DAY_MS) : null,
+      }));
     }
     const result = await this.checkOne(row, 'manual');
     return { row, result };

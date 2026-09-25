@@ -87,7 +87,7 @@ describe('NotificationsSearchService - verifica Poste', () => {
     ]);
     posteRepo.find.mockResolvedValue([{ attemptId: 'a1', status: 'pending', trackingCode: 'RN000000000IT', checkCount: 2, nextCheckAt: null, lastCheckedAt: null, lastError: null, deliveredAt: null, movements: [] }]);
     const detail = await service.getDetail('r1');
-    expect(detail.attempts[0]).toMatchObject({ posteVerification: { status: 'pending', checkCount: 2, maxChecks: 90 } });
+    expect(detail.attempts[0]).toMatchObject({ posteVerification: { status: 'pending', checkCount: 2, trackingUntil: null } });
     expect(detail.attempts[1]).toMatchObject({ posteVerification: null });
   });
 });

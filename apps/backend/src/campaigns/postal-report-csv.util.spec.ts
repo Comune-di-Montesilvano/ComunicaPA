@@ -29,7 +29,7 @@ describe('buildPostalReportAttualeCsv', () => {
   it('include intestazioni e riga con stato/data correnti (ultimo elemento storico)', () => {
     const csv = buildPostalReportAttualeCsv(baseReport);
     const lines = csv.split('\n');
-    expect(lines[0]).toBe('"Codice Fiscale";"Nominativo";"IDPRO";"Stato Documento";"Data Stato";"Stato Consegna Poste";"Codice Consegna";"Data Consegna Poste";"ID Accettazione Poste";"Codice Errore";"Descrizione Errore";"Verifica Poste";"Data Esito Poste";"Ultimo Movimento Poste";"Discrepanza GlobalCom/Poste"');
+    expect(lines[0]).toBe('"Codice Fiscale";"Nominativo";"IDPRO";"Stato Documento";"Data Stato";"Stato Consegna Poste";"Codice Consegna";"Data Consegna Poste";"ID Accettazione Poste";"Codice Errore";"Descrizione Errore";"Verifica Poste";"Sintesi Poste";"Data Esito Poste";"Ultimo Movimento Poste";"Discrepanza GlobalCom/Poste"');
     expect(lines[1]).toContain('"Consegnato"');
     expect(lines[1]).not.toContain('Esito App IO');
   });
@@ -63,7 +63,7 @@ describe('buildPostalReportStoricoCsv', () => {
   it('include una colonna data per ciascuno dei 14 stati, vuota se mai raggiunto', () => {
     const csv = buildPostalReportStoricoCsv(baseReport);
     const lines = csv.split('\n');
-    expect(lines[0].split(';')).toHaveLength(9 + 14 + 4);
+    expect(lines[0].split(';')).toHaveLength(9 + 14 + 5);
     const headers = lines[0].split(';');
     const sospesoIndex = headers.findIndex((h: string) => h === '"Data Sospeso"');
     expect(lines[1].split(';')[sospesoIndex]).toBe('""');
@@ -89,7 +89,7 @@ describe('colonne verifica Poste', () => {
       postalStatus: 'NonConsegnato',
       postalDeliveryStatus: 'Indirizzo errato o inesatto',
       appIoOutcome: { success: true, error: null },
-      posteVerification: { status: 'delivered', checkCount: 3, deliveredAt: '2026-09-04T08:06:00.000Z', outcomeAt: '2026-09-04T08:06:00.000Z', lastMovement: `SVIZZERA ${when}` },
+      posteVerification: { status: 'delivered', checkCount: 3, trackingUntil: '2026-10-27T18:05:03.000Z', deliveredAt: '2026-09-04T08:06:00.000Z', outcomeAt: '2026-09-04T08:06:00.000Z', lastMovement: `SVIZZERA ${when}`, summary: 'La spedizione è stata consegnata' },
       posteDiscrepancy: true,
     }],
   };
@@ -97,17 +97,17 @@ describe('colonne verifica Poste', () => {
   it('attuale: valori e posizione prima di Esito App IO', () => {
     const [header, line] = buildPostalReportAttualeCsv(discrepancyReport).split('\n');
     expect(header).toContain('"Discrepanza GlobalCom/Poste";"Esito App IO"');
-    expect(line).toContain(`"Consegnato";"${when}";"SVIZZERA ${when}";"SI";"Consegnato"`);
+    expect(line).toContain(`"Consegnato";"La spedizione è stata consegnata";"${when}";"SVIZZERA ${when}";"SI";"Consegnato"`);
   });
 
   it('storico: stesse colonne', () => {
     const [header, line] = buildPostalReportStoricoCsv(discrepancyReport).split('\n');
-    expect(header).toContain('"Verifica Poste";"Data Esito Poste";"Ultimo Movimento Poste";"Discrepanza GlobalCom/Poste"');
+    expect(header).toContain('"Verifica Poste";"Sintesi Poste";"Data Esito Poste";"Ultimo Movimento Poste";"Discrepanza GlobalCom/Poste"');
     expect(line).toContain('"SI"');
   });
 
   it('senza verifica: celle vuote, nessuna discrepanza', () => {
     const line = buildPostalReportAttualeCsv(baseReport).split('\n')[1]!;
-    expect(line.endsWith('"";"";"";""')).toBe(true);
+    expect(line.endsWith('"";"";"";"";""')).toBe(true);
   });
 });

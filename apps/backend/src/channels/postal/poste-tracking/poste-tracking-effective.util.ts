@@ -1,20 +1,23 @@
 import type { PostalPosteTracking, PosteTrackingMovement, PosteTrackingStatus } from '../../../entities/postal-poste-tracking.entity.js';
 import { lastMovement } from './poste-tracking-mapping.util.js';
 
-/** Allineato a MAX_POSTE_CHECKS del servizio (definito qui per evitare import circolare util → service). */
-export const POSTE_MAX_CHECKS = 90;
+/** Finestra di verifica: 90 giorni dalla data della notifica (non 90 risposte). */
+export const POSTE_TRACKING_DAYS = 90;
 
 export interface PosteVerificationDto {
   status: PosteTrackingStatus;
   trackingCode: string;
   checkCount: number;
-  maxChecks: number;
+  /** Fine finestra di verifica (data notifica + 90 giorni). */
+  trackingUntil: string | null;
   nextCheckAt: string | null;
   lastCheckedAt: string | null;
   lastError: string | null;
   deliveredAt: string | null;
   /** Data esito Poste (consegna o ritorno al mittente). */
   outcomeAt: string | null;
+  /** Ultimo stato visto su Poste, qualunque sia (anche intermedio). */
+  summary: string | null;
   movements: PosteTrackingMovement[];
 }
 
@@ -23,12 +26,13 @@ export function toPosteVerificationDto(row: PostalPosteTracking): PosteVerificat
     status: row.status,
     trackingCode: row.trackingCode,
     checkCount: row.checkCount,
-    maxChecks: POSTE_MAX_CHECKS,
+    trackingUntil: row.trackingUntil ? row.trackingUntil.toISOString() : null,
     nextCheckAt: row.nextCheckAt ? row.nextCheckAt.toISOString() : null,
     lastCheckedAt: row.lastCheckedAt ? row.lastCheckedAt.toISOString() : null,
     lastError: row.lastError,
     deliveredAt: row.deliveredAt ? row.deliveredAt.toISOString() : null,
     outcomeAt: row.outcomeAt ? row.outcomeAt.toISOString() : null,
+    summary: posteSummaryOf(row),
     movements: row.movements ?? [],
   };
 }
@@ -49,15 +53,36 @@ export function posteDeliveredSql(alias: string): string {
   return `(${alias}.postal_status = 'NonConsegnato' AND EXISTS (SELECT 1 FROM postal_poste_tracking ppt WHERE ppt.attempt_id = ${alias}.id AND ppt.status = 'delivered'))`;
 }
 
-export function posteVerificationLabel(v: { status: string; checkCount: number } | null | undefined): string {
+function formatDay(d: string | Date): string {
+  return new Date(d).toLocaleDateString('it-IT', { timeZone: 'Europe/Rome' });
+}
+
+export function posteVerificationLabel(v: { status: string; trackingUntil?: string | Date | null } | null | undefined): string {
   if (!v) return '';
   switch (v.status) {
     case 'delivered': return 'Consegnato';
     case 'returned': return 'Restituito al mittente';
-    case 'pending': return `In verifica (${v.checkCount}/${POSTE_MAX_CHECKS})`;
-    case 'gave_up': return 'Verifica esaurita';
+    case 'pending': return v.trackingUntil ? `In verifica fino al ${formatDay(v.trackingUntil)}` : 'In verifica';
+    case 'gave_up': return `Verifica esaurita (${POSTE_TRACKING_DAYS} giorni)`;
     default: return v.status;
   }
+}
+
+/**
+ * Ultimo stato visto su Poste, qualunque sia: frase di sintesi di Poste
+ * (`sintesiStato`), altrimenti l'ultimo movimento, altrimenti "nessuna
+ * informazione" se Poste non conosce il codice. null se mai risposto.
+ */
+export function posteSummaryOf(row: Pick<PostalPosteTracking, 'lastResponse' | 'movements' | 'posteEsitoRicerca'>): string | null {
+  const sintesi = row.lastResponse?.['sintesiStato'];
+  if (typeof sintesi === 'string' && sintesi.trim()) return sintesi.trim();
+  const last = lastMovement(row.movements ?? []);
+  if (last) {
+    const when = last.at ? new Date(last.at).toLocaleString('it-IT', { timeZone: 'Europe/Rome' }) : '';
+    return [last.statoLavorazione, last.luogo, when].filter(Boolean).join(' · ');
+  }
+  if (row.posteEsitoRicerca === '1') return 'Nessuna informazione su Poste per questo codice';
+  return null;
 }
 
 export function formatLastMovement(movements: PosteTrackingMovement[] | null | undefined): string {

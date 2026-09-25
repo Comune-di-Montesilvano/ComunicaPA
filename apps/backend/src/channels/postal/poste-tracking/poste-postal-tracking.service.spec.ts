@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ConflictException, BadRequestException } from '@nestjs/common';
-import { PostePostalTrackingService, MAX_POSTE_CHECKS } from './poste-postal-tracking.service.js';
+import { PostePostalTrackingService } from './poste-postal-tracking.service.js';
 import { PosteTrackingError } from './poste-tracking-mapping.util.js';
 import type { PostalPosteTracking } from '../../../entities/postal-poste-tracking.entity.js';
 
@@ -10,7 +10,7 @@ const NOT_FOUND = { esitoRicerca: '1', stato: '1', flagRitorno: false, tipoProdo
 const BLOCKED = () => new PosteTrackingError('HTTP 400 da Poste', 'blocked');
 
 function row(partial: Partial<PostalPosteTracking> = {}): PostalPosteTracking {
-  return { id: 't1', attemptId: 'a1', trackingCode: 'RN000000000IT', status: 'pending', checkCount: 0, nextCheckAt: new Date(Date.now() - 1000), lastCheckedAt: null, lastError: null, posteStato: null, posteEsitoRicerca: null, posteProduct: null, deliveredAt: null, outcomeAt: null, movements: null, lastResponse: null, createdAt: new Date(), updatedAt: new Date(), ...partial } as PostalPosteTracking;
+  return { id: 't1', attemptId: 'a1', trackingCode: 'RN000000000IT', status: 'pending', checkCount: 0, nextCheckAt: new Date(Date.now() - 1000), lastCheckedAt: null, lastError: null, posteStato: null, posteEsitoRicerca: null, posteProduct: null, deliveredAt: null, outcomeAt: null, trackingUntil: new Date(Date.now() + 30 * 86_400_000), movements: null, lastResponse: null, createdAt: new Date(), updatedAt: new Date(), ...partial } as PostalPosteTracking;
 }
 
 describe('PostePostalTrackingService', () => {
@@ -62,6 +62,8 @@ describe('PostePostalTrackingService', () => {
       repo.query.mockResolvedValue([{ id: 'x' }, { id: 'y' }]);
       expect(await service.backfill()).toBe(2);
       const sql = repo.query.mock.calls[0][0] as string;
+      expect(sql).toContain("COALESCE(na.sent_at, na.created_at) + interval '90 days'");
+      expect(sql).toContain("COALESCE(na.sent_at, na.created_at) > now() - interval '90 days'");
       expect(sql).toContain('ON CONFLICT (attempt_id) DO NOTHING');
       expect(sql).toContain("na.postal_status = 'NonConsegnato'");
       expect(sql).toContain('newer.attempt_number > na.attempt_number');
@@ -103,11 +105,30 @@ describe('PostePostalTrackingService', () => {
       expect(r.nextCheckAt!.getTime()).toBeGreaterThanOrEqual(before + 86_400_000 - 1000);
     });
 
-    it(`al ${MAX_POSTE_CHECKS}° controllo senza esito → gave_up`, async () => {
-      client.track.mockResolvedValue(NOT_FOUND);
-      const r = row({ checkCount: MAX_POSTE_CHECKS - 1 });
+    it('finestra di 90 giorni dalla notifica scaduta: gave_up senza chiamare Poste', async () => {
+      const r = row({ checkCount: 3, trackingUntil: new Date(Date.now() - 1000) });
       expect(await service.checkOne(r, 'cron')).toBe('gave_up');
+      expect(client.track).not.toHaveBeenCalled();
       expect(r.nextCheckAt).toBeNull();
+    });
+
+    it('molti controlli ma finestra ancora aperta: resta pending (non conta le risposte)', async () => {
+      client.track.mockResolvedValue(NOT_FOUND);
+      const r = row({ checkCount: 200 });
+      expect(await service.checkOne(r, 'cron')).toBe('pending');
+    });
+
+    it('ultimo controllo utile: se il prossimo cadrebbe oltre la finestra → gave_up', async () => {
+      client.track.mockResolvedValue(NOT_FOUND);
+      const r = row({ trackingUntil: new Date(Date.now() + 3 * 3_600_000) });
+      expect(await service.checkOne(r, 'cron')).toBe('gave_up');
+      expect(client.track).toHaveBeenCalledTimes(1);
+    });
+
+    it('manuale oltre la finestra: chiama comunque Poste (tasto sempre disponibile)', async () => {
+      client.track.mockResolvedValue(DELIVERED);
+      const r = row({ status: 'gave_up', nextCheckAt: null, trackingUntil: new Date(Date.now() - 86_400_000) });
+      expect(await service.checkOne(r, 'manual')).toBe('delivered');
     });
 
     it('errore di rete: non consuma controllo, rimanda di un giorno', async () => {
@@ -194,8 +215,8 @@ describe('PostePostalTrackingService', () => {
       expect(repo.save).toHaveBeenCalledWith(r);
     });
 
-    it(`cron: skip che raggiunge il ${MAX_POSTE_CHECKS}° giorno → gave_up`, async () => {
-      const r = row({ lastCheckedAt: hoursAgo(3), lastError: null, checkCount: MAX_POSTE_CHECKS - 1 });
+    it('cron: skip con finestra che si chiude prima del prossimo controllo → gave_up', async () => {
+      const r = row({ lastCheckedAt: hoursAgo(3), lastError: null, trackingUntil: new Date(Date.now() + 3_600_000) });
       expect(await service.checkOne(r, 'cron')).toBe('skipped');
       expect(r.status).toBe('gave_up');
       expect(r.nextCheckAt).toBeNull();
@@ -354,10 +375,10 @@ describe('PostePostalTrackingService', () => {
   describe('checkRecipientNow', () => {
     it('crea la riga al volo se manca e controlla subito', async () => {
       recipientRepo.findOne.mockResolvedValue({ id: 'r1', campaignId: 'c1' });
-      attemptRepo.findOne.mockResolvedValue({ id: 'a1', channelType: 'POSTAL', postalStatus: 'NonConsegnato', postalAcceptanceId: 'RN000000000IT' });
+      attemptRepo.findOne.mockResolvedValue({ id: 'a1', channelType: 'POSTAL', postalStatus: 'NonConsegnato', postalAcceptanceId: 'RN000000000IT', sentAt: new Date('2026-07-29T18:05:03Z'), createdAt: new Date('2026-07-29T18:00:00Z') });
       client.track.mockResolvedValue(DELIVERED);
       const { row: r, result } = await service.checkRecipientNow('c1', 'r1');
-      expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ attemptId: 'a1', trackingCode: 'RN000000000IT', status: 'pending' }));
+      expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ attemptId: 'a1', trackingCode: 'RN000000000IT', status: 'pending', trackingUntil: new Date('2026-10-27T18:05:03Z') }));
       expect(r.status).toBe('delivered');
       expect(result).toBe('delivered');
     });

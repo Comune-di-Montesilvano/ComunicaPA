@@ -38,7 +38,7 @@ export class PostalPosteTracking {
   @Column({ type: 'varchar', length: 20, default: 'pending' })
   status!: PosteTrackingStatus;
 
-  /** Solo controlli del cron con risposta valida: errori di rete e controlli manuali esclusi. */
+  /** Giorni controllati (informativo): il limite è la finestra tracking_until, non il numero di risposte. */
   @Column({ name: 'check_count', type: 'int', default: 0 })
   checkCount!: number;
 
@@ -63,6 +63,10 @@ export class PostalPosteTracking {
 
   @Column({ name: 'delivered_at', type: 'timestamptz', nullable: true })
   deliveredAt!: Date | null;
+
+  /** Fine finestra di verifica: data della notifica (sent_at, altrimenti created_at) + 90 giorni. */
+  @Column({ name: 'tracking_until', type: 'timestamptz', nullable: true })
+  trackingUntil!: Date | null;
 
   /** Data esito Poste (consegna O ritorno al mittente) = data dell'ultimo movimento. */
   @Column({ name: 'outcome_at', type: 'timestamptz', nullable: true })
