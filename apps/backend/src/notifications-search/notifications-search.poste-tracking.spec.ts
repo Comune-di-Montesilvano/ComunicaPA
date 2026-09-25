@@ -50,7 +50,7 @@ describe('NotificationsSearchService - verifica Poste', () => {
     await service.search({ posteVerification: 'delivered', page: 1, pageSize: 50 });
     const sql = qb.andWhere.mock.calls.map((c: any[]) => String(c[0])).join('\n');
     expect(sql).toContain("ppt.status = 'delivered'");
-    expect(sql).toContain("na.postal_status = 'NonConsegnato'");
+    expect(sql).toContain("COALESCE(na.postal_status, '') <> 'Consegnato'");
     expect(sql).toContain('SELECT MAX(na2.attempt_number)');
   });
 
@@ -68,15 +68,16 @@ describe('NotificationsSearchService - verifica Poste', () => {
   });
 
   it('righe risultato: stato verifica dall\'ultimo attempt, delivered senza NonConsegnato scartato', async () => {
-    qb.getManyAndCount.mockResolvedValue([[recipientRow('r1'), recipientRow('r2'), recipientRow('r3')], 3]);
+    qb.getManyAndCount.mockResolvedValue([[recipientRow('r1'), recipientRow('r2'), recipientRow('r3'), recipientRow('r4')], 4]);
     posteRepo.query.mockResolvedValue([
       { recipientId: 'r1', status: 'delivered', postalStatus: 'NonConsegnato' },
       { recipientId: 'r2', status: 'delivered', postalStatus: 'Consegnato' },
+      { recipientId: 'r4', status: 'delivered', postalStatus: 'Confermato' },
       { recipientId: 'r3', status: 'pending', postalStatus: 'NonConsegnato' },
     ]);
     const { rows } = await service.search({ page: 1, pageSize: 50 });
-    expect(rows.map((r) => r.posteVerificationStatus)).toEqual(['delivered', null, 'pending']);
-    expect(posteRepo.query.mock.calls[0][1]).toEqual([['r1', 'r2', 'r3']]);
+    expect(rows.map((r) => r.posteVerificationStatus)).toEqual(['delivered', null, 'pending', 'delivered']);
+    expect(posteRepo.query.mock.calls[0][1]).toEqual([['r1', 'r2', 'r3', 'r4']]);
   });
 
   it('dettaglio: posteVerification sugli attempt POSTAL con riga, null sugli altri', async () => {
@@ -87,7 +88,7 @@ describe('NotificationsSearchService - verifica Poste', () => {
     ]);
     posteRepo.find.mockResolvedValue([{ attemptId: 'a1', status: 'pending', trackingCode: 'RN000000000IT', checkCount: 2, nextCheckAt: null, lastCheckedAt: null, lastError: null, deliveredAt: null, movements: [] }]);
     const detail = await service.getDetail('r1');
-    expect(detail.attempts[0]).toMatchObject({ posteVerification: { status: 'pending', checkCount: 2, maxChecks: 90 } });
+    expect(detail.attempts[0]).toMatchObject({ posteVerification: { status: 'pending', checkCount: 2, trackingUntil: null } });
     expect(detail.attempts[1]).toMatchObject({ posteVerification: null });
   });
 });

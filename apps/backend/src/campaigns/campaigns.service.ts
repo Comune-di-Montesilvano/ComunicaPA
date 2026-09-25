@@ -47,7 +47,7 @@ import { SignatureVerificationService } from '../signature-verification/signatur
 import { SignatureVerificationJobStatus } from '../entities/signature-verification-job.entity.js';
 import { isPartitaIva } from '../channels/tax-id.util.js';
 import { PostalPosteTracking } from '../entities/postal-poste-tracking.entity.js';
-import { POSTE_DELIVERED_BUCKET, formatLastMovement, isPosteDeliveredOverride, posteDeliveredSql } from '../channels/postal/poste-tracking/poste-tracking-effective.util.js';
+import { POSTE_DELIVERED_BUCKET, formatLastMovement, isPosteDeliveredOverride, posteDeliveredSql, posteSummaryOf } from '../channels/postal/poste-tracking/poste-tracking-effective.util.js';
 
 const INAD_BULK_THRESHOLD = 100;
 // Sentinella filtro "Stato Consegna" per attempt SUCCESS senza send_status/postal_status
@@ -3528,7 +3528,7 @@ export class CampaignsService {
         appIoOutcome: appIo ? { success: !!appIo.success, error: appIo.error ?? null } : null,
         externalId: resolveExternalId(campaign, r),
         posteVerification: poste
-          ? { status: poste.status, checkCount: poste.checkCount, deliveredAt: poste.deliveredAt ? poste.deliveredAt.toISOString() : null, outcomeAt: poste.outcomeAt ? poste.outcomeAt.toISOString() : null, lastMovement: formatLastMovement(poste.movements) }
+          ? { status: poste.status, checkCount: poste.checkCount, trackingUntil: poste.trackingUntil ? poste.trackingUntil.toISOString() : null, deliveredAt: poste.deliveredAt ? poste.deliveredAt.toISOString() : null, outcomeAt: poste.outcomeAt ? poste.outcomeAt.toISOString() : null, lastMovement: formatLastMovement(poste.movements), summary: posteSummaryOf(poste) }
           : null,
         posteDiscrepancy: isPosteDeliveredOverride(latest?.postalStatus, poste?.status),
       };

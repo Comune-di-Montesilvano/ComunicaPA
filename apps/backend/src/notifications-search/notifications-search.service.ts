@@ -142,7 +142,7 @@ export class NotificationsSearchService {
     const map = new Map<string, string>();
     for (const r of rows) {
       if (!r.status) continue;
-      if (r.status === 'delivered' && r.postalStatus !== 'NonConsegnato') continue;
+      if (r.status === 'delivered' && r.postalStatus === 'Consegnato') continue;
       map.set(r.recipientId, r.status);
     }
     return map;

@@ -179,7 +179,7 @@ export interface PostalReportRowDto {
   appIoOutcome: { success: boolean; error: string | null } | null;
   externalId: string | null;
   /** Verifica consegna su tracking Poste dell'ultimo attempt, null se nessuna riga. */
-  posteVerification: { status: string; checkCount: number; deliveredAt: string | null; outcomeAt: string | null; lastMovement: string } | null;
+  posteVerification: { status: string; checkCount: number; trackingUntil: string | null; deliveredAt: string | null; outcomeAt: string | null; lastMovement: string; summary: string | null } | null;
   /** GlobalCom NonConsegnato ma Poste consegnato (stesso criterio del bucket ConsegnatoVerificaPoste). */
   posteDiscrepancy: boolean;
 }

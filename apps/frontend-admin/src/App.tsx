@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import MDEditor from '@uiw/react-md-editor';
 import { TemplateEditor } from './components/TemplateEditor';
+import { NotificationVerdict, NotificationTimeline } from './components/notification-detail/NotificationJourney';
+import type { JourneyLabels } from './components/notification-detail/journey';
 import { SearchableSelect } from './components/SearchableSelect';
 import { StatisticsView } from './components/StatisticsView';
 import { DashboardView } from './components/DashboardView';
@@ -326,6 +328,14 @@ function PostalDeliveryStatusBadge({
 // GlobalCom NonConsegnato ma consegnato secondo il tracking Poste: badge
 // dedicato con lo stato GlobalCom originale nel tooltip (la discrepanza
 // resta visibile, vedi spec 2026-09-24-postal-verifica-poste-design.md).
+// Etichette per verdetto e percorso del dettaglio notifica (stessi registri
+// usati altrove: nessuna label duplicata per canale/stato).
+const NOTIF_JOURNEY_LABELS: JourneyLabels = {
+  channel: (c) => getChannelMeta(c).label,
+  postalStatus: (s) => POSTAL_STATUS_META[s]?.label ?? s,
+  sendStatus: (s) => SEND_STATUS_META[s]?.label ?? s,
+};
+
 function PostalDeliveryWithPosteBadge({ postalStatus, postalDeliveryStatus, postalDeliveryCode, posteVerificationStatus, posteDeliveredAt }: {
   postalStatus?: string | null;
   postalDeliveryStatus?: string | null;
@@ -333,10 +343,10 @@ function PostalDeliveryWithPosteBadge({ postalStatus, postalDeliveryStatus, post
   posteVerificationStatus?: string | null;
   posteDeliveredAt?: string | null;
 }): React.JSX.Element {
-  if (postalStatus === 'NonConsegnato' && posteVerificationStatus === 'delivered') {
+  if (postalStatus !== 'Consegnato' && posteVerificationStatus === 'delivered') {
     const meta = POSTAL_DELIVERY_STATUS_META['ConsegnatoVerificaPoste']!;
     const Icon = meta.icon;
-    const title = `GlobalCom: ${postalDeliveryStatus ?? 'Non consegnato'} — Poste: consegnato${posteDeliveredAt ? ` il ${new Date(posteDeliveredAt).toLocaleString('it-IT')}` : ''}`;
+    const title = `GlobalCom: ${postalDeliveryStatus ?? postalStatus ?? 'Non consegnato'} — Poste: consegnato${posteDeliveredAt ? ` il ${new Date(posteDeliveredAt).toLocaleString('it-IT')}` : ''}`;
     return <span className={`badge ${meta.badge}`} title={title}><Icon className="me-1" size={14} />{meta.label}</span>;
   }
   return <PostalDeliveryStatusBadge status={postalDeliveryStatus} code={postalDeliveryCode} />;
@@ -1534,7 +1544,7 @@ export function App(): React.JSX.Element {
   const [notifDetail, setNotifDetail] = useState<{
     recipient: { id: string; codiceFiscale: string; fullName: string | null; email: string | null; pec: string | null; status: string; physicalAddress: { address: string; municipality: string; zip?: string; province?: string; foreignState?: string | null } | null };
     campaign: { id: string; name: string; channelType: string; postalServiceType?: string | null; postalReturnReceipt?: boolean };
-    attempts: Array<{ attemptNumber: number; status: string; channelType: string; errorMessage: string | null; sentAt: string | null; createdAt: string; appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null; messageId?: string | null }; appIoMessageId?: string | null; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalTrackingId?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; postalStatusHistory?: Array<{ stato: string; rilevatoIl: string; codiceErrore?: string; descrizione?: string; statoConsegna?: string; codiceConsegna?: number }> | null; posteVerification?: { status: 'pending' | 'delivered' | 'returned' | 'gave_up'; trackingCode: string; checkCount: number; maxChecks: number; nextCheckAt: string | null; lastCheckedAt: string | null; lastError: string | null; deliveredAt: string | null; outcomeAt?: string | null; movements: Array<{ at: string; luogo: string; statoLavorazione: string; box: string; flagRitorno: boolean }> } | null; protocolNumber?: number | null; protocolYear?: number | null; protocolledAt?: string | null; costCents?: number | null; costCalculatedAt?: string | null; costBreakdown?: Record<string, unknown> | null }>;
+    attempts: Array<{ attemptNumber: number; status: string; channelType: string; errorMessage: string | null; sentAt: string | null; createdAt: string; appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null; messageId?: string | null }; appIoMessageId?: string | null; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalTrackingId?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; postalStatusHistory?: Array<{ stato: string; rilevatoIl: string; codiceErrore?: string; descrizione?: string; statoConsegna?: string; codiceConsegna?: number }> | null; posteVerification?: { status: 'pending' | 'delivered' | 'returned' | 'gave_up'; trackingCode: string; checkCount: number; trackingUntil?: string | null; summary?: string | null; nextCheckAt: string | null; lastCheckedAt: string | null; lastError: string | null; deliveredAt: string | null; outcomeAt?: string | null; movements: Array<{ at: string; luogo: string; statoLavorazione: string; box: string; flagRitorno: boolean }> } | null; protocolNumber?: number | null; protocolYear?: number | null; protocolledAt?: string | null; costCents?: number | null; costCalculatedAt?: string | null; costBreakdown?: Record<string, unknown> | null }>;
     preview: { subject: string; bodyHtml?: string; bodyMarkdown?: string };
     appIoPreview: { subject: string; bodyHtml?: string; bodyMarkdown?: string } | null;
     downloads: Array<{ channel: string; attachmentIndex: number; downloadedAt: string }>;
@@ -2683,6 +2693,7 @@ export function App(): React.JSX.Element {
   const [settPostalPosteTrackingEnabled, setSettPostalPosteTrackingEnabled] = useState(true);
   const [settPostalPosteIntervalSeconds, setSettPostalPosteIntervalSeconds] = useState('15');
   const [settPostalPosteCooldownMinutes, setSettPostalPosteCooldownMinutes] = useState('30');
+  const [settPostalPosteStaleDays, setSettPostalPosteStaleDays] = useState('30');
   const [settInadTestPurposeId, setSettInadTestPurposeId] = useState('');
   const [settInadProdPurposeId, setSettInadProdPurposeId] = useState('');
   const [settInadTesting, setSettInadTesting] = useState<'test' | 'prod' | null>(null);
@@ -3142,6 +3153,7 @@ export function App(): React.JSX.Element {
         setSettPostalPosteTrackingEnabled(s['postalPosteTracking.enabled'] !== false);
         setSettPostalPosteIntervalSeconds(String(s['postalPosteTracking.intervalSeconds'] ?? '15'));
         setSettPostalPosteCooldownMinutes(String(s['postalPosteTracking.cooldownMinutes'] ?? '30'));
+        setSettPostalPosteStaleDays(String(s['postalPosteTracking.staleDays'] ?? '30'));
         setSettInadTestPurposeId(String(s['inad.test.purposeId'] ?? ''));
         setSettInadProdPurposeId(String(s['inad.prod.purposeId'] ?? ''));
         setSettRegistroImpreseTestPurposeId(String(s['registroImprese.test.purposeId'] ?? ''));
@@ -4480,6 +4492,7 @@ export function App(): React.JSX.Element {
     'postalPosteTracking.enabled': settPostalPosteTrackingEnabled,
     'postalPosteTracking.intervalSeconds': Number(settPostalPosteIntervalSeconds) || 15,
     'postalPosteTracking.cooldownMinutes': Number(settPostalPosteCooldownMinutes) || 30,
+    'postalPosteTracking.staleDays': Number(settPostalPosteStaleDays) || 30,
     'inad.test.purposeId': settInadTestPurposeId,
     'inad.prod.purposeId': settInadProdPurposeId,
     'registroImprese.test.purposeId': settRegistroImpreseTestPurposeId,
@@ -5824,6 +5837,11 @@ export function App(): React.JSX.Element {
               <label className="form-label small fw-semibold" htmlFor="postal_poste_cooldown">Pausa quando Poste blocca (minuti)</label>
               <input id="postal_poste_cooldown" type="number" min={1} className="form-control form-control-sm" value={settPostalPosteCooldownMinutes} onChange={(e) => setSettPostalPosteCooldownMinutes(e.target.value)} />
               <div className="form-text small">Raddoppia a ogni nuovo blocco, fino a 4 ore; poi la verifica riprende da sola.</div>
+            </div>
+            <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+              <label className="form-label small fw-semibold" htmlFor="postal_poste_stale">Verifica anche gli invii fermi da (giorni)</label>
+              <input id="postal_poste_stale" type="number" min={1} className="form-control form-control-sm" value={settPostalPosteStaleDays} onChange={(e) => setSettPostalPosteStaleDays(e.target.value)} />
+              <div className="form-text small">Oltre ai Non consegnati: invii che GlobalCom non dà consegnati e non aggiorna da questi giorni.</div>
             </div>
           </div>
         )}
@@ -13241,10 +13259,21 @@ export function App(): React.JSX.Element {
                 }
               }}
             >
-              <div className="modal-dialog modal-lg modal-dialog-scrollable">
+              <div className="modal-dialog modal-xl modal-dialog-scrollable">
                 <div className="modal-content">
                   <div className="modal-header align-items-center">
-                    <h5 className="modal-title mb-0">Dettaglio Notifica</h5>
+                    {notifDetail ? (
+                      <div className="nd-scope">
+                        <h5 className="nd-who">{notifDetail.recipient.fullName || notifDetail.recipient.codiceFiscale}</h5>
+                        <p className="nd-who-meta">
+                          <span className="nd-cf">{notifDetail.recipient.codiceFiscale}</span>
+                          <ChannelBadge channel={notifDetail.campaign.channelType} extra={notifDetail.campaign.channelType === 'POSTAL' ? postalBadgeExtra({ postalServiceType: notifDetail.campaign.postalServiceType, postalReturnReceipt: notifDetail.campaign.postalReturnReceipt }, postalProviders.find((p) => p.active)?.enabledServiceTypes) : undefined} />
+                          <span>{notifDetail.campaign.name}</span>
+                        </p>
+                      </div>
+                    ) : (
+                      <h5 className="modal-title mb-0">Dettaglio Notifica</h5>
+                    )}
                     {notifDetail && (
                       <div className="ms-auto me-3">
                         {notifDetail.totalCostCents !== undefined && notifDetail.totalCostCents !== null ? (
@@ -13270,39 +13299,82 @@ export function App(): React.JSX.Element {
                       <div className="text-center text-muted py-4"><Loader2 className="icon-spin me-1" size={16} />Caricamento...</div>
                     ) : notifDetail && (
                       <>
-                        <div className="mb-3">
-                          <div><strong>Destinatario:</strong> {notifDetail.recipient.fullName || notifDetail.recipient.codiceFiscale} ({notifDetail.recipient.codiceFiscale})</div>
-                          {notifDetail.recipient.physicalAddress && (
-                            <div>
-                              <strong>Indirizzo:</strong>{' '}
-                              {notifDetail.recipient.physicalAddress.address}
-                              {notifDetail.recipient.physicalAddress.zip ? `, ${notifDetail.recipient.physicalAddress.zip}` : ''}
-                              {' '}{notifDetail.recipient.physicalAddress.municipality}
-                              {notifDetail.recipient.physicalAddress.province ? ` (${notifDetail.recipient.physicalAddress.province})` : ''}
-                              {notifDetail.recipient.physicalAddress.foreignState ? `, ${notifDetail.recipient.physicalAddress.foreignState}` : ''}
-                              <span className={`badge ms-2 ${notifDetail.recipient.physicalAddress.foreignState ? 'bg-warning text-dark' : 'bg-secondary'}`}>
-                                {notifDetail.recipient.physicalAddress.foreignState ? 'Estero' : 'Italia'}
-                              </span>
-                            </div>
-                          )}
-                          {notifDetail.recipient.email && <div><strong>Email:</strong> {notifDetail.recipient.email}</div>}
-                          {notifDetail.recipient.pec && <div><strong>PEC:</strong> {notifDetail.recipient.pec}</div>}
-                          <div><strong>Campagna:</strong> {notifDetail.campaign.name} <span className="ms-1"><ChannelBadge channel={notifDetail.campaign.channelType} extra={notifDetail.campaign.channelType === 'POSTAL' ? postalBadgeExtra({ postalServiceType: notifDetail.campaign.postalServiceType, postalReturnReceipt: notifDetail.campaign.postalReturnReceipt }, postalProviders.find((p) => p.active)?.enabledServiceTypes) : undefined} /></span></div>
-                        </div>
-
-                        {notifDetail.payment && (notifDetail.payment.noticeCode || notifDetail.payment.amountCents !== null || notifDetail.payment.dueDateIso) && (
-                          <div className="mb-3 p-2 border rounded bg-light small">
-                            <div className="fw-bold mb-1"><Euro size={14} className="me-1" />Pagamento PagoPA</div>
-                            <div className="d-flex flex-wrap gap-4">
-                              {notifDetail.payment.noticeCode && <div><strong>IUV:</strong> {notifDetail.payment.noticeCode}</div>}
-                              {notifDetail.payment.amountCents !== null && <div><strong>Importo:</strong> {formatEuroCents(notifDetail.payment.amountCents)}</div>}
-                              {notifDetail.payment.dueDateIso && <div><strong>Scadenza:</strong> {new Date(notifDetail.payment.dueDateIso).toLocaleDateString('it-IT')}</div>}
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="d-flex justify-content-between align-items-center">
-                          <h6 className="fw-bold small mb-0">Storico Tentativi</h6>
+                        <div className="nd-scope">
+                          <NotificationVerdict detail={notifDetail} labels={NOTIF_JOURNEY_LABELS} />
+                          <div className="nd-grid">
+                            <section aria-label="Percorso della notifica">
+                              <h3 className="nd-section-title">Percorso</h3>
+                              <NotificationTimeline detail={notifDetail} labels={NOTIF_JOURNEY_LABELS} />
+                            </section>
+                            <aside className="nd-side" aria-label="Dati della notifica">
+                              {(notifDetail.recipient.physicalAddress || notifDetail.recipient.email || notifDetail.recipient.pec) && (
+                                <div>
+                                  <h4>Recapito</h4>
+                                  {notifDetail.recipient.physicalAddress && (
+                                    <>
+                                      <p>{notifDetail.recipient.physicalAddress.address}</p>
+                                      <p>
+                                        {notifDetail.recipient.physicalAddress.zip ? `${notifDetail.recipient.physicalAddress.zip} ` : ''}
+                                        {notifDetail.recipient.physicalAddress.municipality}
+                                        {notifDetail.recipient.physicalAddress.province ? ` (${notifDetail.recipient.physicalAddress.province})` : ''}
+                                      </p>
+                                      <p className={notifDetail.recipient.physicalAddress.foreignState ? 'text-warning-emphasis fw-semibold' : 'text-muted'}>
+                                        {notifDetail.recipient.physicalAddress.foreignState || 'Italia'}
+                                      </p>
+                                    </>
+                                  )}
+                                  {notifDetail.recipient.email && <p>{notifDetail.recipient.email}</p>}
+                                  {notifDetail.recipient.pec && <p>PEC {notifDetail.recipient.pec}</p>}
+                                </div>
+                              )}
+                              {notifDetail.payment && (notifDetail.payment.noticeCode || notifDetail.payment.amountCents !== null || notifDetail.payment.dueDateIso) && (
+                                <div>
+                                  <h4>Pagamento pagoPA</h4>
+                                  {notifDetail.payment.amountCents !== null && <p className="nd-kv fw-semibold">{formatEuroCents(notifDetail.payment.amountCents)}</p>}
+                                  {notifDetail.payment.noticeCode && <p className="nd-kv">IUV {notifDetail.payment.noticeCode}</p>}
+                                  {notifDetail.payment.dueDateIso && <p className="nd-kv">Scadenza {new Date(notifDetail.payment.dueDateIso).toLocaleDateString('it-IT')}</p>}
+                                </div>
+                              )}
+                              {notifDetail.campaign.channelType !== 'SEND' && notifDetail.attachments.length > 0 && (
+                                <div>
+                                  <h4>Allegati</h4>
+                                  {notifDetail.attachments.map((att) => (
+                                    <div key={att.index} className="nd-attachment">
+                                      <p>{att.label}</p>
+                                      <button type="button" className="btn btn-sm btn-outline-secondary text-nowrap" onClick={() => downloadNotifAttachment(att.index)}>
+                                        <Download className="me-1" size={14} />Scarica
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {(() => {
+                                const lastPostal = [...notifDetail.attempts].filter(a => a.channelType === 'POSTAL').sort((a, b) => b.attemptNumber - a.attemptNumber)[0];
+                                const pv = lastPostal?.posteVerification;
+                                if (!lastPostal || !(pv || (lastPostal.postalStatus !== 'Consegnato' && lastPostal.postalAcceptanceId))) return null;
+                                return (
+                                  <div>
+                                    <h4>Verifica su Poste</h4>
+                                    {pv ? (
+                                      <>
+                                        <p className="nd-kv">Codice {pv.trackingCode}</p>
+                                        <p>
+                                          {pv.status === 'pending' && `In verifica${pv.trackingUntil ? ` fino al ${new Date(pv.trackingUntil).toLocaleDateString('it-IT')}` : ''}`}
+                                          {pv.status === 'gave_up' && 'Verifica conclusa: 90 giorni dalla notifica'}
+                                          {pv.status === 'delivered' && 'Consegnata secondo Poste'}
+                                          {pv.status === 'returned' && 'Restituita al mittente secondo Poste'}
+                                        </p>
+                                        {pv.summary && <p className="text-muted">{pv.summary}</p>}
+                                        {pv.lastCheckedAt && <p className="text-muted nd-kv">Ultimo controllo {new Date(pv.lastCheckedAt).toLocaleString('it-IT')}</p>}
+                                        {pv.lastError && <p className="text-danger">Ultimo tentativo non riuscito: {pv.lastError}</p>}
+                                      </>
+                                    ) : (
+                                      <p className="text-muted">Non ancora verificata</p>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                              <div className="nd-actions">
                           {notifDetail.campaign.channelType === 'POSTAL' && (() => {
                             const lastAttempt = notifDetail.attempts[notifDetail.attempts.length - 1];
                             // Nessun IDPRO reale (mai davvero trasmesso a GlobalCom, es. attempt
@@ -13328,41 +13400,236 @@ export function App(): React.JSX.Element {
                               </button>
                             );
                           })()}
-                          {(() => {
-                            const lastPostal = [...notifDetail.attempts].filter(a => a.channelType === 'POSTAL').sort((a, b) => b.attemptNumber - a.attemptNumber)[0];
-                            if (!lastPostal) return null;
-                            const pv = lastPostal.posteVerification;
-                            const canCheck = !!pv || (lastPostal.postalStatus === 'NonConsegnato' && !!lastPostal.postalAcceptanceId);
-                            if (!canCheck) return null;
-                            const statusLabel = !pv ? 'Non ancora verificata'
-                              : pv.status === 'delivered' ? `Consegnata${(pv.outcomeAt ?? pv.deliveredAt) ? ` il ${new Date((pv.outcomeAt ?? pv.deliveredAt)!).toLocaleString('it-IT')}` : ''}`
-                              : pv.status === 'returned' ? `Restituita al mittente${pv.outcomeAt ? ` il ${new Date(pv.outcomeAt).toLocaleString('it-IT')}` : ''}`
-                              : pv.status === 'gave_up' ? `Verifica esaurita (${pv.checkCount}/${pv.maxChecks})`
-                              : `In verifica (${pv.checkCount}/${pv.maxChecks})${pv.nextCheckAt ? ` — prossimo controllo ${new Date(pv.nextCheckAt).toLocaleString('it-IT')}` : ''}`;
-                            return (
-                              <div className="border rounded p-2 mt-2 small">
-                                <div className="d-flex align-items-center justify-content-between gap-2">
-                                  <div>
-                                    <span className="fw-semibold">Verifica Poste</span>{pv && <span className="text-muted ms-2">{pv.trackingCode}</span>}
-                                    <div>{statusLabel}</div>
-                                    {pv?.lastError && <div className="text-danger">Ultimo errore: {pv.lastError}</div>}
-                                  </div>
-                                  <button type="button" className="btn btn-sm btn-outline-secondary text-nowrap" disabled={posteChecking} onClick={handlePosteCheckRecipient}>
-                                    {posteChecking ? <Loader2 className="icon-spin me-1" size={14} /> : <RefreshCw className="me-1" size={14} />}
-                                    Verifica ora su Poste
+                                {(() => {
+                                  const lastPostal = [...notifDetail.attempts].filter(a => a.channelType === 'POSTAL').sort((a, b) => b.attemptNumber - a.attemptNumber)[0];
+                                  if (!lastPostal || !(lastPostal.posteVerification || (lastPostal.postalStatus !== 'Consegnato' && lastPostal.postalAcceptanceId))) return null;
+                                  return (
+                                    <button type="button" className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center" disabled={posteChecking} onClick={handlePosteCheckRecipient}>
+                                      {posteChecking ? <Loader2 className="icon-spin me-1" size={14} /> : <RefreshCw className="me-1" size={14} />}
+                                      Verifica ora su Poste
+                                    </button>
+                                  );
+                                })()}
+                              </div>
+                            </aside>
+                          </div>
+                        </div>
+
+                        {(notifDetail.campaign.channelType === 'POSTAL' || notifDetail.campaign.channelType === 'SEND')
+                          && notifDetail.attempts.length > 0
+                          && (() => {
+                            const last = notifDetail.attempts[notifDetail.attempts.length - 1];
+                            // Un attempt "Riuscito" può nascondere un errore di consegna reale
+                            // post-accettazione (es. GlobalCom "Impossibile validare l'indirizzo",
+                            // CodiceErrore valorizzato ma status resta SUCCESS) — stesso criterio già
+                            // usato per la colonna Errore: il valore di codiceErrore, non lo status.
+                            const hasDeliveryError = (last.postalStatusHistory || []).some((h) => h.codiceErrore && h.codiceErrore !== '0');
+                            // Un "Riuscito" POSTAL che non riceve MAI un postal_status (nemmeno
+                            // "Rimandato"/transitorio) entro un tempo ragionevole è di fatto appeso —
+                            // sync gira ogni minuto (postal-status-sync.service.ts), 30 minuti senza
+                            // nessun aggiornamento è ben oltre qualunque latenza normale GlobalCom.
+                            // Copre sia il caso dedup fittizio (bug corretto in postal.strategy.ts,
+                            // isGoodExistingSubmission) sia un IDPRO mai davvero assegnato — senza
+                            // questo controllo il bottone "Correggi indirizzo e rimetti in coda"
+                            // spariva proprio sui casi che ne hanno più bisogno (l'ultimo attempt,
+                            // quello davvero bloccato, non ha uno storico errore proprio).
+                            const POSTAL_STUCK_TIMEOUT_MS = 30 * 60 * 1000;
+                            const isStuckPending =
+                              last.channelType === 'POSTAL' &&
+                              last.status === 'success' &&
+                              !last.postalStatus &&
+                              Date.now() - new Date(last.createdAt).getTime() > POSTAL_STUCK_TIMEOUT_MS;
+                            return last.status === 'failed' || hasDeliveryError || isStuckPending;
+                          })() && (
+                          <div className="card border-warning mb-4">
+                            <div className="card-header bg-warning-subtle d-flex align-items-center justify-content-between">
+                              <span className="fw-bold small"><MapPin className="me-1" size={16} />Correggi indirizzo e rimetti in coda</span>
+                              {!addressEditOpen && (
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-outline-dark"
+                                  onClick={() => {
+                                    // Prepopola con l'indirizzo/nominativo già presenti (mai vuoto se
+                                    // già risolvibile) — solo un vero indirizzo mai mappato resta vuoto.
+                                    const pa = notifDetail?.recipient.physicalAddress;
+                                    setAddressEditForm({
+                                      address: pa?.address || '',
+                                      municipality: pa?.municipality || '',
+                                      zip: pa?.zip || '',
+                                      province: pa?.province || '',
+                                      country: pa?.foreignState || 'Italia',
+                                      fullName: notifDetail?.recipient.fullName || '',
+                                    });
+                                    setAddressEditOpen(true);
+                                  }}
+                                >
+                                  <Pencil className="me-1" size={16} />Modifica
+                                </button>
+                              )}
+                            </div>
+                            {addressEditOpen && (
+                              <div className="card-body">
+                                <div className="d-flex justify-content-end mb-2">
+                                  <button
+                                    type="button"
+                                    className="btn btn-sm btn-outline-primary"
+                                    onClick={runAddressEditAnprCheck}
+                                    disabled={addressEditAnprLoading}
+                                  >
+                                    {addressEditAnprLoading ? (
+                                      <><Loader2 className="icon-spin me-1" size={16} />Verifica in corso...</>
+                                    ) : /^\d{11}$/.test((notifDetail?.recipient.codiceFiscale || '').trim()) ? (
+                                      <><Search className="me-1" size={16} />Carica da Registro Imprese</>
+                                    ) : (
+                                      <><Search className="me-1" size={16} />Verifica ANPR</>
+                                    )}
                                   </button>
                                 </div>
-                                {pv && pv.movements.length > 0 && (
-                                  <ul className="list-unstyled mb-0 mt-2">
-                                    {pv.movements.map((m, i) => (
-                                      <li key={i} className="text-muted">{m.at ? new Date(m.at).toLocaleString('it-IT') : '—'} · {m.luogo || '—'} · fase {m.box}{m.flagRitorno ? ' · ritorno al mittente' : ''}</li>
-                                    ))}
-                                  </ul>
-                                )}
+                                <div className="row g-2">
+                                  <div className="col-12">
+                                    <label className="form-label small mb-1">Nominativo</label>
+                                    <input type="text" className="form-control form-control-sm" value={addressEditForm.fullName} onChange={(e) => setAddressEditForm(f => ({ ...f, fullName: e.target.value }))} />
+                                  </div>
+                                  <div className="col-12">
+                                    <label className="form-label small mb-1">Via/Indirizzo *</label>
+                                    <input type="text" className="form-control form-control-sm" value={addressEditForm.address} onChange={(e) => setAddressEditForm(f => ({ ...f, address: e.target.value }))} />
+                                  </div>
+                                  <div className="col-md-6">
+                                    <label className="form-label small mb-1">Comune *</label>
+                                    <input type="text" className="form-control form-control-sm" value={addressEditForm.municipality} onChange={(e) => setAddressEditForm(f => ({ ...f, municipality: e.target.value }))} />
+                                  </div>
+                                  <div className="col-md-3">
+                                    <label className="form-label small mb-1">CAP</label>
+                                    <input type="text" className="form-control form-control-sm" value={addressEditForm.zip} onChange={(e) => setAddressEditForm(f => ({ ...f, zip: e.target.value }))} />
+                                  </div>
+                                  <div className="col-md-3">
+                                    <label className="form-label small mb-1">Provincia</label>
+                                    <input type="text" className="form-control form-control-sm" value={addressEditForm.province} onChange={(e) => setAddressEditForm(f => ({ ...f, province: e.target.value }))} disabled={addressEditForm.country !== 'Italia'} />
+                                  </div>
+                                  <div className="col-md-6">
+                                    <label className="form-label small mb-1">Paese</label>
+                                    <select className="form-select form-select-sm" value={addressEditForm.country} onChange={(e) => setAddressEditForm(f => ({ ...f, country: e.target.value }))}>
+                                      {addressEditForm.country !== 'Italia' && !COUNTRIES.includes(addressEditForm.country as any) && (
+                                        <option value={addressEditForm.country}>{addressEditForm.country} (verifica manuale)</option>
+                                      )}
+                                      {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                  </div>
+                                </div>
+                                <div className="d-flex justify-content-end gap-2 mt-3">
+                                  <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => setAddressEditOpen(false)}>Annulla</button>
+                                  <button type="button" className="btn btn-sm btn-warning" onClick={handleSaveAddressAndRetry} disabled={addressEditSaving}>
+                                    {addressEditSaving ? (
+                                      <><Loader2 className="icon-spin me-1" size={16} />Salvataggio...</>
+                                    ) : (
+                                      <><RotateCcw className="me-1" size={16} />Salva e rimetti in coda</>
+                                    )}
+                                  </button>
+                                </div>
                               </div>
-                            );
-                          })()}
-                        </div>
+                            )}
+                          </div>
+                        )}
+
+                        {notifDetail.campaign.channelType === 'SEND' && (
+                        <details className="nd-more nd-scope" open>
+                          <summary>Documenti SEND</summary>
+                          <div className="nd-more-body">
+                        {notifDetail.campaign.channelType === 'SEND' && (
+                          <>
+                            <h6 className="fw-bold small d-flex align-items-center justify-content-between">
+                              Documenti disponibili (SEND)
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-primary"
+                                onClick={loadSendLegalFacts}
+                                disabled={sendLegalFactsLoading}
+                              >
+                                {sendLegalFactsLoading ? (
+                                  <><Loader2 className="icon-spin me-1" size={16} />Caricamento...</>
+                                ) : (
+                                  <><RotateCw className="me-1" size={16} />Carica documenti</>
+                                )}
+                              </button>
+                            </h6>
+                            {sendLegalFacts !== null && (
+                              sendLegalFacts.length === 0 ? (
+                                <div className="text-muted small mb-4">Nessun documento disponibile al momento.</div>
+                              ) : (
+                                <div className="table-responsive">
+                                  <table className="table table-sm mb-4">
+                                    <thead><tr><th>Documento</th><th></th></tr></thead>
+                                    <tbody>
+                                      {sendLegalFacts.map((item) => (
+                                        <tr key={item.legalFactId}>
+                                          <td className="small">{SEND_LEGAL_FACT_CATEGORY_LABELS[item.category] ?? item.category}</td>
+                                          <td className="small text-end">
+                                            {sendLegalFactRetry[item.legalFactId] ? (
+                                              <span className="text-muted">
+                                                {sendLegalFactRetry[item.legalFactId].error
+                                                  ? sendLegalFactRetry[item.legalFactId].error
+                                                  : `Non ancora disponibile, riprova tra ${sendLegalFactRetry[item.legalFactId].retryAfterSeconds ?? '?'}s`}
+                                              </span>
+                                            ) : (
+                                              <button
+                                                type="button"
+                                                className="btn btn-sm btn-outline-secondary"
+                                                onClick={() => downloadSendLegalFact(item.legalFactId)}
+                                              >
+                                                <Download className="me-1" size={16} />Scarica
+                                              </button>
+                                            )}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )
+                            )}
+                          </>
+                        )}
+
+                          </div>
+                        </details>
+                        )}
+                        <details className="nd-more nd-scope">
+                          <summary>Messaggio inviato</summary>
+                          <div className="nd-more-body">
+                        {(() => {
+                          const isLetterlessChannel = notifDetail.campaign.channelType === 'SEND' || notifDetail.campaign.channelType === 'POSTAL';
+                          return (
+                            <>
+                              <h6 className="fw-bold small">{isLetterlessChannel ? 'Oggetto Inviato' : 'Anteprima Messaggio Inviato'}</h6>
+                              <div className="mb-2 small text-muted"><strong>Oggetto:</strong> {notifDetail.preview.subject}</div>
+                              {!isLetterlessChannel && (
+                                notifDetail.preview.bodyHtml ? (
+                                  <div className="bg-white border rounded overflow-hidden" style={{ padding: '4px' }} dangerouslySetInnerHTML={{ __html: notifDetail.preview.bodyHtml }} />
+                                ) : notifDetail.preview.bodyMarkdown ? (
+                                  <div className="bg-white border rounded p-3" data-color-mode="light">
+                                    <MDEditor.Markdown source={notifDetail.preview.bodyMarkdown} />
+                                  </div>
+                                ) : (
+                                  <div className="text-muted small">Nessuna anteprima disponibile.</div>
+                                )
+                              )}
+                            </>
+                          );
+                        })()}
+                        {notifDetail.appIoPreview && (
+                          <>
+                            <h6 className="fw-bold small mt-3"><Smartphone className="me-2 text-primary" size={16} />Messaggio App IO Inviato</h6>
+                            <div className="mb-2 small text-muted"><strong>Oggetto:</strong> {notifDetail.appIoPreview.subject}</div>
+                            <div className="bg-white border rounded p-3" data-color-mode="light">
+                              <MDEditor.Markdown source={notifDetail.appIoPreview.bodyMarkdown ?? ''} />
+                            </div>
+                          </>
+                        )}
+                          </div>
+                        </details>
+                        <details className="nd-more nd-scope">
+                          <summary>Dettagli tecnici dei tentativi</summary>
+                          <div className="nd-more-body">
                         <div className="table-responsive">
                           <table className="table table-sm mb-4">
                             <thead>
@@ -13588,204 +13855,6 @@ export function App(): React.JSX.Element {
                           </table>
                         </div>
 
-                        {(notifDetail.campaign.channelType === 'POSTAL' || notifDetail.campaign.channelType === 'SEND')
-                          && notifDetail.attempts.length > 0
-                          && (() => {
-                            const last = notifDetail.attempts[notifDetail.attempts.length - 1];
-                            // Un attempt "Riuscito" può nascondere un errore di consegna reale
-                            // post-accettazione (es. GlobalCom "Impossibile validare l'indirizzo",
-                            // CodiceErrore valorizzato ma status resta SUCCESS) — stesso criterio già
-                            // usato per la colonna Errore: il valore di codiceErrore, non lo status.
-                            const hasDeliveryError = (last.postalStatusHistory || []).some((h) => h.codiceErrore && h.codiceErrore !== '0');
-                            // Un "Riuscito" POSTAL che non riceve MAI un postal_status (nemmeno
-                            // "Rimandato"/transitorio) entro un tempo ragionevole è di fatto appeso —
-                            // sync gira ogni minuto (postal-status-sync.service.ts), 30 minuti senza
-                            // nessun aggiornamento è ben oltre qualunque latenza normale GlobalCom.
-                            // Copre sia il caso dedup fittizio (bug corretto in postal.strategy.ts,
-                            // isGoodExistingSubmission) sia un IDPRO mai davvero assegnato — senza
-                            // questo controllo il bottone "Correggi indirizzo e rimetti in coda"
-                            // spariva proprio sui casi che ne hanno più bisogno (l'ultimo attempt,
-                            // quello davvero bloccato, non ha uno storico errore proprio).
-                            const POSTAL_STUCK_TIMEOUT_MS = 30 * 60 * 1000;
-                            const isStuckPending =
-                              last.channelType === 'POSTAL' &&
-                              last.status === 'success' &&
-                              !last.postalStatus &&
-                              Date.now() - new Date(last.createdAt).getTime() > POSTAL_STUCK_TIMEOUT_MS;
-                            return last.status === 'failed' || hasDeliveryError || isStuckPending;
-                          })() && (
-                          <div className="card border-warning mb-4">
-                            <div className="card-header bg-warning-subtle d-flex align-items-center justify-content-between">
-                              <span className="fw-bold small"><MapPin className="me-1" size={16} />Correggi indirizzo e rimetti in coda</span>
-                              {!addressEditOpen && (
-                                <button
-                                  type="button"
-                                  className="btn btn-sm btn-outline-dark"
-                                  onClick={() => {
-                                    // Prepopola con l'indirizzo/nominativo già presenti (mai vuoto se
-                                    // già risolvibile) — solo un vero indirizzo mai mappato resta vuoto.
-                                    const pa = notifDetail?.recipient.physicalAddress;
-                                    setAddressEditForm({
-                                      address: pa?.address || '',
-                                      municipality: pa?.municipality || '',
-                                      zip: pa?.zip || '',
-                                      province: pa?.province || '',
-                                      country: pa?.foreignState || 'Italia',
-                                      fullName: notifDetail?.recipient.fullName || '',
-                                    });
-                                    setAddressEditOpen(true);
-                                  }}
-                                >
-                                  <Pencil className="me-1" size={16} />Modifica
-                                </button>
-                              )}
-                            </div>
-                            {addressEditOpen && (
-                              <div className="card-body">
-                                <div className="d-flex justify-content-end mb-2">
-                                  <button
-                                    type="button"
-                                    className="btn btn-sm btn-outline-primary"
-                                    onClick={runAddressEditAnprCheck}
-                                    disabled={addressEditAnprLoading}
-                                  >
-                                    {addressEditAnprLoading ? (
-                                      <><Loader2 className="icon-spin me-1" size={16} />Verifica in corso...</>
-                                    ) : /^\d{11}$/.test((notifDetail?.recipient.codiceFiscale || '').trim()) ? (
-                                      <><Search className="me-1" size={16} />Carica da Registro Imprese</>
-                                    ) : (
-                                      <><Search className="me-1" size={16} />Verifica ANPR</>
-                                    )}
-                                  </button>
-                                </div>
-                                <div className="row g-2">
-                                  <div className="col-12">
-                                    <label className="form-label small mb-1">Nominativo</label>
-                                    <input type="text" className="form-control form-control-sm" value={addressEditForm.fullName} onChange={(e) => setAddressEditForm(f => ({ ...f, fullName: e.target.value }))} />
-                                  </div>
-                                  <div className="col-12">
-                                    <label className="form-label small mb-1">Via/Indirizzo *</label>
-                                    <input type="text" className="form-control form-control-sm" value={addressEditForm.address} onChange={(e) => setAddressEditForm(f => ({ ...f, address: e.target.value }))} />
-                                  </div>
-                                  <div className="col-md-6">
-                                    <label className="form-label small mb-1">Comune *</label>
-                                    <input type="text" className="form-control form-control-sm" value={addressEditForm.municipality} onChange={(e) => setAddressEditForm(f => ({ ...f, municipality: e.target.value }))} />
-                                  </div>
-                                  <div className="col-md-3">
-                                    <label className="form-label small mb-1">CAP</label>
-                                    <input type="text" className="form-control form-control-sm" value={addressEditForm.zip} onChange={(e) => setAddressEditForm(f => ({ ...f, zip: e.target.value }))} />
-                                  </div>
-                                  <div className="col-md-3">
-                                    <label className="form-label small mb-1">Provincia</label>
-                                    <input type="text" className="form-control form-control-sm" value={addressEditForm.province} onChange={(e) => setAddressEditForm(f => ({ ...f, province: e.target.value }))} disabled={addressEditForm.country !== 'Italia'} />
-                                  </div>
-                                  <div className="col-md-6">
-                                    <label className="form-label small mb-1">Paese</label>
-                                    <select className="form-select form-select-sm" value={addressEditForm.country} onChange={(e) => setAddressEditForm(f => ({ ...f, country: e.target.value }))}>
-                                      {addressEditForm.country !== 'Italia' && !COUNTRIES.includes(addressEditForm.country as any) && (
-                                        <option value={addressEditForm.country}>{addressEditForm.country} (verifica manuale)</option>
-                                      )}
-                                      {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
-                                    </select>
-                                  </div>
-                                </div>
-                                <div className="d-flex justify-content-end gap-2 mt-3">
-                                  <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => setAddressEditOpen(false)}>Annulla</button>
-                                  <button type="button" className="btn btn-sm btn-warning" onClick={handleSaveAddressAndRetry} disabled={addressEditSaving}>
-                                    {addressEditSaving ? (
-                                      <><Loader2 className="icon-spin me-1" size={16} />Salvataggio...</>
-                                    ) : (
-                                      <><RotateCcw className="me-1" size={16} />Salva e rimetti in coda</>
-                                    )}
-                                  </button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {notifDetail.campaign.channelType === 'SEND' && (
-                          <>
-                            <h6 className="fw-bold small d-flex align-items-center justify-content-between">
-                              Documenti disponibili (SEND)
-                              <button
-                                type="button"
-                                className="btn btn-sm btn-outline-primary"
-                                onClick={loadSendLegalFacts}
-                                disabled={sendLegalFactsLoading}
-                              >
-                                {sendLegalFactsLoading ? (
-                                  <><Loader2 className="icon-spin me-1" size={16} />Caricamento...</>
-                                ) : (
-                                  <><RotateCw className="me-1" size={16} />Carica documenti</>
-                                )}
-                              </button>
-                            </h6>
-                            {sendLegalFacts !== null && (
-                              sendLegalFacts.length === 0 ? (
-                                <div className="text-muted small mb-4">Nessun documento disponibile al momento.</div>
-                              ) : (
-                                <div className="table-responsive">
-                                  <table className="table table-sm mb-4">
-                                    <thead><tr><th>Documento</th><th></th></tr></thead>
-                                    <tbody>
-                                      {sendLegalFacts.map((item) => (
-                                        <tr key={item.legalFactId}>
-                                          <td className="small">{SEND_LEGAL_FACT_CATEGORY_LABELS[item.category] ?? item.category}</td>
-                                          <td className="small text-end">
-                                            {sendLegalFactRetry[item.legalFactId] ? (
-                                              <span className="text-muted">
-                                                {sendLegalFactRetry[item.legalFactId].error
-                                                  ? sendLegalFactRetry[item.legalFactId].error
-                                                  : `Non ancora disponibile, riprova tra ${sendLegalFactRetry[item.legalFactId].retryAfterSeconds ?? '?'}s`}
-                                              </span>
-                                            ) : (
-                                              <button
-                                                type="button"
-                                                className="btn btn-sm btn-outline-secondary"
-                                                onClick={() => downloadSendLegalFact(item.legalFactId)}
-                                              >
-                                                <Download className="me-1" size={16} />Scarica
-                                              </button>
-                                            )}
-                                          </td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              )
-                            )}
-                          </>
-                        )}
-
-                        {notifDetail.campaign.channelType !== 'SEND' && notifDetail.attachments.length > 0 && (
-                          <>
-                            <h6 className="fw-bold small">Allegati</h6>
-                            <div className="table-responsive">
-                              <table className="table table-sm mb-4">
-                                <thead><tr><th>Documento</th><th></th></tr></thead>
-                                <tbody>
-                                  {notifDetail.attachments.map((att) => (
-                                    <tr key={att.index}>
-                                      <td className="small">{att.label}</td>
-                                      <td className="small text-end">
-                                        <button
-                                          type="button"
-                                          className="btn btn-sm btn-outline-secondary"
-                                          onClick={() => downloadNotifAttachment(att.index)}
-                                        >
-                                          <Download className="me-1" size={16} />Scarica
-                                        </button>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </>
-                        )}
-
                         {notifDetail.downloads.length > 0 && (
                           <>
                             <h6 className="fw-bold small">Download</h6>
@@ -13806,35 +13875,8 @@ export function App(): React.JSX.Element {
                           </>
                         )}
 
-                        {(() => {
-                          const isLetterlessChannel = notifDetail.campaign.channelType === 'SEND' || notifDetail.campaign.channelType === 'POSTAL';
-                          return (
-                            <>
-                              <h6 className="fw-bold small">{isLetterlessChannel ? 'Oggetto Inviato' : 'Anteprima Messaggio Inviato'}</h6>
-                              <div className="mb-2 small text-muted"><strong>Oggetto:</strong> {notifDetail.preview.subject}</div>
-                              {!isLetterlessChannel && (
-                                notifDetail.preview.bodyHtml ? (
-                                  <div className="bg-white border rounded overflow-hidden" style={{ padding: '4px' }} dangerouslySetInnerHTML={{ __html: notifDetail.preview.bodyHtml }} />
-                                ) : notifDetail.preview.bodyMarkdown ? (
-                                  <div className="bg-white border rounded p-3" data-color-mode="light">
-                                    <MDEditor.Markdown source={notifDetail.preview.bodyMarkdown} />
-                                  </div>
-                                ) : (
-                                  <div className="text-muted small">Nessuna anteprima disponibile.</div>
-                                )
-                              )}
-                            </>
-                          );
-                        })()}
-                        {notifDetail.appIoPreview && (
-                          <>
-                            <h6 className="fw-bold small mt-3"><Smartphone className="me-2 text-primary" size={16} />Messaggio App IO Inviato</h6>
-                            <div className="mb-2 small text-muted"><strong>Oggetto:</strong> {notifDetail.appIoPreview.subject}</div>
-                            <div className="bg-white border rounded p-3" data-color-mode="light">
-                              <MDEditor.Markdown source={notifDetail.appIoPreview.bodyMarkdown ?? ''} />
-                            </div>
-                          </>
-                        )}
+                          </div>
+                        </details>
                       </>
                     )}
                   </div>
