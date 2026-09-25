@@ -72,12 +72,44 @@ export function lastMovement(movements: PosteTrackingMovement[]): PosteTrackingM
  * resto resta pending, con risposta grezza salvata per allargare la
  * mappatura sui casi reali.
  */
-export function mapPosteOutcome(r: PosteTrackingResponse): { outcome: PosteOutcome; outcomeAt: Date | null } {
+/** Dove doveva arrivare la lettera e chi la spedisce: serve a riconoscere i ritorni. */
+export interface DeliveryContext {
+  recipientForeign?: boolean;
+  recipientCity?: string | null;
+  senderCity?: string | null;
+}
+
+function normCity(s: string): string {
+  return s.toUpperCase().replace(/\([^)]*\)/g, ' ').replace(/[^A-Z]+/g, ' ').trim();
+}
+
+/**
+ * Poste non sempre segna flagRitorno: una raccomandata restituita può
+ * chiudersi con "consegnata" (fase 5) all'ufficio del mittente. Caso reale
+ * (raccomandata internazionale per l'Austria, KO GlobalCom "indirizzo
+ * errato"): movimenti solo italiani, consegnata a MONTESILVANO (PE) = il
+ * Comune mittente. Due segnali: destinatario estero ma consegna con sigla di
+ * provincia italiana "(XX)"; oppure consegna nella città del mittente con
+ * destinatario altrove (se la città coincide, non distinguibile).
+ */
+export function isDeliveryToSender(luogo: string, ctx: DeliveryContext): boolean {
+  if (!luogo) return false;
+  if (ctx.recipientForeign && /\([A-Z]{2}\)/.test(luogo.toUpperCase())) return true;
+  if (!ctx.senderCity) return false;
+  const sender = normCity(ctx.senderCity);
+  if (!sender || !` ${normCity(luogo)} `.includes(` ${sender} `)) return false;
+  return !ctx.recipientCity || normCity(ctx.recipientCity) !== sender;
+}
+
+export function mapPosteOutcome(r: PosteTrackingResponse, ctx?: DeliveryContext): { outcome: PosteOutcome; outcomeAt: Date | null } {
   // Data esito = data dell'ultimo movimento Poste (consegna o ritorno):
   // dato che l'ente usa come data di consegna/mancata consegna.
   const last = lastMovement(r.movements);
   const outcomeAt = last?.at ? new Date(last.at) : null;
   if (r.flagRitorno || r.movements.some((m) => m.flagRitorno)) return { outcome: 'returned', outcomeAt };
-  if (r.esitoRicerca === '3' && r.stato === '5') return { outcome: 'delivered', outcomeAt };
+  if (r.esitoRicerca === '3' && r.stato === '5') {
+    if (ctx && last && isDeliveryToSender(last.luogo, ctx)) return { outcome: 'returned', outcomeAt };
+    return { outcome: 'delivered', outcomeAt };
+  }
   return { outcome: 'pending', outcomeAt: null };
 }

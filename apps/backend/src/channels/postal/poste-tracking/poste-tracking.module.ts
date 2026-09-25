@@ -6,9 +6,10 @@ import { Recipient } from '../../../entities/recipient.entity.js';
 import { PosteTrackingClient } from './poste-tracking-client.service.js';
 import { PostePostalTrackingService } from './poste-postal-tracking.service.js';
 import { PosteTrackingController, PosteTrackingEnginesController } from './poste-tracking.controller.js';
+import { PostalProvidersModule } from '../../../postal-providers/postal-providers.module.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([PostalPosteTracking, NotificationAttempt, Recipient])],
+  imports: [TypeOrmModule.forFeature([PostalPosteTracking, NotificationAttempt, Recipient]), PostalProvidersModule],
   controllers: [PosteTrackingController, PosteTrackingEnginesController],
   providers: [PosteTrackingClient, PostePostalTrackingService],
 })
