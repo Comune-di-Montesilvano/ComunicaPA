@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import MDEditor from '@uiw/react-md-editor';
 import { TemplateEditor } from './components/TemplateEditor';
+import { CampaignSummary, type OutcomeSegment, type OutcomeTone, type KeyFigure } from './components/campaign-detail/CampaignSummary';
 import { NotificationVerdict, NotificationTimeline } from './components/notification-detail/NotificationJourney';
 import type { JourneyLabels } from './components/notification-detail/journey';
 import { SearchableSelect } from './components/SearchableSelect';
@@ -17528,547 +17529,101 @@ export function App(): React.JSX.Element {
               ) : detailError ? (
                 <div className="alert alert-danger"><AlertTriangle /> {detailError}</div>
               ) : campaign ? (
-                <div className="row g-3">
-                  <div className="col-xxl-2 col-xl-3 col-lg-3">
-                    <div className="card shadow-sm mb-4">
-                      <div className="card-header bg-white py-3 border-bottom">
-                        <h3 className="h6 mb-0 fw-bold text-dark"><Info className="me-2" />Metadati Campagna</h3>
-                      </div>
-                      <div className="card-body">
-                        <div className="mb-3">
-                          <label className="text-muted small fw-semibold block">ID Campagna</label>
-                          <div className="fw-mono" style={{ fontSize: '0.82rem' }}>{campaign.id}</div>
-                        </div>
-                        <div className="mb-3">
-                          <label className="text-muted small fw-semibold block">Nome</label>
-                          <div className="fw-bold">
-                            {campaign.name}
-                            {campaign.isTest && (
-                              <span className="badge bg-warning text-dark ms-2" title="Campagna di prova, collegata a una bozza">
-                                TEST
-                              </span>
-                            )}
-                            {campaign.isTest && campaign.parentCampaignId && (
-                              <button
-                                type="button"
-                                className="btn btn-link btn-sm p-0 ms-2"
-                                onClick={() => handleCampaignClick(campaign.parentCampaignId!)}
-                              >
-                                Vedi bozza madre
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                        {campaign.groupId && (() => {
-                          const siblings = campaigns.filter(c => c.groupId === campaign.groupId && c.id !== campaign.id);
-                          if (siblings.length === 0) return null;
-                          return (
-                            <div className="mb-3 alert alert-light border d-flex flex-column gap-1 py-2 px-2">
-                              <strong className="small">Fa parte di un lancio multicanale:</strong>
-                              {siblings.map(s => (
-                                <a
-                                  key={s.id}
-                                  href="#"
-                                  className="small"
-                                  onClick={(e) => { e.preventDefault(); handleCampaignClick(s.id); }}
-                                >
-                                  {getChannelMeta(s.channelType).label} — {s.totalRecipients} destinatari — {s.status}
-                                </a>
-                              ))}
-                            </div>
-                          );
-                        })()}
-                        <div className="mb-3">
-                          <label className="text-muted small fw-semibold block">Canale</label>
-                          <div>
+                  <>
+                  {(() => {
+                    // Testata + barra dell'esito: ogni segmento è un filtro della tabella destinatari.
+                    type FilterKind = 'status' | 'delivery' | 'postalDelivery';
+                    const currentFilter = (kind: FilterKind) => (kind === 'status' ? recipientsStatusFilter : kind === 'delivery' ? recipientsDeliveryStatusFilter : recipientsPostalDeliveryStatusFilter);
+                    const toggleFilter = (kind: FilterKind, value: string) => () => {
+                      const next = currentFilter(kind) === value ? '' : value;
+                      if (kind === 'status') setRecipientsStatusFilter(next);
+                      else if (kind === 'delivery') setRecipientsDeliveryStatusFilter(next);
+                      else setRecipientsPostalDeliveryStatusFilter(next);
+                      setRecipientsPageNum(1);
+                      const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+                      document.getElementById('cd-recipients')?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+                    };
+                    const seg = (key: string, label: string, count: number, tone: OutcomeTone, kind: FilterKind, value: string, color?: string): OutcomeSegment => ({
+                      key, label, count, tone, color, active: currentFilter(kind) === value, onSelect: toggleFilter(kind, value),
+                    });
+                    const POSTAL_RANK: Record<string, number> = { Consegnato: 0, NonConsegnato: 80, ConsegnaParziale: 70, Errore: 85, FAILED: 90, Eliminato: 95, DirottatoAPec: 60, AppIoSostituito: 65 };
+                    const POSTAL_TONE: Record<string, OutcomeTone> = { Consegnato: 'ok', NonConsegnato: 'ko', ConsegnaParziale: 'warn', Errore: 'ko', FAILED: 'ko', Eliminato: 'muted', DirottatoAPec: 'alt', AppIoSostituito: 'alt' };
+                    let segments: OutcomeSegment[];
+                    let note: React.ReactNode = null;
+                    if (campaign.channelType === 'POSTAL' && postalStatusBreakdown) {
+                      segments = [...postalStatusBreakdown]
+                        .sort((a, b) => (POSTAL_RANK[a.status ?? ''] ?? 30) - (POSTAL_RANK[b.status ?? ''] ?? 30))
+                        .map((b) => b.status === null
+                          ? seg('pending', 'In corso', b.count, 'muted', 'delivery', PENDING_DELIVERY_STATUS_SENTINEL, '#adb5bd')
+                          : b.status === 'FAILED'
+                            ? seg('FAILED', 'Invio fallito', b.count, 'ko', 'status', 'failed', POSTAL_STATUS_PIE_COLORS['FAILED'])
+                            : seg(b.status, POSTAL_STATUS_META[b.status]?.label ?? POSTAL_DELIVERY_STATUS_META[b.status]?.label ?? b.status, b.count, POSTAL_TONE[b.status] ?? 'progress', 'delivery', b.status, POSTAL_STATUS_PIE_COLORS[b.status] ?? POSTAL_DELIVERY_STATUS_PIE_COLORS[b.status] ?? stableColorForKey(b.status)));
+                      const posteDelivered = (postalDeliveryStatusBreakdown ?? []).find((b) => b.status === 'ConsegnatoVerificaPoste')?.count ?? 0;
+                      if (posteDelivered > 0) {
+                        const active = recipientsPostalDeliveryStatusFilter === 'ConsegnatoVerificaPoste';
+                        note = (
+                          <>
+                            {posteDelivered.toLocaleString('it-IT')} {posteDelivered === 1 ? 'notifica risulta consegnata' : 'notifiche risultano consegnate'} su Poste Italiane anche se GlobalCom non lo conferma.{' '}
+                            <button type="button" className="btn btn-link btn-sm" aria-pressed={active} onClick={toggleFilter('postalDelivery', 'ConsegnatoVerificaPoste')}>
+                              {active ? 'Mostra tutte' : 'Mostrale'}
+                            </button>
+                          </>
+                        );
+                      }
+                    } else if (campaign.channelType === 'SEND' && sendStatusBreakdown) {
+                      segments = sendStatusBreakdown.map((b) => b.status === null
+                        ? seg('pending', 'In attesa', b.count, 'muted', 'delivery', PENDING_DELIVERY_STATUS_SENTINEL, '#adb5bd')
+                        : b.status === 'FAILED'
+                          ? seg('FAILED', 'Invio fallito', b.count, 'ko', 'status', 'failed')
+                          : seg(b.status, SEND_STATUS_META[b.status]?.label ?? b.status, b.count, 'progress', 'delivery', b.status, stableColorForKey(b.status)));
+                    } else {
+                      const sent = Math.max(0, campaign.sentCount);
+                      const failed = Math.max(0, campaign.failedCount);
+                      segments = [
+                        seg('sent', 'Inviati', sent, 'ok', 'status', 'sent'),
+                        seg('failed', 'Falliti', failed, 'ko', 'status', 'failed'),
+                        seg('queued', 'In coda', Math.max(0, campaign.totalRecipients - sent - failed), 'muted', 'status', 'queued'),
+                      ];
+                    }
+                    const figures: KeyFigure[] = [];
+                    if (campaignCost && (campaign.channelType === 'SEND' || campaign.channelType === 'POSTAL')) {
+                      const uncalculated = campaignCost.byChannel.reduce((sum, c) => sum + c.uncalculatedCount, 0);
+                      figures.push({ label: 'Costo', value: formatEuroCents(campaignCost.totalCostCents), hint: uncalculated > 0 ? `${uncalculated.toLocaleString('it-IT')} non ancora calcolati` : null });
+                    }
+                    if (campaignCostSavings && campaignCostSavings.totalSavingCents > 0) {
+                      figures.push({ label: 'Risparmio da dirottamento', value: formatEuroCents(campaignCostSavings.totalSavingCents), hint: 'stima' });
+                    }
+                    if (campaignPaymentTotal?.enabled) {
+                      figures.push({ label: 'Importo pagoPA', value: formatEuroCents(campaignPaymentTotal.totalAmountCents), hint: `${campaignPaymentTotal.recipientsWithPaymentCount.toLocaleString('it-IT')} avvisi` });
+                    }
+                    if (downloadCombinations) {
+                      const ok = downloadCombinations.filter((c) => c.sentSuccessfully);
+                      const sentOk = ok.reduce((sum, c) => sum + c.count, 0);
+                      const notDl = ok.find((c) => c.channels.length === 0)?.count ?? 0;
+                      if (sentOk > 0) figures.push({ label: 'Documento scaricato', value: `${Math.round(((sentOk - notDl) / sentOk) * 100)}%`, hint: `${(sentOk - notDl).toLocaleString('it-IT')} su ${sentOk.toLocaleString('it-IT')} notificati` });
+                    }
+                    return (
+                      <CampaignSummary
+                        title={campaign.name}
+                        meta={
+                          <>
                             <ChannelBadge channel={campaign.channelType} extra={campaign.channelType === 'POSTAL' ? postalBadgeExtra(campaign.channelConfig, postalProviders.find((p) => p.active)?.enabledServiceTypes) : (campaign.channelConfig?.['serviceName'] as string | undefined)} />
-                          </div>
-                        </div>
-                        {campaign.channelType === 'POSTAL' && (
-                          <div className="mb-3">
-                            <label className="text-muted small fw-semibold block">Opzioni di stampa</label>
-                            <div className="d-flex flex-wrap gap-1">
-                              <span className={`badge ${campaign.channelConfig?.['postalDuplex'] !== false ? 'bg-primary' : 'bg-secondary'}`}>
-                                {campaign.channelConfig?.['postalDuplex'] !== false ? 'Stampa fronte-retro' : 'Stampa solo fronte'}
-                              </span>
-                              <span
-                                className="badge"
-                                style={
-                                  campaign.channelConfig?.['postalColorPrint']
-                                    ? { background: 'linear-gradient(90deg, #e53935, #fb8c00, #fdd835, #43a047, #1e88e5, #8e24aa)', color: '#fff' }
-                                    : { background: '#6c757d', color: '#fff' }
-                                }
-                              >
-                                {campaign.channelConfig?.['postalColorPrint'] ? 'Stampa a colori' : 'Stampa bianco/nero'}
-                              </span>
-                            </div>
-                          </div>
-                        )}
-                        <div className="mb-3">
-                          <label className="text-muted small fw-semibold block">Creata da</label>
-                          <div>{campaign.createdByDisplayName || campaign.createdBy}</div>
-                        </div>
-                        <div className="mb-3">
-                          <label className="text-muted small fw-semibold block">Stato</label>
-                          <div>
                             <StatusBadge status={campaign.status} />
-                          </div>
-                        </div>
-                        <div className="mb-3">
-                          <label className="text-muted small fw-semibold block">Valore legale</label>
-                          <div>
-                            {campaignIsLegalValue(campaign) ? (
-                              <span className="badge bg-primary d-inline-flex align-items-center gap-1">
-                                <ShieldCheck size={14} /> {campaign.status === 'draft' ? 'Campagna a valore legale (Bozza)' : 'Campagna a valore legale — non eliminabile'}
-                              </span>
-                            ) : campaign.attachmentExpiresAt ? (
-                              <span className="badge bg-secondary d-inline-flex align-items-center gap-1" title="Data in cui gli allegati verranno eliminati dalla retention automatica">
-                                <Hourglass size={14} /> Allegati in scadenza il {new Date(campaign.attachmentExpiresAt).toLocaleDateString('it-IT')}
-                              </span>
-                            ) : (
-                              <span className="text-muted small">Nessuna scadenza calcolata</span>
-                            )}
-                          </div>
-                        </div>
-                        {campaign.channelConfig?.['subject'] && (
-                          <div className="mb-3">
-                            <label className="text-muted small fw-semibold block">Oggetto</label>
-                            <div className="p-2 bg-light border rounded small" style={{ wordBreak: 'break-all' }}>
-                              {campaign.channelConfig['subject']}
-                            </div>
-                          </div>
-                        )}
-                        {campaign.channelConfig?.['body'] ? (
-                          <div className="mb-3">
-                            <label className="text-muted small fw-semibold block">Testo Messaggio</label>
-                            <div
-                              className="p-2 bg-light border rounded small"
-                              style={{ whiteSpace: 'pre-wrap', maxHeight: '180px', overflowY: 'auto' }}
-                              dangerouslySetInnerHTML={{ __html: campaign.channelConfig['body'] }}
-                            />
-                          </div>
-                        ) : campaign.description ? (
-                          <div className="mb-3">
-                            <label className="text-muted small fw-semibold block">Descrizione Campagna</label>
-                            <div className="p-2 bg-light border rounded small" style={{ whiteSpace: 'pre-wrap' }}>
-                              {campaign.description}
-                            </div>
-                          </div>
-                        ) : null}
-
-                        {(campaign.status === 'running' || campaign.status === 'completed' || campaign.status === 'queued' || campaign.status === 'cancelled') && (() => {
-                          const safeSentCount = Math.max(0, campaign.sentCount);
-                          const safeFailedCount = Math.max(0, campaign.failedCount);
-                          const totalProcessed = Math.min(campaign.totalRecipients, safeSentCount + safeFailedCount);
-                          return (
-                            <div className="mt-4 border-top pt-3">
-                              <h4 className="small fw-bold mb-2">Stato dell'Invio ({totalProcessed} / {campaign.totalRecipients})</h4>
-                              <div className="progress mb-2" style={{ height: '10px' }}>
-                                <div
-                                  className="progress-bar bg-success"
-                                  role="progressbar"
-                                  style={{ width: `${campaign.totalRecipients ? (safeSentCount / campaign.totalRecipients) * 100 : 0}%` }}
-                                ></div>
-                                <div
-                                  className="progress-bar bg-danger"
-                                  role="progressbar"
-                                  style={{ width: `${campaign.totalRecipients ? (safeFailedCount / campaign.totalRecipients) * 100 : 0}%` }}
-                                ></div>
-                              </div>
-                              <div className="d-flex justify-content-between small text-muted">
-                                <span><Check className="text-success" /> Successo: {safeSentCount}</span>
-                                <span><X className="text-danger" /> Errori: {safeFailedCount}</span>
-                              </div>
-                            </div>
-                          );
-                        })()}
-
-                        {campaign.channelType === 'SEND' && sendStatusBreakdown && (
-                          <div className="mt-4 border-top pt-3">
-                            <h4 className="small fw-bold mb-2">
-                              <BarChart3 className="me-1 text-primary" />Andamento Invio SEND
-                            </h4>
-                            <ChannelStatusBar breakdown={sendStatusBreakdown} meta={SEND_STATUS_META} pendingLabel="In attesa" />
-                          </div>
-                        )}
-
-                        {campaign.channelType !== 'SEND' && campaign.channelConfig?.['protocolla'] === true && campaignSendStageCounts && (
-                          <div className="mt-4 border-top pt-3">
-                            <h4 className="small fw-bold mb-2">
-                              <Stamp className="me-1 text-primary" />Stato Protocollazione
-                            </h4>
-                            <div className="d-flex gap-3 text-center small">
-                              <div>
-                                <div className="fw-bold text-secondary">{campaignSendStageCounts.queued}</div>
-                                <div className="text-muted" style={{ fontSize: '0.7rem' }}>In attesa protocollo</div>
-                              </div>
-                              <div>
-                                <div className="fw-bold text-info">{campaignSendStageCounts.protocollato}</div>
-                                <div className="text-muted" style={{ fontSize: '0.7rem' }}>Protocollato (in attesa invio)</div>
-                              </div>
-                              <div>
-                                <div className="fw-bold text-success">{campaignSendStageCounts.inviato}</div>
-                                <div className="text-muted" style={{ fontSize: '0.7rem' }}>Inviato</div>
-                              </div>
-                              <div>
-                                <div className={`fw-bold ${campaignSendStageCounts.fallito > 0 ? 'text-danger' : 'text-muted'}`}>{campaignSendStageCounts.fallito}</div>
-                                <div className="text-muted" style={{ fontSize: '0.7rem' }}>Fallito</div>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {campaign.channelType === 'POSTAL' && postalStatusBreakdown && (
-                          <div className="mt-4 border-top pt-3">
-                            <h4 className="small fw-bold mb-2">
-                              <BarChart3 className="me-1 text-primary" />Andamento Invio POSTAL
-                            </h4>
-                            <ChannelStatusBar breakdown={postalStatusBreakdown} meta={POSTAL_STATUS_META} pendingLabel="In corso" colorMap={POSTAL_STATUS_PIE_COLORS} />
-                          </div>
-                        )}
-
-                        {['completed', 'failed', 'cancelled'].includes(campaign.status) && (
-                          <div className="mt-4 border-top pt-3">
-                            <div className="d-flex justify-content-between align-items-center mb-2">
-                              <h4 className="small fw-bold mb-0"><Pencil className="me-1 text-primary" size={16} />Contenuto (Oggetto/Testo)</h4>
-                              {!contentCorrectionOpen && (
-                                <button className="btn btn-sm btn-outline-secondary" type="button" onClick={() => openContentCorrection(campaign)}>
-                                  Correggi
-                                </button>
-                              )}
-                            </div>
-                            {contentCorrectionOpen ? (
-                              <div className="border rounded p-3 bg-light">
-                                <div className="mb-2">
-                                  <label className="form-label small fw-bold">Oggetto</label>
-                                  <input type="text" className="form-control form-control-sm" value={contentCorrectionSubject}
-                                    onChange={(e) => setContentCorrectionSubject(e.target.value)} />
-                                </div>
-                                <div className="mb-2">
-                                  <label className="form-label small fw-bold">Testo</label>
-                                  <textarea className="form-control form-control-sm" rows={4} value={contentCorrectionBody}
-                                    onChange={(e) => setContentCorrectionBody(e.target.value)} />
-                                </div>
-                                {contentCorrectionError && <div className="alert alert-danger small">{contentCorrectionError}</div>}
-                                <div className="d-flex gap-2">
-                                  <button className="btn btn-sm btn-primary" type="button" disabled={contentCorrectionSaving}
-                                    onClick={() => handleSaveContentCorrection(campaign.id)}>
-                                    {contentCorrectionSaving ? <><Loader2 className="icon-spin me-1" size={16} />Salvataggio...</> : 'Salva correzione'}
-                                  </button>
-                                  <button className="btn btn-sm btn-outline-secondary" type="button" disabled={contentCorrectionSaving}
-                                    onClick={() => setContentCorrectionOpen(false)}>
-                                    Annulla
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="small text-muted">
-                                <div><strong>Oggetto:</strong> {(campaign.channelConfig?.subject as string) || <em>vuoto</em>}</div>
-                              </div>
-                            )}
-                            {Array.isArray(campaign.channelConfig?.contentHistory) && campaign.channelConfig.contentHistory.length > 0 && (
-                              <details className="mt-2 small">
-                                <summary className="text-muted" style={{ cursor: 'pointer' }}>Storico contenuto ({campaign.channelConfig.contentHistory.length} versioni precedenti)</summary>
-                                <ul className="list-unstyled mt-2">
-                                  {campaign.channelConfig.contentHistory.map((h: any, i: number) => (
-                                    <li key={i} className="border-bottom pb-1 mb-1">
-                                      <div className="text-muted">{new Date(h.changedAt).toLocaleString('it-IT')} — {h.changedBy}</div>
-                                      <div><strong>Oggetto:</strong> {h.subject || <em>vuoto</em>}</div>
-                                      <div><strong>Testo:</strong> {h.body || <em>vuoto</em>}</div>
-                                    </li>
-                                  ))}
-                                </ul>
-                              </details>
-                            )}
-                          </div>
-                        )}
-
-                        {channelBreakdown && (() => {
-                          // "Rimanda a questi" ha senso solo se il contenuto è
-                          // stato CORRETTO dopo l'invio originale (il conferma
-                          // dialog parla esplicitamente di "contenuto
-                          // corretto", vedi handleResendByOutcome) — con
-                          // subject/body invariati il resend è comunque
-                          // no-op lato backend (gate firma SHA-256, vedi
-                          // notification.processor.ts/resendSafe), ma
-                          // mostrare comunque il tasto è fuorviante (sembra
-                          // promettere un secondo invio reale). contentHistory
-                          // si popola solo quando un salvataggio di
-                          // correzione cambia davvero subject/body.
-                          const hasContentCorrection = Array.isArray(campaign.channelConfig?.contentHistory) && campaign.channelConfig.contentHistory.length > 0;
-                          // Le 5 righe di esito App IO hanno senso solo se un canale
-                          // secondario App IO è davvero configurato — altrimenti sono
-                          // sempre 0 e vanno lette come "non applicabile", non come
-                          // "App IO fallito per tutti" (ambiguità reale segnalata
-                          // dall'operatore). "Maggiori di 0" per non mostrare righe
-                          // vuote quando App IO è configurato ma ancora nessun esito.
-                          const showAppIoRows = channelBreakdown.appIoMode !== 'none';
-                          const appIoModeLabel = channelBreakdown.appIoMode === 'parallel' ? 'Parallela' : channelBreakdown.appIoMode === 'exclusive' ? 'Esclusiva' : 'Nessuna';
-                          const anyRowVisible =
-                            (showAppIoRows && (channelBreakdown.primaryOnly > 0 || channelBreakdown.both > 0 || channelBreakdown.appIoOnly > 0 || channelBreakdown.appIoDespitePrimaryFail > 0 || channelBreakdown.neither > 0)) ||
-                            channelBreakdown.inadCheckRan;
-                          return (
-                          <div className="mt-4 border-top pt-3">
-                            <h4 className="small fw-bold mb-2">
-                              <Smartphone className="me-1 text-primary" />Dettaglio Consegna Multicanale
-                            </h4>
-                            <div className="small text-muted mb-2">
-                              <div>Modalità consegna App IO: <strong>{appIoModeLabel}</strong></div>
-                              <div>Verifica domicilio digitale (INAD/Registro Imprese): <strong>{channelBreakdown.inadCheckRan ? 'Eseguita' : 'Non eseguita'}</strong></div>
-                            </div>
-                            {!anyRowVisible && (
-                              <div className="small text-muted fst-italic">Nessun destinatario ancora classificato.</div>
-                            )}
-                            <div className="small">
-                              {showAppIoRows && channelBreakdown.primaryOnly > 0 && (
-                                <div className="d-flex justify-content-between mb-1">
-                                  <span><Mail className="text-muted me-1" />Solo {channelLabel(campaign.channelType)}</span>
-                                  <span className="fw-bold">{channelBreakdown.primaryOnly}</span>
-                                </div>
-                              )}
-                              {showAppIoRows && channelBreakdown.both > 0 && (
-                                <div className="d-flex justify-content-between align-items-center mb-1">
-                                  <span><CheckCheck className="text-success me-1" />Anche App IO (parallela)</span>
-                                  <span className="d-flex align-items-center gap-2">
-                                    <span className="fw-bold">{channelBreakdown.both}</span>
-                                    {hasContentCorrection && (
-                                      <button className="btn btn-sm btn-link p-0" type="button"
-                                        disabled={resendingOutcome === 'both'}
-                                        onClick={() => handleResendByOutcome(campaign.id, 'both', channelBreakdown.both)}>
-                                        {resendingOutcome === 'both' ? 'Invio...' : `Rimanda a questi ${channelBreakdown.both}`}
-                                      </button>
-                                    )}
-                                  </span>
-                                </div>
-                              )}
-                              {showAppIoRows && channelBreakdown.appIoOnly > 0 && (
-                                <div className="d-flex justify-content-between mb-1">
-                                  <span><Smartphone className="text-success me-1" />Solo App IO (esclusiva)</span>
-                                  <span className="fw-bold">{channelBreakdown.appIoOnly}</span>
-                                </div>
-                              )}
-                              {showAppIoRows && channelBreakdown.appIoDespitePrimaryFail > 0 && (
-                                <div className="d-flex justify-content-between mb-1">
-                                  <span><AlertTriangle className="text-warning me-1" />App IO riuscito, primario fallito</span>
-                                  <span className="fw-bold">{channelBreakdown.appIoDespitePrimaryFail}</span>
-                                </div>
-                              )}
-                              {showAppIoRows && channelBreakdown.neither > 0 && (
-                                <div className="d-flex justify-content-between mb-1">
-                                  <span><X className="text-danger me-1" />Nessuno dei due (fallito)</span>
-                                  <span className="fw-bold">{channelBreakdown.neither}</span>
-                                </div>
-                              )}
-                              {channelBreakdown.inadCheckRan && (
-                                <div className="d-flex justify-content-between align-items-center">
-                                  <span><ShieldCheck className="text-primary me-1" />Dirottato su PEC (domicilio digitale)</span>
-                                  <span className="d-flex align-items-center gap-2">
-                                    <span className="fw-bold">{channelBreakdown.inadDiverted}</span>
-                                    {channelBreakdown.inadDiverted > 0 && hasContentCorrection && (
-                                      <button className="btn btn-sm btn-link p-0" type="button"
-                                        disabled={resendingOutcome === 'inadDiverted'}
-                                        onClick={() => handleResendByOutcome(campaign.id, 'inadDiverted', channelBreakdown.inadDiverted)}>
-                                        {resendingOutcome === 'inadDiverted' ? 'Invio...' : `Rimanda a questi ${channelBreakdown.inadDiverted}`}
-                                      </button>
-                                    )}
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                          );
-                        })()}
-
-                        {failureGroups.length > 0 && (
-                          <div className="mt-4 border-top pt-3">
-                            <h4 className="small fw-bold mb-2 text-danger">
-                              <AlertTriangle className="me-1" />
-                              Destinatari con invio fallito ({failureGroups.reduce((sum, g) => sum + g.count, 0)}) — raggruppati per motivo
-                            </h4>
-                            <div className="table-responsive" style={{ maxHeight: 300, overflowY: 'auto' }}>
-                              <table className="table table-sm" style={{ tableLayout: 'fixed', minWidth: 480 }}>
-                                <colgroup>
-                                  <col style={{ width: '60%' }} />
-                                  <col style={{ width: '15%' }} />
-                                  <col style={{ width: '25%' }} />
-                                </colgroup>
-                                <thead><tr><th>MOTIVO ERRORE</th><th className="text-end">DESTINATARI</th><th></th></tr></thead>
-                                <tbody>
-                                  {failureGroups.map((g) => (
-                                    <tr key={g.errorMessage}>
-                                      <td className="text-break small text-danger">{g.errorMessage}</td>
-                                      <td className="text-end fw-bold small">{g.count}</td>
-                                      <td className="text-end">
-                                        <button
-                                          className="btn btn-sm btn-outline-primary"
-                                          disabled={retryingGroup === g.errorMessage}
-                                          onClick={() => handleRetryGroup(g)}
-                                        >
-                                          <RotateCw className="me-1" />
-                                          {retryingGroup === g.errorMessage ? 'Rimetto in coda...' : 'Rimetti in coda tutti'}
-                                        </button>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                            {retryBulkStatus && (
-                              <div className="small mt-2">
-                                {retryBulkStatus.status === 'done' ? (
-                                  <span className="text-success">
-                                    <CheckCircle2 className="me-1" size={14} />
-                                    {retryBulkStatus.requeuedCount} destinatari rimessi in coda su {retryBulkStatus.totalCount}
-                                    {retryBulkStatus.failed.length > 0 ? `, ${retryBulkStatus.failed.length} non ritentabili` : ''}
-                                  </span>
-                                ) : retryBulkStatus.status === 'failed' ? (
-                                  <span className="text-danger">
-                                    <AlertTriangle className="me-1" size={14} />
-                                    Job fallito: {retryBulkStatus.errorMessage || 'errore sconosciuto'}
-                                  </span>
-                                ) : (
-                                  <span className="text-muted">
-                                    <Loader2 className="icon-spin me-1" size={14} />
-                                    Rimessa in coda in corso: {retryBulkStatus.processedCount}/{retryBulkStatus.totalCount}
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        <div className="mt-4 border-top pt-3">
-                          {campaign.status === 'draft' && (
-                            <button
-                              className="btn btn-success w-100 py-2 fw-semibold"
-                              disabled={campaign.totalRecipients === 0 || launching}
-                              onClick={handleLaunchCampaign}
-                            >
-                              {launching ? (
-                                <><Loader2 className="icon-spin me-2" />Lancio in corso...</>
-                              ) : (
-                                <><Rocket className="me-2" />Lancia Campagna</>
-                              )}
-                            </button>
-                          )}
-                          {campaign.status === 'queued' && (role === 'admin' || campaign.createdBy === username) && (
-                            <button
-                              className="btn btn-outline-danger w-100 py-2 fw-semibold"
-                              disabled={cancelling}
-                              onClick={handleCancelCampaign}
-                            >
-                              {cancelling ? (
-                                <><Loader2 className="icon-spin me-2" />Annullamento in corso...</>
-                              ) : (
-                                <><Ban className="me-2" />Annulla Campagna</>
-                              )}
-                            </button>
-                          )}
-                          {campaign.status === 'checking_inad' && (
-                            <div className="alert alert-info border border-info rounded p-3 mb-3">
-                              <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
-                                <div className="d-flex align-items-center gap-2 fw-semibold text-primary">
-                                  <Loader2 className="icon-spin" size={18} />
-                                  <span>Verifica domicilio digitale (INAD/Registro Imprese, AgID/PDND) in corso…</span>
-                                </div>
-                                <div className="d-flex align-items-center gap-2 flex-wrap">
-                                  <button
-                                    type="button"
-                                    className="btn btn-sm btn-outline-primary d-flex align-items-center gap-1"
-                                    onClick={() => fetchInadStatus(campaign.id)}
-                                    disabled={loadingInadStatus}
-                                  >
-                                    <RefreshCw className={loadingInadStatus ? 'icon-spin' : ''} size={14} />
-                                    Aggiorna stato live
-                                  </button>
-                                  <button className="btn btn-sm btn-outline-secondary" onClick={() => handleRetryInadCheck(campaign.id)}>
-                                    Riprova verifica
-                                  </button>
-                                  <button className="btn btn-sm btn-outline-warning" onClick={() => handleSkipInadCheck(campaign.id)}>
-                                    Salta verifica e procedi
-                                  </button>
-                                  {(role === 'admin' || campaign.createdBy === username) && (
-                                    <button className="btn btn-sm btn-outline-danger" disabled={cancelling} onClick={handleCancelCampaign}>
-                                      Annulla campagna
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-
-                              {inadStatusInfo && (
-                                <div className="bg-white rounded border p-3 mt-2 shadow-sm">
-                                  <div className="d-flex justify-content-between align-items-center small text-muted mb-2 pb-2 border-bottom flex-wrap gap-2">
-                                    <span>
-                                      Richiesta inviata il: <strong>{inadStatusInfo.requestedAt ? new Date(inadStatusInfo.requestedAt).toLocaleString('it-IT') : 'Recente'}</strong>
-                                    </span>
-                                    <span>
-                                      Stato Batch INAD: <strong>{inadStatusInfo.completedBatches} su {inadStatusInfo.totalBatches} completati</strong>
-                                    </span>
-                                    {inadStatusInfo.pivaTotal > 0 && (
-                                      <span>
-                                        Stato Partite IVA (Registro Imprese): <strong>{inadStatusInfo.pivaCompleted} su {inadStatusInfo.pivaTotal} completate</strong>
-                                      </span>
-                                    )}
-                                  </div>
-                                  {inadStatusInfo.batches.length > 0 ? (
-                                    <div className="d-flex flex-column gap-2">
-                                      {inadStatusInfo.batches.map((b, idx) => (
-                                        <div
-                                          key={b.id || idx}
-                                          className="d-flex justify-content-between align-items-center p-2 rounded bg-light border-start border-4"
-                                          style={{ borderColor: b.done || b.state === 'DISPONIBILE' ? '#198754' : b.error ? '#dc3545' : '#ffc107' }}
-                                        >
-                                          <div className="small">
-                                            <span className="fw-bold text-dark">Batch {idx + 1}</span> ({b.recipientCount} destinatari)
-                                            <div className="font-monospace text-muted" style={{ fontSize: '0.75rem' }}>ID Batch INAD: {b.id}</div>
-                                          </div>
-                                          <div>
-                                            {b.done || b.state === 'DISPONIBILE' ? (
-                                              <span className="badge bg-success d-inline-flex align-items-center gap-1">
-                                                <Check size={12} /> DISPONIBILE (Pronto)
-                                              </span>
-                                            ) : b.error ? (
-                                              <span className="badge bg-danger d-inline-flex align-items-center gap-1" title={b.error}>
-                                                <AlertTriangle size={12} /> ERRORE
-                                              </span>
-                                            ) : (
-                                              <span className="badge bg-warning text-dark d-inline-flex align-items-center gap-1">
-                                                <Loader2 className="icon-spin" size={12} />{' '}
-                                                {b.state === 'PRESA_IN_CARICO' ? 'Presa in carico' : 'In elaborazione'}
-                                              </span>
-                                            )}
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  ) : (
-                                    <div className="small text-muted text-center py-1">Inizializzazione batch INAD in corso...</div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          {campaign.totalRecipients === 0 && campaign.status === 'draft' && (
-                            <div className="alert alert-warning small p-2 mt-2 mb-0">
-                              <Info /> Carica un file CSV di destinatari per poter lanciare la campagna.
-                            </div>
-                          )}
-                          {(role === 'admin' || campaign.createdBy === username) && (
-                            <button
-                              className="btn btn-outline-danger w-100 py-2 fw-semibold mt-2"
-                              disabled={campaignIsLegalValue(campaign) && campaign.status !== 'draft'}
-                              title={campaignIsLegalValue(campaign) && campaign.status !== 'draft' ? 'Campagna a valore legale: non eliminabile dopo l\'avvio' : undefined}
-                              onClick={() => handleDeleteCampaign(campaign.id, campaign.name)}
-                            >
-                              <Trash2 className="me-2" />Elimina Campagna
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="col-xxl-10 col-xl-9 col-lg-9">
+                            {campaignIsLegalValue(campaign) && <span className="badge bg-primary d-inline-flex align-items-center gap-1"><ShieldCheck size={14} />Valore legale</span>}
+                            {campaign.isTest && <span className="badge bg-warning text-dark">TEST</span>}
+                            <span>Creata da {campaign.createdByDisplayName || campaign.createdBy} il {new Date(campaign.createdAt).toLocaleDateString('it-IT')}</span>
+                          </>
+                        }
+                        total={campaign.totalRecipients}
+                        totalLabel={campaign.totalRecipients === 1 ? 'destinatario' : 'destinatari'}
+                        segments={segments}
+                        note={note}
+                        figures={figures}
+                      />
+                    );
+                  })()}
+                <div className="row g-3">
+                    <div className="col-12">
                     {campaign.status === 'draft' && (
                       <div className="card shadow-sm mb-4">
                         <div className="card-body text-center py-4">
@@ -18141,7 +17696,7 @@ export function App(): React.JSX.Element {
                       </div>
                     )}
 
-                    <div className="card shadow-sm">
+                    <div className="card shadow-sm" id="cd-recipients">
                         <div className="card-header bg-white py-3 border-bottom">
                           <h3 className="h6 mb-3 fw-bold text-dark d-flex align-items-center">
                             <Users size={18} className="me-2" />Destinatari Caricati ({recipientsPage?.total ?? campaign.totalRecipients})
@@ -18892,6 +18447,9 @@ export function App(): React.JSX.Element {
                     </div>
                   </div>
 
+                      <details className="cd-more">
+                        <summary>Grafici di dettaglio <span className="cd-more-hint">esito, stato documento, recapito, canale effettivo, costi e download</span></summary>
+                        <div className="cd-more-body">
                     <div className="row g-4 mt-0">
                       <div className={['EMAIL', 'PEC', 'APP_IO'].includes(campaign.channelType) ? 'col-md-6' : 'col-12'}>
                         <div className="card shadow-sm h-100">
@@ -19125,8 +18683,552 @@ export function App(): React.JSX.Element {
                       </div>
                       )}
                     </div>
+                        </div>
+                      </details>
+                      <details className="cd-more cd-info">
+                        <summary>Informazioni, contenuto e avanzamento <span className="cd-more-hint">ID, opzioni di stampa, testo, protocollazione, multicanale, correzione, eliminazione</span></summary>
+                        <div className="cd-more-body">
+                    <div className="card shadow-sm mb-4">
+                      <div className="card-header bg-white py-3 border-bottom">
+                        <h3 className="h6 mb-0 fw-bold text-dark"><Info className="me-2" />Metadati Campagna</h3>
+                      </div>
+                      <div className="card-body">
+                        <div className="mb-3">
+                          <label className="text-muted small fw-semibold block">ID Campagna</label>
+                          <div className="fw-mono" style={{ fontSize: '0.82rem' }}>{campaign.id}</div>
+                        </div>
+                        <div className="mb-3">
+                          <label className="text-muted small fw-semibold block">Nome</label>
+                          <div className="fw-bold">
+                            {campaign.name}
+                            {campaign.isTest && (
+                              <span className="badge bg-warning text-dark ms-2" title="Campagna di prova, collegata a una bozza">
+                                TEST
+                              </span>
+                            )}
+                            {campaign.isTest && campaign.parentCampaignId && (
+                              <button
+                                type="button"
+                                className="btn btn-link btn-sm p-0 ms-2"
+                                onClick={() => handleCampaignClick(campaign.parentCampaignId!)}
+                              >
+                                Vedi bozza madre
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        {campaign.groupId && (() => {
+                          const siblings = campaigns.filter(c => c.groupId === campaign.groupId && c.id !== campaign.id);
+                          if (siblings.length === 0) return null;
+                          return (
+                            <div className="mb-3 alert alert-light border d-flex flex-column gap-1 py-2 px-2">
+                              <strong className="small">Fa parte di un lancio multicanale:</strong>
+                              {siblings.map(s => (
+                                <a
+                                  key={s.id}
+                                  href="#"
+                                  className="small"
+                                  onClick={(e) => { e.preventDefault(); handleCampaignClick(s.id); }}
+                                >
+                                  {getChannelMeta(s.channelType).label} — {s.totalRecipients} destinatari — {s.status}
+                                </a>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                        <div className="mb-3">
+                          <label className="text-muted small fw-semibold block">Canale</label>
+                          <div>
+                            <ChannelBadge channel={campaign.channelType} extra={campaign.channelType === 'POSTAL' ? postalBadgeExtra(campaign.channelConfig, postalProviders.find((p) => p.active)?.enabledServiceTypes) : (campaign.channelConfig?.['serviceName'] as string | undefined)} />
+                          </div>
+                        </div>
+                        {campaign.channelType === 'POSTAL' && (
+                          <div className="mb-3">
+                            <label className="text-muted small fw-semibold block">Opzioni di stampa</label>
+                            <div className="d-flex flex-wrap gap-1">
+                              <span className={`badge ${campaign.channelConfig?.['postalDuplex'] !== false ? 'bg-primary' : 'bg-secondary'}`}>
+                                {campaign.channelConfig?.['postalDuplex'] !== false ? 'Stampa fronte-retro' : 'Stampa solo fronte'}
+                              </span>
+                              <span
+                                className="badge"
+                                style={
+                                  campaign.channelConfig?.['postalColorPrint']
+                                    ? { background: 'linear-gradient(90deg, #e53935, #fb8c00, #fdd835, #43a047, #1e88e5, #8e24aa)', color: '#fff' }
+                                    : { background: '#6c757d', color: '#fff' }
+                                }
+                              >
+                                {campaign.channelConfig?.['postalColorPrint'] ? 'Stampa a colori' : 'Stampa bianco/nero'}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                        <div className="mb-3">
+                          <label className="text-muted small fw-semibold block">Creata da</label>
+                          <div>{campaign.createdByDisplayName || campaign.createdBy}</div>
+                        </div>
+                        <div className="mb-3">
+                          <label className="text-muted small fw-semibold block">Stato</label>
+                          <div>
+                            <StatusBadge status={campaign.status} />
+                          </div>
+                        </div>
+                        <div className="mb-3">
+                          <label className="text-muted small fw-semibold block">Valore legale</label>
+                          <div>
+                            {campaignIsLegalValue(campaign) ? (
+                              <span className="badge bg-primary d-inline-flex align-items-center gap-1">
+                                <ShieldCheck size={14} /> {campaign.status === 'draft' ? 'Campagna a valore legale (Bozza)' : 'Campagna a valore legale — non eliminabile'}
+                              </span>
+                            ) : campaign.attachmentExpiresAt ? (
+                              <span className="badge bg-secondary d-inline-flex align-items-center gap-1" title="Data in cui gli allegati verranno eliminati dalla retention automatica">
+                                <Hourglass size={14} /> Allegati in scadenza il {new Date(campaign.attachmentExpiresAt).toLocaleDateString('it-IT')}
+                              </span>
+                            ) : (
+                              <span className="text-muted small">Nessuna scadenza calcolata</span>
+                            )}
+                          </div>
+                        </div>
+                        {campaign.channelConfig?.['subject'] && (
+                          <div className="mb-3">
+                            <label className="text-muted small fw-semibold block">Oggetto</label>
+                            <div className="p-2 bg-light border rounded small" style={{ wordBreak: 'break-all' }}>
+                              {campaign.channelConfig['subject']}
+                            </div>
+                          </div>
+                        )}
+                        {campaign.channelConfig?.['body'] ? (
+                          <div className="mb-3">
+                            <label className="text-muted small fw-semibold block">Testo Messaggio</label>
+                            <div
+                              className="p-2 bg-light border rounded small"
+                              style={{ whiteSpace: 'pre-wrap', maxHeight: '180px', overflowY: 'auto' }}
+                              dangerouslySetInnerHTML={{ __html: campaign.channelConfig['body'] }}
+                            />
+                          </div>
+                        ) : campaign.description ? (
+                          <div className="mb-3">
+                            <label className="text-muted small fw-semibold block">Descrizione Campagna</label>
+                            <div className="p-2 bg-light border rounded small" style={{ whiteSpace: 'pre-wrap' }}>
+                              {campaign.description}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {(campaign.status === 'running' || campaign.status === 'completed' || campaign.status === 'queued' || campaign.status === 'cancelled') && (() => {
+                          const safeSentCount = Math.max(0, campaign.sentCount);
+                          const safeFailedCount = Math.max(0, campaign.failedCount);
+                          const totalProcessed = Math.min(campaign.totalRecipients, safeSentCount + safeFailedCount);
+                          return (
+                            <div className="mt-4 border-top pt-3">
+                              <h4 className="small fw-bold mb-2">Stato dell'Invio ({totalProcessed} / {campaign.totalRecipients})</h4>
+                              <div className="progress mb-2" style={{ height: '10px' }}>
+                                <div
+                                  className="progress-bar bg-success"
+                                  role="progressbar"
+                                  style={{ width: `${campaign.totalRecipients ? (safeSentCount / campaign.totalRecipients) * 100 : 0}%` }}
+                                ></div>
+                                <div
+                                  className="progress-bar bg-danger"
+                                  role="progressbar"
+                                  style={{ width: `${campaign.totalRecipients ? (safeFailedCount / campaign.totalRecipients) * 100 : 0}%` }}
+                                ></div>
+                              </div>
+                              <div className="d-flex justify-content-between small text-muted">
+                                <span><Check className="text-success" /> Successo: {safeSentCount}</span>
+                                <span><X className="text-danger" /> Errori: {safeFailedCount}</span>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {campaign.channelType === 'SEND' && sendStatusBreakdown && (
+                          <div className="mt-4 border-top pt-3">
+                            <h4 className="small fw-bold mb-2">
+                              <BarChart3 className="me-1 text-primary" />Andamento Invio SEND
+                            </h4>
+                            <ChannelStatusBar breakdown={sendStatusBreakdown} meta={SEND_STATUS_META} pendingLabel="In attesa" />
+                          </div>
+                        )}
+
+                        {campaign.channelType !== 'SEND' && campaign.channelConfig?.['protocolla'] === true && campaignSendStageCounts && (
+                          <div className="mt-4 border-top pt-3">
+                            <h4 className="small fw-bold mb-2">
+                              <Stamp className="me-1 text-primary" />Stato Protocollazione
+                            </h4>
+                            <div className="d-flex gap-3 text-center small">
+                              <div>
+                                <div className="fw-bold text-secondary">{campaignSendStageCounts.queued}</div>
+                                <div className="text-muted" style={{ fontSize: '0.7rem' }}>In attesa protocollo</div>
+                              </div>
+                              <div>
+                                <div className="fw-bold text-info">{campaignSendStageCounts.protocollato}</div>
+                                <div className="text-muted" style={{ fontSize: '0.7rem' }}>Protocollato (in attesa invio)</div>
+                              </div>
+                              <div>
+                                <div className="fw-bold text-success">{campaignSendStageCounts.inviato}</div>
+                                <div className="text-muted" style={{ fontSize: '0.7rem' }}>Inviato</div>
+                              </div>
+                              <div>
+                                <div className={`fw-bold ${campaignSendStageCounts.fallito > 0 ? 'text-danger' : 'text-muted'}`}>{campaignSendStageCounts.fallito}</div>
+                                <div className="text-muted" style={{ fontSize: '0.7rem' }}>Fallito</div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {campaign.channelType === 'POSTAL' && postalStatusBreakdown && (
+                          <div className="mt-4 border-top pt-3">
+                            <h4 className="small fw-bold mb-2">
+                              <BarChart3 className="me-1 text-primary" />Andamento Invio POSTAL
+                            </h4>
+                            <ChannelStatusBar breakdown={postalStatusBreakdown} meta={POSTAL_STATUS_META} pendingLabel="In corso" colorMap={POSTAL_STATUS_PIE_COLORS} />
+                          </div>
+                        )}
+
+                        {['completed', 'failed', 'cancelled'].includes(campaign.status) && (
+                          <div className="mt-4 border-top pt-3">
+                            <div className="d-flex justify-content-between align-items-center mb-2">
+                              <h4 className="small fw-bold mb-0"><Pencil className="me-1 text-primary" size={16} />Contenuto (Oggetto/Testo)</h4>
+                              {!contentCorrectionOpen && (
+                                <button className="btn btn-sm btn-outline-secondary" type="button" onClick={() => openContentCorrection(campaign)}>
+                                  Correggi
+                                </button>
+                              )}
+                            </div>
+                            {contentCorrectionOpen ? (
+                              <div className="border rounded p-3 bg-light">
+                                <div className="mb-2">
+                                  <label className="form-label small fw-bold">Oggetto</label>
+                                  <input type="text" className="form-control form-control-sm" value={contentCorrectionSubject}
+                                    onChange={(e) => setContentCorrectionSubject(e.target.value)} />
+                                </div>
+                                <div className="mb-2">
+                                  <label className="form-label small fw-bold">Testo</label>
+                                  <textarea className="form-control form-control-sm" rows={4} value={contentCorrectionBody}
+                                    onChange={(e) => setContentCorrectionBody(e.target.value)} />
+                                </div>
+                                {contentCorrectionError && <div className="alert alert-danger small">{contentCorrectionError}</div>}
+                                <div className="d-flex gap-2">
+                                  <button className="btn btn-sm btn-primary" type="button" disabled={contentCorrectionSaving}
+                                    onClick={() => handleSaveContentCorrection(campaign.id)}>
+                                    {contentCorrectionSaving ? <><Loader2 className="icon-spin me-1" size={16} />Salvataggio...</> : 'Salva correzione'}
+                                  </button>
+                                  <button className="btn btn-sm btn-outline-secondary" type="button" disabled={contentCorrectionSaving}
+                                    onClick={() => setContentCorrectionOpen(false)}>
+                                    Annulla
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="small text-muted">
+                                <div><strong>Oggetto:</strong> {(campaign.channelConfig?.subject as string) || <em>vuoto</em>}</div>
+                              </div>
+                            )}
+                            {Array.isArray(campaign.channelConfig?.contentHistory) && campaign.channelConfig.contentHistory.length > 0 && (
+                              <details className="mt-2 small">
+                                <summary className="text-muted" style={{ cursor: 'pointer' }}>Storico contenuto ({campaign.channelConfig.contentHistory.length} versioni precedenti)</summary>
+                                <ul className="list-unstyled mt-2">
+                                  {campaign.channelConfig.contentHistory.map((h: any, i: number) => (
+                                    <li key={i} className="border-bottom pb-1 mb-1">
+                                      <div className="text-muted">{new Date(h.changedAt).toLocaleString('it-IT')} — {h.changedBy}</div>
+                                      <div><strong>Oggetto:</strong> {h.subject || <em>vuoto</em>}</div>
+                                      <div><strong>Testo:</strong> {h.body || <em>vuoto</em>}</div>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </details>
+                            )}
+                          </div>
+                        )}
+
+                        {channelBreakdown && (() => {
+                          // "Rimanda a questi" ha senso solo se il contenuto è
+                          // stato CORRETTO dopo l'invio originale (il conferma
+                          // dialog parla esplicitamente di "contenuto
+                          // corretto", vedi handleResendByOutcome) — con
+                          // subject/body invariati il resend è comunque
+                          // no-op lato backend (gate firma SHA-256, vedi
+                          // notification.processor.ts/resendSafe), ma
+                          // mostrare comunque il tasto è fuorviante (sembra
+                          // promettere un secondo invio reale). contentHistory
+                          // si popola solo quando un salvataggio di
+                          // correzione cambia davvero subject/body.
+                          const hasContentCorrection = Array.isArray(campaign.channelConfig?.contentHistory) && campaign.channelConfig.contentHistory.length > 0;
+                          // Le 5 righe di esito App IO hanno senso solo se un canale
+                          // secondario App IO è davvero configurato — altrimenti sono
+                          // sempre 0 e vanno lette come "non applicabile", non come
+                          // "App IO fallito per tutti" (ambiguità reale segnalata
+                          // dall'operatore). "Maggiori di 0" per non mostrare righe
+                          // vuote quando App IO è configurato ma ancora nessun esito.
+                          const showAppIoRows = channelBreakdown.appIoMode !== 'none';
+                          const appIoModeLabel = channelBreakdown.appIoMode === 'parallel' ? 'Parallela' : channelBreakdown.appIoMode === 'exclusive' ? 'Esclusiva' : 'Nessuna';
+                          const anyRowVisible =
+                            (showAppIoRows && (channelBreakdown.primaryOnly > 0 || channelBreakdown.both > 0 || channelBreakdown.appIoOnly > 0 || channelBreakdown.appIoDespitePrimaryFail > 0 || channelBreakdown.neither > 0)) ||
+                            channelBreakdown.inadCheckRan;
+                          return (
+                          <div className="mt-4 border-top pt-3">
+                            <h4 className="small fw-bold mb-2">
+                              <Smartphone className="me-1 text-primary" />Dettaglio Consegna Multicanale
+                            </h4>
+                            <div className="small text-muted mb-2">
+                              <div>Modalità consegna App IO: <strong>{appIoModeLabel}</strong></div>
+                              <div>Verifica domicilio digitale (INAD/Registro Imprese): <strong>{channelBreakdown.inadCheckRan ? 'Eseguita' : 'Non eseguita'}</strong></div>
+                            </div>
+                            {!anyRowVisible && (
+                              <div className="small text-muted fst-italic">Nessun destinatario ancora classificato.</div>
+                            )}
+                            <div className="small">
+                              {showAppIoRows && channelBreakdown.primaryOnly > 0 && (
+                                <div className="d-flex justify-content-between mb-1">
+                                  <span><Mail className="text-muted me-1" />Solo {channelLabel(campaign.channelType)}</span>
+                                  <span className="fw-bold">{channelBreakdown.primaryOnly}</span>
+                                </div>
+                              )}
+                              {showAppIoRows && channelBreakdown.both > 0 && (
+                                <div className="d-flex justify-content-between align-items-center mb-1">
+                                  <span><CheckCheck className="text-success me-1" />Anche App IO (parallela)</span>
+                                  <span className="d-flex align-items-center gap-2">
+                                    <span className="fw-bold">{channelBreakdown.both}</span>
+                                    {hasContentCorrection && (
+                                      <button className="btn btn-sm btn-link p-0" type="button"
+                                        disabled={resendingOutcome === 'both'}
+                                        onClick={() => handleResendByOutcome(campaign.id, 'both', channelBreakdown.both)}>
+                                        {resendingOutcome === 'both' ? 'Invio...' : `Rimanda a questi ${channelBreakdown.both}`}
+                                      </button>
+                                    )}
+                                  </span>
+                                </div>
+                              )}
+                              {showAppIoRows && channelBreakdown.appIoOnly > 0 && (
+                                <div className="d-flex justify-content-between mb-1">
+                                  <span><Smartphone className="text-success me-1" />Solo App IO (esclusiva)</span>
+                                  <span className="fw-bold">{channelBreakdown.appIoOnly}</span>
+                                </div>
+                              )}
+                              {showAppIoRows && channelBreakdown.appIoDespitePrimaryFail > 0 && (
+                                <div className="d-flex justify-content-between mb-1">
+                                  <span><AlertTriangle className="text-warning me-1" />App IO riuscito, primario fallito</span>
+                                  <span className="fw-bold">{channelBreakdown.appIoDespitePrimaryFail}</span>
+                                </div>
+                              )}
+                              {showAppIoRows && channelBreakdown.neither > 0 && (
+                                <div className="d-flex justify-content-between mb-1">
+                                  <span><X className="text-danger me-1" />Nessuno dei due (fallito)</span>
+                                  <span className="fw-bold">{channelBreakdown.neither}</span>
+                                </div>
+                              )}
+                              {channelBreakdown.inadCheckRan && (
+                                <div className="d-flex justify-content-between align-items-center">
+                                  <span><ShieldCheck className="text-primary me-1" />Dirottato su PEC (domicilio digitale)</span>
+                                  <span className="d-flex align-items-center gap-2">
+                                    <span className="fw-bold">{channelBreakdown.inadDiverted}</span>
+                                    {channelBreakdown.inadDiverted > 0 && hasContentCorrection && (
+                                      <button className="btn btn-sm btn-link p-0" type="button"
+                                        disabled={resendingOutcome === 'inadDiverted'}
+                                        onClick={() => handleResendByOutcome(campaign.id, 'inadDiverted', channelBreakdown.inadDiverted)}>
+                                        {resendingOutcome === 'inadDiverted' ? 'Invio...' : `Rimanda a questi ${channelBreakdown.inadDiverted}`}
+                                      </button>
+                                    )}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          );
+                        })()}
+
+                        {failureGroups.length > 0 && (
+                          <div className="mt-4 border-top pt-3">
+                            <h4 className="small fw-bold mb-2 text-danger">
+                              <AlertTriangle className="me-1" />
+                              Destinatari con invio fallito ({failureGroups.reduce((sum, g) => sum + g.count, 0)}) — raggruppati per motivo
+                            </h4>
+                            <div className="table-responsive" style={{ maxHeight: 300, overflowY: 'auto' }}>
+                              <table className="table table-sm" style={{ tableLayout: 'fixed', minWidth: 480 }}>
+                                <colgroup>
+                                  <col style={{ width: '60%' }} />
+                                  <col style={{ width: '15%' }} />
+                                  <col style={{ width: '25%' }} />
+                                </colgroup>
+                                <thead><tr><th>MOTIVO ERRORE</th><th className="text-end">DESTINATARI</th><th></th></tr></thead>
+                                <tbody>
+                                  {failureGroups.map((g) => (
+                                    <tr key={g.errorMessage}>
+                                      <td className="text-break small text-danger">{g.errorMessage}</td>
+                                      <td className="text-end fw-bold small">{g.count}</td>
+                                      <td className="text-end">
+                                        <button
+                                          className="btn btn-sm btn-outline-primary"
+                                          disabled={retryingGroup === g.errorMessage}
+                                          onClick={() => handleRetryGroup(g)}
+                                        >
+                                          <RotateCw className="me-1" />
+                                          {retryingGroup === g.errorMessage ? 'Rimetto in coda...' : 'Rimetti in coda tutti'}
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                            {retryBulkStatus && (
+                              <div className="small mt-2">
+                                {retryBulkStatus.status === 'done' ? (
+                                  <span className="text-success">
+                                    <CheckCircle2 className="me-1" size={14} />
+                                    {retryBulkStatus.requeuedCount} destinatari rimessi in coda su {retryBulkStatus.totalCount}
+                                    {retryBulkStatus.failed.length > 0 ? `, ${retryBulkStatus.failed.length} non ritentabili` : ''}
+                                  </span>
+                                ) : retryBulkStatus.status === 'failed' ? (
+                                  <span className="text-danger">
+                                    <AlertTriangle className="me-1" size={14} />
+                                    Job fallito: {retryBulkStatus.errorMessage || 'errore sconosciuto'}
+                                  </span>
+                                ) : (
+                                  <span className="text-muted">
+                                    <Loader2 className="icon-spin me-1" size={14} />
+                                    Rimessa in coda in corso: {retryBulkStatus.processedCount}/{retryBulkStatus.totalCount}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="mt-4 border-top pt-3">
+                          {campaign.status === 'draft' && (
+                            <button
+                              className="btn btn-success w-100 py-2 fw-semibold"
+                              disabled={campaign.totalRecipients === 0 || launching}
+                              onClick={handleLaunchCampaign}
+                            >
+                              {launching ? (
+                                <><Loader2 className="icon-spin me-2" />Lancio in corso...</>
+                              ) : (
+                                <><Rocket className="me-2" />Lancia Campagna</>
+                              )}
+                            </button>
+                          )}
+                          {campaign.status === 'queued' && (role === 'admin' || campaign.createdBy === username) && (
+                            <button
+                              className="btn btn-outline-danger w-100 py-2 fw-semibold"
+                              disabled={cancelling}
+                              onClick={handleCancelCampaign}
+                            >
+                              {cancelling ? (
+                                <><Loader2 className="icon-spin me-2" />Annullamento in corso...</>
+                              ) : (
+                                <><Ban className="me-2" />Annulla Campagna</>
+                              )}
+                            </button>
+                          )}
+                          {campaign.status === 'checking_inad' && (
+                            <div className="alert alert-info border border-info rounded p-3 mb-3">
+                              <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                                <div className="d-flex align-items-center gap-2 fw-semibold text-primary">
+                                  <Loader2 className="icon-spin" size={18} />
+                                  <span>Verifica domicilio digitale (INAD/Registro Imprese, AgID/PDND) in corso…</span>
+                                </div>
+                                <div className="d-flex align-items-center gap-2 flex-wrap">
+                                  <button
+                                    type="button"
+                                    className="btn btn-sm btn-outline-primary d-flex align-items-center gap-1"
+                                    onClick={() => fetchInadStatus(campaign.id)}
+                                    disabled={loadingInadStatus}
+                                  >
+                                    <RefreshCw className={loadingInadStatus ? 'icon-spin' : ''} size={14} />
+                                    Aggiorna stato live
+                                  </button>
+                                  <button className="btn btn-sm btn-outline-secondary" onClick={() => handleRetryInadCheck(campaign.id)}>
+                                    Riprova verifica
+                                  </button>
+                                  <button className="btn btn-sm btn-outline-warning" onClick={() => handleSkipInadCheck(campaign.id)}>
+                                    Salta verifica e procedi
+                                  </button>
+                                  {(role === 'admin' || campaign.createdBy === username) && (
+                                    <button className="btn btn-sm btn-outline-danger" disabled={cancelling} onClick={handleCancelCampaign}>
+                                      Annulla campagna
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+
+                              {inadStatusInfo && (
+                                <div className="bg-white rounded border p-3 mt-2 shadow-sm">
+                                  <div className="d-flex justify-content-between align-items-center small text-muted mb-2 pb-2 border-bottom flex-wrap gap-2">
+                                    <span>
+                                      Richiesta inviata il: <strong>{inadStatusInfo.requestedAt ? new Date(inadStatusInfo.requestedAt).toLocaleString('it-IT') : 'Recente'}</strong>
+                                    </span>
+                                    <span>
+                                      Stato Batch INAD: <strong>{inadStatusInfo.completedBatches} su {inadStatusInfo.totalBatches} completati</strong>
+                                    </span>
+                                    {inadStatusInfo.pivaTotal > 0 && (
+                                      <span>
+                                        Stato Partite IVA (Registro Imprese): <strong>{inadStatusInfo.pivaCompleted} su {inadStatusInfo.pivaTotal} completate</strong>
+                                      </span>
+                                    )}
+                                  </div>
+                                  {inadStatusInfo.batches.length > 0 ? (
+                                    <div className="d-flex flex-column gap-2">
+                                      {inadStatusInfo.batches.map((b, idx) => (
+                                        <div
+                                          key={b.id || idx}
+                                          className="d-flex justify-content-between align-items-center p-2 rounded bg-light border-start border-4"
+                                          style={{ borderColor: b.done || b.state === 'DISPONIBILE' ? '#198754' : b.error ? '#dc3545' : '#ffc107' }}
+                                        >
+                                          <div className="small">
+                                            <span className="fw-bold text-dark">Batch {idx + 1}</span> ({b.recipientCount} destinatari)
+                                            <div className="font-monospace text-muted" style={{ fontSize: '0.75rem' }}>ID Batch INAD: {b.id}</div>
+                                          </div>
+                                          <div>
+                                            {b.done || b.state === 'DISPONIBILE' ? (
+                                              <span className="badge bg-success d-inline-flex align-items-center gap-1">
+                                                <Check size={12} /> DISPONIBILE (Pronto)
+                                              </span>
+                                            ) : b.error ? (
+                                              <span className="badge bg-danger d-inline-flex align-items-center gap-1" title={b.error}>
+                                                <AlertTriangle size={12} /> ERRORE
+                                              </span>
+                                            ) : (
+                                              <span className="badge bg-warning text-dark d-inline-flex align-items-center gap-1">
+                                                <Loader2 className="icon-spin" size={12} />{' '}
+                                                {b.state === 'PRESA_IN_CARICO' ? 'Presa in carico' : 'In elaborazione'}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div className="small text-muted text-center py-1">Inizializzazione batch INAD in corso...</div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {campaign.totalRecipients === 0 && campaign.status === 'draft' && (
+                            <div className="alert alert-warning small p-2 mt-2 mb-0">
+                              <Info /> Carica un file CSV di destinatari per poter lanciare la campagna.
+                            </div>
+                          )}
+                          {(role === 'admin' || campaign.createdBy === username) && (
+                            <button
+                              className="btn btn-outline-danger w-100 py-2 fw-semibold mt-2"
+                              disabled={campaignIsLegalValue(campaign) && campaign.status !== 'draft'}
+                              title={campaignIsLegalValue(campaign) && campaign.status !== 'draft' ? 'Campagna a valore legale: non eliminabile dopo l\'avvio' : undefined}
+                              onClick={() => handleDeleteCampaign(campaign.id, campaign.name)}
+                            >
+                              <Trash2 className="me-2" />Elimina Campagna
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                        </div>
+                      </details>
                   </div>
                 </div>
+                  </>
               ) : null}
             </div>
           )}
