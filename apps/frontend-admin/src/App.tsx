@@ -2845,7 +2845,7 @@ export function App(): React.JSX.Element {
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
   }, [recipientsFiltersPanelOpen]);
-  const [recipientsFilterOptions, setRecipientsFilterOptions] = useState<{ statuses: Array<string | { value: string; count: number }>; deliveryStatuses: Array<string | { value: string; count: number }>; postalDeliveryStatuses?: Array<string | { value: string; count: number }>; downloadChannelCombos?: Array<{ value: string; count: number }> } | null>(null);
+  const [recipientsFilterOptions, setRecipientsFilterOptions] = useState<{ statuses: Array<string | { value: string; count: number }>; deliveryStatuses: Array<string | { value: string; count: number }>; postalDeliveryStatuses?: Array<string | { value: string; count: number }>; posteCheckedCount?: number; downloadChannelCombos?: Array<{ value: string; count: number }> } | null>(null);
   const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number; inadDiverted: number; appIoMode: 'none' | 'parallel' | 'exclusive'; inadCheckRan: boolean } | null>(null);
   const [resendingOutcome, setResendingOutcome] = useState<string | null>(null);
   const [effectiveChannelBreakdown, setEffectiveChannelBreakdown] = useState<Record<string, number> | null>(null);
@@ -18150,15 +18150,34 @@ export function App(): React.JSX.Element {
                                     aria-pressed={active}
                                     title="Mostra solo le notifiche che GlobalCom dà come Non consegnate ma che risultano consegnate sul tracking Poste"
                                     onClick={() => {
-                                      const val = active ? '' : 'ConsegnatoVerificaPoste';
-                                      setRecipientsPostalDeliveryStatusFilter(val);
+                                      // Nessuna fetch esplicita: l'useEffect dei filtri ricarica
+                                      // già a ogni cambio (stesso pattern delle checkbox Tipo invio).
+                                      setRecipientsPostalDeliveryStatusFilter(active ? '' : 'ConsegnatoVerificaPoste');
                                       setRecipientsPageNum(1);
-                                      if (selectedCampaignId) {
-                                        fetchRecipientsPage(selectedCampaignId, 1, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, val, recipientsSortBy, recipientsSortDir);
-                                      }
                                     }}
                                   >
                                     <CheckCircle2 className="me-1" size={14} />Discrepanze GlobalCom/Poste ({count})
+                                  </button>
+                                );
+                              })()}
+                              {campaign.channelType === 'POSTAL' && (() => {
+                                // Filtro rapido "Controllati su Poste": almeno una risposta valida
+                                // dal tracking, con o senza discrepanza (tag posteChecked).
+                                const count = recipientsFilterOptions?.posteCheckedCount ?? 0;
+                                const active = recipientsTagsFilter.includes('posteChecked');
+                                if (count === 0 && !active) return null;
+                                return (
+                                  <button
+                                    type="button"
+                                    className={`btn btn-sm d-inline-flex align-items-center text-nowrap ${active ? 'btn-info' : 'btn-outline-info'}`}
+                                    aria-pressed={active}
+                                    title="Mostra solo le notifiche già verificate sul tracking Poste (almeno una risposta valida), con o senza discrepanza con GlobalCom"
+                                    onClick={() => {
+                                      setRecipientsTagsFilter((prev) => (active ? prev.filter((t) => t !== 'posteChecked') : [...prev, 'posteChecked']));
+                                      setRecipientsPageNum(1);
+                                    }}
+                                  >
+                                    <Truck className="me-1" size={14} />Controllati su Poste ({count})
                                   </button>
                                 );
                               })()}
@@ -18377,6 +18396,7 @@ export function App(): React.JSX.Element {
                               // (vedi notification.processor.ts, isPrimaryAppIoDivertedToPec) — non
                               // più un caso ridondante da escludere.
                               { id: 'appio', label: 'App IO (co-consegna)' },
+                              ...(campaign.channelType === 'POSTAL' ? [{ id: 'posteChecked', label: 'Controllati su Poste' }] : []),
                             ];
                             const selectedTagLabels = tagOptions.filter((o) => recipientsTagsFilter.includes(o.id)).map((o) => o.label);
                             const tagsSummary = selectedTagLabels.length === 0

@@ -19,6 +19,10 @@ const JITTER_RATIO = 0.3;
 const DAY_MS = 86_400_000;
 /** Mai due chiamate a Poste per la stessa notifica entro 23 ore, da chiunque partano. */
 const MIN_RECHECK_MS = 23 * 60 * 60_000;
+// Priorità della coda (cron e run di campagna): prima le notifiche mai
+// controllate su Poste (nessuna risposta valida), poi le controllate più
+// vecchie.
+const NEVER_CHECKED_FIRST_SQL = 'CASE WHEN t.poste_esito_ricerca IS NULL THEN 0 ELSE 1 END';
 const DISABLED_MESSAGE = 'Verifica consegna su Poste disattivata (Impostazioni → Postalizzazione)';
 
 export type CheckResult = PosteTrackingStatus | 'error' | 'blocked' | 'skipped';
@@ -221,8 +225,13 @@ export class PostePostalTrackingService {
       .where("t.status = 'pending'")
       .andWhere('t.next_check_at <= now()')
       .andWhere("a.postal_status = 'NonConsegnato'")
-      .orderBy('COALESCE(t.last_checked_at, t.created_at)', 'ASC')
-      .take(1)
+      .orderBy(NEVER_CHECKED_FIRST_SQL, 'ASC')
+      .addOrderBy('t.last_checked_at', 'ASC', 'NULLS FIRST')
+      .addOrderBy('t.created_at', 'ASC')
+      // limit(), mai take(): take() con un join fa riscrivere a TypeORM la
+      // query in DISTINCT + subquery, dove un ORDER BY su espressione SQL
+      // fallisce ("alias was not found") — bug reale v1.8.3, coda ferma.
+      .limit(1)
       .getOne();
     return row ? { row, mode: 'cron' } : null;
   }
@@ -338,7 +347,9 @@ export class PostePostalTrackingService {
       .where('r.campaign_id = :campaignId', { campaignId })
       .andWhere("t.status IN ('pending', 'gave_up')")
       .andWhere("a.postal_status = 'NonConsegnato'")
-      .orderBy('COALESCE(t.last_checked_at, t.created_at)', 'ASC')
+      .orderBy(NEVER_CHECKED_FIRST_SQL, 'ASC')
+      .addOrderBy('t.last_checked_at', 'ASC', 'NULLS FIRST')
+      .addOrderBy('t.created_at', 'ASC')
       .getMany();
     const now = new Date().toISOString();
     this.campaignRuns.set(campaignId, {

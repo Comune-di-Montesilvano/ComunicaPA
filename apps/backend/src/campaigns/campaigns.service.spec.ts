@@ -792,6 +792,7 @@ describe('CampaignsService', () => {
         statuses: [{ value: 'sent', count: 10 }, { value: 'failed', count: 5 }],
         deliveryStatuses: [{ value: 'ACCEPTED', count: 12 }, { value: 'DELIVERED', count: 20 }],
         postalDeliveryStatuses: [{ value: 'CONSEGNATO', count: 15 }],
+        posteCheckedCount: 0,
         downloadChannelCombos: [],
       });
       // "Senza download" coerente con le combinazioni canale: niente eventi e contatore a zero.

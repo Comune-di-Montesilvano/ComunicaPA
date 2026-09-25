@@ -31,7 +31,7 @@ describe('PostePostalTrackingService', () => {
   // Simula la query "prossimo dovuto" del DB: pending, next_check_at scaduto.
   function dueQb() {
     const qb: any = {};
-    for (const m of ['innerJoin', 'where', 'andWhere', 'orderBy', 'take']) qb[m] = vi.fn().mockReturnValue(qb);
+    for (const m of ['innerJoin', 'where', 'andWhere', 'orderBy', 'addOrderBy', 'take', 'limit']) qb[m] = vi.fn().mockReturnValue(qb);
     qb.getOne = vi.fn(async () => [...store.values()].find((r) => r.status === 'pending' && r.nextCheckAt && r.nextCheckAt.getTime() <= Date.now()) ?? null);
     qb.getMany = vi.fn(async () => campaignRows);
     return qb;
@@ -227,6 +227,34 @@ describe('PostePostalTrackingService', () => {
       expect(result).toBe('skipped');
       expect(r.id).toBe('t1');
       expect(client.track).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('priorità della coda', () => {
+    function orderSql(qb: any): string {
+      return [qb.orderBy, qb.addOrderBy].flatMap((f: any) => f.mock.calls.map((c: any[]) => c.join(' '))).join(' | ');
+    }
+
+    it('dovuti del giorno: prima i mai controllati su Poste, poi i controllati più vecchi; LIMIT semplice, mai take()', async () => {
+      add(row({ id: 't1' }));
+      client.track.mockResolvedValue(NOT_FOUND);
+      await service.tick();
+      const qb = repo.createQueryBuilder.mock.results[0].value;
+      const order = orderSql(qb);
+      expect(order.indexOf('poste_esito_ricerca IS NULL')).toBeGreaterThanOrEqual(0);
+      expect(order.indexOf('poste_esito_ricerca IS NULL')).toBeLessThan(order.indexOf('t.last_checked_at'));
+      expect(order).toContain('NULLS FIRST');
+      expect(qb.limit).toHaveBeenCalledWith(1);
+      expect(qb.take).not.toHaveBeenCalled();
+    });
+
+    it('run di campagna: stesso ordinamento', async () => {
+      campaignRows = [];
+      await service.startCampaignRun('c1');
+      const qb = repo.createQueryBuilder.mock.results[0].value;
+      const order = orderSql(qb);
+      expect(order.indexOf('poste_esito_ricerca IS NULL')).toBeGreaterThanOrEqual(0);
+      expect(order.indexOf('poste_esito_ricerca IS NULL')).toBeLessThan(order.indexOf('t.last_checked_at'));
     });
   });
 

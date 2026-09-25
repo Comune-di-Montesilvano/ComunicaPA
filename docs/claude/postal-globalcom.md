@@ -317,3 +317,12 @@ consegnate e restituite (`flagRitorno`, anche "in restituzione" `stato 3`).
 non conta, si riprova). Il cron che trova il giorno già controllato a mano lo
 conta nei 90 e sposta `next_check_at` a 24 h dall'ultimo controllo; il tasto
 notifica risponde `skipped: true` con l'ultimo esito.
+
+**Priorità coda verifica Poste** (cron e run campagna): prima le righe mai
+controllate (`poste_esito_ricerca IS NULL`), poi `last_checked_at` più vecchio.
+**Query "prossimo dovuto" con join: `limit(1)`, MAI `take(1)`** — `take()` con
+un join fa riscrivere a TypeORM la query in DISTINCT + subquery e un ORDER BY su
+espressione SQL fallisce (`"COALESCE(t" alias was not found`). Bug reale v1.8.3:
+coda automatica ferma a ogni tick (solo i run di campagna, che usano `getMany()`
+senza take, funzionavano). I mock dei test non lo vedono: verificare sempre la
+query su Postgres reale (log del tick in dev).
