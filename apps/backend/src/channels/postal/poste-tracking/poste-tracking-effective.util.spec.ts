@@ -35,7 +35,7 @@ describe('poste-tracking-effective', () => {
   });
 
   it('DTO con date ISO e maxChecks', () => {
-    const dto = toPosteVerificationDto({ status: 'pending', trackingCode: 'RN000000000IT', checkCount: 1, nextCheckAt: new Date('2026-09-25T02:00:00Z'), lastCheckedAt: null, lastError: null, deliveredAt: null, movements: null } as any);
-    expect(dto).toEqual({ status: 'pending', trackingCode: 'RN000000000IT', checkCount: 1, maxChecks: 90, nextCheckAt: '2026-09-25T02:00:00.000Z', lastCheckedAt: null, lastError: null, deliveredAt: null, movements: [] });
+    const dto = toPosteVerificationDto({ status: 'pending', trackingCode: 'RN000000000IT', checkCount: 1, nextCheckAt: new Date('2026-09-25T02:00:00Z'), lastCheckedAt: null, lastError: null, deliveredAt: null, outcomeAt: new Date('2026-08-20T09:00:00Z'), movements: null } as any);
+    expect(dto).toEqual({ status: 'pending', trackingCode: 'RN000000000IT', checkCount: 1, maxChecks: 90, nextCheckAt: '2026-09-25T02:00:00.000Z', lastCheckedAt: null, lastError: null, deliveredAt: null, outcomeAt: '2026-08-20T09:00:00.000Z', movements: [] });
   });
 });

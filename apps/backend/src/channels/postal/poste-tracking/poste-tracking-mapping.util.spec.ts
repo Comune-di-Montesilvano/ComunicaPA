@@ -54,22 +54,24 @@ describe('lastMovement', () => {
 
 describe('mapPosteOutcome', () => {
   it('esito 3 + stato 5 senza ritorno → delivered con data ultimo movimento', () => {
-    const { outcome, deliveredAt } = mapPosteOutcome(parsePosteResponse(delivered));
+    const { outcome, outcomeAt } = mapPosteOutcome(parsePosteResponse(delivered));
     expect(outcome).toBe('delivered');
-    expect(deliveredAt?.toISOString()).toBe('2026-09-04T08:06:00.000Z');
+    expect(outcomeAt?.toISOString()).toBe('2026-09-04T08:06:00.000Z');
   });
 
   it('flagRitorno in testa → returned anche con stato 5', () => {
     expect(mapPosteOutcome(parsePosteResponse({ ...delivered, flagRitorno: true })).outcome).toBe('returned');
   });
 
-  it('flagRitorno su un movimento → returned', () => {
+  it('flagRitorno su un movimento → returned, con data esito = ultimo movimento', () => {
     const body = { ...delivered, listaMovimenti: [...delivered.listaMovimenti, { dataOra: 1788600000000, statoLavorazione: 'x', luogo: 'Y', flagRitorno: true, box: '5' }] };
-    expect(mapPosteOutcome(parsePosteResponse(body)).outcome).toBe('returned');
+    const r = mapPosteOutcome(parsePosteResponse(body));
+    expect(r.outcome).toBe('returned');
+    expect(r.outcomeAt?.toISOString()).toBe(new Date(1788600000000).toISOString());
   });
 
   it('esitoRicerca 1 (non trovato) → pending', () => {
-    expect(mapPosteOutcome(parsePosteResponse({ esitoRicerca: '1', stato: '1' }))).toEqual({ outcome: 'pending', deliveredAt: null });
+    expect(mapPosteOutcome(parsePosteResponse({ esitoRicerca: '1', stato: '1' }))).toEqual({ outcome: 'pending', outcomeAt: null });
   });
 
   it('stato intermedio o sconosciuto → pending', () => {

@@ -1,7 +1,7 @@
 import type { PosteTrackingMovement } from '../../../entities/postal-poste-tracking.entity.js';
 
 export class PosteTrackingError extends Error {
-  constructor(message: string, readonly kind: 'network' | 'http' | 'invalid_body') {
+  constructor(message: string, readonly kind: 'network' | 'http' | 'blocked' | 'invalid_body') {
     super(message);
     this.name = 'PosteTrackingError';
   }
@@ -72,11 +72,12 @@ export function lastMovement(movements: PosteTrackingMovement[]): PosteTrackingM
  * resto resta pending, con risposta grezza salvata per allargare la
  * mappatura sui casi reali.
  */
-export function mapPosteOutcome(r: PosteTrackingResponse): { outcome: PosteOutcome; deliveredAt: Date | null } {
-  if (r.flagRitorno || r.movements.some((m) => m.flagRitorno)) return { outcome: 'returned', deliveredAt: null };
-  if (r.esitoRicerca === '3' && r.stato === '5') {
-    const last = lastMovement(r.movements);
-    return { outcome: 'delivered', deliveredAt: last?.at ? new Date(last.at) : null };
-  }
-  return { outcome: 'pending', deliveredAt: null };
+export function mapPosteOutcome(r: PosteTrackingResponse): { outcome: PosteOutcome; outcomeAt: Date | null } {
+  // Data esito = data dell'ultimo movimento Poste (consegna o ritorno):
+  // dato che l'ente usa come data di consegna/mancata consegna.
+  const last = lastMovement(r.movements);
+  const outcomeAt = last?.at ? new Date(last.at) : null;
+  if (r.flagRitorno || r.movements.some((m) => m.flagRitorno)) return { outcome: 'returned', outcomeAt };
+  if (r.esitoRicerca === '3' && r.stato === '5') return { outcome: 'delivered', outcomeAt };
+  return { outcome: 'pending', outcomeAt: null };
 }

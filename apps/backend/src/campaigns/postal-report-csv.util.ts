@@ -9,12 +9,13 @@ function formatDate(iso: string | undefined): string {
 
 // Verifica consegna su tracking Poste — sempre presenti, dopo le colonne
 // GlobalCom e prima di quelle condizionali (Esito App IO / External ID).
-const POSTE_HEADERS = ['Verifica Poste', 'Data Consegna (Poste)', 'Ultimo Movimento Poste', 'Discrepanza GlobalCom/Poste'];
+const POSTE_HEADERS = ['Verifica Poste', 'Data Esito Poste', 'Ultimo Movimento Poste', 'Discrepanza GlobalCom/Poste'];
 
 function posteFields(r: PostalReportRowDto): string[] {
   return [
     posteVerificationLabel(r.posteVerification),
-    formatDate(r.posteVerification?.deliveredAt ?? undefined),
+    // Data esito: consegna o ritorno al mittente, per l'ente è la data di riferimento.
+    formatDate(r.posteVerification?.outcomeAt ?? undefined),
     r.posteVerification?.lastMovement ?? '',
     r.posteDiscrepancy ? 'SI' : '',
   ];

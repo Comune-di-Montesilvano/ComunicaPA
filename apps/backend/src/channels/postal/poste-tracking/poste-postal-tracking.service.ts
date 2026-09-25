@@ -8,16 +8,18 @@ import { Recipient } from '../../../entities/recipient.entity.js';
 import { AppSettingsService } from '../../../settings/app-settings.service.js';
 import { captureException } from '../../../common/sentry.util.js';
 import { PosteTrackingClient } from './poste-tracking-client.service.js';
-import { mapPosteOutcome, type PosteTrackingResponse } from './poste-tracking-mapping.util.js';
+import { mapPosteOutcome, PosteTrackingError, type PosteTrackingResponse } from './poste-tracking-mapping.util.js';
 import { POSTE_MAX_CHECKS } from './poste-tracking-effective.util.js';
 
 export const MAX_POSTE_CHECKS = POSTE_MAX_CHECKS;
-const PAUSE_MS = 2_000;
-const CIRCUIT_BREAKER_THRESHOLD = 5;
+const NETWORK_ERROR_THRESHOLD = 5;
+const BLOCK_THRESHOLD = 2;
+const MAX_COOLDOWN_MS = 4 * 60 * 60_000;
+const JITTER_RATIO = 0.3;
 const DAY_MS = 86_400_000;
 const DISABLED_MESSAGE = 'Verifica consegna su Poste disattivata (Impostazioni → Postalizzazione)';
 
-export type CheckResult = PosteTrackingStatus | 'error';
+export type CheckResult = PosteTrackingStatus | 'error' | 'blocked';
 
 export interface PosteCampaignRunState {
   running: boolean;
@@ -26,24 +28,46 @@ export interface PosteCampaignRunState {
   delivered: number;
   returned: number;
   errors: number;
-  aborted: boolean;
+  remaining: number;
+  /** Stima: rimanenti × intervallo tra le chiamate (pause per blocco escluse). */
+  etaSeconds: number;
+  /** Coda in pausa perché Poste limita le richieste: ripresa automatica a questa ora. */
+  blockedUntil: string | null;
   startedAt: string | null;
   finishedAt: string | null;
 }
 
-const EMPTY_RUN: PosteCampaignRunState = { running: false, total: 0, done: 0, delivered: 0, returned: 0, errors: 0, aborted: false, startedAt: null, finishedAt: null };
+interface CampaignRun {
+  queue: string[];
+  total: number;
+  done: number;
+  delivered: number;
+  returned: number;
+  errors: number;
+  startedAt: string;
+  finishedAt: string | null;
+}
 
 /**
  * Verifica consegna su tracking Poste per gli attempt POSTAL che GlobalCom
- * chiude come NonConsegnato. Sola lettura esterna: niente motore BullMQ,
- * stesso modello @Cron di PostalStatusSyncService. Mai scritti i campi
- * postal_* dell'attempt — vedi spec 2026-09-24-postal-verifica-poste-design.md.
+ * chiude come NonConsegnato. Una sola coda "a goccia" per tutto il backend
+ * (cron ogni 5 minuti + run di campagna messi in testa alla stessa coda):
+ * poste.it limita le richieste ravvicinate dallo stesso IP (400 dopo ~20
+ * chiamate a 2 s, visto in produzione), quindi mai due giri in parallelo,
+ * pausa configurabile tra le chiamate e pausa progressiva quando blocca.
+ * Mai scritti i campi postal_* dell'attempt — vedi spec
+ * 2026-09-24-postal-verifica-poste-design.md.
  */
 @Injectable()
 export class PostePostalTrackingService {
   private readonly logger = new Logger(PostePostalTrackingService.name);
-  private cronRunning = false;
-  private readonly campaignRuns = new Map<string, PosteCampaignRunState>();
+  private processing = false;
+  private blockedUntil: Date | null = null;
+  private currentCooldownMs: number | null = null;
+  private consecutiveBlocks = 0;
+  private readonly campaignRuns = new Map<string, CampaignRun>();
+  /** Ultimo intervallo letto dalle Impostazioni, per la stima del tempo residuo. */
+  private intervalSeconds = 15;
   /** Sovrascrivibile nei test. */
   protected sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -62,11 +86,29 @@ export class PostePostalTrackingService {
     return !!(await this.settings.get<boolean>('postalPosteTracking.enabled'));
   }
 
+  private async intervalMs(): Promise<number> {
+    const s = Number(await this.settings.get<number>('postalPosteTracking.intervalSeconds'));
+    this.intervalSeconds = Number.isFinite(s) && s > 0 ? s : 15;
+    return this.intervalSeconds * 1000;
+  }
+
+  private async baseCooldownMs(): Promise<number> {
+    const m = Number(await this.settings.get<number>('postalPosteTracking.cooldownMinutes'));
+    return (Number.isFinite(m) && m > 0 ? m : 30) * 60_000;
+  }
+
+  private isBlocked(): boolean {
+    return !!this.blockedUntil && this.blockedUntil.getTime() > Date.now();
+  }
+
+  getBlockedUntil(): Date | null {
+    return this.isBlocked() ? this.blockedUntil : null;
+  }
+
   /**
    * Ingresso idempotente: nessun hook nel sync GlobalCom, basta questo
-   * INSERT all'avvio di ogni giro (ritardo max un giorno, irrilevante con
-   * un controllo al giorno). Solo ultimo attempt del destinatario: un
-   * reinvio successivo rende il vecchio NonConsegnato irrilevante.
+   * INSERT all'avvio di ogni giro. Solo ultimo attempt del destinatario:
+   * un reinvio successivo rende il vecchio NonConsegnato irrilevante.
    */
   async backfill(campaignId?: string): Promise<number> {
     const params: unknown[] = campaignId ? [campaignId] : [];
@@ -88,9 +130,8 @@ export class PostePostalTrackingService {
   }
 
   async checkOne(row: PostalPosteTracking, mode: 'cron' | 'manual'): Promise<CheckResult> {
-    // Cron e run manuale caricano i candidati all'inizio e li salvano anche
-    // ore dopo: senza rileggere, uno snapshot vecchio riporterebbe a
-    // pending una riga nel frattempo marcata delivered dall'altro giro.
+    // Rilettura: un giro può aver caricato la riga molto prima di salvarla,
+    // uno snapshot vecchio riporterebbe a pending una riga già delivered.
     const fresh = await this.repo.findOneBy({ id: row.id });
     if (fresh) Object.assign(row, fresh);
     const now = new Date();
@@ -100,16 +141,19 @@ export class PostePostalTrackingService {
       resp = await this.client.track(row.trackingCode);
     } catch (err) {
       row.lastError = (err instanceof Error ? err.message : String(err)).slice(0, 500);
-      if (mode === 'cron') row.nextCheckAt = new Date(now.getTime() + DAY_MS);
+      // Blocco (4xx o pagina HTML): non è un esito del codice, si riprova
+      // alla ripresa della coda senza spostare il prossimo controllo.
+      const blocked = err instanceof PosteTrackingError && (err.kind === 'blocked' || err.kind === 'invalid_body');
+      if (!blocked && mode === 'cron') row.nextCheckAt = new Date(now.getTime() + DAY_MS);
       await this.repo.save(row);
-      return 'error';
+      return blocked ? 'blocked' : 'error';
     }
 
     row.lastError = null;
-    const { outcome, deliveredAt } = mapPosteOutcome(resp);
+    const { outcome, outcomeAt } = mapPosteOutcome(resp);
     // Riga già finale e Poste non dà un esito nuovo (es. spedizione purgata
-    // dal tracking, esitoRicerca "1"): movimenti e risposta salvati sono la
-    // prova della consegna/ritorno, mai sovrascritti da una risposta vuota.
+    // dal tracking): movimenti, risposta e date salvati sono la prova
+    // della consegna/ritorno, mai sovrascritti da una risposta vuota.
     if ((row.status === 'delivered' || row.status === 'returned') && outcome === 'pending') {
       await this.repo.save(row);
       return row.status;
@@ -123,7 +167,8 @@ export class PostePostalTrackingService {
 
     if (outcome !== 'pending') {
       row.status = outcome;
-      row.deliveredAt = deliveredAt;
+      row.outcomeAt = outcomeAt;
+      row.deliveredAt = outcome === 'delivered' ? outcomeAt : null;
       row.nextCheckAt = null;
     } else if (mode === 'cron') {
       if (row.checkCount >= MAX_POSTE_CHECKS) {
@@ -137,52 +182,97 @@ export class PostePostalTrackingService {
     return row.status;
   }
 
-  /** Sequenziale con pausa; si ferma dopo N errori consecutivi (endpoint cambiato/giù). */
-  private async processSequential(rows: PostalPosteTracking[], mode: 'cron' | 'manual', onResult?: (r: CheckResult) => void): Promise<{ aborted: boolean }> {
-    let consecutiveErrors = 0;
-    for (let i = 0; i < rows.length; i++) {
-      if (i > 0) await this.sleep(PAUSE_MS);
-      const result = await this.checkOne(rows[i]!, mode);
-      onResult?.(result);
-      if (result === 'error') {
-        consecutiveErrors++;
-        if (consecutiveErrors >= CIRCUIT_BREAKER_THRESHOLD) {
-          this.logger.warn(`Verifica Poste interrotta dopo ${consecutiveErrors} errori consecutivi (ultimo: ${rows[i]!.lastError}) — endpoint poste.it cambiato o irraggiungibile?`);
-          return { aborted: true };
-        }
-      } else {
-        consecutiveErrors = 0;
+  /** Prossimo lavoro: prima le campagne lanciate a mano, poi i dovuti del giorno. */
+  private async nextWork(): Promise<{ row: PostalPosteTracking; mode: 'cron' | 'manual'; run?: CampaignRun } | null> {
+    for (const run of this.campaignRuns.values()) {
+      while (!run.finishedAt && run.queue.length > 0) {
+        const row = await this.repo.findOneBy({ id: run.queue[0]! });
+        if (row) return { row, mode: 'manual', run };
+        run.queue.shift();
+        run.done++;
       }
+      if (!run.finishedAt) run.finishedAt = new Date().toISOString();
     }
-    return { aborted: false };
+    const row = await this.repo
+      .createQueryBuilder('t')
+      .innerJoin(NotificationAttempt, 'a', 'a.id = t.attempt_id')
+      .where("t.status = 'pending'")
+      .andWhere('t.next_check_at <= now()')
+      .andWhere("a.postal_status = 'NonConsegnato'")
+      .orderBy('COALESCE(t.last_checked_at, t.created_at)', 'ASC')
+      .take(1)
+      .getOne();
+    return row ? { row, mode: 'cron' } : null;
   }
 
-  @Cron('0 4 * * *', { timeZone: 'Europe/Rome' })
-  async handleCron(): Promise<void> {
-    if (this.cronRunning) return;
+  private async enterCooldown(): Promise<void> {
+    const base = await this.baseCooldownMs();
+    this.currentCooldownMs = this.currentCooldownMs ? Math.min(this.currentCooldownMs * 2, MAX_COOLDOWN_MS) : base;
+    this.blockedUntil = new Date(Date.now() + this.currentCooldownMs);
+    this.consecutiveBlocks = 0;
+    this.logger.warn(`Poste limita le richieste: verifica in pausa fino alle ${this.blockedUntil.toISOString()} (${Math.round(this.currentCooldownMs / 60_000)} min)`);
+  }
+
+  /**
+   * Coda a goccia: ogni 5 minuti smaltisce il lavoro dovuto, una chiamata
+   * alla volta con la pausa configurata. Non rientrante; in pausa per blocco
+   * non parte finché non scade blockedUntil.
+   */
+  @Cron('*/5 * * * *')
+  async tick(): Promise<void> {
+    if (this.processing) return;
     if (!(await this.isEnabled())) return;
-    this.cronRunning = true;
+    if (this.isBlocked()) return;
+    this.processing = true;
     try {
       await this.backfill();
-      const rows = await this.repo
-        .createQueryBuilder('t')
-        .innerJoin(NotificationAttempt, 'a', 'a.id = t.attempt_id')
-        .where("t.status = 'pending'")
-        .andWhere('t.next_check_at <= now()')
-        .andWhere("a.postal_status = 'NonConsegnato'")
-        .orderBy('COALESCE(t.last_checked_at, t.created_at)', 'ASC')
-        .getMany();
-      await this.processSequential(rows, 'cron');
+      const interval = await this.intervalMs();
+      let first = true;
+      let networkErrors = 0;
+      for (;;) {
+        const work = await this.nextWork();
+        if (!work) break;
+        if (!first) await this.sleep(interval + Math.floor(Math.random() * interval * JITTER_RATIO));
+        first = false;
+        const result = await this.checkOne(work.row, work.mode);
+        if (result === 'blocked') {
+          this.consecutiveBlocks++;
+          if (this.consecutiveBlocks >= BLOCK_THRESHOLD) {
+            await this.enterCooldown();
+            break;
+          }
+          continue;
+        }
+        this.consecutiveBlocks = 0;
+        if (work.run) {
+          work.run.queue.shift();
+          work.run.done++;
+          if (result === 'delivered') work.run.delivered++;
+          else if (result === 'returned') work.run.returned++;
+          else if (result === 'error') work.run.errors++;
+        }
+        if (result === 'error') {
+          networkErrors++;
+          if (networkErrors >= NETWORK_ERROR_THRESHOLD) {
+            this.logger.warn(`Verifica Poste interrotta dopo ${networkErrors} errori di rete consecutivi (ultimo: ${work.row.lastError})`);
+            break;
+          }
+        } else {
+          networkErrors = 0;
+          this.currentCooldownMs = null;
+        }
+      }
     } catch (err) {
       this.logger.warn(`Errore giro verifica Poste: ${err instanceof Error ? err.message : String(err)}`);
-      captureException(err instanceof Error ? err : new Error(String(err)), { stage: 'postePostalTrackingCron' });
+      captureException(err instanceof Error ? err : new Error(String(err)), { stage: 'postePostalTrackingTick' });
     } finally {
-      this.cronRunning = false;
+      this.processing = false;
     }
   }
 
   async checkRecipientNow(campaignId: string, recipientId: string): Promise<PostalPosteTracking> {
     if (!(await this.isEnabled())) throw new ConflictException(DISABLED_MESSAGE);
+    if (this.isBlocked()) throw new ConflictException(`Poste sta limitando le richieste: riprova dopo le ${this.blockedUntil!.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' })}`);
     const recipient = await this.recipientRepo.findOne({ where: { id: recipientId } });
     if (!recipient || recipient.campaignId !== campaignId) throw new NotFoundException(`Recipient ${recipientId} non trovato in questa campagna`);
     const attempt = await this.attemptRepo.findOne({ where: { recipientId, channelType: 'POSTAL' }, order: { attemptNumber: 'DESC' } });
@@ -200,57 +290,59 @@ export class PostePostalTrackingService {
   }
 
   /**
-   * Tasto "Verifica su Poste" della campagna: a qualsiasi ora, ignora
-   * next_check_at, include i gave_up. Risponde subito, il lavoro prosegue
-   * in background; stato in memoria per campagna (letto dal GET in polling).
+   * Tasto "Verifica su Poste": le righe della campagna (anche gave_up e non
+   * ancora scadute) vanno in testa alla coda unica, che parte subito se è
+   * ferma. Avanzamento letto dal GET in polling.
    */
   async startCampaignRun(campaignId: string): Promise<{ total: number }> {
     if (!(await this.isEnabled())) throw new ConflictException(DISABLED_MESSAGE);
-    if (this.campaignRuns.get(campaignId)?.running) throw new ConflictException('Verifica su Poste già in corso per questa campagna');
-    const state: PosteCampaignRunState = { ...EMPTY_RUN, running: true, startedAt: new Date().toISOString() };
-    this.campaignRuns.set(campaignId, state);
+    const existing = this.campaignRuns.get(campaignId);
+    if (existing && !existing.finishedAt) throw new ConflictException('Verifica su Poste già in corso per questa campagna');
 
-    let rows: PostalPosteTracking[];
-    try {
-      await this.backfill(campaignId);
-      rows = await this.repo
-        .createQueryBuilder('t')
-        .innerJoin(NotificationAttempt, 'a', 'a.id = t.attempt_id')
-        .innerJoin(Recipient, 'r', 'r.id = a.recipient_id')
-        .where('r.campaign_id = :campaignId', { campaignId })
-        .andWhere("t.status IN ('pending', 'gave_up')")
-        .andWhere("a.postal_status = 'NonConsegnato'")
-        .orderBy('COALESCE(t.last_checked_at, t.created_at)', 'ASC')
-        .getMany();
-    } catch (err) {
-      state.running = false;
-      state.finishedAt = new Date().toISOString();
-      throw err;
-    }
-    state.total = rows.length;
-    void this.runCampaign(campaignId, state, rows);
+    await this.intervalMs();
+    await this.backfill(campaignId);
+    const rows = await this.repo
+      .createQueryBuilder('t')
+      .innerJoin(NotificationAttempt, 'a', 'a.id = t.attempt_id')
+      .innerJoin(Recipient, 'r', 'r.id = a.recipient_id')
+      .where('r.campaign_id = :campaignId', { campaignId })
+      .andWhere("t.status IN ('pending', 'gave_up')")
+      .andWhere("a.postal_status = 'NonConsegnato'")
+      .orderBy('COALESCE(t.last_checked_at, t.created_at)', 'ASC')
+      .getMany();
+    const now = new Date().toISOString();
+    this.campaignRuns.set(campaignId, {
+      queue: rows.map((r) => r.id),
+      total: rows.length,
+      done: 0,
+      delivered: 0,
+      returned: 0,
+      errors: 0,
+      startedAt: now,
+      finishedAt: rows.length === 0 ? now : null,
+    });
+    if (rows.length > 0) void this.tick();
     return { total: rows.length };
   }
 
-  private async runCampaign(campaignId: string, state: PosteCampaignRunState, rows: PostalPosteTracking[]): Promise<void> {
-    try {
-      const { aborted } = await this.processSequential(rows, 'manual', (r) => {
-        state.done++;
-        if (r === 'delivered') state.delivered++;
-        else if (r === 'returned') state.returned++;
-        else if (r === 'error') state.errors++;
-      });
-      state.aborted = aborted;
-    } catch (err) {
-      this.logger.warn(`Errore verifica Poste campagna ${campaignId}: ${err instanceof Error ? err.message : String(err)}`);
-      captureException(err instanceof Error ? err : new Error(String(err)), { campaignId, stage: 'postePostalTrackingCampaignRun' });
-    } finally {
-      state.running = false;
-      state.finishedAt = new Date().toISOString();
-    }
+  getCampaignRun(campaignId: string): PosteCampaignRunState {
+    const run = this.campaignRuns.get(campaignId);
+    const blockedUntil = this.getBlockedUntil()?.toISOString() ?? null;
+    if (!run) return { running: false, total: 0, done: 0, delivered: 0, returned: 0, errors: 0, remaining: 0, etaSeconds: 0, blockedUntil, startedAt: null, finishedAt: null };
+    const remaining = run.queue.length;
+    return {
+      running: !run.finishedAt,
+      total: run.total,
+      done: run.done,
+      delivered: run.delivered,
+      returned: run.returned,
+      errors: run.errors,
+      remaining,
+      etaSeconds: remaining * this.intervalSeconds,
+      blockedUntil,
+      startedAt: run.startedAt,
+      finishedAt: run.finishedAt,
+    };
   }
 
-  getCampaignRun(campaignId: string): PosteCampaignRunState {
-    return this.campaignRuns.get(campaignId) ?? { ...EMPTY_RUN };
-  }
 }

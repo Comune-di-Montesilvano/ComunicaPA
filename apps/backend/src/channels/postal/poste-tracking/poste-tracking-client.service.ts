@@ -27,6 +27,10 @@ export class PosteTrackingClient {
     } catch (err) {
       throw new PosteTrackingError(`Errore di rete verso Poste: ${err instanceof Error ? err.message : String(err)}`, 'network');
     }
+    // Poste risponde 400 (non 429) quando limita le richieste ravvicinate
+    // dallo stesso IP (visto in produzione dopo ~20 chiamate a 2 s): ogni
+    // 4xx è trattato come blocco, mai come esito del codice.
+    if (res.status >= 400 && res.status < 500) throw new PosteTrackingError(`HTTP ${res.status} da Poste`, 'blocked');
     if (!res.ok) throw new PosteTrackingError(`HTTP ${res.status} da Poste`, 'http');
     let body: unknown;
     try {

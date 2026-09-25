@@ -3502,7 +3502,7 @@ export class CampaignsService {
         appIoOutcome: appIo ? { success: !!appIo.success, error: appIo.error ?? null } : null,
         externalId: resolveExternalId(campaign, r),
         posteVerification: poste
-          ? { status: poste.status, checkCount: poste.checkCount, deliveredAt: poste.deliveredAt ? poste.deliveredAt.toISOString() : null, lastMovement: formatLastMovement(poste.movements) }
+          ? { status: poste.status, checkCount: poste.checkCount, deliveredAt: poste.deliveredAt ? poste.deliveredAt.toISOString() : null, outcomeAt: poste.outcomeAt ? poste.outcomeAt.toISOString() : null, lastMovement: formatLastMovement(poste.movements) }
           : null,
         posteDiscrepancy: isPosteDeliveredOverride(latest?.postalStatus, poste?.status),
       };

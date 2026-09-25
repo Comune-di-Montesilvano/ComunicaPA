@@ -123,11 +123,11 @@ describe('CampaignsService - verifica Poste', () => {
   it('report postale: verifica e discrepanza sull\'ultimo attempt', async () => {
     recipientRepo.find.mockResolvedValue([{ id: 'r1', codiceFiscale: 'RSSMRA80A01H501U', fullName: 'ROSSI MARIO', extraData: {} }]);
     attemptRepo.find.mockResolvedValue([{ id: 'a1', recipientId: 'r1', attemptNumber: 1, channelType: 'POSTAL', status: 'success', postalStatus: 'NonConsegnato', postalDeliveryStatus: 'Indirizzo errato o inesatto', postalStatusHistory: [] }]);
-    posteRepo.find.mockResolvedValue([{ attemptId: 'a1', status: 'delivered', checkCount: 3, deliveredAt: new Date('2026-09-04T08:06:00Z'), movements: [{ at: '2026-09-04T08:06:00.000Z', luogo: 'SVIZZERA', statoLavorazione: 'con successo in data', box: '5', flagRitorno: false }] }]);
+    posteRepo.find.mockResolvedValue([{ attemptId: 'a1', status: 'delivered', checkCount: 3, deliveredAt: new Date('2026-09-04T08:06:00Z'), outcomeAt: new Date('2026-09-04T08:06:00Z'), movements: [{ at: '2026-09-04T08:06:00.000Z', luogo: 'SVIZZERA', statoLavorazione: 'con successo in data', box: '5', flagRitorno: false }] }]);
     const report = await service.getPostalReportRows('c1');
     expect(report.rows[0]).toMatchObject({
       posteDiscrepancy: true,
-      posteVerification: { status: 'delivered', checkCount: 3, deliveredAt: '2026-09-04T08:06:00.000Z' },
+      posteVerification: { status: 'delivered', checkCount: 3, deliveredAt: '2026-09-04T08:06:00.000Z', outcomeAt: '2026-09-04T08:06:00.000Z' },
     });
     expect(report.rows[0]!.posteVerification!.lastMovement).toContain('SVIZZERA');
   });
