@@ -120,6 +120,12 @@ export function isCampaignLegalValue(campaign: Pick<Campaign, 'isLegalValue' | '
 // scaricato dal portale). Il contatore resta in OR per i download registrati
 // prima della tabella eventi o con inserimento evento fallito (try/catch).
 const HAS_DOWNLOAD_SQL = '(r.download_count > 0 OR EXISTS (SELECT 1 FROM download_events de_x WHERE de_x.recipient_id = r.id))';
+
+// Canali digitali: un destinatario "sent" con almeno un download è mostrato
+// come "Letto" (stato derivato, mai scritto su recipient.status — sent resta
+// il valore che pilota completamento, retry e statistiche).
+const READ_STATUS_CHANNELS = ['EMAIL', 'PEC', 'APP_IO'];
+const READ_STATUS = 'read';
 // Numero di download mostrato/ordinabile: stesso principio, il maggiore tra i due.
 const DOWNLOAD_COUNT_SQL = 'GREATEST(r.download_count, (SELECT COUNT(*) FROM download_events de_y WHERE de_y.recipient_id = r.id))'
 
@@ -2596,8 +2602,14 @@ export class CampaignsService {
     if (search && search.trim()) {
       qb.andWhere('(r.fullName ILIKE :search OR r.codiceFiscale ILIKE :search)', { search: `%${search.trim()}%` });
     }
-    if (status) {
+    const tracksRead = READ_STATUS_CHANNELS.includes(campaign.channelType);
+    if (status === READ_STATUS && tracksRead) {
+      qb.andWhere('r.status = :status', { status: 'sent' });
+      qb.andWhere(HAS_DOWNLOAD_SQL);
+    } else if (status) {
       qb.andWhere('r.status = :status', { status });
+      // "Inviato" su canale digitale = inviato e non ancora letto.
+      if (status === 'sent' && tracksRead) qb.andWhere(`NOT ${HAS_DOWNLOAD_SQL}`);
     }
     // Dirottato INAD: mai un postal_status/postal_delivery_status reale
     // sull'attempt (che è su PEC, non POSTAL) — filtro diretto sul flag
@@ -2880,12 +2892,17 @@ export class CampaignsService {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
+    // Canali digitali: "read" (inviato + download) separato da "sent" nella
+    // stessa query, stesso criterio HAS_DOWNLOAD_SQL del filtro.
+    const statusExpr = READ_STATUS_CHANNELS.includes(campaign.channelType)
+      ? `CASE WHEN r.status = 'sent' AND ${HAS_DOWNLOAD_SQL} THEN '${READ_STATUS}' ELSE r.status::text END`
+      : 'r.status';
     const statusRows = await this.recipientRepo
       .createQueryBuilder('r')
-      .select('r.status', 'value')
+      .select(statusExpr, 'value')
       .addSelect('COUNT(r.id)', 'count')
       .where('r.campaignId = :campaignId', { campaignId })
-      .groupBy('r.status')
+      .groupBy(statusExpr)
       .getRawMany<{ value: string; count: string }>();
 
     const deliveryRows = await this.recipientRepo

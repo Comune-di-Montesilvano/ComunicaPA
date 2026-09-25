@@ -20,6 +20,7 @@ describe('NotificationsSearchService - verifica Poste', () => {
   let recipientRepo: any;
   let attemptRepo: any;
   let posteRepo: any;
+  let downloadRepo: any;
   let campaignsService: any;
   let service: NotificationsSearchService;
 
@@ -30,13 +31,14 @@ describe('NotificationsSearchService - verifica Poste', () => {
     recipientRepo = { createQueryBuilder: vi.fn(() => qb), findOne: vi.fn() };
     attemptRepo = { find: vi.fn() };
     posteRepo = { find: vi.fn().mockResolvedValue([]), query: vi.fn().mockResolvedValue([]) };
+    downloadRepo = { find: vi.fn().mockResolvedValue([]) };
     campaignsService = { renderMessageForRecipient: vi.fn().mockResolvedValue({ subject: 's', bodyHtml: '' }), renderAppIoCoDeliveryPreview: vi.fn() };
     const moduleRef = await Test.createTestingModule({
       providers: [
         NotificationsSearchService,
         { provide: getRepositoryToken(Recipient), useValue: recipientRepo },
         { provide: getRepositoryToken(NotificationAttempt), useValue: attemptRepo },
-        { provide: getRepositoryToken(DownloadEvent), useValue: { find: vi.fn().mockResolvedValue([]) } },
+        { provide: getRepositoryToken(DownloadEvent), useValue: downloadRepo },
         { provide: getRepositoryToken(PostalPosteTracking), useValue: posteRepo },
         { provide: CampaignsService, useValue: campaignsService },
         { provide: SendLegalFactsService, useValue: {} },
@@ -90,6 +92,56 @@ describe('NotificationsSearchService - verifica Poste', () => {
     const detail = await service.getDetail('r1');
     expect(detail.attempts[0]).toMatchObject({ posteVerification: { status: 'pending', checkCount: 2, trackingUntil: null } });
     expect(detail.attempts[1]).toMatchObject({ posteVerification: null });
+  });
+});
+
+describe('NotificationsSearchService - stato Letto (canali digitali)', () => {
+  let qb: any;
+  let service: NotificationsSearchService;
+  let downloadRepo: any;
+
+  function recipient(id: string, channelType: string, status = 'sent', downloadCount = 0) {
+    return { id, campaignId: 'c1', codiceFiscale: 'RSSMRA80A01H501U', fullName: 'ROSSI MARIO', status, downloadCount, createdAt: new Date('2026-07-01T00:00:00Z'), campaign: { name: 'Avviso', channelType } };
+  }
+
+  beforeEach(async () => {
+    qb = {};
+    for (const m of ['leftJoinAndSelect', 'andWhere', 'orderBy', 'skip', 'take']) qb[m] = vi.fn().mockReturnValue(qb);
+    qb.getManyAndCount = vi.fn().mockResolvedValue([[], 0]);
+    downloadRepo = { find: vi.fn().mockResolvedValue([]) };
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        NotificationsSearchService,
+        { provide: getRepositoryToken(Recipient), useValue: { createQueryBuilder: vi.fn(() => qb) } },
+        { provide: getRepositoryToken(NotificationAttempt), useValue: { find: vi.fn() } },
+        { provide: getRepositoryToken(DownloadEvent), useValue: downloadRepo },
+        { provide: CampaignsService, useValue: {} },
+        { provide: SendLegalFactsService, useValue: {} },
+        { provide: AttachmentService, useValue: {} },
+      ],
+    }).compile();
+    service = moduleRef.get(NotificationsSearchService);
+  });
+
+  it('riga: sent + download su canale digitale → read; POSTAL resta sent', async () => {
+    qb.getManyAndCount.mockResolvedValue([[recipient('r1', 'EMAIL', 'sent', 1), recipient('r2', 'PEC'), recipient('r3', 'APP_IO'), recipient('r4', 'POSTAL', 'sent', 3)], 4]);
+    downloadRepo.find.mockResolvedValue([{ recipientId: 'r3' }]);
+    const { rows } = await service.search({ page: 1, pageSize: 50 });
+    expect(rows.map((r) => r.status)).toEqual(['read', 'sent', 'read', 'sent']);
+  });
+
+  it('filtro status=read: inviato, canale digitale, con download', async () => {
+    await service.search({ status: 'read', page: 1, pageSize: 50 });
+    expect(qb.andWhere).toHaveBeenCalledWith('recipient.status = :status', { status: 'sent' });
+    const sql = qb.andWhere.mock.calls.map((c: any[]) => String(c[0])).join('\n');
+    expect(sql).toContain("campaign.channelType IN ('EMAIL', 'PEC', 'APP_IO')");
+    expect(sql).toContain('recipient.download_count > 0 OR EXISTS');
+  });
+
+  it('filtro status=sent: esclude i letti dei canali digitali', async () => {
+    await service.search({ status: 'sent', page: 1, pageSize: 50 });
+    const sql = qb.andWhere.mock.calls.map((c: any[]) => String(c[0])).join('\n');
+    expect(sql).toContain("NOT (campaign.channelType IN ('EMAIL', 'PEC', 'APP_IO') AND");
   });
 });
 
