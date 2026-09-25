@@ -38,6 +38,7 @@ export interface JourneyAttempt {
 }
 
 export interface JourneyDetail {
+  recipient?: { status: string };
   campaign: { channelType: string };
   attempts: JourneyAttempt[];
   downloads: Array<{ channel: string; attachmentIndex: number; downloadedAt: string }>;
@@ -177,7 +178,9 @@ export function buildJourney(d: JourneyDetail, labels: JourneyLabels): JourneyEv
 export function computeVerdict(d: JourneyDetail, labels: JourneyLabels): Verdict {
   const last = latestAttempt(d);
   const base: Verdict = { headline: 'Non ancora inviata', tone: 'neutral', when: null, source: null, note: null, discrepancy: false };
-  if (!last) return base;
+  // Nessun tentativo registrato: ci si affida allo stato del destinatario
+  // (es. notifica creata senza passare dal motore di invio).
+  if (!last) return d.recipient?.status === 'sent' ? { ...base, headline: 'Inviata' } : base;
   if (last.status === 'failed') {
     return { ...base, headline: 'Invio non riuscito', tone: 'ko', when: last.createdAt, source: `su ${labels.channel(last.channelType)}`, note: last.errorMessage };
   }
