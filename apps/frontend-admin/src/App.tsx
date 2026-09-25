@@ -18099,11 +18099,11 @@ export function App(): React.JSX.Element {
                             <Users size={18} className="me-2" />Destinatari Caricati ({recipientsPage?.total ?? campaign.totalRecipients})
                           </h3>
                           <div className="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                            <div className="d-flex align-items-center gap-2">
+                            <div className="d-flex align-items-center flex-wrap gap-2" style={{ minWidth: 0 }}>
                               <input
                                 type="text"
                                 className="form-control form-control-sm flex-shrink-0"
-                                style={{ width: 320 }}
+                                style={{ width: 320, maxWidth: '100%' }}
                                 placeholder="Cerca per nominativo o CF..."
                                 value={recipientsSearch}
                                 onChange={(e) => { setRecipientsSearch(e.target.value); setRecipientsPageNum(1); }}
@@ -18129,6 +18129,33 @@ export function App(): React.JSX.Element {
                                   <X className="me-1" size={14} />Reset filtri
                                 </button>
                               )}
+                              {campaign.channelType === 'POSTAL' && (() => {
+                                // Filtro rapido: GlobalCom "Non consegnato" ma consegnato secondo
+                                // il tracking Poste (bucket ConsegnatoVerificaPoste del filtro
+                                // Stato consegna, conteggio dalle opzioni filtro del backend).
+                                const opt = (recipientsFilterOptions?.postalDeliveryStatuses ?? []).find((o) => typeof o !== 'string' && o.value === 'ConsegnatoVerificaPoste');
+                                const count = opt && typeof opt !== 'string' ? opt.count : 0;
+                                const active = recipientsPostalDeliveryStatusFilter === 'ConsegnatoVerificaPoste';
+                                if (count === 0 && !active) return null;
+                                return (
+                                  <button
+                                    type="button"
+                                    className={`btn btn-sm d-inline-flex align-items-center text-nowrap ${active ? 'btn-success' : 'btn-outline-success'}`}
+                                    aria-pressed={active}
+                                    title="Mostra solo le notifiche che GlobalCom dà come Non consegnate ma che risultano consegnate sul tracking Poste"
+                                    onClick={() => {
+                                      const val = active ? '' : 'ConsegnatoVerificaPoste';
+                                      setRecipientsPostalDeliveryStatusFilter(val);
+                                      setRecipientsPageNum(1);
+                                      if (selectedCampaignId) {
+                                        fetchRecipientsPage(selectedCampaignId, 1, recipientsSearch, recipientsStatusFilter, recipientsDeliveryStatusFilter, recipientsTagsFilter, recipientsDownloadFilter, val, recipientsSortBy, recipientsSortDir);
+                                      }
+                                    }}
+                                  >
+                                    <CheckCircle2 className="me-1" size={14} />Discrepanze GlobalCom/Poste ({count})
+                                  </button>
+                                );
+                              })()}
                             </div>
                             <div className="d-flex align-items-center flex-wrap gap-2">
                               {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType !== 'SEND' && campaign.channelType !== 'POSTAL' && (
@@ -18172,13 +18199,17 @@ export function App(): React.JSX.Element {
                                   className="btn btn-sm d-inline-flex align-items-center text-nowrap btn-outline-success"
                                   disabled={!!posteRun?.running && posteRun.campaignId === campaign.id}
                                   onClick={handlePosteCheckCampaign}
-                                  title="Controlla subito sul tracking di Poste Italiane le raccomandate che GlobalCom dà come Non consegnate (il postino può aver consegnato in un secondo passaggio). Lanciabile a qualsiasi ora, oltre al controllo automatico giornaliero."
+                                  title={posteRun?.running && posteRun.campaignId === campaign.id
+                                    ? (posteRun.blockedUntil
+                                        ? `Verifica su Poste in corso: ${posteRun.done} di ${posteRun.total} controllate. Poste sta limitando le richieste: ripresa automatica alle ${new Date(posteRun.blockedUntil).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}.`
+                                        : `Verifica su Poste in corso: ${posteRun.done} di ${posteRun.total} controllate, ${posteRun.delivered} consegnate e ${posteRun.returned} restituite finora.`)
+                                    : 'Controlla subito sul tracking di Poste Italiane le raccomandate che GlobalCom dà come Non consegnate (il postino può aver consegnato in un secondo passaggio). Lanciabile a qualsiasi ora, oltre al controllo automatico giornaliero.'}
                                 >
                                   {posteRun?.running && posteRun.campaignId === campaign.id ? <Loader2 className="icon-spin me-1" size={14} /> : <Truck className="me-1" size={14} />}
                                   {posteRun?.running && posteRun.campaignId === campaign.id
                                     ? (posteRun.blockedUntil
-                                        ? `Verifica su Poste ${posteRun.done}/${posteRun.total} — Poste limita le richieste, ripresa alle ${new Date(posteRun.blockedUntil).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`
-                                        : `Verifica su Poste ${posteRun.done}/${posteRun.total}${posteRun.etaSeconds ? ` — circa ${posteRun.etaSeconds >= 3600 ? `${Math.floor(posteRun.etaSeconds / 3600)} h ${Math.round((posteRun.etaSeconds % 3600) / 60)} min` : `${Math.max(1, Math.round(posteRun.etaSeconds / 60))} min`}` : ''}`)
+                                        ? `Poste ${posteRun.done}/${posteRun.total} · pausa fino ${new Date(posteRun.blockedUntil).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`
+                                        : `Poste ${posteRun.done}/${posteRun.total}${posteRun.etaSeconds ? ` · ~${posteRun.etaSeconds >= 3600 ? `${Math.floor(posteRun.etaSeconds / 3600)}h${String(Math.round((posteRun.etaSeconds % 3600) / 60)).padStart(2, '0')}` : `${Math.max(1, Math.round(posteRun.etaSeconds / 60))} min`}` : ''}`)
                                     : 'Verifica su Poste'}
                                 </button>
                               )}
