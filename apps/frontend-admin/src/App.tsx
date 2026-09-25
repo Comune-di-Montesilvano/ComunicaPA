@@ -1553,7 +1553,7 @@ export function App(): React.JSX.Element {
   const [postalStatusRefreshing, setPostalStatusRefreshing] = useState(false);
   const [postalErrorsResetting, setPostalErrorsResetting] = useState(false);
   const [posteChecking, setPosteChecking] = useState(false);
-  const [posteRun, setPosteRun] = useState<{ campaignId: string; running: boolean; total: number; done: number; delivered: number; returned: number; errors: number; remaining?: number; etaSeconds?: number; blockedUntil?: string | null } | null>(null);
+  const [posteRun, setPosteRun] = useState<{ campaignId: string; running: boolean; total: number; done: number; delivered: number; returned: number; errors: number; skipped?: number; remaining?: number; etaSeconds?: number; blockedUntil?: string | null } | null>(null);
   const [trackingIdEditOpenFor, setTrackingIdEditOpenFor] = useState<number | null>(null);
   const [trackingIdEditValue, setTrackingIdEditValue] = useState('');
   const [trackingIdEditSaving, setTrackingIdEditSaving] = useState(false);
@@ -2088,7 +2088,7 @@ export function App(): React.JSX.Element {
         stopped = true;
         clearInterval(timer);
         setPosteRun(null);
-        alert(`Verifica su Poste completata: ${state.delivered} consegnate secondo Poste, ${state.returned} restituite, ${state.errors} errori.`);
+        alert(`Verifica su Poste completata: ${state.delivered} consegnate secondo Poste, ${state.returned} restituite, ${state.errors} errori${state.skipped ? `, ${state.skipped} saltate (già controllate nelle ultime 23 ore)` : ''}.`);
         fetchCampaignDetail(campaignId);
         fetchRecipientsPage(campaignId);
         fetchRecipientsFilterOptions(campaignId);
@@ -2113,6 +2113,12 @@ export function App(): React.JSX.Element {
         const body = await res.json().catch(() => ({}));
         alert(body.message || 'Errore durante la verifica su Poste.');
         return;
+      }
+      const body = await res.json().catch(() => ({}));
+      // Max una chiamata a Poste ogni 23 ore per notifica: il backend non
+      // richiama e restituisce l'ultimo esito.
+      if (body.skipped) {
+        alert(`Notifica già verificata su Poste${body.lastCheckedAt ? ` alle ${new Date(body.lastCheckedAt).toLocaleString('it-IT')}` : ''}: si ricontrolla al massimo una volta ogni 23 ore. Mostro l'ultimo esito.`);
       }
       await openNotificationDetail(notifDetail.recipient.id);
     } catch (err) {

@@ -17,9 +17,11 @@ const BLOCK_THRESHOLD = 2;
 const MAX_COOLDOWN_MS = 4 * 60 * 60_000;
 const JITTER_RATIO = 0.3;
 const DAY_MS = 86_400_000;
+/** Mai due chiamate a Poste per la stessa notifica entro 23 ore, da chiunque partano. */
+const MIN_RECHECK_MS = 23 * 60 * 60_000;
 const DISABLED_MESSAGE = 'Verifica consegna su Poste disattivata (Impostazioni → Postalizzazione)';
 
-export type CheckResult = PosteTrackingStatus | 'error' | 'blocked';
+export type CheckResult = PosteTrackingStatus | 'error' | 'blocked' | 'skipped';
 
 export interface PosteCampaignRunState {
   running: boolean;
@@ -28,6 +30,8 @@ export interface PosteCampaignRunState {
   delivered: number;
   returned: number;
   errors: number;
+  /** Già controllate nelle ultime 23 ore: nessuna chiamata a Poste. */
+  skipped: number;
   remaining: number;
   /** Stima: rimanenti × intervallo tra le chiamate (pause per blocco escluse). */
   etaSeconds: number;
@@ -44,6 +48,7 @@ interface CampaignRun {
   delivered: number;
   returned: number;
   errors: number;
+  skipped: number;
   startedAt: string;
   finishedAt: string | null;
 }
@@ -135,6 +140,23 @@ export class PostePostalTrackingService {
     const fresh = await this.repo.findOneBy({ id: row.id });
     if (fresh) Object.assign(row, fresh);
     const now = new Date();
+    // Ultimo controllo riuscito (nessun errore) da meno di 23 ore: niente
+    // chiamata. Un tentativo bloccato/fallito non conta, si può riprovare.
+    if (row.lastCheckedAt && !row.lastError && now.getTime() - row.lastCheckedAt.getTime() < MIN_RECHECK_MS) {
+      if (mode === 'cron') {
+        // Il controllo del giorno l'ha già fatto qualcun altro (tasto/campagna):
+        // il giorno conta, prossimo controllo a 24 ore da quello.
+        row.checkCount += 1;
+        if (row.status === 'pending' && row.checkCount >= MAX_POSTE_CHECKS) {
+          row.status = 'gave_up';
+          row.nextCheckAt = null;
+        } else {
+          row.nextCheckAt = new Date(row.lastCheckedAt.getTime() + DAY_MS);
+        }
+        await this.repo.save(row);
+      }
+      return 'skipped';
+    }
     row.lastCheckedAt = now;
     let resp: PosteTrackingResponse;
     try {
@@ -205,6 +227,10 @@ export class PostePostalTrackingService {
     return row ? { row, mode: 'cron' } : null;
   }
 
+  private isRecentlyChecked(row: PostalPosteTracking): boolean {
+    return !!row.lastCheckedAt && !row.lastError && Date.now() - row.lastCheckedAt.getTime() < MIN_RECHECK_MS;
+  }
+
   private async enterCooldown(): Promise<void> {
     const base = await this.baseCooldownMs();
     this.currentCooldownMs = this.currentCooldownMs ? Math.min(this.currentCooldownMs * 2, MAX_COOLDOWN_MS) : base;
@@ -227,14 +253,17 @@ export class PostePostalTrackingService {
     try {
       await this.backfill();
       const interval = await this.intervalMs();
-      let first = true;
+      let calledBefore = false;
       let networkErrors = 0;
       for (;;) {
         const work = await this.nextWork();
         if (!work) break;
-        if (!first) await this.sleep(interval + Math.floor(Math.random() * interval * JITTER_RATIO));
-        first = false;
+        // Pausa solo tra due chiamate reali: una riga saltata non chiama Poste.
+        if (calledBefore && !this.isRecentlyChecked(work.row)) {
+          await this.sleep(interval + Math.floor(Math.random() * interval * JITTER_RATIO));
+        }
         const result = await this.checkOne(work.row, work.mode);
+        if (result !== 'skipped') calledBefore = true;
         if (result === 'blocked') {
           this.consecutiveBlocks++;
           if (this.consecutiveBlocks >= BLOCK_THRESHOLD) {
@@ -247,7 +276,8 @@ export class PostePostalTrackingService {
         if (work.run) {
           work.run.queue.shift();
           work.run.done++;
-          if (result === 'delivered') work.run.delivered++;
+          if (result === 'skipped') work.run.skipped++;
+          else if (result === 'delivered') work.run.delivered++;
           else if (result === 'returned') work.run.returned++;
           else if (result === 'error') work.run.errors++;
         }
@@ -257,7 +287,7 @@ export class PostePostalTrackingService {
             this.logger.warn(`Verifica Poste interrotta dopo ${networkErrors} errori di rete consecutivi (ultimo: ${work.row.lastError})`);
             break;
           }
-        } else {
+        } else if (result !== 'skipped') {
           networkErrors = 0;
           this.currentCooldownMs = null;
         }
@@ -270,7 +300,7 @@ export class PostePostalTrackingService {
     }
   }
 
-  async checkRecipientNow(campaignId: string, recipientId: string): Promise<PostalPosteTracking> {
+  async checkRecipientNow(campaignId: string, recipientId: string): Promise<{ row: PostalPosteTracking; result: CheckResult }> {
     if (!(await this.isEnabled())) throw new ConflictException(DISABLED_MESSAGE);
     if (this.isBlocked()) throw new ConflictException(`Poste sta limitando le richieste: riprova dopo le ${this.blockedUntil!.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' })}`);
     const recipient = await this.recipientRepo.findOne({ where: { id: recipientId } });
@@ -285,8 +315,8 @@ export class PostePostalTrackingService {
       }
       row = await this.repo.save(this.repo.create({ attemptId: attempt.id, trackingCode: attempt.postalAcceptanceId, status: 'pending', checkCount: 0, nextCheckAt: new Date() }));
     }
-    await this.checkOne(row, 'manual');
-    return row;
+    const result = await this.checkOne(row, 'manual');
+    return { row, result };
   }
 
   /**
@@ -318,6 +348,7 @@ export class PostePostalTrackingService {
       delivered: 0,
       returned: 0,
       errors: 0,
+      skipped: 0,
       startedAt: now,
       finishedAt: rows.length === 0 ? now : null,
     });
@@ -328,7 +359,7 @@ export class PostePostalTrackingService {
   getCampaignRun(campaignId: string): PosteCampaignRunState {
     const run = this.campaignRuns.get(campaignId);
     const blockedUntil = this.getBlockedUntil()?.toISOString() ?? null;
-    if (!run) return { running: false, total: 0, done: 0, delivered: 0, returned: 0, errors: 0, remaining: 0, etaSeconds: 0, blockedUntil, startedAt: null, finishedAt: null };
+    if (!run) return { running: false, total: 0, done: 0, delivered: 0, returned: 0, errors: 0, skipped: 0, remaining: 0, etaSeconds: 0, blockedUntil, startedAt: null, finishedAt: null };
     const remaining = run.queue.length;
     return {
       running: !run.finishedAt,
@@ -337,6 +368,7 @@ export class PostePostalTrackingService {
       delivered: run.delivered,
       returned: run.returned,
       errors: run.errors,
+      skipped: run.skipped,
       remaining,
       etaSeconds: remaining * this.intervalSeconds,
       blockedUntil,
