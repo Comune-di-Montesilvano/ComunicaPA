@@ -39,7 +39,7 @@ describe('CampaignsService - verifica Poste', () => {
     campaignRepo = { findOneBy: vi.fn().mockResolvedValue({ id: 'c1', channelType: 'POSTAL', channelConfig: { postalServiceType: 'RaccomandataMarket4', postalReturnReceipt: true } }) };
     recipientRepo = { find: vi.fn(), createQueryBuilder: vi.fn() };
     attemptRepo = { find: vi.fn() };
-    posteRepo = { find: vi.fn().mockResolvedValue([]) };
+    posteRepo = { find: vi.fn().mockResolvedValue([]), query: vi.fn().mockResolvedValue([]) };
     downloadEventRepo = { find: vi.fn().mockResolvedValue([]) };
     const module = await Test.createTestingModule({
       providers: [
@@ -130,6 +130,24 @@ describe('CampaignsService - verifica Poste', () => {
       posteVerification: { status: 'delivered', checkCount: 3, deliveredAt: '2026-09-04T08:06:00.000Z', outcomeAt: '2026-09-04T08:06:00.000Z' },
     });
     expect(report.rows[0]!.posteVerification!.lastMovement).toContain('SVIZZERA');
+  });
+
+  it('tag posteChecked: solo destinatari con almeno una risposta valida di Poste sull\'ultimo attempt', async () => {
+    const qb = makeQb();
+    recipientRepo.createQueryBuilder.mockReturnValue(qb);
+    await service.getRecipientStats('c1', 1, 50, undefined, undefined, undefined, ['posteChecked']);
+    const sql = qb.andWhere.mock.calls.map((c: any[]) => String(c[0])).find((s: string) => s.includes('postal_poste_tracking'));
+    expect(sql).toContain('ppt.poste_esito_ricerca IS NOT NULL');
+    expect(sql).toContain('SELECT MAX(na2.attempt_number)');
+  });
+
+  it('opzioni filtro: conteggio controllati su Poste', async () => {
+    recipientRepo.createQueryBuilder.mockImplementation(() => makeQb());
+    posteRepo.query = vi.fn().mockResolvedValue([{ n: 7 }]);
+    const opts = await service.getRecipientFilterOptions('c1');
+    expect(opts.posteCheckedCount).toBe(7);
+    expect(posteRepo.query.mock.calls[0][0]).toContain('ppt.poste_esito_ricerca IS NOT NULL');
+    expect(posteRepo.query.mock.calls[0][1]).toEqual(['c1']);
   });
 
   it('opzioni filtro: valore = CASE sul bucket, sottoquery espone id e postal_status', async () => {

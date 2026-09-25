@@ -310,3 +310,19 @@ controlli, non sposta `next_check_at`, 2 di fila mettono la coda in pausa
 Pausa tra chiamate `postalPosteTracking.intervalSeconds` (default 15 +
 jitter 30%). Data esito (`outcome_at`) = data dell'ultimo movimento, per
 consegnate e restituite (`flagRitorno`, anche "in restituzione" `stato 3`).
+
+**Max una chiamata a Poste per notifica ogni 23 ore, da chiunque parta**
+(cron, scan campagna, tasto notifica): `checkOne` salta la chiamata se
+`last_checked_at` < 23 h E `last_error` è null (un tentativo bloccato/fallito
+non conta, si riprova). Il cron che trova il giorno già controllato a mano lo
+conta nei 90 e sposta `next_check_at` a 24 h dall'ultimo controllo; il tasto
+notifica risponde `skipped: true` con l'ultimo esito.
+
+**Priorità coda verifica Poste** (cron e run campagna): prima le righe mai
+controllate (`poste_esito_ricerca IS NULL`), poi `last_checked_at` più vecchio.
+**Query "prossimo dovuto" con join: `limit(1)`, MAI `take(1)`** — `take()` con
+un join fa riscrivere a TypeORM la query in DISTINCT + subquery e un ORDER BY su
+espressione SQL fallisce (`"COALESCE(t" alias was not found`). Bug reale v1.8.3:
+coda automatica ferma a ogni tick (solo i run di campagna, che usano `getMany()`
+senza take, funzionavano). I mock dei test non lo vedono: verificare sempre la
+query su Postgres reale (log del tick in dev).

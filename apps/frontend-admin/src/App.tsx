@@ -1553,7 +1553,7 @@ export function App(): React.JSX.Element {
   const [postalStatusRefreshing, setPostalStatusRefreshing] = useState(false);
   const [postalErrorsResetting, setPostalErrorsResetting] = useState(false);
   const [posteChecking, setPosteChecking] = useState(false);
-  const [posteRun, setPosteRun] = useState<{ campaignId: string; running: boolean; total: number; done: number; delivered: number; returned: number; errors: number; remaining?: number; etaSeconds?: number; blockedUntil?: string | null } | null>(null);
+  const [posteRun, setPosteRun] = useState<{ campaignId: string; running: boolean; total: number; done: number; delivered: number; returned: number; errors: number; skipped?: number; remaining?: number; etaSeconds?: number; blockedUntil?: string | null } | null>(null);
   const [trackingIdEditOpenFor, setTrackingIdEditOpenFor] = useState<number | null>(null);
   const [trackingIdEditValue, setTrackingIdEditValue] = useState('');
   const [trackingIdEditSaving, setTrackingIdEditSaving] = useState(false);
@@ -2088,7 +2088,7 @@ export function App(): React.JSX.Element {
         stopped = true;
         clearInterval(timer);
         setPosteRun(null);
-        alert(`Verifica su Poste completata: ${state.delivered} consegnate secondo Poste, ${state.returned} restituite, ${state.errors} errori.`);
+        alert(`Verifica su Poste completata: ${state.delivered} consegnate secondo Poste, ${state.returned} restituite, ${state.errors} errori${state.skipped ? `, ${state.skipped} saltate (già controllate nelle ultime 23 ore)` : ''}.`);
         fetchCampaignDetail(campaignId);
         fetchRecipientsPage(campaignId);
         fetchRecipientsFilterOptions(campaignId);
@@ -2113,6 +2113,12 @@ export function App(): React.JSX.Element {
         const body = await res.json().catch(() => ({}));
         alert(body.message || 'Errore durante la verifica su Poste.');
         return;
+      }
+      const body = await res.json().catch(() => ({}));
+      // Max una chiamata a Poste ogni 23 ore per notifica: il backend non
+      // richiama e restituisce l'ultimo esito.
+      if (body.skipped) {
+        alert(`Notifica già verificata su Poste${body.lastCheckedAt ? ` alle ${new Date(body.lastCheckedAt).toLocaleString('it-IT')}` : ''}: si ricontrolla al massimo una volta ogni 23 ore. Mostro l'ultimo esito.`);
       }
       await openNotificationDetail(notifDetail.recipient.id);
     } catch (err) {
@@ -2839,7 +2845,7 @@ export function App(): React.JSX.Element {
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
   }, [recipientsFiltersPanelOpen]);
-  const [recipientsFilterOptions, setRecipientsFilterOptions] = useState<{ statuses: Array<string | { value: string; count: number }>; deliveryStatuses: Array<string | { value: string; count: number }>; postalDeliveryStatuses?: Array<string | { value: string; count: number }>; downloadChannelCombos?: Array<{ value: string; count: number }> } | null>(null);
+  const [recipientsFilterOptions, setRecipientsFilterOptions] = useState<{ statuses: Array<string | { value: string; count: number }>; deliveryStatuses: Array<string | { value: string; count: number }>; postalDeliveryStatuses?: Array<string | { value: string; count: number }>; posteCheckedCount?: number; downloadChannelCombos?: Array<{ value: string; count: number }> } | null>(null);
   const [channelBreakdown, setChannelBreakdown] = useState<{ primaryOnly: number; both: number; appIoOnly: number; appIoDespitePrimaryFail: number; neither: number; inadDiverted: number; appIoMode: 'none' | 'parallel' | 'exclusive'; inadCheckRan: boolean } | null>(null);
   const [resendingOutcome, setResendingOutcome] = useState<string | null>(null);
   const [effectiveChannelBreakdown, setEffectiveChannelBreakdown] = useState<Record<string, number> | null>(null);
@@ -18099,11 +18105,11 @@ export function App(): React.JSX.Element {
                             <Users size={18} className="me-2" />Destinatari Caricati ({recipientsPage?.total ?? campaign.totalRecipients})
                           </h3>
                           <div className="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                            <div className="d-flex align-items-center gap-2">
+                            <div className="d-flex align-items-center flex-wrap gap-2" style={{ minWidth: 0 }}>
                               <input
                                 type="text"
                                 className="form-control form-control-sm flex-shrink-0"
-                                style={{ width: 320 }}
+                                style={{ width: 320, maxWidth: '100%' }}
                                 placeholder="Cerca per nominativo o CF..."
                                 value={recipientsSearch}
                                 onChange={(e) => { setRecipientsSearch(e.target.value); setRecipientsPageNum(1); }}
@@ -18129,6 +18135,52 @@ export function App(): React.JSX.Element {
                                   <X className="me-1" size={14} />Reset filtri
                                 </button>
                               )}
+                              {campaign.channelType === 'POSTAL' && (() => {
+                                // Filtro rapido: GlobalCom "Non consegnato" ma consegnato secondo
+                                // il tracking Poste (bucket ConsegnatoVerificaPoste del filtro
+                                // Stato consegna, conteggio dalle opzioni filtro del backend).
+                                const opt = (recipientsFilterOptions?.postalDeliveryStatuses ?? []).find((o) => typeof o !== 'string' && o.value === 'ConsegnatoVerificaPoste');
+                                const count = opt && typeof opt !== 'string' ? opt.count : 0;
+                                const active = recipientsPostalDeliveryStatusFilter === 'ConsegnatoVerificaPoste';
+                                if (count === 0 && !active) return null;
+                                return (
+                                  <button
+                                    type="button"
+                                    className={`btn btn-sm d-inline-flex align-items-center text-nowrap ${active ? 'btn-success' : 'btn-outline-success'}`}
+                                    aria-pressed={active}
+                                    title="Mostra solo le notifiche che GlobalCom dà come Non consegnate ma che risultano consegnate sul tracking Poste"
+                                    onClick={() => {
+                                      // Nessuna fetch esplicita: l'useEffect dei filtri ricarica
+                                      // già a ogni cambio (stesso pattern delle checkbox Tipo invio).
+                                      setRecipientsPostalDeliveryStatusFilter(active ? '' : 'ConsegnatoVerificaPoste');
+                                      setRecipientsPageNum(1);
+                                    }}
+                                  >
+                                    <CheckCircle2 className="me-1" size={14} />Discrepanze GlobalCom/Poste ({count})
+                                  </button>
+                                );
+                              })()}
+                              {campaign.channelType === 'POSTAL' && (() => {
+                                // Filtro rapido "Controllati su Poste": almeno una risposta valida
+                                // dal tracking, con o senza discrepanza (tag posteChecked).
+                                const count = recipientsFilterOptions?.posteCheckedCount ?? 0;
+                                const active = recipientsTagsFilter.includes('posteChecked');
+                                if (count === 0 && !active) return null;
+                                return (
+                                  <button
+                                    type="button"
+                                    className={`btn btn-sm d-inline-flex align-items-center text-nowrap ${active ? 'btn-info' : 'btn-outline-info'}`}
+                                    aria-pressed={active}
+                                    title="Mostra solo le notifiche già verificate sul tracking Poste (almeno una risposta valida), con o senza discrepanza con GlobalCom"
+                                    onClick={() => {
+                                      setRecipientsTagsFilter((prev) => (active ? prev.filter((t) => t !== 'posteChecked') : [...prev, 'posteChecked']));
+                                      setRecipientsPageNum(1);
+                                    }}
+                                  >
+                                    <Truck className="me-1" size={14} />Controllati su Poste ({count})
+                                  </button>
+                                );
+                              })()}
                             </div>
                             <div className="d-flex align-items-center flex-wrap gap-2">
                               {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType !== 'SEND' && campaign.channelType !== 'POSTAL' && (
@@ -18172,13 +18224,17 @@ export function App(): React.JSX.Element {
                                   className="btn btn-sm d-inline-flex align-items-center text-nowrap btn-outline-success"
                                   disabled={!!posteRun?.running && posteRun.campaignId === campaign.id}
                                   onClick={handlePosteCheckCampaign}
-                                  title="Controlla subito sul tracking di Poste Italiane le raccomandate che GlobalCom dà come Non consegnate (il postino può aver consegnato in un secondo passaggio). Lanciabile a qualsiasi ora, oltre al controllo automatico giornaliero."
+                                  title={posteRun?.running && posteRun.campaignId === campaign.id
+                                    ? (posteRun.blockedUntil
+                                        ? `Verifica su Poste in corso: ${posteRun.done} di ${posteRun.total} controllate. Poste sta limitando le richieste: ripresa automatica alle ${new Date(posteRun.blockedUntil).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}.`
+                                        : `Verifica su Poste in corso: ${posteRun.done} di ${posteRun.total} controllate, ${posteRun.delivered} consegnate e ${posteRun.returned} restituite finora.`)
+                                    : 'Controlla subito sul tracking di Poste Italiane le raccomandate che GlobalCom dà come Non consegnate (il postino può aver consegnato in un secondo passaggio). Lanciabile a qualsiasi ora, oltre al controllo automatico giornaliero.'}
                                 >
                                   {posteRun?.running && posteRun.campaignId === campaign.id ? <Loader2 className="icon-spin me-1" size={14} /> : <Truck className="me-1" size={14} />}
                                   {posteRun?.running && posteRun.campaignId === campaign.id
                                     ? (posteRun.blockedUntil
-                                        ? `Verifica su Poste ${posteRun.done}/${posteRun.total} — Poste limita le richieste, ripresa alle ${new Date(posteRun.blockedUntil).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`
-                                        : `Verifica su Poste ${posteRun.done}/${posteRun.total}${posteRun.etaSeconds ? ` — circa ${posteRun.etaSeconds >= 3600 ? `${Math.floor(posteRun.etaSeconds / 3600)} h ${Math.round((posteRun.etaSeconds % 3600) / 60)} min` : `${Math.max(1, Math.round(posteRun.etaSeconds / 60))} min`}` : ''}`)
+                                        ? `Poste ${posteRun.done}/${posteRun.total} · pausa fino ${new Date(posteRun.blockedUntil).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`
+                                        : `Poste ${posteRun.done}/${posteRun.total}${posteRun.etaSeconds ? ` · ~${posteRun.etaSeconds >= 3600 ? `${Math.floor(posteRun.etaSeconds / 3600)}h${String(Math.round((posteRun.etaSeconds % 3600) / 60)).padStart(2, '0')}` : `${Math.max(1, Math.round(posteRun.etaSeconds / 60))} min`}` : ''}`)
                                     : 'Verifica su Poste'}
                                 </button>
                               )}
@@ -18340,6 +18396,7 @@ export function App(): React.JSX.Element {
                               // (vedi notification.processor.ts, isPrimaryAppIoDivertedToPec) — non
                               // più un caso ridondante da escludere.
                               { id: 'appio', label: 'App IO (co-consegna)' },
+                              ...(campaign.channelType === 'POSTAL' ? [{ id: 'posteChecked', label: 'Controllati su Poste' }] : []),
                             ];
                             const selectedTagLabels = tagOptions.filter((o) => recipientsTagsFilter.includes(o.id)).map((o) => o.label);
                             const tagsSummary = selectedTagLabels.length === 0

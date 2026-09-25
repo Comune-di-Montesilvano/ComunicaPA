@@ -31,6 +31,8 @@ export class PosteTrackingController {
     @Param('id', ParseUUIDPipe) id: string,
     @Param('recipientId', ParseUUIDPipe) recipientId: string,
   ) {
-    return toPosteVerificationDto(await this.svc.checkRecipientNow(id, recipientId));
+    const { row, result } = await this.svc.checkRecipientNow(id, recipientId);
+    // skipped: controllata con successo nelle ultime 23 ore, Poste non richiamato.
+    return { ...toPosteVerificationDto(row), skipped: result === 'skipped' };
   }
 }

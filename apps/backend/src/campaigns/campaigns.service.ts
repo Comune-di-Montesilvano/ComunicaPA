@@ -66,6 +66,17 @@ const POSTAL_DELIVERY_PENDING_SENTINEL = '__POSTAL_DELIVERY_PENDING__';
 // collisione possibile.
 const DOWNLOAD_NONE_SENTINEL = '__DOWNLOAD_NONE__';
 
+// Tag "Controllati su Poste": l'ultimo attempt ha avuto almeno una risposta
+// valida dal tracking Poste (poste_esito_ricerca si scrive solo su risposta
+// valida, mai su blocco/errore) — con o senza discrepanza con GlobalCom.
+const POSTE_CHECKED_SQL = `EXISTS (
+  SELECT 1 FROM notification_attempts na
+  JOIN postal_poste_tracking ppt ON ppt.attempt_id = na.id
+  WHERE na.recipient_id = r.id
+    AND na.attempt_number = (SELECT MAX(na2.attempt_number) FROM notification_attempts na2 WHERE na2.recipient_id = r.id)
+    AND ppt.poste_esito_ricerca IS NOT NULL
+)`;
+
 export interface CampaignRequester {
   username: string;
   role: OperatorRole;
@@ -2688,6 +2699,9 @@ export class CampaignsService {
     if (tags?.includes('primary')) {
       qb.andWhere(`COALESCE((r.inad_check->>'diverted')::boolean, false) = false`);
     }
+    if (tags?.includes('posteChecked')) {
+      qb.andWhere(POSTE_CHECKED_SQL);
+    }
     if (tags?.includes('appio')) {
       qb.andWhere(
         `EXISTS (SELECT 1 FROM notification_attempts na WHERE na.recipient_id = r.id AND na.response_payload -> 'appIo' IS NOT NULL)`,
@@ -2859,6 +2873,8 @@ export class CampaignsService {
     statuses: Array<{ value: string; count: number }>;
     deliveryStatuses: Array<{ value: string; count: number }>;
     postalDeliveryStatuses: Array<{ value: string; count: number }>;
+    /** Destinatari con almeno una risposta valida del tracking Poste (tag posteChecked). */
+    posteCheckedCount: number;
     downloadChannelCombos: Array<{ value: string; count: number }>;
   }> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
@@ -2994,6 +3010,15 @@ export class CampaignsService {
         .getCount()
       : 0;
 
+    // Query diretta sul repo verifica Poste (opzionale): nessun
+    // createQueryBuilder in più, le spec esistenti ne mockano una sequenza fissa.
+    const posteCheckedCount = campaign.channelType === 'POSTAL' && this.posteTrackingRepo
+      ? Number(((await this.posteTrackingRepo.query(
+        `SELECT COUNT(*)::int AS n FROM recipients r WHERE r.campaign_id = $1 AND ${POSTE_CHECKED_SQL}`,
+        [campaignId],
+      )) as Array<{ n: number }> | undefined)?.[0]?.n ?? 0)
+      : 0;
+
     return {
       statuses: statusRows.map((r) => ({ value: r.value, count: Number(r.count) })),
       deliveryStatuses: [
@@ -3008,6 +3033,7 @@ export class CampaignsService {
         ...(appIoSostituitoPostalDeliveryCount > 0 ? [{ value: 'AppIoSostituito', count: appIoSostituitoPostalDeliveryCount }] : []),
         ...(divertedCount > 0 ? [{ value: 'DirottatoAPec', count: divertedCount }] : []),
       ],
+      posteCheckedCount,
       downloadChannelCombos: [
         ...(notDownloadedCount > 0 ? [{ value: DOWNLOAD_NONE_SENTINEL, count: notDownloadedCount }] : []),
         ...downloadComboRows.map((r) => ({ value: r.value, count: Number(r.count) })),
