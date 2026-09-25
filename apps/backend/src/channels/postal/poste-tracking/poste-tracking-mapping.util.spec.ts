@@ -79,3 +79,37 @@ describe('mapPosteOutcome', () => {
     expect(mapPosteOutcome(parsePosteResponse({ ...delivered, esitoRicerca: '2' })).outcome).toBe('pending');
   });
 });
+
+describe('consegna al mittente (ritorno senza flagRitorno)', () => {
+  const returnedAbroad = {
+    esitoRicerca: '3', stato: '5', flagRitorno: false, tipoProdotto: 'Raccomandata internazionale',
+    listaMovimenti: [
+      { dataOra: 1785393537000, statoLavorazione: 'a seguito di acquisto da poste.it', luogo: 'sito poste.it', flagRitorno: false, box: '2' },
+      { dataOra: 1787814060000, statoLavorazione: 'in data', luogo: 'PESCARA (PE)', flagRitorno: false, box: '3' },
+      { dataOra: 1787824680000, statoLavorazione: 'in data', luogo: 'MONTESILVANO (PE)', flagRitorno: false, box: '4' },
+      { dataOra: 1787839380000, statoLavorazione: 'con successo in data', luogo: 'MONTESILVANO (PE)', flagRitorno: false, box: '5' },
+    ],
+  };
+
+  it('destinatario estero ma consegna registrata in Italia → returned', () => {
+    const r = mapPosteOutcome(parsePosteResponse(returnedAbroad), { recipientForeign: true, recipientCity: 'GRAZ', senderCity: 'MONTESILVANO' });
+    expect(r.outcome).toBe('returned');
+    expect(r.outcomeAt?.getTime()).toBe(1787839380000);
+  });
+
+  it('destinatario estero con consegna all\'estero (luogo senza provincia) → delivered', () => {
+    expect(mapPosteOutcome(parsePosteResponse(delivered), { recipientForeign: true, recipientCity: 'ZURIGO', senderCity: 'MONTESILVANO' }).outcome).toBe('delivered');
+  });
+
+  it('domestico: consegna nella città del mittente, destinatario altrove → returned', () => {
+    expect(mapPosteOutcome(parsePosteResponse(returnedAbroad), { recipientForeign: false, recipientCity: 'VASTO', senderCity: 'Montesilvano' }).outcome).toBe('returned');
+  });
+
+  it('domestico: destinatario nella stessa città del mittente → delivered (non distinguibile)', () => {
+    expect(mapPosteOutcome(parsePosteResponse(returnedAbroad), { recipientForeign: false, recipientCity: 'MONTESILVANO', senderCity: 'MONTESILVANO' }).outcome).toBe('delivered');
+  });
+
+  it('senza contesto: comportamento invariato', () => {
+    expect(mapPosteOutcome(parsePosteResponse(returnedAbroad)).outcome).toBe('delivered');
+  });
+});

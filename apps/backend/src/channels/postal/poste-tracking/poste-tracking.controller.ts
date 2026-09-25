@@ -36,3 +36,15 @@ export class PosteTrackingController {
     return { ...toPosteVerificationDto(row), skipped: result === 'skipped' };
   }
 }
+
+/** Salute della coda verifica Poste nella tab Motori (stesso prefisso di EnginesController). */
+@Controller('admin/engines')
+@Roles('user', 'admin')
+export class PosteTrackingEnginesController {
+  constructor(private readonly svc: PostePostalTrackingService) {}
+
+  @Get('poste/queue-health')
+  getQueueHealth() {
+    return this.svc.getQueueHealth();
+  }
+}

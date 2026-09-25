@@ -23,6 +23,7 @@ describe('PostePostalTrackingService', () => {
   let client: { track: ReturnType<typeof vi.fn> };
   let settingsValues: Record<string, unknown>;
   let sleep: ReturnType<typeof vi.fn>;
+  let providers: any;
 
   function add(...rows: PostalPosteTracking[]) {
     for (const r of rows) store.set(r.id, r);
@@ -42,6 +43,7 @@ describe('PostePostalTrackingService', () => {
     campaignRows = [];
     repo = {
       query: vi.fn().mockResolvedValue([]),
+      find: vi.fn().mockResolvedValue([]),
       save: vi.fn(async (r) => { store.set(r.id, r); return r; }),
       create: vi.fn((r) => ({ ...row({ id: 'new' }), ...r })),
       findOneBy: vi.fn(async (w: any) => (w.id ? store.get(w.id) : [...store.values()].find((r) => r.attemptId === w.attemptId)) ?? null),
@@ -52,7 +54,8 @@ describe('PostePostalTrackingService', () => {
     client = { track: vi.fn() };
     settingsValues = { 'postalPosteTracking.enabled': true, 'postalPosteTracking.intervalSeconds': 15, 'postalPosteTracking.cooldownMinutes': 30, 'postalPosteTracking.staleDays': 30 };
     const settings = { get: vi.fn(async (k: string) => settingsValues[k]) };
-    service = new PostePostalTrackingService(repo, attemptRepo, recipientRepo, client as any, settings as any);
+    providers = { getActive: vi.fn().mockResolvedValue({ mittente: { citta: 'MONTESILVANO' } }) };
+    service = new PostePostalTrackingService(repo, attemptRepo, recipientRepo, client as any, settings as any, providers as any);
     sleep = vi.fn().mockResolvedValue(undefined);
     (service as any).sleep = sleep;
   });
@@ -184,6 +187,50 @@ describe('PostePostalTrackingService', () => {
     });
   });
 
+  describe('ritorno al mittente senza flagRitorno', () => {
+    const AT_SENDER = { esitoRicerca: '3', stato: '5', flagRitorno: false, tipoProdotto: 'Raccomandata internazionale', movements: [{ at: '2026-08-27T12:03:31.000Z', luogo: 'MONTESILVANO (PE)', statoLavorazione: 'con successo in data', box: '5', flagRitorno: false }], raw: {} };
+
+    it('consegna nella città del mittente per destinatario estero → returned, niente data di consegna', async () => {
+      (service as any).deliveryContextFor = vi.fn().mockResolvedValue({ recipientForeign: true, recipientCity: 'GRAZ', senderCity: 'MONTESILVANO' });
+      client.track.mockResolvedValue(AT_SENDER);
+      const r = row();
+      expect(await service.checkOne(r, 'cron')).toBe('returned');
+      expect(r.deliveredAt).toBeNull();
+      expect(r.outcomeAt?.toISOString()).toBe('2026-08-27T12:03:31.000Z');
+    });
+
+    it('riesame righe già delivered dai movimenti salvati, senza chiamare Poste', async () => {
+      const wrong = row({ id: 'w1', status: 'delivered', deliveredAt: new Date('2026-08-27T12:03:31Z'), outcomeAt: new Date('2026-08-27T12:03:31Z'), movements: AT_SENDER.movements, nextCheckAt: null });
+      const right = row({ id: 'k1', status: 'delivered', movements: [{ at: '2026-09-04T08:06:00.000Z', luogo: 'SVIZZERA', statoLavorazione: 'con successo in data', box: '5', flagRitorno: false }], nextCheckAt: null });
+      repo.find = vi.fn().mockResolvedValue([wrong, right]);
+      (service as any).deliveryContextFor = vi.fn().mockResolvedValue({ recipientForeign: true, recipientCity: 'GRAZ', senderCity: 'MONTESILVANO' });
+      expect(await service.reclassifyDeliveredToSender()).toBe(1);
+      expect(wrong.status).toBe('returned');
+      expect(wrong.deliveredAt).toBeNull();
+      expect(right.status).toBe('delivered');
+      expect(client.track).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('riverifica righe consegnate valutate su dati ridotti', () => {
+    it('riverifica con esito restituita → returned', async () => {
+      client.track.mockResolvedValue(RETURNED);
+      const r = row({ status: 'delivered', deliveredAt: new Date('2026-08-03T09:12:00Z'), nextCheckAt: new Date(Date.now() - 1000) });
+      expect(await service.checkOne(r, 'cron')).toBe('returned');
+      expect(r.deliveredAt).toBeNull();
+      expect(r.nextCheckAt).toBeNull();
+    });
+
+    it('riverifica senza esito nuovo: resta consegnata e non viene ripescata', async () => {
+      client.track.mockResolvedValue(NOT_FOUND);
+      const movements = DELIVERED.movements;
+      const r = row({ status: 'delivered', movements, nextCheckAt: new Date(Date.now() - 1000) });
+      expect(await service.checkOne(r, 'cron')).toBe('delivered');
+      expect(r.movements).toBe(movements);
+      expect(r.nextCheckAt).toBeNull();
+    });
+  });
+
   describe('max una chiamata ogni 23 ore per notifica', () => {
     const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000);
 
@@ -305,6 +352,8 @@ describe('PostePostalTrackingService', () => {
       const where = [qb.where, qb.andWhere].flatMap((f: any) => f.mock.calls.map((c: any[]) => c[0])).join(' ');
       expect(where).toContain("COALESCE(a.postal_status, '') <> 'Consegnato'");
       expect(where).toContain('t.next_check_at <= now()');
+      // Anche le righe già consegnate rimesse in coda per la riverifica (dati completi).
+      expect(where).toContain("t.status IN ('pending', 'delivered')");
     });
 
     it('due blocchi consecutivi: pausa di 30 minuti, nessun altro controllo fino alla ripresa', async () => {
@@ -372,6 +421,32 @@ describe('PostePostalTrackingService', () => {
       expect(client.track).toHaveBeenCalledTimes(1);
       release();
       await first;
+    });
+  });
+
+  describe('salute della coda (tab Motori)', () => {
+    it('conteggi per stato, dovuti adesso, pausa e ultimo giro', async () => {
+      repo.query.mockResolvedValue([
+        { status: 'pending', n: 120, due: 40 },
+        { status: 'delivered', n: 7, due: 0 },
+        { status: 'returned', n: 3, due: 0 },
+        { status: 'gave_up', n: 2, due: 0 },
+      ]);
+      (service as any).blockedUntil = new Date(Date.now() + 600_000);
+      const h = await service.getQueueHealth();
+      expect(h).toMatchObject({ enabled: true, pending: 120, dueNow: 40, delivered: 7, returned: 3, gaveUp: 2, processing: false, intervalSeconds: 15, activeCampaignRuns: 0 });
+      expect(h.blockedUntil).not.toBeNull();
+      expect(h.lastTickAt).toBeNull();
+    });
+
+    it('ultimo giro registrato dopo un tick', async () => {
+      add(row({ id: 't1' }));
+      client.track.mockResolvedValue(NOT_FOUND);
+      await service.tick();
+      repo.query.mockResolvedValue([]);
+      const h = await service.getQueueHealth();
+      expect(h.lastTickAt).not.toBeNull();
+      expect(h.lastTickChecks).toBe(1);
     });
   });
 

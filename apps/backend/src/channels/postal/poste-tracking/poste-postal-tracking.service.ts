@@ -8,7 +8,9 @@ import { Recipient } from '../../../entities/recipient.entity.js';
 import { AppSettingsService } from '../../../settings/app-settings.service.js';
 import { captureException } from '../../../common/sentry.util.js';
 import { PosteTrackingClient } from './poste-tracking-client.service.js';
-import { mapPosteOutcome, PosteTrackingError, type PosteTrackingResponse } from './poste-tracking-mapping.util.js';
+import { isDeliveryToSender, lastMovement, mapPosteOutcome, PosteTrackingError, type DeliveryContext, type PosteTrackingResponse } from './poste-tracking-mapping.util.js';
+import { PostalProvidersService } from '../../../postal-providers/postal-providers.service.js';
+import { resolvePhysicalAddress } from '../../payment-config.util.js';
 import { POSTE_TRACKING_DAYS } from './poste-tracking-effective.util.js';
 const NETWORK_ERROR_THRESHOLD = 5;
 const BLOCK_THRESHOLD = 2;
@@ -43,6 +45,21 @@ export interface PosteCampaignRunState {
   finishedAt: string | null;
 }
 
+export interface PosteQueueHealth {
+  enabled: boolean;
+  processing: boolean;
+  blockedUntil: string | null;
+  pending: number;
+  dueNow: number;
+  delivered: number;
+  returned: number;
+  gaveUp: number;
+  intervalSeconds: number;
+  activeCampaignRuns: number;
+  lastTickAt: string | null;
+  lastTickChecks: number;
+}
+
 interface CampaignRun {
   queue: string[];
   total: number;
@@ -75,6 +92,8 @@ export class PostePostalTrackingService {
   private readonly campaignRuns = new Map<string, CampaignRun>();
   /** Ultimo intervallo letto dalle Impostazioni, per la stima del tempo residuo. */
   private intervalSeconds = 15;
+  private lastTickAt: Date | null = null;
+  private lastTickChecks = 0;
   /** Sovrascrivibile nei test. */
   protected sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -87,7 +106,51 @@ export class PostePostalTrackingService {
     private readonly recipientRepo: Repository<Recipient>,
     private readonly client: PosteTrackingClient,
     private readonly settings: AppSettingsService,
+    private readonly providers: PostalProvidersService,
   ) {}
+
+  private reclassifiedOnce = false;
+
+  /**
+   * Contesto per riconoscere un ritorno che Poste chiude come "consegnata"
+   * senza flagRitorno: città/nazione del destinatario (stessa risoluzione
+   * dell'invio) e città del mittente del provider postale attivo.
+   */
+  protected async deliveryContextFor(row: PostalPosteTracking): Promise<DeliveryContext> {
+    const attempt = await this.attemptRepo.findOne({ where: { id: row.attemptId }, relations: { recipient: { campaign: true } } });
+    const recipient = attempt?.recipient;
+    const address = recipient
+      ? resolvePhysicalAddress(recipient, recipient.campaign?.channelConfig?.['physicalAddressConfig'] as Record<string, unknown> | undefined)
+      : null;
+    const provider = await this.providers.getActive();
+    return {
+      recipientForeign: !!address?.foreignState,
+      recipientCity: address?.municipality ?? null,
+      senderCity: provider?.mittente?.citta ?? null,
+    };
+  }
+
+  /**
+   * Righe già chiuse come "delivered" prima di questa regola: riesame dai
+   * movimenti salvati (nessuna chiamata a Poste). Una volta per avvio.
+   */
+  async reclassifyDeliveredToSender(): Promise<number> {
+    const rows = (await this.repo.find({ where: { status: 'delivered' } })) ?? [];
+    let changed = 0;
+    for (const row of rows) {
+      const last = lastMovement(row.movements ?? []);
+      if (!last) continue;
+      if (isDeliveryToSender(last.luogo, await this.deliveryContextFor(row))) {
+        row.status = 'returned';
+        row.deliveredAt = null;
+        row.outcomeAt = row.outcomeAt ?? (last.at ? new Date(last.at) : null);
+        await this.repo.save(row);
+        changed++;
+      }
+    }
+    if (changed > 0) this.logger.log(`Verifica Poste: ${changed} righe "consegnate" riclassificate come restituite al mittente`);
+    return changed;
+  }
 
   private async isEnabled(): Promise<boolean> {
     return !!(await this.settings.get<boolean>('postalPosteTracking.enabled'));
@@ -198,11 +261,13 @@ export class PostePostalTrackingService {
     }
 
     row.lastError = null;
-    const { outcome, outcomeAt } = mapPosteOutcome(resp);
+    const { outcome, outcomeAt } = mapPosteOutcome(resp, await this.deliveryContextFor(row));
     // Riga già finale e Poste non dà un esito nuovo (es. spedizione purgata
     // dal tracking): movimenti, risposta e date salvati sono la prova
     // della consegna/ritorno, mai sovrascritti da una risposta vuota.
     if ((row.status === 'delivered' || row.status === 'returned') && outcome === 'pending') {
+      // Riverifica di una riga già chiusa senza esito nuovo: fine riverifica.
+      if (mode === 'cron') row.nextCheckAt = null;
       await this.repo.save(row);
       return row.status;
     }
@@ -246,7 +311,9 @@ export class PostePostalTrackingService {
     const row = await this.repo
       .createQueryBuilder('t')
       .innerJoin(NotificationAttempt, 'a', 'a.id = t.attempt_id')
-      .where("t.status = 'pending'")
+      // delivered con next_check_at impostato = riverifica una tantum (righe
+      // valutate prima del flusso verifica+cookie, su dati ridotti di Poste).
+      .where("t.status IN ('pending', 'delivered')")
       .andWhere('t.next_check_at <= now()')
       .andWhere("COALESCE(a.postal_status, '') <> 'Consegnato'")
       .orderBy(NEVER_CHECKED_FIRST_SQL, 'ASC')
@@ -289,8 +356,14 @@ export class PostePostalTrackingService {
     if (this.isBlocked()) return;
     this.processing = true;
     try {
+      if (!this.reclassifiedOnce) {
+        this.reclassifiedOnce = true;
+        await this.reclassifyDeliveredToSender();
+      }
       await this.backfill();
       const interval = await this.intervalMs();
+      this.lastTickAt = new Date();
+      this.lastTickChecks = 0;
       let calledBefore = false;
       let networkErrors = 0;
       for (;;) {
@@ -301,7 +374,10 @@ export class PostePostalTrackingService {
           await this.sleep(interval + Math.floor(Math.random() * interval * JITTER_RATIO));
         }
         const result = await this.checkOne(work.row, work.mode);
-        if (result !== 'skipped') calledBefore = true;
+        if (result !== 'skipped') {
+          calledBefore = true;
+          this.lastTickChecks++;
+        }
         if (result === 'blocked') {
           this.consecutiveBlocks++;
           if (this.consecutiveBlocks >= BLOCK_THRESHOLD) {
@@ -402,6 +478,30 @@ export class PostePostalTrackingService {
     });
     if (rows.length > 0) void this.tick();
     return { total: rows.length };
+  }
+
+  /** Salute della coda per la tab Motori: stesso ruolo di PostalStatusSyncService.getQueueHealth. */
+  async getQueueHealth(): Promise<PosteQueueHealth> {
+    const rows: Array<{ status: string; n: number; due: number }> = (await this.repo.query(
+      `SELECT status, COUNT(*)::int AS n,
+              COUNT(*) FILTER (WHERE status = 'pending' AND next_check_at <= now())::int AS due
+       FROM postal_poste_tracking GROUP BY status`,
+    )) ?? [];
+    const by = (s: string) => rows.find((r) => r.status === s);
+    return {
+      enabled: await this.isEnabled(),
+      processing: this.processing,
+      blockedUntil: this.getBlockedUntil()?.toISOString() ?? null,
+      pending: Number(by('pending')?.n ?? 0),
+      dueNow: Number(by('pending')?.due ?? 0),
+      delivered: Number(by('delivered')?.n ?? 0),
+      returned: Number(by('returned')?.n ?? 0),
+      gaveUp: Number(by('gave_up')?.n ?? 0),
+      intervalSeconds: this.intervalSeconds,
+      activeCampaignRuns: [...this.campaignRuns.values()].filter((r) => !r.finishedAt).length,
+      lastTickAt: this.lastTickAt?.toISOString() ?? null,
+      lastTickChecks: this.lastTickChecks,
+    };
   }
 
   getCampaignRun(campaignId: string): PosteCampaignRunState {

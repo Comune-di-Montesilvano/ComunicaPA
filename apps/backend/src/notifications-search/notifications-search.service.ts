@@ -12,6 +12,13 @@ import type { NotificationDetailDto } from './dto/notification-detail.dto.js';
 import { PostalPosteTracking } from '../entities/postal-poste-tracking.entity.js';
 import { posteDeliveredSql, toPosteVerificationDto } from '../channels/postal/poste-tracking/poste-tracking-effective.util.js';
 
+// Canali digitali: "sent" con almeno un download = "read" (Letto), stato
+// derivato mai scritto su recipient.status. Stesso criterio del dettaglio
+// campagna (HAS_DOWNLOAD_SQL in campaigns.service.ts).
+const READ_STATUS_CHANNELS_SQL = "campaign.channelType IN ('EMAIL', 'PEC', 'APP_IO')";
+const RECIPIENT_HAS_DOWNLOAD_SQL = '(recipient.download_count > 0 OR EXISTS (SELECT 1 FROM download_events de_x WHERE de_x.recipient_id = recipient.id))';
+const READ_STATUS_CHANNELS = ['EMAIL', 'PEC', 'APP_IO'];
+
 export type PosteVerificationFilter = 'delivered' | 'returned' | 'pending' | 'gave_up' | 'any';
 export const POSTE_VERIFICATION_FILTERS: readonly PosteVerificationFilter[] = ['delivered', 'returned', 'pending', 'gave_up', 'any'];
 
@@ -80,8 +87,13 @@ export class NotificationsSearchService {
         { campaignQ: `%${campaignText}%` },
       );
     }
-    if (filters.status) {
+    if (filters.status === 'read') {
+      qb.andWhere('recipient.status = :status', { status: 'sent' });
+      qb.andWhere(`(${READ_STATUS_CHANNELS_SQL} AND ${RECIPIENT_HAS_DOWNLOAD_SQL})`);
+    } else if (filters.status) {
       qb.andWhere('recipient.status = :status', { status: filters.status });
+      // "Inviato" = inviato e, se canale digitale, non ancora letto.
+      if (filters.status === 'sent') qb.andWhere(`NOT (${READ_STATUS_CHANNELS_SQL} AND ${RECIPIENT_HAS_DOWNLOAD_SQL})`);
     }
     if (filters.channelType) {
       qb.andWhere('campaign.channelType = :channelType', { channelType: filters.channelType });
@@ -111,6 +123,16 @@ export class NotificationsSearchService {
 
     const [rows, total] = await qb.getManyAndCount();
     const posteByRecipient = await this.loadLatestPosteStatus(rows.map((r) => r.id));
+    const digitalSentIds = rows.filter((r) => r.status === 'sent' && READ_STATUS_CHANNELS.includes(r.campaign.channelType)).map((r) => r.id);
+    const withDownloadEvent = new Set(
+      digitalSentIds.length > 0
+        ? ((await this.downloadEventRepo.find({ where: { recipientId: In(digitalSentIds) }, select: { recipientId: true } })) ?? []).map((d) => d.recipientId)
+        : [],
+    );
+    const effectiveStatus = (r: Recipient): string =>
+      r.status === 'sent' && READ_STATUS_CHANNELS.includes(r.campaign.channelType) && ((r.downloadCount ?? 0) > 0 || withDownloadEvent.has(r.id))
+        ? 'read'
+        : r.status;
 
     return {
       rows: rows.map((r) => ({
@@ -120,7 +142,7 @@ export class NotificationsSearchService {
         codiceFiscale: r.codiceFiscale,
         fullName: r.fullName,
         channelType: r.campaign.channelType,
-        status: r.status,
+        status: effectiveStatus(r),
         createdAt: r.createdAt.toISOString(),
         posteVerificationStatus: posteByRecipient.get(r.id) ?? null,
       })),

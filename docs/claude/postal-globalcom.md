@@ -337,3 +337,24 @@ soglia entrerebbero tutte le raccomandate in viaggio (migliaia) contro il
 limite di ~20 richieste di Poste. Discrepanza/override = Poste `delivered` e
 GlobalCom qualunque stato ≠ `Consegnato`. Finestra = 90 giorni dalla data
 notifica (`tracking_until`), non 90 risposte.
+
+**Tracking Poste: SEMPRE `verificaricercasemplice` + cookie prima di
+`ricercasemplice`** (stesso flusso della pagina "Cerca spedizioni"). La sola
+`ricercasemplice` risponde con dati RIDOTTI senza errore: `esitoRicerca "2"` o
+`stato "1"` senza movimenti, niente fase 6 / `flagRitorno` / `sintesiStato`.
+Caso reale 570202616665: via browser `stato "6"`, `flagRitorno true`,
+"restituita al mittente in data 02/09/26"; via server senza verifica, nulla.
+Per confrontare un codice, riprodurre il flusso (curl con cookie jar) o aprire
+la pagina con Playwright e leggere la risposta di `ricercasemplice`, mai
+fidarsi di una chiamata diretta. Migration `ReverifyPosteDelivered` ha rimesso
+in coda le righe `delivered` valutate prima del fix.
+
+**Raccomandate internazionali restituite: Poste può NON segnare
+`flagRitorno`** anche con i dati completi (vede solo la tratta italiana):
+RN700062106IT per l'Austria chiuso "consegnata" a MONTESILVANO (PE), busta
+realmente tornata al Comune (modulo CN 15). `isDeliveryToSender`: destinatario
+estero + consegna con sigla provincia "(XX)", oppure consegna nella città del
+mittente (provider postale attivo) con destinatario altrove → `returned`.
+Destinatario nella stessa città del mittente: non distinguibile, resta
+`delivered`. Riesame una tantum delle righe `delivered` all'avvio
+(`reclassifyDeliveredToSender`, senza chiamate a Poste).
