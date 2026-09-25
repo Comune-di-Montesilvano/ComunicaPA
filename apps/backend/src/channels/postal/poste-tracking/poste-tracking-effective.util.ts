@@ -13,6 +13,8 @@ export interface PosteVerificationDto {
   lastCheckedAt: string | null;
   lastError: string | null;
   deliveredAt: string | null;
+  /** Data esito Poste (consegna o ritorno al mittente). */
+  outcomeAt: string | null;
   movements: PosteTrackingMovement[];
 }
 
@@ -26,6 +28,7 @@ export function toPosteVerificationDto(row: PostalPosteTracking): PosteVerificat
     lastCheckedAt: row.lastCheckedAt ? row.lastCheckedAt.toISOString() : null,
     lastError: row.lastError,
     deliveredAt: row.deliveredAt ? row.deliveredAt.toISOString() : null,
+    outcomeAt: row.outcomeAt ? row.outcomeAt.toISOString() : null,
     movements: row.movements ?? [],
   };
 }

@@ -29,7 +29,7 @@ describe('buildPostalReportAttualeCsv', () => {
   it('include intestazioni e riga con stato/data correnti (ultimo elemento storico)', () => {
     const csv = buildPostalReportAttualeCsv(baseReport);
     const lines = csv.split('\n');
-    expect(lines[0]).toBe('"Codice Fiscale";"Nominativo";"IDPRO";"Stato Documento";"Data Stato";"Stato Consegna Poste";"Codice Consegna";"Data Consegna Poste";"ID Accettazione Poste";"Codice Errore";"Descrizione Errore";"Verifica Poste";"Data Consegna (Poste)";"Ultimo Movimento Poste";"Discrepanza GlobalCom/Poste"');
+    expect(lines[0]).toBe('"Codice Fiscale";"Nominativo";"IDPRO";"Stato Documento";"Data Stato";"Stato Consegna Poste";"Codice Consegna";"Data Consegna Poste";"ID Accettazione Poste";"Codice Errore";"Descrizione Errore";"Verifica Poste";"Data Esito Poste";"Ultimo Movimento Poste";"Discrepanza GlobalCom/Poste"');
     expect(lines[1]).toContain('"Consegnato"');
     expect(lines[1]).not.toContain('Esito App IO');
   });
@@ -89,7 +89,7 @@ describe('colonne verifica Poste', () => {
       postalStatus: 'NonConsegnato',
       postalDeliveryStatus: 'Indirizzo errato o inesatto',
       appIoOutcome: { success: true, error: null },
-      posteVerification: { status: 'delivered', checkCount: 3, deliveredAt: '2026-09-04T08:06:00.000Z', lastMovement: `SVIZZERA ${when}` },
+      posteVerification: { status: 'delivered', checkCount: 3, deliveredAt: '2026-09-04T08:06:00.000Z', outcomeAt: '2026-09-04T08:06:00.000Z', lastMovement: `SVIZZERA ${when}` },
       posteDiscrepancy: true,
     }],
   };
@@ -102,7 +102,7 @@ describe('colonne verifica Poste', () => {
 
   it('storico: stesse colonne', () => {
     const [header, line] = buildPostalReportStoricoCsv(discrepancyReport).split('\n');
-    expect(header).toContain('"Verifica Poste";"Data Consegna (Poste)";"Ultimo Movimento Poste";"Discrepanza GlobalCom/Poste"');
+    expect(header).toContain('"Verifica Poste";"Data Esito Poste";"Ultimo Movimento Poste";"Discrepanza GlobalCom/Poste"');
     expect(line).toContain('"SI"');
   });
 

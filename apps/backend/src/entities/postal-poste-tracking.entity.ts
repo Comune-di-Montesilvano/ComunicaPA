@@ -64,6 +64,10 @@ export class PostalPosteTracking {
   @Column({ name: 'delivered_at', type: 'timestamptz', nullable: true })
   deliveredAt!: Date | null;
 
+  /** Data esito Poste (consegna O ritorno al mittente) = data dell'ultimo movimento. */
+  @Column({ name: 'outcome_at', type: 'timestamptz', nullable: true })
+  outcomeAt!: Date | null;
+
   @Column({ type: 'jsonb', nullable: true })
   movements!: PosteTrackingMovement[] | null;
 

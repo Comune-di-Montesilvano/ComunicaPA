@@ -25,9 +25,16 @@ describe('PosteTrackingClient', () => {
     await expect(new PosteTrackingClient().track('X')).rejects.toMatchObject({ kind: 'network' });
   });
 
-  it('HTTP non 2xx → kind http', async () => {
+  it('HTTP 5xx → kind http', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('down', { status: 503 }));
     await expect(new PosteTrackingClient().track('X')).rejects.toMatchObject({ kind: 'http' });
+  });
+
+  it('HTTP 4xx (Poste limita le richieste con 400/403/429) → kind blocked', async () => {
+    for (const status of [400, 403, 429]) {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('no', { status }));
+      await expect(new PosteTrackingClient().track('X')).rejects.toMatchObject({ kind: 'blocked' });
+    }
   });
 
   it('body HTML (200) → kind invalid_body', async () => {

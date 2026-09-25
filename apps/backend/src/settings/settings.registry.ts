@@ -94,6 +94,11 @@ export const SETTING_DEFS = {
   // invii che GlobalCom chiude come NonConsegnato — kill-switch se
   // l'endpoint (non documentato) di poste.it cambia o va giù.
   'postalPosteTracking.enabled': { type: 'boolean', default: true },
+  // Pausa tra due chiamate a poste.it (+ variazione casuale fino al 30%):
+  // a 2 s Poste blocca dopo ~20 richieste (risponde 400).
+  'postalPosteTracking.intervalSeconds': { type: 'number', default: 15 },
+  // Pausa iniziale quando Poste blocca; raddoppia a ogni nuovo blocco fino a 4 ore.
+  'postalPosteTracking.cooldownMinutes': { type: 'number', default: 30 },
   'inad.test.purposeId': { type: 'string', default: '' },
   'inad.prod.purposeId': { type: 'string', default: '' },
   // Registro Imprese (PCAD-PDND, Unioncamere) — fonte del domicilio digitale
