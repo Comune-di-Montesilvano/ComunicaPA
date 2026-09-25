@@ -117,6 +117,8 @@ const STATUS_META: Record<string, { label: string; badge: string }> = {
   running: { label: 'In corso', badge: 'bg-warning text-dark' },
   checking_inad: { label: 'Verifica INAD', badge: 'bg-info' },
   sent: { label: 'Inviato', badge: 'bg-success' },
+  // Stato derivato (canali digitali): inviato e documento scaricato.
+  read: { label: 'Letto', badge: 'bg-primary' },
   success: { label: 'Riuscito', badge: 'bg-success' },
   completed: { label: 'Completata', badge: 'bg-success' },
   failed: { label: 'Fallito', badge: 'bg-danger' },
@@ -2809,7 +2811,7 @@ export function App(): React.JSX.Element {
   // in uso per gli altri pannelli di dettaglio campagna.
   const [pendingPecReview, setPendingPecReview] = useState<Array<{ recipientId: string; fullName: string | null; codiceFiscale: string; pecOriginale: string | null; pecTrovata: string | null }>>([]);
   const [pecReviewResolving, setPecReviewResolving] = useState<string | null>(null);
-  const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number; costCents?: number | null; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; posteVerificationStatus?: string | null; posteDeliveredAt?: string | null; protocolNumber?: number | null; protocolYear?: number | null; inadCheck?: { found: boolean; diverted: boolean } | null; signatureCheck?: { valid: boolean; reason: string | null } | null }> } | null>(null);
+  const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number; costCents?: number | null; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; posteVerificationStatus?: string | null; posteDeliveredAt?: string | null; sentAt?: string | null; firstReadAt?: string | null; attemptsCount?: number; lastError?: string | null; protocolNumber?: number | null; protocolYear?: number | null; inadCheck?: { found: boolean; diverted: boolean } | null; signatureCheck?: { valid: boolean; reason: string | null } | null }> } | null>(null);
   const [recipientsSearch, setRecipientsSearch] = useState('');
   const [recipientsPageNum, setRecipientsPageNum] = useState(1);
   const [recipientsStatusFilter, setRecipientsStatusFilter] = useState('');
@@ -13164,6 +13166,7 @@ export function App(): React.JSX.Element {
                       <option value="pending">In attesa</option>
                       <option value="queued">In coda</option>
                       <option value="sent">Inviato</option>
+                      <option value="read">Letto (email, PEC, App IO)</option>
                       <option value="failed">Fallito</option>
                       <option value="skipped">Saltato</option>
                     </select>
@@ -17530,6 +17533,8 @@ export function App(): React.JSX.Element {
                 <div className="alert alert-danger"><AlertTriangle /> {detailError}</div>
               ) : campaign ? (
                   <>
+                <div className="row g-3">
+                    <div className="col-12">
                   {(() => {
                     // Testata + barra dell'esito: ogni segmento è un filtro della tabella destinatari.
                     type FilterKind = 'status' | 'delivery' | 'postalDelivery';
@@ -17576,6 +17581,14 @@ export function App(): React.JSX.Element {
                         : b.status === 'FAILED'
                           ? seg('FAILED', 'Invio fallito', b.count, 'ko', 'status', 'failed')
                           : seg(b.status, SEND_STATUS_META[b.status]?.label ?? b.status, b.count, 'progress', 'delivery', b.status, stableColorForKey(b.status)));
+                    } else if (['EMAIL', 'PEC', 'APP_IO'].includes(campaign.channelType) && (recipientsFilterOptions?.statuses ?? []).length > 0) {
+                      // Canali digitali: gli inviati si dividono in letti (documento scaricato) e non ancora letti.
+                      const DIGITAL_RANK: Record<string, number> = { read: 0, sent: 1, queued: 2, processing: 3, pending: 4, pending_review: 5, skipped: 8, failed: 9 };
+                      const DIGITAL_TONE: Record<string, OutcomeTone> = { read: 'ok', sent: 'progress', failed: 'ko', skipped: 'muted' };
+                      segments = (recipientsFilterOptions?.statuses ?? [])
+                        .map((o) => (typeof o === 'string' ? { value: o, count: 0 } : o))
+                        .sort((a, b) => (DIGITAL_RANK[a.value] ?? 6) - (DIGITAL_RANK[b.value] ?? 6))
+                        .map((o) => seg(o.value, o.value === 'read' ? 'Letti' : o.value === 'sent' ? 'Inviati, non ancora letti' : (STATUS_META[o.value]?.label ?? o.value), o.count, DIGITAL_TONE[o.value] ?? 'muted', 'status', o.value));
                     } else {
                       const sent = Math.max(0, campaign.sentCount);
                       const failed = Math.max(0, campaign.failedCount);
@@ -17596,11 +17609,37 @@ export function App(): React.JSX.Element {
                     if (campaignPaymentTotal?.enabled) {
                       figures.push({ label: 'Importo pagoPA', value: formatEuroCents(campaignPaymentTotal.totalAmountCents), hint: `${campaignPaymentTotal.recipientsWithPaymentCount.toLocaleString('it-IT')} avvisi` });
                     }
-                    if (downloadCombinations) {
+                    // Canali digitali: la % di scaricati coincide con il segmento "Letti".
+                    if (downloadCombinations && !['EMAIL', 'PEC', 'APP_IO'].includes(campaign.channelType)) {
                       const ok = downloadCombinations.filter((c) => c.sentSuccessfully);
                       const sentOk = ok.reduce((sum, c) => sum + c.count, 0);
                       const notDl = ok.find((c) => c.channels.length === 0)?.count ?? 0;
                       if (sentOk > 0) figures.push({ label: 'Documento scaricato', value: `${Math.round(((sentOk - notDl) / sentOk) * 100)}%`, hint: `${(sentOk - notDl).toLocaleString('it-IT')} su ${sentOk.toLocaleString('it-IT')} notificati` });
+                    }
+                    // Grafici compatti accanto all'esito: i più utili per canale (il resto nei "Grafici di dettaglio").
+                    const asideCharts: React.ReactNode[] = [];
+                    if (campaign.channelType === 'POSTAL' && postalDeliveryStatusBreakdown && postalDeliveryStatusBreakdown.length > 0) {
+                      const deliveryData = postalDeliveryStatusBreakdown
+                        .map((item) => ({
+                          label: item.status ? (POSTAL_DELIVERY_STATUS_META[item.status]?.label ?? item.status) : 'In corso',
+                          value: item.count,
+                          color: item.status ? (POSTAL_DELIVERY_STATUS_PIE_COLORS[item.status] ?? stableColorForKey(item.status)) : '#adb5bd',
+                        }))
+                        .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+                      asideCharts.push(<div key="recapito">{renderProgressListCard('Recapito Poste', deliveryData, 'Nessun dato recapito')}</div>);
+                    }
+                    if (downloadCombinations && downloadCombinations.some((c) => c.sentSuccessfully)) {
+                      const dlData = downloadCombinations
+                        .filter((c) => c.sentSuccessfully)
+                        .map((c) => ({ label: downloadComboLabel(c.channels), value: c.count, color: c.channels.length === 0 ? '#adb5bd' : stableColorForKey(c.channels.join('+')) }))
+                        .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+                      asideCharts.push(<div key="download">{renderDonutCard('Documenti scaricati', dlData, 'Nessun dato download')}</div>);
+                    }
+                    if (asideCharts.length < 2 && effectiveChannelBreakdown && Object.keys(effectiveChannelBreakdown).length > 1) {
+                      const effData = Object.entries(effectiveChannelBreakdown)
+                        .map(([key, value]) => ({ label: channelLabel(key), value, color: EFFECTIVE_CHANNEL_COLORS[key] ?? stableColorForKey(key) }))
+                        .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+                      asideCharts.push(<div key="canale">{renderDonutCard('Canale effettivo', effData, 'Nessun dato')}</div>);
                     }
                     return (
                       <CampaignSummary
@@ -17619,11 +17658,10 @@ export function App(): React.JSX.Element {
                         segments={segments}
                         note={note}
                         figures={figures}
+                        aside={asideCharts.length > 0 ? asideCharts : undefined}
                       />
                     );
                   })()}
-                <div className="row g-3">
-                    <div className="col-12">
                     {campaign.status === 'draft' && (
                       <div className="card shadow-sm mb-4">
                         <div className="card-body text-center py-4">
@@ -18051,6 +18089,8 @@ export function App(): React.JSX.Element {
                               </div>
                             );
                           })()}
+                          {/* Canali digitali: "con download" coincide con lo stato Letto (filtro Stato notifica). */}
+                          {!['EMAIL', 'PEC', 'APP_IO'].includes(campaign.channelType) && (
                           <div style={{ flex: '1 1 0', minWidth: 0 }}>
                             <label className="form-label small text-muted mb-1" htmlFor="rf-download">Download</label>
                             <select
@@ -18071,6 +18111,7 @@ export function App(): React.JSX.Element {
                               <option value="no">Senza download</option>
                             </select>
                           </div>
+                          )}
                           {recipientsFilterOptions?.downloadChannelCombos && recipientsFilterOptions.downloadChannelCombos.length > 0 && (
                             <div style={{ flex: '1 1 0', minWidth: 0 }}>
                               <label className="form-label small text-muted mb-1" htmlFor="rf-download-channel">Canale download</label>
@@ -18107,7 +18148,7 @@ export function App(): React.JSX.Element {
                           const hasCost = (campaignCost?.totalCostCents ?? 0) > 0;
                           return (
                           <>
-                            <div className="table-responsive" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                            <div className="table-responsive" style={{ maxHeight: 'max(420px, calc(100vh - 260px))', overflowY: 'auto' }}>
                               <table className="table table-sm table-striped table-hover align-middle mb-0" style={{ fontSize: '0.8rem' }}>
                                 <thead className="table-light sticky-top">
                                   <tr>
@@ -18132,6 +18173,14 @@ export function App(): React.JSX.Element {
                                         )}
                                       </div>
                                     </th>
+                                    {['EMAIL', 'PEC', 'APP_IO'].includes(campaign.channelType) && (
+                                      <>
+                                        <th>Inviato il</th>
+                                        <th>Letto il</th>
+                                        <th className="text-center">Tentativi</th>
+                                        <th>Errore</th>
+                                      </>
+                                    )}
                                     {campaign.channelType === 'SEND' ? (
                                        <>
                                          <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('iun')}>
@@ -18345,13 +18394,23 @@ export function App(): React.JSX.Element {
                                         </div>
                                       </td>
                                       <td>
-                                        <StatusBadge status={r.status} />
+                                        <StatusBadge status={['EMAIL', 'PEC', 'APP_IO'].includes(campaign.channelType) && r.status === 'sent' && (r.downloadCount ?? 0) > 0 ? 'read' : r.status} />
                                         {r.signatureCheck?.valid === false && (
                                           <span className="badge bg-danger-subtle text-danger border border-danger-subtle ms-1" title={r.signatureCheck.reason ?? ''}>
                                             Firma non valida
                                           </span>
                                         )}
                                       </td>
+                                      {['EMAIL', 'PEC', 'APP_IO'].includes(campaign.channelType) && (
+                                        <>
+                                          <td className="small text-muted text-nowrap">{r.sentAt ? new Date(r.sentAt).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                                          <td className="small text-nowrap">{r.firstReadAt ? new Date(r.firstReadAt).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : <span className="text-muted">—</span>}</td>
+                                          <td className="small text-center">{r.attemptsCount ?? '—'}</td>
+                                          <td className="small text-danger" style={{ maxWidth: '22rem' }}>
+                                            {r.lastError ? <span className="d-inline-block text-truncate" style={{ maxWidth: '22rem' }} title={r.lastError}>{r.lastError}</span> : <span className="text-muted">—</span>}
+                                          </td>
+                                        </>
+                                      )}
                                       {campaign.channelType === 'SEND' ? (
                                         <>
                                           <td className="small fw-mono">{r.iun || '—'}</td>

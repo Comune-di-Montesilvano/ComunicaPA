@@ -29,6 +29,8 @@ interface Props {
   segments: OutcomeSegment[];
   note?: React.ReactNode;
   figures: KeyFigure[];
+  /** Grafici compatti accanto all'esito. */
+  aside?: React.ReactNode;
 }
 
 function pct(n: number, total: number): string {
@@ -42,8 +44,11 @@ function pct(n: number, total: number): string {
  * barra. Ogni segmento è un filtro della tabella destinatari (click =
  * applica, di nuovo = toglie), così il riepilogo porta dritto ai casi.
  */
-export function CampaignSummary({ title, meta, total, totalLabel, segments, note, figures }: Props): React.JSX.Element {
+export function CampaignSummary({ title, meta, total, totalLabel, segments, note, figures, aside }: Props): React.JSX.Element {
   const visible = segments.filter((s) => s.count > 0);
+  // Percentuali sulla somma dei segmenti: sempre coerenti con la barra anche
+  // se il totale della campagna non è allineato (es. destinatari aggiunti dopo).
+  const segTotal = visible.reduce((sum, s) => sum + s.count, 0) || total;
   return (
     <section className="cd-summary" aria-label="Riepilogo campagna">
       <header className="cd-head">
@@ -51,6 +56,8 @@ export function CampaignSummary({ title, meta, total, totalLabel, segments, note
         <div className="cd-meta">{meta}</div>
       </header>
 
+      <div className={`cd-body${aside ? ' has-aside' : ''}`}>
+      <div className="cd-main">
       <div className="cd-outcome">
         <p className="cd-total">
           <span className="cd-total-n">{total.toLocaleString('it-IT')}</span> {totalLabel}
@@ -65,7 +72,7 @@ export function CampaignSummary({ title, meta, total, totalLabel, segments, note
                   className={`cd-seg cd-tone-${s.tone}${s.active ? ' is-active' : ''}`}
                   style={{ flexGrow: s.count, ...(s.color ? { ['--cd-seg' as string]: s.color } : {}) }}
                   aria-pressed={!!s.active}
-                  title={`${s.label}: ${s.count.toLocaleString('it-IT')} (${pct(s.count, total)}) — clic per filtrare`}
+                  title={`${s.label}: ${s.count.toLocaleString('it-IT')} (${pct(s.count, segTotal)}) — clic per filtrare`}
                   onClick={s.onSelect}
                   disabled={!s.onSelect}
                 />
@@ -85,7 +92,7 @@ export function CampaignSummary({ title, meta, total, totalLabel, segments, note
                     <span className="cd-swatch" aria-hidden="true" />
                     <span className="cd-legend-label">{s.label}</span>
                     <span className="cd-legend-n">{s.count.toLocaleString('it-IT')}</span>
-                    <span className="cd-legend-pct">{pct(s.count, total)}</span>
+                    <span className="cd-legend-pct">{pct(s.count, segTotal)}</span>
                   </button>
                 </li>
               ))}
@@ -106,6 +113,9 @@ export function CampaignSummary({ title, meta, total, totalLabel, segments, note
           ))}
         </dl>
       )}
+      </div>
+      {aside && <div className="cd-aside">{aside}</div>}
+      </div>
     </section>
   );
 }
