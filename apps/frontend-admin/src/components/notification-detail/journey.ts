@@ -39,6 +39,8 @@ export interface JourneyAttempt {
 
 export interface JourneyDetail {
   recipient?: { status: string };
+  /** Solo POSTAL: esito legale calcolato dal backend. */
+  legalOutcome?: { outcome: string; reason: string | null; at: string | null } | null;
   campaign: { channelType: string };
   attempts: JourneyAttempt[];
   downloads: Array<{ channel: string; attachmentIndex: number; downloadedAt: string }>;
@@ -183,6 +185,24 @@ export function computeVerdict(d: JourneyDetail, labels: JourneyLabels): Verdict
   if (!last) return d.recipient?.status === 'sent' ? { ...base, headline: 'Inviata' } : base;
   if (last.status === 'failed') {
     return { ...base, headline: 'Invio non riuscito', tone: 'ko', when: last.createdAt, source: `su ${labels.channel(last.channelType)}`, note: last.errorMessage };
+  }
+
+  // POSTAL: il verdetto segue l'esito legale calcolato dal backend (compiuta
+  // giacenza e rifiuto valgono consegna, via PEC idem). In corso / non
+  // classificato ricadono sulla logica GlobalCom/Poste sotto.
+  const lo = d.campaign.channelType === 'POSTAL' ? d.legalOutcome : null;
+  if (lo?.outcome === 'delivered') {
+    const source = lo.reason === 'Verifica Poste' ? 'secondo Poste Italiane' : lo.reason === 'Via PEC' ? 'via PEC (domicilio digitale)' : 'secondo GlobalCom';
+    return { headline: 'Consegnata', tone: 'ok', when: lo.at, source, note: lo.reason === 'Verifica Poste' || lo.reason === 'Via PEC' ? null : lo.reason, discrepancy: lo.reason === 'Verifica Poste' && last.postalStatus !== 'Consegnato' };
+  }
+  if (lo?.outcome === 'not_delivered') {
+    return { headline: 'Non consegnata', tone: 'ko', when: last.postalDeliveryDate ?? null, source: 'secondo GlobalCom', note: lo.reason, discrepancy: false };
+  }
+  if (lo?.outcome === 'no_legal_value') {
+    return { headline: 'Solo App IO', tone: 'warn', when: last.sentAt ?? last.createdAt, source: 'senza valore legale', note: null, discrepancy: false };
+  }
+  if (lo?.outcome === 'no_ar') {
+    return { headline: 'Inviata senza AR', tone: 'neutral', when: last.sentAt ?? last.createdAt, source: 'nessun esito di consegna', note: null, discrepancy: false };
   }
 
   if (d.campaign.channelType === 'POSTAL' && last.channelType === 'POSTAL') {

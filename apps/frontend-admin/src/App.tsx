@@ -288,7 +288,45 @@ const POSTAL_DELIVERY_STATUS_META: Record<string, { label: string; badge: string
   'Sconosciuto': { label: 'Destinatario sconosciuto', badge: 'bg-danger-subtle text-danger-emphasis border', icon: UserX },
   'Trasferito': { label: 'Destinatario trasferito', badge: 'bg-danger-subtle text-danger-emphasis border', icon: MapPin },
   'Deceduto': { label: 'Destinatario deceduto', badge: 'bg-secondary-subtle text-secondary-emphasis border', icon: X },
+  // Valori reali di StatoConsegna GlobalCom (verificati in produzione).
+  // Compiuta giacenza e rifiuto in verde: per legge valgono consegna.
+  'Consegnato a Domicilio': { label: 'Consegnato a domicilio', badge: 'bg-success-subtle text-success-emphasis border', icon: CheckCircle2 },
+  'Consegnato a Sportello': { label: 'Consegnato a sportello', badge: 'bg-success-subtle text-success-emphasis border', icon: CheckCircle2 },
+  'Consegnato in Digitale': { label: 'Consegnato in digitale', badge: 'bg-success-subtle text-success-emphasis border', icon: CheckCircle2 },
+  'Compiuta Giacenza': { label: 'Compiuta giacenza', badge: 'bg-success-subtle text-success-emphasis border', icon: CheckCircle2 },
+  'Invio Rifiutato': { label: 'Invio rifiutato', badge: 'bg-success-subtle text-success-emphasis border', icon: CheckCircle2 },
+  'In giacenza': { label: 'In giacenza', badge: 'bg-warning-subtle text-warning-emphasis border', icon: Clock },
 };
+
+// Esito legale POSTAL ("Stato Documento"): unico registro etichette/colori,
+// codici calcolati dal backend (campaigns/postal-legal-outcome.util.ts).
+const POSTAL_LEGAL_OUTCOME_META: Record<string, { label: string; badge: string; color: string; tone: OutcomeTone; icon: React.ComponentType<{ className?: string; size?: number }> }> = {
+  delivered: { label: 'Consegnato', badge: 'bg-success-subtle text-success-emphasis border', color: '#198754', tone: 'ok', icon: CheckCircle2 },
+  not_delivered: { label: 'Non consegnato', badge: 'bg-danger-subtle text-danger-emphasis border', color: '#dc3545', tone: 'ko', icon: XCircle },
+  in_progress: { label: 'In corso', badge: 'bg-light text-dark border', color: '#adb5bd', tone: 'muted', icon: Clock },
+  no_legal_value: { label: 'Senza valore legale (solo App IO)', badge: 'bg-info-subtle text-info-emphasis border', color: '#0dcaf0', tone: 'alt', icon: Smartphone },
+  no_ar: { label: 'Senza AR', badge: 'bg-secondary-subtle text-secondary-emphasis border', color: '#6c757d', tone: 'muted', icon: HelpCircle },
+  unclassified: { label: 'Non classificato', badge: 'bg-secondary-subtle text-secondary-emphasis border', color: '#6c757d', tone: 'muted', icon: HelpCircle },
+};
+const POSTAL_LEGAL_OUTCOME_RANK: Record<string, number> = { delivered: 0, not_delivered: 1, in_progress: 2, no_legal_value: 3, no_ar: 4, unclassified: 5 };
+
+// Cella "Stato Documento": esito legale con motivo e data legale; stato
+// GlobalCom grezzo nel tooltip.
+function PostalLegalOutcomeBadge({ outcome, reason, at, postalStatus }: { outcome?: string | null; reason?: string | null; at?: string | null; postalStatus?: string | null }): React.JSX.Element {
+  if (!outcome) return <span className="badge bg-light text-dark border">—</span>;
+  const meta = POSTAL_LEGAL_OUTCOME_META[outcome] ?? POSTAL_LEGAL_OUTCOME_META['unclassified']!;
+  const title = postalStatus ? `GlobalCom: ${POSTAL_STATUS_META[postalStatus]?.label ?? postalStatus}` : undefined;
+  return (
+    <div className="d-inline-flex flex-column align-items-start gap-1" title={title}>
+      <span className={`badge ${meta.badge}`}><meta.icon className="me-1" size={14} />{meta.label}</span>
+      {(reason || at) && (
+        <span className="text-muted" style={{ fontSize: '0.7rem' }}>
+          {reason}{reason && at ? ' · ' : ''}{at ? new Date(at).toLocaleDateString('it-IT') : ''}
+        </span>
+      )}
+    </div>
+  );
+}
 
 function PostalDeliveryStatusBadge({
   status,
@@ -391,6 +429,12 @@ const POSTAL_DELIVERY_STATUS_PIE_COLORS: Record<string, string> = {
   'Sconosciuto': '#dc3545',
   'Trasferito': '#dc3545',
   'Deceduto': '#6c757d',
+  'Consegnato a Domicilio': '#198754',
+  'Consegnato a Sportello': '#198754',
+  'Consegnato in Digitale': '#198754',
+  'Compiuta Giacenza': '#198754',
+  'Invio Rifiutato': '#198754',
+  'In giacenza': '#ffc107',
 };
 
 // Pannello anteprima live destinatari (canale + tab App IO, paging record CSV,
@@ -2819,7 +2863,7 @@ export function App(): React.JSX.Element {
   // in uso per gli altri pannelli di dettaglio campagna.
   const [pendingPecReview, setPendingPecReview] = useState<Array<{ recipientId: string; fullName: string | null; codiceFiscale: string; pecOriginale: string | null; pecTrovata: string | null }>>([]);
   const [pecReviewResolving, setPecReviewResolving] = useState<string | null>(null);
-  const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number; costCents?: number | null; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; posteVerificationStatus?: string | null; posteDeliveredAt?: string | null; sentAt?: string | null; firstReadAt?: string | null; attemptsCount?: number; lastError?: string | null; protocolNumber?: number | null; protocolYear?: number | null; inadCheck?: { found: boolean; diverted: boolean } | null; signatureCheck?: { valid: boolean; reason: string | null } | null }> } | null>(null);
+  const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number; costCents?: number | null; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; posteVerificationStatus?: string | null; posteDeliveredAt?: string | null; legalOutcome?: string | null; legalOutcomeReason?: string | null; legalOutcomeAt?: string | null; sentAt?: string | null; firstReadAt?: string | null; attemptsCount?: number; lastError?: string | null; protocolNumber?: number | null; protocolYear?: number | null; inadCheck?: { found: boolean; diverted: boolean } | null; signatureCheck?: { valid: boolean; reason: string | null } | null }> } | null>(null);
   const [recipientsSearch, setRecipientsSearch] = useState('');
   const [recipientsPageNum, setRecipientsPageNum] = useState(1);
   const [recipientsStatusFilter, setRecipientsStatusFilter] = useState('');
@@ -17649,18 +17693,17 @@ export function App(): React.JSX.Element {
                     const seg = (key: string, label: string, count: number, tone: OutcomeTone, kind: FilterKind, value: string, color?: string): OutcomeSegment => ({
                       key, label, count, tone, color, active: currentFilter(kind) === value, onSelect: toggleFilter(kind, value),
                     });
-                    const POSTAL_RANK: Record<string, number> = { Consegnato: 0, NonConsegnato: 80, ConsegnaParziale: 70, Errore: 85, FAILED: 90, Eliminato: 95, DirottatoAPec: 60, AppIoSostituito: 65 };
-                    const POSTAL_TONE: Record<string, OutcomeTone> = { Consegnato: 'ok', NonConsegnato: 'ko', ConsegnaParziale: 'warn', Errore: 'ko', FAILED: 'ko', Eliminato: 'muted', DirottatoAPec: 'alt', AppIoSostituito: 'alt' };
                     let segments: OutcomeSegment[];
                     let note: React.ReactNode = null;
-                    if (campaign.channelType === 'POSTAL' && postalStatusBreakdown) {
-                      segments = [...postalStatusBreakdown]
-                        .sort((a, b) => (POSTAL_RANK[a.status ?? ''] ?? 30) - (POSTAL_RANK[b.status ?? ''] ?? 30))
-                        .map((b) => b.status === null
-                          ? seg('pending', 'In corso', b.count, 'muted', 'delivery', PENDING_DELIVERY_STATUS_SENTINEL, '#adb5bd')
-                          : b.status === 'FAILED'
-                            ? seg('FAILED', 'Invio fallito', b.count, 'ko', 'status', 'failed', POSTAL_STATUS_PIE_COLORS['FAILED'])
-                            : seg(b.status, POSTAL_STATUS_META[b.status]?.label ?? POSTAL_DELIVERY_STATUS_META[b.status]?.label ?? b.status, b.count, POSTAL_TONE[b.status] ?? 'progress', 'delivery', b.status, POSTAL_STATUS_PIE_COLORS[b.status] ?? POSTAL_DELIVERY_STATUS_PIE_COLORS[b.status] ?? stableColorForKey(b.status)));
+                    if (campaign.channelType === 'POSTAL' && (recipientsFilterOptions?.deliveryStatuses ?? []).length > 0) {
+                      // Stato Documento = esito legale (conteggi dal backend, stesso valore del filtro).
+                      segments = (recipientsFilterOptions?.deliveryStatuses ?? [])
+                        .filter((o): o is { value: string; count: number } => typeof o !== 'string')
+                        .sort((a, b) => (POSTAL_LEGAL_OUTCOME_RANK[a.value] ?? 9) - (POSTAL_LEGAL_OUTCOME_RANK[b.value] ?? 9))
+                        .map((o) => {
+                          const meta = POSTAL_LEGAL_OUTCOME_META[o.value];
+                          return seg(o.value, meta?.label ?? o.value, o.count, meta?.tone ?? 'muted', 'delivery', o.value, meta?.color ?? stableColorForKey(o.value));
+                        });
                       const posteDelivered = (postalDeliveryStatusBreakdown ?? []).find((b) => b.status === 'ConsegnatoVerificaPoste')?.count ?? 0;
                       if (posteDelivered > 0) {
                         const active = recipientsPostalDeliveryStatusFilter === 'ConsegnatoVerificaPoste';
@@ -18034,7 +18077,9 @@ export function App(): React.JSX.Element {
                               recipientsFilterOptions?.deliveryStatuses,
                               (s) => s === PENDING_DELIVERY_STATUS_SENTINEL
                                 ? (campaign.channelType === 'SEND' ? 'In attesa' : 'In corso')
-                                : ((campaign.channelType === 'SEND' ? SEND_STATUS_META[s]?.label : POSTAL_STATUS_META[s]?.label) ?? s),
+                                : campaign.channelType === 'POSTAL'
+                                  ? (POSTAL_LEGAL_OUTCOME_META[s]?.label ?? s)
+                                  : ((campaign.channelType === 'SEND' ? SEND_STATUS_META[s]?.label : POSTAL_STATUS_META[s]?.label) ?? s),
                             );
 
                             const postalDeliveryStatusOptions = getSortedFilterOptions(
@@ -18544,7 +18589,7 @@ export function App(): React.JSX.Element {
                                         ) : campaign.channelConfig?.['protocolla'] ? (
                                           <>
                                             <td className="small">{r.protocolNumber ? `${r.protocolNumber}/${r.protocolYear}` : '—'}</td>
-                                            <td className="small"><PostalStatusBadge status={r.postalStatus} /></td>
+                                            <td className="small"><PostalLegalOutcomeBadge outcome={r.legalOutcome} reason={r.legalOutcomeReason} at={r.legalOutcomeAt} postalStatus={r.postalStatus} /></td>
                                             <td className="small"><PostalDeliveryWithPosteBadge postalStatus={r.postalStatus} postalDeliveryStatus={r.postalDeliveryStatus} postalDeliveryCode={r.postalDeliveryCode} posteVerificationStatus={r.posteVerificationStatus} posteDeliveredAt={r.posteDeliveredAt} /></td>
                                             <td className="small text-muted">{r.postalStatusUpdatedAt ? new Date(r.postalStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
                                             {downloadCell}
@@ -18552,7 +18597,7 @@ export function App(): React.JSX.Element {
                                           </>
                                         ) : (
                                           <>
-                                            <td className="small"><PostalStatusBadge status={r.postalStatus} /></td>
+                                            <td className="small"><PostalLegalOutcomeBadge outcome={r.legalOutcome} reason={r.legalOutcomeReason} at={r.legalOutcomeAt} postalStatus={r.postalStatus} /></td>
                                             <td className="small"><PostalDeliveryWithPosteBadge postalStatus={r.postalStatus} postalDeliveryStatus={r.postalDeliveryStatus} postalDeliveryCode={r.postalDeliveryCode} posteVerificationStatus={r.posteVerificationStatus} posteDeliveredAt={r.posteDeliveredAt} /></td>
                                             <td className="small text-muted">{r.postalStatusUpdatedAt ? new Date(r.postalStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
                                             {downloadCell}
@@ -18635,13 +18680,13 @@ export function App(): React.JSX.Element {
                                 return renderDonutCard("Esito Invio", pieData, "Nessun dato esito", true);
                               }
 
-                              const statusPieData = (postalStatusBreakdown ?? [])
-                                .map((item) => ({
-                                  label: item.status ? (POSTAL_STATUS_META[item.status]?.label ?? item.status) : 'In corso',
-                                  value: item.count,
-                                  // '#adb5bd' (grigio chiaro), mai '#6c757d' (Accettato/Sospeso/Eliminato) —
-                                  // stesso colore rendeva "In corso" e "Accettato" indistinguibili in legenda.
-                                  color: item.status ? (POSTAL_STATUS_PIE_COLORS[item.status] ?? stableColorForKey(item.status)) : '#adb5bd',
+                              // Stato Documento = esito legale (stessi conteggi del filtro e della barra).
+                              const statusPieData = (recipientsFilterOptions?.deliveryStatuses ?? [])
+                                .filter((o): o is { value: string; count: number } => typeof o !== 'string' && o.count > 0)
+                                .map((o) => ({
+                                  label: POSTAL_LEGAL_OUTCOME_META[o.value]?.label ?? o.value,
+                                  value: o.count,
+                                  color: POSTAL_LEGAL_OUTCOME_META[o.value]?.color ?? stableColorForKey(o.value),
                                 }))
                                 .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
 
