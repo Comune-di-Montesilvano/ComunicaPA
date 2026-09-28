@@ -40,6 +40,23 @@ async function bootstrap(): Promise<void> {
       // un'istanza CON DSN configurata avrebbe una semantica di failure
       // diversa da una SENZA, per lo stesso identico codice applicativo.
       integrations: [Sentry.onUnhandledRejectionIntegration({ mode: 'strict' })],
+      // Sentry v11 ha sostituito sendDefaultPii (default false) con
+      // dataCollection, i cui default sono quasi tutti attivi: body/header
+      // HTTP, argomenti dei job BullMQ, variabili locali negli stack frame,
+      // dati delle query DB, IP. Qui passano CF, PEC, indirizzi e token —
+      // tutto spento, stesso comportamento di v10.
+      dataCollection: {
+        userInfo: false,
+        cookies: false,
+        httpHeaders: false,
+        httpBodies: [],
+        urlQueryParams: false,
+        graphQL: { document: false, variables: false },
+        genAI: { inputs: false, outputs: false },
+        databaseQueryData: false,
+        queues: false,
+        stackFrameVariables: false,
+      },
     });
   }
 
