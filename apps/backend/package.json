@@ -31,7 +31,7 @@
     "pg": "^8.23.0",
     "@nestjs/bullmq": "^12.0.0",
     "@nestjs/schedule": "^12.0.2",
-    "@sentry/node": "^10.75.0",
+    "@sentry/node": "^11.0.0",
     "bullmq": "^6.3.6",
     "csv-parse": "^7.0.2",
     "ioredis": "^6.0.0",
