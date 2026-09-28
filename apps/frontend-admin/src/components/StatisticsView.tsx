@@ -29,7 +29,7 @@ interface CostAnalytics {
   postal: { totalCostCents: number; count: number; avgCostCents: number; components: { stampaCents: number; postaleCents: number; arCents: number }; byProduct: CostByKey[]; domestic: CostBucket; foreign: CostBucket; pendingCount: number };
   monthly: Array<{ month: string; sendDigitalCents: number; sendAnalogCents: number; postalCents: number }>;
   topCampaigns: Array<{ campaignId: string; campaignName: string; channelType: string; costCents: number; costedCount: number; avgCostCents: number }>;
-  savings: { sendCents: number; sendDigitalCount: number; sendNotEstimableCount: number; postalCents: number; postalDivertedCount: number; postalNotEstimableCount: number };
+  savings: { sendCents: number; sendDigitalCount: number; sendEstimatedCount: number; sendNotEstimableCount: number; postalCents: number; postalDivertedCount: number; postalNotEstimableCount: number };
 }
 
 interface Props {
@@ -278,7 +278,7 @@ export function StatisticsView({ apiFetch, onOpenCampaign, formatEuroCents }: Pr
             <Kpi icon={<Printer size={14} />} label="Postalizzazione" value={formatEuroCents(costs.postal.totalCostCents)}
               sub={<>{plural(costs.postal.count, 'spedizione', 'spedizioni')} · media <strong>{formatEuroCents(costs.postal.avgCostCents)}</strong></>} />
             <Kpi icon={<PiggyBank size={14} />} label="Risparmio stimato" value={formatEuroCents(totalSaving)} valueColor="var(--stx-good)"
-              title={'Spedizioni cartacee evitate, valorizzate al costo medio della stessa campagna (media del periodo se la campagna non ha riferimenti).\n'
+              title={'Spedizioni cartacee evitate, valorizzate al costo medio della stessa campagna (SEND senza cartaceo in campagna: media degli ultimi 100 invii cartacei SEND; Postalizzazione: media del periodo).\n'
                 + `SEND: ${fmt(costs.savings.sendDigitalCount)} notifiche recapitate in digitale × spedizione cartacea media.\n`
                 + `Postalizzazione: ${fmt(costs.savings.postalDivertedCount)} lettere dirottate su domicilio digitale × costo medio lettera.`}
               sub={<>SEND <strong>{formatEuroCents(costs.savings.sendCents)}</strong> · Posta <strong>{formatEuroCents(costs.savings.postalCents)}</strong></>} />
@@ -328,8 +328,8 @@ export function StatisticsView({ apiFetch, onOpenCampaign, formatEuroCents }: Pr
                       <p className="stx-note" style={{ marginTop: '0.9rem' }}>
                         <PiggyBank size={12} />
                         {costs.savings.sendNotEstimableCount === sendDigital!.count
-                          ? <>Risparmio non stimabile: nessuna spedizione cartacea di riferimento nel periodo.</>
-                          : <>{plural(sendDigital!.count, 'notifica recapitata in digitale ha', 'notifiche recapitate in digitale hanno')} evitato la spedizione cartacea: circa {formatEuroCents(costs.savings.sendCents)} risparmiati.</>}
+                          ? <>Risparmio non stimabile: nessuna spedizione cartacea SEND di riferimento.</>
+                          : <>{plural(sendDigital!.count, 'notifica recapitata in digitale ha', 'notifiche recapitate in digitale hanno')} evitato la spedizione cartacea: circa {formatEuroCents(costs.savings.sendCents)} risparmiati{costs.savings.sendEstimatedCount > 0 ? ` (${fmt(costs.savings.sendEstimatedCount)} stimate sulla media degli ultimi 100 invii cartacei)` : ''}.</>}
                       </p>
                     )}
                   </>

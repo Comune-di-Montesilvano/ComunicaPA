@@ -230,10 +230,11 @@ export interface CampaignCostSavingsDto {
    * NON è sempre un risparmio "da dirottamento", la UI deve etichettarlo di
    * conseguenza (bug reale corretto: label unica "da dirottamento" mostrata
    * anche per SEND):
-   * - SEND: per destinatario, `send.digitalBaseFeeCents` (costo nozionale di
-   *   un invio tradizionale) meno il costo SEND realmente sostenuto — non ha
-   *   nulla a che fare con INAD/dirottamento (SEND risolve il domicilio da
-   *   sé, vedi matrice comportamenti campagne).
+   * - SEND: notifiche recapitate in digitale × spedizione cartacea evitata
+   *   (media dei cartacei della campagna, oppure degli ultimi 100 invii
+   *   cartacei SEND se la campagna non ne ha — vedi `sendEstimatedCount`).
+   *   Non ha nulla a che fare con INAD/dirottamento (SEND risolve il
+   *   domicilio da sé). Falliti/non calcolati non contano.
    * - POSTAL: costo medio delle spedizioni POSTAL realmente inviate in
    *   questa campagna, moltiplicato per il numero di destinatari dirottati
    *   (INAD su PEC, o App IO esclusiva riuscita) — questo sì è un risparmio
@@ -242,6 +243,8 @@ export interface CampaignCostSavingsDto {
   totalSavingCents: number;
   /** Numero di destinatari POSTAL dirottati per cui il risparmio non è stimabile (mostrato N/D in UI). */
   postalNotEstimableCount: number;
+  /** Solo SEND: digitali valorizzati con la media degli ultimi invii cartacei (campagna senza cartaceo proprio) — la UI lo segnala come stima. */
+  sendEstimatedCount?: number;
 }
 
 export interface CampaignPaymentTotalDto {

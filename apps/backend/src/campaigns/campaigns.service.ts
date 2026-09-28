@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Not, IsNull, Repository } from 'typeorm';
+import { In, Not, IsNull, Repository, type SelectQueryBuilder } from 'typeorm';
 import { createReadStream } from 'fs';
 import { unlink } from 'fs/promises';
 import { parse } from 'csv-parse';
@@ -33,7 +33,7 @@ import type { TestSendDto } from './dto/test-send.dto.js';
 import type { CampaignStatsDto, RecipientStatDto, RecipientStatsPageDto, ChannelBreakdownDto, EffectiveChannelBreakdownDto, DownloadCombinationDto, DownloadCombinationStatsDto, FailureRowDto, FailureGroupDto, DownloadReportDto, SendStatusBreakdownDto, SendReportDto, SendReportRowDto, PostalStatusBreakdownDto, PostalReportDto, PostalReportRowDto, CampaignCostDto, CampaignCostSavingsDto, CampaignPaymentTotalDto, ExternalDeliveryStatusDto } from './dto/campaign-stats.dto.js';
 import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.dto.js';
 import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util.js';
-import { buildCostAnalytics, type CostAnalyticsDto, type CostAttemptRow } from './cost-analytics.util.js';
+import { buildCostAnalytics, sendShipCentsOf, type CostAnalyticsDto, type CostAttemptRow } from './cost-analytics.util.js';
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto.js';
 import type { NotificationChannel, NotificationJobData, OperatorRole } from '@comunicapa/shared-types';
 import { matchCountry, abbreviateLongMunicipality } from '@comunicapa/shared-types';
@@ -2048,27 +2048,14 @@ export class CampaignsService {
     };
   }
 
-  /** Risparmio SEND stimato nel periodo: costo nominale (base fee digitale) meno costo reale, per campagna. */
+  /** Risparmio SEND stimato nel periodo: stessa stima della vista Statistiche (buildCostAnalytics). */
   private async computeSendSavingCents(range: { sql: string; params: Record<string, string> }): Promise<number> {
-    const savingRow = await this.recipientRepo
-      .createQueryBuilder('r')
-      .innerJoin('r.campaign', 'c')
-      .leftJoin('r.attempts', 'a', "a.channel_type = 'SEND'")
-      .select('c.id', 'campaignId')
-      .addSelect('COALESCE(SUM(a.costCents), 0)', 'actualCostCents')
-      .addSelect('COUNT(DISTINCT r.id)', 'recipientCount')
-      .where("c.channelType = 'SEND'")
+    const rows = await this.loadCostRows((qb) => qb
+      .andWhere("a.channelType = 'SEND'")
       .andWhere(range.sql, range.params)
-      .andWhere('c.isTest = false')
-      .groupBy('c.id')
-      .getRawMany<{ campaignId: string; actualCostCents: string; recipientCount: string }>();
-
-    const nominalBaseFeeCents = await this.settings.get<number>('send.digitalBaseFeeCents');
-    return savingRow.reduce((sum, row) => {
-      const nominal = nominalBaseFeeCents * Number(row.recipientCount);
-      const saving = nominal - Number(row.actualCostCents);
-      return saving > 0 ? sum + saving : sum;
-    }, 0);
+      .andWhere('c.isTest = false'));
+    const analytics = buildCostAnalytics(rows, { postalDivertedByCampaign: {}, sendFallbackShipCents: await this.recentSendShipAvgCents() });
+    return analytics.savings.sendCents;
   }
 
   /**
@@ -2079,23 +2066,10 @@ export class CampaignsService {
   async getCostAnalytics(dateFrom?: string, dateTo?: string): Promise<CostAnalyticsDto> {
     const range = buildDateRangeWhere('c', dateFrom, dateTo);
 
-    const rows = await this.attemptRepo
-      .createQueryBuilder('a')
-      .innerJoin('a.recipient', 'r')
-      .innerJoin('r.campaign', 'c')
-      .select('a.channelType', 'channelType')
-      .addSelect('a.status', 'status')
-      .addSelect('a.costCents', 'costCents')
-      .addSelect('a.costBreakdown', 'costBreakdown')
-      .addSelect('a.sendDigitalDomicile', 'sendDigitalDomicile')
-      .addSelect('a.postalStatus', 'postalStatus')
-      .addSelect('c.id', 'campaignId')
-      .addSelect('c.name', 'campaignName')
-      .addSelect("to_char(date_trunc('month', c.createdAt), 'YYYY-MM')", 'month')
-      .where('a.channelType IN (:...channels)', { channels: ['SEND', 'POSTAL'] })
+    const rows = await this.loadCostRows((qb) => qb
+      .andWhere('a.channelType IN (:...channels)', { channels: ['SEND', 'POSTAL'] })
       .andWhere(range.sql, range.params)
-      .andWhere('c.isTest = false')
-      .getRawMany<CostAttemptRow & { costCents: number | string | null }>();
+      .andWhere('c.isTest = false'));
 
     // POSTAL mai spediti perché dirottati su PEC da INAD, per campagna: il
     // risparmio si stima col costo medio di spedizione DELLA STESSA campagna.
@@ -2111,10 +2085,55 @@ export class CampaignsService {
       .groupBy('c.id')
       .getRawMany<{ campaignId: string; diverted: string }>();
 
-    return buildCostAnalytics(
-      rows.map((r) => ({ ...r, costCents: r.costCents === null ? null : Number(r.costCents) })),
-      { postalDivertedByCampaign: Object.fromEntries(divertedRows.map((d) => [d.campaignId, Number(d.diverted)])) },
-    );
+    return buildCostAnalytics(rows, {
+      postalDivertedByCampaign: Object.fromEntries(divertedRows.map((d) => [d.campaignId, Number(d.diverted)])),
+      sendFallbackShipCents: await this.recentSendShipAvgCents(),
+    });
+  }
+
+  /** Righe attempt per l'aggregazione costi (cost-analytics.util.ts); `filter` aggiunge i where. */
+  private async loadCostRows(
+    filter: (qb: SelectQueryBuilder<NotificationAttempt>) => SelectQueryBuilder<NotificationAttempt>,
+  ): Promise<CostAttemptRow[]> {
+    const qb = this.attemptRepo
+      .createQueryBuilder('a')
+      .innerJoin('a.recipient', 'r')
+      .innerJoin('r.campaign', 'c')
+      .select('a.channelType', 'channelType')
+      .addSelect('a.status', 'status')
+      .addSelect('a.costCents', 'costCents')
+      .addSelect('a.costBreakdown', 'costBreakdown')
+      .addSelect('a.sendDigitalDomicile', 'sendDigitalDomicile')
+      .addSelect('a.postalStatus', 'postalStatus')
+      .addSelect('c.id', 'campaignId')
+      .addSelect('c.name', 'campaignName')
+      .addSelect("to_char(date_trunc('month', c.createdAt), 'YYYY-MM')", 'month')
+      .where('1 = 1');
+    const rows = await filter(qb).getRawMany<CostAttemptRow & { costCents: number | string | null }>();
+    return rows.map((r) => ({ ...r, costCents: r.costCents === null ? null : Number(r.costCents) }));
+  }
+
+  /**
+   * Spedizione cartacea media degli ultimi 100 invii SEND andati su carta
+   * (tutte le campagne non di test): riferimento del risparmio per le
+   * campagne SEND senza nemmeno un cartaceo proprio. null se non ce n'è
+   * nessuno. Solo la parte cartacea: la base fee PN si paga comunque.
+   */
+  private async recentSendShipAvgCents(): Promise<number | null> {
+    const rows = await this.attemptRepo
+      .createQueryBuilder('a')
+      .innerJoin('a.recipient', 'r')
+      .innerJoin('r.campaign', 'c')
+      .select('a.costBreakdown', 'costBreakdown')
+      .where("a.channelType = 'SEND'")
+      .andWhere('a.costCents IS NOT NULL')
+      .andWhere("jsonb_array_length(COALESCE(a.costBreakdown -> 'analogEvents', '[]'::jsonb)) > 0")
+      .andWhere('c.isTest = false')
+      .orderBy('a.costCalculatedAt', 'DESC', 'NULLS LAST')
+      .limit(100)
+      .getRawMany<{ costBreakdown: Record<string, unknown> | null }>();
+    const ships = rows.map((r) => sendShipCentsOf(r)).filter((c) => c > 0);
+    return ships.length > 0 ? ships.reduce((sum, c) => sum + c, 0) / ships.length : null;
   }
 
   async getNeverDownloadedRecipients(dateFrom?: string, dateTo?: string): Promise<NeverDownloadedRowDto[]> {
@@ -3495,28 +3514,17 @@ export class CampaignsService {
       return { campaignId, totalSavingCents: 0, postalNotEstimableCount: 0 };
     }
 
-    const recipients = await this.recipientRepo.find({ where: { campaignId }, select: { id: true } });
-    const recipientIds = recipients.map((r) => r.id);
-    if (recipientIds.length === 0) return { campaignId, totalSavingCents: 0, postalNotEstimableCount: 0 };
-
-    const attempts = await this.attemptRepo.find({
-      where: { recipientId: In(recipientIds), channelType: 'SEND' },
-      select: { recipientId: true, costCents: true },
-    });
-    const costByRecipient = new Map<string, number>();
-    for (const a of attempts) {
-      costByRecipient.set(a.recipientId, (costByRecipient.get(a.recipientId) ?? 0) + (a.costCents ?? 0));
-    }
-
-    const nominalBaseFeeCents = await this.settings.get<number>('send.digitalBaseFeeCents');
-    let totalSavingCents = 0;
-    for (const id of recipientIds) {
-      const actual = costByRecipient.get(id) ?? 0;
-      const saving = nominalBaseFeeCents - actual;
-      if (saving > 0) totalSavingCents += saving;
-    }
-
-    return { campaignId, totalSavingCents, postalNotEstimableCount: 0 };
+    // Risparmio SEND = notifiche recapitate in digitale × spedizione cartacea
+    // evitata (media dei cartacei di questa campagna, o degli ultimi 100
+    // invii cartacei se la campagna non ne ha: stima). Stessa funzione della
+    // vista Statistiche. Bug reale corretto: prima era base fee − costo reale
+    // per ogni destinatario, così un invio FALLITO (costo 0) risultava 1 €
+    // di "risparmio" e un digitale riuscito (costo 1 €) nessuno.
+    const rows = await this.loadCostRows((qb) => qb
+      .andWhere("a.channelType = 'SEND'")
+      .andWhere('c.id = :campaignId', { campaignId }));
+    const { savings } = buildCostAnalytics(rows, { postalDivertedByCampaign: {}, sendFallbackShipCents: await this.recentSendShipAvgCents() });
+    return { campaignId, totalSavingCents: savings.sendCents, postalNotEstimableCount: 0, sendEstimatedCount: savings.sendEstimatedCount };
   }
 
   /**

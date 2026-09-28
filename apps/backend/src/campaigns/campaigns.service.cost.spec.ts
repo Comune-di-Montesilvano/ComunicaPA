@@ -119,22 +119,56 @@ describe('CampaignsService - Cost and Savings', () => {
   });
 
   describe('getCampaignCostSavings', () => {
-    it('calcola risparmio SEND solo per destinatari dirottati/senza attempt a pagamento (fallback base fee)', async () => {
+    // Query builder finto: ogni metodo è concatenabile, getRawMany restituisce le righe.
+    const fakeQb = (rows: unknown[]) => {
+      const qb: any = new Proxy({}, { get: (_t, prop) => (prop === 'getRawMany' ? async () => rows : () => qb) });
+      return qb;
+    };
+    const sendRow = (over: Record<string, unknown> = {}) => ({
+      channelType: 'SEND', status: 'success', costCents: 100,
+      costBreakdown: { baseFeeCents: 100, analogEvents: [] }, sendDigitalDomicile: { type: 'PEC' },
+      postalStatus: null, campaignId: 'c1', campaignName: 'Test', month: '2026-09', ...over,
+    });
+    const analogRow = (ship: number) => sendRow({ costCents: 100 + ship, costBreakdown: { baseFeeCents: 100, analogEvents: [{ productType: 'AR', analogCostCents: ship }] } });
+
+    it('SEND: invio fallito (mai partito, nessun costo) → nessun risparmio', async () => {
       campaignRepo.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'SEND' });
-      recipientRepo.find.mockResolvedValue([
-        { id: 'r1', inadCheck: null },
-        { id: 'r2', inadCheck: { diverted: true } },
-      ]);
-      attemptRepo.find.mockResolvedValue([
-        { recipientId: 'r1', channelType: 'SEND', costCents: 100 },
-        // r2: nessun attempt SEND (dirottato/skippato) → costo reale incorso 0
-      ]);
-      settingsService.get.mockResolvedValue(100);
+      attemptRepo.createQueryBuilder = jest.fn()
+        .mockReturnValueOnce(fakeQb([sendRow({ status: 'failed', costCents: null })]))
+        .mockReturnValueOnce(fakeQb([{ costBreakdown: { analogEvents: [{ analogCostCents: 426 }] } }]));
 
       const result = await service.getCampaignCostSavings('c1');
 
-      expect(result.totalSavingCents).toBe(100);
-      expect(result.postalNotEstimableCount).toBe(0);
+      expect(result.totalSavingCents).toBe(0);
+    });
+
+    it('SEND: digitali × media cartacea della campagna quando ne ha almeno uno', async () => {
+      campaignRepo.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'SEND' });
+      attemptRepo.createQueryBuilder = jest.fn()
+        .mockReturnValueOnce(fakeQb([sendRow(), sendRow(), analogRow(400), analogRow(500)]))
+        .mockReturnValueOnce(fakeQb([{ costBreakdown: { analogEvents: [{ analogCostCents: 999 }] } }]));
+
+      const result = await service.getCampaignCostSavings('c1');
+
+      // media campagna (400+500)/2 = 450 × 2 digitali
+      expect(result.totalSavingCents).toBe(900);
+      expect(result.sendEstimatedCount).toBe(0);
+    });
+
+    it('SEND: campagna senza cartaceo → media ultimi invii cartacei, segnalata come stima', async () => {
+      campaignRepo.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'SEND' });
+      attemptRepo.createQueryBuilder = jest.fn()
+        .mockReturnValueOnce(fakeQb([sendRow()]))
+        .mockReturnValueOnce(fakeQb([
+          { costBreakdown: { analogEvents: [{ analogCostCents: 400 }] } },
+          { costBreakdown: { analogEvents: [{ analogCostCents: 200 }, { analogCostCents: 100 }] } },
+        ]));
+
+      const result = await service.getCampaignCostSavings('c1');
+
+      // (400 + 300) / 2 = 350 × 1 digitale
+      expect(result.totalSavingCents).toBe(350);
+      expect(result.sendEstimatedCount).toBe(1);
     });
 
     it('campagna POSTAL: dirottati presenti ma nessun invio POSTAL costato in campagna → non stimabile', async () => {

@@ -1,4 +1,4 @@
-import { buildCostAnalytics, classifySendAttempt, type CostAttemptRow } from './cost-analytics.util.js';
+import { buildCostAnalytics, classifySendAttempt, sendShipCentsOf, type CostAttemptRow } from './cost-analytics.util.js';
 
 function sendRow(over: Partial<CostAttemptRow> = {}): CostAttemptRow {
   return {
@@ -54,7 +54,7 @@ describe('buildCostAnalytics', () => {
         postalRow(),
         postalRow({ costCents: 516, costBreakdown: { nazionale: false, tipoDocumento: 'RaccomandataMarket4', importoStampaNetto: 0.3, importoPostaleNetto: 4.26, importoARNetto: 0.6 } }),
       ],
-      { postalDivertedByCampaign: {} },
+      { postalDivertedByCampaign: {}, sendFallbackShipCents: null },
     );
 
     expect(result.totalCostCents).toBe(100 + 593 + 540 + 87 + 516);
@@ -79,7 +79,7 @@ describe('buildCostAnalytics', () => {
         postalRow({ costCents: null, status: 'failed' }),
         postalRow({ costCents: null, postalStatus: 'AppIoSostituito' }),
       ],
-      { postalDivertedByCampaign: {} },
+      { postalDivertedByCampaign: {}, sendFallbackShipCents: null },
     );
 
     expect(result.send.pendingCount).toBe(1);
@@ -90,7 +90,7 @@ describe('buildCostAnalytics', () => {
   it('trend mensile ordinato per mese', () => {
     const result = buildCostAnalytics(
       [postalRow({ month: '2026-09', costCents: 100 }), postalRow({ month: '2026-08', costCents: 300 }), sendRow({ month: '2026-09' })],
-      { postalDivertedByCampaign: {} },
+      { postalDivertedByCampaign: {}, sendFallbackShipCents: null },
     );
 
     expect(result.monthly).toEqual([
@@ -100,7 +100,7 @@ describe('buildCostAnalytics', () => {
     expect(result.postal.avgCostCents).toBe(200);
   });
 
-  it('risparmio SEND: digitali × spedizione cartacea media DELLA CAMPAGNA (base fee esclusa), fallback media periodo', () => {
+  it('risparmio SEND: digitali × spedizione cartacea media DELLA CAMPAGNA (base fee esclusa), fallback ultimi invii cartacei', () => {
     const analog = (campaignId: string, ship: number) => sendRow({
       campaignId,
       costCents: 100 + ship,
@@ -110,23 +110,39 @@ describe('buildCostAnalytics', () => {
       [
         // Campagna A: 2 digitali, cartaceo medio (500+580)/2 = 540 → 1080
         sendRow({ campaignId: 'A' }), sendRow({ campaignId: 'A' }), analog('A', 500), analog('A', 580),
-        // Campagna B: 1 digitale, nessun cartaceo → media periodo (500+580+900)/3 = 660
+        // Campagna B: 1 digitale, nessun cartaceo → fallback (media ultimi 100 cartacei) 420
         sendRow({ campaignId: 'B' }),
         analog('C', 900),
       ],
-      { postalDivertedByCampaign: {} },
+      { postalDivertedByCampaign: {}, sendFallbackShipCents: 420 },
     );
 
-    expect(result.savings.sendCents).toBe(1080 + 660);
+    expect(result.savings.sendCents).toBe(1080 + 420);
     expect(result.savings.sendDigitalCount).toBe(3);
+    expect(result.savings.sendEstimatedCount).toBe(1);
     expect(result.savings.sendNotEstimableCount).toBe(0);
   });
 
-  it('risparmio SEND non stimabile se nel periodo non esiste alcun cartaceo di riferimento', () => {
-    const result = buildCostAnalytics([sendRow(), sendRow()], { postalDivertedByCampaign: {} });
+  it('risparmio SEND: falliti e non ancora calcolati non generano risparmio', () => {
+    const result = buildCostAnalytics(
+      [sendRow({ status: 'failed', costCents: null }), sendRow({ status: 'success', costCents: null })],
+      { postalDivertedByCampaign: {}, sendFallbackShipCents: 420 },
+    );
+
+    expect(result.savings.sendCents).toBe(0);
+    expect(result.savings.sendDigitalCount).toBe(0);
+  });
+
+  it('risparmio SEND non stimabile se non esiste alcun cartaceo di riferimento (né in campagna né negli ultimi invii)', () => {
+    const result = buildCostAnalytics([sendRow(), sendRow()], { postalDivertedByCampaign: {}, sendFallbackShipCents: null });
 
     expect(result.savings.sendCents).toBe(0);
     expect(result.savings.sendNotEstimableCount).toBe(2);
+  });
+
+  it('sendShipCentsOf somma la sola parte cartacea (analogEvents), base fee esclusa', () => {
+    expect(sendShipCentsOf(sendRow({ costCents: 526, costBreakdown: { analogEvents: [{ analogCostCents: 426 }] } }))).toBe(426);
+    expect(sendShipCentsOf(sendRow())).toBe(0);
   });
 
   it('risparmio POSTAL: dirottati × costo medio DELLA CAMPAGNA, fallback media periodo', () => {
@@ -136,7 +152,7 @@ describe('buildCostAnalytics', () => {
         postalRow({ campaignId: 'P2', costCents: 100 }),
       ],
       // P1: 2 × 500 = 1000 · P3 senza spedizioni proprie: 1 × media periodo 1100/3
-      { postalDivertedByCampaign: { P1: 2, P3: 1 } },
+      { postalDivertedByCampaign: { P1: 2, P3: 1 }, sendFallbackShipCents: null },
     );
 
     expect(result.savings.postalCents).toBe(Math.round(1000 + 1100 / 3));
@@ -149,7 +165,7 @@ describe('buildCostAnalytics', () => {
       ...Array.from({ length: 6 }, (_, i) => postalRow({ campaignId: `c${i}`, campaignName: `Camp ${i}`, costCents: 100 * (i + 1) })),
       postalRow({ campaignId: 'c5', campaignName: 'Camp 5', costCents: 400 }),
     ];
-    const result = buildCostAnalytics(rows, { postalDivertedByCampaign: {} });
+    const result = buildCostAnalytics(rows, { postalDivertedByCampaign: {}, sendFallbackShipCents: null });
 
     expect(result.topCampaigns).toHaveLength(5);
     expect(result.topCampaigns[0]).toEqual({ campaignId: 'c5', campaignName: 'Camp 5', channelType: 'POSTAL', costCents: 1000, costedCount: 2, avgCostCents: 500 });

@@ -54,7 +54,9 @@ export interface CostAnalyticsDto {
     /** Notifiche SEND recapitate in digitale × costo medio spedizione cartacea evitata. */
     sendCents: number;
     sendDigitalCount: number;
-    /** Digitali senza alcun cartaceo di riferimento (né in campagna né nel periodo): non stimabili. */
+    /** Digitali di campagne senza cartaceo proprio, valorizzati con la media degli ultimi invii cartacei (stima). */
+    sendEstimatedCount: number;
+    /** Digitali senza alcun cartaceo di riferimento (né in campagna né negli ultimi invii): non stimabili. */
     sendNotEstimableCount: number;
     /** POSTAL dirottati su domicilio digitale × costo medio spedizione. */
     postalCents: number;
@@ -68,6 +70,11 @@ type AnalogEvent = { productType?: string | null; analogCostCents?: number };
 function analogEventsOf(row: CostAttemptRow): AnalogEvent[] {
   const events = row.costBreakdown?.['analogEvents'];
   return Array.isArray(events) ? (events as AnalogEvent[]) : [];
+}
+
+/** Sola parte cartacea di un attempt SEND (somma analogCost della timeline), base fee esclusa. */
+export function sendShipCentsOf(row: Pick<CostAttemptRow, 'costBreakdown'>): number {
+  return analogEventsOf(row as CostAttemptRow).reduce((s, e) => s + (e.analogCostCents ?? 0), 0);
 }
 
 /** SEND analogico = PN ha spedito carta (evento con costo, o domicilio risolto CARTACEO). */
@@ -95,7 +102,15 @@ function sortedByCost(map: Map<string, CostBucket>): CostByKey[] {
 
 export function buildCostAnalytics(
   rows: CostAttemptRow[],
-  opts: { postalDivertedByCampaign: Record<string, number> },
+  opts: {
+    postalDivertedByCampaign: Record<string, number>;
+    /**
+     * Spedizione cartacea media degli ultimi invii SEND cartacei (tutte le
+     * campagne): riferimento per le campagne SEND senza nemmeno un cartaceo
+     * proprio. null = nessun cartaceo mai registrato → non stimabile.
+     */
+    sendFallbackShipCents: number | null;
+  },
 ): CostAnalyticsDto {
   const digital: CostBucket = { count: 0, costCents: 0 };
   const analog = { count: 0, costCents: 0, baseFeeCents: 0, analogCostCents: 0 };
@@ -139,7 +154,7 @@ export function buildCostAnalytics(
     if (row.channelType === 'SEND') {
       if (classifySendAttempt(row) === 'analog') {
         const events = analogEventsOf(row);
-        const analogPart = events.reduce((s, e) => s + (e.analogCostCents ?? 0), 0);
+        const analogPart = sendShipCentsOf(row);
         analog.count += 1;
         analog.costCents += cost;
         analog.analogCostCents += analogPart;
@@ -184,14 +199,22 @@ export function buildCostAnalytics(
   // Risparmio SEND: una notifica recapitata in digitale evita la spedizione
   // cartacea (es. 1€ notifica + 5,40€ raccomandata → risparmio 5,40€). La
   // base fee PN si paga comunque, quindi resta fuori dal risparmio.
-  const periodShipAvg = analog.count > 0 ? analog.analogCostCents / analog.count : null;
+  // Riferimento: media cartacea della stessa campagna (stesso formato/peso);
+  // se la campagna non ha nemmeno un cartaceo, media degli ultimi invii
+  // cartacei (stima, segnalata in UI). Falliti/non calcolati non contano mai.
   let sendSaving = 0;
+  let sendEstimated = 0;
   let sendNotEstimable = 0;
   for (const c of sendByCampaign.values()) {
     if (c.digital === 0) continue;
-    const ref = c.analog > 0 ? c.shipCents / c.analog : periodShipAvg;
-    if (ref === null) sendNotEstimable += c.digital;
-    else sendSaving += c.digital * ref;
+    if (c.analog > 0) {
+      sendSaving += c.digital * (c.shipCents / c.analog);
+    } else if (opts.sendFallbackShipCents !== null) {
+      sendSaving += c.digital * opts.sendFallbackShipCents;
+      sendEstimated += c.digital;
+    } else {
+      sendNotEstimable += c.digital;
+    }
   }
 
   // Risparmio POSTAL: lettera dirottata su domicilio digitale = spedizione evitata.
@@ -235,6 +258,7 @@ export function buildCostAnalytics(
     savings: {
       sendCents: Math.round(sendSaving),
       sendDigitalCount: digital.count,
+      sendEstimatedCount: sendEstimated,
       sendNotEstimableCount: sendNotEstimable,
       postalCents: Math.round(postalSaving),
       postalDivertedCount: postalDiverted,

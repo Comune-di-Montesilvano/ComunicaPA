@@ -2920,7 +2920,7 @@ export function App(): React.JSX.Element {
   const [postalStatusBreakdown, setPostalStatusBreakdown] = useState<Array<{ status: string | null; count: number }> | null>(null);
   const [postalDeliveryStatusBreakdown, setPostalDeliveryStatusBreakdown] = useState<Array<{ status: string | null; count: number }> | null>(null);
   const [campaignCost, setCampaignCost] = useState<{ campaignId: string; totalCostCents: number; byChannel: Array<{ channel: string; totalCostCents: number; uncalculatedCount: number }> } | null>(null);
-  const [campaignCostSavings, setCampaignCostSavings] = useState<{ campaignId: string; totalSavingCents: number; postalNotEstimableCount: number } | null>(null);
+  const [campaignCostSavings, setCampaignCostSavings] = useState<{ campaignId: string; totalSavingCents: number; postalNotEstimableCount: number; sendEstimatedCount?: number } | null>(null);
   const [campaignPaymentTotal, setCampaignPaymentTotal] = useState<{ campaignId: string; enabled: boolean; totalAmountCents: number; recipientsWithPaymentCount: number } | null>(null);
   const [downloadCombinations, setDownloadCombinations] = useState<Array<{ channels: string[]; count: number; sentSuccessfully: boolean }> | null>(null);
   const [postalNoDigitalDownloaded, setPostalNoDigitalDownloaded] = useState(0);
@@ -17745,7 +17745,10 @@ export function App(): React.JSX.Element {
                       figures.push({ label: 'Costo', value: formatEuroCents(campaignCost.totalCostCents), hint: uncalculated > 0 ? `${uncalculated.toLocaleString('it-IT')} non ancora calcolati` : null });
                     }
                     if (campaignCostSavings && campaignCostSavings.totalSavingCents > 0) {
-                      figures.push({ label: 'Risparmio da dirottamento', value: formatEuroCents(campaignCostSavings.totalSavingCents), hint: 'stima' });
+                      const sendEstimated = (campaignCostSavings.sendEstimatedCount ?? 0) > 0;
+                      figures.push(campaign.channelType === 'SEND'
+                        ? { label: 'Risparmio vs cartaceo', value: formatEuroCents(campaignCostSavings.totalSavingCents), hint: sendEstimated ? 'stima su ultimi 100 invii cartacei' : 'media cartaceo campagna' }
+                        : { label: 'Risparmio da dirottamento', value: formatEuroCents(campaignCostSavings.totalSavingCents), hint: 'stima' });
                     }
                     if (campaignPaymentTotal?.enabled) {
                       figures.push({ label: 'Importo pagoPA', value: formatEuroCents(campaignPaymentTotal.totalAmountCents), hint: `${campaignPaymentTotal.recipientsWithPaymentCount.toLocaleString('it-IT')} avvisi` });
@@ -18763,7 +18766,7 @@ export function App(): React.JSX.Element {
                             {campaignCostSavings && campaignCostSavings.totalSavingCents > 0 && (
                               <div className="alert alert-success small mt-3 mb-0">
                                 {campaign.channelType === 'SEND'
-                                  ? <>Risparmio stimato vs canale tradizionale: <strong>{formatEuroCents(campaignCostSavings.totalSavingCents)}</strong></>
+                                  ? <>Risparmio stimato vs cartaceo (notifiche recapitate in digitale × spedizione cartacea {(campaignCostSavings.sendEstimatedCount ?? 0) > 0 ? 'media degli ultimi 100 invii cartacei SEND — nessun cartaceo in questa campagna' : 'media di questa campagna'}): <strong>{formatEuroCents(campaignCostSavings.totalSavingCents)}</strong></>
                                   : <>Risparmio stimato da dirottamento: <strong>{formatEuroCents(campaignCostSavings.totalSavingCents)}</strong></>}
                               </div>
                             )}
