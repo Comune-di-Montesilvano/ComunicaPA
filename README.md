@@ -62,23 +62,35 @@ Dettaglio completo delle combinazioni: [`docs/superpowers/specs/2026-07-17-matri
 
 ## Altre funzionalità
 
-Oltre all'invio massivo, il portale operatori offre:
+Oltre all'invio massivo da CSV, il portale operatori offre:
 
-- **Invio Singolo**: invio a un solo destinatario senza caricare un CSV — stessa procedura guidata, stesse regole di validazione (formato codice fiscale/email, lunghezza minima testo) e stessi canali dell'invio massivo, per comunicazioni puntuali fuori campagna.
-- **Verifica Anagrafica**: ricerca il domicilio digitale reale di un destinatario (ANPR, INAD, App IO, Registro Imprese per le imprese — ricerca sempre per Codice Fiscale, con ricerca per denominazione come alternativa quando non coincide con la Partita IVA) prima di scegliere il canale, evitando dirottamenti a sorpresa. Le interrogazioni ad ANPR e INAD passano dalla **Piattaforma Digitale Nazionale Dati (PDND)**: autenticazione tramite voucher (client assertion firmata, non semplice chiave statica) verso i registri nazionali, con audit obbligatorio di ogni ricerca (operatore + codice fiscale cercato).
-- **Arricchimento Tracciati**: converte un tracciato Maggioli (CSV + allegati PDF, anche caricato in più ZIP consecutivi) in un CSV pronto per l'invio, estraendo automaticamente indirizzo postale e dati di pagamento pagoPA dai PDF (codice a barre/QR), con correzione manuale riga per riga in caso di dati mancanti e creazione diretta della bozza campagna a job completato.
-- **Ricerca Notifiche**: consultazione trasversale di tutte le notifiche inviate, per destinatario o codice fiscale, con dettaglio esiti per canale.
-- **Statistiche**: andamento invii, tasso di successo per canale, costi di postalizzazione nel tempo.
-- **Motori**: pannello di controllo delle code di invio per canale — pausa/ripresa, elenco job falliti, log di dettaglio per singolo invio.
+- **Invio Manuale**: uno o più destinatari inseriti a mano, senza caricare un file. Ogni riga può avere un canale diverso (es. una PEC e due App IO nello stesso lotto): il sistema lancia una campagna per canale e le raggruppa come un unico invio nella lista campagne. Stesse validazioni del wizard massivo (formato codice fiscale/email, allegati obbligatori, lunghezze testo).
+- **Invio di prova**: dal riepilogo del wizard, prima del lancio definitivo.
+- **Template**: modelli di messaggio Email/PEC e App IO, con template "gemelli" per l'invio combinato canale primario + App IO e segnaposto `%%nome%%` (anche da qualsiasi colonna del CSV).
+- **Verifica Anagrafica**: ricerca il domicilio digitale reale di un destinatario (ANPR, INAD, App IO, Registro Imprese per le imprese) prima di scegliere il canale, evitando dirottamenti a sorpresa. Ricerca per Codice Fiscale, per denominazione su Registro Imprese, o per anagrafica su ANPR (nome, cognome, data di nascita) quando il CF non è noto; per le imprese mostra anche lo stato (cessata/cancellata). Le interrogazioni ad ANPR e INAD passano dalla **Piattaforma Digitale Nazionale Dati (PDND)**: autenticazione tramite voucher (client assertion firmata, non semplice chiave statica), con audit obbligatorio di ogni ricerca (operatore + codice fiscale cercato).
+- **Verifica Domicili Digitali**: verifica massiva di un elenco di codici fiscali da file CSV su INAD, App IO e Registro Imprese, in un job asincrono, con esiti scaricabili in CSV per fonte e aggregati.
+- **Arricchimento Tracciati**: converte un tracciato Maggioli (CSV + allegati PDF, anche caricato in più ZIP consecutivi) in un CSV pronto per l'invio, estraendo automaticamente indirizzo postale e dati di pagamento pagoPA dai PDF (codice a barre/QR, anche più rate), con correzione manuale riga per riga e creazione diretta della bozza campagna a job completato.
+- **Verifica firma digitale**: controllo automatico delle firme PAdES sugli allegati PDF, con validazione dei certificati sulla trust list AgID.
+- **Ricerca Notifiche**: consultazione trasversale di tutte le notifiche inviate, per codice fiscale, destinatario o ID campagna, con dettaglio esiti per canale (stati SEND, stati del provider postale, tracking Poste).
+- **Tracking Poste Italiane**: per le raccomandate che il provider postale dà come non consegnate o ferme da troppo tempo, verifica periodica dell'esito reale sul tracking Poste (finestra 90 giorni, ritmo e pause configurabili).
+- **Costi**: costo per campagna (SEND a tariffa configurabile, Postalizzazione a costo reale del fornitore) e risparmio stimato per i destinatari dirottati da carta a PEC.
+- **Statistiche**: andamento invii, esiti per canale, tasso di download, costi SEND/postali e campagne più costose nel periodo.
 - **Registro Attività**: log di controllo per ogni ricerca su un registro anagrafico esterno (ANPR/INAD/App IO/Registro Imprese) — chi ha cercato quale codice fiscale e quando.
+- **Guida**: manuale operativo integrato nel portale (regole per canale, segnaposto, costi, dirottamento INAD).
+- **Impostazioni** (solo amministratori): server SMTP/PEC, App IO, client PDND, SEND, INAD, ANPR, protocollo, provider di postalizzazione e utenti abilitati all'invio postale, API esterne, SPID/CIE (OIDC), branding e **Motori di Invio** — pannello delle code per canale con pausa/ripresa, job falliti e log per singolo invio. Le modifiche si applicano subito, senza riavvio.
+
+Il **portale cittadini** mostra tutte le comunicazioni ricevute al proprio codice fiscale su qualunque canale, con stato di consegna, allegati scaricabili e avviso di avvenuta ricezione SEND. Accesso con SPID/CIE, anche **per conto di un'impresa** (SPID persona giuridica, attivabile da Impostazioni → SPID / CIE): in quel caso le comunicazioni si cercano per Partita IVA dell'impresa.
 
 ## Componenti tecnologici
 
 - **Backend:** NestJS 12 (ESM) + TypeScript (porta 8080) — API REST + worker asincroni BullMQ
-- **Frontend Admin:** React 19 + Vite 6 — portale operatori PA (porta 3000)
-- **Frontend Cittadino:** React 19 + Vite 6 — portale accesso cittadini, SPID/CIE (porta 3001)
-- **Database:** PostgreSQL 17
+- **Frontend Admin:** React 19 + Vite 8 — portale operatori PA (porta 3000)
+- **Frontend Cittadino:** React 19 + Vite 8 — portale accesso cittadini, SPID/CIE (porta 3001)
+- **pdf-extractor:** microservizio Python (FastAPI + PyMuPDF/pdfplumber) per l'estrazione dati dai PDF
+- **Database:** PostgreSQL 17 (TypeORM)
 - **Coda:** Redis 7 + BullMQ
+- **Test:** Vitest
+- **Monitoraggio errori (opzionale):** Sentry/GlitchTip
 - **Monorepo:** pnpm workspaces (compilazione/test/controllo qualità interamente dentro Docker — nessuno strumento richiesto sull'host)
 
 ## Requisiti
@@ -127,9 +139,11 @@ docker compose up -d --build backend
 # Test backend (worker limitati a 2 in vitest.config.ts, non serve un flag)
 docker compose exec backend node_modules/.bin/vitest run
 
-# Controllo dei tipi
+# Controllo dei tipi (backend, spec di test inclusi, e frontend)
 docker compose exec backend node_modules/.bin/tsc --noEmit
+docker compose exec backend node_modules/.bin/tsc -p tsconfig.spec.json --noEmit
 docker compose exec frontend-admin node_modules/.bin/tsc -p tsconfig.app.json --noEmit
+docker compose exec frontend-citizen node_modules/.bin/tsc -p tsconfig.app.json --noEmit
 
 # Ripristino completo (inclusi i volumi del database)
 docker compose down -v
@@ -137,15 +151,15 @@ docker compose down -v
 
 Ricarica automatica attiva: le modifiche ai file sorgente in `apps/*/src/` sono riflesse nei container tramite bind mount (il watch di NestJS a volte non le rileva su Windows — vedi `CLAUDE.md`).
 
-Per il contesto architetturale completo (gotcha, pattern interni, integrazioni SEND/POSTAL/App IO, migration, CI/CD) vedi **[`CLAUDE.md`](CLAUDE.md)** — pensato sia per Claude Code sia come riferimento tecnico per chi contribuisce.
+Per il contesto architetturale (gotcha, pattern interni, migration, CI/CD) vedi **[`CLAUDE.md`](CLAUDE.md)** e le note per argomento in **[`docs/claude/`](docs/claude/)** (SEND, Postalizzazione/GlobalCom, App IO, ANPR/INAD, protocollo, firma PAdES, arricchimento...) — pensati sia per Claude Code sia come riferimento tecnico per chi contribuisce.
 
 ## Architettura
 
 ```
 apps/
 ├── backend/          # API REST + worker asincroni BullMQ (Strategy Pattern per canale)
-├── frontend-admin/   # Portale operatori PA — procedura guidata invio massivo, impostazioni, motori
-└── frontend-citizen/ # Portale cittadini — login SPID/CIE, notifiche ricevute
+├── frontend-admin/   # Portale operatori PA — wizard invio manuale/massivo, verifiche anagrafiche, impostazioni
+└── frontend-citizen/ # Portale cittadini — login SPID/CIE (anche per conto di impresa), notifiche ricevute
 packages/
 └── shared-types/     # Interfacce TypeScript condivise (@comunicapa/shared-types)
 services/
@@ -154,7 +168,9 @@ services/
 
 **Flusso:** caricamento CSV → elaborazione a flusso (nessun caricamento in memoria) → coda BullMQ (Redis) → worker asincroni → Strategy Pattern per canale (PEC/Email/App IO/SEND/Postal), con co-consegna opzionale su App IO in parallelo al canale primario.
 
-**Autenticazione:** LDAP/Active Directory per operatori PA; OIDC (SPID/CIE, Authorization Code + PKCE) per cittadini.
+**Autenticazione:** LDAP/Active Directory per operatori PA (ruoli admin/operatore); OIDC (SPID/CIE, Authorization Code + PKCE) per cittadini e rappresentanti di impresa.
+
+**Integrazioni esterne:** PDND (voucher per ANPR/INAD), SEND/PN, App IO, GlobalCom (postalizzazione) + tracking Poste Italiane, Registro Imprese, Protocollo Informatico TINN, trust list AgID per la verifica firme.
 
 ## API esterna — caricamento puntuale
 
@@ -190,8 +206,8 @@ Per domande su un'adozione o per segnalare che il software è in uso presso un a
 Issue e pull request sono benvenute. Prima di aprire una PR:
 
 1. Verifica che la suite test passi (`docker compose exec backend node_modules/.bin/vitest run`)
-2. Verifica il controllo dei tipi di backend e frontend
-3. Leggi `CLAUDE.md` per i pattern e i gotcha del progetto (evita di reintrodurre bug già risolti)
+2. Verifica il controllo dei tipi di backend (spec inclusi) e frontend — la CI esegue anche lint e build completa
+3. Leggi `CLAUDE.md` e il file pertinente in `docs/claude/` per i pattern e i gotcha del progetto (evita di reintrodurre bug già risolti)
 
 ## Licenza
 

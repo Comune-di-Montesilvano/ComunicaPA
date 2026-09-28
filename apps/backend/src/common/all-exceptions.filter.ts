@@ -1,6 +1,7 @@
 import { ArgumentsHost, Catch, HttpException } from '@nestjs/common';
 import { BaseExceptionFilter } from '@nestjs/core';
 import { captureException } from './sentry.util.js';
+import { buildRequestContext, type RequestLike } from './sentry-request-context.js';
 
 /**
  * Filtro globale di ultima istanza — ESTENDE `BaseExceptionFilter` di Nest
@@ -22,7 +23,10 @@ export class AllExceptionsFilter extends BaseExceptionFilter {
   override catch(exception: unknown, host: ArgumentsHost): void {
     const isServerError = !(exception instanceof HttpException) || exception.getStatus() >= 500;
     if (isServerError) {
-      captureException(exception);
+      // Senza contesto un errore HTTP arriva a GlitchTip col solo stack
+      // trace: rotta, parametri e chiamante bastano a risalire al caso dal DB.
+      const request = buildRequestContext(host.switchToHttp().getRequest<RequestLike | undefined>());
+      captureException(exception, request ? { request } : undefined);
     }
     super.catch(exception, host);
   }
