@@ -17,6 +17,15 @@ if (sentryDsn) {
     dsn: sentryDsn,
     environment: window.__COMUNICAPA_CONFIG__?.sentryEnvironment || 'unknown',
     tracesSampleRate: 0,
+    // Sentry v11: dataCollection sostituisce sendDefaultPii (default false)
+    // con default quasi tutti attivi — spento tutto, stesso comportamento di v10.
+    dataCollection: {
+      userInfo: false,
+      cookies: false,
+      httpHeaders: false,
+      httpBodies: [],
+      urlQueryParams: false,
+    },
   })
 }
 
