@@ -70,7 +70,12 @@ function globalcomErrorReason(a: LegalOutcomeAttempt): string {
 
 export function postalLegalOutcome(i: PostalLegalOutcomeInput): PostalLegalOutcomeResult {
   const a = i.attempt;
-  if (i.diverted) return { outcome: 'delivered', reason: 'Via PEC', at: a?.sentAt ?? null };
+  // Dirottato INAD: la PEC vale consegna solo se è partita davvero.
+  if (i.diverted) {
+    if (a?.status === 'success') return { outcome: 'delivered', reason: 'Via PEC', at: a.sentAt ?? null };
+    if (a?.status === 'failed') return { outcome: 'not_delivered', reason: a.errorMessage ?? 'PEC non inviata', at: null };
+    return { outcome: 'in_progress', reason: null, at: null };
+  }
   if (a?.postalStatus === 'AppIoSostituito') return { outcome: 'no_legal_value', reason: 'Solo App IO', at: null };
   if (!i.arTracking) return { outcome: 'no_ar', reason: null, at: null };
   if (!a) return { outcome: 'in_progress', reason: null, at: null };
@@ -78,6 +83,8 @@ export function postalLegalOutcome(i: PostalLegalOutcomeInput): PostalLegalOutco
   if (a.postalStatus === 'Errore') return { outcome: 'not_delivered', reason: globalcomErrorReason(a), at: null };
   const ds = a.postalDeliveryStatus;
   if (ds && LEGAL_DELIVERED_STATUSES.includes(ds)) return { outcome: 'delivered', reason: ds, at: a.postalDeliveryDate };
+  // Documento GlobalCom Consegnato con StatoConsegna mancante (dato a volte vuoto lato GlobalCom).
+  if (a.postalStatus === 'Consegnato') return { outcome: 'delivered', reason: 'Consegnato', at: a.postalDeliveryDate };
   if (i.poste?.status === 'delivered') return { outcome: 'delivered', reason: 'Verifica Poste', at: i.poste.outcomeAt };
   if (ds && LEGAL_NOT_DELIVERED_STATUSES.includes(ds)) return { outcome: 'not_delivered', reason: ds, at: null };
   if (a.postalStatus === 'Eliminato') return { outcome: 'unclassified', reason: 'Eliminato', at: null };
@@ -95,8 +102,11 @@ export function postalLegalOutcomeCaseSql(arTracking: boolean, aliases: { r?: st
   const r = aliases.r ?? 'r';
   const la = aliases.la ?? 'la';
   const ppt = aliases.ppt ?? 'ppt';
+  const diverted = `COALESCE((${r}.inad_check->>'diverted')::boolean, false)`;
   const head = `CASE
-    WHEN COALESCE((${r}.inad_check->>'diverted')::boolean, false) THEN 'delivered'
+    WHEN ${diverted} AND ${la}.status = 'success' THEN 'delivered'
+    WHEN ${diverted} AND ${la}.status = 'failed' THEN 'not_delivered'
+    WHEN ${diverted} THEN 'in_progress'
     WHEN ${la}.postal_status = 'AppIoSostituito' THEN 'no_legal_value'`;
   if (!arTracking) return `${head}
     ELSE 'no_ar' END`;
@@ -105,6 +115,7 @@ export function postalLegalOutcomeCaseSql(arTracking: boolean, aliases: { r?: st
     WHEN ${la}.status = 'failed' THEN 'not_delivered'
     WHEN ${la}.postal_status = 'Errore' THEN 'not_delivered'
     WHEN ${la}.postal_delivery_status IN (${sqlList(LEGAL_DELIVERED_STATUSES)}) THEN 'delivered'
+    WHEN ${la}.postal_status = 'Consegnato' THEN 'delivered'
     WHEN ${ppt}.status = 'delivered' THEN 'delivered'
     WHEN ${la}.postal_delivery_status IN (${sqlList(LEGAL_NOT_DELIVERED_STATUSES)}) THEN 'not_delivered'
     WHEN ${la}.postal_status = 'Eliminato' THEN 'unclassified'

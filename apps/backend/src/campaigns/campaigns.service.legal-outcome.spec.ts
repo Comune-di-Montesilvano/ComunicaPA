@@ -173,4 +173,14 @@ describe('CampaignsService - esito legale POSTAL', () => {
     const report = await service.getPostalReportRows('c1');
     expect(report.rows[0]).toMatchObject({ legalOutcome: 'delivered', legalOutcomeReason: 'Via PEC', legalOutcomeAt: '2026-08-01T10:00:00.000Z' });
   });
+
+  it('report: dirottato con PEC fallita → non consegnato, mai Via PEC', async () => {
+    campaignRepo.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'POSTAL', channelConfig: AR });
+    recipientRepo.find.mockResolvedValue([{ id: 'r1', codiceFiscale: 'RSSMRA80A01H501U', fullName: 'ROSSI MARIO', extraData: {}, inadCheck: { found: true, diverted: true } }]);
+    attemptRepo.find.mockImplementation(async (opts: any) => (opts.where.channelType === 'PEC'
+      ? [{ id: 'p1', recipientId: 'r1', attemptNumber: 1, channelType: 'PEC', status: 'failed', sentAt: null, errorMessage: 'Casella PEC piena' }]
+      : []));
+    const report = await service.getPostalReportRows('c1');
+    expect(report.rows[0]).toMatchObject({ legalOutcome: 'not_delivered', legalOutcomeReason: 'Casella PEC piena', legalOutcomeAt: null });
+  });
 });

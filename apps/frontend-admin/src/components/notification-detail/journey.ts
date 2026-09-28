@@ -210,6 +210,16 @@ export function computeVerdict(d: JourneyDetail, labels: JourneyLabels): Verdict
   if (lo?.outcome === 'no_ar') {
     return { headline: 'Inviata senza AR', tone: 'neutral', when: last.sentAt ?? last.createdAt, source: 'nessun esito di consegna', note: null, discrepancy: false };
   }
+  if (lo?.outcome === 'in_progress' || lo?.outcome === 'unclassified') {
+    // Stesso esito della tabella: mai "Non consegnata" per un valore GlobalCom
+    // non (ancora) classificato. Stato GlobalCom e Poste restano in nota.
+    const pv = last.posteVerification;
+    const gc = last.postalStatus ? `GlobalCom: ${labels.postalStatus(last.postalStatus)}${last.postalDeliveryStatus ? ` (${last.postalDeliveryStatus})` : ''}` : null;
+    const posteNote = pv?.status === 'pending'
+      ? `Verifica su Poste in corso${pv.trackingUntil ? ` fino al ${new Date(pv.trackingUntil).toLocaleDateString('it-IT')}` : ''}${pv.summary ? `: ${pv.summary}` : ''}`
+      : pv?.summary ? `Poste: ${pv.summary}` : null;
+    return { headline: lo.outcome === 'in_progress' ? 'In corso' : 'Non classificata', tone: 'neutral', when: null, source: null, note: [gc, posteNote].filter(Boolean).join(' — ') || null, discrepancy: false };
+  }
 
   if (d.campaign.channelType === 'POSTAL' && last.channelType === 'POSTAL') {
     const pv = last.posteVerification;

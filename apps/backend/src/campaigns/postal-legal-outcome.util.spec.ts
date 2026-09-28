@@ -23,6 +23,22 @@ describe('postalLegalOutcome', () => {
     expect(r).toEqual({ outcome: 'delivered', reason: 'Via PEC', at: D('2026-08-01T10:00:00Z') });
   });
 
+  it('dirottato con PEC fallita → not_delivered, mai consegnato', () => {
+    const r = postalLegalOutcome(input({ diverted: true, attempt: attempt({ status: 'failed', postalStatus: null, sentAt: null, errorMessage: 'Casella PEC piena' }) }));
+    expect(r).toEqual({ outcome: 'not_delivered', reason: 'Casella PEC piena', at: null });
+    expect(postalLegalOutcome(input({ diverted: true, attempt: attempt({ status: 'failed', postalStatus: null, sentAt: null }) })).reason).toBe('PEC non inviata');
+  });
+
+  it('dirottato con PEC non ancora partita o senza tentativi → in_progress', () => {
+    expect(postalLegalOutcome(input({ diverted: true, attempt: null })).outcome).toBe('in_progress');
+    expect(postalLegalOutcome(input({ diverted: true, attempt: attempt({ status: 'queued', postalStatus: null, sentAt: null }) })).outcome).toBe('in_progress');
+  });
+
+  it('GlobalCom Consegnato senza StatoConsegna → delivered con data consegna', () => {
+    const r = postalLegalOutcome(input({ attempt: attempt({ postalStatus: 'Consegnato', postalDeliveryStatus: null, postalDeliveryDate: D('2026-09-10T00:00:00Z') }) }));
+    expect(r).toEqual({ outcome: 'delivered', reason: 'Consegnato', at: D('2026-09-10T00:00:00Z') });
+  });
+
   it('App IO esclusiva → no_legal_value', () => {
     expect(postalLegalOutcome(input({ attempt: attempt({ postalStatus: 'AppIoSostituito' }) })).outcome).toBe('no_legal_value');
   });
@@ -101,7 +117,7 @@ describe('postalLegalOutcome', () => {
 describe('postalLegalOutcomeCaseSql / postalLegalOutcomeSql', () => {
   it('con AR contiene tutte le regole nell\'ordine della spec', () => {
     const sql = postalLegalOutcomeCaseSql(true);
-    const order = ['inad_check', 'AppIoSostituito', 'la.id IS NULL', "la.status = 'failed'", "la.postal_status = 'Errore'", "'Compiuta Giacenza'", "ppt.status = 'delivered'", "'Smarrito'", "'Eliminato'"]
+    const order = ["AND la.status = 'success'", "AND la.status = 'failed'", "false) THEN 'in_progress'", 'AppIoSostituito', 'la.id IS NULL', "WHEN la.status = 'failed'", "la.postal_status = 'Errore'", "'Compiuta Giacenza'", "la.postal_status = 'Consegnato'", "ppt.status = 'delivered'", "'Smarrito'", "'Eliminato'"]
       .map((frag) => sql.indexOf(frag));
     expect(order.every((i) => i >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);

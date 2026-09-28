@@ -7,7 +7,7 @@ import { postalLegalOutcome, postalLegalOutcomeCaseSql } from '../../dist/campai
 const statuses = [null, 'Consegnato', 'Consegnato a Domicilio', 'Compiuta Giacenza', 'Invio Rifiutato', 'Indirizzo errato o inesatto', 'Smarrito', 'Inesitato', 'In giacenza', 'Valore mai visto'];
 const postalStatuses = [null, 'Confermato', 'NonConsegnato', 'Consegnato', 'Errore', 'Eliminato', 'AppIoSostituito'];
 const cases = [];
-for (const diverted of [false, true]) for (const hasAttempt of [false, true]) for (const status of ['success', 'failed'])
+for (const diverted of [false, true]) for (const hasAttempt of [false, true]) for (const status of ['success', 'failed', 'queued'])
   for (const ps of postalStatuses) for (const ds of statuses) for (const poste of [null, 'delivered', 'returned', 'pending'])
     cases.push({ diverted, hasAttempt, status, ps, ds, poste });
 

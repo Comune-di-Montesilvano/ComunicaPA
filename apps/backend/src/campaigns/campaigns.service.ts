@@ -3586,15 +3586,13 @@ export class CampaignsService {
     const arTracking = hasPostalArTracking(campaign);
     // Dirottati INAD: la data legale è l'invio PEC, tentativo non POSTAL.
     const divertedIds = recipients.filter((r) => r.inadCheck?.diverted).map((r) => r.id);
-    const pecSentAt = new Map<string, Date | null>();
+    const latestPecByRecipient = new Map<string, NotificationAttempt>();
     if (divertedIds.length > 0) {
       const pecAttempts = (await this.attemptRepo.find({ where: { recipientId: In(divertedIds), channelType: 'PEC' } })) ?? [];
-      const latestPec = new Map<string, NotificationAttempt>();
       for (const a of pecAttempts) {
-        const cur = latestPec.get(a.recipientId);
-        if (!cur || a.attemptNumber > cur.attemptNumber) latestPec.set(a.recipientId, a);
+        const cur = latestPecByRecipient.get(a.recipientId);
+        if (!cur || a.attemptNumber > cur.attemptNumber) latestPecByRecipient.set(a.recipientId, a);
       }
-      for (const [rid, a] of latestPec) pecSentAt.set(rid, a.sentAt ?? null);
     }
 
     const rows: PostalReportRowDto[] = recipients.map((r) => {
@@ -3609,7 +3607,8 @@ export class CampaignsService {
       const legal = postalLegalOutcome({
         diverted,
         arTracking,
-        attempt: diverted ? { status: 'success', postalStatus: null, postalDeliveryStatus: null, postalDeliveryDate: null, sentAt: pecSentAt.get(r.id) ?? null } : (latest ?? null),
+        // Dirottato: conta il tentativo PEC reale (esito e data di invio).
+        attempt: diverted ? (latestPecByRecipient.get(r.id) ?? null) : (latest ?? null),
         poste: poste ? { status: poste.status, outcomeAt: poste.outcomeAt ?? null } : null,
       });
 
