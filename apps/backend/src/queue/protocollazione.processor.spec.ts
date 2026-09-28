@@ -10,6 +10,8 @@ import { AttachmentService } from '../attachments/attachment.service.js';
 import { CampaignCompletionService } from '../campaigns/campaign-completion.service.js';
 import { NotificationQueuesService } from './notification-queues.service.js';
 import { ConfigService } from '@nestjs/config';
+import { NotFoundException } from '@nestjs/common';
+import { UnrecoverableError } from 'bullmq';
 import { AppSettingsService } from '../settings/app-settings.service.js';
 import * as sentryUtil from '../common/sentry.util.js';
 
@@ -151,6 +153,52 @@ describe('ProtocollazioneProcessor', () => {
     expect(mockCampaignRepo.increment).toHaveBeenCalledWith({ id: 'camp-1' }, 'failedCount', 1);
     expect(mockCompletion.checkAndComplete).toHaveBeenCalledWith('camp-1');
     expect(sentryUtil.captureException).toHaveBeenCalled();
+  });
+
+  it('fallimento con retry BullMQ ancora disponibili: rilancia senza marcare FAILED (TINN transitoriamente giù)', async () => {
+    mockAttemptRepo.findOne.mockResolvedValueOnce(makeAttempt());
+    mockProtocollo.protocolla.mockRejectedValueOnce(new Error('Protocollazione fallita (-100): Errore in fase di trasferimento allegati al sito FTP'));
+    const job = { ...mockJob(), attemptsMade: 0, opts: { attempts: 5 } };
+
+    await expect(processor.process(job)).rejects.toThrow('-100');
+
+    expect(mockAttemptRepo.update).not.toHaveBeenCalled();
+    expect(mockRecipientRepo.update).not.toHaveBeenCalled();
+    expect(mockCampaignRepo.increment).not.toHaveBeenCalled();
+    expect(mockCompletion.checkAndComplete).not.toHaveBeenCalled();
+  });
+
+  it('fallimento all\'ultimo retry BullMQ: marca FAILED', async () => {
+    mockAttemptRepo.findOne.mockResolvedValueOnce(makeAttempt());
+    mockProtocollo.protocolla.mockRejectedValueOnce(new Error('fetch failed'));
+    const job = { ...mockJob(), attemptsMade: 4, opts: { attempts: 5 } };
+
+    await expect(processor.process(job)).rejects.toThrow('fetch failed');
+
+    expect(mockAttemptRepo.update).toHaveBeenCalledWith(
+      { id: 'att-1', status: AttemptStatus.QUEUED },
+      { status: AttemptStatus.FAILED, errorMessage: 'fetch failed' },
+    );
+    expect(mockCompletion.checkAndComplete).toHaveBeenCalledWith('camp-1');
+  });
+
+  it('allegato mancante (NotFoundException): FAILED subito e UnrecoverableError, niente retry', async () => {
+    mockAttemptRepo.findOne.mockResolvedValueOnce(makeAttempt({
+      recipient: {
+        id: 'r1', fullName: 'Mario Rossi', codiceFiscale: 'RSSMRA85M01H501Z',
+        campaign: { id: 'camp-1', name: 'TARI', channelType: 'SEND', channelConfig: { subject: 'Avviso TARI', attachments: [{ key: 'allegato', label: 'Avviso' }] } },
+      } as unknown as Recipient,
+    }));
+    mockAttachments.generatePdfBuffer.mockRejectedValueOnce(new NotFoundException('File allegato "x.pdf" non trovato'));
+    const job = { ...mockJob(), attemptsMade: 0, opts: { attempts: 5 } };
+
+    await expect(processor.process(job)).rejects.toBeInstanceOf(UnrecoverableError);
+
+    expect(mockAttemptRepo.update).toHaveBeenCalledWith(
+      { id: 'att-1', status: AttemptStatus.QUEUED },
+      { status: AttemptStatus.FAILED, errorMessage: 'File allegato "x.pdf" non trovato' },
+    );
+    expect(mockProtocollo.protocolla).not.toHaveBeenCalled();
   });
 
   it('canale EMAIL senza allegato configurato: protocolla usando l\'EML come documento, senza chiamare generatePdfBuffer', async () => {

@@ -20,6 +20,18 @@ export const QUEUED_CHANNELS = Object.keys(CHANNEL_QUEUES) as Array<Exclude<Noti
 export const PROTOCOLLAZIONE_QUEUE = 'notifications-protocollazione';
 
 /**
+ * Retry della protocollazione: TINN ha disservizi brevi (fetch failed, -100
+ * FTP) che rientrano da soli. 5 tentativi con backoff esponenziale 40s →
+ * 40+80+160+320 = 600s ≈ 10 minuti prima di marcare FAILED. Come
+ * defaultJobOptions della coda valgono per ogni accodamento (launch, retry,
+ * riconciliazione orfani) senza passarle a ogni addBulk.
+ */
+export const PROTOCOLLAZIONE_JOB_OPTIONS = {
+  attempts: 5,
+  backoff: { type: 'exponential', delay: 40_000 },
+} as const;
+
+/**
  * "Motori" gestiti con lo stesso meccanismo generico (pausa/riprendi/job
  * falliti/log) dei canali BullMQ — PROTOCOLLAZIONE non è un NotificationChannel
  * (è channel-agnostica), ma va gestita identicamente dalla tab Motori.
