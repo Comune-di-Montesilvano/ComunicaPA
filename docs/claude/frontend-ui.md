@@ -103,6 +103,19 @@ dettaglio campagna, diffa esplicitamente la lista dei fetch in
 `handleCampaignClick` contro quelli nel/nei `useEffect` di polling — non
 fidarti di un commento che dice già "lo fa".
 
+**Ogni fetch del dettaglio campagna deve scartare le risposte di una
+campagna non più aperta: `if (!isCurrentCampaign(id)) return;` prima del
+setter.** Il cleanup dei `setInterval` ferma i tick futuri, non le fetch già
+partite: passando da A a B, una risposta lenta di A arrivava dopo e
+sovrascriveva nome, stato, barra esito e contatori di B (bug reale: filtri
+"Discrepanze GlobalCom/Poste" e "Controllati su Poste" a zero, tornati solo
+uscendo e rientrando). `selectedCampaignIdRef` si aggiorna in modo sincrono
+in `handleCampaignClick`, unico setter della campagna selezionata. Un nuovo
+fetcher del dettaglio va guardato allo stesso modo. Riprodotto con Playwright
+patchando `window.fetch` per ritardare di 3 s le risposte della campagna A
+(`page.route` + `waitForTimeout` nel sandbox MCP non funziona: niente
+`setTimeout`).
+
 Stessa istanza trovata anche fuori dal dettaglio campagna: il modale
 "Dettaglio Notifica" (`openNotificationDetail`, apribile dalla ricerca
 notifiche globale) fetchava una volta sola all'apertura — lo stato di un

@@ -1505,6 +1505,13 @@ export function App(): React.JSX.Element {
   const [canUsePostal, setCanUsePostal] = useState<boolean>(localStorage.getItem('comunicapa_can_use_postal') === 'true');
   const [view, setView] = useState<'dashboard' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'notifiche-ricerca' | 'cerca-domicilio' | 'verifica-domicili' | 'template-dashboard' | 'impostazioni' | 'campaign-detail' | 'audit-logs' | 'arricchimento' | 'guida'>('dashboard');
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
+  // Campagna aperta, aggiornata in modo sincrono da handleCampaignClick: i
+  // fetch del dettaglio la confrontano prima di scrivere lo state. Bug reale:
+  // passando da una campagna all'altra, una risposta in ritardo della
+  // precedente sovrascriveva i contatori (es. Discrepanze GlobalCom/Poste e
+  // Controllati su Poste a zero) finché non si usciva e rientrava.
+  const selectedCampaignIdRef = useRef<string | null>(null);
+  const isCurrentCampaign = (id: string) => selectedCampaignIdRef.current === id;
   const [templates, setTemplates] = useState<TemplateItem[]>([]);
   const [editingTemplate, setEditingTemplate] = useState<Partial<TemplateItem> & { type: 'MAIL' | 'APP_IO' } | null>(null);
   const [tmplLastFocusedField, setTmplLastFocusedField] = useState<'subject' | 'body' | 'appio-subject' | 'appio-body'>('body');
@@ -2898,7 +2905,9 @@ export function App(): React.JSX.Element {
       // al completamento, visibile solo ricaricando la pagina.
       const hasAsyncDeliveryTracking = campaign.channelType === 'SEND' || campaign.channelType === 'POSTAL';
       const isRunningStatus = campaign.status === 'queued' || campaign.status === 'checking_inad' || campaign.status === 'running';
-      if (isRunningStatus || (hasAsyncDeliveryTracking && campaign.status === 'completed')) {
+      // Anche 'cancelled': gli invii già partiti prima dell'annullamento
+      // continuano a essere tracciati (SEND/GlobalCom/Poste).
+      if (isRunningStatus || (hasAsyncDeliveryTracking && (campaign.status === 'completed' || campaign.status === 'cancelled'))) {
         timer = setInterval(() => {
           fetchCampaignDetail(selectedCampaignId);
           // Bug reale (confronto fatto tra i fetch di handleCampaignClick e
@@ -4168,16 +4177,17 @@ export function App(): React.JSX.Element {
       const res = await apiFetch(`/campaigns/${id}`);
       if (!res.ok) throw new Error('Impossibile caricare il dettaglio della campagna.');
       const data = await res.json();
-      setCampaign(data);
       setCampaigns((prev) => prev.map((c) => (c.id === id ? { ...c, ...data } : c)));
+      if (!isCurrentCampaign(id)) return;
+      setCampaign(data);
       if (data.status === 'checking_inad') {
         fetchInadStatus(id);
       }
     } catch (err: any) {
-      if (err instanceof ApiAuthError) return;
+      if (err instanceof ApiAuthError || !isCurrentCampaign(id)) return;
       setDetailError(err.message);
     } finally {
-      setLoadingCampaignDetail(false);
+      if (isCurrentCampaign(id)) setLoadingCampaignDetail(false);
     }
   };
 
@@ -4186,6 +4196,7 @@ export function App(): React.JSX.Element {
       const res = await apiFetch(`/campaigns/${id}/pending-pec-review`);
       if (!res.ok) return;
       const data = await res.json();
+      if (!isCurrentCampaign(id)) return;
       setPendingPecReview(data.recipients ?? []);
     } catch {
       // best-effort, stesso principio del polling di dettaglio campagna
@@ -4252,7 +4263,9 @@ export function App(): React.JSX.Element {
     try {
       const res = await apiFetch(`/campaigns/${campaignId}/failures/by-reason`);
       if (!res.ok) return;
-      setFailureGroups(await res.json());
+      const data = await res.json();
+      if (!isCurrentCampaign(campaignId)) return;
+      setFailureGroups(data);
     } catch {
       // Non bloccante.
     }
@@ -8943,6 +8956,7 @@ export function App(): React.JSX.Element {
   };
 
   const handleCampaignClick = (id: string) => {
+    selectedCampaignIdRef.current = id;
     setSelectedCampaignId(id);
     setView('campaign-detail');
     setCampaign(null);
@@ -9116,6 +9130,7 @@ export function App(): React.JSX.Element {
       const res = await apiFetch(`/campaigns/${id}/channel-stats`);
       if (!res.ok) return;
       const data = await res.json();
+      if (!isCurrentCampaign(id)) return;
       setChannelBreakdown(data.breakdown);
     } catch {
       // Non bloccante: la pagina dettaglio resta usabile senza il breakdown.
@@ -9127,6 +9142,7 @@ export function App(): React.JSX.Element {
       const res = await apiFetch(`/campaigns/${id}/effective-channel-stats`);
       if (!res.ok) return;
       const data = await res.json();
+      if (!isCurrentCampaign(id)) return;
       setEffectiveChannelBreakdown(data.breakdown);
     } catch {
       // Non bloccante: la pagina dettaglio resta usabile senza il breakdown.
@@ -9137,7 +9153,9 @@ export function App(): React.JSX.Element {
     try {
       const res = await apiFetch(`/campaigns/${id}/send-stage-counts`);
       if (!res.ok) return;
-      setCampaignSendStageCounts(await res.json());
+      const data = await res.json();
+      if (!isCurrentCampaign(id)) return;
+      setCampaignSendStageCounts(data);
     } catch {
       // Non bloccante: il dettaglio campagna resta usabile senza la barra a stadi.
     }
@@ -9147,7 +9165,9 @@ export function App(): React.JSX.Element {
     try {
       const res = await apiFetch(`/campaigns/${id}/send-status-breakdown`);
       if (!res.ok) return;
-      setSendStatusBreakdown(await res.json());
+      const data = await res.json();
+      if (!isCurrentCampaign(id)) return;
+      setSendStatusBreakdown(data);
     } catch {
       // Non bloccante: il dettaglio campagna resta usabile senza la barra.
     }
@@ -9157,7 +9177,9 @@ export function App(): React.JSX.Element {
     try {
       const res = await apiFetch(`/campaigns/${id}/postal-status-breakdown`);
       if (!res.ok) return;
-      setPostalStatusBreakdown(await res.json());
+      const data = await res.json();
+      if (!isCurrentCampaign(id)) return;
+      setPostalStatusBreakdown(data);
     } catch {
       // Non bloccante: il dettaglio campagna resta usabile senza la barra.
     }
@@ -9167,7 +9189,9 @@ export function App(): React.JSX.Element {
     try {
       const res = await apiFetch(`/campaigns/${id}/postal-delivery-status-breakdown`);
       if (!res.ok) return;
-      setPostalDeliveryStatusBreakdown(await res.json());
+      const data = await res.json();
+      if (!isCurrentCampaign(id)) return;
+      setPostalDeliveryStatusBreakdown(data);
     } catch {
       // Non bloccante: il dettaglio campagna resta usabile senza la barra.
     }
@@ -9177,7 +9201,9 @@ export function App(): React.JSX.Element {
     try {
       const res = await apiFetch(`/campaigns/${id}/cost`);
       if (!res.ok) return;
-      setCampaignCost(await res.json());
+      const data = await res.json();
+      if (!isCurrentCampaign(id)) return;
+      setCampaignCost(data);
     } catch {
       // Non bloccante: il dettaglio campagna resta usabile senza il costo.
     }
@@ -9187,7 +9213,9 @@ export function App(): React.JSX.Element {
     try {
       const res = await apiFetch(`/campaigns/${id}/cost-savings`);
       if (!res.ok) return;
-      setCampaignCostSavings(await res.json());
+      const data = await res.json();
+      if (!isCurrentCampaign(id)) return;
+      setCampaignCostSavings(data);
     } catch {
       // Non bloccante: il dettaglio campagna resta usabile senza il risparmio.
     }
@@ -9197,7 +9225,9 @@ export function App(): React.JSX.Element {
     try {
       const res = await apiFetch(`/campaigns/${id}/payment-total`);
       if (!res.ok) return;
-      setCampaignPaymentTotal(await res.json());
+      const data = await res.json();
+      if (!isCurrentCampaign(id)) return;
+      setCampaignPaymentTotal(data);
     } catch {
       // Non bloccante: il dettaglio campagna resta usabile senza il totale PagoPA.
     }
@@ -9273,6 +9303,7 @@ export function App(): React.JSX.Element {
       const res = await apiFetch(`/campaigns/${campaignId}/stats/recipients?${params.toString()}`);
       if (!res.ok) return;
       const data = await res.json();
+      if (!isCurrentCampaign(campaignId)) return;
       setRecipientsPage(data);
     } catch {
       // Non bloccante: la tabella resta sullo stato precedente.
@@ -9283,7 +9314,9 @@ export function App(): React.JSX.Element {
     try {
       const res = await apiFetch(`/campaigns/${campaignId}/stats/recipients/filter-options`);
       if (!res.ok) return;
-      setRecipientsFilterOptions(await res.json());
+      const data = await res.json();
+      if (!isCurrentCampaign(campaignId)) return;
+      setRecipientsFilterOptions(data);
     } catch {
       // Non bloccante: le select filtro restano vuote.
     }
@@ -9294,6 +9327,7 @@ export function App(): React.JSX.Element {
       const res = await apiFetch(`/campaigns/${id}/download-combination-stats`);
       if (!res.ok) return;
       const data = await res.json();
+      if (!isCurrentCampaign(id)) return;
       setDownloadCombinations(data.combinations && data.combinations.length > 0 ? data.combinations : null);
       setPostalNoDigitalDownloaded(data.postalNoDigitalDownloaded ?? 0);
     } catch {
