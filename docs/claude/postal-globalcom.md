@@ -347,7 +347,18 @@ Caso reale 570202616665: via browser `stato "6"`, `flagRitorno true`,
 Per confrontare un codice, riprodurre il flusso (curl con cookie jar) o aprire
 la pagina con Playwright e leggere la risposta di `ricercasemplice`, mai
 fidarsi di una chiamata diretta. Migration `ReverifyPosteDelivered` ha rimesso
-in coda le righe `delivered` valutate prima del fix.
+in coda le righe `delivered` valutate prima del fix. Script pronto con lo
+stesso flusso: `docker compose exec -w /app/apps/backend backend node
+src/debug/poste-tracking-probe.mjs <codice>` (con `MSYS_NO_PATHCONV=1` da Git
+Bash) — stampa testata e movimenti.
+
+**Poste non dice il motivo di un ritorno al mittente: compiuta giacenza e
+rifiuto appaiono come "restituita" (`flagRitorno`) come un indirizzo errato.**
+Verificato dal vivo (570202746797 giacenza, 570202727476 rifiuto): il motivo
+c'è solo su GlobalCom (`StatoConsegna` `Compiuta Giacenza` / `Invio
+Rifiutato`, `Stato NonConsegnato`, `CodiceConsegna KO`, `DataConsegna` = data
+legale). Per l'esito legale vince GlobalCom, Poste può solo promuovere a
+consegnato (spec `2026-09-28-postal-esito-legale-design.md`).
 
 **Raccomandate internazionali restituite: Poste può NON segnare
 `flagRitorno`** anche con i dati completi (vede solo la tratta italiana):
@@ -358,3 +369,15 @@ mittente (provider postale attivo) con destinatario altrove → `returned`.
 Destinatario nella stessa città del mittente: non distinguibile, resta
 `delivered`. Riesame una tantum delle righe `delivered` all'avvio
 (`reclassifyDeliveredToSender`, senza chiamate a Poste).
+
+**"Stato Documento" POSTAL = esito legale, derivato
+(`campaigns/postal-legal-outcome.util.ts`).** Tabelle CONSEGNATO /
+NON_CONSEGNATO dei valori reali di `StatoConsegna` (verificati in prod) usate
+sia dalla regola TS sia dall'SQL generato: un nuovo valore GlobalCom va
+aggiunto lì e basta (finché non c'è, cade in "In corso", mai in Consegnato).
+Parità SQL/TS: `node src/debug/postal-legal-outcome-parity.mjs` (dopo
+`docker compose restart backend`, legge `dist/`). "Stato notifica" Fallito per
+`Errore` GlobalCom è solo derivato (`recipient.status` resta `sent`).
+`postal-status-breakdown` resta lo stato GlobalCom grezzo (Andamento Invio,
+tasto Verifica su Poste). Riga tabella dei dirottati INAD: ramo JSX proprio
+(`r.inadCheck?.diverted`), va aggiornato insieme alle altre celle.

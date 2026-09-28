@@ -37,7 +37,7 @@ describe('CampaignsService - verifica Poste', () => {
 
   beforeEach(async () => {
     campaignRepo = { findOneBy: vi.fn().mockResolvedValue({ id: 'c1', channelType: 'POSTAL', channelConfig: { postalServiceType: 'RaccomandataMarket4', postalReturnReceipt: true } }) };
-    recipientRepo = { find: vi.fn(), createQueryBuilder: vi.fn() };
+    recipientRepo = { find: vi.fn(), createQueryBuilder: vi.fn(), query: vi.fn().mockResolvedValue([]) };
     attemptRepo = { find: vi.fn() };
     posteRepo = { find: vi.fn().mockResolvedValue([]), query: vi.fn().mockResolvedValue([]) };
     downloadEventRepo = { find: vi.fn().mockResolvedValue([]) };

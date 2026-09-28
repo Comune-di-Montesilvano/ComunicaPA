@@ -39,6 +39,8 @@ export interface JourneyAttempt {
 
 export interface JourneyDetail {
   recipient?: { status: string };
+  /** Solo POSTAL: esito legale calcolato dal backend. */
+  legalOutcome?: { outcome: string; reason: string | null; at: string | null } | null;
   campaign: { channelType: string };
   attempts: JourneyAttempt[];
   downloads: Array<{ channel: string; attachmentIndex: number; downloadedAt: string }>;
@@ -69,6 +71,8 @@ export interface Verdict {
   note: string | null;
   /** Le fonti non concordano (es. Poste consegnata, GlobalCom no). */
   discrepancy: boolean;
+  /** Data legale: mostrare solo il giorno, mai l'ora. */
+  dateOnly?: boolean;
 }
 
 const SOURCE_LABELS: Record<JourneySource, string> = {
@@ -183,6 +187,38 @@ export function computeVerdict(d: JourneyDetail, labels: JourneyLabels): Verdict
   if (!last) return d.recipient?.status === 'sent' ? { ...base, headline: 'Inviata' } : base;
   if (last.status === 'failed') {
     return { ...base, headline: 'Invio non riuscito', tone: 'ko', when: last.createdAt, source: `su ${labels.channel(last.channelType)}`, note: last.errorMessage };
+  }
+
+  // POSTAL: il verdetto segue l'esito legale calcolato dal backend (compiuta
+  // giacenza e rifiuto valgono consegna, via PEC idem). In corso / non
+  // classificato ricadono sulla logica GlobalCom/Poste sotto.
+  const lo = d.campaign.channelType === 'POSTAL' ? d.legalOutcome : null;
+  if (lo?.outcome === 'delivered') {
+    const source = lo.reason === 'Verifica Poste' ? 'secondo Poste Italiane' : lo.reason === 'Via PEC' ? 'via PEC (domicilio digitale)' : 'secondo GlobalCom';
+    const discrepancy = lo.reason === 'Verifica Poste' && last.postalStatus !== 'Consegnato';
+    // Discrepanza: lo stato GlobalCom resta visibile accanto alla consegna Poste.
+    const gcNote = last.postalStatus ? `GlobalCom: ${labels.postalStatus(last.postalStatus)}${last.postalDeliveryStatus ? ` (${last.postalDeliveryStatus})` : ''}` : null;
+    const note = discrepancy ? gcNote : lo.reason === 'Verifica Poste' || lo.reason === 'Via PEC' ? null : lo.reason;
+    return { headline: 'Consegnata', tone: 'ok', when: lo.at, source, note, discrepancy, dateOnly: true };
+  }
+  if (lo?.outcome === 'not_delivered') {
+    return { headline: 'Non consegnata', tone: 'ko', when: last.postalDeliveryDate ?? null, source: 'secondo GlobalCom', note: lo.reason, discrepancy: false };
+  }
+  if (lo?.outcome === 'no_legal_value') {
+    return { headline: 'Solo App IO', tone: 'warn', when: last.sentAt ?? last.createdAt, source: 'senza valore legale', note: null, discrepancy: false };
+  }
+  if (lo?.outcome === 'no_ar') {
+    return { headline: 'Inviata senza AR', tone: 'neutral', when: last.sentAt ?? last.createdAt, source: 'nessun esito di consegna', note: null, discrepancy: false };
+  }
+  if (lo?.outcome === 'in_progress' || lo?.outcome === 'unclassified') {
+    // Stesso esito della tabella: mai "Non consegnata" per un valore GlobalCom
+    // non (ancora) classificato. Stato GlobalCom e Poste restano in nota.
+    const pv = last.posteVerification;
+    const gc = last.postalStatus ? `GlobalCom: ${labels.postalStatus(last.postalStatus)}${last.postalDeliveryStatus ? ` (${last.postalDeliveryStatus})` : ''}` : null;
+    const posteNote = pv?.status === 'pending'
+      ? `Verifica su Poste in corso${pv.trackingUntil ? ` fino al ${new Date(pv.trackingUntil).toLocaleDateString('it-IT')}` : ''}${pv.summary ? `: ${pv.summary}` : ''}`
+      : pv?.summary ? `Poste: ${pv.summary}` : null;
+    return { headline: lo.outcome === 'in_progress' ? 'In corso' : 'Non classificata', tone: 'neutral', when: null, source: null, note: [gc, posteNote].filter(Boolean).join(' — ') || null, discrepancy: false };
   }
 
   if (d.campaign.channelType === 'POSTAL' && last.channelType === 'POSTAL') {

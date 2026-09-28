@@ -1,3 +1,5 @@
+import type { PostalLegalOutcome } from '../postal-legal-outcome.util.js';
+
 export interface CampaignStatsDto {
   campaignId: string;
   totalRecipients: number;
@@ -34,6 +36,10 @@ export interface RecipientStatDto {
   /** Verifica consegna su tracking Poste (ultimo attempt POSTAL), vedi poste-tracking-effective.util.ts. */
   posteVerificationStatus?: string | null;
   posteDeliveredAt?: Date | null;
+  /** Solo POSTAL: esito legale derivato (spec 2026-09-28-postal-esito-legale). */
+  legalOutcome?: PostalLegalOutcome | null;
+  legalOutcomeReason?: string | null;
+  legalOutcomeAt?: Date | null;
   /** Invio dell'ultimo tentativo. */
   sentAt?: Date | null;
   /** Numero di tentativi di invio. */
@@ -190,6 +196,10 @@ export interface PostalReportRowDto {
   posteVerification: { status: string; checkCount: number; trackingUntil: string | null; deliveredAt: string | null; outcomeAt: string | null; lastMovement: string; summary: string | null } | null;
   /** GlobalCom NonConsegnato ma Poste consegnato (stesso criterio del bucket ConsegnatoVerificaPoste). */
   posteDiscrepancy: boolean;
+  /** Esito legale (spec 2026-09-28-postal-esito-legale). */
+  legalOutcome: PostalLegalOutcome;
+  legalOutcomeReason: string | null;
+  legalOutcomeAt: string | null;
 }
 
 export interface PostalReportDto {

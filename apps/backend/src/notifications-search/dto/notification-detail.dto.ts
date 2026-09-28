@@ -1,5 +1,6 @@
 import type { PreviewMessageResult } from '../../campaigns/dto/preview-message.dto.js';
 import type { ResolvedPaymentData } from '../../channels/payment-config.util.js';
+import type { PostalLegalOutcome } from '../../campaigns/postal-legal-outcome.util.js';
 import type { PosteVerificationDto } from '../../channels/postal/poste-tracking/poste-tracking-effective.util.js';
 
 export interface AttemptDetailDto {
@@ -53,6 +54,8 @@ export interface NotificationDetailDto {
   downloads: Array<{ channel: string; attachmentIndex: number; downloadedAt: string }>;
   preview: PreviewMessageResult;
   appIoPreview: PreviewMessageResult | null;
+  /** Solo POSTAL: esito legale derivato (spec 2026-09-28-postal-esito-legale). */
+  legalOutcome: { outcome: PostalLegalOutcome; reason: string | null; at: string | null } | null;
   totalCostCents?: number | null;
   attachments: Array<{ index: number; label: string }>;
   /** null = campagna senza channelConfig.paymentConfig.enabled, o dato non risolvibile per questo destinatario. */

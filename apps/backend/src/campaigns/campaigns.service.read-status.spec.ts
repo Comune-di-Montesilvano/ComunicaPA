@@ -37,7 +37,7 @@ describe('CampaignsService - stato Letto (canali digitali)', () => {
 
   beforeEach(async () => {
     campaignRepo = { findOneBy: vi.fn().mockResolvedValue({ id: 'c1', channelType: 'POSTAL', channelConfig: { postalServiceType: 'RaccomandataMarket4', postalReturnReceipt: true } }) };
-    recipientRepo = { find: vi.fn(), createQueryBuilder: vi.fn() };
+    recipientRepo = { find: vi.fn(), createQueryBuilder: vi.fn(), query: vi.fn().mockResolvedValue([]) };
     attemptRepo = { find: vi.fn() };
     posteRepo = { find: vi.fn().mockResolvedValue([]), query: vi.fn().mockResolvedValue([]) };
     downloadEventRepo = { find: vi.fn().mockResolvedValue([]) };
@@ -124,10 +124,10 @@ describe('CampaignsService - stato Letto (canali digitali)', () => {
     expect(page.items[1]).toMatchObject({ sentAt: null, attemptsCount: 2, lastError: '550 mailbox unavailable', firstReadAt: null });
   });
 
-  it('opzioni filtro stato su POSTAL: r.status semplice', async () => {
+  it('opzioni filtro stato su POSTAL: nessun concetto di letto', async () => {
     const qbs: any[] = [];
     recipientRepo.createQueryBuilder.mockImplementation(() => { const q = makeQb(); qbs.push(q); return q; });
     await service.getRecipientFilterOptions('c1');
-    expect(qbs[0].select.mock.calls[0][0]).toBe('r.status');
+    expect(String(qbs[0].select.mock.calls[0][0])).not.toContain("'read'");
   });
 });

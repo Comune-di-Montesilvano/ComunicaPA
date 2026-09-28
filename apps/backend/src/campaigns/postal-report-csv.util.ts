@@ -1,10 +1,17 @@
 import { escapeCsvField } from './csv.util.js';
 import type { PostalReportDto, PostalReportRowDto } from './dto/campaign-stats.dto.js';
 import { postalStatusLabel, POSTAL_STATUS_HISTORY_COLUMNS } from './postal-status-labels.util.js';
+import { POSTAL_LEGAL_OUTCOME_LABELS } from './postal-legal-outcome.util.js';
 import { posteVerificationLabel } from '../channels/postal/poste-tracking/poste-tracking-effective.util.js';
 
 function formatDate(iso: string | undefined): string {
   return iso ? new Date(iso).toLocaleString('it-IT', { timeZone: 'Europe/Rome' }) : '';
+}
+
+// Data legale (valore probatorio): solo il giorno. GlobalCom manda DataConsegna
+// senza ora, un orario mostrato sarebbe inventato dal fuso.
+function formatLegalDate(iso: string | undefined): string {
+  return iso ? new Date(iso).toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
 }
 
 // Verifica consegna su tracking Poste — sempre presenti, dopo le colonne
@@ -28,7 +35,7 @@ function appIoOutcomeLabel(outcome: PostalReportRowDto['appIoOutcome']): string 
 }
 
 export function buildPostalReportAttualeCsv(report: PostalReportDto): string {
-  const headers = ['Codice Fiscale', 'Nominativo', 'IDPRO', 'Stato Documento', 'Data Stato', 'Stato Consegna Poste', 'Codice Consegna', 'Data Consegna Poste', 'ID Accettazione Poste', 'Codice Errore', 'Descrizione Errore', ...POSTE_HEADERS];
+  const headers = ['Codice Fiscale', 'Nominativo', 'IDPRO', 'Stato Documento', 'Motivo', 'Data Legale', 'Stato GlobalCom', 'Data Stato GlobalCom', 'Stato Consegna Poste', 'Codice Consegna', 'Data Consegna Poste', 'ID Accettazione Poste', 'Codice Errore', 'Descrizione Errore', ...POSTE_HEADERS];
   if (report.hasAppIoCoDelivery) headers.push('Esito App IO');
   if (report.hasExternalId) headers.push('External ID');
 
@@ -40,6 +47,10 @@ export function buildPostalReportAttualeCsv(report: PostalReportDto): string {
       r.codiceFiscale,
       r.fullName ?? '',
       r.postalTrackingId ?? '',
+      // Stato Documento = esito legale; data legale con valore probatorio.
+      POSTAL_LEGAL_OUTCOME_LABELS[r.legalOutcome],
+      r.legalOutcomeReason ?? '',
+      formatLegalDate(r.legalOutcomeAt ?? undefined),
       postalStatusLabel(r.postalStatus),
       formatDate(latestEntry?.rilevatoIl),
       r.postalDeliveryStatus ?? '',

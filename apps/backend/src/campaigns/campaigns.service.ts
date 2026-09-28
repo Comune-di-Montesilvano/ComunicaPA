@@ -47,6 +47,7 @@ import { SignatureVerificationService } from '../signature-verification/signatur
 import { SignatureVerificationJobStatus } from '../entities/signature-verification-job.entity.js';
 import { isPartitaIva } from '../channels/tax-id.util.js';
 import { PostalPosteTracking } from '../entities/postal-poste-tracking.entity.js';
+import { postalLegalOutcome, postalLegalOutcomeSql, POSTAL_GLOBALCOM_ERROR_SQL, isPostalLegalOutcome } from './postal-legal-outcome.util.js';
 import { POSTE_DELIVERED_BUCKET, formatLastMovement, isPosteDeliveredOverride, posteDeliveredSql, posteSummaryOf } from '../channels/postal/poste-tracking/poste-tracking-effective.util.js';
 
 const INAD_BULK_THRESHOLD = 100;
@@ -2603,14 +2604,26 @@ export class CampaignsService {
       qb.andWhere('(r.fullName ILIKE :search OR r.codiceFiscale ILIKE :search)', { search: `%${search.trim()}%` });
     }
     const tracksRead = READ_STATUS_CHANNELS.includes(campaign.channelType);
+    const isPostal = campaign.channelType === 'POSTAL';
     if (status === READ_STATUS && tracksRead) {
       qb.andWhere('r.status = :status', { status: 'sent' });
       qb.andWhere(HAS_DOWNLOAD_SQL);
+    } else if (status === 'failed' && isPostal) {
+      // Errore GlobalCom dopo l'accettazione: mostrato Fallito, recipient.status resta sent.
+      qb.andWhere(`(r.status = 'failed' OR (r.status = 'sent' AND ${POSTAL_GLOBALCOM_ERROR_SQL}))`);
     } else if (status) {
       qb.andWhere('r.status = :status', { status });
       // "Inviato" su canale digitale = inviato e non ancora letto.
       if (status === 'sent' && tracksRead) qb.andWhere(`NOT ${HAS_DOWNLOAD_SQL}`);
+      if (status === 'sent' && isPostal) qb.andWhere(`NOT ${POSTAL_GLOBALCOM_ERROR_SQL}`);
     }
+    // POSTAL: "Stato documento" = esito legale. Il valore del filtro è un
+    // codice esito, mai un postal_status grezzo.
+    const legalFilter = isPostal && isPostalLegalOutcome(deliveryStatus);
+    if (legalFilter) {
+      qb.andWhere(`${postalLegalOutcomeSql(hasPostalArTracking(campaign))} = :legalOutcome`, { legalOutcome: deliveryStatus });
+    }
+    const rawDeliveryStatus = legalFilter ? undefined : deliveryStatus;
     // Dirottato INAD: mai un postal_status/postal_delivery_status reale
     // sull'attempt (che è su PEC, non POSTAL) — filtro diretto sul flag
     // Recipient.inadCheck.diverted, stesso identico criterio usato per
@@ -2618,10 +2631,10 @@ export class CampaignsService {
     // sotto (mai valori reali per 'DirottatoAPec' su na.send_status/
     // na.postal_status/na.postal_delivery_status — combinati in AND
     // darebbero sempre zero risultati).
-    if (deliveryStatus === 'DirottatoAPec' || postalDeliveryStatus === 'DirottatoAPec') {
+    if (rawDeliveryStatus === 'DirottatoAPec' || postalDeliveryStatus === 'DirottatoAPec') {
       qb.andWhere(`(r.inad_check->>'diverted')::boolean = true`);
     }
-    if (deliveryStatus === PENDING_DELIVERY_STATUS_SENTINEL) {
+    if (rawDeliveryStatus === PENDING_DELIVERY_STATUS_SENTINEL) {
       qb.andWhere(
         `EXISTS (
           SELECT 1 FROM notification_attempts na
@@ -2631,7 +2644,7 @@ export class CampaignsService {
         )`,
         { campaignChannelType: campaign.channelType },
       );
-    } else if (deliveryStatus && deliveryStatus !== 'DirottatoAPec') {
+    } else if (rawDeliveryStatus && rawDeliveryStatus !== 'DirottatoAPec') {
       qb.andWhere(
         `EXISTS (
           SELECT 1 FROM notification_attempts na
@@ -2639,7 +2652,7 @@ export class CampaignsService {
             AND na.attempt_number = (SELECT MAX(na2.attempt_number) FROM notification_attempts na2 WHERE na2.recipient_id = r.id)
             AND (na.send_status = :deliveryStatus OR na.postal_status = :deliveryStatus)
         )`,
-        { deliveryStatus },
+        { deliveryStatus: rawDeliveryStatus },
       );
     }
     if (postalDeliveryStatus === POSTAL_DELIVERY_PENDING_SENTINEL) {
@@ -2769,11 +2782,15 @@ export class CampaignsService {
       );
       if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
     } else if (sortBy === 'postalStatus') {
-      qb.orderBy(
-        `(SELECT na.postal_status FROM notification_attempts na WHERE na.recipient_id = r.id AND na.postal_status IS NOT NULL ORDER BY na.attempt_number DESC LIMIT 1)`,
-        dir,
-        'NULLS LAST',
-      );
+      if (isPostal) {
+        qb.orderBy(postalLegalOutcomeSql(hasPostalArTracking(campaign)), dir);
+      } else {
+        qb.orderBy(
+          `(SELECT na.postal_status FROM notification_attempts na WHERE na.recipient_id = r.id AND na.postal_status IS NOT NULL ORDER BY na.attempt_number DESC LIMIT 1)`,
+          dir,
+          'NULLS LAST',
+        );
+      }
       if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
     } else if (sortBy === 'postalDeliveryStatus') {
       qb.orderBy(
@@ -2884,6 +2901,22 @@ export class CampaignsService {
           item.posteDeliveredAt = poste?.deliveredAt ?? null;
           item.costCents = latest.costCents ?? null;
         }
+        if (isPostal) {
+          const poste = latest ? posteByAttempt.get(latest.id) : undefined;
+          const legal = postalLegalOutcome({
+            diverted: !!item.inadCheck?.diverted,
+            arTracking: hasPostalArTracking(campaign),
+            attempt: latest ?? null,
+            poste: poste ? { status: poste.status, outcomeAt: poste.outcomeAt ?? null } : null,
+          });
+          item.legalOutcome = legal.outcome;
+          item.legalOutcomeReason = legal.reason;
+          item.legalOutcomeAt = legal.at;
+          if (item.status === 'sent' && latest?.postalStatus === 'Errore') {
+            item.status = 'failed';
+            item.lastError = item.lastError ?? legal.reason;
+          }
+        }
       }
     }
 
@@ -2908,9 +2941,13 @@ export class CampaignsService {
 
     // Canali digitali: "read" (inviato + download) separato da "sent" nella
     // stessa query, stesso criterio HAS_DOWNLOAD_SQL del filtro.
+    // POSTAL: "failed" include gli Errore GlobalCom dopo l'accettazione
+    // (derivato, recipient.status resta sent).
     const statusExpr = READ_STATUS_CHANNELS.includes(campaign.channelType)
       ? `CASE WHEN r.status = 'sent' AND ${HAS_DOWNLOAD_SQL} THEN '${READ_STATUS}' ELSE r.status::text END`
-      : 'r.status';
+      : campaign.channelType === 'POSTAL'
+        ? `CASE WHEN r.status = 'sent' AND ${POSTAL_GLOBALCOM_ERROR_SQL} THEN 'failed' ELSE r.status::text END`
+        : 'r.status';
     const statusRows = await this.recipientRepo
       .createQueryBuilder('r')
       .select(statusExpr, 'value')
@@ -3050,13 +3087,25 @@ export class CampaignsService {
       )) as Array<{ n: number }> | undefined)?.[0]?.n ?? 0)
       : 0;
 
+    // POSTAL: "Stato documento" = esito legale. Query raw (niente
+    // createQueryBuilder in più: le spec ne mockano una sequenza fissa).
+    const legalOutcomeRows = campaign.channelType === 'POSTAL'
+      ? ((await this.recipientRepo.query(
+        `SELECT ${postalLegalOutcomeSql(hasPostalArTracking(campaign))} AS value, COUNT(*)::int AS count
+         FROM recipients r WHERE r.campaign_id = $1 GROUP BY 1`,
+        [campaignId],
+      )) as Array<{ value: string; count: number }> | undefined) ?? []
+      : null;
+
     return {
       statuses: statusRows.map((r) => ({ value: r.value, count: Number(r.count) })),
-      deliveryStatuses: [
-        ...deliveryRows.map((r) => ({ value: r.value, count: Number(r.count) })),
-        ...(pendingCount > 0 ? [{ value: PENDING_DELIVERY_STATUS_SENTINEL, count: pendingCount }] : []),
-        ...(divertedCount > 0 ? [{ value: 'DirottatoAPec', count: divertedCount }] : []),
-      ],
+      deliveryStatuses: legalOutcomeRows
+        ? legalOutcomeRows.map((r) => ({ value: r.value, count: Number(r.count) }))
+        : [
+          ...deliveryRows.map((r) => ({ value: r.value, count: Number(r.count) })),
+          ...(pendingCount > 0 ? [{ value: PENDING_DELIVERY_STATUS_SENTINEL, count: pendingCount }] : []),
+          ...(divertedCount > 0 ? [{ value: 'DirottatoAPec', count: divertedCount }] : []),
+        ],
       postalDeliveryStatuses: [
         ...postalDeliveryRows.map((r) => ({ value: r.value, count: Number(r.count) })),
         ...(nonTracciatoCount > 0 ? [{ value: 'NonTracciato', count: nonTracciatoCount }] : []),
@@ -3512,7 +3561,7 @@ export class CampaignsService {
 
     const recipients = await this.recipientRepo.find({
       where: { campaignId },
-      select: { id: true, codiceFiscale: true, fullName: true, extraData: true },
+      select: { id: true, codiceFiscale: true, fullName: true, extraData: true, inadCheck: true },
       order: { createdAt: 'ASC' },
     });
     if (recipients.length === 0) return { hasAppIoCoDelivery: false, hasExternalId: false, rows: [] };
@@ -3534,6 +3583,17 @@ export class CampaignsService {
     const posteByAttempt = await this.loadPosteTrackingByAttempt([...latestByRecipient.values()].map((a) => a.id));
 
     const hasAppIoCoDelivery = !!resolveSecondaryAppIoConfig(campaign.channelConfig);
+    const arTracking = hasPostalArTracking(campaign);
+    // Dirottati INAD: la data legale è l'invio PEC, tentativo non POSTAL.
+    const divertedIds = recipients.filter((r) => r.inadCheck?.diverted).map((r) => r.id);
+    const latestPecByRecipient = new Map<string, NotificationAttempt>();
+    if (divertedIds.length > 0) {
+      const pecAttempts = (await this.attemptRepo.find({ where: { recipientId: In(divertedIds), channelType: 'PEC' } })) ?? [];
+      for (const a of pecAttempts) {
+        const cur = latestPecByRecipient.get(a.recipientId);
+        if (!cur || a.attemptNumber > cur.attemptNumber) latestPecByRecipient.set(a.recipientId, a);
+      }
+    }
 
     const rows: PostalReportRowDto[] = recipients.map((r) => {
       const latest = latestByRecipient.get(r.id);
@@ -3543,6 +3603,14 @@ export class CampaignsService {
         ? ((first?.responsePayload as Record<string, unknown> | undefined)?.['appIo'] as { success?: boolean; error?: string } | undefined)
         : undefined;
       const latestPayload = latest?.responsePayload as Record<string, unknown> | undefined;
+      const diverted = !!r.inadCheck?.diverted;
+      const legal = postalLegalOutcome({
+        diverted,
+        arTracking,
+        // Dirottato: conta il tentativo PEC reale (esito e data di invio).
+        attempt: diverted ? (latestPecByRecipient.get(r.id) ?? null) : (latest ?? null),
+        poste: poste ? { status: poste.status, outcomeAt: poste.outcomeAt ?? null } : null,
+      });
 
       return {
         codiceFiscale: r.codiceFiscale,
@@ -3562,6 +3630,9 @@ export class CampaignsService {
           ? { status: poste.status, checkCount: poste.checkCount, trackingUntil: poste.trackingUntil ? poste.trackingUntil.toISOString() : null, deliveredAt: poste.deliveredAt ? poste.deliveredAt.toISOString() : null, outcomeAt: poste.outcomeAt ? poste.outcomeAt.toISOString() : null, lastMovement: formatLastMovement(poste.movements), summary: posteSummaryOf(poste) }
           : null,
         posteDiscrepancy: isPosteDeliveredOverride(latest?.postalStatus, poste?.status),
+        legalOutcome: legal.outcome,
+        legalOutcomeReason: legal.reason,
+        legalOutcomeAt: legal.at ? legal.at.toISOString() : null,
       };
     });
 

@@ -177,6 +177,7 @@ describe('NotificationsSearchService.getDetail', () => {
     const result = await service.getDetail('r1');
 
     expect(result).toEqual({
+      legalOutcome: null,
       recipient: {
         id: 'r1',
         codiceFiscale: 'RSSMRA80A01H501X',
@@ -425,6 +426,34 @@ describe('NotificationsSearchService.getDetail', () => {
       protocolYear: null,
       protocolledAt: null,
     });
+  });
+
+  it('POSTAL: esito legale nel dettaglio (compiuta giacenza = consegnato, data GlobalCom)', async () => {
+    recipientRepoMock.findOne.mockResolvedValueOnce({
+      id: 'r-postal', codiceFiscale: 'RSSMRA80A01H501U', fullName: 'ROSSI MARIO', email: null, pec: null, status: 'sent', extraData: {}, inadCheck: null,
+      campaign: { id: 'c-postal', name: 'Raccomandata AR', channelType: 'POSTAL', channelConfig: { postalServiceType: 'RaccomandataMarket4', postalReturnReceipt: true } },
+    });
+    attemptRepoMock.find.mockResolvedValueOnce([{
+      id: 'a1', attemptNumber: 1, status: 'success', channelType: 'POSTAL', errorMessage: null,
+      sentAt: new Date('2026-07-30T08:00:00Z'), createdAt: new Date('2026-07-30T08:00:00Z'), responsePayload: null,
+      postalStatus: 'NonConsegnato', postalDeliveryStatus: 'Compiuta Giacenza', postalDeliveryDate: new Date('2026-09-08T00:00:00Z'),
+    }]);
+    downloadEventRepoMock.find.mockResolvedValueOnce([]);
+    campaignsServiceMock.renderMessageForRecipient.mockResolvedValueOnce({ subject: 'Avviso', bodyHtml: '' });
+    const result = await service.getDetail('r-postal');
+    expect(result.legalOutcome).toEqual({ outcome: 'delivered', reason: 'Compiuta Giacenza', at: '2026-09-08T00:00:00.000Z' });
+  });
+
+  it('non POSTAL: legalOutcome null', async () => {
+    recipientRepoMock.findOne.mockResolvedValueOnce({
+      id: 'r1', codiceFiscale: 'RSSMRA80A01H501U', fullName: 'ROSSI MARIO', email: 'mario@test.it', pec: null, status: 'sent', extraData: {},
+      campaign: { id: 'c1', name: 'Avviso', channelType: 'EMAIL', channelConfig: {} },
+    });
+    attemptRepoMock.find.mockResolvedValueOnce([]);
+    downloadEventRepoMock.find.mockResolvedValueOnce([]);
+    campaignsServiceMock.renderMessageForRecipient.mockResolvedValueOnce({ subject: 'Avviso', bodyHtml: '' });
+    const result = await service.getDetail('r1');
+    expect(result.legalOutcome).toBeNull();
   });
 });
 
