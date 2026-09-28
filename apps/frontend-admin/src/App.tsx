@@ -13426,7 +13426,9 @@ export function App(): React.JSX.Element {
                                   {notifDetail.payment.dueDateIso && <p className="nd-kv">Scadenza {new Date(notifDetail.payment.dueDateIso).toLocaleDateString('it-IT')}</p>}
                                 </div>
                               )}
-                              {notifDetail.campaign.channelType !== 'SEND' && notifDetail.attachments.length > 0 && (
+                              {/* SEND: i documenti arrivano da PN ("Documenti SEND") solo dopo l'IUN —
+                                  se l'invio è fallito prima (es. protocollazione) serve la copia locale. */}
+                              {(notifDetail.campaign.channelType !== 'SEND' || !notifDetail.attempts.some((a) => a.iun)) && notifDetail.attachments.length > 0 && (
                                 <div>
                                   <h4>Allegati</h4>
                                   {notifDetail.attachments.map((att) => (
