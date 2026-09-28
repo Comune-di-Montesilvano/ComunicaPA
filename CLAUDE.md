@@ -12,8 +12,8 @@ ComunicaPA — HUB open-source per la trasmissione asincrona di comunicazioni ma
 
 ```
 apps/backend/          NestJS 12 (ESM) + TypeScript — API REST, worker BullMQ (porta 8080)
-apps/frontend-admin/   React 19 + Vite 6 — Portale operatori PA (porta 3000)
-apps/frontend-citizen/ React 19 + Vite 6 — Portale cittadini (porta 3001)
+apps/frontend-admin/   React 19 + Vite 8 — Portale operatori PA (porta 3000)
+apps/frontend-citizen/ React 19 + Vite 8 — Portale cittadini (porta 3001)
 packages/shared-types/ @comunicapa/shared-types — interfacce TypeScript condivise
 ```
 

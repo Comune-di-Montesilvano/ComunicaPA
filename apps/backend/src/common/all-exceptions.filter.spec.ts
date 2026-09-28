@@ -10,7 +10,12 @@ function makeHost() {
   const status = jest.fn(() => ({ json }));
   const response = { status };
   const getResponse = () => response;
-  const getRequest = () => ({});
+  const getRequest = () => ({
+    method: 'GET',
+    route: { path: '/admin/campaigns/:id' },
+    params: { id: '42' },
+    user: { type: 'operator', username: 'mrossi', role: 'admin' },
+  });
   const host = {
     switchToHttp: () => ({ getResponse, getRequest }),
     // BaseExceptionFilter legge la response reale con getArgByIndex(1),
@@ -46,7 +51,14 @@ describe('AllExceptionsFilter', () => {
 
     filter.catch(genericErr, host);
 
-    expect(sentryUtil.captureException).toHaveBeenCalledWith(genericErr);
+    expect(sentryUtil.captureException).toHaveBeenCalledWith(genericErr, {
+      request: {
+        method: 'GET',
+        route: '/admin/campaigns/:id',
+        params: { id: '42' },
+        actor: { type: 'operator', username: 'mrossi', role: 'admin' },
+      },
+    });
   });
 
   it('chiama captureException per una HttpException con status >= 500', () => {
@@ -58,7 +70,7 @@ describe('AllExceptionsFilter', () => {
 
     filter.catch(serverErr, host);
 
-    expect(sentryUtil.captureException).toHaveBeenCalledWith(serverErr);
+    expect(sentryUtil.captureException).toHaveBeenCalledWith(serverErr, expect.objectContaining({ request: expect.any(Object) }));
   });
 
   it('NON chiama captureException per una HttpException 4xx (es. NotFoundException)', () => {

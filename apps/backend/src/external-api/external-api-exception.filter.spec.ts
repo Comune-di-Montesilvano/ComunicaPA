@@ -9,7 +9,15 @@ function makeHost() {
   const json = jest.fn();
   const status = jest.fn(() => ({ json }));
   const host = {
-    switchToHttp: () => ({ getResponse: () => ({ status }) }),
+    switchToHttp: () => ({
+      getResponse: () => ({ status }),
+      getRequest: () => ({
+        method: 'POST',
+        route: { path: '/external/v1/notifications' },
+        params: {},
+        apiClient: { id: 'client-1', name: 'Gestionale Tributi' },
+      }),
+    }),
   } as unknown as ArgumentsHost;
   return { host, status, json };
 }
@@ -64,6 +72,13 @@ describe('ExternalApiExceptionFilter', () => {
 
     const genericErr = new Error('boom interno');
     filter.catch(genericErr, host);
-    expect(sentryUtil.captureException).toHaveBeenCalledWith(genericErr);
+    expect(sentryUtil.captureException).toHaveBeenCalledWith(genericErr, {
+      request: {
+        method: 'POST',
+        route: '/external/v1/notifications',
+        params: {},
+        actor: { type: 'api-client', id: 'client-1', name: 'Gestionale Tributi' },
+      },
+    });
   });
 });
