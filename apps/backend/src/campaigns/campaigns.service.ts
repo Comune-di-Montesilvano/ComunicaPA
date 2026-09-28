@@ -47,6 +47,7 @@ import { SignatureVerificationService } from '../signature-verification/signatur
 import { SignatureVerificationJobStatus } from '../entities/signature-verification-job.entity.js';
 import { isPartitaIva } from '../channels/tax-id.util.js';
 import { PostalPosteTracking } from '../entities/postal-poste-tracking.entity.js';
+import { postalLegalOutcome, postalLegalOutcomeSql, POSTAL_GLOBALCOM_ERROR_SQL, isPostalLegalOutcome } from './postal-legal-outcome.util.js';
 import { POSTE_DELIVERED_BUCKET, formatLastMovement, isPosteDeliveredOverride, posteDeliveredSql, posteSummaryOf } from '../channels/postal/poste-tracking/poste-tracking-effective.util.js';
 
 const INAD_BULK_THRESHOLD = 100;
@@ -2603,14 +2604,26 @@ export class CampaignsService {
       qb.andWhere('(r.fullName ILIKE :search OR r.codiceFiscale ILIKE :search)', { search: `%${search.trim()}%` });
     }
     const tracksRead = READ_STATUS_CHANNELS.includes(campaign.channelType);
+    const isPostal = campaign.channelType === 'POSTAL';
     if (status === READ_STATUS && tracksRead) {
       qb.andWhere('r.status = :status', { status: 'sent' });
       qb.andWhere(HAS_DOWNLOAD_SQL);
+    } else if (status === 'failed' && isPostal) {
+      // Errore GlobalCom dopo l'accettazione: mostrato Fallito, recipient.status resta sent.
+      qb.andWhere(`(r.status = 'failed' OR (r.status = 'sent' AND ${POSTAL_GLOBALCOM_ERROR_SQL}))`);
     } else if (status) {
       qb.andWhere('r.status = :status', { status });
       // "Inviato" su canale digitale = inviato e non ancora letto.
       if (status === 'sent' && tracksRead) qb.andWhere(`NOT ${HAS_DOWNLOAD_SQL}`);
+      if (status === 'sent' && isPostal) qb.andWhere(`NOT ${POSTAL_GLOBALCOM_ERROR_SQL}`);
     }
+    // POSTAL: "Stato documento" = esito legale. Il valore del filtro è un
+    // codice esito, mai un postal_status grezzo.
+    const legalFilter = isPostal && isPostalLegalOutcome(deliveryStatus);
+    if (legalFilter) {
+      qb.andWhere(`${postalLegalOutcomeSql(hasPostalArTracking(campaign))} = :legalOutcome`, { legalOutcome: deliveryStatus });
+    }
+    const rawDeliveryStatus = legalFilter ? undefined : deliveryStatus;
     // Dirottato INAD: mai un postal_status/postal_delivery_status reale
     // sull'attempt (che è su PEC, non POSTAL) — filtro diretto sul flag
     // Recipient.inadCheck.diverted, stesso identico criterio usato per
@@ -2618,10 +2631,10 @@ export class CampaignsService {
     // sotto (mai valori reali per 'DirottatoAPec' su na.send_status/
     // na.postal_status/na.postal_delivery_status — combinati in AND
     // darebbero sempre zero risultati).
-    if (deliveryStatus === 'DirottatoAPec' || postalDeliveryStatus === 'DirottatoAPec') {
+    if (rawDeliveryStatus === 'DirottatoAPec' || postalDeliveryStatus === 'DirottatoAPec') {
       qb.andWhere(`(r.inad_check->>'diverted')::boolean = true`);
     }
-    if (deliveryStatus === PENDING_DELIVERY_STATUS_SENTINEL) {
+    if (rawDeliveryStatus === PENDING_DELIVERY_STATUS_SENTINEL) {
       qb.andWhere(
         `EXISTS (
           SELECT 1 FROM notification_attempts na
@@ -2631,7 +2644,7 @@ export class CampaignsService {
         )`,
         { campaignChannelType: campaign.channelType },
       );
-    } else if (deliveryStatus && deliveryStatus !== 'DirottatoAPec') {
+    } else if (rawDeliveryStatus && rawDeliveryStatus !== 'DirottatoAPec') {
       qb.andWhere(
         `EXISTS (
           SELECT 1 FROM notification_attempts na
@@ -2639,7 +2652,7 @@ export class CampaignsService {
             AND na.attempt_number = (SELECT MAX(na2.attempt_number) FROM notification_attempts na2 WHERE na2.recipient_id = r.id)
             AND (na.send_status = :deliveryStatus OR na.postal_status = :deliveryStatus)
         )`,
-        { deliveryStatus },
+        { deliveryStatus: rawDeliveryStatus },
       );
     }
     if (postalDeliveryStatus === POSTAL_DELIVERY_PENDING_SENTINEL) {
@@ -2769,11 +2782,15 @@ export class CampaignsService {
       );
       if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
     } else if (sortBy === 'postalStatus') {
-      qb.orderBy(
-        `(SELECT na.postal_status FROM notification_attempts na WHERE na.recipient_id = r.id AND na.postal_status IS NOT NULL ORDER BY na.attempt_number DESC LIMIT 1)`,
-        dir,
-        'NULLS LAST',
-      );
+      if (isPostal) {
+        qb.orderBy(postalLegalOutcomeSql(hasPostalArTracking(campaign)), dir);
+      } else {
+        qb.orderBy(
+          `(SELECT na.postal_status FROM notification_attempts na WHERE na.recipient_id = r.id AND na.postal_status IS NOT NULL ORDER BY na.attempt_number DESC LIMIT 1)`,
+          dir,
+          'NULLS LAST',
+        );
+      }
       if (typeof (qb as any).addOrderBy === 'function') (qb as any).addOrderBy('r.id', 'ASC');
     } else if (sortBy === 'postalDeliveryStatus') {
       qb.orderBy(
@@ -2883,6 +2900,22 @@ export class CampaignsService {
           item.posteVerificationStatus = poste?.status ?? null;
           item.posteDeliveredAt = poste?.deliveredAt ?? null;
           item.costCents = latest.costCents ?? null;
+        }
+        if (isPostal) {
+          const poste = latest ? posteByAttempt.get(latest.id) : undefined;
+          const legal = postalLegalOutcome({
+            diverted: !!item.inadCheck?.diverted,
+            arTracking: hasPostalArTracking(campaign),
+            attempt: latest ?? null,
+            poste: poste ? { status: poste.status, outcomeAt: poste.outcomeAt ?? null } : null,
+          });
+          item.legalOutcome = legal.outcome;
+          item.legalOutcomeReason = legal.reason;
+          item.legalOutcomeAt = legal.at;
+          if (item.status === 'sent' && latest?.postalStatus === 'Errore') {
+            item.status = 'failed';
+            item.lastError = item.lastError ?? legal.reason;
+          }
         }
       }
     }
