@@ -1,8 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import type { Job } from 'bullmq';
+import { UnrecoverableError, type Job } from 'bullmq';
 import type { NotificationChannel, NotificationJobData } from '@comunicapa/shared-types';
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity.js';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity.js';
@@ -199,6 +199,20 @@ export class ProtocollazioneProcessor extends WorkerHost {
         jobLog(dispatchMsg);
       }
     } catch (err: any) {
+      // TINN è instabile (fetch failed, -100 "trasferimento allegati al sito
+      // FTP") e spesso riprende da solo dopo pochi minuti: finché BullMQ ha
+      // retry disponibili (backoff di PROTOCOLLAZIONE_JOB_OPTIONS, ~10 min
+      // in totale) l'attempt resta QUEUED e l'errore si rilancia soltanto.
+      // Allegato mancante (NotFoundException) è permanente: FAILED subito.
+      const permanent = err instanceof NotFoundException;
+      const maxAttempts = job.opts?.attempts ?? 1;
+      const isLastAttempt = permanent || (job.attemptsMade ?? 0) + 1 >= maxAttempts;
+      if (!isLastAttempt) {
+        const msg = `Protocollazione fallita per attempt ${attemptId} (tentativo ${(job.attemptsMade ?? 0) + 1}/${maxAttempts}), nuovo tentativo programmato: ${err.message}`;
+        this.logger.warn(msg);
+        jobLog(msg);
+        throw err;
+      }
       captureException(err, { attemptId, recipientId });
       const msg = `Protocollazione fallita per attempt ${attemptId}: ${err.message}`;
       this.logger.warn(msg);
@@ -217,7 +231,7 @@ export class ProtocollazioneProcessor extends WorkerHost {
         await this.campaignRepo.increment({ id: campaignId }, 'failedCount', 1);
         await this.campaignCompletion.checkAndComplete(campaignId);
       }
-      throw err;
+      throw permanent ? new UnrecoverableError(err.message) : err;
     }
   }
 }

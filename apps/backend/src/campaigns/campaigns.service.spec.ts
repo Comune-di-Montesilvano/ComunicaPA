@@ -2285,7 +2285,7 @@ describe('CampaignsService', () => {
   describe('getGlobalStats', () => {
     function makeQb(terminal: { rawOne?: any; rawMany?: any[]; count?: number }) {
       const qb: any = {};
-      ['select', 'addSelect', 'innerJoin', 'leftJoin', 'where', 'andWhere', 'groupBy', 'orderBy', 'having', 'andHaving', 'setParameters'].forEach((m) => {
+      ['select', 'addSelect', 'innerJoin', 'leftJoin', 'where', 'andWhere', 'groupBy', 'orderBy', 'having', 'andHaving', 'setParameters', 'limit'].forEach((m) => {
         qb[m] = jest.fn().mockReturnValue(qb);
       });
       qb.getRawOne = jest.fn().mockResolvedValue(terminal.rawOne);
@@ -2295,8 +2295,9 @@ describe('CampaignsService', () => {
     }
 
     // Ordine di creazione dei query builder in getGlobalStats:
-    // recipientRepo → totals, monthly, daily, channel, neverDownloaded, saving
-    // campaignRepo → leaderboard · downloadEventRepo → downloadChannel · attemptRepo → cost
+    // recipientRepo → totals, monthly, daily, channel, neverDownloaded
+    // campaignRepo → leaderboard · downloadEventRepo → downloadChannel
+    // attemptRepo → cost, saving (righe costo SEND), ultimi 100 cartacei SEND
     function wire(opts: {
       totals?: any; monthly?: any[]; daily?: any[]; channel?: any[]; never?: number; saving?: any[];
       leaderboard?: any[]; downloadChannel?: any[]; cost?: any;
@@ -2312,11 +2313,14 @@ describe('CampaignsService', () => {
         .mockImplementationOnce(() => mk({ rawMany: opts.monthly ?? [] }))
         .mockImplementationOnce(() => mk({ rawMany: opts.daily ?? [] }))
         .mockImplementationOnce(() => mk({ rawMany: opts.channel ?? [] }))
-        .mockImplementationOnce(() => mk({ count: opts.never ?? 0 }))
-        .mockImplementationOnce(() => mk({ rawMany: opts.saving ?? [] }));
+        .mockImplementationOnce(() => mk({ count: opts.never ?? 0 }));
       mockCampaignRepo.createQueryBuilder = jest.fn().mockImplementationOnce(() => mk({ rawMany: opts.leaderboard ?? [] }));
       mockDownloadEventRepo.createQueryBuilder = jest.fn().mockImplementationOnce(() => mk({ rawMany: opts.downloadChannel ?? [] }));
-      mockAttemptRepo.createQueryBuilder = jest.fn().mockImplementationOnce(() => mk({ rawOne: opts.cost }));
+      mockAttemptRepo.createQueryBuilder = jest
+        .fn()
+        .mockImplementationOnce(() => mk({ rawOne: opts.cost }))
+        .mockImplementationOnce(() => mk({ rawMany: opts.saving ?? [] }))
+        .mockImplementationOnce(() => mk({ rawMany: [] }));
     }
 
     it('assembla il DTO dai conteggi sullo stato attuale dei destinatari', async () => {
@@ -2409,13 +2413,13 @@ describe('CampaignsService', () => {
       expect(result.campaignLeaderboard).toEqual([]);
     });
 
-    it('esclude sempre le campagne isTest=true da ognuna delle 9 query aggregate', async () => {
+    it('esclude sempre le campagne isTest=true da ognuna delle 10 query aggregate', async () => {
       const qbs: any[] = [];
       wire({ totals: { totalRecipients: '0', totalSent: '0', totalFailed: '0', totalDownloaded: '0' }, cost: { totalCostCents: '0' } }, qbs);
 
       await service.getGlobalStats();
 
-      expect(qbs).toHaveLength(9);
+      expect(qbs).toHaveLength(10);
       qbs.forEach((qb, i) => {
         const andWhereCalls = qb.andWhere.mock.calls.map((c: unknown[]) => c[0]);
         expect({ query: i, hasIsTestFilter: andWhereCalls.includes('c.isTest = false') }).toEqual({ query: i, hasIsTestFilter: true });
