@@ -4499,6 +4499,10 @@ describe('CampaignsService.getPostalStatusBreakdown / getPostalReportRows', () =
         externalId: null,
         posteVerification: null,
         posteDiscrepancy: false,
+        // channelConfig senza AR: nessun esito legale di consegna possibile.
+        legalOutcome: 'no_ar',
+        legalOutcomeReason: null,
+        legalOutcomeAt: null,
       }]);
     });
 

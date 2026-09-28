@@ -3561,7 +3561,7 @@ export class CampaignsService {
 
     const recipients = await this.recipientRepo.find({
       where: { campaignId },
-      select: { id: true, codiceFiscale: true, fullName: true, extraData: true },
+      select: { id: true, codiceFiscale: true, fullName: true, extraData: true, inadCheck: true },
       order: { createdAt: 'ASC' },
     });
     if (recipients.length === 0) return { hasAppIoCoDelivery: false, hasExternalId: false, rows: [] };
@@ -3583,6 +3583,19 @@ export class CampaignsService {
     const posteByAttempt = await this.loadPosteTrackingByAttempt([...latestByRecipient.values()].map((a) => a.id));
 
     const hasAppIoCoDelivery = !!resolveSecondaryAppIoConfig(campaign.channelConfig);
+    const arTracking = hasPostalArTracking(campaign);
+    // Dirottati INAD: la data legale è l'invio PEC, tentativo non POSTAL.
+    const divertedIds = recipients.filter((r) => r.inadCheck?.diverted).map((r) => r.id);
+    const pecSentAt = new Map<string, Date | null>();
+    if (divertedIds.length > 0) {
+      const pecAttempts = (await this.attemptRepo.find({ where: { recipientId: In(divertedIds), channelType: 'PEC' } })) ?? [];
+      const latestPec = new Map<string, NotificationAttempt>();
+      for (const a of pecAttempts) {
+        const cur = latestPec.get(a.recipientId);
+        if (!cur || a.attemptNumber > cur.attemptNumber) latestPec.set(a.recipientId, a);
+      }
+      for (const [rid, a] of latestPec) pecSentAt.set(rid, a.sentAt ?? null);
+    }
 
     const rows: PostalReportRowDto[] = recipients.map((r) => {
       const latest = latestByRecipient.get(r.id);
@@ -3592,6 +3605,13 @@ export class CampaignsService {
         ? ((first?.responsePayload as Record<string, unknown> | undefined)?.['appIo'] as { success?: boolean; error?: string } | undefined)
         : undefined;
       const latestPayload = latest?.responsePayload as Record<string, unknown> | undefined;
+      const diverted = !!r.inadCheck?.diverted;
+      const legal = postalLegalOutcome({
+        diverted,
+        arTracking,
+        attempt: diverted ? { status: 'success', postalStatus: null, postalDeliveryStatus: null, postalDeliveryDate: null, sentAt: pecSentAt.get(r.id) ?? null } : (latest ?? null),
+        poste: poste ? { status: poste.status, outcomeAt: poste.outcomeAt ?? null } : null,
+      });
 
       return {
         codiceFiscale: r.codiceFiscale,
@@ -3611,6 +3631,9 @@ export class CampaignsService {
           ? { status: poste.status, checkCount: poste.checkCount, trackingUntil: poste.trackingUntil ? poste.trackingUntil.toISOString() : null, deliveredAt: poste.deliveredAt ? poste.deliveredAt.toISOString() : null, outcomeAt: poste.outcomeAt ? poste.outcomeAt.toISOString() : null, lastMovement: formatLastMovement(poste.movements), summary: posteSummaryOf(poste) }
           : null,
         posteDiscrepancy: isPosteDeliveredOverride(latest?.postalStatus, poste?.status),
+        legalOutcome: legal.outcome,
+        legalOutcomeReason: legal.reason,
+        legalOutcomeAt: legal.at ? legal.at.toISOString() : null,
       };
     });
 

@@ -22,14 +22,36 @@ const baseReport: PostalReportDto = {
     externalId: null,
     posteVerification: null,
     posteDiscrepancy: false,
+    legalOutcome: 'delivered',
+    legalOutcomeReason: 'Consegnato',
+    legalOutcomeAt: '2026-01-14T09:00:00.000Z',
   }],
 };
 
 describe('buildPostalReportAttualeCsv', () => {
+  it('Stato Documento = esito legale con motivo e data legale, stato GlobalCom a parte', () => {
+    const csv = buildPostalReportAttualeCsv({
+      ...baseReport,
+      rows: [{
+        ...baseReport.rows[0],
+        postalStatus: 'NonConsegnato',
+        postalDeliveryStatus: 'Compiuta Giacenza',
+        legalOutcome: 'delivered',
+        legalOutcomeReason: 'Compiuta Giacenza',
+        legalOutcomeAt: '2026-09-08T00:00:00.000Z',
+      }],
+    });
+    const fields = csv.split('\n')[1].split(';');
+    expect(fields[3]).toBe('"Consegnato"');
+    expect(fields[4]).toBe('"Compiuta Giacenza"');
+    expect(fields[5]).toContain('08/09/2026');
+    expect(fields[6]).toBe('"Non consegnato"');
+  });
+
   it('include intestazioni e riga con stato/data correnti (ultimo elemento storico)', () => {
     const csv = buildPostalReportAttualeCsv(baseReport);
     const lines = csv.split('\n');
-    expect(lines[0]).toBe('"Codice Fiscale";"Nominativo";"IDPRO";"Stato Documento";"Data Stato";"Stato Consegna Poste";"Codice Consegna";"Data Consegna Poste";"ID Accettazione Poste";"Codice Errore";"Descrizione Errore";"Verifica Poste";"Sintesi Poste";"Data Esito Poste";"Ultimo Movimento Poste";"Discrepanza GlobalCom/Poste"');
+    expect(lines[0]).toBe('"Codice Fiscale";"Nominativo";"IDPRO";"Stato Documento";"Motivo";"Data Legale";"Stato GlobalCom";"Data Stato GlobalCom";"Stato Consegna Poste";"Codice Consegna";"Data Consegna Poste";"ID Accettazione Poste";"Codice Errore";"Descrizione Errore";"Verifica Poste";"Sintesi Poste";"Data Esito Poste";"Ultimo Movimento Poste";"Discrepanza GlobalCom/Poste"');
     expect(lines[1]).toContain('"Consegnato"');
     expect(lines[1]).not.toContain('Esito App IO');
   });

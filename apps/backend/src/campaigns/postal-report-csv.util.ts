@@ -1,6 +1,7 @@
 import { escapeCsvField } from './csv.util.js';
 import type { PostalReportDto, PostalReportRowDto } from './dto/campaign-stats.dto.js';
 import { postalStatusLabel, POSTAL_STATUS_HISTORY_COLUMNS } from './postal-status-labels.util.js';
+import { POSTAL_LEGAL_OUTCOME_LABELS } from './postal-legal-outcome.util.js';
 import { posteVerificationLabel } from '../channels/postal/poste-tracking/poste-tracking-effective.util.js';
 
 function formatDate(iso: string | undefined): string {
@@ -28,7 +29,7 @@ function appIoOutcomeLabel(outcome: PostalReportRowDto['appIoOutcome']): string 
 }
 
 export function buildPostalReportAttualeCsv(report: PostalReportDto): string {
-  const headers = ['Codice Fiscale', 'Nominativo', 'IDPRO', 'Stato Documento', 'Data Stato', 'Stato Consegna Poste', 'Codice Consegna', 'Data Consegna Poste', 'ID Accettazione Poste', 'Codice Errore', 'Descrizione Errore', ...POSTE_HEADERS];
+  const headers = ['Codice Fiscale', 'Nominativo', 'IDPRO', 'Stato Documento', 'Motivo', 'Data Legale', 'Stato GlobalCom', 'Data Stato GlobalCom', 'Stato Consegna Poste', 'Codice Consegna', 'Data Consegna Poste', 'ID Accettazione Poste', 'Codice Errore', 'Descrizione Errore', ...POSTE_HEADERS];
   if (report.hasAppIoCoDelivery) headers.push('Esito App IO');
   if (report.hasExternalId) headers.push('External ID');
 
@@ -40,6 +41,10 @@ export function buildPostalReportAttualeCsv(report: PostalReportDto): string {
       r.codiceFiscale,
       r.fullName ?? '',
       r.postalTrackingId ?? '',
+      // Stato Documento = esito legale; data legale con valore probatorio.
+      POSTAL_LEGAL_OUTCOME_LABELS[r.legalOutcome],
+      r.legalOutcomeReason ?? '',
+      formatDate(r.legalOutcomeAt ?? undefined),
       postalStatusLabel(r.postalStatus),
       formatDate(latestEntry?.rilevatoIl),
       r.postalDeliveryStatus ?? '',

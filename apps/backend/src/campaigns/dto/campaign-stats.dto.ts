@@ -196,6 +196,10 @@ export interface PostalReportRowDto {
   posteVerification: { status: string; checkCount: number; trackingUntil: string | null; deliveredAt: string | null; outcomeAt: string | null; lastMovement: string; summary: string | null } | null;
   /** GlobalCom NonConsegnato ma Poste consegnato (stesso criterio del bucket ConsegnatoVerificaPoste). */
   posteDiscrepancy: boolean;
+  /** Esito legale (spec 2026-09-28-postal-esito-legale). */
+  legalOutcome: PostalLegalOutcome;
+  legalOutcomeReason: string | null;
+  legalOutcomeAt: string | null;
 }
 
 export interface PostalReportDto {

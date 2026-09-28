@@ -4,7 +4,8 @@ import { In, Repository } from 'typeorm';
 import { Recipient } from '../entities/recipient.entity.js';
 import { NotificationAttempt } from '../entities/notification-attempt.entity.js';
 import { DownloadEvent } from '../entities/download-event.entity.js';
-import { CampaignsService } from '../campaigns/campaigns.service.js';
+import { CampaignsService, hasPostalArTracking } from '../campaigns/campaigns.service.js';
+import { postalLegalOutcome } from '../campaigns/postal-legal-outcome.util.js';
 import { SendLegalFactsService, type SendLegalFactItem, type SendLegalFactDownloadResult } from '../channels/send/send-legal-facts.service.js';
 import { AttachmentService, resolveAttachmentsConfig, resolveAttachmentLabel, resolveCustomAttachmentFilename } from '../attachments/attachment.service.js';
 import { resolvePhysicalAddress, resolvePaymentData } from '../channels/payment-config.util.js';
@@ -187,6 +188,16 @@ export class NotificationsSearchService {
       ? ((await this.posteTrackingRepo.find({ where: { attemptId: In(postalAttemptIds) } })) ?? [])
       : [];
     const posteByAttempt = new Map(posteRows.map((p) => [p.attemptId, p]));
+    const latestAttempt = attempts.reduce<NotificationAttempt | null>((acc, a) => (!acc || a.attemptNumber > acc.attemptNumber ? a : acc), null);
+    const latestPoste = latestAttempt ? posteByAttempt.get(latestAttempt.id) : undefined;
+    const legal = recipient.campaign.channelType === 'POSTAL'
+      ? postalLegalOutcome({
+        diverted: !!recipient.inadCheck?.diverted,
+        arTracking: hasPostalArTracking(recipient.campaign),
+        attempt: latestAttempt,
+        poste: latestPoste ? { status: latestPoste.status, outcomeAt: latestPoste.outcomeAt ?? null } : null,
+      })
+      : null;
 
     const downloads = await this.downloadEventRepo.find({
       where: { recipientId },
@@ -229,6 +240,7 @@ export class NotificationsSearchService {
     const payment = resolvePaymentData(recipient, paymentConfig);
 
     return {
+      legalOutcome: legal ? { outcome: legal.outcome, reason: legal.reason, at: legal.at ? legal.at.toISOString() : null } : null,
       recipient: {
         id: recipient.id,
         codiceFiscale: recipient.codiceFiscale,
