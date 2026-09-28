@@ -66,13 +66,15 @@ docker compose down -v
 docker compose -f docker-compose.yml config --quiet
 ```
 
+**DB dev = `synchronize`, niente migration → mancano gli indici definiti solo in migration** (es. `1786600000000-AddRecipientAndAttemptIndexes`: `notification_attempts(recipient_id…)`, `recipients(campaign_id)`). Query con subquery correlate in dev fanno seq scan (secondi) mentre in prod sono ms: per un benchmark creare quegli indici dentro una transazione `BEGIN … ROLLBACK` insieme ai dati finti.
+
 Hot-reload: i frontend Vite ricaricano da soli; il watch di NestJS spesso NON vede le modifiche sui bind mount Windows — dopo modifiche a `apps/backend/src/` fare `docker compose restart backend` e verificare che `dist/` sia più recente di `src/` (`docker compose exec backend ls -la dist/... src/...`).
 
 **Rebuild obbligatorio** se si modifica `package.json`, `Dockerfile.dev`, o file fuori da `src/`. Questo include file root come `publiccode.yml`: `AppController.getVersion()` lo legge dalla copia buildata nell'immagine, mai dal file host — modificarlo non basta, serve `docker compose build backend` (o `up -d --build`) perché il container lo veda, stesso principio già noto per `package.json`. `publiccode.yml.softwareVersion` inoltre non è mai toccato da CI — va bumpato a mano a ogni tag, altrimenti resta indietro rispetto ai tag git reali. ATTENZIONE per le nuove dipendenze: il rebuild da solo NON basta — il volume named dei node_modules maschera quelli freschi dell'immagine (`Cannot find module` all'avvio):
 
 ```bash
 # Dopo aver aggiunto una dipendenza a apps/backend/package.json:
-MSYS_NO_PATHCONV=1 docker run --rm -v "${PWD}:/w" -w /w node:22-alpine sh -c "corepack enable && corepack prepare pnpm@latest --activate && pnpm install --lockfile-only --ignore-scripts"   # aggiorna pnpm-lock.yaml (niente Node sull'host)
+MSYS_NO_PATHCONV=1 docker run --rm -v "${PWD}:/w" -w /w node:22-alpine sh -c "corepack enable && corepack prepare pnpm@11.9.0 --activate && pnpm install --lockfile-only --ignore-scripts"   # aggiorna pnpm-lock.yaml (niente Node sull'host) — pnpm fissato alla versione della CI (tests.yml), mai @latest
 docker compose build backend
 docker compose rm -sf backend && docker volume rm comunicapa_backend_node_modules && docker compose up -d backend
 ```
@@ -154,7 +156,7 @@ docker compose exec backend node -e "const jwt=require('/app/node_modules/.pnpm/
 
 **Test rapido di un endpoint autenticato senza frontend**: nessun `curl` nel container backend — usare `node -e` con `fetch()` verso `http://localhost:8080/...` e il token JWT generato con lo snippet sopra. Utile per lanciare/testare una campagna reale da riga di comando durante il debug.
 
-**E2E chunked-upload via script Node standalone**: per testare end-to-end un endpoint che usa `chunked-upload.util.ts` (init/chunk/complete) serve chunking client-side reale — rispettare `MAX_CHUNK_SIZE_BYTES`, un chunk singolo troppo grande dà 413 silenzioso lato test, non un errore ovvio. Script con `fetch`+`FormData` nativi, JWT dallo snippet sopra, lanciato con `docker compose exec backend node /app/apps/backend/script.mjs` (deve vivere sotto `/app`, non `/tmp`, per la risoluzione moduli `node_modules`) e `MSYS_NO_PATHCONV=1` per gli argomenti path assoluti da Git Bash Windows.
+**E2E chunked-upload via script Node standalone**: per testare end-to-end un endpoint che usa `chunked-upload.util.ts` (init/chunk/complete) serve chunking client-side reale — rispettare `MAX_CHUNK_SIZE_BYTES`, un chunk singolo troppo grande dà 413 silenzioso lato test, non un errore ovvio. Script con `fetch`+`FormData` nativi, JWT dallo snippet sopra, lanciato con `MSYS_NO_PATHCONV=1 docker compose exec -w /app/apps/backend backend node src/debug/script.mjs`: deve stare sotto `apps/backend/src/` (unico bind mount del backend; `src/debug/` è escluso dall'immagine), mai in `apps/backend/` o `/tmp`. `MSYS_NO_PATHCONV=1` serve anche per `-w <path assoluto>` ("Cwd must be an absolute path").
 
 **Simulare un crash reale del backend per test (es. resume da checkpoint) — `docker kill` è bloccato dal classificatore di sicurezza di Claude Code.** Usare `docker compose restart backend`: il container non gestisce `SIGTERM` (nessun `enableShutdownHooks`), quindi il processo termina comunque bruscamente — stesso effetto pratico di un crash vero per testare codice di recovery, senza permessi distruttivi.
 
