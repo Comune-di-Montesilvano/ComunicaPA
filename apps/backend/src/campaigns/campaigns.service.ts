@@ -33,6 +33,7 @@ import type { TestSendDto } from './dto/test-send.dto.js';
 import type { CampaignStatsDto, RecipientStatDto, RecipientStatsPageDto, ChannelBreakdownDto, EffectiveChannelBreakdownDto, DownloadCombinationDto, DownloadCombinationStatsDto, FailureRowDto, FailureGroupDto, DownloadReportDto, SendStatusBreakdownDto, SendReportDto, SendReportRowDto, PostalStatusBreakdownDto, PostalReportDto, PostalReportRowDto, CampaignCostDto, CampaignCostSavingsDto, CampaignPaymentTotalDto, ExternalDeliveryStatusDto } from './dto/campaign-stats.dto.js';
 import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.dto.js';
 import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util.js';
+import { sendLegalDateOf } from './send-legal-date.util.js';
 import { buildCostAnalytics, sendShipCentsOf, type CostAnalyticsDto, type CostAttemptRow } from './cost-analytics.util.js';
 import type { PreviewMessageDto, PreviewMessageResult } from './dto/preview-message.dto.js';
 import type { NotificationChannel, NotificationJobData, OperatorRole } from '@comunicapa/shared-types';
@@ -2905,6 +2906,7 @@ export class CampaignsService {
           item.iun = latest.iun;
           item.sendStatus = latest.sendStatus;
           item.sendStatusUpdatedAt = latest.sendStatusUpdatedAt;
+          item.sendLegalAt = sendLegalDateOf(latest.sendStatusHistory);
           const protoFallback = protocolByRecipient.get(item.id);
           item.protocolNumber = latest.protocolNumber ?? protoFallback?.protocolNumber ?? null;
           item.protocolYear = latest.protocolYear ?? protoFallback?.protocolYear ?? null;

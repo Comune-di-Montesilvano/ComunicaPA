@@ -24,6 +24,8 @@ export interface RecipientStatDto {
   iun?: string | null;
   sendStatus?: string | null;
   sendStatusUpdatedAt?: Date | null;
+  /** SEND: data con valore legale di avvenuta notifica (perfezionamento, vedi send-legal-date.util.ts). */
+  sendLegalAt?: string | null;
   protocolNumber?: number | null;
   protocolYear?: number | null;
   postalTrackingId?: string | null;

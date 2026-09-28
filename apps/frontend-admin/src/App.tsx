@@ -310,22 +310,21 @@ const POSTAL_LEGAL_OUTCOME_META: Record<string, { label: string; badge: string; 
 };
 const POSTAL_LEGAL_OUTCOME_RANK: Record<string, number> = { delivered: 0, not_delivered: 1, in_progress: 2, no_legal_value: 3, no_ar: 4, unclassified: 5 };
 
-// Cella "Stato Documento": esito legale con motivo e data legale; stato
-// GlobalCom grezzo nel tooltip.
-function PostalLegalOutcomeBadge({ outcome, reason, at, postalStatus }: { outcome?: string | null; reason?: string | null; at?: string | null; postalStatus?: string | null }): React.JSX.Element {
+// Cella "Stato Documento": esito legale; motivo e stato GlobalCom grezzo nel
+// tooltip (la data legale ha una colonna sua, "Data notifica").
+function PostalLegalOutcomeBadge({ outcome, reason, postalStatus }: { outcome?: string | null; reason?: string | null; postalStatus?: string | null }): React.JSX.Element {
   if (!outcome) return <span className="badge bg-light text-dark border">—</span>;
   const meta = POSTAL_LEGAL_OUTCOME_META[outcome] ?? POSTAL_LEGAL_OUTCOME_META['unclassified']!;
-  const title = postalStatus ? `GlobalCom: ${POSTAL_STATUS_META[postalStatus]?.label ?? postalStatus}` : undefined;
-  return (
-    <div className="d-inline-flex flex-column align-items-start gap-1" title={title}>
-      <span className={`badge ${meta.badge}`}><meta.icon className="me-1" size={14} />{meta.label}</span>
-      {(reason || at) && (
-        <span className="text-muted" style={{ fontSize: '0.7rem' }}>
-          {reason}{reason && at ? ' · ' : ''}{at ? new Date(at).toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', year: 'numeric' }) : ''}
-        </span>
-      )}
-    </div>
-  );
+  const title = [reason, postalStatus ? `GlobalCom: ${POSTAL_STATUS_META[postalStatus]?.label ?? postalStatus}` : null].filter(Boolean).join(' — ') || undefined;
+  return <span className={`badge ${meta.badge}`} title={title}><meta.icon className="me-1" size={14} />{meta.label}</span>;
+}
+
+// Colonna "Data legale notifica" (POSTAL e SEND): data con valore legale di
+// avvenuta notifica, solo giorno, fuso Europe/Rome come nei report CSV.
+const LEGAL_DATE_HEADER_TITLE = 'Data con valore legale di avvenuta notifica — POSTAL: consegna/compiuta giacenza (solo esito Consegnato); SEND: perfezionamento, la prima tra presa visione e decorrenza termini';
+function LegalDateCell({ at }: { at?: string | null }): React.JSX.Element {
+  if (!at) return <td className="small text-muted">—</td>;
+  return <td className="small text-nowrap">{new Date(at).toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', year: 'numeric' })}</td>;
 }
 
 function PostalDeliveryStatusBadge({
@@ -2863,7 +2862,7 @@ export function App(): React.JSX.Element {
   // in uso per gli altri pannelli di dettaglio campagna.
   const [pendingPecReview, setPendingPecReview] = useState<Array<{ recipientId: string; fullName: string | null; codiceFiscale: string; pecOriginale: string | null; pecTrovata: string | null }>>([]);
   const [pecReviewResolving, setPecReviewResolving] = useState<string | null>(null);
-  const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number; costCents?: number | null; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; posteVerificationStatus?: string | null; posteDeliveredAt?: string | null; legalOutcome?: string | null; legalOutcomeReason?: string | null; legalOutcomeAt?: string | null; sentAt?: string | null; firstReadAt?: string | null; attemptsCount?: number; lastError?: string | null; protocolNumber?: number | null; protocolYear?: number | null; inadCheck?: { found: boolean; diverted: boolean } | null; signatureCheck?: { valid: boolean; reason: string | null } | null }> } | null>(null);
+  const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number; costCents?: number | null; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; sendLegalAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; posteVerificationStatus?: string | null; posteDeliveredAt?: string | null; legalOutcome?: string | null; legalOutcomeReason?: string | null; legalOutcomeAt?: string | null; sentAt?: string | null; firstReadAt?: string | null; attemptsCount?: number; lastError?: string | null; protocolNumber?: number | null; protocolYear?: number | null; inadCheck?: { found: boolean; diverted: boolean } | null; signatureCheck?: { valid: boolean; reason: string | null } | null }> } | null>(null);
   const [recipientsSearch, setRecipientsSearch] = useState('');
   const [recipientsPageNum, setRecipientsPageNum] = useState(1);
   const [recipientsStatusFilter, setRecipientsStatusFilter] = useState('');
@@ -18311,7 +18310,7 @@ export function App(): React.JSX.Element {
                                         )}
                                       </div>
                                     </th>
-                                    <th>Contatti</th>
+                                    <th>{campaign.channelType === 'POSTAL' || campaign.channelType === 'SEND' ? 'Domicilio digitale' : 'Contatti'}</th>
                                     <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('status')}>
                                       <div className="d-inline-flex align-items-center gap-1">
                                         <span>Stato Notifica</span>
@@ -18362,6 +18361,7 @@ export function App(): React.JSX.Element {
                                              )}
                                            </div>
                                          </th>
+                                         <th title={LEGAL_DATE_HEADER_TITLE}>Data legale notifica</th>
                                          <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('updatedAt')}>
                                            <div className="d-inline-flex align-items-center gap-1">
                                              <span>Aggiornato il</span>
@@ -18421,6 +18421,7 @@ export function App(): React.JSX.Element {
                                              )}
                                            </div>
                                          </th>
+                                         <th title={LEGAL_DATE_HEADER_TITLE}>Data legale notifica</th>
                                          <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('postalDeliveryStatus')}>
                                            <div className="d-inline-flex align-items-center gap-1">
                                              <span>Recapito Poste</span>
@@ -18565,6 +18566,7 @@ export function App(): React.JSX.Element {
                                           <td className="small fw-mono">{r.iun || '—'}</td>
                                           <td className="small">{r.protocolNumber ? `${r.protocolNumber}/${r.protocolYear}` : '—'}</td>
                                           <td className="small"><SendStatusBadge status={r.sendStatus} /></td>
+                                          <LegalDateCell at={r.sendLegalAt} />
                                           <td className="small text-muted">{r.sendStatusUpdatedAt ? new Date(r.sendStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
                                           {downloadCell}
                                           {costCell}
@@ -18577,7 +18579,8 @@ export function App(): React.JSX.Element {
                                           campaign.channelConfig?.['protocolla'] ? (
                                             <>
                                               <td className="small">{r.protocolNumber ? `${r.protocolNumber}/${r.protocolYear}` : '—'}</td>
-                                              <td className="small"><PostalLegalOutcomeBadge outcome={r.legalOutcome} reason={r.legalOutcomeReason} at={r.legalOutcomeAt} postalStatus={r.postalStatus} /></td>
+                                              <td className="small"><PostalLegalOutcomeBadge outcome={r.legalOutcome} reason={r.legalOutcomeReason} postalStatus={r.postalStatus} /></td>
+<LegalDateCell at={r.legalOutcome === 'delivered' ? r.legalOutcomeAt : null} />
                                               <td className="small"><span className="badge bg-info-subtle text-info-emphasis border"><MailOpen className="me-1" size={14} />Sostituito da PEC</span></td>
                                               <td className="small text-muted">—</td>
                                               {downloadCell}
@@ -18585,7 +18588,8 @@ export function App(): React.JSX.Element {
                                             </>
                                           ) : (
                                             <>
-                                              <td className="small"><PostalLegalOutcomeBadge outcome={r.legalOutcome} reason={r.legalOutcomeReason} at={r.legalOutcomeAt} postalStatus={r.postalStatus} /></td>
+                                              <td className="small"><PostalLegalOutcomeBadge outcome={r.legalOutcome} reason={r.legalOutcomeReason} postalStatus={r.postalStatus} /></td>
+<LegalDateCell at={r.legalOutcome === 'delivered' ? r.legalOutcomeAt : null} />
                                               <td className="small"><span className="badge bg-info-subtle text-info-emphasis border"><MailOpen className="me-1" size={14} />Sostituito da PEC</span></td>
                                               <td className="small text-muted">—</td>
                                               {downloadCell}
@@ -18595,7 +18599,8 @@ export function App(): React.JSX.Element {
                                         ) : campaign.channelConfig?.['protocolla'] ? (
                                           <>
                                             <td className="small">{r.protocolNumber ? `${r.protocolNumber}/${r.protocolYear}` : '—'}</td>
-                                            <td className="small"><PostalLegalOutcomeBadge outcome={r.legalOutcome} reason={r.legalOutcomeReason} at={r.legalOutcomeAt} postalStatus={r.postalStatus} /></td>
+                                            <td className="small"><PostalLegalOutcomeBadge outcome={r.legalOutcome} reason={r.legalOutcomeReason} postalStatus={r.postalStatus} /></td>
+<LegalDateCell at={r.legalOutcome === 'delivered' ? r.legalOutcomeAt : null} />
                                             <td className="small"><PostalDeliveryWithPosteBadge postalStatus={r.postalStatus} postalDeliveryStatus={r.postalDeliveryStatus} postalDeliveryCode={r.postalDeliveryCode} posteVerificationStatus={r.posteVerificationStatus} posteDeliveredAt={r.posteDeliveredAt} /></td>
                                             <td className="small text-muted">{r.postalStatusUpdatedAt ? new Date(r.postalStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
                                             {downloadCell}
@@ -18603,7 +18608,8 @@ export function App(): React.JSX.Element {
                                           </>
                                         ) : (
                                           <>
-                                            <td className="small"><PostalLegalOutcomeBadge outcome={r.legalOutcome} reason={r.legalOutcomeReason} at={r.legalOutcomeAt} postalStatus={r.postalStatus} /></td>
+                                            <td className="small"><PostalLegalOutcomeBadge outcome={r.legalOutcome} reason={r.legalOutcomeReason} postalStatus={r.postalStatus} /></td>
+<LegalDateCell at={r.legalOutcome === 'delivered' ? r.legalOutcomeAt : null} />
                                             <td className="small"><PostalDeliveryWithPosteBadge postalStatus={r.postalStatus} postalDeliveryStatus={r.postalDeliveryStatus} postalDeliveryCode={r.postalDeliveryCode} posteVerificationStatus={r.posteVerificationStatus} posteDeliveredAt={r.posteDeliveredAt} /></td>
                                             <td className="small text-muted">{r.postalStatusUpdatedAt ? new Date(r.postalStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
                                             {downloadCell}
