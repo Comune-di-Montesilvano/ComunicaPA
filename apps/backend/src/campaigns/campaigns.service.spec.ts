@@ -85,6 +85,7 @@ describe('CampaignsService', () => {
     delete: jest.fn().mockResolvedValue(undefined),
     findAndCount: jest.fn().mockResolvedValue([[], 0]),
     createQueryBuilder: jest.fn(),
+    query: jest.fn().mockResolvedValue([]),
   };
   const mockAttemptRepo = {
     find: jest.fn(),
@@ -962,7 +963,7 @@ describe('CampaignsService', () => {
       expect(result.postalDeliveryStatuses).toEqual([{ value: '__POSTAL_DELIVERY_PENDING__', count: 4 }]);
     });
 
-    it('bucket "DirottatoAPec" in ENTRAMBI deliveryStatuses (Stato documento) e postalDeliveryStatuses (Recapito Poste) — mai solo nei grafici', async () => {
+    it('POSTAL: dirottati nel bucket "DirottatoAPec" di Recapito Poste; in Stato documento contano come esito legale (consegnato via PEC)', async () => {
       mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'POSTAL' });
 
       const statusQb: any = {};
@@ -1012,9 +1013,10 @@ describe('CampaignsService', () => {
         .mockReturnValueOnce(notDownloadedQb)
         .mockReturnValueOnce(divertedQb);
 
+      mockRecipientRepo.query.mockResolvedValueOnce([{ value: 'delivered', count: 528 }]);
       const result = await service.getRecipientFilterOptions('uuid-1');
 
-      expect(result.deliveryStatuses).toEqual(expect.arrayContaining([{ value: 'DirottatoAPec', count: 528 }]));
+      expect(result.deliveryStatuses).toEqual([{ value: 'delivered', count: 528 }]);
       expect(result.postalDeliveryStatuses).toEqual(expect.arrayContaining([{ value: 'DirottatoAPec', count: 528 }]));
     });
   });

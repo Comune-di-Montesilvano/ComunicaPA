@@ -37,7 +37,7 @@ describe('CampaignsService - esito legale POSTAL', () => {
 
   beforeEach(async () => {
     campaignRepo = { findOneBy: vi.fn().mockResolvedValue({ id: 'c1', channelType: 'POSTAL', channelConfig: { postalServiceType: 'RaccomandataMarket4', postalReturnReceipt: true } }) };
-    recipientRepo = { find: vi.fn(), createQueryBuilder: vi.fn() };
+    recipientRepo = { find: vi.fn(), createQueryBuilder: vi.fn(), query: vi.fn().mockResolvedValue([]) };
     attemptRepo = { find: vi.fn() };
     posteRepo = { find: vi.fn().mockResolvedValue([]), query: vi.fn().mockResolvedValue([]) };
     downloadEventRepo = { find: vi.fn().mockResolvedValue([]) };
@@ -133,5 +133,34 @@ describe('CampaignsService - esito legale POSTAL', () => {
     attemptRepo.find.mockResolvedValue([{ id: 'a1', recipientId: 'r1', attemptNumber: 1, channelType: 'EMAIL', status: 'success', sentAt: new Date(), errorMessage: null }]);
     const page = await service.getRecipientStats('c1', 1, 50);
     expect(page.items[0]).not.toHaveProperty('legalOutcome');
+  });
+
+  it('opzioni filtro: deliveryStatuses POSTAL = conteggi per esito legale (query raw)', async () => {
+    recipientRepo.createQueryBuilder.mockImplementation(() => makeQb({ raw: [{ value: 'Confermato', count: '9' }] }));
+    recipientRepo.query.mockResolvedValue([{ value: 'delivered', count: 3 }, { value: 'in_progress', count: 2 }]);
+    const res = await service.getRecipientFilterOptions('c1');
+    expect(res.deliveryStatuses).toEqual([{ value: 'delivered', count: 3 }, { value: 'in_progress', count: 2 }]);
+    const sql = String(recipientRepo.query.mock.calls[0][0]);
+    expect(sql).toContain('LEFT JOIN LATERAL');
+    expect(sql).toContain('GROUP BY 1');
+    expect(recipientRepo.query.mock.calls[0][1]).toEqual(['c1']);
+  });
+
+  it('opzioni filtro: statuses POSTAL contano Fallito gli Errore GlobalCom', async () => {
+    const qbs: any[] = [];
+    recipientRepo.createQueryBuilder.mockImplementation(() => { const q = makeQb(); qbs.push(q); return q; });
+    await service.getRecipientFilterOptions('c1');
+    const selectExpr = String(qbs[0].select.mock.calls[0][0]);
+    expect(selectExpr).toContain("THEN 'failed'");
+    expect(selectExpr).toContain("na_err.postal_status = 'Errore'");
+    expect(String(qbs[0].groupBy.mock.calls[0][0])).toBe(selectExpr);
+  });
+
+  it('opzioni filtro: canali non POSTAL non usano la query esito', async () => {
+    campaignRepo.findOneBy.mockResolvedValue({ id: 'c1', channelType: 'SEND', channelConfig: {} });
+    recipientRepo.createQueryBuilder.mockImplementation(() => makeQb({ raw: [{ value: 'DELIVERED', count: '4' }] }));
+    const res = await service.getRecipientFilterOptions('c1');
+    expect(recipientRepo.query).not.toHaveBeenCalled();
+    expect(res.deliveryStatuses).toContainEqual({ value: 'DELIVERED', count: 4 });
   });
 });

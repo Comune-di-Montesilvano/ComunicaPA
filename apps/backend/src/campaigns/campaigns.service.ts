@@ -2941,9 +2941,13 @@ export class CampaignsService {
 
     // Canali digitali: "read" (inviato + download) separato da "sent" nella
     // stessa query, stesso criterio HAS_DOWNLOAD_SQL del filtro.
+    // POSTAL: "failed" include gli Errore GlobalCom dopo l'accettazione
+    // (derivato, recipient.status resta sent).
     const statusExpr = READ_STATUS_CHANNELS.includes(campaign.channelType)
       ? `CASE WHEN r.status = 'sent' AND ${HAS_DOWNLOAD_SQL} THEN '${READ_STATUS}' ELSE r.status::text END`
-      : 'r.status';
+      : campaign.channelType === 'POSTAL'
+        ? `CASE WHEN r.status = 'sent' AND ${POSTAL_GLOBALCOM_ERROR_SQL} THEN 'failed' ELSE r.status::text END`
+        : 'r.status';
     const statusRows = await this.recipientRepo
       .createQueryBuilder('r')
       .select(statusExpr, 'value')
@@ -3083,13 +3087,25 @@ export class CampaignsService {
       )) as Array<{ n: number }> | undefined)?.[0]?.n ?? 0)
       : 0;
 
+    // POSTAL: "Stato documento" = esito legale. Query raw (niente
+    // createQueryBuilder in più: le spec ne mockano una sequenza fissa).
+    const legalOutcomeRows = campaign.channelType === 'POSTAL'
+      ? ((await this.recipientRepo.query(
+        `SELECT ${postalLegalOutcomeSql(hasPostalArTracking(campaign))} AS value, COUNT(*)::int AS count
+         FROM recipients r WHERE r.campaign_id = $1 GROUP BY 1`,
+        [campaignId],
+      )) as Array<{ value: string; count: number }> | undefined) ?? []
+      : null;
+
     return {
       statuses: statusRows.map((r) => ({ value: r.value, count: Number(r.count) })),
-      deliveryStatuses: [
-        ...deliveryRows.map((r) => ({ value: r.value, count: Number(r.count) })),
-        ...(pendingCount > 0 ? [{ value: PENDING_DELIVERY_STATUS_SENTINEL, count: pendingCount }] : []),
-        ...(divertedCount > 0 ? [{ value: 'DirottatoAPec', count: divertedCount }] : []),
-      ],
+      deliveryStatuses: legalOutcomeRows
+        ? legalOutcomeRows.map((r) => ({ value: r.value, count: Number(r.count) }))
+        : [
+          ...deliveryRows.map((r) => ({ value: r.value, count: Number(r.count) })),
+          ...(pendingCount > 0 ? [{ value: PENDING_DELIVERY_STATUS_SENTINEL, count: pendingCount }] : []),
+          ...(divertedCount > 0 ? [{ value: 'DirottatoAPec', count: divertedCount }] : []),
+        ],
       postalDeliveryStatuses: [
         ...postalDeliveryRows.map((r) => ({ value: r.value, count: Number(r.count) })),
         ...(nonTracciatoCount > 0 ? [{ value: 'NonTracciato', count: nonTracciatoCount }] : []),
