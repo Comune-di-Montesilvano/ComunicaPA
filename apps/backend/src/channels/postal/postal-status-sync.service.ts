@@ -37,6 +37,8 @@ export class PostalStatusSyncService {
   private readonly logger = new Logger(PostalStatusSyncService.name);
   /** Avvio del processo: soglia del recupero date consegna (getCandidatesQuery). */
   private readonly startedAt = new Date();
+  /** Giro del cron in corso (guardia anti-sovrapposizione in handleCron). */
+  private running = false;
 
   constructor(
     @InjectRepository(NotificationAttempt)
@@ -47,28 +49,38 @@ export class PostalStatusSyncService {
 
   @Cron('*/1 * * * *')
   async handleCron(): Promise<void> {
-    const attempts = await this.getCandidatesQuery()
-      .orderBy('COALESCE(attempt.postal_last_checked_at, attempt.created_at)', 'ASC')
-      .take(BATCH_SIZE)
-      .getMany();
+    // Un giro alla volta: 200 chiamate SOAP (~1-2 s l'una) durano più del
+    // minuto del cron, e un giro sovrapposto riprenderebbe gli stessi attempt
+    // più vecchi (postal_last_checked_at non ancora aggiornato) — chiamate
+    // doppie a GlobalCom. Bug reale emerso col recupero date consegna (v1.8.10).
+    if (this.running) return;
+    this.running = true;
+    try {
+      const attempts = await this.getCandidatesQuery()
+        .orderBy('COALESCE(attempt.postal_last_checked_at, attempt.created_at)', 'ASC')
+        .take(BATCH_SIZE)
+        .getMany();
 
-    if (attempts.length === 0) return;
+      if (attempts.length === 0) return;
 
-    const provider = await this.providers.getActive();
-    if (!provider) return;
-    const creds = provider.creds;
+      const provider = await this.providers.getActive();
+      if (!provider) return;
+      const creds = provider.creds;
 
-    for (const attempt of attempts) {
-      try {
-        await this.syncOne(attempt, creds);
-      } catch (err: any) {
-        this.logger.warn(`Errore aggiornamento stato POSTAL per attempt ${attempt.id} (IDPRO=${attempt.postalTrackingId}): ${err.message}`);
-        captureException(err instanceof Error ? err : new Error(String(err)), {
-          attemptId: attempt.id,
-          channel: 'POSTAL',
-          idpro: attempt.postalTrackingId,
-        });
+      for (const attempt of attempts) {
+        try {
+          await this.syncOne(attempt, creds);
+        } catch (err: any) {
+          this.logger.warn(`Errore aggiornamento stato POSTAL per attempt ${attempt.id} (IDPRO=${attempt.postalTrackingId}): ${err.message}`);
+          captureException(err instanceof Error ? err : new Error(String(err)), {
+            attemptId: attempt.id,
+            channel: 'POSTAL',
+            idpro: attempt.postalTrackingId,
+          });
+        }
       }
+    } finally {
+      this.running = false;
     }
   }
 

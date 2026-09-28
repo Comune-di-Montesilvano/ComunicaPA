@@ -70,6 +70,31 @@ describe('PostalStatusSyncService', () => {
     expect(globalCom.dettagliDocumento).not.toHaveBeenCalled();
   });
 
+  it('un solo giro alla volta: il cron che scatta mentre il precedente è in corso non riprende gli stessi attempt', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([{ id: 'a1', postalTrackingId: 'IDPRO1', postalStatus: null }]));
+    globalCom.dettagliDocumento.mockImplementation(async () => { await gate; return null; });
+
+    const first = service.handleCron();
+    await new Promise((r) => setTimeout(r, 0));
+    await service.handleCron(); // secondo tick mentre il primo è fermo su GlobalCom
+    release();
+    await first;
+
+    expect(globalCom.dettagliDocumento).toHaveBeenCalledTimes(1);
+    expect(attemptRepo.createQueryBuilder).toHaveBeenCalledTimes(1);
+  });
+
+  it('dopo un giro fallito il successivo riparte (la guardia si libera sempre)', async () => {
+    attemptRepo.createQueryBuilder.mockImplementationOnce(() => { throw new Error('db giù'); });
+    await expect(service.handleCron()).rejects.toThrow('db giù');
+
+    attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([]));
+    await service.handleCron();
+    expect(attemptRepo.createQueryBuilder).toHaveBeenCalledTimes(2);
+  });
+
   it('non fa nulla se non c\'è un provider attivo', async () => {
     providers.getActive.mockResolvedValue(null);
     attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([{ id: 'a1', postalTrackingId: 'IDPRO1', postalStatus: null }]));
