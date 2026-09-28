@@ -337,10 +337,23 @@ export function buildParallelChannelNotice(
   return '';
 }
 
-/** Footer markdown (App IO consuma content.markdown, mai HTML) con link al Portale ComunicaPA. */
+/**
+ * Dicitura in calce a OGNI messaggio App IO inviato da ComunicaPA (primario,
+ * co-consegna parallela, esclusiva): fuori da SEND App IO non ha valore di
+ * notificazione. L'apertura degli allegati è davvero tracciata (DownloadEvent
+ * canale APP_IO) — dichiararlo rende il download utilizzabile come indizio di
+ * conoscenza effettiva dell'atto.
+ */
+export const APP_IO_LEGAL_DISCLAIMER =
+  "_Il presente messaggio ha carattere informativo e non costituisce notificazione ai sensi di legge. L'apertura degli allegati viene registrata dall'ente._";
+
+/** Footer markdown (App IO consuma content.markdown, mai HTML): dicitura legale + link al Portale ComunicaPA. */
 export function appendAppIoPortalFooter(markdown: string, portalUrl: string | null): string {
-  if (!portalUrl) return markdown;
-  return `${markdown}\n\n---\nLa comunicazione ufficiale ed i relativi atti/allegati sono disponibili ed accessibili con SPID/CIE sul [Portale ComunicaPA](${portalUrl}).`;
+  const footer = [APP_IO_LEGAL_DISCLAIMER];
+  if (portalUrl) {
+    footer.push(`La comunicazione ufficiale ed i relativi atti/allegati sono disponibili ed accessibili con SPID/CIE sul [Portale ComunicaPA](${portalUrl}).`);
+  }
+  return `${markdown}\n\n---\n${footer.join('\n\n')}`;
 }
 
 export interface FormatAppIoMarkdownOptions {

@@ -243,25 +243,42 @@ describe('buildParallelChannelNotice', () => {
 });
 
 describe('appendAppIoPortalFooter / formatAppIoMarkdown', () => {
-  it('appende il footer solo se portalUrl è valorizzato', () => {
-    expect(appendAppIoPortalFooter('corpo', 'https://portale.ente.it')).toBe(
-      'corpo\n\n---\nLa comunicazione ufficiale ed i relativi atti/allegati sono disponibili ed accessibili con SPID/CIE sul [Portale ComunicaPA](https://portale.ente.it).',
-    );
-    expect(appendAppIoPortalFooter('corpo', null)).toBe('corpo');
+  const DISCLAIMER = "_Il presente messaggio ha carattere informativo e non costituisce notificazione ai sensi di legge. L'apertura degli allegati viene registrata dall'ente._";
+  const PORTAL = 'La comunicazione ufficiale ed i relativi atti/allegati sono disponibili ed accessibili con SPID/CIE sul [Portale ComunicaPA](https://portale.ente.it).';
+
+  it('footer: dicitura "non costituisce notificazione" sempre, link Portale solo se portalUrl è valorizzato', () => {
+    expect(appendAppIoPortalFooter('corpo', 'https://portale.ente.it')).toBe(`corpo
+
+---
+${DISCLAIMER}
+
+${PORTAL}`);
+    expect(appendAppIoPortalFooter('corpo', null)).toBe(`corpo
+
+---
+${DISCLAIMER}`);
   });
 
-  it('formatAppIoMarkdown combina cortesia + footer nell\'ordine corretto', () => {
+  it("formatAppIoMarkdown combina cortesia + footer nell'ordine corretto", () => {
     const result = formatAppIoMarkdown('corpo', { parallelNotice: 'cortesia', portalUrl: 'https://portale.ente.it' });
-    expect(result).toBe(
-      'corpo\n\ncortesia\n\n---\nLa comunicazione ufficiale ed i relativi atti/allegati sono disponibili ed accessibili con SPID/CIE sul [Portale ComunicaPA](https://portale.ente.it).',
-    );
+    expect(result).toBe(`corpo
+
+cortesia
+
+---
+${DISCLAIMER}
+
+${PORTAL}`);
   });
 
-  it('formatAppIoMarkdown senza cortesia (esclusiva/App IO primario): solo footer', () => {
+  it('formatAppIoMarkdown senza cortesia (esclusiva/App IO primario): dicitura sempre presente', () => {
     const result = formatAppIoMarkdown('corpo', { portalUrl: 'https://portale.ente.it' });
-    expect(result).toBe(
-      'corpo\n\n---\nLa comunicazione ufficiale ed i relativi atti/allegati sono disponibili ed accessibili con SPID/CIE sul [Portale ComunicaPA](https://portale.ente.it).',
-    );
+    expect(result).toBe(`corpo
+
+---
+${DISCLAIMER}
+
+${PORTAL}`);
   });
 });
 
