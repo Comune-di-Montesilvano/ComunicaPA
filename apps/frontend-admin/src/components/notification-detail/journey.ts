@@ -71,6 +71,8 @@ export interface Verdict {
   note: string | null;
   /** Le fonti non concordano (es. Poste consegnata, GlobalCom no). */
   discrepancy: boolean;
+  /** Data legale: mostrare solo il giorno, mai l'ora. */
+  dateOnly?: boolean;
 }
 
 const SOURCE_LABELS: Record<JourneySource, string> = {
@@ -197,7 +199,7 @@ export function computeVerdict(d: JourneyDetail, labels: JourneyLabels): Verdict
     // Discrepanza: lo stato GlobalCom resta visibile accanto alla consegna Poste.
     const gcNote = last.postalStatus ? `GlobalCom: ${labels.postalStatus(last.postalStatus)}${last.postalDeliveryStatus ? ` (${last.postalDeliveryStatus})` : ''}` : null;
     const note = discrepancy ? gcNote : lo.reason === 'Verifica Poste' || lo.reason === 'Via PEC' ? null : lo.reason;
-    return { headline: 'Consegnata', tone: 'ok', when: lo.at, source, note, discrepancy };
+    return { headline: 'Consegnata', tone: 'ok', when: lo.at, source, note, discrepancy, dateOnly: true };
   }
   if (lo?.outcome === 'not_delivered') {
     return { headline: 'Non consegnata', tone: 'ko', when: last.postalDeliveryDate ?? null, source: 'secondo GlobalCom', note: lo.reason, discrepancy: false };

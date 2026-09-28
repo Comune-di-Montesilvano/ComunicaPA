@@ -44,7 +44,7 @@ describe('buildPostalReportAttualeCsv', () => {
     const fields = csv.split('\n')[1].split(';');
     expect(fields[3]).toBe('"Consegnato"');
     expect(fields[4]).toBe('"Compiuta Giacenza"');
-    expect(fields[5]).toContain('08/09/2026');
+    expect(fields[5]).toBe('"08/09/2026"'); // data legale: solo giorno, mai l'ora
     expect(fields[6]).toBe('"Non consegnato"');
   });
 

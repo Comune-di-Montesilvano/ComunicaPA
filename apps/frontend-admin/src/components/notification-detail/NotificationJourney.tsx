@@ -14,7 +14,11 @@ function formatWhen(iso: string): { day: string; time: string } {
 /** Esito effettivo della notifica, con fonte e data: la prima cosa che si legge. */
 export function NotificationVerdict({ detail, labels }: { detail: JourneyDetail; labels: JourneyLabels }): React.JSX.Element {
   const v = computeVerdict(detail, labels);
-  const when = v.when ? new Date(v.when).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : null;
+  const when = v.when
+    ? v.dateOnly
+      ? new Date(v.when).toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', year: 'numeric' })
+      : new Date(v.when).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : null;
   return (
     <section className={`nd-verdict nd-tone-${v.tone}`} aria-label="Esito della notifica">
       <p className="nd-verdict-headline">{v.headline}</p>

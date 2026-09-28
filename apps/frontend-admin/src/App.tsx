@@ -321,7 +321,7 @@ function PostalLegalOutcomeBadge({ outcome, reason, at, postalStatus }: { outcom
       <span className={`badge ${meta.badge}`}><meta.icon className="me-1" size={14} />{meta.label}</span>
       {(reason || at) && (
         <span className="text-muted" style={{ fontSize: '0.7rem' }}>
-          {reason}{reason && at ? ' · ' : ''}{at ? new Date(at).toLocaleDateString('it-IT') : ''}
+          {reason}{reason && at ? ' · ' : ''}{at ? new Date(at).toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', year: 'numeric' }) : ''}
         </span>
       )}
     </div>

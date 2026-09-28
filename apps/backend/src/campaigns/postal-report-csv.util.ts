@@ -8,6 +8,12 @@ function formatDate(iso: string | undefined): string {
   return iso ? new Date(iso).toLocaleString('it-IT', { timeZone: 'Europe/Rome' }) : '';
 }
 
+// Data legale (valore probatorio): solo il giorno. GlobalCom manda DataConsegna
+// senza ora, un orario mostrato sarebbe inventato dal fuso.
+function formatLegalDate(iso: string | undefined): string {
+  return iso ? new Date(iso).toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
+}
+
 // Verifica consegna su tracking Poste — sempre presenti, dopo le colonne
 // GlobalCom e prima di quelle condizionali (Esito App IO / External ID).
 const POSTE_HEADERS = ['Verifica Poste', 'Sintesi Poste', 'Data Esito Poste', 'Ultimo Movimento Poste', 'Discrepanza GlobalCom/Poste'];
@@ -44,7 +50,7 @@ export function buildPostalReportAttualeCsv(report: PostalReportDto): string {
       // Stato Documento = esito legale; data legale con valore probatorio.
       POSTAL_LEGAL_OUTCOME_LABELS[r.legalOutcome],
       r.legalOutcomeReason ?? '',
-      formatDate(r.legalOutcomeAt ?? undefined),
+      formatLegalDate(r.legalOutcomeAt ?? undefined),
       postalStatusLabel(r.postalStatus),
       formatDate(latestEntry?.rilevatoIl),
       r.postalDeliveryStatus ?? '',
