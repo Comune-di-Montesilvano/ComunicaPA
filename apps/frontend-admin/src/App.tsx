@@ -13426,9 +13426,10 @@ export function App(): React.JSX.Element {
                                   {notifDetail.payment.dueDateIso && <p className="nd-kv">Scadenza {new Date(notifDetail.payment.dueDateIso).toLocaleDateString('it-IT')}</p>}
                                 </div>
                               )}
-                              {/* SEND: i documenti arrivano da PN ("Documenti SEND") solo dopo l'IUN —
-                                  se l'invio è fallito prima (es. protocollazione) serve la copia locale. */}
-                              {(notifDetail.campaign.channelType !== 'SEND' || !notifDetail.attempts.some((a) => a.iun)) && notifDetail.attachments.length > 0 && (
+                              {/* Anche SEND: "Documenti SEND" elenca solo gli atti opponibili PN
+                                  (legal-facts), mai il documento notificato — la copia locale è lo
+                                  stesso file caricato su PN (sha256 salvato all'upload). */}
+                              {notifDetail.attachments.length > 0 && (
                                 <div>
                                   <h4>Allegati</h4>
                                   {notifDetail.attachments.map((att) => (
