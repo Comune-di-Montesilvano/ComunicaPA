@@ -155,6 +155,39 @@ function toInfoIndirizzoExt(addr: GbcAddress): Record<string, unknown> {
   };
 }
 
+/** Offset (ms) di Europe/Rome rispetto a UTC nell'istante dato (CET/CEST). */
+function romeOffsetMs(instant: number): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Rome', hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(new Date(instant));
+  const n = (t: string) => Number(parts.find((p) => p.type === t)?.value);
+  return Date.UTC(n('year'), n('month') - 1, n('day'), n('hour'), n('minute'), n('second')) - instant;
+}
+
+/**
+ * Date di dettagli_documento → ISO UTC, o null se vuote/illeggibili.
+ * `DataConsegna` arriva in formato compatto `yyyyMMddHHmmss` in ora
+ * italiana (verificato dal vivo: "20260810000000") — `new Date()` su quella
+ * stringa dà Invalid Date: bug reale, data consegna mai salvata. ISO
+ * accettato come fallback.
+ */
+export function parseGlobalcomDate(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  const s = String(value).trim();
+  const m = /^(\d{4})(\d{2})(\d{2})(\d{2})?(\d{2})?(\d{2})?$/.exec(s);
+  if (m) {
+    const [y, mo, d, h, mi, se] = [m[1], m[2], m[3], m[4] ?? '0', m[5] ?? '0', m[6] ?? '0'].map(Number) as [number, number, number, number, number, number];
+    if (y < 1900 || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+    const naive = Date.UTC(y, mo - 1, d, h, mi, se);
+    const guess = naive - romeOffsetMs(naive);
+    return new Date(naive - romeOffsetMs(guess)).toISOString();
+  }
+  if (!/^\d{4}-\d{2}-\d{2}/.test(s)) return null;
+  const parsed = new Date(s);
+  return isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
 export function mapDocStatus(raw: any): GbcDocStatus {
   const valori = raw.Valori;
   const billing = valori?.DettaglioBilling;
@@ -180,7 +213,7 @@ export function mapDocStatus(raw: any): GbcDocStatus {
     codiceContratto: raw.CodiceContratto ?? null,
     statoConsegna: firstDest?.StatoConsegna ? String(firstDest.StatoConsegna).trim() : null,
     codiceConsegna: validCode,
-    dataConsegna: firstDest?.DataConsegna ? String(firstDest.DataConsegna) : null,
+    dataConsegna: parseGlobalcomDate(firstDest?.DataConsegna),
     idAccettazione: firstDest?.IDAccettazione ? String(firstDest.IDAccettazione).trim() : null,
   };
 }

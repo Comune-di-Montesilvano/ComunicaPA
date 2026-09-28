@@ -441,6 +441,23 @@ describe('mapDocStatus — campi costo', () => {
     expect(result.idAccettazione).toBe('ACC123456');
   });
 
+  it('DataConsegna reale in formato compatto yyyyMMddHHmmss (ora italiana) → ISO', () => {
+    // Formato verificato dal vivo su dettagli_documento (IDPRO reale):
+    // "DataConsegna": "20260810000000". new Date() su questa stringa dà
+    // Invalid Date — bug reale: data consegna mai salvata.
+    const raw = { IDPRO: 'SOA_1', Stato: 'Consegnato', StatoDestinatari: { GBCDestStatus: { StatoConsegna: 'Consegnato a Domicilio', DataConsegna: '20260810000000' } } };
+    expect(mapDocStatus(raw).dataConsegna).toBe('2026-08-09T22:00:00.000Z'); // 10/08 00:00 CEST
+    const winter = { ...raw, StatoDestinatari: { GBCDestStatus: { DataConsegna: '20261215143000' } } };
+    expect(mapDocStatus(winter).dataConsegna).toBe('2026-12-15T13:30:00.000Z'); // 15/12 14:30 CET
+  });
+
+  it('DataConsegna vuota o illeggibile → null, mai una data inventata', () => {
+    const mk = (d: unknown) => mapDocStatus({ IDPRO: 'SOA_1', Stato: 'Consegnato', StatoDestinatari: { GBCDestStatus: { DataConsegna: d } } }).dataConsegna;
+    expect(mk('')).toBeNull();
+    expect(mk('00000000000000')).toBeNull();
+    expect(mk('boh')).toBeNull();
+  });
+
   it('gestisce GBCDestStatus come array (più destinatari)', () => {
     const raw = {
       IDPRO: 'SOA_123',

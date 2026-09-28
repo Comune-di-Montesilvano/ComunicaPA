@@ -6,6 +6,7 @@ import { NotificationAttempt, AttemptStatus } from '../../entities/notification-
 import { PostalProvidersService } from '../../postal-providers/postal-providers.service.js';
 import { GlobalComClient, type GbcCredentials } from './globalcom-client.service.js';
 import { captureException } from '../../common/sentry.util.js';
+import { LEGAL_DELIVERED_STATUSES } from '../../campaigns/postal-legal-outcome.util.js';
 
 export interface PostalQueueHealth {
   candidatesCount: number;
@@ -34,6 +35,8 @@ const TERMINAL_STATUSES = ['Consegnato', 'NonConsegnato', 'ConsegnaParziale', 'E
 @Injectable()
 export class PostalStatusSyncService {
   private readonly logger = new Logger(PostalStatusSyncService.name);
+  /** Avvio del processo: soglia del recupero date consegna (getCandidatesQuery). */
+  private readonly startedAt = new Date();
 
   constructor(
     @InjectRepository(NotificationAttempt)
@@ -89,9 +92,20 @@ export class PostalStatusSyncService {
    * lo cambia qui una volta sola, niente drift tra cron reale e pannello.
    */
   private getCandidatesQuery() {
+    // Ultima riga: consegnati senza data consegna controllati prima dell'avvio
+    // del processo — recupero delle date mai salvate per il bug del formato
+    // compatto (parseGlobalcomDate). Ogni deploy/riavvio li ricontrolla una
+    // volta sola: dopo il controllo postal_last_checked_at supera l'avvio.
     return this.getPostalSuccessWithTrackingQuery().andWhere(
-      '(attempt.postal_status IS NULL OR attempt.postal_status NOT IN (:...terminal) OR attempt.cost_cents IS NULL OR attempt.cost_cents = 0 OR attempt.postal_delivery_status IS NULL OR (attempt.postal_status = :eliminato AND attempt.postal_requeue_checked_at IS NULL))',
-      { terminal: TERMINAL_STATUSES, eliminato: 'Eliminato' },
+      '(attempt.postal_status IS NULL OR attempt.postal_status NOT IN (:...terminal) OR attempt.cost_cents IS NULL OR attempt.cost_cents = 0 OR attempt.postal_delivery_status IS NULL OR (attempt.postal_status = :eliminato AND attempt.postal_requeue_checked_at IS NULL)'
+        + ' OR (attempt.postal_delivery_date IS NULL AND (attempt.postal_status = :consegnato OR attempt.postal_delivery_status IN (:...legalDelivered)) AND attempt.postal_last_checked_at < :deliveryDateFixAt))',
+      {
+        terminal: TERMINAL_STATUSES,
+        eliminato: 'Eliminato',
+        consegnato: 'Consegnato',
+        legalDelivered: [...LEGAL_DELIVERED_STATUSES],
+        deliveryDateFixAt: this.startedAt,
+      },
     );
   }
 
@@ -159,10 +173,13 @@ export class PostalStatusSyncService {
     }
 
     let changed = false;
+    // La sola data consegna non conta come cambio di recapito: niente voce di
+    // storia né "aggiornato il" per un recupero data (bug reale: con la data
+    // in formato compatto il confronto era NaN !== x, un cambio finto a ogni
+    // sync che duplicava le voci di storia).
     const deliveryChanged =
       stato.statoConsegna !== attempt.postalDeliveryStatus ||
       stato.codiceConsegna !== attempt.postalDeliveryCode ||
-      (stato.dataConsegna ? new Date(stato.dataConsegna).getTime() !== attempt.postalDeliveryDate?.getTime() : false) ||
       (stato.idAccettazione && stato.idAccettazione !== attempt.postalAcceptanceId);
 
     if (stato.statoConsegna !== attempt.postalDeliveryStatus) {

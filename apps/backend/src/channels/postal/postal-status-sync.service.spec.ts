@@ -327,6 +327,59 @@ describe('PostalStatusSyncService', () => {
     expect(includesDeliveryStatusNull).toBe(true);
   });
 
+  it('solo la data consegna nuova (stato invariato): salva la data senza voce di storia né cambio "aggiornato il"', async () => {
+    const history = [{ stato: 'Consegnato', statoConsegna: 'Consegnato a Domicilio', codiceConsegna: null, rilevatoIl: '2026-08-12T10:58:00.000Z' }];
+    const updatedAt = new Date('2026-08-12T10:58:00.000Z');
+    const attempt = {
+      id: 'a1', postalTrackingId: 'IDPRO1', postalStatus: 'Consegnato', postalDeliveryStatus: 'Consegnato a Domicilio',
+      postalDeliveryCode: null, postalDeliveryDate: null, postalAcceptanceId: null, costCents: 614,
+      postalStatusUpdatedAt: updatedAt, postalStatusHistory: [...history],
+    };
+    attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
+    globalCom.dettagliDocumento.mockResolvedValue({
+      idPro: 'IDPRO1', stato: 'Consegnato', statoConsegna: 'Consegnato a Domicilio', codiceConsegna: null,
+      dataConsegna: '2026-08-09T22:00:00.000Z', idAccettazione: null, costoNetto: 6.14,
+    } as any);
+
+    await service.handleCron();
+
+    expect(attemptRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      postalDeliveryDate: new Date('2026-08-09T22:00:00.000Z'),
+      postalStatusHistory: history,
+      postalStatusUpdatedAt: updatedAt,
+    }));
+  });
+
+  it('stessa data consegna già salvata: nessun cambio, nessuna voce di storia (bug: NaN !== data → cambio finto a ogni sync)', async () => {
+    const history = [{ stato: 'Confermato', statoConsegna: 'Accettato', codiceConsegna: null, rilevatoIl: '2026-08-04T06:23:00.000Z' }];
+    const attempt = {
+      id: 'a1', postalTrackingId: 'IDPRO1', postalStatus: 'Confermato', postalDeliveryStatus: 'Accettato',
+      postalDeliveryCode: null, postalDeliveryDate: new Date('2026-08-03T22:00:00.000Z'), postalAcceptanceId: null, costCents: 614,
+      postalStatusUpdatedAt: null, postalStatusHistory: [...history],
+    };
+    attemptRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
+    globalCom.dettagliDocumento.mockResolvedValue({
+      idPro: 'IDPRO1', stato: 'Confermato', statoConsegna: 'Accettato', codiceConsegna: null,
+      dataConsegna: '2026-08-03T22:00:00.000Z', idAccettazione: null, costoNetto: 6.14,
+    } as any);
+
+    await service.handleCron();
+
+    expect(attemptRepo.save).toHaveBeenCalledWith(expect.objectContaining({ postalStatusHistory: history }));
+  });
+
+  it('include nella query, una volta sola, i terminali senza data consegna controllati prima del fix del formato data', async () => {
+    const qb = makeQueryBuilder([]);
+    attemptRepo.createQueryBuilder.mockReturnValue(qb);
+
+    await service.handleCron();
+
+    const includesBackfill = qb.andWhere.mock.calls.some(
+      ([sql]: [string]) => /postal_delivery_date IS NULL/i.test(sql) && /postal_last_checked_at < :deliveryDateFixAt/i.test(sql),
+    );
+    expect(includesBackfill).toBe(true);
+  });
+
   it('include nella query un attempt Eliminato con costo già calcolato ma mai controllato per riaccodamento', async () => {
     const qb = makeQueryBuilder([]);
     attemptRepo.createQueryBuilder.mockReturnValue(qb);
