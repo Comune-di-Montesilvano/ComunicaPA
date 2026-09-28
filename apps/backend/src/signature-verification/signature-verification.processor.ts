@@ -102,7 +102,7 @@ export class SignatureVerificationProcessor extends WorkerHost {
       );
     } catch (err: any) {
       this.logger.error(`Job verifica firma ${jobId} fallito: ${err?.message ?? err}`);
-      captureException(err);
+      captureException(err, { jobId, campaignId, stage: 'signatureVerification' });
       await this.jobRepo.update({ id: jobId }, { status: SignatureVerificationJobStatus.FAILED, errorMessage: err?.message ?? 'Errore sconosciuto', completedAt: new Date() });
     }
   }
