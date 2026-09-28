@@ -17,6 +17,7 @@ import { CampaignCompletionService } from '../campaigns/campaign-completion.serv
 import { AppIoDeliveryService } from '../channels/app-io/app-io-delivery.service.js';
 import type { NotificationJobData } from '@comunicapa/shared-types';
 import * as sentryUtil from '../common/sentry.util.js';
+import { APP_IO_LEGAL_DISCLAIMER } from '../channels/template.helper.js';
 
 vi.mock('../common/sentry.util', () => ({ captureException: jest.fn() }));
 
@@ -646,7 +647,7 @@ describe('NotificationProcessor', () => {
 
       expect(capturedBody.content.subject).toBe('Oggetto IO');
       expect(capturedBody.content.markdown).toBe(
-        "Corpo IO differenziato\n\nQuesto messaggio vale come notifica di cortesia per la comunicazione spedita mediante Email all'indirizzo mario@example.com.",
+        `Corpo IO differenziato\n\nQuesto messaggio vale come notifica di cortesia per la comunicazione spedita mediante Email all'indirizzo mario@example.com.\n\n---\n${APP_IO_LEGAL_DISCLAIMER}`,
       );
     });
   });

@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { AppIoStrategy } from './app-io.strategy.js';
+import { APP_IO_LEGAL_DISCLAIMER } from '../template.helper.js';
 import { IoServicesService } from '../../io-services/io-services.service.js';
 import { AppSettingsService } from '../../settings/app-settings.service.js';
 
@@ -92,7 +93,7 @@ describe('AppIoStrategy', () => {
         }),
         body: JSON.stringify({
           fiscal_code: 'RSSMRA85M01H501Z',
-          content: { subject: 'Avviso Mario', markdown: 'Importo dovuto.' },
+          content: { subject: 'Avviso Mario', markdown: `Importo dovuto.\n\n---\n${APP_IO_LEGAL_DISCLAIMER}` },
         }),
       }),
     );
