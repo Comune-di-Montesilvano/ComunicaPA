@@ -193,7 +193,11 @@ export function computeVerdict(d: JourneyDetail, labels: JourneyLabels): Verdict
   const lo = d.campaign.channelType === 'POSTAL' ? d.legalOutcome : null;
   if (lo?.outcome === 'delivered') {
     const source = lo.reason === 'Verifica Poste' ? 'secondo Poste Italiane' : lo.reason === 'Via PEC' ? 'via PEC (domicilio digitale)' : 'secondo GlobalCom';
-    return { headline: 'Consegnata', tone: 'ok', when: lo.at, source, note: lo.reason === 'Verifica Poste' || lo.reason === 'Via PEC' ? null : lo.reason, discrepancy: lo.reason === 'Verifica Poste' && last.postalStatus !== 'Consegnato' };
+    const discrepancy = lo.reason === 'Verifica Poste' && last.postalStatus !== 'Consegnato';
+    // Discrepanza: lo stato GlobalCom resta visibile accanto alla consegna Poste.
+    const gcNote = last.postalStatus ? `GlobalCom: ${labels.postalStatus(last.postalStatus)}${last.postalDeliveryStatus ? ` (${last.postalDeliveryStatus})` : ''}` : null;
+    const note = discrepancy ? gcNote : lo.reason === 'Verifica Poste' || lo.reason === 'Via PEC' ? null : lo.reason;
+    return { headline: 'Consegnata', tone: 'ok', when: lo.at, source, note, discrepancy };
   }
   if (lo?.outcome === 'not_delivered') {
     return { headline: 'Non consegnata', tone: 'ko', when: last.postalDeliveryDate ?? null, source: 'secondo GlobalCom', note: lo.reason, discrepancy: false };

@@ -369,3 +369,15 @@ mittente (provider postale attivo) con destinatario altrove → `returned`.
 Destinatario nella stessa città del mittente: non distinguibile, resta
 `delivered`. Riesame una tantum delle righe `delivered` all'avvio
 (`reclassifyDeliveredToSender`, senza chiamate a Poste).
+
+**"Stato Documento" POSTAL = esito legale, derivato
+(`campaigns/postal-legal-outcome.util.ts`).** Tabelle CONSEGNATO /
+NON_CONSEGNATO dei valori reali di `StatoConsegna` (verificati in prod) usate
+sia dalla regola TS sia dall'SQL generato: un nuovo valore GlobalCom va
+aggiunto lì e basta (finché non c'è, cade in "In corso", mai in Consegnato).
+Parità SQL/TS: `node src/debug/postal-legal-outcome-parity.mjs` (dopo
+`docker compose restart backend`, legge `dist/`). "Stato notifica" Fallito per
+`Errore` GlobalCom è solo derivato (`recipient.status` resta `sent`).
+`postal-status-breakdown` resta lo stato GlobalCom grezzo (Andamento Invio,
+tasto Verifica su Poste). Riga tabella dei dirottati INAD: ramo JSX proprio
+(`r.inadCheck?.diverted`), va aggiornato insieme alle altre celle.

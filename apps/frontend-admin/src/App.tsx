@@ -18571,16 +18571,16 @@ export function App(): React.JSX.Element {
                                           campaign.channelConfig?.['protocolla'] ? (
                                             <>
                                               <td className="small">{r.protocolNumber ? `${r.protocolNumber}/${r.protocolYear}` : '—'}</td>
+                                              <td className="small"><PostalLegalOutcomeBadge outcome={r.legalOutcome} reason={r.legalOutcomeReason} at={r.legalOutcomeAt} postalStatus={r.postalStatus} /></td>
                                               <td className="small"><span className="badge bg-info-subtle text-info-emphasis border"><MailOpen className="me-1" size={14} />Sostituito da PEC</span></td>
-                                              <td className="small text-muted">—</td>
                                               <td className="small text-muted">—</td>
                                               {downloadCell}
                                               {costCell}
                                             </>
                                           ) : (
                                             <>
+                                              <td className="small"><PostalLegalOutcomeBadge outcome={r.legalOutcome} reason={r.legalOutcomeReason} at={r.legalOutcomeAt} postalStatus={r.postalStatus} /></td>
                                               <td className="small"><span className="badge bg-info-subtle text-info-emphasis border"><MailOpen className="me-1" size={14} />Sostituito da PEC</span></td>
-                                              <td className="small text-muted">—</td>
                                               <td className="small text-muted">—</td>
                                               {downloadCell}
                                               {costCell}
