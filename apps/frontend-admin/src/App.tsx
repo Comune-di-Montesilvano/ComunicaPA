@@ -1355,6 +1355,11 @@ interface Campaign {
   isGroupAggregate?: boolean;
   groupMemberIds?: string[];
   groupChannels?: Array<'PEC' | 'EMAIL' | 'APP_IO' | 'SEND' | 'POSTAL'>;
+  // Membro reale che determina lo stato mostrato (worstStatus): target di
+  // Riprendi/Elimina sulla riga aggregata. Mai l'id della riga (= primo
+  // membro creato), che con stato "draft" aggregato puntava a una campagna
+  // già completata.
+  groupActionMember?: Campaign;
 }
 
 interface Recipient {
@@ -1493,6 +1498,15 @@ interface ManualRow {
   // dal default per questa riga.
   attachmentOverrides: Record<string, File>;
 }
+
+// Canale effettivo di una riga dell'Invio Manuale: un dirottamento INAD manda
+// la riga sul bucket PEC, TRANNE se l'operatore ha scelto SEND — PN risolve da
+// sé il domicilio digitale, e la select canale ammette esplicitamente SEND
+// anche con INAD trovato. Bug reale: una riga INAD scelta SEND finiva in un
+// bucket PEC separato mai lanciato (gruppo SEND+PEC non voluto, 1 destinatario
+// rimasto in bozza).
+const manualRowEffectiveChannel = (row: ManualRow): ManualRow['channel'] =>
+  row.inadForced && row.channel !== 'SEND' ? 'PEC' : row.channel;
 
 interface ManualChannelConfig {
   mailConfigId: string;
@@ -7424,8 +7438,7 @@ export function App(): React.JSX.Element {
     setWizChannel(channel);
     if (!isFirstRowOfChannel(channel)) applyManualChannelConfig(channel);
 
-    const effectiveChannel = (row: ManualRow): ManualRow['channel'] => (row.inadForced ? 'PEC' : row.channel);
-    const bucketRows = isGrouped ? rows.filter(r => effectiveChannel(r) === channel) : rows;
+    const bucketRows = isGrouped ? rows.filter(r => manualRowEffectiveChannel(r) === channel) : rows;
     const bucketNeedsPhysicalAddress = channel === 'POSTAL' || channel === 'SEND';
 
     const cols: string[] = ['codice_fiscale', 'full_name', 'email', 'pec'];
@@ -7527,10 +7540,7 @@ export function App(): React.JSX.Element {
       return;
     }
 
-    // Canale effettivo: un dirottamento INAD manda sempre la riga sul bucket
-    // PEC, indipendente dal canale scelto dall'operatore per quella riga.
-    const effectiveChannel = (row: ManualRow): ManualRow['channel'] => (row.inadForced ? 'PEC' : row.channel);
-    const distinctChannels = Array.from(new Set(rows.map(effectiveChannel)));
+    const distinctChannels = Array.from(new Set(rows.map(manualRowEffectiveChannel)));
 
     // groupId calcolato localmente (mai da wizGroupId di stato subito dopo
     // averlo appena impostato — stessa stale closure di `rows` sopra):
@@ -9086,6 +9096,7 @@ export function App(): React.JSX.Element {
         isGroupAggregate: true,
         groupMemberIds: sorted.map(m => m.id),
         groupChannels: Array.from(new Set(sorted.map(m => m.channelType))),
+        groupActionMember: sorted.find(m => m.status === worstStatus),
       });
     }
 
@@ -10146,7 +10157,7 @@ export function App(): React.JSX.Element {
                                           type="button"
                                           className="btn btn-sm btn-outline-primary d-flex align-items-center gap-1"
                                           title="Riprendi wizard campagna"
-                                          onClick={() => handleResumeDraft(c.id)}
+                                          onClick={() => handleResumeDraft((c.groupActionMember ?? c).id)}
                                         >
                                           <Pencil /> Riprendi
                                         </button>
@@ -10163,9 +10174,15 @@ export function App(): React.JSX.Element {
                                         <button
                                           type="button"
                                           className="btn btn-sm btn-outline-danger d-flex align-items-center gap-1"
-                                          disabled={campaignIsLegalValue(c) && c.status !== 'draft'}
-                                          title={campaignIsLegalValue(c) && c.status !== 'draft' ? 'Campagna a valore legale: non eliminabile dopo l\'avvio' : 'Elimina campagna definitivamente'}
-                                          onClick={() => handleDeleteCampaign(c.id, c.name)}
+                                          disabled={campaignIsLegalValue(c.groupActionMember ?? c) && c.status !== 'draft'}
+                                          title={campaignIsLegalValue(c.groupActionMember ?? c) && c.status !== 'draft' ? 'Campagna a valore legale: non eliminabile dopo l\'avvio' : 'Elimina campagna definitivamente'}
+                                          onClick={() => {
+                                            const target = c.groupActionMember ?? c;
+                                            handleDeleteCampaign(
+                                              target.id,
+                                              c.groupActionMember ? `${target.name} (solo canale ${getChannelMeta(target.channelType).label})` : target.name,
+                                            );
+                                          }}
                                         >
                                           <Trash2 /> Elimina
                                         </button>
@@ -10391,8 +10408,8 @@ export function App(): React.JSX.Element {
                   )}
 
                   {(() => {
-                    const hasDiverted = wizManualRows.some(r => r.inadForced);
-                    const hasNonPec = wizManualRows.some(r => r.channel !== 'PEC' && !r.inadForced);
+                    const hasDiverted = wizManualRows.some(r => manualRowEffectiveChannel(r) !== r.channel);
+                    const hasNonPec = wizManualRows.some(r => manualRowEffectiveChannel(r) !== 'PEC');
                     if (!hasDiverted || !hasNonPec) return null;
                     return (
                       <div className="alert alert-warning d-flex align-items-start gap-2 mb-3">
@@ -10426,7 +10443,7 @@ export function App(): React.JSX.Element {
                                 <td className="font-monospace small">{row.cf}</td>
                                 <td>{[row.surname, row.firstName].filter(Boolean).join(' ')}</td>
                                 <td>
-                                  {row.inadForced ? (
+                                  {manualRowEffectiveChannel(row) !== row.channel ? (
                                     <span className="badge bg-info-subtle text-info-emphasis">Dirottato su PEC (INAD)</span>
                                   ) : (
                                     <span className="text-muted small">{row.channel}</span>
