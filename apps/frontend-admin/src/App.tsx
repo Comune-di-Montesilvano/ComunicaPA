@@ -7,8 +7,7 @@ import type { JourneyLabels } from './components/notification-detail/journey';
 import { SearchableSelect } from './components/SearchableSelect';
 import { StatisticsView } from './components/StatisticsView';
 import { DashboardView } from './components/DashboardView';
-import { SEND_ENTITY_TYPES, SEND_TAXONOMY_CATALOG } from './data/sendTaxonomy';
-import { COUNTRIES, matchCountry, isValidCap, abbreviateLongMunicipality } from '@comunicapa/shared-types';
+import { COUNTRIES, matchCountry, isValidCap, abbreviateLongMunicipality, SEND_ENTITY_TYPES, SEND_TAXONOMY_CATALOG } from '@comunicapa/shared-types';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import {
   Mail, MailOpen, MailCheck, Mails, Smartphone, Send, HelpCircle,
