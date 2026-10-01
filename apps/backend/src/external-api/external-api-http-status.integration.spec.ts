@@ -7,116 +7,106 @@ import { randomUUID } from 'crypto';
 import { ExternalNotificationsController } from './external-notifications.controller.js';
 import { ExternalAttachmentsController } from './external-attachments.controller.js';
 import { ExternalDomicilioController } from './external-domicilio.controller.js';
-import { ExternalApiService } from './external-api.service.js';
-import { CampaignsService } from '../campaigns/campaigns.service.js';
+import { ExternalCapabilitiesController } from './external-capabilities.controller.js';
+import { ExternalNotificationsService } from './external-notifications.service.js';
+import { ExternalNotificationStatusService } from './external-notification-status.service.js';
+import { ExternalCapabilitiesService } from './external-capabilities.service.js';
 import { ExternalAttachmentTokensService } from './external-attachment-tokens.service.js';
 import { DomicilioService } from '../channels/domicilio/domicilio.service.js';
 import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
 import { ApiKeyGuard } from './guards/api-key.guard.js';
 import { ExternalApiClientsService } from './external-api-clients.service.js';
+import { ExternalApiError } from './external-api.error.js';
 import { chunkUploadDir } from '../campaigns/chunked-upload.util.js';
 
 /**
- * Task 12 (review follow-up) — Nessuno spec in external-api/ prima d'ora
- * asserisce sul vero status code HTTP: tutti istanziano i controller con
- * `new X(...)` e verificano solo il body ritornato — un `@HttpCode` mancante
- * (bug reale trovato/corretto, vedi task-12-report.md) non fa fallire NESSUNO
- * di quegli spec, perché la risposta HTTP vera (con lo status code deciso da
- * Nest/Express) non viene mai prodotta in quei test.
- *
- * Questo spec fa il contrario: boot di un vero modulo Nest (controller +
- * guard reali, solo i service esterni mockati, stesso principio già usato
- * dagli spec unit di questa cartella ma cablato attraverso il vero grafo
- * Nest invece che `new Controller(...)`) e richieste HTTP reali via
- * supertest — così `@HttpCode`/il default Nest sono davvero esercitati.
- *
- * Scelta deliberata: NON importo `ExternalApiModule` per intero (richiede
- * `TypeOrmModule.forFeature`, quindi una connessione DB reale/datasource
- * mockato più pesante da wire-are senza guadagnare nulla sul punto da
- * verificare, il codice HTTP). Uso invece
- * `Test.createTestingModule({ controllers: [...], providers: [...] })` con
- * i controller REALI di produzione e i loro service diretti mockati — stesso
- * identico controller/guard/filter compilati da Nest, zero DB coinvolto.
+ * Boot reale di controller+guard+filter con richieste HTTP vere: intercetta
+ * i due gotcha non visibili agli spec unit (201 al posto di 200 su @Post,
+ * provider non risolti). Vedi docs/claude/external-api-module.md.
  */
-describe('external/v1 — status code contratto HTTP reale (integration)', () => {
+describe('external/v2 — status code contratto HTTP reale (integration)', () => {
   let app: INestApplication;
-  let externalApiService: { createAndLaunch: jest.Mock };
-  let campaignsService: { findOne: jest.Mock };
-  let tokensService: { completeUpload: jest.Mock };
-  let domicilioService: { cercaDomicilio: jest.Mock };
-  let auditLogsService: { log: jest.Mock };
-  let clientsService: { findActiveByKey: jest.Mock; touchLastUsed: jest.Mock };
-  const createdUploadIds: string[] = [];
-
   const VALID_KEY = 'valid-key-e2e';
   const FAKE_CLIENT = { id: 'client-1', name: 'Test Client HTTP' };
+  const createdUploadIds: string[] = [];
+  const notifications = { create: jest.fn() };
+  const status = { get: jest.fn() };
+  const capabilities = { getCapabilities: jest.fn(async () => ({ success: true, channels: {} })) };
+  const domicilio = { cercaDomicilio: jest.fn(async (taxId: string) => ({ codiceFiscale: taxId })) };
+  const tokensService = { completeUpload: jest.fn(async () => ({ token: 'tok-http-1' })) };
 
   beforeAll(async () => {
-    externalApiService = {
-      createAndLaunch: jest.fn().mockResolvedValue({ success: true, campaignId: 'camp-http-1', status: 'QUEUED' }),
-    };
-    campaignsService = { findOne: jest.fn() };
-    tokensService = { completeUpload: jest.fn().mockResolvedValue({ token: 'tok-http-1' }) };
-    domicilioService = {
-      cercaDomicilio: jest.fn().mockResolvedValue({
-        codiceFiscale: 'RSSMRA80A01H501U',
-        inad: { success: true, found: false },
-        appIo: { success: true, active: false },
-        anpr: { success: true, found: false },
-      }),
-    };
-    auditLogsService = { log: jest.fn().mockResolvedValue(undefined) };
-    clientsService = {
-      findActiveByKey: jest.fn().mockImplementation(async (key: string) => (key === VALID_KEY ? FAKE_CLIENT : null)),
-      touchLastUsed: jest.fn().mockResolvedValue(undefined),
-    };
-
     const moduleRef: TestingModule = await Test.createTestingModule({
-      controllers: [ExternalNotificationsController, ExternalAttachmentsController, ExternalDomicilioController],
+      controllers: [ExternalNotificationsController, ExternalAttachmentsController, ExternalDomicilioController, ExternalCapabilitiesController],
       providers: [
         ApiKeyGuard,
-        { provide: ExternalApiClientsService, useValue: clientsService },
-        { provide: ExternalApiService, useValue: externalApiService },
-        { provide: CampaignsService, useValue: campaignsService },
+        {
+          provide: ExternalApiClientsService,
+          useValue: {
+            findActiveByKey: jest.fn(async (k: string) => (k === VALID_KEY ? FAKE_CLIENT : null)),
+            touchLastUsed: jest.fn(async () => undefined),
+          },
+        },
+        { provide: ExternalNotificationsService, useValue: notifications },
+        { provide: ExternalNotificationStatusService, useValue: status },
+        { provide: ExternalCapabilitiesService, useValue: capabilities },
         { provide: ExternalAttachmentTokensService, useValue: tokensService },
-        { provide: DomicilioService, useValue: domicilioService },
-        { provide: AuditLogsService, useValue: auditLogsService },
+        { provide: DomicilioService, useValue: domicilio },
+        { provide: AuditLogsService, useValue: { log: jest.fn(async () => undefined) } },
       ],
     }).compile();
-
     app = moduleRef.createNestApplication();
-    // Stesso ValidationPipe globale configurato in main.ts — senza questo,
-    // la pipeline reale testata non rispecchierebbe quella di produzione.
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
     await app.init();
   });
 
   afterAll(async () => {
     await app.close();
-    for (const uploadId of createdUploadIds) {
-      fs.rmSync(chunkUploadDir(uploadId), { recursive: true, force: true });
-    }
+    for (const id of createdUploadIds) fs.rmSync(chunkUploadDir(id), { recursive: true, force: true });
   });
 
-  it('POST external/v1/notifications (successo) → HTTP 200, non 201 (default Nest per POST)', async () => {
-    const res = await request(app.getHttpServer())
-      .post('/external/v1/notifications')
-      .set('X-Api-Key', VALID_KEY)
-      .send({
-        channelType: 'EMAIL',
-        codiceFiscale: 'RSSMRA80A01H501U',
-        email: 'test@example.com',
-        extraData: {},
-        subject: 'Oggetto di test',
-        body: 'Corpo del messaggio di test.',
-      })
-      .expect(200);
-    expect(res.body).toEqual({ success: true, campaignId: 'camp-http-1', status: 'QUEUED' });
+  it('POST /external/v2/notifications → 200, body e Idempotency-Key passati al service senza ValidationPipe globale', async () => {
+    notifications.create.mockResolvedValueOnce({ success: true, notificationId: 'rec-1', status: 'accepted' });
+    const body = { channel: 'EMAIL', recipient: { type: 'PF', taxId: 'RSSMRA80A01H501U', email: 'a@b.it', unknown: 1 }, content: { subject: 'x', body: 'y' } };
+    const res = await request(app.getHttpServer()).post('/external/v2/notifications').set('X-Api-Key', VALID_KEY).set('Idempotency-Key', 'k-1').send(body).expect(200);
+    expect(res.body).toEqual({ success: true, notificationId: 'rec-1', status: 'accepted' });
+    // Il body arriva intatto (campo sconosciuto incluso): la validazione con path completo è del service.
+    expect(notifications.create).toHaveBeenCalledWith(body, FAKE_CLIENT, 'k-1');
   });
 
-  it('POST external/v1/attachments/upload/init (successo) → HTTP 200', async () => {
+  it('POST /external/v2/notifications con ExternalApiError → 200 con code/details', async () => {
+    notifications.create.mockRejectedValueOnce(new ExternalApiError('VALIDATION_ERROR', 'Validazione fallita', [{ field: 'recipient.unknown', message: 'campo non ammesso' }]));
+    const res = await request(app.getHttpServer()).post('/external/v2/notifications').set('X-Api-Key', VALID_KEY).set('Idempotency-Key', 'k-2').send({}).expect(200);
+    expect(res.body).toEqual({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Validazione fallita', details: [{ field: 'recipient.unknown', message: 'campo non ammesso' }] } });
+  });
+
+  it('GET /external/v2/notifications/:id → 200; NOT_FOUND resta 200', async () => {
+    status.get.mockResolvedValueOnce({ success: true, notificationId: 'rec-1', status: 'sent', events: [] });
+    await request(app.getHttpServer()).get('/external/v2/notifications/rec-1').set('X-Api-Key', VALID_KEY).expect(200);
+    expect(status.get).toHaveBeenCalledWith('rec-1', 'client-1');
+    status.get.mockRejectedValueOnce(new ExternalApiError('NOT_FOUND', 'Notifica non trovata'));
+    const res = await request(app.getHttpServer()).get('/external/v2/notifications/x').set('X-Api-Key', VALID_KEY).expect(200);
+    expect(res.body.error.code).toBe('NOT_FOUND');
+  });
+
+  it('GET /external/v2/capabilities → 200', async () => {
+    await request(app.getHttpServer()).get('/external/v2/capabilities').set('X-Api-Key', VALID_KEY).expect(200);
+  });
+
+  it('POST /external/v2/domicilio/cerca accetta P.IVA → 200', async () => {
+    const res = await request(app.getHttpServer()).post('/external/v2/domicilio/cerca').set('X-Api-Key', VALID_KEY).send({ taxId: '01234567890' }).expect(200);
+    expect(res.body).toEqual({ success: true, codiceFiscale: '01234567890' });
+    expect(domicilio.cercaDomicilio).toHaveBeenCalledWith('01234567890', 'external:Test Client HTTP');
+  });
+
+  it('POST /external/v2/domicilio/cerca con taxId non valido → VALIDATION_ERROR (200)', async () => {
+    const res = await request(app.getHttpServer()).post('/external/v2/domicilio/cerca').set('X-Api-Key', VALID_KEY).send({ taxId: '123' }).expect(200);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('POST external/v2/attachments/upload/init (successo) → HTTP 200', async () => {
     const res = await request(app.getHttpServer())
-      .post('/external/v1/attachments/upload/init')
+      .post('/external/v2/attachments/upload/init')
       .set('X-Api-Key', VALID_KEY)
       .send({ filename: 'avviso.pdf', totalChunks: 1 })
       .expect(200);
@@ -125,9 +115,9 @@ describe('external/v1 — status code contratto HTTP reale (integration)', () =>
     createdUploadIds.push(res.body.uploadId);
   });
 
-  it('POST external/v1/attachments/upload/init con filename path-traversal → validazione lo riduce/rifiuta, mai scritto fuori dalla cartella upload', async () => {
+  it('POST external/v2/attachments/upload/init con filename path-traversal → validazione lo riduce/rifiuta, mai scritto fuori dalla cartella upload', async () => {
     const res = await request(app.getHttpServer())
-      .post('/external/v1/attachments/upload/init')
+      .post('/external/v2/attachments/upload/init')
       .set('X-Api-Key', VALID_KEY)
       .send({ filename: '../../../../etc/passwd', totalChunks: 1 })
       .expect(200);
@@ -141,20 +131,20 @@ describe('external/v1 — status code contratto HTTP reale (integration)', () =>
     expect(meta.filename).toBe('passwd');
   });
 
-  it('POST external/v1/attachments/upload/init con totalChunks non intero → VALIDATION_ERROR (DTO validato, non più interfaccia TS grezza)', async () => {
+  it('POST external/v2/attachments/upload/init con totalChunks non intero → VALIDATION_ERROR (DTO validato, non più interfaccia TS grezza)', async () => {
     const res = await request(app.getHttpServer())
-      .post('/external/v1/attachments/upload/init')
+      .post('/external/v2/attachments/upload/init')
       .set('X-Api-Key', VALID_KEY)
       .send({ filename: 'avviso.pdf', totalChunks: 'not-a-number' })
       .expect(200);
     expect(res.body).toMatchObject({ success: false, error: { code: 'VALIDATION_ERROR' } });
   });
 
-  it('POST external/v1/attachments/upload/chunk (successo, uploadId UUID valido) → HTTP 200', async () => {
+  it('POST external/v2/attachments/upload/chunk (successo, uploadId UUID valido) → HTTP 200', async () => {
     const uploadId = randomUUID();
     createdUploadIds.push(uploadId);
     const res = await request(app.getHttpServer())
-      .post('/external/v1/attachments/upload/chunk')
+      .post('/external/v2/attachments/upload/chunk')
       .set('X-Api-Key', VALID_KEY)
       .field('uploadId', uploadId)
       .field('index', '0')
@@ -176,10 +166,10 @@ describe('external/v1 — status code contratto HTTP reale (integration)', () =>
    * percorso. Solo un vero giro HTTP attraverso multer prova che il file
    * non viene scritto fuori da CHUNK_ROOT.
    */
-  it('POST external/v1/attachments/upload/chunk con uploadId path-traversal → HTTP 200 con blocco esplicito, nessun file scritto fuori da CHUNK_ROOT', async () => {
+  it('POST external/v2/attachments/upload/chunk con uploadId path-traversal → HTTP 200 con blocco esplicito, nessun file scritto fuori da CHUNK_ROOT', async () => {
     const maliciousUploadId = '../../../../tmp/comunicapa-uploads-traversal-poc';
     const res = await request(app.getHttpServer())
-      .post('/external/v1/attachments/upload/chunk')
+      .post('/external/v2/attachments/upload/chunk')
       .set('X-Api-Key', VALID_KEY)
       .field('uploadId', maliciousUploadId)
       .field('index', '0')
@@ -191,19 +181,19 @@ describe('external/v1 — status code contratto HTTP reale (integration)', () =>
     expect(fs.existsSync('/tmp/comunicapa-uploads-traversal-poc')).toBe(false);
   });
 
-  it('POST external/v1/attachments/upload/chunk con index path-traversal → HTTP 200 con blocco esplicito', async () => {
+  it('POST external/v2/attachments/upload/chunk con index path-traversal → HTTP 200 con blocco esplicito', async () => {
     const uploadId = randomUUID();
     createdUploadIds.push(uploadId);
     // init reale, per avere una cartella di upload legittima su cui
     // verificare che NON compaia alcun file col nome malevolo.
     await request(app.getHttpServer())
-      .post('/external/v1/attachments/upload/init')
+      .post('/external/v2/attachments/upload/init')
       .set('X-Api-Key', VALID_KEY)
       .send({ filename: 'avviso.pdf', totalChunks: 1 })
       .expect(200);
 
     const res = await request(app.getHttpServer())
-      .post('/external/v1/attachments/upload/chunk')
+      .post('/external/v2/attachments/upload/chunk')
       .set('X-Api-Key', VALID_KEY)
       .field('uploadId', uploadId)
       .field('index', '../../evil')
@@ -212,10 +202,10 @@ describe('external/v1 — status code contratto HTTP reale (integration)', () =>
     expect(res.body).toMatchObject({ success: false, error: { code: 'VALIDATION_ERROR' } });
   });
 
-  it('POST external/v1/attachments/upload/complete (successo, uploadId UUID valido) → HTTP 200', async () => {
+  it('POST external/v2/attachments/upload/complete (successo, uploadId UUID valido) → HTTP 200', async () => {
     const uploadId = randomUUID();
     const res = await request(app.getHttpServer())
-      .post('/external/v1/attachments/upload/complete')
+      .post('/external/v2/attachments/upload/complete')
       .set('X-Api-Key', VALID_KEY)
       .send({ uploadId })
       .expect(200);
@@ -228,9 +218,9 @@ describe('external/v1 — status code contratto HTTP reale (integration)', () =>
    * PRIMA del controller, quindi @IsUUID() su CompleteAttachmentUploadDto è
    * la protezione REALE (non solo difesa in profondità come per chunk()).
    */
-  it('POST external/v1/attachments/upload/complete con uploadId path-traversal → VALIDATION_ERROR, mai invocato con il payload malevolo', async () => {
+  it('POST external/v2/attachments/upload/complete con uploadId path-traversal → VALIDATION_ERROR, mai invocato con il payload malevolo', async () => {
     const res = await request(app.getHttpServer())
-      .post('/external/v1/attachments/upload/complete')
+      .post('/external/v2/attachments/upload/complete')
       .set('X-Api-Key', VALID_KEY)
       .send({ uploadId: '../../../../etc/passwd' })
       .expect(200);
@@ -242,24 +232,10 @@ describe('external/v1 — status code contratto HTTP reale (integration)', () =>
     expect(tokensService.completeUpload).not.toHaveBeenCalledWith(expect.anything(), '../../../../etc/passwd');
   });
 
-  it('POST external/v1/domicilio/cerca (successo) → HTTP 200', async () => {
-    const res = await request(app.getHttpServer())
-      .post('/external/v1/domicilio/cerca')
-      .set('X-Api-Key', VALID_KEY)
-      .send({ codiceFiscale: 'RSSMRA80A01H501U' })
-      .expect(200);
-    expect(res.body.success).toBe(true);
-    expect(auditLogsService.log).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'EXTERNAL_DOMICILIO_SEARCH', details: { codiceFiscale: 'RSSMRA80A01H501U' } }),
-    );
-  });
 
-  it('POST external/v1/notifications con API key invalida → resta HTTP 200 (filtro eccezioni, mai 401)', async () => {
-    const res = await request(app.getHttpServer())
-      .post('/external/v1/notifications')
-      .set('X-Api-Key', 'key-completamente-sbagliata')
-      .send({ channelType: 'EMAIL', codiceFiscale: 'RSSMRA80A01H501U', email: 'test@example.com', extraData: {} })
-      .expect(200);
-    expect(res.body).toEqual({ success: false, error: { code: 'UNAUTHORIZED', message: 'API key non valida o revocata' } });
+  it('API key non valida → 200 UNAUTHORIZED; route v1 non esiste più', async () => {
+    const res = await request(app.getHttpServer()).post('/external/v2/notifications').set('X-Api-Key', 'nope').send({}).expect(200);
+    expect(res.body.error.code).toBe('UNAUTHORIZED');
+    await request(app.getHttpServer()).get('/external/v1/capabilities').set('X-Api-Key', VALID_KEY).expect(404);
   });
 });

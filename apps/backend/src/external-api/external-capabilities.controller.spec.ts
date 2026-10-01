@@ -1,118 +1,12 @@
 import { ExternalCapabilitiesController } from './external-capabilities.controller.js';
-import { MailConfigsService } from '../mail-configs/mail-configs.service.js';
-import { IoServicesService } from '../io-services/io-services.service.js';
-import { PostalProvidersService } from '../postal-providers/postal-providers.service.js';
-import { AppSettingsService } from '../settings/app-settings.service.js';
+import type { ExternalCapabilitiesService } from './external-capabilities.service.js';
 
+// La logica (fonti, default, valori ammessi) è coperta da external-capabilities.service.spec.ts.
 describe('ExternalCapabilitiesController', () => {
-  let controller: ExternalCapabilitiesController;
-  let mailConfigs: { listMasked: jest.Mock };
-  let ioServices: { resolveApiKey: jest.Mock };
-  let postalProviders: { getActive: jest.Mock };
-  let settings: { get: jest.Mock };
-
-  beforeEach(() => {
-    mailConfigs = {
-      listMasked: jest.fn().mockResolvedValue([
-        { type: 'EMAIL', active: true },
-        { type: 'PEC', active: false },
-      ]),
-    };
-    ioServices = { resolveApiKey: jest.fn().mockResolvedValue(null) };
-    postalProviders = { getActive: jest.fn().mockResolvedValue(null) };
-    settings = {
-      get: jest.fn(async (key: string) => {
-        if (key === 'send.enabledTaxonomyCodes') return '["TARI","SANZIONI"]';
-        if (key === 'send.environment') return 'collaudo';
-        if (key === 'send.test.group') return 'gruppo-1';
-        if (key === 'send.test.apiKey') return 'api-key-collaudo';
-        if (key === 'send.test.purposeId') return 'purpose-collaudo';
-        return '';
-      }),
-    };
-    controller = new ExternalCapabilitiesController(
-      mailConfigs as unknown as MailConfigsService,
-      ioServices as unknown as IoServicesService,
-      postalProviders as unknown as PostalProvidersService,
-      settings as unknown as AppSettingsService,
-    );
-  });
-
-  it('EMAIL attivo, PEC non attivo, riflette listMasked()', async () => {
-    const result = await controller.get();
-    expect(result.channels.EMAIL).toEqual({ active: true });
-    expect(result.channels.PEC).toEqual({ active: false });
-  });
-
-  it('APP_IO e appIoSecondary non attivi se resolveApiKey ritorna null', async () => {
-    const result = await controller.get();
-    expect(result.channels.APP_IO).toEqual({ active: false });
-    expect(result.appIoSecondary).toEqual({ available: false });
-  });
-
-  it('APP_IO attivo se resolveApiKey ritorna una chiave', async () => {
-    ioServices.resolveApiKey.mockResolvedValue({ apiKey: 'k', idService: 's1' });
-    const result = await controller.get();
-    expect(result.channels.APP_IO).toEqual({ active: true });
-    expect(result.appIoSecondary).toEqual({ available: true });
-  });
-
-  it('SEND riflette enabledTaxonomyCodes e requiresGroup, active da credenziali PDND configurate', async () => {
-    const result = await controller.get();
-    expect(result.channels.SEND).toEqual({ active: true, enabledTaxonomyCodes: ['TARI', 'SANZIONI'], requiresGroup: true });
-  });
-
-  it('SEND active=false se apiKey/purposeId non configurati, anche con taxonomy popolata', async () => {
-    settings.get.mockImplementation(async (key: string) => {
-      if (key === 'send.enabledTaxonomyCodes') return '["TARI","SANZIONI"]';
-      if (key === 'send.environment') return 'collaudo';
-      if (key === 'send.test.group') return 'gruppo-1';
-      return '';
-    });
-    const result = await controller.get();
-    expect(result.channels.SEND.active).toBe(false);
-    expect(result.channels.SEND.enabledTaxonomyCodes).toEqual(['TARI', 'SANZIONI']);
-  });
-
-  it('SEND active=true con credenziali configurate anche se taxonomy è vuota', async () => {
-    settings.get.mockImplementation(async (key: string) => {
-      if (key === 'send.enabledTaxonomyCodes') return '[]';
-      if (key === 'send.environment') return 'collaudo';
-      if (key === 'send.test.group') return 'gruppo-1';
-      if (key === 'send.test.apiKey') return 'api-key-collaudo';
-      if (key === 'send.test.purposeId') return 'purpose-collaudo';
-      return '';
-    });
-    const result = await controller.get();
-    expect(result.channels.SEND.active).toBe(true);
-    expect(result.channels.SEND.enabledTaxonomyCodes).toEqual([]);
-  });
-
-  it('SEND legge le credenziali dal prefisso prod quando send.environment è "produzione"', async () => {
-    settings.get.mockImplementation(async (key: string) => {
-      if (key === 'send.enabledTaxonomyCodes') return '[]';
-      if (key === 'send.environment') return 'produzione';
-      if (key === 'send.prod.group') return 'gruppo-prod';
-      if (key === 'send.prod.apiKey') return 'api-key-prod';
-      if (key === 'send.prod.purposeId') return 'purpose-prod';
-      return '';
-    });
-    const result = await controller.get();
-    expect(result.channels.SEND).toEqual({ active: true, enabledTaxonomyCodes: [], requiresGroup: true });
-  });
-
-  it('POSTAL non attivo se nessun provider attivo', async () => {
-    const result = await controller.get();
-    expect(result.channels.POSTAL).toEqual({ active: false, enabledServiceTypes: [], contratti: [] });
-  });
-
-  it('POSTAL attivo riflette enabledServiceTypes/contratti del provider attivo', async () => {
-    postalProviders.getActive.mockResolvedValue({ enabledServiceTypes: ['Raccomandata1Market'], contratti: [{ codiceContratto: 'C1', descrizione: 'd', tipologia: 't', estero: false }] });
-    const result = await controller.get();
-    expect(result.channels.POSTAL).toEqual({
-      active: true,
-      enabledServiceTypes: ['Raccomandata1Market'],
-      contratti: [{ codiceContratto: 'C1', descrizione: 'd', tipologia: 't', estero: false }],
-    });
+  it('restituisce le capabilities calcolate dal service', async () => {
+    const caps = { success: true, channels: {} };
+    const service = { getCapabilities: jest.fn().mockResolvedValue(caps) };
+    const controller = new ExternalCapabilitiesController(service as unknown as ExternalCapabilitiesService);
+    await expect(controller.get()).resolves.toBe(caps);
   });
 });

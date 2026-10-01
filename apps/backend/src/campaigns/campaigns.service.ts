@@ -30,7 +30,7 @@ import type { CreateCampaignDto } from './dto/create-campaign.dto.js';
 import type { UpdateCampaignDto } from './dto/update-campaign.dto.js';
 import type { UpdateCampaignContentDto } from './dto/update-campaign-content.dto.js';
 import type { TestSendDto } from './dto/test-send.dto.js';
-import type { CampaignStatsDto, RecipientStatDto, RecipientStatsPageDto, ChannelBreakdownDto, EffectiveChannelBreakdownDto, DownloadCombinationDto, DownloadCombinationStatsDto, FailureRowDto, FailureGroupDto, DownloadReportDto, SendStatusBreakdownDto, SendReportDto, SendReportRowDto, PostalStatusBreakdownDto, PostalReportDto, PostalReportRowDto, CampaignCostDto, CampaignCostSavingsDto, CampaignPaymentTotalDto, ExternalDeliveryStatusDto } from './dto/campaign-stats.dto.js';
+import type { CampaignStatsDto, RecipientStatDto, RecipientStatsPageDto, ChannelBreakdownDto, EffectiveChannelBreakdownDto, DownloadCombinationDto, DownloadCombinationStatsDto, FailureRowDto, FailureGroupDto, DownloadReportDto, SendStatusBreakdownDto, SendReportDto, SendReportRowDto, PostalStatusBreakdownDto, PostalReportDto, PostalReportRowDto, CampaignCostDto, CampaignCostSavingsDto, CampaignPaymentTotalDto } from './dto/campaign-stats.dto.js';
 import type { GlobalStatsDto, NeverDownloadedRowDto } from './dto/global-stats.dto.js';
 import { mergeMonthlyTrend, computeDownloadPercentage, buildDateRangeWhere } from './global-stats.util.js';
 import { sendLegalDateOf } from './send-legal-date.util.js';
@@ -102,6 +102,17 @@ export interface CampaignRequester {
 export function hasPostalArTracking(campaign: Pick<Campaign, 'channelConfig'>): boolean {
   const servizio = String(campaign.channelConfig?.['postalServiceType'] ?? '');
   return servizio.startsWith('Agol') || (servizio.startsWith('Raccomandata') && !!campaign.channelConfig?.['postalReturnReceipt']);
+}
+
+/**
+ * Un solo destinatario per costruzione: wizard "invio singolo" o API esterna.
+ * Usato per i controlli che in massivo sono bloccanti (es. verifica firma SEND
+ * via job BullMQ) e su un destinatario solo vanno fatti in linea. NON per lo
+ * skip INAD: quello resta legato a wizSingleMode, l'API esterna dirotta come
+ * il lancio UI.
+ */
+export function isSingleRecipientFlow(campaign: Pick<Campaign, 'channelConfig'>): boolean {
+  return campaign.channelConfig?.['wizSingleMode'] === true || campaign.channelConfig?.['source'] === 'external';
 }
 
 export function isCampaignLegalValue(campaign: Pick<Campaign, 'isLegalValue' | 'channelType' | 'channelConfig'>): boolean {
@@ -430,14 +441,14 @@ export class CampaignsService {
    */
   async addSingleRecipient(
     campaignId: string,
-    data: { codiceFiscale: string; email?: string | null; pec?: string | null; extraData: Record<string, unknown> },
+    data: { codiceFiscale: string; fullName?: string | null; email?: string | null; pec?: string | null; extraData: Record<string, unknown> },
   ): Promise<Recipient> {
     const recipient = this.recipientRepo.create({
       campaignId,
       codiceFiscale: data.codiceFiscale,
       email: data.email ?? null,
       pec: data.pec ?? null,
-      fullName: (data.extraData['full_name'] as string | undefined) ?? null,
+      fullName: data.fullName ?? null,
       extraData: data.extraData,
       status: RecipientStatus.PENDING,
     });
@@ -658,8 +669,7 @@ export class CampaignsService {
     // È il contenuto legale notificato, non un corredo opzionale.
     let signatureWarning: string | undefined;
     if (campaign.channelType === 'SEND') {
-      const isWizSingleModeForSignature = campaign.channelConfig?.['wizSingleMode'] === true;
-      if (isWizSingleModeForSignature) {
+      if (isSingleRecipientFlow(campaign)) {
         const singleRecipients = await this.recipientRepo.find({
           where: { campaignId, status: RecipientStatus.PENDING },
           select: { id: true, extraData: true },
@@ -3300,46 +3310,6 @@ export class CampaignsService {
     }
 
     return Array.from(counts.entries()).map(([status, count]) => ({ status, count }));
-  }
-
-  /**
-   * Stato canale-specifico dell'unico attempt di una campagna lanciata via
-   * external-api (sempre wizSingleMode, un solo Recipient) — usato da
-   * GET external/v1/notifications/:campaignId. Adatta la stessa logica di
-   * lettura sendStatus/postalStatus/errore già in uso in
-   * getSendStatusBreakdown/getPostalStatusBreakdown, ma per un singolo
-   * attempt invece di aggregare su molti destinatari.
-   */
-  async getExternalDeliveryStatus(campaignId: string): Promise<ExternalDeliveryStatusDto | null> {
-    const recipient = await this.recipientRepo.findOne({ where: { campaignId }, order: { createdAt: 'ASC' } });
-    if (!recipient) return null;
-
-    const attempts = await this.attemptRepo.find({ where: { recipientId: recipient.id } });
-    if (attempts.length === 0) return null;
-
-    const latest = attempts.reduce((a, b) => (b.attemptNumber > a.attemptNumber ? b : a));
-
-    let error: string | null = null;
-    if (latest.status === AttemptStatus.FAILED) {
-      error = latest.errorMessage ?? 'Invio fallito';
-    } else if (latest.channelType === 'POSTAL') {
-      // Gate su codiceErrore!=='0', mai su stato (vedi CLAUDE.md POSTAL
-      // gotcha) — un errore reale può arrivare su uno stato non terminale
-      // come "Rimandato", dopo che l'accettazione iniziale è già riuscita.
-      const lastError = [...(latest.postalStatusHistory ?? [])]
-        .reverse()
-        .find((h) => h.codiceErrore && h.codiceErrore !== '0');
-      if (lastError) {
-        error = lastError.descrizione ? `${lastError.codiceErrore}: ${lastError.descrizione}` : lastError.codiceErrore ?? null;
-      }
-    }
-
-    return {
-      attemptStatus: latest.status,
-      ...(latest.channelType === 'SEND' ? { sendStatus: latest.sendStatus } : {}),
-      ...(latest.channelType === 'POSTAL' ? { postalStatus: latest.postalStatus } : {}),
-      error,
-    };
   }
 
   /** Righe verifica Poste per attempt id — mappa vuota senza repo o senza id. */

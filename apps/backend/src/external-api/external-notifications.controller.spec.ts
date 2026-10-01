@@ -1,65 +1,26 @@
 import { ExternalNotificationsController } from './external-notifications.controller.js';
-import { ExternalApiService } from './external-api.service.js';
-import { CampaignsService } from '../campaigns/campaigns.service.js';
+import type { ExternalNotificationsService } from './external-notifications.service.js';
+import type { ExternalNotificationStatusService } from './external-notification-status.service.js';
 
+// Validazione, idempotenza e stato sono coperti dagli spec dei rispettivi service
+// e da external-api-http-status.integration.spec.ts (HTTP reale).
 describe('ExternalNotificationsController', () => {
-  let controller: ExternalNotificationsController;
-  let externalApi: { createAndLaunch: jest.Mock };
-  let campaigns: { findOne: jest.Mock; getExternalDeliveryStatus: jest.Mock };
-  const req = { apiClient: { id: 'client-1', name: 'Comune X' } } as any;
+  const req = { apiClient: { id: 'client-1', name: 'Gestionale Tributi' } } as any;
+  const notifications = { create: jest.fn().mockResolvedValue({ success: true, notificationId: 'rec-1', status: 'accepted' }) };
+  const status = { get: jest.fn().mockResolvedValue({ success: true, notificationId: 'rec-1' }) };
+  const controller = new ExternalNotificationsController(
+    notifications as unknown as ExternalNotificationsService,
+    status as unknown as ExternalNotificationStatusService,
+  );
 
-  beforeEach(() => {
-    externalApi = { createAndLaunch: jest.fn().mockResolvedValue({ success: true, campaignId: 'camp-1', status: 'QUEUED' }) };
-    campaigns = { findOne: jest.fn(), getExternalDeliveryStatus: jest.fn().mockResolvedValue(null) };
-    controller = new ExternalNotificationsController(
-      externalApi as unknown as ExternalApiService,
-      campaigns as unknown as CampaignsService,
-    );
+  it('create passa body grezzo, client e Idempotency-Key al service', async () => {
+    const body = { channel: 'EMAIL' };
+    await expect(controller.create(body, 'k-1', req)).resolves.toEqual({ success: true, notificationId: 'rec-1', status: 'accepted' });
+    expect(notifications.create).toHaveBeenCalledWith(body, req.apiClient, 'k-1');
   });
 
-  it('create delega a ExternalApiService.createAndLaunch con l\'apiClient della richiesta', async () => {
-    const dto = { channelType: 'EMAIL', codiceFiscale: 'RSSMRA80A01H501U', email: 'a@b.it', extraData: {} } as any;
-    const result = await controller.create(dto, req);
-    expect(externalApi.createAndLaunch).toHaveBeenCalledWith(dto, req.apiClient);
-    expect(result).toEqual({ success: true, campaignId: 'camp-1', status: 'QUEUED' });
-  });
-
-  it('getStatus ritorna NOT_FOUND se la campagna non appartiene al client chiamante', async () => {
-    campaigns.findOne.mockResolvedValue({ id: 'camp-1', externalClientId: 'altro-client', status: 'queued' });
-    const result = await controller.getStatus('camp-1', req);
-    expect(result).toEqual({ success: false, error: { code: 'NOT_FOUND', message: 'Notifica non trovata' } });
-  });
-
-  it('getStatus ritorna lo stesso NOT_FOUND se la campagna non esiste affatto (findOne rigetta)', async () => {
-    campaigns.findOne.mockRejectedValue(new Error('Campaign camp-inesistente not found'));
-    const result = await controller.getStatus('camp-inesistente', req);
-    expect(result).toEqual({ success: false, error: { code: 'NOT_FOUND', message: 'Notifica non trovata' } });
-  });
-
-  it('getStatus ritorna lo stato se la campagna appartiene al client chiamante, delivery=null se nessun attempt ancora', async () => {
-    campaigns.findOne.mockResolvedValue({ id: 'camp-1', externalClientId: 'client-1', status: 'completed', channelType: 'EMAIL' });
-    campaigns.getExternalDeliveryStatus.mockResolvedValue(null);
-    const result = await controller.getStatus('camp-1', req);
-    expect(result).toEqual({ success: true, campaignId: 'camp-1', status: 'completed', channelType: 'EMAIL', delivery: null });
-  });
-
-  it('getStatus include delivery.sendStatus per una campagna SEND con attempt', async () => {
-    campaigns.findOne.mockResolvedValue({ id: 'camp-2', externalClientId: 'client-1', status: 'queued', channelType: 'SEND' });
-    campaigns.getExternalDeliveryStatus.mockResolvedValue({ attemptStatus: 'success', sendStatus: 'DELIVERED', error: null });
-    const result = await controller.getStatus('camp-2', req);
-    expect(result).toEqual({
-      success: true,
-      campaignId: 'camp-2',
-      status: 'queued',
-      channelType: 'SEND',
-      delivery: { attemptStatus: 'success', sendStatus: 'DELIVERED', error: null },
-    });
-  });
-
-  it('getStatus include delivery.postalStatus per una campagna POSTAL con attempt', async () => {
-    campaigns.findOne.mockResolvedValue({ id: 'camp-3', externalClientId: 'client-1', status: 'completed', channelType: 'POSTAL' });
-    campaigns.getExternalDeliveryStatus.mockResolvedValue({ attemptStatus: 'success', postalStatus: 'Confermato', error: null });
-    const result = await controller.getStatus('camp-3', req);
-    expect(result.delivery).toEqual({ attemptStatus: 'success', postalStatus: 'Confermato', error: null });
+  it('get legge lo stato per notificationId e id del client chiamante', async () => {
+    await controller.get('rec-1', req);
+    expect(status.get).toHaveBeenCalledWith('rec-1', 'client-1');
   });
 });

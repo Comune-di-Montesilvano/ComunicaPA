@@ -176,17 +176,19 @@ services/
 
 Oltre alla procedura guidata admin (invii massivi da CSV), un sistema PA esterno può lanciare **una notifica puntuale per chiamata** (qualunque canale: PEC/Email/App IO/SEND/Postalizzazione) via API REST autenticata con chiave API, senza passare dal portale operatore:
 
-- `GET /external/v1/capabilities` — scopre canali e opzioni realmente configurati sull'istanza (nessun tentativo alla cieca)
-- `POST /external/v1/domicilio/cerca` — verifica il domicilio digitale reale del destinatario (ANPR/INAD/App IO) prima di scegliere il canale, evitando dirottamenti a sorpresa
-- `POST /external/v1/attachments/upload/{init,chunk,complete}` — caricamento allegato a blocchi (obbligatorio per SEND/Postalizzazione)
-- `POST /external/v1/notifications` — crea e lancia la notifica (risposta asincrona, `campaignId` per l'interrogazione periodica dello stato)
-- `GET /external/v1/notifications/{campaignId}` — stato della notifica
+- `GET /external/v2/capabilities` — canali attivi e **tutti i valori ammessi** sull'istanza (tassonomie SEND, servizi e contratti di postalizzazione, mittenti EMAIL/PEC, servizi App IO, opzioni Agol), con i default
+- `POST /external/v2/domicilio/cerca` — domicilio digitale del destinatario: codice fiscale (ANPR/INAD/App IO) o partita IVA (Registro Imprese)
+- `POST /external/v2/attachments/upload/{init,chunk,complete}` — caricamento allegato a blocchi (obbligatorio per SEND/Postalizzazione)
+- `POST /external/v2/notifications` — crea e lancia la notifica per una persona fisica o un'impresa, con indirizzo, pagamento pagoPA e opzioni del canale tipizzati; header `Idempotency-Key` obbligatorio (un retry non genera un secondo invio)
+- `GET /external/v2/notifications/{notificationId}` — stato, esito legale (IUN e data di perfezionamento SEND, consegna della raccomandata), eventuale dirottamento a PEC ed elenco eventi
+
+Come per gli invii da backoffice, il destinatario viene verificato su INAD/Registro Imprese prima dell'invio e, se ha un domicilio digitale, la notifica è dirottata su PEC in automatico.
 
 Tutte le risposte sono **sempre HTTP 200** (esito nel campo `success` del body — un proxy inverso di produzione sostituisce altrimenti il body delle risposte non-2xx con una pagina HTML). Gestione dei client (creazione/revoca chiave API) dalla UI admin, menu **Impostazioni → API Esterne**.
 
-I percorsi sopra sono quelli interni al backend (`apps/backend/src/external-api/`); un chiamante esterno reale li raggiunge tramite qualunque percorso pubblico la propria infrastruttura instrada verso questo backend — nello stesso ambiente di riferimento di questo repository, tramite il prefisso `/api/` con rimozione del prefisso lato nginx (vedi `apps/backend/openapi/external-api.yaml`, `servers: /api/external/v1`), ma un'installazione diversa può esporlo diversamente.
+I percorsi sopra sono quelli interni al backend (`apps/backend/src/external-api/`); un chiamante esterno reale li raggiunge tramite qualunque percorso pubblico la propria infrastruttura instrada verso questo backend — nello stesso ambiente di riferimento di questo repository, tramite il prefisso `/api/` con rimozione del prefisso lato nginx (vedi `apps/backend/openapi/external-api-v2.yaml`, `servers: /api/external/v2`), ma un'installazione diversa può esporlo diversamente.
 
-Specifica completa: [`apps/backend/openapi/external-api.yaml`](apps/backend/openapi/external-api.yaml).
+Specifica completa: [`apps/backend/openapi/external-api-v2.yaml`](apps/backend/openapi/external-api-v2.yaml).
 
 ## Riuso da parte di altre PA
 

@@ -1,6 +1,7 @@
 import { vi } from 'vitest';
 import { ArgumentsHost, BadRequestException, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { ExternalApiExceptionFilter } from './external-api-exception.filter.js';
+import { ExternalApiError } from './external-api.error.js';
 import * as sentryUtil from '../common/sentry.util.js';
 
 vi.mock('../common/sentry.util', () => ({ captureException: jest.fn() }));
@@ -80,5 +81,29 @@ describe('ExternalApiExceptionFilter', () => {
         actor: { type: 'api-client', id: 'client-1', name: 'Gestionale Tributi' },
       },
     });
+  });
+});
+
+describe('ExternalApiExceptionFilter — ExternalApiError', () => {
+  const filter = new ExternalApiExceptionFilter();
+
+  it('mappa code/message/details di ExternalApiError con HTTP 200', () => {
+    const { host, status, json } = makeHost();
+    filter.catch(
+      new ExternalApiError('VALIDATION_ERROR', 'Validazione fallita', [{ field: 'send.taxonomyCode', message: 'non abilitato', allowed: ['010101N'] }]),
+      host,
+    );
+    expect(status).toHaveBeenCalledWith(200);
+    expect(json).toHaveBeenCalledWith({
+      success: false,
+      error: { code: 'VALIDATION_ERROR', message: 'Validazione fallita', details: [{ field: 'send.taxonomyCode', message: 'non abilitato', allowed: ['010101N'] }] },
+    });
+  });
+
+  it('omette details quando assente e non invia a GlitchTip', () => {
+    const { host, json } = makeHost();
+    filter.catch(new ExternalApiError('NOT_FOUND', 'Notifica non trovata'), host);
+    expect(json).toHaveBeenCalledWith({ success: false, error: { code: 'NOT_FOUND', message: 'Notifica non trovata' } });
+    expect(sentryUtil.captureException).not.toHaveBeenCalled();
   });
 });

@@ -2,6 +2,7 @@ import { ArgumentsHost, BadRequestException, Catch, ExceptionFilter, HttpExcepti
 import type { Response } from 'express';
 import { captureException } from '../common/sentry.util.js';
 import { buildRequestContext, type RequestLike } from '../common/sentry-request-context.js';
+import { ExternalApiError } from './external-api.error.js';
 
 interface NormalizedError {
   success: false;
@@ -24,6 +25,12 @@ export class ExternalApiExceptionFilter implements ExceptionFilter {
   }
 
   private normalize(exception: unknown): NormalizedError {
+    if (exception instanceof ExternalApiError) {
+      return {
+        success: false,
+        error: { code: exception.code, message: exception.message, ...(exception.details ? { details: exception.details } : {}) },
+      };
+    }
     if (exception instanceof UnauthorizedException) {
       return { success: false, error: { code: 'UNAUTHORIZED', message: this.messageOf(exception) } };
     }

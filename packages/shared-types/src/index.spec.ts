@@ -1,4 +1,17 @@
-import { COUNTRIES, matchCountry, isValidCap, abbreviateLongMunicipality } from './index';
+import {
+  COUNTRIES,
+  matchCountry,
+  isValidCap,
+  abbreviateLongMunicipality,
+  SEND_TAXONOMY_CATALOG,
+  sendTaxonomyRequiresPayment,
+  SEND_PHYSICAL_COMMUNICATION_TYPES,
+  POSTAL_AGOL_NOTIFIER_TYPES,
+  POSTAL_AGOL_SECOND_ATTEMPT_OPTIONS,
+  isPostalAgolService,
+  postalServiceSupportsReturnReceipt,
+  isPosteTrackableService,
+} from './index';
 
 describe('COUNTRIES', () => {
   it('include Italia e una selezione di paesi esteri comuni', () => {
@@ -109,5 +122,50 @@ describe('abbreviateLongMunicipality', () => {
   it('un nome oltre 30 caratteri ma non mappato torna invariato (nessun troncamento inventato)', () => {
     const longUnknown = 'COMUNE INESISTENTE MOLTO LUNGO DAVVERO';
     expect(abbreviateLongMunicipality(longUnknown)).toBe(longUnknown);
+  });
+});
+
+describe('costanti SEND/POSTAL condivise', () => {
+  it('catalogo tassonomie SEND senza codici duplicati, ogni codice termina in P o N', () => {
+    const codes = SEND_TAXONOMY_CATALOG.map((t) => t.code);
+    expect(new Set(codes).size).toBe(codes.length);
+    expect(codes.every((c) => /^\d{6}[PN]$/.test(c))).toBe(true);
+  });
+
+  it('sendTaxonomyRequiresPayment segue il suffisso', () => {
+    expect(sendTaxonomyRequiresPayment('010101P')).toBe(true);
+    expect(sendTaxonomyRequiresPayment('010101N')).toBe(false);
+  });
+
+  it('helper servizio postale', () => {
+    expect(isPostalAgolService('AgolRaccomandata')).toBe(true);
+    expect(isPostalAgolService('Raccomandata')).toBe(false);
+    expect(postalServiceSupportsReturnReceipt('Raccomandata1')).toBe(true);
+    expect(postalServiceSupportsReturnReceipt('PostaOrdinaria')).toBe(false);
+  });
+
+  it('enum condivise', () => {
+    expect(SEND_PHYSICAL_COMMUNICATION_TYPES).toEqual(['AR_REGISTERED_LETTER', 'REGISTERED_LETTER_890']);
+    expect(POSTAL_AGOL_NOTIFIER_TYPES).toContain('NonUtilizzato');
+    expect(POSTAL_AGOL_SECOND_ATTEMPT_OPTIONS).toContain('NonRichiedere');
+  });
+});
+
+describe('isPosteTrackableService', () => {
+  it('raccomandate e atti giudiziari sono tracciabili su Poste', () => {
+    expect(isPosteTrackableService('RaccomandataMarket4')).toBe(true);
+    expect(isPosteTrackableService('Raccomandata')).toBe(true);
+    expect(isPosteTrackableService('AgolMarket')).toBe(true);
+  });
+
+  it('posta semplice non è tracciabile (codici di 10 cifre sconosciuti a Poste)', () => {
+    expect(isPosteTrackableService('LetteraContest4')).toBe(false);
+    expect(isPosteTrackableService('PostaOrdinaria')).toBe(false);
+  });
+
+  it('servizio assente (campagne storiche) → tracciabile, comportamento precedente', () => {
+    expect(isPosteTrackableService(undefined)).toBe(true);
+    expect(isPosteTrackableService(null)).toBe(true);
+    expect(isPosteTrackableService('')).toBe(true);
   });
 });

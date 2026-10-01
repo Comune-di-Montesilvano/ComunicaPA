@@ -11,7 +11,7 @@ import { InitAttachmentUploadDto } from './dto/init-attachment-upload.dto.js';
 import { ChunkAttachmentUploadDto } from './dto/chunk-attachment-upload.dto.js';
 import { CompleteAttachmentUploadDto } from './dto/complete-attachment-upload.dto.js';
 
-@Controller('external/v1/attachments/upload')
+@Controller('external/v2/attachments/upload')
 @Public()
 @UseGuards(ApiKeyGuard)
 @UseFilters(ExternalApiExceptionFilter)
