@@ -351,7 +351,10 @@ components:
                 HTML. Obbligatorio per EMAIL/PEC/APP_IO (testo visibile non
                 vuoto); per APP_IO 80-10000 caratteri visibili (tag esclusi
                 dal conteggio). Vietato per SEND/POSTAL: il contenuto
-                notificato sono gli allegati.
+                notificato sono gli allegati. Se la richiesta ha allegati
+                deve contenere `%%elenco_allegati%%` oppure tutti i link
+                `%%allegato1%%`...`%%allegatoN%%` (sostituiti con i link di
+                download).
         attachments:
           type: array
           minItems: 1
@@ -388,6 +391,8 @@ components:
             Consegna App IO in parallelo (EMAIL/PEC/POSTAL). Per POSTAL
             `subject` e `body` sono obbligatori; per EMAIL/PEC se omessi si
             usano quelli di `content`, che devono rispettare i limiti App IO.
+            Se la richiesta ha allegati (POSTAL ne ha sempre), `body` deve
+            contenere `%%elenco_allegati%%` o tutti i `%%allegatoN%%`.
           properties:
             subject: { type: string }
             body: { type: string }
@@ -415,7 +420,7 @@ components:
             agol:
               type: object
               additionalProperties: false
-              description: solo per serviceType Agol
+              description: solo per serviceType Agol (atto giudiziario, sempre protocollato come SEND)
               properties:
                 notifierType: { type: string, enum: [NonUtilizzato, UfficialeGiudiziario, Procuratore, ParteIstante] }
                 secondAttempt: { type: string, enum: [NonRichiedere, Concordato, Automatico] }

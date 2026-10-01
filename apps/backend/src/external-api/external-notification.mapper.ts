@@ -1,3 +1,4 @@
+import { isPostalAgolService } from '@comunicapa/shared-types';
 import type { CreateNotificationDto } from './dto/create-notification.dto.js';
 
 /** Colonne extraData dedicate: physicalAddressConfig/paymentConfig puntano qui (stesso schema del self-bootstrap `_edit*` di updateRecipientAddressAndRetry). */
@@ -51,6 +52,8 @@ export function mapNotification(
   if (dto.channel === 'POSTAL') {
     const p = dto.postal ?? {};
     put(cfg, 'postalServiceType', defaults.postalServiceType);
+    // Atto giudiziario: launch() (assertSendProtocolConfigured) lo rifiuta senza protocollazione.
+    if (defaults.postalServiceType && isPostalAgolService(defaults.postalServiceType)) cfg['protocolla'] = true;
     put(cfg, 'postalCodiceContratto', p.contractCode);
     put(cfg, 'postalReturnReceipt', p.returnReceipt);
     put(cfg, 'postalColorPrint', p.color);

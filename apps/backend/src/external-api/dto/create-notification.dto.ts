@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import {
   IsArray,
   IsBoolean,
+  IsDefined,
   IsEmail,
   IsIn,
   IsInt,
@@ -30,6 +31,7 @@ import {
 } from '@comunicapa/shared-types';
 import type { ValidationIssue } from '../external-api.error.js';
 import { validateBody } from '../validate-body.util.js';
+import { hasValidAttachmentPlaceholders } from '../../channels/template.helper.js';
 
 export const APP_IO_LIMITS = { subject: [10, 120], body: [80, 10000] } as const;
 
@@ -204,10 +206,14 @@ export class CreateNotificationDto {
   @MaxLength(100)
   externalReference?: string;
 
+  // @ValidateNested non scatta su undefined: senza @IsDefined un oggetto
+  // mancante arriverebbe a channelRuleIssues e lo farebbe esplodere.
+  @IsDefined({ message: 'recipient obbligatorio' })
   @ValidateNested()
   @Type(() => RecipientDto)
   recipient!: RecipientDto;
 
+  @IsDefined({ message: 'content obbligatorio' })
   @ValidateNested()
   @Type(() => ContentDto)
   content!: ContentDto;
@@ -293,6 +299,18 @@ export function channelRuleIssues(dto: CreateNotificationDto): ValidationIssue[]
   }
 
   if (physical && !dto.attachments?.length) add('attachments', 'attachments obbligatorio (almeno 1) per SEND e POSTAL');
+
+  // Stessa regola bloccante di launch() (checkAttachmentsBlocking): con allegati,
+  // il testo deve indicare dove inserire i link — anticipata qui con il campo esatto.
+  const attachmentCount = dto.attachments?.length ?? 0;
+  const placeholderHint = `deve contenere %%elenco_allegati%% oppure tutti i link %%allegato1%%...%%allegato${attachmentCount}%% per i ${attachmentCount} allegati`;
+  const bodyFlagged = issues.some((i) => i.field === 'content.body');
+  if (!physical && !bodyFlagged && body !== undefined && !hasValidAttachmentPlaceholders(body, attachmentCount)) {
+    add('content.body', `body ${placeholderHint}`);
+  }
+  if (dto.appIoParallel?.body !== undefined && !hasValidAttachmentPlaceholders(dto.appIoParallel.body, attachmentCount)) {
+    add('appIoParallel.body', `appIoParallel.body ${placeholderHint}`);
+  }
   if (dto.payment && ch !== 'SEND' && ch !== 'APP_IO') add('payment', 'payment ammesso solo per SEND e APP_IO');
   if (ch === 'SEND' && !dto.send) add('send', 'send obbligatorio per il canale SEND');
   if (ch !== 'SEND' && dto.send) add('send', 'send ammesso solo per il canale SEND');

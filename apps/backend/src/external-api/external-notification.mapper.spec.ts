@@ -108,8 +108,20 @@ describe('mapNotification', () => {
       postalAgolNomeNotificante: 'ROSSI MARIO',
       postalAgolNumeroCronologico: '42',
     }));
-    expect(m.channelConfig).not.toHaveProperty('protocolla');
+    // Atto giudiziario (Agol): launch() rifiuta senza protocollazione, come per SEND.
+    expect(m.channelConfig).toHaveProperty('protocolla', true);
     expect(m.recipient.extraData._extProvince).toBe('RM');
+  });
+
+  it('POSTAL Agol dal servizio di default → protocolla true; servizio non Agol → nessuna protocollazione', () => {
+    const base = {
+      channel: 'POSTAL',
+      recipient: { type: 'PF', taxId: 'RSSMRA80A01H501U', fullName: 'ROSSI MARIO', address: ADDRESS },
+      content: { subject: 'Avviso' },
+      attachments: [{ token: '3fbb1e2a-1234-4abc-9def-426614174000' }],
+    } as CreateNotificationDto;
+    expect(mapNotification(base, { postalServiceType: 'AgolMarket' }).channelConfig).toHaveProperty('protocolla', true);
+    expect(mapNotification(base, { postalServiceType: 'RaccomandataMarket4' }).channelConfig).not.toHaveProperty('protocolla');
   });
 
   it('opzioni postali omesse → chiavi assenti (fallback runtime della strategy)', () => {

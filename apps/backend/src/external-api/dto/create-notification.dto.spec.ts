@@ -143,4 +143,24 @@ describe('validateCreateNotification — regole per canale', () => {
     expect(await fields(email({ appIoParallel: {} }))).toEqual(['appIoParallel']);
     expect(await fields(email({ content: { subject: 'Avviso TARI 2026', body: LONG_BODY }, appIoParallel: {} }))).toEqual([]);
   });
+
+  it('EMAIL con allegati: content.body deve contenere %%elenco_allegati%% o tutti i %%allegatoN%%', async () => {
+    const att = [{ token: TOKEN }, { token: '4fbb1e2a-1234-4abc-9def-426614174000' }];
+    expect(await fields(email({ attachments: att }))).toEqual(['content.body']);
+    expect(await fields(email({ attachments: att, content: { subject: 'Avviso', body: '<p>%%elenco_allegati%%</p>' } }))).toEqual([]);
+    expect(await fields(email({ attachments: att, content: { subject: 'Avviso', body: '<p>%%allegato1%% %%allegato2%%</p>' } }))).toEqual([]);
+  });
+
+  it('POSTAL + appIoParallel: appIoParallel.body deve contenere il placeholder allegati', async () => {
+    const parallel = (body: string) => postal({ appIoParallel: { subject: 'Hai una nuova comunicazione', body } });
+    expect(await fields(parallel('<p>' + 'Ti abbiamo inviato una raccomandata con un avviso importante. '.repeat(2) + '</p>'))).toEqual(['appIoParallel.body']);
+    expect(await fields(parallel('<p>' + 'Ti abbiamo inviato una raccomandata con un avviso importante. '.repeat(2) + '%%elenco_allegati%%</p>'))).toEqual([]);
+  });
+});
+
+describe('validateCreateNotification — oggetti obbligatori', () => {
+  it('recipient o content mancanti → VALIDATION_ERROR, mai eccezione', async () => {
+    expect(await fields({ channel: 'EMAIL', content: { subject: 'Avviso', body: '<p>x</p>' } })).toEqual(['recipient']);
+    expect(await fields({ channel: 'EMAIL', recipient: { type: 'PF', taxId: 'RSSMRA80A01H501U', email: 'a@b.it' } })).toEqual(['content']);
+  });
 });

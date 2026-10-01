@@ -1,4 +1,4 @@
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import * as fs from 'fs';
 import { join } from 'path';
 import { CampaignsService } from '../campaigns/campaigns.service.js';
@@ -24,6 +24,8 @@ export interface CreateNotificationResult {
 
 @Injectable()
 export class ExternalNotificationsService {
+  private readonly logger = new Logger(ExternalNotificationsService.name);
+
   constructor(
     private readonly capabilities: ExternalCapabilitiesService,
     private readonly idempotency: ExternalIdempotencyStore,
@@ -54,21 +56,38 @@ export class ExternalNotificationsService {
     if (begin.kind === 'conflict') throw new ExternalApiError('IDEMPOTENCY_CONFLICT', 'Idempotency-Key già usata con un payload diverso');
     if (begin.kind === 'in_progress') throw new ExternalApiError('IDEMPOTENCY_IN_PROGRESS', 'Richiesta con la stessa Idempotency-Key ancora in elaborazione');
 
+    let launched: { result: CreateNotificationResult; campaign: { id: string; name: string }; taxId: string };
     try {
-      const result = await this.createAndLaunch(dto, client, this.capabilities.resolveDefaults(dto, caps));
-      await this.idempotency.complete(client.id, idempotencyKey, requestHash, result);
-      return result;
+      launched = await this.createAndLaunch(dto, client, this.capabilities.resolveDefaults(dto, caps));
     } catch (err) {
+      // Nulla è partito: la chiave si libera e il client può riprovare.
       await this.idempotency.release(client.id, idempotencyKey);
       throw err;
     }
+
+    // Da qui la notifica è in coda: un errore NON deve mai liberare la chiave,
+    // altrimenti un retry del client creerebbe un secondo invio (SEND/POSTAL costano).
+    const { result, campaign, taxId } = launched;
+    await this.audit
+      .log({
+        campaignId: campaign.id,
+        campaignName: campaign.name,
+        operator: `external:${client.name}`,
+        action: 'EXTERNAL_API_CREATE',
+        details: { channel: dto.channel, externalReference: dto.externalReference ?? null, taxId: `***${taxId.slice(-4)}` },
+      })
+      .catch((e: unknown) => this.logger.error(`Audit EXTERNAL_API_CREATE fallito per campagna ${campaign.id}: ${e instanceof Error ? e.message : e}`));
+    await this.idempotency
+      .complete(client.id, idempotencyKey, requestHash, result)
+      .catch((e: unknown) => this.logger.error(`Idempotency complete fallito per campagna ${campaign.id}: ${e instanceof Error ? e.message : e}`));
+    return result;
   }
 
   private async createAndLaunch(
     dto: CreateNotificationDto,
     client: ExternalApiClient,
     defaults: { physicalCommunicationType?: string; postalServiceType?: string },
-  ): Promise<CreateNotificationResult> {
+  ): Promise<{ result: CreateNotificationResult; campaign: { id: string; name: string }; taxId: string }> {
     const mapped = mapNotification(dto, defaults);
     const campaign = await this.campaigns.create(
       {
@@ -78,45 +97,55 @@ export class ExternalNotificationsService {
       },
       `external:${client.name}`,
     );
-    await this.campaigns.setExternalClientId(campaign.id, client.id);
+    // Qualunque esito negativo prima del lancio riuscito elimina la bozza:
+    // nessuna campagna orfana in backoffice.
+    const discard = () => this.campaigns.remove(campaign.id, REQUESTER).catch(() => undefined);
 
-    const extraData: Record<string, unknown> = { ...mapped.recipient.extraData };
-    if (dto.attachments?.length) {
-      // Risolti tutti prima di copiare/consumare: un token invalido non deve lasciare token già consumati.
-      const resolved = dto.attachments.map((ref) => ({ ref, file: this.tokens.resolve(client.id, ref.token) }));
-      const missing = resolved.find((r) => !r.file);
-      if (missing) {
-        await this.campaigns.remove(campaign.id, REQUESTER).catch(() => undefined);
-        throw new ExternalApiError('ATTACHMENT_INVALID', `Allegato con token "${missing.ref.token}" non trovato, già usato o scaduto`);
+    let consumable: Array<{ token: string }> = [];
+    let recipientId: string;
+    try {
+      await this.campaigns.setExternalClientId(campaign.id, client.id);
+
+      const extraData: Record<string, unknown> = { ...mapped.recipient.extraData };
+      if (dto.attachments?.length) {
+        // Risolti tutti prima di copiare: un token invalido non deve lasciare copie parziali.
+        const resolved = dto.attachments.map((ref) => ({ ref, file: this.tokens.resolve(client.id, ref.token) }));
+        const missing = resolved.find((r) => !r.file);
+        if (missing) {
+          throw new ExternalApiError('ATTACHMENT_INVALID', `Allegato con token "${missing.ref.token}" non trovato, già usato o scaduto`);
+        }
+        const destDir = this.uploadsDir(campaign.id);
+        fs.mkdirSync(destDir, { recursive: true });
+        const attachmentsConfig: AttachmentConfigEntry[] = [];
+        resolved.forEach(({ ref, file }, i) => {
+          const destFilename = `${i}_${file!.filename}`;
+          fs.copyFileSync(file!.path, join(destDir, destFilename));
+          attachmentsConfig.push({ key: `allegato_${i}`, label: ref.label ?? `Allegato ${i + 1}` });
+          extraData[`allegato_${i}`] = destFilename;
+        });
+        consumable = dto.attachments;
+        // updateDraft sostituisce channelConfig per intero: spread obbligatorio.
+        await this.campaigns.updateDraft(campaign.id, { channelConfig: { ...campaign.channelConfig, attachments: attachmentsConfig } } as any);
       }
-      const destDir = this.uploadsDir(campaign.id);
-      fs.mkdirSync(destDir, { recursive: true });
-      const attachmentsConfig: AttachmentConfigEntry[] = [];
-      resolved.forEach(({ ref, file }, i) => {
-        const destFilename = `${i}_${file!.filename}`;
-        fs.copyFileSync(file!.path, join(destDir, destFilename));
-        this.tokens.markConsumed(client.id, ref.token);
-        attachmentsConfig.push({ key: `allegato_${i}`, label: ref.label ?? `Allegato ${i + 1}` });
-        extraData[`allegato_${i}`] = destFilename;
-      });
-      // updateDraft sostituisce channelConfig per intero: spread obbligatorio.
-      await this.campaigns.updateDraft(campaign.id, { channelConfig: { ...campaign.channelConfig, attachments: attachmentsConfig } } as any);
+
+      const recipient = await this.campaigns.addSingleRecipient(campaign.id, { ...mapped.recipient, extraData });
+      recipientId = recipient.id;
+
+      // Requester sintetico admin: il confine di sicurezza è ApiKeyGuard (come v1).
+      const launch = await this.campaigns.launch(campaign.id, REQUESTER);
+      if (launch.blocked) throw new ExternalApiError('LAUNCH_BLOCKED', launch.message ?? 'Lancio bloccato');
+    } catch (err) {
+      await discard();
+      throw err;
     }
 
-    const recipient = await this.campaigns.addSingleRecipient(campaign.id, { ...mapped.recipient, extraData });
+    // Token consumati solo a lancio riuscito: dopo un blocco il client riprova con gli stessi.
+    for (const ref of consumable) this.tokens.markConsumed(client.id, ref.token);
 
-    // Requester sintetico admin: il confine di sicurezza è ApiKeyGuard (come v1).
-    const launch = await this.campaigns.launch(campaign.id, REQUESTER);
-    if (launch.blocked) throw new ExternalApiError('LAUNCH_BLOCKED', launch.message ?? 'Lancio bloccato');
-
-    await this.audit.log({
-      campaignId: campaign.id,
-      campaignName: campaign.name,
-      operator: `external:${client.name}`,
-      action: 'EXTERNAL_API_CREATE',
-      details: { channel: dto.channel, externalReference: dto.externalReference ?? null, taxId: `***${mapped.recipient.codiceFiscale.slice(-4)}` },
-    });
-
-    return { success: true, notificationId: recipient.id, status: 'accepted' };
+    return {
+      result: { success: true, notificationId: recipientId, status: 'accepted' },
+      campaign: { id: campaign.id, name: campaign.name },
+      taxId: mapped.recipient.codiceFiscale,
+    };
   }
 }

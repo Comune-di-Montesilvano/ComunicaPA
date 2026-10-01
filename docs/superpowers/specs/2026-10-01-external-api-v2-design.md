@@ -49,7 +49,7 @@ conoscere dettagli interni.
 | D7 | Esito solo via polling ora; modello `events[]` progettato per aggiungere webhook dopo senza cambiare contratto. |
 | D8 | Architettura: adapter sottile sopra `CampaignsService` (campagna mono-destinatario), nessuna pipeline dedicata. |
 | D9 | `Idempotency-Key` obbligatorio su `POST /notifications`. |
-| D10 | SEND sempre protocollato (`protocolla: true` forzato, non più richiesto al client). |
+| D10 | SEND e POSTAL Agol (atto giudiziario) sempre protocollati (`protocolla: true` forzato, non più richiesto al client). |
 
 ## Contratto
 

@@ -134,11 +134,37 @@ describe('ExternalNotificationsService.create', () => {
     expect(tokens.markConsumed).not.toHaveBeenCalled();
   });
 
-  it('launch bloccato → LAUNCH_BLOCKED con messaggio, chiave rilasciata', async () => {
-    const { service, idempotency } = setup({ launchBlocked: true });
-    const e = await errorOf(service.create(EMAIL_BODY, client, 'k'));
+  it('launch bloccato → LAUNCH_BLOCKED, bozza rimossa, token NON consumati (riprovabile), chiave rilasciata', async () => {
+    const { service, idempotency, campaigns, tokens } = setup({ launchBlocked: true });
+    const e = await errorOf(service.create(SEND_BODY, client, 'k'));
     expect(e).toMatchObject({ code: 'LAUNCH_BLOCKED', message: 'Quota INAD esaurita' });
+    expect(campaigns.remove).toHaveBeenCalledWith('camp-1', { username: 'external-api', role: 'admin' });
+    expect(tokens.markConsumed).not.toHaveBeenCalled();
     expect(idempotency.release).toHaveBeenCalled();
+  });
+
+  it('launch che lancia eccezione → bozza rimossa, token non consumati, errore propagato', async () => {
+    const { service, campaigns, tokens, idempotency } = setup();
+    campaigns.launch.mockRejectedValueOnce(new Error('Protocollazione obbligatoria'));
+    await expect(service.create(SEND_BODY, client, 'k')).rejects.toThrow('Protocollazione obbligatoria');
+    expect(campaigns.remove).toHaveBeenCalledWith('camp-1', { username: 'external-api', role: 'admin' });
+    expect(tokens.markConsumed).not.toHaveBeenCalled();
+    expect(idempotency.release).toHaveBeenCalled();
+  });
+
+  it('dopo un lancio riuscito, audit che fallisce NON libera la chiave (un retry non deve reinviare)', async () => {
+    const { service, audit, idempotency } = setup();
+    audit.log.mockRejectedValueOnce(new Error('db giù'));
+    await expect(service.create(EMAIL_BODY, client, 'k')).resolves.toEqual({ success: true, notificationId: 'rec-1', status: 'accepted' });
+    expect(idempotency.release).not.toHaveBeenCalled();
+    expect(idempotency.complete).toHaveBeenCalled();
+  });
+
+  it('dopo un lancio riuscito, complete() che fallisce NON libera la chiave e risponde comunque accepted', async () => {
+    const { service, idempotency } = setup();
+    idempotency.complete.mockRejectedValueOnce(new Error('redis giù'));
+    await expect(service.create(EMAIL_BODY, client, 'k')).resolves.toEqual({ success: true, notificationId: 'rec-1', status: 'accepted' });
+    expect(idempotency.release).not.toHaveBeenCalled();
   });
 
   it('eccezione inattesa → chiave rilasciata e rilanciata', async () => {
