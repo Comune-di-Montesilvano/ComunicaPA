@@ -16,6 +16,7 @@ import { CampaignCompletionService } from '../../campaigns/campaign-completion.s
 import { resolveSubjectTemplate } from '../subject-mapping.util.js';
 import { splitDenominazione, type DenominazioneAbbreviation } from '../postal/denominazione.util.js';
 import { captureException } from '../../common/sentry.util.js';
+import { isPartitaIva } from '../tax-id.util.js';
 
 const BATCH_SIZE = 200;
 
@@ -230,7 +231,9 @@ export class SendDispatchService {
       subject,
       ...(group ? { group } : {}),
       recipients: [{
-        recipientType: 'PF',
+        // P.IVA (11 cifre) = persona giuridica: PN valida recipientType
+        // contro il formato del taxId, PF fisso rifiutava le imprese.
+        recipientType: isPartitaIva(recipient.codiceFiscale) ? 'PG' : 'PF',
         taxId: recipient.codiceFiscale,
         denomination,
         ...(payments ? { payments } : {}),

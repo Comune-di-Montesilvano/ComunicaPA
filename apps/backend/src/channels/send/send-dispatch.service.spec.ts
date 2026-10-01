@@ -372,4 +372,36 @@ describe('SendDispatchService', () => {
     const body = JSON.parse(sendCall![1].body as string);
     expect(body.recipients[0].denomination).toBe(nomeCorto);
   });
+
+  it('usa recipientType PG quando il codice fiscale del destinatario è una Partita IVA', async () => {
+    const attempt = makeAttempt({
+      recipient: {
+        id: 'r1',
+        codiceFiscale: '01234567890',
+        fullName: 'ACME SRL',
+        extraData: {},
+        campaign: {
+          id: 'camp-1',
+          name: 'TARI',
+          retentionDays: null,
+          channelConfig: { subject: 'Avviso', taxonomyCode: '010101N' },
+        } as unknown as Campaign,
+      } as unknown as Recipient,
+    });
+    mockBatch([attempt]);
+
+    await service.handleCron();
+
+    const sendCall = mockFetch.mock.calls.find(([url]) => url === 'https://send.test/delivery/v2.6/requests');
+    const payload = JSON.parse(sendCall![1].body as string);
+    expect(payload.recipients[0].recipientType).toBe('PG');
+    expect(payload.recipients[0].taxId).toBe('01234567890');
+  });
+
+  it('usa recipientType PF per un codice fiscale di persona fisica', async () => {
+    mockBatch([makeAttempt()]);
+    await service.handleCron();
+    const sendCall = mockFetch.mock.calls.find(([url]) => url === 'https://send.test/delivery/v2.6/requests');
+    expect(JSON.parse(sendCall![1].body as string).recipients[0].recipientType).toBe('PF');
+  });
 });
