@@ -104,6 +104,17 @@ export function hasPostalArTracking(campaign: Pick<Campaign, 'channelConfig'>): 
   return servizio.startsWith('Agol') || (servizio.startsWith('Raccomandata') && !!campaign.channelConfig?.['postalReturnReceipt']);
 }
 
+/**
+ * Un solo destinatario per costruzione: wizard "invio singolo" o API esterna.
+ * Usato per i controlli che in massivo sono bloccanti (es. verifica firma SEND
+ * via job BullMQ) e su un destinatario solo vanno fatti in linea. NON per lo
+ * skip INAD: quello resta legato a wizSingleMode, l'API esterna dirotta come
+ * il lancio UI.
+ */
+export function isSingleRecipientFlow(campaign: Pick<Campaign, 'channelConfig'>): boolean {
+  return campaign.channelConfig?.['wizSingleMode'] === true || campaign.channelConfig?.['source'] === 'external';
+}
+
 export function isCampaignLegalValue(campaign: Pick<Campaign, 'isLegalValue' | 'channelType' | 'channelConfig'>): boolean {
   if (campaign.isLegalValue) return true;
   if (campaign.channelType === 'SEND') return true;
@@ -430,14 +441,14 @@ export class CampaignsService {
    */
   async addSingleRecipient(
     campaignId: string,
-    data: { codiceFiscale: string; email?: string | null; pec?: string | null; extraData: Record<string, unknown> },
+    data: { codiceFiscale: string; fullName?: string | null; email?: string | null; pec?: string | null; extraData: Record<string, unknown> },
   ): Promise<Recipient> {
     const recipient = this.recipientRepo.create({
       campaignId,
       codiceFiscale: data.codiceFiscale,
       email: data.email ?? null,
       pec: data.pec ?? null,
-      fullName: (data.extraData['full_name'] as string | undefined) ?? null,
+      fullName: data.fullName ?? null,
       extraData: data.extraData,
       status: RecipientStatus.PENDING,
     });
@@ -658,8 +669,7 @@ export class CampaignsService {
     // È il contenuto legale notificato, non un corredo opzionale.
     let signatureWarning: string | undefined;
     if (campaign.channelType === 'SEND') {
-      const isWizSingleModeForSignature = campaign.channelConfig?.['wizSingleMode'] === true;
-      if (isWizSingleModeForSignature) {
+      if (isSingleRecipientFlow(campaign)) {
         const singleRecipients = await this.recipientRepo.find({
           where: { campaignId, status: RecipientStatus.PENDING },
           select: { id: true, extraData: true },

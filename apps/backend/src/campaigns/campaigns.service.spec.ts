@@ -4,7 +4,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { In } from 'typeorm';
-import { CampaignsService } from './campaigns.service.js';
+import { CampaignsService, isSingleRecipientFlow } from './campaigns.service.js';
 import { Campaign, CampaignStatus } from '../entities/campaign.entity.js';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity.js';
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity.js';
@@ -4694,3 +4694,47 @@ describe('CampaignsService.getExternalDeliveryStatus', () => {
   });
 });
 
+describe('isSingleRecipientFlow', () => {
+  it('vero per wizard singolo e per campagne API esterna, falso per massive', () => {
+    expect(isSingleRecipientFlow({ channelConfig: { wizSingleMode: true } })).toBe(true);
+    expect(isSingleRecipientFlow({ channelConfig: { source: 'external' } })).toBe(true);
+    expect(isSingleRecipientFlow({ channelConfig: {} })).toBe(false);
+  });
+});
+
+describe('CampaignsService.addSingleRecipient', () => {
+  const recipientRepoMock = { create: jest.fn((x: unknown) => x), save: jest.fn(async (x: unknown) => x) };
+
+  it('salva fullName esplicito, senza leggerlo da extraData', async () => {
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        CampaignsService,
+        { provide: SignatureVerificationBulkService, useValue: mockSignatureVerificationBulkService },
+        { provide: SignatureVerificationService, useValue: mockSignatureVerificationService },
+        { provide: PostalAuthorizedUsersService, useValue: mockPostalAuthorizedUsersService },
+        { provide: getRepositoryToken(Campaign), useValue: {} },
+        { provide: getRepositoryToken(Recipient), useValue: recipientRepoMock },
+        { provide: getRepositoryToken(NotificationAttempt), useValue: {} },
+        { provide: getRepositoryToken(DownloadEvent), useValue: {} },
+        { provide: NotificationQueuesService, useValue: {} },
+        { provide: AppSettingsService, useValue: { get: jest.fn(async () => null) } },
+        { provide: ConfigService, useValue: { get: jest.fn(() => 'test-secret') } },
+        { provide: InadService, useValue: { extractDigitalAddress: jest.fn(), startBulkExtraction: jest.fn() } },
+        { provide: PostalStatusSyncService, useValue: { refreshOne: jest.fn() } },
+        { provide: RegistroImpreseService, useValue: { dettaglioImpresa: jest.fn() } },
+        { provide: RegistroImpreseVerifyQueueService, useValue: { enqueueCampaignVerify: jest.fn(), isCampaignJobDone: jest.fn() } },
+      ],
+    }).compile();
+    const service = moduleRef.get(CampaignsService);
+
+    await service.addSingleRecipient('c1', {
+      codiceFiscale: 'RSSMRA80A01H501U',
+      fullName: 'ROSSI MARIO',
+      extraData: { _extStreet: 'Via Roma 1', full_name: 'ALTRO NOME' },
+    });
+
+    expect(recipientRepoMock.create).toHaveBeenCalledWith(
+      expect.objectContaining({ fullName: 'ROSSI MARIO', extraData: { _extStreet: 'Via Roma 1', full_name: 'ALTRO NOME' } }),
+    );
+  });
+});
