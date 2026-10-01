@@ -1,0 +1,618 @@
+openapi: 3.0.3
+info:
+  title: ComunicaPA — API esterna v2
+  version: 2.0.0
+  description: >
+    API per sistemi PA esterni: invio di una notifica puntuale (un
+    destinatario per chiamata, persona fisica o giuridica) su EMAIL, PEC,
+    APP_IO, SEND o POSTAL, con lettura dello stato e dell'esito legale.
+
+
+    **Tutte le risposte sono HTTP 200**: l'esito è nel campo `success`, mai
+    nello status code (un reverse proxy esterno in produzione sostituisce il
+    body delle risposte non-2xx con una pagina HTML propria).
+
+
+    **Flusso consigliato**: `GET /capabilities` per scoprire canali attivi e
+    valori ammessi → (SEND/POSTAL) upload allegati a chunk → `POST
+    /notifications` con header `Idempotency-Key` → polling di `GET
+    /notifications/{notificationId}`.
+
+
+    **Dirottamento**: come per gli invii da backoffice, prima dell'invio il
+    destinatario viene verificato su INAD (persona fisica) o Registro Imprese
+    (persona giuridica). Se ha un domicilio digitale, EMAIL/POSTAL/APP_IO
+    vengono dirottati su PEC (`effectiveChannel`, `diversion` nello stato).
+    Per un'impresa su canale PEC con una PEC diversa da quella fornita, la
+    notifica resta in `pending_review` fino alla decisione di un operatore.
+
+
+    **Stato SEND/POSTAL**: `status` e `legal` continuano a cambiare per giorni
+    o settimane dopo l'invio (perfezionamento, consegna, ritorno al
+    mittente). Pollare `GET /notifications/{notificationId}`; `events[].id` è
+    stabile tra letture e serve a deduplicare gli eventi già elaborati.
+servers:
+  - url: /api/external/v2
+security:
+  - apiKey: []
+paths:
+  /capabilities:
+    get:
+      summary: Canali attivi e valori ammessi su questa istanza
+      description: >
+        Ogni valore enumerato accettato da `POST /notifications` (tassonomia
+        SEND, servizio/contratto POSTAL, mittenti, servizi App IO) è uno di
+        quelli esposti qui. Un canale non configurato compare con
+        `active: false` e liste vuote.
+      responses:
+        '200':
+          description: sempre 200
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/Capabilities'
+                  - $ref: '#/components/schemas/ErrorResponse'
+  /domicilio/cerca:
+    post:
+      summary: Domicilio digitale del destinatario (facoltativo)
+      description: >
+        Codice fiscale (16 caratteri) → INAD + App IO + ANPR; partita IVA (11
+        cifre) → Registro Imprese. Utile per conoscere in anticipo il canale
+        effettivo: il dirottamento avviene comunque in automatico all'invio.
+        Ogni fonte fallisce in modo indipendente.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [taxId]
+              additionalProperties: false
+              properties:
+                taxId: { type: string, pattern: '^([A-Za-z0-9]{16}|\d{11})$', example: RSSMRA80A01H501U }
+      responses:
+        '200':
+          description: sempre 200
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      success: { type: boolean, example: true }
+                      codiceFiscale: { type: string }
+                      inad: { type: object, description: 'solo per codice fiscale' }
+                      appIo: { type: object, description: 'solo per codice fiscale' }
+                      anpr: { type: object, description: 'solo per codice fiscale' }
+                      anprEsistenzaInVita: { type: object, description: 'solo se ANPR segnala il soggetto deceduto' }
+                      registroImprese:
+                        type: object
+                        description: solo per partita IVA
+                        properties:
+                          success: { type: boolean }
+                          found: { type: boolean }
+                          pec: { type: string, nullable: true }
+                          denominazione: { type: string, nullable: true }
+                          message: { type: string }
+                  - $ref: '#/components/schemas/ErrorResponse'
+  /attachments/upload/init:
+    post:
+      summary: Inizializza un upload allegato a chunk
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename, totalChunks]
+              properties:
+                filename: { type: string, example: avviso.pdf }
+                totalChunks: { type: integer, minimum: 1, example: 3 }
+      responses:
+        '200':
+          description: sempre 200
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      success: { type: boolean, example: true }
+                      uploadId: { type: string, format: uuid }
+                  - $ref: '#/components/schemas/ErrorResponse'
+  /attachments/upload/chunk:
+    post:
+      summary: Carica un singolo chunk (max `limits.attachment.chunkMaxBytes`, consigliato `chunkRecommendedBytes`)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [uploadId, index, chunk]
+              properties:
+                uploadId: { type: string, format: uuid }
+                index: { type: integer, minimum: 0 }
+                chunk: { type: string, format: binary }
+      responses:
+        '200':
+          description: sempre 200
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      success: { type: boolean, example: true }
+                  - $ref: '#/components/schemas/ErrorResponse'
+  /attachments/upload/complete:
+    post:
+      summary: Assembla i chunk e restituisce il token allegato
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [uploadId]
+              properties:
+                uploadId: { type: string, format: uuid }
+      responses:
+        '200':
+          description: >
+            `attachmentToken` opaco, valido 24h e consumato dalla prima
+            notifica che lo usa (non riusabile).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      success: { type: boolean, example: true }
+                      attachmentToken: { type: string, format: uuid }
+                  - $ref: '#/components/schemas/ErrorResponse'
+  /notifications:
+    post:
+      summary: Crea e lancia una notifica (asincrona)
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: >
+            Chiave scelta dal client (1-255 caratteri), conservata 24h per
+            client. Stessa chiave + stesso body → stessa risposta, nessuna
+            seconda notifica (sicuro da ripetere dopo un timeout). Stessa
+            chiave + body diverso → `IDEMPOTENCY_CONFLICT`. Se la richiesta
+            fallisce (validazione, blocco), la chiave viene liberata e si può
+            riprovare con la stessa.
+          schema: { type: string, minLength: 1, maxLength: 255 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateNotificationRequest'
+            examples:
+              email:
+                summary: EMAIL
+                value:
+                  channel: EMAIL
+                  externalReference: PROT-2026-123
+                  recipient: { type: PF, taxId: RSSMRA80A01H501U, email: mario.rossi@example.com }
+                  content: { subject: Avviso scadenza TARI 2026, body: '<p>Gentile contribuente, la informiamo che...</p>' }
+              pec_con_app_io:
+                summary: PEC con App IO in parallelo
+                value:
+                  channel: PEC
+                  recipient: { type: PF, taxId: RSSMRA80A01H501U, pec: mario.rossi@pec.example.com }
+                  content: { subject: Avviso scadenza TARI 2026, body: '<p>Gentile contribuente, la informiamo che...</p>' }
+                  appIoParallel:
+                    subject: Hai una nuova comunicazione
+                    body: Ti abbiamo inviato una comunicazione via PEC. Consulta la tua casella per leggerne il contenuto completo.
+              app_io_con_pagamento:
+                summary: APP_IO con avviso pagoPA
+                value:
+                  channel: APP_IO
+                  recipient: { type: PF, taxId: RSSMRA80A01H501U }
+                  content:
+                    subject: Avviso di pagamento TARI 2026
+                    body: '<p>Gentile contribuente, è disponibile l''avviso di pagamento TARI 2026. Può pagare direttamente dall''app.</p>'
+                  payment: { noticeCode: '302000000000000000', amountCents: 12300, creditorTaxId: '01234567890', dueDate: '2026-12-31' }
+              send_con_pagamento:
+                summary: SEND con pagamento (tassonomia con suffisso P)
+                value:
+                  channel: SEND
+                  recipient:
+                    type: PF
+                    taxId: RSSMRA80A01H501U
+                    fullName: ROSSI MARIO
+                    address: { street: Via Roma 1, zip: '00100', municipality: Roma, province: RM }
+                  content: { subject: Avviso di accertamento TARI }
+                  attachments: [{ token: 3fbb1e2a-1234-4abc-9def-426614174000, label: Atto }]
+                  payment: { noticeCode: '302000000000000000', amountCents: 12300, creditorTaxId: '01234567890' }
+                  send: { taxonomyCode: 010101P, physicalCommunicationType: AR_REGISTERED_LETTER }
+              postal_raccomandata_ar:
+                summary: POSTAL Raccomandata con ricevuta di ritorno
+                value:
+                  channel: POSTAL
+                  recipient:
+                    type: PF
+                    taxId: RSSMRA80A01H501U
+                    fullName: ROSSI MARIO
+                    address: { street: Via Roma 1, zip: '00100', municipality: Roma, province: RM }
+                  content: { subject: Avviso TARI 2026 }
+                  attachments: [{ token: 3fbb1e2a-1234-4abc-9def-426614174000 }]
+                  postal: { serviceType: Raccomandata, returnReceipt: true, color: false, duplex: true }
+              postal_agol_impresa:
+                summary: POSTAL Agol verso impresa
+                value:
+                  channel: POSTAL
+                  recipient:
+                    type: PG
+                    taxId: '01234567890'
+                    fullName: ACME SRL
+                    address: { street: Via Roma 1, zip: '00100', municipality: Roma, province: RM }
+                  content: { subject: Notifica atto }
+                  attachments: [{ token: 3fbb1e2a-1234-4abc-9def-426614174000 }]
+                  postal:
+                    serviceType: AgolRaccomandata
+                    agol: { notifierType: NonUtilizzato, secondAttempt: NonRichiedere }
+      responses:
+        '200':
+          description: sempre 200 — vedi `success`
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      success: { type: boolean, example: true }
+                      notificationId: { type: string, format: uuid }
+                      status: { type: string, enum: [accepted] }
+                  - $ref: '#/components/schemas/ErrorResponse'
+  /notifications/{notificationId}:
+    get:
+      summary: Stato, esito legale ed eventi di una notifica di questo client
+      parameters:
+        - name: notificationId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: >
+            sempre 200 — `NOT_FOUND` sia per notifica inesistente sia per
+            notifica di un altro client (nessuna enumerazione)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/NotificationStatus'
+                  - $ref: '#/components/schemas/ErrorResponse'
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+  schemas:
+    Address:
+      type: object
+      required: [street, municipality]
+      additionalProperties: false
+      properties:
+        street: { type: string, maxLength: 100 }
+        zip: { type: string, maxLength: 10 }
+        municipality:
+          type: string
+          maxLength: 30
+          description: max 30 caratteri; i 5 comuni italiani noti più lunghi vengono abbreviati in automatico
+        province: { type: string, pattern: '^[A-Za-z]{2}$', description: 'obbligatoria se country è assente o Italia' }
+        country: { type: string, description: 'nome del paese in italiano (es. Belgio); assente = Italia' }
+    Recipient:
+      type: object
+      required: [type, taxId]
+      additionalProperties: false
+      properties:
+        type: { type: string, enum: [PF, PG], description: 'PF persona fisica, PG persona giuridica (impresa)' }
+        taxId: { type: string, description: 'PF: codice fiscale 16 caratteri; PG: partita IVA 11 cifre' }
+        fullName: { type: string, maxLength: 255, description: 'nome e cognome (PF) o ragione sociale (PG); obbligatorio per SEND e POSTAL' }
+        email: { type: string, format: email, description: obbligatoria per EMAIL }
+        pec: { type: string, format: email, description: obbligatoria per PEC }
+        address: { $ref: '#/components/schemas/Address' }
+    CreateNotificationRequest:
+      type: object
+      required: [channel, recipient, content]
+      additionalProperties: false
+      description: >
+        I campi non dichiarati producono `VALIDATION_ERROR` (mai ignorati).
+        Regole per canale: `recipient.address`, `recipient.fullName` e
+        `attachments` obbligatori per SEND/POSTAL e non ammessi (address)
+        altrove; `content.body` obbligatorio per EMAIL/PEC/APP_IO e vietato
+        per SEND/POSTAL; `send` solo per SEND (obbligatorio); `postal` solo
+        per POSTAL; `payment` solo per SEND e APP_IO; `appIoParallel` solo per
+        EMAIL/PEC/POSTAL.
+      properties:
+        channel: { type: string, enum: [EMAIL, PEC, APP_IO, SEND, POSTAL] }
+        externalReference: { type: string, maxLength: 100, description: 'riferimento libero del client, riportato nello stato' }
+        recipient: { $ref: '#/components/schemas/Recipient' }
+        content:
+          type: object
+          required: [subject]
+          additionalProperties: false
+          properties:
+            subject:
+              type: string
+              description: obbligatorio (non vuoto) per ogni canale; per APP_IO 10-120 caratteri
+            body:
+              type: string
+              description: >
+                HTML. Obbligatorio per EMAIL/PEC/APP_IO (testo visibile non
+                vuoto); per APP_IO 80-10000 caratteri visibili (tag esclusi
+                dal conteggio). Vietato per SEND/POSTAL: il contenuto
+                notificato sono gli allegati.
+        attachments:
+          type: array
+          minItems: 1
+          description: obbligatorio (almeno 1) per SEND e POSTAL
+          items:
+            type: object
+            required: [token]
+            additionalProperties: false
+            properties:
+              token: { type: string, format: uuid, description: 'attachmentToken da /attachments/upload/complete' }
+              label: { type: string, maxLength: 100 }
+        payment:
+          type: object
+          required: [noticeCode, amountCents, creditorTaxId]
+          additionalProperties: false
+          description: avviso pagoPA (SEND e APP_IO). Su SEND richiede una tassonomia con suffisso P.
+          properties:
+            noticeCode: { type: string, pattern: '^\d{18}$' }
+            amountCents: { type: integer, minimum: 1 }
+            creditorTaxId: { type: string, pattern: '^\d{11}$', description: codice fiscale dell'ente creditore }
+            dueDate: { type: string, format: date, example: '2026-12-31' }
+        sender:
+          type: object
+          additionalProperties: false
+          description: mittenti e servizi tra quelli in /capabilities; omessi = default dell'istanza
+          properties:
+            mailConfigId: { type: string, format: uuid, description: 'mittente EMAIL o PEC del canale' }
+            pecReserveMailConfigId: { type: string, format: uuid, description: 'mittente PEC usato in caso di dirottamento' }
+            ioServiceId: { type: string, format: uuid, description: 'servizio App IO' }
+        appIoParallel:
+          type: object
+          additionalProperties: false
+          description: >
+            Consegna App IO in parallelo (EMAIL/PEC/POSTAL). Per POSTAL
+            `subject` e `body` sono obbligatori; per EMAIL/PEC se omessi si
+            usano quelli di `content`, che devono rispettare i limiti App IO.
+          properties:
+            subject: { type: string }
+            body: { type: string }
+        send:
+          type: object
+          required: [taxonomyCode]
+          additionalProperties: false
+          properties:
+            taxonomyCode:
+              type: string
+              pattern: '^\d{6}[PN]$'
+              description: uno di capabilities.channels.SEND.taxonomies; suffisso P se e solo se payment è presente
+            physicalCommunicationType: { type: string, enum: [AR_REGISTERED_LETTER, REGISTERED_LETTER_890] }
+        postal:
+          type: object
+          additionalProperties: false
+          description: opzioni omesse = default di capabilities.channels.POSTAL
+          properties:
+            serviceType: { type: string, description: uno di capabilities.channels.POSTAL.serviceTypes }
+            contractCode: { type: string, description: uno di capabilities.channels.POSTAL.contracts }
+            returnReceipt: { type: boolean, description: solo per servizi con returnReceiptAvailable }
+            color: { type: boolean }
+            duplex: { type: boolean }
+            coverPageId: { type: string }
+            agol:
+              type: object
+              additionalProperties: false
+              description: solo per serviceType Agol
+              properties:
+                notifierType: { type: string, enum: [NonUtilizzato, UfficialeGiudiziario, Procuratore, ParteIstante] }
+                secondAttempt: { type: string, enum: [NonRichiedere, Concordato, Automatico] }
+                notifierName: { type: string, maxLength: 100 }
+                chronologicalNumber: { type: string, maxLength: 50 }
+    Sender:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        fromAddress: { type: string }
+        default: { type: boolean }
+    Capabilities:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        recipientTypes: { type: array, items: { type: string, enum: [PF, PG] } }
+        limits:
+          type: object
+          properties:
+            attachment:
+              type: object
+              properties:
+                chunkMaxBytes: { type: integer }
+                chunkRecommendedBytes: { type: integer }
+                tokenTtlHours: { type: integer }
+            appIo:
+              type: object
+              properties:
+                subject: { type: array, items: { type: integer }, example: [10, 120] }
+                body: { type: array, items: { type: integer }, example: [80, 10000] }
+            idempotencyKeyTtlHours: { type: integer }
+        channels:
+          type: object
+          properties:
+            EMAIL:
+              type: object
+              properties:
+                active: { type: boolean }
+                senders: { type: array, items: { $ref: '#/components/schemas/Sender' } }
+            PEC:
+              type: object
+              properties:
+                active: { type: boolean }
+                senders: { type: array, items: { $ref: '#/components/schemas/Sender' } }
+            APP_IO:
+              type: object
+              properties:
+                active: { type: boolean }
+                parallelAvailable: { type: boolean }
+                services:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id: { type: string, format: uuid }
+                      name: { type: string }
+                      default: { type: boolean }
+            SEND:
+              type: object
+              properties:
+                active: { type: boolean }
+                environment: { type: string, example: test }
+                taxonomies:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      code: { type: string, example: 010101N }
+                      label: { type: string }
+                      description: { type: string }
+                      requiresPayment: { type: boolean }
+                      default: { type: boolean }
+                physicalCommunicationTypes:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      value: { type: string }
+                      default: { type: boolean }
+            POSTAL:
+              type: object
+              properties:
+                active: { type: boolean }
+                serviceTypes:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      value: { type: string }
+                      returnReceiptAvailable: { type: boolean }
+                      agol: { type: boolean }
+                      default: { type: boolean }
+                contracts:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      code: { type: string }
+                      description: { type: string }
+                      type: { type: string }
+                      foreign: { type: boolean }
+                defaults:
+                  type: object
+                  properties:
+                    color: { type: boolean }
+                    duplex: { type: boolean }
+                    returnReceipt: { type: boolean }
+                agol:
+                  type: object
+                  properties:
+                    notifierTypes: { type: array, items: { type: string } }
+                    secondAttemptOptions: { type: array, items: { type: string } }
+    NotificationStatus:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        notificationId: { type: string, format: uuid }
+        externalReference: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        requestedChannel: { type: string, enum: [EMAIL, PEC, APP_IO, SEND, POSTAL] }
+        effectiveChannel: { type: string, enum: [EMAIL, PEC, APP_IO, SEND, POSTAL], description: 'diverso da requestedChannel se dirottata' }
+        diversion:
+          type: object
+          nullable: true
+          properties:
+            source: { type: string, enum: [INAD, REGISTRO_IMPRESE] }
+        status:
+          type: string
+          enum: [accepted, checking, pending_review, in_progress, sent, delivered, not_delivered, failed, cancelled]
+          description: >
+            Riassunto tra canali. EMAIL e APP_IO si fermano a `sent` (nessuna
+            prova di consegna); SEND, POSTAL e notifiche dirottate a PEC
+            passano a `delivered`/`not_delivered` in base a `legal`.
+        legal:
+          type: object
+          description: presente per SEND, POSTAL e notifiche dirottate a PEC
+          properties:
+            outcome: { type: string, enum: [delivered, not_delivered, in_progress, no_legal_value, no_ar, unclassified] }
+            at: { type: string, format: date-time, nullable: true, description: 'data con valore legale (perfezionamento SEND, consegna POSTAL)' }
+            reason: { type: string, nullable: true }
+        send:
+          type: object
+          description: solo per canale effettivo SEND
+          properties:
+            iun: { type: string, nullable: true }
+            status: { type: string, nullable: true, description: stato PN }
+            legalDate: { type: string, nullable: true }
+            protocol:
+              type: object
+              nullable: true
+              properties:
+                number: { type: integer }
+                year: { type: integer }
+                at: { type: string, format: date-time, nullable: true }
+        postal:
+          type: object
+          description: solo per canale effettivo POSTAL
+          properties:
+            trackingId: { type: string, nullable: true }
+            status: { type: string, nullable: true }
+            deliveryStatus: { type: string, nullable: true }
+            deliveryDate: { type: string, format: date-time, nullable: true }
+        appIoParallel:
+          type: object
+          description: solo se richiesta la consegna App IO in parallelo
+          properties:
+            success: { type: boolean }
+        costCents: { type: integer, nullable: true }
+        error: { type: string, nullable: true }
+        events:
+          type: array
+          description: ordinati per `at`; `id` stabile tra letture
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              type: { type: string, enum: [accepted, diverted, pending_review, protocolled, sent, send_status, postal_status, poste_tracking, failed] }
+              at: { type: string, format: date-time }
+              data: { type: object }
+    ErrorResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              enum: [UNAUTHORIZED, VALIDATION_ERROR, CHANNEL_INACTIVE, IDEMPOTENCY_CONFLICT, IDEMPOTENCY_IN_PROGRESS, ATTACHMENT_INVALID, LAUNCH_BLOCKED, NOT_FOUND, INTERNAL_ERROR]
+            message: { type: string }
+            details:
+              type: array
+              description: solo per VALIDATION_ERROR
+              items:
+                type: object
+                properties:
+                  field: { type: string, example: send.taxonomyCode }
+                  message: { type: string }
+                  allowed: { type: array, items: { type: string } }

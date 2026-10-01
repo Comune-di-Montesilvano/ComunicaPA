@@ -36,7 +36,7 @@ export class ExternalAttachmentTokensService {
     const metaPath = join(dir, 'meta.json');
     if (!fs.existsSync(metaPath)) return null;
     const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8')) as TokenMeta;
-    // Token "one-shot" (vedi openapi/external-api.yaml): un token già
+    // Token "one-shot" (vedi openapi/external-api-v2.yaml): un token già
     // consumato da un lancio precedente è trattato come non trovato, stesso
     // pattern non-enumeration già in uso altrove in questo feature — mai
     // rivelare "esiste ma è già stato usato" con un errore distinto.

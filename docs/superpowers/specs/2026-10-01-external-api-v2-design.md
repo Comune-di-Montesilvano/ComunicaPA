@@ -134,8 +134,10 @@ Refactor di supporto:
   si sposta in `@comunicapa/shared-types`; il frontend lo importa da lì.
 - Le enumerazioni `physicalCommunicationType`, Agol `tipoNotificante` e
   `secondoTentativoRecapito` diventano costanti condivise in
-  `@comunicapa/shared-types`, usate da `postal.strategy.ts`,
-  `send-dispatch.service.ts`, `App.tsx` e dalla validazione `v2`.
+  `@comunicapa/shared-types`, usate da capabilities e validazione `v2`.
+  `postal.strategy.ts`, `send-dispatch.service.ts` e `App.tsx` mantengono
+  per ora gli stessi letterali (valori identici; sostituirli è un refactor
+  separato).
 
 ### `POST /notifications`
 
@@ -309,7 +311,7 @@ tuo", nessuna enumerazione).
   "createdAt": "2026-10-01T10:00:00Z",
   "requestedChannel": "POSTAL",
   "effectiveChannel": "PEC",
-  "diversion": { "source": "INAD", "address": "mario.rossi@pec.example.com" },
+  "diversion": { "source": "INAD" },
   "status": "delivered",
   "legal": { "outcome": "delivered", "at": "2026-10-01T10:05:00Z", "reason": "Via PEC" },
   "send": { "iun": "...", "status": "VIEWED", "legalDate": "...", "protocol": { "number": 123, "year": 2026, "at": "..." } },
@@ -323,8 +325,9 @@ tuo", nessuna enumerazione).
 
 - `externalReference`: salvato in `channelConfig.externalReference`.
 - `effectiveChannel`: `channelType` dell'ultimo attempt; `diversion` da
-  `recipient.inadCheck` (`diverted`, fonte, indirizzo); `null` se non
-  dirottata.
+  `recipient.inadCheck.diverted`: fonte `REGISTRO_IMPRESE` se il taxId è una
+  P.IVA, altrimenti `INAD`; `null` se non dirottata. L'indirizzo trovato non è
+  persistito per i dirottamenti applicati e non viene esposto.
 - Blocchi `send`/`postal`/`appIoParallel` presenti solo se pertinenti
   (omessi, non `null`).
 - `legal`:
