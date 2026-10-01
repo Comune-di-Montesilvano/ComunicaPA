@@ -1,36 +1,33 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Req, UseFilters, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, HttpStatus, Param, Post, Req, UseFilters, UseGuards } from '@nestjs/common';
 import { Public } from '../auth/decorators/public.decorator.js';
 import { ApiKeyGuard, type RequestWithApiClient } from './guards/api-key.guard.js';
 import { ExternalApiExceptionFilter } from './external-api-exception.filter.js';
-import { ExternalApiService } from './external-api.service.js';
-import { CampaignsService } from '../campaigns/campaigns.service.js';
-import { CreateExternalNotificationDto } from './dto/create-external-notification.dto.js';
+import { ExternalNotificationsService } from './external-notifications.service.js';
+import { ExternalNotificationStatusService } from './external-notification-status.service.js';
 
-@Controller('external/v1/notifications')
+@Controller('external/v2/notifications')
 @Public()
 @UseGuards(ApiKeyGuard)
 @UseFilters(ExternalApiExceptionFilter)
 export class ExternalNotificationsController {
   constructor(
-    private readonly externalApiService: ExternalApiService,
-    private readonly campaignsService: CampaignsService,
+    private readonly notifications: ExternalNotificationsService,
+    private readonly status: ExternalNotificationStatusService,
   ) {}
 
+  /**
+   * `Record<string, unknown>` (metatype Object) è voluto: la ValidationPipe
+   * globale lo salta e la validazione con path completo (`details[].field`)
+   * la fa il service — vedi validate-body.util.ts.
+   */
   @Post()
   @HttpCode(HttpStatus.OK)
-  create(@Body() dto: CreateExternalNotificationDto, @Req() req: RequestWithApiClient) {
-    return this.externalApiService.createAndLaunch(dto, req.apiClient);
+  create(@Body() body: Record<string, unknown>, @Headers('idempotency-key') idempotencyKey: string | undefined, @Req() req: RequestWithApiClient) {
+    return this.notifications.create(body, req.apiClient, idempotencyKey);
   }
 
-  @Get(':campaignId')
-  async getStatus(@Param('campaignId') campaignId: string, @Req() req: RequestWithApiClient) {
-    const campaign = await this.campaignsService.findOne(campaignId).catch(() => null);
-    // Stesso messaggio sia per "non esiste" sia per "non è tuo" — mai enumeration
-    // (vedi design doc, gotcha già noto in altri endpoint di questo repo).
-    if (!campaign || campaign.externalClientId !== req.apiClient.id) {
-      return { success: false, error: { code: 'NOT_FOUND', message: 'Notifica non trovata' } };
-    }
-    const delivery = await this.campaignsService.getExternalDeliveryStatus(campaign.id);
-    return { success: true, campaignId: campaign.id, status: campaign.status, channelType: campaign.channelType, delivery };
+  @Get(':notificationId')
+  get(@Param('notificationId') notificationId: string, @Req() req: RequestWithApiClient) {
+    return this.status.get(notificationId, req.apiClient.id);
   }
 }

@@ -4,9 +4,9 @@ import { ApiKeyGuard, type RequestWithApiClient } from './guards/api-key.guard.j
 import { ExternalApiExceptionFilter } from './external-api-exception.filter.js';
 import { DomicilioService } from '../channels/domicilio/domicilio.service.js';
 import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
-import { CercaDomicilioExternalDto } from './dto/cerca-domicilio-external.dto.js';
+import { CercaDomicilioDto } from './dto/cerca-domicilio.dto.js';
 
-@Controller('external/v1/domicilio')
+@Controller('external/v2/domicilio')
 @Public()
 @UseGuards(ApiKeyGuard)
 @UseFilters(ExternalApiExceptionFilter)
@@ -16,17 +16,14 @@ export class ExternalDomicilioController {
     private readonly auditLogsService: AuditLogsService,
   ) {}
 
+  /** CF → INAD+App IO+ANPR; P.IVA (11 cifre) → Registro Imprese (smistamento in DomicilioService). */
   @Post('cerca')
   @HttpCode(HttpStatus.OK)
-  async cerca(@Body() dto: CercaDomicilioExternalDto, @Req() req: RequestWithApiClient) {
-    const cf = dto.codiceFiscale.toUpperCase().trim();
-    const operatorLabel = `external:${req.apiClient.name}`;
-    const result = await this.domicilioService.cercaDomicilio(cf, operatorLabel);
-    await this.auditLogsService.log({
-      operator: operatorLabel,
-      action: 'EXTERNAL_DOMICILIO_SEARCH',
-      details: { codiceFiscale: cf },
-    });
+  async cerca(@Body() dto: CercaDomicilioDto, @Req() req: RequestWithApiClient) {
+    const taxId = dto.taxId.toUpperCase().trim();
+    const operator = `external:${req.apiClient.name}`;
+    const result = await this.domicilioService.cercaDomicilio(taxId, operator);
+    await this.auditLogsService.log({ operator, action: 'EXTERNAL_DOMICILIO_SEARCH', details: { taxId: `***${taxId.slice(-4)}` } });
     return { success: true, ...result };
   }
 }
