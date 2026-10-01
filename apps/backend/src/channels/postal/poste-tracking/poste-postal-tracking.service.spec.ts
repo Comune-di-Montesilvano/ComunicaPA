@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ConflictException, BadRequestException } from '@nestjs/common';
-import { PostePostalTrackingService } from './poste-postal-tracking.service.js';
+import { PostePostalTrackingService, POSTE_TRACKABLE_SERVICE_SQL } from './poste-postal-tracking.service.js';
 import { PosteTrackingError } from './poste-tracking-mapping.util.js';
 import type { PostalPosteTracking } from '../../../entities/postal-poste-tracking.entity.js';
 
@@ -74,6 +74,13 @@ describe('PostePostalTrackingService', () => {
       expect(sql).toContain("< now() - interval '30 days'");
       expect(sql).toContain('newer.attempt_number > na.attempt_number');
       expect(repo.query.mock.calls[0][1]).toEqual([]);
+    });
+
+    it('solo servizi tracciabili su Poste: posta semplice esclusa, servizio assente ammesso', async () => {
+      await service.backfill();
+      const sql = repo.query.mock.calls[0][0] as string;
+      expect(sql).toContain('JOIN campaigns c ON c.id = r.campaign_id');
+      expect(sql).toContain(POSTE_TRACKABLE_SERVICE_SQL);
     });
 
     it('ristretto alla campagna quando passato', async () => {
@@ -319,6 +326,21 @@ describe('PostePostalTrackingService', () => {
       expect(qb.take).not.toHaveBeenCalled();
     });
 
+    it('cron: esclude le righe di posta semplice già in coda', async () => {
+      add(row({ id: 't1' }));
+      client.track.mockResolvedValue(NOT_FOUND);
+      await service.tick();
+      const qb = repo.createQueryBuilder.mock.results[0].value;
+      expect(qb.andWhere).toHaveBeenCalledWith(POSTE_TRACKABLE_SERVICE_SQL);
+    });
+
+    it('run di campagna: esclude le righe di posta semplice', async () => {
+      campaignRows = [];
+      await service.startCampaignRun('c1');
+      const qb = repo.createQueryBuilder.mock.results[0].value;
+      expect(qb.andWhere).toHaveBeenCalledWith(POSTE_TRACKABLE_SERVICE_SQL);
+    });
+
     it('run di campagna: stesso ordinamento', async () => {
       campaignRows = [];
       await service.startCampaignRun('c1');
@@ -459,6 +481,14 @@ describe('PostePostalTrackingService', () => {
       expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ attemptId: 'a1', trackingCode: 'RN000000000IT', status: 'pending', trackingUntil: new Date('2026-10-27T18:05:03Z') }));
       expect(r.status).toBe('delivered');
       expect(result).toBe('delivered');
+    });
+
+    it('posta semplice: rifiuta senza creare righe né chiamare Poste', async () => {
+      recipientRepo.findOne.mockResolvedValue({ id: 'r1', campaignId: 'c1', campaign: { channelConfig: { postalServiceType: 'LetteraContest4' } } });
+      attemptRepo.findOne.mockResolvedValue({ id: 'a1', channelType: 'POSTAL', postalStatus: 'NonConsegnato', postalAcceptanceId: '1000000000', sentAt: new Date(), createdAt: new Date() });
+      await expect(service.checkRecipientNow('c1', 'r1')).rejects.toThrow(BadRequestException);
+      expect(repo.create).not.toHaveBeenCalled();
+      expect(client.track).not.toHaveBeenCalled();
     });
 
     it('invio fermo (GlobalCom Confermato) senza riga: la crea e controlla', async () => {

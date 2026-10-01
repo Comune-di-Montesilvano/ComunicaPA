@@ -140,6 +140,18 @@ export function isValidCap(value: string): boolean {
 }
 
 /**
+ * Servizio postale con codice tracciabile su poste.it: raccomandate (anche
+ * senza ricevuta di ritorno) e atti giudiziari (Agol). La posta semplice
+ * (es. LetteraContest4) ha codici di 10 cifre che Poste non riconosce mai
+ * (`esitoRicerca "1"`). Servizio assente (campagne storiche) → tracciabile,
+ * per non cambiare il comportamento precedente.
+ */
+export function isPosteTrackableService(serviceType: string | null | undefined): boolean {
+  if (!serviceType) return true;
+  return serviceType.startsWith('Raccomandata') || serviceType.startsWith('Agol');
+}
+
+/**
  * Solo 5 comuni italiani esistenti superano 30 caratteri (limite lato
  * server GlobalCom per il campo Città/Comune — verificato dal vivo
  * scaricando il WSDL reale: nessun maxLength nello schema, il vincolo non è

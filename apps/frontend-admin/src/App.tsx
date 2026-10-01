@@ -7,7 +7,7 @@ import type { JourneyLabels } from './components/notification-detail/journey';
 import { SearchableSelect } from './components/SearchableSelect';
 import { StatisticsView } from './components/StatisticsView';
 import { DashboardView } from './components/DashboardView';
-import { COUNTRIES, matchCountry, isValidCap, abbreviateLongMunicipality, SEND_ENTITY_TYPES, SEND_TAXONOMY_CATALOG } from '@comunicapa/shared-types';
+import { COUNTRIES, matchCountry, isValidCap, abbreviateLongMunicipality, isPosteTrackableService, SEND_ENTITY_TYPES, SEND_TAXONOMY_CATALOG } from '@comunicapa/shared-types';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import {
   Mail, MailOpen, MailCheck, Mails, Smartphone, Send, HelpCircle,
@@ -13460,7 +13460,8 @@ export function App(): React.JSX.Element {
                               {(() => {
                                 const lastPostal = [...notifDetail.attempts].filter(a => a.channelType === 'POSTAL').sort((a, b) => b.attemptNumber - a.attemptNumber)[0];
                                 const pv = lastPostal?.posteVerification;
-                                if (!lastPostal || !(pv || (lastPostal.postalStatus !== 'Consegnato' && lastPostal.postalAcceptanceId))) return null;
+                                // Posta semplice: codice mai tracciabile su Poste, nessuna sezione.
+                                if (!lastPostal || !isPosteTrackableService(notifDetail.campaign.postalServiceType) || !(pv || (lastPostal.postalStatus !== 'Consegnato' && lastPostal.postalAcceptanceId))) return null;
                                 return (
                                   <div>
                                     <h4>Verifica su Poste</h4>
@@ -18016,7 +18017,7 @@ export function App(): React.JSX.Element {
                                   Riattiva errori GlobalCom
                                 </button>
                               )}
-                              {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType === 'POSTAL' && (postalStatusBreakdown ?? []).some(b => b.status === 'NonConsegnato' && b.count > 0) && (
+                              {(campaign?.totalRecipients ?? 0) > 0 && campaign.channelType === 'POSTAL' && isPosteTrackableService(campaign.channelConfig?.postalServiceType) && (postalStatusBreakdown ?? []).some(b => b.status === 'NonConsegnato' && b.count > 0) && (
                                 <button
                                   className="btn btn-sm d-inline-flex align-items-center text-nowrap btn-outline-success"
                                   disabled={!!posteRun?.running && posteRun.campaignId === campaign.id}

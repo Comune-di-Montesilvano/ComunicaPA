@@ -10,6 +10,7 @@ import {
   POSTAL_AGOL_SECOND_ATTEMPT_OPTIONS,
   isPostalAgolService,
   postalServiceSupportsReturnReceipt,
+  isPosteTrackableService,
 } from './index';
 
 describe('COUNTRIES', () => {
@@ -147,5 +148,24 @@ describe('costanti SEND/POSTAL condivise', () => {
     expect(SEND_PHYSICAL_COMMUNICATION_TYPES).toEqual(['AR_REGISTERED_LETTER', 'REGISTERED_LETTER_890']);
     expect(POSTAL_AGOL_NOTIFIER_TYPES).toContain('NonUtilizzato');
     expect(POSTAL_AGOL_SECOND_ATTEMPT_OPTIONS).toContain('NonRichiedere');
+  });
+});
+
+describe('isPosteTrackableService', () => {
+  it('raccomandate e atti giudiziari sono tracciabili su Poste', () => {
+    expect(isPosteTrackableService('RaccomandataMarket4')).toBe(true);
+    expect(isPosteTrackableService('Raccomandata')).toBe(true);
+    expect(isPosteTrackableService('AgolMarket')).toBe(true);
+  });
+
+  it('posta semplice non è tracciabile (codici di 10 cifre sconosciuti a Poste)', () => {
+    expect(isPosteTrackableService('LetteraContest4')).toBe(false);
+    expect(isPosteTrackableService('PostaOrdinaria')).toBe(false);
+  });
+
+  it('servizio assente (campagne storiche) → tracciabile, comportamento precedente', () => {
+    expect(isPosteTrackableService(undefined)).toBe(true);
+    expect(isPosteTrackableService(null)).toBe(true);
+    expect(isPosteTrackableService('')).toBe(true);
   });
 });

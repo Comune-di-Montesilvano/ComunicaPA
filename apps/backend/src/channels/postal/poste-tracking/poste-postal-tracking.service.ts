@@ -5,6 +5,8 @@ import { Cron } from '@nestjs/schedule';
 import { PostalPosteTracking, type PosteTrackingStatus } from '../../../entities/postal-poste-tracking.entity.js';
 import { NotificationAttempt } from '../../../entities/notification-attempt.entity.js';
 import { Recipient } from '../../../entities/recipient.entity.js';
+import { Campaign } from '../../../entities/campaign.entity.js';
+import { isPosteTrackableService } from '@comunicapa/shared-types';
 import { AppSettingsService } from '../../../settings/app-settings.service.js';
 import { captureException } from '../../../common/sentry.util.js';
 import { PosteTrackingClient } from './poste-tracking-client.service.js';
@@ -23,6 +25,14 @@ const MIN_RECHECK_MS = 23 * 60 * 60_000;
 // controllate su Poste (nessuna risposta valida), poi le controllate più
 // vecchie.
 const NEVER_CHECKED_FIRST_SQL = 'CASE WHEN t.poste_esito_ricerca IS NULL THEN 0 ELSE 1 END';
+/**
+ * Stessa regola di isPosteTrackableService (shared-types) in SQL, alias `c`
+ * = campagna: solo raccomandate/Agol, o servizio assente (campagne storiche).
+ * La posta semplice ha codici di 10 cifre mai riconosciuti da Poste: senza
+ * questo filtro restava in coda e interrogata fino alla finestra di 90 giorni.
+ */
+export const POSTE_TRACKABLE_SERVICE_SQL =
+  "(COALESCE(c.channel_config->>'postalServiceType', '') = '' OR c.channel_config->>'postalServiceType' LIKE 'Raccomandata%' OR c.channel_config->>'postalServiceType' LIKE 'Agol%')";
 const DISABLED_MESSAGE = 'Verifica consegna su Poste disattivata (Impostazioni → Postalizzazione)';
 
 export type CheckResult = PosteTrackingStatus | 'error' | 'blocked' | 'skipped';
@@ -194,7 +204,9 @@ export class PostePostalTrackingService {
        SELECT na.id, na.postal_acceptance_id, 'pending', now(), COALESCE(na.sent_at, na.created_at) + interval '90 days'
        FROM notification_attempts na
        JOIN recipients r ON r.id = na.recipient_id
+       JOIN campaigns c ON c.id = r.campaign_id
        WHERE na.channel_type = 'POSTAL'
+         AND ${POSTE_TRACKABLE_SERVICE_SQL}
          -- NonConsegnato terminale, oppure invio "fermo": GlobalCom non lo dà
          -- consegnato e non lo aggiorna da staleDays giorni (smette di seguirlo
          -- senza stato finale, es. Confermato/Accettato per settimane).
@@ -311,11 +323,14 @@ export class PostePostalTrackingService {
     const row = await this.repo
       .createQueryBuilder('t')
       .innerJoin(NotificationAttempt, 'a', 'a.id = t.attempt_id')
+      .innerJoin(Recipient, 'r', 'r.id = a.recipient_id')
+      .innerJoin(Campaign, 'c', 'c.id = r.campaign_id')
       // delivered con next_check_at impostato = riverifica una tantum (righe
       // valutate prima del flusso verifica+cookie, su dati ridotti di Poste).
       .where("t.status IN ('pending', 'delivered')")
       .andWhere('t.next_check_at <= now()')
       .andWhere("COALESCE(a.postal_status, '') <> 'Consegnato'")
+      .andWhere(POSTE_TRACKABLE_SERVICE_SQL)
       .orderBy(NEVER_CHECKED_FIRST_SQL, 'ASC')
       .addOrderBy('t.last_checked_at', 'ASC', 'NULLS FIRST')
       .addOrderBy('t.created_at', 'ASC')
@@ -417,8 +432,12 @@ export class PostePostalTrackingService {
   async checkRecipientNow(campaignId: string, recipientId: string): Promise<{ row: PostalPosteTracking; result: CheckResult }> {
     if (!(await this.isEnabled())) throw new ConflictException(DISABLED_MESSAGE);
     if (this.isBlocked()) throw new ConflictException(`Poste sta limitando le richieste: riprova dopo le ${this.blockedUntil!.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' })}`);
-    const recipient = await this.recipientRepo.findOne({ where: { id: recipientId } });
+    const recipient = await this.recipientRepo.findOne({ where: { id: recipientId }, relations: { campaign: true } });
     if (!recipient || recipient.campaignId !== campaignId) throw new NotFoundException(`Recipient ${recipientId} non trovato in questa campagna`);
+    const serviceType = recipient.campaign?.channelConfig?.['postalServiceType'] as string | undefined;
+    if (!isPosteTrackableService(serviceType)) {
+      throw new BadRequestException(`Verifica su Poste non disponibile per ${serviceType}: la posta semplice non ha un codice tracciabile su Poste`);
+    }
     const attempt = await this.attemptRepo.findOne({ where: { recipientId, channelType: 'POSTAL' }, order: { attemptNumber: 'DESC' } });
     if (!attempt) throw new BadRequestException('Nessun tentativo POSTAL per questo destinatario');
 
@@ -457,9 +476,11 @@ export class PostePostalTrackingService {
       .createQueryBuilder('t')
       .innerJoin(NotificationAttempt, 'a', 'a.id = t.attempt_id')
       .innerJoin(Recipient, 'r', 'r.id = a.recipient_id')
+      .innerJoin(Campaign, 'c', 'c.id = r.campaign_id')
       .where('r.campaign_id = :campaignId', { campaignId })
       .andWhere("t.status IN ('pending', 'gave_up')")
       .andWhere("COALESCE(a.postal_status, '') <> 'Consegnato'")
+      .andWhere(POSTE_TRACKABLE_SERVICE_SQL)
       .orderBy(NEVER_CHECKED_FIRST_SQL, 'ASC')
       .addOrderBy('t.last_checked_at', 'ASC', 'NULLS FIRST')
       .addOrderBy('t.created_at', 'ASC')
