@@ -3,8 +3,10 @@ import { AlertTriangle } from 'lucide-react';
 import { buildJourney, computeVerdict, sourceLabel, type JourneyDetail, type JourneyLabels, type JourneySource } from './journey';
 import '../../assets/css/notification-detail.css';
 
-function formatWhen(iso: string): { day: string; time: string } {
+function formatWhen(iso: string, dateOnly = false): { day: string; time: string } {
   const d = new Date(iso);
+  // Data senza ora (esito GlobalCom): giorno in fuso italiano, nessun falso "00:00".
+  if (dateOnly) return { day: d.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', year: 'numeric' }), time: '' };
   return {
     day: d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' }),
     time: d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }),
@@ -50,13 +52,13 @@ export function NotificationTimeline({ detail, labels }: { detail: JourneyDetail
     <div className="nd-journey">
       <ol className="nd-timeline">
         {events.map((e, i) => {
-          const { day, time } = formatWhen(e.at);
-          const prevDay = i > 0 ? formatWhen(events[i - 1]!.at).day : null;
+          const { day, time } = formatWhen(e.at, e.dateOnly);
+          const prevDay = i > 0 ? formatWhen(events[i - 1]!.at, events[i - 1]!.dateOnly).day : null;
           return (
             <li key={`${e.at}-${i}`} className={`nd-event nd-src-${e.source} nd-tone-${e.tone}`}>
               <div className="nd-when">
                 {day !== prevDay && <span className="nd-day">{day}</span>}
-                <span className="nd-time">{time}</span>
+                {time && <span className="nd-time">{time}</span>}
               </div>
               <span className="nd-marker" aria-hidden="true" />
               <div className="nd-what">

@@ -61,6 +61,8 @@ export interface JourneyEvent {
   title: string;
   detail?: string | null;
   tone: JourneyTone;
+  /** Data senza ora significativa (esito GlobalCom): mostrare solo il giorno. */
+  dateOnly?: boolean;
 }
 
 export interface Verdict {
@@ -124,16 +126,25 @@ export function buildJourney(d: JourneyDetail, labels: JourneyLabels): JourneyEv
     if (validDate(a.protocolledAt) && a.protocolNumber) {
       events.push({ at: a.protocolledAt, source: 'protocollo', title: `Protocollata n. ${a.protocolNumber}/${a.protocolYear ?? ''}`, tone: 'neutral' });
     }
-    for (const h of a.postalStatusHistory ?? []) {
+    const history = a.postalStatusHistory ?? [];
+    history.forEach((h, i) => {
       const failed = h.stato === 'NonConsegnato' || h.stato === 'Errore' || (!!h.codiceErrore && h.codiceErrore !== '0');
+      // rilevatoIl è quando il sync ha visto lo stato (anche giorni dopo): per
+      // l'esito finale GlobalCom dà la data vera, la stessa del verdetto.
+      const isFinalOutcome = i === history.length - 1 && h.stato === a.postalStatus
+        && (h.stato === 'Consegnato' || h.stato === 'NonConsegnato') && validDate(a.postalDeliveryDate);
+      const detected = isFinalOutcome
+        ? `rilevato il ${new Date(h.rilevatoIl).toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', year: 'numeric' })}`
+        : null;
       events.push({
-        at: h.rilevatoIl,
+        at: isFinalOutcome ? a.postalDeliveryDate! : h.rilevatoIl,
         source: 'globalcom',
         title: labels.postalStatus(h.stato),
-        detail: [h.statoConsegna, h.codiceErrore && h.codiceErrore !== '0' ? h.descrizione : null].filter(Boolean).join(' · ') || null,
+        detail: [h.statoConsegna, h.codiceErrore && h.codiceErrore !== '0' ? h.descrizione : null, detected].filter(Boolean).join(' · ') || null,
         tone: h.stato === 'Consegnato' ? 'ok' : failed ? 'ko' : 'neutral',
+        ...(isFinalOutcome ? { dateOnly: true } : {}),
       });
-    }
+    });
     const pv = a.posteVerification;
     if (pv) {
       const lastMovementIndex = pv.movements.reduce((best, m, i) => (best < 0 || (Number(m.box) || 0) >= (Number(pv.movements[best]!.box) || 0) ? i : best), -1);
