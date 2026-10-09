@@ -198,6 +198,25 @@ body:not(.bo-shell) {
   font-weight: 400;
 }
 
+/* Marchio prodotto sotto il branding dell'ente */
+.login-product {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 5px 12px 5px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.login-product img {
+  border-radius: 5px;
+}
+
 .login-body {
   padding: 2.5rem 2.25rem;
 }
