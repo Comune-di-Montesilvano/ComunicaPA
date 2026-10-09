@@ -284,6 +284,7 @@ body.bo-shell {
 
 /* Marchio prodotto ComunicaPA a destra della topbar (il branding dell'ente resta nella sidebar) */
 .bo-topbar-product {
+  display: inline-flex;
   align-items: center;
   gap: 8px;
   padding-right: 14px;
@@ -292,6 +293,10 @@ body.bo-shell {
   font-size: 14px;
   color: #0066cc;
   white-space: nowrap;
+}
+
+@media (max-width: 767px) {
+  .bo-topbar-product { display: none; }
 }
 
 .bo-topbar-icon-btn:hover {

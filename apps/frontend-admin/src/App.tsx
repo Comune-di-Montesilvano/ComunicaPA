@@ -9886,7 +9886,7 @@ export function App(): React.JSX.Element {
         </h2>
 
         <div className="bo-topbar-actions ms-auto d-flex align-items-center gap-3">
-          <span className="bo-topbar-product d-none d-md-inline-flex">
+          <span className="bo-topbar-product">
             <img src="/favicon.svg" alt="" width={22} height={22} />
             ComunicaPA
           </span>
