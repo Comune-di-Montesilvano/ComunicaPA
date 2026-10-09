@@ -9886,6 +9886,10 @@ export function App(): React.JSX.Element {
         </h2>
 
         <div className="bo-topbar-actions ms-auto d-flex align-items-center gap-3">
+          <span className="bo-topbar-product d-none d-md-inline-flex">
+            <img src="/favicon.svg" alt="" width={22} height={22} />
+            ComunicaPA
+          </span>
           <div className="d-flex align-items-center gap-2">
             <span className="user-initials-avatar" style={{ width: '28px', height: '28px', fontSize: '10px' }}>
               {(displayName || username)?.slice(0, 2).toUpperCase()}
