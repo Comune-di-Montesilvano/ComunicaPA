@@ -61,6 +61,11 @@ button { font-family: inherit; }
 }
 .inst-brand .sub { font-size: 13px; color: var(--fg-2); margin-top: 2px; }
 .inst-actions { display:flex; gap: var(--sp-3); align-items:center; }
+.inst-product {
+  display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;
+  font-weight: 700; font-size: 15px; color: #0066cc; white-space: nowrap;
+}
+.inst-actions .inst-product { padding-right: var(--sp-3); border-right: 1px solid var(--border-1); }
 
 /* ============================================================================
    MAIN NAV (sticky)
@@ -872,6 +877,7 @@ body.density-compact .table td { padding: 12px 16px; }
   .inst-brand .title { font-size: 16px; }
   .inst-brand .sub { display: none; }
   .inst-actions { gap: var(--sp-2); flex-shrink: 0; }
+  .inst-product { display: none; }
   .inst-actions .btn-ghost { display: none; }   /* hide "Guida" link on mobile (it's in nav) */
 }
 @media (max-width: 380px) {

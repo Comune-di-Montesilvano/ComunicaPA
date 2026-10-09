@@ -9615,6 +9615,10 @@ export function App(): React.JSX.Element {
             </div>
             <h1 className="login-title">{brandName}</h1>
             <p className="login-subtitle">{brandSubtitle || 'Amministrazione & Gestione Invii'}</p>
+            <span className="login-product">
+              <img src="/favicon.svg" alt="" width={20} height={20} />
+              ComunicaPA
+            </span>
           </div>
           <div className="login-body">
             {backendStatus === 'offline' && (
