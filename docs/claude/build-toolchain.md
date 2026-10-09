@@ -176,3 +176,7 @@ file spec separati.** Aggiungere un parametro al costruttore non basta patchare 
 completo — bug reale: `campaigns.service.spec.ts` aveva 12 builder indipendenti, più un tredicesimo in
 `campaigns.service.cost.spec.ts`, scoperti solo eseguendo la suite completa dopo un fix parziale.
 
+
+## Type-check frontend-admin di un worktree separato (container dev attivo)
+
+Copia in `/app/apps/fa-check` (stessa profondità: `tsconfig.app.json` estende `../../tsconfig.base.json`): `tsconfig*.json`, `eslint.config.js`, `package.json` più `docker cp src`, `ln -s /app/apps/frontend-admin/node_modules`, poi `tsc -p tsconfig.app.json --noEmit` ed `eslint src/App.tsx`; alla fine `rm -rf /app/apps/fa-check`. Non tocca il bind-mount del worktree principale.
