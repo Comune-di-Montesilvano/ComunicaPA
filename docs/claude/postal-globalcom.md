@@ -179,6 +179,19 @@ un riaccodamento reale presente, zero log/eccezioni. Verificato dal vivo
 contro GlobalCom prod (Montesilvano) con IDPRO reale. Per ogni nuovo
 metodo SOAP: dati sempre da `Risposta`, mai dal campo `<metodo>Result`.
 
+**`DataConsegna` arriva compatta `yyyyMMddHHmmss` in ora italiana** (es.
+`"20260810000000"`), non ISO: `new Date()` → Invalid Date. Usare sempre
+`parseGlobalcomDate` (`globalcom-client.service.ts`). Bug reale fino a
+v1.8.10: data consegna mai salvata (date legali vuote) e `NaN !== x` in
+`deliveryChanged` → voce di storia finta a ogni sync. Recupero automatico dei
+consegnati senza data a ogni avvio del processo (`startedAt` in
+`getCandidatesQuery`).
+
+**Cron `PostalStatusSyncService` = un giro alla volta** (flag `running`): 200
+chiamate SOAP durano più del minuto del cron, i giri sovrapposti riprendevano
+gli stessi attempt. Qualunque nuovo `@Cron` che può durare più del suo
+intervallo va protetto allo stesso modo.
+
 **Script di debug per interrogare GlobalCom a mano su un IDPRO reale**:
 `apps/backend/src/debug/globalcom-dettagli-documento.cjs` — replica a mano
 login+cookie di sessione+`dettagli_documento` senza passare da nest

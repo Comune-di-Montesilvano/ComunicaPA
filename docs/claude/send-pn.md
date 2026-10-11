@@ -144,9 +144,19 @@ listino.
 pagamento, quelli in `N` senza — il wizard filtra la select su questo
 suffisso in base al checkbox "Integrazione pagamenti".
 
-**Pipeline a demoni, non BullMQ**: SEND non ha coda (`launch()` crea solo
-l'attempt `QUEUED`, i demoni `@Cron` protocollazione → invio lo raccolgono).
+**Protocollazione su coda BullMQ `PROTOCOLLAZIONE`, invio SEND via demone
+`@Cron`**: la protocollazione ritenta 5 volte con backoff (~10 min,
+`PROTOCOLLAZIONE_JOB_OPTIONS`) prima di FAILED — TINN ha disservizi brevi
+(`fetch failed`, `-100` FTP); allegato mancante = `UnrecoverableError`.
 L'upload degli allegati avviene **solo nel demone di invio**, mai in quello
 di protocollazione: gli URL S3 presigned di PN scadono dopo 1 h e tra i due
 stadi può passare tempo. Il PDF è rigenerato (deterministico) in ciascuno
 stadio.
+
+**"Documenti SEND" (legal-facts) NON contiene il documento notificato**, solo
+gli atti opponibili (presa in carico, accesso): il download dell'originale è
+sempre la copia locale (sezione Allegati del dettaglio notifica).
+
+**Data legale SEND = perfezionamento** = min(`VIEWED`, `EFFECTIVE_DATE`) da
+`sendStatusHistory` (`sendLegalDateOf`). App IO fuori da SEND non ha mai
+valore di notifica (dicitura `APP_IO_LEGAL_DISCLAIMER` in calce).

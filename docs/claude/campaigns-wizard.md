@@ -244,6 +244,13 @@ risoluzione via `resolvePecReview()` (due scelte: mantieni su file / usa
 trovata, entrambe sbloccano l'invio per quel solo destinatario — il resto
 della campagna procede regolarmente, mai un blocco sull'intera campagna).
 
+## Invio Manuale — INAD vs SEND, gruppi multicanale
+
+`manualRowEffectiveChannel` (`App.tsx`): una riga `inadForced` va su PEC SOLO se il canale scelto ≠ SEND (PN risolve da sé il domicilio). Bug reale (v1.8.12): una riga INAD riportata a SEND finiva in un bucket PEC → gruppo SEND+PEC non voluto, sintomo "N-1 su N partiti, campagna in bozza".
+I bucket di un gruppo si lanciano uno alla volta: chiudere il wizard dopo il primo lascia una bozza orfana con lo stesso nome.
+Riga aggregata in dashboard (`aggregateCampaignGroups`): id = primo membro creato, stato = il peggiore; Riprendi/Elimina usano `groupActionMember`. La bozza del membro si raggiunge da dettaglio → "Fa parte di un lancio multicanale".
+Diagnosi: `SELECT c.id, c.channel_type, c.status, right(r.codice_fiscale,4), r.status FROM campaigns c LEFT JOIN recipients r ON r.campaign_id=c.id WHERE c.group_id='<id>';`
+
 ## Setting globale che condiziona una campagna — inferire "è girato?" dai dati, mai assumere 0 = mai eseguito
 
 `inad.checkEnabled` è un `AppSettingsService` globale, non salvato su

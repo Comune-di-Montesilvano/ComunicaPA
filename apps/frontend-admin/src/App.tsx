@@ -2281,7 +2281,7 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     fetch(`${API_BASE}/branding`)
       .then((r) => r.json())
-      .then((b: { name?: string; subtitle?: string; logoUrl?: string | null; faviconUrl?: string | null }) => {
+      .then((b: { name?: string; subtitle?: string; logoUrl?: string | null }) => {
         if (b.name) {
           document.title = `${b.name} — ComunicaPA Admin`;
           setBrandName(b.name);
@@ -2289,16 +2289,10 @@ export function App(): React.JSX.Element {
         if (b.subtitle) {
           setBrandSubtitle(b.subtitle);
         }
-        // logo/favicon possono essere path relativi al backend o URL esterni assoluti
+        // logo: path relativo al backend o URL esterno assoluto.
+        // brand.favicon vale solo per il portale cittadini: il backoffice tiene l'icona ComunicaPA fissa.
         if (b.logoUrl) {
           setBrandLogoUrl(/^https?:\/\//i.test(b.logoUrl) ? b.logoUrl : `${API_BASE}${b.logoUrl}`);
-        }
-        if (b.faviconUrl) {
-          const link = document.querySelector<HTMLLinkElement>("link[rel~='icon']") ?? document.createElement('link');
-          link.rel = 'icon';
-          // faviconUrl può essere un path relativo al backend o un URL esterno assoluto
-          link.href = /^https?:\/\//i.test(b.faviconUrl) ? b.faviconUrl : `${API_BASE}${b.faviconUrl}`;
-          document.head.appendChild(link);
         }
       })
       .catch(() => { /* branding default */ });
@@ -9621,6 +9615,10 @@ export function App(): React.JSX.Element {
             </div>
             <h1 className="login-title">{brandName}</h1>
             <p className="login-subtitle">{brandSubtitle || 'Amministrazione & Gestione Invii'}</p>
+            <span className="login-product">
+              <img src="/favicon.svg" alt="" width={20} height={20} />
+              ComunicaPA
+            </span>
           </div>
           <div className="login-body">
             {backendStatus === 'offline' && (
@@ -9892,6 +9890,10 @@ export function App(): React.JSX.Element {
         </h2>
 
         <div className="bo-topbar-actions ms-auto d-flex align-items-center gap-3">
+          <span className="bo-topbar-product">
+            <img src="/favicon.svg" alt="" width={22} height={22} />
+            ComunicaPA
+          </span>
           <div className="d-flex align-items-center gap-2">
             <span className="user-initials-avatar" style={{ width: '28px', height: '28px', fontSize: '10px' }}>
               {(displayName || username)?.slice(0, 2).toUpperCase()}
@@ -15866,7 +15868,7 @@ export function App(): React.JSX.Element {
                               <div className="form-text small text-muted">In alternativa all'upload puoi indicare un URL https:// (salva con "Salva impostazioni").</div>
                             </div>
                             <div className="mb-3">
-                              <label className="form-label">Favicon (ICO/PNG/SVG, max 2 MB)</label>
+                              <label className="form-label">Favicon portale cittadini (ICO/PNG/SVG, max 2 MB)</label>
                               <input type="file" className="form-control" accept="image/x-icon,image/png,image/svg+xml"
                                 onChange={(e) => e.target.files?.[0] && handleUploadBranding('favicon', e.target.files[0])} />
                               <input
@@ -15876,7 +15878,7 @@ export function App(): React.JSX.Element {
                                 value={settFaviconValue}
                                 onChange={(e) => setSettFaviconValue(e.target.value)}
                               />
-                              <div className="form-text small text-muted">In alternativa all'upload puoi indicare un URL https:// (salva con "Salva impostazioni").</div>
+                              <div className="form-text small text-muted">Usata solo nel portale cittadini; il backoffice mantiene l'icona ComunicaPA. In alternativa all'upload puoi indicare un URL https:// (salva con "Salva impostazioni").</div>
                             </div>
                             <div className="mb-3">
                               <label className="form-label">Conservazione allegati (giorni)</label>
