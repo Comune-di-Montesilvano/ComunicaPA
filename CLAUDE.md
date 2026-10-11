@@ -33,6 +33,8 @@ Tutti i comandi si eseguono con Docker Compose. Copiare `.env.example` in `.env`
 
 **Senza dichiarazione esplicita dell'utente, lo stack Docker raggiungibile in sessione è locale/dev, mai prod** — nessun accesso reale a produzione per default. Il DB dev condivide comunque le credenziali GlobalCom REALI (vedi sezione POSTAL sotto), quindi un dato reale può comparire anche in un ambiente locale — non è prova che l'ambiente stesso sia prod.
 
+DB prod: l'utente usa la console Portainer del container `postgres` → `psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"`; query su una riga sola, CF mascherati (`right(codice_fiscale,4)`). I log backend vanno letti dalla tab Logs di Portainer (non dalla shell del container).
+
 **Compose è splittato in due file:**
 - `docker-compose.yml` — **produzione**: immagini da ghcr.io, solo volumi named, nessun bind mount. Usato da solo per il deploy reale (Portainer / podman rootless).
 - `docker-compose.override.yml` — **sviluppo**: build da `Dockerfile.dev`, bind mount per hot-reload, porte DB esposte, frontend in ascolto su 3000/3001.
@@ -124,7 +126,7 @@ confrontare con un altro branch senza rischio: `git diff <ref> -- <path>`
 
 **subagent-driven-development su questo repo — mai `isolation:"worktree"` per gli implementer se il lavoro deve andare dritto su `main`.** Un subagent con worktree isolato committa su un branch/checkout separato (`.claude/worktrees/...`) — se poi lo si rimuove, il report scritto dal subagent nella working directory sparisce con esso (bug reale: report ricostruito a mano dal riassunto restituito). Per lavoro diretto su main, dispatchare i subagent SENZA `isolation`, verificare poi con `git log --oneline -1 && git branch --show-current` che il commit sia finito dove atteso.
 
-**Script di editing con quoting misto (Python che contiene JSX/TS/SQL)**: mai heredoc inline nel tool Bash, si rompe su apici/backtick annidati ("unexpected EOF") — scrivere lo script `.py` nella scratchpad con Write e lanciarlo con `python <path>`.
+**Script di editing con quoting misto (Python che contiene JSX/TS/SQL)**: mai heredoc inline nel tool Bash, si rompe su apici/backtick annidati ("unexpected EOF") e Git Bash collassa `\\n` → `\n` anche con `<<'EOF'` quotato — scrivere lo script `.py` nella scratchpad con Write e lanciarlo con `python <path>`.
 
 **`.superpowers/sdd/` è scratch condiviso tra TUTTI i piani eseguiti nel repo, non per-piano.** Nomi file generici (`task-N-brief.md`/`task-N-report.md`) vengono sovrascritti da esecuzioni diverse — un report letto da lì può essere residuo di un piano precedente non correlato (bug reale: report Task 1 riletto per il review conteneva il riepilogo di un task di tutt'altro piano). Verificare sempre che il contenuto corrisponda al task atteso prima di fidarsene per una review.
 

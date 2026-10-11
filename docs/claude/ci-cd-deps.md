@@ -98,3 +98,9 @@ sempre il fix non distruttivo sopra.
 
 
 **Procedura release**: bump `publiccode.yml` (`softwareVersion` + `releaseDate`) DENTRO la PR della feature (niente PR di solo bump), merge squash, poi `git tag -a vX.Y.Z` sul commit di merge + `git push origin vX.Y.Z`. GitHub Release creata solo occasionalmente (non a ogni tag).
+
+**Tag solo dopo `git fetch origin`, e sempre per SHA esplicito** (`git tag -a vX.Y.Z <sha-merge>`), mai `origin/main` senza fetch: bug reale, v1.8.11 taggato su un `origin/main` locale fermo al merge precedente → immagini `:vX.Y.Z`/`:latest` col codice vecchio, tag da spostare. Verificare con `git ls-remote origin refs/tags/vX.Y.Z^{}`.
+
+**`gh pr merge` è bloccato dal classificatore di Claude Code**: lo lancia l'utente con `! gh pr merge N --squash` (senza spazio prima di `!`, altrimenti arriva come testo e non viene eseguito); poi verificare `gh pr view N --json state` prima del tag.
+
+`gh` risolve il repo dalla cwd: da un'altra cartella (es. utenzepa) → "Could not resolve to a PullRequest". Usare sempre `-R Comune-di-Montesilvano/ComunicaPA`; con `-R`, `--delete-branch` cancella solo il branch remoto.

@@ -243,6 +243,16 @@ const CHANNEL_META: Record<string, { label: string; icon: string; cls: string; l
   CITIZEN_PORTAL: { label: 'Portale Cittadino', icon: 'fa-globe', cls: 'channel-portal' },
 };
 
+/** Marchio prodotto ComunicaPA a destra dell'header (il branding dell'ente resta a sinistra). */
+function ProductMark(): React.JSX.Element {
+  return (
+    <span className="inst-product">
+      <img src="/favicon.svg" alt="" width={24} height={24} />
+      ComunicaPA
+    </span>
+  );
+}
+
 function ChannelBadge({ channel }: { channel: string }): React.JSX.Element {
   const normKey = (channel || '').toUpperCase();
   const meta = CHANNEL_META[normKey] ?? { label: channel || '—', icon: 'fa-paper-plane', cls: 'channel-generic' };
@@ -766,6 +776,7 @@ export function App(): React.JSX.Element {
                 <div className="sub">ComunicaPA — Notifiche e comunicazioni istituzionali</div>
               </div>
             </a>
+            <ProductMark />
           </div>
         </header>
 
@@ -1056,6 +1067,7 @@ export function App(): React.JSX.Element {
 
           {/* Badge utente (stile GovPay) */}
           <div className="inst-actions">
+            <ProductMark />
             <div className="fo-user-menu">
               <button
                 type="button"
