@@ -36,6 +36,7 @@ const API_BASE = window.__COMUNICAPA_CONFIG__?.apiBase ?? 'http://localhost:8080
 const ADMIN_API_BASE = `${API_BASE}/admin`;
 
 import { CHANNELS_REGISTRY, EMBEDDED_LOGOS, getChannelMeta, channelLabel } from './data/channels';
+import { GUIDA_URL, GUIDA_PER_VISTA, GUIDA_WIZARD_MASSIVO, GUIDA_WIZARD_SINGOLO, guidaSections } from './guida';
 
 // ---------------------------------------------------------------------------
 // Definizione centralizzata delle voci di navigazione della pagina Impostazioni.
@@ -1560,6 +1561,50 @@ export function App(): React.JSX.Element {
   const [role, setRole] = useState<string | null>(localStorage.getItem('comunicapa_role'));
   const [canUsePostal, setCanUsePostal] = useState<boolean>(localStorage.getItem('comunicapa_can_use_postal') === 'true');
   const [view, setView] = useState<'dashboard' | 'invio-massivo' | 'invio-massivo-wizard' | 'statistiche' | 'notifiche-ricerca' | 'cerca-domicilio' | 'verifica-domicili' | 'template-dashboard' | 'impostazioni' | 'campaign-detail' | 'audit-logs' | 'arricchimento' | 'guida'>('dashboard');
+
+  // Guida operatori (public/guida/guida.md): scaricata alla prima apertura
+  // della vista, poi tenuta in memoria. guidaAnchor = sezione da mostrare
+  // dopo il caricamento (link "?" della topbar e link contestuali).
+  const [guidaMd, setGuidaMd] = useState<string | null>(null);
+  const [guidaError, setGuidaError] = useState(false);
+  const [guidaAnchor, setGuidaAnchor] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (view !== 'guida' || guidaMd !== null || guidaError) return;
+    fetch(GUIDA_URL, { cache: 'no-cache' })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.text();
+      })
+      .then(setGuidaMd)
+      .catch(() => setGuidaError(true));
+  }, [view, guidaMd, guidaError]);
+
+  useEffect(() => {
+    if (view !== 'guida' || guidaMd === null) return;
+    if (guidaAnchor) {
+      // Al frame successivo: la vista appena montata ha già l'altezza finale.
+      const id = guidaAnchor;
+      requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ block: 'start' }));
+      setGuidaAnchor(null);
+    }
+  }, [view, guidaMd, guidaAnchor]);
+
+  const openGuida = (anchor?: string) => {
+    setGuidaAnchor(anchor || null);
+    setView('guida');
+  };
+
+  const guidaLink = (anchor: string) => (
+    <button
+      type="button"
+      className="btn btn-link btn-sm p-0 ms-2 align-baseline text-decoration-none"
+      title="Apri la guida su questo argomento"
+      onClick={() => openGuida(anchor)}
+    >
+      <HelpCircle size={14} className="me-1" />Guida
+    </button>
+  );
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   // Campagna aperta, aggiornata in modo sincrono da handleCampaignClick: i
   // fetch del dettaglio la confrontano prima di scrivere lo state. Bug reale:
@@ -5531,26 +5576,23 @@ export function App(): React.JSX.Element {
   };
 
   const renderGuidaView = () => {
-    const guidaChannels = (['EMAIL', 'PEC', 'APP_IO', 'SEND', 'POSTAL'] as const).map((key) => ({
-      key,
-      meta: getChannelMeta(key),
-    }));
-
-    const sections: Array<{ id: string; title: string }> = [
-      { id: 'guida-cose', title: "Cos'è ComunicaPA" },
-      { id: 'guida-anagrafica', title: 'Verifica Anagrafica e domicilio digitale' },
-      { id: 'guida-arricchimento', title: 'Arricchimento Tracciati' },
-      { id: 'guida-dirottamento', title: 'Dirottamento automatico su domicilio digitale' },
-      { id: 'guida-regole-canale', title: 'Regole per canale (allegato, oggetto/testo, App IO)' },
-      { id: 'guida-wizard', title: 'Come lanciare un invio' },
-      { id: 'guida-templating', title: 'Personalizzare oggetto e testo (placeholder)' },
-      { id: 'guida-canali', title: 'Canali disponibili' },
-      { id: 'guida-protocollo', title: 'Protocollo e sigillo elettronico' },
-      { id: 'guida-costi', title: 'Costi degli invii' },
-      { id: 'guida-monitoraggio', title: 'Monitoraggio e stato invii' },
-      { id: 'guida-postal', title: 'Autorizzazione Postalizzazione' },
-      { id: 'guida-impostazioni', title: 'Impostazioni' },
-    ];
+    if (guidaError) {
+      return (
+        <div className="alert alert-warning d-flex align-items-center gap-2">
+          Impossibile caricare la guida.
+          <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => setGuidaError(false)}>
+            Riprova
+          </button>
+        </div>
+      );
+    }
+    if (guidaMd === null) {
+      return (
+        <div className="text-center text-muted small py-5">
+          <Loader2 className="icon-spin me-1" size={16} /> Caricamento guida...
+        </div>
+      );
+    }
 
     return (
       <div className="d-flex flex-column gap-4">
@@ -5558,7 +5600,7 @@ export function App(): React.JSX.Element {
           <div className="card-body p-4">
             <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-3">In questa pagina</h5>
             <div className="d-flex flex-wrap gap-2">
-              {sections.map((s) => (
+              {guidaSections(guidaMd).map((s) => (
                 <a key={s.id} href={`#${s.id}`} className="btn btn-sm btn-outline-secondary">
                   {s.title}
                 </a>
@@ -5567,322 +5609,21 @@ export function App(): React.JSX.Element {
           </div>
         </div>
 
-        <div id="guida-cose" className="card shadow-sm border-0 rounded-3">
-          <div className="card-body p-4">
-            <h4 className="h5 fw-bold text-dark mb-3">Cos'è ComunicaPA</h4>
-            <p className="text-muted mb-2">
-              ComunicaPA è l'hub con cui l'Ente invia comunicazioni ufficiali ai cittadini (avvisi TARI,
-              notifiche, sanzioni) su più canali. Per ogni destinatario il sistema può verificare se esiste
-              un domicilio digitale attivo (INAD) e instradare l'invio di conseguenza, oppure usare il canale
-              scelto direttamente dall'operatore.
-            </p>
-            <p className="text-muted mb-0">
-              Ogni invio resta tracciato: stato di consegna, errori, costi (per la posta cartacea) e report
-              scaricabili sono sempre consultabili dal dettaglio della campagna.
-            </p>
-          </div>
-        </div>
-
-        <div id="guida-anagrafica" className="card shadow-sm border-0 rounded-3">
-          <div className="card-body p-4">
-            <h4 className="h5 fw-bold text-dark mb-3 d-flex align-items-center gap-2">
-              Verifica Anagrafica e domicilio digitale
-              <span className="badge bg-primary-subtle text-primary border border-primary-subtle" style={{ fontSize: '0.65rem' }}>La funzione più usata</span>
-            </h4>
-            <p className="text-muted mb-2">
-              Dalla voce "Verifica Anagrafica" è possibile cercare un codice fiscale o una partita IVA e
-              consultare in un unico posto: dati anagrafici, domicilio digitale (INAD), eventuale PEC da
-              Registro Imprese e — per le imprese — amministratori e soci, con i relativi CF/PIVA cliccabili
-              per approfondire a cascata.
-            </p>
-            <p className="text-muted mb-2">
-              È utile anche senza dover inviare nulla: è il modo più rapido per un ufficio di sapere se un
-              cittadino o un'impresa ha un domicilio digitale attivo e su quale canale sarebbe effettivamente
-              raggiungibile, prima ancora di organizzare una comunicazione.
-            </p>
-            <p className="text-muted mb-2">
-              <strong>Attenzione:</strong> la ricerca per un'impresa avviene sempre per Codice Fiscale, mai
-              per Partita IVA — per la maggior parte delle imprese coincidono, ma non sempre (enti pubblici,
-              cooperative sociali...). Se inserendo la Partita IVA non trovi risultati, riprova con il Codice
-              Fiscale reale del soggetto. Se non conosci il Codice Fiscale, il link "Non hai il codice
-              fiscale?" permette di cercare per denominazione su Registro Imprese. Il Codice Fiscale di
-              un'impresa individuale ha lo stesso formato di quello di una persona fisica (16 caratteri): se
-              la ricerca automatica sbaglia soggetto, la checkbox "Forza ricerca come impresa" instrada la
-              query direttamente su Registro Imprese. Una scheda impresa mostra anche se è cessata/cancellata
-              (badge in alto a destra, con data e causale).
-            </p>
-            <p className="text-muted mb-0">
-              Se non hai il Codice Fiscale ma conosci nome, cognome e data di nascita, è disponibile una
-              ricerca ANPR per anagrafica (senza CF) direttamente dal pannello di Verifica Anagrafica.
-            </p>
-          </div>
-        </div>
-
-        <div id="guida-arricchimento" className="card shadow-sm border-0 rounded-3">
-          <div className="card-body p-4">
-            <h4 className="h5 fw-bold text-dark mb-3">Arricchimento Tracciati</h4>
-            <p className="text-muted mb-2">
-              Converte un tracciato Maggioli (CSV + allegati PDF, es. avvisi TARI) in un CSV pronto per
-              l'invio massivo: estrae automaticamente da ogni PDF l'indirizzo postale del destinatario e i
-              dati di pagamento pagoPA (numero avviso, importo, scadenza — anche con più rate sulla stessa
-              pagina), leggendo il codice a barre/QR del documento.
-            </p>
-            <p className="text-muted mb-2">
-              Se un PDF non permette l'estrazione automatica (indirizzo mancante, QR illeggibile), la riga
-              viene segnalata come warning e può essere corretta manualmente, riga per riga, senza dover
-              rifare l'intero caricamento. È possibile caricare più ZIP in sequenza per lo stesso tracciato
-              (es. file troppo grandi spezzati in più parti): i pezzi vengono uniti automaticamente in un
-              unico job.
-            </p>
-            <p className="text-muted mb-0">
-              A job completato, il bottone "Crea bozza campagna" apre il wizard di invio massivo con il CSV
-              arricchito già precaricato: stesse validazioni e stesso percorso guidato di un caricamento CSV
-              manuale, nessun passaggio saltato.
-            </p>
-          </div>
-        </div>
-
-        <div id="guida-dirottamento" className="card shadow-sm border-0 rounded-3">
-          <div className="card-body p-4">
-            <h4 className="h5 fw-bold text-dark mb-3">Dirottamento automatico su domicilio digitale</h4>
-            <p className="text-muted mb-2">
-              Su una campagna <strong>massiva</strong> con canale EMAIL, App IO o Posta cartacea, il sistema
-              verifica per ogni destinatario se ha un domicilio digitale attivo su INAD. Se lo trova, quella
-              persona viene dirottata automaticamente su PEC — anche se la campagna nel complesso è, ad
-              esempio, un invio cartaceo: per un cittadino con domicilio digitale non viene stampata e
-              spedita alcuna lettera, riceve invece una PEC.
-            </p>
-            <p className="text-muted mb-0">
-              Il canale effettivamente usato per ciascun destinatario si vede sempre nel dettaglio della
-              campagna, riga per riga — non fidarti del canale "nominale" della campagna per capire cosa ha
-              ricevuto davvero un singolo cittadino. Questo controllo <strong>non</strong> si applica a SEND
-              (la piattaforma nazionale risolve da sé il domicilio) né agli invii singoli dal wizard (l'operatore
-              ha già verificato il domicilio a mano, es. da Verifica Anagrafica, prima di scegliere il canale).
-            </p>
-          </div>
-        </div>
-
-        <div id="guida-regole-canale" className="card shadow-sm border-0 rounded-3">
-          <div className="card-body p-4">
-            <h4 className="h5 fw-bold text-dark mb-3">Regole per canale</h4>
-            <p className="text-muted mb-3">
-              Ogni canale ha vincoli diversi su allegato, oggetto/testo e App IO abbinata — se il wizard
-              blocca "Avanti" o rifiuta un campo, è quasi sempre per una di queste regole.
-            </p>
-            <div className="table-responsive">
-              <table className="table table-sm align-middle mb-0">
-                <thead className="text-muted small text-uppercase">
-                  <tr>
-                    <th>Canale</th>
-                    <th>Allegato</th>
-                    <th>Oggetto / Testo</th>
-                    <th>App IO abbinata</th>
-                    <th>Protocollo</th>
-                  </tr>
-                </thead>
-                <tbody className="small text-muted">
-                  <tr>
-                    <td><strong>EMAIL</strong></td>
-                    <td>Facoltativo</td>
-                    <td>Entrambi obbligatori</td>
-                    <td>Nessuna / parallela / esclusiva*</td>
-                    <td>Facoltativo</td>
-                  </tr>
-                  <tr>
-                    <td><strong>PEC</strong></td>
-                    <td>Facoltativo</td>
-                    <td>Entrambi obbligatori</td>
-                    <td>Nessuna / parallela / esclusiva*</td>
-                    <td>Facoltativo</td>
-                  </tr>
-                  <tr>
-                    <td><strong>App IO</strong></td>
-                    <td>Facoltativo</td>
-                    <td>Oggetto 10–120 caratteri, testo 80–10.000 — entrambi obbligatori</td>
-                    <td>—</td>
-                    <td>Facoltativo</td>
-                  </tr>
-                  <tr>
-                    <td><strong>SEND</strong></td>
-                    <td><strong>Obbligatorio</strong></td>
-                    <td>Solo oggetto obbligatorio — il testo libero non è previsto</td>
-                    <td>—</td>
-                    <td><strong>Obbligatorio</strong></td>
-                  </tr>
-                  <tr>
-                    <td><strong>Posta</strong></td>
-                    <td><strong>Obbligatorio</strong></td>
-                    <td>Solo oggetto obbligatorio — il testo libero non è previsto (il contenuto è l'allegato)</td>
-                    <td>Nessuna / parallela / esclusiva*</td>
-                    <td>Facoltativo</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <p className="text-muted small mb-0 mt-2">
-              * Su EMAIL, PEC e Posta si può abbinare una notifica App IO. Se scelta come "esclusiva" (solo
-              App IO, senza il canale primario) e quel destinatario viene dirottato da INAD, per lui diventa
-              automaticamente "parallela" — l'App IO da sola non basterebbe se il domicilio digitale reale è
-              su PEC.
-            </p>
-          </div>
-        </div>
-
-        <div id="guida-wizard" className="card shadow-sm border-0 rounded-3">
-          <div className="card-body p-4">
-            <h4 className="h5 fw-bold text-dark mb-3">Come lanciare un invio</h4>
-            <p className="text-muted">
-              Ogni campagna si crea dal wizard guidato — è l'unico percorso di creazione, garantisce le
-              validazioni corrette (formato CF/email, allegati obbligatori dove previsto). Due voci di menu,
-              a seconda di quanti destinatari e quanti canali servono:
-            </p>
-            <ol className="text-muted mb-0 ps-3">
-              <li className="mb-2">
-                <strong>Invio Manuale</strong>: uno o più destinatari inseriti a mano, senza caricare un file.
-                Ogni riga può avere un canale diverso dalle altre (es. una PEC e due App IO nello stesso
-                lotto) — il sistema lancia una campagna per canale e le raggruppa insieme nella lista
-                "Campagne Massive", mostrate come un unico invio.
-              </li>
-              <li className="mb-2"><strong>Invio Massivo</strong>: elenco destinatari da file CSV, un solo canale per l'intero lancio — caricamento del file e mappatura delle colonne (codice fiscale, nome, email/PEC, allegato...).</li>
-              <li className="mb-2">In entrambi i casi: scelta/configurazione del canale (allegati, oggetto/testo del messaggio), poi riepilogo e verifica — è possibile inviare un invio di prova prima del lancio definitivo.</li>
-              <li>Lancio della campagna: da qui in poi lo stato si segue dal dettaglio campagna o dalla lista "Campagne Massive".</li>
-            </ol>
-          </div>
-        </div>
-
-        <div id="guida-templating" className="card shadow-sm border-0 rounded-3">
-          <div className="card-body p-4">
-            <h4 className="h5 fw-bold text-dark mb-3">Personalizzare oggetto e testo (placeholder)</h4>
-            <p className="text-muted mb-2">
-              Nell'oggetto e nel testo del messaggio puoi inserire dei segnaposto che vengono sostituiti
-              automaticamente, riga per riga, con il valore di quel destinatario. Il formato è sempre con il
-              <strong> doppio percento</strong>: <code>%%nome_segnaposto%%</code>. Un singolo <code>%</code>
-              scritto in mezzo al testo (es. "sconto del 60% sul tributo") non viene toccato — solo il doppio
-              percento forma un segnaposto reale.
-            </p>
-            <p className="text-muted mb-2">
-              Segnaposto sempre disponibili: <code>%%nominativo%%</code>, <code>%%codice_fiscale%%</code>, e
-              — se hai attivato allegati, protocollazione o pagoPA — anche <code>%%elenco_allegati%%</code>,
-              <code> %%allegato1%%</code>/<code>%%allegato2%%</code>..., <code>%%numero_protocollo%%</code> e i
-              campi pagoPA (importo, numero avviso, scadenza).
-            </p>
-            <p className="text-muted mb-2">
-              Nell'invio massivo puoi usare anche <strong>qualsiasi colonna del tuo file</strong> non già
-              usata per CF/nome/email: basta scrivere <code>%%NomeColonna%%</code> esattamente come intestata
-              nel file. L'editor mostra sempre l'elenco completo dei segnaposto disponibili — non serve
-              ricordarli a memoria.
-            </p>
-            <p className="text-muted mb-0">
-              Attenzione: se nel wizard massivo mappi una colonna del CSV come "Oggetto" (mappatura colonne,
-              passo 3), l'oggetto che scrivi a mano nel wizard viene <strong>ignorato</strong> per quei
-              destinatari — vince sempre il valore della colonna, riga per riga (utile per invii con tributi
-              diversi nello stesso lancio).
-            </p>
-          </div>
-        </div>
-
-        <div id="guida-canali" className="card shadow-sm border-0 rounded-3">
-          <div className="card-body p-4">
-            <h4 className="h5 fw-bold text-dark mb-3">Canali disponibili</h4>
-            <div className="alert alert-warning border-0 bg-warning-subtle text-warning-emphasis mb-3">
-              <strong>Se l'invio deve avere valore formale, il canale è SEND — punto.</strong> È l'unico canale
-              con piena garanzia normativa (ricevute opponibili a norma di legge) e gestisce da sé anche i
-              destinatari senza domicilio digitale, recapitando in automatico su carta se serve. Sugli altri
-              canali sappiamo comunque se una comunicazione è stata consegnata o scaricata, ma questo non
-              equivale al valore legale di SEND.
-            </div>
-            <div className="d-flex flex-column gap-3">
-              {guidaChannels.map(({ key, meta }) => {
-                const Icon = meta.icon;
-                return (
-                  <div key={key} className="d-flex align-items-start gap-3">
-                    <span className={`badge ${meta.badge} d-flex align-items-center gap-1 flex-shrink-0`} style={{ fontSize: '0.8rem' }}>
-                      <Icon size={14} /> {meta.label}
-                    </span>
-                    <span className="text-muted small">
-                      {key === 'EMAIL' && 'Posta elettronica ordinaria — per comunicazioni non aventi valore legale.'}
-                      {key === 'PEC' && 'Posta Elettronica Certificata — per comunicazioni con valore legale verso destinatari con indirizzo PEC noto. La protocollazione ordinaria dell\'Ente resta comunque necessaria, vedi sotto.'}
-                      {key === 'APP_IO' && "Notifica push sull'app IO — può accompagnare un altro canale (co-consegna) o essere usata da sola."}
-                      {key === 'SEND' && "Piattaforma nazionale Notifiche Digitali — l'unico canale a pieno valore legale, ricevute opponibili, gestisce da sé anche chi non ha domicilio digitale. Richiede protocollazione, integrata direttamente nel flusso di invio."}
-                      {key === 'POSTAL' && 'Posta cartacea (raccomandata o lettera) — pensata per invii massivi, non come alternativa spicciola a SEND per un singolo destinatario senza domicilio digitale. Riservata ad admin e operatori autorizzati.'}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        <div id="guida-protocollo" className="card shadow-sm border-0 rounded-3">
-          <div className="card-body p-4">
-            <h4 className="h5 fw-bold text-dark mb-3">ComunicaPA non sostituisce il protocollo</h4>
-            <p className="text-muted mb-2">
-              ComunicaPA <strong>non sostituisce il protocollo generale dell'Ente</strong>, in particolare per
-              la PEC: per gli invii PEC continua a valere l'iter di protocollazione ordinario.
-            </p>
-            <p className="text-muted mb-0">
-              Per i canali che la richiedono (es. SEND), ComunicaPA integra una protocollazione automatica —
-              ma quella usata qui <strong>non appone il sigillo elettronico</strong>: un limite tecnico reale,
-              non un'alternativa equivalente al protocollo ufficiale. Non va quindi usata in modo indiscriminato
-              al posto del protocollo per ogni comunicazione.
-            </p>
-          </div>
-        </div>
-
-        <div id="guida-costi" className="card shadow-sm border-0 rounded-3">
-          <div className="card-body p-4">
-            <h4 className="h5 fw-bold text-dark mb-3">Costi degli invii</h4>
-            <p className="text-muted mb-2">
-              EMAIL, PEC e App IO non hanno un costo per notifica. <strong>SEND</strong> e <strong>Posta</strong>
-              sì — il widget "Costo Campagna" nel dettaglio di ogni campagna mostra il totale, aggiornato man
-              mano che arrivano i costi reali.
-            </p>
-            <ul className="text-muted mb-2 ps-3">
-              <li className="mb-2"><strong>SEND</strong>: si paga sempre un costo base per notifica, circa <strong>1 euro</strong> (importo configurabile in Impostazioni → SEND) — a prescindere dal contenuto o dal numero di pagine.</li>
-              <li><strong>Posta</strong>: il costo è quello reale del fornitore (dipende da tipologia, peso, ricevuta di ritorno...) e non è noto subito — spesso compare a "0€" per un po' prima di essere calcolato: non è un errore, è solo il costo non ancora arrivato dal fornitore.</li>
-            </ul>
-            <p className="text-muted mb-0">
-              Se hai attivato il dirottamento automatico su domicilio digitale (vedi sopra), un destinatario
-              dirottato su PEC non genera alcun costo aggiuntivo rispetto all'invio cartaceo originariamente
-              previsto — anzi, il dettaglio campagna mostra anche il risparmio stimato rispetto al canale
-              tradizionale.
-            </p>
-          </div>
-        </div>
-
-        <div id="guida-monitoraggio" className="card shadow-sm border-0 rounded-3">
-          <div className="card-body p-4">
-            <h4 className="h5 fw-bold text-dark mb-3">Monitoraggio e stato invii</h4>
-            <p className="text-muted mb-0">
-              Il dettaglio di ogni campagna mostra lo stato di ciascun destinatario (in coda, consegnato,
-              letto, errore) con aggiornamento automatico mentre l'invio è in corso. Da "Ricerca Notifiche"
-              è possibile cercare un singolo invio per codice fiscale o ID campagna, anche a distanza di
-              tempo. Report dettagliati (CSV) sono scaricabili dal dettaglio campagna.
-            </p>
-          </div>
-        </div>
-
-        <div id="guida-postal" className="card shadow-sm border-0 rounded-3">
-          <div className="card-body p-4">
-            <h4 className="h5 fw-bold text-dark mb-3">Autorizzazione Postalizzazione</h4>
-            <p className="text-muted mb-0">
-              L'avvio di una campagna sul canale Posta (raccomandata/lettera) è riservato agli amministratori
-              e agli operatori esplicitamente abilitati, per via del costo reale di ogni spedizione. Se non
-              vedi l'opzione "Posta" nel wizard e ne hai bisogno, chiedi a un amministratore di abilitarti
-              dalla tab Impostazioni → Postalizzazione, sezione "Utenti abilitati all'invio Postalizzazione".
-            </p>
-          </div>
-        </div>
-
-        <div id="guida-impostazioni" className="card shadow-sm border-0 rounded-3">
-          <div className="card-body p-4">
-            <h4 className="h5 fw-bold text-dark mb-3">Impostazioni</h4>
-            <p className="text-muted mb-0">
-              Visibile solo agli amministratori. Da qui si configurano i server di invio (SMTP/PEC), App IO,
-              SEND, Postalizzazione (provider e utenti abilitati), verifica INAD, personalizzazione del
-              portale e altro. Ogni tab riguarda un canale o un aspetto del sistema — le modifiche si
-              applicano subito, senza bisogno di riavviare nulla.
-            </p>
+        <div className="card shadow-sm border-0 rounded-3">
+          <div className="card-body p-4 bo-guida" data-color-mode="light">
+            {/* skipHtml={false} = HTML grezzo scartato: per react-markdown-preview
+                il default (true) significa "rendi l'HTML" (vedi preview.js). */}
+            <MDEditor.Markdown
+              source={guidaMd}
+              skipHtml={false}
+              rehypeRewrite={(node) => {
+                if (node.type !== 'element' || node.tagName !== 'a') return;
+                const href = String(node.properties?.href ?? '');
+                if (/^https?:\/\//.test(href)) {
+                  node.properties = { ...node.properties, target: '_blank', rel: 'noopener noreferrer' };
+                }
+              }}
+            />
           </div>
         </div>
       </div>
@@ -9888,6 +9629,11 @@ export function App(): React.JSX.Element {
           {view === 'guida' && 'Guida'}
           {view === 'campaign-detail' && `Dettaglio Campagna / ${campaign?.name || '...'}`}
         </h2>
+        {view !== 'guida' && guidaLink(
+          view === 'invio-massivo-wizard'
+            ? (wizSingleMode ? GUIDA_WIZARD_SINGOLO : GUIDA_WIZARD_MASSIVO)
+            : (GUIDA_PER_VISTA[view] ?? ''),
+        )}
 
         <div className="bo-topbar-actions ms-auto d-flex align-items-center gap-3">
           <span className="bo-topbar-product">
@@ -17850,6 +17596,7 @@ export function App(): React.JSX.Element {
                         <div className="card-header bg-warning-subtle py-3 border-bottom">
                           <h3 className="h6 mb-0 fw-bold text-dark">
                             <AlertTriangle className="me-2" />PEC difformi da verificare ({pendingPecReview.length})
+                            {guidaLink('alcuni-destinatari-sono-pec-da-verificare')}
                           </h3>
                           <p className="small text-muted mb-0 mt-1">
                             Registro Imprese ha trovato una PEC diversa da quella già su file — invio bloccato finché non decidi quale usare.
@@ -19275,6 +19022,7 @@ export function App(): React.JSX.Element {
                             <h4 className="small fw-bold mb-2 text-danger">
                               <AlertTriangle className="me-1" />
                               Destinatari con invio fallito ({failureGroups.reduce((sum, g) => sum + g.count, 0)}) — raggruppati per motivo
+                              {guidaLink('alcuni-destinatari-risultano-fallito')}
                             </h4>
                             <div className="table-responsive" style={{ maxHeight: 300, overflowY: 'auto' }}>
                               <table className="table table-sm" style={{ tableLayout: 'fixed', minWidth: 480 }}>
@@ -19361,6 +19109,7 @@ export function App(): React.JSX.Element {
                                 <div className="d-flex align-items-center gap-2 fw-semibold text-primary">
                                   <Loader2 className="icon-spin" size={18} />
                                   <span>Verifica domicilio digitale (INAD/Registro Imprese, AgID/PDND) in corso…</span>
+                                  {guidaLink('la-campagna-resta-in-verifica-inad')}
                                 </div>
                                 <div className="d-flex align-items-center gap-2 flex-wrap">
                                   <button
