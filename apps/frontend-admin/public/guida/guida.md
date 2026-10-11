@@ -55,9 +55,9 @@ Le altre informazioni sono in riquadri da aprire con un clic:
 | Assetto societario e patrimonio | Durata della società, primo esercizio, sistema di amministrazione, collegio sindacale, controllo contabile, capitale sociale deliberato, sottoscritto e versato |
 | Altri dati | Fonte, tipo di soggetto e di impresa, data di inizio attività |
 
-I codici fiscali di amministratori e soci sono cliccabili: aprono la loro scheda per proseguire la ricerca. I riquadri compaiono solo se il Registro Imprese ha quei dati. Se trovi solo denominazione e PEC, è disponibile solo l'estratto ridotto.
+I codici fiscali di amministratori e soci sono cliccabili: aprono la loro scheda per proseguire la ricerca. Un riquadro manca solo se quel dato non esiste per l'impresa (es. i soci di una ditta individuale).
 
-L'estratto serve per consultazione interna e non sostituisce una visura camerale ufficiale. <!-- DA VERIFICARE: quando il Registro Imprese restituisce solo denominazione e PEC (estratto ridotto)? -->
+L'estratto serve per consultazione interna e non sostituisce una visura camerale ufficiale.
 
 ### Inviare una comunicazione a pochi destinatari
 
@@ -170,8 +170,8 @@ Per i canali che la richiedono (SEND) ComunicaPA protocolla in automatico, ma se
 
 Email, PEC e App IO non costano nulla per notifica. SEND e Posta sì:
 
-- **SEND**: un costo base per notifica, circa 1 euro, indipendente da contenuto e numero di pagine.
-- **Posta**: il costo reale del fornitore (tipo, peso, ricevuta di ritorno), noto solo dopo la spedizione.
+- **SEND**: un costo base per notifica, circa 1 euro, indipendente da contenuto e numero di pagine. Il costo compare nel dettaglio entro 7 giorni.
+- **Posta**: il costo reale del fornitore (tipo, peso, ricevuta di ritorno), che arriva circa 24–48 ore dopo la spedizione.
 
 Un destinatario dirottato su PEC non costa nulla in più. Il dettaglio della campagna mostra anche il risparmio stimato rispetto alla posta.
 
@@ -244,7 +244,7 @@ Da **Impostazioni** gli amministratori configurano server Email e PEC, App IO, S
 3. Se serve inviare subito, premi **Salta verifica e procedi** e conferma: si procede con i canali configurati nella campagna, senza dirottamento su PEC.
 4. Per fermare tutto premi **Annulla campagna**.
 
-**Apri un ticket se:** dopo **Riprova verifica** il conteggio non avanza per più di un'ora. <!-- DA VERIFICARE: soglia di attesa ragionevole per la verifica INAD -->
+**Apri un ticket se:** dopo **Riprova verifica** il conteggio non avanza per più di 30 minuti.
 
 ### Alcuni destinatari sono «PEC da verificare»
 
@@ -263,7 +263,7 @@ Da **Impostazioni** gli amministratori configurano server Email e PEC, App IO, S
 1. Leggi il motivo dell'errore.
 2. Se il problema era temporaneo (server non raggiungibile, limite di invio), premi **Rimetti in coda tutti** su quel gruppo.
 3. Se il problema è un indirizzo postale, correggilo con **Correggi indirizzo e rimetti in coda**.
-4. Se è un indirizzo email o PEC errato, verifica il destinatario con **Verifica Anagrafica** e invialo con un **Invio Manuale**. <!-- DA VERIFICARE: esiste una correzione dell'indirizzo email/PEC sul singolo destinatario? -->
+4. Se è un indirizzo email o PEC errato: sul destinatario non si può correggere. Verifica il recapito giusto con **Verifica Anagrafica** e invialo con un **Invio Manuale**.
 
 I destinatari di una campagna annullata non si possono rimettere in coda.
 
@@ -277,13 +277,13 @@ I destinatari di una campagna annullata non si possono rimettere in coda.
 
 **Apri un ticket se:** l'indirizzo è completo e corretto ma viene rifiutato.
 
-### Il costo della posta risulta zero
+### Il costo di posta o SEND risulta zero
 
-**Causa:** il costo della posta arriva dal fornitore qualche tempo dopo la spedizione. Fino ad allora il widget mostra 0 €.
+**Causa:** il costo reale arriva dopo la spedizione: circa 24–48 ore per la posta, fino a 7 giorni per SEND. Fino ad allora il widget **Costo Campagna** mostra 0 €.
 
 **Soluzione:** nessuna, non è un errore. Ricontrolla il dettaglio della campagna nei giorni successivi.
 
-**Apri un ticket se:** dopo una settimana dalla spedizione il costo è ancora 0 €. <!-- DA VERIFICARE: tempi reali di arrivo dei costi GlobalCom -->
+**Apri un ticket se:** il costo è ancora 0 € dopo 48 ore per la posta o dopo 7 giorni per SEND.
 
 ### Non riesco a modificare o eliminare una campagna
 
