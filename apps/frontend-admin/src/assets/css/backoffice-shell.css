@@ -2040,3 +2040,12 @@ pre#daemon-log-output {
   margin: 0 !important;
 }
 
+
+/* Guida operatori (vista Guida, Markdown di public/guida/guida.md) */
+.bo-guida .wmde-markdown {
+  font-family: inherit;
+}
+
+.bo-guida .wmde-markdown :is(h1, h2, h3, h4) {
+  scroll-margin-top: calc(var(--bo-topbar-height) + 16px);
+}

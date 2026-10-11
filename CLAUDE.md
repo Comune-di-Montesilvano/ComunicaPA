@@ -176,6 +176,10 @@ Quando si debugga un PDF/CSV reale fornito dall'utente, il testo dumpato va SEMP
 `.env` contiene SOLO bootstrap (porte, postgres, secret, LDAP, `CITIZEN_ORIGIN`). Da `CITIZEN_ORIGIN` il backend deriva i link email/PEC (`<origine>/api/...`) e la Redirect URI OIDC — chiavi registry `system.*` marcate `bootstrapOnly`: risolte solo env→default, mai DB né UI. Tutto il resto (branding, SMTP, PEC, App IO, SEND, OIDC, retention) vive nella tabella `app_settings` — si configura dalla UI admin (menu Impostazioni). `AppSettingsService.get()` risolve cache→DB→env→default; i secret sono cifrati AES-256-GCM con chiave derivata da `JWT_SECRET` (cambiarlo = reinserire i secret da UI). Chiavi e fallback env: `apps/backend/src/settings/settings.registry.ts`.
 
 
+## Guida operatori
+
+Unica fonte: `apps/frontend-admin/public/guida/guida.md` (Markdown, struttura comune delle guide integrate del Comune: Cos'è, Accesso, Operazioni frequenti, Regole e riferimenti, Problemi frequenti con Causa/Soluzione/Apri un ticket se, Contatti). La vista "Guida" dell'admin la scarica da `/guida/guida.md` e la rende con `MDEditor.Markdown` (HTML grezzo scartato); CruscottoPA la importa dallo stesso file su GitHub. **Ogni modifica visibile all'operatore aggiorna la guida nella stessa PR, con la data in testa.** Ancore = slug dei titoli (`guidaSlug`, `src/guida.ts`): bottone "?" della topbar per vista (`GUIDA_PER_VISTA`) e link contestuali `guidaLink('…')`; rinominare un titolo citato rompe `pnpm test` (`scripts/check-guida.mjs`, controlla anche titoli ripetuti e HTML nella guida). `<!-- DA VERIFICARE -->` = punti ancora da confermare.
+
 ## Documentazione dettagliata
 
 Il resto delle note (gotcha, incidenti reali, pattern verificati) è
