@@ -7,6 +7,8 @@ Dev: `synchronize` allinea lo schema automaticamente. Prod: le migration in `app
 ```bash
 docker compose exec postgres psql -U comunicapa -d comunicapa_db -c "CREATE DATABASE migration_gen;"
 PGPASS=$(docker compose exec postgres printenv POSTGRES_PASSWORD | tr -d '\r')
+# ATTENZIONE: typeorm-ts-node-commonjs è rotto col backend ESM (verificato su migration:run il 2026-10-13,
+# generate non verificato). Per eseguire le migration usare il DataSource su dist/ (vedi CLAUDE.md, sezione worktree).
 docker compose exec -e DATABASE_URL="postgresql://comunicapa:${PGPASS}@postgres:5432/migration_gen" backend node_modules/.bin/typeorm-ts-node-commonjs migration:run -d src/database/data-source.ts
 docker compose exec -e DATABASE_URL="postgresql://comunicapa:${PGPASS}@postgres:5432/migration_gen" backend node_modules/.bin/typeorm-ts-node-commonjs migration:generate src/database/migrations/NomeMigration -d src/database/data-source.ts
 docker compose exec postgres psql -U comunicapa -d comunicapa_db -c "DROP DATABASE migration_gen;"
@@ -121,3 +123,7 @@ tabella eventi); numero download mostrato = il maggiore tra le due fonti
 (`DOWNLOAD_COUNT_SQL`). Usarle ovunque: Statistiche, filtri/ordinamento/
 colonna del dettaglio campagna, report CSV download — mai `downloadCount`
 da solo.
+
+## Timestamp senza fuso letti come ora di Roma
+
+Le colonne `timestamp without time zone` (es. `notification_attempts.created_at`, default `now()` del DB, sessione Postgres in UTC) vengono lette da node-postgres come **ora locale del processo Node** — il container backend gira in `Europe/Rome`, quindi il `Date` risultante è 1-2 h nel passato (verificato: raw `2026-10-10 11:22:07` → `2026-10-10T09:22:07Z`). In SQL confrontare in UTC esplicito (`now() AT TIME ZONE 'UTC'`), in TS ricostruire l'istante con `fromUtcWallClock` (`legal-attention.util.ts`). Le colonne `timestamptz` (es. `sent_at`, `notification_reviews.created_at`) non hanno il problema. Altri punti del codice che confrontano o mostrano colonne senza fuso potrebbero avere lo stesso scarto: non ancora verificato.
