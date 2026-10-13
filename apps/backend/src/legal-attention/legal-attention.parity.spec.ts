@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import pg from 'pg';
+import { DataSource } from 'typeorm';
 import { legalAttentionClassifiedSql, legalAttentionOf, isLegalAttentionCampaign, fromUtcWallClock } from './legal-attention.util.js';
 import { postalLegalOutcome } from '../campaigns/postal-legal-outcome.util.js';
 
@@ -42,6 +42,19 @@ const FIXTURES: Fixture[] = [
   { key: 'p-no-receipt', campaign: 'postalFalse', attempts: [{ daysAgo: 50, postalStatus: 'InLavorazione' }], expected: 'excluded' },
 ];
 
+interface AttemptRow {
+  status: string;
+  error_message: string | null;
+  send_status: string | null;
+  send_status_history: Array<{ status: string; activeFrom: string }> | null;
+  postal_status: string | null;
+  postal_delivery_status: string | null;
+  postal_delivery_date: Date | null;
+  sent_at: Date | null;
+  postal_status_history: Array<{ codiceErrore?: string; descrizione?: string }> | null;
+  created_at: Date;
+}
+
 const CAMPAIGNS = {
   send: { channelType: 'SEND', channelConfig: {} },
   postalBool: { channelType: 'POSTAL', channelConfig: { postalServiceType: 'RaccomandataMarket4', postalReturnReceipt: true } },
@@ -51,13 +64,14 @@ const CAMPAIGNS = {
 
 describe.skipIf(!process.env.DATABASE_URL)('legal-attention — parità TS/SQL su Postgres', () => {
   it('ogni caso della tabella di classificazione dà lo stesso risultato in TS e in SQL', async () => {
-    const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    const ds = await new DataSource({ type: 'postgres', url: process.env.DATABASE_URL }).initialize();
+    const client = ds.createQueryRunner();
     await client.connect();
     try {
-      await client.query('BEGIN');
+      await client.startTransaction();
       const campaignIds: Record<string, string> = {};
       for (const [key, c] of Object.entries(CAMPAIGNS)) {
-        const { rows } = await client.query(
+        const rows: Array<{ id: string }> = await client.query(
           `INSERT INTO campaigns (id, name, status, channel_type, channel_config, created_by, is_test)
            VALUES (gen_random_uuid(), $1, 'completed', $2, $3::jsonb, 'parity-test', false) RETURNING id`,
           [`PARITY ${key}`, c.channelType, JSON.stringify(c.channelConfig)],
@@ -66,7 +80,7 @@ describe.skipIf(!process.env.DATABASE_URL)('legal-attention — parità TS/SQL s
       }
       const recipientIds: Record<string, string> = {};
       for (const f of FIXTURES) {
-        const { rows } = await client.query(
+        const rows: Array<{ id: string }> = await client.query(
           `INSERT INTO recipients (id, campaign_id, codice_fiscale, full_name, status)
            VALUES (gen_random_uuid(), $1, 'RSSMRA80A01H501U', $2, $3) RETURNING id`,
           [campaignIds[f.campaign], `ROSSI MARIO ${f.key}`, f.recipientStatus ?? 'sent'],
@@ -84,16 +98,16 @@ describe.skipIf(!process.env.DATABASE_URL)('legal-attention — parità TS/SQL s
       }
 
       const ids = Object.values(campaignIds);
-      const { rows: sqlRows } = await client.query(
+      const sqlRows: Array<{ recipient_id: string; kind: string | null }> = await client.query(
         `SELECT recipient_id, kind FROM (${legalAttentionClassifiedSql('r.campaign_id = ANY($1::uuid[])')}) x`,
         [ids],
       );
-      const sqlKind = new Map(sqlRows.map((r) => [r.recipient_id as string, (r.kind as string | null) ?? null]));
+      const sqlKind = new Map(sqlRows.map((r) => [r.recipient_id, r.kind ?? null]));
 
       const now = new Date();
       for (const f of FIXTURES) {
         const id = recipientIds[f.key];
-        const { rows: attempts } = await client.query(
+        const attempts: AttemptRow[] = await client.query(
           `SELECT status, error_message, send_status, send_status_history, postal_status, postal_delivery_status, postal_delivery_date, sent_at, postal_status_history, created_at
            FROM notification_attempts WHERE recipient_id = $1 ORDER BY attempt_number`,
           [id],
@@ -131,8 +145,9 @@ describe.skipIf(!process.env.DATABASE_URL)('legal-attention — parità TS/SQL s
         }
       }
     } finally {
-      await client.query('ROLLBACK');
-      await client.end();
+      await client.rollbackTransaction();
+      await client.release();
+      await ds.destroy();
     }
   });
 });
