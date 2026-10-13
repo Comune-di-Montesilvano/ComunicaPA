@@ -151,6 +151,17 @@ Se una notifica già presa in visione come ferma riceve in seguito un esito bloc
 
 Dalla voce **Template** salvi oggetti e testi da riusare negli invii. Un template email può essere collegato a un template App IO «gemello», usato per la notifica App IO abbinata.
 
+### Firmare gli allegati SEND
+
+Se la verifica firma segnala allegati non firmati validamente:
+
+- **Invio massivo, Passo 6:** nel riquadro arancione scegli
+  - **Firma con Aruba**: inserisci utente e password della firma remota, genera l'OTP e premi **Firma**. Un solo OTP firma tutti i file; al termine la verifica riparte da sola.
+  - **Scarica ZIP da firmare**: firma i PDF con il tuo programma (firma PAdES, il file resta un PDF), poi **Carica firmati** con lo ZIP o il singolo PDF. I nomi possono restare uguali o avere il suffisso `-signed` / `_firmato`.
+- **Invio Manuale:** se l'allegato non è firmato compare la scelta **Firma con Aruba**, **Invia comunque** o **Annulla**. Dopo la firma l'invio prosegue da solo.
+
+La firma con Aruba compare solo se attivata in **Impostazioni → Firma remota (Aruba)**.
+
 ## Regole e riferimenti
 
 ### Quale canale scegliere
@@ -314,7 +325,7 @@ I destinatari di una campagna annullata non si possono rimettere in coda.
 
 **Causa:** per le campagne SEND massive ComunicaPA verifica la firma digitale di ogni allegato. Il messaggio compare quando uno o più PDF non hanno una firma digitale valida (per esempio documenti con firma autografa a stampa).
 
-**Soluzione:** sostituisci gli allegati con quelli firmati al Passo 5. Se devi inviare comunque, premi **Conferma ed Avvia Campagna** e conferma l'avviso: l'invio parte sotto la tua responsabilità e la forzatura resta registrata nel registro attività. Senza firma valida la notifica può essere contestata.
+**Soluzione:** firma gli allegati dal riquadro (vedi [Firmare gli allegati SEND](#firmare-gli-allegati-send)). Se devi inviare comunque, premi **Conferma ed Avvia Campagna** e conferma l'avviso: l'invio parte sotto la tua responsabilità e la forzatura resta registrata nel registro attività. Senza firma valida la notifica può essere contestata.
 
 **Apri un ticket se:** il messaggio «Verifica firma digitale allegati in corso…» resta visibile per più di qualche minuto.
 
@@ -325,6 +336,22 @@ I destinatari di una campagna annullata non si possono rimettere in coda.
 **Soluzione:** nessuna. La data legale si legge nel dettaglio della notifica.
 
 **Apri un ticket se:** la notifica risulta irreperibile e dopo 45 giorni non ha ancora una data legale nel dettaglio.
+
+### Firma con Aruba: «Sessione scaduta dopo X file»
+
+**Causa:** la sessione di firma Aruba ha una durata limitata; con molti file può scadere prima della fine.
+
+**Soluzione:** premi di nuovo **Firma con Aruba** e inserisci un nuovo OTP: vengono firmati solo i file rimasti.
+
+**Apri un ticket se:** la sessione scade sempre entro i primi file.
+
+### Firma con Aruba: «Credenziali o OTP non validi» o «Dominio non abilitato»
+
+**Causa:** utente, password o OTP errati (l'OTP scade in pochi secondi), oppure il dominio in Impostazioni non corrisponde alla tua firma.
+
+**Soluzione:** genera l'OTP subito prima di premere **Firma**. Per il dominio chiedi all'amministratore di verificare **Impostazioni → Firma remota** con **Prova firma**.
+
+**Apri un ticket se:** la **Prova firma** fallisce con credenziali corrette.
 
 ### Non riesco a modificare o eliminare una campagna
 
