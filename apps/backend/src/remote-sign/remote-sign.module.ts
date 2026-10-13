@@ -9,6 +9,8 @@ import { ArubaSignClient } from './aruba-sign.client.js';
 import { RemoteSignService } from './remote-sign.service.js';
 import { RemoteSignProcessor } from './remote-sign.processor.js';
 import { RemoteSignController } from './remote-sign.controller.js';
+import { SignedAttachmentsController } from './signed-attachments.controller.js';
+import { SignedAttachmentsService } from './signed-attachments.service.js';
 import { RemoteSignReconcileService } from './remote-sign-reconcile.service.js';
 import { REMOTE_SIGN_QUEUE } from './remote-sign-job.types.js';
 
@@ -19,8 +21,8 @@ import { REMOTE_SIGN_QUEUE } from './remote-sign-job.types.js';
     BullModule.registerQueue({ name: REMOTE_SIGN_QUEUE }),
     AuditLogsModule,
   ],
-  controllers: [RemoteSignController],
-  providers: [ArubaSignClient, RemoteSignService, RemoteSignProcessor, RemoteSignReconcileService],
+  controllers: [RemoteSignController, SignedAttachmentsController],
+  providers: [ArubaSignClient, RemoteSignService, RemoteSignProcessor, RemoteSignReconcileService, SignedAttachmentsService],
   exports: [RemoteSignService],
 })
 export class RemoteSignModule {}
