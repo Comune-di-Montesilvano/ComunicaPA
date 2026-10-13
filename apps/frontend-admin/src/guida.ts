@@ -28,6 +28,7 @@ export function guidaSections(markdown: string): Array<{ id: string; title: stri
 // Sezione della guida aperta dal bottone "?" della topbar, per vista.
 // Le viste senza voce aprono la guida dall'inizio.
 export const GUIDA_PER_VISTA: Record<string, string> = {
+  dashboard: 'gestire-le-notifiche-senza-esito-legale',
   'invio-massivo': 'seguire-lo-stato-di-una-campagna',
   'campaign-detail': 'seguire-lo-stato-di-una-campagna',
   'notifiche-ricerca': 'cercare-una-singola-notifica',

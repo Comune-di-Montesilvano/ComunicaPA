@@ -122,6 +122,23 @@ Per una notifica SEND, nel dettaglio apri **Documenti SEND** e premi **Carica do
 
 Il perfezionamento per decorrenza dei termini non genera un documento: la data compare nel percorso della notifica.
 
+### Gestire le notifiche senza esito legale
+
+In **Dashboard** il riquadro **Notifiche senza esito legale** elenca, per campagna, le notifiche SEND e le raccomandate con ricevuta di ritorno (o atti giudiziari) che non arriveranno a una data legale di notifica. Ogni operatore vede le campagne che ha creato; gli amministratori le vedono tutte.
+
+Le notifiche segnalate sono di due tipi:
+
+- **Esito bloccante**: la notifica non andrà a buon fine, ad esempio destinatario deceduto o sconosciuto, indirizzo errato, notifica rifiutata o annullata da SEND. Compare subito.
+- **Ferma da oltre 45 giorni**: dopo 45 giorni dal primo invio non c'è ancora una data legale.
+
+1. Premi sulla campagna per aprire l'elenco delle notifiche.
+2. Seleziona le notifiche e scegli:
+   - **Presa visione**, per confermare di averle viste: escono dall'elenco;
+   - **Posticipa**, solo per le notifiche ferme, di 15, 30 o 45 giorni o fino a una data a scelta: ricompaiono alla scadenza se sono ancora senza esito.
+3. Puoi aggiungere una nota, ad esempio come hai proceduto. Ogni azione resta registrata con nome e data.
+
+Se una notifica già presa in visione come ferma riceve in seguito un esito bloccante, ricompare. Premi sul nome del destinatario per aprire il dettaglio della notifica.
+
 ### Verificare i domicili digitali di un elenco
 
 **Verifica Domicili Digitali** controlla un elenco intero senza inviare nulla.
@@ -292,6 +309,14 @@ I destinatari di una campagna annullata non si possono rimettere in coda.
 **Soluzione:** nessuna, non è un errore. Ricontrolla il dettaglio della campagna nei giorni successivi.
 
 **Apri un ticket se:** il costo è ancora 0 € dopo 48 ore per la posta o dopo 7 giorni per SEND.
+
+### Una notifica SEND irreperibile non compare tra le segnalazioni
+
+**Causa:** per SEND il destinatario irreperibile non blocca la notifica: la piattaforma la perfeziona comunque e assegna una data legale. Non è quindi una notifica senza esito.
+
+**Soluzione:** nessuna. La data legale si legge nel dettaglio della notifica.
+
+**Apri un ticket se:** la notifica risulta irreperibile e dopo 45 giorni non ha ancora una data legale nel dettaglio.
 
 ### Non riesco a modificare o eliminare una campagna
 
