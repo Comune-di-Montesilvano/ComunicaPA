@@ -88,6 +88,58 @@ describe('LegalAttentionService', () => {
     });
   });
 
+  describe('getSummary — cache', () => {
+    const row = { campaign_id: 'c1', name: 'TARI 2026', channel_type: 'SEND', created_by: 'mrossi', blocking_count: 1, stale_count: 0 };
+
+    it('seconda chiamata entro 60s dallo stesso utente: nessuna nuova query', async () => {
+      recipientRepo.query.mockResolvedValue([row]);
+      await service.getSummary(OPERATOR);
+      const again = await service.getSummary(OPERATOR);
+      expect(recipientRepo.query).toHaveBeenCalledTimes(1);
+      expect(again.items[0].blockingCount).toBe(1);
+    });
+
+    it('cache separata per utente', async () => {
+      recipientRepo.query.mockResolvedValue([row]);
+      await service.getSummary(OPERATOR);
+      await service.getSummary(ADMIN);
+      expect(recipientRepo.query).toHaveBeenCalledTimes(2);
+    });
+
+    it('refresh scavalca la cache', async () => {
+      recipientRepo.query.mockResolvedValue([row]);
+      await service.getSummary(OPERATOR);
+      await service.getSummary(OPERATOR, { refresh: true });
+      expect(recipientRepo.query).toHaveBeenCalledTimes(2);
+    });
+
+    it('scaduta dopo 60s', async () => {
+      vi.useFakeTimers();
+      try {
+        recipientRepo.query.mockResolvedValue([row]);
+        await service.getSummary(OPERATOR);
+        vi.advanceTimersByTime(60_001);
+        await service.getSummary(OPERATOR);
+        expect(recipientRepo.query).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('una presa visione applicata svuota la cache di tutti', async () => {
+      recipientRepo.query.mockResolvedValue([row]);
+      await service.getSummary(OPERATOR);
+      await service.getSummary(ADMIN);
+      recipientRepo.find.mockResolvedValueOnce([recipient('r1')]);
+      attemptRepo.find.mockResolvedValueOnce([attempt('r1', { sendStatus: 'REFUSED' })]);
+      reviewRepo.find.mockResolvedValueOnce([]);
+      await service.applyReviews({ recipientIds: ['r1'], action: 'ack' }, OPERATOR);
+      await service.getSummary(OPERATOR);
+      await service.getSummary(ADMIN);
+      expect(recipientRepo.query).toHaveBeenCalledTimes(4);
+    });
+  });
+
   describe('getCampaignItems', () => {
     it('404 se la campagna non esiste o è fuori perimetro', async () => {
       campaignRepo.findOneBy.mockResolvedValueOnce(null);

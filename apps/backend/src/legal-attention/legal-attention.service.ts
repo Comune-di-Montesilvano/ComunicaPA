@@ -75,10 +75,18 @@ const DAY_MS = 86_400_000;
 const MAX_SNOOZE_DAYS = 366;
 const MAX_PAGE_SIZE = 200;
 const EXCLUDED_RECIPIENT_STATUSES = ['cancelled', 'skipped'];
+/**
+ * Cache in memoria del riepilogo per utente: la query lavora su tutti i
+ * destinatari delle campagne legali. Valida a singola istanza backend (come
+ * gli eventi SSE dell'arricchimento); svuotata da ogni review applicata, il
+ * pulsante "Aggiorna" la scavalca con refresh.
+ */
+const SUMMARY_CACHE_TTL_MS = 60_000;
 
 @Injectable()
 export class LegalAttentionService {
   private readonly logger = new Logger(LegalAttentionService.name);
+  private readonly summaryCache = new Map<string, { at: number; value: { items: LegalAttentionSummaryItem[] } }>();
 
   constructor(
     @InjectRepository(Campaign) private readonly campaignRepo: Repository<Campaign>,
@@ -90,8 +98,12 @@ export class LegalAttentionService {
     private readonly auditLogs: AuditLogsService,
   ) {}
 
-  async getSummary(user: LegalAttentionUser): Promise<{ items: LegalAttentionSummaryItem[] }> {
+  async getSummary(user: LegalAttentionUser, opts: { refresh?: boolean } = {}): Promise<{ items: LegalAttentionSummaryItem[] }> {
     const isAdmin = user.role === 'admin';
+    const cacheKey = isAdmin ? 'admin' : `user:${user.username}`;
+    const cached = this.summaryCache.get(cacheKey);
+    if (!opts.refresh && cached && Date.now() - cached.at < SUMMARY_CACHE_TTL_MS) return cached.value;
+
     const params: unknown[] = isAdmin ? [] : [user.username];
     const rows: Array<{ campaign_id: string; name: string; channel_type: string; created_by: string; blocking_count: number; stale_count: number }> =
       await this.recipientRepo.query(
@@ -105,7 +117,7 @@ export class LegalAttentionService {
         params,
       );
     const names = await this.operatorDirectory.resolveMany(rows.map((r) => r.created_by));
-    return {
+    const value = {
       items: rows.map((r) => ({
         campaignId: r.campaign_id,
         name: r.name,
@@ -116,6 +128,8 @@ export class LegalAttentionService {
         staleCount: Number(r.stale_count),
       })),
     };
+    this.summaryCache.set(cacheKey, { at: Date.now(), value });
+    return value;
   }
 
   async getCampaignItems(campaignId: string, user: LegalAttentionUser, page: number, pageSize: number): Promise<{ items: LegalAttentionItem[]; total: number }> {
@@ -213,6 +227,7 @@ export class LegalAttentionService {
 
     if (toSave.length > 0) {
       await this.reviewRepo.save(toSave);
+      this.summaryCache.clear();
       const byCampaign = new Map<string, { campaign: Campaign; recipientIds: string[] }>();
       for (const r of toSave) {
         const ctx = contexts.get(r.recipientId)!;

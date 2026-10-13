@@ -16,8 +16,8 @@ export class LegalAttentionController {
   constructor(private readonly service: LegalAttentionService) {}
 
   @Get()
-  getSummary(@Req() req: OperatorRequest) {
-    return this.service.getSummary(userOf(req));
+  getSummary(@Query('refresh') refresh: string | undefined, @Req() req: OperatorRequest) {
+    return this.service.getSummary(userOf(req), { refresh: refresh === '1' || refresh === 'true' });
   }
 
   @Get('campaigns/:id')

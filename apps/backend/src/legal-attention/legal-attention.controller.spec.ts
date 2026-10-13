@@ -18,10 +18,12 @@ describe('LegalAttentionController', () => {
     controller = module.get(LegalAttentionController);
   });
 
-  it('summary delega con utente', async () => {
-    svc.getSummary.mockResolvedValueOnce({ items: [] });
-    await expect(controller.getSummary(req)).resolves.toEqual({ items: [] });
-    expect(svc.getSummary).toHaveBeenCalledWith({ username: 'mrossi', role: 'user' });
+  it('summary delega con utente; refresh=1 scavalca la cache', async () => {
+    svc.getSummary.mockResolvedValue({ items: [] });
+    await expect(controller.getSummary(undefined, req)).resolves.toEqual({ items: [] });
+    expect(svc.getSummary).toHaveBeenCalledWith({ username: 'mrossi', role: 'user' }, { refresh: false });
+    await controller.getSummary('1', req);
+    expect(svc.getSummary).toHaveBeenLastCalledWith({ username: 'mrossi', role: 'user' }, { refresh: true });
   });
 
   it('campaign items: page/pageSize numerici con default', async () => {
