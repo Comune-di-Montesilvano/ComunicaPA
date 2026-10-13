@@ -32,9 +32,13 @@ export class SignedAttachmentsService {
     const zip = new AdmZip();
     for (const f of toSign) {
       const path = join(getUploadsDir(campaignId), f);
-      if (fs.existsSync(path)) zip.addLocalFile(path);
+      if (!fs.existsSync(path)) continue;
+      // STORED: i PDF sono già compressi, deflate costa CPU senza guadagno.
+      zip.addFile(f, await fs.promises.readFile(path));
+      const entry = zip.getEntry(f);
+      if (entry) entry.header.method = 0;
     }
-    return zip.toBuffer();
+    return zip.toBufferPromise();
   }
 
   /**
@@ -48,42 +52,53 @@ export class SignedAttachmentsService {
     uploadedPath: string,
     uploadedName: string,
   ): Promise<{ replaced: number; rejected: Array<{ file: string; reason: string }> } | { error: string }> {
-    const campaign = await this.remoteSign.assertCanModify(campaignId, requester);
-    if (await this.remoteSign.hasActiveJob(campaignId)) {
-      fs.rmSync(uploadedPath, { force: true });
-      return { error: 'Firma remota in corso: attendi la fine prima di ricaricare' };
-    }
-    const tmp = fs.mkdtempSync(join(os.tmpdir(), 'comunicapa-signed-'));
+    let tmp: string | null = null;
     try {
+      const campaign = await this.remoteSign.assertCanModify(campaignId, requester);
+      if (await this.remoteSign.hasActiveJob(campaignId)) {
+        return { error: 'Firma remota in corso: attendi la fine prima di ricaricare' };
+      }
+      tmp = fs.mkdtempSync(join(os.tmpdir(), 'comunicapa-signed-'));
       let names: string[];
       if (uploadedName.toLowerCase().endsWith('.zip')) {
-        // Elenco completo (anche non-PDF/.p7m, che extractZipWithYauzl salta
-        // in silenzio) per poterli riportare come rifiutati col motivo.
-        names = new AdmZip(uploadedPath).getEntries()
-          .filter((e) => !e.isDirectory)
-          .map((e) => flattenZipEntryName(e.entryName));
-        await extractZipWithYauzl(uploadedPath, tmp);
+        try {
+          // Elenco completo (anche non-PDF/.p7m, che extractZipWithYauzl salta
+          // in silenzio) per poterli riportare come rifiutati col motivo.
+          names = new AdmZip(uploadedPath).getEntries()
+            .filter((e) => !e.isDirectory)
+            .map((e) => flattenZipEntryName(e.entryName));
+          await extractZipWithYauzl(uploadedPath, tmp);
+        } catch {
+          return { error: 'ZIP non valido o danneggiato' };
+        }
       } else {
         names = [uploadedName];
         fs.copyFileSync(uploadedPath, join(tmp, uploadedName));
       }
 
       const { toSign, alreadyValid } = await this.remoteSign.listFilesToSign(campaignId);
-      const { matched, rejected } = matchSignedFiles(names, toSign, alreadyValid);
+      const { matched, rejected: matchRejected } = matchSignedFiles(names, toSign, alreadyValid);
+      const rejected = [...matchRejected];
+      let replaced = 0;
       for (const m of matched) {
-        replaceAttachment(campaignId, m.original, fs.readFileSync(join(tmp, m.uploaded)));
+        try {
+          replaceAttachment(campaignId, m.original, fs.readFileSync(join(tmp, m.uploaded)));
+          replaced++;
+        } catch {
+          rejected.push({ file: m.uploaded, reason: 'Errore durante il salvataggio del file' });
+        }
       }
-      if (matched.length > 0) await this.verificationBulk.startForCampaign(campaignId);
+      if (replaced > 0) await this.verificationBulk.startForCampaign(campaignId);
       await this.audit.log({
         campaignId,
         campaignName: campaign.name ?? null,
         operator: requester.username,
         action: 'UPLOAD_SIGNED_ATTACHMENTS',
-        details: { filename: uploadedName, replaced: matched.length, rejected: rejected.length },
+        details: { filename: uploadedName, replaced, rejected: rejected.length },
       });
-      return { replaced: matched.length, rejected };
+      return { replaced, rejected };
     } finally {
-      fs.rmSync(tmp, { recursive: true, force: true });
+      if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
       fs.rmSync(uploadedPath, { force: true });
     }
   }

@@ -46,6 +46,7 @@ describe('SignedAttachmentsService', () => {
     expect(Buffer.isBuffer(zip)).toBe(true);
     const names = new AdmZip(zip as Buffer).getEntries().map((e) => e.entryName).sort();
     expect(names).toEqual(['A.pdf', 'B.pdf']);
+    expect(new AdmZip(zip as Buffer).getEntries().every((e) => e.header.method === 0)).toBe(true);
   });
 
   it('buildUnsignedZip con verifica non conclusa → error', async () => {
@@ -106,5 +107,40 @@ describe('SignedAttachmentsService', () => {
     await expect(svc.applySignedUpload(CAMPAIGN, ADMIN, pdfPath, 'A.pdf'))
       .resolves.toEqual({ error: 'Firma remota in corso: attendi la fine prima di ricaricare' });
     expect(fs.readFileSync(join(getUploadsDir(CAMPAIGN), 'A.pdf'), 'utf8')).toBe('orig-A.pdf');
+  });
+
+  it('assertCanModify rifiuta → errore e file caricato rimosso', async () => {
+    const { svc, remoteSign } = build();
+    remoteSign.assertCanModify.mockRejectedValueOnce(new Error('403'));
+    const pdfPath = join(scratch, 'upload.bin');
+    fs.writeFileSync(pdfPath, 'x');
+    await expect(svc.applySignedUpload(CAMPAIGN, ADMIN, pdfPath, 'A.pdf')).rejects.toThrow('403');
+    expect(fs.existsSync(pdfPath)).toBe(false);
+  });
+
+  it('ZIP corrotto → error, uploads invariati', async () => {
+    const { svc } = build();
+    const zipPath = join(scratch, 'x.zip');
+    fs.writeFileSync(zipPath, Buffer.from('questo non e uno zip'));
+    await expect(svc.applySignedUpload(CAMPAIGN, ADMIN, zipPath, 'x.zip'))
+      .resolves.toEqual({ error: 'ZIP non valido o danneggiato' });
+    expect(fs.readFileSync(join(getUploadsDir(CAMPAIGN), 'A.pdf'), 'utf8')).toBe('orig-A.pdf');
+    expect(fs.existsSync(zipPath)).toBe(false);
+  });
+
+  it('errore di salvataggio su un file: gli altri sostituiti, nuova verifica avviata', async () => {
+    const { svc, bulk } = build();
+    // B.pdf diventa una cartella → replaceAttachment lancia
+    fs.rmSync(join(getUploadsDir(CAMPAIGN), 'B.pdf'));
+    fs.mkdirSync(join(getUploadsDir(CAMPAIGN), 'B.pdf'));
+    const zip = new AdmZip();
+    zip.addFile('A.pdf', Buffer.from('firmato-A'));
+    zip.addFile('B.pdf', Buffer.from('firmato-B'));
+    const zipPath = join(scratch, 'f.zip');
+    zip.writeZip(zipPath);
+    const res = await svc.applySignedUpload(CAMPAIGN, ADMIN, zipPath, 'f.zip');
+    expect(res).toEqual({ replaced: 1, rejected: [{ file: 'B.pdf', reason: 'Errore durante il salvataggio del file' }] });
+    expect(fs.readFileSync(join(getUploadsDir(CAMPAIGN), 'A.pdf'), 'utf8')).toBe('firmato-A');
+    expect(bulk.startForCampaign).toHaveBeenCalledWith(CAMPAIGN);
   });
 });

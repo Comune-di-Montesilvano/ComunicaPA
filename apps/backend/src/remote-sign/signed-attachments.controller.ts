@@ -13,12 +13,16 @@ import {
   MAX_CHUNK_SIZE_BYTES,
   safeChunkUploadDir,
 } from '../campaigns/chunked-upload.util.js';
+import { RemoteSignService } from './remote-sign.service.js';
 import { SignedAttachmentsService } from './signed-attachments.service.js';
 
 @Controller('admin/campaigns/:id')
 @Roles('user', 'admin')
 export class SignedAttachmentsController {
-  constructor(private readonly service: SignedAttachmentsService) {}
+  constructor(
+    private readonly service: SignedAttachmentsService,
+    private readonly remoteSign: RemoteSignService,
+  ) {}
 
   @Get('signature/unsigned.zip')
   async download(
@@ -85,7 +89,10 @@ export class SignedAttachmentsController {
     @Param('uploadId') uploadId: string,
     @Req() req: Request & { user: JwtOperatorPayload },
   ) {
+    const requester = { username: req.user.username, role: req.user.role };
+    // Permessi PRIMA di assemblare: niente file su disco per chi non può modificare.
+    await this.remoteSign.assertCanModify(id, requester);
     const { path, filename } = await assembleChunkedUpload(uploadId);
-    return this.service.applySignedUpload(id, { username: req.user.username, role: req.user.role }, path, filename);
+    return this.service.applySignedUpload(id, requester, path, filename);
   }
 }
