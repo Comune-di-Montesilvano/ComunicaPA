@@ -46,6 +46,13 @@ export const SETTING_DEFS = {
   'pec.user': { env: 'PEC_USER', type: 'string', default: '' },
   'pec.password': { env: 'PEC_PASSWORD', type: 'string', secret: true, default: '' },
   'pec.from': { env: 'PEC_FROM', type: 'string', default: 'noreply@pec.comunicapa.local' },
+  // Firma remota Aruba (ARSS): solo parametri di servizio. Credenziali e OTP
+  // del firmatario si digitano al momento e non vengono mai salvati.
+  'remoteSign.enabled': { type: 'boolean', default: false },
+  'remoteSign.wsdlUrl': { type: 'string', default: 'https://arss.arubapec.it/ArubaSignService/ArubaSignService?wsdl' },
+  'remoteSign.otpDomain': { type: 'string', default: 'firma' },
+  'remoteSign.typeHsm': { type: 'string', default: 'COSIGN' },
+  'remoteSign.certId': { type: 'string', default: 'AS0' },
   'send.environment': { env: 'SEND_ENVIRONMENT', type: 'string', default: 'collaudo' },
   'send.test.baseUrl': { type: 'string', default: 'https://api.uat.notifichedigitali.it' },
   // Autenticazione reale verso PN (api.notifichedigitali.it): OGNI chiamata
