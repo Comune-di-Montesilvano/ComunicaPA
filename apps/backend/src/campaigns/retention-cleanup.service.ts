@@ -7,7 +7,7 @@ import { unlink, rm, readdir } from 'fs/promises';
 import { Recipient } from '../entities/recipient.entity.js';
 import { Campaign } from '../entities/campaign.entity.js';
 import { resolveAttachmentsConfig, resolveCustomAttachmentFilename } from '../attachments/attachment.service.js';
-import { getUploadsDir, getAttachmentsRoot } from '../attachments/attachment-paths.js';
+import { getUploadsDir, getUnsignedBackupDir, getAttachmentsRoot } from '../attachments/attachment-paths.js';
 
 const BATCH_SIZE = 200;
 
@@ -51,6 +51,7 @@ export class RetentionCleanupService {
       if (exists) continue;
       try {
         await rm(getUploadsDir(campaignId), { recursive: true, force: true });
+        await rm(getUnsignedBackupDir(campaignId), { recursive: true, force: true });
         removed++;
       } catch {
         this.logger.warn(`Cartella allegati orfana non eliminabile: ${campaignId}`);

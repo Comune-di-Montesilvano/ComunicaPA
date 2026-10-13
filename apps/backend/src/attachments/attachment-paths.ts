@@ -13,6 +13,15 @@ export function getUploadsDir(campaignId: string): string {
   return join(getAttachmentsRoot(), 'uploads', campaignId);
 }
 
+/**
+ * Originali sostituiti da una versione firmata (firma remota o ricarico ZIP).
+ * Cartella SORELLA di uploads, mai dentro: finalizeAttachments() cancella
+ * ogni voce di uploads non referenziata dal CSV, sottocartelle comprese.
+ */
+export function getUnsignedBackupDir(campaignId: string): string {
+  return join(getAttachmentsRoot(), 'unsigned-backup', campaignId);
+}
+
 // Stesso principio di isValidUploadId/UPLOAD_ID_PATTERN in
 // chunked-upload.util.ts, applicato a `:id` (campagna): l'entity
 // (Campaign.id, @PrimaryGeneratedColumn('uuid')) è sempre un UUID —

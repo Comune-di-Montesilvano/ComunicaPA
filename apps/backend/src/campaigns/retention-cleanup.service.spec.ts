@@ -85,8 +85,11 @@ describe('RetentionCleanupService', () => {
 
       await service.runOrphanCleanup();
 
-      expect(fs.rm).toHaveBeenCalledTimes(1);
-      expect(fs.rm).toHaveBeenCalledWith(expect.stringContaining('c-orfana'), { recursive: true, force: true });
+      // uploads/<id> + unsigned-backup/<id> della sola campagna orfana
+      expect(fs.rm).toHaveBeenCalledTimes(2);
+      expect(fs.rm).toHaveBeenCalledWith(expect.stringContaining('uploads'), { recursive: true, force: true });
+      expect(fs.rm).toHaveBeenCalledWith(expect.stringContaining('unsigned-backup'), { recursive: true, force: true });
+      for (const call of (fs.rm as jest.Mock).mock.calls) expect(call[0]).toContain('c-orfana');
     });
 
     it('non fa nulla se uploads/ non esiste ancora', async () => {

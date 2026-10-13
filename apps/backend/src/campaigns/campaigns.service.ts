@@ -14,7 +14,7 @@ import type { AppConfiguration } from '../config/configuration.js';
 import { AppSettingsService } from '../settings/app-settings.service.js';
 import { processTemplate, wrapInHtmlLayout, hasValidAttachmentPlaceholders, resolveCitizenPortalUrl, buildParallelChannelNotice, formatAppIoMarkdown } from '../channels/template.helper.js';
 import { getEffectiveRetentionDays } from './retention.util.js';
-import { getUploadsDir } from '../attachments/attachment-paths.js';
+import { getUploadsDir, getUnsignedBackupDir } from '../attachments/attachment-paths.js';
 import { resolveAttachmentsConfig, resolveAttachmentLabel, resolveCustomAttachmentFilename } from '../attachments/attachment.service.js';
 import { resolveSubjectTemplate } from '../channels/subject-mapping.util.js';
 import { resolveExternalId } from '../channels/external-id-mapping.util.js';
@@ -3918,9 +3918,11 @@ export class CampaignsService {
       }
       await this.campaignRepo.delete(linkedTestCampaign.id);
       await fs.promises.rm(getUploadsDir(linkedTestCampaign.id), { recursive: true, force: true });
+      await fs.promises.rm(getUnsignedBackupDir(linkedTestCampaign.id), { recursive: true, force: true });
     }
 
     await fs.promises.rm(getUploadsDir(campaignId), { recursive: true, force: true });
+    await fs.promises.rm(getUnsignedBackupDir(campaignId), { recursive: true, force: true });
     await this.campaignRepo.delete(campaignId);
 
     return { deleted: true };

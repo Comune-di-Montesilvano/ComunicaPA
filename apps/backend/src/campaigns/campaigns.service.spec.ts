@@ -27,6 +27,7 @@ import { getUploadsDir } from '../attachments/attachment-paths.js';
 const tmpDirRef = { dir: '' };
 vi.mock('../attachments/attachment-paths', () => ({
   getUploadsDir: jest.fn(() => tmpDirRef.dir),
+  getUnsignedBackupDir: jest.fn((id: string) => `/tmp/comunicapa-nonexistent-unsigned-backup/${id}`),
 }));
 
 

@@ -5,7 +5,7 @@ import { In, Repository } from 'typeorm';
 import { Campaign, CampaignStatus } from '../entities/campaign.entity.js';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity.js';
 import { NotificationAttempt } from '../entities/notification-attempt.entity.js';
-import { getUploadsDir } from '../attachments/attachment-paths.js';
+import { getUploadsDir, getUnsignedBackupDir } from '../attachments/attachment-paths.js';
 
 /**
  * Estratto da notification.processor.ts (era privato lì, chiamato solo dal
@@ -89,6 +89,7 @@ export class CampaignCompletionService {
 
     try {
       fs.rmSync(getUploadsDir(child.id), { recursive: true, force: true });
+      fs.rmSync(getUnsignedBackupDir(child.id), { recursive: true, force: true });
     } catch {
       // best-effort: cartella già assente non è un errore
     }
