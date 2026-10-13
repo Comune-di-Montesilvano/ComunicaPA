@@ -11,6 +11,7 @@ import { OperatorDirectoryService } from '../operator-directory/operator-directo
 import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
 import { postalLegalOutcome } from '../campaigns/postal-legal-outcome.util.js';
 import {
+  fromUtcWallClock,
   isLegalAttentionCampaign,
   isReviewOpen,
   legalAttentionFlaggedSql,
@@ -44,7 +45,7 @@ export interface LegalAttentionItem {
   firstAttemptAt: string | null;
   iun: string | null;
   postalCode: string | null;
-  lastReview: { action: string; snoozedUntil: string | null; note: string | null; createdBy: string; createdAt: string } | null;
+  lastReview: { action: string; snoozedUntil: string | null; note: string | null; createdBy: string; createdByDisplayName: string; createdAt: string } | null;
 }
 
 export interface ApplyReviewsInput {
@@ -82,6 +83,8 @@ const EXCLUDED_RECIPIENT_STATUSES = ['cancelled', 'skipped'];
  * pulsante "Aggiorna" la scavalca con refresh.
  */
 const SUMMARY_CACHE_TTL_MS = 60_000;
+/** "Aggiorna" ripetuto: sotto questa età la cache vale comunque (niente query a raffica). */
+const SUMMARY_MIN_REFRESH_MS = 10_000;
 
 @Injectable()
 export class LegalAttentionService {
@@ -102,7 +105,8 @@ export class LegalAttentionService {
     const isAdmin = user.role === 'admin';
     const cacheKey = isAdmin ? 'admin' : `user:${user.username}`;
     const cached = this.summaryCache.get(cacheKey);
-    if (!opts.refresh && cached && Date.now() - cached.at < SUMMARY_CACHE_TTL_MS) return cached.value;
+    const age = cached ? Date.now() - cached.at : Infinity;
+    if (cached && age < (opts.refresh ? SUMMARY_MIN_REFRESH_MS : SUMMARY_CACHE_TTL_MS)) return cached.value;
 
     const params: unknown[] = isAdmin ? [] : [user.username];
     const rows: Array<{ campaign_id: string; name: string; channel_type: string; created_by: string; blocking_count: number; stale_count: number }> =
@@ -148,6 +152,9 @@ export class LegalAttentionService {
     );
     const total = rows.length ? Number(rows[0].total) : 0;
     const contexts = await this.loadContexts(rows.map((r) => r.recipient_id), new Date());
+    const names = await this.operatorDirectory.resolveMany(
+      [...contexts.values()].map((ctx) => ctx.latest?.createdBy ?? '').filter(Boolean),
+    );
 
     const items: LegalAttentionItem[] = [];
     for (const row of rows) {
@@ -164,7 +171,7 @@ export class LegalAttentionService {
         codiceFiscale: ctx.recipient.codiceFiscale,
         kind: c?.kind ?? row.kind,
         reason: c?.reason ?? '',
-        firstAttemptAt: ctx.firstAttempt ? ctx.firstAttempt.createdAt.toISOString() : null,
+        firstAttemptAt: ctx.firstAttempt ? fromUtcWallClock(ctx.firstAttempt.createdAt).toISOString() : null,
         iun: a?.iun ?? null,
         postalCode: a?.postalAcceptanceId ?? a?.postalTrackingId ?? null,
         lastReview: ctx.latest
@@ -173,6 +180,7 @@ export class LegalAttentionService {
               snoozedUntil: ctx.latest.snoozedUntil ? ctx.latest.snoozedUntil.toISOString() : null,
               note: ctx.latest.note,
               createdBy: ctx.latest.createdBy,
+              createdByDisplayName: names[ctx.latest.createdBy] ?? ctx.latest.createdBy,
               createdAt: ctx.latest.createdAt.toISOString(),
             }
           : null,
@@ -293,7 +301,7 @@ export class LegalAttentionService {
         classification = legalAttentionOf({
           channelType: campaign.channelType,
           now,
-          firstAttemptAt: firstAttempt?.createdAt ?? null,
+          firstAttemptAt: firstAttempt ? fromUtcWallClock(firstAttempt.createdAt) : null,
           lastAttempt: lastAttempt
             ? {
                 status: lastAttempt.status,

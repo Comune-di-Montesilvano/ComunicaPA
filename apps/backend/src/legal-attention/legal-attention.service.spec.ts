@@ -14,6 +14,8 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
 
 const DAY = 86_400_000;
 const daysAgo = (d: number) => new Date(Date.now() - d * DAY);
+/** Come node-postgres legge created_at (timestamp senza fuso scritto in UTC): componenti UTC come ora locale. */
+const asDriverReads = (d: Date) => new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds(), d.getUTCMilliseconds());
 const OPERATOR = { username: 'mrossi', role: 'user' };
 const ADMIN = { username: 'admin', role: 'admin' };
 
@@ -28,7 +30,8 @@ function attempt(recipientId: string, over: Record<string, unknown> = {}) {
     id: `a-${recipientId}`, recipientId, attemptNumber: 1, status: 'success', errorMessage: null,
     sendStatus: 'DELIVERING', sendStatusHistory: [], iun: 'AAAA-BBBB-CCCC-202609-X-1',
     postalStatus: null, postalDeliveryStatus: null, postalDeliveryDate: null, postalStatusHistory: null,
-    postalAcceptanceId: null, postalTrackingId: null, sentAt: daysAgo(60), createdAt: daysAgo(60), ...over,
+    postalAcceptanceId: null, postalTrackingId: null, sentAt: daysAgo(60), ...over,
+    createdAt: asDriverReads((over.createdAt as Date | undefined) ?? daysAgo(60)),
   };
 }
 
@@ -106,11 +109,25 @@ describe('LegalAttentionService', () => {
       expect(recipientRepo.query).toHaveBeenCalledTimes(2);
     });
 
-    it('refresh scavalca la cache', async () => {
+    it('refresh scavalca la cache se è più vecchia di 10s', async () => {
+      vi.useFakeTimers();
+      try {
+        recipientRepo.query.mockResolvedValue([row]);
+        await service.getSummary(OPERATOR);
+        vi.advanceTimersByTime(10_001);
+        await service.getSummary(OPERATOR, { refresh: true });
+        expect(recipientRepo.query).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('refresh ripetuto entro 10s: usa la cache (niente query a raffica)', async () => {
       recipientRepo.query.mockResolvedValue([row]);
       await service.getSummary(OPERATOR);
       await service.getSummary(OPERATOR, { refresh: true });
-      expect(recipientRepo.query).toHaveBeenCalledTimes(2);
+      await service.getSummary(OPERATOR, { refresh: true });
+      expect(recipientRepo.query).toHaveBeenCalledTimes(1);
     });
 
     it('scaduta dopo 60s', async () => {
@@ -164,7 +181,7 @@ describe('LegalAttentionService', () => {
       expect(res.items[0]).toMatchObject({
         recipientId: 'r1', fullName: 'ROSSI MARIO', codiceFiscale: 'RSSMRA80A01H501U', kind: 'blocking',
         reason: 'Rifiutata da SEND', iun: 'AAAA-BBBB-CCCC-202609-X-1', postalCode: null,
-        lastReview: { action: 'ack', note: 'ok', createdBy: 'mrossi' },
+        lastReview: { action: 'ack', note: 'ok', createdBy: 'mrossi', createdByDisplayName: 'Mario Rossi' },
       });
     });
     it('pageSize limitato a 200 e page minima 1', async () => {

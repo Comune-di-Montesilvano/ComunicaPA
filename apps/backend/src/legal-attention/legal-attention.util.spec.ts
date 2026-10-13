@@ -5,6 +5,7 @@ import {
   isLegalAttentionCampaign,
   legalAttentionOf,
   isReviewOpen,
+  fromUtcWallClock,
   legalAttentionClassifiedSql,
   legalAttentionFlaggedSql,
   type LegalAttentionInput,
@@ -100,6 +101,15 @@ describe('legalAttentionOf — POSTAL', () => {
   });
 });
 
+describe('fromUtcWallClock', () => {
+  it('reinterpreta come UTC un timestamp senza fuso letto dal driver come ora locale', () => {
+    // node-postgres legge "timestamp without time zone" come ora locale del
+    // processo; created_at è scritto dal DB in UTC.
+    const parsedAsLocal = new Date(2026, 9, 10, 11, 22, 7, 505);
+    expect(fromUtcWallClock(parsedAsLocal).toISOString()).toBe('2026-10-10T11:22:07.505Z');
+  });
+});
+
 describe('isReviewOpen', () => {
   it('nessuna review → aperta', () => {
     expect(isReviewOpen(null, NOW)).toBe(true);
@@ -118,13 +128,19 @@ describe('SQL', () => {
   it('classified: perimetro, ultimo e primo tentativo, esclusioni', () => {
     const sql = legalAttentionClassifiedSql();
     expect(sql).toContain('c.is_test = false');
-    expect(sql).toContain("c.channel_config->>'postalReturnReceipt' = 'true'");
     expect(sql).toContain('ORDER BY na.recipient_id, na.attempt_number DESC');
     expect(sql).toContain('MIN(na.created_at) OVER (PARTITION BY na.recipient_id) AS first_at');
     expect(sql).toContain("r.status NOT IN ('cancelled', 'skipped')");
     expect(sql).toContain("la.status = 'cancelled' THEN NULL");
     expect(sql).toContain("'REFUSED', 'CANCELLED', 'RETURNED_TO_SENDER'");
-    expect(sql).toContain("interval '45 days'");
+    expect(sql).toContain("la.first_at <= (now() AT TIME ZONE 'UTC') - interval '45 days'");
+  });
+  it('ricevuta di ritorno: stessa verità di JS per boolean, numero e stringa', () => {
+    const sql = legalAttentionClassifiedSql();
+    expect(sql).toContain("jsonb_typeof(c.channel_config->'postalReturnReceipt')");
+    expect(sql).toContain("WHEN 'boolean' THEN (c.channel_config->>'postalReturnReceipt')::boolean");
+    expect(sql).toContain("WHEN 'number' THEN (c.channel_config->>'postalReturnReceipt')::numeric <> 0");
+    expect(sql).toContain("WHEN 'string' THEN c.channel_config->>'postalReturnReceipt' <> ''");
   });
   it('classified: SEND data legale richiede activeFrom valorizzato', () => {
     expect(legalAttentionClassifiedSql()).toContain("COALESCE(h->>'activeFrom', '') <> ''");

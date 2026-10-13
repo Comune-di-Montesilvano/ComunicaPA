@@ -77,17 +77,36 @@ export function legalAttentionOf(i: LegalAttentionInput): LegalAttentionResult |
   return null;
 }
 
+/**
+ * created_at dei tentativi è "timestamp without time zone" scritto dal DB in
+ * UTC, ma node-postgres lo legge come ora locale del processo (container in
+ * Europe/Rome → 1-2 ore di scarto). Ricostruisce l'istante UTC corretto, così
+ * la soglia dei 45 giorni coincide con quella SQL.
+ */
+export function fromUtcWallClock(d: Date): Date {
+  return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds()));
+}
+
 /** Review assente, oppure posticipo scaduto: la notifica è di nuovo da gestire. */
 export function isReviewOpen(review: { action: string; snoozedUntil: Date | null } | null | undefined, now: Date): boolean {
   if (!review) return true;
   return review.action === 'snooze' && !!review.snoozedUntil && review.snoozedUntil.getTime() <= now.getTime();
 }
 
+/** Stessa verità di `!!channelConfig.postalReturnReceipt` in hasPostalArTracking, per ogni tipo JSON. */
+const RETURN_RECEIPT_SQL = `(CASE jsonb_typeof(c.channel_config->'postalReturnReceipt')
+      WHEN 'boolean' THEN (c.channel_config->>'postalReturnReceipt')::boolean
+      WHEN 'number' THEN (c.channel_config->>'postalReturnReceipt')::numeric <> 0
+      WHEN 'string' THEN c.channel_config->>'postalReturnReceipt' <> ''
+      ELSE false END)`;
+
 const PERIMETER_SQL = `c.is_test = false AND (c.channel_type = 'SEND' OR (c.channel_type = 'POSTAL' AND (
     c.channel_config->>'postalServiceType' LIKE 'Agol%'
-    OR (c.channel_config->>'postalServiceType' LIKE 'Raccomandata%' AND c.channel_config->>'postalReturnReceipt' = 'true'))))`;
+    OR (c.channel_config->>'postalServiceType' LIKE 'Raccomandata%' AND ${RETURN_RECEIPT_SQL}))))`;
 
-const STALE_SQL = `la.first_at <= now() - interval '${STALE_AFTER_DAYS} days'`;
+// created_at è timestamp senza fuso scritto in UTC: confronto in UTC esplicito,
+// indipendente dal fuso della sessione e dall'ora legale.
+const STALE_SQL = `la.first_at <= (now() AT TIME ZONE 'UTC') - interval '${STALE_AFTER_DAYS} days'`;
 
 const SEND_LEGAL_DATE_SQL = `EXISTS (
     SELECT 1 FROM jsonb_array_elements(COALESCE(la.send_status_history, '[]'::jsonb)) h
