@@ -47,6 +47,12 @@ export function LegalAttentionPanel({ apiFetch, campaign, onClose, onOpenNotific
       const res = await apiFetchRef.current(`/legal-attention/campaigns/${campaign.campaignId}?page=${p}&pageSize=${PAGE_SIZE}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
+      // Smarcate tutte le righe dell'ultima pagina: torna indietro invece di
+      // mostrare "nessuna notifica" con notifiche ancora nelle pagine prima.
+      if ((data.items ?? []).length === 0 && p > 1) {
+        setPage(p - 1);
+        return;
+      }
       setItems(data.items ?? []);
       setTotal(data.total ?? 0);
       setSelected(new Set());
@@ -75,7 +81,16 @@ export function LegalAttentionPanel({ apiFetch, campaign, onClose, onOpenNotific
     const body: Record<string, unknown> = { recipientIds: selectedItems.map((i) => i.recipientId), action };
     if (note.trim()) body.note = note.trim();
     if (action === 'snooze') {
-      body.snoozedUntil = snoozeDays === 'custom' ? new Date(`${customDate}T00:00:00`).toISOString() : addDays(snoozeDays);
+      if (snoozeDays === 'custom') {
+        const until = new Date(`${customDate}T00:00:00`);
+        if (!customDate || Number.isNaN(until.getTime())) {
+          setMessage({ tone: 'danger', text: 'Indica una data valida per il posticipo.', skipped: [] });
+          return;
+        }
+        body.snoozedUntil = until.toISOString();
+      } else {
+        body.snoozedUntil = addDays(snoozeDays);
+      }
     }
     setBusy(true);
     setMessage(null);
@@ -97,6 +112,8 @@ export function LegalAttentionPanel({ apiFetch, campaign, onClose, onOpenNotific
       setMessage({ tone: 'success', text: `${verb} per ${count}.`, skipped: result.skipped });
       setNote('');
       await load(page);
+    } catch {
+      setMessage({ tone: 'danger', text: 'Operazione non riuscita: riprova tra qualche istante.', skipped: [] });
     } finally {
       setBusy(false);
     }
