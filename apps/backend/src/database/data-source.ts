@@ -18,6 +18,7 @@ import { EnrichmentAddressOverride } from '../entities/enrichment-address-overri
 import { OperatorDirectoryEntry } from '../entities/operator-directory-entry.entity.js';
 import { CampaignBulkRetryJob } from '../entities/campaign-bulk-retry-job.entity.js';
 import { PostalPosteTracking } from '../entities/postal-poste-tracking.entity.js';
+import { NotificationReview } from '../entities/notification-review.entity.js';
 
 // DataSource per la CLI TypeORM (migration:generate / migration:run).
 // Il runtime dell'app usa database.module.ts, che condivide entity e migrations.
@@ -28,6 +29,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 export default new DataSource({
   type: 'postgres',
   url: process.env['DATABASE_URL'],
-  entities: [Campaign, Recipient, NotificationAttempt, AppSetting, MailServerConfig, IoServiceConfig, Template, DownloadEvent, AuditLog, PostalProviderConfig, DomicileVerificationJob, EnrichmentJob, EnrichmentAddressOverride, OperatorDirectoryEntry, CampaignBulkRetryJob, PostalPosteTracking],
+  entities: [Campaign, Recipient, NotificationAttempt, AppSetting, MailServerConfig, IoServiceConfig, Template, DownloadEvent, AuditLog, PostalProviderConfig, DomicileVerificationJob, EnrichmentJob, EnrichmentAddressOverride, OperatorDirectoryEntry, CampaignBulkRetryJob, PostalPosteTracking, NotificationReview],
   migrations: [`${__dirname}/migrations/*.{ts,js}`],
 });
