@@ -116,7 +116,7 @@ Componenti in `src/components/legal-attention/`, non in `App.tsx`.
 - **Riquadro dashboard "Notifiche senza esito legale"**, in alto, solo se
   ci sono segnalazioni. Riga per campagna: nome, logo canale, "Creata da"
   (solo admin), badge rosso "N esito bloccante", badge giallo "N ferme da
-  oltre 45 giorni". Pulsante **Aggiorna**.
+  almeno 45 giorni". Pulsante **Aggiorna**.
 - **Pannello laterale** al clic sulla riga: tabella paginata con checkbox,
   destinatario, CF, classe, motivo, IUN/codice raccomandata. Clic sul
   destinatario apre il dettaglio notifica esistente. Barra azioni sulla

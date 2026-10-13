@@ -124,12 +124,12 @@ Il perfezionamento per decorrenza dei termini non genera un documento: la data c
 
 ### Gestire le notifiche senza esito legale
 
-In **Dashboard** il riquadro **Notifiche senza esito legale** elenca, per campagna, le notifiche SEND e le raccomandate con ricevuta di ritorno (o atti giudiziari) che non arriveranno a una data legale di notifica. Ogni operatore vede le campagne che ha creato; gli amministratori le vedono tutte.
+In **Dashboard** il riquadro **Notifiche senza esito legale** elenca, per campagna, le notifiche SEND e le raccomandate con ricevuta di ritorno (o atti giudiziari) che non hanno una data legale di notifica: quelle con esito bloccante non l'avranno mai, le altre sono ferme senza esito da almeno 45 giorni. Ogni operatore vede le campagne che ha creato; gli amministratori le vedono tutte.
 
 Le notifiche segnalate sono di due tipi:
 
 - **Esito bloccante**: la notifica non andrà a buon fine, ad esempio destinatario deceduto o sconosciuto, indirizzo errato, notifica rifiutata o annullata da SEND. Compare subito.
-- **Ferma da oltre 45 giorni**: dopo 45 giorni dal primo invio non c'è ancora una data legale.
+- **Ferma da almeno 45 giorni**: dopo 45 giorni dal primo invio non c'è ancora una data legale.
 
 1. Premi sulla campagna per aprire l'elenco delle notifiche.
 2. Seleziona le notifiche e scegli:

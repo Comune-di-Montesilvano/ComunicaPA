@@ -65,7 +65,7 @@ export function LegalAttentionCard({ apiFetch, isAdmin, onOpenNotification, onOp
               <strong>{c.name}</strong>
               {isAdmin && <span className="text-muted small">di {c.createdByDisplayName}</span>}
               {c.blockingCount > 0 && <span className="stx-status is-bad">{plural(c.blockingCount, 'esito bloccante', 'esiti bloccanti')}</span>}
-              {c.staleCount > 0 && <span className="stx-status is-warn">{plural(c.staleCount, 'ferma da oltre 45 giorni', 'ferme da oltre 45 giorni')}</span>}
+              {c.staleCount > 0 && <span className="stx-status is-warn">{plural(c.staleCount, 'ferma da almeno 45 giorni', 'ferme da almeno 45 giorni')}</span>}
             </span>
             <span className="stx-alert-cta">Gestisci<ChevronRight size={14} /></span>
           </div>

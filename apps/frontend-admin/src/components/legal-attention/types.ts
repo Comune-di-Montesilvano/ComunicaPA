@@ -20,7 +20,7 @@ export interface LegalAttentionItem {
   firstAttemptAt: string | null;
   iun: string | null;
   postalCode: string | null;
-  lastReview: { action: string; snoozedUntil: string | null; note: string | null; createdBy: string; createdAt: string } | null;
+  lastReview: { action: string; snoozedUntil: string | null; note: string | null; createdBy: string; createdByDisplayName: string; createdAt: string } | null;
 }
 
 export interface ApplyReviewsResult {
@@ -32,5 +32,5 @@ export type ApiFetch = (path: string, init?: RequestInit) => Promise<Response>;
 
 export const KIND_LABELS: Record<LegalAttentionKind, string> = {
   blocking: 'Esito bloccante',
-  stale: 'Ferma da oltre 45 giorni',
+  stale: 'Ferma da almeno 45 giorni',
 };

@@ -206,7 +206,7 @@ export function LegalAttentionPanel({ apiFetch, campaign, onClose, onOpenNotific
                         <td className="small">{i.iun ?? i.postalCode ?? '—'}</td>
                         <td className="small text-muted">
                           {i.lastReview
-                            ? `${i.lastReview.action === 'ack' ? 'Presa visione' : 'Posticipo'} di ${i.lastReview.createdBy} il ${new Date(i.lastReview.createdAt).toLocaleDateString('it-IT')}`
+                            ? `${i.lastReview.action === 'ack' ? 'Presa visione' : 'Posticipo'} di ${i.lastReview.createdByDisplayName} il ${new Date(i.lastReview.createdAt).toLocaleDateString('it-IT')}`
                             : '—'}
                         </td>
                       </tr>
