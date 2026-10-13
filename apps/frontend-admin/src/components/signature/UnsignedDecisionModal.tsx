@@ -91,7 +91,8 @@ export function UnsignedDecisionModal({ apiFetch, campaignId, invalidCount, tota
             {waitingVerification && <div className="d-flex align-items-center gap-2"><Loader2 className="icon-spin" size={16} /> Verifica della firma in corso…</div>}
           </div>
           <div className="modal-footer">
-            <button type="button" className="btn btn-outline-secondary" disabled={waitingVerification} onClick={() => onDecision('cancel')}>Annulla</button>
+            {/* Annulla sempre attivo: anche durante l'attesa della verifica (ferma il polling). */}
+            <button type="button" className="btn btn-outline-secondary" onClick={() => { setWaitingVerification(false); onDecision('cancel'); }}>Annulla</button>
             <button type="button" className="btn btn-outline-danger" disabled={waitingVerification} onClick={() => onDecision('continue')}>Invia comunque</button>
             {arubaEnabled && (
               <button type="button" className="btn btn-primary" disabled={waitingVerification} onClick={() => { setNote(null); setSigning(true); }}>

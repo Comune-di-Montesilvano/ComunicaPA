@@ -93,6 +93,9 @@ export function RemoteSignModal({ apiFetch, mode, onClose, onFinished }: Props) 
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Gli eventi React risalgono anche attraverso i portal: senza questo il
+    // submit raggiunge la form Impostazioni che contiene il bottone "Prova firma".
+    e.stopPropagation();
     setBusy(true);
     setError(null);
     setTestResult(null);

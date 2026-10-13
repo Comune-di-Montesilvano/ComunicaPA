@@ -2754,7 +2754,7 @@ export function App(): React.JSX.Element {
   const [settOidcLogoutUrl, setSettOidcLogoutUrl] = useState('');
   const [settOidcLegalEntityEnabled, setSettOidcLegalEntityEnabled] = useState(false);
   const [settRemoteSignEnabled, setSettRemoteSignEnabled] = useState(false);
-  const [settRemoteSignWsdlUrl, setSettRemoteSignWsdlUrl] = useState('');
+  const [settRemoteSignWsdlUrl, setSettRemoteSignWsdlUrl] = useState('https://arss.arubapec.it/ArubaSignService/ArubaSignService?wsdl');
   const [settRemoteSignOtpDomain, setSettRemoteSignOtpDomain] = useState('firma');
   const [settRemoteSignTypeHsm, setSettRemoteSignTypeHsm] = useState('COSIGN');
   const [settRemoteSignCertId, setSettRemoteSignCertId] = useState('AS0');
@@ -4564,10 +4564,10 @@ export function App(): React.JSX.Element {
     'oidc.logoutUrl': settOidcLogoutUrl,
     'oidc.legalEntityEnabled': settOidcLegalEntityEnabled,
     'remoteSign.enabled': settRemoteSignEnabled,
-    'remoteSign.wsdlUrl': settRemoteSignWsdlUrl,
-    'remoteSign.otpDomain': settRemoteSignOtpDomain,
-    'remoteSign.typeHsm': settRemoteSignTypeHsm,
-    'remoteSign.certId': settRemoteSignCertId,
+    'remoteSign.wsdlUrl': settRemoteSignWsdlUrl.trim() || 'https://arss.arubapec.it/ArubaSignService/ArubaSignService?wsdl',
+    'remoteSign.otpDomain': settRemoteSignOtpDomain.trim() || 'firma',
+    'remoteSign.typeHsm': settRemoteSignTypeHsm.trim() || 'COSIGN',
+    'remoteSign.certId': settRemoteSignCertId.trim() || 'AS0',
     'oidc.legalEntityScope': settOidcLegalEntityScope.trim() || 'legal_entity',
   });
 
