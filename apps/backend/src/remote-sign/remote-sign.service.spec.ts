@@ -124,6 +124,13 @@ describe('RemoteSignService', () => {
     await expect(svc.assertCanModify(CAMPAIGN_ID, { username: 'luigi', role: 'user' })).rejects.toThrow('altro operatore');
   });
 
+  it('assertCanRead: user non proprietario → Forbidden; campagna lanciata comunque leggibile', async () => {
+    const { svc, campaignRepo } = build();
+    await expect(svc.assertCanRead(CAMPAIGN_ID, { username: 'luigi', role: 'user' })).rejects.toThrow('altro operatore');
+    campaignRepo.findOneBy.mockResolvedValueOnce({ ...sendCampaign, status: CampaignStatus.QUEUED });
+    await expect(svc.assertCanRead(CAMPAIGN_ID, { username: 'mario', role: 'user' })).resolves.toBeDefined();
+  });
+
   it('assertCanModify: campagna non SEND o non in bozza → errore', async () => {
     const { svc, campaignRepo } = build();
     campaignRepo.findOneBy.mockResolvedValueOnce({ ...sendCampaign, status: CampaignStatus.QUEUED });

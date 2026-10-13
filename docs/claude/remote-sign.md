@@ -53,3 +53,13 @@ prosegue; si ferma solo su `RemoteSignError` session/network/domain/credentials.
 **Frontend:** `apiFetch` di App non è memoizzato → nei componenti
 `components/signature/` i polling tengono apiFetch/callback in ref (altrimenti
 l'intervallo si resetta a ogni render di App). `RemoteSignModal` usa `createPortal`.
+
+**Hardening (review finale):**
+- Nomi allegato dal CSV sanificati prima di qualunque lettura: `listFilesToSign`
+  tiene solo `basename(f) === f`, niente `.` iniziale, solo `.pdf`;
+  `safeAttachmentPath` (path risolto dentro uploads) in ZIP, processor e `replaceAttachment`.
+- Claim atomico del job (`UPDATE … SET processing WHERE status='queued'`): una
+  ri-esecuzione BullMQ di un job stalled dopo riavvio/riconciliazione chiude la
+  sessione e non tocca nulla. Campagna non più DRAFT → FAILED senza firmare.
+- Prima di sovrascrivere un file (processor e ricarico) si verifica il file su
+  disco: `signatureCheck` è per destinatario, non per file — se già valido si salta.

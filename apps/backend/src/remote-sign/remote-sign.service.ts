@@ -65,6 +65,16 @@ export class RemoteSignService {
     return this.settings.get<boolean>('remoteSign.enabled');
   }
 
+  /** Solo ownership (admin tutte, user le proprie): lo stato resta leggibile dopo il lancio. */
+  async assertCanRead(campaignId: string, requester: CampaignRequester): Promise<Campaign> {
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+    if (requester.role !== 'admin' && campaign.createdBy !== requester.username) {
+      throw new ForbiddenException('Non puoi vedere una campagna creata da un altro operatore');
+    }
+    return campaign;
+  }
+
   /** SEND in bozza (massivo o Invio Manuale), ownership come assertOwnership di CampaignsService. */
   async assertCanModify(campaignId: string, requester: CampaignRequester): Promise<Campaign> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as soap from 'soap';
 import { AppSettingsService } from '../settings/app-settings.service.js';
+import type { SettingKey } from '../settings/settings.registry.js';
 import { classifyArssError, RemoteSignError } from './arss-errors.js';
 
 export interface ArssCredentials {
@@ -27,7 +28,7 @@ export class ArubaSignClient {
   constructor(private readonly settings: AppSettingsService) {}
 
   /** Impostazione vuota (salvata in bianco da UI) → default del registry. */
-  private async setting(key: string, fallback: string): Promise<string> {
+  private async setting(key: SettingKey, fallback: string): Promise<string> {
     return String((await this.settings.get<string>(key)) ?? '').trim() || fallback;
   }
 

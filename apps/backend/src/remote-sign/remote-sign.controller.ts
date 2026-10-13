@@ -28,7 +28,8 @@ export class RemoteSignController {
 
   @Get('campaigns/:id/remote-sign')
   @Roles('user', 'admin')
-  async status(@Param('id', ParseUUIDPipe) id: string) {
+  async status(@Param('id', ParseUUIDPipe) id: string, @Req() req: Request & { user: JwtOperatorPayload }) {
+    await this.service.assertCanRead(id, { username: req.user.username, role: req.user.role });
     const status = await this.service.getLatestStatus(id);
     if (!status) throw new NotFoundException('Nessuna firma remota avviata per questa campagna');
     return status;
