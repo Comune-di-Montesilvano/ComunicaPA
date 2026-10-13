@@ -618,7 +618,18 @@ export class CampaignsService {
   async launch(
     campaignId: string,
     requester: CampaignRequester,
-  ): Promise<{ launched: number; campaignId: string; blocked?: boolean; message?: string; signatureWarning?: string }> {
+    options: { forceUnsignedAttachments?: boolean } = {},
+  ): Promise<{
+    launched: number;
+    campaignId: string;
+    blocked?: boolean;
+    code?: 'UNSIGNED_ATTACHMENTS';
+    invalidCount?: number;
+    totalRows?: number;
+    message?: string;
+    signatureWarning?: string;
+    forcedUnsignedAttachments?: number;
+  }> {
     const launchResult = await this.campaignRepo
       .createQueryBuilder()
       .update()
@@ -665,9 +676,13 @@ export class CampaignsService {
 
     // Verifica firma digitale allegati SEND: invio singolo non bloccante
     // (solo warning restituito), invio massivo bloccante finché il job
-    // BullMQ di verifica non è done con invalidCount 0 — l'allegato SEND
-    // È il contenuto legale notificato, non un corredo opzionale.
+    // BullMQ di verifica non è done — l'allegato SEND È il contenuto legale
+    // notificato, non un corredo opzionale. Con allegati invalidi il massivo
+    // resta bloccato salvo forceUnsignedAttachments (conferma esplicita
+    // dell'operatore, tracciata in audit dal controller); la verifica ancora
+    // in corso non è mai forzabile.
     let signatureWarning: string | undefined;
+    let forcedUnsignedAttachments: number | undefined;
     if (campaign.channelType === 'SEND') {
       if (isSingleRecipientFlow(campaign)) {
         const singleRecipients = await this.recipientRepo.find({
@@ -700,13 +715,19 @@ export class CampaignsService {
           };
         }
         if (verificationStatus.invalidCount > 0) {
-          await this.campaignRepo.update({ id: campaignId }, { status: CampaignStatus.DRAFT });
-          return {
-            launched: 0,
-            campaignId,
-            blocked: true,
-            message: `${verificationStatus.invalidCount} allegato/i non risultano firmati validamente. Correggi i file prima di rilanciare.`,
-          };
+          if (!options.forceUnsignedAttachments) {
+            await this.campaignRepo.update({ id: campaignId }, { status: CampaignStatus.DRAFT });
+            return {
+              launched: 0,
+              campaignId,
+              blocked: true,
+              code: 'UNSIGNED_ATTACHMENTS',
+              invalidCount: verificationStatus.invalidCount,
+              totalRows: verificationStatus.totalRows,
+              message: `${verificationStatus.invalidCount} allegato/i non risultano firmati validamente. Correggi i file prima di rilanciare.`,
+            };
+          }
+          forcedUnsignedAttachments = verificationStatus.invalidCount;
         }
       }
     }
@@ -746,7 +767,7 @@ export class CampaignsService {
           // controllati — stesso meccanismo differito del percorso bulk
           // (CHECKING_INAD, retry automatico via InadCheckSyncService).
           const { launched } = await this.startInadBulkCheck(campaign, recipients);
-          return { launched, campaignId, signatureWarning };
+          return { launched, campaignId, signatureWarning, forcedUnsignedAttachments };
         }
         channelOverrides = result.channelOverrides;
         // I destinatari finiti in PENDING_REVIEW (PEC difforme da Registro
@@ -758,12 +779,12 @@ export class CampaignsService {
         }
       } else {
         const { launched } = await this.startInadBulkCheck(campaign, recipients);
-        return { launched, campaignId, signatureWarning };
+        return { launched, campaignId, signatureWarning, forcedUnsignedAttachments };
       }
     }
 
     const { launched } = await this.createAttemptsAndEnqueue(campaign, sendableRecipients, channelOverrides);
-    return { launched, campaignId, signatureWarning };
+    return { launched, campaignId, signatureWarning, forcedUnsignedAttachments };
   }
 
   async launchTestSend(

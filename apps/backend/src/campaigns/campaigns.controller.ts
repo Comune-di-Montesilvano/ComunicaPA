@@ -33,6 +33,7 @@ import { CreateCampaignDto } from './dto/create-campaign.dto.js';
 import { UpdateCampaignDto } from './dto/update-campaign.dto.js';
 import { PreviewMessageDto } from './dto/preview-message.dto.js';
 import { TestSendDto } from './dto/test-send.dto.js';
+import { LaunchCampaignDto } from './dto/launch-campaign.dto.js';
 import { UpdateRecipientAddressDto } from './dto/update-recipient-address.dto.js';
 import { AttachPostalTrackingIdDto } from './dto/attach-postal-tracking-id.dto.js';
 import { UpdateCampaignContentDto } from './dto/update-campaign-content.dto.js';
@@ -507,16 +508,26 @@ export class CampaignsController {
   @Post(':id/launch')
   async launch(
     @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: LaunchCampaignDto,
     @Req() req: Request & { user: JwtOperatorPayload },
   ): Promise<{ launched: number; campaignId: string }> {
-    const result = await this.campaignsService.launch(id, { username: req.user.username, role: req.user.role });
+    const result = await this.campaignsService.launch(
+      id,
+      { username: req.user.username, role: req.user.role },
+      { forceUnsignedAttachments: dto?.forceUnsignedAttachments === true },
+    );
     const campaign = await this.campaignsService.findOne(id).catch(() => null);
     await this.auditLogsService.log({
       campaignId: id,
       campaignName: campaign ? campaign.name : null,
       operator: req.user.username,
       action: 'LAUNCH',
-      details: { launched: result.launched },
+      details: {
+        launched: result.launched,
+        // Traccia chi ha lanciato SEND con allegati non firmati validamente
+        // (forzatura confermata dall'operatore) e su quanti file.
+        ...(result.forcedUnsignedAttachments ? { forcedUnsignedAttachments: result.forcedUnsignedAttachments } : {}),
+      },
     });
     return result;
   }
