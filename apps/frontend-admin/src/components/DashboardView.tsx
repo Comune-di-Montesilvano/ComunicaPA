@@ -7,6 +7,7 @@ import {
 import { getChannelMeta, ENGINE_LABELS } from '../data/channels';
 import { CHART, channelColor, channelRank, fmt, pct, plural, iso, formatDay, Kpi, BarRow, ChartTooltip, Sparkline } from './stats-ui';
 import '../assets/css/statistics.css';
+import { LegalAttentionCard } from './legal-attention/LegalAttentionCard';
 
 interface EngineInfo {
   channel: string;
@@ -68,6 +69,8 @@ interface Props {
   onOpenCampaign: (id: string) => void;
   onOpenEngines: () => void;
   onSeeAllCampaigns: () => void;
+  isAdmin: boolean;
+  onOpenNotification: (recipientId: string) => void;
 }
 
 const DAYS = 30;
@@ -224,6 +227,14 @@ export function DashboardView(props: Props) {
           <button type="button" className="stx-hero-btn" onClick={props.onOpenStatistics}><BarChart3 size={16} />Statistiche</button>
         </div>
       </div>
+
+      {/* ── Notifiche senza esito legale ── */}
+      <LegalAttentionCard
+        apiFetch={props.apiFetch}
+        isAdmin={props.isAdmin}
+        onOpenNotification={props.onOpenNotification}
+        onOpenCampaign={props.onOpenCampaign}
+      />
 
       {/* ── Da attenzionare ── */}
       {alerts.total > 0 && (
