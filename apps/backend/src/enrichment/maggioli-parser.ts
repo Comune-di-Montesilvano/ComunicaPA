@@ -59,6 +59,13 @@ export function parseRubricaPec(text: string): MaggioliRecord[] {
     const line = rawLine.trim();
     if (!line) continue;
     const fields = line.split(';');
+    // I ';' vuoti in coda non contano per riconoscere la variante: bug reale,
+    // export Maggioli nel formato standard a 14 campi con 9 ';' vuoti in
+    // fondo (23 campi) finiva nel ramo TARI saldo (>= 18) — pec/cf/filename
+    // letti da posizioni sbagliate, "PDF non trovato" su ogni riga. Le
+    // varianti 16/18 campi hanno sempre il filename nell'ultimo campo, quindi
+    // restano invariate.
+    while (fields.length > 0 && fields[fields.length - 1].trim() === '') fields.pop();
     // Variante "TARI saldo": 18 campi, id;tributo;flag;pec;flag2;nome;cognome;cf;;nominativo;
     // numProvv;giorno;mese;anno;oggetto;;;filename — vs il formato standard a 14 campi sotto.
     if (fields.length >= 18) {

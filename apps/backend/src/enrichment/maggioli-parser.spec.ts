@@ -109,6 +109,24 @@ describe('parseRubricaPec', () => {
     });
   });
 
+  it('formato standard con ";" vuoti in coda (23 campi): letto come 14 campi, non come TARI saldo', () => {
+    const records = parseRubricaPec(`${RUBRICA_ROW_PF};;;;;;;;;\n${RUBRICA_ROW_PG};;;;;;;;;`);
+    expect(records).toHaveLength(2);
+    expect(records[0]).toMatchObject({
+      pec: 'mario.rossi@pec.it',
+      codiceFiscale: 'RSSMRA80A01H501U',
+      tipo: 'PF',
+      nominativo: 'ROSSI MARIO',
+      pdfFilename: 'PROVV_36042_142072.pdf',
+    });
+    expect(records[1]).toMatchObject({
+      pec: 'acme@pec.it',
+      codiceFiscale: '00123456789',
+      tipo: 'PG',
+      pdfFilename: 'PROVV_36043_1.pdf',
+    });
+  });
+
   it('PIVA a 10 cifre nel formato PG (14 campi) viene zero-paddata a 11', () => {
     const row = '36044;beta@pec.it;;;;2333900682;;BETA SRL;19009034;13/03/2026;Oggetto PG;;;PROVV_36044_1.pdf';
     const records = parseRubricaPec(row);
