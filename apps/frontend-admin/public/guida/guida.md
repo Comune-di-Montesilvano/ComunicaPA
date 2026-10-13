@@ -1,6 +1,6 @@
 # ComunicaPA – Guida per gli operatori
 
-_Ultimo aggiornamento: 2026-10-11_
+_Ultimo aggiornamento: 2026-10-13_
 
 ## Cos'è e chi lo usa
 
@@ -113,6 +113,14 @@ Se nella mappatura colleghi una colonna del CSV all'**Oggetto**, l'oggetto scrit
 ### Cercare una singola notifica
 
 Apri **Ricerca Notifiche** e cerca per codice fiscale, nome, email, PEC o IUN. Funziona anche a distanza di tempo dall'invio. I filtri permettono, ad esempio, di vedere solo le notifiche lette o quelle restituite al mittente.
+
+Per una notifica SEND, nel dettaglio apri **Documenti SEND** e premi **Carica documenti** per scaricare i documenti dalla piattaforma:
+
+- le **attestazioni opponibili a terzi**: notifica presa in carico, avvenuto accesso (quando il destinatario legge la notifica), notifica digitale, mancato recapito;
+- l'**avviso di avvenuta ricezione (AAR)**;
+- per l'invio cartaceo: la **copia conforme dell'avviso spedito**, prodotta quando la raccomandata viene stampata e non è una prova di consegna; la **cartolina AR firmata**, che prova la consegna; il **plico restituito**, se il destinatario è irreperibile.
+
+Il perfezionamento per decorrenza dei termini non genera un documento: la data compare nel percorso della notifica.
 
 ### Verificare i domicili digitali di un elenco
 

@@ -4,6 +4,7 @@ import { TemplateEditor } from './components/TemplateEditor';
 import { CampaignSummary, type OutcomeSegment, type OutcomeTone, type KeyFigure } from './components/campaign-detail/CampaignSummary';
 import { NotificationVerdict, NotificationTimeline } from './components/notification-detail/NotificationJourney';
 import type { JourneyLabels } from './components/notification-detail/journey';
+import { sendDocumentLabel, type SendDocumentItem } from './components/notification-detail/send-documents';
 import { SearchableSelect } from './components/SearchableSelect';
 import { StatisticsView } from './components/StatisticsView';
 import { DashboardView } from './components/DashboardView';
@@ -849,16 +850,6 @@ function campaignTypeLabel(key: string): string {
   }
 }
 
-const SEND_LEGAL_FACT_CATEGORY_LABELS: Record<string, string> = {
-  SENDER_ACK: 'Presa in carico',
-  DIGITAL_DELIVERY: 'Consegna digitale (PEC)',
-  ANALOG_DELIVERY: 'Consegna cartacea (cartolina AR)',
-  RECIPIENT_ACCESS: 'Accesso del destinatario',
-  PEC_RECEIPT: 'Ricevuta PEC',
-  ANALOG_FAILURE_DELIVERY: 'Mancata consegna cartacea',
-  NOTIFICATION_CANCELLED: 'Notifica annullata',
-};
-
 function downloadComboLabel(channels: string[]): string {
   if (channels.length === 0) return 'Non scaricato';
   return channels.map((c) => channelLabel(c)).join(' + ');
@@ -1664,7 +1655,7 @@ export function App(): React.JSX.Element {
     payment: { noticeCode: string | null; amountCents: number | null; dueDateIso: string | null } | null;
   } | null>(null);
   const [notifDetailLoading, setNotifDetailLoading] = useState(false);
-  const [sendLegalFacts, setSendLegalFacts] = useState<{ legalFactId: string; category: string }[] | null>(null);
+  const [sendLegalFacts, setSendLegalFacts] = useState<SendDocumentItem[] | null>(null);
   const [sendLegalFactsLoading, setSendLegalFactsLoading] = useState(false);
   const [sendLegalFactRetry, setSendLegalFactRetry] = useState<Record<string, { retryAfterSeconds?: number; error?: string }>>({});
   const [addressEditOpen, setAddressEditOpen] = useState(false);
@@ -13420,7 +13411,7 @@ export function App(): React.JSX.Element {
                                     <tbody>
                                       {sendLegalFacts.map((item) => (
                                         <tr key={item.legalFactId}>
-                                          <td className="small">{SEND_LEGAL_FACT_CATEGORY_LABELS[item.category] ?? item.category}</td>
+                                          <td className="small">{sendDocumentLabel(item)}</td>
                                           <td className="small text-end">
                                             {sendLegalFactRetry[item.legalFactId] ? (
                                               <span className="text-muted">
