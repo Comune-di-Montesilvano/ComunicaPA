@@ -5,7 +5,7 @@ import type { Job } from 'bullmq';
 import { Repository } from 'typeorm';
 import * as fs from 'fs';
 import { RemoteSignJob, RemoteSignJobStatus } from '../entities/remote-sign-job.entity.js';
-import { Campaign } from '../entities/campaign.entity.js';
+import { Campaign, CampaignStatus } from '../entities/campaign.entity.js';
 import { SignatureVerificationBulkService } from '../signature-verification/signature-verification-bulk.service.js';
 import { SignatureVerificationService } from '../signature-verification/signature-verification.service.js';
 import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
@@ -17,7 +17,8 @@ import { replaceAttachment, safeAttachmentPath } from './attachment-writer.util.
 import { REMOTE_SIGN_QUEUE, RemoteSignQueueJobData } from './remote-sign-job.types.js';
 
 @Injectable()
-@Processor(REMOTE_SIGN_QUEUE, { concurrency: 1 })
+// Esclusività per campagna garantita da hasActiveJob, non dalla coda.
+@Processor(REMOTE_SIGN_QUEUE, { concurrency: 3 })
 export class RemoteSignProcessor extends WorkerHost {
   private readonly logger = new Logger(RemoteSignProcessor.name);
 
@@ -33,12 +34,56 @@ export class RemoteSignProcessor extends WorkerHost {
     super();
   }
 
+  /** Chiusura sessione ARSS best-effort quando il job non deve proseguire. */
+  private async closeQuietly(data: RemoteSignQueueJobData): Promise<void> {
+    try {
+      const creds = { user: data.user, password: this.service.decryptPassword(data.passwordEnc) };
+      await this.client.closeSession(data.sessionId, creds);
+    } catch {
+      // credenziali illeggibili: la sessione scadrà da sola lato Aruba
+    }
+  }
+
   async process(job: Job<RemoteSignQueueJobData>): Promise<void> {
     const { jobId, campaignId, sessionId, user, passwordEnc } = job.data;
+    // Claim atomico queued→processing: dopo un riavvio BullMQ può rieseguire
+    // un job stalled la cui riga è già stata chiusa FAILED dalla
+    // riconciliazione — in quel caso non si tocca nulla.
+    const claim = await this.jobRepo.createQueryBuilder()
+      .update(RemoteSignJob)
+      .set({ status: RemoteSignJobStatus.PROCESSING })
+      .where('id = :id AND status = :queued', { id: jobId, queued: RemoteSignJobStatus.QUEUED })
+      .execute();
+    if (claim.affected !== 1) {
+      this.logger.warn(`Firma remota ${jobId}: job non più in coda (riavvio?), esecuzione ignorata`);
+      await this.closeQuietly(job.data);
+      return;
+    }
+    let campaignRow: Campaign | null = null;
+    let abortMessage: string | null = null;
+    try {
+      campaignRow = await this.campaignRepo.findOneBy({ id: campaignId });
+      if (campaignRow?.status !== CampaignStatus.DRAFT) abortMessage = 'La campagna non è più in bozza';
+    } catch (err) {
+      captureException(err, { jobId, campaignId, stage: 'remoteSignCampaign' });
+      abortMessage = 'Errore imprevisto durante la firma: rilancia la firma';
+    }
+    if (abortMessage || !campaignRow) {
+      this.logger.warn(`Firma remota ${jobId}: annullata prima di firmare (${abortMessage})`);
+      await this.closeQuietly(job.data);
+      await this.jobRepo.update({ id: jobId }, {
+        status: RemoteSignJobStatus.FAILED,
+        errorMessage: abortMessage,
+        completedAt: new Date(),
+      });
+      return;
+    }
+
     let creds: { user: string; password: string } | null = null;
     const startedAt = Date.now();
     let signedCount = 0;
     let failedCount = 0;
+    let alreadyValidCount = 0;
     let signerCn: string | null = null;
     let stop: RemoteSignError | null = null;
     let total = 0;
@@ -50,7 +95,6 @@ export class RemoteSignProcessor extends WorkerHost {
         captureException(err, { jobId, campaignId, stage: 'remoteSignDecrypt' });
         throw new RemoteSignError('credentials', 'Impossibile leggere le credenziali di firma: rilancia la firma');
       }
-      await this.jobRepo.update({ id: jobId }, { status: RemoteSignJobStatus.PROCESSING });
       const { toSign } = await this.service.listFilesToSign(campaignId);
       total = toSign.length;
       for (const filename of toSign) {
@@ -60,7 +104,14 @@ export class RemoteSignProcessor extends WorkerHost {
           continue;
         }
         try {
-          const signed = await this.client.signPdf(sessionId, creds, fs.readFileSync(path));
+          const current = fs.readFileSync(path);
+          // signatureCheck è per destinatario, non per file: lo stesso file può
+          // essere già firmato validamente (es. ricaricato nel frattempo).
+          if ((await this.verification.verify(current, filename)).valid) {
+            alreadyValidCount++;
+            continue;
+          }
+          const signed = await this.client.signPdf(sessionId, creds, current);
           replaceAttachment(campaignId, filename, signed);
           signedCount++;
           if (!signerCn) {
@@ -109,7 +160,7 @@ export class RemoteSignProcessor extends WorkerHost {
           : stop.message
         : null;
       if (stop) this.logger.warn(`Firma remota ${jobId} interrotta (${stop.kind}) dopo ${signedCount}/${total} file in ${seconds} s`);
-      else this.logger.log(`Firma remota ${jobId}: ${signedCount} firmati, ${failedCount} falliti su ${total} in ${seconds} s`);
+      else this.logger.log(`Firma remota ${jobId}: ${signedCount} firmati, ${failedCount} falliti, ${alreadyValidCount} già validi su ${total} in ${seconds} s`);
       await this.jobRepo.update({ id: jobId }, {
         status: stop ? RemoteSignJobStatus.FAILED : RemoteSignJobStatus.DONE,
         signedCount,
@@ -120,15 +171,14 @@ export class RemoteSignProcessor extends WorkerHost {
         completedAt: new Date(),
       });
       try {
-        const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
         // Operatore ComunicaPA che ha avviato la firma (non lo username Aruba).
         const jobRow = await this.jobRepo.findOneBy({ id: jobId });
         await this.audit.log({
           campaignId,
-          campaignName: campaign?.name ?? null,
+          campaignName: campaignRow.name ?? null,
           operator: jobRow?.operator ?? user,
           action: 'REMOTE_SIGN',
-          details: { jobId, signerCn, signed: signedCount, failed: failedCount, total, errorKind: stop?.kind ?? null, seconds },
+          details: { jobId, signerCn, signed: signedCount, failed: failedCount, alreadyValid: alreadyValidCount, total, errorKind: stop?.kind ?? null, seconds },
         });
       } catch (err) {
         captureException(err, { jobId, campaignId, stage: 'remoteSignAudit' });

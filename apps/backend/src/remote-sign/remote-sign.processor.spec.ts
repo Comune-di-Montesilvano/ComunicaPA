@@ -5,16 +5,24 @@ import { join } from 'path';
 import { RemoteSignProcessor } from './remote-sign.processor.js';
 import { RemoteSignError } from './arss-errors.js';
 import { RemoteSignJobStatus } from '../entities/remote-sign-job.entity.js';
+import { CampaignStatus } from '../entities/campaign.entity.js';
 import { getUnsignedBackupDir, getUploadsDir } from '../attachments/attachment-paths.js';
 
 const CAMPAIGN = '33333333-3333-3333-3333-333333333333';
 const jobData = { jobId: 'job-1', campaignId: CAMPAIGN, sessionId: 'SESS-1', user: 'mario', passwordEnc: 'enc' };
 
-function build(files: string[]) {
+function build(files: string[], opts: { claimAffected?: number } = {}) {
   const calls: string[] = [];
+  const claim = {
+    update: vi.fn().mockReturnThis(),
+    set: vi.fn().mockReturnThis(),
+    where: vi.fn().mockReturnThis(),
+    execute: vi.fn(async () => { calls.push('claim'); return { affected: opts.claimAffected ?? 1 }; }),
+  };
   const jobRepo = {
     update: vi.fn(async (_id: unknown, patch: any) => { if (patch.status) calls.push(`status:${patch.status}`); }),
     findOneBy: vi.fn().mockResolvedValue({ operator: 'operatore.comune' }),
+    createQueryBuilder: vi.fn(() => claim),
   };
   const client = {
     signPdf: vi.fn(async (_s: string, _c: unknown, pdf: Buffer) => Buffer.concat([pdf, Buffer.from('+FIRMA')])),
@@ -25,11 +33,16 @@ function build(files: string[]) {
     decryptPassword: vi.fn().mockReturnValue('segreta'),
   };
   const bulk = { startForCampaign: vi.fn(async () => { calls.push('verify'); return { jobId: 'v-2' }; }) };
-  const verification = { verify: vi.fn().mockResolvedValue({ valid: true, reason: null, signerCn: 'MARIO ROSSI' }) };
+  // File su disco non firmati (default); firmati = contenuto con suffisso +FIRMA.
+  const verification = {
+    verify: vi.fn(async (buf: Buffer) => (buf.toString().endsWith('+FIRMA')
+      ? { valid: true, reason: null, signerCn: 'MARIO ROSSI' }
+      : { valid: false, reason: 'non firmato' })),
+  };
   const audit = { log: vi.fn() };
-  const campaignRepo = { findOneBy: vi.fn().mockResolvedValue({ id: CAMPAIGN, name: 'Prova' }) };
+  const campaignRepo = { findOneBy: vi.fn().mockResolvedValue({ id: CAMPAIGN, name: 'Prova', status: CampaignStatus.DRAFT }) };
   const p = new RemoteSignProcessor(jobRepo as any, campaignRepo as any, client as any, service as any, bulk as any, verification as any, audit as any);
-  return { p, jobRepo, client, service, bulk, audit, calls };
+  return { p, jobRepo, client, service, bulk, audit, calls, claim, campaignRepo, verification };
 }
 
 describe('RemoteSignProcessor', () => {
@@ -53,7 +66,7 @@ describe('RemoteSignProcessor', () => {
     expect(fs.readFileSync(join(getUploadsDir(CAMPAIGN), 'A.pdf'), 'utf8')).toBe('A.pdf+FIRMA');
     expect(fs.readFileSync(join(getUnsignedBackupDir(CAMPAIGN), 'A.pdf'), 'utf8')).toBe('A.pdf');
     expect(fs.readFileSync(join(getUploadsDir(CAMPAIGN), 'C.pdf'), 'utf8')).toBe('C.pdf');
-    expect(calls).toEqual(['status:processing', 'close', 'verify', 'status:done']);
+    expect(calls).toEqual(['claim', 'close', 'verify', 'status:done']);
     expect(jobRepo.update).toHaveBeenLastCalledWith({ id: 'job-1' }, expect.objectContaining({
       status: RemoteSignJobStatus.DONE, signedCount: 2, failedCount: 0, signerCn: 'MARIO ROSSI',
     }));
@@ -78,7 +91,7 @@ describe('RemoteSignProcessor', () => {
       .mockRejectedValueOnce(new RemoteSignError('session', 'Sessione di firma scaduta o non valida'));
     await p.process({ data: jobData } as any);
     expect(client.signPdf).toHaveBeenCalledTimes(2);
-    expect(calls).toEqual(['status:processing', 'close', 'verify', 'status:failed']);
+    expect(calls).toEqual(['claim', 'close', 'verify', 'status:failed']);
     const last = jobRepo.update.mock.calls.at(-1)![1];
     expect(last).toMatchObject({ status: RemoteSignJobStatus.FAILED, errorKind: 'session', signedCount: 1 });
     expect(last.errorMessage).toMatch(/^Sessione scaduta dopo 1 file su 3 \(\d+ s\): inserisci un nuovo OTP per i rimanenti$/);
@@ -90,7 +103,7 @@ describe('RemoteSignProcessor', () => {
     await p.process({ data: jobData } as any);
     expect(client.closeSession).not.toHaveBeenCalled();
     expect(client.signPdf).not.toHaveBeenCalled();
-    expect(calls).toEqual(['verify', 'status:failed']);
+    expect(calls).toEqual(['claim', 'verify', 'status:failed']);
     expect(jobRepo.update).toHaveBeenLastCalledWith({ id: 'job-1' }, expect.objectContaining({
       status: RemoteSignJobStatus.FAILED, errorKind: 'credentials',
       errorMessage: 'Impossibile leggere le credenziali di firma: rilancia la firma',
@@ -133,6 +146,52 @@ describe('RemoteSignProcessor', () => {
     expect(fs.readFileSync(join(getUploadsDir(CAMPAIGN), 'B.pdf'), 'utf8')).toBe('B.pdf+FIRMA');
     expect(jobRepo.update).toHaveBeenLastCalledWith({ id: 'job-1' }, expect.objectContaining({
       status: RemoteSignJobStatus.DONE, signedCount: 1, failedCount: 1, errorKind: null,
+    }));
+  });
+
+  it('claim atomico: aggiorna solo da queued a processing', async () => {
+    const { p, claim } = build(['A.pdf']);
+    await p.process({ data: jobData } as any);
+    expect(claim.set).toHaveBeenCalledWith({ status: RemoteSignJobStatus.PROCESSING });
+    expect(claim.where).toHaveBeenCalledWith('id = :id AND status = :queued', { id: 'job-1', queued: RemoteSignJobStatus.QUEUED });
+  });
+
+  it('riga non più queued (riconciliata dopo riavvio): nessuna firma, verifica, audit o update; sessione chiusa', async () => {
+    const { p, client, bulk, jobRepo, audit } = build(['A.pdf'], { claimAffected: 0 });
+    await p.process({ data: jobData } as any);
+    expect(client.signPdf).not.toHaveBeenCalled();
+    expect(bulk.startForCampaign).not.toHaveBeenCalled();
+    expect(jobRepo.update).not.toHaveBeenCalled();
+    expect(audit.log).not.toHaveBeenCalled();
+    expect(client.closeSession).toHaveBeenCalledWith('SESS-1', { user: 'mario', password: 'segreta' });
+    expect(fs.readFileSync(join(getUploadsDir(CAMPAIGN), 'A.pdf'), 'utf8')).toBe('A.pdf');
+  });
+
+  it('campagna non più in bozza: FAILED, nessuna firma, sessione chiusa', async () => {
+    const { p, client, bulk, jobRepo, campaignRepo } = build(['A.pdf']);
+    campaignRepo.findOneBy.mockResolvedValue({ id: CAMPAIGN, name: 'Prova', status: CampaignStatus.QUEUED });
+    await p.process({ data: jobData } as any);
+    expect(client.signPdf).not.toHaveBeenCalled();
+    expect(bulk.startForCampaign).not.toHaveBeenCalled();
+    expect(client.closeSession).toHaveBeenCalled();
+    expect(jobRepo.update).toHaveBeenLastCalledWith({ id: 'job-1' }, expect.objectContaining({
+      status: RemoteSignJobStatus.FAILED, errorMessage: 'La campagna non è più in bozza',
+    }));
+    expect(fs.readFileSync(join(getUploadsDir(CAMPAIGN), 'A.pdf'), 'utf8')).toBe('A.pdf');
+  });
+
+  it('file già firmato validamente su disco: saltato (né firmato né fallito), contato nell audit', async () => {
+    fs.writeFileSync(join(getUploadsDir(CAMPAIGN), 'A.pdf'), 'A.pdf+FIRMA');
+    const { p, client, jobRepo, audit } = build(['A.pdf', 'B.pdf']);
+    await p.process({ data: jobData } as any);
+    expect(client.signPdf).toHaveBeenCalledTimes(1);
+    expect(client.signPdf.mock.calls[0][2].toString()).toBe('B.pdf');
+    expect(fs.readFileSync(join(getUploadsDir(CAMPAIGN), 'A.pdf'), 'utf8')).toBe('A.pdf+FIRMA');
+    expect(jobRepo.update).toHaveBeenLastCalledWith({ id: 'job-1' }, expect.objectContaining({
+      status: RemoteSignJobStatus.DONE, signedCount: 1, failedCount: 0,
+    }));
+    expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({
+      details: expect.objectContaining({ alreadyValid: 1, signed: 1 }),
     }));
   });
 });

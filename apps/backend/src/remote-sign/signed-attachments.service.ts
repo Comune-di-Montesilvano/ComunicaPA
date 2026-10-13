@@ -6,6 +6,7 @@ import { join } from 'path';
 import AdmZip from 'adm-zip';
 import { extractZipWithYauzl, flattenZipEntryName } from '../campaigns/zip-extract.util.js';
 import { SignatureVerificationBulkService } from '../signature-verification/signature-verification-bulk.service.js';
+import { SignatureVerificationService } from '../signature-verification/signature-verification.service.js';
 import { SignatureVerificationJobStatus } from '../entities/signature-verification-job.entity.js';
 import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
 import type { CampaignRequester } from '../campaigns/campaigns.service.js';
@@ -18,6 +19,7 @@ export class SignedAttachmentsService {
   constructor(
     private readonly remoteSign: RemoteSignService,
     private readonly verificationBulk: SignatureVerificationBulkService,
+    private readonly verification: SignatureVerificationService,
     private readonly audit: AuditLogsService,
   ) {}
 
@@ -81,6 +83,14 @@ export class SignedAttachmentsService {
       let replaced = 0;
       for (const m of matched) {
         try {
+          // signatureCheck è per destinatario, non per file: mai sovrascrivere
+          // un originale che su disco è già firmato validamente.
+          const current = safeAttachmentPath(campaignId, m.original);
+          if (current && fs.existsSync(current)
+            && (await this.verification.verify(fs.readFileSync(current), m.original)).valid) {
+            rejected.push({ file: m.uploaded, reason: 'Allegato già firmato validamente' });
+            continue;
+          }
           replaceAttachment(campaignId, m.original, fs.readFileSync(join(tmp, m.uploaded)));
           replaced++;
         } catch {

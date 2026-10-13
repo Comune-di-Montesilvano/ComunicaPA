@@ -21,7 +21,11 @@ function build() {
     startForCampaign: vi.fn().mockResolvedValue({ jobId: 'v-2' }),
   };
   const audit = { log: vi.fn() };
-  return { svc: new SignedAttachmentsService(remoteSign as any, bulk as any, audit as any), remoteSign, bulk, audit };
+  const verification = { verify: vi.fn().mockResolvedValue({ valid: false, reason: 'non firmato' }) };
+  return {
+    svc: new SignedAttachmentsService(remoteSign as any, bulk as any, verification as any, audit as any),
+    remoteSign, bulk, audit, verification,
+  };
 }
 
 describe('SignedAttachmentsService', () => {
@@ -158,6 +162,24 @@ describe('SignedAttachmentsService', () => {
     const res = await svc.applySignedUpload(CAMPAIGN, ADMIN, zipPath, 'f.zip');
     expect(res).toEqual({ replaced: 1, rejected: [{ file: 'B.pdf', reason: 'Errore durante il salvataggio del file' }] });
     expect(fs.readFileSync(join(getUploadsDir(CAMPAIGN), 'A.pdf'), 'utf8')).toBe('firmato-A');
+    expect(bulk.startForCampaign).toHaveBeenCalledWith(CAMPAIGN);
+  });
+
+  it('originale su disco già firmato validamente: rifiutato, non sovrascritto', async () => {
+    const { svc, verification, bulk } = build();
+    verification.verify.mockImplementation(async (buf: Buffer) => (buf.toString() === 'orig-A.pdf'
+      ? { valid: true, reason: null, signerCn: 'MARIO ROSSI' }
+      : { valid: false, reason: 'non firmato' }));
+    const zip = new AdmZip();
+    zip.addFile('A.pdf', Buffer.from('firmato-A'));
+    zip.addFile('B.pdf', Buffer.from('firmato-B'));
+    const zipPath = join(scratch, 'f.zip');
+    zip.writeZip(zipPath);
+    const res = await svc.applySignedUpload(CAMPAIGN, ADMIN, zipPath, 'f.zip');
+    expect(res).toEqual({ replaced: 1, rejected: [{ file: 'A.pdf', reason: 'Allegato già firmato validamente' }] });
+    expect(fs.readFileSync(join(getUploadsDir(CAMPAIGN), 'A.pdf'), 'utf8')).toBe('orig-A.pdf');
+    expect(fs.readFileSync(join(getUploadsDir(CAMPAIGN), 'B.pdf'), 'utf8')).toBe('firmato-B');
+    expect(verification.verify).toHaveBeenCalledWith(Buffer.from('orig-A.pdf'), 'A.pdf');
     expect(bulk.startForCampaign).toHaveBeenCalledWith(CAMPAIGN);
   });
 });
