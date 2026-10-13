@@ -13,11 +13,11 @@ import { SignatureVerificationService } from '../signature-verification/signatur
 import { SignatureVerificationJobStatus } from '../entities/signature-verification-job.entity.js';
 import { AppSettingsService } from '../settings/app-settings.service.js';
 import { decryptValue, deriveSettingsKey, encryptValue } from '../settings/settings-crypto.js';
-import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
 import type { AppConfiguration } from '../config/configuration.js';
 import type { CampaignRequester } from '../campaigns/campaigns.service.js';
 import { ArubaSignClient } from './aruba-sign.client.js';
 import { RemoteSignError } from './arss-errors.js';
+import { captureException } from '../common/sentry.util.js';
 import { buildTestPdf } from './test-pdf.js';
 import { REMOTE_SIGN_QUEUE, RemoteSignQueueJobData } from './remote-sign-job.types.js';
 import type { RemoteSignCredentialsDto } from './dto/remote-sign-credentials.dto.js';
@@ -48,7 +48,6 @@ export class RemoteSignService {
     private readonly verification: SignatureVerificationService,
     private readonly settings: AppSettingsService,
     config: ConfigService<AppConfiguration, true>,
-    _audit: AuditLogsService, // riservato (DI invariata); l'audit è scritto dal processor
   ) {
     this.cryptoKey = deriveSettingsKey(config.get('jwt.secret', { infer: true }));
   }
@@ -141,11 +140,24 @@ export class RemoteSignService {
       totalFiles: toSign.length,
       operator: requester.username,
     }));
-    await this.queue.add(
-      'sign',
-      { jobId: job.id, campaignId, sessionId, user: dto.user, passwordEnc: encryptValue(dto.password, this.cryptoKey) },
-      { jobId: job.id, removeOnComplete: true, removeOnFail: true, attempts: 1 },
-    );
+    try {
+      await this.queue.add(
+        'sign',
+        { jobId: job.id, campaignId, sessionId, user: dto.user, passwordEnc: encryptValue(dto.password, this.cryptoKey) },
+        { jobId: job.id, removeOnComplete: true, removeOnFail: true, attempts: 1 },
+      );
+    } catch (err) {
+      // Riga già salvata ma job mai accodato: chiuderla, altrimenti resta
+      // queued per sempre e blocca lancio e upload.
+      captureException(err, { jobId: job.id, campaignId, stage: 'remoteSignEnqueue' });
+      await this.jobRepo.update({ id: job.id }, {
+        status: RemoteSignJobStatus.FAILED,
+        errorMessage: 'Impossibile avviare la firma: riprova',
+        completedAt: new Date(),
+      });
+      await this.client.closeSession(sessionId, creds);
+      return { error: 'Impossibile avviare la firma: riprova' };
+    }
     return { jobId: job.id };
   }
 

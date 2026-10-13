@@ -37,7 +37,7 @@ export class RemoteSignProcessor extends WorkerHost {
 
   async process(job: Job<RemoteSignQueueJobData>): Promise<void> {
     const { jobId, campaignId, sessionId, user, passwordEnc } = job.data;
-    const creds = { user, password: this.service.decryptPassword(passwordEnc) };
+    let creds: { user: string; password: string } | null = null;
     const startedAt = Date.now();
     let signedCount = 0;
     let failedCount = 0;
@@ -45,8 +45,14 @@ export class RemoteSignProcessor extends WorkerHost {
     let stop: RemoteSignError | null = null;
     let total = 0;
 
-    await this.jobRepo.update({ id: jobId }, { status: RemoteSignJobStatus.PROCESSING });
     try {
+      try {
+        creds = { user, password: this.service.decryptPassword(passwordEnc) };
+      } catch (err) {
+        captureException(err, { jobId, campaignId, stage: 'remoteSignDecrypt' });
+        throw new RemoteSignError('credentials', 'Impossibile leggere le credenziali di firma: rilancia la firma');
+      }
+      await this.jobRepo.update({ id: jobId }, { status: RemoteSignJobStatus.PROCESSING });
       const { toSign } = await this.service.listFilesToSign(campaignId);
       total = toSign.length;
       for (const filename of toSign) {
@@ -79,11 +85,25 @@ export class RemoteSignProcessor extends WorkerHost {
         }
         await this.jobRepo.update({ id: jobId }, { signedCount, failedCount });
       }
+    } catch (err) {
+      // Qualsiasi errore fuori dal ciclo per-file (elenco file, DB, ...): il job
+      // deve comunque chiudersi FAILED, mai restare queued/processing.
+      if (err instanceof RemoteSignError) {
+        stop = err;
+      } else {
+        captureException(err, { jobId, campaignId, stage: 'remoteSign' });
+        stop = new RemoteSignError('network', 'Errore imprevisto durante la firma: rilancia la firma');
+      }
     } finally {
-      await this.client.closeSession(sessionId, creds);
+      if (creds) await this.client.closeSession(sessionId, creds);
       // PRIMA della nuova verifica, POI lo stato finale: la UI legge "job
       // concluso" e subito dopo l'ultima verifica — deve già essere la nuova.
-      await this.verificationBulk.startForCampaign(campaignId);
+      try {
+        await this.verificationBulk.startForCampaign(campaignId);
+      } catch (err) {
+        captureException(err, { jobId, campaignId, stage: 'remoteSignReverify' });
+        this.logger.warn(`Firma remota ${jobId}: riavvio verifica firma fallito`);
+      }
       const seconds = Math.round((Date.now() - startedAt) / 1000);
       const errorMessage = stop
         ? stop.kind === 'session'
@@ -101,16 +121,20 @@ export class RemoteSignProcessor extends WorkerHost {
         errorMessage,
         completedAt: new Date(),
       });
-      const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
-      // Operatore ComunicaPA che ha avviato la firma (non lo username Aruba).
-      const jobRow = await this.jobRepo.findOneBy({ id: jobId });
-      await this.audit.log({
-        campaignId,
-        campaignName: campaign?.name ?? null,
-        operator: jobRow?.operator ?? user,
-        action: 'REMOTE_SIGN',
-        details: { jobId, signerCn, signed: signedCount, failed: failedCount, total, errorKind: stop?.kind ?? null, seconds },
-      });
+      try {
+        const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+        // Operatore ComunicaPA che ha avviato la firma (non lo username Aruba).
+        const jobRow = await this.jobRepo.findOneBy({ id: jobId });
+        await this.audit.log({
+          campaignId,
+          campaignName: campaign?.name ?? null,
+          operator: jobRow?.operator ?? user,
+          action: 'REMOTE_SIGN',
+          details: { jobId, signerCn, signed: signedCount, failed: failedCount, total, errorKind: stop?.kind ?? null, seconds },
+        });
+      } catch (err) {
+        captureException(err, { jobId, campaignId, stage: 'remoteSignAudit' });
+      }
     }
   }
 }

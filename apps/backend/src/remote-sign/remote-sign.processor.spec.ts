@@ -84,6 +84,39 @@ describe('RemoteSignProcessor', () => {
     expect(last.errorMessage).toMatch(/^Sessione scaduta dopo 1 file su 3 \(\d+ s\): inserisci un nuovo OTP per i rimanenti$/);
   });
 
+  it('decrypt fallisce: job FAILED con messaggio, closeSession NON chiamata', async () => {
+    const { p, service, client, jobRepo, calls } = build(['A.pdf']);
+    service.decryptPassword.mockImplementation(() => { throw new Error('bad tag'); });
+    await p.process({ data: jobData } as any);
+    expect(client.closeSession).not.toHaveBeenCalled();
+    expect(client.signPdf).not.toHaveBeenCalled();
+    expect(calls).toEqual(['verify', 'status:failed']);
+    expect(jobRepo.update).toHaveBeenLastCalledWith({ id: 'job-1' }, expect.objectContaining({
+      status: RemoteSignJobStatus.FAILED, errorKind: 'credentials',
+      errorMessage: 'Impossibile leggere le credenziali di firma: rilancia la firma',
+    }));
+  });
+
+  it('startForCampaign lancia: lo stato finale viene comunque scritto', async () => {
+    const { p, bulk, jobRepo } = build(['A.pdf']);
+    bulk.startForCampaign.mockRejectedValueOnce(new Error('redis'));
+    await p.process({ data: jobData } as any);
+    expect(jobRepo.update).toHaveBeenLastCalledWith({ id: 'job-1' }, expect.objectContaining({
+      status: RemoteSignJobStatus.DONE, signedCount: 1,
+    }));
+  });
+
+  it('listFilesToSign lancia: job FAILED (non DONE 0/0), sessione chiusa', async () => {
+    const { p, service, client, jobRepo } = build(['A.pdf']);
+    service.listFilesToSign.mockRejectedValueOnce(new Error('db down'));
+    await p.process({ data: jobData } as any);
+    expect(client.closeSession).toHaveBeenCalled();
+    expect(jobRepo.update).toHaveBeenLastCalledWith({ id: 'job-1' }, expect.objectContaining({
+      status: RemoteSignJobStatus.FAILED, errorKind: 'network',
+      errorMessage: 'Errore imprevisto durante la firma: rilancia la firma',
+    }));
+  });
+
   it('file sparito da disco: conta come fallito', async () => {
     const { p, jobRepo } = build(['MANCANTE.pdf']);
     await p.process({ data: jobData } as any);

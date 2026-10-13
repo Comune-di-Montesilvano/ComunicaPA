@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RemoteSignService } from './remote-sign.service.js';
 import { RemoteSignError } from './arss-errors.js';
+import { RemoteSignJobStatus } from '../entities/remote-sign-job.entity.js';
 import { CampaignStatus } from '../entities/campaign.entity.js';
 
 const CAMPAIGN_ID = '22222222-2222-2222-2222-222222222222';
@@ -35,7 +36,7 @@ function build() {
   const audit = { log: vi.fn() };
   const svc = new RemoteSignService(
     campaignRepo as any, recipientRepo as any, jobRepo as any, queue as any, client as any,
-    bulk as any, verification as any, settings as any, config as any, audit as any,
+    bulk as any, verification as any, settings as any, config as any,
   );
   return { svc, campaignRepo, recipientRepo, jobRepo, queue, client, bulk, verification, settings, audit };
 }
@@ -59,6 +60,18 @@ describe('RemoteSignService', () => {
     expect(JSON.stringify(data)).not.toContain('segreta');
     expect(opts).toMatchObject({ jobId: 'job-1', removeOnComplete: true, removeOnFail: true });
     expect(svc.decryptPassword(data.passwordEnc)).toBe('segreta');
+  });
+
+  it('start: queue.add fallisce → riga FAILED, sessione chiusa, { error }', async () => {
+    const { svc, queue, jobRepo, client } = build();
+    (jobRepo as any).update = vi.fn();
+    queue.add.mockRejectedValueOnce(new Error('redis down'));
+    await expect(svc.start(CAMPAIGN_ID, ADMIN, { user: 'mario', password: 'x', otp: '123456' }))
+      .resolves.toEqual({ error: 'Impossibile avviare la firma: riprova' });
+    expect((jobRepo as any).update).toHaveBeenCalledWith({ id: 'job-1' }, expect.objectContaining({
+      status: RemoteSignJobStatus.FAILED, errorMessage: 'Impossibile avviare la firma: riprova',
+    }));
+    expect(client.closeSession).toHaveBeenCalledWith('SESS-1', { user: 'mario', password: 'x' });
   });
 
   it('start: OTP errato → { error } e nessun job', async () => {

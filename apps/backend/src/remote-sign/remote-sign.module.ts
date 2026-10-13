@@ -9,6 +9,7 @@ import { ArubaSignClient } from './aruba-sign.client.js';
 import { RemoteSignService } from './remote-sign.service.js';
 import { RemoteSignProcessor } from './remote-sign.processor.js';
 import { RemoteSignController } from './remote-sign.controller.js';
+import { RemoteSignReconcileService } from './remote-sign-reconcile.service.js';
 import { REMOTE_SIGN_QUEUE } from './remote-sign-job.types.js';
 
 @Global()
@@ -19,7 +20,7 @@ import { REMOTE_SIGN_QUEUE } from './remote-sign-job.types.js';
     AuditLogsModule,
   ],
   controllers: [RemoteSignController],
-  providers: [ArubaSignClient, RemoteSignService, RemoteSignProcessor],
+  providers: [ArubaSignClient, RemoteSignService, RemoteSignProcessor, RemoteSignReconcileService],
   exports: [RemoteSignService],
 })
 export class RemoteSignModule {}
