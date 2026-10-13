@@ -10,6 +10,7 @@ import { StatisticsView } from './components/StatisticsView';
 import { DashboardView } from './components/DashboardView';
 import { uploadFileInChunks } from './chunked-upload';
 import { SignaturePanel } from './components/signature/SignaturePanel';
+import { UnsignedDecisionModal, type UnsignedDecision } from './components/signature/UnsignedDecisionModal';
 import { COUNTRIES, matchCountry, isValidCap, abbreviateLongMunicipality, isPosteTrackableService, SEND_ENTITY_TYPES, SEND_TAXONOMY_CATALOG } from '@comunicapa/shared-types';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import {
@@ -2354,6 +2355,15 @@ export function App(): React.JSX.Element {
   });
   const [wizAttachments, setWizAttachments] = useState<Array<{ key: string; label: string; labelColumn?: string }>>([]);
   const [wizSignatureJobStatus, setWizSignatureJobStatus] = useState<{ status: string; totalRows: number; validCount: number; invalidCount: number; errorMessage: string | null } | null>(null);
+  // Invio Manuale SEND: decisione dell'operatore su allegati non firmati,
+  // risolta da UnsignedDecisionModal (firma Aruba / invia comunque / annulla).
+  const [unsignedDecision, setUnsignedDecision] = useState<{
+    campaignId: string;
+    invalidCount: number;
+    totalRows: number;
+    arubaEnabled: boolean;
+    resolve: (d: UnsignedDecision) => void;
+  } | null>(null);
   // Mappatura colonna→campo e colonne allegato salvate su una campagna sorgente
   // (duplica/riprendi bozza), da riapplicare al prossimo CSV caricato SOLO se le
   // stesse colonne sono presenti nell'intestazione (stesso formato CSV riusato,
@@ -8223,6 +8233,21 @@ export function App(): React.JSX.Element {
   // Ritorna `false` solo se il singolo viene annullato (Annulla sulla
   // conferma) — i chiamanti interrompono il flusso silenziosamente, nessun
   // ulteriore popup di errore: la conferma già spiegata è l'unico messaggio.
+  const askUnsignedDecision = async (campaignId: string, invalidCount: number, totalRows: number): Promise<boolean> => {
+    let arubaEnabled = false;
+    try {
+      const res = await apiFetch('/remote-sign/config');
+      if (res.ok) arubaEnabled = Boolean((await res.json()).enabled);
+    } catch {
+      // senza config: solo Invia comunque / Annulla
+    }
+    const decision = await new Promise<UnsignedDecision>((resolve) => {
+      setUnsignedDecision({ campaignId, invalidCount, totalRows, arubaEnabled, resolve });
+    });
+    setUnsignedDecision(null);
+    return decision === 'continue';
+  };
+
   const triggerAndAlertSignatureVerification = async (campaignId: string): Promise<boolean> => {
     const isSingolo = wizChannel === 'SEND' && wizSingleMode;
     try {
@@ -8241,7 +8266,7 @@ export function App(): React.JSX.Element {
         if (status.status === 'done') {
           if (status.invalidCount > 0) {
             if (isSingolo) {
-              return confirmContinueDespiteInvalidSignature(status.invalidCount, status.totalRows);
+              return askUnsignedDecision(campaignId, status.invalidCount, status.totalRows);
             }
             alert(`Attenzione: ${status.invalidCount} allegato/i su ${status.totalRows} non risultano firmati validamente.`);
           }
@@ -19178,6 +19203,17 @@ export function App(): React.JSX.Element {
             Ricarica Ora
           </button>
         </div>
+      )}
+
+      {unsignedDecision && (
+        <UnsignedDecisionModal
+          apiFetch={apiFetch}
+          campaignId={unsignedDecision.campaignId}
+          invalidCount={unsignedDecision.invalidCount}
+          totalRows={unsignedDecision.totalRows}
+          arubaEnabled={unsignedDecision.arubaEnabled}
+          onDecision={unsignedDecision.resolve}
+        />
       )}
     </div>
   );
