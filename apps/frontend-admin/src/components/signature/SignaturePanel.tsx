@@ -52,6 +52,8 @@ export function SignaturePanel({ apiFetch, token, adminApiBase, campaignId, stat
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setMessage({ kind: 'danger', text: err?.message ?? 'Download non riuscito' });
     } finally {
       setBusy(null);
     }
@@ -88,6 +90,11 @@ export function SignaturePanel({ apiFetch, token, adminApiBase, campaignId, stat
 
   const allValid = status?.status === 'done' && status.invalidCount === 0;
   const hasInvalid = status?.status === 'done' && status.invalidCount > 0;
+
+  // Firma riuscita e verifica tutta valida: la modale ha finito il suo lavoro.
+  useEffect(() => {
+    if (allValid) setModalOpen(false);
+  }, [allValid]);
 
   return (
     <div className={`alert ${allValid ? 'alert-success' : 'alert-warning'} mb-3`}>

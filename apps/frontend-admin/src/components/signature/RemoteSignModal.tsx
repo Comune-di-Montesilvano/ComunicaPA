@@ -44,6 +44,23 @@ export function RemoteSignModal({ apiFetch, mode, onClose, onFinished }: Props) 
   const polling = progress !== null && (progress.status === 'queued' || progress.status === 'processing');
   const campaignId = mode.kind === 'campaign' ? mode.campaignId : null;
 
+  // Riprende un job gia' in corso (modale richiusa/riaperta o pagina ricaricata).
+  useEffect(() => {
+    if (!campaignId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetchRef.current(`/campaigns/${campaignId}/remote-sign`);
+        if (!res.ok || cancelled) return;
+        const s: RemoteSignStatus = await res.json();
+        if (!cancelled && (s.status === 'queued' || s.status === 'processing')) setProgress(s);
+      } catch {
+        // nessun job da riprendere: resta il form
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [campaignId]);
+
   useEffect(() => {
     if (!polling || !campaignId) return;
     let cancelled = false;
@@ -131,7 +148,7 @@ export function RemoteSignModal({ apiFetch, mode, onClose, onFinished }: Props) 
                 {polling ? (
                   <div className="d-flex align-items-center gap-2"><Loader2 className="icon-spin" size={16} /> Firma in corso {progress.signedCount}/{progress.totalFiles || '…'}</div>
                 ) : progress.status === 'done' ? (
-                  <div className="alert alert-success mb-0">Firmati {progress.signedCount} file{progress.failedCount > 0 ? `, ${progress.failedCount} non firmati` : ''}{progress.signerCn ? ` — firmatario ${progress.signerCn}` : ''}. Verifica firma in corso…</div>
+                  <div className="alert alert-success mb-0">Firmati {progress.signedCount} file{progress.failedCount > 0 ? `, ${progress.failedCount} non firmati` : ''}{progress.signerCn ? ` — firmatario ${progress.signerCn}` : ''}. La verifica della firma è stata riavviata: chiudi per vedere l'esito.</div>
                 ) : null}
               </div>
             )}
