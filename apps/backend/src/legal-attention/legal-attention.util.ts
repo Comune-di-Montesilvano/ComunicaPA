@@ -87,13 +87,13 @@ const PERIMETER_SQL = `c.is_test = false AND (c.channel_type = 'SEND' OR (c.chan
     c.channel_config->>'postalServiceType' LIKE 'Agol%'
     OR (c.channel_config->>'postalServiceType' LIKE 'Raccomandata%' AND c.channel_config->>'postalReturnReceipt' = 'true'))))`;
 
-const STALE_SQL = `fa.first_at <= now() - interval '${STALE_AFTER_DAYS} days'`;
+const STALE_SQL = `la.first_at <= now() - interval '${STALE_AFTER_DAYS} days'`;
 
 const SEND_LEGAL_DATE_SQL = `EXISTS (
     SELECT 1 FROM jsonb_array_elements(COALESCE(la.send_status_history, '[]'::jsonb)) h
     WHERE h->>'status' IN ('VIEWED', 'EFFECTIVE_DATE') AND COALESCE(h->>'activeFrom', '') <> '')`;
 
-/** Stessa regola di legalAttentionOf. Alias: c (campaigns), r (recipients), la (ultimo tentativo), fa (primo), ppt (verifica Poste). */
+/** Stessa regola di legalAttentionOf. Alias: c (campaigns), r (recipients), la (ultimo tentativo + first_at), ppt (verifica Poste). */
 function kindCaseSql(): string {
   return `CASE
     WHEN la.id IS NULL THEN NULL
@@ -112,23 +112,35 @@ function kindCaseSql(): string {
   END`;
 }
 
-/** Tutti i destinatari in perimetro con la loro classe (anche null). extraWhere in AND, es. "r.campaign_id = $1". */
+/**
+ * Tutti i destinatari in perimetro con la loro classe (anche null). extraWhere
+ * in AND, es. "r.campaign_id = $1". Set-based: ultimo tentativo e first_at in
+ * un solo passaggio (DISTINCT ON + MIN() OVER), mai due LATERAL per
+ * destinatario (bench 400k destinatari: 2.9s → 1.8s). extraWhere è ripetuto
+ * nella sottoquery dei tentativi, altrimenti il dettaglio di una campagna
+ * leggerebbe i tentativi di tutte; lì il perimetro è solo grezzo (canale e
+ * test), quello esatto su channel_config lo applica il join esterno.
+ */
 export function legalAttentionClassifiedSql(extraWhere = ''): string {
-  return `SELECT r.id AS recipient_id, r.campaign_id, fa.first_at, ${kindCaseSql()} AS kind
+  const extra = extraWhere ? ` AND ${extraWhere}` : '';
+  const where = `${PERIMETER_SQL} AND r.status NOT IN ('cancelled', 'skipped')${extra}`;
+  // Filtro grezzo e veloce: il perimetro esatto (channel_config jsonb) lo applica il join esterno.
+  const attemptsWhere = `c.is_test = false AND c.channel_type IN ('SEND', 'POSTAL')${extra}`;
+  return `SELECT r.id AS recipient_id, r.campaign_id, la.first_at, ${kindCaseSql()} AS kind
   FROM recipients r
   JOIN campaigns c ON c.id = r.campaign_id
-  LEFT JOIN LATERAL (
-    SELECT na.id, na.status, na.postal_status, na.postal_delivery_status, na.send_status, na.send_status_history
+  LEFT JOIN (
+    SELECT DISTINCT ON (na.recipient_id) na.recipient_id, na.id, na.status, na.postal_status, na.postal_delivery_status,
+      na.send_status, na.send_status_history,
+      MIN(na.created_at) OVER (PARTITION BY na.recipient_id) AS first_at
     FROM notification_attempts na
-    WHERE na.recipient_id = r.id
-    ORDER BY na.attempt_number DESC
-    LIMIT 1
-  ) la ON true
-  LEFT JOIN LATERAL (
-    SELECT MIN(na2.created_at) AS first_at FROM notification_attempts na2 WHERE na2.recipient_id = r.id
-  ) fa ON true
+    JOIN recipients r ON r.id = na.recipient_id
+    JOIN campaigns c ON c.id = r.campaign_id
+    WHERE ${attemptsWhere}
+    ORDER BY na.recipient_id, na.attempt_number DESC
+  ) la ON la.recipient_id = r.id
   LEFT JOIN postal_poste_tracking ppt ON ppt.attempt_id = la.id
-  WHERE ${PERIMETER_SQL} AND r.status NOT IN ('cancelled', 'skipped')${extraWhere ? ` AND ${extraWhere}` : ''}`;
+  WHERE ${where}`;
 }
 
 /** Solo le segnalate: classe non null e ultima review dello stesso kind assente o posticipo scaduto. */

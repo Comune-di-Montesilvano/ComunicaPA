@@ -119,8 +119,8 @@ describe('SQL', () => {
     const sql = legalAttentionClassifiedSql();
     expect(sql).toContain('c.is_test = false');
     expect(sql).toContain("c.channel_config->>'postalReturnReceipt' = 'true'");
-    expect(sql).toContain('ORDER BY na.attempt_number DESC');
-    expect(sql).toContain('MIN(na2.created_at) AS first_at');
+    expect(sql).toContain('ORDER BY na.recipient_id, na.attempt_number DESC');
+    expect(sql).toContain('MIN(na.created_at) OVER (PARTITION BY na.recipient_id) AS first_at');
     expect(sql).toContain("r.status NOT IN ('cancelled', 'skipped')");
     expect(sql).toContain("la.status = 'cancelled' THEN NULL");
     expect(sql).toContain("'REFUSED', 'CANCELLED', 'RETURNED_TO_SENDER'");
@@ -131,6 +131,17 @@ describe('SQL', () => {
   });
   it('extraWhere viene aggiunto in AND', () => {
     expect(legalAttentionClassifiedSql('r.campaign_id = $1')).toContain('AND r.campaign_id = $1');
+  });
+  it('set-based: tentativi letti in un solo passaggio, mai un LATERAL per destinatario', () => {
+    const sql = legalAttentionClassifiedSql();
+    expect(sql).toContain('DISTINCT ON (na.recipient_id)');
+    expect(sql).not.toContain('LATERAL');
+  });
+  it('extraWhere e filtro grezzo di perimetro ripetuti nella sottoquery dei tentativi (dettaglio di una campagna non legge tutto)', () => {
+    const sql = legalAttentionClassifiedSql('r.campaign_id = $1');
+    expect(sql.split('AND r.campaign_id = $1').length - 1).toBe(2);
+    expect(sql.split('c.is_test = false').length - 1).toBe(2);
+    expect(sql).toContain("c.channel_type IN ('SEND', 'POSTAL') AND r.campaign_id = $1");
   });
   it('flagged: ultima review per stesso kind, snooze scaduto riapre', () => {
     const sql = legalAttentionFlaggedSql();
