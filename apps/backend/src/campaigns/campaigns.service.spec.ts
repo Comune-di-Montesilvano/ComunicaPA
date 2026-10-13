@@ -495,7 +495,46 @@ describe('CampaignsService', () => {
     const result = await service.launch('c-send-invalid', ADMIN_REQUESTER);
 
     expect(result.blocked).toBe(true);
+    expect(result.code).toBe('UNSIGNED_ATTACHMENTS');
     expect(result.message).toContain('1');
+  });
+
+  it('launch(): SEND massivo con allegati non validi supera il gate firma se forzato', async () => {
+    mockCampaignQb.execute.mockResolvedValueOnce({ affected: 1 });
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({
+      ...mockCampaign,
+      channelType: 'SEND',
+      channelConfig: { protocolla: true, attachments: [{ key: 'doc', label: 'Documento' }], wizSingleMode: false },
+    });
+    mockSignatureVerificationBulkService.getLatestStatus.mockResolvedValueOnce({
+      status: 'done', totalRows: 5, validCount: 4, invalidCount: 1, errorMessage: null,
+    });
+    // (1) findMissingAttachments, (2) recipients principali: vuoti → il lancio
+    // si ferma DOPO il gate firma, su "No pending recipients".
+    mockRecipientRepo.find.mockResolvedValueOnce([]);
+    mockRecipientRepo.find.mockResolvedValueOnce([]);
+
+    await expect(
+      service.launch('c-send-forced', ADMIN_REQUESTER, { forceUnsignedAttachments: true }),
+    ).rejects.toThrow('No pending recipients');
+    expect(mockCampaignRepo.update).not.toHaveBeenCalledWith({ id: 'c-send-forced' }, { status: CampaignStatus.DRAFT });
+  });
+
+  it('launch(): SEND massivo con verifica in corso resta bloccato anche se forzato', async () => {
+    mockCampaignQb.execute.mockResolvedValueOnce({ affected: 1 });
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({
+      ...mockCampaign,
+      channelType: 'SEND',
+      channelConfig: { protocolla: true, attachments: [{ key: 'doc', label: 'Documento' }], wizSingleMode: false },
+    });
+    mockSignatureVerificationBulkService.getLatestStatus.mockResolvedValueOnce({
+      status: 'processing', totalRows: 5, validCount: 0, invalidCount: 0, errorMessage: null,
+    });
+
+    const result = await service.launch('c-send-pending', ADMIN_REQUESTER, { forceUnsignedAttachments: true });
+
+    expect(result.blocked).toBe(true);
+    expect(result.message).toContain('Verifica firma');
   });
 
   it('launch(): SEND singolo NON bloccato da firma non valida, solo warning', async () => {

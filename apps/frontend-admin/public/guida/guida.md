@@ -310,6 +310,14 @@ I destinatari di una campagna annullata non si possono rimettere in coda.
 
 **Apri un ticket se:** il costo è ancora 0 € dopo 48 ore per la posta o dopo 7 giorni per SEND.
 
+### SEND: «allegato/i non firmati validamente» al Passo 6
+
+**Causa:** per le campagne SEND massive ComunicaPA verifica la firma digitale di ogni allegato. Il messaggio compare quando uno o più PDF non hanno una firma digitale valida (per esempio documenti con firma autografa a stampa).
+
+**Soluzione:** sostituisci gli allegati con quelli firmati al Passo 5. Se devi inviare comunque, premi **Conferma ed Avvia Campagna** e conferma l'avviso: l'invio parte sotto la tua responsabilità e la forzatura resta registrata nel registro attività. Senza firma valida la notifica può essere contestata.
+
+**Apri un ticket se:** il messaggio «Verifica firma digitale allegati in corso…» resta visibile per più di qualche minuto.
+
 ### Una notifica SEND irreperibile non compare tra le segnalazioni
 
 **Causa:** per SEND il destinatario irreperibile non blocca la notifica: la piattaforma la perfeziona comunque e assegna una data legale. Non è quindi una notifica senza esito.

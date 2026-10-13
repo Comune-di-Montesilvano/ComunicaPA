@@ -8436,6 +8436,14 @@ export function App(): React.JSX.Element {
       alert('Non ci sono destinatari validi da inviare.');
       return;
     }
+    // SEND massivo con allegati non firmati validamente: lancio consentito
+    // solo dopo conferma esplicita (stesso avviso del singolo) — il backend
+    // blocca senza il flag forceUnsignedAttachments e traccia la forzatura in audit.
+    let forceUnsignedAttachments = false;
+    if (wizChannel === 'SEND' && !wizSingleMode && wizSignatureJobStatus?.status === 'done' && wizSignatureJobStatus.invalidCount > 0) {
+      if (!confirmContinueDespiteInvalidSignature(wizSignatureJobStatus.invalidCount, wizSignatureJobStatus.totalRows)) return;
+      forceUnsignedAttachments = true;
+    }
     setWizSending(true);
 
     try {
@@ -8617,7 +8625,8 @@ export function App(): React.JSX.Element {
 
       const launchRes = await fetch(`${ADMIN_API_BASE}/campaigns/${campaignObj.id}/launch`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(forceUnsignedAttachments ? { forceUnsignedAttachments: true } : {}),
       });
 
       if (!launchRes.ok) {
@@ -9168,6 +9177,12 @@ export function App(): React.JSX.Element {
       if (!res.ok) {
         const errData = await res.json();
         throw new Error(errData.message || 'Errore durante il lancio della campagna');
+      }
+      // launch() risponde 200 anche quando blocca (vedi handleWizLaunch): senza
+      // questo controllo un lancio bloccato veniva mostrato come riuscito.
+      const launchData = await res.json().catch(() => null);
+      if (launchData?.blocked) {
+        throw new Error(launchData.message || 'Impossibile avviare la campagna.');
       }
       alert('Campagna lanciata con successo!');
       await fetchCampaignDetail(campaign.id);
@@ -12620,7 +12635,7 @@ export function App(): React.JSX.Element {
                       ) : wizSignatureJobStatus.status !== 'done' ? (
                         <><Loader2 className="icon-spin" size={16} /> Verifica firma digitale in corso...</>
                       ) : wizSignatureJobStatus.invalidCount > 0 ? (
-                        <><AlertTriangle size={16} /> {wizSignatureJobStatus.invalidCount} allegato/i non firmati validamente su {wizSignatureJobStatus.totalRows} — correggi i file prima di lanciare.</>
+                        <><AlertTriangle size={16} /> {wizSignatureJobStatus.invalidCount} allegato/i non firmati validamente su {wizSignatureJobStatus.totalRows} — puoi sostituirli (Passo 5) o lanciare comunque confermando sotto la tua responsabilità.</>
                       ) : (
                         <><CheckCircle2 size={16} /> Tutti gli allegati ({wizSignatureJobStatus.totalRows}) risultano firmati validamente.</>
                       )}
@@ -12658,7 +12673,7 @@ export function App(): React.JSX.Element {
                       <button
                         className="btn btn-success"
                         onClick={handleWizLaunch}
-                        disabled={wizSending || (wizSingleMode && !wizSingleNeedsTemplateStep && !wizSubject.trim()) || (wizChannel === 'SEND' && !wizSingleMode && (!wizSignatureJobStatus || wizSignatureJobStatus.status !== 'done' || wizSignatureJobStatus.invalidCount > 0))}
+                        disabled={wizSending || (wizSingleMode && !wizSingleNeedsTemplateStep && !wizSubject.trim()) || (wizChannel === 'SEND' && !wizSingleMode && (!wizSignatureJobStatus || wizSignatureJobStatus.status !== 'done'))}
                       >
                         {wizSending ? (
                           <>
@@ -12785,7 +12800,7 @@ export function App(): React.JSX.Element {
                       ) : wizSignatureJobStatus.status !== 'done' ? (
                         <><Loader2 className="icon-spin" size={16} /> Verifica firma digitale in corso...</>
                       ) : wizSignatureJobStatus.invalidCount > 0 ? (
-                        <><AlertTriangle size={16} /> {wizSignatureJobStatus.invalidCount} allegato/i non firmati validamente su {wizSignatureJobStatus.totalRows} — correggi i file prima di lanciare.</>
+                        <><AlertTriangle size={16} /> {wizSignatureJobStatus.invalidCount} allegato/i non firmati validamente su {wizSignatureJobStatus.totalRows} — puoi sostituirli (Passo 5) o lanciare comunque confermando sotto la tua responsabilità.</>
                       ) : (
                         <><CheckCircle2 size={16} /> Tutti gli allegati ({wizSignatureJobStatus.totalRows}) risultano firmati validamente.</>
                       )}
@@ -12823,7 +12838,7 @@ export function App(): React.JSX.Element {
                       <button
                         className="btn btn-success"
                         onClick={handleWizLaunch}
-                        disabled={wizSending || (wizSingleMode && !wizSingleNeedsTemplateStep && !wizSubject.trim()) || (wizChannel === 'SEND' && !wizSingleMode && (!wizSignatureJobStatus || wizSignatureJobStatus.status !== 'done' || wizSignatureJobStatus.invalidCount > 0))}
+                        disabled={wizSending || (wizSingleMode && !wizSingleNeedsTemplateStep && !wizSubject.trim()) || (wizChannel === 'SEND' && !wizSingleMode && (!wizSignatureJobStatus || wizSignatureJobStatus.status !== 'done'))}
                       >
                         {wizSending ? (
                           <>
