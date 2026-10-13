@@ -24,6 +24,7 @@ import { DomicilioModule } from './channels/domicilio/domicilio.module.js';
 import { EnrichmentModule } from './enrichment/enrichment.module.js';
 import { DomicileVerificationModule } from './channels/domicile-verification/domicile-verification.module.js';
 import { NotificationsSearchModule } from './notifications-search/notifications-search.module.js';
+import { LegalAttentionModule } from './legal-attention/legal-attention.module.js';
 import { TemplatesModule } from './templates/templates.module.js';
 import { AuditLogsModule } from './audit-logs/audit-logs.module.js';
 import { PresenceModule } from './presence/presence.module.js';
@@ -59,6 +60,7 @@ import configuration from './config/configuration.js';
     EnrichmentModule,
     DomicileVerificationModule,
     NotificationsSearchModule,
+    LegalAttentionModule,
     TemplatesModule,
     AuditLogsModule,
     PresenceModule,
