@@ -49,6 +49,20 @@ describe('RemoteSignService', () => {
     await expect(svc.listFilesToSign(CAMPAIGN_ID)).resolves.toEqual({ toSign: ['A.pdf'], alreadyValid: ['B.pdf'] });
   });
 
+  it('listFilesToSign: scarta nomi non sicuri (traversal, sottocartelle, nascosti, non PDF)', async () => {
+    const { svc, recipientRepo } = build();
+    const bad = ['../../etc/passwd', '../11111111-1111-1111-1111-111111111111/DOC.pdf', '.hidden.pdf', 'a/b.pdf', 'x.txt'];
+    recipientRepo.find.mockResolvedValueOnce([
+      ...bad.map((f) => ({ extraData: { allegato: f }, signatureCheck: { valid: false } })),
+      ...['../../etc/V.pdf', '.v.pdf', 'v/w.pdf', 'v.txt'].map((f) => ({ extraData: { allegato: f }, signatureCheck: { valid: true } })),
+      { extraData: { allegato: 'OK.PDF' }, signatureCheck: { valid: false } },
+      { extraData: { allegato: '../evil.pdf' }, signatureCheck: { valid: true } },
+    ]);
+    const res = await svc.listFilesToSign(CAMPAIGN_ID);
+    expect(res.toSign).toEqual(['OK.PDF']);
+    expect(res.alreadyValid).toEqual([]);
+  });
+
   it('start: apre la sessione nella richiesta e accoda senza password in chiaro', async () => {
     const { svc, queue, client } = build();
     const res = await svc.start(CAMPAIGN_ID, ADMIN, { user: 'mario', password: 'segreta', otp: '123456' });

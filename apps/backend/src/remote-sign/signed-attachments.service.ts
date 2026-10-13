@@ -4,7 +4,6 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { join } from 'path';
 import AdmZip from 'adm-zip';
-import { getUploadsDir } from '../attachments/attachment-paths.js';
 import { extractZipWithYauzl, flattenZipEntryName } from '../campaigns/zip-extract.util.js';
 import { SignatureVerificationBulkService } from '../signature-verification/signature-verification-bulk.service.js';
 import { SignatureVerificationJobStatus } from '../entities/signature-verification-job.entity.js';
@@ -12,7 +11,7 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
 import type { CampaignRequester } from '../campaigns/campaigns.service.js';
 import { RemoteSignService } from './remote-sign.service.js';
 import { matchSignedFiles } from './signed-attachment-matcher.util.js';
-import { replaceAttachment } from './attachment-writer.util.js';
+import { replaceAttachment, safeAttachmentPath } from './attachment-writer.util.js';
 
 @Injectable()
 export class SignedAttachmentsService {
@@ -31,8 +30,8 @@ export class SignedAttachmentsService {
     const { toSign } = await this.remoteSign.listFilesToSign(campaignId);
     const zip = new AdmZip();
     for (const f of toSign) {
-      const path = join(getUploadsDir(campaignId), f);
-      if (!fs.existsSync(path)) continue;
+      const path = safeAttachmentPath(campaignId, f);
+      if (!path || !fs.existsSync(path)) continue;
       // STORED: i PDF sono già compressi, deflate costa CPU senza guadagno.
       zip.addFile(f, await fs.promises.readFile(path));
       const entry = zip.getEntry(f);

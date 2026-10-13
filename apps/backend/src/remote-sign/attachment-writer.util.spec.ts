@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import { join } from 'path';
-import { replaceAttachment } from './attachment-writer.util.js';
+import { replaceAttachment, safeAttachmentPath } from './attachment-writer.util.js';
 import { getUnsignedBackupDir, getUploadsDir } from '../attachments/attachment-paths.js';
 
 const CAMPAIGN = '11111111-1111-1111-1111-111111111111';
@@ -38,4 +38,19 @@ describe('replaceAttachment', () => {
   it('rifiuta nomi con path traversal', () => {
     expect(() => replaceAttachment(CAMPAIGN, '../x.pdf', Buffer.from('X'))).toThrow('Nome allegato non valido');
   });
+});
+
+describe('safeAttachmentPath', () => {
+  beforeEach(() => { process.env['ATTACHMENTS_PATH'] = '/tmp/comunicapa-safe'; });
+  afterEach(() => { delete process.env['ATTACHMENTS_PATH']; });
+
+  it('nome semplice → path dentro uploads', () => {
+    expect(safeAttachmentPath(CAMPAIGN, 'DOC_1.pdf')).toBe(join(getUploadsDir(CAMPAIGN), 'DOC_1.pdf'));
+  });
+
+  it.each(['../../etc/passwd', '../22222222-2222-2222-2222-222222222222/DOC.pdf', '.hidden.pdf', 'a/b.pdf', '', '..'])(
+    'rifiuta %s', (f) => {
+      expect(safeAttachmentPath(CAMPAIGN, f)).toBeNull();
+    },
+  );
 });

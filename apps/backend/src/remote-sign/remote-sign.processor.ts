@@ -4,10 +4,8 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import type { Job } from 'bullmq';
 import { Repository } from 'typeorm';
 import * as fs from 'fs';
-import { join } from 'path';
 import { RemoteSignJob, RemoteSignJobStatus } from '../entities/remote-sign-job.entity.js';
 import { Campaign } from '../entities/campaign.entity.js';
-import { getUploadsDir } from '../attachments/attachment-paths.js';
 import { SignatureVerificationBulkService } from '../signature-verification/signature-verification-bulk.service.js';
 import { SignatureVerificationService } from '../signature-verification/signature-verification.service.js';
 import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
@@ -15,7 +13,7 @@ import { captureException } from '../common/sentry.util.js';
 import { ArubaSignClient } from './aruba-sign.client.js';
 import { RemoteSignError } from './arss-errors.js';
 import { RemoteSignService } from './remote-sign.service.js';
-import { replaceAttachment } from './attachment-writer.util.js';
+import { replaceAttachment, safeAttachmentPath } from './attachment-writer.util.js';
 import { REMOTE_SIGN_QUEUE, RemoteSignQueueJobData } from './remote-sign-job.types.js';
 
 @Injectable()
@@ -56,8 +54,8 @@ export class RemoteSignProcessor extends WorkerHost {
       const { toSign } = await this.service.listFilesToSign(campaignId);
       total = toSign.length;
       for (const filename of toSign) {
-        const path = join(getUploadsDir(campaignId), filename);
-        if (!fs.existsSync(path)) {
+        const path = safeAttachmentPath(campaignId, filename);
+        if (!path || !fs.existsSync(path)) {
           failedCount++;
           continue;
         }

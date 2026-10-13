@@ -49,6 +49,23 @@ describe('SignedAttachmentsService', () => {
     expect(new AdmZip(zip as Buffer).getEntries().every((e) => e.header.method === 0)).toBe(true);
   });
 
+  it('buildUnsignedZip non legge mai nomi fuori da uploads anche se listFilesToSign li restituisse', async () => {
+    const { svc, remoteSign } = build();
+    // File "segreto" fuori da uploads, raggiungibile con ../
+    fs.writeFileSync(join(root, 'segreto.pdf'), 'SEGRETO');
+    fs.mkdirSync(join(getUploadsDir(CAMPAIGN), 'a'));
+    fs.writeFileSync(join(getUploadsDir(CAMPAIGN), 'a', 'b.pdf'), 'sub');
+    fs.writeFileSync(join(getUploadsDir(CAMPAIGN), '.hidden.pdf'), 'hidden');
+    remoteSign.listFilesToSign.mockResolvedValueOnce({
+      toSign: ['A.pdf', '../../segreto.pdf', '../../../etc/passwd', '.hidden.pdf', 'a/b.pdf'],
+      alreadyValid: [],
+    });
+    const zip = await svc.buildUnsignedZip(CAMPAIGN, ADMIN);
+    const entries = new AdmZip(zip as Buffer).getEntries();
+    expect(entries.map((e) => e.entryName)).toEqual(['A.pdf']);
+    expect(entries.some((e) => e.getData().toString().includes('SEGRETO'))).toBe(false);
+  });
+
   it('buildUnsignedZip con verifica non conclusa → error', async () => {
     const { svc, bulk } = build();
     bulk.getLatestStatus.mockResolvedValueOnce({ status: 'processing' });

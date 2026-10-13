@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import { In, Repository } from 'typeorm';
+import { basename } from 'path';
 import type { Queue } from 'bullmq';
 import { Campaign, CampaignStatus } from '../entities/campaign.entity.js';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity.js';
@@ -30,6 +31,10 @@ export interface RemoteSignStatusDto {
   errorKind: string | null;
   errorMessage: string | null;
   signerCn: string | null;
+}
+
+function isSafePdfName(f: string): boolean {
+  return basename(f) === f && !f.startsWith('.') && f.toLowerCase().endsWith('.pdf');
 }
 
 const ACTIVE = [RemoteSignJobStatus.QUEUED, RemoteSignJobStatus.PROCESSING];
@@ -79,8 +84,10 @@ export class RemoteSignService {
 
   /**
    * Allegati da firmare = file dei destinatari PENDING con signatureCheck
-   * invalido (ultima verifica), deduplicati, .p7m esclusi (PAdES impossibile).
+   * invalido (ultima verifica), deduplicati, solo .pdf (PAdES: .p7m esclusi).
    * alreadyValid = file referenziati SOLO da destinatari validi.
+   * Nomi dal CSV non fidati: tenuti solo nomi file semplici (no path, no
+   * nascosti) — vengono poi letti da disco e spediti ad Aruba.
    */
   async listFilesToSign(campaignId: string): Promise<{ toSign: string[]; alreadyValid: string[] }> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
@@ -100,8 +107,10 @@ export class RemoteSignService {
         else valid.add(f);
       }
     }
-    const signable = [...toSign].filter((f) => !f.toLowerCase().endsWith('.p7m'));
-    return { toSign: signable, alreadyValid: [...valid].filter((f) => !toSign.has(f)) };
+    return {
+      toSign: [...toSign].filter(isSafePdfName),
+      alreadyValid: [...valid].filter((f) => !toSign.has(f) && isSafePdfName(f)),
+    };
   }
 
   async start(
