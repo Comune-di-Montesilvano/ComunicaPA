@@ -10,6 +10,7 @@ import { StatisticsView } from './components/StatisticsView';
 import { DashboardView } from './components/DashboardView';
 import { uploadFileInChunks } from './chunked-upload';
 import { SignaturePanel } from './components/signature/SignaturePanel';
+import { RemoteSignModal } from './components/signature/RemoteSignModal';
 import { UnsignedDecisionModal, type UnsignedDecision } from './components/signature/UnsignedDecisionModal';
 import { COUNTRIES, matchCountry, isValidCap, abbreviateLongMunicipality, isPosteTrackableService, SEND_ENTITY_TYPES, SEND_TAXONOMY_CATALOG } from '@comunicapa/shared-types';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
@@ -27,7 +28,7 @@ import {
   CheckCheck, Shield, Paperclip, Upload, Filter, ExternalLink, Contact,
   Play, FileArchive, Keyboard, Key,
   Minus, Star, Stamp, CircleUserRound, BarChart3, ShieldCheck, Rocket, ArrowDown, ArrowUp, ArrowUpDown,
-  Users, Euro, ChevronDown,
+  Users, Euro, ChevronDown, PenLine,
 } from 'lucide-react';
 
 declare global {
@@ -46,7 +47,7 @@ import { GUIDA_URL, GUIDA_PER_VISTA, GUIDA_WIZARD_MASSIVO, GUIDA_WIZARD_SINGOLO,
 // Definizione centralizzata delle voci di navigazione della pagina Impostazioni.
 // Le voci canale leggono icona, logo e label direttamente da CHANNELS_REGISTRY.
 // ---------------------------------------------------------------------------
-type SettingsTab = 'personalizzazione' | 'smtp' | 'pec' | 'app-io' | 'pdnd' | 'send' | 'inad' | 'anpr' | 'protocollo' | 'postalizzazione' | 'external-api' | 'oidc' | 'motori';
+type SettingsTab = 'personalizzazione' | 'smtp' | 'pec' | 'app-io' | 'pdnd' | 'send' | 'inad' | 'anpr' | 'protocollo' | 'postalizzazione' | 'firma-remota' | 'external-api' | 'oidc' | 'motori';
 type SettingsNavSection = { section: string };
 type SettingsNavItem = {
   tab: SettingsTab;
@@ -71,6 +72,7 @@ const SETTINGS_NAV: Array<SettingsNavSection | SettingsNavItem> = [
   { tab: 'anpr',             icon: MapPin,                 label: 'ANPR (C002/C019)' },
   { tab: 'protocollo',       channelKey: 'PROTOCOLLAZIONE', icon: _sm('PROTOCOLLAZIONE').icon, label: _sm('PROTOCOLLAZIONE').label },
   { tab: 'postalizzazione',  channelKey: 'POSTAL',          icon: _sm('POSTAL').icon,          label: _sm('POSTAL').label },
+  { tab: 'firma-remota',     icon: PenLine,                 label: 'Firma remota (Aruba)' },
   { tab: 'external-api',     icon: Lock,                    label: 'API Esterne' },
   // ── Sicurezza ──────────────────────────────────────────────────────────
   { section: 'Sicurezza' },
@@ -2751,6 +2753,12 @@ export function App(): React.JSX.Element {
   const [settOidcClientSecret, setSettOidcClientSecret] = useState('');
   const [settOidcLogoutUrl, setSettOidcLogoutUrl] = useState('');
   const [settOidcLegalEntityEnabled, setSettOidcLegalEntityEnabled] = useState(false);
+  const [settRemoteSignEnabled, setSettRemoteSignEnabled] = useState(false);
+  const [settRemoteSignWsdlUrl, setSettRemoteSignWsdlUrl] = useState('');
+  const [settRemoteSignOtpDomain, setSettRemoteSignOtpDomain] = useState('firma');
+  const [settRemoteSignTypeHsm, setSettRemoteSignTypeHsm] = useState('COSIGN');
+  const [settRemoteSignCertId, setSettRemoteSignCertId] = useState('AS0');
+  const [remoteSignTestOpen, setRemoteSignTestOpen] = useState(false);
   const [settOidcLegalEntityScope, setSettOidcLegalEntityScope] = useState('legal_entity');
   const [settCitizenPublicUrl, setSettCitizenPublicUrl] = useState('');
 
@@ -3207,6 +3215,11 @@ export function App(): React.JSX.Element {
         setSettOidcClientSecret(String(s['oidc.clientSecret'] ?? ''));
         setSettOidcLogoutUrl(String(s['oidc.logoutUrl'] ?? ''));
         setSettOidcLegalEntityEnabled(Boolean(s['oidc.legalEntityEnabled']));
+        setSettRemoteSignEnabled(Boolean(s['remoteSign.enabled']));
+        setSettRemoteSignWsdlUrl(String(s['remoteSign.wsdlUrl'] ?? ''));
+        setSettRemoteSignOtpDomain(String(s['remoteSign.otpDomain'] ?? 'firma'));
+        setSettRemoteSignTypeHsm(String(s['remoteSign.typeHsm'] ?? 'COSIGN'));
+        setSettRemoteSignCertId(String(s['remoteSign.certId'] ?? 'AS0'));
         setSettOidcLegalEntityScope(String(s['oidc.legalEntityScope'] || 'legal_entity'));
         setSettCitizenPublicUrl(String(s['system.citizenPublicUrl'] ?? ''));
       })
@@ -4550,6 +4563,11 @@ export function App(): React.JSX.Element {
     'oidc.clientSecret': settOidcClientSecret,
     'oidc.logoutUrl': settOidcLogoutUrl,
     'oidc.legalEntityEnabled': settOidcLegalEntityEnabled,
+    'remoteSign.enabled': settRemoteSignEnabled,
+    'remoteSign.wsdlUrl': settRemoteSignWsdlUrl,
+    'remoteSign.otpDomain': settRemoteSignOtpDomain,
+    'remoteSign.typeHsm': settRemoteSignTypeHsm,
+    'remoteSign.certId': settRemoteSignCertId,
     'oidc.legalEntityScope': settOidcLegalEntityScope.trim() || 'legal_entity',
   });
 
@@ -15520,6 +15538,7 @@ export function App(): React.JSX.Element {
                         {activeSettingsTab === 'protocollo' && 'Connettore Protocollo Informatico'}
                         {activeSettingsTab === 'postalizzazione' && 'Postalizzazione Cartacea Istituzionale'}
                         {activeSettingsTab === 'external-api' && 'API Esterne — Caricamento Puntuale'}
+                        {activeSettingsTab === 'firma-remota' && 'Firma remota Aruba - Firma allegati SEND'}
                         {activeSettingsTab === 'oidc' && 'SPID / CIE (OIDC) - Autenticazione Cittadini'}
                         {activeSettingsTab === 'motori' && 'Motori di Invio — Stato Code BullMQ'}
                       </h3>
@@ -16358,6 +16377,44 @@ export function App(): React.JSX.Element {
                         {activeSettingsTab === 'external-api' && renderExternalClientsTab()}
 
                         {/* TAB: OIDC (SPID/CIE) */}
+                        {activeSettingsTab === 'firma-remota' && (
+                          <div className="row g-3">
+                            <div className="col-12">
+                              <div className="form-text small text-muted mb-2">Firma digitale PAdES degli allegati SEND con la firma remota OTP Aruba. Utente, password e OTP si inseriscono al momento della firma e non vengono mai salvati.</div>
+                              <div className="form-check form-switch">
+                                <input className="form-check-input" type="checkbox" id="rs_enabled" checked={settRemoteSignEnabled} onChange={(e) => setSettRemoteSignEnabled(e.target.checked)} />
+                                <label className="form-check-label small fw-bold" htmlFor="rs_enabled">Abilita "Firma con Aruba" nel wizard SEND</label>
+                              </div>
+                            </div>
+                            <div className="col-md-8">
+                              <label className="form-label small fw-bold text-dark" htmlFor="rs_wsdl">Endpoint servizio (WSDL)</label>
+                              <input type="text" id="rs_wsdl" className="form-control form-control-sm" value={settRemoteSignWsdlUrl} onChange={(e) => setSettRemoteSignWsdlUrl(e.target.value)} />
+                              <div className="form-text small text-muted">Servizio ARSS di Aruba. Cambiare solo per un'installazione ATP dell'ente.</div>
+                            </div>
+                            <div className="col-md-4">
+                              <label className="form-label small fw-bold text-dark" htmlFor="rs_domain">Dominio OTP</label>
+                              <input type="text" id="rs_domain" className="form-control form-control-sm" value={settRemoteSignOtpDomain} onChange={(e) => setSettRemoteSignOtpDomain(e.target.value)} />
+                              <div className="form-text small text-muted"><code>firma</code> per la firma remota personale Aruba.</div>
+                            </div>
+                            <div className="col-md-4">
+                              <label className="form-label small fw-bold text-dark" htmlFor="rs_hsm">Tipo HSM</label>
+                              <input type="text" id="rs_hsm" className="form-control form-control-sm" value={settRemoteSignTypeHsm} onChange={(e) => setSettRemoteSignTypeHsm(e.target.value)} />
+                            </div>
+                            <div className="col-md-4">
+                              <label className="form-label small fw-bold text-dark" htmlFor="rs_cert">ID certificato</label>
+                              <input type="text" id="rs_cert" className="form-control form-control-sm" value={settRemoteSignCertId} onChange={(e) => setSettRemoteSignCertId(e.target.value)} />
+                            </div>
+                            <div className="col-12">
+                              <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => setRemoteSignTestOpen(true)}>
+                                <PenLine size={14} className="me-1" />Prova firma
+                              </button>
+                              <div className="form-text small text-muted">Salva prima le impostazioni: la prova firma un PDF di test con i parametri salvati e mostra il firmatario.</div>
+                            </div>
+                            {remoteSignTestOpen && (
+                              <RemoteSignModal apiFetch={apiFetch} mode={{ kind: 'test' }} onClose={() => setRemoteSignTestOpen(false)} />
+                            )}
+                          </div>
+                        )}
                         {activeSettingsTab === 'oidc' && (
                           <div className="row g-3">
                             <div className="col-12">
