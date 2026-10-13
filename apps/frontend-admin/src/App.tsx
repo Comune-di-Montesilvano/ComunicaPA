@@ -7501,11 +7501,21 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     if (!(wizChannel === 'SEND' && !wizSingleMode && wizCampaignId && (wizStep === 6 || wizStep === 7))) return;
     let cancelled = false;
+    // Il job parte di norma all'upload allegati dello step 5, ma una bozza
+    // con allegati già sul server senza upload dal wizard (campagna da
+    // Arricchimento Tracciati, canale cambiato in SEND dopo l'upload) non ne
+    // ha nessuno: GET → 404 e il banner resterebbe "in corso" per sempre col
+    // lancio bloccato. Su 404 lo si avvia qui, una sola volta per montaggio.
+    let started = false;
     const poll = async () => {
       try {
         const res = await apiFetch(`/campaigns/${wizCampaignId}/signature-verification`);
-        if (!cancelled && res.ok) {
+        if (cancelled) return;
+        if (res.ok) {
           setWizSignatureJobStatus(await res.json());
+        } else if (res.status === 404 && !started) {
+          started = true;
+          await apiFetch(`/campaigns/${wizCampaignId}/signature-verification`, { method: 'POST' });
         }
       } catch {
         // silenzioso: stesso principio del polling stato campagna esistente
