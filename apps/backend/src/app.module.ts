@@ -18,6 +18,7 @@ import { PostalProvidersModule } from './postal-providers/postal-providers.modul
 import { PostalAuthorizedUsersModule } from './postal-authorized-users/postal-authorized-users.module.js';
 import { PosteTrackingModule } from './channels/postal/poste-tracking/poste-tracking.module.js';
 import { SignatureVerificationModule } from './signature-verification/signature-verification.module.js';
+import { RemoteSignModule } from './remote-sign/remote-sign.module.js';
 import { EnginesModule } from './engines/engines.module.js';
 import { IoServicesModule } from './io-services/io-services.module.js';
 import { DomicilioModule } from './channels/domicilio/domicilio.module.js';
@@ -54,6 +55,7 @@ import configuration from './config/configuration.js';
     PostalAuthorizedUsersModule,
     PosteTrackingModule,
     SignatureVerificationModule,
+    RemoteSignModule,
     EnginesModule,
     IoServicesModule,
     DomicilioModule,
