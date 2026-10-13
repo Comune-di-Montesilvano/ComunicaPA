@@ -312,3 +312,22 @@ merge-patch di `channelConfig.subject/body` (mai replace, perderebbe gli altri
 campi) e reinvio solo su EMAIL/PEC/APP_IO — **mai** un secondo invio
 POSTAL/SEND (spedizione fisica/legale). Sempre azione esplicita
 dell'operatore, mai un demone.
+
+## Notifiche senza esito legale (dashboard) — classe derivata, review append-only
+
+`legal-attention/legal-attention.util.ts` contiene la regola TS
+(`legalAttentionOf`, dettaglio e validazione review) e la gemella SQL
+(`legalAttentionClassifiedSql`/`legalAttentionFlaggedSql`, conteggi e
+paginazione): cambiarne una senza l'altra è un bug — il service logga
+`Classificazione SQL/TS divergente` se divergono su una riga mostrata.
+Perimetro: SEND + POSTAL con `hasPostalArTracking`, no test. SEND
+`UNREACHABLE` NON è bloccante (si perfeziona). `notification_reviews` è
+append-only: vale l'ultima riga per `(recipient_id, kind)`, quindi un ack su
+`stale` non copre un successivo `blocking`. Endpoint riepilogo mai nel
+polling 5s della dashboard (`apiFetch` tenuta in ref nei componenti).
+**Prestazioni**: SQL set-based (DISTINCT ON + MIN() OVER sui tentativi, mai
+2 LATERAL per destinatario: bench 400k destinatari 2.9s → 1.8s; il filtro
+di campagna va ripetuto nella sottoquery tentativi, altrimenti il dettaglio
+legge tutto) + cache riepilogo in memoria per utente 60s, svuotata da ogni
+review applicata, scavalcata da `?refresh=1` (pulsante Aggiorna) — valida a
+singola istanza backend, come l'SSE dell'arricchimento.

@@ -97,6 +97,10 @@ Stesso path-mangling anche su `docker compose exec <servizio> cat /path/assoluto
 (non solo `-v`): prefissare `MSYS_NO_PATHCONV=1` a qualunque comando che passa
 un path unix assoluto come argomento a un container da Git Bash Windows.
 
+**Path case-sensitive per `docker compose build` (Compose v5 = buildx bake).** La cartella reale è `comunicaPA`: lanciato da `.../comunicapa` (minuscolo) bake vede il Dockerfile "fuori dal context", chiede `fs.read` e fallisce con solo `failed to execute bake: exit status 1`. Fix: `cd` nel path con il case esatto (o `BUILDX_BAKE_ENTITLEMENTS_FS=0`). Diagnosi: `docker compose build --print <svc>` + `docker buildx bake -f <json>`.
+
+**Timestamp senza fuso letti 1-2 h nel passato.** Colonne `timestamp without time zone` (es. `notification_attempts.created_at`, scritte dal DB in UTC) vengono lette da node-postgres come ora locale del container (Europe/Rome). In SQL confrontare con `now() AT TIME ZONE 'UTC'`, in TS usare `fromUtcWallClock` (`legal-attention.util.ts`). Dettagli: `docs/claude/database-queue.md`.
+
 **Attenzione worktree/checkout paralleli — `docker-compose.yml` ha `name: comunicapa` fisso in cima al file.** Qualsiasi `docker compose` lanciato da QUALSIASI checkout/worktree di questo repo (anche una cartella diversa dalla principale) punta agli **stessi container condivisi** — non crea uno stack isolato, anche passando porte/env diversi. Un `docker compose up` da un worktree può silenziosamente ricreare in-place i container dev del checkout principale, ricollegandoli al codice del worktree (incidente reale già capitato). Se serve lavorare da un worktree/checkout secondario: **mai `docker compose`**, usare `docker run`/`docker exec` diretti sui container/volumi named già esistenti, es.:
 
 ```bash
@@ -109,7 +113,9 @@ MSYS_NO_PATHCONV=1 docker run --rm \
 
 # Migration contro un DB temporaneo, sul container postgres già in esecuzione
 docker exec comunicapa-postgres-1 psql -U comunicapa -d comunicapa_db -c "CREATE DATABASE migration_test;"
-docker exec -e DATABASE_URL="postgresql://comunicapa:<password>@postgres:5432/migration_test" comunicapa-backend-1 node_modules/.bin/typeorm-ts-node-commonjs migration:run -d src/database/data-source.ts
+# typeorm-ts-node-commonjs è rotto col backend ESM (Cannot find module '.../app-setting.entity.js'):
+# eseguire le migration compilate in dist/ del container (codice del checkout principale, non del worktree)
+MSYS_NO_PATHCONV=1 docker exec -w /app/apps/backend comunicapa-backend-1 node --input-type=module -e "import { DataSource } from 'typeorm'; const ds = await new DataSource({ type: 'postgres', url: process.env.DATABASE_URL.replace(/\/[^/]+\$/, '/migration_test'), migrations: ['/app/apps/backend/dist/database/migrations/*.js'] }).initialize(); console.log((await ds.runMigrations()).length); await ds.destroy();"
 ```
 
 **`git checkout <ref> -- .` — mai per "ispezionare"/confrontare, cancella lavoro non committato.**
@@ -126,7 +132,7 @@ confrontare con un altro branch senza rischio: `git diff <ref> -- <path>`
 
 **subagent-driven-development su questo repo — mai `isolation:"worktree"` per gli implementer se il lavoro deve andare dritto su `main`.** Un subagent con worktree isolato committa su un branch/checkout separato (`.claude/worktrees/...`) — se poi lo si rimuove, il report scritto dal subagent nella working directory sparisce con esso (bug reale: report ricostruito a mano dal riassunto restituito). Per lavoro diretto su main, dispatchare i subagent SENZA `isolation`, verificare poi con `git log --oneline -1 && git branch --show-current` che il commit sia finito dove atteso.
 
-**Script di editing con quoting misto (Python che contiene JSX/TS/SQL)**: mai heredoc inline nel tool Bash, si rompe su apici/backtick annidati ("unexpected EOF") e Git Bash collassa `\\n` → `\n` anche con `<<'EOF'` quotato — scrivere lo script `.py` nella scratchpad con Write e lanciarlo con `python <path>`.
+**Script di editing con quoting misto (Python che contiene JSX/TS/SQL)**: mai heredoc inline nel tool Bash, si rompe su apici/backtick annidati ("unexpected EOF") e Git Bash collassa `\\n` → `\n` anche con `<<'EOF'` quotato — scrivere lo script `.py` nella scratchpad con Write e lanciarlo con `python <path>`. Se lo script riscrive file del repo: `open(p, 'w', encoding='utf8', newline='')` — senza `newline=''` Python su Windows converte tutto il file in CRLF.
 
 **`.superpowers/sdd/` è scratch condiviso tra TUTTI i piani eseguiti nel repo, non per-piano.** Nomi file generici (`task-N-brief.md`/`task-N-report.md`) vengono sovrascritti da esecuzioni diverse — un report letto da lì può essere residuo di un piano precedente non correlato (bug reale: report Task 1 riletto per il review conteneva il riepilogo di un task di tutt'altro piano). Verificare sempre che il contenuto corrisponda al task atteso prima di fidarsene per una review.
 
@@ -161,6 +167,8 @@ docker compose exec backend node -e "const jwt=require('/app/node_modules/.pnpm/
 **E2E chunked-upload via script Node standalone**: per testare end-to-end un endpoint che usa `chunked-upload.util.ts` (init/chunk/complete) serve chunking client-side reale — rispettare `MAX_CHUNK_SIZE_BYTES`, un chunk singolo troppo grande dà 413 silenzioso lato test, non un errore ovvio. Script con `fetch`+`FormData` nativi, JWT dallo snippet sopra, lanciato con `MSYS_NO_PATHCONV=1 docker compose exec -w /app/apps/backend backend node src/debug/script.mjs`: deve stare sotto `apps/backend/src/` (unico bind mount del backend; `src/debug/` è escluso dall'immagine), mai in `apps/backend/` o `/tmp`. `MSYS_NO_PATHCONV=1` serve anche per `-w <path assoluto>` ("Cwd must be an absolute path").
 
 **Simulare un crash reale del backend per test (es. resume da checkpoint) — `docker kill` è bloccato dal classificatore di sicurezza di Claude Code.** Usare `docker compose restart backend`: il container non gestisce `SIGTERM` (nessun `enableShutdownHooks`), quindi il processo termina comunque bruscamente — stesso effetto pratico di un crash vero per testare codice di recovery, senza permessi distruttivi.
+
+**Test su Postgres reale**: la CI non ha DB → `describe.skipIf(!process.env.DATABASE_URL)`, fixture in transazione con rollback via `DataSource`/`createQueryRunner` di TypeORM (`pg` non ha tipi: `import pg` rompe `tsc -p tsconfig.spec.json`). Esempio: `legal-attention.parity.spec.ts`.
 
 **Test pdf-extractor (pytest) — deps NON nell'immagine dev, CI non le esegue.** `Dockerfile.dev` installa solo `requirements.txt` (prod), non `requirements-dev.txt`; `tests.yml` non gira affatto la suite Python. Per lanciarla: `docker cp services/pdf-extractor/requirements-dev.txt comunicapa-pdf-extractor-1:/svc/` + `docker cp services/pdf-extractor/tests comunicapa-pdf-extractor-1:/svc/tests` + `docker compose exec pdf-extractor pip install -r requirements-dev.txt` (una tantum, persiste finché il container non viene ricreato), poi `docker compose exec pdf-extractor python -m pytest tests/ -v`. Baseline: 1 fallimento noto pre-esistente (`test_extract_address_foreign_cap_embedded_in_street`), verificato anche su `main` pulito — non è una regressione.
 

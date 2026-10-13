@@ -9675,6 +9675,8 @@ export function App(): React.JSX.Element {
               onOpenCampaign={handleCampaignClick}
               onOpenEngines={() => { setView('impostazioni'); setActiveSettingsTab('motori'); fetchEngines(); }}
               onSeeAllCampaigns={() => setView('invio-massivo')}
+              isAdmin={role === 'admin'}
+              onOpenNotification={(recipientId) => { void openNotificationDetail(recipientId); }}
             />
           )}
 
@@ -17276,6 +17278,12 @@ export function App(): React.JSX.Element {
                             } else if (log.action === 'RETRY') {
                               badgeClass = 'bg-warning-subtle text-warning border border-warning-subtle';
                               actionText = 'Rinvio';
+                            } else if (log.action === 'LEGAL_ATTENTION_ACK') {
+                              badgeClass = 'bg-info-subtle text-info border border-info-subtle';
+                              actionText = 'Presa visione';
+                            } else if (log.action === 'LEGAL_ATTENTION_SNOOZE') {
+                              badgeClass = 'bg-info-subtle text-info border border-info-subtle';
+                              actionText = 'Posticipo';
                             }
 
                             // Dettagli dinamici descrittivi
@@ -17308,6 +17316,14 @@ export function App(): React.JSX.Element {
                               detailText = count 
                                 ? `Rinvio bulk avviato per ${count} notifiche fallite`
                                 : `Rinvio avviato per notifica fallita`;
+                            } else if (log.action === 'LEGAL_ATTENTION_ACK' || log.action === 'LEGAL_ATTENTION_SNOOZE') {
+                              const count = log.details?.count || 0;
+                              const what = count === 1 ? '1 notifica senza esito legale' : `${count} notifiche senza esito legale`;
+                              const until = log.details?.snoozedUntil ? ` fino al ${new Date(log.details.snoozedUntil).toLocaleDateString('it-IT')}` : '';
+                              const note = log.details?.note ? ` — nota: ${log.details.note}` : '';
+                              detailText = log.action === 'LEGAL_ATTENTION_ACK'
+                                ? `Presa visione di ${what}${note}`
+                                : `Posticipata la segnalazione di ${what}${until}${note}`;
                             } else if (log.details) {
                               detailText = JSON.stringify(log.details);
                             }
