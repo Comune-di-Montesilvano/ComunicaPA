@@ -157,6 +157,19 @@ stadio.
 gli atti opponibili (presa in carico, accesso): il download dell'originale è
 sempre la copia locale (sezione Allegati del dettaglio notifica).
 
+**ANALOG_DELIVERY = 3+ documenti diversi, tipo SOLO dalla timeline.** Sotto
+la stessa categoria PN mette `PN_PRINTED` (copia conforme AAR, CON020, NON
+prova di consegna), `PN_EXTERNAL_LEGAL_FACTS` .zip (cartolina AR, RECRN001B) e
+.pdf (plico restituito, RECRN002E) — distinguibili solo da
+`details.attachments[].documentType` (`Copia Conforme AAR`/`AR`/`Plico`)
+dell'evento timeline col legalFact, mai da nome file né ordine (la copia
+conforme può arrivare DOPO la cartolina). `SendLegalFactsService.listDocuments`
+(solo backoffice) fa il join; il portale cittadini resta su `listLegalFacts` e
+rimanda a notifichedigitali.it. **L'AAR non è nei legal-facts**: chiave in
+`generatedAarUrl` (AAR_GENERATION, ripetuta in ANALOG_FAILURE_WORKFLOW),
+download da `/delivery-push/{iun}/document/AAR?documentId=<chiave>` (stessa
+risposta filename/url/retryAfter; la variante `/v2.0/` dà 403).
+
 **Data legale SEND = perfezionamento** = min(`VIEWED`, `EFFECTIVE_DATE`) da
 `sendStatusHistory` (`sendLegalDateOf`). App IO fuori da SEND non ha mai
 valore di notifica (dicitura `APP_IO_LEGAL_DISCLAIMER` in calce).

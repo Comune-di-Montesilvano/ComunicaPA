@@ -8,6 +8,26 @@ export interface SendLegalFactItem {
   category: string;
 }
 
+/**
+ * Documento SEND per il dettaglio operatore. `category` è quella PN più
+ * 'AAR' (avviso di avvenuta ricezione, che PN non elenca tra i legal-facts).
+ * `documentType` serve solo per ANALOG_DELIVERY: sotto la stessa categoria PN
+ * mette copia conforme dell'AAR spedito, cartolina AR e plico restituito —
+ * distinguibili solo da details.attachments[].documentType dell'evento in
+ * timeline, mai da nome file o ordine (verificato su IUN reali).
+ */
+export interface SendDocumentItem extends SendLegalFactItem {
+  documentType?: string;
+}
+
+interface PnTimelineElement {
+  category: string;
+  legalFactsIds?: Array<{ key: string; category: string }>;
+  details?: { generatedAarUrl?: string; attachments?: Array<{ documentType?: string }> };
+}
+
+const AAR_KEY_MARKER = 'PN_AAR-';
+
 export type SendLegalFactDownloadResult =
   | { ready: true; filename: string; contentType: string; buffer: Buffer }
   | { ready: false; retryAfterSeconds?: number; error?: string };
@@ -50,11 +70,66 @@ export class SendLegalFactsService {
     }
   }
 
-  async downloadLegalFact(iun: string, legalFactId: string): Promise<SendLegalFactDownloadResult> {
+  /**
+   * Elenco documenti per il backoffice: legal-facts PN + tipo documento dalla
+   * timeline + AAR. Se la timeline non risponde degrada all'elenco legal-facts
+   * nudo, mai un errore. Il portale cittadini resta su listLegalFacts.
+   */
+  async listDocuments(iun: string): Promise<SendDocumentItem[]> {
+    const legalFacts = await this.listLegalFacts(iun);
+    const timeline = await this.fetchTimeline(iun);
+    if (!timeline) return legalFacts;
+
+    const documentTypeByKey = new Map<string, string>();
+    const aarKeys: string[] = [];
+    for (const el of timeline) {
+      const documentType = el.details?.attachments?.[0]?.documentType;
+      if (documentType) {
+        for (const lf of el.legalFactsIds ?? []) documentTypeByKey.set(lf.key, documentType);
+      }
+      const aar = el.details?.generatedAarUrl;
+      if (aar && !aarKeys.includes(aar)) aarKeys.push(aar);
+    }
+
+    const items: SendDocumentItem[] = legalFacts.map((lf) => {
+      const documentType = lf.category === 'ANALOG_DELIVERY' ? documentTypeByKey.get(lf.legalFactId) : undefined;
+      return documentType ? { ...lf, documentType } : lf;
+    });
+    const aarItems: SendDocumentItem[] = aarKeys.map((key) => ({ legalFactId: key, category: 'AAR' }));
+    const ackIndex = items.findIndex((i) => i.category === 'SENDER_ACK');
+    items.splice(ackIndex + 1, 0, ...aarItems);
+    return items;
+  }
+
+  private async fetchTimeline(iun: string): Promise<PnTimelineElement[] | null> {
     const { envKey, baseUrl, apiKey, purposeId } = await this.getEnvAndBaseUrl();
     try {
       const voucher = await this.pdndAuth.getVoucher(envKey, purposeId);
-      const metaRes = await fetch(`${baseUrl}/delivery-push/${iun}/download/legal-facts/${encodeURIComponent(legalFactId)}`, {
+      const res = await fetch(`${baseUrl}/delivery/v2.9/notifications/sent/${iun}`, {
+        headers: { 'x-api-key': apiKey, Authorization: `Bearer ${voucher}` },
+      });
+      const text = await res.text();
+      if (!res.ok) {
+        this.logger.warn(`Timeline SEND IUN ${iun} per elenco documenti fallita: HTTP ${res.status} — ${text.slice(0, 300)}`);
+        return null;
+      }
+      return (JSON.parse(text) as { timeline?: PnTimelineElement[] }).timeline ?? [];
+    } catch (err: any) {
+      this.logger.warn(`Errore timeline SEND IUN ${iun} per elenco documenti: ${err.message}`);
+      return null;
+    }
+  }
+
+  async downloadLegalFact(iun: string, legalFactId: string): Promise<SendLegalFactDownloadResult> {
+    const { envKey, baseUrl, apiKey, purposeId } = await this.getEnvAndBaseUrl();
+    // L'AAR non è un legal-fact: PN lo serve da /document/AAR (stessa forma
+    // di risposta filename/url/retryAfter, verificato dal vivo).
+    const metaUrl = legalFactId.includes(AAR_KEY_MARKER)
+      ? `${baseUrl}/delivery-push/${iun}/document/AAR?documentId=${encodeURIComponent(legalFactId)}`
+      : `${baseUrl}/delivery-push/${iun}/download/legal-facts/${encodeURIComponent(legalFactId)}`;
+    try {
+      const voucher = await this.pdndAuth.getVoucher(envKey, purposeId);
+      const metaRes = await fetch(metaUrl, {
         headers: { 'x-api-key': apiKey, Authorization: `Bearer ${voucher}` },
       });
       const metaText = await metaRes.text();

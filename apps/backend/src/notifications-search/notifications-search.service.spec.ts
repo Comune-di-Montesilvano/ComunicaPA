@@ -36,7 +36,7 @@ describe('NotificationsSearchService.search', () => {
         { provide: getRepositoryToken(NotificationAttempt), useValue: { find: jest.fn() } },
         { provide: getRepositoryToken(DownloadEvent), useValue: { find: jest.fn() } },
         { provide: CampaignsService, useValue: { renderMessageForRecipient: jest.fn() } },
-        { provide: SendLegalFactsService, useValue: { listLegalFacts: jest.fn(), downloadLegalFact: jest.fn() } },
+        { provide: SendLegalFactsService, useValue: { listDocuments: jest.fn(), downloadLegalFact: jest.fn() } },
         { provide: AttachmentService, useValue: { generatePdfBuffer: jest.fn() } },
       ],
     }).compile();
@@ -125,7 +125,7 @@ describe('NotificationsSearchService.getDetail', () => {
         { provide: getRepositoryToken(NotificationAttempt), useValue: attemptRepoMock },
         { provide: getRepositoryToken(DownloadEvent), useValue: downloadEventRepoMock },
         { provide: CampaignsService, useValue: campaignsServiceMock },
-        { provide: SendLegalFactsService, useValue: { listLegalFacts: jest.fn(), downloadLegalFact: jest.fn() } },
+        { provide: SendLegalFactsService, useValue: { listDocuments: jest.fn(), downloadLegalFact: jest.fn() } },
         { provide: AttachmentService, useValue: { generatePdfBuffer: jest.fn() } },
       ],
     }).compile();
@@ -462,7 +462,7 @@ describe('NotificationsSearchService.getSendLegalFacts / downloadSendLegalFact',
   const attemptRepoMock = { find: jest.fn(), findOne: jest.fn() };
   const downloadEventRepoMock = { find: jest.fn() };
   const campaignsServiceMock = { renderMessageForRecipient: jest.fn() };
-  const sendLegalFactsMock = { listLegalFacts: jest.fn(), downloadLegalFact: jest.fn() };
+  const sendLegalFactsMock = { listDocuments: jest.fn(), downloadLegalFact: jest.fn() };
 
   let service: NotificationsSearchService;
 
@@ -488,12 +488,12 @@ describe('NotificationsSearchService.getSendLegalFacts / downloadSendLegalFact',
     const result = await service.getSendLegalFacts('rec-1');
 
     expect(result).toEqual({ items: [] });
-    expect(sendLegalFactsMock.listLegalFacts).not.toHaveBeenCalled();
+    expect(sendLegalFactsMock.listDocuments).not.toHaveBeenCalled();
   });
 
-  it('getSendLegalFacts: chiama SendLegalFactsService.listLegalFacts con lo iun più recente', async () => {
+  it('getSendLegalFacts: chiama SendLegalFactsService.listDocuments con lo iun più recente', async () => {
     attemptRepoMock.findOne.mockResolvedValueOnce({ iun: 'IUN-1' });
-    sendLegalFactsMock.listLegalFacts.mockResolvedValueOnce([{ legalFactId: 'key1', category: 'SENDER_ACK' }]);
+    sendLegalFactsMock.listDocuments.mockResolvedValueOnce([{ legalFactId: 'key1', category: 'SENDER_ACK' }]);
 
     const result = await service.getSendLegalFacts('rec-1');
 
@@ -501,7 +501,7 @@ describe('NotificationsSearchService.getSendLegalFacts / downloadSendLegalFact',
       where: { recipientId: 'rec-1', channelType: 'SEND' },
       order: { createdAt: 'DESC' },
     });
-    expect(sendLegalFactsMock.listLegalFacts).toHaveBeenCalledWith('IUN-1');
+    expect(sendLegalFactsMock.listDocuments).toHaveBeenCalledWith('IUN-1');
     expect(result).toEqual({ items: [{ legalFactId: 'key1', category: 'SENDER_ACK' }] });
   });
 
@@ -540,7 +540,7 @@ describe('NotificationsSearchService.downloadAttachment', () => {
         { provide: getRepositoryToken(NotificationAttempt), useValue: { find: jest.fn() } },
         { provide: getRepositoryToken(DownloadEvent), useValue: { find: jest.fn() } },
         { provide: CampaignsService, useValue: { renderMessageForRecipient: jest.fn() } },
-        { provide: SendLegalFactsService, useValue: { listLegalFacts: jest.fn(), downloadLegalFact: jest.fn() } },
+        { provide: SendLegalFactsService, useValue: { listDocuments: jest.fn(), downloadLegalFact: jest.fn() } },
         { provide: AttachmentService, useValue: attachmentServiceMock },
       ],
     }).compile();

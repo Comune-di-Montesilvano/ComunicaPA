@@ -6,7 +6,7 @@ import { NotificationAttempt } from '../entities/notification-attempt.entity.js'
 import { DownloadEvent } from '../entities/download-event.entity.js';
 import { CampaignsService, hasPostalArTracking } from '../campaigns/campaigns.service.js';
 import { postalLegalOutcome } from '../campaigns/postal-legal-outcome.util.js';
-import { SendLegalFactsService, type SendLegalFactItem, type SendLegalFactDownloadResult } from '../channels/send/send-legal-facts.service.js';
+import { SendLegalFactsService, type SendDocumentItem, type SendLegalFactDownloadResult } from '../channels/send/send-legal-facts.service.js';
 import { AttachmentService, resolveAttachmentsConfig, resolveAttachmentLabel, resolveCustomAttachmentFilename } from '../attachments/attachment.service.js';
 import { resolvePhysicalAddress, resolvePaymentData } from '../channels/payment-config.util.js';
 import type { NotificationDetailDto } from './dto/notification-detail.dto.js';
@@ -349,13 +349,13 @@ export class NotificationsSearchService {
     return { buffer, filename };
   }
 
-  async getSendLegalFacts(recipientId: string): Promise<{ items: SendLegalFactItem[] }> {
+  async getSendLegalFacts(recipientId: string): Promise<{ items: SendDocumentItem[] }> {
     const attempt = await this.attemptRepo.findOne({
       where: { recipientId, channelType: 'SEND' },
       order: { createdAt: 'DESC' },
     });
     if (!attempt?.iun) return { items: [] };
-    const items = await this.sendLegalFacts.listLegalFacts(attempt.iun);
+    const items = await this.sendLegalFacts.listDocuments(attempt.iun);
     return { items };
   }
 
