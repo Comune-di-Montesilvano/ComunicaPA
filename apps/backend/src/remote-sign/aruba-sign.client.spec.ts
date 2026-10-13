@@ -86,4 +86,46 @@ describe('ArubaSignClient', () => {
     expect(logged).not.toContain('segreta');
     expect(logged).not.toContain('987654');
   });
+
+  it('impostazioni vuote → default del registry', async () => {
+    const empty = new ArubaSignClient({ get: vi.fn(async () => '') } as any);
+    soapClient.opensessionAsync.mockResolvedValueOnce([{ return: 'SESS-1' }]);
+    soapClient.pdfsignatureV2Async.mockResolvedValueOnce([{ return: { status: 'OK', binaryoutput: Buffer.from('F').toString('base64') } }]);
+    await empty.openSession(creds, '123456');
+    await empty.signPdf('SESS-1', creds, Buffer.from('PDF'));
+    expect(soap.createClientAsync).toHaveBeenCalledWith(
+      'https://arss.arubapec.it/ArubaSignService/ArubaSignService?wsdl',
+      { endpoint: 'https://arss.arubapec.it/ArubaSignService/ArubaSignService' },
+    );
+    expect(soapClient.opensessionAsync.mock.calls[0][0].Identity).toMatchObject({ typeOtpAuth: 'firma', typeHSM: 'COSIGN' });
+    expect(soapClient.pdfsignatureV2Async.mock.calls[0][0].SignRequestV2.certID).toBe('AS0');
+  });
+
+  it('WSDL scaricato una sola volta per lo stesso URL', async () => {
+    soapClient.opensessionAsync.mockResolvedValue([{ return: 'SESS-1' }]);
+    await client.openSession(creds, '1');
+    await client.openSession(creds, '2');
+    await client.closeSession('SESS-1', creds);
+    expect(soap.createClientAsync).toHaveBeenCalledTimes(1);
+    soapClient.opensessionAsync.mockReset();
+  });
+
+  it('URL WSDL cambiato → nuovo client', async () => {
+    let url = 'https://a.example/x?wsdl';
+    const c = new ArubaSignClient({ get: vi.fn(async (k: string) => (k === 'remoteSign.wsdlUrl' ? url : 'v')) } as any);
+    await c.closeSession('S', creds);
+    url = 'https://b.example/x?wsdl';
+    await c.closeSession('S', creds);
+    await c.closeSession('S', creds);
+    expect(soap.createClientAsync).toHaveBeenCalledTimes(2);
+    expect((soap.createClientAsync as any).mock.calls[1][0]).toBe('https://b.example/x?wsdl');
+  });
+
+  it('download WSDL fallito → errore network e nuovo tentativo alla chiamata successiva', async () => {
+    (soap.createClientAsync as any).mockRejectedValueOnce(Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' }));
+    await expect(client.openSession(creds, '1')).rejects.toMatchObject({ kind: 'network' });
+    soapClient.opensessionAsync.mockResolvedValueOnce([{ return: 'SESS-2' }]);
+    await expect(client.openSession(creds, '2')).resolves.toBe('SESS-2');
+    expect(soap.createClientAsync).toHaveBeenCalledTimes(2);
+  });
 });

@@ -8,6 +8,9 @@ export interface ArssCredentials {
   password: string;
 }
 
+/** Stessi default di settings.registry.ts (remoteSign.*). */
+const DEFAULT_WSDL_URL = 'https://arss.arubapec.it/ArubaSignService/ArubaSignService?wsdl';
+
 /**
  * Client SOAP Aruba Remote Sign Service (ARSS). Flusso verificato dal vivo
  * (spike 2026-10-13, docs/claude/remote-sign.md): opensession con OTP →
@@ -18,12 +21,27 @@ export interface ArssCredentials {
 export class ArubaSignClient {
   private readonly logger = new Logger(ArubaSignClient.name);
 
+  /** Client SOAP per URL WSDL: il WSDL si scarica una volta, non a ogni chiamata. */
+  private cache: { url: string; client: Promise<any> } | null = null;
+
   constructor(private readonly settings: AppSettingsService) {}
 
+  /** Impostazione vuota (salvata in bianco da UI) → default del registry. */
+  private async setting(key: string, fallback: string): Promise<string> {
+    return String((await this.settings.get<string>(key)) ?? '').trim() || fallback;
+  }
+
   private async client(): Promise<any> {
-    const wsdlUrl = await this.settings.get<string>('remoteSign.wsdlUrl');
+    const wsdlUrl = await this.setting('remoteSign.wsdlUrl', DEFAULT_WSDL_URL);
+    if (this.cache?.url !== wsdlUrl) {
+      const client = soap.createClientAsync(wsdlUrl, { endpoint: wsdlUrl.replace(/\?wsdl$/i, '') });
+      const entry = { url: wsdlUrl, client };
+      this.cache = entry;
+      // Download fallito: via dalla cache, la prossima chiamata riprova.
+      client.catch(() => { if (this.cache === entry) this.cache = null; });
+    }
     try {
-      return await soap.createClientAsync(wsdlUrl, { endpoint: wsdlUrl.replace(/\?wsdl$/i, '') });
+      return await this.cache!.client;
     } catch (err: any) {
       this.logger.warn(`WSDL ARSS non raggiungibile: ${err?.code ?? err?.message ?? err}`);
       throw new RemoteSignError('network', 'Servizio di firma Aruba non raggiungibile');
@@ -34,8 +52,8 @@ export class ArubaSignClient {
     return {
       user: creds.user,
       userPWD: creds.password,
-      typeOtpAuth: await this.settings.get<string>('remoteSign.otpDomain'),
-      typeHSM: await this.settings.get<string>('remoteSign.typeHsm'),
+      typeOtpAuth: await this.setting('remoteSign.otpDomain', 'firma'),
+      typeHSM: await this.setting('remoteSign.typeHsm', 'COSIGN'),
     };
   }
 
@@ -66,7 +84,7 @@ export class ArubaSignClient {
     const [res] = await this.call<any[]>(async () => client.pdfsignatureV2Async({
       SignRequestV2: {
         binaryinput: pdf.toString('base64'),
-        certID: await this.settings.get<string>('remoteSign.certId'),
+        certID: await this.setting('remoteSign.certId', 'AS0'),
         identity: await this.identity(creds),
         requiredmark: false,
         session_id: sessionId,
