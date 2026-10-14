@@ -127,9 +127,16 @@ export function parseRubricaPec(text: string): MaggioliRecord[] {
   return records;
 }
 
-/** Il formato analogico prefissa OGNI cella con un apostrofo (idempotente da strippare). */
+/**
+ * Il formato analogico prefissa OGNI cella con un apostrofo (idempotente da
+ * strippare). Export più recenti quotano invece ogni cella come formula Excel
+ * `="valore"` o tra semplici virgolette `"valore"` — bug reale: header letto
+ * come `="nome file"`, nessuna colonna riconosciuta, "PDF non trovato" su
+ * ogni riga. Nessun valore reale contiene ';', lo split resta valido.
+ */
 function stripApice(s: string): string {
-  return s.replace(/^'+/, '');
+  const quoted = /^\s*=?"(.*)"\s*$/.exec(s);
+  return quoted ? quoted[1] : s.replace(/^'+/, '');
 }
 
 export function parsePagIndice(text: string): MaggioliRecord[] {
