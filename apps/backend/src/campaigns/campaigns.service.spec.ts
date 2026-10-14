@@ -6,6 +6,7 @@ import { ConfigService } from '@nestjs/config';
 import { In } from 'typeorm';
 import { CampaignsService, isSingleRecipientFlow } from './campaigns.service.js';
 import { Campaign, CampaignStatus } from '../entities/campaign.entity.js';
+import { RemoteSignJob } from '../entities/remote-sign-job.entity.js';
 import { Recipient, RecipientStatus } from '../entities/recipient.entity.js';
 import { NotificationAttempt, AttemptStatus } from '../entities/notification-attempt.entity.js';
 import { DownloadEvent } from '../entities/download-event.entity.js';
@@ -27,6 +28,7 @@ import { getUploadsDir } from '../attachments/attachment-paths.js';
 const tmpDirRef = { dir: '' };
 vi.mock('../attachments/attachment-paths', () => ({
   getUploadsDir: jest.fn(() => tmpDirRef.dir),
+  getUnsignedBackupDir: jest.fn((id: string) => `/tmp/comunicapa-nonexistent-unsigned-backup/${id}`),
 }));
 
 
@@ -53,6 +55,7 @@ const ADMIN_REQUESTER = { username: 'admin', role: 'admin' as const };
 // Test.createTestingModule — serve visibile ovunque, non solo nel primo.
 const mockPostalAuthorizedUsersService = { isAuthorized: vi.fn().mockResolvedValue(true) };
 const mockSignatureVerificationBulkService = { getLatestStatus: vi.fn().mockResolvedValue({ status: 'done', totalRows: 0, validCount: 0, invalidCount: 0, errorMessage: null }) };
+const mockRemoteSignJobRepo = { exists: vi.fn().mockResolvedValue(false) };
 const mockSignatureVerificationService = { verify: vi.fn().mockResolvedValue({ valid: true, reason: null }) };
 
 describe('CampaignsService', () => {
@@ -123,6 +126,7 @@ describe('CampaignsService', () => {
       providers: [
         CampaignsService,
         { provide: SignatureVerificationBulkService, useValue: mockSignatureVerificationBulkService },
+        { provide: getRepositoryToken(RemoteSignJob), useValue: mockRemoteSignJobRepo },
         { provide: SignatureVerificationService, useValue: mockSignatureVerificationService },
         { provide: PostalAuthorizedUsersService, useValue: mockPostalAuthorizedUsersService },
         { provide: getRepositoryToken(Campaign), useValue: mockCampaignRepo },
@@ -518,6 +522,37 @@ describe('CampaignsService', () => {
       service.launch('c-send-forced', ADMIN_REQUESTER, { forceUnsignedAttachments: true }),
     ).rejects.toThrow('No pending recipients');
     expect(mockCampaignRepo.update).not.toHaveBeenCalledWith({ id: 'c-send-forced' }, { status: CampaignStatus.DRAFT });
+  });
+
+  it('launch(): SEND massivo bloccato se la firma remota è in corso', async () => {
+    mockCampaignQb.execute.mockResolvedValueOnce({ affected: 1 });
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({
+      ...mockCampaign,
+      channelType: 'SEND',
+      channelConfig: { protocolla: true, attachments: [{ key: 'doc', label: 'Documento' }], wizSingleMode: false },
+    });
+    mockRemoteSignJobRepo.exists.mockResolvedValueOnce(true);
+
+    const result = await service.launch('c-send-signing', ADMIN_REQUESTER, { forceUnsignedAttachments: true });
+
+    expect(result.blocked).toBe(true);
+    expect(result.message).toBe('Firma remota in corso: attendi la fine prima di lanciare.');
+    expect(mockCampaignRepo.update).toHaveBeenCalledWith({ id: 'c-send-signing' }, { status: CampaignStatus.DRAFT });
+  });
+
+  it('launch(): Invio Manuale SEND bloccato se la firma remota è in corso', async () => {
+    mockCampaignQb.execute.mockResolvedValueOnce({ affected: 1 });
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({
+      ...mockCampaign,
+      channelType: 'SEND',
+      channelConfig: { protocolla: true, attachments: [{ key: 'doc', label: 'Documento' }], wizSingleMode: true },
+    });
+    mockRemoteSignJobRepo.exists.mockResolvedValueOnce(true);
+
+    const result = await service.launch('c-single-signing', ADMIN_REQUESTER);
+
+    expect(result.blocked).toBe(true);
+    expect(result.message).toBe('Firma remota in corso: attendi la fine prima di lanciare.');
   });
 
   it('launch(): SEND massivo con verifica in corso resta bloccato anche se forzato', async () => {
@@ -1151,6 +1186,14 @@ describe('CampaignsService', () => {
   it('assertDraftForAttachments passa per campagna DRAFT', async () => {
     mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, status: CampaignStatus.DRAFT });
     await expect(service.assertDraftForAttachments('uuid-1')).resolves.toBeUndefined();
+  });
+
+  it('assertDraftForAttachments lancia BadRequestException se la firma remota è in corso', async () => {
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, status: CampaignStatus.DRAFT });
+    mockRemoteSignJobRepo.exists.mockResolvedValueOnce(true);
+    await expect(service.assertDraftForAttachments('uuid-1')).rejects.toThrow(
+      'Firma remota in corso: attendi la fine prima di caricare allegati.',
+    );
   });
 
   it('assertDraftForAttachments lancia BadRequestException per campagna QUEUED', async () => {

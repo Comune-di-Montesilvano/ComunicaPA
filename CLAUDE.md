@@ -206,6 +206,7 @@ codice, leggere con Read SOLO il file pertinente dall'indice sotto.
 - `docs/claude/postal-globalcom.md` — POSTAL: GlobalCom SOAP (login, invio, stato, Agol, script debug)
 - `docs/claude/anpr-inad-registro.md` — ANPR C002, INAD, Registro Imprese (stato impresa, encoding XML)
 - `docs/claude/pades-signature.md` — verifica firma digitale PDF (PAdES) con node-forge
+- `docs/claude/remote-sign.md` — firma remota Aruba ARSS (campi SOAP verificati, sessione OTP), backup originali fuori da uploads, ricarico firmati
 - `docs/claude/protocollo-tinn.md` — Protocollo Informatico TINN (SOAP Login/Inserimento/Protocollazione, Segnatura, DST)
 - `docs/claude/external-api-module.md` — `external-api/` — exports moduli Nest, `@HttpCode` su POST
 - `docs/claude/http-proxy-perf.md` — reverse proxy esterno (limite body/HTML error), event loop bloccato, multer diskStorage

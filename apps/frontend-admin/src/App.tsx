@@ -8,6 +8,10 @@ import { sendDocumentLabel, type SendDocumentItem } from './components/notificat
 import { SearchableSelect } from './components/SearchableSelect';
 import { StatisticsView } from './components/StatisticsView';
 import { DashboardView } from './components/DashboardView';
+import { uploadFileInChunks } from './chunked-upload';
+import { SignaturePanel } from './components/signature/SignaturePanel';
+import { RemoteSignModal } from './components/signature/RemoteSignModal';
+import { UnsignedDecisionModal, type UnsignedDecision } from './components/signature/UnsignedDecisionModal';
 import { COUNTRIES, matchCountry, isValidCap, abbreviateLongMunicipality, isPosteTrackableService, SEND_ENTITY_TYPES, SEND_TAXONOMY_CATALOG } from '@comunicapa/shared-types';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import {
@@ -24,7 +28,7 @@ import {
   CheckCheck, Shield, Paperclip, Upload, Filter, ExternalLink, Contact,
   Play, FileArchive, Keyboard, Key,
   Minus, Star, Stamp, CircleUserRound, BarChart3, ShieldCheck, Rocket, ArrowDown, ArrowUp, ArrowUpDown,
-  Users, Euro, ChevronDown,
+  Users, Euro, ChevronDown, PenLine,
 } from 'lucide-react';
 
 declare global {
@@ -43,7 +47,7 @@ import { GUIDA_URL, GUIDA_PER_VISTA, GUIDA_WIZARD_MASSIVO, GUIDA_WIZARD_SINGOLO,
 // Definizione centralizzata delle voci di navigazione della pagina Impostazioni.
 // Le voci canale leggono icona, logo e label direttamente da CHANNELS_REGISTRY.
 // ---------------------------------------------------------------------------
-type SettingsTab = 'personalizzazione' | 'smtp' | 'pec' | 'app-io' | 'pdnd' | 'send' | 'inad' | 'anpr' | 'protocollo' | 'postalizzazione' | 'external-api' | 'oidc' | 'motori';
+type SettingsTab = 'personalizzazione' | 'smtp' | 'pec' | 'app-io' | 'pdnd' | 'send' | 'inad' | 'anpr' | 'protocollo' | 'postalizzazione' | 'firma-remota' | 'external-api' | 'oidc' | 'motori';
 type SettingsNavSection = { section: string };
 type SettingsNavItem = {
   tab: SettingsTab;
@@ -68,6 +72,7 @@ const SETTINGS_NAV: Array<SettingsNavSection | SettingsNavItem> = [
   { tab: 'anpr',             icon: MapPin,                 label: 'ANPR (C002/C019)' },
   { tab: 'protocollo',       channelKey: 'PROTOCOLLAZIONE', icon: _sm('PROTOCOLLAZIONE').icon, label: _sm('PROTOCOLLAZIONE').label },
   { tab: 'postalizzazione',  channelKey: 'POSTAL',          icon: _sm('POSTAL').icon,          label: _sm('POSTAL').label },
+  { tab: 'firma-remota',     icon: PenLine,                 label: 'Firma remota (Aruba)' },
   { tab: 'external-api',     icon: Lock,                    label: 'API Esterne' },
   // ── Sicurezza ──────────────────────────────────────────────────────────
   { section: 'Sicurezza' },
@@ -1074,91 +1079,6 @@ const APP_IO_MARKDOWN_MAX = 10000;
 const APP_IO_SUBJECT_MIN = 10;
 const APP_IO_SUBJECT_MAX = 120;
 
-// Upload a chunk: un reverse proxy esterno davanti al backend in produzione
-// ha un limite di dimensione del body (osservato: 1MB) che spezzava in
-// un'unica richiesta l'upload di CSV/ZIP di migliaia di destinatari/
-// allegati. Chunk da 800KB per restare sotto quel limite con margine.
-const UPLOAD_CHUNK_SIZE = 800 * 1024;
-
-/** Upload di un singolo chunk via XHR (fetch non espone eventi di progresso in upload). */
-function uploadChunkXhr(url: string, token: string, chunk: Blob, onProgress: (loadedBytes: number) => void): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', url);
-    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress(e.loaded);
-    };
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        onProgress(chunk.size);
-        resolve();
-      } else {
-        reject(new Error(`Upload chunk fallito (HTTP ${xhr.status})`));
-      }
-    };
-    xhr.onerror = () => reject(new Error('Errore di rete durante upload chunk'));
-    const fd = new FormData();
-    fd.append('chunk', chunk, 'chunk.part');
-    xhr.send(fd);
-  });
-}
-
-/**
- * Carica `file` a chunk verso `<baseUrl>/init`, `/chunk/:uploadId/:index`,
- * `/complete/:uploadId`. `onProgress` riceve i byte effettivamente caricati
- * per QUESTO file (il chiamante somma l'offset se sta caricando più file
- * con una barra di progresso aggregata).
- */
-async function uploadFileInChunks(
-  baseUrl: string,
-  token: string,
-  file: Blob,
-  filename: string,
-  onProgress: (loadedBytes: number) => void,
-  onCompleteStart?: () => void,
-  completeBody?: Record<string, unknown>,
-): Promise<any> {
-  const totalChunks = Math.max(1, Math.ceil(file.size / UPLOAD_CHUNK_SIZE));
-
-  const initRes = await fetch(`${baseUrl}/init`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ filename, totalChunks }),
-  });
-  if (!initRes.ok) {
-    const errBody = await initRes.json().catch(() => null);
-    throw new Error(errBody?.message || `Errore inizializzazione upload (HTTP ${initRes.status}).`);
-  }
-  const { uploadId } = await initRes.json() as { uploadId: string };
-
-  let uploadedBefore = 0;
-  for (let i = 0; i < totalChunks; i++) {
-    const start = i * UPLOAD_CHUNK_SIZE;
-    const end = Math.min(start + UPLOAD_CHUNK_SIZE, file.size);
-    const chunk = file.slice(start, end);
-    const base = uploadedBefore;
-    await uploadChunkXhr(`${baseUrl}/chunk/${uploadId}/${i}`, token, chunk, (loadedInChunk) => onProgress(base + loadedInChunk));
-    uploadedBefore += chunk.size;
-  }
-
-  if (onCompleteStart) {
-    onCompleteStart();
-  }
-
-  const completeRes = await fetch(`${baseUrl}/complete/${uploadId}`, {
-    method: 'POST',
-    headers: completeBody
-      ? { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
-      : { Authorization: `Bearer ${token}` },
-    body: completeBody ? JSON.stringify(completeBody) : undefined,
-  });
-  if (!completeRes.ok) {
-    const errBody = await completeRes.json().catch(() => null);
-    throw new Error(errBody?.message || `Errore completamento upload (HTTP ${completeRes.status}).`);
-  }
-  return completeRes.json();
-}
 
 // Più warning di arricchimento sulla stessa riga/PDF (es. "Indirizzo non
 // estratto" + "Città mancante" + "Provincia mancante") vanno mostrati come
@@ -2437,6 +2357,15 @@ export function App(): React.JSX.Element {
   });
   const [wizAttachments, setWizAttachments] = useState<Array<{ key: string; label: string; labelColumn?: string }>>([]);
   const [wizSignatureJobStatus, setWizSignatureJobStatus] = useState<{ status: string; totalRows: number; validCount: number; invalidCount: number; errorMessage: string | null } | null>(null);
+  // Invio Manuale SEND: decisione dell'operatore su allegati non firmati,
+  // risolta da UnsignedDecisionModal (firma Aruba / invia comunque / annulla).
+  const [unsignedDecision, setUnsignedDecision] = useState<{
+    campaignId: string;
+    invalidCount: number;
+    totalRows: number;
+    arubaEnabled: boolean;
+    resolve: (d: UnsignedDecision) => void;
+  } | null>(null);
   // Mappatura colonna→campo e colonne allegato salvate su una campagna sorgente
   // (duplica/riprendi bozza), da riapplicare al prossimo CSV caricato SOLO se le
   // stesse colonne sono presenti nell'intestazione (stesso formato CSV riusato,
@@ -2824,6 +2753,12 @@ export function App(): React.JSX.Element {
   const [settOidcClientSecret, setSettOidcClientSecret] = useState('');
   const [settOidcLogoutUrl, setSettOidcLogoutUrl] = useState('');
   const [settOidcLegalEntityEnabled, setSettOidcLegalEntityEnabled] = useState(false);
+  const [settRemoteSignEnabled, setSettRemoteSignEnabled] = useState(false);
+  const [settRemoteSignWsdlUrl, setSettRemoteSignWsdlUrl] = useState('https://arss.arubapec.it/ArubaSignService/ArubaSignService?wsdl');
+  const [settRemoteSignOtpDomain, setSettRemoteSignOtpDomain] = useState('firma');
+  const [settRemoteSignTypeHsm, setSettRemoteSignTypeHsm] = useState('COSIGN');
+  const [settRemoteSignCertId, setSettRemoteSignCertId] = useState('AS0');
+  const [remoteSignTestOpen, setRemoteSignTestOpen] = useState(false);
   const [settOidcLegalEntityScope, setSettOidcLegalEntityScope] = useState('legal_entity');
   const [settCitizenPublicUrl, setSettCitizenPublicUrl] = useState('');
 
@@ -3280,6 +3215,11 @@ export function App(): React.JSX.Element {
         setSettOidcClientSecret(String(s['oidc.clientSecret'] ?? ''));
         setSettOidcLogoutUrl(String(s['oidc.logoutUrl'] ?? ''));
         setSettOidcLegalEntityEnabled(Boolean(s['oidc.legalEntityEnabled']));
+        setSettRemoteSignEnabled(Boolean(s['remoteSign.enabled']));
+        setSettRemoteSignWsdlUrl(String(s['remoteSign.wsdlUrl'] ?? ''));
+        setSettRemoteSignOtpDomain(String(s['remoteSign.otpDomain'] ?? 'firma'));
+        setSettRemoteSignTypeHsm(String(s['remoteSign.typeHsm'] ?? 'COSIGN'));
+        setSettRemoteSignCertId(String(s['remoteSign.certId'] ?? 'AS0'));
         setSettOidcLegalEntityScope(String(s['oidc.legalEntityScope'] || 'legal_entity'));
         setSettCitizenPublicUrl(String(s['system.citizenPublicUrl'] ?? ''));
       })
@@ -4623,6 +4563,11 @@ export function App(): React.JSX.Element {
     'oidc.clientSecret': settOidcClientSecret,
     'oidc.logoutUrl': settOidcLogoutUrl,
     'oidc.legalEntityEnabled': settOidcLegalEntityEnabled,
+    'remoteSign.enabled': settRemoteSignEnabled,
+    'remoteSign.wsdlUrl': settRemoteSignWsdlUrl.trim() || 'https://arss.arubapec.it/ArubaSignService/ArubaSignService?wsdl',
+    'remoteSign.otpDomain': settRemoteSignOtpDomain.trim() || 'firma',
+    'remoteSign.typeHsm': settRemoteSignTypeHsm.trim() || 'COSIGN',
+    'remoteSign.certId': settRemoteSignCertId.trim() || 'AS0',
     'oidc.legalEntityScope': settOidcLegalEntityScope.trim() || 'legal_entity',
   });
 
@@ -8306,6 +8251,21 @@ export function App(): React.JSX.Element {
   // Ritorna `false` solo se il singolo viene annullato (Annulla sulla
   // conferma) — i chiamanti interrompono il flusso silenziosamente, nessun
   // ulteriore popup di errore: la conferma già spiegata è l'unico messaggio.
+  const askUnsignedDecision = async (campaignId: string, invalidCount: number, totalRows: number): Promise<boolean> => {
+    let arubaEnabled = false;
+    try {
+      const res = await apiFetch('/remote-sign/config');
+      if (res.ok) arubaEnabled = Boolean((await res.json()).enabled);
+    } catch {
+      // senza config: solo Invia comunque / Annulla
+    }
+    const decision = await new Promise<UnsignedDecision>((resolve) => {
+      setUnsignedDecision({ campaignId, invalidCount, totalRows, arubaEnabled, resolve });
+    });
+    setUnsignedDecision(null);
+    return decision === 'continue';
+  };
+
   const triggerAndAlertSignatureVerification = async (campaignId: string): Promise<boolean> => {
     const isSingolo = wizChannel === 'SEND' && wizSingleMode;
     try {
@@ -8324,7 +8284,7 @@ export function App(): React.JSX.Element {
         if (status.status === 'done') {
           if (status.invalidCount > 0) {
             if (isSingolo) {
-              return confirmContinueDespiteInvalidSignature(status.invalidCount, status.totalRows);
+              return askUnsignedDecision(campaignId, status.invalidCount, status.totalRows);
             }
             alert(`Attenzione: ${status.invalidCount} allegato/i su ${status.totalRows} non risultano firmati validamente.`);
           }
@@ -12628,18 +12588,14 @@ export function App(): React.JSX.Element {
                     </div>
                   )}
 
-                  {wizChannel === 'SEND' && !wizSingleMode && (
-                    <div className={`alert ${wizSignatureJobStatus?.status === 'done' && wizSignatureJobStatus.invalidCount === 0 ? 'alert-success' : 'alert-warning'} d-flex align-items-center gap-2 mb-3`}>
-                      {!wizSignatureJobStatus ? (
-                        <>Verifica firma digitale allegati in corso...</>
-                      ) : wizSignatureJobStatus.status !== 'done' ? (
-                        <><Loader2 className="icon-spin" size={16} /> Verifica firma digitale in corso...</>
-                      ) : wizSignatureJobStatus.invalidCount > 0 ? (
-                        <><AlertTriangle size={16} /> {wizSignatureJobStatus.invalidCount} allegato/i non firmati validamente su {wizSignatureJobStatus.totalRows} — puoi sostituirli (Passo 5) o lanciare comunque confermando sotto la tua responsabilità.</>
-                      ) : (
-                        <><CheckCircle2 size={16} /> Tutti gli allegati ({wizSignatureJobStatus.totalRows}) risultano firmati validamente.</>
-                      )}
-                    </div>
+                  {wizChannel === 'SEND' && !wizSingleMode && wizCampaignId && (
+                    <SignaturePanel
+                      apiFetch={apiFetch}
+                      token={token!}
+                      adminApiBase={ADMIN_API_BASE}
+                      campaignId={wizCampaignId}
+                      status={wizSignatureJobStatus}
+                    />
                   )}
 
                   <div className="mb-4 pb-3 border-bottom d-flex justify-content-between">
@@ -12793,18 +12749,14 @@ export function App(): React.JSX.Element {
                     </div>
                   </div>
 
-                  {wizChannel === 'SEND' && !wizSingleMode && (
-                    <div className={`alert ${wizSignatureJobStatus?.status === 'done' && wizSignatureJobStatus.invalidCount === 0 ? 'alert-success' : 'alert-warning'} d-flex align-items-center gap-2 mb-3`}>
-                      {!wizSignatureJobStatus ? (
-                        <>Verifica firma digitale allegati in corso...</>
-                      ) : wizSignatureJobStatus.status !== 'done' ? (
-                        <><Loader2 className="icon-spin" size={16} /> Verifica firma digitale in corso...</>
-                      ) : wizSignatureJobStatus.invalidCount > 0 ? (
-                        <><AlertTriangle size={16} /> {wizSignatureJobStatus.invalidCount} allegato/i non firmati validamente su {wizSignatureJobStatus.totalRows} — puoi sostituirli (Passo 5) o lanciare comunque confermando sotto la tua responsabilità.</>
-                      ) : (
-                        <><CheckCircle2 size={16} /> Tutti gli allegati ({wizSignatureJobStatus.totalRows}) risultano firmati validamente.</>
-                      )}
-                    </div>
+                  {wizChannel === 'SEND' && !wizSingleMode && wizCampaignId && (
+                    <SignaturePanel
+                      apiFetch={apiFetch}
+                      token={token!}
+                      adminApiBase={ADMIN_API_BASE}
+                      campaignId={wizCampaignId}
+                      status={wizSignatureJobStatus}
+                    />
                   )}
 
                   <div className="mt-4 pt-3 border-top d-flex justify-content-between">
@@ -15586,6 +15538,7 @@ export function App(): React.JSX.Element {
                         {activeSettingsTab === 'protocollo' && 'Connettore Protocollo Informatico'}
                         {activeSettingsTab === 'postalizzazione' && 'Postalizzazione Cartacea Istituzionale'}
                         {activeSettingsTab === 'external-api' && 'API Esterne — Caricamento Puntuale'}
+                        {activeSettingsTab === 'firma-remota' && 'Firma remota Aruba - Firma allegati SEND'}
                         {activeSettingsTab === 'oidc' && 'SPID / CIE (OIDC) - Autenticazione Cittadini'}
                         {activeSettingsTab === 'motori' && 'Motori di Invio — Stato Code BullMQ'}
                       </h3>
@@ -16424,6 +16377,44 @@ export function App(): React.JSX.Element {
                         {activeSettingsTab === 'external-api' && renderExternalClientsTab()}
 
                         {/* TAB: OIDC (SPID/CIE) */}
+                        {activeSettingsTab === 'firma-remota' && (
+                          <div className="row g-3">
+                            <div className="col-12">
+                              <div className="form-text small text-muted mb-2">Firma digitale PAdES degli allegati SEND con la firma remota OTP Aruba. Utente, password e OTP si inseriscono al momento della firma e non vengono mai salvati.</div>
+                              <div className="form-check form-switch">
+                                <input className="form-check-input" type="checkbox" id="rs_enabled" checked={settRemoteSignEnabled} onChange={(e) => setSettRemoteSignEnabled(e.target.checked)} />
+                                <label className="form-check-label small fw-bold" htmlFor="rs_enabled">Abilita "Firma con Aruba" nel wizard SEND</label>
+                              </div>
+                            </div>
+                            <div className="col-md-8">
+                              <label className="form-label small fw-bold text-dark" htmlFor="rs_wsdl">Endpoint servizio (WSDL)</label>
+                              <input type="text" id="rs_wsdl" className="form-control form-control-sm" value={settRemoteSignWsdlUrl} onChange={(e) => setSettRemoteSignWsdlUrl(e.target.value)} />
+                              <div className="form-text small text-muted">Servizio ARSS di Aruba. Cambiare solo per un'installazione ATP dell'ente.</div>
+                            </div>
+                            <div className="col-md-4">
+                              <label className="form-label small fw-bold text-dark" htmlFor="rs_domain">Dominio OTP</label>
+                              <input type="text" id="rs_domain" className="form-control form-control-sm" value={settRemoteSignOtpDomain} onChange={(e) => setSettRemoteSignOtpDomain(e.target.value)} />
+                              <div className="form-text small text-muted"><code>firma</code> per la firma remota personale Aruba.</div>
+                            </div>
+                            <div className="col-md-4">
+                              <label className="form-label small fw-bold text-dark" htmlFor="rs_hsm">Tipo HSM</label>
+                              <input type="text" id="rs_hsm" className="form-control form-control-sm" value={settRemoteSignTypeHsm} onChange={(e) => setSettRemoteSignTypeHsm(e.target.value)} />
+                            </div>
+                            <div className="col-md-4">
+                              <label className="form-label small fw-bold text-dark" htmlFor="rs_cert">ID certificato</label>
+                              <input type="text" id="rs_cert" className="form-control form-control-sm" value={settRemoteSignCertId} onChange={(e) => setSettRemoteSignCertId(e.target.value)} />
+                            </div>
+                            <div className="col-12">
+                              <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => setRemoteSignTestOpen(true)}>
+                                <PenLine size={14} className="me-1" />Prova firma
+                              </button>
+                              <div className="form-text small text-muted">Salva prima le impostazioni: la prova firma un PDF di test con i parametri salvati e mostra il firmatario.</div>
+                            </div>
+                            {remoteSignTestOpen && (
+                              <RemoteSignModal apiFetch={apiFetch} mode={{ kind: 'test' }} onClose={() => setRemoteSignTestOpen(false)} />
+                            )}
+                          </div>
+                        )}
                         {activeSettingsTab === 'oidc' && (
                           <div className="row g-3">
                             <div className="col-12">
@@ -19269,6 +19260,17 @@ export function App(): React.JSX.Element {
             Ricarica Ora
           </button>
         </div>
+      )}
+
+      {unsignedDecision && (
+        <UnsignedDecisionModal
+          apiFetch={apiFetch}
+          campaignId={unsignedDecision.campaignId}
+          invalidCount={unsignedDecision.invalidCount}
+          totalRows={unsignedDecision.totalRows}
+          arubaEnabled={unsignedDecision.arubaEnabled}
+          onDecision={unsignedDecision.resolve}
+        />
       )}
     </div>
   );

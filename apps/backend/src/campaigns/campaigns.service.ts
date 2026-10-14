@@ -14,7 +14,7 @@ import type { AppConfiguration } from '../config/configuration.js';
 import { AppSettingsService } from '../settings/app-settings.service.js';
 import { processTemplate, wrapInHtmlLayout, hasValidAttachmentPlaceholders, resolveCitizenPortalUrl, buildParallelChannelNotice, formatAppIoMarkdown } from '../channels/template.helper.js';
 import { getEffectiveRetentionDays } from './retention.util.js';
-import { getUploadsDir } from '../attachments/attachment-paths.js';
+import { getUploadsDir, getUnsignedBackupDir } from '../attachments/attachment-paths.js';
 import { resolveAttachmentsConfig, resolveAttachmentLabel, resolveCustomAttachmentFilename } from '../attachments/attachment.service.js';
 import { resolveSubjectTemplate } from '../channels/subject-mapping.util.js';
 import { resolveExternalId } from '../channels/external-id-mapping.util.js';
@@ -48,6 +48,7 @@ import { SignatureVerificationService } from '../signature-verification/signatur
 import { SignatureVerificationJobStatus } from '../entities/signature-verification-job.entity.js';
 import { isPartitaIva } from '../channels/tax-id.util.js';
 import { PostalPosteTracking } from '../entities/postal-poste-tracking.entity.js';
+import { RemoteSignJob, RemoteSignJobStatus } from '../entities/remote-sign-job.entity.js';
 import { postalLegalOutcome, postalLegalOutcomeSql, POSTAL_GLOBALCOM_ERROR_SQL, isPostalLegalOutcome } from './postal-legal-outcome.util.js';
 import { POSTE_DELIVERED_BUCKET, formatLastMovement, isPosteDeliveredOverride, posteDeliveredSql, posteSummaryOf } from '../channels/postal/poste-tracking/poste-tracking-effective.util.js';
 
@@ -177,6 +178,10 @@ export class CampaignsService {
     // repo — senza, le letture verifica Poste tornano vuote (nessun override).
     @Optional() @InjectRepository(PostalPosteTracking)
     private readonly posteTrackingRepo?: Repository<PostalPosteTracking>,
+    // @Optional: come posteTrackingRepo — le spec che non lo forniscono
+    // vedono "nessuna firma remota in corso".
+    @Optional() @InjectRepository(RemoteSignJob)
+    private readonly remoteSignJobRepo?: Repository<RemoteSignJob>,
   ) {}
 
   findAll(): Promise<Campaign[]> {
@@ -684,6 +689,14 @@ export class CampaignsService {
     let signatureWarning: string | undefined;
     let forcedUnsignedAttachments: number | undefined;
     if (campaign.channelType === 'SEND') {
+      // Firma remota in corso: l'ultima verifica "done" è quella PRIMA della
+      // firma — senza questo blocco si lancerebbe a metà sostituzione file.
+      if (this.remoteSignJobRepo && await this.remoteSignJobRepo.exists({
+        where: { campaignId, status: In([RemoteSignJobStatus.QUEUED, RemoteSignJobStatus.PROCESSING]) },
+      })) {
+        await this.campaignRepo.update({ id: campaignId }, { status: CampaignStatus.DRAFT });
+        return { launched: 0, campaignId, blocked: true, message: 'Firma remota in corso: attendi la fine prima di lanciare.' };
+      }
       if (isSingleRecipientFlow(campaign)) {
         const singleRecipients = await this.recipientRepo.find({
           where: { campaignId, status: RecipientStatus.PENDING },
@@ -3648,6 +3661,13 @@ export class CampaignsService {
         'La campagna non è più in bozza: gli allegati non possono essere modificati dopo il lancio. Annulla e crea una nuova campagna per cambiarli.',
       );
     }
+    // Durante la firma remota i file vengono sostituiti: un upload concorrente
+    // verrebbe sovrascritto o firmato a metà.
+    if (this.remoteSignJobRepo && await this.remoteSignJobRepo.exists({
+      where: { campaignId, status: In([RemoteSignJobStatus.QUEUED, RemoteSignJobStatus.PROCESSING]) },
+    })) {
+      throw new BadRequestException('Firma remota in corso: attendi la fine prima di caricare allegati.');
+    }
   }
 
   /**
@@ -3918,9 +3938,11 @@ export class CampaignsService {
       }
       await this.campaignRepo.delete(linkedTestCampaign.id);
       await fs.promises.rm(getUploadsDir(linkedTestCampaign.id), { recursive: true, force: true });
+      await fs.promises.rm(getUnsignedBackupDir(linkedTestCampaign.id), { recursive: true, force: true });
     }
 
     await fs.promises.rm(getUploadsDir(campaignId), { recursive: true, force: true });
+    await fs.promises.rm(getUnsignedBackupDir(campaignId), { recursive: true, force: true });
     await this.campaignRepo.delete(campaignId);
 
     return { deleted: true };
