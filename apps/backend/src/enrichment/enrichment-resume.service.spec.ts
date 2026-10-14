@@ -6,6 +6,10 @@ vi.mock('./enrichment-checkpoint.util', () => ({
   readCheckpointSync: jest.fn(),
 }));
 import { readCheckpointSync } from './enrichment-checkpoint.util.js';
+vi.mock('./enrichment-sources.util', () => ({
+  listEnrichmentSources: jest.fn(() => []),
+}));
+import { listEnrichmentSources } from './enrichment-sources.util.js';
 
 describe('EnrichmentResumeService', () => {
   let jobRepo: any;
@@ -20,6 +24,7 @@ describe('EnrichmentResumeService', () => {
     queue = { add: jest.fn(async () => undefined), getJob: jest.fn(async () => null) };
     service = new EnrichmentResumeService(jobRepo, queue);
     (readCheckpointSync as jest.Mock).mockReset();
+    (listEnrichmentSources as jest.Mock).mockReset().mockReturnValue([]);
   });
 
   it('nessun job PROCESSING → nessuna azione', async () => {
@@ -88,6 +93,59 @@ describe('EnrichmentResumeService', () => {
       status: EnrichmentJobStatus.FAILED,
       errorMessage: expect.stringContaining('riavvio'),
     }));
+  });
+
+  // Il primo checkpoint si scrive solo a riga CHECKPOINT_EVERY (100): il cron
+  // ogni 5 minuti trovava il job ancora nelle prime righe, senza checkpoint,
+  // e lo marcava FAILED mentre il worker lo stava elaborando (bug reale).
+  it.each(['active', 'waiting', 'delayed'])(
+    'senza checkpoint ma job "enrich" BullMQ %s → nessuna azione (non è bloccato)',
+    async (state) => {
+      jobRepo.find.mockResolvedValue([{ id: 'j3', status: EnrichmentJobStatus.PROCESSING, totalRecords: 832 }]);
+      (readCheckpointSync as jest.Mock).mockReturnValue(null);
+      queue.getJob.mockImplementation(async (id: string) => (id === 'j3' ? { getState: jest.fn(async () => state), remove: jest.fn() } : null));
+
+      await service.resumeStuckJobs();
+
+      expect(queue.add).not.toHaveBeenCalled();
+      expect(jobRepo.update).not.toHaveBeenCalled();
+    },
+  );
+
+  it('senza checkpoint ma merge-batch BullMQ ancora active → nessuna azione', async () => {
+    jobRepo.find.mockResolvedValue([{ id: 'j4', status: EnrichmentJobStatus.PROCESSING, totalRecords: 0 }]);
+    (readCheckpointSync as jest.Mock).mockReturnValue(null);
+    queue.getJob.mockImplementation(async (id: string) => (id === 'merge-j4' ? { getState: jest.fn(async () => 'active') } : null));
+
+    await service.resumeStuckJobs();
+
+    expect(queue.add).not.toHaveBeenCalled();
+    expect(jobRepo.update).not.toHaveBeenCalled();
+  });
+
+  it('senza checkpoint, merge già completato (totalRecords>0, sorgenti su disco), job BullMQ terminale → riparte da zero', async () => {
+    jobRepo.find.mockResolvedValue([{ id: 'j5', status: EnrichmentJobStatus.PROCESSING, totalRecords: 832 }]);
+    (readCheckpointSync as jest.Mock).mockReturnValue(null);
+    (listEnrichmentSources as jest.Mock).mockReturnValue([{ path: '/x/1_a.zip', filename: 'a.zip' }]);
+    const remove = jest.fn(async () => undefined);
+    queue.getJob.mockImplementation(async (id: string) => (id === 'j5' ? { getState: jest.fn(async () => 'failed'), remove } : null));
+
+    await service.resumeStuckJobs();
+
+    expect(remove).toHaveBeenCalled();
+    expect(queue.add).toHaveBeenCalledWith('enrich', { jobId: 'j5' }, { jobId: 'j5' });
+    expect(jobRepo.update).not.toHaveBeenCalled();
+  });
+
+  it('senza checkpoint e merge mai completato (totalRecords=0) → FAILED anche con sorgenti su disco', async () => {
+    jobRepo.find.mockResolvedValue([{ id: 'j6', status: EnrichmentJobStatus.PROCESSING, totalRecords: 0 }]);
+    (readCheckpointSync as jest.Mock).mockReturnValue(null);
+    (listEnrichmentSources as jest.Mock).mockReturnValue([{ path: '/x/1_a.zip', filename: 'a.zip' }]);
+
+    await service.resumeStuckJobs();
+
+    expect(queue.add).not.toHaveBeenCalled();
+    expect(jobRepo.update).toHaveBeenCalledWith('j6', expect.objectContaining({ status: EnrichmentJobStatus.FAILED }));
   });
 
   it('più job bloccati: ciascuno gestito indipendentemente', async () => {

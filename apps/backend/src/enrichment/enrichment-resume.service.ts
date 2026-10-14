@@ -7,6 +7,11 @@ import { Queue } from 'bullmq';
 import { EnrichmentJob, EnrichmentJobStatus } from '../entities/enrichment-job.entity.js';
 import { ENRICHMENT_QUEUE, EnrichmentQueueJobData } from './enrichment-job.types.js';
 import { readCheckpointSync } from './enrichment-checkpoint.util.js';
+import { listEnrichmentSources } from './enrichment-sources.util.js';
+
+function isLive(state: string | null): boolean {
+  return state === 'active' || state === 'waiting' || state === 'waiting-children' || state === 'delayed';
+}
 
 /**
  * Un job lasciato in PROCESSING da un riavvio backend non ha altrimenti
@@ -75,24 +80,44 @@ export class EnrichmentResumeService implements OnModuleInit {
     const stuck = await this.jobRepo.find({ where: { status: EnrichmentJobStatus.PROCESSING } });
     for (const job of stuck) {
       const checkpoint = readCheckpointSync(job.id);
-      if (checkpoint) {
-        const existing = await this.queue.getJob(job.id);
-        const state = existing ? await existing.getState() : null;
+      const existing = await this.queue.getJob(job.id);
+      const state = existing ? await existing.getState() : null;
 
-        if (state === 'active' || state === 'waiting' || state === 'waiting-children' || state === 'delayed') {
-          // Il job BullMQ esiste ancora ed è vivo/in attesa — non è davvero
-          // "bloccato", è solo il nostro stato DB (aggiornato solo a fine job)
-          // a non riflettere ancora la realtà, oppure è genuinamente `active`
-          // con lock scaduto: in quel caso lo stalled-job recovery di BullMQ
-          // (opzioni default, nessun enableShutdownHooks in main.ts) lo
-          // riprende da solo entro pochi secondi. Aggiungerne un secondo qui
-          // produrrebbe due process() concorrenti sullo stesso jobId — mai
-          // farlo, si limita a loggare.
-          this.logger.warn(`EnrichmentJob ${job.id}: job BullMQ ancora presente (stato ${state}) — nessuna azione, lo riprende in carico BullMQ stesso (stalled-job recovery)`);
-          continue;
-        }
+      if (isLive(state)) {
+        // Il job BullMQ esiste ancora ed è vivo/in attesa — non è davvero
+        // "bloccato", è solo il nostro stato DB (aggiornato solo a fine job)
+        // a non riflettere ancora la realtà, oppure è genuinamente `active`
+        // con lock scaduto: in quel caso lo stalled-job recovery di BullMQ
+        // (opzioni default, nessun enableShutdownHooks in main.ts) lo
+        // riprende da solo entro pochi secondi. Aggiungerne un secondo qui
+        // produrrebbe due process() concorrenti sullo stesso jobId — mai
+        // farlo, si limita a loggare. Vale ANCHE senza checkpoint: il primo
+        // si scrive solo a riga CHECKPOINT_EVERY, e questo cron trovava il
+        // job ancora nelle prime righe marcandolo FAILED mentre il worker lo
+        // stava elaborando (bug reale, "Interrotto da riavvio" senza riavvio).
+        this.logger.warn(`EnrichmentJob ${job.id}: job BullMQ ancora presente (stato ${state}) — nessuna azione, lo riprende in carico BullMQ stesso (stalled-job recovery)`);
+        continue;
+      }
 
-        this.logger.warn(`EnrichmentJob ${job.id} bloccato in PROCESSING dopo riavvio — riprendo da riga ${checkpoint.lastRow}`);
+      // Stesso discorso per il merge multi-ZIP (jobId BullMQ `merge-<id>`,
+      // vedi EnrichmentService.enqueueBatchMerge): durante la copia/fusione
+      // il record è già PROCESSING ma il job 'enrich' non esiste ancora.
+      const merge = await this.queue.getJob(`merge-${job.id}`);
+      const mergeState = merge ? await merge.getState() : null;
+      if (isLive(mergeState)) {
+        this.logger.warn(`EnrichmentJob ${job.id}: merge-batch BullMQ ancora presente (stato ${mergeState}) — nessuna azione`);
+        continue;
+      }
+
+      // Senza checkpoint si può comunque ripartire da zero se il merge era
+      // già completato (totalRecords valorizzato solo a merge riuscito) e i
+      // pezzi ZIP sono ancora su disco — riparte dalla riga 1, nessun dato
+      // perso perché nessun checkpoint era ancora stato scritto.
+      const restartFromZero = !checkpoint && (job.totalRecords ?? 0) > 0 && listEnrichmentSources(job.id).length > 0;
+      if (checkpoint || restartFromZero) {
+        this.logger.warn(checkpoint
+          ? `EnrichmentJob ${job.id} bloccato in PROCESSING dopo riavvio — riprendo da riga ${checkpoint.lastRow}`
+          : `EnrichmentJob ${job.id} bloccato in PROCESSING dopo riavvio, nessun checkpoint — riparto dalla prima riga`);
         // Il vecchio job BullMQ (se presente) è in stato terminale
         // (completed/failed) — riaggiungerlo con lo stesso jobId sarebbe un
         // no-op silenzioso di BullMQ (dedup su jobId esistente, qualunque sia
