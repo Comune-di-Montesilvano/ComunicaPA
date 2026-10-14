@@ -196,6 +196,42 @@ describe('parsePagIndice', () => {
     const records = parsePagIndice(csv);
     expect(records[0].codiceFiscale).toBe('02333900682');
   });
+
+  // Export Maggioli più recenti: stesse colonne, celle quotate come formula
+  // Excel ="valore" o tra semplici virgolette "valore", con ';' finale.
+  const HEADER_QUOTED = ['nome file', 'destinatario', 'cod. fisc. dest', 'indirizzo', 'indirizzo parte 2', 'localita', 'comune', 'stato estero', 'Ocr int', 'Ocr rid', 'Num. provv', 'Data emissione', 'ocr notifica'];
+  const ROW_QUOTED = ['DOC_4.pdf', 'VERDI LUIGI', 'VRDLGU70A01H501X', 'VIA MILANO 5', 'SCALA B', '00067 MORLUPO RM', 'MORLUPO', '', '301000000000000003', '', '97', '01/02/2026', '5890000000049997'];
+
+  it.each([
+    ['formula Excel ="…"', (v: string) => `="${v}"`],
+    ['virgolette "…"', (v: string) => `"${v}"`],
+  ])('celle quotate come %s con ";" finale: colonne riconosciute', (_label, quote) => {
+    const csv = [HEADER_QUOTED, ROW_QUOTED].map((r) => `${r.map(quote).join(';')};`).join('\n');
+    const records = parsePagIndice(csv);
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      codiceFiscale: 'VRDLGU70A01H501X',
+      tipo: 'PF',
+      nominativo: 'VERDI LUIGI',
+      pdfFilename: 'DOC_4.pdf',
+      numeroProvvedimento: '97',
+      csvNumeroAvviso: '301000000000000003',
+      csvNumeroAvvisoAlt: '',
+      ocrNotifica: '5890000000049997',
+    });
+    expect(records[0].csvAddress).toEqual({
+      indirizzo: 'VIA MILANO 5 SCALA B',
+      cap: '00067',
+      comune: 'MORLUPO',
+      provincia: 'RM',
+      statoEstero: '',
+    });
+  });
+
+  it('cella quotata con apostrofo nel valore resta intatta', () => {
+    const csv = ['="nome file";="localita";', `="DOC_5.pdf";="64045 ISOLA DEL GRAN SASSO D'ITALIA";`].join('\n');
+    expect(parsePagIndice(csv)[0].csvAddress?.comune).toBe("ISOLA DEL GRAN SASSO D'ITALIA");
+  });
 });
 
 describe('parseMaggioliZip', () => {
