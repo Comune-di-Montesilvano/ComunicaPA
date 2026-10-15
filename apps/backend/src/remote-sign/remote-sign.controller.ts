@@ -11,8 +11,8 @@ export class RemoteSignController {
 
   @Get('remote-sign/config')
   @Roles('user', 'admin')
-  async config(): Promise<{ enabled: boolean }> {
-    return { enabled: await this.service.isEnabled() };
+  async config(): Promise<{ enabled: boolean; otpDomain: string }> {
+    return { enabled: await this.service.isEnabled(), otpDomain: await this.service.getOtpDomain() };
   }
 
   @Post('campaigns/:id/remote-sign')

@@ -31,6 +31,7 @@ export function RemoteSignModal({ apiFetch, mode, onClose, onFinished }: Props) 
   const [user, setUser] = useState(readSavedUser);
   const [password, setPassword] = useState('');
   const [otp, setOtp] = useState('');
+  const [otpDomain, setOtpDomain] = useState('firma');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<string | null>(null);
@@ -40,6 +41,15 @@ export function RemoteSignModal({ apiFetch, mode, onClose, onFinished }: Props) 
   // apiFetch del chiamante non e' memoizzato: via ref per non resettare il polling a ogni render.
   const apiFetchRef = useRef(apiFetch);
   useEffect(() => { apiFetchRef.current = apiFetch; }, [apiFetch]);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetchRef.current('/remote-sign/config')
+      .then((res) => res.ok ? res.json() : null)
+      .then((config) => { if (!cancelled && config?.otpDomain) setOtpDomain(config.otpDomain); })
+      .catch(() => { /* usa il dominio predefinito */ });
+    return () => { cancelled = true; };
+  }, []);
 
   const polling = progress !== null && (progress.status === 'queued' || progress.status === 'processing');
   const campaignId = mode.kind === 'campaign' ? mode.campaignId : null;
@@ -105,7 +115,7 @@ export function RemoteSignModal({ apiFetch, mode, onClose, onFinished }: Props) 
       const res = await apiFetch(path, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user: user.trim(), password, otp: otp.trim() }),
+        body: JSON.stringify({ user: user.trim(), password, otp: otp.trim(), otpDomain: otpDomain.trim() }),
       });
       const body = await res.json().catch(() => null);
       if (!res.ok) {
@@ -166,6 +176,11 @@ export function RemoteSignModal({ apiFetch, mode, onClose, onFinished }: Props) 
                 <div className="mb-2">
                   <label className="form-label small fw-bold" htmlFor="rs_password">Password</label>
                   <input id="rs_password" type="password" className="form-control form-control-sm" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="new-password" />
+                </div>
+                <div className="mb-2">
+                  <label className="form-label small fw-bold" htmlFor="rs_otp_domain">Dominio OTP</label>
+                  <input id="rs_otp_domain" className="form-control form-control-sm" value={otpDomain} onChange={(e) => setOtpDomain(e.target.value)} required maxLength={64} autoComplete="off" />
+                  <div className="form-text small">Puoi modificarlo per questa firma; il valore preconfigurato resta invariato.</div>
                 </div>
                 <div className="mb-2">
                   <label className="form-label small fw-bold" htmlFor="rs_otp">OTP</label>

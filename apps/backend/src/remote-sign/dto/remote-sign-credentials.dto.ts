@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, Matches, MaxLength } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 
 export class RemoteSignCredentialsDto {
   @IsString()
@@ -14,4 +14,10 @@ export class RemoteSignCredentialsDto {
   @IsString()
   @Matches(/^\d{6,8}$/, { message: "L'OTP deve essere di 6-8 cifre" })
   otp!: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(64)
+  otpDomain?: string;
 }
