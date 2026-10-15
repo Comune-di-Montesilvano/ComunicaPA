@@ -65,6 +65,10 @@ export class RemoteSignService {
     return this.settings.get<boolean>('remoteSign.enabled');
   }
 
+  getOtpDomain(): Promise<string> {
+    return this.settings.get<string>('remoteSign.otpDomain').then((value) => String(value ?? '').trim() || 'firma');
+  }
+
   /** Solo ownership (admin tutte, user le proprie): lo stato resta leggibile dopo il lancio. */
   async assertCanRead(campaignId: string, requester: CampaignRequester): Promise<Campaign> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
@@ -147,7 +151,7 @@ export class RemoteSignService {
     const creds = { user: dto.user, password: dto.password };
     let sessionId: string;
     try {
-      sessionId = await this.client.openSession(creds, dto.otp);
+      sessionId = await this.client.openSession(creds, dto.otp, dto.otpDomain);
     } catch (err) {
       if (err instanceof RemoteSignError) return { error: err.message, errorKind: err.kind };
       throw err;
@@ -199,7 +203,7 @@ export class RemoteSignService {
     const creds = { user: dto.user, password: dto.password };
     let sessionId: string | null = null;
     try {
-      sessionId = await this.client.openSession(creds, dto.otp);
+      sessionId = await this.client.openSession(creds, dto.otp, dto.otpDomain);
       const signed = await this.client.signPdf(sessionId, creds, buildTestPdf());
       const result = await this.verification.verify(signed, 'prova-firma.pdf');
       if (!result.valid) return { ok: false, error: `Firma creata ma non valida: ${result.reason}` };

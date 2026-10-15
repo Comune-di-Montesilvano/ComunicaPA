@@ -49,11 +49,11 @@ export class ArubaSignClient {
     }
   }
 
-  private async identity(creds: ArssCredentials): Promise<Record<string, string>> {
+  private async identity(creds: ArssCredentials, otpDomain?: string): Promise<Record<string, string>> {
     return {
       user: creds.user,
       userPWD: creds.password,
-      typeOtpAuth: await this.setting('remoteSign.otpDomain', 'firma'),
+      typeOtpAuth: otpDomain?.trim() || await this.setting('remoteSign.otpDomain', 'firma'),
       typeHSM: await this.setting('remoteSign.typeHsm', 'COSIGN'),
     };
   }
@@ -68,9 +68,9 @@ export class ArubaSignClient {
     }
   }
 
-  async openSession(creds: ArssCredentials, otp: string): Promise<string> {
+  async openSession(creds: ArssCredentials, otp: string, otpDomain?: string): Promise<string> {
     const client = await this.client();
-    const identity = { ...(await this.identity(creds)), otpPwd: otp };
+    const identity = { ...(await this.identity(creds, otpDomain)), otpPwd: otp };
     const [res] = await this.call<any[]>(() => client.opensessionAsync({ Identity: identity }));
     const sessionId: unknown = res?.return;
     if (typeof sessionId !== 'string' || sessionId === '' || sessionId.startsWith('KO') || res?.status === 'KO') {
