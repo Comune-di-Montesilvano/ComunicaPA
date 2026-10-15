@@ -651,6 +651,15 @@ export class CampaignsService {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
 
+    // Lancio solo al proprietario (o admin): un altro 'user' (es. dirigente
+    // che firma gli allegati) non può avviare la campagna altrui.
+    try {
+      this.assertOwnership(campaign, requester);
+    } catch (err) {
+      await this.campaignRepo.update({ id: campaignId }, { status: CampaignStatus.DRAFT });
+      throw err;
+    }
+
     // Solo l'avvio (launch/launchTestSend) è gated — retry/correzioni su
     // una campagna POSTAL già avviata restano permessi a qualunque 'user'
     // (perimetro deciso in fase di design, vedi spec).
@@ -807,6 +816,7 @@ export class CampaignsService {
   ): Promise<{ attemptId: string; testCampaignId: string; blocked?: boolean; message?: string; signatureWarning?: string }> {
     const parent = await this.campaignRepo.findOneBy({ id: parentCampaignId });
     if (!parent) throw new NotFoundException(`Campaign ${parentCampaignId} not found`);
+    this.assertOwnership(parent, requester);
 
     if (parent.channelType === 'POSTAL' && requester.role !== 'admin') {
       const authorized = await this.postalAuthorizedUsers.isAuthorized(requester.username);

@@ -119,14 +119,15 @@ describe('RemoteSignService', () => {
       .resolves.toEqual({ error: 'Firma remota non attiva: abilitala da Impostazioni → Firma remota' });
   });
 
-  it('assertCanModify: un user non può firmare la campagna di un altro', async () => {
+  // Flusso reale: l'admin prepara la campagna, il dirigente (ruolo 'user') la firma.
+  it('assertCanModify: un user può firmare la campagna creata da un altro operatore', async () => {
     const { svc } = build();
-    await expect(svc.assertCanModify(CAMPAIGN_ID, { username: 'luigi', role: 'user' })).rejects.toThrow('altro operatore');
+    await expect(svc.assertCanModify(CAMPAIGN_ID, { username: 'luigi', role: 'user' })).resolves.toBeDefined();
   });
 
-  it('assertCanRead: user non proprietario → Forbidden; campagna lanciata comunque leggibile', async () => {
+  it('assertCanRead: user non proprietario legge lo stato firma; campagna lanciata comunque leggibile', async () => {
     const { svc, campaignRepo } = build();
-    await expect(svc.assertCanRead(CAMPAIGN_ID, { username: 'luigi', role: 'user' })).rejects.toThrow('altro operatore');
+    await expect(svc.assertCanRead(CAMPAIGN_ID, { username: 'luigi', role: 'user' })).resolves.toBeDefined();
     campaignRepo.findOneBy.mockResolvedValueOnce({ ...sendCampaign, status: CampaignStatus.QUEUED });
     await expect(svc.assertCanRead(CAMPAIGN_ID, { username: 'mario', role: 'user' })).resolves.toBeDefined();
   });
