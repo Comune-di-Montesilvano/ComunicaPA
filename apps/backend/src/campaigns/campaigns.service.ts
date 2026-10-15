@@ -483,6 +483,7 @@ export class CampaignsService {
     );
 
     try {
+      const carriedSignatureChecks = await this.collectSignatureChecks(campaign);
       // Svuota i destinatari esistenti per evitare duplicati in caso di ri-upload o modifica bozza
       await this.recipientRepo.delete({ campaignId });
       await this.campaignRepo.update({ id: campaignId }, { totalRecipients: 0 });
@@ -505,6 +506,7 @@ export class CampaignsService {
           fullName: row['full_name']?.trim() || null,
           extraData,
           status: RecipientStatus.PENDING,
+          signatureCheck: carriedSignatureChecks?.get(this.signatureCheckKey(campaign, extraData)) ?? null,
         });
 
         if (batch.length >= BATCH_SIZE) {
@@ -536,6 +538,34 @@ export class CampaignsService {
     }
 
     return { imported, campaignId };
+  }
+
+  /**
+   * SEND: il wizard ricrea i Recipient a ogni sync e prima del lancio
+   * (delete+recreate). L'esito della verifica firma dipende solo dai file
+   * allegati, quindi si riporta sui nuovi destinatari con gli stessi file —
+   * altrimenti signatureCheck torna NULL e la verifica risulta superata
+   * (lancio bloccato "mai avviata", firma "nessun allegato da firmare").
+   * File sostituiti su disco: il ricarico firmati riavvia comunque la verifica.
+   */
+  private async collectSignatureChecks(campaign: Campaign): Promise<Map<string, Recipient['signatureCheck']> | null> {
+    if (campaign.channelType !== 'SEND') return null;
+    const previous = await this.recipientRepo.find({
+      where: { campaignId: campaign.id, signatureCheck: Not(IsNull()) },
+      select: { extraData: true, signatureCheck: true },
+    });
+    const checks = new Map<string, Recipient['signatureCheck']>();
+    for (const r of previous) checks.set(this.signatureCheckKey(campaign, r.extraData), r.signatureCheck);
+    return checks;
+  }
+
+  private signatureCheckKey(campaign: Campaign, extraData: Record<string, unknown>): string {
+    const slots = resolveAttachmentsConfig(campaign.channelConfig).length;
+    const files: (string | null)[] = [];
+    for (let i = 0; i < slots; i++) {
+      files.push(resolveCustomAttachmentFilename({ campaign, extraData } as unknown as Recipient, i) ?? null);
+    }
+    return JSON.stringify(files);
   }
 
   private assertSendProtocolConfigured(campaign: Campaign): void {
