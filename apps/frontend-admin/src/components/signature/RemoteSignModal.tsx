@@ -20,6 +20,11 @@ function readSavedUser(): string {
 function saveUser(user: string): void {
   try { localStorage.setItem(ARUBA_USER_STORAGE_KEY, user); } catch { /* storage non disponibile */ }
 }
+/** Nessun job avviato = 200 con body vuoto (null). */
+async function readRemoteSignStatus(res: Response): Promise<RemoteSignStatus | null> {
+  const text = await res.text();
+  return text ? (JSON.parse(text) as RemoteSignStatus | null) : null;
+}
 
 /**
  * Credenziali firma remota Aruba: utente ricordato nel browser, password e
@@ -62,8 +67,8 @@ export function RemoteSignModal({ apiFetch, mode, onClose, onFinished }: Props) 
       try {
         const res = await apiFetchRef.current(`/campaigns/${campaignId}/remote-sign`);
         if (!res.ok || cancelled) return;
-        const s: RemoteSignStatus = await res.json();
-        if (!cancelled && (s.status === 'queued' || s.status === 'processing')) setProgress(s);
+        const s = await readRemoteSignStatus(res);
+        if (!cancelled && s && (s.status === 'queued' || s.status === 'processing')) setProgress(s);
       } catch {
         // nessun job da riprendere: resta il form
       }
@@ -78,8 +83,8 @@ export function RemoteSignModal({ apiFetch, mode, onClose, onFinished }: Props) 
       try {
         const res = await apiFetchRef.current(`/campaigns/${campaignId}/remote-sign`);
         if (!res.ok || cancelled) return;
-        const s: RemoteSignStatus = await res.json();
-        if (cancelled) return;
+        const s = await readRemoteSignStatus(res);
+        if (cancelled || !s) return;
         setProgress(s);
         if (s.status === 'done' || s.status === 'failed') {
           if (s.status === 'failed') {
