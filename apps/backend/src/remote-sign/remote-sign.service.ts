@@ -151,7 +151,9 @@ export class RemoteSignService {
     const creds = { user: dto.user, password: dto.password };
     let sessionId: string;
     try {
-      sessionId = await this.client.openSession(creds, dto.otp, dto.otpDomain);
+      sessionId = dto.otpDomain
+        ? await this.client.openSession(creds, dto.otp, dto.otpDomain)
+        : await this.client.openSession(creds, dto.otp);
     } catch (err) {
       if (err instanceof RemoteSignError) return { error: err.message, errorKind: err.kind };
       throw err;
@@ -203,7 +205,9 @@ export class RemoteSignService {
     const creds = { user: dto.user, password: dto.password };
     let sessionId: string | null = null;
     try {
-      sessionId = await this.client.openSession(creds, dto.otp, dto.otpDomain);
+      sessionId = dto.otpDomain
+        ? await this.client.openSession(creds, dto.otp, dto.otpDomain)
+        : await this.client.openSession(creds, dto.otp);
       const signed = await this.client.signPdf(sessionId, creds, buildTestPdf());
       const result = await this.verification.verify(signed, 'prova-firma.pdf');
       if (!result.valid) return { ok: false, error: `Firma creata ma non valida: ${result.reason}` };
