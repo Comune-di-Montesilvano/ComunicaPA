@@ -8525,6 +8525,13 @@ export function App(): React.JSX.Element {
       if (wizMapping.codice_fiscale) {
         channelConfig.csvMapping = wizMapping;
       }
+      // La PATCH sostituisce channelConfig per intero: senza lo stato wizard
+      // un lancio BLOCCATO (firma, allegati…) lascia una bozza che "Riprendi"
+      // apre dal passo 1 senza CSV (bug reale). Stesse chiavi lette da handleResumeDraft.
+      const draftCfg = buildWizChannelConfigDraft(wizStep);
+      for (const key of ['wizStep', 'wizRowCount', 'wizSingleMode', 'wizCsvFilename', 'wizCsvHasHeaders']) {
+        if (draftCfg[key] !== undefined) channelConfig[key] = draftCfg[key];
+      }
 
       let campaignObj: { id: string };
       if (wizCampaignId) {
