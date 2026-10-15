@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
@@ -69,23 +69,22 @@ export class RemoteSignService {
     return this.settings.get<string>('remoteSign.otpDomain').then((value) => String(value ?? '').trim() || 'firma');
   }
 
-  /** Solo ownership (admin tutte, user le proprie): lo stato resta leggibile dopo il lancio. */
-  async assertCanRead(campaignId: string, requester: CampaignRequester): Promise<Campaign> {
+  // Firma senza controllo di ownership: chi firma (dirigente, ruolo 'user')
+  // di norma NON è chi ha preparato la campagna. Vale SOLO per la firma
+  // (avvio, stato, ZIP, ricarico firmati): annulla/elimina restano al
+  // proprietario (assertOwnership di CampaignsService). Operatore nell'audit.
+
+  /** Lo stato firma resta leggibile anche dopo il lancio. */
+  async assertCanRead(campaignId: string, _requester: CampaignRequester): Promise<Campaign> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
-    if (requester.role !== 'admin' && campaign.createdBy !== requester.username) {
-      throw new ForbiddenException('Non puoi vedere una campagna creata da un altro operatore');
-    }
     return campaign;
   }
 
-  /** SEND in bozza (massivo o Invio Manuale), ownership come assertOwnership di CampaignsService. */
-  async assertCanModify(campaignId: string, requester: CampaignRequester): Promise<Campaign> {
+  /** SEND in bozza (massivo o Invio Manuale), qualunque operatore può firmare. */
+  async assertCanModify(campaignId: string, _requester: CampaignRequester): Promise<Campaign> {
     const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
     if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
-    if (requester.role !== 'admin' && campaign.createdBy !== requester.username) {
-      throw new ForbiddenException('Non puoi modificare una campagna creata da un altro operatore');
-    }
     if (campaign.channelType !== 'SEND' || campaign.status !== CampaignStatus.DRAFT) {
       throw new BadRequestException('Firma allegati disponibile solo per campagne SEND in bozza');
     }

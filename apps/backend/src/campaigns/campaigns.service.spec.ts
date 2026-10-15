@@ -313,7 +313,7 @@ describe('CampaignsService', () => {
   });
 
   it('launch(): blocca un user non autorizzato su campagna POSTAL', async () => {
-    mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'POSTAL' });
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'POSTAL', createdBy: 'user1' });
     mockPostalAuthorizedUsersService.isAuthorized.mockResolvedValueOnce(false);
 
     const result = await service.launch('c-postal-blocked', { username: 'user1', role: 'user' });
@@ -336,7 +336,7 @@ describe('CampaignsService', () => {
   });
 
   it('launch(): un user autorizzato in tabella lancia POSTAL', async () => {
-    mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'POSTAL' });
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'POSTAL', createdBy: 'user2' });
     mockPostalAuthorizedUsersService.isAuthorized.mockResolvedValueOnce(true);
 
     const result = await service.launch('c-postal-user-ok', { username: 'user2', role: 'user' });
@@ -346,13 +346,20 @@ describe('CampaignsService', () => {
   });
 
   it('launch(): un canale non-POSTAL non controlla mai la tabella', async () => {
-    mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'EMAIL' });
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'EMAIL', createdBy: 'user3' });
     mockRecipientRepo.find.mockResolvedValueOnce([{ id: 'r1' }]);
 
     const result = await service.launch('c-email', { username: 'user3', role: 'user' });
 
     expect(mockPostalAuthorizedUsersService.isAuthorized).not.toHaveBeenCalled();
     expect(result.blocked).toBeUndefined();
+  });
+
+  it('launch(): un user non può avviare la campagna di un altro operatore e la bozza torna DRAFT', async () => {
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, channelType: 'SEND', createdBy: 'op1' });
+
+    await expect(service.launch('c-altrui', { username: 'dirigente', role: 'user' })).rejects.toThrow('altro operatore');
+    expect(mockCampaignRepo.update).toHaveBeenCalledWith({ id: 'c-altrui' }, { status: CampaignStatus.DRAFT });
   });
 
   it('launch() POSTAL Servizio Agol senza protocolla lancia BadRequestException e riporta la campagna a DRAFT', async () => {
@@ -2886,8 +2893,19 @@ describe('CampaignsService', () => {
   });
 
   describe('launchTestSend', () => {
+    it('launchTestSend(): un user non può inviare il test della campagna di un altro operatore', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, id: 'parent-1', createdBy: 'op1' });
+
+      await expect(service.launchTestSend(
+        'parent-1',
+        { codiceFiscale: 'RSSMRA80A01H501U', extraData: {} },
+        { username: 'dirigente', role: 'user' },
+      )).rejects.toThrow('altro operatore');
+      expect(mockCampaignRepo.save).not.toHaveBeenCalled();
+    });
+
     it('launchTestSend(): blocca un user non autorizzato su campagna POSTAL', async () => {
-      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, id: 'parent-1', channelType: 'POSTAL' });
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...mockCampaign, id: 'parent-1', channelType: 'POSTAL', createdBy: 'user1' });
       mockPostalAuthorizedUsersService.isAuthorized.mockResolvedValueOnce(false);
 
       const result = await service.launchTestSend(

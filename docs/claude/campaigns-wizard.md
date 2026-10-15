@@ -12,6 +12,13 @@ Qualunque nuovo metodo mutante su Campaign aggiunto in futuro (oltre a
 cancel/remove) va valutato per lo stesso controllo, non solo quello che
 lo introduce — stesso principio già in uso per gli stati terminali sopra.
 
+Stesso check su `launch()` (riporta la bozza a DRAFT prima di rilanciare
+l'eccezione) e `launchTestSend()`. **Eccezione voluta: firma allegati SEND**
+(`RemoteSignService.assertCanRead/assertCanModify` → avvio firma Aruba,
+stato, ZIP, ricarico firmati) è aperta a qualunque operatore — flusso reale:
+l'admin prepara, il dirigente (ruolo `user`) firma, poi lancia il
+proprietario. Bug reale (v1.11.x): ownership sulla firma → 403 al dirigente.
+
 ## operator_directory — cache display name, si popola solo al login
 
 `OperatorDirectoryService` mappa username → display name (LDAP reale o

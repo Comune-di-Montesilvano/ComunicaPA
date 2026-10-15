@@ -1,6 +1,6 @@
 # ComunicaPA – Guida per gli operatori
 
-_Ultimo aggiornamento: 2026-10-13_
+_Ultimo aggiornamento: 2026-10-15_
 
 ## Cos'è e chi lo usa
 
@@ -161,6 +161,8 @@ Se la verifica firma segnala allegati non firmati validamente:
 - **Invio Manuale:** se l'allegato non è firmato compare la scelta **Firma con Aruba**, **Invia comunque** o **Annulla**. Dopo la firma l'invio prosegue da solo.
 
 La firma con Aruba compare solo se attivata in **Impostazioni → Firma remota (Aruba)**.
+
+Gli allegati può firmarli qualunque operatore, anche su una campagna creata da altri (ad esempio il dirigente che firma la campagna preparata dall'ufficio). Avviare la campagna, inviare il test, annullarla o eliminarla resta invece a chi l'ha creata o a un amministratore.
 
 ## Regole e riferimenti
 
@@ -357,7 +359,7 @@ I destinatari di una campagna annullata non si possono rimettere in coda.
 
 **Causa:** dipende dal messaggio.
 
-- «Non puoi modificare una campagna creata da un altro operatore»: solo chi l'ha creata può modificarla.
+- «Non puoi modificare una campagna creata da un altro operatore»: solo chi l'ha creata (o un amministratore) può avviarla, inviare il test, annullarla o eliminarla. La firma degli allegati è invece aperta a tutti gli operatori.
 - «Solo le campagne in bozza possono essere modificate»: la campagna è già partita.
 - «Campagna a valore legale: eliminazione non consentita per campagne avviate»: una campagna con valore legale già avviata resta per sempre nello storico.
 
