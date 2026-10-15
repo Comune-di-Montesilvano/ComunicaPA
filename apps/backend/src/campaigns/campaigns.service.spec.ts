@@ -630,6 +630,27 @@ describe('CampaignsService', () => {
     expect(mockCampaignRepo.increment).not.toHaveBeenCalled();
   });
 
+  it('uploadCsv SEND: riporta signatureCheck sui destinatari ricreati con gli stessi allegati', async () => {
+    const tmpDir = fs.mkdtempSync(join(os.tmpdir(), 'upload-csv-'));
+    const csvPath = join(tmpDir, 'r.csv');
+    fs.writeFileSync(csvPath, 'codice_fiscale,doc\nRSSMRA80A01H501U,A.pdf\nVRDLGU80A01H501U,NUOVO.pdf\n');
+    const check = { valid: false, reason: 'non firmato', checkedAt: '2026-10-15T10:00:00.000Z' };
+    mockCampaignRepo.findOneBy.mockResolvedValueOnce({
+      ...mockCampaign,
+      status: CampaignStatus.DRAFT,
+      channelType: 'SEND',
+      channelConfig: { attachments: [{ key: 'doc', label: 'Documento' }] },
+    });
+    mockRecipientRepo.find.mockResolvedValueOnce([{ extraData: { doc: 'A.pdf' }, signatureCheck: check }]);
+
+    await service.uploadCsv('uuid-1', csvPath);
+
+    const saved = mockRecipientRepo.save.mock.calls.at(-1)![0] as Partial<Recipient>[];
+    expect(saved.find((r) => r.extraData?.['doc'] === 'A.pdf')?.signatureCheck).toEqual(check);
+    expect(saved.find((r) => r.extraData?.['doc'] === 'NUOVO.pdf')?.signatureCheck).toBeNull();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
   it('getStats calcola aggregati corretti', async () => {
     mockRecipientRepo.find.mockResolvedValueOnce([
       { downloadCount: 2, lastDownloadedAt: new Date('2026-06-26') },
