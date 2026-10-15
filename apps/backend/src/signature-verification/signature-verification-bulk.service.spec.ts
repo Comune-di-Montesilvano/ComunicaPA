@@ -4,12 +4,14 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { getQueueToken } from '@nestjs/bullmq';
 import { SignatureVerificationBulkService } from './signature-verification-bulk.service.js';
 import { SignatureVerificationJob, SignatureVerificationJobStatus } from '../entities/signature-verification-job.entity.js';
+import { Recipient } from '../entities/recipient.entity.js';
 import { SIGNATURE_VERIFICATION_QUEUE } from './signature-verification-job.types.js';
 
 describe('SignatureVerificationBulkService', () => {
   let service: SignatureVerificationBulkService;
   let jobRepo: { create: ReturnType<typeof vi.fn>; save: ReturnType<typeof vi.fn>; findOne: ReturnType<typeof vi.fn> };
   let queue: { add: ReturnType<typeof vi.fn> };
+  let recipientRepo: { exists: ReturnType<typeof vi.fn> };
 
   beforeEach(async () => {
     jobRepo = {
@@ -18,11 +20,13 @@ describe('SignatureVerificationBulkService', () => {
       findOne: vi.fn(),
     };
     queue = { add: vi.fn().mockResolvedValue(undefined) };
+    recipientRepo = { exists: vi.fn().mockResolvedValue(false) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SignatureVerificationBulkService,
         { provide: getRepositoryToken(SignatureVerificationJob), useValue: jobRepo },
+        { provide: getRepositoryToken(Recipient), useValue: recipientRepo },
         { provide: getQueueToken(SIGNATURE_VERIFICATION_QUEUE), useValue: queue },
       ],
     }).compile();
@@ -54,6 +58,26 @@ describe('SignatureVerificationBulkService', () => {
       });
       const result = await service.getLatestStatus('camp-1');
       expect(result).toEqual(expect.objectContaining({ status: SignatureVerificationJobStatus.DONE, invalidCount: 1 }));
+    });
+
+    it('job DONE ma destinatari pending mai verificati (ricreati dal wizard) → null, come mai avviata', async () => {
+      jobRepo.findOne.mockResolvedValueOnce({
+        id: 'job-1', campaignId: 'camp-1', status: SignatureVerificationJobStatus.DONE,
+        totalRows: 33, validCount: 0, invalidCount: 33, errorMessage: null,
+      });
+      recipientRepo.exists.mockResolvedValueOnce(true);
+      const result = await service.getLatestStatus('camp-1');
+      expect(result).toBeNull();
+    });
+
+    it('job in corso: nessun controllo sui destinatari (signatureCheck ancora in scrittura)', async () => {
+      jobRepo.findOne.mockResolvedValueOnce({
+        id: 'job-1', campaignId: 'camp-1', status: SignatureVerificationJobStatus.PROCESSING,
+        totalRows: 0, validCount: 0, invalidCount: 0, errorMessage: null,
+      });
+      const result = await service.getLatestStatus('camp-1');
+      expect(result).toEqual(expect.objectContaining({ status: SignatureVerificationJobStatus.PROCESSING }));
+      expect(recipientRepo.exists).not.toHaveBeenCalled();
     });
   });
 });

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, NotFoundException, Param, ParseUUIDPipe, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import type { JwtOperatorPayload } from '@comunicapa/shared-types';
 import { Roles } from '../auth/decorators/roles.decorator.js';
@@ -26,13 +26,13 @@ export class RemoteSignController {
     return this.service.start(id, { username: req.user.username, role: req.user.role }, dto);
   }
 
+  // Nessun job = 200 con body vuoto (null), non 404: il modal lo chiede a
+  // ogni apertura per riprendere una firma in corso, non è un errore.
   @Get('campaigns/:id/remote-sign')
   @Roles('user', 'admin')
   async status(@Param('id', ParseUUIDPipe) id: string, @Req() req: Request & { user: JwtOperatorPayload }) {
     await this.service.assertCanRead(id, { username: req.user.username, role: req.user.role });
-    const status = await this.service.getLatestStatus(id);
-    if (!status) throw new NotFoundException('Nessuna firma remota avviata per questa campagna');
-    return status;
+    return (await this.service.getLatestStatus(id)) ?? null;
   }
 
   @Post('settings/remote-sign/test')
