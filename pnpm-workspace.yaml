@@ -12,3 +12,12 @@ allowBuilds:
 overrides:
   # @nestjs/platform-express 12.x dipende da multer 2.4.0 esatto (CVE-2026-113872)
   'multer@2.4.0': 2.5.0
+# Advisory senza versione corretta, mitigati nel codice. Ognuno va rimosso appena esce
+# un fix upstream (Dependabot/audit lo segnalano di nuovo se la mitigazione non basta).
+auditConfig:
+  ignoreGhsas:
+    # node-forge <= 1.4.0: DigestInfo PKCS#1 v1.5 con byte spuri accettato in
+    # publicKey.verify()/cert.verify(). Nessuna release corretta. Il backend non usa
+    # piu' quelle funzioni: le verifiche RSA passano da node:crypto
+    # (signature-verification.service.ts, test di regressione nello spec).
+    - GHSA-86w9-cpqp-85rv

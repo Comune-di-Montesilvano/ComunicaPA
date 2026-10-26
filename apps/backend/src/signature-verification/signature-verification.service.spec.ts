@@ -25,7 +25,29 @@ function makeTestChain() {
   signerCert.setIssuer(ca.subject.attributes);
   signerCert.sign(caKeys.privateKey);
 
-  return { ca, signerCert, signerKeys };
+  return { ca, caKeys, signerCert, signerKeys };
+}
+
+/**
+ * Firma RSA PKCS#1 v1.5 con DigestInfo MALFORMATO: byte spuri annidati dentro
+ * DigestAlgorithm. node-forge <= 1.4.0 (nessuna versione corretta,
+ * GHSA-86w9-cpqp-85rv) accetta questa struttura in `publicKey.verify()`/
+ * `cert.verify()`, base delle firme contraffatte su chiavi a esponente basso:
+ * una verifica corretta deve rifiutarla. Schema 'NONE' = forge firma i byte
+ * DigestInfo cosi' come sono, con padding PKCS#1 tipo 1 (uno schema
+ * personalizzato `{ encode }` salterebbe il padding: firma invalida per
+ * tutt'altro motivo, test inutile).
+ */
+function signWithMalformedDigestInfo(key: forge.pki.rsa.PrivateKey, md: forge.md.MessageDigest, digestOid: string): string {
+  const digestInfo = forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SEQUENCE, true, [
+    forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SEQUENCE, true, [
+      forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.OID, false, forge.asn1.oidToDer(digestOid).getBytes()),
+      forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.NULL, false, ''),
+      forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.OCTETSTRING, false, 'garbage'),
+    ]),
+    forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.OCTETSTRING, false, md.digest().getBytes()),
+  ]);
+  return key.sign(forge.asn1.toDer(digestInfo).getBytes() as unknown as forge.md.MessageDigest, 'NONE');
 }
 
 function makeP7m(content: Buffer, signerCert: forge.pki.Certificate, signerKeys: forge.pki.rsa.KeyPair): Buffer {
@@ -92,7 +114,7 @@ function makePadesPdf(before: Buffer, after: Buffer, signerCert: forge.pki.Certi
 describe('SignatureVerificationService', () => {
   let service: SignatureVerificationService;
   let trustList: { getTrustedCertificates: ReturnType<typeof vi.fn> };
-  const { ca, signerCert, signerKeys } = makeTestChain();
+  const { ca, caKeys, signerCert, signerKeys } = makeTestChain();
 
   beforeEach(() => {
     trustList = { getTrustedCertificates: vi.fn().mockResolvedValue([ca]) };
@@ -189,6 +211,66 @@ describe('SignatureVerificationService', () => {
 
     expect(result.valid).toBe(true);
     expect(result.signerCn).toBe('Mario Rossi Test');
+  });
+
+  it('.p7m con firma CMS su DigestInfo malformato (GHSA-86w9-cpqp-85rv) → rifiutata', async () => {
+    const content = Buffer.from('contenuto con firma malformata');
+    const p7 = forge.pkcs7.createSignedData();
+    p7.content = forge.util.createBuffer(content.toString('binary'));
+    p7.addCertificate(signerCert);
+    p7.addSigner({
+      key: signerKeys.privateKey,
+      certificate: signerCert,
+      digestAlgorithm: forge.pki.oids.sha256,
+      authenticatedAttributes: [
+        { type: forge.pki.oids.contentType, value: forge.pki.oids.data },
+        { type: forge.pki.oids.messageDigest },
+        { type: forge.pki.oids.signingTime, value: new Date() as unknown as string },
+      ],
+    });
+    p7.sign();
+    // Rifirma lo stesso SET di authenticatedAttributes con la chiave reale del
+    // firmatario, ma con un DigestInfo malformato.
+    const signer = (p7 as any).signers[0];
+    const attrsSet = forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SET, true, signer.authenticatedAttributesAsn1.value);
+    const md = forge.md.sha256.create().update(forge.asn1.toDer(attrsSet).getBytes());
+    const forgedSignature = signWithMalformedDigestInfo(signerKeys.privateKey, md, forge.pki.oids.sha256);
+    // forge serializza i SignerInfo gia' dentro sign(): la firma va sostituita
+    // nell'ASN.1 (ContentInfo > [0] > SignedData > signerInfos > SignerInfo,
+    // ultimo campo = OCTET STRING della firma), non su `signer.signature`.
+    const asn1 = p7.toAsn1();
+    const signedData = (asn1.value[1] as forge.asn1.Asn1).value[0] as forge.asn1.Asn1;
+    const signerInfos = (signedData.value as forge.asn1.Asn1[]).at(-1)!;
+    const signerInfo = (signerInfos.value as forge.asn1.Asn1[])[0];
+    const signatureNode = (signerInfo.value as forge.asn1.Asn1[]).at(-1)!;
+    expect(signatureNode.type).toBe(forge.asn1.Type.OCTETSTRING);
+    signatureNode.value = forgedSignature;
+    const p7m = Buffer.from(forge.asn1.toDer(asn1).getBytes(), 'binary');
+
+    const result = await service.verify(p7m, 'documento.p7m');
+
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain('Integrità');
+  });
+
+  it('certificato firmatario firmato dalla CA con DigestInfo malformato (GHSA-86w9-cpqp-85rv) → CA non riconosciuta', async () => {
+    const forgedCert = forge.pki.createCertificate();
+    forgedCert.publicKey = signerKeys.publicKey;
+    forgedCert.serialNumber = '03';
+    forgedCert.validity.notBefore = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    forgedCert.validity.notAfter = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+    forgedCert.setSubject([{ name: 'commonName', value: 'Mario Rossi Test' }]);
+    forgedCert.setIssuer(ca.subject.attributes);
+    forgedCert.sign(caKeys.privateKey, forge.md.sha256.create());
+    const tbsDer = forge.asn1.toDer((forge.pki as any).getTBSCertificate(forgedCert)).getBytes();
+    const md = forge.md.sha256.create().update(tbsDer);
+    forgedCert.signature = signWithMalformedDigestInfo(caKeys.privateKey, md, forge.pki.oids.sha256);
+    const p7m = makeP7m(Buffer.from('contenuto'), forgedCert, signerKeys);
+
+    const result = await service.verify(p7m, 'documento.p7m');
+
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain('non riconosciuta');
   });
 
   describe('PAdES (PDF con firma embedded)', () => {

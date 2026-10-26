@@ -1,3 +1,4 @@
+import { createPublicKey, verify as cryptoVerify, X509Certificate } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import forge from 'node-forge';
 import { AgidTrustListService } from './agid-trust-list.service.js';
@@ -38,6 +39,34 @@ function digestCreatorFor(oid: string): (() => forge.md.MessageDigest) | undefin
     [forge.pki.oids.md5]: () => forge.md.md5.create(),
   };
   return creators[oid];
+}
+
+/** Nome dell'hash per `crypto.verify` di Node, dallo stesso OID del digest. */
+function nodeHashNameFor(oid: string): string | undefined {
+  const names: Record<string, string> = {
+    [forge.pki.oids.sha1]: 'sha1',
+    [forge.pki.oids.sha256]: 'sha256',
+    [forge.pki.oids.sha384]: 'sha384',
+    [forge.pki.oids.sha512]: 'sha512',
+    [forge.pki.oids.md5]: 'md5',
+  };
+  return names[oid];
+}
+
+// Le verifiche RSA (firma CMS e catena del certificato) passano da node:crypto
+// (OpenSSL), MAI da `publicKey.verify()`/`cert.verify()` di node-forge:
+// forge <= 1.4.0 accetta DigestInfo PKCS#1 v1.5 con elementi annidati in piu'
+// dentro DigestAlgorithm (GHSA-86w9-cpqp-85rv, nessuna versione corretta),
+// base delle firme contraffatte su chiavi a esponente basso. forge resta solo
+// per il parsing ASN.1/PKCS7.
+const x509Cache = new WeakMap<forge.pki.Certificate, X509Certificate>();
+function toX509(cert: forge.pki.Certificate): X509Certificate {
+  let x509 = x509Cache.get(cert);
+  if (!x509) {
+    x509 = new X509Certificate(forge.pki.certificateToPem(cert));
+    x509Cache.set(cert, x509);
+  }
+  return x509;
 }
 
 /**
@@ -196,9 +225,11 @@ export class SignatureVerificationService {
     // davvero firmato il certificato, bypassabile costruendo un issuer che
     // dichiara semplicemente il nome di una CA fidata senza averne la
     // chiave privata.
+    const signerX509 = toX509(signerCert);
     const issuerRecognized = trustedCerts.some((ca) => {
       try {
-        return ca.verify(signerCert);
+        const caX509 = toX509(ca);
+        return signerX509.checkIssued(caX509) && signerX509.verify(caX509.publicKey);
       } catch {
         return false;
       }
@@ -225,7 +256,8 @@ export class SignatureVerificationService {
 
     const digestOid = forge.asn1.derToOid(rawCapture.digestAlgorithm);
     const createDigest = digestCreatorFor(digestOid);
-    if (!createDigest) throw new Error(`Algoritmo di digest non supportato: ${digestOid}`);
+    const hashName = nodeHashNameFor(digestOid);
+    if (!createDigest || !hashName) throw new Error(`Algoritmo di digest non supportato: ${digestOid}`);
 
     const contentBytes = detachedContentBytes !== undefined ? detachedContentBytes : this.extractContentBytes(rawCapture.content);
     const contentDigest = createDigest().update(contentBytes).digest().bytes();
@@ -233,7 +265,9 @@ export class SignatureVerificationService {
     const authAttrs: forge.asn1.Asn1[] | undefined = rawCapture.authenticatedAttributes;
     const signatureBytes: string = rawCapture.signature;
 
-    let digestToVerify: string;
+    // Byte coperti dalla firma RSA: SET DER degli authenticatedAttributes se
+    // presenti (CAdES-BES/PAdES), altrimenti il contenuto stesso.
+    let signedData: string;
     if (authAttrs && authAttrs.length > 0) {
       const messageDigestAttr = authAttrs.find((attr) => {
         const oid = forge.asn1.derToOid((attr.value[0] as forge.asn1.Asn1).value as string);
@@ -247,17 +281,18 @@ export class SignatureVerificationService {
       // contenitore [0] IMPLICIT usato per il trasporto) — si re-incapsula
       // esattamente gli stessi nodi ASN.1 già decodificati in un SET UNIVERSAL.
       const attrsSet = forge.asn1.create(forge.asn1.Class.UNIVERSAL, forge.asn1.Type.SET, true, authAttrs);
-      const attrsDer = forge.asn1.toDer(attrsSet).getBytes();
-      digestToVerify = createDigest().update(attrsDer).digest().bytes();
+      signedData = forge.asn1.toDer(attrsSet).getBytes();
     } else {
-      digestToVerify = contentDigest;
+      signedData = contentBytes;
     }
 
     const signerCert = this.selectSignerCertificate(p7, rawCapture)!;
-    // Certificate.publicKey è tipizzato come pki.PublicKey generico (nessun
-    // metodo) da @types/node-forge — a runtime, per certificati RSA (unico
-    // caso supportato qui), è sempre un rsa.PublicKey con verify().
-    return (signerCert.publicKey as forge.pki.rsa.PublicKey).verify(digestToVerify, signatureBytes);
+    return cryptoVerify(
+      hashName,
+      Buffer.from(signedData, 'binary'),
+      createPublicKey(forge.pki.certificateToPem(signerCert)),
+      Buffer.from(signatureBytes, 'binary'),
+    );
   }
 
   /**
