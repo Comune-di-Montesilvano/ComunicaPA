@@ -4,7 +4,7 @@
 
 ## Dependabot auto-merge (`dependabot-automerge.yml`, pattern da GovPay-Interaction-Layer)
 
-Minor/patch (gruppi `*-minor-patch` per ecosistema, `cooldown` 7 gg / 14 le major) → `gh pr merge --auto --squash` appena `run-tests` è verde. Major e bump immagine `python` (minor per dependabot, upgrade runtime per noi) → PR lasciata aperta, manuale. Job `update-behind` (push su main + cron 6h): aggiorna UNA PR dependabot `BEHIND` con auto-merge attivo alla volta (strict protection), il merge successivo rilancia il giro.
+Minor/patch (gruppi `*-minor-patch` per ecosistema, schedule `daily`, nessun `cooldown` per scelta: le fix devono arrivare subito; advisory via security updates) → `gh pr merge --auto --squash` appena `run-tests` è verde. Major e bump immagine `python` (minor per dependabot, upgrade runtime per noi) → PR lasciata aperta, manuale. Job `update-behind` (push su main + cron 6h): aggiorna UNA PR dependabot `BEHIND` con auto-merge attivo alla volta (strict protection), il merge successivo rilancia il giro.
 Token GitHub App `comune-montesilvano-bot` (installata su tutta l'org), secret `BOT_CLIENT_ID`/`BOT_PRIVATE_KEY` sia come **Actions** sia come **Dependabot** secret (sul trigger `pull_request` di dependabot si vedono solo i secret Dependabot). Con `GITHUB_TOKEN` merge/update-branch non triggerano `tests.yml` → PR bloccate. Prerequisito repo: `allow_auto_merge` attivo.
 
 ## Dependabot — bump "a scaglioni" su pacchetti fratelli, verificare sempre l'intera famiglia

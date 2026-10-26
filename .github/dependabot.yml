@@ -2,9 +2,10 @@ version: 2
 # Ogni ecosistema: minor+patch raggruppate in una sola PR, mergiata in automatico
 # (vedi dependabot-automerge.yml); le major restano PR singole, aperte come promemoria
 # per l'upgrade manuale.
-# cooldown: attende N giorni dalla pubblicazione prima di proporre l'update — mitiga il
-# rischio di una release appena pubblicata compromessa/malevola (supply-chain), con piu'
-# margine sulle major.
+# Controllo giornaliero e nessun cooldown: le correzioni (anche di bug critici non
+# classificati come advisory) arrivano il giorno stesso. Gli advisory di sicurezza
+# passano comunque dai Dependabot security updates (attivi sul repo), indipendenti
+# da questo schedule.
 updates:
   # pnpm workspace monorepo — root pnpm-lock.yaml copre apps/* + packages/*
   # (Dependabot rileva il workspace pnpm da un solo entry alla root, non
@@ -12,11 +13,7 @@ updates:
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
-    cooldown:
-      default-days: 7
-      semver-major-days: 14
+      interval: "daily"
     open-pull-requests-limit: 10
     groups:
       npm-minor-patch:
@@ -31,11 +28,7 @@ updates:
   - package-ecosystem: "pip"
     directory: "/services/pdf-extractor"
     schedule:
-      interval: "weekly"
-      day: "monday"
-    cooldown:
-      default-days: 7
-      semver-major-days: 14
+      interval: "daily"
     open-pull-requests-limit: 10
     groups:
       pip-minor-patch:
@@ -55,10 +48,7 @@ updates:
       - "/apps/frontend-citizen"
       - "/services/pdf-extractor"
     schedule:
-      interval: "weekly"
-      day: "monday"
-    cooldown:
-      default-days: 7
+      interval: "daily"
     groups:
       docker-minor-patch:
         update-types:
@@ -72,10 +62,7 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
-    cooldown:
-      default-days: 7
+      interval: "daily"
     groups:
       actions-minor-patch:
         update-types:
