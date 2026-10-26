@@ -4,16 +4,16 @@ name: Build & Push immagini
 on:
   push:
     tags: ['v*']
-  # Rebuild settimanale di main (lunedi' 04:30 UTC, dopo il giro dependabot): aggiorna SOLO
+  # Rebuild giornaliero di main (04:30 UTC, dopo il giro dependabot delle 01:00): aggiorna SOLO
   # `latest` (+ `latest-YYYYMMDD`) con immagini base e dipendenze minor/patch fresche, senza
   # toccare i tag vX.Y.Z (quelli li crea solo il maintainer). Saltato se nell'ultima
-  # settimana e' gia' stato pubblicato un tag (latest e' gia' fresco).
+  # 24 ore e' gia' stato pubblicato un tag (latest e' gia' fresco).
   schedule:
-    - cron: "30 4 * * 1"
+    - cron: "30 4 * * *"
   workflow_dispatch:
     inputs:
       rebuild_latest:
-        description: "Rebuild di latest da main (come lo schedule settimanale, senza skip)"
+        description: "Rebuild di latest da main (come lo schedule giornaliero, senza skip)"
         type: boolean
         default: true
 
@@ -70,14 +70,14 @@ jobs:
             skip=true
             version=dev
           fi
-          # Solo lo schedule salta: un tag pubblicato negli ultimi 7 giorni ha gia' rinfrescato
+          # Solo lo schedule salta: un tag pubblicato nelle ultime 24 ore ha gia' rinfrescato
           # latest. Le run "push" di questo workflow sono solo tag.
           if [[ "$EVENT_NAME" == "schedule" ]]; then
-            since=$(date -u -d '7 days ago' +%F)
+            since=$(date -u -d '24 hours ago' +%FT%TZ)
             recent=$(gh run list -R "$REPO" --workflow release.yml --event push \
               --status success --created ">=$since" --json headBranch -q 'length')
             if [[ "$recent" -gt 0 ]]; then
-              echo "::notice::Tag pubblicato negli ultimi 7 giorni: rebuild settimanale saltato."
+              echo "::notice::Tag pubblicato nelle ultime 24 ore: rebuild giornaliero saltato."
               skip=true
             fi
           fi
@@ -86,9 +86,9 @@ jobs:
             echo "skip=$skip"
             echo "version=$version"
             echo "auto_tag=latest-$(date -u +%Y%m%d)"
-            # Settimana ISO: invalida una volta a settimana il layer `apk/apt upgrade` dei
+            # Data del giorno: invalida una volta al giorno il layer `apk/apt upgrade` dei
             # Dockerfile, altrimenti la cache registry lo congela e le patch OS non entrano.
-            echo "pkg_refresh=$(date -u +%G-W%V)"
+            echo "pkg_refresh=$(date -u +%F)"
           } >> "$GITHUB_OUTPUT"
 
   build-push:
