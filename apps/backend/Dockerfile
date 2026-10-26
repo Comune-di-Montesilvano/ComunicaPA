@@ -34,8 +34,8 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
 
 # ── Runtime ───────────────────────────────────────────────────────────────────
 FROM node:26-alpine
-# PKG_REFRESH (settimana ISO, passata da release.yml) invalida la cache del layer una
-# volta a settimana: senza, la cache registry congela `apk upgrade` e le patch di
+# PKG_REFRESH (data del giorno, passata da release.yml) invalida la cache del layer una
+# volta al giorno: senza, la cache registry congela `apk upgrade` e le patch di
 # sicurezza Alpine non entrano mai finche' l'immagine base non viene ripubblicata.
 # npm/npx/corepack non servono a runtime (CMD = node): rimossi per non portarsi dietro
 # le CVE delle loro dipendenze bundled (undici, brace-expansion...).

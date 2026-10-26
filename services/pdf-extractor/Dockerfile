@@ -1,7 +1,7 @@
 FROM python:3.14-slim
 WORKDIR /svc
-# PKG_REFRESH (settimana ISO, passata da release.yml) invalida la cache del layer una
-# volta a settimana: senza, la cache registry congela `apt-get upgrade` e le patch
+# PKG_REFRESH (data del giorno, passata da release.yml) invalida la cache del layer una
+# volta al giorno: senza, la cache registry congela `apt-get upgrade` e le patch
 # Debian non entrano mai finche' l'immagine base non viene ripubblicata.
 ARG PKG_REFRESH=none
 RUN apt-get update && apt-get upgrade -y \

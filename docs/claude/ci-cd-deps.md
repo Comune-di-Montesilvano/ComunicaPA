@@ -73,12 +73,12 @@ assegnazioni iniziali sempre sovrascritte in ogni ramo prima di essere
 lette (bug reale, non solo stile): fixare rimuovendo l'inizializzatore
 morto (`let x: T;` invece di `let x: T = default;`).
 
-`.github/workflows/release.yml`: push tag `v*` → `:vX.Y.Z` + `:latest` su `ghcr.io/comune-di-montesilvano/comunicapa-*` (Trivy report-only). Più rebuild settimanale di `main` (cron lunedì 04:30 UTC o `workflow_dispatch`): push `:latest-YYYYMMDD`, `APP_VERSION` = ultimo tag `v*`, Trivy BLOCCANTE (CRITICAL/HIGH con fix), solo se passa `latest` viene ripuntato al nuovo digest (`imagetools create`). Lo schedule salta se un tag è stato pubblicato negli ultimi 7 giorni. Mai tocca i tag `vX.Y.Z`.
+`.github/workflows/release.yml`: push tag `v*` → `:vX.Y.Z` + `:latest` su `ghcr.io/comune-di-montesilvano/comunicapa-*` (Trivy report-only). Più rebuild giornaliero di `main` (cron 04:30 UTC, dopo il giro Dependabot delle 01:00 Europe/Rome, o `workflow_dispatch`): push `:latest-YYYYMMDD`, `APP_VERSION` = ultimo tag `v*`, Trivy BLOCCANTE (CRITICAL/HIGH con fix), solo se passa `latest` viene ripuntato al nuovo digest (`imagetools create`). Lo schedule salta se un tag è stato pubblicato nelle ultime 24 ore. Mai tocca i tag `vX.Y.Z`.
 
 **`trivy-action` con `format: sarif` ignora `severity` se `limit-severities-for-sarif` non è `true`** (log: "Building SARIF report with all severities") → `exit-code: 1` scatta anche su LOW/MEDIUM. Nel rebuild il flag è attivo; in locale una scansione `--severity CRITICAL,HIGH` pulita non basta a dimostrare che la CI passi se il flag manca.
 
 **Rebuild bloccato da Trivy = di solito CVE reali.** Il formato SARIF non stampa le CVE nel log (solo `exit code 1`): per vederle `docker run --rm aquasec/trivy image --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed ghcr.io/comune-di-montesilvano/comunicapa-<app>:latest-YYYYMMDD`. Tre fonti tipiche:
-- pacchetti OS dell'immagine base → `apk/apt upgrade` nel runtime stage, rinfrescato ogni settimana da `ARG PKG_REFRESH` (settimana ISO passata da `release.yml`; senza, la cache registry congela il layer);
+- pacchetti OS dell'immagine base → `apk/apt upgrade` nel runtime stage, rinfrescato ogni giorno da `ARG PKG_REFRESH` (data del giorno passata da `release.yml`; senza, la cache registry congela il layer);
 - tool non usati a runtime con dipendenze bundled (npm/corepack nell'immagine node, pip `_vendor` nel pdf-extractor) → rimossi nei Dockerfile;
 - npm transitive (Dependabot bumpa solo le dirette) → `pnpm update -r --lockfile-only --depth Infinity <pkg...>`; se un padre fissa la versione esatta (es. `@nestjs/platform-express` → `multer` 2.4.0) → `overrides` in `pnpm-workspace.yaml` limitato alla versione vulnerabile (`'multer@2.4.0': 2.5.0`), da rimuovere quando il padre si aggiorna. Namespace hardcoded lowercase (il nome org ha maiuscole e romperebbe il cache exporter buildx). Allegati: path fisso `/data/attachments` nel container, volume named `attachments_data`.
 

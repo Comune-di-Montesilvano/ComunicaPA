@@ -5,7 +5,8 @@ version: 2
 # Controllo giornaliero e nessun cooldown: le correzioni (anche di bug critici non
 # classificati come advisory) arrivano il giorno stesso. Gli advisory di sicurezza
 # passano comunque dai Dependabot security updates (attivi sul repo), indipendenti
-# da questo schedule.
+# da questo schedule. Giro alle 01:00 cosi' l'auto-merge finisce prima del rebuild
+# giornaliero di latest (release.yml, 04:30 UTC).
 updates:
   # pnpm workspace monorepo — root pnpm-lock.yaml copre apps/* + packages/*
   # (Dependabot rileva il workspace pnpm da un solo entry alla root, non
@@ -14,6 +15,8 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
+      time: "01:00"
+      timezone: "Europe/Rome"
     open-pull-requests-limit: 10
     groups:
       npm-minor-patch:
@@ -29,6 +32,8 @@ updates:
     directory: "/services/pdf-extractor"
     schedule:
       interval: "daily"
+      time: "01:00"
+      timezone: "Europe/Rome"
     open-pull-requests-limit: 10
     groups:
       pip-minor-patch:
@@ -49,6 +54,8 @@ updates:
       - "/services/pdf-extractor"
     schedule:
       interval: "daily"
+      time: "01:00"
+      timezone: "Europe/Rome"
     groups:
       docker-minor-patch:
         update-types:
@@ -63,6 +70,8 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
+      time: "01:00"
+      timezone: "Europe/Rome"
     groups:
       actions-minor-patch:
         update-types:

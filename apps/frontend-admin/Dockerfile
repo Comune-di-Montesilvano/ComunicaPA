@@ -25,8 +25,8 @@ RUN node_modules/.bin/tsc -b && node_modules/.bin/vite build
 
 # ── Runtime ───────────────────────────────────────────────────────────────────
 FROM nginxinc/nginx-unprivileged:1.31-alpine
-# PKG_REFRESH (settimana ISO, passata da release.yml) invalida la cache del layer una
-# volta a settimana, cosi' `apk upgrade` prende le patch Alpine anche prima che
+# PKG_REFRESH (data del giorno, passata da release.yml) invalida la cache del layer una
+# volta al giorno, cosi' `apk upgrade` prende le patch Alpine anche prima che
 # l'immagine base nginx venga ripubblicata. L'immagine gira come utente nginx.
 ARG PKG_REFRESH=none
 USER root
