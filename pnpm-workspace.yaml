@@ -5,3 +5,10 @@ allowBuilds:
   '@nestjs/core': false
   esbuild: true
   msgpackr-extract: false
+# Dipendenze transitive con CVE fissate a versione esatta dal pacchetto padre
+# (Trivy bloccante nel rebuild settimanale di latest). Ogni override e' limitato
+# alla versione vulnerabile: quando il padre si aggiorna smette di applicarsi e
+# va rimosso.
+overrides:
+  # @nestjs/platform-express 12.x dipende da multer 2.4.0 esatto (CVE-2026-113872)
+  'multer@2.4.0': 2.5.0

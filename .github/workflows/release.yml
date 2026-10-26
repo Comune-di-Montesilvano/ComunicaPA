@@ -38,6 +38,7 @@ jobs:
       skip: ${{ steps.mode.outputs.skip }}
       version: ${{ steps.mode.outputs.version }}
       auto_tag: ${{ steps.mode.outputs.auto_tag }}
+      pkg_refresh: ${{ steps.mode.outputs.pkg_refresh }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -85,6 +86,9 @@ jobs:
             echo "skip=$skip"
             echo "version=$version"
             echo "auto_tag=latest-$(date -u +%Y%m%d)"
+            # Settimana ISO: invalida una volta a settimana il layer `apk/apt upgrade` dei
+            # Dockerfile, altrimenti la cache registry lo congela e le patch OS non entrano.
+            echo "pkg_refresh=$(date -u +%G-W%V)"
           } >> "$GITHUB_OUTPUT"
 
   build-push:
@@ -139,6 +143,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             APP_VERSION=${{ needs.setup.outputs.version }}
+            PKG_REFRESH=${{ needs.setup.outputs.pkg_refresh }}
           cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
           cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
 
