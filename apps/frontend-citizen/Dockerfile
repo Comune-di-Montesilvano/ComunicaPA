@@ -1,10 +1,13 @@
 # syntax=docker/dockerfile:1
 # ── Build ─────────────────────────────────────────────────────────────────────
 FROM node:26-alpine@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797 AS build
-RUN npm install -g corepack@0.36.0 && corepack enable && corepack prepare pnpm@11.9.0 --activate
+RUN npm install -g corepack@0.36.0 && corepack enable
 WORKDIR /app
 
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc pnpm.yaml ./
+# Versione di pnpm (con hash sha512, verificato da corepack) dal campo packageManager
+# di package.json: unica fonte, letta anche da pnpm/action-setup nei workflow.
+RUN corepack install
 COPY packages/shared-types/package.json packages/shared-types/
 COPY apps/frontend-citizen/package.json apps/frontend-citizen/
 

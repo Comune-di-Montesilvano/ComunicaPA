@@ -9,7 +9,10 @@ RUN apt-get update && apt-get upgrade -y \
 COPY services/pdf-extractor/requirements.txt .
 # pip non serve a runtime: rimosso dopo l'install insieme alle sue librerie vendored
 # (pip/_vendor: urllib3, msgpack...) che portano CVE indipendenti da quelle dell'app.
-RUN pip install --no-cache-dir -r requirements.txt \
+# requirements.txt = lock completo (transitive comprese) con hash, generato da
+# requirements.in con pip-compile: --require-hashes rifiuta qualunque pacchetto con hash
+# diverso, --no-deps impedisce di tirare dentro altro oltre al lock.
+RUN pip install --no-cache-dir --require-hashes --no-deps -r requirements.txt \
     && (pip uninstall -y pip setuptools wheel || true)
 COPY services/pdf-extractor/app/ ./app/
 # Utente senza privilegi: un PDF ostile che sfrutta un bug di PyMuPDF/pdfplumber

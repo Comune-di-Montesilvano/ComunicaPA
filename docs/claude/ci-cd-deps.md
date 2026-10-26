@@ -75,7 +75,7 @@ morto (`let x: T;` invece di `let x: T = default;`).
 
 **`main` è protetto (dal 2026-09-06): required check `run-tests`, no force-push, no delete branch.** Push diretto a main viene RIFIUTATO — serve sempre branch + PR + CI verde + merge. `tests.yml` triggera anche su `pull_request` (non solo push a main), quindi il check gira già sulla PR prima del merge.
 
-**`tests.yml` usa pnpm v11.9.0/Node 26** (stesso pattern `--ignore-scripts` + `pnpm rebuild esbuild` dei Dockerfile, vedi sezione sotto) ed esegue anche `pnpm lint` (reale, non più placeholder — vedi `apps/*/eslint.config.{mjs,js}`) e `pnpm build` (stesso comando delle immagini Docker) prima dei test — un errore di compilazione o lint viene preso qui, non solo al build immagine su tag.
+**`tests.yml` usa il pnpm di `packageManager` e la major di Node del `FROM` di `apps/backend/Dockerfile`** (stesso pattern `--ignore-scripts` + `pnpm rebuild esbuild` dei Dockerfile, vedi sezione sotto) ed esegue anche `pnpm lint` (reale, non più placeholder — vedi `apps/*/eslint.config.{mjs,js}`) e `pnpm build` (stesso comando delle immagini Docker) prima dei test — un errore di compilazione o lint viene preso qui, non solo al build immagine su tag.
 
 **`release.yml` scansiona ogni immagine con Trivy** (CRITICAL/HIGH, report-only, risultati su tab Security) subito dopo il push su ghcr.
 
@@ -120,3 +120,23 @@ sempre il fix non distruttivo sopra.
 - **Immagini base con digest** (`FROM image:tag@sha256:…`, anche postgres/redis nel compose, ecosistema Dependabot `docker-compose`): build riproducibili, Dependabot apre la PR quando il digest cambia. `corepack` fissato (`corepack@0.36.0`, era `@latest`).
 - **Runtime**: tutte le immagini prod non-root (pdf-extractor uid 10001); compose con `no-new-privileges` + `cap_drop: ALL` (anchor `x-hardening`), postgres/redis riaggiungono solo CHOWN/DAC_OVERRIDE/FOWNER/SETUID/SETGID per il drop di privilegi dell'entrypoint.
 - **Workflow**: `permissions` esplicite ovunque, `persist-credentials: false` su ogni checkout, `timeout-minutes` su ogni job. `scorecard.yml` (OpenSSF) pubblica il punteggio su scorecard.dev.
+
+## Versioni fissate e da dove si aggiornano (dal 2026-10-26)
+
+| Cosa | Dove è fissata | Chi la aggiorna |
+|---|---|---|
+| npm (dirette + transitive) | `pnpm-lock.yaml` | Dependabot `npm` |
+| Python pdf-extractor (dirette + transitive, con hash) | `services/pdf-extractor/requirements.txt`, generato da `requirements.in` | Dependabot `pip` (riconosce l'header pip-compile e rigenera il lock) |
+| Python di test | `requirements-dev.txt` da `requirements-dev.in` (`-c requirements.txt`) | idem |
+| pnpm | `packageManager` in `package.json`, con `+sha512.<hex>` verificato da corepack | a mano, su issue di `toolchain-version-check.yml` |
+| corepack | `npm install -g corepack@X.Y.Z` nei 6 Dockerfile di `apps/*/` (tutti uguali, il job lo controlla) | a mano, su issue di `toolchain-version-check.yml` |
+| Trivy | `version:` in `release.yml`/`security.yml` | a mano, su issue di `trivy-version-check.yml` |
+| Node di CI | major del `FROM node:<N>` di `apps/backend/Dockerfile` | Dependabot `docker` (con l'immagine) |
+| Immagini base, postgres/redis | tag + digest | Dependabot `docker` / `docker-compose` |
+| Actions | SHA | Dependabot `github-actions` |
+
+- **Rigenerare il lock Python** dopo aver cambiato `requirements*.in` (stessa immagine del Dockerfile):
+  `MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W):/w" -w /w/services/pdf-extractor <FROM di services/pdf-extractor/Dockerfile> sh -c "pip install -q pip-tools && pip-compile -q --generate-hashes --allow-unsafe --strip-extras --no-emit-index-url -o requirements.txt requirements.in && pip-compile -q --generate-hashes --allow-unsafe --strip-extras --no-emit-index-url -o requirements-dev.txt requirements-dev.in"`.
+  L'install è `pip install --require-hashes --no-deps -r requirements.txt`: un pacchetto con hash diverso o non elencato fa fallire la build.
+- **Aggiornare pnpm**: `packageManager` = `pnpm@X.Y.Z+sha512.<hex>`, dove `<hex>` è l'`integrity` del registry npm (`https://registry.npmjs.org/pnpm/X.Y.Z`, campo `dist.integrity`, base64 → hex). Poi rigenerare il lockfile con il comando di CLAUDE.md.
+

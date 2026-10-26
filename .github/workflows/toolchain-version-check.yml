@@ -1,0 +1,81 @@
+name: Toolchain version check
+# pnpm (campo packageManager di package.json) e corepack (Dockerfile) sono fissati a mano e
+# Dependabot non li aggiorna: questo job apre una issue quando esce una versione piu' nuova,
+# dopo 7 giorni come il cooldown di Dependabot (una release compromessa e ritirata nel
+# frattempo non arriva mai a una PR). Stesso schema di trivy-version-check.yml.
+on:
+  schedule:
+    - cron: "15 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: toolchain-version-check
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    strategy:
+      fail-fast: false
+      matrix:
+        tool: [pnpm, corepack]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Confronta versione fissata con ultima release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TOOL: ${{ matrix.tool }}
+          COOLDOWN_DAYS: "7"
+        run: |
+          set -euo pipefail
+          if [ "$TOOL" = pnpm ]; then
+            pinned=$(jq -r '.packageManager // ""' package.json | sed -nE 's/^pnpm@([0-9]+\.[0-9]+\.[0-9]+)(\+.*)?$/\1/p')
+            where='il campo `packageManager` di `package.json` (con l'"'"'hash: `pnpm@X.Y.Z+sha512.<hex>`, hex dell'"'"'integrity del registry npm)'
+          else
+            pinned=$(grep -rhoE 'corepack@[0-9]+\.[0-9]+\.[0-9]+' apps/*/Dockerfile* | cut -d@ -f2 | sort -u)
+            where='`npm install -g corepack@X.Y.Z` nei Dockerfile di `apps/*/` (tutti uguali)'
+          fi
+          if [ -z "$pinned" ] || [ "$(printf '%s\n' "$pinned" | wc -l)" -ne 1 ]; then
+            echo "::error::Versioni $TOOL fissate incoerenti o assenti: $(tr '\n' ' ' <<<"$pinned")"
+            exit 1
+          fi
+
+          meta=$(curl -fsSL --retry 3 "https://registry.npmjs.org/$TOOL")
+          latest=$(jq -r '."dist-tags".latest' <<<"$meta")
+          published=$(jq -r --arg v "$latest" '.time[$v]' <<<"$meta")
+          age_days=$(( ( $(date -u +%s) - $(date -u -d "$published" +%s) ) / 86400 ))
+          # Ultima della stessa major (solo versioni stabili): aggiornamento senza rotture,
+          # indicato nella issue accanto a quella piu' recente in assoluto.
+          same_major=$(jq -r --arg m "${pinned%%.*}." '.versions | keys[] | select(startswith($m)) | select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))' <<<"$meta" | sort -V | tail -1)
+          echo "$TOOL fissato: $pinned, ultimo: $latest (pubblicato $published, $age_days giorni fa), ultimo ${pinned%%.*}.x: $same_major"
+
+          [ "$latest" = "$pinned" ] && { echo "$TOOL aggiornato."; exit 0; }
+          if [ "$(printf '%s\n%s\n' "$pinned" "$latest" | sort -V | tail -1)" != "$latest" ]; then
+            echo "Fissato piu' recente dell'ultima release, niente da fare."
+            exit 0
+          fi
+          [ "$age_days" -lt "$COOLDOWN_DAYS" ] && { echo "Release troppo recente, attendo."; exit 0; }
+
+          existing=$(gh issue list --state open --search "in:title \"Aggiornare $TOOL a $latest\"" --json number --jq '.[0].number // empty')
+          [ -n "$existing" ] && { echo "Issue gia' aperta: #$existing"; exit 0; }
+          gh issue create --title "Aggiornare $TOOL a $latest (fissato $pinned)" --body "$(cat <<EOF
+          Disponibile **$TOOL $latest** (pubblicato $published). Fissato: **$pinned**.
+          Ultima della stessa major: **$same_major**.
+
+          Da aggiornare in $where.
+
+          Changelog: https://www.npmjs.com/package/$TOOL?activeTab=versions
+
+          _Issue aperta da \`toolchain-version-check.yml\`._
+          EOF
+          )"
