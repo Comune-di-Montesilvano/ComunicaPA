@@ -5,6 +5,9 @@ name: Pulizia immagini ghcr
 #   - ogni versione con un tag diverso da latest-YYYYMMDD (vX.Y.Z, latest, buildcache);
 #   - gli ultimi KEEP_DAILY tag latest-YYYYMMDD;
 #   - le sotto-versioni (manifest per piattaforma, attestazioni) dei tag tenuti;
+#   - le firme cosign (tag sha256-<digest>, release.yml) delle sole immagini tenute: non
+#     sono tag "di rilascio", trattarle come tali le terrebbe per sempre insieme alla
+#     firma di ogni immagine gia' cancellata;
 #   - tutto cio' che e' nato nelle ultime 6 ore (build in corso: i figli arrivano prima
 #     dell'indice).
 # Il resto viene cancellato. workflow_dispatch parte in dry-run per default.
@@ -73,7 +76,9 @@ jobs:
             [ -n "$tags" ] || continue
             keep=false
             for t in ${tags//,/ }; do
-              if [[ "$t" =~ ^latest-[0-9]{8}$ ]]; then
+              if [[ "$t" =~ ^sha256-[0-9a-f]{64} ]]; then
+                continue  # firma cosign: decisa sotto, dall'immagine a cui si riferisce
+              elif [[ "$t" =~ ^latest-[0-9]{8}$ ]]; then
                 grep -qx "$t" daily-keep.txt && keep=true
               else
                 keep=true
@@ -87,6 +92,19 @@ jobs:
             # cancellati, rompendo l'immagine taggata — meglio fermare tutto.
             raw=$(docker buildx imagetools inspect --raw "$image@$digest")
             jq -r '.manifests[]?.digest' <<<"$raw" >> keep.txt
+          done < versions.tsv
+          sort -u -o keep.txt keep.txt
+
+          # Firme: tag sha256-<hex> -> si tengono (con i figli) solo se l'immagine
+          # sha256:<hex> e' tenuta; le firme di immagini cancellate se ne vanno con loro.
+          while IFS=$'\t' read -r id digest created tags; do
+            for t in ${tags//,/ }; do
+              [[ "$t" =~ ^sha256-([0-9a-f]{64}) ]] || continue
+              grep -qx "sha256:${BASH_REMATCH[1]}" keep.txt || continue
+              echo "$digest" >> keep.txt
+              raw=$(docker buildx imagetools inspect --raw "$image@$digest")
+              jq -r '.manifests[]?.digest' <<<"$raw" >> keep.txt
+            done
           done < versions.tsv
           sort -u -o keep.txt keep.txt
 

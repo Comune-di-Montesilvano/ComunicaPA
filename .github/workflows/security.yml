@@ -1,12 +1,14 @@
 name: Sicurezza
-# Controlli sul sorgente a ogni PR e push su main, piu' un giro giornaliero (nuovi advisory
-# su dipendenze invariate). Non e' un required check: blocca solo il merge automatico di
-# Dependabot quando lo si rende obbligatorio nella branch protection.
+# Controlli sul sorgente a ogni PR, in merge queue e su push su main, piu' un giro
+# giornaliero (nuovi advisory su dipendenze invariate). I job sono required check del
+# ruleset di main: anche l'auto-merge di Dependabot li aspetta.
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  # Merge queue di main: i check girano sulla PR gia' unita a main prima del merge.
+  merge_group:
   schedule:
     - cron: "0 5 * * *"
   workflow_dispatch:
@@ -19,6 +21,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Dipendenze aggiunte o aggiornate dalla PR con advisory high/critical, devDependencies e
+  # Actions comprese (pnpm-audit e Trivy vedono solo produzione e immagini). Solo sulle PR:
+  # in merge queue e su push il job risulta saltato, che per un required check vale verde.
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+
   # Advisory npm sulle dipendenze di produzione (dirette e transitive). Eccezioni motivate
   # in pnpm-workspace.yaml (auditConfig.ignoreGhsas).
   pnpm-audit:
