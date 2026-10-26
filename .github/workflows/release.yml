@@ -4,14 +4,92 @@ name: Build & Push immagini
 on:
   push:
     tags: ['v*']
+  # Rebuild settimanale di main (lunedi' 04:30 UTC, dopo il giro dependabot): aggiorna SOLO
+  # `latest` (+ `latest-YYYYMMDD`) con immagini base e dipendenze minor/patch fresche, senza
+  # toccare i tag vX.Y.Z (quelli li crea solo il maintainer). Saltato se nell'ultima
+  # settimana e' gia' stato pubblicato un tag (latest e' gia' fresco).
+  schedule:
+    - cron: "30 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      rebuild_latest:
+        description: "Rebuild di latest da main (come lo schedule settimanale, senza skip)"
+        type: boolean
+        default: true
+
+# Mai cancel-in-progress: un push a ghcr interrotto a meta' puo' lasciare un manifest
+# incompleto — run concorrenti si accodano invece di accavallarsi.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
   packages: write
   security-events: write
+  actions: read
 
 jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      auto: ${{ steps.mode.outputs.auto }}
+      skip: ${{ steps.mode.outputs.skip }}
+      version: ${{ steps.mode.outputs.version }}
+      auto_tag: ${{ steps.mode.outputs.auto_tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # Storia + tag completi: il rebuild automatico ricava l'ultimo tag vX.Y.Z.
+          fetch-depth: 0
+
+      - name: Resolve build mode
+        id: mode
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          REBUILD_LATEST: ${{ inputs.rebuild_latest }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          auto=false
+          skip=false
+          if [[ "$EVENT_NAME" == "push" && "$REF_TYPE" == "tag" ]]; then
+            version="$REF_NAME"
+          elif [[ "$EVENT_NAME" == "schedule" || "$REBUILD_LATEST" == "true" ]]; then
+            auto=true
+            # APP_VERSION = ultimo tag rilasciato (versione mostrata in UI/`/version`);
+            # il tag immagine latest-YYYYMMDD distingue il rebuild.
+            version=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || echo dev)
+          else
+            echo "::notice::Dispatch senza rebuild_latest: niente da buildare."
+            skip=true
+            version=dev
+          fi
+          # Solo lo schedule salta: un tag pubblicato negli ultimi 7 giorni ha gia' rinfrescato
+          # latest. Le run "push" di questo workflow sono solo tag.
+          if [[ "$EVENT_NAME" == "schedule" ]]; then
+            since=$(date -u -d '7 days ago' +%F)
+            recent=$(gh run list -R "$REPO" --workflow release.yml --event push \
+              --status success --created ">=$since" --json headBranch -q 'length')
+            if [[ "$recent" -gt 0 ]]; then
+              echo "::notice::Tag pubblicato negli ultimi 7 giorni: rebuild settimanale saltato."
+              skip=true
+            fi
+          fi
+          {
+            echo "auto=$auto"
+            echo "skip=$skip"
+            echo "version=$version"
+            echo "auto_tag=latest-$(date -u +%Y%m%d)"
+          } >> "$GITHUB_OUTPUT"
+
   build-push:
+    needs: setup
+    if: needs.setup.outputs.skip != 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -25,6 +103,8 @@ jobs:
             dockerfile: apps/frontend-citizen/Dockerfile
           - app: pdf-extractor
             dockerfile: services/pdf-extractor/Dockerfile
+    env:
+      IMAGE: ghcr.io/comune-di-montesilvano/comunicapa-${{ matrix.app }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -36,45 +116,58 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Tag git: vX.Y.Z + latest. Rebuild automatico: solo latest-YYYYMMDD, latest viene
+      # promosso piu' sotto solo dopo che Trivy ha passato l'immagine.
       - id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
-          images: ghcr.io/comune-di-montesilvano/comunicapa-${{ matrix.app }}
+          images: ${{ env.IMAGE }}
           tags: |
             type=ref,event=tag
             type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
-            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=${{ needs.setup.outputs.auto_tag }},enable=${{ needs.setup.outputs.auto == 'true' }}
 
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+      - id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           file: ${{ matrix.dockerfile }}
           push: true
+          # Ripesca sempre le immagini base (node/nginx/python) per prendere le patch del tag.
+          pull: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            APP_VERSION=${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}
-          cache-from: type=registry,ref=ghcr.io/comune-di-montesilvano/comunicapa-${{ matrix.app }}:buildcache
-          cache-to: type=registry,ref=ghcr.io/comune-di-montesilvano/comunicapa-${{ matrix.app }}:buildcache,mode=max
+            APP_VERSION=${{ needs.setup.outputs.version }}
+          cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
 
-      # Report-only: non blocca la release (exit-code 0), risultati visibili
-      # nella tab Security del repo. Scansiona l'immagine appena pushata,
-      # taggata con il tag git corrente (sempre presente, trigger solo su tag).
+      # Tag git: report-only (exit-code 0), risultati nella tab Security del repo.
+      # Rebuild automatico: bloccante su CRITICAL/HIGH con fix disponibile — se fallisce,
+      # latest resta sulla build precedente.
       - name: Trivy vulnerability scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ghcr.io/comune-di-montesilvano/comunicapa-${{ matrix.app }}:${{ github.ref_name }}
+          image-ref: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
           format: sarif
           output: trivy-results.sarif
           severity: CRITICAL,HIGH
-          exit-code: '0'
+          exit-code: ${{ needs.setup.outputs.auto == 'true' && '1' || '0' }}
+          ignore-unfixed: ${{ needs.setup.outputs.auto == 'true' }}
           # Scanner Trivy (non l'Action stessa, quella resta pinnata per SHA
           # sopra) — 'latest' qui è il pattern raccomandato dall'action per
           # avere sempre il rilevamento CVE più aggiornato senza bump manuali.
           version: latest
 
+      - name: Promuovi latest
+        if: needs.setup.outputs.auto == 'true'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: docker buildx imagetools create -t "$IMAGE:latest" "$IMAGE@$DIGEST"
+
       - name: Upload Trivy scan results
-        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4
+        if: always()
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4
         with:
           sarif_file: trivy-results.sarif
           category: trivy-${{ matrix.app }}
