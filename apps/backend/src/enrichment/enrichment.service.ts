@@ -296,6 +296,9 @@ export class EnrichmentService {
     for (const [key, value] of Object.entries(fields)) {
       if (key === 'indirizzo' || key === 'cap' || key === 'comune' || key === 'provincia' || key === 'stato_estero') continue;
       if (key === 'allegato') continue; // chiave di identità della riga, mai sovrascrivibile
+      // Chiavi dal body HTTP: mai nomi che toccano il prototipo degli oggetti
+      // in cui extraFields viene poi copiato (applyOverrides sulla riga CSV).
+      if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
       extraFields[key] = value;
     }
     await this.overrideService.upsert(jobId, pdfFilename, address, extraFields, correctedBy);
