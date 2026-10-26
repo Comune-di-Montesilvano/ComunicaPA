@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import * as fs from 'fs';
-import { join } from 'path';
+import { basename, join } from 'path';
 import type { Recipient } from '../entities/recipient.entity.js';
 import { getUploadsDir } from './attachment-paths.js';
 
@@ -60,6 +60,25 @@ export function resolveAttachmentLabel(entry: AttachmentConfigEntry, recipient: 
  * in modo che entrambi concordino su quali destinatari hanno un allegato personalizzato.
  */
 export function resolveCustomAttachmentFilename(recipient: Recipient, index = 0): string | undefined {
+  const name = resolveRawAttachmentFilename(recipient, index);
+  return name !== undefined && isPlainFilename(name) ? name : undefined;
+}
+
+/**
+ * Il nome arriva dal CSV (o dal DTO dell'invio di test) e finisce in
+ * `join(getUploadsDir(...), nome)` per leggere l'allegato da spedire o
+ * cancellarlo a scadenza retention: un valore con componenti di path
+ * (`../../proc/self/environ`) farebbe allegare alla notifica, o eliminare, un
+ * file qualsiasi del container. Gli allegati stanno sempre piatti nella
+ * cartella della campagna (gli ZIP vengono appiattiti all'estrazione), quindi
+ * un nome valido non contiene mai separatori. Un nome scartato equivale a
+ * "allegato non configurato": i chiamanti lo gestiscono già.
+ */
+function isPlainFilename(name: string): boolean {
+  return name !== '' && name !== '.' && name !== '..' && !/[\\\0]/.test(name) && basename(name) === name;
+}
+
+function resolveRawAttachmentFilename(recipient: Recipient, index: number): string | undefined {
   const attachments = resolveAttachmentsConfig(recipient.campaign?.channelConfig);
   const entry = attachments[index];
 
