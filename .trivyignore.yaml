@@ -1,0 +1,11 @@
+# Eccezioni Trivy motivate e limitate per percorso (usato da security.yml).
+misconfigurations:
+  - id: DS-0002
+    paths:
+      - "apps/backend/Dockerfile.dev"
+      - "apps/frontend-admin/Dockerfile.dev"
+      - "apps/frontend-citizen/Dockerfile.dev"
+      - "services/pdf-extractor/Dockerfile.dev"
+    statement: >-
+      Immagini solo per sviluppo locale (bind mount + hot-reload, volumi node_modules
+      scritti dal container): root voluto. Le immagini di produzione girano non-root.

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # ── Build ─────────────────────────────────────────────────────────────────────
-FROM node:26-alpine AS build
-RUN npm install -g corepack@latest && corepack enable && corepack prepare pnpm@11.9.0 --activate
+FROM node:26-alpine@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797 AS build
+RUN npm install -g corepack@0.36.0 && corepack enable && corepack prepare pnpm@11.9.0 --activate
 WORKDIR /app
 
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc pnpm.yaml ./
@@ -33,7 +33,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm --filter backend deploy --prod --ignore-scripts --legacy /prod/backend
 
 # ── Runtime ───────────────────────────────────────────────────────────────────
-FROM node:26-alpine
+FROM node:26-alpine@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797
 # PKG_REFRESH (data del giorno, passata da release.yml) invalida la cache del layer una
 # volta al giorno: senza, la cache registry congela `apk upgrade` e le patch di
 # sicurezza Alpine non entrano mai finche' l'immagine base non viene ripubblicata.
