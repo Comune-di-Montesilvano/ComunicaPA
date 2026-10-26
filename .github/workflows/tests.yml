@@ -6,6 +6,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Merge queue di main: i check girano sulla PR gia' unita a main prima del merge.
+  merge_group:
 
 # Cancella run precedenti sullo stesso branch/PR quando arriva un nuovo push -
 # evita di sprecare minuti CI su commit gia' superati (push rapidi, force-push).
