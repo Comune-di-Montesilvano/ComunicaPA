@@ -10,6 +10,15 @@ export interface LdapUser {
   role: OperatorRole;
 }
 
+/**
+ * Escape RFC 4515 di un valore inserito in un filtro LDAP: senza, uno username
+ * come `x)(sAMAccountName=*` altera il filtro (LDAP injection), e un DN di gruppo
+ * con parentesi (`CN=Ufficio (IT),...`) lo rende malformato.
+ */
+export function escapeLdapFilterValue(value: string): string {
+  return value.replace(/[\\*()\0]/g, (c) => `\\${c.charCodeAt(0).toString(16).padStart(2, '0')}`);
+}
+
 @Injectable()
 export class LdapService {
   private readonly logger = new Logger(LdapService.name);
@@ -181,7 +190,7 @@ export class LdapService {
     baseDn: string,
     groupCns: string[],
   ): Promise<Record<string, string>> {
-    const filter = `(&(objectClass=group)(|${groupCns.map((cn) => `(cn=${cn})`).join('')}))`;
+    const filter = `(&(objectClass=group)(|${groupCns.map((cn) => `(cn=${escapeLdapFilterValue(cn)})`).join('')}))`;
     return new Promise((resolve) => {
       const dns: Record<string, string> = {};
       client.search(
@@ -232,7 +241,8 @@ export class LdapService {
     username: string,
     groupDn: string,
   ): Promise<boolean> {
-    const filter = `(&(|(sAMAccountName=${username})(userPrincipalName=${username}))(memberOf:1.2.840.113556.1.4.1941:=${groupDn}))`;
+    const user = escapeLdapFilterValue(username);
+    const filter = `(&(|(sAMAccountName=${user})(userPrincipalName=${user}))(memberOf:1.2.840.113556.1.4.1941:=${escapeLdapFilterValue(groupDn)}))`;
     return new Promise((resolve) => {
       let matched = false;
       client.search(
@@ -274,7 +284,8 @@ export class LdapService {
     baseDn: string,
     username: string,
   ): Promise<Record<string, unknown> | null> {
-    const filter = `(|(sAMAccountName=${username})(userPrincipalName=${username}))`;
+    const user = escapeLdapFilterValue(username);
+    const filter = `(|(sAMAccountName=${user})(userPrincipalName=${user}))`;
     return new Promise((resolve, reject) => {
       let resolved = false;
       let found: Record<string, unknown> | null = null;

@@ -276,6 +276,19 @@ describe('EnrichmentService', () => {
       );
     });
 
+    it('chiavi riservate (__proto__/constructor/prototype) nel body → scartate', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.DONE });
+      fs.mkdirSync(getEnrichmentDir('j1'), { recursive: true });
+      fs.writeFileSync(
+        getEnrichmentResultCsv('j1'),
+        buildEnrichedCsv(buildEnrichedCsvHeaders(0), [{ allegato: 'PROVV_1.pdf' }]),
+      );
+      const fields = JSON.parse('{"__proto__":"x","constructor":"y","prototype":"z","importo":"1,00"}') as Record<string, string>;
+      await service.saveRowOverride('j1', 'PROVV_1.pdf', fields, 'op');
+      const extraFields = overrideService.upsert.mock.calls[0][3] as Record<string, string>;
+      expect(Object.keys(extraFields)).toEqual(['importo']);
+    });
+
     it('pdfFilename inesistente → blocked', async () => {
       repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.DONE });
       fs.mkdirSync(getEnrichmentDir('j1'), { recursive: true });

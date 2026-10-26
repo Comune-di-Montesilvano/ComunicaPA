@@ -1,3 +1,4 @@
+import logging
 import os
 from dataclasses import asdict
 
@@ -5,6 +6,8 @@ import sentry_sdk
 from fastapi import FastAPI, UploadFile
 
 from app.pdf_extractor import AddressExtractionError, PdfExtractor
+
+logger = logging.getLogger("pdf-extractor")
 
 # Attivo SOLO se SENTRY_DSN_PDF_EXTRACTOR è valorizzata — stesso principio
 # opt-in del backend Node (sentry.util.ts): nessun invio di default,
@@ -55,8 +58,10 @@ async def extract(file: UploadFile, search_payments: bool = True):
                     "totale": asdict(totale) if totale else None,
                     "rate": [asdict(r) for r in rate],
                 }
-    except Exception as e:
-        warnings.append(f"PDF non elaborabile: {e}")
+    except Exception:
+        # Il dettaglio resta nel log del servizio, non nella risposta.
+        logger.exception("PDF non elaborabile")
+        warnings.append("PDF non elaborabile: file danneggiato o formato non supportato")
 
     return {
         "address": asdict(address) if address else None,
