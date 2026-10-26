@@ -2,6 +2,11 @@
 
 ## CI/CD
 
+## Dependabot auto-merge (`dependabot-automerge.yml`, pattern da GovPay-Interaction-Layer)
+
+Minor/patch (gruppi `*-minor-patch` per ecosistema, `cooldown` 7 gg / 14 le major) → `gh pr merge --auto --squash` appena `run-tests` è verde. Major e bump immagine `python` (minor per dependabot, upgrade runtime per noi) → PR lasciata aperta, manuale. Job `update-behind` (push su main + cron 6h): aggiorna UNA PR dependabot `BEHIND` con auto-merge attivo alla volta (strict protection), il merge successivo rilancia il giro.
+Token GitHub App `comune-montesilvano-bot` (installata su tutta l'org), secret `BOT_CLIENT_ID`/`BOT_PRIVATE_KEY` sia come **Actions** sia come **Dependabot** secret (sul trigger `pull_request` di dependabot si vedono solo i secret Dependabot). Con `GITHUB_TOKEN` merge/update-branch non triggerano `tests.yml` → PR bloccate. Prerequisito repo: `allow_auto_merge` attivo.
+
 ## Dependabot — bump "a scaglioni" su pacchetti fratelli, verificare sempre l'intera famiglia
 
 Dependabot bumpa un pacchetto per volta: un major su un solo membro di
@@ -68,7 +73,7 @@ assegnazioni iniziali sempre sovrascritte in ogni ramo prima di essere
 lette (bug reale, non solo stile): fixare rimuovendo l'inizializzatore
 morto (`let x: T;` invece di `let x: T = default;`).
 
-`.github/workflows/release.yml`: triggera SOLO su tag `v*` (mai su push a main, nonostante il tag `dev` nel metadata-action — condizione mai raggiunta, riga corretta dopo audit). Push tag → `:vX.Y.Z` + `:latest` su `ghcr.io/comune-di-montesilvano/comunicapa-*`. Namespace hardcoded lowercase (il nome org ha maiuscole e romperebbe il cache exporter buildx). Allegati: path fisso `/data/attachments` nel container, volume named `attachments_data`.
+`.github/workflows/release.yml`: push tag `v*` → `:vX.Y.Z` + `:latest` su `ghcr.io/comune-di-montesilvano/comunicapa-*` (Trivy report-only). Più rebuild settimanale di `main` (cron lunedì 04:30 UTC o `workflow_dispatch`): push `:latest-YYYYMMDD`, `APP_VERSION` = ultimo tag `v*`, Trivy BLOCCANTE (CRITICAL/HIGH con fix), solo se passa `latest` viene ripuntato al nuovo digest (`imagetools create`). Lo schedule salta se un tag è stato pubblicato negli ultimi 7 giorni. Mai tocca i tag `vX.Y.Z`. Namespace hardcoded lowercase (il nome org ha maiuscole e romperebbe il cache exporter buildx). Allegati: path fisso `/data/attachments` nel container, volume named `attachments_data`.
 
 **`main` è protetto (dal 2026-09-06): required check `run-tests`, no force-push, no delete branch.** Push diretto a main viene RIFIUTATO — serve sempre branch + PR + CI verde + merge. `tests.yml` triggera anche su `pull_request` (non solo push a main), quindi il check gira già sulla PR prima del merge.
 

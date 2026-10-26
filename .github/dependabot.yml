@@ -1,4 +1,10 @@
 version: 2
+# Ogni ecosistema: minor+patch raggruppate in una sola PR, mergiata in automatico
+# (vedi dependabot-automerge.yml); le major restano PR singole, aperte come promemoria
+# per l'upgrade manuale.
+# cooldown: attende N giorni dalla pubblicazione prima di proporre l'update — mitiga il
+# rischio di una release appena pubblicata compromessa/malevola (supply-chain), con piu'
+# margine sulle major.
 updates:
   # pnpm workspace monorepo — root pnpm-lock.yaml copre apps/* + packages/*
   # (Dependabot rileva il workspace pnpm da un solo entry alla root, non
@@ -8,6 +14,9 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
     open-pull-requests-limit: 10
     groups:
       npm-minor-patch:
@@ -24,6 +33,9 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
     open-pull-requests-limit: 10
     groups:
       pip-minor-patch:
@@ -34,40 +46,24 @@ updates:
       prefix: "chore"
       include: "scope"
 
-  # Dockerfile + Dockerfile.dev per servizio — un entry per directory copre
-  # entrambi i file (Dependabot scansiona ogni Dockerfile* nella directory).
+  # Dockerfile + Dockerfile.dev per servizio — un entry con `directories` copre
+  # tutti i Dockerfile* delle cartelle elencate.
   - package-ecosystem: "docker"
-    directory: "/apps/backend"
+    directories:
+      - "/apps/backend"
+      - "/apps/frontend-admin"
+      - "/apps/frontend-citizen"
+      - "/services/pdf-extractor"
     schedule:
       interval: "weekly"
       day: "monday"
-    commit-message:
-      prefix: "chore"
-      include: "scope"
-
-  - package-ecosystem: "docker"
-    directory: "/apps/frontend-admin"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    commit-message:
-      prefix: "chore"
-      include: "scope"
-
-  - package-ecosystem: "docker"
-    directory: "/apps/frontend-citizen"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    commit-message:
-      prefix: "chore"
-      include: "scope"
-
-  - package-ecosystem: "docker"
-    directory: "/services/pdf-extractor"
-    schedule:
-      interval: "weekly"
-      day: "monday"
+    cooldown:
+      default-days: 7
+    groups:
+      docker-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
     commit-message:
       prefix: "chore"
       include: "scope"
@@ -78,6 +74,13 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+    cooldown:
+      default-days: 7
+    groups:
+      actions-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
     commit-message:
       prefix: "chore"
       include: "scope"
