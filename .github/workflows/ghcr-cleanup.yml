@@ -1,0 +1,107 @@
+name: Pulizia immagini ghcr
+# Il rebuild giornaliero (release.yml) lascia su ghcr un tag latest-YYYYMMDD al giorno, e
+# ogni build crea 3 versioni (indice + immagine + attestazione): quelle sostituite
+# restano senza tag. Qui si tengono:
+#   - ogni versione con un tag diverso da latest-YYYYMMDD (vX.Y.Z, latest, buildcache);
+#   - gli ultimi KEEP_DAILY tag latest-YYYYMMDD;
+#   - le sotto-versioni (manifest per piattaforma, attestazioni) dei tag tenuti;
+#   - tutto cio' che e' nato nelle ultime 6 ore (build in corso: i figli arrivano prima
+#     dell'indice).
+# Il resto viene cancellato. workflow_dispatch parte in dry-run per default.
+on:
+  schedule:
+    - cron: "0 3 * * 0"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Solo elenco, nessuna cancellazione"
+        type: boolean
+        default: true
+      keep_daily:
+        description: "Tag latest-YYYYMMDD da tenere"
+        type: number
+        default: 30
+
+permissions:
+  contents: read
+  packages: write
+
+# Mai in parallelo con un'altra pulizia (stesse versioni).
+concurrency:
+  group: ghcr-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        app: [backend, frontend-admin, frontend-citizen, pdf-extractor]
+    env:
+      ORG: comune-di-montesilvano
+      PKG: comunicapa-${{ matrix.app }}
+    steps:
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pulizia ${{ matrix.app }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Schedule: sempre reale. Dispatch: secondo l'input (default dry-run).
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+          KEEP_DAILY: ${{ inputs.keep_daily || 30 }}
+        run: |
+          set -euo pipefail
+          api="orgs/$ORG/packages/container/$PKG/versions"
+          image="ghcr.io/$ORG/$PKG"
+
+          gh api --paginate "$api?per_page=100" \
+            -q '.[] | [.id, .name, .created_at, (.metadata.container.tags | join(","))] | @tsv' > versions.tsv
+          echo "Versioni totali: $(wc -l < versions.tsv)"
+
+          grep -oE '(^|,)latest-[0-9]{8}' <(cut -f4 versions.tsv) | tr -d ',' \
+            | sort -r | head -n "$KEEP_DAILY" > daily-keep.txt || true
+
+          : > keep.txt
+          while IFS=$'\t' read -r id digest created tags; do
+            [ -n "$tags" ] || continue
+            keep=false
+            for t in ${tags//,/ }; do
+              if [[ "$t" =~ ^latest-[0-9]{8}$ ]]; then
+                grep -qx "$t" daily-keep.txt && keep=true
+              else
+                keep=true
+              fi
+            done
+            $keep || continue
+            echo "$digest" >> keep.txt
+            # Figli dell'indice (immagine per piattaforma + attestazione). Un manifest
+            # singolo o una cache non hanno .manifests: nessun figlio. Mai `|| true`:
+            # se la lettura fallisce i figli resterebbero fuori da keep.txt e verrebbero
+            # cancellati, rompendo l'immagine taggata — meglio fermare tutto.
+            raw=$(docker buildx imagetools inspect --raw "$image@$digest")
+            jq -r '.manifests[]?.digest' <<<"$raw" >> keep.txt
+          done < versions.tsv
+          sort -u -o keep.txt keep.txt
+
+          cutoff=$(date -u -d '6 hours ago' +%FT%TZ)
+          deleted=0
+          while IFS=$'\t' read -r id digest created tags; do
+            grep -qx "$digest" keep.txt && continue
+            [[ "$created" > "$cutoff" ]] && continue
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "DRY-RUN elimina $id $digest ${tags:-<senza tag>} ($created)"
+            else
+              gh api -X DELETE "$api/$id" >/dev/null
+            fi
+            deleted=$((deleted + 1))
+          done < versions.tsv
+
+          kept=$(( $(wc -l < versions.tsv) - deleted ))
+          echo "::notice::$PKG: $deleted versioni da eliminare, $kept tenute (dry_run=$DRY_RUN)"
