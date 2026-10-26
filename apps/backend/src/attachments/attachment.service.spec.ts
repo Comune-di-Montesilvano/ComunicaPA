@@ -63,6 +63,43 @@ describe('resolveCustomAttachmentFilename con indice', () => {
     const r = baseRecipient({ allegatoKey: 'doc' }, { doc: 'X.pdf' });
     expect(resolveCustomAttachmentFilename(r)).toBe('X.pdf');
   });
+
+  // Il valore arriva dal CSV: un path farebbe leggere (e allegare alla notifica)
+  // o cancellare (retention) un file qualsiasi del container.
+  it.each([
+    '../../../proc/self/environ',
+    '../segreto.pdf',
+    'sotto/cartella.pdf',
+    '/etc/passwd',
+    'dir\\file.pdf',
+    '..',
+    '.',
+  ])('nome con componenti di path (%s) → undefined', (value) => {
+    const r = baseRecipient({ attachments: [{ key: 'doc', label: 'Doc' }] }, { doc: value });
+    expect(resolveCustomAttachmentFilename(r, 0)).toBeUndefined();
+  });
+
+  it('fallback legacy: valore .pdf con path → undefined', () => {
+    const r = baseRecipient({}, { documentoAllegato: '../../app/x.pdf' });
+    expect(resolveCustomAttachmentFilename(r, 0)).toBeUndefined();
+  });
+
+  it('nome semplice con spazi e punti resta valido', () => {
+    const r = baseRecipient({ attachments: [{ key: 'doc', label: 'Doc' }] }, { doc: 'AVVISO TARI 2026.v2.pdf' });
+    expect(resolveCustomAttachmentFilename(r, 0)).toBe('AVVISO TARI 2026.v2.pdf');
+  });
+});
+
+describe('AttachmentService.generatePdfBuffer — path traversal', () => {
+  it('nome allegato con ../ → NotFound, nessuna lettura fuori da uploads', async () => {
+    const r = {
+      id: 'r1',
+      campaignId: '00000000-0000-0000-0000-000000000001',
+      extraData: { doc: '../../../../etc/hostname' },
+      campaign: { channelConfig: { attachments: [{ key: 'doc', label: 'Doc' }] } },
+    } as unknown as Recipient;
+    await expect(new AttachmentService().generatePdfBuffer(r, 0)).rejects.toThrow('Nessun allegato');
+  });
 });
 
 describe('AttachmentService.generatePdfBuffer', () => {
