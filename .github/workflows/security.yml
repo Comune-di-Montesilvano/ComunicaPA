@@ -76,6 +76,8 @@ jobs:
   # main, invece di emergere solo nel rebuild notturno. Required check: l'auto-merge lo
   # aspetta.
   trivy-image:
+    # Nome stabile: e' quello registrato come required check nella branch protection.
+    name: trivy-image (${{ matrix.app }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
