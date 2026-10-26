@@ -8,6 +8,14 @@ import { MASKED_VALUE } from '../settings/settings.registry.js';
 import type { AppConfiguration } from '../config/configuration.js';
 import type { CreateIoServiceDto, IoServiceMaskedDto, UpdateIoServiceDto } from './dto/io-service.dto.js';
 
+// App IO accetta solo codici fiscali di persona fisica (16 caratteri alfanumerici,
+// omocodia compresa). Il CF finisce nel path della richiesta: validato prima.
+function normalizeFiscalCode(value: string): string {
+  const cf = String(value).toUpperCase().trim();
+  if (!/^[A-Z0-9]{16}$/.test(cf)) throw new BadRequestException('Codice fiscale non valido');
+  return cf;
+}
+
 @Injectable()
 export class IoServicesService {
   private readonly cryptoKey: Buffer;
@@ -99,6 +107,7 @@ export class IoServicesService {
 
   async verifyProfile(codiceFiscale: string, ioServiceId?: string): Promise<{ success: boolean; active: boolean; message: string }> {
     if (!codiceFiscale) throw new BadRequestException('Codice fiscale richiesto');
+    const fiscalCode = normalizeFiscalCode(codiceFiscale);
 
     // Con ioServiceId esplicito (verifica bulk: la scelta del servizio è
     // deliberata, sender_allowed è per-servizio) NIENTE fallback al default —
@@ -120,7 +129,7 @@ export class IoServicesService {
     const { APP_IO_BASE_URL } = await import('../channels/app-io/app-io.strategy.js');
 
     try {
-      const response = await fetch(`${APP_IO_BASE_URL}/api/v1/profiles/${codiceFiscale.toUpperCase().trim()}`, {
+      const response = await fetch(`${APP_IO_BASE_URL}/api/v1/profiles/${encodeURIComponent(fiscalCode)}`, {
         method: 'GET',
         headers: { 'Ocp-Apim-Subscription-Key': resolved.apiKey },
       });
@@ -147,12 +156,13 @@ export class IoServicesService {
     const entity = await this.repo.findOneBy({ id });
     if (!entity) throw new NotFoundException(`Servizio App IO ${id} non trovato`);
     if (!codiceFiscale) throw new BadRequestException('Codice fiscale di test richiesto');
+    const fiscalCode = normalizeFiscalCode(codiceFiscale);
 
     const apiKey = decryptValue(entity.apiKeyPrimariaEnc, this.cryptoKey);
     const { APP_IO_BASE_URL } = await import('../channels/app-io/app-io.strategy.js');
 
     // 1. Verifica profilo cittadino
-    const profileResponse = await fetch(`${APP_IO_BASE_URL}/api/v1/profiles/${codiceFiscale}`, {
+    const profileResponse = await fetch(`${APP_IO_BASE_URL}/api/v1/profiles/${encodeURIComponent(fiscalCode)}`, {
       method: 'GET',
       headers: { 'Ocp-Apim-Subscription-Key': apiKey },
     });
@@ -174,7 +184,7 @@ export class IoServicesService {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Ocp-Apim-Subscription-Key': apiKey },
       body: JSON.stringify({
-        fiscal_code: codiceFiscale,
+        fiscal_code: fiscalCode,
         content: {
           subject: `Test ComunicaPA - ${entity.nome}`,
           markdown: `Messaggio di test inviato dal portale ComunicaPA per verificare la corretta integrazione del servizio **${entity.nome}** con App IO. Questo messaggio conferma che la configurazione e le chiavi API sono valide.`,
