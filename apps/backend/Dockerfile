@@ -34,7 +34,15 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
 
 # ── Runtime ───────────────────────────────────────────────────────────────────
 FROM node:26-alpine
-RUN apk add --no-cache tzdata
+# PKG_REFRESH (settimana ISO, passata da release.yml) invalida la cache del layer una
+# volta a settimana: senza, la cache registry congela `apk upgrade` e le patch di
+# sicurezza Alpine non entrano mai finche' l'immagine base non viene ripubblicata.
+# npm/npx/corepack non servono a runtime (CMD = node): rimossi per non portarsi dietro
+# le CVE delle loro dipendenze bundled (undici, brace-expansion...).
+ARG PKG_REFRESH=none
+RUN apk upgrade --no-cache && apk add --no-cache tzdata \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \
+       /usr/local/lib/node_modules/corepack /usr/local/bin/corepack
 ARG APP_VERSION=dev
 ENV APP_VERSION=${APP_VERSION} NODE_ENV=production TZ=Europe/Rome
 WORKDIR /app
