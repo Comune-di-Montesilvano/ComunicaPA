@@ -29,15 +29,24 @@ jobs:
         with:
           persist-credentials: false
 
+      # Versione di pnpm dal campo packageManager di package.json (unica fonte, la stessa
+      # che corepack installa nei Dockerfile).
       - name: Setup PNPM
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-        with:
-          version: 11.9.0
+
+      # Major di Node dall'immagine base del backend (aggiornata da Dependabot): la CI
+      # testa sulla stessa versione che gira in produzione.
+      - name: Versione Node dall'immagine base
+        id: node
+        run: |
+          major=$(sed -nE 's/^FROM node:([0-9]+)-.*/\1/p' apps/backend/Dockerfile | head -n1)
+          [ -n "$major" ] || { echo "::error::FROM node:<major> non trovato in apps/backend/Dockerfile"; exit 1; }
+          echo "major=$major" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 26
+          node-version: ${{ steps.node.outputs.major }}
           cache: 'pnpm'
 
       # pnpm v11 blocca i lifecycle script per default (ERR_PNPM_IGNORED_BUILDS)

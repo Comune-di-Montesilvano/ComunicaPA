@@ -76,7 +76,7 @@ Hot-reload: i frontend Vite ricaricano da soli; il watch di NestJS spesso NON ve
 
 ```bash
 # Dopo aver aggiunto una dipendenza a apps/backend/package.json:
-MSYS_NO_PATHCONV=1 docker run --rm -v "${PWD}:/w" -w /w node:22-alpine sh -c "corepack enable && corepack prepare pnpm@11.9.0 --activate && pnpm install --lockfile-only --ignore-scripts"   # aggiorna pnpm-lock.yaml (niente Node sull'host) — pnpm fissato alla versione della CI (tests.yml), mai @latest
+MSYS_NO_PATHCONV=1 docker run --rm -v "${PWD}:/w" -w /w node:26-alpine sh -c "npm install -g corepack@0.36.0 >/dev/null && corepack enable && corepack install && pnpm install --lockfile-only --ignore-scripts"   # aggiorna pnpm-lock.yaml (niente Node sull'host) — pnpm dalla versione di `packageManager` in package.json (unica fonte per Dockerfile e CI), mai @latest
 docker compose build backend
 docker compose rm -sf backend && docker volume rm comunicapa_backend_node_modules && docker compose up -d backend
 ```
