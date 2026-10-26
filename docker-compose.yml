@@ -4,10 +4,28 @@ name: comunicapa
 # named, nessun bind mount. Per lo sviluppo vedi docker-compose.override.yml
 # (attivato da COMPOSE_FILE in .env).
 
+# Hardening comune: nessuna escalation di privilegi (setuid/setgid) e nessuna
+# capability Linux. postgres e redis partono come root e scendono al proprio
+# utente (chown della data dir + su-exec): solo loro riaggiungono quelle 5.
+x-hardening: &hardening
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+x-db-caps: &db-caps
+  cap_add:
+    - CHOWN
+    - DAC_OVERRIDE
+    - FOWNER
+    - SETUID
+    - SETGID
+
 services:
 
   postgres:
-    image: postgres:17-alpine
+    <<: [*hardening, *db-caps]
+    image: postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -24,7 +42,8 @@ services:
       retries: 5
 
   redis:
-    image: redis:7-alpine
+    <<: [*hardening, *db-caps]
+    image: redis:7-alpine@sha256:57e4255cc971b1c8d6f8a6ca283ac01bc3ecdd914273ef6bfaede87aaecd6541
     restart: unless-stopped
     # AOF (append-only file): persiste ogni scrittura su disco, non solo gli
     # snapshot RDB periodici (default immagine: "save 3600 1 300 100 60
@@ -44,6 +63,7 @@ services:
       retries: 5
 
   backend:
+    <<: *hardening
     image: ghcr.io/comune-di-montesilvano/comunicapa-backend:${IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
@@ -84,6 +104,7 @@ services:
       - comunicapa-net
 
   pdf-extractor:
+    <<: *hardening
     image: ghcr.io/comune-di-montesilvano/comunicapa-pdf-extractor:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
@@ -98,6 +119,7 @@ services:
       retries: 3
 
   frontend-admin:
+    <<: *hardening
     image: ghcr.io/comune-di-montesilvano/comunicapa-frontend-admin:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
@@ -111,6 +133,7 @@ services:
       - comunicapa-net
 
   frontend-citizen:
+    <<: *hardening
     image: ghcr.io/comune-di-montesilvano/comunicapa-frontend-citizen:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:

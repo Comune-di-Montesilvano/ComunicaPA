@@ -1,0 +1,70 @@
+name: Trivy version check
+# Trivy e' fissato a una versione nei workflow (`version:` di trivy-action) e Dependabot non
+# lo aggiorna: questo job apre una issue quando esce una release piu' nuova (dopo 3 giorni,
+# per non adottare subito una release potenzialmente compromessa). Pattern da
+# GovPay-Interaction-Layer.
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: trivy-version-check
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Confronta versione fissata con ultima release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COOLDOWN_DAYS: "3"
+        run: |
+          set -euo pipefail
+          pinned=$(grep -hoE '^\s+version: v[0-9]+\.[0-9]+\.[0-9]+' .github/workflows/release.yml .github/workflows/security.yml | awk '{print $2}' | sort -u)
+          if [ "$(printf '%s\n' "$pinned" | wc -l)" -ne 1 ] || [ -z "$pinned" ]; then
+            echo "::error::Versioni Trivy fissate incoerenti o assenti: $(tr '\n' ' ' <<<"$pinned")"
+            exit 1
+          fi
+
+          # Chiamata anonima: l'org aquasecurity ha una IP allow list che rifiuta il
+          # GITHUB_TOKEN dei runner (HTTP 403) anche su risorse pubbliche.
+          release=$(curl -fsSL --retry 3 -H 'Accept: application/vnd.github+json' \
+            https://api.github.com/repos/aquasecurity/trivy/releases/latest \
+            | jq -r '[.tag_name, .published_at] | @tsv')
+          latest=$(cut -f1 <<<"$release")
+          published=$(cut -f2 <<<"$release")
+          age_days=$(( ( $(date -u +%s) - $(date -u -d "$published" +%s) ) / 86400 ))
+          echo "Fissata: $pinned, ultima: $latest (pubblicata $published, $age_days giorni fa)"
+
+          [ "$latest" = "$pinned" ] && { echo "Trivy aggiornato."; exit 0; }
+          if [ "$(printf '%s\n%s\n' "$pinned" "$latest" | sort -V | tail -1)" != "$latest" ]; then
+            echo "Fissata piu' recente dell'ultima release, niente da fare."
+            exit 0
+          fi
+          [ "$age_days" -lt "$COOLDOWN_DAYS" ] && { echo "Release troppo recente, attendo."; exit 0; }
+
+          existing=$(gh issue list --state open --search "in:title \"Aggiornare Trivy a $latest\"" --json number --jq '.[0].number // empty')
+          [ -n "$existing" ] && { echo "Issue gia' aperta: #$existing"; exit 0; }
+          gh issue create --title "Aggiornare Trivy a $latest (fissato $pinned)" --body "$(cat <<EOF
+          Disponibile Trivy **$latest** (pubblicata $published). Fissata nei workflow: **$pinned**.
+
+          Aggiornare l'input \`version:\` degli step \`aquasecurity/trivy-action\` in:
+          - \`.github/workflows/release.yml\`
+          - \`.github/workflows/security.yml\`
+
+          Release notes: https://github.com/aquasecurity/trivy/releases/tag/$latest
+
+          _Issue aperta da \`trivy-version-check.yml\`._
+          EOF
+          )"

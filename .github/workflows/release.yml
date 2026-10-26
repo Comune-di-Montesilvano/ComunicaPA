@@ -28,6 +28,8 @@ permissions:
   packages: write
   security-events: write
   actions: read
+  # Firma keyless cosign: certificato emesso da Sigstore sull'identita' OIDC del workflow.
+  id-token: write
 
 jobs:
   setup:
@@ -42,6 +44,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           # Storia + tag completi: il rebuild automatico ricava l'ultimo tag vX.Y.Z.
           fetch-depth: 0
 
@@ -95,6 +98,7 @@ jobs:
     needs: setup
     if: needs.setup.outputs.skip != 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -111,6 +115,8 @@ jobs:
       IMAGE: ghcr.io/comune-di-montesilvano/comunicapa-${{ matrix.app }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
@@ -120,26 +126,31 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Tag git: vX.Y.Z + latest. Rebuild automatico: solo latest-YYYYMMDD, latest viene
-      # promosso piu' sotto solo dopo che Trivy ha passato l'immagine.
+      # Tag da applicare SOLO dopo scansione e firma: tag git → vX.Y.Z + latest;
+      # rebuild automatico → latest-YYYYMMDD + latest.
       - id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
           images: ${{ env.IMAGE }}
           tags: |
             type=ref,event=tag
-            type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
+            type=raw,value=latest,enable=${{ github.ref_type == 'tag' || needs.setup.outputs.auto == 'true' }}
             type=raw,value=${{ needs.setup.outputs.auto_tag }},enable=${{ needs.setup.outputs.auto == 'true' }}
 
+      # Push solo per digest, senza nessun tag: un'immagine che non passa Trivy resta un
+      # digest orfano (rimosso da ghcr-cleanup.yml) e non e' mai raggiungibile da un tag.
       - id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           file: ${{ matrix.dockerfile }}
-          push: true
-          # Ripesca sempre le immagini base (node/nginx/python) per prendere le patch del tag.
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          # Ripesca sempre le immagini base (node/nginx/python) per prendere le patch.
           pull: true
-          tags: ${{ steps.meta.outputs.tags }}
+          # Attestazioni nel registry accanto all'immagine: SBOM (pacchetti contenuti) e
+          # provenance SLSA completa (commit, workflow, parametri di build).
+          sbom: true
+          provenance: mode=max
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             APP_VERSION=${{ needs.setup.outputs.version }}
@@ -147,9 +158,9 @@ jobs:
           cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
           cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
 
-      # Tag git: report-only (exit-code 0), risultati nella tab Security del repo.
-      # Rebuild automatico: bloccante su CRITICAL/HIGH con fix disponibile — se fallisce,
-      # latest resta sulla build precedente.
+      # Bloccante sempre (tag e rebuild): CRITICAL/HIGH con fix disponibile fermano la
+      # pubblicazione. Le PR passano gia' dallo stesso controllo (security.yml, trivy-image),
+      # quindi qui scatta solo per CVE pubblicate dopo il merge.
       - name: Trivy vulnerability scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -157,22 +168,39 @@ jobs:
           format: sarif
           output: trivy-results.sarif
           severity: CRITICAL,HIGH
-          exit-code: ${{ needs.setup.outputs.auto == 'true' && '1' || '0' }}
-          ignore-unfixed: ${{ needs.setup.outputs.auto == 'true' }}
-          # Con format sarif l'action ignora `severity` e riporta tutte le severita' se questo
-          # flag e' spento: nel rebuild exit-code 1 scatterebbe anche su LOW/MEDIUM. Sui tag
-          # resta spento (report completo nella tab Security, comunque non bloccante).
-          limit-severities-for-sarif: ${{ needs.setup.outputs.auto == 'true' }}
-          # Scanner Trivy (non l'Action stessa, quella resta pinnata per SHA
-          # sopra) — 'latest' qui è il pattern raccomandato dall'action per
-          # avere sempre il rilevamento CVE più aggiornato senza bump manuali.
-          version: latest
+          exit-code: 1
+          ignore-unfixed: true
+          # Senza, con format sarif l'action ignora `severity` ed exit-code scatta su tutto.
+          limit-severities-for-sarif: true
+          trivyignores: .trivyignore.yaml
+          # Versione fissa come l'Action: un rilascio Trivy compromesso non entra in
+          # automatico. trivy-version-check.yml apre una issue quando ne esce una nuova.
+          version: v0.76.1
 
-      - name: Promuovi latest
-        if: needs.setup.outputs.auto == 'true'
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      # Firma keyless del digest (non del tag, che e' mobile): chi fa il deploy verifica
+      # con `cosign verify --certificate-identity-regexp 'https://github.com/Comune-di-Montesilvano/ComunicaPA/.github/workflows/release.yml@.*' --certificate-oidc-issuer https://token.actions.githubusercontent.com <immagine>`.
+      - name: Firma immagine (cosign)
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
-        run: docker buildx imagetools create -t "$IMAGE:latest" "$IMAGE@$DIGEST"
+        run: cosign sign --yes "$IMAGE@$DIGEST"
+
+      # Solo ora l'immagine diventa raggiungibile per tag (indice copiato cosi' com'e',
+      # attestazioni SBOM/provenance comprese).
+      - name: Pubblica tag
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          args=()
+          while IFS= read -r t; do
+            [ -n "$t" ] && args+=(-t "$t")
+          done <<<"$TAGS"
+          [ "${#args[@]}" -gt 0 ] || { echo "::error::Nessun tag da pubblicare"; exit 1; }
+          docker buildx imagetools create "${args[@]}" "$IMAGE@$DIGEST"
+          echo "::notice::$IMAGE@$DIGEST → $(tr '\n' ' ' <<<"$TAGS")"
 
       - name: Upload Trivy scan results
         if: always()

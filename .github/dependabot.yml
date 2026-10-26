@@ -65,6 +65,23 @@ updates:
       prefix: "chore"
       include: "scope"
 
+  # Immagini di terze parti nel compose di produzione (postgres, redis): digest
+  # fissato, aggiornato qui. Le major (postgres 17 -> 18) restano manuali.
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "01:00"
+      timezone: "Europe/Rome"
+    groups:
+      compose-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
   # Workflow GitHub Actions (.github/workflows/*.yml)
   - package-ecosystem: "github-actions"
     directory: "/"
