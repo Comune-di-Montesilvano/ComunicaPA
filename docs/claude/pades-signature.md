@@ -29,3 +29,6 @@ garantito. Vedi
 per l'implementazione completa (gotcha `node-forge` import sopra
 applicabile 1:1 anche qui).
 
+
+**Verifiche RSA solo con `node:crypto`, mai `publicKey.verify()`/`cert.verify()` di node-forge.** forge <= 1.4.0 accetta DigestInfo PKCS#1 v1.5 con byte spuri dentro DigestAlgorithm (GHSA-86w9-cpqp-85rv, nessuna release corretta): firme contraffattibili su chiavi a esponente basso. Firma CMS → `crypto.verify(hash, datiFirmati, chiave, firma)` sui byte reali (SET DER degli authenticatedAttributes, o contenuto); catena → `X509Certificate.checkIssued(ca) && verify(ca.publicKey)`. forge resta per il parsing ASN.1/PKCS7. GHSA ignorato in `pnpm-workspace.yaml` (`auditConfig.ignoreGhsas`) con questa motivazione — rimuoverlo quando esce un fix.
+**Test con firme contraffatte in forge: schema `'NONE'`** (`key.sign(derDigestInfo, 'NONE')`) — uno schema personalizzato `{ encode }` salta il padding PKCS#1 e produce una firma invalida per tutt'altro motivo (falso RED). E `p7.sign()` serializza già i SignerInfo: per alterare la firma va modificato l'ASN.1 di `p7.toAsn1()`, non `signer.signature`.
