@@ -159,6 +159,10 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: ${{ needs.setup.outputs.auto == 'true' && '1' || '0' }}
           ignore-unfixed: ${{ needs.setup.outputs.auto == 'true' }}
+          # Con format sarif l'action ignora `severity` e riporta tutte le severita' se questo
+          # flag e' spento: nel rebuild exit-code 1 scatterebbe anche su LOW/MEDIUM. Sui tag
+          # resta spento (report completo nella tab Security, comunque non bloccante).
+          limit-severities-for-sarif: ${{ needs.setup.outputs.auto == 'true' }}
           # Scanner Trivy (non l'Action stessa, quella resta pinnata per SHA
           # sopra) — 'latest' qui è il pattern raccomandato dall'action per
           # avere sempre il rilevamento CVE più aggiornato senza bump manuali.
