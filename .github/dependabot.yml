@@ -2,12 +2,13 @@ version: 2
 # Ogni ecosistema: minor+patch raggruppate in una sola PR, mergiata in automatico
 # (vedi dependabot-automerge.yml); le major restano PR singole, aperte come promemoria
 # per l'upgrade manuale.
-# Controllo giornaliero con cooldown di 7 giorni (14 sulle major): una versione appena
-# pubblicata, anche compromessa (es. pacchetto npm dirottato e ritirato dopo qualche
-# giorno), non entra in automatico. Il cooldown non si applica ai Dependabot security
-# updates (attivi sul repo): le correzioni di advisory arrivano subito. Giro alle 01:00
-# cosi' l'auto-merge finisce prima del rebuild giornaliero di latest (release.yml,
-# 04:30 UTC).
+# Controllo giornaliero con cooldown di 7 giorni: una versione appena pubblicata, anche
+# compromessa (es. pacchetto npm dirottato e ritirato dopo qualche giorno), non entra in
+# automatico. Major a 14 giorni solo per npm/pip: docker, docker-compose e github-actions
+# non supportano semver-major-days (le loro major restano comunque manuali). Il cooldown
+# non si applica ai Dependabot security updates (attivi sul repo): le correzioni di
+# advisory arrivano subito. Giro alle 01:00 cosi' l'auto-merge finisce prima del rebuild
+# giornaliero di latest (release.yml, 04:30 UTC).
 updates:
   # pnpm workspace monorepo — root pnpm-lock.yaml copre apps/* + packages/*
   # (Dependabot rileva il workspace pnpm da un solo entry alla root, non
@@ -65,7 +66,6 @@ updates:
       timezone: "Europe/Rome"
     cooldown:
       default-days: 7
-      semver-major-days: 14
     groups:
       docker-minor-patch:
         update-types:
@@ -85,7 +85,6 @@ updates:
       timezone: "Europe/Rome"
     cooldown:
       default-days: 7
-      semver-major-days: 14
     groups:
       compose-minor-patch:
         update-types:
@@ -104,7 +103,6 @@ updates:
       timezone: "Europe/Rome"
     cooldown:
       default-days: 7
-      semver-major-days: 14
     groups:
       actions-minor-patch:
         update-types:
