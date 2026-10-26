@@ -82,21 +82,31 @@ export class CitizenController {
    * Download di un documento legale (attestazione opponibile a terzi) direttamente
    * dalla piattaforma SEND tramite il legalFactId. Usato nel dettaglio della notifica
    * SEND per scaricare le attestazioni della timeline.
+   *
+   * Lo IUN si prende dalla notifica del cittadino autenticato, mai dalla query
+   * (`iun` resta accettato per compatibilità ma ignorato): altrimenti un cittadino
+   * potrebbe scaricare atti di notifiche altrui passando un proprio `id` e lo IUN
+   * di un altro.
    */
   @Get('notifications/:id/send-document')
   async downloadSendDocument(
     @Param('id', ParseUUIDPipe) id: string,
-    @Query('iun') iun: string,
-    @Query('legalFactId') legalFactId: string,
+    @Query('iun') _iun: unknown,
+    @Query('legalFactId') legalFactId: unknown,
     @Req() req: { user: CitizenSessionClaims },
     @Res() res: Response,
   ) {
-    if (!iun || !legalFactId) {
-      throw new NotFoundException('Parametri IUN o legalFactId mancanti');
+    // Parametro ripetuto in query → array: rifiutato, non solo convertito.
+    if (typeof legalFactId !== 'string' || !legalFactId) {
+      throw new NotFoundException('Parametro legalFactId mancante');
     }
 
-    // Verifica che il recipient appartiene al cittadino autenticato
-    await this.citizenService.findOneForCitizen(id, recipientKeyOf(req.user));
+    // Verifica che il recipient appartiene al cittadino autenticato e ne ricava lo IUN
+    const notification = await this.citizenService.findOneForCitizen(id, recipientKeyOf(req.user));
+    const iun = notification.iun;
+    if (!iun) {
+      throw new NotFoundException('Notifica SEND non trovata');
+    }
 
     // Registra il download
     await this.citizenService.markAsDownloaded(id, recipientKeyOf(req.user), 0);
