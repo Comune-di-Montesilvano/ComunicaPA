@@ -97,6 +97,20 @@ describe('SendLegalFactsService', () => {
     expect(result).toEqual({ ready: true, filename: 'attestazione.pdf', contentType: 'application/pdf', buffer: Buffer.from('%PDF') });
   });
 
+  it('downloadLegalFact: IUN con caratteri di path (../) → rifiutato senza chiamare PN', async () => {
+    const result = await service.downloadLegalFact('../../delivery/v2.9/notifications', 'key1');
+
+    expect(result.ready).toBe(false);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('downloadLegalFact: legalFactId non stringa (parametro ripetuto) → rifiutato senza chiamare PN', async () => {
+    const result = await service.downloadLegalFact('IUN-1', ['a', 'b'] as unknown as string);
+
+    expect(result.ready).toBe(false);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
   it('downloadLegalFact: ritorna ready:false con retryAfterSeconds se il file non è pronto', async () => {
     mockFetch.mockResolvedValue({
       ok: true,

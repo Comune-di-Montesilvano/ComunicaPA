@@ -98,6 +98,15 @@ describe('IoServicesService', () => {
       );
     });
 
+    it('codice fiscale con caratteri di path (../) → BadRequest senza chiamare App IO', async () => {
+      const fetchMock = jest.fn();
+      global.fetch = fetchMock;
+      jest.spyOn(service, 'resolveApiKey').mockResolvedValue({ apiKey: 'key', idService: 'svc' });
+
+      await expect(service.verifyProfile('../../services/x')).rejects.toThrow('Codice fiscale');
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
     it('ritorna active: false se il profilo risponde 404', async () => {
       const fetchMock = jest.fn().mockResolvedValue({
         ok: false,

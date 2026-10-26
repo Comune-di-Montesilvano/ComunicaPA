@@ -32,6 +32,12 @@ export type SendLegalFactDownloadResult =
   | { ready: true; filename: string; contentType: string; buffer: Buffer }
   | { ready: false; retryAfterSeconds?: number; error?: string };
 
+// IUN PN: lettere maiuscole, cifre e trattini (es. ABCD-EFGH-IJKL-202610-A-1).
+const IUN_RE = /^[A-Z0-9-]{1,64}$/;
+function isValidIun(iun: unknown): iun is string {
+  return typeof iun === 'string' && IUN_RE.test(iun);
+}
+
 @Injectable()
 export class SendLegalFactsService {
   private readonly logger = new Logger(SendLegalFactsService.name);
@@ -102,10 +108,14 @@ export class SendLegalFactsService {
   }
 
   private async fetchTimeline(iun: string): Promise<PnTimelineElement[] | null> {
+    if (!isValidIun(iun)) {
+      this.logger.warn('Timeline SEND per elenco documenti: IUN non valido, richiesta scartata');
+      return null;
+    }
     const { envKey, baseUrl, apiKey, purposeId } = await this.getEnvAndBaseUrl();
     try {
       const voucher = await this.pdndAuth.getVoucher(envKey, purposeId);
-      const res = await fetch(`${baseUrl}/delivery/v2.9/notifications/sent/${iun}`, {
+      const res = await fetch(`${baseUrl}/delivery/v2.9/notifications/sent/${encodeURIComponent(iun)}`, {
         headers: { 'x-api-key': apiKey, Authorization: `Bearer ${voucher}` },
       });
       const text = await res.text();
@@ -121,12 +131,17 @@ export class SendLegalFactsService {
   }
 
   async downloadLegalFact(iun: string, legalFactId: string): Promise<SendLegalFactDownloadResult> {
+    // Lo IUN finisce nel path della richiesta a PN; legalFactId deve essere una
+    // stringa (non un array da parametro ripetuto in query).
+    if (!isValidIun(iun) || typeof legalFactId !== 'string' || !legalFactId) {
+      return { ready: false, error: 'IUN o legalFactId non validi' };
+    }
     const { envKey, baseUrl, apiKey, purposeId } = await this.getEnvAndBaseUrl();
     // L'AAR non è un legal-fact: PN lo serve da /document/AAR (stessa forma
     // di risposta filename/url/retryAfter, verificato dal vivo).
     const metaUrl = legalFactId.includes(AAR_KEY_MARKER)
-      ? `${baseUrl}/delivery-push/${iun}/document/AAR?documentId=${encodeURIComponent(legalFactId)}`
-      : `${baseUrl}/delivery-push/${iun}/download/legal-facts/${encodeURIComponent(legalFactId)}`;
+      ? `${baseUrl}/delivery-push/${encodeURIComponent(iun)}/document/AAR?documentId=${encodeURIComponent(legalFactId)}`
+      : `${baseUrl}/delivery-push/${encodeURIComponent(iun)}/download/legal-facts/${encodeURIComponent(legalFactId)}`;
     try {
       const voucher = await this.pdndAuth.getVoucher(envKey, purposeId);
       const metaRes = await fetch(metaUrl, {
