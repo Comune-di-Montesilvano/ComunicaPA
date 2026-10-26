@@ -35,21 +35,12 @@ esplicitamente la riscrittura tsgo (`typescript-eslint/typescript-eslint#10940`,
 ancora open) — peer range attuale `>=4.8.4 <6.1.0`, fermarsi a 6.x finché
 non c'è supporto.
 
-**Merge sequenziale di più PR dependabot**: dopo ogni merge, le PR
-successive passano da `mergeable:true` a `CONFLICTING`/`BEHIND` (lockfile
-cambiato) — un solo `@dependabot rebase` non basta se altre merge
-arrivano nel frattempo, va ripetuto finché `gh pr view N --json
-mergeStateStatus` non torna `CLEAN` (non fidarsi del solo `mergeable`,
-resta `MERGEABLE` anche con branch behind se `strict` non lo blocca
-ancora).
-
-**Merge PR dependabot — usare update-branch diretto, non `@dependabot rebase`, quando possibile.**
-Se `mergeStateStatus` è `BEHIND` (mai conflitto reale), `gh api -X PUT
-repos/<org>/<repo>/pulls/<N>/update-branch` aggiorna il branch in pochi
-secondi — molto più veloce di commentare `@dependabot rebase`, che può
-metterci 10-20+ minuti o non rispondere affatto. Riservare
-`@dependabot rebase` al solo caso `CONFLICTING` (conflitto vero, es.
-lockfile), dove update-branch non basta.
+**Merge di più PR in sequenza (merge queue)**: una PR solo `BEHIND` non
+va più aggiornata a mano — `gh pr merge <N> --auto` la mette in coda e la
+coda la ricombina con main e rilancia i check da sola. Resta manuale solo
+il conflitto vero (`CONFLICTING`, tipicamente il lockfile dopo un altro
+bump): su una PR Dependabot `@dependabot rebase` (può metterci 10-20+
+minuti), su una PR nostra rebase/merge di main nel branch.
 
 **vitest 3→5 — mock costruiti con `new` devono usare `function`, mai arrow
 function, in `mockImplementation()`.** Vitest 5 fa `Reflect.construct()`
