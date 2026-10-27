@@ -40,7 +40,7 @@ services:
     restart: "no"
     read_only: true
     tmpfs:
-      - /home/nonroot:uid=65532,gid=65532
+      - /home/nonroot:mode=1777
     environment:
       VERIFY_IMAGES: ${VERIFY_IMAGES:-false}
       IMAGE_TAG: ${IMAGE_TAG:-latest}
