@@ -42,8 +42,8 @@ jobs:
             pinned=$(jq -r '.packageManager // ""' package.json | sed -nE 's/^pnpm@([0-9]+\.[0-9]+\.[0-9]+)(\+.*)?$/\1/p')
             where='il campo `packageManager` di `package.json` (con l'"'"'hash: `pnpm@X.Y.Z+sha512.<hex>`, hex dell'"'"'integrity del registry npm)'
           else
-            pinned=$(grep -rhoE 'corepack@[0-9]+\.[0-9]+\.[0-9]+' apps/*/Dockerfile* | cut -d@ -f2 | sort -u)
-            where='`npm install -g corepack@X.Y.Z` nei Dockerfile di `apps/*/` (tutti uguali)'
+            pinned=$(grep -rhoE 'corepack-[0-9]+\.[0-9]+\.[0-9]+\.tgz' apps/*/Dockerfile* | sed -E 's/^corepack-(.*)\.tgz$/\1/' | sort -u)
+            where='URL `corepack-X.Y.Z.tgz` e `--checksum=sha256:` di `ADD` nei Dockerfile di `apps/*/` (tutti uguali; sha256 del tarball dopo averne verificato l'"'"'integrity del registry)'
           fi
           if [ -z "$pinned" ] || [ "$(printf '%s\n' "$pinned" | wc -l)" -ne 1 ]; then
             echo "::error::Versioni $TOOL fissate incoerenti o assenti: $(tr '\n' ' ' <<<"$pinned")"

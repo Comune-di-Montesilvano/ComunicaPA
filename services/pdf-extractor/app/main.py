@@ -45,8 +45,10 @@ async def extract(file: UploadFile, search_payments: bool = True):
 
         try:
             fiscal_code = extractor.extract_fiscal_code()
-        except Exception as e:
-            warnings.append(f"Estrazione CF/PIVA fallita: {e}")
+        except Exception:
+            # Messaggio di un'eccezione qualsiasi: resta nel log, non nella risposta.
+            logger.exception("Estrazione CF/PIVA fallita")
+            warnings.append("Estrazione CF/PIVA fallita")
 
         if search_payments:
             totale, rate, pay_warnings = extractor.extract_payment()

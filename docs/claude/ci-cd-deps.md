@@ -119,10 +119,11 @@ sempre il fix non distruttivo sopra.
 - **Verifica prima del deploy**: `scripts/verify-images.sh vX.Y.Z` (cosign nell'immagine ufficiale fissata per digest, niente installazioni; `CONTAINER_CLI=podman` sull'host podman) verifica che le 4 immagini del tag siano firmate da `release.yml` di questo repo su un tag `v*` o su main e, con `gh` disponibile, le attestazioni provenance e SBOM. Stampa i digest verificati. Se fallisce, NON aggiornare lo stack. Le release precedenti alla v1.11.12 non hanno attestazioni GitHub: per quelle solo la firma (eseguire senza `gh` nel PATH).
 - **Tag `v*` protetti** (ruleset `release-tags`): creazione, modifica e cancellazione solo per gli admin del repo; chi ha solo scrittura non può far partire una release firmata.
 - **Trivy fissato** (`version: v0.76.1` in release/security, mai `latest`); `trivy-version-check.yml` apre una issue per le release nuove (attesa 3 giorni).
-- **Immagini base con digest** (`FROM image:tag@sha256:…`, anche postgres/redis nel compose, ecosistema Dependabot `docker-compose`): build riproducibili, Dependabot apre la PR quando il digest cambia. `corepack` fissato (`corepack@0.36.0`, era `@latest`).
+- **Immagini base con digest** (`FROM image:tag@sha256:…`, anche postgres/redis nel compose, ecosistema Dependabot `docker-compose`): build riproducibili, Dependabot apre la PR quando il digest cambia. `corepack` fissato con hash (`ADD --checksum=sha256:` del tarball npm, era `npm install -g corepack@latest`).
 - **Runtime**: tutte le immagini prod non-root (pdf-extractor uid 10001); compose con `no-new-privileges` + `cap_drop: ALL` (anchor `x-hardening`), postgres/redis riaggiungono solo CHOWN/DAC_OVERRIDE/FOWNER/SETUID/SETGID per il drop di privilegi dell'entrypoint.
 - **Workflow**: `permissions: contents: read` a livello di workflow e permessi di scrittura solo nel job che li usa, `persist-credentials: false` su ogni checkout, `timeout-minutes` su ogni job. `scorecard.yml` (OpenSSF) pubblica il punteggio su scorecard.dev.
 - **pytest pdf-extractor** (`pdf-extractor-tests` in `tests.yml`, required): immagine `Dockerfile.dev` + `requirements-dev.txt` con hash. Il bug noto del CAP estero è `xfail(strict=True)`: quando viene corretto il test passa e il job fallisce finché non si toglie il marker.
+- **`security-alerts.yml`** (giornaliero 06:00 UTC + push main): la regola code scanning blocca solo gli alert nuovi di una PR, questo job conta quelli già aperti su main (CodeQL/Trivy high/critical, Scorecard escluso). Se ce ne sono fallisce e aggiorna la issue "Alert di sicurezza aperti su main"; senza alert la chiude. Ogni alert va corretto o chiuso dalla tab Security con motivazione. Non è required (bloccherebbe anche la PR che corregge).
 - **Segnalazione privata delle vulnerabilità** attiva (Security → Advisories → Report a vulnerability), indicata in `SECURITY.md`.
 
 ## Versioni fissate e da dove si aggiornano (dal 2026-10-26)
@@ -133,7 +134,7 @@ sempre il fix non distruttivo sopra.
 | Python pdf-extractor (dirette + transitive, con hash) | `services/pdf-extractor/requirements.txt`, generato da `requirements.in` | Dependabot `pip` (riconosce l'header pip-compile e rigenera il lock) |
 | Python di test | `requirements-dev.txt` da `requirements-dev.in` (`-c requirements.txt`) | idem |
 | pnpm | `packageManager` in `package.json`, con `+sha512.<hex>` verificato da corepack | a mano, su issue di `toolchain-version-check.yml` |
-| corepack | `npm install -g corepack@X.Y.Z` nei 6 Dockerfile di `apps/*/` (tutti uguali, il job lo controlla) | a mano, su issue di `toolchain-version-check.yml` |
+| corepack | `ADD --checksum=sha256:… …/corepack-X.Y.Z.tgz` nei 6 Dockerfile di `apps/*/` (tutti uguali, il job lo controlla; sha256 calcolato sul tarball dopo averne confrontato lo sha512 con `dist.integrity` del registry) | a mano, su issue di `toolchain-version-check.yml` |
 | Trivy | `version:` in `release.yml`/`security.yml` | a mano, su issue di `trivy-version-check.yml` |
 | Node di CI | major del `FROM node:<N>` di `apps/backend/Dockerfile` | Dependabot `docker` (con l'immagine) |
 | Immagini base, postgres/redis | tag + digest | Dependabot `docker` / `docker-compose` |

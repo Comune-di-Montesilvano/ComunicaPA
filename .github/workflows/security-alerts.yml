@@ -1,0 +1,70 @@
+name: Alert di sicurezza aperti
+# La regola code scanning del ruleset blocca solo gli alert NUOVI introdotti da una PR:
+# quelli gia' aperti su main (CVE pubblicate dopo il merge, regole CodeQL nuove) non
+# fermerebbero nulla e resterebbero nella tab Security senza decisione. Questo job li
+# conta: con alert CodeQL/Trivy high o critical aperti fallisce (notifica della run
+# fallita) e tiene aggiornata una issue con l'elenco; ognuno va corretto o chiuso dalla
+# tab Security con motivazione (falso positivo / rischio accettato). Senza alert la issue
+# viene chiusa.
+# Non e' un required check: un alert aperto su main bloccherebbe anche la PR che lo corregge.
+# Esclusi gli alert Scorecard (postura del repo, non vulnerabilita'). Le CVE delle
+# dipendenze sono gia' bloccanti in PR (pnpm-audit, trivy-fs, trivy-image).
+on:
+  schedule:
+    # Dopo il giro giornaliero di security.yml (05:00 UTC).
+    - cron: "0 6 * * *"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-alerts
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      security-events: read
+      issues: write
+    steps:
+      - name: Alert high/critical aperti su main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TITLE: "Alert di sicurezza aperti su main"
+        run: |
+          set -euo pipefail
+          # Su push la nuova analisi CodeQL (default setup) parte insieme a questo job:
+          # si conta lo stato attuale, il giro giornaliero ricontrolla a analisi finite.
+          list=$(gh api --paginate "repos/$REPO/code-scanning/alerts?state=open&ref=refs/heads/main&per_page=100" \
+            --jq '.[] | select(.tool.name != "Scorecard")
+                      | select((.rule.security_severity_level // "") as $s | $s == "high" or $s == "critical")
+                      | "- [#\(.number)](\(.html_url)) **\(.rule.security_severity_level)** \(.tool.name) `\(.rule.id)` — `\(.most_recent_instance.location.path):\(.most_recent_instance.location.start_line)`"')
+          existing=$(gh issue list -R "$REPO" --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number // empty')
+
+          if [ -z "$list" ]; then
+            echo "Nessun alert high/critical aperto."
+            if [ -n "$existing" ]; then
+              gh issue close "$existing" -R "$REPO" --comment "Nessun alert high/critical aperto: chiusa da \`security-alerts.yml\`."
+            fi
+            exit 0
+          fi
+
+          count=$(printf '%s\n' "$list" | wc -l)
+          body=$(printf '%s\n\n%s\n\n%s\n' \
+            "$count alert CodeQL/Trivy high o critical aperti su main:" \
+            "$list" \
+            "Ognuno va corretto oppure chiuso dalla tab Security con motivazione (falso positivo, rischio accettato). Issue aggiornata da \`security-alerts.yml\`.")
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" -R "$REPO" --body "$body"
+          else
+            gh issue create -R "$REPO" --title "$TITLE" --body "$body"
+          fi
+          echo "::error::$count alert high/critical aperti su main"
+          printf '%s\n' "$list"
+          exit 1
