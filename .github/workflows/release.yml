@@ -210,8 +210,8 @@ jobs:
           cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
 
       # Bloccante sempre (tag e rebuild): CRITICAL/HIGH con fix disponibile fermano la
-      # pubblicazione. Le PR passano gia' dallo stesso controllo (security.yml, trivy-image),
-      # quindi qui scatta solo per CVE pubblicate dopo il merge.
+      # pubblicazione. Le PR passano gia' dallo stesso controllo in merge queue
+      # (security.yml, trivy-image), quindi qui scatta solo per CVE pubblicate dopo il merge.
       - name: Trivy vulnerability scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -258,27 +258,29 @@ jobs:
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       # Firma keyless del digest (non del tag, che e' mobile). Prima del deploy
-      # scripts/verify-images.sh <tag> verifica firma e attestazioni delle 4 immagini.
+      # scripts/verify-images.sh <tag> (o VERIFY_IMAGES=true nel compose) verifica le firme.
       - name: Firma immagine (cosign)
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: cosign sign --yes "$IMAGE@$DIGEST"
 
-      # Solo ora l'immagine diventa raggiungibile per tag (indice copiato cosi' com'e',
-      # attestazioni SBOM/provenance comprese).
-      - name: Pubblica tag
+      # Digest firmato e tag previsti per i job smoke e publish: i tag arrivano solo dopo
+      # lo smoke test dello stack completo.
+      - name: Digest e tag per smoke e publish
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
           TAGS: ${{ steps.meta.outputs.tags }}
         run: |
-          set -euo pipefail
-          args=()
-          while IFS= read -r t; do
-            [ -n "$t" ] && args+=(-t "$t")
-          done <<<"$TAGS"
-          [ "${#args[@]}" -gt 0 ] || { echo "::error::Nessun tag da pubblicare"; exit 1; }
-          docker buildx imagetools create "${args[@]}" "$IMAGE@$DIGEST"
-          echo "::notice::$IMAGE@$DIGEST → $(tr '\n' ' ' <<<"$TAGS")"
+          mkdir -p handoff
+          printf '%s\n' "$DIGEST" > handoff/digest
+          printf '%s\n' "$TAGS" > handoff/tags
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ matrix.app }}
+          path: handoff/
+          retention-days: 1
+          if-no-files-found: error
 
       - name: Upload Trivy scan results
         if: always()
@@ -286,3 +288,115 @@ jobs:
         with:
           sarif_file: trivy-results.sarif
           category: trivy-${{ matrix.app }}
+
+  # Stack di produzione (docker-compose.yml) avviato con le 4 immagini appena firmate,
+  # per digest: se lo smoke test fallisce nessun tag si sposta e `latest` resta quello
+  # precedente. Le immagini restano digest orfani (ghcr-cleanup.yml).
+  smoke:
+    needs: [setup, build-push]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            ghcr.io:443
+            pkg-containers.githubusercontent.com:443
+            registry-1.docker.io:443
+            auth.docker.io:443
+            production.cloudfront.docker.com:443
+            production.cloudflare.docker.com:443
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-*
+          path: handoff
+
+      # Tag locale `smoke` sui digest firmati: il compose li usa senza pull (pull_policy
+      # missing). VERIFY_IMAGES resta spento: il tag smoke non esiste sul registry.
+      - name: Avvio stack
+        run: |
+          set -euo pipefail
+          for app in backend frontend-admin frontend-citizen pdf-extractor; do
+            img=ghcr.io/comune-di-montesilvano/comunicapa-$app
+            digest=$(cat "handoff/release-$app/digest")
+            docker pull -q "$img@$digest"
+            docker tag "$img@$digest" "$img:smoke"
+          done
+          {
+            echo "IMAGE_TAG=smoke"
+            echo "POSTGRES_USER=comunicapa"
+            echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)"
+            echo "POSTGRES_DB=comunicapa_db"
+            echo "JWT_SECRET=$(openssl rand -hex 32)"
+            echo "DOWNLOAD_LINK_SECRET=$(openssl rand -hex 32)"
+          } > smoke.env
+          docker compose -f docker-compose.yml -p smoke --env-file smoke.env up -d
+
+      - name: Smoke test
+        env:
+          COMPOSE: docker compose -f docker-compose.yml -p smoke --env-file smoke.env
+        run: scripts/smoke-stack.sh
+
+      - name: Stop stack
+        if: always()
+        run: docker compose -f docker-compose.yml -p smoke --env-file smoke.env down -v || true
+
+  # Solo ora le immagini diventano raggiungibili per tag (indice copiato cosi' com'e',
+  # attestazioni SBOM/provenance comprese).
+  publish:
+    needs: [setup, smoke]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [backend, frontend-admin, frontend-citizen, pdf-extractor]
+    env:
+      IMAGE: ghcr.io/comune-di-montesilvano/comunicapa-${{ matrix.app }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            ghcr.io:443
+            pkg-containers.githubusercontent.com:443
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-${{ matrix.app }}
+          path: handoff
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pubblica tag
+        run: |
+          set -euo pipefail
+          DIGEST=$(cat handoff/digest)
+          args=()
+          while IFS= read -r t; do
+            [ -n "$t" ] && args+=(-t "$t")
+          done < handoff/tags
+          [ "${#args[@]}" -gt 0 ] || { echo "::error::Nessun tag da pubblicare"; exit 1; }
+          docker buildx imagetools create "${args[@]}" "$IMAGE@$DIGEST"
+          echo "::notice::$IMAGE@$DIGEST → $(tr '\n' ' ' < handoff/tags)"
