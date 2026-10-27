@@ -4,7 +4,7 @@
 
 # ComunicaPA
 
-[![Test Integrati](https://github.com/Comune-di-Montesilvano/ComunicaPA/actions/workflows/tests.yml/badge.svg)](https://github.com/Comune-di-Montesilvano/ComunicaPA/actions/workflows/tests.yml)
+[![Test Integrati](https://github.com/Comune-di-Montesilvano/ComunicaPA/actions/workflows/tests.yml/badge.svg?event=merge_group)](https://github.com/Comune-di-Montesilvano/ComunicaPA/actions/workflows/tests.yml)
 [![publiccode.yml validation](https://github.com/Comune-di-Montesilvano/ComunicaPA/actions/workflows/publiccode-validate.yml/badge.svg)](https://github.com/Comune-di-Montesilvano/ComunicaPA/actions/workflows/publiccode-validate.yml)
 [![Licenza EUPL-1.2](https://img.shields.io/badge/licenza-EUPL--1.2-blue.svg)](LICENSE)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15983/badge)](https://www.bestpractices.dev/projects/15983)

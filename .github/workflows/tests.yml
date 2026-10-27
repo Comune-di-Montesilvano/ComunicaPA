@@ -1,9 +1,10 @@
 # .github/workflows/tests.yml
 name: Test Integrati
 
+# Niente push su main: il commit che arriva su main e' quello gia' testato nella merge
+# queue (il ruleset di main non ha bypass). Sulle PR solo i controlli veloci (lint e
+# type-check); build e test completi girano in merge queue, sul commit che verra' unito.
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
   # Merge queue di main: i check girano sulla PR gia' unita a main prima del merge.
@@ -73,15 +74,20 @@ jobs:
       - name: Type-check backend spec files
         run: pnpm --filter backend exec tsc -p tsconfig.spec.json --noEmit
 
+      # Solo in merge queue: sulla PR lo step risulta saltato e il check resta verde.
       - name: Build (stesso comando usato nelle immagini Docker)
+        if: github.event_name != 'pull_request'
         run: pnpm build
 
       - name: Run integrated tests
+        if: github.event_name != 'pull_request'
         run: pnpm test
 
   # Suite pytest del pdf-extractor nell'immagine dev (stessa base e stesse librerie di
   # sistema della produzione), dipendenze di test installate dal lock con hash.
+  # Solo in merge queue: sulla PR il job risulta saltato, che per un required check vale verde.
   pdf-extractor-tests:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
