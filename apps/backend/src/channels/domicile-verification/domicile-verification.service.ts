@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { Repository } from 'typeorm';
+import type { OperatorRole } from '@comunicapa/shared-types';
 import {
   DomicileVerificationJob,
   DomicileVerificationJobStatus,
@@ -23,6 +24,14 @@ export interface CreateDomicileVerificationJobParams {
   hasHeaders: boolean;
   cfColumn: string;
   ioServiceId: string;
+  /** Username dell'operatore che carica il tracciato (proprietario del job). */
+  createdBy: string;
+}
+
+/** Chi chiede: un 'user' vede e cancella solo i propri job, un 'admin' tutti. */
+export interface DomicileVerificationRequester {
+  username: string;
+  role: OperatorRole;
 }
 
 export interface CreateDomicileVerificationJobResult {
@@ -55,6 +64,7 @@ export interface DomicileVerificationJobSummary {
   totalRows: number;
   cfFisicoTotal: number;
   pivaTotal: number;
+  createdBy: string | null;
 }
 
 export type DomicileVerificationCsvVariant = 'assenti' | 'app-io' | 'inad' | 'registro-imprese' | 'aggregato';
@@ -111,6 +121,7 @@ export class DomicileVerificationService {
       cfColumn: params.cfColumn,
       hasHeaders: params.hasHeaders,
       ioServiceId: params.ioServiceId,
+      createdBy: params.createdBy,
       cfFisicoTotal: cfFisici.length,
       pivaTotal: pive.length,
       inadBatches: [],
@@ -216,9 +227,20 @@ export class DomicileVerificationService {
     return { jobId: saved.id };
   }
 
-  async getStatus(jobId: string): Promise<DomicileVerificationStatus> {
-    const job = await this.jobRepo.findOneBy({ id: jobId });
+  /**
+   * Job visibile a chi chiede: un 'user' trova solo i propri, quindi un job
+   * altrui risponde 404 come se non esistesse (non se ne rivela nemmeno
+   * l'esistenza). I job senza proprietario (precedenti al campo) solo admin.
+   */
+  private async findVisibleJob(jobId: string, requester: DomicileVerificationRequester): Promise<DomicileVerificationJob> {
+    const where = requester.role === 'admin' ? { id: jobId } : { id: jobId, createdBy: requester.username };
+    const job = await this.jobRepo.findOneBy(where);
     if (!job) throw new NotFoundException(`Job di verifica ${jobId} non trovato`);
+    return job;
+  }
+
+  async getStatus(jobId: string, requester: DomicileVerificationRequester): Promise<DomicileVerificationStatus> {
+    const job = await this.findVisibleJob(jobId, requester);
     return {
       status: job.status,
       totalRows: job.totalRows,
@@ -237,8 +259,12 @@ export class DomicileVerificationService {
     };
   }
 
-  async listJobs(): Promise<DomicileVerificationJobSummary[]> {
-    const jobs = await this.jobRepo.find({ order: { createdAt: 'DESC' }, take: 50 });
+  async listJobs(requester: DomicileVerificationRequester): Promise<DomicileVerificationJobSummary[]> {
+    const jobs = await this.jobRepo.find({
+      where: requester.role === 'admin' ? {} : { createdBy: requester.username },
+      order: { createdAt: 'DESC' },
+      take: 50,
+    });
     return jobs.map((j) => ({
       id: j.id,
       status: j.status,
@@ -246,7 +272,21 @@ export class DomicileVerificationService {
       totalRows: j.totalRows,
       cfFisicoTotal: j.cfFisicoTotal,
       pivaTotal: j.pivaTotal,
+      createdBy: j.createdBy,
     }));
+  }
+
+  /**
+   * Cancellazione dallo storico (proprietario o admin). Mai un job in
+   * elaborazione: i worker App IO/Registro Imprese e il sync INAD lo
+   * aggiornano ancora — stessa esclusione della retention automatica.
+   */
+  async deleteJob(jobId: string, requester: DomicileVerificationRequester): Promise<void> {
+    const job = await this.findVisibleJob(jobId, requester);
+    if (job.status === DomicileVerificationJobStatus.PROCESSING) {
+      throw new BadRequestException('Il job è in elaborazione: si può eliminare solo a verifica conclusa');
+    }
+    await this.jobRepo.delete(job.id);
   }
 
   /**
@@ -268,9 +308,8 @@ export class DomicileVerificationService {
     await this.jobRepo.update(jobId, { inadBatches, inadFetched: true });
   }
 
-  async getResultCsv(jobId: string, variant: DomicileVerificationCsvVariant): Promise<string> {
-    const job = await this.jobRepo.findOneBy({ id: jobId });
-    if (!job) throw new NotFoundException(`Job di verifica ${jobId} non trovato`);
+  async getResultCsv(jobId: string, variant: DomicileVerificationCsvVariant, requester: DomicileVerificationRequester): Promise<string> {
+    const job = await this.findVisibleJob(jobId, requester);
     if (job.status !== DomicileVerificationJobStatus.DONE) {
       throw new BadRequestException('Il job di verifica non è ancora completato');
     }

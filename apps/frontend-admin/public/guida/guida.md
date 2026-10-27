@@ -1,6 +1,6 @@
 # ComunicaPA – Guida per gli operatori
 
-_Ultimo aggiornamento: 2026-10-15_
+_Ultimo aggiornamento: 2026-10-27_
 
 ## Cos'è e chi lo usa
 
@@ -146,6 +146,8 @@ Se una notifica già presa in visione come ferma riceve in seguito un esito bloc
 1. Carica un file CSV e indica se ha una riga di intestazione.
 2. Scegli la colonna **Codice Fiscale / Partita IVA** e il servizio App IO da usare per la verifica.
 3. Premi **Avvia verifica**. Al termine vedi quanti soggetti sono su INAD e quanti su App IO.
+
+Nello **Storico verifiche** vedi solo le verifiche che hai caricato tu (un amministratore le vede tutte, con la colonna **Operatore**). Con il cestino elimini una verifica conclusa: il file caricato e i risultati vengono cancellati definitivamente. Una verifica ancora in corso non si può eliminare.
 
 ### Gestire i template
 

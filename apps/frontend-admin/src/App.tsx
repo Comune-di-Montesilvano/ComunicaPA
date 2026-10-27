@@ -1624,6 +1624,7 @@ export function App(): React.JSX.Element {
     totalRows: number;
     cfFisicoTotal: number;
     pivaTotal: number;
+    createdBy: string | null;
   }
 
   const [domicileVerifFile, setDomicileVerifFile] = useState<File | null>(null);
@@ -3550,6 +3551,22 @@ export function App(): React.JSX.Element {
     setDomicileVerifJobId(null);
     setDomicileVerifStatus(null);
     setDomicileVerifSubmitError(null);
+  };
+
+  const handleDomicileVerifDelete = async (jobId: string) => {
+    if (!confirm('Eliminare questa verifica dallo storico? Il tracciato caricato e i CSV dei risultati verranno cancellati definitivamente.')) return;
+    try {
+      const res = await apiFetch(`/domicile-verification/jobs/${jobId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        alert(data?.message || 'Errore durante l\'eliminazione');
+        return;
+      }
+      if (jobId === domicileVerifJobId) handleDomicileVerifReset();
+      fetchDomicileVerifJobs();
+    } catch {
+      alert('Errore durante l\'eliminazione');
+    }
   };
 
   const runCercaDomicilio = async (cfOverride?: string, forzaImpresaOverride?: boolean) => {
@@ -13897,6 +13914,7 @@ export function App(): React.JSX.Element {
                       <thead>
                         <tr>
                           <th>Data</th>
+                          {role === 'admin' && <th>Operatore</th>}
                           <th>Stato</th>
                           <th>Righe</th>
                           <th>CF fisici</th>
@@ -13908,13 +13926,23 @@ export function App(): React.JSX.Element {
                         {domicileVerifJobs.map(job => (
                           <tr key={job.id}>
                             <td className="small">{new Date(job.createdAt).toLocaleString('it-IT')}</td>
+                            {role === 'admin' && <td className="small">{job.createdBy ?? <span className="text-muted">—</span>}</td>}
                             <td><StatusBadge status={job.status} /></td>
                             <td className="small">{job.totalRows}</td>
                             <td className="small">{job.cfFisicoTotal}</td>
                             <td className="small">{job.pivaTotal}</td>
-                            <td>
-                              <button className="btn btn-sm btn-outline-secondary" onClick={() => handleDomicileVerifOpenJob(job.id)}>
+                            <td className="text-nowrap">
+                              <button className="btn btn-sm btn-outline-secondary me-1" onClick={() => handleDomicileVerifOpenJob(job.id)}>
                                 Apri
+                              </button>
+                              <button
+                                className="btn btn-sm btn-outline-danger"
+                                onClick={() => handleDomicileVerifDelete(job.id)}
+                                disabled={job.status === 'processing'}
+                                title={job.status === 'processing' ? 'Eliminabile a verifica conclusa' : 'Elimina dallo storico'}
+                                aria-label="Elimina dallo storico"
+                              >
+                                <Trash2 size={14} />
                               </button>
                             </td>
                           </tr>
