@@ -119,7 +119,10 @@ merge queue ──► check completi sul commit che verrà unito
 main ──► security.yml (giornaliero) · CodeQL · Scorecard · security-alerts (giornaliero)
         │
         ▼
-release.yml (tag v* · rebuild giornaliero 04:30 · dispatch)
+release.yml (tag v* · controllo giornaliero 04:30 · dispatch)
+   setup:         solo schedule (o dry_run): rebuild-check sulle 4 latest
+                  (a commit su main · b patch di sistema · c Trivy HIGH/CRITICAL con fix)
+                  → nessuna causa = skip, latest invariato
    build-push ×4: build → push SOLO per digest → Trivy bloccante → SBOM
                   → attestazioni provenance + SBOM → firma cosign keyless
    smoke:         stack compose di produzione con i 4 digest → smoke-stack.sh
@@ -141,7 +144,7 @@ runtime ──► non-root · cap_drop ALL · no-new-privileges · read_only + t
 | CodeQL (default setup) | PR, main, settimanale | SAST, suite extended |
 | `scorecard.yml` | push main, settimanale | OpenSSF Scorecard, risultati pubblici |
 | `security-alerts.yml` | giornaliero, push main | fallisce e apre/aggiorna una issue se ci sono alert high/critical aperti su main (la regola code scanning blocca solo i nuovi) |
-| `release.yml` | tag `v*`, giornaliero, dispatch | build, firma, smoke, pubblicazione |
+| `release.yml` | tag `v*`, giornaliero, dispatch | build, firma, smoke, pubblicazione; il giornaliero ricostruisce `latest` solo su causa reale (`scripts/rebuild-check.sh`) |
 | `ghcr-cleanup.yml` | settimanale | rimuove i digest orfani (build non pubblicati) e le loro firme |
 | `dependabot-automerge.yml` | PR Dependabot | auto-merge minor/patch via token GitHub App; major e runtime restano manuali |
 | `toolchain-version-check.yml`, `trivy-version-check.yml` | settimanale (lunedì) | issue quando escono nuove versioni dei tool fissati |
@@ -163,6 +166,27 @@ runtime ──► non-root · cap_drop ALL · no-new-privileges · read_only + t
 - Push **solo per digest**, senza tag: un'immagine non scansionata, non firmata o non provata
   non è mai raggiungibile per tag (resta un digest orfano rimosso dalla pulizia settimanale).
 - Trivy bloccante su CRITICAL/HIGH con fix disponibile, anche nel rebuild giornaliero.
+- **Rebuild giornaliero su causa reale**, non incondizionato: lo schedule delle 04:30 esegue
+  `scripts/rebuild-check.sh` sulle 4 immagini `latest` attuali (per digest) e ricostruisce
+  solo se trova almeno una causa:
+  - **a** commit su main dopo la label `org.opencontainers.image.revision` di `latest`
+    (codice e merge Dependabot: npm, pip, immagini base fissate per digest, Actions);
+  - **b** patch di sistema disponibili (`apk list -u` / `apt list --upgradable` dentro
+    l'immagine, distro letta da `/etc/os-release`; senza shell o package manager Trivy sui
+    pacchetti OS);
+  - **c** Trivy con DB aggiornato: almeno una HIGH/CRITICAL con fix.
+
+  Nessuna causa → run verde, nessun digest nuovo (le istanze su `latest` non si riavviano,
+  ghcr non accumula digest); esito per immagine e controllo nel summary della run. Un
+  controllo che non riesce a verificare conta come causa (fallire chiusi = ricostruire).
+  Le cause finiscono nel summary e nella label `comunicapa.rebuild.reason` dell'immagine
+  (`docker inspect --format '{{index .Config.Labels "comunicapa.rebuild.reason"}}'`).
+  Rebuild per causa c ancora bloccato da Trivy (fix non ancora nelle immagini base) →
+  issue "Vulnerabilità non risolvibile con un rebuild (<app>)", `latest` resta il precedente.
+  Tag `v*` e dispatch con `rebuild_latest=true` ricostruiscono sempre; dispatch con
+  `dry_run=true` esegue solo il controllo e ne stampa l'esito. Il vecchio salto "tag nelle
+  ultime 24 ore" non c'è più: dopo un tag la revision di `latest` è il commit taggato, quindi
+  la causa a lo copre, mentre il salto a tempo ignorava per un giorno le cause b e c.
 - Attestazioni firmate su GitHub: provenance SLSA (`attest-build-provenance`) e SBOM CycloneDX
   (`attest-sbom`), legate al digest.
 - Firma **keyless** cosign del digest (identità OIDC del workflow, log di trasparenza Rekor).
@@ -170,7 +194,8 @@ runtime ──► non-root · cap_drop ALL · no-new-privileges · read_only + t
   via reverse proxy, query autenticata sul DB (migration applicate), upload su disco,
   servizio PDF, filesystem in sola lettura, log senza errori di filesystem.
 - Tag: `vX.Y.Z` solo dal maintainer (ruleset), `latest` e `latest-YYYYMMDD` dal rebuild
-  giornaliero; `latest-YYYYMMDD` del giorno prima = rollback immediato.
+  giornaliero (solo nei giorni con una causa); il `latest-YYYYMMDD` precedente = rollback
+  immediato.
 
 Verifica manuale di un tag:
 ```sh

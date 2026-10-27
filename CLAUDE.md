@@ -41,7 +41,7 @@ DB prod: l'utente usa la console Portainer del container `postgres` → `psql -U
 
 Lo sviluppo locale attiva l'override tramite `COMPOSE_FILE=docker-compose.yml;docker-compose.override.yml` in `.env` (nel `.env.example` la riga è **commentata**: decommentarla per lo sviluppo; in produzione non va impostata). Con questa variabile attiva, `docker compose` carica automaticamente entrambi i file: non serve passare `-f` esplicitamente.
 
-**Produzione = stack Portainer da git (main) su podman rootless, `IMAGE_TAG=latest`, niente SSH.** Un merge che tocca `docker-compose.yml` arriva in prod al deploy successivo: ogni modifica va pensata per podman (es. tmpfs `uid=`/`gid=` → "unknown mount option", usare `mode=`), non solo provata con Docker Desktop. Se il compose nuovo richiede immagini nuove, subito dopo il merge lanciare `gh workflow run release.yml --ref main -f rebuild_latest=true` (il cron delle 04:30 salta se c'è stato un tag nelle 24 h).
+**Produzione = stack Portainer da git (main) su podman rootless, `IMAGE_TAG=latest`, niente SSH.** Un merge che tocca `docker-compose.yml` arriva in prod al deploy successivo: ogni modifica va pensata per podman (es. tmpfs `uid=`/`gid=` → "unknown mount option", usare `mode=`), non solo provata con Docker Desktop. Se il compose nuovo richiede immagini nuove, subito dopo il merge lanciare `gh workflow run release.yml --ref main -f rebuild_latest=true` (il cron delle 04:30 ricostruisce `latest` solo su causa reale — commit su main dopo la sua revision, patch OS, CVE con fix: il merge stesso basta, ma il rebuild arriva solo la notte dopo; prova senza rebuild con `-f dry_run=true`).
 
 ```bash
 # Primo avvio
