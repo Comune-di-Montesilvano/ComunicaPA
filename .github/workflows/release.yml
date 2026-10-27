@@ -60,12 +60,13 @@ jobs:
       - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
-          # Dal controllo cause: registry, Trivy (binario da GitHub, DB da mirror.gcr.io,
-          # check versione) e mirror Alpine/Debian usati da `apk update`/`apt-get update`
-          # dentro le immagini latest.
+          # Dal controllo cause: registry, Trivy (binario da get.trivy.dev → GitHub releases,
+          # DB da mirror.gcr.io, check versione) e mirror Alpine/Debian usati da
+          # `apk update`/`apt-get update` dentro le immagini latest.
           allowed-endpoints: >
             github.com:443
             api.github.com:443
+            get.trivy.dev:443
             release-assets.githubusercontent.com:443
             objects.githubusercontent.com:443
             ghcr.io:443
@@ -140,11 +141,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Stessa versione fissa della scansione bloccante in build-push.
+      # Stessa versione fissa (e stessa cache del binario) della scansione bloccante in build-push.
       - uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
         if: steps.mode.outputs.check == 'true'
         with:
           version: v0.76.1
+          cache: true
 
       # Cause a (commit su main), b (patch di sistema), c (CVE HIGH/CRITICAL con fix) per
       # ognuna delle 4 immagini latest; esito nel summary della run. Un controllo che non
@@ -212,6 +214,7 @@ jobs:
             dl-cdn.alpinelinux.org:443
             deb.debian.org:80
             deb.debian.org:443
+            get.trivy.dev:443
             check.trivy.dev:443
             fulcio.sigstore.dev:443
             rekor.sigstore.dev:443
