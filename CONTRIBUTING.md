@@ -20,6 +20,8 @@ Prima di aprire una PR:
 
 **Ogni nuova funzionalità e ogni bugfix includono test automatici** che ne coprono il comportamento: unit test Vitest per backend e frontend, pytest per il pdf-extractor. Un bugfix aggiunge un test di regressione che fallisce senza la correzione. Una PR senza test va motivata nella descrizione (es. sola documentazione o configurazione).
 
+Le funzioni che trasformano input non fidato (CSV, body HTTP, parametri di route) in path su disco, filtri LDAP o celle CSV hanno anche test di fuzzing property-based con [fast-check](https://fast-check.dev/) in `apps/backend/src/common/untrusted-input.fuzz.spec.ts`: una nuova funzione di questo tipo aggiunge lì la sua proprietà.
+
 ## Stile del codice
 
 - TypeScript in strict mode (`tsconfig.base.json`), ESLint senza warning (`pnpm lint`).
