@@ -1,6 +1,14 @@
 FROM node:26-alpine@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797
 WORKDIR /app
-RUN npm install -g corepack@0.36.0 && corepack enable
+# corepack dal tarball del registry npm, verificato con sha256 (niente `npm install` senza
+# hash). Stessa posizione di `npm install -g`. toolchain-version-check.yml segnala le nuove versioni.
+ADD --checksum=sha256:9128cfe26aee0c99f4fc68c15c6b8b12309a68be0de2c012cdfea2a463cb722f \
+    https://registry.npmjs.org/corepack/-/corepack-0.36.0.tgz /tmp/corepack.tgz
+RUN mkdir -p /usr/local/lib/node_modules/corepack \
+    && tar -xzf /tmp/corepack.tgz --strip-components=1 -C /usr/local/lib/node_modules/corepack \
+    && rm /tmp/corepack.tgz \
+    && ln -sf ../lib/node_modules/corepack/dist/corepack.js /usr/local/bin/corepack \
+    && corepack enable
 
 COPY package.json pnpm-workspace.yaml .npmrc pnpm.yaml ./
 # Versione di pnpm (con hash sha512, verificato da corepack) dal campo packageManager
