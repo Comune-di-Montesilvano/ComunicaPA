@@ -23,6 +23,36 @@ x-db-caps: &db-caps
 
 services:
 
+  # Verifica delle firme cosign delle 4 immagini di ${IMAGE_TAG} prima di avviarle
+  # (VERIFY_IMAGES=true): firmate da release.yml di questo repo su un tag v* o su main.
+  # Se fallisce, backend, pdf-extractor e frontend restano creati ma non avviati e il
+  # deploy da Portainer va in errore: rimettere il tag precedente. Spenta (default),
+  # esce subito con successo. Serve HTTPS verso ghcr.io e i servizi Sigstore
+  # (tuf-repo-cdn.sigstore.dev, rekor.sigstore.dev). Ripartenze dei container gia'
+  # creati (riavvio host, restart policy) non passano di qui.
+  verify-images:
+    <<: *hardening
+    # Variante -dev (con shell busybox) per il toggle VERIFY_IMAGES; fissata per digest.
+    image: ghcr.io/sigstore/cosign/cosign:v3.1.4-dev@sha256:8af1a2cf9fba903fdfc6bdafdc25f7b13ef34ad722095543ea787fb96f7240c1
+    restart: "no"
+    environment:
+      VERIFY_IMAGES: ${VERIFY_IMAGES:-false}
+      IMAGE_TAG: ${IMAGE_TAG:-latest}
+    entrypoint: ["/busybox/sh", "-ec"]
+    command:
+      - |
+        if [ "$$VERIFY_IMAGES" != "true" ]; then
+          echo "Verifica firme disattivata (VERIFY_IMAGES=$$VERIFY_IMAGES)"
+          exit 0
+        fi
+        R=ghcr.io/comune-di-montesilvano/comunicapa
+        cosign verify \
+          --certificate-identity-regexp '^https://github\.com/Comune-di-Montesilvano/ComunicaPA/\.github/workflows/release\.yml@refs/(tags/v.*|heads/main)$$' \
+          --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+          "$$R-backend:$$IMAGE_TAG" "$$R-pdf-extractor:$$IMAGE_TAG" \
+          "$$R-frontend-admin:$$IMAGE_TAG" "$$R-frontend-citizen:$$IMAGE_TAG" >/dev/null
+        echo "Firme verificate: $$IMAGE_TAG"
+
   postgres:
     <<: [*hardening, *db-caps]
     image: postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
@@ -96,6 +126,8 @@ services:
     volumes:
       - attachments_data:/data/attachments
     depends_on:
+      verify-images:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -107,6 +139,9 @@ services:
     <<: *hardening
     image: ghcr.io/comune-di-montesilvano/comunicapa-pdf-extractor:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    depends_on:
+      verify-images:
+        condition: service_completed_successfully
     environment:
       SENTRY_DSN_PDF_EXTRACTOR: ${SENTRY_DSN_PDF_EXTRACTOR:-}
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
@@ -128,7 +163,10 @@ services:
     ports:
       - "${ADMIN_PORT:-3000}:8080"
     depends_on:
-      - backend
+      verify-images:
+        condition: service_completed_successfully
+      backend:
+        condition: service_started
     networks:
       - comunicapa-net
 
@@ -142,7 +180,10 @@ services:
     ports:
       - "${CITIZEN_PORT:-3001}:8080"
     depends_on:
-      - backend
+      verify-images:
+        condition: service_completed_successfully
+      backend:
+        condition: service_started
     networks:
       - comunicapa-net
 

@@ -16,5 +16,5 @@ Solo l'ultima versione taggata (`vX.Y.Z`) riceve fix di sicurezza. Nessun suppor
 
 - Conferma di ricezione entro qualche giorno lavorativo.
 - Nessun bug bounty: il progetto è software libero per la PA, non un prodotto commerciale.
-- Le immagini Docker pubblicate sono firmate (cosign keyless) e hanno provenance SLSA e SBOM attestati: `scripts/verify-images.sh <tag>` li verifica prima del deploy.
+- Le immagini Docker pubblicate sono firmate (cosign keyless) e hanno provenance SLSA e SBOM attestati: `scripts/verify-images.sh <tag>` li verifica prima del deploy; con `VERIFY_IMAGES=true` nel compose la verifica della firma avviene a ogni deploy e i servizi non partono se fallisce.
 - Le vulnerabilità nelle dipendenze sono già monitorate automaticamente (Dependabot security updates + Trivy sulle immagini Docker ad ogni release, risultati nella tab [Security](https://github.com/Comune-di-Montesilvano/ComunicaPA/security)).
