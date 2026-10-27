@@ -41,6 +41,8 @@ DB prod: l'utente usa la console Portainer del container `postgres` → `psql -U
 
 Lo sviluppo locale attiva l'override tramite `COMPOSE_FILE=docker-compose.yml;docker-compose.override.yml` in `.env` (nel `.env.example` la riga è **commentata**: decommentarla per lo sviluppo; in produzione non va impostata). Con questa variabile attiva, `docker compose` carica automaticamente entrambi i file: non serve passare `-f` esplicitamente.
 
+**Produzione = stack Portainer da git (main) su podman rootless, `IMAGE_TAG=latest`, niente SSH.** Un merge che tocca `docker-compose.yml` arriva in prod al deploy successivo: ogni modifica va pensata per podman (es. tmpfs `uid=`/`gid=` → "unknown mount option", usare `mode=`), non solo provata con Docker Desktop. Se il compose nuovo richiede immagini nuove, subito dopo il merge lanciare `gh workflow run release.yml --ref main -f rebuild_latest=true` (il cron delle 04:30 salta se c'è stato un tag nelle 24 h).
+
 ```bash
 # Primo avvio
 cp .env.example .env
@@ -81,6 +83,8 @@ docker compose build backend
 docker compose rm -sf backend && docker volume rm comunicapa_backend_node_modules && docker compose up -d backend
 ```
 
+Se `pnpm` sul bind mount Windows è lento o pianta il PC (visto dal vivo: >10 min e crash): copia del repo nel container (`git archive HEAD` → `docker cp` in un container `node:26-alpine` con `--memory 3g`), `pnpm --filter backend add -D <pkg>` lì dentro (~30 s), poi `docker cp` di `package.json` e `pnpm-lock.yaml` verso l'host. Utile anche per test/tsc isolati sulla copia (serve `pnpm --filter @comunicapa/shared-types build` prima di `tsc`).
+
 Il nome del volume `node_modules` non sempre coincide col nome del servizio (es. `frontend-admin` → volume `comunicapa_admin_node_modules`, non `comunicapa_frontend-admin_node_modules`): verificare con `docker volume ls | grep node_modules` prima di eseguire `docker volume rm`.
 
 **Il volume può risultare stale anche SENZA aver aggiunto una dipendenza** — un semplice `docker compose up -d --build` su un checkout rimasto fermo a lungo può far ripartire un container con `MODULE_NOT_FOUND`/`Cannot find module` su pacchetti già presenti nell'immagine appena buildata (visto dal vivo: `frontend-admin` su `vite`, `backend` su `bullmq`). Stesso fix di sopra: `docker compose rm -sf <servizio> && docker volume rm comunicapa_<nome>_node_modules && docker compose up -d --build <servizio>`.
@@ -117,6 +121,8 @@ docker exec comunicapa-postgres-1 psql -U comunicapa -d comunicapa_db -c "CREATE
 # eseguire le migration compilate in dist/ del container (codice del checkout principale, non del worktree)
 MSYS_NO_PATHCONV=1 docker exec -w /app/apps/backend comunicapa-backend-1 node --input-type=module -e "import { DataSource } from 'typeorm'; const ds = await new DataSource({ type: 'postgres', url: process.env.DATABASE_URL.replace(/\/[^/]+\$/, '/migration_test'), migrations: ['/app/apps/backend/dist/database/migrations/*.js'] }).initialize(); console.log((await ds.runMigrations()).length); await ds.destroy();"
 ```
+
+Per provare lo stack di PRODUZIONE in locale senza toccare quello dev: `docker compose -f docker-compose.yml -p <nome> --env-file <env di prova> up -d` (`-p` sostituisce `name:`, container e volumi separati; porte libere con un override di prova), poi `COMPOSE="docker compose -f docker-compose.yml -p <nome> --env-file <env>" scripts/smoke-stack.sh`, infine `down -v`.
 
 **`git checkout <ref> -- .` — mai per "ispezionare"/confrontare, cancella lavoro non committato.**
 Sovrascrive SIA index SIA working tree per ogni path che differisce, in
@@ -162,6 +168,10 @@ docker compose exec backend node -e "const jwt=require('/app/node_modules/.pnpm/
 
 **Baseline:** 1 fallimento noto pre-esistente (`app.controller.spec.ts` › "senza APP_VERSION → versione da publiccode.yml o dev", asserzione `isLdapMock` `expected true to be false` — artefatto di `LDAP_HOST=mock` in dev), il resto della suite pulito. Il criterio per una modifica resta "failure set identico" al prima — se emerge un nuovo fallimento oltre a questo, è una regressione, non baseline nota.
 
+**Fuzzing property-based** (`fast-check`): `apps/backend/src/common/untrusted-input.fuzz.spec.ts` — una nuova funzione che trasforma input non fidato in path/filtri LDAP/celle CSV aggiunge lì la sua proprietà. Per verificare che una proprietà morda: mutare la funzione in una copia (script `.cjs` scritto con Write, mai heredoc: Git Bash collassa `\\`) e controllare il controesempio.
+
+**CI: sulle PR girano solo lint e type-check**; build, test completi, pytest e Trivy immagini girano nella merge queue. Un test rotto emerge quando la PR entra in coda, non al push.
+
 **Test rapido di un endpoint autenticato senza frontend**: nessun `curl` nel container backend — usare `node -e` con `fetch()` verso `http://localhost:8080/...` e il token JWT generato con lo snippet sopra. Utile per lanciare/testare una campagna reale da riga di comando durante il debug.
 
 **E2E chunked-upload via script Node standalone**: per testare end-to-end un endpoint che usa `chunked-upload.util.ts` (init/chunk/complete) serve chunking client-side reale — rispettare `MAX_CHUNK_SIZE_BYTES`, un chunk singolo troppo grande dà 413 silenzioso lato test, non un errore ovvio. Script con `fetch`+`FormData` nativi, JWT dallo snippet sopra, lanciato con `MSYS_NO_PATHCONV=1 docker compose exec -w /app/apps/backend backend node src/debug/script.mjs`: deve stare sotto `apps/backend/src/` (unico bind mount del backend; `src/debug/` è escluso dall'immagine), mai in `apps/backend/` o `/tmp`. `MSYS_NO_PATHCONV=1` serve anche per `-w <path assoluto>` ("Cwd must be an absolute path").
@@ -195,7 +205,7 @@ spezzettato per argomento sotto `docs/claude/` — NON auto-caricato (niente
 `@import`, per non gonfiare il contesto). Prima di toccare una parte di
 codice, leggere con Read SOLO il file pertinente dall'indice sotto.
 
-- `docs/claude/ci-cd-deps.md` — CI/CD (workflow, protezione main, release/tag), Dependabot bump a scaglioni
+- `docs/claude/ci-cd-deps.md` — CI/CD (workflow, protezione main, release/tag, smoke test, action consentite), Dependabot bump a scaglioni. `release.yml` si collauda SOLO con dispatch su main dopo il merge: firmare da un branch dà un'identità che `VERIFY_IMAGES` rifiuta (sicuro: smoke fallito = `latest` invariato)
 - `docs/ci-cd-security-baseline.md` — baseline di sicurezza CI/CD: principi, ruleset, impostazioni repo, pipeline completa, checklist per la gap analysis di altri repo. Aggiornarla quando cambia un workflow, un ruleset o un'impostazione di sicurezza
 - `docs/claude/build-toolchain.md` — pnpm v11 in Docker, `@comunicapa/shared-types` dual build CJS/ESM, backend NestJS v12 ESM, audit costruttori/spec
 - `docs/claude/database-queue.md` — Migration DB/enum Postgres, Redis AOF, TypeORM select/relations e leftJoinAndSelect bug, query paginate destinatari
