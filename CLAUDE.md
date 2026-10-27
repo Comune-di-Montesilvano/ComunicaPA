@@ -196,6 +196,7 @@ spezzettato per argomento sotto `docs/claude/` — NON auto-caricato (niente
 codice, leggere con Read SOLO il file pertinente dall'indice sotto.
 
 - `docs/claude/ci-cd-deps.md` — CI/CD (workflow, protezione main, release/tag), Dependabot bump a scaglioni
+- `docs/ci-cd-security-baseline.md` — baseline di sicurezza CI/CD: principi, ruleset, impostazioni repo, pipeline completa, checklist per la gap analysis di altri repo. Aggiornarla quando cambia un workflow, un ruleset o un'impostazione di sicurezza
 - `docs/claude/build-toolchain.md` — pnpm v11 in Docker, `@comunicapa/shared-types` dual build CJS/ESM, backend NestJS v12 ESM, audit costruttori/spec
 - `docs/claude/database-queue.md` — Migration DB/enum Postgres, Redis AOF, TypeORM select/relations e leftJoinAndSelect bug, query paginate destinatari
 - `docs/claude/bullmq-jobs.md` — pattern jobId=attemptId, riconciliazione job orfani, dedup BullMQ, cron round-robin, side-effect post-invio
