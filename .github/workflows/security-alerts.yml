@@ -32,6 +32,12 @@ jobs:
       security-events: read
       issues: write
     steps:
+      # Traffico in uscita registrato (audit, non bloccato): host contattati nel log del
+      # post-step e nella pagina insights StepSecurity della run.
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
       - name: Alert high/critical aperti su main
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
