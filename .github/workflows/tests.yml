@@ -72,3 +72,25 @@ jobs:
 
       - name: Run integrated tests
         run: pnpm test
+
+  # Suite pytest del pdf-extractor nell'immagine dev (stessa base e stesse librerie di
+  # sistema della produzione), dipendenze di test installate dal lock con hash.
+  pdf-extractor-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Build immagine dev
+        run: docker build -q -f services/pdf-extractor/Dockerfile.dev -t pdf-extractor:test .
+
+      - name: pytest
+        run: |
+          docker run --rm -v "$PWD/services/pdf-extractor:/src:ro" pdf-extractor:test sh -ec '
+            pip install -q --no-cache-dir --require-hashes --no-deps -r /src/requirements-dev.txt
+            cp -r /src/tests ./tests
+            python -m pytest tests/ -q
+          '

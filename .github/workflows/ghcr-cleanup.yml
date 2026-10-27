@@ -27,7 +27,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 # Mai in parallelo con un'altra pulizia (stesse versioni).
 concurrency:
@@ -38,6 +37,9 @@ jobs:
   cleanup:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       max-parallel: 1

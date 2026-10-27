@@ -4,7 +4,7 @@
 
 Se scopri una vulnerabilità di sicurezza in ComunicaPA, **non aprire una issue pubblica**.
 
-Segnala privatamente via [GitHub Security Advisories](https://github.com/Comune-di-Montesilvano/ComunicaPA/security/advisories/new) — visibile solo ai maintainer finché non viene risolta e pubblicata.
+Segnala privatamente con **Report a vulnerability** nella tab [Security](https://github.com/Comune-di-Montesilvano/ComunicaPA/security/advisories/new) (segnalazione privata di GitHub) — visibile solo ai maintainer finché non viene risolta e pubblicata.
 
 In alternativa, contatta l'amministrazione del Comune di Montesilvano tramite i canali istituzionali indicati su [comune.montesilvano.pe.it](https://www.comune.montesilvano.pe.it).
 
@@ -16,4 +16,5 @@ Solo l'ultima versione taggata (`vX.Y.Z`) riceve fix di sicurezza. Nessun suppor
 
 - Conferma di ricezione entro qualche giorno lavorativo.
 - Nessun bug bounty: il progetto è software libero per la PA, non un prodotto commerciale.
+- Le immagini Docker pubblicate sono firmate (cosign keyless) e hanno provenance SLSA e SBOM attestati: `scripts/verify-images.sh <tag>` li verifica prima del deploy.
 - Le vulnerabilità nelle dipendenze sono già monitorate automaticamente (Dependabot security updates + Trivy sulle immagini Docker ad ogni release, risultati nella tab [Security](https://github.com/Comune-di-Montesilvano/ComunicaPA/security)).
