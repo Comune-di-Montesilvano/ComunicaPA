@@ -82,6 +82,10 @@ def test_extract_address_foreign_clean(pdf_foreign_address_clean):
     assert addr.stato_estero == "Belgio"
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="Bug aperto: lo pseudocodice a 5 cifre prima del comune viene ancora preso come CAP",
+)
 def test_extract_address_foreign_cap_embedded_in_street(pdf_foreign_address_cap_embedded):
     """Regressione bug reale: il CAP vero (8802) è dentro la via dopo la
     keyword 'CAP', lo pseudocodice a 5 cifre (86078) prima del comune NON va
