@@ -30,15 +30,23 @@ export interface SignatureVerificationResult {
 // `esModuleInterop`/`allowSyntheticDefaultImports` (già attivi in
 // tsconfig.base.json) rendono valido `import forge from 'node-forge'` pur
 // con le dichiarazioni `@types/node-forge` tutte nominali (ambient module).
+//
+// MD5 non ammesso: collisioni praticabili, nessuna firma qualificata lo usa. SHA-1 resta
+// solo per verificare firme gia' esistenti (legacy).
 function digestCreatorFor(oid: string): (() => forge.md.MessageDigest) | undefined {
   const creators: Record<string, () => forge.md.MessageDigest> = {
     [forge.pki.oids.sha1]: () => forge.md.sha1.create(),
     [forge.pki.oids.sha256]: () => forge.md.sha256.create(),
     [forge.pki.oids.sha384]: () => forge.md.sha384.create(),
     [forge.pki.oids.sha512]: () => forge.md.sha512.create(),
-    [forge.pki.oids.md5]: () => forge.md.md5.create(),
   };
   return creators[oid];
+}
+
+class UnsupportedDigestError extends Error {
+  constructor(oid: string) {
+    super(`Algoritmo di digest non supportato: ${oid}`);
+  }
 }
 
 /** Nome dell'hash per `crypto.verify` di Node, dallo stesso OID del digest. */
@@ -48,7 +56,6 @@ function nodeHashNameFor(oid: string): string | undefined {
     [forge.pki.oids.sha256]: 'sha256',
     [forge.pki.oids.sha384]: 'sha384',
     [forge.pki.oids.sha512]: 'sha512',
-    [forge.pki.oids.md5]: 'md5',
   };
   return names[oid];
 }
@@ -211,6 +218,9 @@ export class SignatureVerificationService {
     try {
       signatureValid = this.verifyCryptographically(p7, detachedContentBytes);
     } catch (err: any) {
+      if (err instanceof UnsupportedDigestError) {
+        return { valid: false, reason: 'Algoritmo di hash della firma non ammesso (MD5 o non supportato)', signerCn: this.commonName(signerCert) };
+      }
       this.logger.warn(`Verifica crittografica fallita per ${filename}: ${err?.message ?? err}`);
       return { valid: false, reason: 'Integrità della firma non verificata (hash non corrispondente)' };
     }
@@ -257,7 +267,7 @@ export class SignatureVerificationService {
     const digestOid = forge.asn1.derToOid(rawCapture.digestAlgorithm);
     const createDigest = digestCreatorFor(digestOid);
     const hashName = nodeHashNameFor(digestOid);
-    if (!createDigest || !hashName) throw new Error(`Algoritmo di digest non supportato: ${digestOid}`);
+    if (!createDigest || !hashName) throw new UnsupportedDigestError(digestOid);
 
     const contentBytes = detachedContentBytes !== undefined ? detachedContentBytes : this.extractContentBytes(rawCapture.content);
     const contentDigest = createDigest().update(contentBytes).digest().bytes();
