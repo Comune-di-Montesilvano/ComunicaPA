@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="apps/frontend-admin/public/favicon.svg" alt="Logo ComunicaPA" width="120" height="120">
+</p>
+
 # ComunicaPA
 
 [![Test Integrati](https://github.com/Comune-di-Montesilvano/ComunicaPA/actions/workflows/tests.yml/badge.svg)](https://github.com/Comune-di-Montesilvano/ComunicaPA/actions/workflows/tests.yml)
