@@ -122,6 +122,14 @@ export class DomicileVerificationJob {
   @Column({ name: 'result_aggregato_csv', type: 'text', nullable: true })
   resultAggregatoCsv!: string | null;
 
+  /**
+   * Username dell'operatore che ha caricato il tracciato: un 'user' vede e
+   * cancella solo i propri job, un 'admin' tutti. null = job precedenti
+   * all'introduzione del campo, visibili solo agli admin.
+   */
+  @Column({ name: 'created_by', type: 'varchar', length: 255, nullable: true })
+  createdBy!: string | null;
+
   @Column({ name: 'error_message', type: 'text', nullable: true })
   errorMessage!: string | null;
 
