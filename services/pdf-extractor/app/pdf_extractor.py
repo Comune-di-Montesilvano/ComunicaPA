@@ -1,4 +1,5 @@
 import io
+import logging
 import re
 import unicodedata
 from typing import Optional
@@ -6,6 +7,8 @@ from typing import Optional
 import pdfplumber
 
 from app.models import AddressData, PaymentData
+
+logger = logging.getLogger("pdf-extractor")
 
 
 class AddressExtractionError(Exception):
@@ -534,8 +537,10 @@ class PdfExtractor:
                         results.append(result)
                         if max_results is not None and len(results) >= max_results:
                             return results, warnings
-            except Exception as e:
-                warnings.append(f"Pagina {page_idx}: rendering {zoom}x fallito — {e}")
+            except Exception:
+                # Dettaglio dell'eccezione nel log, nella risposta solo il messaggio fisso.
+                logger.exception("Pagina %s: rendering %sx fallito", page_idx, zoom)
+                warnings.append(f"Pagina {page_idx}: rendering {zoom}x fallito")
 
         if not results:
             warnings.append(f"Pagina {page_idx}: QR PagoPA non decodificato")
@@ -657,8 +662,9 @@ class PdfExtractor:
                             rate_by_index[int(n_str)] = payment
                         else:
                             unknown_rate.append(payment)
-        except Exception as e:
-            warnings.append(f"Estrazione QR fallita: {e}")
+        except Exception:
+            logger.exception("Estrazione QR fallita")
+            warnings.append("Estrazione QR fallita")
 
         rate = [rate_by_index[k] for k in sorted(rate_by_index.keys())] + unknown_rate
 
