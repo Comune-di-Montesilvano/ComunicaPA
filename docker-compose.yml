@@ -4,6 +4,9 @@ name: comunicapa
 # named, nessun bind mount. Per lo sviluppo vedi docker-compose.override.yml
 # (attivato da COMPOSE_FILE in .env).
 
+# Filesystem del container in sola lettura: scrivono solo nei volumi e nei tmpfs
+# dichiarati (un processo compromesso non puo' modificare codice o configurazione).
+#
 # Hardening comune: nessuna escalation di privilegi (setuid/setgid) e nessuna
 # capability Linux. postgres e redis partono come root e scendono al proprio
 # utente (chown della data dir + su-exec): solo loro riaggiungono quelle 5.
@@ -35,6 +38,9 @@ services:
     # Variante -dev (con shell busybox) per il toggle VERIFY_IMAGES; fissata per digest.
     image: ghcr.io/sigstore/cosign/cosign:v3.1.4-dev@sha256:8af1a2cf9fba903fdfc6bdafdc25f7b13ef34ad722095543ea787fb96f7240c1
     restart: "no"
+    read_only: true
+    tmpfs:
+      - /home/nonroot:uid=65532,gid=65532
     environment:
       VERIFY_IMAGES: ${VERIFY_IMAGES:-false}
       IMAGE_TAG: ${IMAGE_TAG:-latest}
@@ -57,6 +63,10 @@ services:
     <<: [*hardening, *db-caps]
     image: postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /var/run/postgresql
+      - /tmp
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -75,6 +85,7 @@ services:
     <<: [*hardening, *db-caps]
     image: redis:8-alpine@sha256:0bf6577d7774e592b29d093e3ac9390eb91e13d72c21e506afce736de5e0eeb0
     restart: unless-stopped
+    read_only: true
     # AOF (append-only file): persiste ogni scrittura su disco, non solo gli
     # snapshot RDB periodici (default immagine: "save 3600 1 300 100 60
     # 10000", una finestra tra due snapshot in cui i job BullMQ accodati
@@ -96,6 +107,7 @@ services:
     <<: *hardening
     image: ghcr.io/comune-di-montesilvano/comunicapa-backend:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    read_only: true
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     environment:
@@ -125,6 +137,9 @@ services:
       PDF_EXTRACTOR_URL: ${PDF_EXTRACTOR_URL:-http://pdf-extractor:8000}
     volumes:
       - attachments_data:/data/attachments
+      # Upload in corso (chunk, multer, ZIP firmati): su disco e non in tmpfs, perche'
+      # un CSV/ZIP grande occuperebbe RAM.
+      - backend_tmp:/tmp
     depends_on:
       verify-images:
         condition: service_completed_successfully
@@ -139,6 +154,9 @@ services:
     <<: *hardening
     image: ghcr.io/comune-di-montesilvano/comunicapa-pdf-extractor:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
     depends_on:
       verify-images:
         condition: service_completed_successfully
@@ -157,6 +175,10 @@ services:
     <<: *hardening
     image: ghcr.io/comune-di-montesilvano/comunicapa-frontend-admin:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    read_only: true
+    # pid e file temporanei di nginx, config.js generato all'avvio.
+    tmpfs:
+      - /tmp
     environment:
       SENTRY_DSN: ${SENTRY_DSN_ADMIN:-}
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
@@ -174,6 +196,10 @@ services:
     <<: *hardening
     image: ghcr.io/comune-di-montesilvano/comunicapa-frontend-citizen:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    read_only: true
+    # pid e file temporanei di nginx, config.js generato all'avvio.
+    tmpfs:
+      - /tmp
     environment:
       SENTRY_DSN: ${SENTRY_DSN_CITIZEN:-}
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
@@ -191,6 +217,7 @@ volumes:
   postgres_data:
   redis_data:
   attachments_data:
+  backend_tmp:
 
 networks:
   comunicapa-net:

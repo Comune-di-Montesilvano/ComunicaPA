@@ -22,6 +22,8 @@ services:
 
   backend:
     image: comunicapa/backend:dev
+    # Dev: build, watch e pip scrivono nel filesystem del container (prod: read_only).
+    read_only: false
     build:
       context: .
       dockerfile: apps/backend/Dockerfile.dev
@@ -37,6 +39,7 @@ services:
 
   pdf-extractor:
     image: comunicapa/pdf-extractor:dev
+    read_only: false
     build:
       context: .
       dockerfile: services/pdf-extractor/Dockerfile.dev
@@ -45,6 +48,7 @@ services:
 
   frontend-admin:
     image: comunicapa/frontend-admin:dev
+    read_only: false
     build:
       context: .
       dockerfile: apps/frontend-admin/Dockerfile.dev
@@ -60,6 +64,7 @@ services:
 
   frontend-citizen:
     image: comunicapa/frontend-citizen:dev
+    read_only: false
     build:
       context: .
       dockerfile: apps/frontend-citizen/Dockerfile.dev

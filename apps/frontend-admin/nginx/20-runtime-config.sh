@@ -31,6 +31,9 @@ case "$SENTRY_ENVIRONMENT" in
     exit 1
     ;;
 esac
-cat > /usr/share/nginx/html/config.js <<EOF
+# In /tmp (tmpfs) e non nella root html: il container gira con filesystem in sola
+# lettura (read_only nel docker-compose.yml). default.conf serve /config.js da qui.
+mkdir -p /tmp/runtime-config
+cat > /tmp/runtime-config/config.js <<EOF
 window.__COMUNICAPA_CONFIG__ = { apiBase: '${API_BASE}', sentryDsn: '${SENTRY_DSN}', sentryEnvironment: '${SENTRY_ENVIRONMENT}' };
 EOF
