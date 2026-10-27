@@ -50,14 +50,19 @@ function signWithMalformedDigestInfo(key: forge.pki.rsa.PrivateKey, md: forge.md
   return key.sign(forge.asn1.toDer(digestInfo).getBytes() as unknown as forge.md.MessageDigest, 'NONE');
 }
 
-function makeP7m(content: Buffer, signerCert: forge.pki.Certificate, signerKeys: forge.pki.rsa.KeyPair): Buffer {
+function makeP7m(
+  content: Buffer,
+  signerCert: forge.pki.Certificate,
+  signerKeys: forge.pki.rsa.KeyPair,
+  digestAlgorithm: string = forge.pki.oids.sha256,
+): Buffer {
   const p7 = forge.pkcs7.createSignedData();
   p7.content = forge.util.createBuffer(content.toString('binary'));
   p7.addCertificate(signerCert);
   p7.addSigner({
     key: signerKeys.privateKey,
     certificate: signerCert,
-    digestAlgorithm: forge.pki.oids.sha256,
+    digestAlgorithm,
     authenticatedAttributes: [
       { type: forge.pki.oids.contentType, value: forge.pki.oids.data },
       { type: forge.pki.oids.messageDigest },
@@ -140,6 +145,23 @@ describe('SignatureVerificationService', () => {
 
     expect(result.valid).toBe(false);
     expect(result.reason).toContain('non riconosciuta');
+  });
+
+  it('.p7m con digest MD5 → valid: false, algoritmo non ammesso', async () => {
+    const p7m = makeP7m(Buffer.from('contenuto'), signerCert, signerKeys, forge.pki.oids.md5);
+
+    const result = await service.verify(p7m, 'documento.p7m');
+
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain('non ammesso');
+  });
+
+  it('.p7m con digest SHA-1 (firma legacy) → ancora accettata', async () => {
+    const p7m = makeP7m(Buffer.from('contenuto'), signerCert, signerKeys, forge.pki.oids.sha1);
+
+    const result = await service.verify(p7m, 'documento.p7m');
+
+    expect(result.valid).toBe(true);
   });
 
   it('file non firmato (PDF semplice) → valid: false, reason non firmato', async () => {
