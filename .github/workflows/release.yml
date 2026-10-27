@@ -4,18 +4,23 @@ name: Build & Push immagini
 on:
   push:
     tags: ['v*']
-  # Rebuild giornaliero di main (04:30 UTC, dopo il giro dependabot delle 01:00): aggiorna SOLO
-  # `latest` (+ `latest-YYYYMMDD`) con immagini base e dipendenze minor/patch fresche, senza
-  # toccare i tag vX.Y.Z (quelli li crea solo il maintainer). Saltato se nell'ultima
-  # 24 ore e' gia' stato pubblicato un tag (latest e' gia' fresco).
+  # Controllo giornaliero di main (04:30 UTC, dopo il giro dependabot delle 01:00): ricostruisce
+  # SOLO `latest` (+ `latest-YYYYMMDD`) e solo su causa reale (scripts/rebuild-check.sh):
+  # commit su main dopo la revision di latest, patch di sistema disponibili, CVE HIGH/CRITICAL
+  # con fix. Nessuna causa → nessun rebuild, latest e il suo digest restano quelli. Non tocca
+  # i tag vX.Y.Z (quelli li crea solo il maintainer).
   schedule:
     - cron: "30 4 * * *"
   workflow_dispatch:
     inputs:
       rebuild_latest:
-        description: "Rebuild di latest da main (come lo schedule giornaliero, senza skip)"
+        description: "Rebuild forzato di latest da main, senza controllo delle cause"
         type: boolean
         default: true
+      dry_run:
+        description: "Solo il controllo cause dello schedule: stampa l'esito, nessun rebuild"
+        type: boolean
+        default: false
 
 # Mai cancel-in-progress: un push a ghcr interrotto a meta' puo' lasciare un manifest
 # incompleto — run concorrenti si accodano invece di accavallarsi.
@@ -30,17 +35,23 @@ permissions:
 jobs:
   setup:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 20
     permissions:
       contents: read
-      # gh run list (salto del rebuild giornaliero dopo un tag).
-      actions: read
+      # Pull delle immagini latest attuali per il controllo cause.
+      packages: read
     outputs:
       auto: ${{ steps.mode.outputs.auto }}
-      skip: ${{ steps.mode.outputs.skip }}
+      # Dry run e dispatch senza rebuild saltano sempre; lo schedule salta se il controllo
+      # non trova cause.
+      skip: ${{ steps.mode.outputs.skip == 'true' && 'true' || steps.check.outputs.skip || 'false' }}
       version: ${{ steps.mode.outputs.version }}
       auto_tag: ${{ steps.mode.outputs.auto_tag }}
       pkg_refresh: ${{ steps.mode.outputs.pkg_refresh }}
+      # JSON app → cause del rebuild (label comunicapa.rebuild.reason).
+      reasons: ${{ steps.check.outputs.reasons || steps.mode.outputs.reasons }}
+      # JSON array delle app ricostruite per la causa c (CVE con fix).
+      cause_c: ${{ steps.check.outputs.cause_c || '[]' }}
     steps:
       # Traffico in uscita limitato agli host elencati (anche dentro i container di
       # docker build). Gli endpoint dell'infrastruttura Actions sono consentiti dall'agent.
@@ -49,61 +60,103 @@ jobs:
       - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: block
+          # Dal controllo cause: registry, Trivy (binario da get.trivy.dev → GitHub releases,
+          # DB da mirror.gcr.io, check versione) e mirror Alpine/Debian usati da
+          # `apk update`/`apt-get update` dentro le immagini latest.
           allowed-endpoints: >
             github.com:443
             api.github.com:443
+            get.trivy.dev:443
+            release-assets.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            ghcr.io:443
+            pkg-containers.githubusercontent.com:443
+            mirror.gcr.io:443
+            check.trivy.dev:443
+            dl-cdn.alpinelinux.org:443
+            deb.debian.org:80
+            deb.debian.org:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-          # Storia + tag completi: il rebuild automatico ricava l'ultimo tag vX.Y.Z.
+          # Storia + tag completi: il rebuild automatico ricava l'ultimo tag vX.Y.Z e il
+          # controllo cause conta i commit su main dopo la revision di latest.
           fetch-depth: 0
 
+      # Niente piu' salto "tag nelle ultime 24 ore": dopo un tag latest ha come revision
+      # proprio quel commit, quindi senza merge successivi la causa a non scatta; il salto
+      # a tempo ignorerebbe invece per un giorno le cause b e c.
       - name: Resolve build mode
         id: mode
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EVENT_NAME: ${{ github.event_name }}
           REBUILD_LATEST: ${{ inputs.rebuild_latest }}
+          DRY_RUN: ${{ inputs.dry_run }}
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
-          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           auto=false
           skip=false
+          check=false
+          reason=
           if [[ "$EVENT_NAME" == "push" && "$REF_TYPE" == "tag" ]]; then
             version="$REF_NAME"
-          elif [[ "$EVENT_NAME" == "schedule" || "$REBUILD_LATEST" == "true" ]]; then
+            reason="tag $REF_NAME"
+          elif [[ "$EVENT_NAME" == "schedule" || "$DRY_RUN" == "true" ]]; then
+            # Rebuild solo se il controllo cause ne trova una; il dry run si ferma li'.
             auto=true
-            # APP_VERSION = ultimo tag rilasciato (versione mostrata in UI/`/version`);
-            # il tag immagine latest-YYYYMMDD distingue il rebuild.
-            version=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || echo dev)
+            check=true
+            if [[ "$DRY_RUN" == "true" ]]; then skip=true; fi
+          elif [[ "$REBUILD_LATEST" == "true" ]]; then
+            auto=true
+            reason="rebuild manuale (workflow_dispatch)"
           else
             echo "::notice::Dispatch senza rebuild_latest: niente da buildare."
             skip=true
-            version=dev
           fi
-          # Solo lo schedule salta: un tag pubblicato nelle ultime 24 ore ha gia' rinfrescato
-          # latest. Le run "push" di questo workflow sono solo tag.
-          if [[ "$EVENT_NAME" == "schedule" ]]; then
-            since=$(date -u -d '24 hours ago' +%FT%TZ)
-            recent=$(gh run list -R "$REPO" --workflow release.yml --event push \
-              --status success --created ">=$since" --json headBranch -q 'length')
-            if [[ "$recent" -gt 0 ]]; then
-              echo "::notice::Tag pubblicato nelle ultime 24 ore: rebuild giornaliero saltato."
-              skip=true
-            fi
+          if [[ "$auto" == "true" ]]; then
+            # APP_VERSION = ultimo tag rilasciato (versione mostrata in UI/`/version`);
+            # il tag immagine latest-YYYYMMDD distingue il rebuild.
+            version=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || echo dev)
           fi
           {
             echo "auto=$auto"
             echo "skip=$skip"
-            echo "version=$version"
+            echo "check=$check"
+            echo "reasons=$(jq -cn --arg r "$reason" \
+              '{backend: $r, "frontend-admin": $r, "frontend-citizen": $r, "pdf-extractor": $r}')"
+            echo "version=${version:-dev}"
             echo "auto_tag=latest-$(date -u +%Y%m%d)"
             # Data del giorno: invalida una volta al giorno il layer `apk/apt upgrade` dei
             # Dockerfile, altrimenti la cache registry lo congela e le patch OS non entrano.
             echo "pkg_refresh=$(date -u +%F)"
           } >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
+        if: steps.mode.outputs.check == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Stessa versione fissa (e stessa cache del binario) della scansione bloccante in build-push.
+      - uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
+        if: steps.mode.outputs.check == 'true'
+        with:
+          version: v0.76.1
+          cache: true
+
+      # Cause a (commit su main), b (patch di sistema), c (CVE HIGH/CRITICAL con fix) per
+      # ognuna delle 4 immagini latest; esito nel summary della run. Un controllo che non
+      # riesce a verificare conta come causa: mai uno skip per un errore.
+      - name: Rebuild check
+        id: check
+        if: steps.mode.outputs.check == 'true'
+        env:
+          MAIN_REF: origin/main
+        run: bash scripts/rebuild-check.sh
 
   build-push:
     needs: setup
@@ -132,6 +185,8 @@ jobs:
       # Firma keyless cosign e attestazioni: certificato Sigstore sull'identita' OIDC del workflow.
       id-token: write
       attestations: write
+      # Issue "vulnerabilita' non risolvibile con un rebuild" (rebuild per causa c bloccato da Trivy).
+      issues: write
     steps:
       # Traffico in uscita limitato agli host elencati (anche dentro i container di
       # docker build). Gli endpoint dell'infrastruttura Actions sono consentiti dall'agent.
@@ -159,6 +214,7 @@ jobs:
             dl-cdn.alpinelinux.org:443
             deb.debian.org:80
             deb.debian.org:443
+            get.trivy.dev:443
             check.trivy.dev:443
             fulcio.sigstore.dev:443
             rekor.sigstore.dev:443
@@ -187,6 +243,9 @@ jobs:
             type=ref,event=tag
             type=raw,value=latest,enable=${{ github.ref_type == 'tag' || needs.setup.outputs.auto == 'true' }}
             type=raw,value=${{ needs.setup.outputs.auto_tag }},enable=${{ needs.setup.outputs.auto == 'true' }}
+          # Perche' questa immagine e' stata ricostruita (cause del controllo, tag o dispatch).
+          labels: |
+            comunicapa.rebuild.reason=${{ fromJSON(needs.setup.outputs.reasons)[matrix.app] }}
 
       # Push solo per digest, senza nessun tag: un'immagine che non passa Trivy resta un
       # digest orfano (rimosso da ghcr-cleanup.yml) e non e' mai raggiungibile da un tag.
@@ -213,6 +272,7 @@ jobs:
       # pubblicazione. Le PR passano gia' dallo stesso controllo in merge queue
       # (security.yml, trivy-image), quindi qui scatta solo per CVE pubblicate dopo il merge.
       - name: Trivy vulnerability scan
+        id: trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
@@ -227,6 +287,35 @@ jobs:
           # Versione fissa come l'Action: un rilascio Trivy compromesso non entra in
           # automatico. trivy-version-check.yml apre una issue quando ne esce una nuova.
           version: v0.76.1
+
+      # Rebuild partito per la causa c (CVE con fix) ma ancora bloccato da Trivy: il fix non
+      # e' ancora nelle immagini base o nei mirror. latest resta il precedente (smoke e
+      # publish non partono); la issue tiene traccia finche' Dependabot non porta il fix.
+      - name: Issue vulnerabilita' non risolvibile con un rebuild
+        if: >-
+          failure() && steps.trivy.outcome == 'failure'
+          && contains(fromJSON(needs.setup.outputs.cause_c), matrix.app)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          APP: ${{ matrix.app }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          TITLE="Vulnerabilità non risolvibile con un rebuild ($APP)"
+          table=$(trivy image --quiet --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
+            --ignorefile .trivyignore.yaml --format table "$IMAGE@$DIGEST" 2>&1 || true)
+          body=$(printf '%s\n' \
+            "Il rebuild di \`latest\` per \`$APP\` è partito per CVE HIGH/CRITICAL con fix (causa c), ma l'immagine ricostruita ha ancora vulnerabilità bloccanti: il fix non è ancora nelle immagini base o nei mirror dei pacchetti. \`latest\` è rimasto quello precedente." \
+            "" "Run: $RUN_URL" "" '```' "$table" '```' "" \
+            "Si risolve con il bump Dependabot dell'immagine base (o con un override della dipendenza); il controllo giornaliero riprova da solo.")
+          existing=$(gh issue list -R "$REPO" --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number // empty')
+          if [[ -n "$existing" ]]; then
+            gh issue comment "$existing" -R "$REPO" --body "$body"
+          else
+            gh issue create -R "$REPO" --title "$TITLE" --body "$body"
+          fi
 
       # SBOM CycloneDX dell'immagine (stesso Trivy della scansione), firmato sotto.
       - name: SBOM (Trivy)
