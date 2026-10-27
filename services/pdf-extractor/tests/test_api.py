@@ -48,6 +48,18 @@ def test_extract_no_data(pdf_no_address):
     assert len(body["warnings"]) >= 2  # indirizzo + pagamento
 
 
+def test_extract_no_address_warning_senza_testo_pagina(pdf_no_address):
+    # Il messaggio dell'eccezione contiene un estratto della pagina (dati del
+    # destinatario): nella risposta solo il messaggio fisso.
+    res = client.post(
+        "/extract",
+        files={"file": ("doc.pdf", pdf_no_address, "application/pdf")},
+    )
+    warnings = res.json()["warnings"]
+    assert "Indirizzo non estratto: riga 'Residente in:' non trovata nella prima pagina" in warnings
+    assert not any("Documento senza indirizzo" in w for w in warnings)
+
+
 def test_extract_corrupted_pdf():
     res = client.post(
         "/extract",

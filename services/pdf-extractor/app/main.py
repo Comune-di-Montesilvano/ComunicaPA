@@ -5,7 +5,7 @@ from dataclasses import asdict
 import sentry_sdk
 from fastapi import FastAPI, UploadFile
 
-from app.pdf_extractor import AddressExtractionError, PdfExtractor
+from app.pdf_extractor import AddressExtractionError, EmptyPdfError, PdfExtractor
 
 logger = logging.getLogger("pdf-extractor")
 
@@ -40,8 +40,13 @@ async def extract(file: UploadFile, search_payments: bool = True):
         extractor = PdfExtractor(pdf_bytes)
         try:
             address = extractor.extract_address()
-        except AddressExtractionError as e:
-            warnings.append(f"Indirizzo non estratto: {str(e)[:300]}")
+        except EmptyPdfError:
+            warnings.append("Indirizzo non estratto: PDF senza pagine")
+        except AddressExtractionError:
+            # Il testo dell'eccezione contiene un estratto della pagina (dati del
+            # destinatario): solo nel log di debug, nella risposta il messaggio fisso.
+            logger.debug("Indirizzo non estratto", exc_info=True)
+            warnings.append("Indirizzo non estratto: riga 'Residente in:' non trovata nella prima pagina")
 
         try:
             fiscal_code = extractor.extract_fiscal_code()

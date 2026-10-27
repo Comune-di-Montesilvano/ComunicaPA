@@ -15,6 +15,16 @@ class AddressExtractionError(Exception):
     pass
 
 
+# Sottoclassi per tipo di errore: la risposta HTTP usa un messaggio fisso per tipo, mai il
+# testo dell'eccezione (contiene un estratto della pagina, cioe' l'indirizzo del destinatario).
+class EmptyPdfError(AddressExtractionError):
+    pass
+
+
+class AddressNotFoundError(AddressExtractionError):
+    pass
+
+
 # Elenco paesi (denominazione italiana) — copia di COUNTRIES in
 # packages/shared-types/src/index.ts (usato da matchCountry() lato
 # TS/frontend). Duplicato qui perché pdf-extractor è un microservizio
@@ -229,7 +239,7 @@ class PdfExtractor:
     def extract_address(self) -> AddressData:
         with self._open() as pdf:
             if not pdf.pages:
-                raise AddressExtractionError("PDF vuoto")
+                raise EmptyPdfError("PDF vuoto")
             text = pdf.pages[0].extract_text() or ""
 
         m = self._RE_DOMESTIC.search(text)
@@ -324,7 +334,7 @@ class PdfExtractor:
                 stato_estero="",
             )
 
-        raise AddressExtractionError(
+        raise AddressNotFoundError(
             f"Pattern 'Residente in:' non trovato. Testo pagina 0:\n{text[:500]}"
         )
 
