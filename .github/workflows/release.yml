@@ -42,11 +42,16 @@ jobs:
       auto_tag: ${{ steps.mode.outputs.auto_tag }}
       pkg_refresh: ${{ steps.mode.outputs.pkg_refresh }}
     steps:
-      # Traffico in uscita del job registrato (egress-policy audit): elenco degli host
-      # contattati nella pagina della run, base per passare a `block` con allowed-endpoints.
+      # Traffico in uscita limitato agli host elencati (anche dentro i container di
+      # docker build). Gli endpoint dell'infrastruttura Actions sono consentiti dall'agent.
+      # Release fallita per "blocked" → host nel log del post-step harden-runner o nella
+      # pagina insights della run: aggiungerlo qui se legittimo.
       - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -128,11 +133,37 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      # Traffico in uscita del job registrato (egress-policy audit): elenco degli host
-      # contattati nella pagina della run, base per passare a `block` con allowed-endpoints.
+      # Traffico in uscita limitato agli host elencati (anche dentro i container di
+      # docker build). Gli endpoint dell'infrastruttura Actions sono consentiti dall'agent.
+      # Release fallita per "blocked" → host nel log del post-step harden-runner o nella
+      # pagina insights della run: aggiungerlo qui se legittimo.
       - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            release-assets.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            *.githubapp.com:443
+            ghcr.io:443
+            pkg-containers.githubusercontent.com:443
+            registry-1.docker.io:443
+            auth.docker.io:443
+            production.cloudfront.docker.com:443
+            production.cloudflare.docker.com:443
+            mirror.gcr.io:443
+            registry.npmjs.org:443
+            pypi.org:443
+            files.pythonhosted.org:443
+            dl-cdn.alpinelinux.org:443
+            deb.debian.org:80
+            deb.debian.org:443
+            check.trivy.dev:443
+            fulcio.sigstore.dev:443
+            rekor.sigstore.dev:443
+            timestamp.sigstore.dev:443
+            tuf-repo-cdn.sigstore.dev:443
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
