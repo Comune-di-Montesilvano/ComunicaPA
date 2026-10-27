@@ -205,7 +205,7 @@ Per domande su un'adozione o per segnalare che il software è in uso presso un a
 
 ## Contribuire
 
-Issue e pull request sono benvenute. Prima di aprire una PR:
+Issue e pull request sono benvenute: regole complete, policy sui test e stile in [CONTRIBUTING.md](CONTRIBUTING.md). Prima di aprire una PR:
 
 1. Verifica che la suite test passi (`docker compose exec backend node_modules/.bin/vitest run`)
 2. Verifica il controllo dei tipi di backend (spec inclusi) e frontend — la CI esegue anche lint e build completa
