@@ -381,8 +381,8 @@ jobs:
           name: release-${{ matrix.app }}
           path: handoff
 
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
-
+      # Niente setup-buildx: imagetools create lavora solo sul registry, basta il buildx del
+      # runner (setup-buildx scaricherebbe BuildKit da Docker Hub, fuori dall'allowlist).
       - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
         with:
           registry: ghcr.io
