@@ -7,7 +7,9 @@ version: 2
 # automatico. Major a 14 giorni solo per npm/pip: docker, docker-compose e github-actions
 # non supportano semver-major-days (le loro major restano comunque manuali). Il cooldown
 # non si applica ai Dependabot security updates (attivi sul repo): le correzioni di
-# advisory arrivano subito. Giro alle 01:00 cosi' l'auto-merge finisce prima del rebuild
+# advisory arrivano subito. Se Dependabot non apre l'alert (succede: GHSA pubblicate e
+# nessun alert per giorni) le corregge security-autofix.yml, con versione pubblicata da
+# almeno 48h e provenienza verificata. Giro alle 01:00 cosi' l'auto-merge finisce prima del rebuild
 # giornaliero di latest (release.yml, 04:30 UTC).
 updates:
   # pnpm workspace monorepo — root pnpm-lock.yaml copre apps/* + packages/*

@@ -111,19 +111,22 @@ gh api repos/<owner>/<repo>/rulesets/<id> -q '{bypass_actors, rules}'
 
 ```
 PR ──► check leggeri (lint, type-check, dependency-review, pnpm-audit, trivy-fs, CodeQL)
-        │
+        │        audit e Trivy differenziali: bloccano solo le vulnerabilità NUOVE
         ▼
 merge queue ──► check completi sul commit che verrà unito
-        │        (build, test, pytest, build immagini + Trivy)
+        │        (build, test, pytest, build immagini + Trivy differenziale su latest)
         ▼
-main ──► security.yml (giornaliero) · CodeQL · Scorecard · security-alerts (giornaliero)
+main ──► security.yml (giornaliero, assoluto) · CodeQL · Scorecard · security-alerts
+        │   └─ fallito → security-autofix (anche giornaliero 02:30): PR con le
+        │      correzioni (≥48h, provenienza verificata) → auto-merge in coda
         │
         ▼
 release.yml (tag v* · controllo giornaliero 04:30 · dispatch)
    setup:         solo schedule (o dry_run): rebuild-check sulle 4 latest
                   (a commit su main · b patch di sistema · c Trivy HIGH/CRITICAL con fix)
                   → nessuna causa = skip, latest invariato
-   build-push ×4: build → push SOLO per digest → Trivy bloccante → SBOM
+   build-push ×4: build → push SOLO per digest → Trivy (tag: bloccante;
+                  rebuild: nessuna regressione rispetto a latest) → SBOM
                   → attestazioni provenance + SBOM → firma cosign keyless
    smoke:         stack compose di produzione con i 4 digest → smoke-stack.sh
    publish ×4:    solo se smoke verde → tag vX.Y.Z / latest / latest-YYYYMMDD
@@ -140,7 +143,8 @@ runtime ──► non-root · cap_drop ALL · no-new-privileges · read_only + t
 | Workflow | Trigger | Ruolo |
 |---|---|---|
 | `tests.yml` | PR, merge queue | `run-tests` (sulla PR: install, lint, type-check; in coda + build e test), `pdf-extractor-tests` (solo in coda) |
-| `security.yml` | PR, coda, push main, giornaliero | `dependency-review` (solo PR), `pnpm-audit`, `trivy-fs`, `trivy-image (<app>)` (solo coda/main/giornaliero) |
+| `security.yml` | PR, coda, push main, giornaliero | `dependency-review` (solo PR), `pnpm-audit`, `trivy-fs`, `trivy-image (<app>)` (solo coda/main/giornaliero); differenziali su PR e coda, assoluti su main |
+| `security-autofix.yml` | giornaliero 02:30, Sicurezza fallita su main, dispatch | corregge da solo le HIGH/CRITICAL con versione corretta (≥48h, provenienza verificata): PR col token GitHub App e auto-merge; issue per attese, non correggibili, fallite |
 | CodeQL (default setup) | PR, main, settimanale | SAST, suite extended |
 | `scorecard.yml` | push main, settimanale | OpenSSF Scorecard, risultati pubblici |
 | `security-alerts.yml` | giornaliero, push main | fallisce e apre/aggiorna una issue se ci sono alert high/critical aperti su main (la regola code scanning blocca solo i nuovi) |
@@ -157,7 +161,7 @@ runtime ──► non-root · cap_drop ALL · no-new-privileges · read_only + t
 | Lockfile | `pnpm install --frozen-lockfile`; pip `--require-hashes` con lock completo (dirette + transitive) | build fallisce su lock non allineato |
 | Package manager | versione e hash da `packageManager`; corepack installato da tarball con `ADD --checksum=sha256:` | nessun `@latest` |
 | Immagini base | `FROM image:tag@sha256:…` | Dependabot aggiorna il digest |
-| Dependabot | ecosistemi npm, pip, docker, docker-compose, github-actions; giornaliero; `cooldown` 7 giorni (14 per le major npm/pip); gruppi minor/patch | security updates senza cooldown |
+| Dependabot | ecosistemi npm, pip, docker, docker-compose, github-actions; giornaliero; `cooldown` 7 giorni (14 per le major npm/pip); gruppi minor/patch | security updates senza cooldown; se l'alert non arriva, `security-autofix.yml` dopo 48h e con provenienza verificata |
 | Audit | `pnpm audit --prod` HIGH+, Trivy fs (lockfile, segreti, misconfig Dockerfile/compose), dependency-review su PR (dev e Actions compresi) | eccezioni solo motivate (`auditConfig.ignoreGhsas`, `.trivyignore.yaml`) |
 | Runtime minimale | npm/npx/corepack rimossi dall'immagine di produzione; `apk/apt upgrade` invalidato una volta al giorno (`PKG_REFRESH`) | meno CVE trasportate |
 
@@ -165,7 +169,9 @@ runtime ──► non-root · cap_drop ALL · no-new-privileges · read_only + t
 
 - Push **solo per digest**, senza tag: un'immagine non scansionata, non firmata o non provata
   non è mai raggiungibile per tag (resta un digest orfano rimosso dalla pulizia settimanale).
-- Trivy bloccante su CRITICAL/HIGH con fix disponibile, anche nel rebuild giornaliero.
+- Trivy bloccante su CRITICAL/HIGH con fix disponibile sui tag `v*`; nel rebuild giornaliero
+  blocca solo le regressioni rispetto alla `latest` pubblicata, così un rebuild che corregge
+  qualcosa non resta fermo per una CVE che nessun rebuild può correggere.
 - **Rebuild giornaliero su causa reale**, non incondizionato: lo schedule delle 04:30 esegue
   `scripts/rebuild-check.sh` sulle 4 immagini `latest` attuali (per digest) e ricostruisce
   solo se trova almeno una causa:
@@ -181,8 +187,9 @@ runtime ──► non-root · cap_drop ALL · no-new-privileges · read_only + t
   controllo che non riesce a verificare conta come causa (fallire chiusi = ricostruire).
   Le cause finiscono nel summary e nella label `comunicapa.rebuild.reason` dell'immagine
   (`docker inspect --format '{{index .Config.Labels "comunicapa.rebuild.reason"}}'`).
-  Rebuild per causa c ancora bloccato da Trivy (fix non ancora nelle immagini base) →
-  issue "Vulnerabilità non risolvibile con un rebuild (<app>)", `latest` resta il precedente.
+  Rebuild con CVE ancora presenti (fix non ancora nelle immagini base) → `latest` pubblicata
+  se non peggiora, issue "Vulnerabilità non risolvibile con un rebuild (<app>)"; il bump del
+  digest dell'immagine base lo fa `security-autofix.yml`.
   Tag `v*` e dispatch con `rebuild_latest=true` ricostruiscono sempre; dispatch con
   `dry_run=true` esegue solo il controllo e ne stampa l'esito. Il vecchio salto "tag nelle
   ultime 24 ore" non c'è più: dopo un tag la revision di `latest` è il commit taggato, quindi
