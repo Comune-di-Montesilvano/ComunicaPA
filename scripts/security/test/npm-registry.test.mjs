@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { verifyRegistrySignature } from '../npm-registry.mjs';
+import { verifyRegistrySignature, registryPath } from '../npm-registry.mjs';
 
 // Dati pubblici del registry npm (node-forge 1.4.2, chiave registry attuale).
 const KEYS = [{ expires: null, keyid: 'SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U',
@@ -23,4 +23,12 @@ test('chiave sconosciuta o senza firme → false', () => {
 });
 test('chiave scaduta prima della pubblicazione → false', () => {
   assert.ok(!verifyRegistrySignature('node-forge', '1.4.2', DIST, [{ ...KEYS[0], expires: '2025-01-29T00:00:00.000Z' }], pub));
+});
+
+test('registryPath: scope codificato, nomi non validi rifiutati (niente path traversal)', () => {
+  assert.equal(registryPath('node-forge'), 'node-forge');
+  assert.equal(registryPath('@scope/pkg'), '@scope%2fpkg');
+  for (const bad of ['a/b/c', '../x', '@scope/../../x', 'a?b', '', '@scope/']) {
+    assert.throws(() => registryPath(bad), /nome pacchetto npm non valido/, bad);
+  }
 });

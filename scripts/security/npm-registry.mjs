@@ -53,12 +53,21 @@ async function provenanceRepo(name, version, dist) {
   return null;
 }
 
+// Nome npm: `nome` o `@scope/nome`, minuscolo, senza `..` né caratteri da URL. Arriva
+// dall'output di audit: validato prima di comporre l'URL del registry.
+const NPM_NAME = /^(?:@[a-z0-9~-][a-z0-9._~-]*\/)?[a-z0-9~-][a-z0-9._~-]*$/;
+
+export function registryPath(name) {
+  if (!NPM_NAME.test(String(name)) || String(name).includes('..')) throw new Error(`nome pacchetto npm non valido: ${name}`);
+  return name.replaceAll('/', '%2f');
+}
+
 /**
  * Candidate = versioni > current; previous = versioni <= current con l'ultima attestata
  * (basta una per stabilire che il pacchetto ha provenance e da quale repository).
  */
 export async function fetchCandidates(name, current) {
-  const doc = await getJson(`${REGISTRY}/${name.replace('/', '%2f')}`);
+  const doc = await getJson(`${REGISTRY}/${registryPath(name)}`);
   const keys = await registryKeys();
   const time = doc.time ?? {};
   const toCand = async (v, withProvenance) => {
