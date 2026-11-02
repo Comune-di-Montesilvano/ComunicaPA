@@ -10,20 +10,35 @@ import { execFileSync } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
 
+// Solo questi file possono finire in un commit del bot (merge automatico, nessuna revisione
+// umana): un tool di terze parti eseguito durante la correzione (pip-tools, sdist, pnpm) che
+// scrivesse altrove — script dei gate, workflow, sorgenti — fa fallire il commit.
+const ALLOWED = [
+  /^pnpm-lock\.yaml$/, /^pnpm-workspace\.yaml$/,
+  /^(?:(?:apps|packages)\/[^/]+\/)?package\.json$/,
+  /^services\/[^/]+\/requirements(?:-dev)?\.(?:in|txt)$/,
+  /^(?:apps|services)\/[^/]+\/Dockerfile(?:\.dev)?$/,
+];
+
+export const isAllowedPath = (p) => ALLOWED.some((re) => re.test(p));
+
 /** Da `git status --porcelain=v1 -z` alle fileChanges di createCommitOnBranch. */
 export function buildFileChanges(statusZ, readFile) {
   const parts = statusZ.split('\0').filter(Boolean);
-  const additions = [], deletions = [];
+  const additions = [], deletions = [], refused = [];
+  const check = (p) => { if (!isAllowedPath(p)) refused.push(p); };
   for (let i = 0; i < parts.length; i++) {
     const code = parts[i].slice(0, 2), path = parts[i].slice(3);
     if (code[0] === 'R' || code[0] === 'C') {
       const from = parts[++i];
-      if (code[0] === 'R' && !from.startsWith('.cache/')) deletions.push({ path: from });
+      if (code[0] === 'R' && !from.startsWith('.cache/')) { check(from); deletions.push({ path: from }); }
     }
     if (path.startsWith('.cache/')) continue;
+    check(path);
     if (code.includes('D')) deletions.push({ path });
     else additions.push({ path, contents: readFile(path).toString('base64') });
   }
+  if (refused.length) throw new Error(`file fuori allowlist: ${refused.join(', ')}`);
   return { additions, deletions };
 }
 

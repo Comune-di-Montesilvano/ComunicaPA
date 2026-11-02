@@ -39,14 +39,41 @@ export function groupFindings(findings) {
   const groups = new Map();
   for (const f of findings) {
     const key = `${f.ecosystem}:${f.pkg}@${f.version}`;
-    const g = groups.get(key) ?? { key, ecosystem: f.ecosystem, pkg: f.pkg, current: f.version, vulnerableRanges: [], ghsa: [], targets: [] };
+    const g = groups.get(key) ?? { key, ecosystem: f.ecosystem, pkg: f.pkg, current: f.version, vulnerableRanges: [], fixedRanges: [], ghsa: [], targets: [] };
     if (f.vulnerableRange && !g.vulnerableRanges.includes(f.vulnerableRange)) g.vulnerableRanges.push(f.vulnerableRange);
+    if (f.fixedRange && !g.fixedRanges.includes(f.fixedRange)) g.fixedRanges.push(f.fixedRange);
     const id = [f.id, ...f.aliases].find((x) => x.startsWith('GHSA-')) ?? f.id;
     if (!g.ghsa.includes(id)) g.ghsa.push(id);
     if (!g.targets.includes(f.target)) g.targets.push(f.target);
     groups.set(key, g);
   }
   return [...groups.values()];
+}
+
+/** Versioni (o digest) esclusi per un pacchetto/immagine da voci `nome@versione`. */
+export function skipFor(excluded, name) {
+  return excluded.filter((e) => e.lastIndexOf('@') > 0 && e.slice(0, e.lastIndexOf('@')) === name)
+    .map((e) => e.slice(e.lastIndexOf('@') + 1));
+}
+
+/**
+ * PR per pacchetto: in modalità split, oppure quando la verifica locale della PR unica fallisce
+ * (si rifà ogni correzione da sola per trovare quella responsabile, senza trattenere le altre).
+ */
+export function shouldSplit({ mode, fixed, verification }) {
+  if (fixed === 0 || mode === 'wait') return false;
+  return mode === 'split' || verification === 'failed';
+}
+
+/** Righe `pkg versione ok|failed` del giro per pacchetto → voci da escludere (solo le fallite). */
+export function splitExclusions(lines) {
+  return lines.split('\n').map((l) => l.trim().split(/\s+/)).filter((p) => p.length === 3 && p[2] === 'failed')
+    .map(([pkg, ver]) => `${pkg}@${ver}`);
+}
+
+/** Range con `||` → specifier PEP 440 separati (pip_fix li tratta come OR). */
+export function pipRanges(ranges) {
+  return ranges.flatMap((r) => r.split('||').map((s) => s.trim()).filter(Boolean));
 }
 
 /** I finding dei gruppi corretti devono sparire e nessun finding nuovo deve comparire. */
@@ -103,7 +130,7 @@ async function main() {
     out: { type: 'string' },
   } });
   const ignoreGhsas = readIgnoreGhsas(readFileSync('pnpm-workspace.yaml', 'utf8'));
-  const excluded = new Set(a.state ? readJson(a.state).excluded ?? [] : []);
+  const excluded = a.state ? readJson(a.state).excluded ?? [] : [];
   // --force pkg@versione (npm/pip, la @ iniziale degli scope non conta) oppure image:tag.
   const at = a.force ? a.force.lastIndexOf('@') : -1;
   const [forcePkg, forceVer] = !a.force ? [] : at > 0 ? [a.force.slice(0, at), a.force.slice(at + 1)] : [a.force, undefined];
@@ -131,7 +158,8 @@ async function main() {
     let r;
     try {
       const { candidates, previous } = await fetchCandidates(g.pkg, g.current);
-      r = chooseVersion({ current: g.current, vulnerableRanges: g.vulnerableRanges, candidates, previous, now: new Date(),
+      r = chooseVersion({ current: g.current, vulnerableRanges: g.vulnerableRanges, fixedRanges: g.fixedRanges,
+        skipVersions: skipFor(excluded, g.pkg), candidates, previous, now: new Date(),
         forceVersion: forcePkg === g.pkg ? forceVer : undefined });
       if (r.action === 'fix') {
         const c = candidates.find((x) => x.version === r.version);
@@ -140,8 +168,7 @@ async function main() {
       }
     } catch (e) { r = { action: 'unfixable', reason: `registry: ${e.message}` }; }
     const item = { ecosystem: 'npm', pkg: g.pkg, from: g.current, ghsa: g.ghsa, key: g.key, ...r };
-    if (r.action === 'fix' && excluded.has(`${g.pkg}@${r.version}`)) unfixable.push({ ...item, action: 'unfixable', reason: `${g.pkg}@${r.version} esclusa: fallita in un giro precedente` });
-    else if (r.action === 'fix') { npmFixes.push({ pkg: g.pkg, version: g.current, to: r.version, ghsa: g.ghsa }); fixed.push(item); }
+    if (r.action === 'fix') { npmFixes.push({ pkg: g.pkg, version: g.current, to: r.version, ghsa: g.ghsa }); fixed.push(item); }
     else (r.action === 'pending' ? pending : unfixable).push(item);
   }
   if (npmFixes.length) {
@@ -158,7 +185,8 @@ async function main() {
     mkdirSync('.cache/autofix', { recursive: true });
     const dir = mkdtempSync('.cache/autofix/pip-');
     writeFileSync(join(dir, 'in.json'), JSON.stringify(pipGroups.map((g) => ({ pkg: g.pkg, current: g.current,
-      vulnerable_ranges: g.vulnerableRanges, ghsa: g.ghsa, force_version: forcePkg === g.pkg ? forceVer : undefined }))));
+      vulnerable_ranges: pipRanges(g.vulnerableRanges), ghsa: g.ghsa, skip_versions: skipFor(excluded, g.pkg),
+      force_version: forcePkg === g.pkg ? forceVer : undefined }))));
     const args = ['scripts/security/pip_fix.py', '--fixes', join(dir, 'in.json'), '--dir', 'services/pdf-extractor', '--out', join(dir, 'out.json')];
     if (dry) args.push('--dry-run');
     execFileSync(process.env.PYTHON_CMD || 'python3', args, { stdio: ['ignore', 'ignore', 'inherit'] });
@@ -178,10 +206,11 @@ async function main() {
       const ref = runtimeImage(readFileSync(dockerfile, 'utf8'));
       if (ref && (!a.only || a.only === ref)) refs.set(ref, [...(refs.get(ref) ?? []), ...f]);
     }
-    for (const r of checkImages([...refs.keys()], { force: Boolean(a.force && refs.has(a.force)), dryRun: dry })) {
+    for (const r of checkImages([...refs.keys()], { force: Boolean(a.force && refs.has(a.force)), dryRun: dry,
+      skip: Object.fromEntries([...refs.keys()].map((ref) => [ref, skipFor(excluded, ref)])) })) {
       const ref = `${r.image}:${r.tag}`;
       const ghsa = [...new Set(refs.get(ref).map((f) => f.id))];
-      const item = { ecosystem: 'image', pkg: ref, from: r.from?.slice(0, 19), version: r.digest?.slice(0, 19), ghsa, key: `image:${ref}`, ...r, kind: 'digest' };
+      const item = { ecosystem: 'image', pkg: ref, from: r.from, version: r.digest, ghsa, key: `image:${ref}`, ...r, kind: 'digest' };
       (r.action === 'fix' ? fixed : r.action === 'pending' ? pending : unfixable).push(item);
     }
   }

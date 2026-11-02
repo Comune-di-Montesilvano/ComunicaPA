@@ -27,11 +27,11 @@ test('follow-redirects transitiva → override follow-redirects@1.16.1: 1.16.2',
 
 test('directCommand: ^ di default, ~ e esatto preservati, -D per devDependencies', () => {
   const d = planNpmFix(f('node-forge', '1.4.0'), '1.4.1', manifests);
-  assert.deepEqual(directCommand(d), ['--filter', 'backend', 'add', 'node-forge@1.4.1', '--lockfile-only', '--ignore-scripts']);
+  assert.deepEqual(directCommand(d), ['--filter', 'backend', 'add', 'node-forge@1.4.1', '--lockfile-only', '--ignore-scripts', '--config.minimum-release-age=2880']);
   const t = planNpmFix(f('fast-check', '4.10.2'), '4.10.3', manifests);
-  assert.deepEqual(directCommand(t), ['--filter', 'backend', 'add', 'fast-check@4.10.3', '--lockfile-only', '--ignore-scripts', '-D', '--save-prefix=~']);
+  assert.deepEqual(directCommand(t), ['--filter', 'backend', 'add', 'fast-check@4.10.3', '--lockfile-only', '--ignore-scripts', '--config.minimum-release-age=2880', '-D', '--save-prefix=~']);
   const e = planNpmFix(f('exact', '2.0.0'), '2.0.1', manifests);
-  assert.deepEqual(directCommand(e), ['--filter', 'frontend-admin', 'add', 'exact@2.0.1', '--lockfile-only', '--ignore-scripts', '--save-exact']);
+  assert.deepEqual(directCommand(e), ['--filter', 'frontend-admin', 'add', 'exact@2.0.1', '--lockfile-only', '--ignore-scripts', '--config.minimum-release-age=2880', '--save-exact']);
 });
 
 test('dipendenza della root → filtro "." (workspace root)', () => {
@@ -70,4 +70,23 @@ test('CRLF preservato', () => {
   const fix = { kind: 'override', pkg: 'a', selector: 'a@1.0.0', to: '1.0.1' };
   const out = applyOverride(crlf, fix, { ghsa: ['GHSA-y'], date: '2026-10-31' });
   assert.ok(!/[^\r]\n/.test(out));
+});
+
+test('review: dichiarata ^4 ma copia vulnerabile 3.x transitiva → override, mai downgrade della diretta', () => {
+  const m = [{ path: 'apps/backend/package.json', json: { name: 'backend', dependencies: { lodash: '^4.17.0' } } }];
+  assert.deepEqual(planNpmFix(f('lodash', '3.10.0'), '3.10.2', m),
+    { kind: 'override', pkg: 'lodash', selector: 'lodash@3.10.0', to: '3.10.2' });
+});
+
+test('review: dev che copre la versione ma prod no → sceglie il manifest che la copre', () => {
+  const m = [
+    { path: 'apps/a/package.json', json: { name: 'a', dependencies: { x: '^2.0.0' } } },
+    { path: 'apps/b/package.json', json: { name: 'b', devDependencies: { x: '^1.0.0' } } },
+  ];
+  assert.equal(planNpmFix(f('x', '1.2.0'), '1.2.1', m).path, 'apps/b/package.json');
+});
+
+test('review: specifier workspace:/npm: → override', () => {
+  const m = [{ path: 'apps/a/package.json', json: { name: 'a', dependencies: { x: 'workspace:*' } } }];
+  assert.equal(planNpmFix(f('x', '1.0.0'), '1.0.1', m).kind, 'override');
 });

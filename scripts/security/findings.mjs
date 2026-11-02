@@ -68,11 +68,30 @@ export function parseTrivy(json) {
       out.push({
         tool: 'trivy', ecosystem, pkg: v.PkgName, version: v.InstalledVersion, id: v.VulnerabilityID,
         aliases: (v.VendorIDs ?? []).filter((a) => a !== v.VulnerabilityID), severity: v.Severity,
-        vulnerableRange: lowest ? `<${lowest}` : null, fixedRange: null, fixedVersions, target: r.Target,
+        vulnerableRange: lowest ? vulnerableFromFixed(fixedVersions) : null, fixedRange: null, fixedVersions, target: r.Target,
       });
     }
   }
   return out;
+}
+
+// Trivy dà solo le versioni corrette, una per linea di release (es. "4.2.17, 5.0.10, 5.1.4").
+// Vulnerabile: sotto la prima; su ogni linea corretta, sotto la sua correzione; tra una linea e
+// la successiva (linee senza correzione nota) vulnerabile in via conservativa.
+export function vulnerableFromFixed(fixedVersions) {
+  const sorted = [...fixedVersions].sort(naturalCompare);
+  const parts = [`<${sorted[0]}`];
+  for (let i = 1; i < sorted.length; i++) {
+    const [pM, pm] = sorted[i - 1].split('.').map((n) => Number.parseInt(n, 10) || 0);
+    const [M, m] = sorted[i].split('.').map((n) => Number.parseInt(n, 10) || 0);
+    const nextLine = `${pM}.${pm + 1}.0`;
+    const lineStart = `${M}.${m}.0`;
+    parts.push(naturalCompare(nextLine, lineStart) < 0
+      ? `>=${nextLine} <${sorted[i]}`
+      : `>=${lineStart} <${sorted[i]}`);
+  }
+  // Linee adiacenti producono intervalli contigui: si uniscono per leggibilità solo se identici.
+  return [...new Set(parts)].join(' || ');
 }
 
 // Confronto "numerico a pezzi" sufficiente a scegliere la più bassa tra versioni Trivy.

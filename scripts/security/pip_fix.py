@@ -42,7 +42,8 @@ def _trusted(cand, previous):
     return bool(cand.get("provenance_repo")) and cand["provenance_repo"].lower() in repos
 
 
-def choose_version(current, vulnerable_specs, candidates, previous, now, min_age_hours=MIN_AGE_HOURS, force_version=None):
+def choose_version(current, vulnerable_specs, candidates, previous, now, min_age_hours=MIN_AGE_HOURS, force_version=None,
+                   skip_versions=()):
     cur = Version(current)
     specs = [SpecifierSet(s.replace(" ", ",")) for s in vulnerable_specs]
     fixing = []
@@ -54,9 +55,13 @@ def choose_version(current, vulnerable_specs, candidates, previous, now, min_age
             continue
         fixing.append((0 if v.major == cur.major else 1, v, c))
     fixing.sort(key=lambda t: (t[0], t[1]))
+    correct = fixing
+    # Versioni fallite in un giro precedente: si prova la successiva corretta (force le riprova).
+    skipped = [c["version"] for _, _, c in fixing if c["version"] in skip_versions]
+    fixing = [t for t in fixing if t[2]["version"] not in skip_versions]
 
     if force_version:
-        f = next((c for _, _, c in fixing if c["version"] == force_version), None)
+        f = next((c for _, _, c in correct if c["version"] == force_version), None)
         if f is None:
             return {"action": "unfixable", "reason": f"versione forzata {force_version} non corregge"}
         if not _trusted(f, previous):
@@ -64,7 +69,8 @@ def choose_version(current, vulnerable_specs, candidates, previous, now, min_age
         return {"action": "fix", "version": f["version"]}
 
     if not fixing:
-        return {"action": "unfixable", "reason": "nessuna versione corretta"}
+        reason = "nessuna versione corretta" + (f" (escluse: {', '.join(skipped)})" if skipped else "")
+        return {"action": "unfixable", "reason": reason}
 
     min_age = timedelta(hours=min_age_hours)
     first_young = None
@@ -174,6 +180,42 @@ def fetch_candidates(pkg, current):
     return [e for _, e in cands], previous
 
 
+def _pins(text):
+    out = {}
+    for line in text.splitlines():
+        m = _REQ.match(line.split(" \\")[0].strip())
+        if m:
+            out[canonicalize_name(m["name"])] = m["ver"]
+    return out
+
+
+def changed_pins(before_text, after_text):
+    """Pin nuovi o cambiati nel lockfile dopo pip-compile (nome canonico → versione)."""
+    before = _pins(before_text)
+    return {k: v for k, v in _pins(after_text).items() if before.get(k) != v}
+
+
+def young_pins(changed, target, published_at, now, min_age_hours=MIN_AGE_HOURS):
+    """Pin cambiati come effetto collaterale (non il target) con meno di 48h o data ignota."""
+    out = []
+    for pkg, ver in changed.items():
+        if canonicalize_name(pkg) == canonicalize_name(target):
+            continue
+        t = published_at(pkg, ver)
+        if t is None or now - t < timedelta(hours=min_age_hours):
+            out.append(f"{pkg}=={ver}")
+    return out
+
+
+def _published_at(pkg, version):
+    try:
+        files = _get_json(f"https://pypi.org/pypi/{pkg}/{version}/json").get("urls", [])
+    except Exception:
+        return None
+    times = [f["upload_time_iso_8601"] for f in files if f.get("upload_time_iso_8601")]
+    return min(datetime.fromisoformat(t.replace("Z", "+00:00")) for t in times) if times else None
+
+
 # ── pip-compile ─────────────────────────────────────────────────────────────────────────────
 def _compile(dirpath, src, out, upgrade=None):
     cmd = [sys.executable, "-m", "piptools", "compile", *COMPILE_FLAGS, "-o", out, src]
@@ -194,6 +236,7 @@ def apply(dirpath, pkg, version, ghsa, date):
         raise RuntimeError(f"{pkg}: lockfile già a {locked}, {version} sarebbe un downgrade")
     req_in = d / "requirements.in"
     text = req_in.read_text(encoding="utf8")
+    lock_before = {n: (d / n).read_text(encoding="utf8") for n in ("requirements.txt", "requirements-dev.txt") if (d / n).exists()}
     if is_direct(text, pkg):
         req_in.write_text(set_direct_pin(text, pkg, version), encoding="utf8", newline="")
         r = _compile(d, "requirements.in", "requirements.txt", upgrade=f"{pkg}=={version}")
@@ -211,6 +254,12 @@ def apply(dirpath, pkg, version, ghsa, date):
         r = _compile(d, "requirements-dev.in", "requirements-dev.txt", upgrade=f"{pkg}=={version}")
         if r.returncode != 0:
             raise RuntimeError(f"requirements-dev.txt: {r.stderr.strip()[-500:]}")
+    # Anche i pin trascinati dalla risoluzione devono avere almeno 48h.
+    now = datetime.now(timezone.utc)
+    for name, before in lock_before.items():
+        young = young_pins(changed_pins(before, (d / name).read_text(encoding="utf8")), pkg, _published_at, now)
+        if young:
+            raise RuntimeError(f"{name}: dipendenze trascinate pubblicate da meno di 48h: {', '.join(young)}")
     return kind
 
 
@@ -227,7 +276,8 @@ def main():
     for f in json.loads(Path(a.fixes).read_text(encoding="utf8")):
         try:
             cands, prev = fetch_candidates(f["pkg"], f["current"])
-            r = choose_version(f["current"], f["vulnerable_ranges"], cands, prev, now, force_version=f.get("force_version"))
+            r = choose_version(f["current"], f["vulnerable_ranges"], cands, prev, now, force_version=f.get("force_version"),
+                               skip_versions=f.get("skip_versions", []))
         except Exception as e:  # registry irraggiungibile: mai una versione senza verifica
             r = {"action": "unfixable", "reason": f"registry: {e}"}
         if r["action"] == "fix" and not a.dry_run:

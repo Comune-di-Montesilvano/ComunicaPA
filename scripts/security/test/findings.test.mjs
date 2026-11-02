@@ -78,7 +78,7 @@ test('trivy image: ecosystem os / image-lang / pip, solo HIGH+', () => {
     ['image-lang:example-bundled', 'os:libexample', 'pip:examplepy']);
   const b = f.find((x) => x.pkg === 'example-bundled');
   assert.deepEqual(b.fixedVersions, ['2.0.5', '1.9.9']);
-  assert.equal(b.vulnerableRange, '<1.9.9');
+  assert.equal(b.vulnerableRange, '<1.9.9 || >=1.10.0 <2.0.5'); // 2.0.0-2.0.4 vulnerabili
 });
 
 test('readIgnoreGhsas legge GHSA-86w9-cpqp-85rv dal pnpm-workspace.yaml reale', () => {
@@ -131,4 +131,11 @@ test('cli: --base-empty → tutto nuovo', () => {
   const r = run('--format', 'trivy', '--head', join(here, 'fixtures', 'trivy-image-sample.json'), '--base-empty');
   assert.equal(r.status, 1);
   assert.match(r.stdout, /examplepy/);
+});
+
+test('review: FixedVersion su più linee → range per linea, conservativo tra le linee', () => {
+  const json = { SchemaVersion: 2, Results: [{ Target: 'requirements.txt', Class: 'lang-pkgs', Type: 'pip', Vulnerabilities: [
+    { VulnerabilityID: 'CVE-2099-9', PkgName: 'p', InstalledVersion: '5.1.0', FixedVersion: '4.2.17, 5.0.10, 5.1.4', Severity: 'HIGH' }] }] };
+  const [f] = parseTrivy(json);
+  assert.equal(f.vulnerableRange, '<4.2.17 || >=4.3.0 <5.0.10 || >=5.1.0 <5.1.4');
 });

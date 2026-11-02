@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { nextMode, groupFindings, verifyFixed, prBody, FAILED_AFTER_HOURS } from '../autofix.mjs';
+import { nextMode, groupFindings, verifyFixed, prBody, FAILED_AFTER_HOURS, skipFor, pipRanges, shouldSplit, splitExclusions } from '../autofix.mjs';
 import { parsePnpmAudit } from '../findings.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -78,4 +78,34 @@ test('prBody: tabella con da/a, tipo, GHSA, età e provenienza', () => {
   const body = prBody({ fixed: [{ ecosystem: 'npm', pkg: 'node-forge', from: '1.4.0', version: '1.4.1', kind: 'direct',
     ghsa: ['GHSA-7wch-p9px-956x'], ageHours: 94, provenance: 'firma registry' }], pending: [], unfixable: [] });
   assert.match(body, /\| node-forge \| 1\.4\.0 \| 1\.4\.1 \| direct \| GHSA-7wch-p9px-956x \| 94h \| firma registry \|/);
+});
+
+test('review: skipFor estrae le versioni escluse del pacchetto (scope npm e image:tag@digest)', () => {
+  const ex = ['node-forge@1.4.1', '@scope/pkg@2.0.0', 'node:26-alpine@sha256:abc', 'node-forge-x@9'];
+  assert.deepEqual(skipFor(ex, 'node-forge'), ['1.4.1']);
+  assert.deepEqual(skipFor(ex, '@scope/pkg'), ['2.0.0']);
+  assert.deepEqual(skipFor(ex, 'node:26-alpine'), ['sha256:abc']);
+});
+
+test('review: groupFindings raccoglie patched_versions in fixedRanges', () => {
+  const g = groupFindings(parsePnpmAudit(load('pnpm-audit-main.json'), { ignoreGhsas: [] }));
+  assert.deepEqual(g.find((x) => x.pkg === 'follow-redirects').fixedRanges, ['>=1.16.2']);
+});
+
+test('review: pipRanges divide gli OR in specifier separati', () => {
+  assert.deepEqual(pipRanges(['<4.2.17 || >=4.3.0 <5.0.10', '<1']), ['<4.2.17', '>=4.3.0 <5.0.10', '<1']);
+});
+
+test('review: verifica fallita in single → split (mai esclusione in blocco)', () => {
+  assert.equal(shouldSplit({ mode: 'single', fixed: 2, verification: 'failed' }), true);
+  assert.equal(shouldSplit({ mode: 'single', fixed: 2, verification: 'ok' }), false);
+  assert.equal(shouldSplit({ mode: 'split', fixed: 1, verification: 'ok' }), true);
+  assert.equal(shouldSplit({ mode: 'split', fixed: 0, verification: 'ok' }), false);
+  assert.equal(shouldSplit({ mode: 'wait', fixed: 3, verification: 'failed' }), false);
+});
+
+test('review: esclusi solo i pacchetti la cui verifica singola fallisce', () => {
+  const lines = 'node-forge 1.4.1 ok\nfollow-redirects 1.16.2 failed\nnode:26-alpine sha256:abc ok\n';
+  assert.deepEqual(splitExclusions(lines), ['follow-redirects@1.16.2']);
+  assert.deepEqual(splitExclusions(''), []);
 });

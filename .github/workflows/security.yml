@@ -101,7 +101,9 @@ jobs:
         run: |
           pnpm audit --prod --json > "$RUNNER_TEMP/head.json" || true
           (cd .base && pnpm audit --prod --json > "$RUNNER_TEMP/base.json") || true
-          node scripts/security/diff-gate.mjs --format pnpm \
+          # Gate dalla base quando esiste: una PR non può indebolire il gate che la giudica.
+          GATE=.base/scripts/security/diff-gate.mjs; [ -f "$GATE" ] || GATE=scripts/security/diff-gate.mjs
+          node "$GATE" --format pnpm \
             --head "$RUNNER_TEMP/head.json" --base "$RUNNER_TEMP/base.json" \
             --workspace pnpm-workspace.yaml
 
@@ -173,7 +175,9 @@ jobs:
             --ignore-unfixed --ignorefile "$GITHUB_WORKSPACE/.trivyignore.yaml" --format json)
           trivy "${opts[@]}" --skip-dirs .base,.cache --output "$RUNNER_TEMP/head.json" .
           trivy "${opts[@]}" --output "$RUNNER_TEMP/base.json" .base
-          node scripts/security/diff-gate.mjs --format trivy \
+          # Gate dalla base quando esiste: una PR non può indebolire il gate che la giudica.
+          GATE=.base/scripts/security/diff-gate.mjs; [ -f "$GATE" ] || GATE=scripts/security/diff-gate.mjs
+          node "$GATE" --format trivy \
             --head "$RUNNER_TEMP/head.json" --base "$RUNNER_TEMP/base.json"
 
       - name: Upload SARIF
@@ -280,7 +284,9 @@ jobs:
             echo "::warning::$LATEST non disponibile: tutte le vulnerabilita' contano come nuove"
             base=(--base-empty)
           fi
-          node scripts/security/diff-gate.mjs --format trivy --head "$RUNNER_TEMP/head.json" "${base[@]}"
+          # Gate dalla base quando esiste: una PR non può indebolire il gate che la giudica.
+          GATE=.base/scripts/security/diff-gate.mjs; [ -f "$GATE" ] || GATE=scripts/security/diff-gate.mjs
+          node "$GATE" --format trivy --head "$RUNNER_TEMP/head.json" "${base[@]}"
 
       - name: Upload SARIF
         if: always() && github.event_name != 'pull_request'

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseFromLines, replaceDigest, decideDigest, sourceRepo, runtimeImage } from '../base-image.mjs';
+import { parseFromLines, replaceDigest, decideDigest, sourceRepo, runtimeImage, provenanceOf } from '../base-image.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const backend = readFileSync(join(root, 'apps/backend/Dockerfile'), 'utf8');
@@ -86,4 +86,22 @@ test('decideDigest: corrente senza provenance → basta il digest nuovo', () => 
 test('decideDigest: data sconosciuta → unfixable', () => {
   const latest = { digest: NEW, created: null, repo: cur.repo };
   assert.equal(decideDigest({ current: cur, latest, now }).reason, 'data di pubblicazione sconosciuta');
+});
+
+test('review: digest escluso (fallito prima) → unfixable', () => {
+  const latest = { digest: NEW, created: new Date('2026-10-20T00:00:00Z'), repo: cur.repo };
+  assert.deepEqual(decideDigest({ current: cur, latest, now, skipDigests: [NEW] }),
+    { action: 'unfixable', reason: `digest ${NEW} escluso: fallito in un giro precedente` });
+});
+
+test('review: provenienza del digest in uso illeggibile → unfixable, mai controllo saltato', () => {
+  const latest = { digest: NEW, created: new Date('2026-10-20T00:00:00Z'), repo: null };
+  assert.equal(decideDigest({ current: { ...cur, repo: provenanceOf(() => { throw new Error('429'); }, 'node:26-alpine@x') }, latest, now }).reason,
+    'provenienza assente o diversa');
+});
+
+test('review: provenanceOf: output null (immagine senza attestazioni) → null; errore → unverifiable', () => {
+  assert.equal(provenanceOf(() => null, 'r'), null);
+  assert.equal(provenanceOf(() => ({ 'linux/amd64': { SLSA: { invocation: { configSource: { uri: 'https://github.com/a/b.git#x' } } } } }), 'r'), 'https://github.com/a/b');
+  assert.equal(provenanceOf(() => { throw new Error('boom'); }, 'r'), 'unverifiable:r');
 });

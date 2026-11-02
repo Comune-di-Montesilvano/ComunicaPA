@@ -37,8 +37,11 @@ export function sourceRepo(uri) {
   return String(uri).split('#')[0].replace(/^git\+/, '').replace(/\.git$/, '').replace(/\/+$/, '').toLowerCase();
 }
 
-export function decideDigest({ current, latest, now, force = false, minAgeHours = MIN_AGE_HOURS }) {
+export function decideDigest({ current, latest, now, force = false, minAgeHours = MIN_AGE_HOURS, skipDigests = [] }) {
   if (!latest?.digest || latest.digest === current.digest) return { action: 'unfixable', reason: 'nessun digest più recente' };
+  if (skipDigests.includes(latest.digest) && !force) {
+    return { action: 'unfixable', reason: `digest ${latest.digest} escluso: fallito in un giro precedente` };
+  }
   if (current.repo && latest.repo !== current.repo) return { action: 'unfixable', reason: 'provenienza assente o diversa' };
   if (force) return { action: 'fix', digest: latest.digest };
   if (!latest.created) return { action: 'unfixable', reason: 'data di pubblicazione sconosciuta' };
@@ -51,16 +54,26 @@ function inspect(ref, field) {
   return JSON.parse(execFileSync('docker', ['buildx', 'imagetools', 'inspect', ref, '--format', `{{json .${field}}}`], { encoding: 'utf8' }));
 }
 
+/**
+ * Repository sorgente dall'attestazione SLSA. Output `null` = immagine senza attestazioni;
+ * un errore di lettura (rete, 429) NON è "senza attestazioni": repository fittizio, così il
+ * controllo di provenienza fallisce invece di essere saltato.
+ */
+export function provenanceOf(read, ref) {
+  let prov;
+  try { prov = read(); } catch { return `unverifiable:${ref}`; }
+  const slsa = prov?.['linux/amd64']?.SLSA ?? prov?.SLSA;
+  return sourceRepo(slsa?.invocation?.configSource?.uri);
+}
+
 function describe(ref) {
   const manifest = inspect(ref, 'Manifest');
   const img = inspect(ref, 'Image');
-  const prov = (() => { try { return inspect(ref, 'Provenance'); } catch { return null; } })();
   const amd = img?.['linux/amd64'] ?? img;
-  const slsa = prov?.['linux/amd64']?.SLSA ?? prov?.SLSA;
   return {
     digest: manifest.digest,
     created: amd?.created ? new Date(amd.created) : null,
-    repo: sourceRepo(slsa?.invocation?.configSource?.uri),
+    repo: provenanceOf(() => inspect(ref, 'Provenance'), ref),
   };
 }
 
@@ -85,7 +98,7 @@ export function runtimeImage(dockerfileText) {
 }
 
 /** Controlla (e se fix e non dryRun applica) il digest più recente di ogni image:tag. */
-export function checkImages(refs, { root = '.', force = false, dryRun = false, now = new Date() } = {}) {
+export function checkImages(refs, { root = '.', force = false, dryRun = false, now = new Date(), skip = {} } = {}) {
   const files = dockerfiles(root);
   const results = [];
   for (const ref of refs) {
@@ -96,7 +109,7 @@ export function checkImages(refs, { root = '.', force = false, dryRun = false, n
     let r;
     try {
       if (!pinned) throw new Error(`${ref} non trovato nei Dockerfile`);
-      r = decideDigest({ current: describe(`${image}:${tag}@${pinned}`), latest: describe(ref), now, force });
+      r = decideDigest({ current: describe(`${image}:${tag}@${pinned}`), latest: describe(ref), now, force, skipDigests: skip[ref] ?? [] });
     } catch (e) {
       r = { action: 'unfixable', reason: `registry: ${e.message.split('\n')[0]}` };
     }

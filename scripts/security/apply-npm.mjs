@@ -12,22 +12,33 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
+import { satisfies } from './semver-lite.mjs';
+import { MIN_AGE_HOURS } from './choose-version.mjs';
 
 const FIELDS = ['dependencies', 'devDependencies', 'optionalDependencies'];
 
 export function planNpmFix(finding, version, manifests) {
+  // `direct` solo se il range dichiarato copre la versione vulnerabile installata: altrimenti la
+  // copia vulnerabile è un'altra (transitiva, altra major) e `pnpm add` cambierebbe quella
+  // sbagliata, fino a declassare la dipendenza diretta.
   for (const m of manifests) {
     for (const depField of FIELDS) {
       const from = m.json[depField]?.[finding.pkg];
-      if (from) return { kind: 'direct', path: m.path, workspace: m.json.name, depField, pkg: finding.pkg, from, to: version };
+      if (from && satisfies(finding.version, from)) {
+        return { kind: 'direct', path: m.path, workspace: m.json.name, depField, pkg: finding.pkg, from, to: version };
+      }
     }
   }
   return { kind: 'override', pkg: finding.pkg, selector: `${finding.pkg}@${finding.version}`, to: version };
 }
 
+// Anche le dipendenze NUOVE o allargate dalla versione scelta (risolte da pnpm) devono avere
+// almeno 48h: pnpm >= 10.16 rifiuta le versioni più giovani (minuti).
+export const MIN_AGE_FLAG = `--config.minimum-release-age=${MIN_AGE_HOURS * 60}`;
+
 export function directCommand(fix) {
   const target = fix.path === 'package.json' ? ['-w'] : ['--filter', fix.workspace];
-  const args = [...target, 'add', `${fix.pkg}@${fix.to}`, '--lockfile-only', '--ignore-scripts'];
+  const args = [...target, 'add', `${fix.pkg}@${fix.to}`, '--lockfile-only', '--ignore-scripts', MIN_AGE_FLAG];
   if (fix.depField === 'devDependencies') args.push('-D');
   if (fix.depField === 'optionalDependencies') args.push('-O');
   if (fix.from.startsWith('~')) args.push('--save-prefix=~');
@@ -87,7 +98,7 @@ export function applyNpmFixes(fixes, root = '.') {
     }
     applied.push({ ...f, kind: plan.kind });
   }
-  if (overridden) execFileSync('pnpm', ['install', '--lockfile-only', '--ignore-scripts'], { cwd: root, stdio: 'inherit' });
+  if (overridden) execFileSync('pnpm', ['install', '--lockfile-only', '--ignore-scripts', MIN_AGE_FLAG], { cwd: root, stdio: 'inherit' });
   return applied;
 }
 

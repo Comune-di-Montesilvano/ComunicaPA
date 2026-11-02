@@ -81,10 +81,14 @@ jobs:
           mkdir -p "$W"
           img=$(sed -nE 's/^FROM (python:[^ ]+).*/\1/p' services/pdf-extractor/Dockerfile | head -n1)
           [ -n "$img" ] || { echo "::error::FROM python:... non trovato"; exit 1; }
+          # pip-tools da lock con hash; repo in sola lettura tranne la cartella del pdf-extractor e
+          # la scratch .cache: un tool compromesso non può riscrivere script dei gate o workflow.
           cat > "$PYTHON_CMD" <<EOF
           #!/bin/sh
-          exec docker run --rm -u "\$(id -u):\$(id -g)" -e HOME=/tmp -v "\$PWD:/w" -w /w "$img" \\
-            sh -c 'pip install -q --disable-pip-version-check --user pip-tools packaging >/dev/null && exec python "\$@"' sh "\$@"
+          exec docker run --rm -u "\$(id -u):\$(id -g)" -e HOME=/tmp \\
+            -v "\$PWD:/w:ro" -v "\$PWD/services/pdf-extractor:/w/services/pdf-extractor" -v "\$PWD/.cache:/w/.cache" \\
+            -w /w "$img" \\
+            sh -c 'pip install -q --disable-pip-version-check --user --require-hashes --no-deps -r scripts/security/requirements-autofix.txt >/dev/null && exec python "\$@"' sh "\$@"
           EOF
           chmod +x "$PYTHON_CMD"
 
@@ -175,12 +179,15 @@ jobs:
           # La modalita' split parte sempre da un'analisi senza modifiche: le PR si fanno dopo, una per pacchetto.
           if [ "$DRY_RUN" = "true" ] || [ "${{ steps.mode.outputs.mode }}" = "split" ]; then args+=(--dry-run); fi
           node scripts/security/autofix.mjs "${args[@]}"
-          node -e '
-            const s = require(process.argv[1]);
+          MODE="${{ steps.mode.outputs.mode }}" node --input-type=module -e '
+            import { readFileSync, appendFileSync } from "node:fs";
+            import { shouldSplit } from "./scripts/security/autofix.mjs";
+            const s = JSON.parse(readFileSync(process.argv[1], "utf8"));
             console.log(JSON.stringify({ fixed: s.fixed.map((f) => `${f.pkg} ${f.from} -> ${f.version}`), pending: s.pending.map((f) => f.pkg),
               unfixable: s.unfixable.map((f) => `${f.pkg}: ${f.reason}`), verification: s.verification }, null, 1));
-            require("fs").appendFileSync(process.env.GITHUB_STEP_SUMMARY, s.prBody + "\n");
-            require("fs").appendFileSync(process.env.GITHUB_OUTPUT, `fixed=${s.fixed.length}\nverification=${s.verification}\n`);
+            appendFileSync(process.env.GITHUB_STEP_SUMMARY, s.prBody + "\n");
+            const split = shouldSplit({ mode: process.env.MODE, fixed: s.fixed.length, verification: s.verification });
+            appendFileSync(process.env.GITHUB_OUTPUT, `fixed=${s.fixed.length}\nverification=${s.verification}\nsplit=${split}\n`);
           ' "$PWD/$W/summary.json"
 
       - name: PR unica
@@ -202,9 +209,11 @@ jobs:
           gh pr merge --auto "$url"
           echo "PR: $url" >> "$GITHUB_STEP_SUMMARY"
 
-      # Una PR per pacchetto, ognuna rifatta da main pulito con --only.
+      # Una PR per pacchetto, ognuna rifatta da main pulito con --only: in modalita' split o
+      # quando la verifica locale della PR unica e' fallita. Solo i pacchetti la cui verifica
+      # singola fallisce finiscono in split-results come "failed" (poi esclusi).
       - name: PR per pacchetto
-        if: env.DRY_RUN != 'true' && steps.mode.outputs.mode == 'split' && steps.fix.outputs.fixed != '0'
+        if: env.DRY_RUN != 'true' && steps.fix.outputs.split == 'true'
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
@@ -212,12 +221,17 @@ jobs:
           base=$(git rev-parse HEAD)
           mapfile -t images < "$W/images.args"
           node -e 'for (const f of require(process.argv[1]).fixed) console.log(`${f.pkg} ${f.version}`)' "$PWD/$W/summary.json" > "$W/split.txt"
-          while read -r pkg ver; do
+          while read -r -u 3 pkg ver; do
             git checkout -q -- . && git clean -qfd -e .cache
             node scripts/security/autofix.mjs --pnpm "$W/audit.json" --trivy-fs "$W/fs.json" "${images[@]}" \
               --state "$W/state.json" --only "$pkg" --out "$W/one.json" ${FORCE:+--force "$FORCE"}
             ok=$(node -e 'const s=require(process.argv[1]); console.log(s.fixed.length > 0 && s.verification !== "failed" ? "yes" : "no")' "$PWD/$W/one.json")
-            if [ "$ok" != "yes" ]; then echo "::warning::$pkg: correzione non verificata, nessuna PR"; continue; fi
+            if [ "$ok" != "yes" ]; then
+              echo "::warning::$pkg: correzione non verificata, nessuna PR"
+              echo "$pkg $ver failed" >> "$W/split-results.txt"
+              continue
+            fi
+            echo "$pkg $ver ok" >> "$W/split-results.txt"
             slug=$(printf '%s' "$pkg" | tr -c 'A-Za-z0-9._-' '-')
             branch="security-autofix/split-$slug"
             node scripts/security/gh-commit.mjs --repo "$REPO" --branch "$branch" --base "$base" \
@@ -227,7 +241,7 @@ jobs:
               --title "fix(deps): correzione di sicurezza $pkg $ver" --body "$body"$'\n\n'"<!-- autofix-fix $pkg@$ver -->")
             gh pr merge --auto "$url"
             echo "PR: $url" >> "$GITHUB_STEP_SUMMARY"
-          done < "$W/split.txt"
+          done 3< "$W/split.txt"
 
       # Issue di stato: create/aggiornate se c'e' qualcosa, chiuse se vuote. In modalita' wait
       # si aggiorna solo la issue "fallita" (le altre restano quelle dell'ultimo giro).
@@ -236,22 +250,22 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          VERIFICATION: ${{ steps.fix.outputs.verification }}
         run: |
           set -euo pipefail
           node --input-type=module -e '
             import { readFileSync, writeFileSync, existsSync } from "node:fs";
             import { renderIssue } from "./scripts/security/issues.mjs";
+            import { splitExclusions } from "./scripts/security/autofix.mjs";
             const W = process.env.W, run = process.env.RUN_URL;
             const s = existsSync(`${W}/summary.json`) ? JSON.parse(readFileSync(`${W}/summary.json`, "utf8")) : null;
             const state = JSON.parse(readFileSync(`${W}/state.json`, "utf8"));
             const failedPrs = JSON.parse(readFileSync(`${W}/failed-prs.json`, "utf8"));
             const failedItems = failedPrs.flatMap((p) => (p.pkg.length ? p.pkg : ["(PR unica)"]).map((k) => ({ pkg: k, version: "", pr: `#${p.number}` })));
-            if (s && process.env.VERIFICATION === "failed") {
-              for (const f of s.fixed.filter((x) => x.ecosystem !== "image")) {
-                failedItems.push({ pkg: f.pkg, version: f.version, pr: run });
-                state.excluded.push(`${f.pkg}@${f.version}`);
-              }
+            const splitFile = `${W}/split-results.txt`;
+            for (const e of splitExclusions(existsSync(splitFile) ? readFileSync(splitFile, "utf8") : "")) {
+              const at = e.lastIndexOf("@");
+              failedItems.push({ pkg: e.slice(0, at), version: e.slice(at + 1), pr: run });
+              state.excluded.push(e);
             }
             state.excluded = [...new Set(state.excluded)];
             const out = {};

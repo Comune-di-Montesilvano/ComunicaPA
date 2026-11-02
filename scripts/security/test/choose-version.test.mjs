@@ -108,3 +108,32 @@ test('prerelease mai candidata', () => {
     candidates: [c('1.4.1-rc.1', '2026-01-01T00:00:00Z')], previous: [], now });
   assert.deepEqual(r, { action: 'unfixable', reason: 'nessuna versione corretta' });
 });
+
+test('review: advisory "*" → nessuna versione corretta', () => {
+  const r = chooseVersion({ current: '1.0.0', vulnerableRanges: ['*'], candidates: [c('1.0.1', '2026-10-01T00:00:00Z')], previous: [], now });
+  assert.deepEqual(r, { action: 'unfixable', reason: 'nessuna versione corretta' });
+});
+
+test('review: candidata fuori da patched_versions → scartata', () => {
+  const r = chooseVersion({ current: '1.0.0', vulnerableRanges: ['<1.0.1'], fixedRanges: ['<0.0.0'],
+    candidates: [c('1.0.1', '2026-10-01T00:00:00Z')], previous: [], now });
+  assert.deepEqual(r, { action: 'unfixable', reason: 'nessuna versione corretta' });
+  const ok = chooseVersion({ current: '1.0.0', vulnerableRanges: ['<1.0.1'], fixedRanges: ['>=1.0.2'],
+    candidates: [c('1.0.1', '2026-10-01T00:00:00Z'), c('1.0.2', '2026-10-01T00:00:00Z')], previous: [], now });
+  assert.deepEqual(ok, { action: 'fix', version: '1.0.2' });
+});
+
+test('review: versione esclusa (fallita prima) → si passa alla successiva', () => {
+  const r = chooseVersion({ current: '1.4.0', vulnerableRanges: ['<=1.4.0'], skipVersions: ['1.4.1'],
+    candidates: [c('1.4.1', '2026-10-01T00:00:00Z'), c('1.4.2', '2026-10-02T00:00:00Z')], previous: [], now });
+  assert.deepEqual(r, { action: 'fix', version: '1.4.2' });
+  const none = chooseVersion({ current: '1.4.0', vulnerableRanges: ['<=1.4.0'], skipVersions: ['1.4.1'],
+    candidates: [c('1.4.1', '2026-10-01T00:00:00Z')], previous: [], now });
+  assert.deepEqual(none, { action: 'unfixable', reason: 'nessuna versione corretta (escluse: 1.4.1)' });
+});
+
+test('review: force riprova una versione esclusa', () => {
+  const r = chooseVersion({ current: '1.4.0', vulnerableRanges: ['<=1.4.0'], skipVersions: ['1.4.1'], forceVersion: '1.4.1',
+    candidates: [c('1.4.1', '2026-10-01T00:00:00Z')], previous: [], now });
+  assert.deepEqual(r, { action: 'fix', version: '1.4.1' });
+});

@@ -25,23 +25,32 @@ function trusted(cand, previous) {
  *   now: Date, minAgeHours?: number, forceVersion?: string }} p
  * @returns {{action:'fix',version:string}|{action:'pending',version:string,eta:Date}|{action:'unfixable',reason:string}}
  */
-export function chooseVersion({ current, vulnerableRanges, candidates, previous, now, minAgeHours = MIN_AGE_HOURS, forceVersion }) {
+export function chooseVersion({ current, vulnerableRanges, fixedRanges = [], skipVersions = [], candidates, previous, now,
+  minAgeHours = MIN_AGE_HOURS, forceVersion }) {
   const curMajor = major(current);
-  const fixing = candidates
+  const correct = candidates
     .filter((c) => !isPrerelease(c.version) && compare(c.version, current) > 0)
     .filter((c) => !vulnerableRanges.some((r) => satisfies(c.version, r)))
+    // patched_versions dell'advisory, quando c'è: deve valere per tutte.
+    .filter((c) => fixedRanges.every((r) => satisfies(c.version, r)));
+  // Versioni fallite in un giro precedente: si prova la successiva corretta.
+  const skipped = correct.filter((c) => skipVersions.includes(c.version)).map((c) => c.version);
+  const fixing = correct
+    .filter((c) => !skipVersions.includes(c.version))
     .sort((a, b) => {
       const sa = major(a.version) === curMajor ? 0 : 1, sb = major(b.version) === curMajor ? 0 : 1;
       return sa - sb || compare(a.version, b.version);
     });
 
   if (forceVersion) {
-    const f = fixing.find((c) => c.version === forceVersion);
+    const f = correct.find((c) => c.version === forceVersion);
     if (!f) return { action: 'unfixable', reason: `versione forzata ${forceVersion} non corregge` };
     return trusted(f, previous) ? { action: 'fix', version: f.version } : { action: 'unfixable', reason: 'provenienza assente o diversa' };
   }
 
-  if (fixing.length === 0) return { action: 'unfixable', reason: 'nessuna versione corretta' };
+  if (fixing.length === 0) {
+    return { action: 'unfixable', reason: skipped.length ? `nessuna versione corretta (escluse: ${skipped.join(', ')})` : 'nessuna versione corretta' };
+  }
 
   const minAgeMs = minAgeHours * 3600e3;
   let firstYoung = null, sawUntrusted = false, sawUndated = false;

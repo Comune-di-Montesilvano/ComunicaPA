@@ -100,5 +100,27 @@ class Apply(unittest.TestCase):
             self.assertEqual(Path(d, "requirements.in").read_text(encoding="utf8"), "fastapi==0.161.1\n")
 
 
+class Review(unittest.TestCase):
+    def test_skip_versions_passa_alla_successiva(self):
+        r = choose_version("0.5.0", ["<0.5.3"], [c("0.5.3", OLD), c("0.5.4", OLD)], [], NOW, skip_versions=["0.5.3"])
+        self.assertEqual(r, {"action": "fix", "version": "0.5.4"})
+
+    def test_changed_pins_solo_nuovi_o_cambiati(self):
+        from pip_fix import changed_pins
+        before = "a==1.0 \\\n    --hash=sha256:00\nb==2.0 \\\n    --hash=sha256:11\n"
+        after = ("a==1.1 \\\n    --hash=sha256:22\nb==2.0 \\\n    --hash=sha256:11\n"
+                 "c==3.0 \\\n    --hash=sha256:33\n")
+        self.assertEqual(changed_pins(before, after), {"a": "1.1", "c": "3.0"})
+
+    def test_young_pins_esclude_il_target(self):
+        from pip_fix import young_pins
+        times = {("a", "1.1"): NOW - timedelta(hours=100), ("c", "3.0"): NOW - timedelta(hours=2), ("t", "9"): NOW}
+        self.assertEqual(young_pins({"a": "1.1", "c": "3.0", "t": "9"}, "t", lambda p, v: times[(p, v)], NOW), ["c==3.0"])
+
+    def test_young_pins_data_sconosciuta_conta_come_giovane(self):
+        from pip_fix import young_pins
+        self.assertEqual(young_pins({"x": "1"}, "t", lambda p, v: None, NOW), ["x==1"])
+
+
 if __name__ == "__main__":
     unittest.main()
