@@ -116,3 +116,11 @@ jobs:
             cp -r /src/tests ./tests
             python -m pytest tests/ -q
           '
+
+      # Script pip dell'autofix di sicurezza (packaging arriva da requirements-dev.txt).
+      - name: Test pip_fix (security-autofix)
+        run: |
+          docker run --rm -v "$PWD:/repo:ro" pdf-extractor:test sh -ec '
+            pip install -q --no-cache-dir --require-hashes --no-deps -r /repo/services/pdf-extractor/requirements-dev.txt
+            python -m unittest discover -s /repo/scripts/security/test -p "test_*.py"
+          '
