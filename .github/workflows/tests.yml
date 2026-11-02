@@ -56,6 +56,10 @@ jobs:
           node-version: ${{ steps.node.outputs.major }}
           cache: 'pnpm'
 
+      # Script dei gate di sicurezza e dell'autofix (scripts/security, solo Node built-in).
+      - name: Test script di sicurezza
+        run: node --test scripts/security/test/
+
       # pnpm v11 blocca i lifecycle script per default (ERR_PNPM_IGNORED_BUILDS)
       # - stesso pattern gia' in uso nei Dockerfile (vedi CLAUDE.md). esbuild
       # (dipendenza vite) va ricostruito esplicitamente dopo l'install.

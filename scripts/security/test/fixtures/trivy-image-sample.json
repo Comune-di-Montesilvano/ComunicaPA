@@ -1,0 +1,56 @@
+{
+ "SchemaVersion": 2,
+ "ArtifactName": "scan/backend:pr",
+ "Results": [
+  {
+   "Target": "scan/backend:pr (alpine 3.23.0)",
+   "Class": "os-pkgs",
+   "Type": "alpine",
+   "Vulnerabilities": [
+    {
+     "VulnerabilityID": "CVE-2099-0001",
+     "PkgName": "libexample",
+     "InstalledVersion": "1.0.0-r0",
+     "FixedVersion": "1.0.1-r0",
+     "Severity": "HIGH"
+    },
+    {
+     "VulnerabilityID": "CVE-2099-0002",
+     "PkgName": "libexample",
+     "InstalledVersion": "1.0.0-r0",
+     "FixedVersion": "1.0.1-r0",
+     "Severity": "MEDIUM"
+    }
+   ]
+  },
+  {
+   "Target": "Node.js",
+   "Class": "lang-pkgs",
+   "Type": "node-pkg",
+   "Vulnerabilities": [
+    {
+     "VulnerabilityID": "CVE-2099-0003",
+     "VendorIDs": ["GHSA-aaaa-bbbb-cccc"],
+     "PkgName": "example-bundled",
+     "InstalledVersion": "2.0.0",
+     "FixedVersion": "2.0.5, 1.9.9",
+     "Severity": "CRITICAL"
+    }
+   ]
+  },
+  {
+   "Target": "requirements.txt",
+   "Class": "lang-pkgs",
+   "Type": "pip",
+   "Vulnerabilities": [
+    {
+     "VulnerabilityID": "CVE-2099-0004",
+     "PkgName": "examplepy",
+     "InstalledVersion": "0.5.0",
+     "FixedVersion": "0.5.3",
+     "Severity": "HIGH"
+    }
+   ]
+  }
+ ]
+}
