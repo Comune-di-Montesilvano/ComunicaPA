@@ -1,0 +1,3 @@
+# Tool di risoluzione per security-autofix (pip_fix.py). Rigenerare con pip-compile --generate-hashes --allow-unsafe.
+pip-tools
+packaging

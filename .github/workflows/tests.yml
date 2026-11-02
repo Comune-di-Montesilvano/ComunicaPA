@@ -56,6 +56,10 @@ jobs:
           node-version: ${{ steps.node.outputs.major }}
           cache: 'pnpm'
 
+      # Script dei gate di sicurezza e dell'autofix (scripts/security, solo Node built-in).
+      - name: Test script di sicurezza
+        run: node --test scripts/security/test/
+
       # pnpm v11 blocca i lifecycle script per default (ERR_PNPM_IGNORED_BUILDS)
       # - stesso pattern gia' in uso nei Dockerfile (vedi CLAUDE.md). esbuild
       # (dipendenza vite) va ricostruito esplicitamente dopo l'install.
@@ -111,4 +115,12 @@ jobs:
             pip install -q --no-cache-dir --require-hashes --no-deps -r /src/requirements-dev.txt
             cp -r /src/tests ./tests
             python -m pytest tests/ -q
+          '
+
+      # Script pip dell'autofix di sicurezza (packaging arriva da requirements-dev.txt).
+      - name: Test pip_fix (security-autofix)
+        run: |
+          docker run --rm -v "$PWD:/repo:ro" pdf-extractor:test sh -ec '
+            pip install -q --no-cache-dir --require-hashes --no-deps -r /repo/services/pdf-extractor/requirements-dev.txt
+            python -m unittest discover -s /repo/scripts/security/test -p "test_*.py"
           '

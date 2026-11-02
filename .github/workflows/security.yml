@@ -41,15 +41,33 @@ jobs:
         with:
           persist-credentials: false
 
+      # Stessa fonte unica di pnpm audit: advisory accettati in pnpm-workspace.yaml.
+      - name: Eccezioni da auditConfig.ignoreGhsas
+        id: allow
+        run: |
+          ghsas=$(node --input-type=module -e "
+            import { readFileSync } from 'node:fs';
+            import { readIgnoreGhsas } from './scripts/security/findings.mjs';
+            console.log(readIgnoreGhsas(readFileSync('pnpm-workspace.yaml', 'utf8')).join(','));")
+          echo "ghsas=$ghsas" >> "$GITHUB_OUTPUT"
+
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high
+          allow-ghsas: ${{ steps.allow.outputs.ghsas }}
 
   # Advisory npm sulle dipendenze di produzione (dirette e transitive). Eccezioni motivate
   # in pnpm-workspace.yaml (auditConfig.ignoreGhsas).
+  # Su PR e merge queue il gate e' DIFFERENZIALE: fallisce solo per advisory assenti dalla
+  # base (stesso run, stesso DB). Un advisory pubblicato dopo il merge non blocca le PR non
+  # correlate ne' quelle che lo correggono: lo stato assoluto di main lo controllano push e
+  # schedule, e security-autofix.yml lo corregge.
   pnpm-audit:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      DIFF: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
     steps:
       # Traffico in uscita registrato (audit, non bloccato): host contattati nel log del
       # post-step e nella pagina insights StepSecurity della run.
@@ -59,21 +77,51 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
+
+      - name: Checkout base
+        if: env.DIFF == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.BASE_SHA }}
+          path: .base
           persist-credentials: false
 
       # Versione dal campo packageManager di package.json.
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - name: pnpm audit (prod, HIGH+)
+        if: env.DIFF != 'true'
         run: pnpm audit --prod --audit-level high
 
+      # Exit di pnpm audit ignorato (≠0 con qualsiasi advisory): decide diff-gate, che
+      # fallisce con exit 2 se uno dei due JSON non e' un report valido.
+      - name: pnpm audit differenziale (prod, HIGH+, nuovi rispetto alla base)
+        if: env.DIFF == 'true'
+        run: |
+          pnpm audit --prod --json > "$RUNNER_TEMP/head.json" || true
+          (cd .base && pnpm audit --prod --json > "$RUNNER_TEMP/base.json") || true
+          # Gate dalla base quando esiste: una PR non può indebolire il gate che la giudica.
+          GATE=.base/scripts/security/diff-gate.mjs; [ -f "$GATE" ] || GATE=scripts/security/diff-gate.mjs
+          node "$GATE" --format pnpm \
+            --head "$RUNNER_TEMP/head.json" --base "$RUNNER_TEMP/base.json" \
+            --workspace pnpm-workspace.yaml
+
   # CVE nei lockfile (npm + pip), segreti committati e misconfig di Dockerfile/compose.
+  # Su PR e merge queue le vulnerabilita' sono differenziali (come pnpm-audit); secret e
+  # misconfig restano assoluti: nascono da modifiche al repo, non da advisory esterni.
   trivy-fs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
       security-events: write
+    env:
+      DIFF: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+      # Stessa cache dell'action (default di trivy-action): gli step `trivy` successivi
+      # riusano il DB scaricato con --skip-db-update.
+      TRIVY_CACHE_DIR: ${{ github.workspace }}/.cache/trivy
     steps:
       # Traffico in uscita registrato (audit, non bloccato): host contattati nel log del
       # post-step e nella pagina insights StepSecurity della run.
@@ -85,21 +133,52 @@ jobs:
         with:
           persist-credentials: false
 
+      # Fuori dalla cartella scansionata (Trivy salta .base, vedi skip-dirs).
+      - name: Checkout base
+        if: env.DIFF == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.BASE_SHA }}
+          path: .base
+          persist-credentials: false
+
+      # SARIF sempre caricato. Bloccante (vuln compresi) solo su push/schedule; su PR e merge
+      # queue decidono i due step successivi.
       - name: Trivy filesystem (vuln + secret + misconfig)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: v0.76.1
           scan-type: fs
           scan-ref: .
+          skip-dirs: .base
           scanners: vuln,secret,misconfig
           format: sarif
           output: trivy-fs.sarif
           severity: CRITICAL,HIGH
-          exit-code: 1
+          exit-code: ${{ env.DIFF == 'true' && '0' || '1' }}
           ignore-unfixed: true
           # Senza, con format sarif l'action ignora `severity` ed exit-code scatta su tutto.
           limit-severities-for-sarif: true
           trivyignores: .trivyignore.yaml
+
+      - name: Trivy secret + misconfig (assoluto)
+        if: env.DIFF == 'true'
+        run: |
+          trivy fs --quiet --skip-db-update --skip-dirs .base,.cache --scanners secret,misconfig \
+            --severity CRITICAL,HIGH --ignorefile .trivyignore.yaml --exit-code 1 .
+
+      # Stesso binario e stesso DB (gia' scaricato dallo step SARIF) per testa e base.
+      - name: Trivy vuln differenziale (nuovi rispetto alla base)
+        if: env.DIFF == 'true'
+        run: |
+          opts=(fs --quiet --skip-db-update --scanners vuln --severity "CRITICAL,HIGH"
+            --ignore-unfixed --ignorefile "$GITHUB_WORKSPACE/.trivyignore.yaml" --format json)
+          trivy "${opts[@]}" --skip-dirs .base,.cache --output "$RUNNER_TEMP/head.json" .
+          trivy "${opts[@]}" --output "$RUNNER_TEMP/base.json" .base
+          # Gate dalla base quando esiste: una PR non può indebolire il gate che la giudica.
+          GATE=.base/scripts/security/diff-gate.mjs; [ -f "$GATE" ] || GATE=scripts/security/diff-gate.mjs
+          node "$GATE" --format trivy \
+            --head "$RUNNER_TEMP/head.json" --base "$RUNNER_TEMP/base.json"
 
       - name: Upload SARIF
         if: always()
@@ -171,6 +250,9 @@ jobs:
             PKG_REFRESH=${{ steps.day.outputs.pkg_refresh }}
           cache-from: type=registry,ref=ghcr.io/comune-di-montesilvano/comunicapa-${{ matrix.app }}:buildcache
 
+      # In merge queue il gate e' differenziale rispetto alla `latest` pubblicata (stesso run,
+      # stesso DB): una CVE gia' in produzione non blocca le PR, la corregge l'autofix o il
+      # rebuild. Su push e schedule resta assoluto.
       - name: Trivy ${{ matrix.app }}
         if: github.event_name != 'pull_request'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -180,10 +262,31 @@ jobs:
           format: sarif
           output: trivy-image.sarif
           severity: CRITICAL,HIGH
-          exit-code: 1
+          exit-code: ${{ github.event_name == 'merge_group' && '0' || '1' }}
           ignore-unfixed: true
           limit-severities-for-sarif: true
           trivyignores: .trivyignore.yaml
+
+      - name: Trivy ${{ matrix.app }} differenziale (nuove rispetto a latest)
+        if: github.event_name == 'merge_group'
+        env:
+          TRIVY_CACHE_DIR: ${{ github.workspace }}/.cache/trivy
+          LATEST: ghcr.io/comune-di-montesilvano/comunicapa-${{ matrix.app }}:latest
+          APP: ${{ matrix.app }}
+        run: |
+          opts=(image --quiet --skip-db-update --scanners vuln --severity "CRITICAL,HIGH"
+            --ignore-unfixed --ignorefile .trivyignore.yaml --format json)
+          trivy "${opts[@]}" --output "$RUNNER_TEMP/head.json" "scan/$APP:pr"
+          if docker pull --quiet "$LATEST" >/dev/null 2>&1; then
+            trivy "${opts[@]}" --output "$RUNNER_TEMP/base.json" "$LATEST"
+            base=(--base "$RUNNER_TEMP/base.json")
+          else
+            echo "::warning::$LATEST non disponibile: tutte le vulnerabilita' contano come nuove"
+            base=(--base-empty)
+          fi
+          # Gate dalla base quando esiste: una PR non può indebolire il gate che la giudica.
+          GATE=.base/scripts/security/diff-gate.mjs; [ -f "$GATE" ] || GATE=scripts/security/diff-gate.mjs
+          node "$GATE" --format trivy --head "$RUNNER_TEMP/head.json" "${base[@]}"
 
       - name: Upload SARIF
         if: always() && github.event_name != 'pull_request'

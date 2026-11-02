@@ -1,0 +1,321 @@
+name: Autofix sicurezza
+# Correzioni autonome delle vulnerabilita' HIGH/CRITICAL con versione corretta su main
+# (design: docs/superpowers/specs/2026-11-02-security-autofix-design.md). Rete di sicurezza per
+# quando Dependabot non apre l'alert o il cooldown di 7 giorni blocca la PR raggruppata:
+#  - versione corretta piu' bassa, pubblicata da almeno 48h, provenienza verificata (firma
+#    registry npm / attestazione SLSA o PEP 740 dallo stesso repository delle precedenti);
+#  - npm diretta → bump; transitiva → override sulla sola versione vulnerabile; pip → pin con
+#    hash; immagine base → digest piu' recente dello stesso tag;
+#  - una PR unica col token della GitHub App, auto-merge dopo i test della merge queue; se
+#    fallisce, al giro dopo una PR per pacchetto, e le correzioni fallite restano escluse;
+#  - tre issue di stato (in attesa / non correggibili / fallite), chiuse quando si svuotano.
+# Il merge su main e' una causa reale per il rebuild di latest (release.yml, 04:30 UTC).
+on:
+  schedule:
+    # Dopo il giro Dependabot (01:00 Europe/Rome), prima del rebuild di latest (04:30 UTC).
+    - cron: "30 2 * * *"
+  # Sicurezza fallita su main (push o giro giornaliero): advisory nuovi da correggere subito.
+  workflow_run:
+    workflows: [Sicurezza]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "pkg@versione (o image:tag) da applicare subito: salta solo le 48h, mai la provenienza"
+        type: string
+        default: ""
+      dry_run:
+        description: "Solo analisi: riepilogo nel log, nessuna PR e nessuna issue"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-autofix
+  cancel-in-progress: false
+
+jobs:
+  autofix:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'failure' &&
+       contains(fromJSON('["push","schedule"]'), github.event.workflow_run.event))
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      issues: write
+      # Elenco PR autofix e stato dei check (anche in dry-run, senza token della App).
+      pull-requests: read
+      checks: read
+      statuses: read
+    env:
+      DRY_RUN: ${{ inputs.dry_run == true }}
+      FORCE: ${{ inputs.force }}
+      REPO: ${{ github.repository }}
+      W: .cache/autofix
+      TRIVY_CACHE_DIR: ${{ github.workspace }}/.cache/trivy
+      PYTHON_CMD: ${{ github.workspace }}/.cache/autofix/python.sh
+    steps:
+      # Traffico in uscita registrato (audit, non bloccato): host contattati nel log del
+      # post-step e nella pagina insights StepSecurity della run.
+      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          persist-credentials: false
+
+      # Versione dal campo packageManager di package.json.
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+        with:
+          version: v0.76.1
+
+      # pip-compile con la stessa immagine Python del pdf-extractor (header di requirements.txt):
+      # un'altra versione di Python cambierebbe marker e risoluzione.
+      - name: Python per pip_fix (container)
+        run: |
+          mkdir -p "$W"
+          img=$(sed -nE 's/^FROM (python:[^ ]+).*/\1/p' services/pdf-extractor/Dockerfile | head -n1)
+          [ -n "$img" ] || { echo "::error::FROM python:... non trovato"; exit 1; }
+          # pip-tools da lock con hash; repo in sola lettura tranne la cartella del pdf-extractor e
+          # la scratch .cache: un tool compromesso non può riscrivere script dei gate o workflow.
+          cat > "$PYTHON_CMD" <<EOF
+          #!/bin/sh
+          exec docker run --rm -u "\$(id -u):\$(id -g)" -e HOME=/tmp \\
+            -v "\$PWD:/w:ro" -v "\$PWD/services/pdf-extractor:/w/services/pdf-extractor" -v "\$PWD/.cache:/w/.cache" \\
+            -w /w "$img" \\
+            sh -c 'pip install -q --disable-pip-version-check --user --require-hashes --no-deps -r scripts/security/requirements-autofix.txt >/dev/null && exec python "\$@"' sh "\$@"
+          EOF
+          chmod +x "$PYTHON_CMD"
+
+      - name: Token GitHub App
+        id: app
+        if: env.DRY_RUN != 'true'
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.BOT_CLIENT_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+          # Solo commit sui branch security-autofix/* e PR (creazione, auto-merge, chiusura).
+          permission-contents: write
+          permission-pull-requests: write
+
+      # Stato di main: pnpm audit (npm), Trivy fs (pip) e Trivy delle `latest` pubblicate
+      # (pacchetti OS e runtime dentro le immagini base).
+      - name: Scansioni
+        run: |
+          set -euo pipefail
+          pnpm audit --prod --json > "$W/audit.json" || true
+          trivy fs --quiet --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
+            --ignorefile .trivyignore.yaml --skip-dirs .cache --format json --output "$W/fs.json" .
+          : > "$W/images.args"
+          for app in backend frontend-admin frontend-citizen pdf-extractor; do
+            ref="ghcr.io/comune-di-montesilvano/comunicapa-$app:latest"
+            if docker pull --quiet "$ref" >/dev/null 2>&1; then
+              trivy image --quiet --skip-db-update --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
+                --ignorefile .trivyignore.yaml --format json --output "$W/img-$app.json" "$ref"
+              echo "--trivy-image=$app=$W/img-$app.json" >> "$W/images.args"
+            else
+              echo "::warning::$ref non disponibile: immagine base di $app non controllata"
+            fi
+          done
+
+      # Esclusioni (correzioni fallite) dalla issue "fallita"; PR autofix aperte → modalita'.
+      - name: Stato e modalita'
+        id: mode
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          failed_issue=$(gh issue list -R "$REPO" --state open --search 'in:title "Autofix sicurezza: correzione fallita"' \
+            --json number,body --jq '.[0] // {}')
+          echo "$failed_issue" > "$W/failed-issue.json"
+          gh pr list -R "$REPO" --state open --limit 100 \
+            --json number,headRefName,createdAt,body,statusCheckRollup \
+            --jq '[.[] | select(.headRefName | startswith("security-autofix/"))]' > "$W/prs.json"
+          node --input-type=module -e '
+            import { readFileSync, writeFileSync } from "node:fs";
+            import { nextMode } from "./scripts/security/autofix.mjs";
+            import { parseIssueState } from "./scripts/security/issues.mjs";
+            const W = process.env.W;
+            const issue = JSON.parse(readFileSync(`${W}/failed-issue.json`, "utf8"));
+            const state = parseIssueState(issue.body);
+            const prs = JSON.parse(readFileSync(`${W}/prs.json`, "utf8")).map((p) => ({
+              number: p.number,
+              mode: p.headRefName.startsWith("security-autofix/split-") ? "split" : "single",
+              pkg: (p.body.match(/<!-- autofix-fix (\S+) -->/g) ?? []).map((m) => m.split(" ")[1]),
+              createdAt: new Date(p.createdAt),
+              failedChecks: (p.statusCheckRollup ?? []).some((c) => ["FAILURE", "ERROR", "TIMED_OUT", "CANCELLED"].includes(c.conclusion ?? c.state)),
+            }));
+            const r = nextMode({ openPrs: prs, now: new Date() });
+            // Le PR per pacchetto fallite escono dai giri successivi; la single fallita no (si divide).
+            for (const pr of r.failed) if (pr.mode === "split") state.excluded.push(...pr.pkg);
+            state.excluded = [...new Set(state.excluded)];
+            writeFileSync(`${W}/state.json`, JSON.stringify(state));
+            writeFileSync(`${W}/failed-prs.json`, JSON.stringify(r.failed));
+            writeFileSync(`${W}/replace.json`, JSON.stringify(r.replace ?? null));
+            writeFileSync(process.env.GITHUB_OUTPUT, `mode=${r.mode}\nfailed=${r.failed.map((p) => p.number).join(" ")}\nreplace=${r.replace?.number ?? ""}\n`, { flag: "a" });
+            console.log(`modalita: ${r.mode}, PR fallite: ${r.failed.map((p) => p.number).join(", ") || "nessuna"}`);
+          '
+
+      - name: Chiusura PR autofix fallite
+        if: env.DRY_RUN != 'true' && steps.mode.outputs.failed != ''
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          FAILED: ${{ steps.mode.outputs.failed }}
+        run: |
+          for n in $FAILED; do
+            gh pr close "$n" -R "$REPO" --delete-branch \
+              --comment "Non mergiata dopo i test: chiusa da \`security-autofix.yml\` (vedi issue \"Autofix sicurezza: correzione fallita\")."
+          done
+
+      - name: Analisi e correzioni
+        id: fix
+        if: steps.mode.outputs.mode != 'wait'
+        run: |
+          set -euo pipefail
+          mapfile -t images < "$W/images.args"
+          args=(--pnpm "$W/audit.json" --trivy-fs "$W/fs.json" "${images[@]}" --state "$W/state.json" --out "$W/summary.json")
+          [ -n "$FORCE" ] && args+=(--force "$FORCE")
+          # La modalita' split parte sempre da un'analisi senza modifiche: le PR si fanno dopo, una per pacchetto.
+          if [ "$DRY_RUN" = "true" ] || [ "${{ steps.mode.outputs.mode }}" = "split" ]; then args+=(--dry-run); fi
+          node scripts/security/autofix.mjs "${args[@]}"
+          MODE="${{ steps.mode.outputs.mode }}" node --input-type=module -e '
+            import { readFileSync, appendFileSync } from "node:fs";
+            import { shouldSplit } from "./scripts/security/autofix.mjs";
+            const s = JSON.parse(readFileSync(process.argv[1], "utf8"));
+            console.log(JSON.stringify({ fixed: s.fixed.map((f) => `${f.pkg} ${f.from} -> ${f.version}`), pending: s.pending.map((f) => f.pkg),
+              unfixable: s.unfixable.map((f) => `${f.pkg}: ${f.reason}`), verification: s.verification }, null, 1));
+            appendFileSync(process.env.GITHUB_STEP_SUMMARY, s.prBody + "\n");
+            const split = shouldSplit({ mode: process.env.MODE, fixed: s.fixed.length, verification: s.verification });
+            appendFileSync(process.env.GITHUB_OUTPUT, `fixed=${s.fixed.length}\nverification=${s.verification}\nsplit=${split}\n`);
+          ' "$PWD/$W/summary.json"
+
+      - name: PR unica
+        if: >-
+          env.DRY_RUN != 'true' && contains(fromJSON('["single","update"]'), steps.mode.outputs.mode) &&
+          steps.fix.outputs.fixed != '0' && steps.fix.outputs.split != 'true'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          REPLACE: ${{ steps.mode.outputs.replace }}
+        run: |
+          set -euo pipefail
+          # PR unica gia' aperta (modalita' update): sostituita solo se le correzioni sono cambiate.
+          same=$(node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            import { sameFixes } from "./scripts/security/autofix.mjs";
+            const r = JSON.parse(readFileSync(process.argv[1], "utf8")), s = JSON.parse(readFileSync(process.argv[2], "utf8"));
+            console.log(r && sameFixes(r.pkg, s.fixed) ? "yes" : "no");
+          ' "$W/replace.json" "$W/summary.json")
+          if [ "$same" = "yes" ]; then echo "PR #$REPLACE gia' aggiornata: niente da fare" >> "$GITHUB_STEP_SUMMARY"; exit 0; fi
+          date=$(date -u +%F)
+          branch="security-autofix/$date-$GITHUB_RUN_NUMBER"
+          markers=$(node -e 'const s=require(process.argv[1]); console.log(s.fixed.map((f)=>`<!-- autofix-fix ${f.pkg}@${f.version} -->`).join("\n"))' "$PWD/$W/summary.json")
+          body=$(node -e 'console.log(require(process.argv[1]).prBody)' "$PWD/$W/summary.json")
+          node scripts/security/gh-commit.mjs --repo "$REPO" --branch "$branch" --base "$(git rev-parse HEAD)" \
+            --message "fix(deps): correzioni di sicurezza $date"
+          url=$(gh pr create -R "$REPO" --base main --head "$branch" \
+            --title "fix(deps): correzioni di sicurezza $date" --body "$body"$'\n\n'"$markers")
+          gh pr merge --auto "$url"
+          echo "PR: $url" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$REPLACE" ]; then
+            gh pr close "$REPLACE" -R "$REPO" --delete-branch --comment "Sostituita da $url (nuove correzioni di sicurezza): chiusa da \`security-autofix.yml\`."
+          fi
+
+      # Una PR per pacchetto, ognuna rifatta da main pulito con --only: in modalita' split o
+      # quando la verifica locale della PR unica e' fallita. Solo i pacchetti la cui verifica
+      # singola fallisce finiscono in split-results come "failed" (poi esclusi).
+      - name: PR per pacchetto
+        if: env.DRY_RUN != 'true' && steps.fix.outputs.split == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          REPLACE: ${{ steps.mode.outputs.replace }}
+        run: |
+          set -euo pipefail
+          base=$(git rev-parse HEAD)
+          mapfile -t images < "$W/images.args"
+          node -e 'for (const f of require(process.argv[1]).fixed) console.log(`${f.pkg} ${f.version}`)' "$PWD/$W/summary.json" > "$W/split.txt"
+          while read -r -u 3 pkg ver; do
+            git checkout -q -- . && git clean -qfd -e .cache
+            node scripts/security/autofix.mjs --pnpm "$W/audit.json" --trivy-fs "$W/fs.json" "${images[@]}" \
+              --state "$W/state.json" --only "$pkg" --out "$W/one.json" ${FORCE:+--force "$FORCE"}
+            ok=$(node -e 'const s=require(process.argv[1]); console.log(s.fixed.length > 0 && s.verification !== "failed" ? "yes" : "no")' "$PWD/$W/one.json")
+            if [ "$ok" != "yes" ]; then
+              echo "::warning::$pkg: correzione non verificata, nessuna PR"
+              echo "$pkg $ver failed" >> "$W/split-results.txt"
+              continue
+            fi
+            echo "$pkg $ver ok" >> "$W/split-results.txt"
+            slug=$(printf '%s' "$pkg" | tr -c 'A-Za-z0-9._-' '-')
+            branch="security-autofix/split-$slug"
+            node scripts/security/gh-commit.mjs --repo "$REPO" --branch "$branch" --base "$base" \
+              --message "fix(deps): correzione di sicurezza $pkg $ver"
+            body=$(node -e 'console.log(require(process.argv[1]).prBody)' "$PWD/$W/one.json")
+            url=$(gh pr create -R "$REPO" --base main --head "$branch" \
+              --title "fix(deps): correzione di sicurezza $pkg $ver" --body "$body"$'\n\n'"<!-- autofix-fix $pkg@$ver -->")
+            gh pr merge --auto "$url"
+            echo "PR: $url" >> "$GITHUB_STEP_SUMMARY"
+          done 3< "$W/split.txt"
+          if [ -n "$REPLACE" ]; then
+            gh pr close "$REPLACE" -R "$REPO" --delete-branch --comment "Sostituita da PR per pacchetto (verifica della PR unica fallita): chiusa da \`security-autofix.yml\`."
+          fi
+
+      # Issue di stato: create/aggiornate se c'e' qualcosa, chiuse se vuote. In modalita' wait
+      # si aggiorna solo la issue "fallita" (le altre restano quelle dell'ultimo giro).
+      - name: Issue di stato
+        if: always() && env.DRY_RUN != 'true' && steps.app.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          node --input-type=module -e '
+            import { readFileSync, writeFileSync, existsSync } from "node:fs";
+            import { renderIssue } from "./scripts/security/issues.mjs";
+            import { splitExclusions } from "./scripts/security/autofix.mjs";
+            const W = process.env.W, run = process.env.RUN_URL;
+            const s = existsSync(`${W}/summary.json`) ? JSON.parse(readFileSync(`${W}/summary.json`, "utf8")) : null;
+            const state = JSON.parse(readFileSync(`${W}/state.json`, "utf8"));
+            const failedPrs = JSON.parse(readFileSync(`${W}/failed-prs.json`, "utf8"));
+            const failedItems = failedPrs.flatMap((p) => p.mode === "split"
+              ? p.pkg.map((k) => ({ pkg: k.slice(0, k.lastIndexOf("@")), version: k.slice(k.lastIndexOf("@") + 1), pr: `#${p.number}` }))
+              : [{ pkg: `(PR unica: ${p.pkg.join(", ") || "-"})`, version: "", pr: `#${p.number}` }]);
+            const splitFile = `${W}/split-results.txt`;
+            for (const e of splitExclusions(existsSync(splitFile) ? readFileSync(splitFile, "utf8") : "")) {
+              const at = e.lastIndexOf("@");
+              failedItems.push({ pkg: e.slice(0, at), version: e.slice(at + 1), pr: run });
+              state.excluded.push(e);
+            }
+            state.excluded = [...new Set(state.excluded)];
+            const out = {};
+            if (s) {
+              out.pending = s.pending.length ? renderIssue("pending", s.pending) : null;
+              out.unfixable = s.unfixable.length ? renderIssue("unfixable", s.unfixable) : null;
+            }
+            out.failed = state.excluded.length ? renderIssue("failed", failedItems, state) : null;
+            writeFileSync(`${W}/issues.json`, JSON.stringify(out));
+          '
+          for kind in pending unfixable failed; do
+            data=$(jq -c --arg k "$kind" 'if has($k) then .[$k] else "skip" end' "$W/issues.json")
+            [ "$data" = '"skip"' ] && continue
+            case $kind in
+              pending) title="Autofix sicurezza: correzioni in attesa" ;;
+              unfixable) title="Autofix sicurezza: vulnerabilità non correggibili" ;;
+              failed) title="Autofix sicurezza: correzione fallita" ;;
+            esac
+            existing=$(gh issue list -R "$REPO" --state open --search "in:title \"$title\"" --json number --jq '.[0].number // empty')
+            if [ "$data" = "null" ]; then
+              [ -n "$existing" ] && gh issue close "$existing" -R "$REPO" --comment "Niente da segnalare: chiusa da \`security-autofix.yml\`."
+              continue
+            fi
+            body=$(jq -r '.body' <<<"$data")
+            if [ -n "$existing" ]; then gh issue edit "$existing" -R "$REPO" --body "$body"
+            else gh issue create -R "$REPO" --title "$title" --body "$body"; fi
+          done
