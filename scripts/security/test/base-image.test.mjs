@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseFromLines, replaceDigest, decideDigest, sourceRepo, runtimeImage, provenanceOf } from '../base-image.mjs';
+import { parseFromLines, replaceDigest, decideDigest, sourceRepo, runtimeImage, provenanceOf, publishedAt } from '../base-image.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const backend = readFileSync(join(root, 'apps/backend/Dockerfile'), 'utf8');
@@ -104,4 +104,13 @@ test('review: provenanceOf: output null (immagine senza attestazioni) → null; 
   assert.equal(provenanceOf(() => null, 'r'), null);
   assert.equal(provenanceOf(() => ({ 'linux/amd64': { SLSA: { invocation: { configSource: { uri: 'https://github.com/a/b.git#x' } } } } }), 'r'), 'https://github.com/a/b');
   assert.equal(provenanceOf(() => { throw new Error('boom'); }, 'r'), 'unverifiable:r');
+});
+
+test('review: età = max(created, push Docker Hub) se il digest del tag coincide', () => {
+  const created = new Date('2026-10-01T00:00:00Z');
+  const hub = { digest: NEW, tag_last_pushed: '2026-11-01T23:40:36Z' };
+  assert.deepEqual(publishedAt(created, hub, NEW), new Date('2026-11-01T23:40:36Z'));
+  assert.deepEqual(publishedAt(created, { ...hub, digest: 'sha256:altro' }, NEW), created);
+  assert.deepEqual(publishedAt(created, null, NEW), created);
+  assert.deepEqual(publishedAt(null, hub, NEW), new Date('2026-11-01T23:40:36Z'));
 });

@@ -66,13 +66,35 @@ export function provenanceOf(read, ref) {
   return sourceRepo(slsa?.invocation?.configSource?.uri);
 }
 
+/**
+ * Data da cui contare le 48h: `created` dell'immagine può essere l'ora del commit sorgente
+ * (build riproducibili con SOURCE_DATE_EPOCH), più vecchia del push. Su Docker Hub, se il tag
+ * punta ancora a quel digest, si usa il più recente tra `created` e `tag_last_pushed`.
+ */
+export function publishedAt(created, hubTag, digest) {
+  const pushed = hubTag?.digest === digest && hubTag.tag_last_pushed ? new Date(hubTag.tag_last_pushed) : null;
+  if (!pushed) return created;
+  if (!created) return pushed;
+  return pushed > created ? pushed : created;
+}
+
+function hubTag(ref) {
+  const m = ref.match(/^([^/:@]+(?:\/[^/:@]+)?):([^@]+)$/);
+  if (!m || m[1].split('/')[0].includes('.')) return null; // non Docker Hub
+  const repo = m[1].includes('/') ? m[1] : `library/${m[1]}`;
+  try {
+    return JSON.parse(execFileSync('curl', ['-fsS', '--max-time', '20', `https://hub.docker.com/v2/repositories/${repo}/tags/${m[2]}`], { encoding: 'utf8' }));
+  } catch { return null; }
+}
+
 function describe(ref) {
   const manifest = inspect(ref, 'Manifest');
   const img = inspect(ref, 'Image');
   const amd = img?.['linux/amd64'] ?? img;
+  const created = amd?.created ? new Date(amd.created) : null;
   return {
     digest: manifest.digest,
-    created: amd?.created ? new Date(amd.created) : null,
+    created: ref.includes('@') ? created : publishedAt(created, hubTag(ref), manifest.digest),
     repo: provenanceOf(() => inspect(ref, 'Provenance'), ref),
   };
 }
