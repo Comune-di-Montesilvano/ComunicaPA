@@ -137,3 +137,11 @@ test('review: force riprova una versione esclusa', () => {
     candidates: [c('1.4.1', '2026-10-01T00:00:00Z')], previous: [], now });
   assert.deepEqual(r, { action: 'fix', version: '1.4.1' });
 });
+
+test('minor: provenance comparsa tra current e la scelta vincola anche le successive', () => {
+  // 1.0.1 vulnerabile ma attestata, 1.0.2 corretta senza attestazione → downgrade di fiducia.
+  const r = chooseVersion({ current: '1.0.0', vulnerableRanges: ['<1.0.2'],
+    candidates: [c('1.0.1', '2026-09-01T00:00:00Z', { provenanceRepo: REPO }), c('1.0.2', '2026-10-01T00:00:00Z')],
+    previous: [c('1.0.0', '2026-01-01T00:00:00Z')], now });
+  assert.deepEqual(r, { action: 'unfixable', reason: 'provenienza assente o diversa' });
+});

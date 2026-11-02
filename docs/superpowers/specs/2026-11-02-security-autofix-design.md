@@ -117,7 +117,8 @@ sotto i 48h, vedi C).
    niente PR, issue (C).
 5. **PR unica** con tutte le correzioni di quel giro (una correzione parziale non deve
    dipendere da un'altra per passare il gate, ma un solo merge riduce i giri di coda),
-   branch fisso `security-autofix/<data>` o riuso di quello aperto; titolo
+   branch `security-autofix/<data>-<n. run>` (una PR unica aperta e ancora in corso viene
+   sostituita da una nuova solo se l'insieme di correzioni è cambiato); titolo
    `fix(deps): correzioni di sicurezza <data>`; corpo con tabella pacchetto → da/a, GHSA,
    età, esito provenienza. Aperta con il token GitHub App (`BOT_CLIENT_ID` /
    `BOT_PRIVATE_KEY`, come `dependabot-automerge.yml`) così i check partono, e

@@ -13,9 +13,12 @@ export const MIN_AGE_HOURS = 48;
 
 const normRepo = (r) => String(r).trim().toLowerCase().replace(/^git\+/, '').replace(/\.git$/, '').replace(/\/+$/, '');
 
-function trusted(cand, previous) {
+function trusted(cand, previous, candidates = []) {
   if (!cand.registrySigned) return false;
-  const prevRepos = previous.map((p) => p.provenanceRepo).filter(Boolean).map(normRepo);
+  // Precedenti = versioni fino a quella installata + candidate più basse della scelta (anche
+  // vulnerabili): una provenance comparsa in mezzo vincola tutte le successive.
+  const before = [...previous, ...candidates.filter((c) => compare(c.version, cand.version) < 0)];
+  const prevRepos = before.map((p) => p.provenanceRepo).filter(Boolean).map(normRepo);
   if (prevRepos.length === 0) return true;
   return cand.provenanceRepo != null && prevRepos.includes(normRepo(cand.provenanceRepo));
 }
@@ -45,7 +48,7 @@ export function chooseVersion({ current, vulnerableRanges, fixedRanges = [], ski
   if (forceVersion) {
     const f = correct.find((c) => c.version === forceVersion);
     if (!f) return { action: 'unfixable', reason: `versione forzata ${forceVersion} non corregge` };
-    return trusted(f, previous) ? { action: 'fix', version: f.version } : { action: 'unfixable', reason: 'provenienza assente o diversa' };
+    return trusted(f, previous, candidates) ? { action: 'fix', version: f.version } : { action: 'unfixable', reason: 'provenienza assente o diversa' };
   }
 
   if (fixing.length === 0) {
@@ -55,7 +58,7 @@ export function chooseVersion({ current, vulnerableRanges, fixedRanges = [], ski
   const minAgeMs = minAgeHours * 3600e3;
   let firstYoung = null, sawUntrusted = false, sawUndated = false;
   for (const c of fixing) {
-    if (!trusted(c, previous)) { sawUntrusted = true; continue; }
+    if (!trusted(c, previous, candidates)) { sawUntrusted = true; continue; }
     if (!c.publishedAt) { sawUndated = true; continue; }
     if (now.getTime() - c.publishedAt.getTime() >= minAgeMs) return { action: 'fix', version: c.version };
     firstYoung ??= c;

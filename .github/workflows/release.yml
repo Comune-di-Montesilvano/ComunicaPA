@@ -320,6 +320,8 @@ jobs:
           always() && steps.build.outcome == 'success' && (
             steps.trivy.outcome == 'failure' || steps.nonreg.outcome == 'failure' ||
             steps.nonreg.outputs.residual == 'true')
+        # Solo residui (latest pubblicata comunque): un errore di gh non deve fermare la pubblicazione.
+        continue-on-error: ${{ steps.trivy.outcome != 'failure' && steps.nonreg.outcome != 'failure' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}

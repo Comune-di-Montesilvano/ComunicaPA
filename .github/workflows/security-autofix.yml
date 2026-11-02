@@ -48,6 +48,10 @@ jobs:
     permissions:
       contents: read
       issues: write
+      # Elenco PR autofix e stato dei check (anche in dry-run, senza token della App).
+      pull-requests: read
+      checks: read
+      statuses: read
     env:
       DRY_RUN: ${{ inputs.dry_run == true }}
       FORCE: ${{ inputs.force }}
@@ -99,6 +103,9 @@ jobs:
         with:
           client-id: ${{ secrets.BOT_CLIENT_ID }}
           private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+          # Solo commit sui branch security-autofix/* e PR (creazione, auto-merge, chiusura).
+          permission-contents: write
+          permission-pull-requests: write
 
       # Stato di main: pnpm audit (npm), Trivy fs (pip) e Trivy delle `latest` pubblicate
       # (pacchetti OS e runtime dentro le immagini base).
@@ -124,7 +131,7 @@ jobs:
       - name: Stato e modalita'
         id: mode
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           failed_issue=$(gh issue list -R "$REPO" --state open --search 'in:title "Autofix sicurezza: correzione fallita"' \
@@ -153,7 +160,8 @@ jobs:
             state.excluded = [...new Set(state.excluded)];
             writeFileSync(`${W}/state.json`, JSON.stringify(state));
             writeFileSync(`${W}/failed-prs.json`, JSON.stringify(r.failed));
-            writeFileSync(process.env.GITHUB_OUTPUT, `mode=${r.mode}\nfailed=${r.failed.map((p) => p.number).join(" ")}\n`, { flag: "a" });
+            writeFileSync(`${W}/replace.json`, JSON.stringify(r.replace ?? null));
+            writeFileSync(process.env.GITHUB_OUTPUT, `mode=${r.mode}\nfailed=${r.failed.map((p) => p.number).join(" ")}\nreplace=${r.replace?.number ?? ""}\n`, { flag: "a" });
             console.log(`modalita: ${r.mode}, PR fallite: ${r.failed.map((p) => p.number).join(", ") || "nessuna"}`);
           '
 
@@ -192,14 +200,23 @@ jobs:
 
       - name: PR unica
         if: >-
-          env.DRY_RUN != 'true' && steps.mode.outputs.mode == 'single' &&
-          steps.fix.outputs.fixed != '0' && steps.fix.outputs.verification != 'failed'
+          env.DRY_RUN != 'true' && contains(fromJSON('["single","update"]'), steps.mode.outputs.mode) &&
+          steps.fix.outputs.fixed != '0' && steps.fix.outputs.split != 'true'
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
+          REPLACE: ${{ steps.mode.outputs.replace }}
         run: |
           set -euo pipefail
+          # PR unica gia' aperta (modalita' update): sostituita solo se le correzioni sono cambiate.
+          same=$(node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            import { sameFixes } from "./scripts/security/autofix.mjs";
+            const r = JSON.parse(readFileSync(process.argv[1], "utf8")), s = JSON.parse(readFileSync(process.argv[2], "utf8"));
+            console.log(r && sameFixes(r.pkg, s.fixed) ? "yes" : "no");
+          ' "$W/replace.json" "$W/summary.json")
+          if [ "$same" = "yes" ]; then echo "PR #$REPLACE gia' aggiornata: niente da fare" >> "$GITHUB_STEP_SUMMARY"; exit 0; fi
           date=$(date -u +%F)
-          branch="security-autofix/$date"
+          branch="security-autofix/$date-$GITHUB_RUN_NUMBER"
           markers=$(node -e 'const s=require(process.argv[1]); console.log(s.fixed.map((f)=>`<!-- autofix-fix ${f.pkg}@${f.version} -->`).join("\n"))' "$PWD/$W/summary.json")
           body=$(node -e 'console.log(require(process.argv[1]).prBody)' "$PWD/$W/summary.json")
           node scripts/security/gh-commit.mjs --repo "$REPO" --branch "$branch" --base "$(git rev-parse HEAD)" \
@@ -208,6 +225,9 @@ jobs:
             --title "fix(deps): correzioni di sicurezza $date" --body "$body"$'\n\n'"$markers")
           gh pr merge --auto "$url"
           echo "PR: $url" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$REPLACE" ]; then
+            gh pr close "$REPLACE" -R "$REPO" --delete-branch --comment "Sostituita da $url (nuove correzioni di sicurezza): chiusa da \`security-autofix.yml\`."
+          fi
 
       # Una PR per pacchetto, ognuna rifatta da main pulito con --only: in modalita' split o
       # quando la verifica locale della PR unica e' fallita. Solo i pacchetti la cui verifica
@@ -216,6 +236,7 @@ jobs:
         if: env.DRY_RUN != 'true' && steps.fix.outputs.split == 'true'
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
+          REPLACE: ${{ steps.mode.outputs.replace }}
         run: |
           set -euo pipefail
           base=$(git rev-parse HEAD)
@@ -242,6 +263,9 @@ jobs:
             gh pr merge --auto "$url"
             echo "PR: $url" >> "$GITHUB_STEP_SUMMARY"
           done 3< "$W/split.txt"
+          if [ -n "$REPLACE" ]; then
+            gh pr close "$REPLACE" -R "$REPO" --delete-branch --comment "Sostituita da PR per pacchetto (verifica della PR unica fallita): chiusa da \`security-autofix.yml\`."
+          fi
 
       # Issue di stato: create/aggiornate se c'e' qualcosa, chiuse se vuote. In modalita' wait
       # si aggiorna solo la issue "fallita" (le altre restano quelle dell'ultimo giro).
@@ -260,7 +284,9 @@ jobs:
             const s = existsSync(`${W}/summary.json`) ? JSON.parse(readFileSync(`${W}/summary.json`, "utf8")) : null;
             const state = JSON.parse(readFileSync(`${W}/state.json`, "utf8"));
             const failedPrs = JSON.parse(readFileSync(`${W}/failed-prs.json`, "utf8"));
-            const failedItems = failedPrs.flatMap((p) => (p.pkg.length ? p.pkg : ["(PR unica)"]).map((k) => ({ pkg: k, version: "", pr: `#${p.number}` })));
+            const failedItems = failedPrs.flatMap((p) => p.mode === "split"
+              ? p.pkg.map((k) => ({ pkg: k.slice(0, k.lastIndexOf("@")), version: k.slice(k.lastIndexOf("@") + 1), pr: `#${p.number}` }))
+              : [{ pkg: `(PR unica: ${p.pkg.join(", ") || "-"})`, version: "", pr: `#${p.number}` }]);
             const splitFile = `${W}/split-results.txt`;
             for (const e of splitExclusions(existsSync(splitFile) ? readFileSync(splitFile, "utf8") : "")) {
               const at = e.lastIndexOf("@");

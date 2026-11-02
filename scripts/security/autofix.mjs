@@ -23,12 +23,16 @@ export const FAILED_AFTER_HOURS = 6;
 
 /**
  * @param {{ openPrs: { number:number, mode:'single'|'split', pkg?:string, createdAt:Date, failedChecks:boolean }[], now: Date }} p
- * @returns {{ mode: 'single'|'split'|'wait', failed: object[] }}
+ * @returns {{ mode: 'single'|'split'|'update'|'wait', failed: object[], replace?: object }}
  */
 export function nextMode({ openPrs, now }) {
   const isFailed = (pr) => pr.failedChecks || now - pr.createdAt >= FAILED_AFTER_HOURS * 3600e3;
   const failed = openPrs.filter(isFailed);
   const running = openPrs.filter((pr) => !isFailed(pr));
+  // PR unica in corso: si rifà il giro e la si sostituisce se l'insieme di correzioni è cambiato.
+  if (running.length === 1 && running[0].mode === 'single' && !failed.some((pr) => pr.mode === 'single')) {
+    return { mode: 'update', failed, replace: running[0] };
+  }
   if (running.length) return { mode: 'wait', failed };
   if (failed.some((pr) => pr.mode === 'single')) return { mode: 'split', failed };
   return { mode: 'single', failed };
@@ -63,6 +67,12 @@ export function skipFor(excluded, name) {
 export function shouldSplit({ mode, fixed, verification }) {
   if (fixed === 0 || mode === 'wait') return false;
   return mode === 'split' || verification === 'failed';
+}
+
+/** La PR aperta (marker pkg@versione) contiene già esattamente queste correzioni? */
+export function sameFixes(prPkgs, fixed) {
+  const a = [...new Set(prPkgs)].sort(), b = [...new Set(fixed.map((f) => `${f.pkg}@${f.version}`))].sort();
+  return a.length === b.length && a.every((x, i) => x === b[i]);
 }
 
 /** Righe `pkg versione ok|failed` del giro per pacchetto → voci da escludere (solo le fallite). */

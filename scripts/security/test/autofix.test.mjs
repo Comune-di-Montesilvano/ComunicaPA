@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { nextMode, groupFindings, verifyFixed, prBody, FAILED_AFTER_HOURS, skipFor, pipRanges, shouldSplit, splitExclusions } from '../autofix.mjs';
+import { nextMode, groupFindings, verifyFixed, prBody, FAILED_AFTER_HOURS, skipFor, pipRanges, shouldSplit, splitExclusions, sameFixes } from '../autofix.mjs';
 import { parsePnpmAudit } from '../findings.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -13,8 +13,23 @@ const h = (n) => new Date(now - n * 3600e3);
 
 test('nessuna PR aperta → single', () => assert.deepEqual(nextMode({ openPrs: [], now }), { mode: 'single', failed: [] }));
 
-test('PR recente senza check falliti → wait', () => {
-  assert.equal(nextMode({ openPrs: [{ number: 1, mode: 'single', createdAt: h(1), failedChecks: false }], now }).mode, 'wait');
+test('PR unica recente senza check falliti → update (sostituita se le correzioni cambiano)', () => {
+  const pr = { number: 1, mode: 'single', pkg: ['a@1'], createdAt: h(1), failedChecks: false };
+  assert.deepEqual(nextMode({ openPrs: [pr], now }), { mode: 'update', failed: [], replace: pr });
+});
+
+test('split in corso → wait', () => {
+  assert.equal(nextMode({ openPrs: [{ number: 1, mode: 'split', pkg: ['a@1'], createdAt: h(1), failedChecks: false }], now }).mode, 'wait');
+});
+
+test('sameFixes: stesso insieme pkg@versione → nessuna sostituzione', () => {
+  assert.equal(sameFixes(['a@1', 'b@2'], [{ pkg: 'b', version: '2' }, { pkg: 'a', version: '1' }]), true);
+  assert.equal(sameFixes(['a@1'], [{ pkg: 'a', version: '1' }, { pkg: 'c', version: '3' }]), false);
+});
+
+test('shouldSplit: update si comporta come single', () => {
+  assert.equal(shouldSplit({ mode: 'update', fixed: 2, verification: 'failed' }), true);
+  assert.equal(shouldSplit({ mode: 'update', fixed: 2, verification: 'ok' }), false);
 });
 
 test(`single aperta da più di ${FAILED_AFTER_HOURS}h → split, PR fallita da chiudere`, () => {
