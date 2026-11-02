@@ -58,7 +58,7 @@ export function applyOverride(text, fix, { ghsa, date }) {
   return lines.join(eol);
 }
 
-function workspaceManifests(root) {
+export function workspaceManifests(root) {
   const out = [{ path: 'package.json', json: JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) }];
   for (const dir of ['apps', 'packages']) {
     if (!existsSync(join(root, dir))) continue;
@@ -70,10 +70,8 @@ function workspaceManifests(root) {
   return out;
 }
 
-function main() {
-  const { values } = parseArgs({ options: { fixes: { type: 'string' }, root: { type: 'string', default: '.' } } });
-  const root = values.root;
-  const fixes = JSON.parse(readFileSync(values.fixes, 'utf8'));
+/** Applica le correzioni npm nel workspace `root`; ritorna le correzioni con il tipo applicato. */
+export function applyNpmFixes(fixes, root = '.') {
   const manifests = workspaceManifests(root);
   const date = new Date().toISOString().slice(0, 10);
   const wsPath = join(root, 'pnpm-workspace.yaml');
@@ -90,7 +88,12 @@ function main() {
     applied.push({ ...f, kind: plan.kind });
   }
   if (overridden) execFileSync('pnpm', ['install', '--lockfile-only', '--ignore-scripts'], { cwd: root, stdio: 'inherit' });
-  console.log(JSON.stringify(applied));
+  return applied;
+}
+
+function main() {
+  const { values } = parseArgs({ options: { fixes: { type: 'string' }, root: { type: 'string', default: '.' } } });
+  console.log(JSON.stringify(applyNpmFixes(JSON.parse(readFileSync(values.fixes, 'utf8')), values.root)));
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) main();

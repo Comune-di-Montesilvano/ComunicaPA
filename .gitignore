@@ -26,3 +26,6 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+
+# Scansioni e tool dei workflow di sicurezza (security-autofix.yml)
+.cache/

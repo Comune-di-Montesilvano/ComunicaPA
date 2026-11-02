@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseFromLines, replaceDigest, decideDigest, sourceRepo } from '../base-image.mjs';
+import { parseFromLines, replaceDigest, decideDigest, sourceRepo, runtimeImage } from '../base-image.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const backend = readFileSync(join(root, 'apps/backend/Dockerfile'), 'utf8');
@@ -34,6 +34,12 @@ test('replaceDigest sostituisce tutti i FROM dello stesso image:tag e nient altr
   assert.ok(!out.includes(OLD));
   assert.equal(out.replaceAll(NEW, OLD), backend);
   assert.equal(replaceDigest(backend, 'python', '3.14-slim', NEW), backend);
+});
+
+test('runtimeImage: ultimo stage (node nel backend, nginx nei frontend)', () => {
+  assert.equal(runtimeImage(backend), 'node:26-alpine');
+  assert.equal(runtimeImage(readFileSync(join(root, 'apps/frontend-admin/Dockerfile'), 'utf8')), 'nginxinc/nginx-unprivileged:1.31-alpine');
+  assert.equal(runtimeImage('FROM scratch\n'), null);
 });
 
 test('sourceRepo: uri git con commit e path → repository', () => {

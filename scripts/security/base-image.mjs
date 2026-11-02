@@ -78,15 +78,17 @@ export function dockerfiles(root = '.') {
   return out;
 }
 
-function main() {
-  const { values } = parseArgs({ options: {
-    images: { type: 'string' }, out: { type: 'string' }, root: { type: 'string', default: '.' },
-    force: { type: 'boolean', default: false }, 'dry-run': { type: 'boolean', default: false },
-  } });
-  const files = dockerfiles(values.root);
-  const now = new Date();
+/** image:tag dell'ultimo stage (immagine di runtime) del Dockerfile di produzione di un'app. */
+export function runtimeImage(dockerfileText) {
+  const f = parseFromLines(dockerfileText).at(-1);
+  return f ? `${f.image}:${f.tag}` : null;
+}
+
+/** Controlla (e se fix e non dryRun applica) il digest più recente di ogni image:tag. */
+export function checkImages(refs, { root = '.', force = false, dryRun = false, now = new Date() } = {}) {
+  const files = dockerfiles(root);
   const results = [];
-  for (const ref of (values.images ?? '').split(',').filter(Boolean)) {
+  for (const ref of refs) {
     const i = ref.lastIndexOf(':');
     const image = ref.slice(0, i), tag = ref.slice(i + 1);
     const using = files.filter((p) => parseFromLines(readFileSync(p, 'utf8')).some((f) => f.image === image && f.tag === tag));
@@ -94,16 +96,26 @@ function main() {
     let r;
     try {
       if (!pinned) throw new Error(`${ref} non trovato nei Dockerfile`);
-      r = decideDigest({ current: describe(`${image}:${tag}@${pinned}`), latest: describe(ref), now, force: values.force });
+      r = decideDigest({ current: describe(`${image}:${tag}@${pinned}`), latest: describe(ref), now, force });
     } catch (e) {
       r = { action: 'unfixable', reason: `registry: ${e.message.split('\n')[0]}` };
     }
-    if (r.action === 'fix' && !values['dry-run']) {
+    if (r.action === 'fix' && !dryRun) {
       for (const p of using) writeFileSync(p, replaceDigest(readFileSync(p, 'utf8'), image, tag, r.digest));
       r.files = using;
     }
     results.push({ image, tag, from: pinned, ...r });
   }
+  return results;
+}
+
+function main() {
+  const { values } = parseArgs({ options: {
+    images: { type: 'string' }, out: { type: 'string' }, root: { type: 'string', default: '.' },
+    force: { type: 'boolean', default: false }, 'dry-run': { type: 'boolean', default: false },
+  } });
+  const results = checkImages((values.images ?? '').split(',').filter(Boolean),
+    { root: values.root, force: values.force, dryRun: values['dry-run'] });
   if (values.out) writeFileSync(values.out, JSON.stringify(results, null, 1));
   console.log(JSON.stringify(results));
 }
