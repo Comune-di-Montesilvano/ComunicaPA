@@ -5,9 +5,9 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseFromLines, replaceDigest, decideDigest, sourceRepo, runtimeImage, provenanceOf, publishedAt } from '../base-image.mjs';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
-const backend = readFileSync(join(root, 'apps/backend/Dockerfile'), 'utf8');
-const pdf = readFileSync(join(root, 'services/pdf-extractor/Dockerfile'), 'utf8');
+const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures'); // copie fisse: l'autofix modifica i file reali
+const backend = readFileSync(join(fixtures, 'Dockerfile.backend'), 'utf8');
+const pdf = readFileSync(join(fixtures, 'Dockerfile.pdf-extractor'), 'utf8');
 const OLD = 'sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797';
 const NEW = `sha256:${'a'.repeat(64)}`;
 
@@ -38,7 +38,7 @@ test('replaceDigest sostituisce tutti i FROM dello stesso image:tag e nient altr
 
 test('runtimeImage: ultimo stage (node nel backend, nginx nei frontend)', () => {
   assert.equal(runtimeImage(backend), 'node:26-alpine');
-  assert.equal(runtimeImage(readFileSync(join(root, 'apps/frontend-admin/Dockerfile'), 'utf8')), 'nginxinc/nginx-unprivileged:1.31-alpine');
+  assert.equal(runtimeImage(readFileSync(join(fixtures, 'Dockerfile.frontend-admin'), 'utf8')), 'nginxinc/nginx-unprivileged:1.31-alpine');
   assert.equal(runtimeImage('FROM scratch\n'), null);
 });
 

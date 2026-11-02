@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { parsePnpmAudit, parseTrivy, diffFindings, readIgnoreGhsas } from '../findings.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = join(here, '..', '..', '..');
+const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures'); // copie fisse: l'autofix modifica i file reali
 const load = (f) => JSON.parse(readFileSync(join(here, 'fixtures', f), 'utf8'));
 const cli = join(here, '..', 'diff-gate.mjs');
 
@@ -82,7 +82,7 @@ test('trivy image: ecosystem os / image-lang / pip, solo HIGH+', () => {
 });
 
 test('readIgnoreGhsas legge GHSA-86w9-cpqp-85rv dal pnpm-workspace.yaml reale', () => {
-  const ids = readIgnoreGhsas(readFileSync(join(root, 'pnpm-workspace.yaml'), 'utf8'));
+  const ids = readIgnoreGhsas(readFileSync(join(fixtures, 'pnpm-workspace.yaml'), 'utf8'));
   assert.deepEqual(ids, ['GHSA-86w9-cpqp-85rv']);
 });
 
@@ -116,7 +116,7 @@ test('cli: nuovo finding → exit 1 e pkg nello stdout', () => {
   for (const [k, v] of Object.entries(base.advisories)) if (v.module_name === 'follow-redirects') delete base.advisories[k];
   writeFileSync(join(d, 'b.json'), JSON.stringify(base));
   const r = run('--format', 'pnpm', '--head', join(here, 'fixtures', 'pnpm-audit-main.json'), '--base', join(d, 'b.json'),
-    '--workspace', join(root, 'pnpm-workspace.yaml'));
+    '--workspace', join(fixtures, 'pnpm-workspace.yaml'));
   assert.equal(r.status, 1);
   assert.match(r.stdout, /follow-redirects/);
   assert.doesNotMatch(r.stdout, /node-forge/);
