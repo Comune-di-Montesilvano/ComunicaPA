@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { nextMode, groupFindings, verifyFixed, prBody, FAILED_AFTER_HOURS, skipFor, pipRanges, shouldSplit, splitExclusions, sameFixes } from '../autofix.mjs';
+import { nextMode, groupFindings, verifyFixed, prBody, FAILED_AFTER_HOURS, skipFor, pipRanges, shouldSplit, splitExclusions, sameFixes, prFixMarkers } from '../autofix.mjs';
 import { parsePnpmAudit } from '../findings.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -123,4 +123,11 @@ test('review: esclusi solo i pacchetti la cui verifica singola fallisce', () => 
   const lines = 'node-forge 1.4.1 ok\nfollow-redirects 1.16.2 failed\nnode:26-alpine sha256:abc ok\n';
   assert.deepEqual(splitExclusions(lines), ['follow-redirects@1.16.2']);
   assert.deepEqual(splitExclusions(''), []);
+});
+
+test('prFixMarkers: pkg@versione dai marker del body PR (bug reale: prendeva "autofix-fix")', () => {
+  const body = 'tabella\n\n<!-- autofix-fix follow-redirects@1.16.2 -->\n<!-- autofix-fix @scope/x@1.0.0 -->\n<!-- autofix-fix node:26-alpine@sha256:c6ad -->';
+  assert.deepEqual(prFixMarkers(body), ['follow-redirects@1.16.2', '@scope/x@1.0.0', 'node:26-alpine@sha256:c6ad']);
+  assert.deepEqual(prFixMarkers(''), []);
+  assert.deepEqual(prFixMarkers(null), []);
 });

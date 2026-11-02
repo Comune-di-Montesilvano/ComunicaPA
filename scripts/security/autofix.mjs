@@ -69,6 +69,11 @@ export function shouldSplit({ mode, fixed, verification }) {
   return mode === 'split' || verification === 'failed';
 }
 
+/** Marker `<!-- autofix-fix pkg@versione -->` dal body di una PR autofix. */
+export function prFixMarkers(body) {
+  return [...String(body ?? '').matchAll(/<!-- autofix-fix (\S+) -->/g)].map((m) => m[1]);
+}
+
 /** La PR aperta (marker pkg@versione) contiene già esattamente queste correzioni? */
 export function sameFixes(prPkgs, fixed) {
   const a = [...new Set(prPkgs)].sort(), b = [...new Set(fixed.map((f) => `${f.pkg}@${f.version}`))].sort();
