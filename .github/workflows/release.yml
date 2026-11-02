@@ -268,9 +268,11 @@ jobs:
           cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
           cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
 
-      # Bloccante sempre (tag e rebuild): CRITICAL/HIGH con fix disponibile fermano la
-      # pubblicazione. Le PR passano gia' dallo stesso controllo in merge queue
-      # (security.yml, trivy-image), quindi qui scatta solo per CVE pubblicate dopo il merge.
+      # Tag vX.Y.Z: bloccante assoluto, CRITICAL/HIGH con fix fermano la pubblicazione.
+      # Rebuild di latest: gate di NON REGRESSIONE (step successivo) — si pubblica se l'immagine
+      # nuova non ha vulnerabilita' assenti dalla latest attuale. Bloccare in assoluto qui
+      # impedirebbe anche il rebuild che corregge altre CVE (una CVE senza fix nelle immagini
+      # base fermava tutto); le residue finiscono nella issue sotto e le corregge l'autofix.
       - name: Trivy vulnerability scan
         id: trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -279,7 +281,7 @@ jobs:
           format: sarif
           output: trivy-results.sarif
           severity: CRITICAL,HIGH
-          exit-code: 1
+          exit-code: ${{ github.ref_type == 'tag' && '1' || '0' }}
           ignore-unfixed: true
           # Senza, con format sarif l'action ignora `severity` ed exit-code scatta su tutto.
           limit-severities-for-sarif: true
@@ -288,13 +290,36 @@ jobs:
           # automatico. trivy-version-check.yml apre una issue quando ne esce una nuova.
           version: v0.76.1
 
-      # Rebuild partito per la causa c (CVE con fix) ma ancora bloccato da Trivy: il fix non
-      # e' ancora nelle immagini base o nei mirror. latest resta il precedente (smoke e
-      # publish non partono); la issue tiene traccia finche' Dependabot non porta il fix.
+      # Stesso binario e stesso DB dello step SARIF per l'immagine nuova e la latest attuale.
+      - name: Trivy non regressione rispetto a latest (rebuild)
+        id: nonreg
+        if: github.ref_type != 'tag'
+        env:
+          TRIVY_CACHE_DIR: ${{ github.workspace }}/.cache/trivy
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          opts=(image --quiet --skip-db-update --scanners vuln --severity "CRITICAL,HIGH"
+            --ignore-unfixed --ignorefile .trivyignore.yaml --format json)
+          trivy "${opts[@]}" --output "$RUNNER_TEMP/head.json" "$IMAGE@$DIGEST"
+          if docker pull --quiet "$IMAGE:latest" >/dev/null 2>&1; then
+            trivy "${opts[@]}" --output "$RUNNER_TEMP/base.json" "$IMAGE:latest"
+            base=(--base "$RUNNER_TEMP/base.json")
+          else
+            base=(--base-empty)
+          fi
+          residual=$(jq '[.Results[]?.Vulnerabilities[]?] | length' "$RUNNER_TEMP/head.json")
+          echo "residual=$([ "$residual" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          node scripts/security/diff-gate.mjs --format trivy --head "$RUNNER_TEMP/head.json" "${base[@]}"
+
+      # Rebuild pubblicato (nessuna regressione) ma con CVE HIGH/CRITICAL con fix ancora
+      # presenti, oppure tag/rebuild fermato da Trivy: la issue tiene traccia finche'
+      # l'autofix (security-autofix.yml) o Dependabot non porta il fix.
       - name: Issue vulnerabilita' non risolvibile con un rebuild
         if: >-
-          failure() && steps.trivy.outcome == 'failure'
-          && contains(fromJSON(needs.setup.outputs.cause_c), matrix.app)
+          always() && steps.build.outcome == 'success' && (
+            steps.trivy.outcome == 'failure' || steps.nonreg.outcome == 'failure' ||
+            steps.nonreg.outputs.residual == 'true')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
@@ -306,10 +331,15 @@ jobs:
           TITLE="Vulnerabilità non risolvibile con un rebuild ($APP)"
           table=$(trivy image --quiet --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
             --ignorefile .trivyignore.yaml --format table "$IMAGE@$DIGEST" 2>&1 || true)
+          if [[ "${{ steps.trivy.outcome }}" == "failure" || "${{ steps.nonreg.outcome }}" == "failure" ]]; then
+            esito="La pubblicazione è stata fermata: l'immagine ricostruita ha vulnerabilità HIGH/CRITICAL con fix che la versione pubblicata non aveva (regressione), oppure è un tag di versione. Resta pubblicata l'immagine precedente."
+          else
+            esito="La nuova \`latest\` è stata pubblicata (nessuna regressione), ma contiene ancora vulnerabilità HIGH/CRITICAL con fix: il fix non è ancora nelle immagini base o nei mirror dei pacchetti."
+          fi
           body=$(printf '%s\n' \
-            "Il rebuild di \`latest\` per \`$APP\` è partito per CVE HIGH/CRITICAL con fix (causa c), ma l'immagine ricostruita ha ancora vulnerabilità bloccanti: il fix non è ancora nelle immagini base o nei mirror dei pacchetti. \`latest\` è rimasto quello precedente." \
+            "Rebuild per \`$APP\`. $esito" \
             "" "Run: $RUN_URL" "" '```' "$table" '```' "" \
-            "Si risolve con il bump Dependabot dell'immagine base (o con un override della dipendenza); il controllo giornaliero riprova da solo.")
+            "Le corregge da solo \`security-autofix.yml\` (dipendenze, digest dell'immagine base) quando la versione corretta ha almeno 48 ore; vedi le issue \"Autofix sicurezza: …\". Il controllo giornaliero riprova da solo.")
           existing=$(gh issue list -R "$REPO" --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number // empty')
           if [[ -n "$existing" ]]; then
             gh issue comment "$existing" -R "$REPO" --body "$body"
