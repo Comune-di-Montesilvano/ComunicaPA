@@ -1,0 +1,111 @@
+#!/usr/bin/env node
+// Bump del digest delle immagini base fissate nei Dockerfile, stesso tag (mai cambio di tag):
+// età minima 48h del nuovo digest e provenienza "mai un downgrade di fiducia" (repository
+// sorgente dell'attestazione SLSA uguale a quello del digest in uso).
+//
+//   node scripts/security/base-image.mjs --images node:26-alpine,python:3.14-slim --out result.json
+//        [--force] [--dry-run]
+// Risultato per immagine: { image, tag, action: fix|pending|unfixable, digest?, eta?, reason?, files? }
+import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { parseArgs } from 'node:util';
+import { pathToFileURL } from 'node:url';
+import { MIN_AGE_HOURS } from './choose-version.mjs';
+
+const FROM_RE = /^(\s*FROM\s+(?:--\S+\s+)*)(\S+?):([^\s@:/]+)@(sha256:[a-f0-9]{64})(.*)$/i;
+
+export function parseFromLines(text) {
+  const out = [];
+  text.split(/\r?\n/).forEach((l, i) => {
+    const m = l.match(FROM_RE);
+    if (m) out.push({ line: i + 1, image: m[2], tag: m[3], digest: m[4] });
+  });
+  return out;
+}
+
+export function replaceDigest(text, image, tag, newDigest) {
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  return text.split(/\r?\n/).map((l) => {
+    const m = l.match(FROM_RE);
+    return m && m[2] === image && m[3] === tag ? `${m[1]}${image}:${tag}@${newDigest}${m[5]}` : l;
+  }).join(eol);
+}
+
+export function sourceRepo(uri) {
+  if (!uri) return null;
+  return String(uri).split('#')[0].replace(/^git\+/, '').replace(/\.git$/, '').replace(/\/+$/, '').toLowerCase();
+}
+
+export function decideDigest({ current, latest, now, force = false, minAgeHours = MIN_AGE_HOURS }) {
+  if (!latest?.digest || latest.digest === current.digest) return { action: 'unfixable', reason: 'nessun digest più recente' };
+  if (current.repo && latest.repo !== current.repo) return { action: 'unfixable', reason: 'provenienza assente o diversa' };
+  if (force) return { action: 'fix', digest: latest.digest };
+  if (!latest.created) return { action: 'unfixable', reason: 'data di pubblicazione sconosciuta' };
+  const eta = new Date(latest.created.getTime() + minAgeHours * 3600e3);
+  return eta <= now ? { action: 'fix', digest: latest.digest } : { action: 'pending', digest: latest.digest, eta };
+}
+
+// ── registry (docker buildx imagetools) ───────────────────────────────────────────────────
+function inspect(ref, field) {
+  return JSON.parse(execFileSync('docker', ['buildx', 'imagetools', 'inspect', ref, '--format', `{{json .${field}}}`], { encoding: 'utf8' }));
+}
+
+function describe(ref) {
+  const manifest = inspect(ref, 'Manifest');
+  const img = inspect(ref, 'Image');
+  const prov = (() => { try { return inspect(ref, 'Provenance'); } catch { return null; } })();
+  const amd = img?.['linux/amd64'] ?? img;
+  const slsa = prov?.['linux/amd64']?.SLSA ?? prov?.SLSA;
+  return {
+    digest: manifest.digest,
+    created: amd?.created ? new Date(amd.created) : null,
+    repo: sourceRepo(slsa?.invocation?.configSource?.uri),
+  };
+}
+
+export function dockerfiles(root = '.') {
+  const out = [];
+  for (const base of ['apps', 'services']) {
+    if (!existsSync(join(root, base))) continue;
+    for (const d of readdirSync(join(root, base))) {
+      for (const f of ['Dockerfile', 'Dockerfile.dev']) {
+        const p = join(root, base, d, f);
+        if (existsSync(p)) out.push(p);
+      }
+    }
+  }
+  return out;
+}
+
+function main() {
+  const { values } = parseArgs({ options: {
+    images: { type: 'string' }, out: { type: 'string' }, root: { type: 'string', default: '.' },
+    force: { type: 'boolean', default: false }, 'dry-run': { type: 'boolean', default: false },
+  } });
+  const files = dockerfiles(values.root);
+  const now = new Date();
+  const results = [];
+  for (const ref of (values.images ?? '').split(',').filter(Boolean)) {
+    const i = ref.lastIndexOf(':');
+    const image = ref.slice(0, i), tag = ref.slice(i + 1);
+    const using = files.filter((p) => parseFromLines(readFileSync(p, 'utf8')).some((f) => f.image === image && f.tag === tag));
+    const pinned = using.length ? parseFromLines(readFileSync(using[0], 'utf8')).find((f) => f.image === image && f.tag === tag).digest : null;
+    let r;
+    try {
+      if (!pinned) throw new Error(`${ref} non trovato nei Dockerfile`);
+      r = decideDigest({ current: describe(`${image}:${tag}@${pinned}`), latest: describe(ref), now, force: values.force });
+    } catch (e) {
+      r = { action: 'unfixable', reason: `registry: ${e.message.split('\n')[0]}` };
+    }
+    if (r.action === 'fix' && !values['dry-run']) {
+      for (const p of using) writeFileSync(p, replaceDigest(readFileSync(p, 'utf8'), image, tag, r.digest));
+      r.files = using;
+    }
+    results.push({ image, tag, from: pinned, ...r });
+  }
+  if (values.out) writeFileSync(values.out, JSON.stringify(results, null, 1));
+  console.log(JSON.stringify(results));
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) main();
