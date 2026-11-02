@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # ── Build ─────────────────────────────────────────────────────────────────────
-FROM node:26-alpine@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797 AS build
+FROM node:26-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS build
 # corepack dal tarball del registry npm, verificato con sha256 (niente `npm install` senza
 # hash). Stessa posizione di `npm install -g`. toolchain-version-check.yml segnala le nuove versioni.
 ADD --checksum=sha256:9128cfe26aee0c99f4fc68c15c6b8b12309a68be0de2c012cdfea2a463cb722f \
