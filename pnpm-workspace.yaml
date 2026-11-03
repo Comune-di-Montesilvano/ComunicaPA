@@ -14,6 +14,11 @@ overrides:
   'multer@2.4.0': 2.5.0
   # GHSA-mrwp-f3q8-3g9p (2026-11-03, security-autofix): rimuovere quando il padre si aggiorna
   'follow-redirects@1.16.1': 1.16.2
+  # GHSA minimatch (ReDoS/DoS globparts) e glob (AbortSignal bypass): corretti solo in
+  # minimatch 11 / glob 14, mai backport. Usati solo da tool dev/build (eslint, jest,
+  # nest-cli, sentry bundler plugin, test-exclude). Rimuovere quando i padri passano a ^11/^14.
+  'minimatch@<11.0.1': ^11.0.4
+  'glob@>=9.0.0 <14.0.2': ^14.0.3
 # Advisory senza versione corretta, mitigati nel codice. Ognuno va rimosso appena esce
 # un fix upstream (Dependabot/audit lo segnalano di nuovo se la mitigazione non basta).
 auditConfig:
