@@ -95,8 +95,8 @@ updates:
     commit-message:
       prefix: "chore"
       include: "scope"
-    # postgres-dump deve restare sulla 17 (legge il volume della 17); le major di
-    # postgres richiedono comunque una migrazione dei dati, mai un semplice bump.
+    # Le major di postgres richiedono una migrazione dei dati, mai un semplice bump
+    # (docs/claude/database-queue.md).
     ignore:
       - dependency-name: "postgres"
         update-types: ["version-update:semver-major"]
