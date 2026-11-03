@@ -110,8 +110,9 @@ services:
     image: ghcr.io/comune-di-montesilvano/comunicapa-backend:${IMAGE_TAG:-latest}
     restart: unless-stopped
     read_only: true
-    ports:
-      - "${BACKEND_PORT:-8080}:8080"
+    # Nessuna porta sull'host: i frontend raggiungono backend:8080 sulla rete interna e il
+    # proxy esterno punta solo a ADMIN_PORT/CITIZEN_PORT. La porta diretta e' solo in dev
+    # (docker-compose.override.yml).
     environment:
       NODE_ENV: production
       PORT: "8080"

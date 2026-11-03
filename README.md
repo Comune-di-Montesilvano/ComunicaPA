@@ -116,7 +116,7 @@ docker compose up -d
 
 | Servizio | URL |
 |----------|-----|
-| Backend API | http://localhost:8080 |
+| Backend API (solo sviluppo: in produzione si passa da `/api/` dei frontend) | http://localhost:8080 |
 | Portale Admin | http://localhost:3000 |
 | Portale Cittadino | http://localhost:3001 |
 
@@ -192,7 +192,7 @@ Come per gli invii da backoffice, il destinatario viene verificato su INAD/Regis
 
 Tutte le risposte sono **sempre HTTP 200** (esito nel campo `success` del body — un proxy inverso di produzione sostituisce altrimenti il body delle risposte non-2xx con una pagina HTML). Gestione dei client (creazione/revoca chiave API) dalla UI admin, menu **Impostazioni → API Esterne**.
 
-I percorsi sopra sono quelli interni al backend (`apps/backend/src/external-api/`); un chiamante esterno reale li raggiunge tramite qualunque percorso pubblico la propria infrastruttura instrada verso questo backend — nello stesso ambiente di riferimento di questo repository, tramite il prefisso `/api/` con rimozione del prefisso lato nginx (vedi `apps/backend/openapi/external-api-v2.yaml`, `servers: /api/external/v2`), ma un'installazione diversa può esporlo diversamente.
+I percorsi sopra sono quelli interni al backend (`apps/backend/src/external-api/`). Nel compose di produzione il backend non pubblica porte sull'host: un chiamante esterno li raggiunge tramite un frontend, col prefisso `/api/` che nginx rimuove prima di inoltrare (`https://<origine>/api/external/v2/...`, vedi `apps/backend/openapi/external-api-v2.yaml`, `servers: /api/external/v2`).
 
 Specifica completa: [`apps/backend/openapi/external-api-v2.yaml`](apps/backend/openapi/external-api-v2.yaml).
 
