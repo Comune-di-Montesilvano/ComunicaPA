@@ -59,9 +59,88 @@ services:
           "$$R-frontend-admin:$$IMAGE_TAG" "$$R-frontend-citizen:$$IMAGE_TAG" >/dev/null
         echo "Firme verificate: $$IMAGE_TAG"
 
+  # Migrazione automatica Postgres 17 -> 18 al primo deploy con la 18 (dettagli e
+  # rollback: docs/claude/database-queue.md). Da togliere a migrazione chiusa,
+  # insieme a postgres-restore e al volume postgres_data.
+  # 1) Dump: se postgres_data contiene ancora i dati della 17 e manca il dump, avvia
+  #    una 17 temporanea senza rete (solo socket) e scrive pre18.dump nello stesso
+  #    volume. Nessun dato 17 (installazione nuova) o dump gia' fatto: esce subito.
+  #    Nel redeploy compose crea tutti i container prima di avviarne uno: la vecchia
+  #    17 e' gia' fermata (stop pulito) quando parte questo servizio. Se una 17
+  #    risponde comunque in rete si ferma: mai due server sugli stessi file.
+  #    Resta 17 di proposito: dependabot ignora le major di postgres.
+  postgres-dump:
+    <<: *hardening
+    image: postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
+    restart: "no"
+    read_only: true
+    user: "70:70"
+    tmpfs:
+      - /tmp:mode=1777
+    environment:
+      PGUSER: ${POSTGRES_USER}
+      PGDATABASE: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - comunicapa-net
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        D=/var/lib/postgresql/data
+        if [ ! -s "$$D/PG_VERSION" ]; then echo "Nessun dato Postgres 17: niente da migrare"; exit 0; fi
+        if [ -s "$$D/pre18.dump" ]; then echo "Dump 17 gia' presente: salto"; exit 0; fi
+        if pg_isready -q -h postgres -t 5; then
+          echo "Un Postgres risponde ancora su 'postgres': mi fermo (mai due server sugli stessi file)"
+          exit 1
+        fi
+        echo "Dump dei dati Postgres $$(cat "$$D/PG_VERSION") con una 17 temporanea senza rete"
+        rm -f "$$D/postmaster.pid"
+        pg_ctl -D "$$D" -o "-c listen_addresses='' -k /tmp" -w -t 300 start
+        pg_dump -h /tmp -Fc -f "$$D/pre18.dump.tmp"
+        pg_ctl -D "$$D" -m fast -w stop
+        mv "$$D/pre18.dump.tmp" "$$D/pre18.dump"
+        echo "Dump pronto: $$(du -h "$$D/pre18.dump" | cut -f1)"
+
+  # 2) Restore: con la 18 healthy, se c'e' il dump e il DB non e' marcato come gia'
+  #    ripristinato, svuota public, ripristina e marca il DB (COMMENT ON DATABASE).
+  #    Il backend parte solo dopo: un restore fallito lo lascia fermo e il deploy
+  #    successivo riprova da capo. Il volume della 17 e' solo in lettura (rollback).
+  postgres-restore:
+    <<: *hardening
+    image: postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
+    restart: "no"
+    read_only: true
+    user: "70:70"
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql-17:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - comunicapa-net
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        F=/var/lib/postgresql-17/pre18.dump
+        if [ ! -s "$$F" ]; then echo "Nessun dump 17: niente da ripristinare"; exit 0; fi
+        n=0; until pg_isready -q; do n=$$((n+1)); [ $$n -lt 60 ] || { echo "Postgres 18 non raggiungibile"; exit 1; }; sleep 2; done
+        M=$$(psql -tAc "select shobj_description(oid, 'pg_database') from pg_database where datname = current_database()")
+        if [ "$$M" = "restored-from-17" ]; then echo "Dati 17 gia' ripristinati: salto"; exit 0; fi
+        echo "Ripristino dei dati Postgres 17 nella 18"
+        psql -v ON_ERROR_STOP=1 -qc "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+        pg_restore --exit-on-error -d "$$PGDATABASE" "$$F"
+        psql -v ON_ERROR_STOP=1 -qc "COMMENT ON DATABASE \"$$PGDATABASE\" IS 'restored-from-17'"
+        echo "Ripristino completato"
+
   postgres:
     <<: [*hardening, *db-caps]
-    image: postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
+    image: postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
     restart: unless-stopped
     read_only: true
     tmpfs:
@@ -72,7 +151,12 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # Postgres 18+: un solo mount su /var/lib/postgresql, dati in 18/docker
+      # (il vecchio mount su .../data fa uscire subito il container).
+      - postgres18_data:/var/lib/postgresql
+    depends_on:
+      postgres-dump:
+        condition: service_completed_successfully
     networks:
       - comunicapa-net
     healthcheck:
@@ -107,6 +191,11 @@ services:
     <<: *hardening
     image: ghcr.io/comune-di-montesilvano/comunicapa-backend:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    # Cambiare questa etichetta forza compose a ricreare il backend (depends_on non
+    # conta): il vecchio si ferma subito e il nuovo parte solo dopo postgres-restore,
+    # mai a cavallo della migrazione dei dati. Allineata alla major di Postgres.
+    labels:
+      comunicapa.postgres-major: "18"
     read_only: true
     ports:
       - "${BACKEND_PORT:-8080}:8080"
@@ -145,6 +234,8 @@ services:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
+      postgres-restore:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     networks:
@@ -215,6 +306,7 @@ services:
 
 volumes:
   postgres_data:
+  postgres18_data:
   redis_data:
   attachments_data:
   backend_tmp:
