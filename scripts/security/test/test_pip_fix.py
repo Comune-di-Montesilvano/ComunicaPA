@@ -15,7 +15,9 @@ def c(version, published, repo=None):
 
 
 OLD = datetime(2026, 10, 1, tzinfo=timezone.utc)
-REQ_IN = (Path(__file__).resolve().parents[3] / "services/pdf-extractor/requirements.in").read_text(encoding="utf8")
+# Copia fissa, non services/pdf-extractor/requirements.in: Dependabot e l'autofix modificano il
+# file reale e i test fallirebbero proprio sulle loro PR (stesso motivo dei fixture Node).
+REQ_IN = (Path(__file__).resolve().parent / "fixtures/requirements.in").read_text(encoding="utf8")
 
 
 class ChooseVersion(unittest.TestCase):

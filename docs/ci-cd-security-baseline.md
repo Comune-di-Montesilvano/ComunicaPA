@@ -1,6 +1,6 @@
 # Baseline di sicurezza CI/CD
 
-Riferimento per la supply chain di ComunicaPA (stato al 2026-10-27) e checklist per
+Riferimento per la supply chain di ComunicaPA (stato al 2026-11-03) e checklist per
 misurare i gap di altri repository. Ogni voce dice **cosa**, **perché** e **come
 verificarla**. Le parti specifiche di ComunicaPA (stack Node/Python, compose, Portainer)
 sono segnate come tali: in un altro repo si sostituiscono con l'equivalente.
@@ -24,6 +24,13 @@ sono segnate come tali: in un altro repo si sostituiscono con l'equivalente.
    finali prima di renderli raggiungibili per tag.
 8. **Costo proporzionato.** I controlli pesanti girano una volta, nel punto che protegge
    davvero (merge queue, release), non a ogni push.
+9. **Il cancello non lo sceglie chi lo attraversa.** Nei controlli differenziali lo script
+   che decide e il termine di confronto vengono dal branch di destinazione (o dall'artefatto
+   già pubblicato), non dalla PR:
+   una PR non può indebolire il controllo che la giudica.
+10. **Le correzioni automatiche passano dagli stessi cancelli.** Un bot che corregge da solo
+    apre una PR come chiunque altro (merge queue, check richiesti), con un token dai permessi
+    minimi e potendo toccare solo i file previsti.
 
 ## 1. Impostazioni del repository
 
@@ -32,7 +39,7 @@ sono segnate come tali: in un altro repo si sostituiscono con l'equivalente.
 | Permessi di default `GITHUB_TOKEN` | `read`, non può approvare PR | un workflow compromesso non scrive nulla se non dichiarato |
 | Action consentite | `selected`: GitHub + elenco esplicito delle action di terze parti usate (`owner/action@*`) | un'action non prevista (anche da una PR) non gira |
 | SHA pinning | `sha_pinning_required: true` | GitHub rifiuta i workflow con action non fissate per SHA, anche annidate |
-| Metodo di merge | solo squash (dal ruleset) | storia lineare, un commit per PR |
+| Metodo di merge | solo squash: imposto dal ruleset e, a livello repo, `allow_merge_commit`/`allow_rebase_merge: false` | storia lineare, un commit per PR; i flag repo valgono anche se il ruleset viene disattivato o sui branch che non copre |
 | `delete_branch_on_merge` | `true` | niente branch orfani |
 | `allow_auto_merge` | `true` | serve alla merge queue e all'auto-merge Dependabot |
 | Dependabot security updates | attivo | advisory → PR subito, senza cooldown |
@@ -40,11 +47,12 @@ sono segnate come tali: in un altro repo si sostituiscono con l'equivalente.
 | Private vulnerability reporting | attivo | canale privato citato in `SECURITY.md` |
 | CodeQL | default setup, suite `extended`, tutti i linguaggi (Actions compreso) | analisi su PR e su main |
 | `CODEOWNERS`, template PR | presenti | checklist test/sicurezza a ogni PR |
+| GitHub App del bot | secret `BOT_CLIENT_ID`/`BOT_PRIVATE_KEY` salvati **sia** come secret Actions **sia** come secret Dependabot; permessi App: Contents RW, Pull requests RW, Workflows RW, Metadata R | le azioni fatte con `GITHUB_TOKEN` non avviano altri workflow (la PR resterebbe senza check); sui run avviati da Dependabot sono visibili solo i secret Dependabot |
 
 Verifica:
 ```sh
 R=repos/<owner>/<repo>
-gh api $R -q '{delete_branch_on_merge,allow_auto_merge,security_and_analysis}'
+gh api $R -q '{delete_branch_on_merge,allow_auto_merge,allow_squash_merge,allow_merge_commit,allow_rebase_merge,security_and_analysis}'
 gh api $R/actions/permissions/workflow
 gh api $R/actions/permissions                       # allowed_actions, sha_pinning_required
 gh api $R/actions/permissions/selected-actions      # elenco action di terze parti consentite
@@ -87,6 +95,11 @@ gh api repos/<owner>/<repo>/rulesets -q '.[] | {id,name,target,enforcement}'
 gh api repos/<owner>/<repo>/rulesets/<id> -q '{bypass_actors, rules}'
 ```
 
+> L'API del ruleset `main` riporta anche `require_extra_approval_for_unattributed_changes: true`
+> nella regola `pull_request`: parametro non descritto nella documentazione pubblica di
+> GitHub, lasciato al valore impostato da GitHub. Va ricontrollato quando la documentazione
+> lo descrive.
+
 > I check richiesti devono girare anche sull'evento `merge_group`, altrimenti la coda resta
 > ferma in attesa. Un job saltato per `if:` vale verde; **un job matrice saltato no**: non
 > crea i check `nome (<valore>)` e la PR resta bloccata. Nelle matrici si salta per step.
@@ -94,24 +107,38 @@ gh api repos/<owner>/<repo>/rulesets/<id> -q '{bypass_actors, rules}'
 ## 3. Regole per ogni workflow
 
 - `permissions: contents: read` in testa; scritture solo a livello di job (`packages`,
-  `security-events`, `id-token`, `attestations`, `issues`).
+  `security-events`, `id-token`, `attestations`, `issues`, `pull-requests`). Eccezione:
+  `scorecard.yml` ha `permissions: read-all` in testa, come nel template OpenSSF (nessuna
+  scrittura; le due scritture sono nel job).
+- Un job che deve scrivere sul repo (commit, PR) usa un token di GitHub App generato nel job
+  (`actions/create-github-app-token`) con i soli permessi che servono
+  (`permission-contents: write`, `permission-pull-requests: write`), non un PAT.
 - Ogni `uses:` fissato per **SHA completo** con il tag in commento (`# v4`); Dependabot li aggiorna.
 - `actions/checkout` con `persist-credentials: false`.
 - Primo step di ogni job: `step-security/harden-runner`. `egress-policy: audit` ovunque,
   `block` con `allowed-endpoints` nei job che pubblicano. Elenco host ricavato dal log DNS del
   post-step di qualche run in audit; l'infrastruttura Actions è consentita in automatico.
-- `timeout-minutes` su ogni job; `concurrency` (`cancel-in-progress: true` sui check, `false`
-  sulla release: un push interrotto lascia manifest incompleti).
+- `timeout-minutes` su ogni job; `concurrency` su ogni workflow (eccezione: `scorecard.yml`):
+  `cancel-in-progress: true` sui check di sola lettura, `false` su quelli che scrivono
+  (release: un push interrotto lascia manifest incompleti; autofix, pulizia ghcr, auto-merge).
 - Niente `pull_request_target` con checkout del codice della PR.
 - Input non fidati (titoli PR, nomi branch) passati via `env:`, mai interpolati in `run:`.
 - Tool scaricati a versione fissa (es. Trivy `version: v0.76.1`), con un workflow che apre
-  una issue quando esce una nuova versione.
+  una issue quando esce una nuova versione (pnpm e corepack: dopo 7 giorni, come il cooldown).
+- Controlli differenziali: lo script del gate si prende dal checkout della base quando esiste
+  (`GATE=.base/scripts/security/diff-gate.mjs`, fallback sulla copia della PR solo se la base
+  non lo ha ancora), stesso binario e stesso DB di vulnerabilità per testa e base.
+- Gli script di sicurezza (gate, autofix) hanno test propri: `node --test scripts/security/test/`
+  in `run-tests`, gli unittest di `pip_fix.py` in `pdf-extractor-tests`. I test lavorano su
+  **copie fisse** dei file (`scripts/security/test/fixtures/`), mai sui file vivi del repo:
+  Dependabot e l'autofix li modificano e i test fallirebbero proprio sulle loro PR.
 
 ## 4. Pipeline
 
 ```
 PR ──► check leggeri (lint, type-check, dependency-review, pnpm-audit, trivy-fs, CodeQL)
-        │        audit e Trivy differenziali: bloccano solo le vulnerabilità NUOVE
+        │        audit e Trivy vuln differenziali: bloccano solo le vulnerabilità NUOVE
+        │        (gate preso dalla base); segreti e misconfig sempre assoluti
         ▼
 merge queue ──► check completi sul commit che verrà unito
         │        (build, test, pytest, build immagini + Trivy differenziale su latest)
@@ -142,15 +169,15 @@ runtime ──► non-root · cap_drop ALL · no-new-privileges · read_only + t
 
 | Workflow | Trigger | Ruolo |
 |---|---|---|
-| `tests.yml` | PR, merge queue | `run-tests` (sulla PR: install, lint, type-check; in coda + build e test), `pdf-extractor-tests` (solo in coda) |
-| `security.yml` | PR, coda, push main, giornaliero | `dependency-review` (solo PR), `pnpm-audit`, `trivy-fs`, `trivy-image (<app>)` (solo coda/main/giornaliero); differenziali su PR e coda, assoluti su main |
-| `security-autofix.yml` | giornaliero 02:30, Sicurezza fallita su main, dispatch | corregge da solo le HIGH/CRITICAL con versione corretta (≥48h, provenienza verificata): PR col token GitHub App e auto-merge; issue per attese, non correggibili, fallite |
+| `tests.yml` | PR, merge queue | `run-tests` (sulla PR: test degli script di sicurezza, install, lint, type-check; in coda + build e test), `pdf-extractor-tests` (solo in coda: pytest, test di `pip_fix.py`) |
+| `security.yml` | PR, coda, push main, giornaliero 05:00 | `dependency-review` (solo PR, HIGH+, rispetta `ignoreGhsas`), `pnpm-audit`, `trivy-fs`, `trivy-image (<app>)` (sulla PR job verde senza scansione, per step; scansione in coda/main/giornaliero); vulnerabilità differenziali su PR e coda (`trivy-image` in coda: rispetto alla `latest` pubblicata), assolute su main e nel giornaliero |
+| `security-autofix.yml` | giornaliero 02:30, Sicurezza fallita su main, dispatch (`force`, `dry_run`) | corregge da solo le HIGH/CRITICAL con versione corretta (vedi §5 "Correzioni autonome") |
 | CodeQL (default setup) | PR, main, settimanale | SAST, suite extended |
 | `scorecard.yml` | push main, settimanale | OpenSSF Scorecard, risultati pubblici |
-| `security-alerts.yml` | giornaliero, push main | fallisce e apre/aggiorna una issue se ci sono alert high/critical aperti su main (la regola code scanning blocca solo i nuovi) |
+| `security-alerts.yml` | giornaliero, push main | fallisce e apre/aggiorna una issue se ci sono alert code scanning (CodeQL, Trivy) high/critical aperti su main, Scorecard escluso; la chiude quando non ce ne sono. La regola code scanning blocca solo i nuovi. **Non** è un check richiesto: bloccherebbe anche la PR che corregge l'alert |
 | `release.yml` | tag `v*`, giornaliero, dispatch | build, firma, smoke, pubblicazione; il giornaliero ricostruisce `latest` solo su causa reale (`scripts/rebuild-check.sh`) |
 | `ghcr-cleanup.yml` | settimanale | rimuove i digest orfani (build non pubblicati) e le loro firme |
-| `dependabot-automerge.yml` | PR Dependabot | auto-merge minor/patch via token GitHub App; major e runtime restano manuali |
+| `dependabot-automerge.yml` | PR Dependabot | auto-merge minor/patch via token GitHub App (la PR passa comunque dalla merge queue); major e cambi di runtime (es. tag `python` 3.14 → 3.15, che Dependabot classifica minor) restano manuali |
 | `toolchain-version-check.yml`, `trivy-version-check.yml` | settimanale (lunedì) | issue quando escono nuove versioni dei tool fissati |
 | `publiccode-validate.yml` | PR, push | validazione `publiccode.yml` |
 
@@ -161,9 +188,40 @@ runtime ──► non-root · cap_drop ALL · no-new-privileges · read_only + t
 | Lockfile | `pnpm install --frozen-lockfile`; pip `--require-hashes` con lock completo (dirette + transitive) | build fallisce su lock non allineato |
 | Package manager | versione e hash da `packageManager`; corepack installato da tarball con `ADD --checksum=sha256:` | nessun `@latest` |
 | Immagini base | `FROM image:tag@sha256:…` | Dependabot aggiorna il digest |
-| Dependabot | ecosistemi npm, pip, docker, docker-compose, github-actions; giornaliero; `cooldown` 7 giorni (14 per le major npm/pip); gruppi minor/patch | security updates senza cooldown; se l'alert non arriva, `security-autofix.yml` dopo 48h e con provenienza verificata |
-| Audit | `pnpm audit --prod` HIGH+, Trivy fs (lockfile, segreti, misconfig Dockerfile/compose), dependency-review su PR (dev e Actions compresi) | eccezioni solo motivate (`auditConfig.ignoreGhsas`, `.trivyignore.yaml`) |
+| Dependabot | ecosistemi npm, pip, docker, docker-compose, github-actions; giornaliero alle 01:00 Europe/Rome; `cooldown` 7 giorni (14 per le major npm/pip; docker e Actions non supportano `semver-major-days`); gruppi minor/patch; major di `postgres` ignorate (richiedono migrazione dei dati, mai un bump) | security updates senza cooldown; se l'alert non arriva o il cooldown blocca la PR raggruppata, `security-autofix.yml` |
+| Audit | `pnpm audit --prod` HIGH+, Trivy fs (lockfile, segreti, misconfig Dockerfile/compose), dependency-review su PR HIGH+ (dev e Actions compresi) | eccezioni solo motivate (vedi sotto) |
 | Runtime minimale | npm/npx/corepack rimossi dall'immagine di produzione; `apk/apt upgrade` invalidato una volta al giorno (`PKG_REFRESH`) | meno CVE trasportate |
+
+**Tre strumenti per le eccezioni, ognuno con motivazione scritta accanto:**
+- `overrides` in `pnpm-workspace.yaml`: forza una versione corretta quando il pacchetto padre
+  non si è ancora aggiornato. Va limitato alla versione vulnerabile (`'pkg@<11.0.1': ^11.0.4`,
+  non `pkg: ^11`) e ha nel commento l'advisory e la condizione di rimozione ("quando i padri
+  passano a ^11"). Per un salto di major (fix senza backport) verificare che i padri non usino
+  le API rimosse e che lint, build e test restino verdi.
+- `auditConfig.ignoreGhsas`: solo advisory **senza** versione corretta e con codice vulnerabile
+  non raggiungibile, dimostrato da un test di regressione. Letto anche da dependency-review.
+- `.trivyignore.yaml`: per ID e **limitato per percorso** (es. `DS-0002` "utente root" solo sui
+  `Dockerfile.dev`), con `statement`.
+
+### Correzioni autonome (`security-autofix.yml`)
+
+Rete di sicurezza per le HIGH/CRITICAL con versione corretta, quando Dependabot non apre
+l'alert o il cooldown ferma la PR. Elementi da replicare:
+- **Eccezione al cooldown, non abolizione**: la versione scelta è la più bassa che corregge,
+  pubblicata da almeno **48 ore**, con **provenienza verificata** (firma del registry npm,
+  attestazione SLSA o PEP 740 dallo **stesso repository** delle versioni precedenti). Il
+  dispatch `force` salta solo le 48 ore, mai la provenienza.
+- Per tipo: npm diretta → bump; npm transitiva → `override` sulla sola versione vulnerabile;
+  pip → pin in `requirements.in` e lock ricompilato con hash; immagine base → digest più recente
+  dello stesso tag.
+- Commit creati via API GraphQL `createCommitOnBranch` col token della GitHub App: commit
+  verificati da GitHub, nessuna chiave di firma nel runner. Il commit fallisce se il working
+  tree tocca file fuori da un elenco consentito (un tool di terze parti eseguito durante la
+  correzione non può modificare workflow, gate o sorgenti).
+- Una PR unica con auto-merge, quindi merge queue e check richiesti come ogni altra; se
+  fallisce, al giro dopo una PR per pacchetto, e le correzioni fallite restano escluse.
+- Tre issue di stato (in attesa / non correggibili / fallite), chiuse quando si svuotano.
+- Il merge su main è una causa reale per il rebuild di `latest` delle 04:30.
 
 ## 6. Release e artefatti
 
@@ -204,11 +262,13 @@ runtime ──► non-root · cap_drop ALL · no-new-privileges · read_only + t
   giornaliero (solo nei giorni con una causa); il `latest-YYYYMMDD` precedente = rollback
   immediato.
 
-Verifica manuale di un tag:
+Verifica manuale di un tag (firma cosign; con `gh` disponibile anche le attestazioni
+provenance e SBOM, via `gh attestation verify`):
 ```sh
 scripts/verify-images.sh v1.11.12          # Docker
 CONTAINER_CLI=podman scripts/verify-images.sh v1.11.12
 ```
+Il servizio `verify-images` del compose (§7) verifica solo la firma cosign.
 Identità attesa: `^https://github.com/<owner>/<repo>/\.github/workflows/release\.yml@refs/(tags/v.*|heads/main)$`,
 issuer `https://token.actions.githubusercontent.com`.
 
@@ -228,12 +288,12 @@ issuer `https://token.actions.githubusercontent.com`.
 
 | Misura | Dettaglio |
 |---|---|
-| Utente | tutte le immagini non-root (uid dedicato) |
-| Privilegi | `security_opt: no-new-privileges:true`, `cap_drop: ALL`; solo DB e cache riaggiungono le 5 capability dell'entrypoint |
+| Utente | immagini applicative non-root (uid dedicato: `node`, 101, 10001) e cosign `nonroot`; DB e cache (immagini ufficiali) partono root e l'entrypoint passa all'utente dedicato |
+| Privilegi | `security_opt: no-new-privileges:true`, `cap_drop: ALL` su tutti i servizi; solo DB e cache riaggiungono le 5 capability che servono al loro entrypoint (`CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `SETUID`, `SETGID`) |
 | Filesystem | `read_only: true` su tutti i servizi; scritture solo su volumi named e tmpfs dichiarati |
 | Temporanei | upload grandi su volume su disco (non tmpfs in RAM); `/tmp` in tmpfs piccolo dove basta |
 | Config runtime generata | scritta in tmpfs (es. `config.js` di nginx in `/tmp/runtime-config`), mai nella root servita |
-| Rete | backend non esposto dal proxy esterno; frontend same-origin via nginx |
+| Rete | porte sull'host solo per i due frontend (il proxy esterno punta lì); backend, DB, cache e servizio PDF solo sulla rete interna; frontend same-origin via nginx verso `backend:8080`. Le porte dirette di sviluppo stanno solo in `docker-compose.override.yml` |
 | Segreti | solo da variabili dello stack (`:?` per gli obbligatori), mai nell'immagine |
 
 ## 9. Monitoraggio e governance
@@ -267,7 +327,8 @@ Segnare ✅ / ⚠️ (parziale) / ❌ / n.a. Le voci marcate (★) danno il valo
 - [ ] Dependabot security updates attivi
 - [ ] CodeQL (o SAST equivalente) su PR e branch principale
 - [ ] SHA pinning imposto da impostazione (`sha_pinning_required`), action consentite ristrette a un elenco
-- [ ] Branch cancellati dopo il merge, solo squash
+- [ ] Branch cancellati dopo il merge, solo squash (anche a livello repo, non solo nel ruleset)
+- [ ] Bot con GitHub App (non PAT né `GITHUB_TOKEN`), secret anche lato Dependabot
 
 **Ruleset / protezione**
 - [ ] ★ Branch principale: PR obbligatoria, niente force-push/cancellazione, **nessun bypass**
@@ -284,6 +345,8 @@ Segnare ✅ / ⚠️ (parziale) / ❌ / n.a. Le voci marcate (★) danno il valo
 - [ ] `harden-runner` (audit ovunque, block sui job che pubblicano)
 - [ ] `timeout-minutes` e `concurrency` su ogni job
 - [ ] Controlli pesanti solo dove servono (coda/release), niente run duplicati su push main
+- [ ] Gate differenziali con script e termine di confronto presi dalla base, non dalla PR
+- [ ] Script di sicurezza con test propri, su copie fisse dei file (mai sui file vivi)
 
 **Dipendenze**
 - [ ] ★ Lockfile obbligatorio e congelato in CI; hash per pip/altri
@@ -291,6 +354,8 @@ Segnare ✅ / ⚠️ (parziale) / ❌ / n.a. Le voci marcate (★) danno il valo
 - [ ] Dependabot su tutti gli ecosistemi (codice, Docker, compose, Actions) con cooldown
 - [ ] Immagini base fissate per digest, tool CI a versione fissa
 - [ ] Scansione segreti e misconfig (Trivy fs o equivalente)
+- [ ] Eccezioni (override, ignore) con motivazione, limitate alla versione/al percorso, con condizione di rimozione
+- [ ] Correzione automatica delle vulnerabilità con versione corretta: età minima + provenienza, stessa merge queue, file consentiti
 
 **Release**
 - [ ] ★ Build in CI, mai dal PC del maintainer
@@ -306,6 +371,7 @@ Segnare ✅ / ⚠️ (parziale) / ❌ / n.a. Le voci marcate (★) danno il valo
 - [ ] ★ Container non-root, `cap_drop: ALL`, `no-new-privileges`
 - [ ] Filesystem in sola lettura con tmpfs/volumi espliciti
 - [ ] Segreti solo da ambiente, obbligatori con errore esplicito
+- [ ] Solo i servizi d'ingresso pubblicano porte sull'host; DB, cache e API interne solo in rete interna
 
 **Governance**
 - [ ] `CONTRIBUTING.md` con policy test, template PR
