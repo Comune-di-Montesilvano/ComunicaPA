@@ -5,8 +5,8 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { planNpmFix, applyOverride, directCommand } from '../apply-npm.mjs';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
-const realWorkspaceYaml = readFileSync(join(root, 'pnpm-workspace.yaml'), 'utf8');
+const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures'); // copie fisse: l'autofix modifica i file reali
+const realWorkspaceYaml = readFileSync(join(fixtures, 'pnpm-workspace.yaml'), 'utf8');
 const manifests = [
   { path: 'package.json', json: { name: 'comunicapa', devDependencies: { typescript: '^6.0.3' } } },
   { path: 'apps/backend/package.json', json: { name: 'backend', dependencies: { 'node-forge': '^1.3.1', soap: '^1.14.0' }, devDependencies: { 'fast-check': '~4.10.2' } } },

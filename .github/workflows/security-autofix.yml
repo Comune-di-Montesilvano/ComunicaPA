@@ -142,7 +142,7 @@ jobs:
             --jq '[.[] | select(.headRefName | startswith("security-autofix/"))]' > "$W/prs.json"
           node --input-type=module -e '
             import { readFileSync, writeFileSync } from "node:fs";
-            import { nextMode } from "./scripts/security/autofix.mjs";
+            import { nextMode, prFixMarkers } from "./scripts/security/autofix.mjs";
             import { parseIssueState } from "./scripts/security/issues.mjs";
             const W = process.env.W;
             const issue = JSON.parse(readFileSync(`${W}/failed-issue.json`, "utf8"));
@@ -150,7 +150,7 @@ jobs:
             const prs = JSON.parse(readFileSync(`${W}/prs.json`, "utf8")).map((p) => ({
               number: p.number,
               mode: p.headRefName.startsWith("security-autofix/split-") ? "split" : "single",
-              pkg: (p.body.match(/<!-- autofix-fix (\S+) -->/g) ?? []).map((m) => m.split(" ")[1]),
+              pkg: prFixMarkers(p.body),
               createdAt: new Date(p.createdAt),
               failedChecks: (p.statusCheckRollup ?? []).some((c) => ["FAILURE", "ERROR", "TIMED_OUT", "CANCELLED"].includes(c.conclusion ?? c.state)),
             }));
