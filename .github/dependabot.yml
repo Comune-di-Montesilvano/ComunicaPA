@@ -95,6 +95,11 @@ updates:
     commit-message:
       prefix: "chore"
       include: "scope"
+    # postgres-dump deve restare sulla 17 (legge il volume della 17); le major di
+    # postgres richiedono comunque una migrazione dei dati, mai un semplice bump.
+    ignore:
+      - dependency-name: "postgres"
+        update-types: ["version-update:semver-major"]
 
   # Workflow GitHub Actions (.github/workflows/*.yml)
   - package-ecosystem: "github-actions"
