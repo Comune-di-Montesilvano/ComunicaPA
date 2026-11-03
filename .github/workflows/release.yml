@@ -57,7 +57,7 @@ jobs:
       # docker build). Gli endpoint dell'infrastruttura Actions sono consentiti dall'agent.
       # Release fallita per "blocked" → host nel log del post-step harden-runner o nella
       # pagina insights della run: aggiungerlo qui se legittimo.
-      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: block
           # Dal controllo cause: registry, Trivy (binario da get.trivy.dev → GitHub releases,
@@ -192,7 +192,7 @@ jobs:
       # docker build). Gli endpoint dell'infrastruttura Actions sono consentiti dall'agent.
       # Release fallita per "blocked" → host nel log del post-step harden-runner o nella
       # pagina insights della run: aggiungerlo qui se legittimo.
-      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -420,7 +420,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -488,7 +488,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+      - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: block
           allowed-endpoints: >
