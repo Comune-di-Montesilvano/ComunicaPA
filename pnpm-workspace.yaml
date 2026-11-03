@@ -12,6 +12,8 @@ allowBuilds:
 overrides:
   # @nestjs/platform-express 12.x dipende da multer 2.4.0 esatto (CVE-2026-113872)
   'multer@2.4.0': 2.5.0
+  # GHSA-mrwp-f3q8-3g9p (2026-11-03, security-autofix): rimuovere quando il padre si aggiorna
+  'follow-redirects@1.16.1': 1.16.2
 # Advisory senza versione corretta, mitigati nel codice. Ognuno va rimosso appena esce
 # un fix upstream (Dependabot/audit lo segnalano di nuovo se la mitigazione non basta).
 auditConfig:
