@@ -34,10 +34,6 @@ for svc in postgres redis backend pdf-extractor frontend-admin frontend-citizen;
 done
 verify=$($COMPOSE ps -a --format '{{.State}} {{.ExitCode}}' verify-images)
 [ "$verify" = "exited 0" ] || fail "verify-images: '$verify'"
-for job in postgres-dump postgres-restore; do
-  st=$($COMPOSE ps -a --format '{{.State}} {{.ExitCode}}' "$job")
-  [ "$st" = "exited 0" ] || fail "$job: '$st'"
-done
 ok "servizi in esecuzione"
 
 for url in "$ADMIN" "$CITIZEN"; do

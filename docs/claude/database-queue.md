@@ -32,20 +32,19 @@ un id fisso: lasciarlo autogenerato e leggere sempre `ORDER BY
 `database.module.ts` — mancare `entities:` fa fallire silenziosamente
 l'injection del Repository per quella entity, nessun errore a compile-time.
 
-## Postgres 17 → 18 (major) — migrazione automatica nel compose, mai solo il bump dell'immagine
+## Upgrade major di Postgres — mai solo il bump dell'immagine, serve una migrazione automatica nel compose
 
-Una major di Postgres non legge i file della precedente: la 18 sul volume della 17 esce subito senza toccare i file ("upgrading the Docker image without upgrading the underlying database"), e dalla 18 l'immagine vuole un solo mount su `/var/lib/postgresql` (dati in `18/docker`): il vecchio mount su `.../data` la fa uscire anche a volume vuoto. Incidente reale (#290, bump Dependabot della sola immagine): produzione senza DB dopo il redeploy, ripristinata col revert (#308); volume della 17 intatto (verificato: file identici dopo tre avvii della 18).
+Una major di Postgres non legge i file della precedente: la 18 sul volume della 17 esce subito senza toccare i file ("upgrading the Docker image without upgrading the underlying database"), e dalla 18 l'immagine vuole un solo mount su `/var/lib/postgresql` (dati in `18/docker`): il vecchio mount su `.../data` la fa uscire anche a volume vuoto. Incidente reale (#290, bump Dependabot della sola immagine): produzione senza DB dopo il redeploy, ripristinata col revert (#308); volume della 17 intatto (verificato: file identici dopo tre avvii della 18). Dependabot per questo ignora le major di `postgres`.
 
-Migrazione automatica al primo "Pull and redeploy" con la 18, niente passi a mano:
+17 → 18 fatta con #309 (commit a248b6a, ricetta da riprendere per la 19), poi tolta a migrazione chiusa su tutte le produzioni:
 
-- volume nuovo `postgres18_data:/var/lib/postgresql`; `postgres_data` (la 17) mai scritto dalla 18 → rollback = rimettere la 17 nel compose;
-- `postgres-dump` (immagine 17, una tantum): dati 17 presenti e niente `pre18.dump` → 17 temporanea senza rete (socket in `/tmp`), `pg_dump -Fc` in `postgres_data/pre18.dump`. Compose crea tutti i container prima di avviarne uno, quindi la vecchia 17 è già ferma (stop pulito); se una 17 risponde comunque su `postgres` esce con errore (mai due server sugli stessi file);
-- `postgres-restore` (immagine 18, una tantum, dopo `postgres` healthy): dump presente e DB senza il marker `COMMENT ON DATABASE … 'restored-from-17'` → `DROP SCHEMA public CASCADE`, `pg_restore --exit-on-error`, marker. Fallisce → backend fermo, il deploy successivo riprova da capo;
-- il backend dipende da `postgres-restore` e ha l'etichetta `comunicapa.postgres-major`: `depends_on` non entra nell'hash di compose, senza l'etichetta il vecchio backend resterebbe acceso e si riconnetterebbe alla 18 a metà restore (visto in prova).
+- volume nuovo (`postgres18_data:/var/lib/postgresql`), quello vecchio mai scritto dalla nuova major → rollback = rimettere la vecchia immagine sul vecchio volume;
+- job `postgres-dump` (immagine vecchia, una tantum, `postgres` dipende da lui): dati vecchi presenti e niente dump → server temporaneo senza rete (socket in `/tmp`), `pg_dump -Fc` nel volume vecchio. Compose crea tutti i container prima di avviarne uno, quindi il vecchio server è già fermo; se uno risponde comunque su `postgres` esce con errore (mai due server sugli stessi file);
+- job `postgres-restore` (immagine nuova, dopo `postgres` healthy): dump presente e DB senza marker `COMMENT ON DATABASE … 'restored-from-17'` → `DROP SCHEMA public CASCADE`, `pg_restore --exit-on-error`, marker. Fallito → backend fermo, il deploy successivo riprova;
+- backend con `depends_on` sul restore E un'etichetta cambiata: `depends_on` non entra nell'hash di compose, senza l'etichetta il vecchio backend resta acceso e si riconnette alla nuova major a metà restore (visto in prova);
+- `smoke-stack.sh` controlla che i due job escano 0; provare in locale con `-p` separato: redeploy con la vecchia accesa, secondo deploy, restore interrotto, stack fermo, installazione nuova, rollback.
 
-Verificato in locale (`-p` separato): redeploy con la 17 accesa e stack completo (`smoke-stack.sh` verde, dati e 60 migration presenti, backend avviato dopo la fine del restore), secondo deploy (tutto saltato), restore interrotto (ripete), stack fermo, installazione nuova, rollback alla 17.
-
-A migrazione chiusa (qualche settimana): PR che toglie `postgres-dump`, `postgres-restore`, la dipendenza del backend, il controllo in `smoke-stack.sh` e il volume `postgres_data`; poi rimozione del volume da Portainer. Dependabot ignora le major di `postgres` (servono sempre una migrazione così).
+Dopo la rimozione il volume `postgres_data` (dati 17) resta sugli host finché non lo si cancella a mano da Portainer, così come i container fermi `postgres-dump`/`postgres-restore`.
 
 ## Redis — AOF obbligatorio (`--appendonly yes`), mai solo RDB di default per una coda BullMQ in produzione
 
