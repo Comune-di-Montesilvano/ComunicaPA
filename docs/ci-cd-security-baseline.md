@@ -315,6 +315,7 @@ issuer `https://token.actions.githubusercontent.com`.
 3. Secret scanning dei pattern generici e verifica di validità dei segreti (licenza Secret Protection).
 4. Fuori dalla CI/CD: rotazione dei segreti dello stack, accesso a Portainer, backup con
    ripristino provato, monitoraggio a runtime.
+
 ## Checklist per la gap analysis di un altro repo
 
 Segnare ✅ / ⚠️ (parziale) / ❌ / n.a. Le voci marcate (★) danno il valore maggiore per lo sforzo.
