@@ -39,7 +39,7 @@ sono segnate come tali: in un altro repo si sostituiscono con l'equivalente.
 | Permessi di default `GITHUB_TOKEN` | `read`, non può approvare PR | un workflow compromesso non scrive nulla se non dichiarato |
 | Action consentite | `selected`: GitHub + elenco esplicito delle action di terze parti usate (`owner/action@*`) | un'action non prevista (anche da una PR) non gira |
 | SHA pinning | `sha_pinning_required: true` | GitHub rifiuta i workflow con action non fissate per SHA, anche annidate |
-| Metodo di merge | solo squash: imposto dal ruleset e, a livello repo, `allow_merge_commit`/`allow_rebase_merge: false` | storia lineare, un commit per PR (su ComunicaPA i due flag repo sono ancora `true`: decide il ruleset) |
+| Metodo di merge | solo squash: imposto dal ruleset e, a livello repo, `allow_merge_commit`/`allow_rebase_merge: false` | storia lineare, un commit per PR; i flag repo valgono anche se il ruleset viene disattivato o sui branch che non copre |
 | `delete_branch_on_merge` | `true` | niente branch orfani |
 | `allow_auto_merge` | `true` | serve alla merge queue e all'auto-merge Dependabot |
 | Dependabot security updates | attivo | advisory → PR subito, senza cooldown |
@@ -315,9 +315,6 @@ issuer `https://token.actions.githubusercontent.com`.
 3. Secret scanning dei pattern generici e verifica di validità dei segreti (licenza Secret Protection).
 4. Fuori dalla CI/CD: rotazione dei segreti dello stack, accesso a Portainer, backup con
    ripristino provato, monitoraggio a runtime.
-5. **Metodi di merge a livello repo**: merge commit e rebase restano abilitati; oggi li blocca
-   solo il ruleset.
-
 ## Checklist per la gap analysis di un altro repo
 
 Segnare ✅ / ⚠️ (parziale) / ❌ / n.a. Le voci marcate (★) danno il valore maggiore per lo sforzo.
