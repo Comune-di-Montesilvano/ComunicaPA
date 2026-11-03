@@ -5573,7 +5573,7 @@ export function App(): React.JSX.Element {
                 if (node.type !== 'element' || node.tagName !== 'a') return;
                 const href = String(node.properties?.href ?? '');
                 if (/^https?:\/\//.test(href)) {
-                  node.properties = { ...node.properties, target: '_blank', rel: 'noopener noreferrer' };
+                  node.properties = { ...node.properties, target: '_blank', rel: ['noopener', 'noreferrer'] };
                 }
               }}
             />
