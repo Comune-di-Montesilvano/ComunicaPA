@@ -47,6 +47,7 @@ import { SignatureVerificationBulkService } from '../signature-verification/sign
 import { SignatureVerificationService } from '../signature-verification/signature-verification.service.js';
 import { SignatureVerificationJobStatus } from '../entities/signature-verification-job.entity.js';
 import { isPartitaIva } from '../channels/tax-id.util.js';
+import { samePecAddress } from '../channels/pec-address.util.js';
 import { PostalPosteTracking } from '../entities/postal-poste-tracking.entity.js';
 import { RemoteSignJob, RemoteSignJobStatus } from '../entities/remote-sign-job.entity.js';
 import { postalLegalOutcome, postalLegalOutcomeSql, POSTAL_GLOBALCOM_ERROR_SQL, isPostalLegalOutcome } from './postal-legal-outcome.util.js';
@@ -1051,7 +1052,9 @@ export class CampaignsService {
           // fallito "Recipient non ha indirizzo PEC" (bug reale, campagna
           // EMAIL). Per INAD (persona fisica) found già implica un indirizzo
           // non vuoto, questa guardia è ridondante ma innocua.
-          const diverted = found && !!digitalAddress && digitalAddress !== recipient.pec;
+          // samePecAddress: le fonti differiscono spesso solo per maiuscole (CSV in maiuscolo,
+          // Registro Imprese in minuscolo) — non è una PEC diversa.
+          const diverted = found && !!digitalAddress && !samePecAddress(digitalAddress, recipient.pec);
           const needsReview = blockPecReview && diverted && isPiva && campaign.channelType === 'PEC';
           await this.recipientRepo.update(
             { id: recipient.id },
@@ -1226,7 +1229,7 @@ export class CampaignsService {
         const match = recipient.codiceFiscale ? resultByCf.get(recipient.codiceFiscale) : undefined;
         const found = !!match?.digitalAddress?.length;
         const inadAddress = found ? match!.digitalAddress![0].digitalAddress : null;
-        const diverted = found && inadAddress !== recipient.pec;
+        const diverted = found && !samePecAddress(inadAddress, recipient.pec);
         await this.recipientRepo.update(
           { id: recipient.id },
           {

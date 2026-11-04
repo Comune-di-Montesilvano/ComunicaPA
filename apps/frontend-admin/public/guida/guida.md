@@ -1,6 +1,6 @@
 # ComunicaPA – Guida per gli operatori
 
-_Ultimo aggiornamento: 2026-10-27_
+_Ultimo aggiornamento: 2026-11-04_
 
 ## Cos'è e chi lo usa
 
@@ -288,7 +288,7 @@ Da **Impostazioni** gli amministratori configurano server Email e PEC, App IO, S
 
 ### Alcuni destinatari sono «PEC da verificare»
 
-**Causa:** in una campagna PEC verso imprese la PEC del file è diversa da quella del Registro Imprese. Il sistema non sceglie da solo e blocca l'invio per quei destinatari.
+**Causa:** in una campagna PEC verso imprese la PEC del file è diversa da quella del Registro Imprese. Il sistema non sceglie da solo e blocca l'invio per quei destinatari. Due PEC che differiscono solo per maiuscole e minuscole (es. `NOME@PEC.IT` e `nome@pec.it`) sono considerate uguali e non vengono bloccate.
 
 **Soluzione:** nel dettaglio della campagna, riquadro «PEC difformi da verificare», confronta per ciascun destinatario la PEC su file con quella trovata e premi **Mantieni PEC su file** oppure **Usa PEC trovata**. Dopo la scelta l'invio a quel destinatario parte.
 
