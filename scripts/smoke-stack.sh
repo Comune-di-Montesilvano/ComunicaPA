@@ -88,6 +88,33 @@ if $COMPOSE exec -T backend sh -c 'touch /app/smoke' 2>/dev/null; then
 fi
 ok "filesystem in sola lettura"
 
+# --- backend-ricreato (inizio) ---
+# Solo il backend ricreato, con un IP diverso (redeploy che tocca solo lui, incidente
+# 2026-11-04): i frontend devono seguirlo senza riavvio. Docker riassegna subito l'IP appena
+# liberato, quindi un segnaposto lo occupa mentre il backend riparte.
+old_id=$($COMPOSE ps -q backend)
+net=$(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}' "$old_id" | head -n1)
+ip_of() { docker inspect -f "{{(index .NetworkSettings.Networks \"$net\").IPAddress}}" "$1"; }
+old_ip=$(ip_of "$old_id")
+img=$(docker inspect -f '{{.Config.Image}}' "$old_id")
+$COMPOSE rm -sf backend >/dev/null 2>&1 || fail "rimozione del backend"
+docker run -d --rm --name smoke-ip-hold --network "$net" --entrypoint sleep "$img" 600 >/dev/null \
+  || fail "segnaposto per l'IP del backend"
+$COMPOSE up -d --no-deps backend >/dev/null 2>&1 || fail "ricreazione del backend"
+new_ip=$(ip_of "$($COMPOSE ps -q backend)")
+docker rm -f smoke-ip-hold >/dev/null
+[ "$new_ip" != "$old_ip" ] || fail "IP del backend invariato ($old_ip): controllo non significativo"
+for url in "$ADMIN" "$CITIZEN"; do
+  for ((i = 0; i < TIMEOUT; i += 3)); do
+    curl -fsS "$url/api/version" >/dev/null 2>&1 && break
+    sleep 3
+  done
+  curl -fsS "$url/api/version" >/dev/null 2>&1 \
+    || fail "$url/api non segue il backend ricreato ($old_ip -> $new_ip) entro ${TIMEOUT}s"
+done
+ok "frontend seguono il backend ricreato ($old_ip -> $new_ip)"
+# --- backend-ricreato (fine) ---
+
 # Il messaggio informativo dello script ipv6 di nginx menziona "read-only file system?".
 if $COMPOSE logs --no-color | grep -iE 'EROFS|read-only file system|EACCES|permission denied' | grep -v 10-listen-on-ipv6; then
   fail "errori di filesystem nei log"

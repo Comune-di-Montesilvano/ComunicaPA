@@ -34,6 +34,19 @@ esac
 # In /tmp (tmpfs) e non nella root html: il container gira con filesystem in sola
 # lettura (read_only nel docker-compose.yml). default.conf serve /config.js da qui.
 mkdir -p /tmp/runtime-config
+# Resolver di nginx per il nome `backend` (default.conf): il DNS della rete dei container,
+# cioe' il primo nameserver di /etc/resolv.conf (Docker 127.0.0.11, podman aardvark-dns sul
+# gateway della rete). Gli eventuali successivi sono DNS dell'host, che non conoscono i nomi
+# dei servizi: nginx li userebbe a turno e `backend` risulterebbe a tratti inesistente.
+ns=$(awk '$1 == "nameserver" { print $2; exit }' /etc/resolv.conf)
+case "$ns" in
+  '' | *[!0-9A-Fa-f.:]*)
+    echo "nameserver non valido in /etc/resolv.conf: '$ns'" >&2
+    exit 1
+    ;;
+  *:*) ns="[$ns]" ;;
+esac
+echo "resolver $ns valid=10s;" > /tmp/runtime-config/resolver.conf
 cat > /tmp/runtime-config/config.js <<EOF
 window.__COMUNICAPA_CONFIG__ = { apiBase: '${API_BASE}', sentryDsn: '${SENTRY_DSN}', sentryEnvironment: '${SENTRY_ENVIRONMENT}' };
 EOF
