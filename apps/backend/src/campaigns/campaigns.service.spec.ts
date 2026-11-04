@@ -1920,6 +1920,27 @@ describe('CampaignsService', () => {
       );
     });
 
+    it('INAD irraggiungibile sopra soglia: campagna torna in bozza con messaggio, mai QUEUED senza attempt', async () => {
+      mockSettings.get.mockImplementation(async (key?: string) => (key === 'inad.checkEnabled' ? true : null));
+      const campaignPec = { ...mockCampaign, id: 'c-bulk-down', channelType: 'PEC', channelConfig: {} };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaignPec);
+      const manyRecipients = Array.from({ length: 150 }, (_, i) => ({ id: `r${i}`, codiceFiscale: `CF${i}` }));
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: { extraData?: boolean } }) => {
+        if (select?.extraData) return Promise.resolve([]);
+        return Promise.resolve(manyRecipients);
+      });
+      mockInadService.startBulkExtraction.mockRejectedValue(new TypeError('fetch failed'));
+      mockCampaignRepo.update.mockClear();
+      mockCampaignRepo.save.mockClear();
+
+      const result = await service.launch('c-bulk-down', ADMIN_REQUESTER);
+
+      expect(result).toEqual(expect.objectContaining({ launched: 0, blocked: true, message: expect.stringContaining('bozza') }));
+      expect(mockCampaignRepo.update).toHaveBeenCalledWith({ id: 'c-bulk-down' }, { status: CampaignStatus.DRAFT });
+      expect(mockCampaignRepo.save).not.toHaveBeenCalledWith(expect.objectContaining({ status: CampaignStatus.CHECKING_INAD }));
+      expect(mockAttemptRepo.createQueryBuilder).not.toHaveBeenCalled();
+    });
+
     it('finalizeInadCheck applica i risultati e lancia createAttemptsAndEnqueue', async () => {
       const campaignChecking = {
         ...mockCampaign,
