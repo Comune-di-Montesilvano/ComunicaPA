@@ -14,6 +14,7 @@ import {
 } from './registro-imprese-job.types.js';
 import { RegistroImpreseService } from './registro-imprese.service.js';
 import { RegistroImpreseRateLimitError } from './registro-imprese-rate-limit.error.js';
+import { samePecAddress } from '../pec-address.util.js';
 import { DomicileVerificationEventsService } from '../domicile-verification/domicile-verification-events.service.js';
 
 type AnyJobData = RegistroImpreseVerifyJobData | RegistroImpreseCampaignVerifyJobData;
@@ -138,7 +139,9 @@ export class RegistroImpreseVerifyProcessor extends WorkerHost {
     // !!pec, un'impresa trovata-senza-PEC forzava comunque il canale a PEC
     // (pec=null !== recipientPec) — bug reale gemello di quello in
     // campaigns.service.ts runInadExtractLoop, stesso identico pattern.
-    const diverted = found && !!pec && pec !== recipientPec;
+    // Senza distinzione maiuscole/spazi (samePecAddress): stesso indirizzo scritto diversamente
+    // tra CSV e Registro Imprese non è una PEC difforme.
+    const diverted = found && !!pec && !samePecAddress(pec, recipientPec);
     // Campagna PEC su PIVA (Registro Imprese) con diverted: mai auto-applicare
     // la PEC trovata (a differenza di INAD/switch-canale) — invio bloccato in
     // PENDING_REVIEW finché l'operatore non decide, vedi resolvePecReview e

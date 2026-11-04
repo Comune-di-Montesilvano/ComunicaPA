@@ -195,6 +195,19 @@ describe('RegistroImpreseVerifyProcessor.process — VERIFY_PIVA_CAMPAIGN_JOB_NA
     expect(patch.inadCheck.diverted).toBe(false);
   });
 
+  it('campagna PEC, PEC trovata uguale a quella su file salvo maiuscole/spazi: nessun PENDING_REVIEW né sovrascrittura (bug reale: 7 PEC "difformi" su 13 erano solo in maiuscolo)', async () => {
+    mockRegistroImprese.dettaglioImpresa.mockResolvedValue({ found: true, raw: '<xml/>', pec: 'dibella.viaggi@pec.it' });
+    const jobDataPec = { ...jobData, originalChannel: 'PEC', recipientPec: ' DIBELLA.VIAGGI@PEC.IT' };
+
+    await processor.process({ name: VERIFY_PIVA_CAMPAIGN_JOB_NAME, data: jobDataPec } as any);
+
+    const [, patch] = mockRecipientRepo.update.mock.calls[0];
+    expect(patch.status).toBeUndefined();
+    expect(patch.pec).toBeUndefined();
+    expect(patch.inadCheck).toEqual(expect.objectContaining({ found: true, diverted: false }));
+    expect(patch.inadCheck.foundAddress).toBeUndefined();
+  });
+
   it('non scrive nulla (nessun override) su un errore generico — il job resta comunque completato', async () => {
     mockRegistroImprese.dettaglioImpresa.mockRejectedValue(new Error('boom'));
 

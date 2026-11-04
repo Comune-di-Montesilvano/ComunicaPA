@@ -1766,6 +1766,26 @@ describe('CampaignsService', () => {
       void result;
     });
 
+    it('campagna PEC, PIVA con PEC Registro Imprese uguale a quella su file salvo maiuscole: nessun PENDING_REVIEW, accodato col canale PEC', async () => {
+      mockSettings.get.mockImplementation(async (key?: string) => (key === 'inad.checkEnabled' ? true : null));
+      const campaignPec = { ...mockCampaign, id: 'c-inad-piva-case', channelType: 'PEC', channelConfig: {} };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaignPec);
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: { extraData?: boolean } }) => {
+        if (select?.extraData) return Promise.resolve([]);
+        return Promise.resolve([{ id: 'r-piva', codiceFiscale: '01926010685', pec: '01926010685@IMPRESA.ITALIA.IT' }]);
+      });
+      mockRegistroImpreseService.dettaglioImpresa.mockResolvedValue({ found: true, pec: '01926010685@impresa.italia.it' });
+
+      await service.launch('c-inad-piva-case', ADMIN_REQUESTER);
+
+      const updateCall = mockRecipientRepo.update.mock.calls.find((c: any) => c[0]?.id === 'r-piva');
+      expect(updateCall![1]).not.toHaveProperty('status');
+      expect(updateCall![1]).not.toHaveProperty('pec');
+      expect(updateCall![1].inadCheck).toEqual(expect.objectContaining({ found: true, diverted: false }));
+      const insertBuilder = mockAttemptRepo.createQueryBuilder();
+      expect(insertBuilder.values).toHaveBeenCalledWith([expect.objectContaining({ recipientId: 'r-piva', channelType: 'PEC' })]);
+    });
+
     it('campagna EMAIL, PIVA trovata su Registro Imprese ma SENZA PEC: mai dirottato a PEC (bug reale: found=true non implica PEC presente)', async () => {
       mockSettings.get.mockImplementation(async (key?: string) => (key === 'inad.checkEnabled' ? true : null));
       const campaignEmail = { ...mockCampaign, id: 'c-inad-piva-nopec', channelType: 'EMAIL', channelConfig: {} };
@@ -1900,6 +1920,27 @@ describe('CampaignsService', () => {
       );
     });
 
+    it('INAD irraggiungibile sopra soglia: campagna torna in bozza con messaggio, mai QUEUED senza attempt', async () => {
+      mockSettings.get.mockImplementation(async (key?: string) => (key === 'inad.checkEnabled' ? true : null));
+      const campaignPec = { ...mockCampaign, id: 'c-bulk-down', channelType: 'PEC', channelConfig: {} };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaignPec);
+      const manyRecipients = Array.from({ length: 150 }, (_, i) => ({ id: `r${i}`, codiceFiscale: `CF${i}` }));
+      mockRecipientRepo.find.mockImplementation(({ select }: { select: { extraData?: boolean } }) => {
+        if (select?.extraData) return Promise.resolve([]);
+        return Promise.resolve(manyRecipients);
+      });
+      mockInadService.startBulkExtraction.mockRejectedValue(new TypeError('fetch failed'));
+      mockCampaignRepo.update.mockClear();
+      mockCampaignRepo.save.mockClear();
+
+      const result = await service.launch('c-bulk-down', ADMIN_REQUESTER);
+
+      expect(result).toEqual(expect.objectContaining({ launched: 0, blocked: true, message: expect.stringContaining('bozza') }));
+      expect(mockCampaignRepo.update).toHaveBeenCalledWith({ id: 'c-bulk-down' }, { status: CampaignStatus.DRAFT });
+      expect(mockCampaignRepo.save).not.toHaveBeenCalledWith(expect.objectContaining({ status: CampaignStatus.CHECKING_INAD }));
+      expect(mockAttemptRepo.createQueryBuilder).not.toHaveBeenCalled();
+    });
+
     it('finalizeInadCheck applica i risultati e lancia createAttemptsAndEnqueue', async () => {
       const campaignChecking = {
         ...mockCampaign,
@@ -1968,6 +2009,43 @@ describe('CampaignsService', () => {
       expect(mockQueue.addBulk).toHaveBeenCalledWith('EMAIL', [
         expect.objectContaining({ data: expect.objectContaining({ recipientId: 'r2', channel: 'EMAIL' }) }),
       ]);
+    });
+
+    it('finalizeInadCheck: domicilio INAD uguale alla PEC su file salvo maiuscole/spazi → diverted:false, pec non riscritta', async () => {
+      const campaignChecking = {
+        ...mockCampaign,
+        id: 'c-bulk-case',
+        channelType: 'PEC',
+        status: CampaignStatus.CHECKING_INAD,
+        channelConfig: {
+          inadCheck: {
+            mechanism: 'bulk',
+            batches: [{ id: 'batch-case', recipientIds: ['r1'], done: false }],
+            requestedAt: '2026-01-01T00:00:00Z',
+          },
+        },
+      };
+      mockCampaignRepo.findOneBy.mockResolvedValue(campaignChecking);
+      mockRecipientRepo.find.mockImplementation(({ select }: { select?: Record<string, boolean> }) => {
+        if (select?.inadCheck) return Promise.resolve([{ id: 'r1', pec: 'mario.rossi@pec.it', inadCheck: { diverted: false } }]);
+        return Promise.resolve([{ id: 'r1', codiceFiscale: 'CF1', pec: 'MARIO.ROSSI@PEC.IT', email: null }]);
+      });
+      mockInadService.getBulkResult.mockResolvedValue([
+        { codiceFiscale: 'CF1', since: '2026-01-01', digitalAddress: [{ digitalAddress: ' mario.rossi@pec.it' }] },
+      ]);
+      mockAttemptRepo.createQueryBuilder.mockReturnValue({
+        insert: jest.fn().mockReturnThis(),
+        into: jest.fn().mockReturnThis(),
+        values: jest.fn().mockReturnThis(),
+        returning: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ raw: [{ id: 'att-1' }] }),
+      });
+
+      await service.finalizeInadCheck('c-bulk-case');
+
+      const updateCall = mockRecipientRepo.update.mock.calls.find((c: any) => c[0]?.id === 'r1');
+      expect(updateCall![1]).not.toHaveProperty('pec');
+      expect(updateCall![1].inadCheck).toEqual(expect.objectContaining({ found: true, diverted: false }));
     });
 
     it('finalizeInadCheck non ricrea gli attempt se un altro invocatore ha già vinto la transizione a QUEUED (race)', async () => {

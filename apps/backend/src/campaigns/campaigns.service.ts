@@ -47,6 +47,7 @@ import { SignatureVerificationBulkService } from '../signature-verification/sign
 import { SignatureVerificationService } from '../signature-verification/signature-verification.service.js';
 import { SignatureVerificationJobStatus } from '../entities/signature-verification-job.entity.js';
 import { isPartitaIva } from '../channels/tax-id.util.js';
+import { samePecAddress } from '../channels/pec-address.util.js';
 import { PostalPosteTracking } from '../entities/postal-poste-tracking.entity.js';
 import { RemoteSignJob, RemoteSignJobStatus } from '../entities/remote-sign-job.entity.js';
 import { postalLegalOutcome, postalLegalOutcomeSql, POSTAL_GLOBALCOM_ERROR_SQL, isPostalLegalOutcome } from './postal-legal-outcome.util.js';
@@ -810,6 +811,27 @@ export class CampaignsService {
       !isWizSingleMode &&
       campaign.channelType !== 'SEND' &&
       (await this.settings.get<boolean>('inad.checkEnabled'));
+    // La campagna è già QUEUED da qui: un errore non gestito (INAD
+    // irraggiungibile, config PDND rotta) la lascerebbe QUEUED senza attempt,
+    // né inviabile né rilanciabile — bug reale: ConnectTimeoutError su
+    // api.inad.gov.it, campagna PEC ferma a 0 invii con 244 destinatari
+    // PENDING. Si torna in bozza con un messaggio leggibile per l'operatore.
+    const startBulkOrRevert = async () => {
+      try {
+        return await this.startInadBulkCheck(campaign, recipients);
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        this.logger.error(`Verifica INAD non avviata per la campagna ${campaignId}, torna in bozza: ${reason}`);
+        await this.campaignRepo.update({ id: campaignId }, { status: CampaignStatus.DRAFT });
+        return null;
+      }
+    };
+    const inadUnavailable = {
+      launched: 0,
+      campaignId,
+      blocked: true,
+      message: 'Verifica dei domicili digitali non avviata: INAD o Registro Imprese non raggiungibili. La campagna è tornata in bozza, riprova più tardi.',
+    };
     if (inadCheckEnabled) {
       if (recipients.length < INAD_BULK_THRESHOLD) {
         const result = await this.runInadExtractLoop(campaign, recipients);
@@ -818,8 +840,9 @@ export class CampaignsService {
           // l'invio senza protezione per i destinatari non ancora
           // controllati — stesso meccanismo differito del percorso bulk
           // (CHECKING_INAD, retry automatico via InadCheckSyncService).
-          const { launched } = await this.startInadBulkCheck(campaign, recipients);
-          return { launched, campaignId, signatureWarning, forcedUnsignedAttachments };
+          const bulk = await startBulkOrRevert();
+          if (!bulk) return inadUnavailable;
+          return { launched: bulk.launched, campaignId, signatureWarning, forcedUnsignedAttachments };
         }
         channelOverrides = result.channelOverrides;
         // I destinatari finiti in PENDING_REVIEW (PEC difforme da Registro
@@ -830,8 +853,9 @@ export class CampaignsService {
           sendableRecipients = recipients.filter((r) => !result.pendingReviewIds.has(r.id));
         }
       } else {
-        const { launched } = await this.startInadBulkCheck(campaign, recipients);
-        return { launched, campaignId, signatureWarning, forcedUnsignedAttachments };
+        const bulk = await startBulkOrRevert();
+        if (!bulk) return inadUnavailable;
+        return { launched: bulk.launched, campaignId, signatureWarning, forcedUnsignedAttachments };
       }
     }
 
@@ -1051,7 +1075,9 @@ export class CampaignsService {
           // fallito "Recipient non ha indirizzo PEC" (bug reale, campagna
           // EMAIL). Per INAD (persona fisica) found già implica un indirizzo
           // non vuoto, questa guardia è ridondante ma innocua.
-          const diverted = found && !!digitalAddress && digitalAddress !== recipient.pec;
+          // samePecAddress: le fonti differiscono spesso solo per maiuscole (CSV in maiuscolo,
+          // Registro Imprese in minuscolo) — non è una PEC diversa.
+          const diverted = found && !!digitalAddress && !samePecAddress(digitalAddress, recipient.pec);
           const needsReview = blockPecReview && diverted && isPiva && campaign.channelType === 'PEC';
           await this.recipientRepo.update(
             { id: recipient.id },
@@ -1226,7 +1252,7 @@ export class CampaignsService {
         const match = recipient.codiceFiscale ? resultByCf.get(recipient.codiceFiscale) : undefined;
         const found = !!match?.digitalAddress?.length;
         const inadAddress = found ? match!.digitalAddress![0].digitalAddress : null;
-        const diverted = found && inadAddress !== recipient.pec;
+        const diverted = found && !samePecAddress(inadAddress, recipient.pec);
         await this.recipientRepo.update(
           { id: recipient.id },
           {
