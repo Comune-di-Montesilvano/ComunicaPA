@@ -142,3 +142,9 @@
 .nd-more > summary:focus-visible { outline: 2px solid var(--nd-invio); outline-offset: 3px; border-radius: 2px; }
 .nd-more-body { padding-top: 0.75rem; }
 @media (prefers-reduced-motion: reduce) { .nd-more > summary::before { transition: none; } }
+
+/* Link alla guida nel riquadro esito (come contare i termini, cosa fare). */
+.nd-scope .nd-verdict-guida {
+  font-size: inherit;
+  text-decoration: underline;
+}

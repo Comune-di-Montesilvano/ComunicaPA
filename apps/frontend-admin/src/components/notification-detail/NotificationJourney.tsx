@@ -1,4 +1,5 @@
 import React from 'react';
+import { GUIDA_DATE_TERMINI, GUIDA_IRREPERIBILE } from '../../guida';
 import { AlertTriangle, ExternalLink } from 'lucide-react';
 import { buildJourney, computeVerdict, sourceLabel, type JourneyDetail, type JourneyLabels, type JourneySource } from './journey';
 import '../../assets/css/notification-detail.css';
@@ -14,7 +15,20 @@ function formatWhen(iso: string, dateOnly = false): { day: string; time: string 
 }
 
 /** Esito effettivo della notifica, con fonte e data: la prima cosa che si legge. */
-export function NotificationVerdict({ detail, labels }: { detail: JourneyDetail; labels: JourneyLabels }): React.JSX.Element {
+function GuidaButton({ onOpen, children }: { onOpen: () => void; children: React.ReactNode }): React.JSX.Element {
+  return (
+    <button type="button" className="btn btn-link btn-sm p-0 ms-1 align-baseline nd-verdict-guida" onClick={onOpen}>
+      {children}
+    </button>
+  );
+}
+
+/**
+ * onOpenGuida: apre la guida all'ancora data (chiude il dettaglio). Link solo
+ * dove l'operatore deve decidere qualcosa: come contare i termini dalle date
+ * legali, cosa fare se la notifica non è stata consegnata.
+ */
+export function NotificationVerdict({ detail, labels, onOpenGuida }: { detail: JourneyDetail; labels: JourneyLabels; onOpenGuida?: (anchor: string) => void }): React.JSX.Element {
   const v = computeVerdict(detail, labels);
   const when = v.when
     ? v.dateOnly
@@ -35,12 +49,25 @@ export function NotificationVerdict({ detail, labels }: { detail: JourneyDetail;
         <p className="nd-verdict-legal">
           <strong>Notificata per l'ente il {new Date(v.entityLegalAt).toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', year: 'numeric' })}</strong>
           {' '}· messa a disposizione su SEND: impedisce le decadenze e interrompe la prescrizione (art. 26, c. 9 lett. a e c. 10, D.L. 76/2020). I termini del destinatario decorrono dalla data in cui è notificata per lui
+          {onOpenGuida && <GuidaButton onOpen={() => onOpenGuida(GUIDA_DATE_TERMINI)}>Come si contano i termini</GuidaButton>}
+        </p>
+      )}
+      {!v.entityLegalAt && v.dateOnly && onOpenGuida && (
+        <p className="nd-verdict-legal">
+          Da questa data decorrono i termini del destinatario (pagamento, ricorso, adempimento).
+          <GuidaButton onOpen={() => onOpenGuida(GUIDA_DATE_TERMINI)}>Come si contano i termini</GuidaButton>
         </p>
       )}
       {v.note && (
         <p className={`nd-verdict-note${v.discrepancy ? ' nd-verdict-note-alert' : ''}`}>
           {v.discrepancy && <AlertTriangle size={14} aria-hidden="true" />}
           {v.discrepancy ? `Esiti diversi — ${v.note}` : v.note}
+        </p>
+      )}
+      {v.undelivered && onOpenGuida && (
+        <p className="nd-verdict-legal">
+          Nessuna consegna al destinatario.
+          <GuidaButton onOpen={() => onOpenGuida(GUIDA_IRREPERIBILE)}>Cosa fare</GuidaButton>
         </p>
       )}
     </section>
