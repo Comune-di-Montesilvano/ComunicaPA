@@ -13,6 +13,8 @@ export interface JourneyPosteVerification {
   trackingUntil?: string | null;
   nextCheckAt: string | null;
   lastCheckedAt: string | null;
+  /** Ultimo controllo fallito o bloccato: nessuna conclusione sul vettore. */
+  lastError?: string | null;
   deliveredAt: string | null;
   outcomeAt?: string | null;
   summary?: string | null;
@@ -127,6 +129,16 @@ const SEND_STATUS_TONES: Record<string, JourneyTone> = {
   RETURNED_TO_SENDER: 'warn',
 };
 
+/**
+ * PN non dichiara il recapitista: Poste Italiane se il tracking Poste
+ * riconosce il codice della raccomandata, altrimenti un altro vettore.
+ * Prima del primo controllo non si dice nulla.
+ */
+function sendCarrierOf(pv: JourneyPosteVerification | null | undefined, letter: string): string | null {
+  if (!pv || pv.trackingCode !== letter || !pv.lastCheckedAt || pv.lastError) return null;
+  return pv.movements.length > 0 ? 'recapitista Poste Italiane' : 'recapitista non tracciato su poste.it';
+}
+
 export function buildJourney(d: JourneyDetail, labels: JourneyLabels): JourneyEvent[] {
   const events: JourneyEvent[] = [];
   for (const a of d.attempts) {
@@ -185,9 +197,17 @@ export function buildJourney(d: JourneyDetail, labels: JourneyLabels): JourneyEv
     } else if (a.sendStatus && validDate(a.sendStatusUpdatedAt ?? a.createdAt)) {
       events.push({ at: (a.sendStatusUpdatedAt ?? a.createdAt)!, source: 'send', title: labels.sendStatus(a.sendStatus), tone: 'neutral' });
     }
-    for (const t of a.sendTimeline ?? []) {
+    const sendTimeline = a.sendTimeline ?? [];
+    for (const t of sendTimeline) {
       const described = describeSendTimelineEvent(t);
-      if (described && validDate(t.at)) events.push({ at: t.at, source: 'send', ...described });
+      if (!described || !validDate(t.at)) continue;
+      // Numero della raccomandata (arriva dagli avanzamenti dello stesso
+      // tentativo): è quello da cercare su poste.it o da dare al cittadino.
+      const letter = t.category === 'SEND_ANALOG_DOMICILE'
+        ? sendTimeline.find((x) => x.registeredLetterCode && (x.attempt ?? 0) === (t.attempt ?? 0) && x.category === 'SEND_ANALOG_FEEDBACK')?.registeredLetterCode
+          ?? sendTimeline.find((x) => x.registeredLetterCode && new Date(x.at).getTime() >= new Date(t.at).getTime())?.registeredLetterCode
+        : undefined;
+      events.push({ at: t.at, source: 'send', ...described, ...(letter ? { detail: [`Raccomandata n. ${letter}`, sendCarrierOf(a.posteVerification, letter)].filter(Boolean).join(' · ') } : {}) });
     }
     if (a.appIo.attempted && a.channelType !== 'APP_IO') {
       events.push({

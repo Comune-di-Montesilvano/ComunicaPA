@@ -78,6 +78,7 @@ const POSTE_CHECKED_SQL = `EXISTS (
   JOIN postal_poste_tracking ppt ON ppt.attempt_id = na.id
   WHERE na.recipient_id = r.id
     AND na.attempt_number = (SELECT MAX(na2.attempt_number) FROM notification_attempts na2 WHERE na2.recipient_id = r.id)
+    AND na.channel_type = 'POSTAL'
     AND ppt.poste_esito_ricerca IS NOT NULL
 )`;
 

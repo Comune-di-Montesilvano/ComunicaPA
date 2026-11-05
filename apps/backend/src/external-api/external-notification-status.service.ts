@@ -30,7 +30,8 @@ export class ExternalNotificationStatusService {
 
     const attempts = await this.attempts.find({ where: { recipientId: recipient.id } });
     const latest = attempts.reduce<NotificationAttempt | null>((a, b) => (!a || b.attemptNumber > a.attemptNumber ? b : a), null);
-    const poste = latest ? await this.poste.findOne({ where: { attemptId: latest.id } }) : null;
+    // Verifica Poste solo per POSTAL: per SEND l'esito resta quello di PN.
+    const poste = latest?.channelType === 'POSTAL' ? await this.poste.findOne({ where: { attemptId: latest.id } }) : null;
 
     return buildNotificationStatus({
       recipient: { id: recipient.id, createdAt: recipient.createdAt, status: recipient.status, codiceFiscale: recipient.codiceFiscale, inadCheck: recipient.inadCheck },

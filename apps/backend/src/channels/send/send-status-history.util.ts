@@ -103,6 +103,8 @@ export interface SendTimelineEvent {
   /** Numero del tentativo (0 = primo). */
   attempt?: number;
   raddType?: string;
+  /** Codice della raccomandata del recapitista: tracciabile su poste.it quando il vettore è Poste. */
+  registeredLetterCode?: string;
 }
 
 export const SEND_TIMELINE_CATEGORIES = [
@@ -141,6 +143,7 @@ export function extractSendTimeline(data: unknown): SendTimelineEvent[] {
     if (typeof d.deliveryFailureCause === 'string') ev.deliveryFailureCause = d.deliveryFailureCause;
     if (typeof d.sentAttemptMade === 'number') ev.attempt = d.sentAttemptMade;
     if (typeof d.raddType === 'string') ev.raddType = d.raddType;
+    if (typeof d.registeredLetterCode === 'string' && d.registeredLetterCode) ev.registeredLetterCode = d.registeredLetterCode;
     out.push(ev);
   }
   return out;
