@@ -228,3 +228,24 @@ giorni, Poste consegnata ad Alanno Scalo lo stesso pomeriggio). PN chiude solo
 con l'esito del recapitista (`RECRN00xA/B/C` + demat AR): non è un bug nostro,
 serve un ticket all'assistenza SEND. Il verdetto del dettaglio lo segnala come
 "Esiti diversi" (`computeVerdict`, ramo SEND); l'esito legale resta PN.
+
+**Irreperibilità totale = notifica valida**: `UNREACHABLE` → `EFFECTIVE_DATE`
+10 giorni dopo il deposito dell'AAR su SEND (art. 26, comma 7, D.L. 76/2020;
+knowledge base SEND "Perfezionamento della notifica"). Data legale corretta
+(`sendLegalDateOf`), ma nessuna consegna: il verdetto lo dice in nota. Data
+del verdetto = `activeFrom` dello storico PN, mai `sendStatusUpdatedAt`
+(un backfill la spostava alla data del ri-sync).
+API esterna: `UNREACHABLE` → `legal.outcome = in_progress` (status `sent`), non
+`not_delivered`: è lo stato di deposito che precede EFFECTIVE_DATE (v1.16.4).
+Art. 26 comma 20 (Poste "anche" per copia cartacea degli atti e accesso
+universale) NON impone Poste come recapitista dell'AAR (comma 7: "a mezzo
+posta" ex L. 890/1982): lotti a più operatori, es. codici `PSTAQ…`.
+
+**Due date legali SEND (v1.16.4)**: `sendEntityLegalDateOf` = ACCEPTED dello
+storico = data legale per l'ente (art. 26 c. 9 lett. a: messa a disposizione;
+c. 10: niente decadenze, prescrizione interrotta). `sendLegalDateOf` resta il
+perfezionamento per il destinatario (lett. b), da cui decorrono i SUOI termini.
+UI: colonna "Data legale notifica" = ente, "Perfezionata per il destinatario"
+= lett. b; CSV e API esterna (`send.entityLegalDate`) hanno entrambe. La
+dashboard "Notifiche senza esito legale" e il portale cittadini restano sulla
+lett. b. Fa fede l'ora dell'attestazione SENDER_ACK (pochi minuti dopo ACCEPTED).

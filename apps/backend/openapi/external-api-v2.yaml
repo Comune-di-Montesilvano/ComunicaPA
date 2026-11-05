@@ -568,7 +568,8 @@ components:
           properties:
             iun: { type: string, nullable: true }
             status: { type: string, nullable: true, description: stato PN }
-            legalDate: { type: string, nullable: true }
+            legalDate: { type: string, format: date-time, nullable: true, description: 'perfezionamento per il destinatario (art. 26 c. 9 lett. b D.L. 76/2020): prima tra presa visione e decorrenza termini' }
+            entityLegalDate: { type: string, format: date-time, nullable: true, description: "data legale di notifica per l'ente: messa a disposizione su SEND (art. 26 c. 9 lett. a e c. 10 D.L. 76/2020); null se mai accettata o annullata" }
             protocol:
               type: object
               nullable: true

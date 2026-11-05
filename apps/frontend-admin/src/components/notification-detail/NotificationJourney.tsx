@@ -31,6 +31,12 @@ export function NotificationVerdict({ detail, labels }: { detail: JourneyDetail;
           {v.source}
         </p>
       )}
+      {v.entityLegalAt && (
+        <p className="nd-verdict-legal">
+          <strong>Data legale di notifica per l'ente: {new Date(v.entityLegalAt).toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', year: 'numeric' })}</strong>
+          {' '}· messa a disposizione su SEND, impedisce le decadenze e interrompe la prescrizione (art. 26, c. 9 lett. a e c. 10, D.L. 76/2020)
+        </p>
+      )}
       {v.note && (
         <p className={`nd-verdict-note${v.discrepancy ? ' nd-verdict-note-alert' : ''}`}>
           {v.discrepancy && <AlertTriangle size={14} aria-hidden="true" />}

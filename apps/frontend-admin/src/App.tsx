@@ -328,7 +328,8 @@ function PostalLegalOutcomeBadge({ outcome, reason, postalStatus }: { outcome?: 
 
 // Colonna "Data legale notifica" (POSTAL e SEND): data con valore legale di
 // avvenuta notifica, solo giorno, fuso Europe/Rome come nei report CSV.
-const LEGAL_DATE_HEADER_TITLE = 'Data con valore legale di avvenuta notifica — POSTAL: consegna/compiuta giacenza (solo esito Consegnato); SEND: perfezionamento, la prima tra presa visione e decorrenza termini';
+const LEGAL_DATE_HEADER_TITLE = 'Data con valore legale di avvenuta notifica — POSTAL: consegna/compiuta giacenza (solo esito Consegnato); SEND: messa a disposizione sulla piattaforma (art. 26, c. 9 lett. a e c. 10, D.L. 76/2020: impedisce decadenze e interrompe la prescrizione)';
+const SEND_RECIPIENT_DATE_HEADER_TITLE = 'Perfezionamento per il destinatario (art. 26, c. 9 lett. b, D.L. 76/2020): la prima tra presa visione e decorrenza termini; da qui decorrono i termini del destinatario';
 function LegalDateCell({ at }: { at?: string | null }): React.JSX.Element {
   if (!at) return <td className="small text-muted">—</td>;
   return <td className="small text-nowrap">{new Date(at).toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', year: 'numeric' })}</td>;
@@ -2842,7 +2843,7 @@ export function App(): React.JSX.Element {
   // in uso per gli altri pannelli di dettaglio campagna.
   const [pendingPecReview, setPendingPecReview] = useState<Array<{ recipientId: string; fullName: string | null; codiceFiscale: string; pecOriginale: string | null; pecTrovata: string | null }>>([]);
   const [pecReviewResolving, setPecReviewResolving] = useState<string | null>(null);
-  const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number; costCents?: number | null; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; sendLegalAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; posteVerificationStatus?: string | null; posteDeliveredAt?: string | null; legalOutcome?: string | null; legalOutcomeReason?: string | null; legalOutcomeAt?: string | null; sentAt?: string | null; firstReadAt?: string | null; attemptsCount?: number; lastError?: string | null; protocolNumber?: number | null; protocolYear?: number | null; inadCheck?: { found: boolean; diverted: boolean } | null; signatureCheck?: { valid: boolean; reason: string | null } | null }> } | null>(null);
+  const [recipientsPage, setRecipientsPage] = useState<{ page: number; pageSize: number; total: number; items: Array<{ id: string; fullName: string | null; codiceFiscale: string; email: string | null; pec: string | null; status: string; downloadCount: number; costCents?: number | null; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; sendLegalAt?: string | null; sendEntityLegalAt?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; posteVerificationStatus?: string | null; posteDeliveredAt?: string | null; legalOutcome?: string | null; legalOutcomeReason?: string | null; legalOutcomeAt?: string | null; sentAt?: string | null; firstReadAt?: string | null; attemptsCount?: number; lastError?: string | null; protocolNumber?: number | null; protocolYear?: number | null; inadCheck?: { found: boolean; diverted: boolean } | null; signatureCheck?: { valid: boolean; reason: string | null } | null }> } | null>(null);
   const [recipientsSearch, setRecipientsSearch] = useState('');
   const [recipientsPageNum, setRecipientsPageNum] = useState(1);
   const [recipientsStatusFilter, setRecipientsStatusFilter] = useState('');
@@ -13231,7 +13232,8 @@ export function App(): React.JSX.Element {
                                 const pv = lastPostal?.posteVerification;
                                 if (isSend) {
                                   // SEND: solo raccomandate Poste (altri recapitisti non sono su poste.it).
-                                  if (!lastPostal || !(pv || latestSendPosteLetter(lastPostal.sendTimeline))) return null;
+                                  // Mai controllata e SEND già chiusa: la coda non la verificherà più.
+                                  if (!lastPostal || !(pv || (lastPostal.sendStatus === 'DELIVERING' && latestSendPosteLetter(lastPostal.sendTimeline)))) return null;
                                 } else if (!lastPostal || !isPosteTrackableService(notifDetail.campaign.postalServiceType) || !(pv || (lastPostal.postalStatus !== 'Consegnato' && lastPostal.postalAcceptanceId))) {
                                   // Posta semplice: codice mai tracciabile su Poste, nessuna sezione.
                                   return null;
@@ -13288,7 +13290,7 @@ export function App(): React.JSX.Element {
                                   const isSend = notifDetail.campaign.channelType === 'SEND';
                                   const lastPostal = [...notifDetail.attempts].filter(a => a.channelType === (isSend ? 'SEND' : 'POSTAL')).sort((a, b) => b.attemptNumber - a.attemptNumber)[0];
                                   if (!lastPostal) return null;
-                                  if (isSend ? !(lastPostal.posteVerification || latestSendPosteLetter(lastPostal.sendTimeline)) : !(lastPostal.posteVerification || (lastPostal.postalStatus !== 'Consegnato' && lastPostal.postalAcceptanceId))) return null;
+                                  if (isSend ? !(lastPostal.posteVerification || (lastPostal.sendStatus === 'DELIVERING' && latestSendPosteLetter(lastPostal.sendTimeline))) : !(lastPostal.posteVerification || (lastPostal.postalStatus !== 'Consegnato' && lastPostal.postalAcceptanceId))) return null;
                                   return (
                                     <button type="button" className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center" disabled={posteChecking} onClick={handlePosteCheckRecipient}>
                                       {posteChecking ? <Loader2 className="icon-spin me-1" size={14} /> : <RefreshCw className="me-1" size={14} />}
@@ -18221,6 +18223,7 @@ export function App(): React.JSX.Element {
                                            </div>
                                          </th>
                                          <th title={LEGAL_DATE_HEADER_TITLE}>Data legale notifica</th>
+                                         <th title={SEND_RECIPIENT_DATE_HEADER_TITLE}>Perfezionata per il destinatario</th>
                                          <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('updatedAt')}>
                                            <div className="d-inline-flex align-items-center gap-1">
                                              <span>Aggiornato il</span>
@@ -18413,6 +18416,7 @@ export function App(): React.JSX.Element {
                                           <td className="small fw-mono">{r.iun || '—'}</td>
                                           <td className="small">{r.protocolNumber ? `${r.protocolNumber}/${r.protocolYear}` : '—'}</td>
                                           <td className="small"><SendStatusBadge status={r.sendStatus} /></td>
+                                          <LegalDateCell at={r.sendEntityLegalAt} />
                                           <LegalDateCell at={r.sendLegalAt} />
                                           <td className="small text-muted">{r.sendStatusUpdatedAt ? new Date(r.sendStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
                                           {costCell}

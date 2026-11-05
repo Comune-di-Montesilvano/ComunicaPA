@@ -41,6 +41,7 @@
   margin: 0;
 }
 .nd-verdict-meta { color: var(--nd-muted); margin: 0.2rem 0 0; font-variant-numeric: tabular-nums; }
+.nd-verdict-legal { margin: 0.5rem 0 0; color: var(--nd-ink); max-width: 70ch; font-size: 0.875rem; }
 .nd-verdict-note { margin: 0.5rem 0 0; color: var(--nd-ink); max-width: 70ch; }
 .nd-verdict-note-alert { color: var(--nd-warn); display: flex; gap: 0.4rem; align-items: baseline; font-weight: 600; }
 

@@ -12,6 +12,19 @@ export function sendLegalDateOf(history: Array<{ status: string; activeFrom: str
   return dates.reduce((min, d) => (new Date(d).getTime() < new Date(min).getTime() ? d : min));
 }
 
+/**
+ * Data legale di notifica per l'ente: messa a disposizione del documento su
+ * SEND (art. 26, comma 9, lett. a, D.L. 76/2020); impedisce le decadenze e
+ * interrompe la prescrizione (comma 10). = stato ACCEPTED dello storico PN,
+ * attestata dall'attestazione "notifica presa in carico" (fa fede l'ora di
+ * quella, pochi minuti dopo). null se mai accettata o annullata.
+ */
+export function sendEntityLegalDateOf(history: Array<{ status: string; activeFrom: string }> | null | undefined): string | null {
+  const h = history ?? [];
+  if (h.some((e) => e.status === 'CANCELLED')) return null;
+  return h.find((e) => e.status === 'ACCEPTED' && e.activeFrom)?.activeFrom ?? null;
+}
+
 /** Giorni per cui SEND mostra i documenti notificati dopo la data legale (AAR e attestazioni: 10 anni). */
 export const SEND_DOCUMENTS_RETENTION_DAYS = 120;
 
