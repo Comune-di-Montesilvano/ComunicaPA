@@ -18,6 +18,25 @@ export interface PosteTrackingResponse {
 
 export type PosteOutcome = 'delivered' | 'returned' | 'pending';
 
+function romeOffsetMs(instant: number): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Rome', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(new Date(instant));
+  const n = (t: string) => Number(parts.find((p) => p.type === t)?.value);
+  return Date.UTC(n('year'), n('month') - 1, n('day'), n('hour'), n('minute'), n('second')) - Math.floor(instant / 1000) * 1000;
+}
+
+/**
+ * `dataOra` di poste.it è l'ora italiana codificata come se fosse UTC
+ * (verificato dal vivo: "consegnata" 11:20:24Z quando SEND registra lo stesso
+ * esito alle 09:20Z, e "in consegna" 10:34Z contro RECRN010 alle 08:34Z,
+ * sempre +2 h in ora legale). Si leggono i campi UTC come ora di Roma.
+ */
+export function posteDataOraToDate(ms: number): Date {
+  const guess = ms - romeOffsetMs(ms);
+  return new Date(ms - romeOffsetMs(guess));
+}
+
 function str(v: unknown): string {
   return v === null || v === undefined ? '' : String(v);
 }
@@ -37,7 +56,7 @@ export function parsePosteResponse(body: unknown): PosteTrackingResponse {
   const movements: PosteTrackingMovement[] = lista.map((m) => {
     const ms = Number(m['dataOra']);
     return {
-      at: Number.isFinite(ms) && ms > 0 ? new Date(ms).toISOString() : '',
+      at: Number.isFinite(ms) && ms > 0 ? posteDataOraToDate(ms).toISOString() : '',
       luogo: str(m['luogo']),
       statoLavorazione: str(m['statoLavorazione']),
       box: str(m['box']),

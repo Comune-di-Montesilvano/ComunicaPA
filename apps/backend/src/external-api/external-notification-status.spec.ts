@@ -71,18 +71,18 @@ describe('buildNotificationStatus', () => {
     }));
     expect(s.status).toBe('delivered');
     expect(s.legal).toEqual({ outcome: 'delivered', at: '2026-10-03T09:00:00Z', reason: 'VIEWED' });
-    expect(s.send).toEqual({ iun: 'ABCD-EFGH-IJKL-202610-M-1', status: 'VIEWED', legalDate: '2026-10-03T09:00:00Z', protocol: { number: 123, year: 2026, at: T0.toISOString() } });
+    expect(s.send).toEqual({ iun: 'ABCD-EFGH-IJKL-202610-M-1', status: 'VIEWED', legalDate: '2026-10-03T09:00:00Z', entityLegalDate: '2026-10-01T11:00:00Z', protocol: { number: 123, year: 2026, at: T0.toISOString() } });
     expect(s.costCents).toBe(850);
     expect(s.events.filter((e) => e.type === 'send_status').map((e) => e.data)).toEqual([{ status: 'ACCEPTED' }, { status: 'VIEWED' }]);
   });
 
-  it('SEND UNREACHABLE → not_delivered', () => {
+  it('SEND UNREACHABLE → in_progress (si perfeziona 10 giorni dopo il deposito, art. 26 c. 7)', () => {
     const s = buildNotificationStatus(input({
       campaign: { status: 'completed', channelType: 'SEND', channelConfig: {} },
       attempt: attempt({ channelType: 'SEND', sendStatus: 'UNREACHABLE', sendStatusHistory: [{ status: 'UNREACHABLE', activeFrom: '2026-10-05T00:00:00Z' }] }),
     }));
-    expect(s.status).toBe('not_delivered');
-    expect(s.legal).toEqual({ outcome: 'not_delivered', at: null, reason: 'UNREACHABLE' });
+    expect(s.status).toBe('sent');
+    expect(s.legal).toEqual({ outcome: 'in_progress', at: null, reason: 'UNREACHABLE' });
   });
 
   it('POSTAL Raccomandata AR consegnata → delivered con data consegna', () => {

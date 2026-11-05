@@ -12,6 +12,7 @@ import { resolvePhysicalAddress, resolvePaymentData } from '../channels/payment-
 import type { NotificationDetailDto } from './dto/notification-detail.dto.js';
 import { PostalPosteTracking } from '../entities/postal-poste-tracking.entity.js';
 import { posteDeliveredSql, toPosteVerificationDto } from '../channels/postal/poste-tracking/poste-tracking-effective.util.js';
+import { fromUtcWallClock } from '../legal-attention/legal-attention.util.js';
 
 // Canali digitali: "sent" con almeno un download = "read" (Letto), stato
 // derivato mai scritto su recipient.status. Stesso criterio del dettaglio
@@ -290,7 +291,8 @@ export class NotificationsSearchService {
             channelType: a.channelType,
             errorMessage: a.errorMessage,
             sentAt: a.sentAt ? a.sentAt.toISOString() : null,
-            createdAt: a.createdAt.toISOString(),
+            // created_at è timestamp without time zone (UTC letto come ora locale).
+            createdAt: fromUtcWallClock(a.createdAt).toISOString(),
             appIo: appIoPayload
               ? { attempted: true as const, success: !!appIoPayload.success, error: appIoPayload.error ?? null, messageId: resolvedAppIoMessageId }
               : (a.channelType === 'APP_IO' && resolvedAppIoMessageId

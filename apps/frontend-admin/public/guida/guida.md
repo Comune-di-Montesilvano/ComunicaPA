@@ -115,7 +115,14 @@ Se nella mappatura colleghi una colonna del CSV all'**Oggetto**, l'oggetto scrit
 
 Apri **Ricerca Notifiche** e cerca per codice fiscale, nome, email, PEC o IUN. Funziona anche a distanza di tempo dall'invio. Il nome della campagna, nei risultati e nel dettaglio della notifica, apre la campagna. I filtri permettono, ad esempio, di vedere solo le notifiche lette o quelle restituite al mittente.
 
-Per una notifica SEND il **Percorso** del dettaglio riporta ogni cambio di stato con la sua data (accettata, in consegna, consegnata, letta, perfezionata) e i passaggi registrati da SEND: avviso di cortesia, invio al domicilio digitale, spedizione cartacea con il tipo di raccomandata, avanzamenti del recapitista (avviso di giacenza, giacenza, esito con il codice del recapitista), ritiro da parte del destinatario presso un punto di ritiro SEND. I passaggi arrivano con l'aggiornamento automatico dello stato, ogni pochi minuti. Per le raccomandate il percorso riporta il numero della raccomandata (con il link **Traccia su poste.it** quando il numero è in formato Poste) e, quando il recapitista è Poste Italiane, anche i movimenti del tracking di Poste (presa in carico, lavorazione, disponibilità all'ufficio postale, esito), controllati una volta al giorno finché SEND la dà in consegna. Il tasto **Verifica ora su Poste** del dettaglio forza il controllo (al massimo una volta ogni 23 ore per notifica). SEND non indica il recapitista: un numero in formato diverso da quello di Poste viene indicato come recapitista diverso da Poste Italiane e non viene cercato su poste.it. L'esito che conta resta quello di SEND: se Poste dà la raccomandata già consegnata o restituita mentre SEND la dà ancora in consegna, il dettaglio lo segnala come **Esiti diversi**. Vuol dire che il recapitista non ha ancora trasmesso l'esito a SEND: se la situazione resta ferma, apri una segnalazione all'assistenza SEND indicando IUN, numero della raccomandata e la data di consegna di Poste.
+Una notifica SEND ha due date legali (art. 26, comma 9, D.L. 76/2020):
+
+- **Data legale di notifica (per l'ente)**: il giorno in cui SEND mette il documento a disposizione, cioè la presa in carico. Da quel momento l'ente non incorre in decadenze e la prescrizione è interrotta (comma 10), anche se il destinatario riceve o legge la notifica dopo. Fa fede l'**attestazione «notifica presa in carico»** tra i Documenti SEND.
+- **Perfezionata per il destinatario**: la prima tra la lettura della notifica e il perfezionamento per decorrenza dei termini. Da questa data decorrono i termini del destinatario, per esempio per il pagamento o il ricorso.
+
+Entrambe compaiono nel dettaglio della notifica, nell'elenco destinatari della campagna e nei report CSV SEND.
+
+Per una notifica SEND il **Percorso** del dettaglio riporta ogni cambio di stato con la sua data (accettata, in consegna, consegnata, letta, perfezionata) e i passaggi registrati da SEND: avviso di cortesia, invio al domicilio digitale, affidamento della raccomandata al recapitista con il tipo di raccomandata (è il momento in cui nasce il numero di raccomandata: stampa e imbustamento arrivano dopo, come «Stampata e imbustata»), avanzamenti del recapitista (avviso di giacenza, giacenza, esito con il codice del recapitista), ritiro da parte del destinatario presso un punto di ritiro SEND. I passaggi arrivano con l'aggiornamento automatico dello stato, ogni pochi minuti. Per le raccomandate il percorso riporta il numero della raccomandata (con il link **Traccia su poste.it** quando il numero è in formato Poste) e, quando il recapitista è Poste Italiane, anche i movimenti del tracking di Poste (presa in carico, lavorazione, disponibilità all'ufficio postale, esito), controllati una volta al giorno finché SEND la dà in consegna. Il tasto **Verifica ora su Poste** del dettaglio forza il controllo (al massimo una volta ogni 23 ore per notifica). SEND non indica il recapitista: un numero in formato diverso da quello di Poste viene indicato come recapitista diverso da Poste Italiane e non viene cercato su poste.it. Se SEND dichiara il destinatario **irreperibile** (nessun indirizzo valido, anche dopo il secondo tentativo), deposita l'avviso sulla piattaforma e la notifica si perfeziona 10 giorni dopo (art. 26, comma 7, D.L. 76/2020): la data legale è valida, ma il destinatario non l'ha ricevuta, e il dettaglio lo indica sotto lo stato. L'esito che conta resta quello di SEND: se Poste dà la raccomandata già consegnata o restituita mentre SEND la dà ancora in consegna, il dettaglio lo segnala come **Esiti diversi**. Vuol dire che il recapitista non ha ancora trasmesso l'esito a SEND: se la situazione resta ferma, apri una segnalazione all'assistenza SEND indicando IUN, numero della raccomandata e la data di consegna di Poste.
 
 Per una notifica SEND, nel dettaglio apri **Documenti SEND** e premi **Carica documenti** per scaricare i documenti dalla piattaforma:
 
@@ -129,7 +136,7 @@ Nel portale cittadini una notifica SEND mostra solo lo stato e il link per aprir
 
 ### Gestire le notifiche senza esito legale
 
-In **Dashboard** il riquadro **Notifiche senza esito legale** elenca, per campagna, le notifiche SEND e le raccomandate con ricevuta di ritorno (o atti giudiziari) che non hanno una data legale di notifica: quelle con esito bloccante non l'avranno mai, le altre sono ferme senza esito da almeno 45 giorni. Ogni operatore vede le campagne che ha creato; gli amministratori le vedono tutte.
+In **Dashboard** il riquadro **Notifiche senza esito legale** elenca, per campagna, le notifiche SEND senza perfezionamento per il destinatario e le raccomandate con ricevuta di ritorno (o atti giudiziari) senza data legale di notifica: quelle con esito bloccante non l'avranno mai, le altre sono ferme senza esito da almeno 45 giorni. Ogni operatore vede le campagne che ha creato; gli amministratori le vedono tutte.
 
 Le notifiche segnalate sono di due tipi:
 
@@ -348,11 +355,11 @@ I destinatari di una campagna annullata non si possono rimettere in coda.
 
 ### Una notifica SEND irreperibile non compare tra le segnalazioni
 
-**Causa:** per SEND il destinatario irreperibile non blocca la notifica: la piattaforma la perfeziona comunque e assegna una data legale. Non è quindi una notifica senza esito.
+**Causa:** per SEND il destinatario irreperibile non blocca la notifica: la piattaforma la perfeziona comunque e assegna la data di perfezionamento per il destinatario. Non è quindi una notifica senza esito.
 
-**Soluzione:** nessuna. La data legale si legge nel dettaglio della notifica.
+**Soluzione:** nessuna. Le date legali si leggono nel dettaglio della notifica.
 
-**Apri un ticket se:** la notifica risulta irreperibile e dopo 45 giorni non ha ancora una data legale nel dettaglio.
+**Apri un ticket se:** la notifica risulta irreperibile e dopo 45 giorni non è ancora perfezionata per il destinatario.
 
 ### Firma con Aruba: «Sessione scaduta dopo X file»
 

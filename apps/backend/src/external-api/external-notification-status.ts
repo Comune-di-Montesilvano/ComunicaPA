@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { postalLegalOutcome, type PostalLegalOutcome } from '../campaigns/postal-legal-outcome.util.js';
-import { sendLegalDateOf } from '../campaigns/send-legal-date.util.js';
+import { sendEntityLegalDateOf, sendLegalDateOf } from '../campaigns/send-legal-date.util.js';
 import { hasPostalArTracking } from '../campaigns/campaigns.service.js';
 import { isPartitaIva } from '../channels/tax-id.util.js';
 import type { NotificationAttempt } from '../entities/notification-attempt.entity.js';
@@ -34,7 +34,7 @@ export interface NotificationStatusResponse {
   diversion: { source: 'INAD' | 'REGISTRO_IMPRESE' } | null;
   status: NotificationStatus;
   legal?: { outcome: PostalLegalOutcome; at: string | null; reason: string | null };
-  send?: { iun: string | null; status: string | null; legalDate: string | null; protocol: { number: number; year: number; at: string | null } | null };
+  send?: { iun: string | null; status: string | null; legalDate: string | null; entityLegalDate: string | null; protocol: { number: number; year: number; at: string | null } | null };
   postal?: { trackingId: string | null; status: string | null; deliveryStatus: string | null; deliveryDate: string | null };
   appIoParallel?: { success: boolean };
   costCents: number | null;
@@ -42,7 +42,10 @@ export interface NotificationStatusResponse {
   events: NotificationEvent[];
 }
 
-const SEND_NOT_DELIVERED = ['UNREACHABLE', 'CANCELLED', 'REFUSED'];
+// UNREACHABLE non è qui: irreperibilità totale = AAR depositato su SEND e
+// notifica perfezionata 10 giorni dopo (art. 26, comma 7, D.L. 76/2020),
+// quindi in corso fino a EFFECTIVE_DATE, mai un esito negativo.
+const SEND_NOT_DELIVERED = ['CANCELLED', 'REFUSED'];
 const iso = (d: Date | string | null | undefined): string | null => (d ? new Date(d).toISOString() : null);
 
 function event(type: string, at: string, data: Record<string, unknown> = {}): NotificationEvent {
@@ -130,6 +133,8 @@ export function buildNotificationStatus(input: StatusInput): NotificationStatusR
       iun: attempt.iun,
       status: attempt.sendStatus,
       legalDate: sendLegalDateOf(attempt.sendStatusHistory),
+      // Messa a disposizione su SEND: data legale per l'ente (art. 26 c. 9 lett. a, c. 10).
+      entityLegalDate: sendEntityLegalDateOf(attempt.sendStatusHistory),
       protocol: attempt.protocolNumber != null && attempt.protocolYear != null ? { number: attempt.protocolNumber, year: attempt.protocolYear, at: iso(attempt.protocolledAt) } : null,
     };
   }

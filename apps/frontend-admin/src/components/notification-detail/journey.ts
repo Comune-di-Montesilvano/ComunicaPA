@@ -83,6 +83,8 @@ export interface Verdict {
   discrepancy: boolean;
   /** Data legale: mostrare solo il giorno, mai l'ora. */
   dateOnly?: boolean;
+  /** SEND: data legale di notifica per l'ente (messa a disposizione, art. 26 c. 9 lett. a). */
+  entityLegalAt?: string | null;
 }
 
 const SOURCE_LABELS: Record<JourneySource, string> = {
@@ -340,12 +342,23 @@ export function computeVerdict(d: JourneyDetail, labels: JourneyLabels): Verdict
     const pnOpen = last.sendStatus === 'DELIVERING' || last.sendStatus === 'ACCEPTED';
     const posteOutcome = pnOpen && pv && (pv.status === 'delivered' || pv.status === 'returned') ? pv : null;
     const posteWhen = posteOutcome?.outcomeAt ?? posteOutcome?.deliveredAt ?? null;
+    // Irreperibilità totale: PN deposita l'avviso sulla piattaforma e la
+    // notifica si perfeziona 10 giorni dopo, con valore legale, ma senza
+    // consegna al destinatario: l'operatore deve vederlo.
+    const viaUnreachable = last.sendStatus === 'EFFECTIVE_DATE' && (last.sendStatusHistory ?? []).some((h) => h.status === 'UNREACHABLE');
     const note = posteOutcome
       // "returned" scatta al primo movimento con flagRitorno: per SEND il plico
       // torna al recapitista, la restituzione è avviata, non conclusa.
       ? `Poste: ${posteOutcome.status === 'delivered' ? 'consegnata' : 'restituzione al mittente avviata'}${posteWhen ? ` il ${new Date(posteWhen).toLocaleDateString('it-IT')}` : ''}; SEND non ha ancora ricevuto l'esito dal recapitista`
+      : viaUnreachable
+      ? "Destinatario irreperibile: nessuna consegna, la notifica si è perfezionata 10 giorni dopo il deposito dell'avviso su SEND (art. 26, comma 7, D.L. 76/2020)"
       : null;
-    return { ...base, headline: labels.sendStatus(last.sendStatus), when: last.sendStatusUpdatedAt ?? null, source: 'secondo SEND', tone: 'neutral', note, discrepancy: !!posteOutcome };
+    // Data dello stato secondo PN (storico), non dell'ultimo sync: un
+    // ri-sync (backfill) spostava "Perfezionata" alla data del ri-sync.
+    const pnSince = [...(last.sendStatusHistory ?? [])].reverse().find((h) => h.status === last.sendStatus && validDate(h.activeFrom))?.activeFrom;
+    const history = last.sendStatusHistory ?? [];
+    const entityLegalAt = history.some((h) => h.status === 'CANCELLED') ? null : (history.find((h) => h.status === 'ACCEPTED' && validDate(h.activeFrom))?.activeFrom ?? null);
+    return { ...base, headline: labels.sendStatus(last.sendStatus), when: pnSince ?? last.sendStatusUpdatedAt ?? null, source: 'secondo SEND', tone: 'neutral', note, discrepancy: !!posteOutcome, entityLegalAt };
   }
 
   const firstDownload = [...d.downloads].sort((x, y) => new Date(x.downloadedAt).getTime() - new Date(y.downloadedAt).getTime())[0];

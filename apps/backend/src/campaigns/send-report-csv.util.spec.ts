@@ -24,7 +24,7 @@ describe('buildSendReportAttualeCsv', () => {
   it('include intestazioni e riga con stato/data correnti (ultimo elemento storico)', () => {
     const csv = buildSendReportAttualeCsv(baseReport);
     const lines = csv.split('\n');
-    expect(lines[0]).toBe('"Codice Fiscale";"Nominativo";"IUN";"Tipo Domicilio Digitale";"Indirizzo Domicilio";"Stato";"Data Stato"');
+    expect(lines[0]).toBe('"Codice Fiscale";"Nominativo";"IUN";"Tipo Domicilio Digitale";"Indirizzo Domicilio";"Stato";"Data Stato";"Data Legale Notifica (ente)";"Data Perfezionamento Destinatario"');
     expect(lines[1]).toContain('"Consegnata"');
     expect(lines[1]).not.toContain('Esito App IO');
   });
@@ -70,7 +70,9 @@ describe('buildSendReportStoricoCsv', () => {
     const lines = csv.split('\n');
     expect(lines[0]).toContain('"Data Accettazione"');
     expect(lines[0]).toContain('"Data Restituzione al Mittente"');
-    expect(lines[0].split(';')).toHaveLength(5 + 10);
+    expect(lines[0]).toContain('"Data Legale Notifica (ente)"');
+    expect(lines[0]).toContain('"Data Perfezionamento Destinatario"');
+    expect(lines[0].split(';')).toHaveLength(5 + 10 + 2);
     // REFUSED mai raggiunto in questo fixture: colonna vuota.
     const cells = lines[1].split(';');
     const refusedIndex = lines[0].split(';').findIndex((h) => h === '"Data Rifiuto"');
