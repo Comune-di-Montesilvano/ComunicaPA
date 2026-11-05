@@ -8,7 +8,8 @@
 import type { Campaign } from '../entities/campaign.entity.js';
 import { hasPostalArTracking } from '../campaigns/campaigns.service.js';
 import { postalLegalOutcomeCaseSql, type PostalLegalOutcomeResult } from '../campaigns/postal-legal-outcome.util.js';
-import { sendLegalDateOf } from '../campaigns/send-legal-date.util.js';
+import { sendEntityLegalDateOf, sendLegalDateOf } from '../campaigns/send-legal-date.util.js';
+import { sendStatusLabel } from '../campaigns/send-status-labels.util.js';
 
 export type LegalAttentionKind = 'blocking' | 'stale';
 export type LegalAttentionAction = 'ack' | 'snooze';
@@ -64,7 +65,18 @@ export function legalAttentionOf(i: LegalAttentionInput): LegalAttentionResult |
     if (a.sendStatus && SEND_BLOCKING_STATUSES.includes(a.sendStatus)) return { kind: 'blocking', reason: SEND_BLOCKING_LABELS[a.sendStatus] };
     if (sendLegalDateOf(a.sendStatusHistory)) return null;
     const days = staleDays(i);
-    return days === null ? null : { kind: 'stale', reason: `${a.sendStatus || 'In attesa'} da ${days} giorni` };
+    if (days === null) return null;
+    // Scissione degli effetti (art. 26 c. 9 D.L. 76/2020): con la messa a
+    // disposizione l'ente è a posto, ma per il destinatario i termini di
+    // pagamento e ricorso non partono finché la notifica non si perfeziona.
+    const entityAt = sendEntityLegalDateOf(a.sendStatusHistory);
+    const state = `${sendStatusLabel(a.sendStatus)} da ${days} giorni`;
+    return {
+      kind: 'stale',
+      reason: entityAt
+        ? `Notificata per l'ente il ${new Date(entityAt).toLocaleDateString('it-IT', { timeZone: 'Europe/Rome' })}; non perfezionata per il destinatario (${state}): termini di pagamento e ricorso non avviati, sollecitare SEND`
+        : `${state}: non ancora messa a disposizione su SEND, nessuna data legale per l'ente`,
+    };
   }
 
   const p = i.postal;

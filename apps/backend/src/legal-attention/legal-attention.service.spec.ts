@@ -205,7 +205,7 @@ describe('LegalAttentionService', () => {
       expect(res).toEqual({ applied: 1, skipped: [] });
       expect(reviewRepo.save).toHaveBeenCalledWith([expect.objectContaining({
         recipientId: 'r1', campaignId: 'c1', kind: 'stale', action: 'ack', snoozedUntil: null,
-        reason: 'DELIVERING da 60 giorni', note: 'rinotificata', createdBy: 'mrossi',
+        reason: "In consegna da 60 giorni: non ancora messa a disposizione su SEND, nessuna data legale per l'ente", note: 'rinotificata', createdBy: 'mrossi',
       })]);
       expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ campaignId: 'c1', campaignName: 'TARI 2026', operator: 'mrossi', action: 'LEGAL_ATTENTION_ACK' }));
     });

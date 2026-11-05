@@ -249,3 +249,10 @@ UI: colonna "Data legale notifica" = ente, "Perfezionata per il destinatario"
 = lett. b; CSV e API esterna (`send.entityLegalDate`) hanno entrambe. La
 dashboard "Notifiche senza esito legale" e il portale cittadini restano sulla
 lett. b. Fa fede l'ora dell'attestazione SENDER_ACK (pochi minuti dopo ACCEPTED).
+
+**Dashboard "senza esito legale", SEND ferme (v1.16.5)**: motivo distinto per
+scissione degli effetti. Con ACCEPTED → "Notificata per l'ente il …; non
+perfezionata per il destinatario …: termini di pagamento e ricorso non
+avviati, sollecitare SEND" (l'atto non diventa definitivo, niente coattiva).
+Senza ACCEPTED → "non ancora messa a disposizione su SEND, nessuna data legale
+per l'ente". Solo testo: `kind` e gemella SQL invariati.

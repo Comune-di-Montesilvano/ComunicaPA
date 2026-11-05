@@ -141,7 +141,9 @@ In **Dashboard** il riquadro **Notifiche senza esito legale** elenca, per campag
 Le notifiche segnalate sono di due tipi:
 
 - **Esito bloccante**: la notifica non andrà a buon fine, ad esempio destinatario deceduto o sconosciuto, indirizzo errato, notifica rifiutata o annullata da SEND. Compare subito.
-- **Ferma da almeno 45 giorni**: dopo 45 giorni dal primo invio non c'è ancora una data legale.
+- **Ferma da almeno 45 giorni**: dopo 45 giorni dal primo invio non c'è ancora una data legale. Per SEND il motivo distingue due casi:
+  - **notificata per l'ente, non perfezionata per il destinatario**: il Comune è a posto (niente decadenza, prescrizione interrotta), ma per il cittadino i termini di pagamento e ricorso non sono partiti, quindi l'atto non può diventare definitivo né passare alla riscossione coattiva. Di solito il recapitista non ha trasmesso l'esito: apri una segnalazione all'assistenza SEND;
+  - **non ancora messa a disposizione su SEND**: manca anche la data legale per l'ente, va verificata subito.
 
 1. Premi sulla campagna per aprire l'elenco delle notifiche.
 2. Seleziona le notifiche e scegli:
