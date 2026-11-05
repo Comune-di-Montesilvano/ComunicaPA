@@ -253,7 +253,7 @@ l'alert o il cooldown ferma la PR. Elementi da replicare:
   ultime 24 ore" non c'è più: dopo un tag la revision di `latest` è il commit taggato, quindi
   la causa a lo copre, mentre il salto a tempo ignorava per un giorno le cause b e c.
 - Attestazioni firmate su GitHub: provenance SLSA (`attest-build-provenance`) e SBOM CycloneDX
-  (`attest-sbom`), legate al digest.
+  (`actions/attest` con `sbom-path`; `attest-sbom` è deprecata), legate al digest.
 - Firma **keyless** cosign del digest (identità OIDC del workflow, log di trasparenza Rekor).
 - **Smoke test** dello stack completo (`scripts/smoke-stack.sh`): servizi su, frontend e API
   via reverse proxy, query autenticata sul DB (migration applicate), upload su disco,
