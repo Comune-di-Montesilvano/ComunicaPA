@@ -6,7 +6,7 @@ import { NotificationAttempt } from '../../entities/notification-attempt.entity.
 import { AppSettingsService } from '../../settings/app-settings.service.js';
 import type { SettingKey } from '../../settings/settings.registry.js';
 import { PdndAuthService } from '../../pdnd/pdnd-auth.service.js';
-import { extractSendStatusHistory, extractSendDigitalDomicile, extractSendAnalogCost } from './send-status-history.util.js';
+import { extractSendStatusHistory, extractSendDigitalDomicile, extractSendAnalogCost, extractSendTimeline } from './send-status-history.util.js';
 import { SendBaseFeeService } from './send-base-fee.service.js';
 import { captureException } from '../../common/sentry.util.js';
 
@@ -127,8 +127,21 @@ export class SendStatusSyncService {
         if (data.notificationStatus && data.notificationStatus !== attempt.sendStatus) {
           attempt.sendStatus = data.notificationStatus;
           attempt.sendStatusUpdatedAt = new Date();
-          attempt.sendStatusHistory = extractSendStatusHistory(data);
           attempt.sendDigitalDomicile = extractSendDigitalDomicile(data);
+          changed = true;
+        }
+
+        // Storico stati e timeline confrontati a ogni poll, non solo al cambio
+        // stato: fatti come il ritiro presso un punto RADD o gli avanzamenti del
+        // recapitista arrivano mentre lo stato resta lo stesso (es. DELIVERED).
+        const history = extractSendStatusHistory(data);
+        if (JSON.stringify(history) !== JSON.stringify(attempt.sendStatusHistory ?? [])) {
+          attempt.sendStatusHistory = history;
+          changed = true;
+        }
+        const timeline = extractSendTimeline(data);
+        if (JSON.stringify(timeline) !== JSON.stringify(attempt.sendTimeline ?? [])) {
+          attempt.sendTimeline = timeline;
           changed = true;
         }
 

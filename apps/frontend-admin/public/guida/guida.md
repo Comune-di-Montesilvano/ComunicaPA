@@ -114,6 +114,8 @@ Se nella mappatura colleghi una colonna del CSV all'**Oggetto**, l'oggetto scrit
 
 Apri **Ricerca Notifiche** e cerca per codice fiscale, nome, email, PEC o IUN. Funziona anche a distanza di tempo dall'invio. I filtri permettono, ad esempio, di vedere solo le notifiche lette o quelle restituite al mittente.
 
+Per una notifica SEND il **Percorso** del dettaglio riporta ogni cambio di stato con la sua data (accettata, in consegna, consegnata, letta, perfezionata) e i passaggi registrati da SEND: avviso di cortesia, invio al domicilio digitale, spedizione cartacea con il tipo di raccomandata, avanzamenti del recapitista (avviso di giacenza, giacenza, esito con il codice del recapitista), ritiro da parte del destinatario presso un punto di ritiro SEND. I passaggi arrivano con l'aggiornamento automatico dello stato, ogni pochi minuti.
+
 Per una notifica SEND, nel dettaglio apri **Documenti SEND** e premi **Carica documenti** per scaricare i documenti dalla piattaforma:
 
 - le **attestazioni opponibili a terzi**: notifica presa in carico, avvenuto accesso (quando il destinatario legge la notifica), notifica digitale, mancato recapito;

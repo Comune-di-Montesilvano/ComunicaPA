@@ -15,6 +15,10 @@ export interface AttemptDetailDto {
   iun: string | null;
   sendStatus: string | null;
   sendStatusUpdatedAt: string | null;
+  /** Copia di notificationStatusHistory PN, cronologico. */
+  sendStatusHistory: Array<{ status: string; activeFrom: string }> | null;
+  /** Fatti della timeline PN per il percorso (nessun indirizzo). */
+  sendTimeline: Array<{ category: string; at: string; code?: string; responseStatus?: string; productType?: string; channel?: string; deliveryFailureCause?: string; attempt?: number; raddType?: string }> | null;
   protocolNumber: number | null;
   protocolYear: number | null;
   protocolledAt: string | null;

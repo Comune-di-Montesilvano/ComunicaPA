@@ -175,3 +175,21 @@ risposta filename/url/retryAfter; la variante `/v2.0/` dà 403).
 **Data legale SEND = perfezionamento** = min(`VIEWED`, `EFFECTIVE_DATE`) da
 `sendStatusHistory` (`sendLegalDateOf`). App IO fuori da SEND non ha mai
 valore di notifica (dicitura `APP_IO_LEGAL_DISCLAIMER` in calce).
+
+
+## SEND — percorso: storico stati + timeline (send_timeline)
+
+Il percorso del dettaglio notifica mostra `sendStatusHistory` (copia di
+`notificationStatusHistory`) e `sendTimeline`: sottoinsieme della timeline PN
+estratto da `extractSendTimeline` (`send-status-history.util.ts`) — solo
+categoria, timestamp e campi tecnici (`deliveryDetailCode`, `responseStatus`,
+`productType`, tipo canale), **mai indirizzi**. Entrambi si confrontano a ogni
+poll, non solo al cambio stato: `NOTIFICATION_RADD_RETRIEVED` e gli
+avanzamenti del recapitista arrivano mentre lo stato resta DELIVERED
+(verificato su IUN reale, 2026-11). Etichette dei `deliveryDetailCode`
+(CON080, RECRN010, RECRN003C...) in `frontend-admin/.../send-timeline.ts`,
+fonte catalogo ufficiale `pagopa/pn-helpdesk-fe` `src/model/notification.ts`;
+i codici A/B/D/E (pre-esito, dematerializzazione) non si mostrano, l'esito
+arriva con `SEND_ANALOG_FEEDBACK`. I terminali non vengono ripollati:
+ripopolarli forzando `cost_calculated_at = NULL` (il sync li riprende a
+batch da 200 ogni 5 minuti, poi li richiude da solo).

@@ -3,6 +3,8 @@
 // del cittadino), più un verdetto con l'esito effettivo. I canali cambiano
 // gli eventi, non la struttura: nessuna colonna specifica per canale.
 
+import { describeSendTimelineEvent, type SendTimelineEvent } from './send-timeline';
+
 export interface JourneyMovement { at: string; luogo: string; statoLavorazione: string; box: string; flagRitorno: boolean }
 
 export interface JourneyPosteVerification {
@@ -27,6 +29,8 @@ export interface JourneyAttempt {
   appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null; messageId?: string | null };
   sendStatus?: string | null;
   sendStatusUpdatedAt?: string | null;
+  sendStatusHistory?: Array<{ status: string; activeFrom: string }> | null;
+  sendTimeline?: SendTimelineEvent[] | null;
   postalStatus?: string | null;
   postalDeliveryStatus?: string | null;
   postalDeliveryDate?: string | null;
@@ -113,6 +117,16 @@ function validDate(s: string | null | undefined): s is string {
   return !!s && !Number.isNaN(new Date(s).getTime());
 }
 
+const SEND_STATUS_TONES: Record<string, JourneyTone> = {
+  DELIVERED: 'ok',
+  VIEWED: 'ok',
+  EFFECTIVE_DATE: 'ok',
+  UNREACHABLE: 'ko',
+  REFUSED: 'ko',
+  CANCELLED: 'warn',
+  RETURNED_TO_SENDER: 'warn',
+};
+
 export function buildJourney(d: JourneyDetail, labels: JourneyLabels): JourneyEvent[] {
   const events: JourneyEvent[] = [];
   for (const a of d.attempts) {
@@ -160,8 +174,20 @@ export function buildJourney(d: JourneyDetail, labels: JourneyLabels): JourneyEv
         });
       });
     }
-    if (a.sendStatus && validDate(a.sendStatusUpdatedAt ?? a.createdAt)) {
+    // SEND: ogni stato con la data in cui PN l'ha assunto, più i fatti della
+    // timeline (spedizione, recapitista, ritiro RADD). Senza storico (attempt
+    // non ancora ripollato) resta il solo stato corrente.
+    const sendHistory = (a.sendStatusHistory ?? []).filter((h) => h.status && validDate(h.activeFrom));
+    if (sendHistory.length > 0) {
+      for (const h of sendHistory) {
+        events.push({ at: h.activeFrom, source: 'send', title: labels.sendStatus(h.status), tone: SEND_STATUS_TONES[h.status] ?? 'neutral' });
+      }
+    } else if (a.sendStatus && validDate(a.sendStatusUpdatedAt ?? a.createdAt)) {
       events.push({ at: (a.sendStatusUpdatedAt ?? a.createdAt)!, source: 'send', title: labels.sendStatus(a.sendStatus), tone: 'neutral' });
+    }
+    for (const t of a.sendTimeline ?? []) {
+      const described = describeSendTimelineEvent(t);
+      if (described && validDate(t.at)) events.push({ at: t.at, source: 'send', ...described });
     }
     if (a.appIo.attempted && a.channelType !== 'APP_IO') {
       events.push({
