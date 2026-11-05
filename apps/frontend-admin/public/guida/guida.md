@@ -109,6 +109,7 @@ Se nella mappatura colleghi una colonna del CSV all'**Oggetto**, l'oggetto scrit
 2. Il dettaglio mostra lo stato di ogni destinatario (In coda, Inviato, Letto, Fallito…) e si aggiorna da solo mentre l'invio è in corso.
 3. Per ogni destinatario si vede il **canale effettivo**: per il dirottamento su domicilio digitale può essere diverso da quello della campagna.
 4. Il widget **Costo Campagna** mostra il costo di SEND e Posta. Dal dettaglio scarichi i report in CSV.
+5. Nelle campagne SEND non compaiono i dati sui documenti scaricati: il destinatario apre la notifica su SEND (app IO, sito di SEND o punto di ritiro), non da ComunicaPA. Per sapere se l'ha letta guarda lo stato SEND **Letta dal destinatario**.
 
 ### Cercare una singola notifica
 

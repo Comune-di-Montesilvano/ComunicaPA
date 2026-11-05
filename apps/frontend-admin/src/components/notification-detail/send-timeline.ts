@@ -159,7 +159,7 @@ export function describeSendTimelineEvent(e: SendTimelineEvent): { title: string
       if (!e.code || isIntermediateOutcome(e.code)) return null;
       const known = DELIVERY_CODES[e.code];
       return known
-        ? { title: known.title, detail: `Recapitista · ${e.code}`, tone: known.tone }
+        ? { title: known.title, detail: `Codice evento ${e.code}`, tone: known.tone }
         : { title: 'Aggiornamento del recapitista', detail: e.code, tone: 'neutral' };
     }
     case 'SEND_ANALOG_FEEDBACK': {

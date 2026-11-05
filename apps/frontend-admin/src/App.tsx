@@ -13246,7 +13246,7 @@ export function App(): React.JSX.Element {
                                           {pv.status === 'pending' && `In verifica${pv.trackingUntil ? ` fino al ${new Date(pv.trackingUntil).toLocaleDateString('it-IT')}` : ''}`}
                                           {pv.status === 'gave_up' && (isSend ? 'Verifica conclusa: SEND ha chiuso la consegna' : 'Verifica conclusa: 90 giorni dalla notifica')}
                                           {pv.status === 'delivered' && 'Consegnata secondo Poste'}
-                                          {pv.status === 'returned' && 'Restituita al mittente secondo Poste'}
+                                          {pv.status === 'returned' && (isSend ? 'In restituzione al mittente secondo Poste' : 'Restituita al mittente secondo Poste')}
                                         </p>
                                         {pv.summary && <p className="text-muted">{pv.summary}</p>}
                                         {pv.lastCheckedAt && <p className="text-muted nd-kv">Ultimo controllo {new Date(pv.lastCheckedAt).toLocaleString('it-IT')}</p>}
@@ -17613,7 +17613,8 @@ export function App(): React.JSX.Element {
                       figures.push({ label: 'Importo pagoPA', value: formatEuroCents(campaignPaymentTotal.totalAmountCents), hint: `${campaignPaymentTotal.recipientsWithPaymentCount.toLocaleString('it-IT')} avvisi` });
                     }
                     // Canali digitali: la % di scaricati coincide con il segmento "Letti".
-                    if (downloadCombinations && !['EMAIL', 'PEC', 'APP_IO'].includes(campaign.channelType)) {
+                    // SEND: il destinatario apre la notifica su SEND, non da ComunicaPA.
+                    if (downloadCombinations && !['EMAIL', 'PEC', 'APP_IO', 'SEND'].includes(campaign.channelType)) {
                       const ok = downloadCombinations.filter((c) => c.sentSuccessfully);
                       const sentOk = ok.reduce((sum, c) => sum + c.count, 0);
                       const notDl = ok.find((c) => c.channels.length === 0)?.count ?? 0;
@@ -17631,7 +17632,7 @@ export function App(): React.JSX.Element {
                         .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
                       asideCharts.push(<div key="recapito">{renderProgressListCard('Recapito Poste', deliveryData, 'Nessun dato recapito')}</div>);
                     }
-                    if (downloadCombinations && downloadCombinations.some((c) => c.sentSuccessfully)) {
+                    if (campaign.channelType !== 'SEND' && downloadCombinations && downloadCombinations.some((c) => c.sentSuccessfully)) {
                       const dlData = downloadCombinations
                         .filter((c) => c.sentSuccessfully)
                         .map((c) => ({ label: downloadComboLabel(c.channels), value: c.count, color: c.channels.length === 0 ? '#adb5bd' : stableColorForKey(c.channels.join('+')) }))
@@ -18096,7 +18097,7 @@ export function App(): React.JSX.Element {
                             );
                           })()}
                           {/* Canali digitali: "con download" coincide con lo stato Letto (filtro Stato notifica). */}
-                          {!['EMAIL', 'PEC', 'APP_IO'].includes(campaign.channelType) && (
+                          {!['EMAIL', 'PEC', 'APP_IO', 'SEND'].includes(campaign.channelType) && (
                           <div style={{ flex: '1 1 0', minWidth: 0 }}>
                             <label className="form-label small text-muted mb-1" htmlFor="rf-download">Download</label>
                             <select
@@ -18230,18 +18231,6 @@ export function App(): React.JSX.Element {
                                              )}
                                            </div>
                                          </th>
-                                         {(((campaign.channelConfig?.['attachments'] as any[] | undefined)?.length ?? 0) > 0) && (
-                                           <th className="text-center" style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('download')}>
-                                             <div className="d-inline-flex align-items-center justify-content-center gap-1">
-                                               <span>Download</span>
-                                               {recipientsSortBy === 'download' ? (
-                                                 recipientsSortDir === 'ASC' ? <ArrowUp size={12} className="text-primary" /> : <ArrowDown size={12} className="text-primary" />
-                                               ) : (
-                                                 <ArrowUpDown size={12} className="text-muted opacity-50" />
-                                               )}
-                                             </div>
-                                           </th>
-                                         )}
                                          {hasCost && (
                                            <th className="text-end" style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('cost')}>
                                              <div className="d-inline-flex align-items-center justify-content-end gap-1">
@@ -18426,7 +18415,6 @@ export function App(): React.JSX.Element {
                                           <td className="small"><SendStatusBadge status={r.sendStatus} /></td>
                                           <LegalDateCell at={r.sendLegalAt} />
                                           <td className="small text-muted">{r.sendStatusUpdatedAt ? new Date(r.sendStatusUpdatedAt).toLocaleString('it-IT') : '—'}</td>
-                                          {downloadCell}
                                           {costCell}
                                         </>
                                       ) : campaign.channelType === 'POSTAL' ? (

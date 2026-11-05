@@ -341,7 +341,9 @@ export function computeVerdict(d: JourneyDetail, labels: JourneyLabels): Verdict
     const posteOutcome = pnOpen && pv && (pv.status === 'delivered' || pv.status === 'returned') ? pv : null;
     const posteWhen = posteOutcome?.outcomeAt ?? posteOutcome?.deliveredAt ?? null;
     const note = posteOutcome
-      ? `Poste: ${posteOutcome.status === 'delivered' ? 'consegnata' : 'restituita al mittente'}${posteWhen ? ` il ${new Date(posteWhen).toLocaleDateString('it-IT')}` : ''}; SEND non ha ancora ricevuto l'esito dal recapitista`
+      // "returned" scatta al primo movimento con flagRitorno: per SEND il plico
+      // torna al recapitista, la restituzione è avviata, non conclusa.
+      ? `Poste: ${posteOutcome.status === 'delivered' ? 'consegnata' : 'restituzione al mittente avviata'}${posteWhen ? ` il ${new Date(posteWhen).toLocaleDateString('it-IT')}` : ''}; SEND non ha ancora ricevuto l'esito dal recapitista`
       : null;
     return { ...base, headline: labels.sendStatus(last.sendStatus), when: last.sendStatusUpdatedAt ?? null, source: 'secondo SEND', tone: 'neutral', note, discrepancy: !!posteOutcome };
   }

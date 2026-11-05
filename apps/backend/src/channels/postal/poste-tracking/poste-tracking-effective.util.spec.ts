@@ -46,7 +46,7 @@ describe('poste-tracking-effective', () => {
     expect(posteSummaryOf({ lastResponse: { sintesiStato: 'La spedizione è stata restituita al mittente' }, movements: [], posteEsitoRicerca: '3' } as any)).toBe('La spedizione è stata restituita al mittente');
     const at = '2026-08-12T04:19:00.000Z';
     expect(posteSummaryOf({ lastResponse: { sintesiStato: '' }, movements: [{ at, luogo: 'SVIZZERA', statoLavorazione: 'in data', box: '3', flagRitorno: false }], posteEsitoRicerca: '3' } as any))
-      .toBe(`in data · SVIZZERA · ${new Date(at).toLocaleString('it-IT', { timeZone: 'Europe/Rome' })}`);
+      .toBe(`In lavorazione · SVIZZERA · ${new Date(at).toLocaleString('it-IT', { timeZone: 'Europe/Rome' })}`);
     expect(posteSummaryOf({ lastResponse: { esitoRicerca: '1' }, movements: [], posteEsitoRicerca: '1' } as any)).toBe('Nessuna informazione su Poste per questo codice');
     expect(posteSummaryOf({ lastResponse: null, movements: null, posteEsitoRicerca: null } as any)).toBeNull();
   });
