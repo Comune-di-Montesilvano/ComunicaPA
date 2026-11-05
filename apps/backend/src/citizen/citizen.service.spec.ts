@@ -141,4 +141,36 @@ describe('CitizenService — notifica SEND senza documenti nel portale', () => {
     await expect(service.generateAttachmentPdf('r-send', 'RSSMRA80A01H501X', 0)).rejects.toThrow('notifichedigitali.it');
     expect(mockAttachmentService.generatePdfBuffer).not.toHaveBeenCalled();
   });
+
+  const withLegalDate = (daysAgo: number) => ({
+    ...sendRecipient,
+    attempts: [{
+      channelType: 'SEND', status: 'success', iun: 'AAAA-BBBB-CCCC-202601-A-1',
+      sendStatusHistory: [{ status: 'VIEWED', activeFrom: new Date(Date.now() - daysAgo * 86_400_000).toISOString() }],
+    }],
+  });
+
+  it('entro i 120 giorni dalla data legale: nessun allegato, scadenza esposta', async () => {
+    mockRecipientRepo.findOne.mockResolvedValue(withLegalDate(30));
+    const dto = await service.findOneForCitizen('r-send', 'RSSMRA80A01H501X');
+    expect(dto.attachments).toEqual([]);
+    expect(dto.sendCopyAvailable).toBe(false);
+    expect(new Date(dto.sendDocumentsAvailableUntil!).getTime()).toBeGreaterThan(Date.now());
+    await expect(service.generateAttachmentPdf('r-send', 'RSSMRA80A01H501X', 0)).rejects.toThrow('120 giorni');
+  });
+
+  it('oltre i 120 giorni: copia locale elencata e scaricabile', async () => {
+    mockRecipientRepo.findOne.mockResolvedValue(withLegalDate(121));
+    mockAttachmentService.generatePdfBuffer.mockResolvedValue(Buffer.from('%PDF'));
+    const dto = await service.findOneForCitizen('r-send', 'RSSMRA80A01H501X');
+    expect(dto.attachments).toEqual([{ index: 0, label: 'Avviso' }]);
+    expect(dto.sendCopyAvailable).toBe(true);
+    await expect(service.generateAttachmentPdf('r-send', 'RSSMRA80A01H501X', 0)).resolves.toEqual(Buffer.from('%PDF'));
+  });
+
+  it('notifica senza valore legale: nessuna scadenza, nessuna copia', async () => {
+    const dto = await service.findOneForCitizen('r-send', 'RSSMRA80A01H501X');
+    expect(dto.sendDocumentsAvailableUntil).toBeNull();
+    expect(dto.sendCopyAvailable).toBe(false);
+  });
 });

@@ -122,7 +122,7 @@ Per una notifica SEND, nel dettaglio apri **Documenti SEND** e premi **Carica do
 
 Il perfezionamento per decorrenza dei termini non genera un documento: la data compare nel percorso della notifica.
 
-Nel portale cittadini una notifica SEND mostra solo lo stato e il link per aprirla su SEND (lo stesso del codice QR dell'avviso, o la pagina di accesso di SEND se il codice non è leggibile): documenti e attestazioni con valore legale si consultano solo lì.
+Nel portale cittadini una notifica SEND mostra solo lo stato e il link per aprirla su SEND (lo stesso del codice QR dell'avviso, o la pagina di accesso di SEND se il codice non è leggibile): documenti e attestazioni con valore legale si consultano solo lì. SEND mostra i documenti per 120 giorni dalla data in cui la notifica assume valore legale (avviso e attestazioni per 10 anni): passato quel periodo il portale cittadini offre la copia del documento inviato, indicata come copia di cortesia senza valore legale, con la data da cui decorrono i termini.
 
 ### Gestire le notifiche senza esito legale
 
