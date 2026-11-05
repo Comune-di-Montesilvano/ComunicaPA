@@ -14,15 +14,20 @@ export function guidaSlug(heading: string): string {
     .replace(/ /g, '-');
 }
 
-// Sezioni di secondo livello, per l'indice in cima alla vista.
-export function guidaSections(markdown: string): Array<{ id: string; title: string }> {
-  return markdown
-    .split('\n')
-    .filter((line) => line.startsWith('## '))
-    .map((line) => {
-      const title = line.slice(3).trim();
-      return { id: guidaSlug(title), title };
-    });
+// Titoli di secondo e terzo livello, per l'indice laterale della vista.
+// Righe dentro i blocchi ``` ignorate: un "## " lì non è un titolo.
+export function guidaSections(markdown: string): Array<{ id: string; title: string; level: 2 | 3 }> {
+  const out: Array<{ id: string; title: string; level: 2 | 3 }> = [];
+  let inCode = false;
+  for (const line of markdown.split('\n')) {
+    if (line.startsWith('```')) inCode = !inCode;
+    if (inCode) continue;
+    const m = /^(##|###) (.+)$/.exec(line);
+    if (!m) continue;
+    const title = m[2].trim();
+    out.push({ id: guidaSlug(title), title, level: m[1] === '##' ? 2 : 3 });
+  }
+  return out;
 }
 
 // Sezione della guida aperta dal bottone "?" della topbar, per vista.
@@ -40,4 +45,8 @@ export const GUIDA_PER_VISTA: Record<string, string> = {
 };
 
 export const GUIDA_WIZARD_SINGOLO = 'inviare-una-comunicazione-a-pochi-destinatari';
+// Link contestuali su date legali (dettaglio notifica, elenco destinatari) e
+// su notifiche non consegnate/irreperibili (dettaglio, dashboard).
+export const GUIDA_DATE_TERMINI = 'date-di-notifica-e-termini';
+export const GUIDA_IRREPERIBILE = 'notifica-non-consegnata-o-destinatario-irreperibile';
 export const GUIDA_WIZARD_MASSIVO = 'lanciare-un-invio-massivo-da-file-csv';

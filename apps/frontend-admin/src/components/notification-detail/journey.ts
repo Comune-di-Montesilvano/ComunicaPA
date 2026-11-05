@@ -85,6 +85,8 @@ export interface Verdict {
   dateOnly?: boolean;
   /** SEND: data legale di notifica per l'ente (messa a disposizione, art. 26 c. 9 lett. a). */
   entityLegalAt?: string | null;
+  /** Nessuna consegna (irreperibile, restituita, non consegnata): la UI rimanda alla guida su come procedere. */
+  undelivered?: boolean;
 }
 
 const SOURCE_LABELS: Record<JourneySource, string> = {
@@ -292,7 +294,7 @@ export function computeVerdict(d: JourneyDetail, labels: JourneyLabels): Verdict
     return { headline: 'Consegnata', tone: 'ok', when: lo.at, source, note, discrepancy, dateOnly: true };
   }
   if (lo?.outcome === 'not_delivered') {
-    return { headline: 'Non consegnata', tone: 'ko', when: last.postalDeliveryDate ?? null, source: 'secondo GlobalCom', note: lo.reason, discrepancy: false };
+    return { headline: 'Non consegnata', tone: 'ko', when: last.postalDeliveryDate ?? null, source: 'secondo GlobalCom', note: lo.reason, discrepancy: false, undelivered: true };
   }
   if (lo?.outcome === 'no_legal_value') {
     return { headline: 'Solo App IO', tone: 'warn', when: last.sentAt ?? last.createdAt, source: 'senza valore legale', note: null, discrepancy: false };
@@ -320,7 +322,7 @@ export function computeVerdict(d: JourneyDetail, labels: JourneyLabels): Verdict
       return { headline: 'Consegnata', tone: 'ok', when: pv.outcomeAt ?? pv.deliveredAt, source: 'secondo Poste Italiane', note: discrepancy ? gcNote : null, discrepancy };
     }
     if (pv?.status === 'returned') {
-      return { headline: 'Restituita al mittente', tone: 'warn', when: pv.outcomeAt ?? null, source: 'secondo Poste Italiane', note: gcNote, discrepancy: last.postalStatus === 'Consegnato' };
+      return { headline: 'Restituita al mittente', tone: 'warn', when: pv.outcomeAt ?? null, source: 'secondo Poste Italiane', note: gcNote, discrepancy: last.postalStatus === 'Consegnato', undelivered: true };
     }
     if (last.postalStatus === 'Consegnato') {
       return { headline: 'Consegnata', tone: 'ok', when: last.postalDeliveryDate ?? null, source: 'secondo GlobalCom', note: last.postalDeliveryStatus ?? null, discrepancy: false };
@@ -329,7 +331,7 @@ export function computeVerdict(d: JourneyDetail, labels: JourneyLabels): Verdict
       ? `Verifica su Poste in corso${pv.trackingUntil ? ` fino al ${new Date(pv.trackingUntil).toLocaleDateString('it-IT')}` : ''}${pv.summary ? `: ${pv.summary}` : ''}`
       : pv?.summary ? `Poste: ${pv.summary}` : null;
     if (last.postalStatus === 'NonConsegnato') {
-      return { headline: 'Non consegnata', tone: 'ko', when: last.postalDeliveryDate ?? null, source: 'secondo GlobalCom', note: [last.postalDeliveryStatus, posteNote].filter(Boolean).join(' — ') || null, discrepancy: false };
+      return { headline: 'Non consegnata', tone: 'ko', when: last.postalDeliveryDate ?? null, source: 'secondo GlobalCom', note: [last.postalDeliveryStatus, posteNote].filter(Boolean).join(' — ') || null, discrepancy: false, undelivered: true };
     }
     return { headline: 'In lavorazione', tone: 'neutral', when: null, source: 'secondo GlobalCom', note: [gc && last.postalDeliveryStatus ? `${gc} (${last.postalDeliveryStatus})` : gc, posteNote].filter(Boolean).join(' — ') || null, discrepancy: false };
   }
@@ -358,7 +360,8 @@ export function computeVerdict(d: JourneyDetail, labels: JourneyLabels): Verdict
     const pnSince = [...(last.sendStatusHistory ?? [])].reverse().find((h) => h.status === last.sendStatus && validDate(h.activeFrom))?.activeFrom;
     const history = last.sendStatusHistory ?? [];
     const entityLegalAt = history.some((h) => h.status === 'CANCELLED') ? null : (history.find((h) => h.status === 'ACCEPTED' && validDate(h.activeFrom))?.activeFrom ?? null);
-    return { ...base, headline: labels.sendStatus(last.sendStatus), when: pnSince ?? last.sendStatusUpdatedAt ?? null, source: 'secondo SEND', tone: 'neutral', note, discrepancy: !!posteOutcome, entityLegalAt };
+    const sendUndelivered = viaUnreachable || ['UNREACHABLE', 'RETURNED_TO_SENDER', 'REFUSED', 'CANCELLED'].includes(last.sendStatus ?? '');
+    return { ...base, headline: labels.sendStatus(last.sendStatus), when: pnSince ?? last.sendStatusUpdatedAt ?? null, source: 'secondo SEND', tone: 'neutral', note, discrepancy: !!posteOutcome, entityLegalAt, undelivered: sendUndelivered };
   }
 
   const firstDownload = [...d.downloads].sort((x, y) => new Date(x.downloadedAt).getTime() - new Date(y.downloadedAt).getTime())[0];

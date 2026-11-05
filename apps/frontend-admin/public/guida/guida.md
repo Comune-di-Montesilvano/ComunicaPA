@@ -120,7 +120,7 @@ Una notifica ha due date, una per ciascuna parte (scissione degli effetti; per S
 - **Notificata per l'ente** (solo SEND): il giorno in cui SEND mette il documento a disposizione, cioè la presa in carico. Da quel momento l'ente non incorre in decadenze e la prescrizione è interrotta (comma 10), anche se il destinatario riceve o legge la notifica dopo. Fa fede l'**attestazione «notifica presa in carico»** tra i Documenti SEND.
 - **Notificata per il destinatario**: per SEND la prima tra la lettura della notifica e il perfezionamento per decorrenza dei termini; per le raccomandate la consegna o la compiuta giacenza. **Da questa data decorrono i termini del destinatario**: pagamento, ricorso, adempimento (per esempio i 90 giorni per demolire di un'ordinanza). Non usare la data per l'ente per contare questi termini.
 
-Le colonne con questi nomi compaiono nell'elenco destinatari della campagna e nei report CSV, la data per l'ente anche nel dettaglio della notifica.
+Le colonne con questi nomi compaiono nell'elenco destinatari della campagna e nei report CSV, la data per l'ente anche nel dettaglio della notifica. Come si contano i termini, con esempi: [Date di notifica e termini](#date-di-notifica-e-termini).
 
 Per una notifica SEND il **Percorso** del dettaglio riporta ogni cambio di stato con la sua data (accettata, in consegna, consegnata, letta, perfezionata) e i passaggi registrati da SEND: avviso di cortesia, invio al domicilio digitale, affidamento della raccomandata al recapitista con il tipo di raccomandata (è il momento in cui nasce il numero di raccomandata: stampa e imbustamento arrivano dopo, come «Stampata e imbustata»), avanzamenti del recapitista (avviso di giacenza, giacenza, esito con il codice del recapitista), ritiro da parte del destinatario presso un punto di ritiro SEND. I passaggi arrivano con l'aggiornamento automatico dello stato, ogni pochi minuti. Per le raccomandate il percorso riporta il numero della raccomandata (con il link **Traccia su poste.it** quando il numero è in formato Poste) e, quando il recapitista è Poste Italiane, anche i movimenti del tracking di Poste (presa in carico, lavorazione, disponibilità all'ufficio postale, esito), controllati una volta al giorno finché SEND la dà in consegna. Il tasto **Verifica ora su Poste** del dettaglio forza il controllo (al massimo una volta ogni 23 ore per notifica). SEND non indica il recapitista: un numero in formato diverso da quello di Poste viene indicato come recapitista diverso da Poste Italiane e non viene cercato su poste.it. Se SEND dichiara il destinatario **irreperibile** (nessun indirizzo valido, anche dopo il secondo tentativo), deposita l'avviso sulla piattaforma e la notifica si perfeziona 10 giorni dopo (art. 26, comma 7, D.L. 76/2020): la data legale è valida, ma il destinatario non l'ha ricevuta, e il dettaglio lo indica sotto lo stato. L'esito che conta resta quello di SEND: se Poste dà la raccomandata già consegnata o restituita mentre SEND la dà ancora in consegna, il dettaglio lo segnala come **Esiti diversi**. Vuol dire che il recapitista non ha ancora trasmesso l'esito a SEND: se la situazione resta ferma, apri una segnalazione all'assistenza SEND indicando IUN, numero della raccomandata e la data di consegna di Poste.
 
@@ -144,6 +144,8 @@ Le notifiche segnalate sono di due tipi:
 - **Ferma da almeno 45 giorni**: dopo 45 giorni dal primo invio non c'è ancora una data legale. Per SEND il motivo distingue due casi:
   - **notificata per l'ente, non perfezionata per il destinatario**: il Comune è a posto (niente decadenza, prescrizione interrotta), ma per il cittadino i termini di pagamento e ricorso non sono partiti, quindi l'atto non può diventare definitivo né passare alla riscossione coattiva. Di solito il recapitista non ha trasmesso l'esito: apri una segnalazione all'assistenza SEND;
   - **non ancora messa a disposizione su SEND**: manca anche la data legale per l'ente, va verificata subito.
+
+Per un esito bloccante (destinatario sconosciuto, trasferito, irreperibile, notifica rifiutata o restituita) vedi [Notifica non consegnata o destinatario irreperibile](#notifica-non-consegnata-o-destinatario-irreperibile).
 
 1. Premi sulla campagna per aprire l'elenco delle notifiche.
 2. Seleziona le notifiche e scegli:
@@ -213,6 +215,79 @@ App IO «esclusiva» significa solo App IO, senza il canale principale. Se quel 
 Nelle campagne **massive** su Email, App IO o Posta il sistema controlla su INAD se ogni destinatario ha un domicilio digitale. Se lo trova, quel destinatario riceve una PEC invece del canale della campagna: a chi ha un domicilio digitale non viene spedita nessuna lettera.
 
 Il controllo non si applica a SEND, che risolve da sé il domicilio, né all'Invio Manuale. Per sapere cosa ha ricevuto davvero un cittadino guarda il canale effettivo nel dettaglio della campagna.
+
+### Date di notifica e termini
+
+Ogni notifica ha **due date**, una per ciascuna parte (scissione degli effetti):
+
+- **Notificata per l'ente**: conta per il Comune. Da quel giorno l'ente non incorre in decadenze e la prescrizione è interrotta. Per SEND è la messa a disposizione sulla piattaforma ([art. 26 D.L. 76/2020](https://www.normattiva.it/uri-res/N2Ls?urn:nir:stato:decreto.legge:2020-07-16;76~art26), comma 9, lett. a, e comma 10); per una raccomandata è la consegna del plico per la spedizione ([art. 149 c.p.c.](https://www.normattiva.it/uri-res/N2Ls?urn:nir:stato:regio.decreto:1940-10-28;1443~art149), ultimo comma).
+- **Notificata per il destinatario**: conta per il cittadino o l'impresa. **Da questa data decorrono i suoi termini**: pagamento, ricorso, adempimento. Per SEND è la data del comma 9, lett. b (tabella sotto); per una raccomandata è la consegna, il ritiro o la compiuta giacenza.
+
+Per contare un termine del destinatario usa sempre la **data per il destinatario**, mai quella per l'ente: tra le due possono passare una o due settimane. Un atto non può diventare definitivo, né passare alla riscossione coattiva o all'esecuzione d'ufficio, prima che i termini del destinatario siano scaduti.
+
+**Quando una notifica SEND si perfeziona per il destinatario** ([art. 26 D.L. 76/2020](https://www.normattiva.it/uri-res/N2Ls?urn:nir:stato:decreto.legge:2020-07-16;76~art26), comma 9, lett. b)
+
+| Come arriva | Notificata per il destinatario |
+| --- | --- |
+| Aperta su SEND, anche dall'app IO | il giorno dell'apertura, se viene prima delle date sotto |
+| PEC o domicilio digitale | il 7° giorno dopo la consegna nella casella (se consegnata dopo le 21, dal giorno successivo) |
+| PEC piena, non valida o non attiva | il 15° giorno dopo il deposito dell'avviso di mancato recapito |
+| Avviso cartaceo (raccomandata) | il 10° giorno dopo il perfezionamento della notifica cartacea: consegna, ritiro o compiuta giacenza |
+| Destinatario irreperibile | 10 giorni dopo il deposito dell'avviso su SEND (comma 7) |
+
+La data esatta la calcola SEND ed è quella riportata nel dettaglio della notifica.
+
+**Raccomandata non ritirata (compiuta giacenza).** Se il destinatario è assente il plico va in giacenza e gli viene spedito un avviso di deposito: la notifica si ha per eseguita 10 giorni dopo la spedizione dell'avviso, o prima se ritira il plico ([art. 8 L. 890/1982](https://www.normattiva.it/uri-res/N2Ls?urn:nir:stato:legge:1982-11-20;890~art8)).
+
+**Esempio 1: avviso di accertamento TARI su SEND**, accettato da SEND il 01/10, PEC consegnata il 02/10:
+
+- notificata per l'ente il **01/10**: il Comune ha notificato in tempo, anche se era l'ultimo giorno utile;
+- notificata per il destinatario il **09/10** (7° giorno dopo la PEC): i 60 giorni per pagare o fare ricorso scadono l'**08/12**. Solo dopo l'atto diventa definitivo e si può passare alla riscossione coattiva.
+
+**Esempio 2: ordinanza di demolizione firmata e inviata il 01/10.** Il destinatario ha 90 giorni per demolire ([art. 31 D.P.R. 380/2001](https://www.normattiva.it/uri-res/N2Ls?urn:nir:presidente.repubblica:decreto:2001-06-06;380~art31), comma 3) e 60 giorni per il ricorso al TAR ([art. 29 c.p.a.](https://www.normattiva.it/uri-res/N2Ls?urn:nir:stato:decreto.legislativo:2010-07-02;104:2~art29)), entrambi dalla notifica per lui:
+
+| Come viene notificata | Per l'ente | Per il destinatario | Ricorso TAR entro | Demolizione entro |
+| --- | --- | --- | --- | --- |
+| SEND, aperta dall'app IO il 08/10 | 01/10 | 08/10 | 07/12 | 06/01 |
+| SEND, PEC consegnata il 02/10 | 01/10 | 09/10 | 08/12 | 07/01 |
+| SEND cartacea, consegnata il 06/10 | 01/10 | 16/10 | 15/12 | 14/01 |
+| Raccomandata A/R consegnata il 06/10 | 01/10 | 06/10 | 05/12 | 04/01 |
+| Raccomandata A/R non ritirata, avviso di deposito spedito il 06/10 | 01/10 | 16/10 | 15/12 | 14/01 |
+
+Per l'ordinanza conta la data per il destinatario: se i 90 giorni si contano dalla data per l'ente, il Comune rischia di acquisire il bene prima del tempo e l'acquisizione diventa impugnabile. Se l'atto ha più destinatari (proprietario, responsabile dell'abuso) ognuno ha la sua data, nell'elenco destinatari della campagna.
+
+I termini per i ricorsi in giudizio, compreso il TAR, restano sospesi dal 1° al 31 agosto ([art. 1 L. 742/1969](https://www.normattiva.it/uri-res/N2Ls?urn:nir:stato:legge:1969-10-07;742~art1)): un ricorso che scadrebbe in quel periodo slitta di conseguenza. I 90 giorni per demolire non sono un termine processuale e non si sospendono.
+
+Le date si trovano nel dettaglio della notifica, nell'elenco destinatari della campagna (colonne **Notificata per l'ente** e **Notificata per il destinatario**) e nei report CSV.
+
+### Notifica non consegnata o destinatario irreperibile
+
+Cosa fare dipende dal canale.
+
+**SEND.** Se il destinatario è irreperibile, SEND deposita l'avviso sulla piattaforma e la notifica **si perfeziona da sola 10 giorni dopo** ([art. 26 D.L. 76/2020](https://www.normattiva.it/uri-res/N2Ls?urn:nir:stato:decreto.legge:2020-07-16;76~art26), comma 7). Il dettaglio della notifica lo segnala con «nessuna consegna». La notifica è valida, ma il destinatario può chiedere di essere rimesso in termini se dimostra di non averne avuto conoscenza senza sua colpa. Per atti pesanti (ordinanze, sanzioni rilevanti, iscrizioni a ruolo):
+
+1. verifica la residenza in **Verifica Anagrafica** (ANPR) e il domicilio digitale (INAD, Registro Imprese);
+2. se trovi un indirizzo nuovo e valido, valuta con il responsabile del procedimento una nuova notifica, anche se la prima è perfezionata;
+3. annota quanto fatto, ad esempio con **Presa visione** e una nota se la notifica era tra le segnalazioni.
+
+Se SEND **rifiuta** o **annulla** la notifica, o la **restituisce al mittente**, non c'è nessuna data legale: correggi i dati (indirizzo, codice fiscale, allegati) e invia una nuova notifica.
+
+**Raccomandata (Posta).** Una raccomandata tornata indietro non notifica niente. Il motivo è nel dettaglio della notifica:
+
+- **sconosciuto, trasferito, indirizzo inesatto o insufficiente**: verifica l'indirizzo in **Verifica Anagrafica** (ANPR); se è sbagliato correggilo con **Correggi indirizzo e rimetti in coda**. Se ANPR conferma un indirizzo dove il destinatario non si trova, serve la notifica tramite **messo comunale**;
+- **destinatario assente e raccomandata non ritirata**: non serve fare nulla, vale la **compiuta giacenza** e la notifica è perfezionata ([art. 8 L. 890/1982](https://www.normattiva.it/uri-res/N2Ls?urn:nir:stato:legge:1982-11-20;890~art8));
+- **rifiutata dal destinatario**: il rifiuto vale come consegna in mani proprie, la notifica è perfezionata ([art. 138 c.p.c.](https://www.normattiva.it/uri-res/N2Ls?urn:nir:stato:regio.decreto:1940-10-28;1443~art138)).
+
+Con il messo comunale le procedure per gli irreperibili sono due:
+
+| Situazione | Procedura | Notificata per il destinatario |
+| --- | --- | --- |
+| Indirizzo giusto, ma nessuno in casa né persone che possano ricevere l'atto (irreperibilità relativa) | [art. 140 c.p.c.](https://www.normattiva.it/uri-res/N2Ls?urn:nir:stato:regio.decreto:1940-10-28;1443~art140): deposito in casa comunale, avviso affisso alla porta, raccomandata informativa | quando arriva la raccomandata informativa, al più tardi 10 giorni dopo la spedizione (Corte costituzionale, sentenza 3/2010) |
+| Residenza, dimora e domicilio sconosciuti (irreperibilità assoluta) | [art. 143 c.p.c.](https://www.normattiva.it/uri-res/N2Ls?urn:nir:stato:regio.decreto:1940-10-28;1443~art143): deposito nella casa comunale dell'ultima residenza, dopo le ricerche anagrafiche | il 20° giorno dopo il deposito |
+
+Esempio: ordinanza di demolizione con raccomandata tornata per «sconosciuto»; ricerche ANPR senza esito, deposito ex art. 143 il 15/10. La notifica per il destinatario è il **04/11**: ricorso al TAR entro il 03/01, demolizione entro il 02/02.
+
+Per atti con valore legale, se possibile, preferisci **SEND**: gestisce da sola l'irreperibilità senza passaggi dal messo.
 
 ### Protocollo e sigillo elettronico
 
@@ -359,7 +434,7 @@ I destinatari di una campagna annullata non si possono rimettere in coda.
 
 **Causa:** per SEND il destinatario irreperibile non blocca la notifica: la piattaforma la perfeziona comunque e assegna la data di perfezionamento per il destinatario. Non è quindi una notifica senza esito.
 
-**Soluzione:** nessuna. Le date legali si leggono nel dettaglio della notifica.
+**Soluzione:** nessuna sul sistema. Le date legali si leggono nel dettaglio della notifica. Per atti importanti valuta se rintracciare il destinatario e notificare di nuovo: vedi [Notifica non consegnata o destinatario irreperibile](#notifica-non-consegnata-o-destinatario-irreperibile).
 
 **Apri un ticket se:** la notifica risulta irreperibile e dopo 45 giorni non è ancora perfezionata per il destinatario.
 

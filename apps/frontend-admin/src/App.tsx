@@ -42,7 +42,7 @@ const API_BASE = window.__COMUNICAPA_CONFIG__?.apiBase ?? 'http://localhost:8080
 const ADMIN_API_BASE = `${API_BASE}/admin`;
 
 import { CHANNELS_REGISTRY, EMBEDDED_LOGOS, getChannelMeta, channelLabel } from './data/channels';
-import { GUIDA_URL, GUIDA_PER_VISTA, GUIDA_WIZARD_MASSIVO, GUIDA_WIZARD_SINGOLO, guidaSections } from './guida';
+import { GUIDA_URL, GUIDA_PER_VISTA, GUIDA_WIZARD_MASSIVO, GUIDA_WIZARD_SINGOLO, GUIDA_DATE_TERMINI, guidaSections } from './guida';
 
 // ---------------------------------------------------------------------------
 // Definizione centralizzata delle voci di navigazione della pagina Impostazioni.
@@ -1510,6 +1510,25 @@ export function App(): React.JSX.Element {
     setGuidaAnchor(anchor || null);
     setView('guida');
   };
+
+  // Indice laterale: evidenzia il titolo appena sotto la topbar mentre si
+  // scorre (scroll della finestra, la topbar è fixed).
+  const [guidaActiveId, setGuidaActiveId] = useState<string | null>(null);
+  useEffect(() => {
+    if (view !== 'guida' || guidaMd === null) return;
+    const update = () => {
+      const top = (document.querySelector('.bo-topbar')?.getBoundingClientRect().bottom ?? 0) + 24;
+      let current: string | null = null;
+      for (const h of document.querySelectorAll<HTMLElement>('.bo-guida .wmde-markdown :is(h2, h3)[id]')) {
+        if (h.getBoundingClientRect().top <= top) current = h.id;
+        else break;
+      }
+      setGuidaActiveId(current);
+    };
+    update();
+    window.addEventListener('scroll', update, { passive: true });
+    return () => window.removeEventListener('scroll', update);
+  }, [view, guidaMd]);
 
   const guidaLink = (anchor: string) => (
     <button
@@ -5553,21 +5572,32 @@ export function App(): React.JSX.Element {
     }
 
     return (
-      <div className="d-flex flex-column gap-4">
-        <div className="card shadow-sm border-0 rounded-3">
-          <div className="card-body p-4">
-            <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-3">In questa pagina</h5>
-            <div className="d-flex flex-wrap gap-2">
+      <div className="bo-guida-layout">
+        <nav className="card shadow-sm border-0 rounded-3 bo-guida-toc" aria-label="Indice della guida">
+          <div className="card-body p-3">
+            <h5 className="h6 fw-bold text-secondary text-uppercase tracking-wider mb-2">Indice</h5>
+            <ul className="list-unstyled mb-0">
               {guidaSections(guidaMd).map((s) => (
-                <a key={s.id} href={`#${s.id}`} className="btn btn-sm btn-outline-secondary">
-                  {s.title}
-                </a>
+                <li key={s.id} className={s.level === 2 ? 'bo-guida-toc-l2' : 'bo-guida-toc-l3'}>
+                  <a
+                    href={`#${s.id}`}
+                    className={guidaActiveId === s.id ? 'is-active' : undefined}
+                    aria-current={guidaActiveId === s.id ? 'location' : undefined}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      document.getElementById(s.id)?.scrollIntoView({ block: 'start' });
+                      setGuidaActiveId(s.id);
+                    }}
+                  >
+                    {s.title}
+                  </a>
+                </li>
               ))}
-            </div>
+            </ul>
           </div>
-        </div>
+        </nav>
 
-        <div className="card shadow-sm border-0 rounded-3">
+        <div className="card shadow-sm border-0 rounded-3 bo-guida-body">
           <div className="card-body p-4 bo-guida" data-color-mode="light">
             {/* skipHtml={false} = HTML grezzo scartato: per react-markdown-preview
                 il default (true) significa "rendi l'HTML" (vedi preview.js). */}
@@ -13178,7 +13208,7 @@ export function App(): React.JSX.Element {
                     ) : notifDetail && (
                       <>
                         <div className="nd-scope">
-                          <NotificationVerdict detail={notifDetail} labels={NOTIF_JOURNEY_LABELS} />
+                          <NotificationVerdict detail={notifDetail} labels={NOTIF_JOURNEY_LABELS} onOpenGuida={(anchor) => { setNotifDetail(null); openGuida(anchor); }} />
                           <div className="nd-grid">
                             <section aria-label="Percorso della notifica">
                               <h3 className="nd-section-title">Percorso</h3>
@@ -18226,7 +18256,7 @@ export function App(): React.JSX.Element {
                                            </div>
                                          </th>
                                          <th title={SEND_ENTITY_DATE_HEADER_TITLE}>Notificata per l'ente</th>
-                                         <th title={RECIPIENT_DATE_HEADER_TITLE}>Notificata per il destinatario</th>
+                                         <th title={RECIPIENT_DATE_HEADER_TITLE}>Notificata per il destinatario{guidaLink(GUIDA_DATE_TERMINI)}</th>
                                          <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('updatedAt')}>
                                            <div className="d-inline-flex align-items-center gap-1">
                                              <span>Aggiornato il</span>
@@ -18274,7 +18304,7 @@ export function App(): React.JSX.Element {
                                              )}
                                            </div>
                                          </th>
-                                         <th title={RECIPIENT_DATE_HEADER_TITLE}>Notificata per il destinatario</th>
+                                         <th title={RECIPIENT_DATE_HEADER_TITLE}>Notificata per il destinatario{guidaLink(GUIDA_DATE_TERMINI)}</th>
                                          <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('postalDeliveryStatus')}>
                                            <div className="d-inline-flex align-items-center gap-1">
                                              <span>Recapito Poste</span>
