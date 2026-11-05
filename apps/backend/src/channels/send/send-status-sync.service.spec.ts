@@ -256,6 +256,29 @@ describe('SendStatusSyncService', () => {
     expect(mockRepo.save).toHaveBeenCalledWith(attempt);
   });
 
+  it('salva timeline e storico anche senza cambio stato (es. ritiro presso punto RADD mentre resta DELIVERED)', async () => {
+    const attempt: any = {
+      id: 'a1', iun: 'IUN-123', sendStatus: 'DELIVERED', costCents: 100,
+      costBreakdown: { baseFeeCents: 100, analogEvents: [] },
+      costCalculatedAt: new Date('2026-01-12T10:00:00Z'),
+      sendStatusUpdatedAt: new Date('2026-01-12T09:00:00Z'),
+      sendStatusHistory: [{ status: 'DELIVERED', activeFrom: '2026-01-12T09:00:00Z' }],
+      sendTimeline: [],
+    };
+    mockRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([attempt]));
+    mockFetch.mockResolvedValue({ ok: true, text: () => Promise.resolve(JSON.stringify({
+      notificationStatus: 'DELIVERED',
+      notificationStatusHistory: [{ status: 'DELIVERED', activeFrom: '2026-01-12T09:00:00Z' }],
+      timeline: [{ category: 'NOTIFICATION_RADD_RETRIEVED', timestamp: '2026-01-15T10:00:00Z', details: { raddType: 'ALT' } }],
+    })) });
+
+    await service.updateStatuses();
+
+    expect(attempt.sendTimeline).toEqual([{ category: 'NOTIFICATION_RADD_RETRIEVED', at: '2026-01-15T10:00:00Z', raddType: 'ALT' }]);
+    expect(attempt.sendStatusUpdatedAt).toEqual(new Date('2026-01-12T09:00:00Z'));
+    expect(mockRepo.save).toHaveBeenCalledWith(attempt);
+  });
+
   it('handleCron chiama sia resolveMissingIun che updateStatuses', async () => {
     mockRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder([]));
     const spyResolve = jest.spyOn(service, 'resolveMissingIun');

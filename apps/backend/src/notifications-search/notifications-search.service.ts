@@ -299,6 +299,8 @@ export class NotificationsSearchService {
             iun: a.iun,
             sendStatus: a.sendStatus,
             sendStatusUpdatedAt: a.sendStatusUpdatedAt ? a.sendStatusUpdatedAt.toISOString() : null,
+            sendStatusHistory: a.sendStatusHistory ?? null,
+            sendTimeline: a.sendTimeline ?? null,
             protocolNumber: protoNum,
             protocolYear: protoYr,
             protocolledAt: protoAt ? protoAt.toISOString() : null,

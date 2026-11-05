@@ -7,6 +7,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import type { Recipient } from './recipient.entity.js';
+import type { SendTimelineEvent } from '../channels/send/send-status-history.util.js';
 
 export enum AttemptStatus {
   QUEUED = 'queued',
@@ -54,6 +55,10 @@ export class NotificationAttempt {
 
   @Column({ type: 'jsonb', name: 'send_status_history', nullable: true })
   sendStatusHistory!: Array<{ status: string; activeFrom: string }> | null;
+
+  /** Fatti della timeline PN per il percorso (vedi extractSendTimeline): nessun indirizzo. */
+  @Column({ type: 'jsonb', name: 'send_timeline', nullable: true })
+  sendTimeline!: SendTimelineEvent[] | null;
 
   @Column({ type: 'jsonb', name: 'send_digital_domicile', nullable: true })
   sendDigitalDomicile!: { type: string; address: string | null; source: string } | null;

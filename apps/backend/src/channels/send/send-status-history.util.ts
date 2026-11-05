@@ -83,3 +83,65 @@ export function extractSendAnalogCost(data: unknown): SendAnalogCostInfo {
 
   return { analogCostCents: events.reduce((sum, e) => sum + e.analogCostCents, 0), events };
 }
+
+/**
+ * Evento della timeline PN conservato per il percorso della notifica:
+ * solo i fatti utili all'operatore e solo campi tecnici — mai indirizzi
+ * fisici/digitali né dati del destinatario.
+ */
+export interface SendTimelineEvent {
+  category: string;
+  at: string;
+  /** deliveryDetailCode del recapitista (es. RECRN003C, CON080). */
+  code?: string;
+  /** OK/KO di SEND_ANALOG_FEEDBACK / SEND_DIGITAL_FEEDBACK. */
+  responseStatus?: string;
+  productType?: string;
+  /** Tipo canale del messaggio/domicilio digitale (PEC, EMAIL, SMS, APPIO): mai l'indirizzo. */
+  channel?: string;
+  deliveryFailureCause?: string;
+  /** Numero del tentativo (0 = primo). */
+  attempt?: number;
+  raddType?: string;
+}
+
+export const SEND_TIMELINE_CATEGORIES = [
+  'SEND_DIGITAL_DOMICILE',
+  'SEND_DIGITAL_FEEDBACK',
+  'DIGITAL_FAILURE_WORKFLOW',
+  'SEND_COURTESY_MESSAGE',
+  'PREPARE_ANALOG_DOMICILE_FAILURE',
+  'SEND_ANALOG_DOMICILE',
+  'SEND_SIMPLE_REGISTERED_LETTER',
+  'SEND_ANALOG_PROGRESS',
+  'SEND_ANALOG_FEEDBACK',
+  'ANALOG_FAILURE_WORKFLOW',
+  'NOTIFICATION_RADD_RETRIEVED',
+] as const;
+
+/**
+ * Sottoinsieme della timeline PN per il percorso: gli stati sono già in
+ * notificationStatusHistory, qui i fatti che avvengono DENTRO uno stato
+ * (spedizione cartacea, avanzamenti recapitista, ritiro presso punto RADD...).
+ * Overwrite intero ad ogni poll, come lo storico stati.
+ */
+export function extractSendTimeline(data: unknown): SendTimelineEvent[] {
+  const timeline = (data as { timeline?: unknown })?.timeline;
+  if (!Array.isArray(timeline)) return [];
+  const kept = new Set<string>(SEND_TIMELINE_CATEGORIES);
+  const out: SendTimelineEvent[] = [];
+  for (const el of timeline as any[]) {
+    if (!kept.has(el?.category) || typeof el?.timestamp !== 'string') continue;
+    const d = el.details ?? {};
+    const ev: SendTimelineEvent = { category: el.category, at: el.timestamp };
+    if (typeof d.deliveryDetailCode === 'string') ev.code = d.deliveryDetailCode;
+    if (typeof d.responseStatus === 'string') ev.responseStatus = d.responseStatus;
+    if (typeof d.productType === 'string') ev.productType = d.productType;
+    if (typeof d.digitalAddress?.type === 'string') ev.channel = d.digitalAddress.type;
+    if (typeof d.deliveryFailureCause === 'string') ev.deliveryFailureCause = d.deliveryFailureCause;
+    if (typeof d.sentAttemptMade === 'number') ev.attempt = d.sentAttemptMade;
+    if (typeof d.raddType === 'string') ev.raddType = d.raddType;
+    out.push(ev);
+  }
+  return out;
+}

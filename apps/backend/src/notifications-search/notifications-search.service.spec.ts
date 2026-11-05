@@ -200,6 +200,8 @@ describe('NotificationsSearchService.getDetail', () => {
         iun: null,
         sendStatus: null,
         sendStatusUpdatedAt: null,
+        sendStatusHistory: null,
+        sendTimeline: null,
         protocolNumber: null,
         protocolYear: null,
         protocolledAt: null,

@@ -1,4 +1,4 @@
-import { extractSendStatusHistory, extractSendDigitalDomicile, extractSendAnalogCost } from './send-status-history.util.js';
+import { extractSendStatusHistory, extractSendDigitalDomicile, extractSendAnalogCost, extractSendTimeline } from './send-status-history.util.js';
 
 describe('send-status-history.util', () => {
   describe('extractSendStatusHistory', () => {
@@ -58,6 +58,36 @@ describe('send-status-history.util', () => {
 
       expect(result.analogCostCents).toBe(0);
       expect(result.events).toEqual([]);
+    });
+  });
+  describe('extractSendTimeline', () => {
+    it('tiene solo i fatti utili al percorso, senza indirizzi né dati del destinatario', () => {
+      const data = {
+        timeline: [
+          { category: 'REQUEST_ACCEPTED', timestamp: '2026-10-13T09:46:43Z', details: {} },
+          { category: 'SEND_ANALOG_DOMICILE', timestamp: '2026-10-13T09:47:30Z', details: { physicalAddress: { address: 'VIA ROMA 1' }, productType: 'AR', analogCost: 494, sentAttemptMade: 0 } },
+          { category: 'SEND_ANALOG_PROGRESS', timestamp: '2026-10-20T07:58:00Z', details: { deliveryDetailCode: 'RECRN010', registeredLetterCode: '123' } },
+          { category: 'SEND_ANALOG_FEEDBACK', timestamp: '2026-10-23T13:18:08Z', details: { physicalAddress: { address: 'VIA ROMA 1' }, responseStatus: 'OK', deliveryDetailCode: 'RECRN003C', sentAttemptMade: 0 } },
+          { category: 'SEND_COURTESY_MESSAGE', timestamp: '2026-10-13T09:47:00Z', details: { digitalAddress: { type: 'EMAIL', address: 'mario@example.it' } } },
+          { category: 'NOTIFICATION_RADD_RETRIEVED', timestamp: '2026-10-26T10:51:36Z', details: { raddType: 'ALT', raddTransactionId: 'x' } },
+          { category: 'REFINEMENT', timestamp: '2026-11-02T13:18:08Z', details: {} },
+        ],
+      };
+
+      const result = extractSendTimeline(data);
+
+      expect(result).toEqual([
+        { category: 'SEND_ANALOG_DOMICILE', at: '2026-10-13T09:47:30Z', productType: 'AR', attempt: 0 },
+        { category: 'SEND_ANALOG_PROGRESS', at: '2026-10-20T07:58:00Z', code: 'RECRN010' },
+        { category: 'SEND_ANALOG_FEEDBACK', at: '2026-10-23T13:18:08Z', code: 'RECRN003C', responseStatus: 'OK', attempt: 0 },
+        { category: 'SEND_COURTESY_MESSAGE', at: '2026-10-13T09:47:00Z', channel: 'EMAIL' },
+        { category: 'NOTIFICATION_RADD_RETRIEVED', at: '2026-10-26T10:51:36Z', raddType: 'ALT' },
+      ]);
+      expect(JSON.stringify(result)).not.toMatch(/VIA ROMA|mario@example/);
+    });
+
+    it('timeline assente → array vuoto', () => {
+      expect(extractSendTimeline({})).toEqual([]);
     });
   });
 });
