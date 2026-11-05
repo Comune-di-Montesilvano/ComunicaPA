@@ -333,7 +333,17 @@ export function computeVerdict(d: JourneyDetail, labels: JourneyLabels): Verdict
   }
 
   if (d.campaign.channelType === 'SEND' && last.sendStatus) {
-    return { ...base, headline: labels.sendStatus(last.sendStatus), when: last.sendStatusUpdatedAt ?? null, source: 'secondo SEND', tone: 'neutral' };
+    // Poste ha già un esito ma PN no: il recapitista non ha trasmesso a PN
+    // l'esito (visto dal vivo: RECRN010 e poi più nulla per 45 giorni, Poste
+    // consegnata lo stesso giorno). L'esito legale resta quello di SEND.
+    const pv = last.posteVerification;
+    const pnOpen = last.sendStatus === 'DELIVERING' || last.sendStatus === 'ACCEPTED';
+    const posteOutcome = pnOpen && pv && (pv.status === 'delivered' || pv.status === 'returned') ? pv : null;
+    const posteWhen = posteOutcome?.outcomeAt ?? posteOutcome?.deliveredAt ?? null;
+    const note = posteOutcome
+      ? `Poste: ${posteOutcome.status === 'delivered' ? 'consegnata' : 'restituita al mittente'}${posteWhen ? ` il ${new Date(posteWhen).toLocaleDateString('it-IT')}` : ''}; SEND non ha ancora ricevuto l'esito dal recapitista`
+      : null;
+    return { ...base, headline: labels.sendStatus(last.sendStatus), when: last.sendStatusUpdatedAt ?? null, source: 'secondo SEND', tone: 'neutral', note, discrepancy: !!posteOutcome };
   }
 
   const firstDownload = [...d.downloads].sort((x, y) => new Date(x.downloadedAt).getTime() - new Date(y.downloadedAt).getTime())[0];

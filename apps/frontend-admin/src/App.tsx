@@ -13063,7 +13063,20 @@ export function App(): React.JSX.Element {
                         <tr key={r.recipientId} style={{ cursor: 'pointer' }} onClick={() => openNotificationDetail(r.recipientId)}>
                           <td className="font-monospace small">{r.codiceFiscale}</td>
                           <td className="small">{r.fullName || '—'}</td>
-                          <td className="small">{r.campaignName}</td>
+                          <td className="small">
+                            <a
+                              href="#"
+                              className="text-decoration-none"
+                              title="Apri la campagna"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleCampaignClick(r.campaignId);
+                              }}
+                            >
+                              {r.campaignName}
+                            </a>
+                          </td>
                           <td><ChannelBadge channel={r.channelType} /></td>
                           <td>
                             <StatusBadge status={r.status} />
@@ -13117,7 +13130,19 @@ export function App(): React.JSX.Element {
                         <p className="nd-who-meta">
                           <span className="nd-cf">{notifDetail.recipient.codiceFiscale}</span>
                           <ChannelBadge channel={notifDetail.campaign.channelType} extra={notifDetail.campaign.channelType === 'POSTAL' ? postalBadgeExtra({ postalServiceType: notifDetail.campaign.postalServiceType, postalReturnReceipt: notifDetail.campaign.postalReturnReceipt }, postalProviders.find((p) => p.active)?.enabledServiceTypes) : undefined} />
-                          <span>{notifDetail.campaign.name}</span>
+                          <a
+                            href="#"
+                            className="text-decoration-none"
+                            title="Apri la campagna"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              const campaignId = notifDetail.campaign.id;
+                              setNotifDetail(null);
+                              handleCampaignClick(campaignId);
+                            }}
+                          >
+                            {notifDetail.campaign.name}
+                          </a>
                         </p>
                       </div>
                     ) : (

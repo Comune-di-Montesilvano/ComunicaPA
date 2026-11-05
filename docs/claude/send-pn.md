@@ -221,3 +221,10 @@ copia in `journey.ts`). Visto dal vivo un secondo vettore SEND con codici
 `PSTAQ…` di 20 caratteri (A/R a 3,00 € contro 4,94 € di Poste: altro lotto):
 poste.it risponde `esitoRicerca 3`/`stato 1` senza movimenti, quindi mai
 interrogato. Tasto "Verifica ora su Poste" anche per SEND (`checkSendRecipientNow`).
+
+**Poste consegnata, PN ancora DELIVERING = esito mai trasmesso dal recapitista
+a PN** (visto dal vivo, QLXK-…-202609: `RECRN010` il 22/09 e poi nulla per 45
+giorni, Poste consegnata ad Alanno Scalo lo stesso pomeriggio). PN chiude solo
+con l'esito del recapitista (`RECRN00xA/B/C` + demat AR): non è un bug nostro,
+serve un ticket all'assistenza SEND. Il verdetto del dettaglio lo segnala come
+"Esiti diversi" (`computeVerdict`, ramo SEND); l'esito legale resta PN.
