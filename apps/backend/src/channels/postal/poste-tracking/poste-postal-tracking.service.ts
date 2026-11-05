@@ -33,6 +33,27 @@ const NEVER_CHECKED_FIRST_SQL = 'CASE WHEN t.poste_esito_ricerca IS NULL THEN 0 
  */
 export const POSTE_TRACKABLE_SERVICE_SQL =
   "(COALESCE(c.channel_config->>'postalServiceType', '') = '' OR c.channel_config->>'postalServiceType' LIKE 'Raccomandata%' OR c.channel_config->>'postalServiceType' LIKE 'Agol%')";
+/**
+ * Codici raccomandata Poste: 12 cifre (nazionali, visti dal vivo 698139…/
+ * 698140…) o S10 internazionale (RR123456789IT). Altri vettori SEND hanno
+ * formati propri (visto PSTAQ… di 20 caratteri: poste.it risponde senza
+ * movimenti) e non vanno mai interrogati. Stessa regola in SQL qui sotto e
+ * nel frontend (journey.ts isPosteLetterCode).
+ */
+export function isPosteLetterCode(code: string | null | undefined): boolean {
+  return !!code && (/^\d{12}$/.test(code) || /^[A-Z]{2}\d{9}IT$/.test(code));
+}
+const POSTE_LETTER_CODE_SQL = (expr: string) => `(${expr} ~ '^[0-9]{12}$' OR ${expr} ~ '^[A-Z]{2}[0-9]{9}IT$')`;
+
+/** Ultimo codice raccomandata in formato Poste della timeline SEND (null se assente). */
+export function latestPosteLetterCode(timeline: Array<{ at: string; registeredLetterCode?: string }> | null | undefined): string | null {
+  let best: { at: string; code: string } | null = null;
+  for (const e of timeline ?? []) {
+    if (isPosteLetterCode(e.registeredLetterCode) && (!best || e.at > best.at)) best = { at: e.at, code: e.registeredLetterCode! };
+  }
+  return best?.code ?? null;
+}
+
 const DISABLED_MESSAGE = 'Verifica consegna su Poste disattivata (Impostazioni → Postalizzazione)';
 
 export type CheckResult = PosteTrackingStatus | 'error' | 'blocked' | 'skipped';
@@ -243,7 +264,7 @@ export class PostePostalTrackingService {
        CROSS JOIN LATERAL (
          SELECT e->>'registeredLetterCode' AS value
          FROM jsonb_array_elements(COALESCE(na.send_timeline, '[]'::jsonb)) e
-         WHERE COALESCE(e->>'registeredLetterCode', '') <> ''
+         WHERE ${POSTE_LETTER_CODE_SQL("e->>'registeredLetterCode'")}
          ORDER BY e->>'at' DESC
          LIMIT 1
        ) code
@@ -265,6 +286,14 @@ export class PostePostalTrackingService {
          AND COALESCE(na.send_status, '') <> 'DELIVERING'
          AND t.last_checked_at IS NOT NULL AND t.last_error IS NULL
          AND t.last_checked_at >= COALESCE(na.send_status_updated_at, na.created_at)`,
+    );
+    // Righe entrate prima del filtro di formato (v1.16.0): un vettore diverso
+    // da Poste non avrà mai movimenti su poste.it.
+    await this.repo.query(
+      `UPDATE postal_poste_tracking t SET status = 'gave_up', next_check_at = NULL
+       FROM notification_attempts na
+       WHERE na.id = t.attempt_id AND na.channel_type = 'SEND' AND t.status = 'pending'
+         AND NOT ${POSTE_LETTER_CODE_SQL('t.tracking_code')}`,
     );
     return Array.isArray(rows) ? rows.length : 0;
   }
@@ -481,6 +510,7 @@ export class PostePostalTrackingService {
     if (this.isBlocked()) throw new ConflictException(`Poste sta limitando le richieste: riprova dopo le ${this.blockedUntil!.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' })}`);
     const recipient = await this.recipientRepo.findOne({ where: { id: recipientId }, relations: { campaign: true } });
     if (!recipient || recipient.campaignId !== campaignId) throw new NotFoundException(`Recipient ${recipientId} non trovato in questa campagna`);
+    if (recipient.campaign?.channelType === 'SEND') return this.checkSendRecipientNow(recipientId);
     const serviceType = recipient.campaign?.channelConfig?.['postalServiceType'] as string | undefined;
     if (!isPosteTrackableService(serviceType)) {
       throw new BadRequestException(`Verifica su Poste non disponibile per ${serviceType}: la posta semplice non ha un codice tracciabile su Poste`);
@@ -497,6 +527,40 @@ export class PostePostalTrackingService {
       row = await this.repo.save(this.repo.create({
         attemptId: attempt.id,
         trackingCode: attempt.postalAcceptanceId,
+        status: 'pending',
+        checkCount: 0,
+        nextCheckAt: new Date(),
+        trackingUntil: notifiedAt ? new Date(notifiedAt.getTime() + POSTE_TRACKING_DAYS * DAY_MS) : null,
+      }));
+    }
+    const result = await this.checkOne(row, 'manual');
+    return { row, result };
+  }
+
+  /**
+   * Tasto "Verifica ora su Poste" di una SEND: raccomandata Poste dell'ultimo
+   * tentativo (codice più recente della timeline PN). Stesso limite di una
+   * chiamata ogni 23 ore di checkOne; codice cambiato = riga da capo.
+   */
+  private async checkSendRecipientNow(recipientId: string): Promise<{ row: PostalPosteTracking; result: CheckResult }> {
+    const attempt = await this.attemptRepo.findOne({ where: { recipientId, channelType: 'SEND' }, order: { attemptNumber: 'DESC' } });
+    const code = latestPosteLetterCode(attempt?.sendTimeline);
+    if (!attempt || !code) {
+      throw new BadRequestException('Verifica su Poste non disponibile: nessuna raccomandata di Poste Italiane per questa notifica SEND (non ancora spedita o recapitista diverso)');
+    }
+    let row = await this.repo.findOneBy({ attemptId: attempt.id });
+    if (row && row.trackingCode !== code) {
+      Object.assign(row, {
+        trackingCode: code, status: 'pending', checkCount: 0, nextCheckAt: new Date(), lastCheckedAt: null, lastError: null,
+        posteStato: null, posteEsitoRicerca: null, posteProduct: null, deliveredAt: null, outcomeAt: null, movements: null, lastResponse: null,
+      });
+      row = await this.repo.save(row);
+    }
+    if (!row) {
+      const notifiedAt = attempt.sentAt ?? attempt.createdAt;
+      row = await this.repo.save(this.repo.create({
+        attemptId: attempt.id,
+        trackingCode: code,
         status: 'pending',
         checkCount: 0,
         nextCheckAt: new Date(),

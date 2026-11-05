@@ -77,6 +77,7 @@
 .nd-title { color: var(--nd-ink); font-weight: 600; }
 .nd-source { font-size: 0.78rem; color: var(--nd-muted); }
 .nd-detail { font-size: 0.85rem; color: var(--nd-muted); overflow-wrap: anywhere; }
+.nd-link { display: inline-flex; align-items: center; gap: 3px; color: var(--bs-link-color, #0d6efd); text-decoration: underline; width: fit-content; }
 .nd-tone-ko .nd-title, .nd-tone-ko .nd-detail { color: var(--nd-ko); }
 .nd-tone-ok .nd-title { color: var(--nd-ok); }
 .nd-tone-warn .nd-title { color: var(--nd-warn); }

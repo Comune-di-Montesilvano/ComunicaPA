@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ConflictException, BadRequestException } from '@nestjs/common';
-import { PostePostalTrackingService, POSTE_TRACKABLE_SERVICE_SQL } from './poste-postal-tracking.service.js';
+import { PostePostalTrackingService, POSTE_TRACKABLE_SERVICE_SQL, isPosteLetterCode, latestPosteLetterCode } from './poste-postal-tracking.service.js';
 import { PosteTrackingError } from './poste-tracking-mapping.util.js';
 import type { PostalPosteTracking } from '../../../entities/postal-poste-tracking.entity.js';
 
@@ -502,6 +502,59 @@ describe('PostePostalTrackingService', () => {
       const h = await service.getQueueHealth();
       expect(h.lastTickAt).not.toBeNull();
       expect(h.lastTickChecks).toBe(1);
+    });
+  });
+
+  describe('raccomandate SEND: solo codici in formato Poste', () => {
+    it('12 cifre e S10 internazionale sì, altri vettori no', () => {
+      expect(isPosteLetterCode('698140532848')).toBe(true);
+      expect(isPosteLetterCode('RR123456789IT')).toBe(true);
+      expect(isPosteLetterCode('PSTAQ777950RR1270658')).toBe(false);
+      expect(isPosteLetterCode('1234567890')).toBe(false);
+      expect(isPosteLetterCode(null)).toBe(false);
+    });
+
+    it('ultimo codice Poste della timeline, ignorando gli altri vettori', () => {
+      expect(latestPosteLetterCode([
+        { at: '2026-10-01T10:00:00Z', registeredLetterCode: '698139000001' },
+        { at: '2026-10-20T10:00:00Z', registeredLetterCode: '698139000002' },
+        { at: '2026-10-25T10:00:00Z', registeredLetterCode: 'PSTAQ777950RR1270658' },
+      ])).toBe('698139000002');
+      expect(latestPosteLetterCode(null)).toBeNull();
+    });
+
+    it('backfillSend filtra il formato in SQL e chiude le righe SEND già in coda con codice non Poste', async () => {
+      await service.backfillSend();
+      expect(repo.query.mock.calls[0][0]).toContain("~ '^[0-9]{12}$'");
+      const sweep = repo.query.mock.calls[2][0] as string;
+      expect(sweep).toContain("SET status = 'gave_up'");
+      expect(sweep).toContain("AND NOT (t.tracking_code ~ '^[0-9]{12}$'");
+    });
+
+    it('tasto notifica SEND: crea la riga col codice Poste e chiama Poste', async () => {
+      recipientRepo.findOne.mockResolvedValue({ id: 'r1', campaignId: 'c1', campaign: { channelType: 'SEND', channelConfig: {} } });
+      attemptRepo.findOne.mockResolvedValue({ id: 'a9', channelType: 'SEND', sentAt: new Date(), createdAt: new Date(), sendTimeline: [{ category: 'SEND_ANALOG_PROGRESS', at: '2026-11-04T12:00:00Z', registeredLetterCode: '698140532848' }], recipient: { campaign: { channelConfig: {} } } });
+      client.track.mockResolvedValue(NOT_FOUND);
+      const { row: r } = await service.checkRecipientNow('c1', 'r1');
+      expect(r.trackingCode).toBe('698140532848');
+      expect(client.track).toHaveBeenCalledWith('698140532848');
+    });
+
+    it('tasto notifica SEND senza raccomandata Poste: errore chiaro, nessuna chiamata', async () => {
+      recipientRepo.findOne.mockResolvedValue({ id: 'r1', campaignId: 'c1', campaign: { channelType: 'SEND', channelConfig: {} } });
+      attemptRepo.findOne.mockResolvedValue({ id: 'a9', channelType: 'SEND', sendTimeline: [{ category: 'SEND_ANALOG_PROGRESS', at: '2026-11-04T12:00:00Z', registeredLetterCode: 'PSTAQ777950RR1270658' }] });
+      await expect(service.checkRecipientNow('c1', 'r1')).rejects.toThrow(BadRequestException);
+      expect(client.track).not.toHaveBeenCalled();
+    });
+
+    it('tasto notifica SEND con codice cambiato (secondo tentativo): riga ripartita col codice nuovo', async () => {
+      recipientRepo.findOne.mockResolvedValue({ id: 'r1', campaignId: 'c1', campaign: { channelType: 'SEND', channelConfig: {} } });
+      attemptRepo.findOne.mockResolvedValue({ id: 'a1', channelType: 'SEND', sendTimeline: [{ category: 'SEND_ANALOG_PROGRESS', at: '2026-11-04T12:00:00Z', registeredLetterCode: '698140000002' }], recipient: { campaign: { channelConfig: {} } } });
+      add(row({ id: 't1', attemptId: 'a1', trackingCode: '698140000001', lastCheckedAt: new Date(Date.now() - 2 * 3_600_000), movements: [{ at: 'x', luogo: 'BOLOGNA', statoLavorazione: '', box: '2', flagRitorno: false }] }));
+      client.track.mockResolvedValue(NOT_FOUND);
+      const { row: r } = await service.checkRecipientNow('c1', 'r1');
+      expect(r.trackingCode).toBe('698140000002');
+      expect(client.track).toHaveBeenCalledWith('698140000002');
     });
   });
 

@@ -3,7 +3,7 @@ import MDEditor from '@uiw/react-md-editor';
 import { TemplateEditor } from './components/TemplateEditor';
 import { CampaignSummary, type OutcomeSegment, type OutcomeTone, type KeyFigure } from './components/campaign-detail/CampaignSummary';
 import { NotificationVerdict, NotificationTimeline } from './components/notification-detail/NotificationJourney';
-import type { JourneyLabels } from './components/notification-detail/journey';
+import { latestSendPosteLetter, type JourneyLabels } from './components/notification-detail/journey';
 import { sendDocumentLabel, type SendDocumentItem } from './components/notification-detail/send-documents';
 import type { SendTimelineEvent } from './components/notification-detail/send-timeline';
 import { SearchableSelect } from './components/SearchableSelect';
@@ -13201,10 +13201,16 @@ export function App(): React.JSX.Element {
                                 </div>
                               )}
                               {(() => {
-                                const lastPostal = [...notifDetail.attempts].filter(a => a.channelType === 'POSTAL').sort((a, b) => b.attemptNumber - a.attemptNumber)[0];
+                                const isSend = notifDetail.campaign.channelType === 'SEND';
+                                const lastPostal = [...notifDetail.attempts].filter(a => a.channelType === (isSend ? 'SEND' : 'POSTAL')).sort((a, b) => b.attemptNumber - a.attemptNumber)[0];
                                 const pv = lastPostal?.posteVerification;
-                                // Posta semplice: codice mai tracciabile su Poste, nessuna sezione.
-                                if (!lastPostal || !isPosteTrackableService(notifDetail.campaign.postalServiceType) || !(pv || (lastPostal.postalStatus !== 'Consegnato' && lastPostal.postalAcceptanceId))) return null;
+                                if (isSend) {
+                                  // SEND: solo raccomandate Poste (altri recapitisti non sono su poste.it).
+                                  if (!lastPostal || !(pv || latestSendPosteLetter(lastPostal.sendTimeline))) return null;
+                                } else if (!lastPostal || !isPosteTrackableService(notifDetail.campaign.postalServiceType) || !(pv || (lastPostal.postalStatus !== 'Consegnato' && lastPostal.postalAcceptanceId))) {
+                                  // Posta semplice: codice mai tracciabile su Poste, nessuna sezione.
+                                  return null;
+                                }
                                 return (
                                   <div>
                                     <h4>Verifica su Poste</h4>
@@ -13213,7 +13219,7 @@ export function App(): React.JSX.Element {
                                         <p className="nd-kv">Codice {pv.trackingCode}</p>
                                         <p>
                                           {pv.status === 'pending' && `In verifica${pv.trackingUntil ? ` fino al ${new Date(pv.trackingUntil).toLocaleDateString('it-IT')}` : ''}`}
-                                          {pv.status === 'gave_up' && 'Verifica conclusa: 90 giorni dalla notifica'}
+                                          {pv.status === 'gave_up' && (isSend ? 'Verifica conclusa: SEND ha chiuso la consegna' : 'Verifica conclusa: 90 giorni dalla notifica')}
                                           {pv.status === 'delivered' && 'Consegnata secondo Poste'}
                                           {pv.status === 'returned' && 'Restituita al mittente secondo Poste'}
                                         </p>
@@ -13222,7 +13228,7 @@ export function App(): React.JSX.Element {
                                         {pv.lastError && <p className="text-danger">Ultimo tentativo non riuscito: {pv.lastError}</p>}
                                       </>
                                     ) : (
-                                      <p className="text-muted">Non ancora verificata</p>
+                                      <p className="text-muted">Non ancora verificata{isSend ? ` (raccomandata n. ${latestSendPosteLetter(lastPostal.sendTimeline)})` : ''}</p>
                                     )}
                                   </div>
                                 );
@@ -13254,8 +13260,10 @@ export function App(): React.JSX.Element {
                             );
                           })()}
                                 {(() => {
-                                  const lastPostal = [...notifDetail.attempts].filter(a => a.channelType === 'POSTAL').sort((a, b) => b.attemptNumber - a.attemptNumber)[0];
-                                  if (!lastPostal || !(lastPostal.posteVerification || (lastPostal.postalStatus !== 'Consegnato' && lastPostal.postalAcceptanceId))) return null;
+                                  const isSend = notifDetail.campaign.channelType === 'SEND';
+                                  const lastPostal = [...notifDetail.attempts].filter(a => a.channelType === (isSend ? 'SEND' : 'POSTAL')).sort((a, b) => b.attemptNumber - a.attemptNumber)[0];
+                                  if (!lastPostal) return null;
+                                  if (isSend ? !(lastPostal.posteVerification || latestSendPosteLetter(lastPostal.sendTimeline)) : !(lastPostal.posteVerification || (lastPostal.postalStatus !== 'Consegnato' && lastPostal.postalAcceptanceId))) return null;
                                   return (
                                     <button type="button" className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center" disabled={posteChecking} onClick={handlePosteCheckRecipient}>
                                       {posteChecking ? <Loader2 className="icon-spin me-1" size={14} /> : <RefreshCw className="me-1" size={14} />}
