@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parsePosteResponse, mapPosteOutcome, lastMovement, PosteTrackingError } from './poste-tracking-mapping.util.js';
+import { parsePosteResponse, mapPosteOutcome, lastMovement, PosteTrackingError, posteDataOraToDate } from './poste-tracking-mapping.util.js';
 
 const delivered = {
   idTracciatura: 'RN000000000IT',
@@ -21,7 +21,7 @@ describe('parsePosteResponse', () => {
     expect(r.stato).toBe('5');
     expect(r.tipoProdotto).toBe('RACC. DA/PER ESTERO');
     expect(r.movements).toHaveLength(3);
-    expect(r.movements[2]).toEqual({ at: '2026-09-04T08:06:00.000Z', luogo: 'SVIZZERA', statoLavorazione: 'con successo in data', box: '5', flagRitorno: false });
+    expect(r.movements[2]).toEqual({ at: '2026-09-04T06:06:00.000Z', luogo: 'SVIZZERA', statoLavorazione: 'con successo in data', box: '5', flagRitorno: false });
     expect(r.raw).toBe(delivered);
   });
 
@@ -36,6 +36,21 @@ describe('parsePosteResponse', () => {
       expect(() => parsePosteResponse(body)).toThrow(PosteTrackingError);
     }
     try { parsePosteResponse('x'); } catch (e) { expect((e as PosteTrackingError).kind).toBe('invalid_body'); }
+  });
+});
+
+describe('posteDataOraToDate (ora italiana codificata come UTC)', () => {
+  it('ora legale: −2 h (caso reale: consegnata 11:20:24Z = 09:20:24Z, come SEND)', () => {
+    expect(posteDataOraToDate(Date.parse('2026-09-17T11:20:24Z')).toISOString()).toBe('2026-09-17T09:20:24.000Z');
+  });
+  it('ora solare: −1 h', () => {
+    expect(posteDataOraToDate(Date.parse('2026-11-05T19:38:07Z')).toISOString()).toBe('2026-11-05T18:38:07.000Z');
+  });
+  it('a cavallo del cambio ora (25/10/2026, 03:00 legale → 02:00 solare)', () => {
+    expect(posteDataOraToDate(Date.parse('2026-10-25T01:30:00Z')).toISOString()).toBe('2026-10-24T23:30:00.000Z');
+    expect(posteDataOraToDate(Date.parse('2026-10-25T04:00:00Z')).toISOString()).toBe('2026-10-25T03:00:00.000Z');
+    expect(posteDataOraToDate(Date.parse('2026-03-29T03:30:00Z')).toISOString()).toBe('2026-03-29T01:30:00.000Z');
+    expect(posteDataOraToDate(Date.parse('2026-03-29T01:30:00Z')).toISOString()).toBe('2026-03-29T00:30:00.000Z');
   });
 });
 
@@ -56,7 +71,7 @@ describe('mapPosteOutcome', () => {
   it('esito 3 + stato 5 senza ritorno → delivered con data ultimo movimento', () => {
     const { outcome, outcomeAt } = mapPosteOutcome(parsePosteResponse(delivered));
     expect(outcome).toBe('delivered');
-    expect(outcomeAt?.toISOString()).toBe('2026-09-04T08:06:00.000Z');
+    expect(outcomeAt?.toISOString()).toBe('2026-09-04T06:06:00.000Z');
   });
 
   it('flagRitorno in testa → returned anche con stato 5', () => {
@@ -67,7 +82,7 @@ describe('mapPosteOutcome', () => {
     const body = { ...delivered, listaMovimenti: [...delivered.listaMovimenti, { dataOra: 1788600000000, statoLavorazione: 'x', luogo: 'Y', flagRitorno: true, box: '5' }] };
     const r = mapPosteOutcome(parsePosteResponse(body));
     expect(r.outcome).toBe('returned');
-    expect(r.outcomeAt?.toISOString()).toBe(new Date(1788600000000).toISOString());
+    expect(r.outcomeAt?.toISOString()).toBe(posteDataOraToDate(1788600000000).toISOString());
   });
 
   it('esitoRicerca 1 (non trovato) → pending', () => {
@@ -94,7 +109,7 @@ describe('consegna al mittente (ritorno senza flagRitorno)', () => {
   it('destinatario estero ma consegna registrata in Italia → returned', () => {
     const r = mapPosteOutcome(parsePosteResponse(returnedAbroad), { recipientForeign: true, recipientCity: 'GRAZ', senderCity: 'MONTESILVANO' });
     expect(r.outcome).toBe('returned');
-    expect(r.outcomeAt?.getTime()).toBe(1787839380000);
+    expect(r.outcomeAt?.getTime()).toBe(posteDataOraToDate(1787839380000).getTime());
   });
 
   it('destinatario estero con consegna all\'estero (luogo senza provincia) → delivered', () => {

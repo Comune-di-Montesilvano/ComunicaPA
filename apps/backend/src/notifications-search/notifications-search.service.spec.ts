@@ -194,7 +194,7 @@ describe('NotificationsSearchService.getDetail', () => {
         channelType: 'EMAIL',
         errorMessage: null,
         sentAt: '2026-07-01T10:00:00.000Z',
-        createdAt: '2026-07-01T09:59:00.000Z',
+        createdAt: '2026-07-01T11:59:00.000Z', // created_at senza fuso: fromUtcWallClock (container Europe/Rome)
         appIo: { attempted: true, success: true, error: null, messageId: null },
         appIoMessageId: null,
         iun: null,

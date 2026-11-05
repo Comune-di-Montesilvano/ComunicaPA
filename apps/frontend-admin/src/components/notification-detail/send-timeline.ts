@@ -152,9 +152,9 @@ export function describeSendTimelineEvent(e: SendTimelineEvent): { title: string
     case 'PREPARE_ANALOG_DOMICILE_FAILURE':
       return { title: 'Indirizzo fisico non trovato', detail: null, tone: 'ko' };
     case 'SEND_ANALOG_DOMICILE':
-      return { title: `Spedita per posta${e.productType ? `: ${PRODUCT_LABELS[e.productType] ?? e.productType}` : ''}${attemptSuffix(e)}`, detail: null, tone: 'neutral' };
+      return { title: `Affidata al recapitista${e.productType ? `: ${PRODUCT_LABELS[e.productType] ?? e.productType}` : ''}${attemptSuffix(e)}`, detail: null, tone: 'neutral' };
     case 'SEND_SIMPLE_REGISTERED_LETTER':
-      return { title: 'Spedita raccomandata semplice di avviso', detail: null, tone: 'neutral' };
+      return { title: 'Raccomandata semplice di avviso affidata al recapitista', detail: null, tone: 'neutral' };
     case 'SEND_ANALOG_PROGRESS': {
       if (!e.code || isIntermediateOutcome(e.code)) return null;
       const known = DELIVERY_CODES[e.code];

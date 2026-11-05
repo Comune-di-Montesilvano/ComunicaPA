@@ -400,3 +400,12 @@ data", "con successo in data", "a seguito di acquisto"): su poste.it segue un
 testo che l'API non restituisce. Per titoli/riepiloghi usare la fase `box`
 (`posteMovementLabel` nel backend, `posteMovementTitle` in `journey.ts`).
 Bug reale v1.16.x: sidebar "Verifica su Poste" mostrava "in data · BARI BA · …".
+
+**Poste `dataOra` = ora italiana codificata come UTC** (epoch ms). Verificato
+dal vivo con due SEND: stesso minuto, +2 h esatte rispetto all'evento PN
+corrispondente (RECRN001C 09:20Z ↔ Poste "consegnata" 11:20:24Z; RECRN010
+08:34Z ↔ "in consegna" 10:34Z). `posteDataOraToDate` rilegge i campi UTC come
+ora di Roma (DST via Intl: −2 h legale, −1 h solare); dati salvati prima di
+v1.16.4 corretti dalla migration `FixPosteMovementTimezone1790900000000`
+(movements[].at, delivered_at, outcome_at). Prova rapida in prod: un
+movimento con `at` > `last_checked_at` = orari ancora sfasati.
