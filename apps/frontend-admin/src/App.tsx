@@ -326,10 +326,13 @@ function PostalLegalOutcomeBadge({ outcome, reason, postalStatus }: { outcome?: 
   return <span className={`badge ${meta.badge}`} title={title}><meta.icon className="me-1" size={14} />{meta.label}</span>;
 }
 
-// Colonna "Data legale notifica" (POSTAL e SEND): data con valore legale di
+// Colonne "Notificata per l'ente" (solo SEND) e "Notificata per il destinatario" (POSTAL e SEND): data con valore legale di
 // avvenuta notifica, solo giorno, fuso Europe/Rome come nei report CSV.
-const LEGAL_DATE_HEADER_TITLE = 'Data con valore legale di avvenuta notifica — POSTAL: consegna/compiuta giacenza (solo esito Consegnato); SEND: messa a disposizione sulla piattaforma (art. 26, c. 9 lett. a e c. 10, D.L. 76/2020: impedisce decadenze e interrompe la prescrizione)';
-const SEND_RECIPIENT_DATE_HEADER_TITLE = 'Perfezionamento per il destinatario (art. 26, c. 9 lett. b, D.L. 76/2020): la prima tra presa visione e decorrenza termini; da qui decorrono i termini del destinatario';
+// Due date per scissione degli effetti: per l'ente conta la spedizione/messa a
+// disposizione, per il destinatario la consegna/perfezionamento (da cui
+// decorrono i SUOI termini: pagamento, ricorso, 90 giorni di un'ordinanza...).
+const RECIPIENT_DATE_HEADER_TITLE = "Data da cui decorrono i termini del destinatario (pagamento, ricorso, adempimento) — POSTAL: consegna o compiuta giacenza (solo esito Consegnato); SEND: perfezionamento, la prima tra presa visione e decorrenza termini (art. 26, c. 9 lett. b, D.L. 76/2020)";
+const SEND_ENTITY_DATE_HEADER_TITLE = "Data che conta per il Comune: messa a disposizione su SEND (art. 26, c. 9 lett. a e c. 10, D.L. 76/2020), salva da decadenze e interrompe la prescrizione. Non usarla per contare i termini del destinatario";
 function LegalDateCell({ at }: { at?: string | null }): React.JSX.Element {
   if (!at) return <td className="small text-muted">—</td>;
   return <td className="small text-nowrap">{new Date(at).toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', year: 'numeric' })}</td>;
@@ -18222,8 +18225,8 @@ export function App(): React.JSX.Element {
                                              )}
                                            </div>
                                          </th>
-                                         <th title={LEGAL_DATE_HEADER_TITLE}>Data legale notifica</th>
-                                         <th title={SEND_RECIPIENT_DATE_HEADER_TITLE}>Perfezionata per il destinatario</th>
+                                         <th title={SEND_ENTITY_DATE_HEADER_TITLE}>Notificata per l'ente</th>
+                                         <th title={RECIPIENT_DATE_HEADER_TITLE}>Notificata per il destinatario</th>
                                          <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('updatedAt')}>
                                            <div className="d-inline-flex align-items-center gap-1">
                                              <span>Aggiornato il</span>
@@ -18271,7 +18274,7 @@ export function App(): React.JSX.Element {
                                              )}
                                            </div>
                                          </th>
-                                         <th title={LEGAL_DATE_HEADER_TITLE}>Data legale notifica</th>
+                                         <th title={RECIPIENT_DATE_HEADER_TITLE}>Notificata per il destinatario</th>
                                          <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSortRecipients('postalDeliveryStatus')}>
                                            <div className="d-inline-flex align-items-center gap-1">
                                              <span>Recapito Poste</span>

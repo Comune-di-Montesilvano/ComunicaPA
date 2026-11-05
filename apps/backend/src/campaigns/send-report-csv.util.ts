@@ -5,7 +5,7 @@ import { sendEntityLegalDateOf, sendLegalDateOf } from './send-legal-date.util.j
 
 // Data legale per l'ente (art. 26 c. 9 lett. a) e perfezionamento per il
 // destinatario (lett. b): stesse colonne in entrambi i report.
-const LEGAL_HEADERS = ['Data Legale Notifica (ente)', 'Data Perfezionamento Destinatario'];
+const LEGAL_HEADERS = ["Notificata per l'ente", 'Notificata per il destinatario'];
 function legalFields(history: SendReportRowDto['sendStatusHistory']): string[] {
   return [formatDate(sendEntityLegalDateOf(history) ?? undefined), formatDate(sendLegalDateOf(history) ?? undefined)];
 }

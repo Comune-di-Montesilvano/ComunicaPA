@@ -35,7 +35,7 @@ function appIoOutcomeLabel(outcome: PostalReportRowDto['appIoOutcome']): string 
 }
 
 export function buildPostalReportAttualeCsv(report: PostalReportDto): string {
-  const headers = ['Codice Fiscale', 'Nominativo', 'IDPRO', 'Stato Documento', 'Motivo', 'Data Legale', 'Stato GlobalCom', 'Data Stato GlobalCom', 'Stato Consegna Poste', 'Codice Consegna', 'Data Consegna Poste', 'ID Accettazione Poste', 'Codice Errore', 'Descrizione Errore', ...POSTE_HEADERS];
+  const headers = ['Codice Fiscale', 'Nominativo', 'IDPRO', 'Stato Documento', 'Motivo', 'Notificata per il destinatario', 'Stato GlobalCom', 'Data Stato GlobalCom', 'Stato Consegna Poste', 'Codice Consegna', 'Data Consegna Poste', 'ID Accettazione Poste', 'Codice Errore', 'Descrizione Errore', ...POSTE_HEADERS];
   if (report.hasAppIoCoDelivery) headers.push('Esito App IO');
   if (report.hasExternalId) headers.push('External ID');
 

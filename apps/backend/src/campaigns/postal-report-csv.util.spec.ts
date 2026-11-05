@@ -51,7 +51,7 @@ describe('buildPostalReportAttualeCsv', () => {
   it('include intestazioni e riga con stato/data correnti (ultimo elemento storico)', () => {
     const csv = buildPostalReportAttualeCsv(baseReport);
     const lines = csv.split('\n');
-    expect(lines[0]).toBe('"Codice Fiscale";"Nominativo";"IDPRO";"Stato Documento";"Motivo";"Data Legale";"Stato GlobalCom";"Data Stato GlobalCom";"Stato Consegna Poste";"Codice Consegna";"Data Consegna Poste";"ID Accettazione Poste";"Codice Errore";"Descrizione Errore";"Verifica Poste";"Sintesi Poste";"Data Esito Poste";"Ultimo Movimento Poste";"Discrepanza GlobalCom/Poste"');
+    expect(lines[0]).toBe('"Codice Fiscale";"Nominativo";"IDPRO";"Stato Documento";"Motivo";"Notificata per il destinatario";"Stato GlobalCom";"Data Stato GlobalCom";"Stato Consegna Poste";"Codice Consegna";"Data Consegna Poste";"ID Accettazione Poste";"Codice Errore";"Descrizione Errore";"Verifica Poste";"Sintesi Poste";"Data Esito Poste";"Ultimo Movimento Poste";"Discrepanza GlobalCom/Poste"');
     expect(lines[1]).toContain('"Consegnato"');
     expect(lines[1]).not.toContain('Esito App IO');
   });
