@@ -6,6 +6,7 @@ import { CampaignStatus } from '../entities/campaign.entity.js';
 import { DownloadEvent } from '../entities/download-event.entity.js';
 import { AttachmentService, resolveAttachmentsConfig, resolveAttachmentLabel, resolveCustomAttachmentFilename } from '../attachments/attachment.service.js';
 import { CampaignsService } from '../campaigns/campaigns.service.js';
+import { sendDocumentsAvailableUntil, sendLegalDateOf } from '../campaigns/send-legal-date.util.js';
 
 export interface CitizenAttachmentDto {
   index: number;
@@ -30,6 +31,23 @@ export interface CitizenNotificationDto {
   sendStatus?: string | null;
   sendStatusHistory?: any[] | null;
   sendDigitalDomicile?: any | null;
+  /** SEND: data con valore legale (perfezionamento), null se non ancora raggiunta. */
+  sendLegalDate?: string | null;
+  /** SEND: fine dei 120 giorni di consultazione su SEND (null se non ancora con valore legale). */
+  sendDocumentsAvailableUntil?: string | null;
+  /** SEND: 120 giorni scaduti, il portale offre la copia locale senza valore legale. */
+  sendCopyAvailable?: boolean;
+}
+
+/**
+ * Copia locale degli allegati di una notifica SEND: solo dopo i 120 giorni in
+ * cui SEND li mostra, mai prima (lì hanno valore legale, qui no).
+ */
+function isSendCopyAvailable(recipient: Recipient, now = new Date()): boolean {
+  if (recipient.campaign.channelType !== 'SEND') return false;
+  const sendAttempt = recipient.attempts?.find(a => a.channelType === 'SEND' && a.status === 'success');
+  const until = sendDocumentsAvailableUntil(sendAttempt?.sendStatusHistory);
+  return !!until && now.getTime() > until.getTime();
 }
 
 @Injectable()
@@ -56,10 +74,13 @@ export class CitizenService {
         attachments = [{ index: 0, label: 'Documento principale.pdf' }];
       }
     }
-    // Notifica SEND: nessun documento dal portale, si rimanda a SEND (unico
-    // luogo dove la notifica ha valore legale) — vedi generateAttachmentPdf.
-    if (recipient.campaign.channelType === 'SEND') attachments = [];
     const sendAttempt = recipient.attempts?.find(a => a.channelType === 'SEND' && a.status === 'success');
+    const isSend = recipient.campaign.channelType === 'SEND';
+    const sendAvailableUntil = isSend ? sendDocumentsAvailableUntil(sendAttempt?.sendStatusHistory) : null;
+    const sendCopyAvailable = isSendCopyAvailable(recipient);
+    // Notifica SEND: nessun documento dal portale finché SEND li mostra (unico
+    // luogo dove hanno valore legale), poi la copia locale — vedi generateAttachmentPdf.
+    if (isSend && !sendCopyAvailable) attachments = [];
     return {
       id: recipient.id,
       codiceFiscale: recipient.codiceFiscale,
@@ -78,6 +99,7 @@ export class CitizenService {
       sendStatus: sendAttempt?.sendStatus || null,
       sendStatusHistory: sendAttempt?.sendStatusHistory || null,
       sendDigitalDomicile: sendAttempt?.sendDigitalDomicile || null,
+      ...(isSend ? { sendLegalDate: sendLegalDateOf(sendAttempt?.sendStatusHistory), sendDocumentsAvailableUntil: sendAvailableUntil?.toISOString() ?? null, sendCopyAvailable } : {}),
     };
   }
 
@@ -139,8 +161,8 @@ export class CitizenService {
 
   async generateAttachmentPdf(id: string, codiceFiscale: string, attachmentIndex = 0): Promise<Buffer> {
     const recipient = await this.findRecipientEntity(id, codiceFiscale);
-    if (recipient.campaign.channelType === 'SEND') {
-      throw new NotFoundException('Per le notifiche SEND i documenti sono disponibili solo su notifichedigitali.it');
+    if (recipient.campaign.channelType === 'SEND' && !isSendCopyAvailable(recipient)) {
+      throw new NotFoundException('Per le notifiche SEND i documenti sono disponibili su notifichedigitali.it per 120 giorni dalla data legale');
     }
     return this.attachmentService.generatePdfBuffer(recipient, attachmentIndex);
   }

@@ -194,6 +194,12 @@ interface Notification {
   sendStatus?: string | null;
   sendStatusHistory?: Array<{ status: string; activeFrom: string }> | null;
   sendDigitalDomicile?: { type: string; address: string | null; source: string } | null;
+  /** SEND: data con valore legale (perfezionamento). */
+  sendLegalDate?: string | null;
+  /** SEND: fine dei 120 giorni in cui SEND mostra i documenti. */
+  sendDocumentsAvailableUntil?: string | null;
+  /** SEND: 120 giorni scaduti, `attachments` contiene la copia di cortesia. */
+  sendCopyAvailable?: boolean;
 }
 
 function statusBadge(status: Notification['status']): { cls: string; label: string } {
@@ -209,7 +215,7 @@ function getSendStatusMeta(status: string): { label: string; cls: string; desc: 
     case 'ACCEPTED':
       return { label: 'Depositata', cls: 'status-accepted', desc: 'L\'ente ha depositato la notifica in piattaforma.' };
     case 'DELIVERING':
-      return { label: 'Invio in corso', cls: 'status-delivering', desc: 'L\'invio della notifica tramite canali digitali o analogici è in corso.' };
+      return { label: 'Invio in corso', cls: 'status-delivering', desc: 'L\'invio della notifica è in corso.' };
     case 'DELIVERED':
       return { label: 'Consegnata', cls: 'status-delivered', desc: 'L\'invio della notifica è terminato in quanto almeno un recapito digitale è valido.' };
     case 'VIEWED':
@@ -1379,6 +1385,47 @@ export function App(): React.JSX.Element {
                                   <i className="fas fa-external-link-alt" aria-hidden="true" style={{ marginRight: 8 }}></i>
                                   {sendLink.direct ? 'Apri la notifica su SEND' : 'Vai a SEND - Notifiche Digitali'}
                                 </a>
+                              </div>
+                            </div>
+
+                            {/* Documenti allegati: su SEND per 120 giorni dalla data legale, poi copia di cortesia */}
+                            <div className="send-card">
+                              <div className="send-card-header">
+                                <i className="fas fa-paperclip" aria-hidden="true" style={{ marginRight: 8, color: 'var(--bi-navy)' }}></i>
+                                <strong>Documenti allegati</strong>
+                              </div>
+                              <div className="send-card-body">
+                                {selectedNotif.sendCopyAvailable ? (
+                                  <>
+                                    <div className="alert alert-warning" role="note">
+                                      <i className="fas fa-exclamation-triangle alert-icon" aria-hidden="true"></i>
+                                      <div>
+                                        I documenti non sono più disponibili su SEND
+                                        {selectedNotif.sendDocumentsAvailableUntil && ` dal ${new Date(selectedNotif.sendDocumentsAvailableUntil).toLocaleDateString('it-IT')}`}.
+                                        {' '}Qui sotto trovi una <strong>copia di cortesia, senza valore legale</strong>
+                                        {selectedNotif.sendLegalDate && <>: la notifica ha assunto valore legale il {new Date(selectedNotif.sendLegalDate).toLocaleDateString('it-IT')} e i termini decorrono da quella data</>}.
+                                      </div>
+                                    </div>
+                                    {selectedNotif.attachments.map((att) => (
+                                      <div key={att.index} className="send-attachment-link">
+                                        <i className="fas fa-file-pdf" aria-hidden="true" style={{ color: '#e53e3e', marginRight: 8 }}></i>
+                                        <a
+                                          href="#"
+                                          onClick={(e) => { e.preventDefault(); handleDownloadAttachment(selectedNotif.id, att.index); }}
+                                          className="send-att-link-btn"
+                                        >
+                                          {att.label} (copia di cortesia)
+                                        </a>
+                                      </div>
+                                    ))}
+                                  </>
+                                ) : (
+                                  <p className="send-card-note" style={{ margin: 0 }}>
+                                    {selectedNotif.sendDocumentsAvailableUntil
+                                      ? `I documenti sono disponibili su SEND fino al ${new Date(selectedNotif.sendDocumentsAvailableUntil).toLocaleDateString('it-IT')}, 120 giorni dalla data in cui la notifica ha assunto valore legale. Salvali sul tuo dispositivo.`
+                                      : 'I documenti saranno disponibili su SEND fino a 120 giorni dalla data in cui la notifica assumerà valore legale.'}
+                                  </p>
+                                )}
                               </div>
                             </div>
                           </div>
