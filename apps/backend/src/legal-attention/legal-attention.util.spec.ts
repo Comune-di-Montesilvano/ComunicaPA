@@ -74,10 +74,14 @@ describe('legalAttentionOf — SEND', () => {
   });
   it('soglia 45 giorni: 44 no, 45 sì', () => {
     expect(legalAttentionOf(send({}, STALE_AFTER_DAYS - 1))).toBeNull();
-    expect(legalAttentionOf(send({}, STALE_AFTER_DAYS))).toEqual({ kind: 'stale', reason: 'DELIVERING da 45 giorni' });
+    expect(legalAttentionOf(send({}, STALE_AFTER_DAYS))).toEqual({ kind: 'stale', reason: "In consegna da 45 giorni: non ancora messa a disposizione su SEND, nessuna data legale per l'ente" });
   });
   it('ferma senza sendStatus → motivo "In attesa"', () => {
-    expect(legalAttentionOf(send({ sendStatus: null }, 60))).toEqual({ kind: 'stale', reason: 'In attesa da 60 giorni' });
+    expect(legalAttentionOf(send({ sendStatus: null }, 60))).toEqual({ kind: 'stale', reason: "In attesa accettazione da 60 giorni: non ancora messa a disposizione su SEND, nessuna data legale per l'ente" });
+  });
+  it("accettata ma ferma: notificata per l'ente, termini del destinatario non avviati", () => {
+    const r = legalAttentionOf(send({ sendStatusHistory: [{ status: 'ACCEPTED', activeFrom: '2026-09-22T08:30:00Z' }, { status: 'DELIVERING', activeFrom: '2026-09-22T08:35:00Z' }] }, 60));
+    expect(r).toEqual({ kind: 'stale', reason: "Notificata per l'ente il 22/09/2026; non perfezionata per il destinatario (In consegna da 60 giorni): termini di pagamento e ricorso non avviati, sollecitare SEND" });
   });
 });
 
