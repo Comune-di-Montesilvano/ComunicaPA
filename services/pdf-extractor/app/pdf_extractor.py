@@ -487,6 +487,40 @@ class PdfExtractor:
             codes = qr_decode(img)
         return codes
 
+    def extract_qr_texts(self, max_pages: int = 1) -> list[str]:
+        """Testo di tutti i QR delle prime `max_pages` pagine, nell'ordine in
+        cui compaiono, senza interpretarli (es. il link di accesso rapido
+        dell'avviso di avvenuta ricezione SEND). Prima le immagini embedded,
+        poi il rendering della pagina se nessuna immagine contiene un QR."""
+        from PIL import Image
+        import fitz
+
+        texts: list[str] = []
+        doc = fitz.open(stream=self._pdf_bytes, filetype="pdf")
+        try:
+            for page in list(doc)[:max_pages]:
+                found: list[str] = []
+                for img_info in page.get_images(full=True):
+                    try:
+                        img = Image.open(io.BytesIO(doc.extract_image(img_info[0])["image"]))
+                        if img.width < 50 or img.height < 50:
+                            continue
+                        found.extend(c.data.decode("utf-8") for c in self._decode_qr(img))
+                    except Exception:
+                        continue
+                if not found:
+                    # Il QR dell'AAR SEND è vettoriale: si legge solo dal rendering.
+                    for zoom in (2, 3):
+                        pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+                        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                        found = [c.data.decode("utf-8") for c in self._decode_qr(img)]
+                        if found:
+                            break
+                texts.extend(t for t in found if t not in texts)
+        finally:
+            doc.close()
+        return texts
+
     def _extract_payment_from_page_qr(
         self, doc, page_idx: int, max_results: Optional[int] = 1
     ) -> tuple[list["PaymentData"], list[str]]:

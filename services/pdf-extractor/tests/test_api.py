@@ -101,3 +101,21 @@ def test_extract_fiscal_code_null_quando_assente(pdf_no_address):
     )
     assert res.status_code == 200
     assert res.json()["fiscalCode"] is None
+
+
+def test_qr_codes_aar(pdf_aar_qr):
+    res = client.post("/qr-codes", files={"file": ("aar.pdf", pdf_aar_qr, "application/pdf")})
+    assert res.status_code == 200
+    assert res.json() == {
+        "codes": ["https://cittadini.notifichedigitali.it/io/?aar=QUFBQS1CQkJCLUNDQ0MtMjAyNjExLUEtMV9QRi1maXR0aXppbw"]
+    }
+
+
+def test_qr_codes_senza_qr(pdf_no_address):
+    res = client.post("/qr-codes", files={"file": ("x.pdf", pdf_no_address, "application/pdf")})
+    assert res.json() == {"codes": []}
+
+
+def test_qr_codes_pdf_non_valido():
+    res = client.post("/qr-codes", files={"file": ("x.pdf", b"non un pdf", "application/pdf")})
+    assert res.json() == {"codes": []}

@@ -56,6 +56,9 @@ export class CitizenService {
         attachments = [{ index: 0, label: 'Documento principale.pdf' }];
       }
     }
+    // Notifica SEND: nessun documento dal portale, si rimanda a SEND (unico
+    // luogo dove la notifica ha valore legale) — vedi generateAttachmentPdf.
+    if (recipient.campaign.channelType === 'SEND') attachments = [];
     const sendAttempt = recipient.attempts?.find(a => a.channelType === 'SEND' && a.status === 'success');
     return {
       id: recipient.id,
@@ -136,6 +139,9 @@ export class CitizenService {
 
   async generateAttachmentPdf(id: string, codiceFiscale: string, attachmentIndex = 0): Promise<Buffer> {
     const recipient = await this.findRecipientEntity(id, codiceFiscale);
+    if (recipient.campaign.channelType === 'SEND') {
+      throw new NotFoundException('Per le notifiche SEND i documenti sono disponibili solo su notifichedigitali.it');
+    }
     return this.attachmentService.generatePdfBuffer(recipient, attachmentIndex);
   }
 }

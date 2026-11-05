@@ -1,6 +1,6 @@
 # ComunicaPA – Guida per gli operatori
 
-_Ultimo aggiornamento: 2026-11-04_
+_Ultimo aggiornamento: 2026-11-05_
 
 ## Cos'è e chi lo usa
 
@@ -117,10 +117,12 @@ Apri **Ricerca Notifiche** e cerca per codice fiscale, nome, email, PEC o IUN. F
 Per una notifica SEND, nel dettaglio apri **Documenti SEND** e premi **Carica documenti** per scaricare i documenti dalla piattaforma:
 
 - le **attestazioni opponibili a terzi**: notifica presa in carico, avvenuto accesso (quando il destinatario legge la notifica), notifica digitale, mancato recapito;
-- l'**avviso di avvenuta ricezione (AAR)**;
+- l'**avviso di avvenuta ricezione (AAR)**: nonostante il nome non prova che il destinatario abbia ricevuto la notifica, lo avvisa che c'è una notifica da consultare, con il codice QR per aprirla su SEND;
 - per l'invio cartaceo: la **copia conforme dell'avviso spedito**, prodotta quando la raccomandata viene stampata e non è una prova di consegna; la **cartolina AR firmata**, che prova la consegna; il **plico restituito**, se il destinatario è irreperibile.
 
 Il perfezionamento per decorrenza dei termini non genera un documento: la data compare nel percorso della notifica.
+
+Nel portale cittadini una notifica SEND mostra solo lo stato e il link per aprirla su SEND (lo stesso del codice QR dell'avviso, o la pagina di accesso di SEND se il codice non è leggibile): documenti e attestazioni con valore legale si consultano solo lì.
 
 ### Gestire le notifiche senza esito legale
 

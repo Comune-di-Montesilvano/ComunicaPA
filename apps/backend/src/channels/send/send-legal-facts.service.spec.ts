@@ -1,5 +1,6 @@
 import { Test } from '@nestjs/testing';
-import { SendLegalFactsService } from './send-legal-facts.service.js';
+import { isSendPortalUrl, SendLegalFactsService } from './send-legal-facts.service.js';
+import { PdfExtractorClient } from '../../enrichment/pdf-extractor.client.js';
 import { AppSettingsService } from '../../settings/app-settings.service.js';
 import { PdndAuthService } from '../../pdnd/pdnd-auth.service.js';
 
@@ -14,6 +15,7 @@ const settingsValues: Record<string, unknown> = {
 };
 const mockSettings = { get: jest.fn(async (key: string) => settingsValues[key]) };
 const mockPdndAuth = { getVoucher: jest.fn(async () => 'voucher-abc') };
+const mockPdfExtractor = { qrCodes: jest.fn() };
 
 describe('SendLegalFactsService', () => {
   let service: SendLegalFactsService;
@@ -22,12 +24,14 @@ describe('SendLegalFactsService', () => {
     mockFetch.mockClear();
     mockSettings.get.mockClear();
     mockPdndAuth.getVoucher.mockClear();
+    mockPdfExtractor.qrCodes.mockReset();
 
     const module = await Test.createTestingModule({
       providers: [
         SendLegalFactsService,
         { provide: AppSettingsService, useValue: mockSettings },
         { provide: PdndAuthService, useValue: mockPdndAuth },
+        { provide: PdfExtractorClient, useValue: mockPdfExtractor },
       ],
     }).compile();
 
@@ -219,5 +223,67 @@ describe('SendLegalFactsService', () => {
     const result = await service.downloadLegalFact('IUN-1', 'key1');
 
     expect(result).toEqual({ ready: false, error: 'Errore PN: HTTP 500' });
+  });
+
+  describe('getQuickAccessUrl', () => {
+    const AAR_KEY = 'safestorage://PN_AAR-abc.pdf';
+    const timelineRes = (timeline: unknown[]) => ({ ok: true, text: () => Promise.resolve(JSON.stringify({ timeline })) });
+    const aarMetaRes = { ok: true, text: () => Promise.resolve(JSON.stringify({ filename: 'aar.pdf', url: 'https://safestorage/aar' })) };
+    const aarFileRes = { ok: true, headers: { get: () => 'application/pdf' }, arrayBuffer: () => Promise.resolve(new TextEncoder().encode('%PDF').buffer) };
+
+    it("legge il link dal QR dell'avviso di avvenuta ricezione", async () => {
+      mockFetch
+        .mockResolvedValueOnce(timelineRes([{ category: 'REQUEST_ACCEPTED' }, { category: 'AAR_GENERATION', details: { generatedAarUrl: AAR_KEY } }]))
+        .mockResolvedValueOnce(aarMetaRes)
+        .mockResolvedValueOnce(aarFileRes);
+      mockPdfExtractor.qrCodes.mockResolvedValue(['https://cittadini.notifichedigitali.it/io/?aar=TOKEN']);
+
+      await expect(service.getQuickAccessUrl('IUN-1')).resolves.toBe('https://cittadini.notifichedigitali.it/io/?aar=TOKEN');
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        `https://send.test/delivery-push/IUN-1/document/AAR?documentId=${encodeURIComponent(AAR_KEY)}`,
+        expect.anything(),
+      );
+      expect(mockPdfExtractor.qrCodes).toHaveBeenCalledWith(Buffer.from('%PDF'), 'aar.pdf');
+    });
+
+    it('QR che non punta a SEND → null', async () => {
+      mockFetch
+        .mockResolvedValueOnce(timelineRes([{ category: 'AAR_GENERATION', details: { generatedAarUrl: AAR_KEY } }]))
+        .mockResolvedValueOnce(aarMetaRes)
+        .mockResolvedValueOnce(aarFileRes);
+      mockPdfExtractor.qrCodes.mockResolvedValue(['https://phishing.example/notifichedigitali.it']);
+
+      await expect(service.getQuickAccessUrl('IUN-1')).resolves.toBeNull();
+    });
+
+    it('AAR non ancora generato → null, nessun download', async () => {
+      mockFetch.mockResolvedValueOnce(timelineRes([{ category: 'REQUEST_ACCEPTED' }]));
+
+      await expect(service.getQuickAccessUrl('IUN-1')).resolves.toBeNull();
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(mockPdfExtractor.qrCodes).not.toHaveBeenCalled();
+    });
+
+    it('pdf-extractor non raggiungibile → null', async () => {
+      mockFetch
+        .mockResolvedValueOnce(timelineRes([{ category: 'AAR_GENERATION', details: { generatedAarUrl: AAR_KEY } }]))
+        .mockResolvedValueOnce(aarMetaRes)
+        .mockResolvedValueOnce(aarFileRes);
+      mockPdfExtractor.qrCodes.mockRejectedValue(new Error('fetch failed'));
+
+      await expect(service.getQuickAccessUrl('IUN-1')).resolves.toBeNull();
+    });
+  });
+
+  it('isSendPortalUrl: solo https verso notifichedigitali.it e sottodomini', () => {
+    expect(isSendPortalUrl('https://cittadini.notifichedigitali.it/io/?aar=x')).toBe(true);
+    expect(isSendPortalUrl('https://notifichedigitali.it/')).toBe(true);
+    expect(isSendPortalUrl('http://cittadini.notifichedigitali.it/')).toBe(false);
+    expect(isSendPortalUrl('https://notifichedigitali.it.evil.example/')).toBe(false);
+    expect(isSendPortalUrl('https://evilnotifichedigitali.it/')).toBe(false);
+    expect(isSendPortalUrl('https://user@cittadini.notifichedigitali.it/')).toBe(false);
+    expect(isSendPortalUrl('javascript:alert(1)')).toBe(false);
+    expect(isSendPortalUrl('non un url')).toBe(false);
   });
 });

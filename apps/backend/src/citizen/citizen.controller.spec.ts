@@ -24,40 +24,46 @@ describe('CitizenController — filtro destinatari per tipo di accesso', () => {
   });
 });
 
-describe('CitizenController — documenti SEND solo della propria notifica', () => {
+describe('CitizenController — notifica SEND: solo il link a SEND', () => {
   const user = { sub: 's', codiceFiscale: 'RSSMRA85M01H501Z', accessType: 'PF' as const };
   const id = '00000000-0000-0000-0000-000000000001';
-  const pdf = { ready: true, filename: 'atto.pdf', contentType: 'application/pdf', buffer: Buffer.from('%PDF') };
-  const makeRes = () => ({ setHeader: jest.fn(), end: jest.fn(), status: jest.fn().mockReturnThis(), json: jest.fn() });
 
-  it('usa lo IUN della notifica del cittadino, mai quello passato in query (IDOR)', async () => {
+  it("QR dell'avviso letto → link diretto alla notifica, IUN preso dalla notifica del cittadino", async () => {
+    const citizenService = { findOneForCitizen: jest.fn(async () => ({ iun: 'AAAA-BBBB-CCCC-202610-A-1' })) };
+    const sendLegalFacts = { getQuickAccessUrl: jest.fn(async () => 'https://cittadini.notifichedigitali.it/io/?aar=abc') };
+    const controller = new CitizenController(citizenService as never, sendLegalFacts as never);
+
+    await expect(controller.getSendLink(id, { user })).resolves.toEqual({ url: 'https://cittadini.notifichedigitali.it/io/?aar=abc', direct: true });
+    expect(citizenService.findOneForCitizen).toHaveBeenCalledWith(id, 'RSSMRA85M01H501Z');
+    expect(sendLegalFacts.getQuickAccessUrl).toHaveBeenCalledWith('AAAA-BBBB-CCCC-202610-A-1');
+  });
+
+  it('QR non letto → portale cittadini SEND', async () => {
+    const citizenService = { findOneForCitizen: jest.fn(async () => ({ iun: 'AAAA-BBBB-CCCC-202610-A-1' })) };
+    const sendLegalFacts = { getQuickAccessUrl: jest.fn(async () => null) };
+    const controller = new CitizenController(citizenService as never, sendLegalFacts as never);
+
+    await expect(controller.getSendLink(id, { user })).resolves.toEqual({ url: 'https://cittadini.notifichedigitali.it/', direct: false });
+  });
+
+  it('notifica senza IUN → portale cittadini SEND, nessuna chiamata a PN', async () => {
+    const citizenService = { findOneForCitizen: jest.fn(async () => ({ iun: null })) };
+    const sendLegalFacts = { getQuickAccessUrl: jest.fn() };
+    const controller = new CitizenController(citizenService as never, sendLegalFacts as never);
+
+    await expect(controller.getSendLink(id, { user })).resolves.toEqual({ url: 'https://cittadini.notifichedigitali.it/', direct: false });
+    expect(sendLegalFacts.getQuickAccessUrl).not.toHaveBeenCalled();
+  });
+
+  it('allegato di una notifica SEND rifiutato → nessun download conteggiato', async () => {
     const citizenService = {
-      findOneForCitizen: jest.fn(async () => ({ iun: 'AAAA-BBBB-CCCC-202610-A-1' })),
-      markAsDownloaded: jest.fn(async () => ({})),
+      generateAttachmentPdf: jest.fn(async () => { throw new Error('solo su notifichedigitali.it'); }),
+      markAsDownloaded: jest.fn(),
     };
-    const sendLegalFacts = { downloadLegalFact: jest.fn(async () => pdf) };
-    const controller = new CitizenController(citizenService as never, sendLegalFacts as never);
+    const controller = new CitizenController(citizenService as never, {} as never);
+    const res = { setHeader: jest.fn(), end: jest.fn() };
 
-    await controller.downloadSendDocument(id, 'ZZZZ-YYYY-XXXX-202610-B-1', 'PN_LEGAL_FACTS-abc', { user }, makeRes() as never);
-
-    expect(sendLegalFacts.downloadLegalFact).toHaveBeenCalledWith('AAAA-BBBB-CCCC-202610-A-1', 'PN_LEGAL_FACTS-abc');
-  });
-
-  it('notifica senza IUN SEND → 404, nessuna chiamata a PN', async () => {
-    const citizenService = { findOneForCitizen: jest.fn(async () => ({ iun: null })), markAsDownloaded: jest.fn() };
-    const sendLegalFacts = { downloadLegalFact: jest.fn() };
-    const controller = new CitizenController(citizenService as never, sendLegalFacts as never);
-
-    await expect(controller.downloadSendDocument(id, 'ZZZZ-YYYY-XXXX-202610-B-1', 'k', { user }, makeRes() as never)).rejects.toThrow();
-    expect(sendLegalFacts.downloadLegalFact).not.toHaveBeenCalled();
-  });
-
-  it('legalFactId ripetuto in query (array) → rifiutato', async () => {
-    const citizenService = { findOneForCitizen: jest.fn(async () => ({ iun: 'AAAA-BBBB-CCCC-202610-A-1' })), markAsDownloaded: jest.fn() };
-    const sendLegalFacts = { downloadLegalFact: jest.fn() };
-    const controller = new CitizenController(citizenService as never, sendLegalFacts as never);
-
-    await expect(controller.downloadSendDocument(id, undefined as never, ['a', 'b'] as never, { user }, makeRes() as never)).rejects.toThrow();
-    expect(sendLegalFacts.downloadLegalFact).not.toHaveBeenCalled();
+    await expect(controller.downloadAttachment(id, 0, { user }, res as never)).rejects.toThrow();
+    expect(citizenService.markAsDownloaded).not.toHaveBeenCalled();
   });
 });
