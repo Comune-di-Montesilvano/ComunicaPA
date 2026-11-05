@@ -394,3 +394,9 @@ Parità SQL/TS: `node src/debug/postal-legal-outcome-parity.mjs` (dopo
 `postal-status-breakdown` resta lo stato GlobalCom grezzo (Andamento Invio,
 tasto Verifica su Poste). Riga tabella dei dirottati INAD: ramo JSX proprio
 (`r.inadCheck?.diverted`), va aggiornato insieme alle altre celle.
+
+**Poste `statoLavorazione` è un frammento di frase, mai un'etichetta** ("in
+data", "con successo in data", "a seguito di acquisto"): su poste.it segue un
+testo che l'API non restituisce. Per titoli/riepiloghi usare la fase `box`
+(`posteMovementLabel` nel backend, `posteMovementTitle` in `journey.ts`).
+Bug reale v1.16.x: sidebar "Verifica su Poste" mostrava "in data · BARI BA · …".

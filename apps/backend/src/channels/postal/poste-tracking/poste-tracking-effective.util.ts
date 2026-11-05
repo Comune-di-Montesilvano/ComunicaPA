@@ -78,13 +78,30 @@ export function posteVerificationLabel(v: { status: string; trackingUntil?: stri
  * (`sintesiStato`), altrimenti l'ultimo movimento, altrimenti "nessuna
  * informazione" se Poste non conosce il codice. null se mai risposto.
  */
+/**
+ * Nome della fase di un movimento Poste (campo `box`), stesso schema del
+ * percorso nel frontend (`posteMovementTitle`). `statoLavorazione` non va
+ * mostrato da solo: è un frammento di frase ("in data", "con successo in
+ * data") che su poste.it segue un'etichetta che l'API non restituisce.
+ */
+export function posteMovementLabel(m: Pick<PosteTrackingMovement, 'box' | 'flagRitorno'>): string {
+  if (m.flagRitorno) return m.box === '5' ? 'Restituita al mittente' : 'In restituzione al mittente';
+  switch (m.box) {
+    case '2': return 'Presa in carico';
+    case '3': return 'In lavorazione';
+    case '4': return 'In consegna';
+    case '5': return 'Esito finale';
+    default: return 'Aggiornamento';
+  }
+}
+
 export function posteSummaryOf(row: Pick<PostalPosteTracking, 'lastResponse' | 'movements' | 'posteEsitoRicerca'>): string | null {
   const sintesi = row.lastResponse?.['sintesiStato'];
   if (typeof sintesi === 'string' && sintesi.trim()) return sintesi.trim();
   const last = lastMovement(row.movements ?? []);
   if (last) {
     const when = last.at ? new Date(last.at).toLocaleString('it-IT', { timeZone: 'Europe/Rome' }) : '';
-    return [last.statoLavorazione, last.luogo, when].filter(Boolean).join(' · ');
+    return [posteMovementLabel(last), last.luogo, when].filter(Boolean).join(' · ');
   }
   if (row.posteEsitoRicerca === '1') return 'Nessuna informazione su Poste per questo codice';
   return null;
