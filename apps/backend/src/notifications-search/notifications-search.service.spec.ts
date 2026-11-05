@@ -8,6 +8,7 @@ import { DownloadEvent } from '../entities/download-event.entity.js';
 import { CampaignsService } from '../campaigns/campaigns.service.js';
 import { SendLegalFactsService } from '../channels/send/send-legal-facts.service.js';
 import { AttachmentService } from '../attachments/attachment.service.js';
+import { fromUtcWallClock } from '../legal-attention/legal-attention.util.js';
 
 describe('NotificationsSearchService.search', () => {
   const qbMock = {
@@ -194,7 +195,8 @@ describe('NotificationsSearchService.getDetail', () => {
         channelType: 'EMAIL',
         errorMessage: null,
         sentAt: '2026-07-01T10:00:00.000Z',
-        createdAt: '2026-07-01T11:59:00.000Z', // created_at senza fuso: fromUtcWallClock (container Europe/Rome)
+        // created_at senza fuso: fromUtcWallClock, dipende dal TZ del processo (CI UTC, container Europe/Rome).
+        createdAt: fromUtcWallClock(new Date('2026-07-01T09:59:00Z')).toISOString(),
         appIo: { attempted: true, success: true, error: null, messageId: null },
         appIoMessageId: null,
         iun: null,
