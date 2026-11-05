@@ -36,6 +36,20 @@ describe('ExternalNotificationStatusService.get', () => {
     });
     const s = await svc.get(REC_ID, 'client-1');
     expect(s.status).toBe('sent');
+    // Verifica Poste solo per POSTAL: l'esito di EMAIL/SEND non passa mai da Poste.
+    expect(posteRepo.findOne).not.toHaveBeenCalled();
+  });
+
+  it("POSTAL: legge la verifica Poste dell'ultimo attempt", async () => {
+    const { svc, posteRepo } = setup({
+      recipient,
+      campaign: { id: 'camp-1', externalClientId: 'client-1', status: 'completed', channelType: 'POSTAL', channelConfig: {} },
+      attempts: [
+        { id: 'a1', attemptNumber: 1, status: 'failed', channelType: 'POSTAL', sentAt: null, errorMessage: 'x' },
+        { id: 'a2', attemptNumber: 2, status: 'success', channelType: 'POSTAL', sentAt: new Date('2026-10-01T10:05:00Z') },
+      ],
+    });
+    await svc.get(REC_ID, 'client-1');
     expect(posteRepo.findOne).toHaveBeenCalledWith({ where: { attemptId: 'a2' } });
   });
 });

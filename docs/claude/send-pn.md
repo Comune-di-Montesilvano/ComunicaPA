@@ -193,3 +193,24 @@ i codici A/B/D/E (pre-esito, dematerializzazione) non si mostrano, l'esito
 arriva con `SEND_ANALOG_FEEDBACK`. I terminali non vengono ripollati:
 ripopolarli forzando `cost_calculated_at = NULL` (il sync li riprende a
 batch da 200 ogni 5 minuti, poi li richiude da solo).
+
+## SEND — tracking Poste delle raccomandate (v1.16.0)
+
+PN non espone il recapitista (nessun campo in timeline né nella notifica,
+verificato su tutti i campi). Gli eventi `SEND_ANALOG_PROGRESS`/`FEEDBACK`
+portano `registeredLetterCode` (salvato in `send_timeline`): nel lotto di
+Montesilvano sono codici Poste a 12 cifre (`698139…`) tracciabili su poste.it
+col flusso già usato per GlobalCom (centro di smistamento Bologna → Pescara →
+UP; ritorni a FIUMICINO RM con `flagRitorno`). `backfillSend`
+(`poste-postal-tracking.service.ts`) mette in `postal_poste_tracking` le SEND
+`DELIVERING` con codice — stessa coda a goccia, stesso limite poste.it; codice
+nuovo (secondo tentativo, `sentAttemptMade` 1) = riga ripartita da capo. PN
+non più in consegna + controllo Poste dopo il cambio stato → `gave_up`.
+**La tabella ospita ora anche attempt SEND**: ogni lettore che deduce esiti
+POSTAL (badge/filtri ricerca, `posteDeliveredSql`, `POSTE_CHECKED_SQL`, run di
+campagna, API esterna) filtra `channel_type = 'POSTAL'` — un nuovo lettore
+deve fare lo stesso. Codici visti dal vivo: `CON020` ("affido conservato" =
+copia conforme archiviata) può arrivare DOPO l'esito; `PNRN012` = esito
+generato da PN (perfezionamento d'ufficio dopo 10 giorni di giacenza), poi può
+seguire `RECRN005C`; cause `deliveryFailureCause` M01–M10/F01–F04/C01–C06 da
+`pagopa/pn-ec` `PaperElem.java`.

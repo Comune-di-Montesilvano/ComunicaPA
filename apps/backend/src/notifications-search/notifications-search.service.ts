@@ -112,7 +112,7 @@ export class NotificationsSearchService {
         qb.andWhere(`EXISTS (SELECT 1 FROM notification_attempts na WHERE na.recipient_id = recipient.id AND ${latestAttempt} AND ${posteDeliveredSql('na')})`);
       } else {
         qb.andWhere(
-          `EXISTS (SELECT 1 FROM notification_attempts na JOIN postal_poste_tracking ppt2 ON ppt2.attempt_id = na.id WHERE na.recipient_id = recipient.id AND ${latestAttempt}${filters.posteVerification === 'any' ? '' : ' AND ppt2.status = :pv'})`,
+          `EXISTS (SELECT 1 FROM notification_attempts na JOIN postal_poste_tracking ppt2 ON ppt2.attempt_id = na.id WHERE na.recipient_id = recipient.id AND na.channel_type = 'POSTAL' AND ${latestAttempt}${filters.posteVerification === 'any' ? '' : ' AND ppt2.status = :pv'})`,
           { pv: filters.posteVerification },
         );
       }
@@ -157,7 +157,7 @@ export class NotificationsSearchService {
     const rows: Array<{ recipientId: string; status: string | null; postalStatus: string | null }> = (await this.posteTrackingRepo.query(
       `SELECT DISTINCT ON (na.recipient_id) na.recipient_id AS "recipientId", ppt.status AS "status", na.postal_status AS "postalStatus"
        FROM notification_attempts na
-       LEFT JOIN postal_poste_tracking ppt ON ppt.attempt_id = na.id
+       LEFT JOIN postal_poste_tracking ppt ON ppt.attempt_id = na.id AND na.channel_type = 'POSTAL'
        WHERE na.recipient_id = ANY($1::uuid[])
        ORDER BY na.recipient_id, na.attempt_number DESC`,
       [recipientIds],
@@ -183,7 +183,8 @@ export class NotificationsSearchService {
       order: { attemptNumber: 'ASC' },
     });
 
-    const postalAttemptIds = attempts.filter((a) => a.channelType === 'POSTAL').map((a) => a.id);
+    // Anche SEND: le raccomandate del recapitista Poste hanno i movimenti nel percorso.
+    const postalAttemptIds = attempts.filter((a) => a.channelType === 'POSTAL' || a.channelType === 'SEND').map((a) => a.id);
     const posteRows = this.posteTrackingRepo && postalAttemptIds.length > 0
       ? ((await this.posteTrackingRepo.find({ where: { attemptId: In(postalAttemptIds) } })) ?? [])
       : [];
@@ -312,7 +313,7 @@ export class NotificationsSearchService {
             postalDeliveryDate: a.postalDeliveryDate ? a.postalDeliveryDate.toISOString() : null,
             postalAcceptanceId: a.postalAcceptanceId ?? null,
             postalStatusHistory: a.postalStatusHistory ?? null,
-            ...(a.channelType === 'POSTAL'
+            ...(a.channelType === 'POSTAL' || a.channelType === 'SEND'
               ? { posteVerification: posteByAttempt.has(a.id) ? toPosteVerificationDto(posteByAttempt.get(a.id)!) : null }
               : {}),
             costCents: a.costCents ?? null,

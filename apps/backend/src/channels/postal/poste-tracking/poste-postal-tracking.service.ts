@@ -132,7 +132,9 @@ export class PostePostalTrackingService {
     const address = recipient
       ? resolvePhysicalAddress(recipient, recipient.campaign?.channelConfig?.['physicalAddressConfig'] as Record<string, unknown> | undefined)
       : null;
-    const provider = await this.providers.getActive();
+    // SEND: il plico torna a PN, mai al Comune — la città del mittente
+    // GlobalCom non dice nulla su un ritorno.
+    const provider = attempt?.channelType === 'SEND' ? null : await this.providers.getActive();
     return {
       recipientForeign: !!address?.foreignState,
       recipientCity: address?.municipality ?? null,
@@ -222,6 +224,47 @@ export class PostePostalTrackingService {
        ON CONFLICT (attempt_id) DO NOTHING
        RETURNING id`,
       params,
+    );
+    return Array.isArray(rows) ? rows.length : 0;
+  }
+
+  /**
+   * Raccomandate SEND in consegna: codice della raccomandata dalla timeline
+   * PN (registeredLetterCode, l'ultimo: un secondo tentativo ha un codice
+   * nuovo e la riga riparte da capo). Solo percorso, mai esito: l'esito
+   * legale resta quello di PN. Vettori diversi da Poste rispondono
+   * "non trovato" e si fermano col cambio stato PN (sotto).
+   */
+  async backfillSend(): Promise<number> {
+    const rows = await this.repo.query(
+      `INSERT INTO postal_poste_tracking (attempt_id, tracking_code, status, next_check_at, tracking_until)
+       SELECT na.id, code.value, 'pending', now(), COALESCE(na.sent_at, na.created_at) + interval '90 days'
+       FROM notification_attempts na
+       CROSS JOIN LATERAL (
+         SELECT e->>'registeredLetterCode' AS value
+         FROM jsonb_array_elements(COALESCE(na.send_timeline, '[]'::jsonb)) e
+         WHERE COALESCE(e->>'registeredLetterCode', '') <> ''
+         ORDER BY e->>'at' DESC
+         LIMIT 1
+       ) code
+       WHERE na.channel_type = 'SEND'
+         AND na.send_status = 'DELIVERING'
+       ON CONFLICT (attempt_id) DO UPDATE
+         SET tracking_code = EXCLUDED.tracking_code, status = 'pending', next_check_at = now(), check_count = 0,
+             last_checked_at = NULL, last_error = NULL, poste_stato = NULL, poste_esito_ricerca = NULL,
+             poste_product = NULL, delivered_at = NULL, outcome_at = NULL, movements = NULL, last_response = NULL
+         WHERE postal_poste_tracking.tracking_code <> EXCLUDED.tracking_code
+       RETURNING id`,
+    );
+    // PN non è più "in consegna" e Poste è già stato interrogato dopo il
+    // cambio stato: fine verifica (l'ultimo giro raccoglie i movimenti finali).
+    await this.repo.query(
+      `UPDATE postal_poste_tracking t SET status = 'gave_up', next_check_at = NULL
+       FROM notification_attempts na
+       WHERE na.id = t.attempt_id AND na.channel_type = 'SEND' AND t.status = 'pending'
+         AND COALESCE(na.send_status, '') <> 'DELIVERING'
+         AND t.last_checked_at IS NOT NULL AND t.last_error IS NULL
+         AND t.last_checked_at >= COALESCE(na.send_status_updated_at, na.created_at)`,
     );
     return Array.isArray(rows) ? rows.length : 0;
   }
@@ -331,6 +374,9 @@ export class PostePostalTrackingService {
       .andWhere('t.next_check_at <= now()')
       .andWhere("COALESCE(a.postal_status, '') <> 'Consegnato'")
       .andWhere(POSTE_TRACKABLE_SERVICE_SQL)
+      // SEND: finché PN la dà in consegna, più un ultimo controllo dopo il
+      // cambio stato (backfillSend poi la chiude).
+      .andWhere("(a.channel_type <> 'SEND' OR a.send_status = 'DELIVERING' OR t.last_checked_at IS NULL OR t.last_checked_at < COALESCE(a.send_status_updated_at, a.created_at))")
       .orderBy(NEVER_CHECKED_FIRST_SQL, 'ASC')
       .addOrderBy('t.last_checked_at', 'ASC', 'NULLS FIRST')
       .addOrderBy('t.created_at', 'ASC')
@@ -376,6 +422,7 @@ export class PostePostalTrackingService {
         await this.reclassifyDeliveredToSender();
       }
       await this.backfill();
+      await this.backfillSend();
       const interval = await this.intervalMs();
       this.lastTickAt = new Date();
       this.lastTickChecks = 0;
@@ -478,6 +525,7 @@ export class PostePostalTrackingService {
       .innerJoin(Recipient, 'r', 'r.id = a.recipient_id')
       .innerJoin(Campaign, 'c', 'c.id = r.campaign_id')
       .where('r.campaign_id = :campaignId', { campaignId })
+      .andWhere("a.channel_type = 'POSTAL'")
       .andWhere("t.status IN ('pending', 'gave_up')")
       .andWhere("COALESCE(a.postal_status, '') <> 'Consegnato'")
       .andWhere(POSTE_TRACKABLE_SERVICE_SQL)

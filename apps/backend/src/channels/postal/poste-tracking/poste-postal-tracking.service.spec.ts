@@ -90,6 +90,39 @@ describe('PostePostalTrackingService', () => {
     });
   });
 
+  describe('backfillSend (raccomandate SEND)', () => {
+    it('solo SEND in consegna con codice raccomandata dalla timeline PN; codice nuovo (secondo tentativo) = riga da capo', async () => {
+      repo.query.mockResolvedValueOnce([{ id: 'x' }]).mockResolvedValueOnce([]);
+      expect(await service.backfillSend()).toBe(1);
+      const sql = repo.query.mock.calls[0][0] as string;
+      expect(sql).toContain("na.channel_type = 'SEND'");
+      expect(sql).toContain("na.send_status = 'DELIVERING'");
+      expect(sql).toContain("e->>'registeredLetterCode'");
+      expect(sql).toContain("ORDER BY e->>'at' DESC");
+      expect(sql).toContain('WHERE postal_poste_tracking.tracking_code <> EXCLUDED.tracking_code');
+    });
+
+    it('chiude le righe SEND quando PN non è più in consegna e Poste è già stato interrogato dopo il cambio stato', async () => {
+      await service.backfillSend();
+      const sql = repo.query.mock.calls[1][0] as string;
+      expect(sql).toContain("SET status = 'gave_up', next_check_at = NULL");
+      expect(sql).toContain("COALESCE(na.send_status, '') <> 'DELIVERING'");
+      expect(sql).toContain('t.last_checked_at >= COALESCE(na.send_status_updated_at, na.created_at)');
+    });
+
+    it('tick: inserisce anche le SEND', async () => {
+      await service.tick();
+      expect(repo.query.mock.calls.some((c: any[]) => String(c[0]).includes("na.send_status = 'DELIVERING'"))).toBe(true);
+    });
+
+    it('SEND: ritorno mai dedotto dalla città del mittente GlobalCom (il plico torna a PN)', async () => {
+      attemptRepo.findOne.mockResolvedValue({ id: 'a1', channelType: 'SEND', recipient: { campaign: { channelConfig: {} } } });
+      const ctx = await (service as any).deliveryContextFor(row());
+      expect(ctx.senderCity).toBeNull();
+      expect(providers.getActive).not.toHaveBeenCalled();
+    });
+  });
+
   describe('checkOne', () => {
     it('delivered: finale, data consegna e data esito, check_count++ (cron)', async () => {
       client.track.mockResolvedValue(DELIVERED);

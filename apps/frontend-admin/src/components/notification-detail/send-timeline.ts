@@ -12,6 +12,7 @@ export interface SendTimelineEvent {
   deliveryFailureCause?: string;
   attempt?: number;
   raddType?: string;
+  registeredLetterCode?: string;
 }
 
 export type SendTimelineTone = 'neutral' | 'ok' | 'ko' | 'warn';
@@ -23,7 +24,9 @@ export type SendTimelineTone = 'neutral' | 'ok' | 'ko' | 'warn';
 // esito e non si mostrano: l'esito arriva con SEND_ANALOG_FEEDBACK.
 const DELIVERY_CODES: Record<string, { title: string; tone: SendTimelineTone }> = {
   CON080: { title: 'Stampata e imbustata', tone: 'neutral' },
-  CON020: { title: 'Affidata al recapitista', tone: 'neutral' },
+  // "Affido conservato": archiviata la copia conforme dell'avviso. Può
+  // arrivare anche dopo l'esito (visto dal vivo), mai un passo del viaggio.
+  CON020: { title: "Copia conforme dell'avviso archiviata", tone: 'neutral' },
   CON018: { title: 'Accettata dal recapitista', tone: 'neutral' },
   CON09A: { title: 'Pronta per la spedizione', tone: 'neutral' },
   CON991: { title: 'Non accettata dal recapitista', tone: 'ko' },
@@ -70,6 +73,10 @@ const DELIVERY_CODES: Record<string, { title: string; tone: SendTimelineTone }> 
   RECRN015: { title: 'Ritardo per causa di forza maggiore', tone: 'warn' },
   RECRS015: { title: 'Ritardo per causa di forza maggiore', tone: 'warn' },
   RECAG015: { title: 'Ritardo per causa di forza maggiore', tone: 'warn' },
+  // Esiti generati da PN, non dal recapitista (pn-paper-channel MetaDematUtils):
+  // dopo 10 giorni di giacenza la notifica si perfeziona d'ufficio.
+  PNRN012: { title: "Perfezionata d'ufficio dopo 10 giorni di giacenza", tone: 'ok' },
+  PNAG012: { title: "Perfezionata d'ufficio dopo 10 giorni di giacenza", tone: 'ok' },
   RECAG012: { title: 'Perfezionata per compiuta giacenza (art. 8 L. 890/1982)', tone: 'neutral' },
   RECRSI001: { title: 'Avviata all\'estero', tone: 'neutral' },
   RECRI002: { title: 'Arrivata nel paese estero', tone: 'neutral' },
@@ -86,6 +93,30 @@ const PRODUCT_LABELS: Record<string, string> = {
   RS: 'raccomandata semplice',
   RIR: 'raccomandata internazionale A/R',
   RIS: 'raccomandata internazionale semplice',
+};
+
+// deliveryFailureCause del recapitista (pagopa/pn-ec, PaperElem.java).
+const FAILURE_CAUSES: Record<string, string> = {
+  M01: 'destinatario irreperibile',
+  M02: 'destinatario deceduto',
+  M03: 'destinatario sconosciuto',
+  M04: 'destinatario trasferito',
+  M05: 'invio rifiutato',
+  M06: 'indirizzo inesatto',
+  M07: 'indirizzo inesistente',
+  M08: 'indirizzo insufficiente',
+  M09: 'altre motivazioni',
+  M10: 'indirizzo non leggibile',
+  F01: 'furto',
+  F02: 'smarrimento',
+  F03: 'deterioramento',
+  F04: 'rapina',
+  C01: 'incendio',
+  C02: 'strada chiusa per lavori o frana',
+  C03: 'strada chiusa dalle autorità',
+  C04: 'maltempo',
+  C05: 'terremoto',
+  C06: 'eruzione vulcanica',
 };
 
 const CHANNEL_LABELS: Record<string, string> = {
@@ -136,7 +167,7 @@ export function describeSendTimelineEvent(e: SendTimelineEvent): { title: string
       const ko = e.responseStatus === 'KO';
       return {
         title: `Esito recapito: ${known ? known.title.charAt(0).toLowerCase() + known.title.slice(1) : ko ? 'non consegnata' : 'consegnata'}`,
-        detail: [e.code, e.deliveryFailureCause].filter(Boolean).join(' · ') || null,
+        detail: [e.deliveryFailureCause ? (FAILURE_CAUSES[e.deliveryFailureCause] ?? e.deliveryFailureCause) : null, e.code].filter(Boolean).join(' · ') || null,
         tone: ko ? 'ko' : 'ok',
       };
     }

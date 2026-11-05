@@ -49,9 +49,13 @@ export function isPosteDeliveredOverride(postalStatus: string | null | undefined
   return posteStatus === 'delivered' && postalStatus !== 'Consegnato';
 }
 
-/** Stesso predicato in SQL, su un alias di notification_attempts che espone id e postal_status. */
+/**
+ * Stesso predicato in SQL, su un alias di notification_attempts che espone id e postal_status.
+ * Solo attempt POSTAL: la tabella ospita anche le raccomandate SEND, dove
+ * Poste aggiunge passaggi al percorso ma non è mai un override di esito.
+ */
 export function posteDeliveredSql(alias: string): string {
-  return `(COALESCE(${alias}.postal_status, '') <> 'Consegnato' AND EXISTS (SELECT 1 FROM postal_poste_tracking ppt WHERE ppt.attempt_id = ${alias}.id AND ppt.status = 'delivered'))`;
+  return `(COALESCE(${alias}.postal_status, '') <> 'Consegnato' AND EXISTS (SELECT 1 FROM postal_poste_tracking ppt JOIN notification_attempts ppa ON ppa.id = ppt.attempt_id WHERE ppt.attempt_id = ${alias}.id AND ppa.channel_type = 'POSTAL' AND ppt.status = 'delivered'))`;
 }
 
 function formatDay(d: string | Date): string {
