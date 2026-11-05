@@ -374,3 +374,12 @@ def pdf_rate_scadenze_non_ordinate() -> bytes:
             ("2° RATA", "PAGOPA|002|301000000000000002|00123456789|38050", "entro il 31/01/2027"),
         ]
     )
+
+
+@pytest.fixture
+def pdf_aar_qr() -> bytes:
+    """Avviso di avvenuta ricezione SEND: QR col link di accesso rapido (token fittizio)."""
+    return _make_pdf(
+        ["AVVISO DI AVVENUTA RICEZIONE\nIdentificativo Univoco Notifica: AAAA-BBBB-CCCC-202611-A-1\n"],
+        qr_payload="https://cittadini.notifichedigitali.it/io/?aar=QUFBQS1CQkJCLUNDQ0MtMjAyNjExLUEtMV9QRi1maXR0aXppbw",
+    )

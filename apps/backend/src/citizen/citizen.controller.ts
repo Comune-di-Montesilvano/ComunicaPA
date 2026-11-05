@@ -1,10 +1,10 @@
-import { Controller, Get, HttpCode, HttpStatus, NotFoundException, Param, ParseIntPipe, ParseUUIDPipe, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { Controller, Get, HttpCode, HttpStatus, Param, ParseIntPipe, ParseUUIDPipe, Post, Req, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { recipientKeyOf, type CitizenSessionClaims } from '../auth/citizen-claims.js';
 import { OidcAuthGuard } from '../auth/guards/oidc-auth.guard.js';
 import { Public } from '../auth/decorators/public.decorator.js';
 import { CitizenService } from './citizen.service.js';
-import { SendLegalFactsService } from '../channels/send/send-legal-facts.service.js';
+import { SEND_CITIZEN_PORTAL_URL, SendLegalFactsService } from '../channels/send/send-legal-facts.service.js';
 
 // @Public() esclude questo controller dal JwtAuthGuard globale (pensato per
 // gli operatori, verifica JWT HS256/JWT_SECRET): i token cittadino OIDC reali
@@ -50,11 +50,11 @@ export class CitizenController {
     @Req() req: { user: CitizenSessionClaims },
     @Res() res: Response,
   ) {
-    // 1. Registra il download nel DB
-    await this.citizenService.markAsDownloaded(id, recipientKeyOf(req.user), index);
-
-    // 2. Genera il PDF
+    // 1. Genera il PDF (rifiutato per le notifiche SEND: prima del conteggio)
     const pdfBuffer = await this.citizenService.generateAttachmentPdf(id, recipientKeyOf(req.user), index);
+
+    // 2. Registra il download nel DB
+    await this.citizenService.markAsDownloaded(id, recipientKeyOf(req.user), index);
 
     // 3. Spedisce il file
     res.setHeader('Content-Type', 'application/pdf');
@@ -64,69 +64,19 @@ export class CitizenController {
   }
 
   /**
-   * Elenco dei documenti legali (attestazioni opponibili a terzi) disponibili
-   * sulla piattaforma SEND per la notifica indicata. Usato dal frontend
-   * per mostrare i link di download corretti nella timeline.
+   * Link alla notifica sul portale SEND: per le notifiche SEND il portale
+   * cittadini non offre documenti (né allegati né atti PN), solo il rimando a
+   * SEND, unico luogo dove la notifica ha valore legale. Se il QR dell'avviso
+   * di avvenuta ricezione si legge, link diretto alla notifica; altrimenti il
+   * portale cittadini SEND.
    */
-  @Get('notifications/:id/send-legal-facts')
-  async listSendLegalFacts(
+  @Get('notifications/:id/send-link')
+  async getSendLink(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: { user: CitizenSessionClaims },
-  ) {
+  ): Promise<{ url: string; direct: boolean }> {
     const notif = await this.citizenService.findOneForCitizen(id, recipientKeyOf(req.user));
-    if (!notif.iun) return [];
-    return this.sendLegalFactsService.listLegalFacts(notif.iun);
-  }
-
-  /**
-   * Download di un documento legale (attestazione opponibile a terzi) direttamente
-   * dalla piattaforma SEND tramite il legalFactId. Usato nel dettaglio della notifica
-   * SEND per scaricare le attestazioni della timeline.
-   *
-   * Lo IUN si prende dalla notifica del cittadino autenticato, mai dalla query
-   * (`iun` resta accettato per compatibilità ma ignorato): altrimenti un cittadino
-   * potrebbe scaricare atti di notifiche altrui passando un proprio `id` e lo IUN
-   * di un altro.
-   */
-  @Get('notifications/:id/send-document')
-  async downloadSendDocument(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Query('iun') _iun: unknown,
-    @Query('legalFactId') legalFactId: unknown,
-    @Req() req: { user: CitizenSessionClaims },
-    @Res() res: Response,
-  ) {
-    // Parametro ripetuto in query → array: rifiutato, non solo convertito.
-    if (typeof legalFactId !== 'string' || !legalFactId) {
-      throw new NotFoundException('Parametro legalFactId mancante');
-    }
-
-    // Verifica che il recipient appartiene al cittadino autenticato e ne ricava lo IUN
-    const notification = await this.citizenService.findOneForCitizen(id, recipientKeyOf(req.user));
-    const iun = notification.iun;
-    if (!iun) {
-      throw new NotFoundException('Notifica SEND non trovata');
-    }
-
-    // Registra il download
-    await this.citizenService.markAsDownloaded(id, recipientKeyOf(req.user), 0);
-
-    // Scarica il documento legale da SEND
-    const result = await this.sendLegalFactsService.downloadLegalFact(iun, legalFactId);
-
-    if (!result.ready) {
-      const msg = result.error ?? 'Documento non ancora disponibile, riprovare tra qualche istante.';
-      res.status(503).json({ message: msg });
-      return;
-    }
-
-    const isPdf = result.filename.toLowerCase().endsWith('.pdf');
-    const contentType = isPdf ? 'application/pdf' : 'application/octet-stream';
-    const dispositionMode = isPdf ? 'inline' : 'attachment';
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Disposition', `${dispositionMode}; filename="${result.filename}"`);
-    res.setHeader('Content-Length', result.buffer.length);
-    res.end(result.buffer);
+    const direct = notif.iun ? await this.sendLegalFactsService.getQuickAccessUrl(notif.iun) : null;
+    return direct ? { url: direct, direct: true } : { url: SEND_CITIZEN_PORTAL_URL, direct: false };
   }
 }
-

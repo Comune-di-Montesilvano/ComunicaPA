@@ -7,6 +7,8 @@ declare global {
   }
 }
 
+/** Portale cittadini SEND: destinazione di ripiego del link alla notifica. */
+const SEND_CITIZEN_PORTAL_URL = 'https://cittadini.notifichedigitali.it/';
 const API_BASE = window.__COMUNICAPA_CONFIG__?.apiBase ?? 'http://localhost:8080';
 
 function escapeHtml(text: string): string {
@@ -327,7 +329,7 @@ export function App(): React.JSX.Element {
   const [loadingNotifications, setLoadingNotifications] = useState(false);
   const [errorNotifications, setErrorNotifications] = useState<string | null>(null);
   const [selectedNotif, setSelectedNotif] = useState<Notification | null>(null);
-  const [sendLegalFacts, setSendLegalFacts] = useState<Array<{ legalFactId: string; category: string }>>([]);
+  const [sendLink, setSendLink] = useState<{ url: string; direct: boolean }>({ url: SEND_CITIZEN_PORTAL_URL, direct: false });
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
   // Filtri pannello ricerca (client-side, nessuna nuova chiamata di rete)
@@ -585,19 +587,20 @@ export function App(): React.JSX.Element {
     }
   }, [notifications]);
 
-  // Carica i documenti legali SEND quando si apre una notifica SEND con IUN
+  // Notifica SEND: link al portale SEND subito, poi quello diretto alla
+  // notifica se il backend riesce a leggerlo dal QR dell'avviso PN.
   useEffect(() => {
-    if (!selectedNotif || selectedNotif.channelType !== 'SEND' || !selectedNotif.iun || !token) {
-      setSendLegalFacts([]);
-      return;
-    }
-    fetch(`${API_BASE}/citizen/notifications/${selectedNotif.id}/send-legal-facts`, {
+    setSendLink({ url: SEND_CITIZEN_PORTAL_URL, direct: false });
+    if (!selectedNotif || selectedNotif.channelType !== 'SEND' || !selectedNotif.iun || !token) return;
+    let cancelled = false;
+    fetch(`${API_BASE}/citizen/notifications/${selectedNotif.id}/send-link`, {
       headers: { 'Authorization': `Bearer ${token}` },
     })
-      .then(r => r.ok ? r.json() : [])
-      .then((data: Array<{ legalFactId: string; category: string }>) => setSendLegalFacts(data))
-      .catch(() => setSendLegalFacts([]));
-  }, [selectedNotif?.id, selectedNotif?.channelType]);
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { url: string; direct: boolean } | null) => { if (!cancelled && data?.url) setSendLink(data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [selectedNotif?.id, selectedNotif?.channelType, selectedNotif?.iun]);
 
   // Reset pagina quando cambiano i filtri
   useEffect(() => { setCurrentPage(1); }, [searchText, filterStatus, filterChannel, filterDateFrom, filterDateTo]);
@@ -700,45 +703,6 @@ export function App(): React.JSX.Element {
           const updatedData = await updatedNotifRes.json();
           setSelectedNotif(updatedData);
         }
-      }
-    } catch (err: any) {
-      alert(err.message);
-    }
-  };
-
-  /**
-   * Scarica un documento legale (attestazione) dalla piattaforma SEND.
-   * Cerca prima il legalFact per categoria fra quelli caricati; se assente scarica il primo disponibile.
-   */
-  const handleDownloadSendDocument = async (notifId: string, iun: string, category?: string) => {
-    try {
-      const facts = sendLegalFacts.length > 0 ? sendLegalFacts : [];
-      const fact = category ? facts.find(f => f.category === category) ?? facts[0] : facts[0];
-      if (!fact) {
-        alert('Nessun documento legale disponibile dalla piattaforma SEND per questa notifica.');
-        return;
-      }
-      const url = `${API_BASE}/citizen/notifications/${notifId}/send-document?iun=${encodeURIComponent(iun)}&legalFactId=${encodeURIComponent(fact.legalFactId)}`;
-      const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
-      if (res.status === 401) { handleLogout(true); return; }
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({ message: 'Download fallito.' }));
-        throw new Error(body.message ?? 'Download fallito.');
-      }
-      const blob = await res.blob();
-      const objectUrl = window.URL.createObjectURL(blob);
-      const filename = fact.legalFactId.split('/').pop() ?? `attestazione_${notifId.slice(0, 8)}.pdf`;
-      const isPdf = /\.pdf$/i.test(filename);
-      if (isPdf) {
-        window.open(objectUrl, '_blank');
-      } else {
-        const a = document.createElement('a');
-        a.href = objectUrl;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        window.URL.revokeObjectURL(objectUrl);
       }
     } catch (err: any) {
       alert(err.message);
@@ -1389,53 +1353,32 @@ export function App(): React.JSX.Element {
                             <div className="send-banner-small">
                               <i className="fas fa-info-circle" aria-hidden="true" style={{ marginRight: 8, color: '#0066cc', fontSize: '1.1rem', marginTop: 1 }}></i>
                               <p style={{ margin: 0, fontSize: '0.85rem', lineHeight: '1.4', color: '#4a5568' }}>
-                                Questa comunicazione è stata notificata formalmente tramite la piattaforma nazionale <strong>SEND</strong>. Si raccomanda di accedere alla piattaforma ufficiale <a href="https://notifichedigitali.it/" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline', color: '#0066cc', fontWeight: 600 }}>SEND (https://notifichedigitali.it/)</a> per scaricare ufficialmente la notifica ed i relativi atti con pieno valore legale.
+                                Questa comunicazione è stata notificata formalmente tramite la piattaforma nazionale <strong>SEND</strong>. Qui trovi solo lo stato: la notifica e i relativi atti con pieno valore legale si consultano sulla piattaforma ufficiale <a href={sendLink.url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline', color: '#0066cc', fontWeight: 600 }}>SEND - Notifiche Digitali</a>.
                               </p>
                             </div>
 
-                            {/* Documenti Allegati Card */}
-                            {selectedNotif.attachments && selectedNotif.attachments.length > 0 && (
-                              <div className="send-card">
-                                <div className="send-card-header">
-                                  <i className="fas fa-paperclip" aria-hidden="true" style={{ marginRight: 8, color: 'var(--bi-navy)' }}></i>
-                                  <strong>Documenti allegati</strong>
-                                </div>
-                                <div className="send-card-body">
-                                  <p className="send-card-note">I documenti sono disponibili online per 120 giorni dal perfezionamento della notifica.</p>
-                                  {selectedNotif.attachments.map((att) => (
-                                    <div key={att.index} className="send-attachment-link">
-                                      <i className="fas fa-file-pdf" style={{ color: '#e53e3e', marginRight: 8 }}></i>
-                                      <a
-                                        href="#"
-                                        onClick={(e) => { e.preventDefault(); handleDownloadAttachment(selectedNotif.id, att.index); }}
-                                        className="send-att-link-btn"
-                                      >
-                                        {att.label}
-                                      </a>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Avviso di Avvenuta Ricezione Card */}
+                            {/* Accesso alla notifica su SEND: unico punto con valore legale */}
                             <div className="send-card">
                               <div className="send-card-header">
                                 <i className="fas fa-stamp" aria-hidden="true" style={{ marginRight: 8, color: 'var(--bi-navy)' }}></i>
-                                <strong>Avviso di avvenuta ricezione</strong>
+                                <strong>Notifica legale su SEND</strong>
                               </div>
                               <div className="send-card-body">
-                                <p className="send-card-note">L'avviso di avvenuta ricezione è disponibile online per 10 anni dal perfezionamento della notifica.</p>
-                                <div className="send-attachment-link">
-                                  <i className="fas fa-file-signature" style={{ color: '#4a5568', marginRight: 8 }}></i>
-                                  <a
-                                    href="#"
-                                    onClick={(e) => { e.preventDefault(); handleDownloadSendDocument(selectedNotif.id, selectedNotif.iun!, 'ANALOG_DELIVERY_WORKFLOW'); }}
-                                    className="send-att-link-btn"
-                                  >
-                                    Avviso di avvenuta ricezione
-                                  </a>
-                                </div>
+                                <p className="send-card-note">
+                                  Documenti e attestazioni con valore legale si consultano solo sulla piattaforma SEND, accedendo con SPID o CIE.
+                                  {sendLink.direct
+                                    ? " Il link apre direttamente questa notifica, come il codice QR dell'avviso di avvenuta ricezione."
+                                    : ' Dopo l\'accesso trovi la notifica nell\'elenco, con il codice IUN indicato qui sopra.'}
+                                </p>
+                                <a
+                                  href={sendLink.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="btn btn-primary"
+                                >
+                                  <i className="fas fa-external-link-alt" aria-hidden="true" style={{ marginRight: 8 }}></i>
+                                  {sendLink.direct ? 'Apri la notifica su SEND' : 'Vai a SEND - Notifiche Digitali'}
+                                </a>
                               </div>
                             </div>
                           </div>
@@ -1472,30 +1415,6 @@ export function App(): React.JSX.Element {
                                             </span>
                                           </div>
                                           <div className="timeline-desc">{meta.desc}</div>
-                                          {hist.status === 'VIEWED' && sendLegalFacts.length > 0 && (
-                                            <div className="timeline-attestation">
-                                              <i className="fas fa-paperclip" style={{ fontSize: '0.8rem', marginRight: 6, color: '#0066cc' }}></i>
-                                              <a href="#" onClick={(e) => { e.preventDefault(); handleDownloadSendDocument(selectedNotif.id, selectedNotif.iun!, 'NOTIFICATION_VIEWED'); }} className="att-link">
-                                                Attestazione opponibile a terzi: avvenuto accesso
-                                              </a>
-                                            </div>
-                                          )}
-                                          {hist.status === 'DELIVERED' && sendLegalFacts.length > 0 && (
-                                            <div className="timeline-attestation">
-                                              <i className="fas fa-paperclip" style={{ fontSize: '0.8rem', marginRight: 6, color: '#0066cc' }}></i>
-                                              <a href="#" onClick={(e) => { e.preventDefault(); handleDownloadSendDocument(selectedNotif.id, selectedNotif.iun!, 'DIGITAL_DELIVERY'); }} className="att-link">
-                                                Attestazione opponibile a terzi: notifica digitale
-                                              </a>
-                                            </div>
-                                          )}
-                                          {hist.status === 'ACCEPTED' && sendLegalFacts.length > 0 && (
-                                            <div className="timeline-attestation">
-                                              <i className="fas fa-paperclip" style={{ fontSize: '0.8rem', marginRight: 6, color: '#0066cc' }}></i>
-                                              <a href="#" onClick={(e) => { e.preventDefault(); handleDownloadSendDocument(selectedNotif.id, selectedNotif.iun!, 'SENDER_ACK'); }} className="att-link">
-                                                Attestazione opponibile a terzi: notifica presa in carico
-                                              </a>
-                                            </div>
-                                          )}
                                         </div>
                                       </div>
                                     );
@@ -1585,7 +1504,7 @@ export function App(): React.JSX.Element {
                                 {selectedNotif.channelType === 'SEND' ? (
                                   <p style={{ margin: 0 }}>
                                     Questa comunicazione è stata notificata formalmente tramite la piattaforma nazionale <strong>SEND (Piattaforma Notifiche Digitali)</strong> di pagoPA.
-                                    Si raccomanda di accedere alla piattaforma ufficiale <a href="https://notifichedigitali.it/" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline', color: 'inherit', fontWeight: 600 }}>SEND (https://notifichedigitali.it/)</a> per scaricare ufficialmente la notifica ed i relativi atti con pieno valore legale. I file ed allegati di cortesia sono comunque disponibili per il download anche tramite la sezione sottostante.
+                                    Si raccomanda di accedere alla piattaforma ufficiale <a href="https://notifichedigitali.it/" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline', color: 'inherit', fontWeight: 600 }}>SEND (https://notifichedigitali.it/)</a> per consultare la notifica ed i relativi atti con pieno valore legale.
                                   </p>
                                 ) : (
                                   <p style={{ margin: 0 }}>

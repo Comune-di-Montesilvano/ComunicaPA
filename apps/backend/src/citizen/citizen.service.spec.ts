@@ -106,3 +106,39 @@ describe('CitizenService — esclude campagne in bozza', () => {
     );
   });
 });
+
+describe('CitizenService — notifica SEND senza documenti nel portale', () => {
+  const sendRecipient = {
+    id: 'r-send', codiceFiscale: 'RSSMRA80A01H501X', extraData: {}, attempts: [],
+    campaign: { channelType: 'SEND', channelConfig: { attachments: [{ key: 'allegato', label: 'Avviso' }] } },
+  };
+  const mockRecipientRepo = { find: jest.fn(), findOne: jest.fn() };
+  const mockAttachmentService = { generatePdfBuffer: jest.fn() };
+  const mockCampaignsService = { renderMessageForRecipient: jest.fn().mockResolvedValue({ subject: 'Oggetto' }) };
+  let service: CitizenService;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    mockRecipientRepo.findOne.mockResolvedValue(sendRecipient);
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        CitizenService,
+        { provide: getRepositoryToken(Recipient), useValue: mockRecipientRepo },
+        { provide: getRepositoryToken(DownloadEvent), useValue: { insert: jest.fn() } },
+        { provide: AttachmentService, useValue: mockAttachmentService },
+        { provide: CampaignsService, useValue: mockCampaignsService },
+      ],
+    }).compile();
+    service = moduleRef.get(CitizenService);
+  });
+
+  it('il dettaglio non elenca allegati', async () => {
+    const dto = await service.findOneForCitizen('r-send', 'RSSMRA80A01H501X');
+    expect(dto.attachments).toEqual([]);
+  });
+
+  it('il download di un allegato è rifiutato', async () => {
+    await expect(service.generateAttachmentPdf('r-send', 'RSSMRA80A01H501X', 0)).rejects.toThrow('notifichedigitali.it');
+    expect(mockAttachmentService.generatePdfBuffer).not.toHaveBeenCalled();
+  });
+});

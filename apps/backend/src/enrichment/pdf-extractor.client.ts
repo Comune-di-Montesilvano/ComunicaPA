@@ -47,4 +47,15 @@ export class PdfExtractorClient {
     }
     return (await res.json()) as ExtractResult;
   }
+
+  /** Testo dei QR della prima pagina del PDF, senza interpretarli. */
+  async qrCodes(pdf: Buffer, filename: string): Promise<string[]> {
+    const baseUrl = this.config.get('pdfExtractor.url', { infer: true });
+    const form = new FormData();
+    form.append('file', new Blob([new Uint8Array(pdf)], { type: 'application/pdf' }), filename);
+    const res = await fetch(`${baseUrl}/qr-codes`, { method: 'POST', body: form });
+    if (!res.ok) throw new Error(`pdf-extractor HTTP ${res.status}`);
+    const body = (await res.json()) as { codes?: unknown };
+    return Array.isArray(body.codes) ? body.codes.filter((c): c is string => typeof c === 'string') : [];
+  }
 }

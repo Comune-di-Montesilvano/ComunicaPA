@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { AppSettingsService } from '../../settings/app-settings.service.js';
 import type { SettingKey } from '../../settings/settings.registry.js';
 import { PdndAuthService } from '../../pdnd/pdnd-auth.service.js';
+import { PdfExtractorClient } from '../../enrichment/pdf-extractor.client.js';
 
 export interface SendLegalFactItem {
   legalFactId: string;
@@ -28,6 +29,25 @@ interface PnTimelineElement {
 
 const AAR_KEY_MARKER = 'PN_AAR-';
 
+/** Portale cittadini SEND: destinazione di ripiego se il QR dell'AAR non si legge. */
+export const SEND_CITIZEN_PORTAL_URL = 'https://cittadini.notifichedigitali.it/';
+
+/**
+ * Link letto dal QR dell'AAR accettato solo se punta a un sito SEND in https
+ * (es. https://cittadini.notifichedigitali.it/io/?aar=<token>, verificato su
+ * IUN reale): il cittadino ci viene mandato con un click, mai altrove.
+ */
+export function isSendPortalUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    return url.protocol === 'https:' && !url.username && !url.password
+      && (host === 'notifichedigitali.it' || host.endsWith('.notifichedigitali.it'));
+  } catch {
+    return false;
+  }
+}
+
 export type SendLegalFactDownloadResult =
   | { ready: true; filename: string; contentType: string; buffer: Buffer }
   | { ready: false; retryAfterSeconds?: number; error?: string };
@@ -45,7 +65,30 @@ export class SendLegalFactsService {
   constructor(
     private readonly settings: AppSettingsService,
     private readonly pdndAuth: PdndAuthService,
+    private readonly pdfExtractor: PdfExtractorClient,
   ) {}
+
+  /**
+   * Link di accesso rapido alla notifica su SEND, letto al volo dal QR
+   * dell'avviso di avvenuta ricezione (PN non lo espone via API: il token
+   * contiene un uuid generato da PN). Niente cache: funzione accessoria, ogni
+   * errore (timeline, AAR non pronto, pdf-extractor giù, QR illeggibile) dà
+   * null e il chiamante ripiega sul portale cittadini SEND.
+   */
+  async getQuickAccessUrl(iun: string): Promise<string | null> {
+    const timeline = await this.fetchTimeline(iun);
+    const aarKey = timeline?.find((el) => el.details?.generatedAarUrl)?.details?.generatedAarUrl;
+    if (!aarKey) return null;
+    const aar = await this.downloadLegalFact(iun, aarKey);
+    if (!aar.ready) return null;
+    try {
+      const codes = await this.pdfExtractor.qrCodes(aar.buffer, aar.filename);
+      return codes.find(isSendPortalUrl) ?? null;
+    } catch (err: any) {
+      this.logger.warn(`QR dell'avviso SEND IUN ${iun} non letto: ${err.message}`);
+      return null;
+    }
+  }
 
   private async getEnvAndBaseUrl(): Promise<{ envKey: 'test' | 'prod'; baseUrl: string; apiKey: string; purposeId: string }> {
     const env = await this.settings.get<string>('send.environment');

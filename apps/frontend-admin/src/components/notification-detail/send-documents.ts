@@ -13,7 +13,9 @@ export interface SendDocumentItem {
 
 const CATEGORY_LABELS: Record<string, string> = {
   SENDER_ACK: 'Attestazione opponibile a terzi: notifica presa in carico',
-  AAR: 'Avviso di avvenuta ricezione (AAR)',
+  // Nome di legge (art. 26 D.L. 76/2020), fuorviante: avvisa il destinatario
+  // che c'è una notifica da ritirare, non prova che l'abbia ricevuta.
+  AAR: 'Avviso di avvenuta ricezione (AAR): avviso al destinatario, non prova di consegna',
   DIGITAL_DELIVERY: 'Attestazione opponibile a terzi: notifica digitale',
   RECIPIENT_ACCESS: 'Attestazione opponibile a terzi: avvenuto accesso',
   ANALOG_FAILURE_DELIVERY: 'Attestazione opponibile a terzi: mancato recapito',

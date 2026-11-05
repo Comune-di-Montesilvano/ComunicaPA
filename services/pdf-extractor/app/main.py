@@ -28,6 +28,16 @@ async def health():
     return {"status": "ok"}
 
 
+@app.post("/qr-codes")
+async def qr_codes(file: UploadFile):
+    """Testo dei QR della prima pagina, senza interpretarli."""
+    try:
+        return {"codes": PdfExtractor(await file.read()).extract_qr_texts()}
+    except Exception:
+        logger.exception("QR non estratti")
+        return {"codes": []}
+
+
 @app.post("/extract")
 async def extract(file: UploadFile, search_payments: bool = True):
     pdf_bytes = await file.read()
