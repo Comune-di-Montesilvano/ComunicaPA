@@ -214,3 +214,10 @@ copia conforme archiviata) può arrivare DOPO l'esito; `PNRN012` = esito
 generato da PN (perfezionamento d'ufficio dopo 10 giorni di giacenza), poi può
 seguire `RECRN005C`; cause `deliveryFailureCause` M01–M10/F01–F04/C01–C06 da
 `pagopa/pn-ec` `PaperElem.java`.
+
+**Solo codici in formato Poste (v1.16.1)**: 12 cifre o S10 `XX123456789IT`
+(`isPosteLetterCode`/`POSTE_LETTER_CODE_SQL` in `poste-postal-tracking.service.ts`,
+copia in `journey.ts`). Visto dal vivo un secondo vettore SEND con codici
+`PSTAQ…` di 20 caratteri (A/R a 3,00 € contro 4,94 € di Poste: altro lotto):
+poste.it risponde `esitoRicerca 3`/`stato 1` senza movimenti, quindi mai
+interrogato. Tasto "Verifica ora su Poste" anche per SEND (`checkSendRecipientNow`).

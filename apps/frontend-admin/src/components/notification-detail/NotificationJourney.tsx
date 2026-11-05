@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, ExternalLink } from 'lucide-react';
 import { buildJourney, computeVerdict, sourceLabel, type JourneyDetail, type JourneyLabels, type JourneySource } from './journey';
 import '../../assets/css/notification-detail.css';
 
@@ -65,6 +65,11 @@ export function NotificationTimeline({ detail, labels }: { detail: JourneyDetail
                 <span className="nd-title">{e.title}</span>
                 {e.source !== 'invio' && <span className="nd-source">{sourceLabel(e.source)}</span>}
                 {e.detail && <span className="nd-detail">{e.detail}</span>}
+                {e.link && (
+                  <a className="nd-detail nd-link" href={e.link.href} target="_blank" rel="noopener noreferrer">
+                    {e.link.label} <ExternalLink size={11} aria-hidden="true" />
+                  </a>
+                )}
               </div>
             </li>
           );

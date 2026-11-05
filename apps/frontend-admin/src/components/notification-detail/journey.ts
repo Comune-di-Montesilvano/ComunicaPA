@@ -69,6 +69,8 @@ export interface JourneyEvent {
   tone: JourneyTone;
   /** Data senza ora significativa (esito GlobalCom): mostrare solo il giorno. */
   dateOnly?: boolean;
+  /** Link esterno (es. tracking su poste.it). */
+  link?: { href: string; label: string };
 }
 
 export interface Verdict {
@@ -135,8 +137,31 @@ const SEND_STATUS_TONES: Record<string, JourneyTone> = {
  * Prima del primo controllo non si dice nulla.
  */
 function sendCarrierOf(pv: JourneyPosteVerification | null | undefined, letter: string): string | null {
+  if (!isPosteLetterCode(letter)) return 'recapitista diverso da Poste Italiane';
   if (!pv || pv.trackingCode !== letter || !pv.lastCheckedAt || pv.lastError) return null;
   return pv.movements.length > 0 ? 'recapitista Poste Italiane' : 'recapitista non tracciato su poste.it';
+}
+
+/**
+ * Formato dei codici Poste: 12 cifre (raccomandate nazionali, visti dal vivo
+ * 698139…/698140…) o S10 internazionale (RR123456789IT). Altri vettori SEND
+ * hanno formati propri (visto: PSTAQ… di 20 caratteri, ignoto a poste.it).
+ */
+export function isPosteLetterCode(code: string): boolean {
+  return /^\d{12}$/.test(code) || /^[A-Z]{2}\d{9}IT$/.test(code);
+}
+
+/** Ultima raccomandata in formato Poste della timeline SEND (stessa regola del backend). */
+export function latestSendPosteLetter(timeline: SendTimelineEvent[] | null | undefined): string | null {
+  let best: SendTimelineEvent | null = null;
+  for (const e of timeline ?? []) {
+    if (e.registeredLetterCode && isPosteLetterCode(e.registeredLetterCode) && (!best || e.at > best.at)) best = e;
+  }
+  return best?.registeredLetterCode ?? null;
+}
+
+export function posteTrackingUrl(code: string): string {
+  return `https://www.poste.it/cerca/#/risultati-spedizioni/${encodeURIComponent(code)}`;
 }
 
 export function buildJourney(d: JourneyDetail, labels: JourneyLabels): JourneyEvent[] {
@@ -207,7 +232,13 @@ export function buildJourney(d: JourneyDetail, labels: JourneyLabels): JourneyEv
         ? sendTimeline.find((x) => x.registeredLetterCode && (x.attempt ?? 0) === (t.attempt ?? 0) && x.category === 'SEND_ANALOG_FEEDBACK')?.registeredLetterCode
           ?? sendTimeline.find((x) => x.registeredLetterCode && new Date(x.at).getTime() >= new Date(t.at).getTime())?.registeredLetterCode
         : undefined;
-      events.push({ at: t.at, source: 'send', ...described, ...(letter ? { detail: [`Raccomandata n. ${letter}`, sendCarrierOf(a.posteVerification, letter)].filter(Boolean).join(' · ') } : {}) });
+      events.push({
+        at: t.at,
+        source: 'send',
+        ...described,
+        ...(letter ? { detail: [`Raccomandata n. ${letter}`, sendCarrierOf(a.posteVerification, letter)].filter(Boolean).join(' · ') } : {}),
+        ...(letter && isPosteLetterCode(letter) ? { link: { href: posteTrackingUrl(letter), label: 'Traccia su poste.it' } } : {}),
+      });
     }
     if (a.appIo.attempted && a.channelType !== 'APP_IO') {
       events.push({
