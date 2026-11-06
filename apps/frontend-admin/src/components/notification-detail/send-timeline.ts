@@ -164,8 +164,12 @@ function formatPhysicalAddress(v: unknown): string | null {
 function shipmentAddress(e: SendTimelineEvent, timeline: readonly SendTimelineEvent[]): string | null {
   const own = formatPhysicalAddress(e.details?.['physicalAddress']);
   if (own) return own;
-  const prepare = timeline.find((x) => x.category === 'PREPARE_ANALOG_DOMICILE' && (x.attempt ?? 0) === (e.attempt ?? 0) && formatPhysicalAddress(x.details?.['physicalAddress']));
-  return prepare ? formatPhysicalAddress(prepare.details?.['physicalAddress']) : null;
+  for (const x of timeline) {
+    if (x.category !== 'PREPARE_ANALOG_DOMICILE' || (x.attempt ?? 0) !== (e.attempt ?? 0)) continue;
+    const addr = formatPhysicalAddress(x.details?.['physicalAddress']);
+    if (addr) return addr;
+  }
+  return null;
 }
 
 function sentTo(e: SendTimelineEvent, timeline: readonly SendTimelineEvent[]): string | null {

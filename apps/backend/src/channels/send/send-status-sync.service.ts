@@ -18,7 +18,7 @@ const BATCH_SIZE = 200;
 // Seconda parte: timeline gia' ripollata con `details` ma senza indirizzi (tenuti solo dal
 // task 9): un evento analogico con details e senza physicalAddress va ripollato una volta.
 export const LEGACY_TIMELINE_SQL =
-  "((jsonb_array_length(COALESCE(attempt.send_timeline, '[]'::jsonb)) > 0 AND NOT (attempt.send_timeline -> 0 ? 'details')) OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(attempt.send_timeline, '[]'::jsonb)) e WHERE e->>'category' IN ('SEND_ANALOG_DOMICILE','SEND_SIMPLE_REGISTERED_LETTER','PREPARE_ANALOG_DOMICILE') AND e->'details' IS NOT NULL AND NOT (e->'details' ? 'physicalAddress')))";
+  "((jsonb_array_length(COALESCE(attempt.send_timeline, '[]'::jsonb)) > 0 AND NOT (attempt.send_timeline -> 0 ? 'details')) OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(attempt.send_timeline, '[]'::jsonb)) e WHERE e->>'category' = 'SEND_ANALOG_DOMICILE' AND e->'details' IS NOT NULL AND NOT (e->'details' ? 'physicalAddress')))";
 const TERMINAL_STATUSES = ['VIEWED', 'EFFECTIVE_DATE', 'UNREACHABLE', 'CANCELLED', 'RETURNED_TO_SENDER', 'REFUSED'];
 
 @Injectable()

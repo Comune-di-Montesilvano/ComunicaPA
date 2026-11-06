@@ -282,7 +282,7 @@ describe('SendStatusSyncService', () => {
   });
 
   it('LEGACY_TIMELINE_SQL: predicato esatto e incluso nella OR della condizione terminale', async () => {
-    expect(LEGACY_TIMELINE_SQL).toBe("((jsonb_array_length(COALESCE(attempt.send_timeline, '[]'::jsonb)) > 0 AND NOT (attempt.send_timeline -> 0 ? 'details')) OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(attempt.send_timeline, '[]'::jsonb)) e WHERE e->>'category' IN ('SEND_ANALOG_DOMICILE','SEND_SIMPLE_REGISTERED_LETTER','PREPARE_ANALOG_DOMICILE') AND e->'details' IS NOT NULL AND NOT (e->'details' ? 'physicalAddress')))");
+    expect(LEGACY_TIMELINE_SQL).toBe("((jsonb_array_length(COALESCE(attempt.send_timeline, '[]'::jsonb)) > 0 AND NOT (attempt.send_timeline -> 0 ? 'details')) OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(attempt.send_timeline, '[]'::jsonb)) e WHERE e->>'category' = 'SEND_ANALOG_DOMICILE' AND e->'details' IS NOT NULL AND NOT (e->'details' ? 'physicalAddress')))");
     const qb = makeQueryBuilder([]);
     mockRepo.createQueryBuilder.mockReturnValue(qb);
 
