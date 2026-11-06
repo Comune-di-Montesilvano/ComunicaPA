@@ -10,7 +10,7 @@ import { SearchableSelect } from './components/SearchableSelect';
 import { StatisticsView } from './components/StatisticsView';
 import { DashboardView } from './components/DashboardView';
 import { uploadFileInChunks } from './chunked-upload';
-import { SignaturePanel } from './components/signature/SignaturePanel';
+import { SignaturePanel, ATTACHMENT_RESTRICTED_MESSAGE } from './components/signature/SignaturePanel';
 import { RemoteSignModal } from './components/signature/RemoteSignModal';
 import { UnsignedDecisionModal, type UnsignedDecision } from './components/signature/UnsignedDecisionModal';
 import { COUNTRIES, matchCountry, isValidCap, abbreviateLongMunicipality, isPosteTrackableService, SEND_ENTITY_TYPES, SEND_TAXONOMY_CATALOG } from '@comunicapa/shared-types';
@@ -40,6 +40,7 @@ declare global {
 
 const API_BASE = window.__COMUNICAPA_CONFIG__?.apiBase ?? 'http://localhost:8080';
 const ADMIN_API_BASE = `${API_BASE}/admin`;
+const CAMPAIGN_NOT_ACCESSIBLE_MESSAGE = 'Campagna non trovata o non accessibile';
 
 import { CHANNELS_REGISTRY, EMBEDDED_LOGOS, getChannelMeta, channelLabel } from './data/channels';
 import { GUIDA_URL, GUIDA_PER_VISTA, GUIDA_WIZARD_MASSIVO, GUIDA_WIZARD_SINGOLO, GUIDA_DATE_TERMINI, guidaSections } from './guida';
@@ -644,7 +645,14 @@ function WizAttachmentInlinePreview({
     fetch(`${ADMIN_API_BASE}/campaigns/${campaignId}/attachments/preview-file?filename=${encodeURIComponent(filename)}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
-      .then((res) => (res.ok ? res.blob() : Promise.reject(new Error(res.status === 404 ? `Allegato non trovato — verifica il Passo ${singleMode ? 1 : 5}` : 'Errore caricamento allegato'))))
+      .then(async (res) => {
+        if (res.ok) return res.blob();
+        if (res.status === 403) {
+          const body = await res.json().catch(() => null);
+          throw new Error(body?.message || ATTACHMENT_RESTRICTED_MESSAGE);
+        }
+        throw new Error(res.status === 404 ? `Allegato non trovato — verifica il Passo ${singleMode ? 1 : 5}` : 'Errore caricamento allegato');
+      })
       .then((blob) => {
         if (cancelled) return;
         setObjectUrl(URL.createObjectURL(blob));
@@ -1257,6 +1265,11 @@ interface Campaign {
   channelConfig: Record<string, any>;
   createdBy: string;
   createdByDisplayName?: string;
+  // Calcolati dal backend (dettaglio campagna): chi può aprire gli allegati
+  // e il firmatario indicato per le bozze SEND.
+  canReadAttachments?: boolean;
+  signerUsername?: string | null;
+  signerDisplayName?: string | null;
   totalRecipients: number;
   sentCount: number;
   failedCount: number;
@@ -1598,6 +1611,8 @@ export function App(): React.JSX.Element {
     downloads: Array<{ channel: string; attachmentIndex: number; downloadedAt: string }>;
     totalCostCents?: number | null;
     attachments: Array<{ index: number; label: string }>;
+    /** Calcolato dal backend: creatore, admin o firmatario indicato della campagna. */
+    canReadAttachments?: boolean;
     payment: { noticeCode: string | null; amountCents: number | null; dueDateIso: string | null } | null;
   } | null>(null);
   const [notifDetailLoading, setNotifDetailLoading] = useState(false);
@@ -1946,6 +1961,11 @@ export function App(): React.JSX.Element {
     try {
       const res = await apiFetch(`/notifications-search/${notifDetail.recipient.id}/attachment/${index}`);
       if (!res.ok) {
+        if (res.status === 403) {
+          const body = await res.json().catch(() => null);
+          alert(body?.message || ATTACHMENT_RESTRICTED_MESSAGE);
+          return;
+        }
         alert('Errore durante il download dell\'allegato.');
         return;
       }
@@ -3869,7 +3889,12 @@ export function App(): React.JSX.Element {
     if (!token) return;
     try {
       const res = await apiFetch(`/enrichment/jobs/${jobId}/result.${kind}`);
-      if (!res.ok) { alert('Download non disponibile'); return; }
+      if (!res.ok) {
+        // 403 = ZIP riservato a chi ha caricato l'Arricchimento e agli admin.
+        const body = res.status === 403 ? await res.json().catch(() => null) : null;
+        alert(body?.message || 'Download non disponibile');
+        return;
+      }
       // Il backend risponde 200 + {blocked:true} (mai un errore HTTP) se il
       // risultato non è (più) disponibile: senza questo controllo il JSON
       // verrebbe salvato come se fosse il file richiesto.
@@ -4182,7 +4207,13 @@ export function App(): React.JSX.Element {
           splitMissingPayment: enrichSplitMissingPayment,
         }),
       });
-      const body = await res.json();
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // 403 = conversione riservata a chi ha caricato l'Arricchimento e agli admin.
+        const msg = Array.isArray(body?.message) ? body.message.join(', ') : body?.message;
+        setEnrichCampaignError(msg || 'Errore durante la creazione della campagna');
+        return;
+      }
       if (body.blocked) {
         setEnrichCampaignError(body.message || 'Richiesta bloccata');
         return;
@@ -4251,6 +4282,15 @@ export function App(): React.JSX.Element {
     setDetailError(null);
     try {
       const res = await apiFetch(`/campaigns/${id}`);
+      if (res.status === 404) {
+        // Bozza di un altro operatore (o campagna eliminata): torna all'elenco.
+        if (!isCurrentCampaign(id)) return;
+        setDetailError(CAMPAIGN_NOT_ACCESSIBLE_MESSAGE);
+        alert(CAMPAIGN_NOT_ACCESSIBLE_MESSAGE);
+        setView('invio-massivo');
+        void fetchCampaigns();
+        return;
+      }
       if (!res.ok) throw new Error('Impossibile caricare il dettaglio della campagna.');
       const data = await res.json();
       setCampaigns((prev) => prev.map((c) => (c.id === id ? { ...c, ...data } : c)));
@@ -7504,6 +7544,31 @@ export function App(): React.JSX.Element {
     }
   }, [wizStep, wizCampaignId, token]);
 
+  // Dati di accesso della bozza SEND per il pannello firma (step 6):
+  // canReadAttachments e firmatario arrivano dal dettaglio campagna.
+  const [wizCampaignAccess, setWizCampaignAccess] = useState<{ campaignId: string; createdBy: string; canReadAttachments: boolean; signerUsername: string | null; signerDisplayName: string | null } | null>(null);
+  const [wizCampaignAccessReload, setWizCampaignAccessReload] = useState(0);
+  useEffect(() => {
+    if (!(wizChannel === 'SEND' && !wizSingleMode && wizCampaignId && wizStep === 6)) return;
+    let cancelled = false;
+    apiFetch(`/campaigns/${wizCampaignId}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return;
+        setWizCampaignAccess({
+          campaignId: wizCampaignId,
+          createdBy: data.createdBy,
+          canReadAttachments: data.canReadAttachments !== false,
+          signerUsername: data.signerUsername ?? null,
+          signerDisplayName: data.signerDisplayName ?? null,
+        });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wizChannel, wizSingleMode, wizCampaignId, wizStep, wizCampaignAccessReload]);
+  const wizAccess = wizCampaignAccess && wizCampaignAccess.campaignId === wizCampaignId ? wizCampaignAccess : null;
+
   useEffect(() => {
     if (!(wizChannel === 'SEND' && !wizSingleMode && wizCampaignId && (wizStep === 6 || wizStep === 7))) return;
     let cancelled = false;
@@ -7902,6 +7967,12 @@ export function App(): React.JSX.Element {
     const res = await fetch(`${ADMIN_API_BASE}/campaigns/${campaignId}/duplicate-source`, {
       headers: { Authorization: `Bearer ${token}` },
     });
+    if (res.status === 404) {
+      alert(CAMPAIGN_NOT_ACCESSIBLE_MESSAGE);
+      setView('invio-massivo');
+      void fetchCampaigns();
+      return;
+    }
     if (!res.ok) {
       alert('Impossibile leggere i dati della bozza.');
       return;
@@ -12678,6 +12749,11 @@ export function App(): React.JSX.Element {
                       adminApiBase={ADMIN_API_BASE}
                       campaignId={wizCampaignId}
                       status={wizSignatureJobStatus}
+                      canReadAttachments={wizAccess?.canReadAttachments ?? true}
+                      canEditSigner={role === 'admin' || (!!wizAccess && wizAccess.createdBy === username)}
+                      signerUsername={wizAccess?.signerUsername ?? null}
+                      signerDisplayName={wizAccess?.signerDisplayName ?? null}
+                      onSignerChanged={() => setWizCampaignAccessReload((n) => n + 1)}
                     />
                   )}
 
@@ -12839,6 +12915,11 @@ export function App(): React.JSX.Element {
                       adminApiBase={ADMIN_API_BASE}
                       campaignId={wizCampaignId}
                       status={wizSignatureJobStatus}
+                      canReadAttachments={wizAccess?.canReadAttachments ?? true}
+                      canEditSigner={role === 'admin' || (!!wizAccess && wizAccess.createdBy === username)}
+                      signerUsername={wizAccess?.signerUsername ?? null}
+                      signerDisplayName={wizAccess?.signerDisplayName ?? null}
+                      onSignerChanged={() => setWizCampaignAccessReload((n) => n + 1)}
                     />
                   )}
 
@@ -13276,9 +13357,12 @@ export function App(): React.JSX.Element {
                                   {notifDetail.attachments.map((att) => (
                                     <div key={att.index} className="nd-attachment">
                                       <p>{att.label}</p>
-                                      <button type="button" className="btn btn-sm btn-outline-secondary text-nowrap" onClick={() => downloadNotifAttachment(att.index)}>
-                                        <Download className="me-1" size={14} />Scarica
-                                      </button>
+                                      {/* Bottone disabilitato = niente eventi mouse: il title va sullo span. */}
+                                      <span title={notifDetail.canReadAttachments === false ? ATTACHMENT_RESTRICTED_MESSAGE : undefined}>
+                                        <button type="button" className="btn btn-sm btn-outline-secondary text-nowrap" disabled={notifDetail.canReadAttachments === false} onClick={() => downloadNotifAttachment(att.index)}>
+                                          <Download className="me-1" size={14} />Scarica
+                                        </button>
+                                      </span>
                                     </div>
                                   ))}
                                 </div>
