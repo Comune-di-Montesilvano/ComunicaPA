@@ -11,7 +11,7 @@ In più, la nota attuale per l'irreperibile (`journey.ts` ~356, e la tabella in 
 - **comma 9, lett. b, n. 2**: per il destinatario la notificazione si perfeziona il 10° giorno dopo il perfezionamento della notificazione dell'avviso cartaceo;
 - **n. 3**: in ogni caso, se è anteriore, vale la data in cui il destinatario accede al documento sulla piattaforma.
 
-Per l'irreperibile sono quindi due decorrenze di 10 giorni in fila. Quale data applica davvero PN non lo sappiamo ancora: vedi "Fonte delle date".
+**Verifica su dato reale (2026-11-06).** La lettura "due decorrenze di 10 giorni in fila" (10 + 10) è stata controllata su PN con una GET in sola lettura su una notifica reale: `UNREACHABLE`/`COMPLETELY_UNREACHABLE` al 17/10 02:45:43Z, `SCHEDULE_REFINEMENT` con `details.schedulingDate` al 27/10 02:45:43Z, poi `REFINEMENT` ed `EFFECTIVE_DATE` il 27/10. PN perfeziona quindi la notifica per il destinatario a **deposito + 10 giorni** (termine unico, art. 26, c. 7). Il percorso irreperibile è `entity` → `deposited` → `recipient` (+10); non esiste una tappa intermedia "avviso perfezionato".
 
 ## Obiettivo
 
@@ -62,7 +62,7 @@ Oggi `extractSendTimeline` è una whitelist: 11 categorie e 8 campi dei dettagli
    - **digitale consegnato**: consegna nel domicilio digitale + 7 giorni. Se la consegna è dopo le 21:00 (ora italiana) si conta dal giorno successivo;
    - **digitale con casella satura, non valida o non attiva**: deposito dell'avviso di mancato recapito + 15 giorni;
    - **cartaceo consegnato**: nessuna stima. La data di perfezionamento dell'avviso cartaceo dipende da giacenza e compiuta giacenza (L. 890/1982): la tappa finale resta "in attesa di SEND", senza data;
-   - **irreperibile totale**: deposito + 10 (avviso perfezionato) + 10 (notificata per il destinatario).
+   - **irreperibile totale**: deposito + 10 (notificata per il destinatario, art. 26 c. 7, verificato su PN).
 
    Giorni di calendario, data in fuso Europe/Rome. Un'apertura del destinatario (`VIEWED`) anteriore rende la data effettiva quella dell'apertura (punto 1).
 
@@ -76,7 +76,7 @@ Prima tappa sempre "**Notificata per l'ente**" = `sendEntityLegalDateOf` (stato 
 | Digitale consegnato | "Avviso consegnato al domicilio digitale" (`SEND_DIGITAL_FEEDBACK` OK / `DIGITAL_SUCCESS_WORKFLOW`) |
 | Digitale fallito, mancato recapito depositato | "Avviso di mancato recapito depositato" (`DIGITAL_FAILURE_WORKFLOW`); poi segue il cartaceo se PN lo avvia |
 | Cartaceo consegnato / compiuta giacenza | "Avviso cartaceo consegnato" (o "in giacenza"), da `SEND_ANALOG_FEEDBACK` / `ANALOG_SUCCESS_WORKFLOW` |
-| Irreperibile totale | "Avviso depositato su SEND" (data di `UNREACHABLE` o `COMPLETELY_UNREACHABLE`, rosso), "Avviso perfezionato" (+10) |
+| Irreperibile totale | "Avviso depositato su SEND" (data di `UNREACHABLE` o `COMPLETELY_UNREACHABLE`, rosso); poi direttamente "Notificata per il destinatario" (+10) |
 | Aperta dal destinatario | "Visualizzata su SEND" (`VIEWED`); se anteriore diventa la data finale; se successiva alla data finale non si mostra (irrilevante dopo il perfezionamento) |
 
 Il raggruppamento esatto degli stati PN nei percorsi è lasciato al builder. Unico vincolo: ogni notifica SEND con IUN, non annullata né rifiutata (`CANCELLED`/`REFUSED` → nessuna timeline; tentativo fallito o senza IUN → nessuna timeline), cade in uno dei percorsi, con "in lavorazione" come ripiego.
@@ -93,7 +93,7 @@ La frase attuale "Destinatario irreperibile: … 10 giorni dopo il deposito (art
 ## Guida operatori
 
 Stessa PR, data in testa aggiornata. In "Date di notifica e termini":
-- correggere la riga "Destinatario irreperibile" della tabella: deposito, +10 per il perfezionamento dell'avviso (comma 7), +10 per il destinatario (comma 9 lett. b n. 2), con link Normattiva;
+- correggere la riga "Destinatario irreperibile" della tabella: deposito dell'avviso su SEND, +10 giorni per il destinatario (comma 7), con link Normattiva;
 - aggiungere una frase sulla timeline nel dettaglio notifica: le date passate, quelle previste, e il fatto che vale sempre la data di SEND.
 
 I titoli esistenti non vanno rinominati (`check-guida.mjs`).
@@ -102,7 +102,7 @@ I titoli esistenti non vanno rinominati (`check-guida.mjs`).
 
 - Unit sulla funzione che costruisce le tappe, pura e testabile nel frontend o nel backend (scelta del builder). Un caso per ogni percorso della tabella, più:
   - irreperibile con `SCHEDULE_REFINEMENT`;
-  - irreperibile senza `SCHEDULE_REFINEMENT` (stima 03/11 → 13/11 → 23/11);
+  - irreperibile senza `SCHEDULE_REFINEMENT` (stima 03/11 → 13/11);
   - digitale consegnato alle 21:30 (conteggio dal giorno successivo);
   - apertura anteriore alla data prevista;
   - `CANCELLED` (nessuna timeline).
@@ -116,7 +116,7 @@ I titoli esistenti non vanno rinominati (`check-guida.mjs`).
 - **Più `SCHEDULE_REFINEMENT`**: vale l'ultimo per `at`.
 - **Regola delle 21:00**: si applica solo alla consegna digitale (+7). La soglia è esclusiva, quindi alle 21:00:00 vale ancora il giorno stesso.
 - **`REFINEMENT`** (in PN, "perfezionamento per decorrenza termini") dà la data finale per il destinatario, non una tappa intermedia. La data finale effettiva è `sendLegalDateOf(history)`; se manca, vale `REFINEMENT.at`.
-- **Irreperibile già a `EFFECTIVE_DATE`**: la data finale è quella di PN. La tappa "Avviso perfezionato" è sempre deposito +10, cioè il calcolo di legge: resta "(prevista)" finché non arriva la data finale da PN, poi diventa piena.
+- **Irreperibile già a `EFFECTIVE_DATE`**: la data finale è quella di PN. Non c'è una tappa intermedia: la tappa finale è deposito +10 e resta "(prevista)" finché non arriva la data finale da PN, poi diventa piena.
 - **Notifiche vecchie**: il backfill del Passo 0 le ripopola. Se PN non ha `SCHEDULE_REFINEMENT`, vale la stima con l'etichetta "Data stimata". È accettato come risultato da mostrare.
 - **Verifica `schedulingDate`**: non c'è una risposta PN salvata. Il codice legge `details.schedulingDate`, il nome atteso dalla doc PN, e se il campo manca ripiega sulla stima. Dopo il deploy del Passo 0, i `details` salvati permettono di verificare il nome direttamente nel DB.
 

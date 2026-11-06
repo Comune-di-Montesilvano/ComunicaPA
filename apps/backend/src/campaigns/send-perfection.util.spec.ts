@@ -23,13 +23,12 @@ const step = (p: ReturnType<typeof buildSendPerfection>, k: string) => p!.steps.
 describe('buildSendPerfection', () => {
   it('irreperibile senza SCHEDULE_REFINEMENT', () => {
     const p = buildSendPerfection('UNREACHABLE', irrHistory, [], now);
-    expect(keys(p)).toEqual(['entity', 'deposited', 'aar_refined', 'recipient']);
-    expect(dates(p)).toEqual(['2026-10-15', '2026-11-03', '2026-11-13', '2026-11-23']);
-    expect(p!.steps.map((s) => s.state)).toEqual(['done', 'ko', 'expected', 'expected']);
+    expect(keys(p)).toEqual(['entity', 'deposited', 'recipient']);
+    expect(dates(p)).toEqual(['2026-10-15', '2026-11-03', '2026-11-13']);
+    expect(p!.steps.map((s) => s.state)).toEqual(['done', 'ko', 'expected']);
     expect(p!.finalSource).toBe('estimate');
-    expect(p!.finalDate).toBe('2026-11-23');
+    expect(p!.finalDate).toBe('2026-11-13');
     expect(p!.today).toBe('2026-11-06');
-    expect(step(p, 'aar_refined').offsetDays).toBe(10);
     expect(step(p, 'recipient').offsetDays).toBe(10);
   });
 
@@ -48,8 +47,36 @@ describe('buildSendPerfection', () => {
     const p = buildSendPerfection('EFFECTIVE_DATE', h, tl, now);
     expect(p!.finalSource).toBe('pn');
     expect(p!.finalDate).toBe('2026-11-23');
-    expect(step(p, 'aar_refined').state).toBe('done');
     expect(step(p, 'recipient').state).toBe('done');
+  });
+
+  describe('caso reale: irreperibile totale perfezionata a deposito + 10', () => {
+    const realHistory = [
+      { status: 'ACCEPTED', activeFrom: '2026-09-09T08:42:00Z' },
+      { status: 'DELIVERING', activeFrom: '2026-09-09T09:00:00Z' },
+      { status: 'UNREACHABLE', activeFrom: '2026-10-17T02:45:43Z' },
+    ];
+    const realTl = [
+      ev('COMPLETELY_UNREACHABLE', '2026-10-17T02:45:43Z'),
+      sched('2026-10-17T02:45:44Z', '2026-10-27T02:45:43Z'),
+    ];
+    const realNow = new Date('2026-10-20T10:00:00Z');
+
+    it('programmata da PN', () => {
+      const p = buildSendPerfection('UNREACHABLE', realHistory, realTl, realNow);
+      expect(p!.finalSource).toBe('pn_scheduled');
+      expect(p!.finalDate).toBe('2026-10-27');
+      expect(keys(p)).toEqual(['entity', 'deposited', 'recipient']);
+    });
+
+    it('effettiva da PN', () => {
+      const h = [...realHistory, { status: 'EFFECTIVE_DATE', activeFrom: '2026-10-27T02:45:43Z' }];
+      const tl = [...realTl, ev('REFINEMENT', '2026-10-27T02:45:43Z')];
+      const p = buildSendPerfection('EFFECTIVE_DATE', h, tl, new Date('2026-11-01T10:00:00Z'));
+      expect(p!.finalSource).toBe('pn');
+      expect(p!.finalDate).toBe('2026-10-27');
+      expect(step(p, 'recipient').state).toBe('done');
+    });
   });
 
   it('REFINEMENT senza EFFECTIVE_DATE in history', () => {
@@ -60,7 +87,7 @@ describe('buildSendPerfection', () => {
 
   it('irreperibile da COMPLETELY_UNREACHABLE nella timeline', () => {
     const p = buildSendPerfection(null, [ACCEPTED], [ev('COMPLETELY_UNREACHABLE', '2026-11-03T08:00:00Z')], now);
-    expect(keys(p)).toEqual(['entity', 'deposited', 'aar_refined', 'recipient']);
+    expect(keys(p)).toEqual(['entity', 'deposited', 'recipient']);
     expect(step(p, 'deposited').date).toBe('2026-11-03');
   });
 
@@ -116,12 +143,12 @@ describe('buildSendPerfection', () => {
     const p = buildSendPerfection('VIEWED', h, [], now);
     expect(p!.finalSource).toBe('pn');
     expect(p!.finalDate).toBe('2026-11-23');
-    expect(keys(p)).toEqual(['entity', 'deposited', 'aar_refined', 'recipient']);
+    expect(keys(p)).toEqual(['entity', 'deposited', 'recipient']);
     const ds = dates(p).filter((d): d is string => d !== null);
     expect([...ds].sort()).toEqual(ds);
   });
 
-  it('pn_scheduled prima della data calcolata: niente aar_refined', () => {
+  it('pn_scheduled prima della stima: vince la data di PN', () => {
     const p = buildSendPerfection('UNREACHABLE', irrHistory, [sched('2026-11-04T10:00:00Z', '2026-11-10T10:00:00Z')], now);
     expect(p!.finalSource).toBe('pn_scheduled');
     expect(p!.finalDate).toBe('2026-11-10');

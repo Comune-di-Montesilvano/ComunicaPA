@@ -370,7 +370,7 @@ export function computeVerdict(d: JourneyDetail, labels: JourneyLabels): Verdict
       // torna al recapitista, la restituzione è avviata, non conclusa.
       ? `Poste: ${posteOutcome.status === 'delivered' ? 'consegnata' : 'restituzione al mittente avviata'}${posteWhen ? ` il ${new Date(posteWhen).toLocaleDateString('it-IT')}` : ''}; SEND non ha ancora ricevuto l'esito dal recapitista`
       : viaUnreachable && !last.sendPerfection
-      ? "Destinatario irreperibile: nessuna consegna. Date nella timeline qui sopra (art. 26, commi 7 e 9, D.L. 76/2020)."
+      ? "Destinatario irreperibile: nessuna consegna. Date nella timeline qui sopra (art. 26, comma 7, D.L. 76/2020)."
       : null;
     // Data dello stato secondo PN (storico), non dell'ultimo sync: un
     // ri-sync (backfill) spostava "Perfezionata" alla data del ri-sync.

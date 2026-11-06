@@ -10,7 +10,6 @@ export interface PerfectionStep {
     | 'digital_failure'
     | 'analog_delivered'
     | 'deposited'
-    | 'aar_refined'
     | 'viewed'
     | 'recipient';
   label: string;
@@ -37,7 +36,6 @@ const LABELS: Record<PerfectionStep['key'], string> = {
   digital_failure: 'Avviso di mancato recapito depositato',
   analog_delivered: 'Avviso cartaceo consegnato',
   deposited: 'Avviso depositato su SEND',
-  aar_refined: 'Avviso perfezionato',
   viewed: 'Visualizzata su SEND',
   recipient: 'Notificata per il destinatario',
 };
@@ -115,7 +113,6 @@ export function buildSendPerfection(
   // Percorso (primo che combacia) e stima nostra della data finale.
   let estimate: string | null = null;
   let estimateOffset: number | undefined;
-  let lawStepIndex = -1;
 
   const unreachableHist = histEntry('UNREACHABLE');
   const unreachableEv = first((e) => e.category === 'COMPLETELY_UNREACHABLE');
@@ -130,10 +127,8 @@ export function buildSendPerfection(
   if (unreachableHist || unreachableEv) {
     const deposit = romeDate(unreachableHist?.activeFrom) ?? romeDate(unreachableEv?.at);
     steps.push(mk('deposited', deposit, 'ko'));
-    const refined = deposit ? addDays(deposit, 10) : null;
-    lawStepIndex = steps.length;
-    steps.push(mk('aar_refined', refined, 'expected', refined ? 10 : undefined));
-    estimate = refined ? addDays(refined, 10) : null;
+    // Art. 26, c. 7: perfezionata per il destinatario il decimo giorno dopo il deposito (verificato su PN).
+    estimate = deposit ? addDays(deposit, 10) : null;
     estimateOffset = 10;
   } else if (analogOk) {
     steps.push(mk('analog_delivered', romeDate(analogOk.at), 'done'));
@@ -173,13 +168,6 @@ export function buildSendPerfection(
   } else {
     finalSource = 'none';
     finalDate = null;
-  }
-
-  if (lawStepIndex >= 0 && (finalSource === 'pn' || finalSource === 'pn_scheduled')) {
-    const aar = steps[lawStepIndex]!;
-    // Perfezionata (o programmata) prima della data calcolata (es. presa visione): la tappa non ha più senso.
-    if (aar.date && finalDate && aar.date > finalDate) steps.splice(lawStepIndex, 1);
-    else if (finalSource === 'pn') aar.state = 'done';
   }
 
   // La presa visione conta solo se non successiva alla data finale: dopo il
