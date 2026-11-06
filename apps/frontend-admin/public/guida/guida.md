@@ -107,6 +107,8 @@ Lo ZIP con i PDF e **Crea bozza campagna** sono riservati a chi ha caricato il t
 
 ### Seguire lo stato di una campagna
 
+L'elenco mostra 20 campagne per pagina. La casella di ricerca cerca per nome o ID; per stato, autore, tipo e date usa i filtri accanto.
+
 1. Apri **Lista Campagne** e scegli la campagna.
 2. Il dettaglio mostra lo stato di ogni destinatario (In coda, Inviato, Letto, Fallito…) e si aggiorna da solo mentre l'invio è in corso.
 3. Per ogni destinatario si vede il **canale effettivo**: per il dirottamento su domicilio digitale può essere diverso da quello della campagna.
