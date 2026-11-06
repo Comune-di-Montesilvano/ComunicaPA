@@ -130,7 +130,7 @@ export function buildSendPerfection(
     steps.push(mk('deposited', deposit, 'ko'));
     const refined = deposit ? addDays(deposit, 10) : null;
     lawStepIndex = steps.length;
-    steps.push(mk('aar_refined', refined, 'expected', 10));
+    steps.push(mk('aar_refined', refined, 'expected', refined ? 10 : undefined));
     estimate = refined ? addDays(refined, 10) : null;
     estimateOffset = 10;
   } else if (analogOk) {
@@ -176,7 +176,12 @@ export function buildSendPerfection(
     finalDate = null;
   }
 
-  if (lawStepIndex >= 0 && finalSource === 'pn') steps[lawStepIndex]!.state = 'done';
+  if (lawStepIndex >= 0 && finalSource === 'pn') {
+    const aar = steps[lawStepIndex]!;
+    // Perfezionata prima della data calcolata (es. presa visione): la tappa non ha più senso.
+    if (aar.date && finalDate && aar.date > finalDate) steps.splice(lawStepIndex, 1);
+    else aar.state = 'done';
+  }
   steps.push(
     mk('recipient', finalDate, finalSource === 'pn' ? 'done' : 'expected', finalSource === 'estimate' ? estimateOffset : undefined),
   );

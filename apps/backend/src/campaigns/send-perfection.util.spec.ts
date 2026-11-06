@@ -104,7 +104,7 @@ describe('buildSendPerfection', () => {
     const p = buildSendPerfection('VIEWED', h, [sched('2026-11-04T10:00:00Z', '2026-11-24T10:00:00Z')], now);
     expect(p!.finalSource).toBe('pn');
     expect(p!.finalDate).toBe('2026-11-05');
-    expect(keys(p)).toEqual(['entity', 'deposited', 'aar_refined', 'viewed', 'recipient']);
+    expect(keys(p)).toEqual(['entity', 'deposited', 'viewed', 'recipient']);
   });
 
   it('CANCELLED', () => {
@@ -122,6 +122,34 @@ describe('buildSendPerfection', () => {
 
   it('evento senza at valido ignorato', () => {
     const p = buildSendPerfection('DELIVERING', [ACCEPTED, DELIVERING], [ev('SEND_DIGITAL_FEEDBACK', 'x', { responseStatus: 'OK' })], now);
+    expect(keys(p)).toEqual(['entity', 'delivering', 'recipient']);
+  });
+
+  it('digitale oltre le 21:00 con ora legale (CEST)', () => {
+    const p = buildSendPerfection('DELIVERED', [ACCEPTED], [ev('SEND_DIGITAL_FEEDBACK', '2026-10-20T19:00:01Z', { responseStatus: 'OK' })], now);
+    expect(step(p, 'digital_delivered').date).toBe('2026-10-20');
+    expect(p!.finalDate).toBe('2026-10-28');
+  });
+
+  it('cambio giorno a Roma dopo mezzanotte', () => {
+    const p = buildSendPerfection('DELIVERED', [ACCEPTED], [ev('SEND_DIGITAL_FEEDBACK', '2026-11-03T23:30:00Z', { responseStatus: 'OK' })], now);
+    expect(step(p, 'digital_delivered').date).toBe('2026-11-04');
+    expect(p!.finalDate).toBe('2026-11-11');
+  });
+
+  it('DIGITAL_SUCCESS_WORKFLOW da solo', () => {
+    const p = buildSendPerfection('DELIVERED', [ACCEPTED], [ev('DIGITAL_SUCCESS_WORKFLOW', '2026-11-03T10:00:00Z')], now);
+    expect(keys(p)).toEqual(['entity', 'digital_delivered', 'recipient']);
+  });
+
+  it('ANALOG_SUCCESS_WORKFLOW da solo', () => {
+    const p = buildSendPerfection('DELIVERED', [ACCEPTED], [ev('ANALOG_SUCCESS_WORKFLOW', '2026-11-03T10:00:00Z')], now);
+    expect(keys(p)).toEqual(['entity', 'analog_delivered', 'recipient']);
+    expect(p!.finalSource).toBe('none');
+  });
+
+  it('SEND_DIGITAL_FEEDBACK KO da solo resta in consegna', () => {
+    const p = buildSendPerfection('DELIVERING', [ACCEPTED, DELIVERING], [ev('SEND_DIGITAL_FEEDBACK', '2026-11-03T10:00:00Z', { responseStatus: 'KO' })], now);
     expect(keys(p)).toEqual(['entity', 'delivering', 'recipient']);
   });
 });
