@@ -2,6 +2,7 @@ import React from 'react';
 import { GUIDA_DATE_TERMINI, GUIDA_IRREPERIBILE } from '../../guida';
 import { AlertTriangle, ExternalLink } from 'lucide-react';
 import { SendPerfectionTimeline } from './SendPerfectionTimeline';
+import { getChannelMeta } from '../../data/channels';
 import { buildJourney, computeVerdict, latestAttempt, sourceLabel, type JourneyDetail, type JourneyLabels, type JourneySource } from './journey';
 import '../../assets/css/notification-detail.css';
 
@@ -98,7 +99,13 @@ export function NotificationTimeline({ detail, labels }: { detail: JourneyDetail
               </div>
               <span className="nd-marker" aria-hidden="true" />
               <div className="nd-what">
-                <span className="nd-title">{e.title}</span>
+                <span className="nd-title">
+                  {e.title}
+                  {e.logo && (() => {
+                    const meta = getChannelMeta(e.logo);
+                    return meta.logoUrl ? <> <img className="nd-title-logo" src={meta.logoUrl} alt={meta.label} /></> : ` ${meta.label}`;
+                  })()}
+                </span>
                 {e.source !== 'invio' && <span className="nd-source">{sourceLabel(e.source)}</span>}
                 {e.detail && <span className="nd-detail">{e.detail}</span>}
                 {e.link && (

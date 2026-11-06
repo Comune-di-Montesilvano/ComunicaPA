@@ -178,19 +178,39 @@ function sentTo(e: SendTimelineEvent, timeline: readonly SendTimelineEvent[]): s
   return addr ? `Inviata a: ${addr}` : null;
 }
 
-/** Titolo, dettaglio e tono di un fatto SEND, o null se non va mostrato. */
-export function describeSendTimelineEvent(e: SendTimelineEvent, timeline: readonly SendTimelineEvent[] = []): { title: string; detail: string | null; tone: SendTimelineTone } | null {
+/** Indirizzo digitale ({type, address}) riportato da PN nei dettagli dell'evento. */
+function digitalAddressOf(e: SendTimelineEvent): { type: string | null; address: string | null } {
+  const v = e.details?.['digitalAddress'];
+  if (!v || typeof v !== 'object') return { type: null, address: null };
+  const a = v as Record<string, unknown>;
+  return { type: str(a['type']), address: str(a['address']) };
+}
+
+/** Titolo, dettaglio e tono di un fatto SEND, o null se non va mostrato. `logo`: canale da mostrare col logo ufficiale in coda al titolo. */
+export function describeSendTimelineEvent(e: SendTimelineEvent, timeline: readonly SendTimelineEvent[] = []): { title: string; detail: string | null; tone: SendTimelineTone; logo?: string } | null {
   switch (e.category) {
-    case 'SEND_DIGITAL_DOMICILE':
-      return { title: `Inviata al domicilio digitale${e.channel ? ` (${CHANNEL_LABELS[e.channel] ?? e.channel})` : ''}${attemptSuffix(e)}`, detail: null, tone: 'neutral' };
+    case 'SEND_DIGITAL_DOMICILE': {
+      const da = digitalAddressOf(e);
+      // SERCQ: domicilio digitale attivato dal destinatario su SEND stesso; l'indirizzo
+      // è un URI interno di PN (x-pagopa-pn-sercq:...), non un recapito da mostrare.
+      if ((e.channel ?? da.type) === 'SERCQ') {
+        return { title: `Inviata al domicilio digitale SEND${attemptSuffix(e)}`, detail: "Domicilio digitale attivato dal destinatario su SEND: la notifica gli è recapitata nella sua area personale", tone: 'neutral' };
+      }
+      return { title: `Inviata al domicilio digitale${e.channel ? ` (${CHANNEL_LABELS[e.channel] ?? e.channel})` : ''}${attemptSuffix(e)}`, detail: da.address ? `Inviata a: ${da.address}` : null, tone: 'neutral' };
+    }
     case 'SEND_DIGITAL_FEEDBACK':
       return e.responseStatus === 'KO'
         ? { title: 'Mancata consegna al domicilio digitale', detail: null, tone: 'ko' }
         : { title: 'Consegnata al domicilio digitale', detail: null, tone: 'ok' };
     case 'DIGITAL_FAILURE_WORKFLOW':
       return { title: 'Domicilio digitale non raggiungibile: si passa al cartaceo', detail: null, tone: 'warn' };
-    case 'SEND_COURTESY_MESSAGE':
-      return { title: `Avviso di cortesia inviato${e.channel ? ` via ${CHANNEL_LABELS[e.channel] ?? e.channel}` : ''}`, detail: null, tone: 'neutral' };
+    case 'SEND_COURTESY_MESSAGE': {
+      const da = digitalAddressOf(e);
+      const ch = e.channel ?? da.type;
+      // App IO: logo ufficiale al posto del nome; PN riporta solo "ENABLED", nessun recapito.
+      if (ch === 'APPIO') return { title: 'Avviso di cortesia inviato via', detail: null, tone: 'neutral', logo: 'APP_IO' };
+      return { title: `Avviso di cortesia inviato${ch ? ` via ${CHANNEL_LABELS[ch] ?? ch}` : ''}`, detail: da.address ? `Inviato a: ${da.address}` : null, tone: 'neutral' };
+    }
     case 'PREPARE_ANALOG_DOMICILE_FAILURE':
       return { title: 'Indirizzo fisico non trovato', detail: null, tone: 'ko' };
     case 'SEND_ANALOG_DOMICILE':

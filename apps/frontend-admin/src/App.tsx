@@ -88,18 +88,19 @@ function ChannelBadge({ channel, extra }: { channel: string; extra?: string | nu
   const meta = getChannelMeta(channel);
   const Icon = meta.icon;
   return (
-    <span className={`badge ${meta.badge} d-inline-flex align-items-center`}>
+    <span className={`badge ${meta.badge} d-inline-flex align-items-center`} title={meta.logoUrl ? meta.label : undefined}>
       {meta.logoUrl ? (
+        // Logo ufficiale già leggibile: niente nome ripetuto accanto (resta come alt e title).
         <span
-          className="d-inline-flex align-items-center justify-content-center bg-white rounded-1 me-1.5 px-1.5 py-0.5"
+          className={`d-inline-flex align-items-center justify-content-center bg-white rounded-1 px-1.5 py-0.5${extra ? ' me-1.5' : ''}`}
           style={{ height: 18, minWidth: 18 }}
         >
-          <img src={meta.logoUrl} alt="" style={{ height: 14, width: 'auto', maxHeight: 14, display: 'block', objectFit: 'contain' }} />
+          <img src={meta.logoUrl} alt={meta.label} style={{ height: 14, width: 'auto', maxHeight: 14, display: 'block', objectFit: 'contain' }} />
         </span>
       ) : (
         <Icon className="me-1" size={14} />
       )}
-      {meta.label}{extra ? ` (${extra})` : ''}
+      {meta.logoUrl ? (extra ? `(${extra})` : '') : <>{meta.label}{extra ? ` (${extra})` : ''}</>}
     </span>
   );
 }

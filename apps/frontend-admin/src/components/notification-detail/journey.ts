@@ -88,6 +88,8 @@ export interface JourneyEvent {
   dateOnly?: boolean;
   /** Link esterno (es. tracking su poste.it). */
   link?: { href: string; label: string };
+  /** Canale (chiave del registro canali) mostrato col logo ufficiale in coda al titolo. */
+  logo?: string;
 }
 
 export interface Verdict {
