@@ -1,7 +1,7 @@
 import { CampaignStatus, type Campaign } from '../entities/campaign.entity.js';
 import type { CampaignRequester } from './campaigns.service.js';
 
-export type CampaignAccessSubject = Pick<Campaign, 'createdBy' | 'signerUsername' | 'status'>;
+export type CampaignAccessSubject = Pick<Campaign, 'createdBy' | 'signerUsername' | 'status' | 'isTest'>;
 
 export const ATTACHMENT_DENIED_MESSAGE =
   'Allegato visibile solo a chi ha creato la campagna, agli amministratori e al firmatario indicato';
@@ -16,12 +16,15 @@ export function canReadCampaignAttachments(
   return campaign.signerUsername != null && campaign.signerUsername === requester.username;
 }
 
-/** Le bozze sono visibili solo a chi può leggerne gli allegati; le altre a tutti. */
+/**
+ * Bozze e invii di prova (isTest, qualunque stato: sono verifiche interne di
+ * una bozza) visibili solo a chi può leggerne gli allegati; le altre a tutti.
+ */
 export function canViewCampaign(
   campaign: CampaignAccessSubject,
   requester: Pick<CampaignRequester, 'username' | 'role'>,
 ): boolean {
-  return campaign.status !== CampaignStatus.DRAFT || canReadCampaignAttachments(campaign, requester);
+  return (campaign.status !== CampaignStatus.DRAFT && !campaign.isTest) || canReadCampaignAttachments(campaign, requester);
 }
 
 /**
@@ -37,7 +40,7 @@ export function visibleCampaignSql(
 ): { sql: string; params: { visibleCampaignUser: string } } | null {
   if (requester.role === 'admin') return null;
   return {
-    sql: `(${alias}.status <> 'draft' OR ${alias}.created_by = :visibleCampaignUser OR ${alias}.signer_username = :visibleCampaignUser)`,
+    sql: `((${alias}.status <> 'draft' AND ${alias}.is_test = false) OR ${alias}.created_by = :visibleCampaignUser OR ${alias}.signer_username = :visibleCampaignUser)`,
     params: { visibleCampaignUser: requester.username },
   };
 }

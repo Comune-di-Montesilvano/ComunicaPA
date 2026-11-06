@@ -9,11 +9,13 @@ import { canViewCampaign, visibleCampaignSql } from './campaign-access.util.js';
  * Postgres e la salta; in dev: vitest run campaign-access.parity.
  */
 const FIXTURES = [
-  { key: 'bozza-rossi', createdBy: 'rossi', signerUsername: null, status: CampaignStatus.DRAFT },
-  { key: 'bozza-rossi-firma-verdi', createdBy: 'rossi', signerUsername: 'verdi', status: CampaignStatus.DRAFT },
-  { key: 'bozza-bianchi', createdBy: 'bianchi', signerUsername: null, status: CampaignStatus.DRAFT },
-  { key: 'running-rossi', createdBy: 'rossi', signerUsername: null, status: CampaignStatus.RUNNING },
-  { key: 'completed-rossi', createdBy: 'rossi', signerUsername: 'verdi', status: CampaignStatus.COMPLETED },
+  { key: 'bozza-rossi', createdBy: 'rossi', signerUsername: null, status: CampaignStatus.DRAFT, isTest: false },
+  { key: 'bozza-rossi-firma-verdi', createdBy: 'rossi', signerUsername: 'verdi', status: CampaignStatus.DRAFT, isTest: false },
+  { key: 'bozza-bianchi', createdBy: 'bianchi', signerUsername: null, status: CampaignStatus.DRAFT, isTest: false },
+  { key: 'running-rossi', createdBy: 'rossi', signerUsername: null, status: CampaignStatus.RUNNING, isTest: false },
+  { key: 'completed-rossi', createdBy: 'rossi', signerUsername: 'verdi', status: CampaignStatus.COMPLETED, isTest: false },
+  { key: 'test-queued-rossi', createdBy: 'rossi', signerUsername: 'verdi', status: CampaignStatus.QUEUED, isTest: true },
+  { key: 'test-completed-bianchi', createdBy: 'bianchi', signerUsername: null, status: CampaignStatus.COMPLETED, isTest: true },
 ] as const;
 
 const REQUESTERS = [
@@ -33,8 +35,8 @@ describe.skipIf(!process.env.DATABASE_URL)('campaign-access — parità TS/SQL s
       for (const f of FIXTURES) {
         const rows: Array<{ id: string }> = await client.query(
           `INSERT INTO campaigns (name, status, channel_type, channel_config, created_by, signer_username, is_test)
-           VALUES ($1, $2, 'EMAIL', '{}', $3, $4, true) RETURNING id`,
-          [`parity-${f.key}`, f.status, f.createdBy, f.signerUsername],
+           VALUES ($1, $2, 'EMAIL', '{}', $3, $4, $5) RETURNING id`,
+          [`parity-${f.key}`, f.status, f.createdBy, f.signerUsername, f.isTest],
         );
         ids.set(rows[0]!.id, f.key);
       }

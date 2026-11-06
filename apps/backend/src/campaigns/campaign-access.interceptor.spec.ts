@@ -5,7 +5,7 @@ import { CampaignStatus } from '../entities/campaign.entity.js';
 import { CampaignAccessInterceptor } from './campaign-access.interceptor.js';
 
 const ID = '11111111-2222-4333-8444-555555555555';
-const BOZZA_ALTRUI = { id: ID, createdBy: 'rossi', signerUsername: 'verdi', status: CampaignStatus.DRAFT };
+const BOZZA_ALTRUI = { id: ID, createdBy: 'rossi', signerUsername: 'verdi', status: CampaignStatus.DRAFT, isTest: false };
 
 function setup(found: unknown) {
   const repo = { findOne: vi.fn().mockResolvedValue(found) };
@@ -36,7 +36,7 @@ describe('CampaignAccessInterceptor', () => {
     expect(next.handle).not.toHaveBeenCalled();
     expect(repo.findOne).toHaveBeenCalledWith({
       where: { id: ID },
-      select: { id: true, createdBy: true, signerUsername: true, status: true },
+      select: { id: true, createdBy: true, signerUsername: true, status: true, isTest: true },
     });
   });
 
@@ -48,6 +48,12 @@ describe('CampaignAccessInterceptor', () => {
     const { next, run } = setup(BOZZA_ALTRUI);
     await expect(run('/admin/campaigns/:id/stats', user)).resolves.toBe('ok');
     expect(next.handle).toHaveBeenCalledTimes(1);
+  });
+
+  it('invio di prova lanciato, altro user → 404', async () => {
+    const { next, run } = setup({ ...BOZZA_ALTRUI, status: CampaignStatus.COMPLETED, isTest: true });
+    await expect(run('/admin/campaigns/:id/stats', altro)).rejects.toBeInstanceOf(NotFoundException);
+    expect(next.handle).not.toHaveBeenCalled();
   });
 
   it('campagna non bozza, altro user → passa', async () => {

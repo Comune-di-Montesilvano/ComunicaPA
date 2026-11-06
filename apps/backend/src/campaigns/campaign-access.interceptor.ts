@@ -22,7 +22,7 @@ const CAMPAIGN_ID_ROUTE = /^\/admin\/campaigns\/:id(\/|$)/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Bozze invisibili a chi non può leggerne gli allegati (canViewCampaign):
+ * Bozze e invii di prova invisibili a chi non può leggerne gli allegati (canViewCampaign):
  * ogni route operatore `admin/campaigns/:id/...` risponde 404 come per una
  * campagna inesistente, senza toccare i singoli handler. Globale
  * (APP_INTERCEPTOR) → gira dopo JwtAuthGuard, req.user è già valorizzato.
@@ -46,7 +46,7 @@ export class CampaignAccessInterceptor implements NestInterceptor {
       from(
         this.campaignRepo.findOne({
           where: { id },
-          select: { id: true, createdBy: true, signerUsername: true, status: true },
+          select: { id: true, createdBy: true, signerUsername: true, status: true, isTest: true },
         }),
       ),
     ).pipe(

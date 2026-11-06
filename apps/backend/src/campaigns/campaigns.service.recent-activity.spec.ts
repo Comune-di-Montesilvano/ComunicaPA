@@ -120,7 +120,7 @@ describe('CampaignsService - getRecentActivity', () => {
     await service.getRecentActivity({ username: 'bianchi', role: 'user' });
 
     expect(qb.andWhere).toHaveBeenCalledWith(
-      "(c.status <> 'draft' OR c.created_by = :visibleCampaignUser OR c.signer_username = :visibleCampaignUser)",
+      "((c.status <> 'draft' AND c.is_test = false) OR c.created_by = :visibleCampaignUser OR c.signer_username = :visibleCampaignUser)",
       { visibleCampaignUser: 'bianchi' },
     );
   });

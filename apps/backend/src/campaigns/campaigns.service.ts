@@ -52,7 +52,7 @@ import { PostalPosteTracking } from '../entities/postal-poste-tracking.entity.js
 import { RemoteSignJob, RemoteSignJobStatus } from '../entities/remote-sign-job.entity.js';
 import { postalLegalOutcome, postalLegalOutcomeSql, POSTAL_GLOBALCOM_ERROR_SQL, isPostalLegalOutcome } from './postal-legal-outcome.util.js';
 import { POSTE_DELIVERED_BUCKET, formatLastMovement, isPosteDeliveredOverride, posteDeliveredSql, posteSummaryOf } from '../channels/postal/poste-tracking/poste-tracking-effective.util.js';
-import { canReadCampaignAttachments, visibleCampaignSql } from './campaign-access.util.js';
+import { canReadCampaignAttachments, canViewCampaign, visibleCampaignSql } from './campaign-access.util.js';
 
 const INAD_BULK_THRESHOLD = 100;
 // Sentinella filtro "Stato Consegna" per attempt SUCCESS senza send_status/postal_status
@@ -300,7 +300,10 @@ export class CampaignsService {
    *
    * Con `campaignId` + CF di un destinatario reale il link firmato sarebbe
    * funzionante: se `requester` non può leggere gli allegati di quella
-   * campagna i link diventano un segnaposto non cliccabile.
+   * campagna i link diventano un segnaposto non cliccabile. Campagna non
+   * visibile (bozza altrui) → trattata come destinatario inesistente: id
+   * casuale e nessun segnaposto, così la risposta non rivela se quel CF è
+   * nella bozza.
    */
   async previewMessage(dto: PreviewMessageDto, requester: CampaignRequester): Promise<PreviewMessageResult> {
     let previewRecipientId: string = randomUUID();
@@ -313,9 +316,9 @@ export class CampaignsService {
         },
         relations: { campaign: true },
       });
-      if (realRecipient) {
+      if (realRecipient?.campaign && canViewCampaign(realRecipient.campaign, requester)) {
         previewRecipientId = realRecipient.id;
-        redactDownloadLinks = !realRecipient.campaign || !canReadCampaignAttachments(realRecipient.campaign, requester);
+        redactDownloadLinks = !canReadCampaignAttachments(realRecipient.campaign, requester);
       }
     }
 
@@ -931,6 +934,8 @@ export class CampaignsService {
         channelConfig: parent.channelConfig,
         status: CampaignStatus.QUEUED,
         createdBy: parent.createdBy,
+        // Il firmatario della madre deve poter leggere gli allegati del test.
+        signerUsername: parent.signerUsername ?? null,
         isTest: true,
         parentCampaignId,
       });

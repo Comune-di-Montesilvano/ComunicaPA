@@ -48,7 +48,7 @@ class FakeJwtGuard implements CanActivate {
 describe('CampaignAccessInterceptor — route reali Express (integration)', () => {
   let app: INestApplication;
   const repo = {
-    findOne: jest.fn(async () => ({ id: BOZZA, createdBy: 'rossi', signerUsername: 'verdi', status: CampaignStatus.DRAFT })),
+    findOne: jest.fn(async () => ({ id: BOZZA, createdBy: 'rossi', signerUsername: 'verdi', status: CampaignStatus.DRAFT, isTest: false })),
   };
 
   beforeAll(async () => {

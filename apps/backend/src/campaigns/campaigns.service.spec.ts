@@ -185,7 +185,7 @@ describe('CampaignsService', () => {
     const qb = mockFindAllQb();
     await service.findAll({ username: 'bianchi', role: 'user' });
     expect(qb.andWhere).toHaveBeenCalledWith(
-      "(c.status <> 'draft' OR c.created_by = :visibleCampaignUser OR c.signer_username = :visibleCampaignUser)",
+      "((c.status <> 'draft' AND c.is_test = false) OR c.created_by = :visibleCampaignUser OR c.signer_username = :visibleCampaignUser)",
       { visibleCampaignUser: 'bianchi' },
     );
   });
@@ -3063,6 +3063,7 @@ describe('CampaignsService', () => {
         channelType: 'EMAIL',
         channelConfig: { subject: 'Avviso', body: 'Corpo' },
         createdBy: 'operator1',
+        signerUsername: 'verdi',
       };
       mockCampaignRepo.findOneBy
         .mockResolvedValueOnce(parent) // findOneBy({id: parentCampaignId})
@@ -3090,7 +3091,7 @@ describe('CampaignsService', () => {
       expect(result.testCampaignId).toBe('child-1');
       expect(result.attemptId).toBeTruthy();
       expect(mockCampaignRepo.create).toHaveBeenCalledWith(
-        expect.objectContaining({ isTest: true, parentCampaignId: 'parent-1', name: '[TEST] Campagna TARI 2026' }),
+        expect.objectContaining({ isTest: true, parentCampaignId: 'parent-1', name: '[TEST] Campagna TARI 2026', signerUsername: 'verdi' }),
       );
     });
 
@@ -4407,8 +4408,22 @@ describe('CampaignsService.previewMessage', () => {
     const realRecipient = {
       id: 'real-recipient-1',
       codiceFiscale: 'RSSMRA80A01H501U',
-      campaign: { id: 'camp-1', status: 'completed', createdBy: 'mario', signerUsername: null },
+      campaign: { id: 'camp-1', status: 'completed', createdBy: 'mario', signerUsername: null, isTest: false },
     };
+
+    it('bozza non visibile al requester → come destinatario inesistente (id casuale, niente segnaposto)', async () => {
+      const moduleRef = await buildModule();
+      const service = moduleRef.get(CampaignsService);
+      (recipientRepoMock.findOne as jest.Mock).mockResolvedValueOnce({ ...realRecipient, campaign: { ...realRecipient.campaign, status: 'draft' } });
+      const spy = jest.spyOn(service as any, 'renderMessage');
+
+      const result = await service.previewMessage(dto, OTHER);
+
+      expect(spy.mock.calls[0]?.at(-1)).toBe(false);
+      expect(result.bodyHtml).not.toContain('#allegato-riservato');
+      expect(result.bodyHtml).not.toContain('real-recipient-1');
+      expect(result.bodyHtml).toContain('/public/download/');
+    });
 
     it('requester non ammesso → renderMessage con redactDownloadLinks=true, nessun link firmato', async () => {
       const moduleRef = await buildModule();

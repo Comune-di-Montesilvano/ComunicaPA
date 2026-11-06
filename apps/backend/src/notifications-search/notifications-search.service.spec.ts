@@ -598,9 +598,9 @@ describe('NotificationsSearchService — riservatezza bozze e allegati', () => {
   const auditLogsMock = { log: jest.fn() };
   let service: NotificationsSearchService;
 
-  const recipientOf = (status: string) => ({
+  const recipientOf = (status: string, isTest = false) => ({
     id: 'r1', codiceFiscale: 'RSSMRA80A01H501U', fullName: 'ROSSI MARIO', email: null, pec: null, status: 'sent', extraData: {},
-    campaign: { id: 'c1', name: 'Avviso', channelType: 'EMAIL', channelConfig: {}, status, createdBy: 'mario', signerUsername: null },
+    campaign: { id: 'c1', name: 'Avviso', channelType: 'EMAIL', channelConfig: {}, status, createdBy: 'mario', signerUsername: null, isTest },
   });
 
   beforeEach(async () => {
@@ -639,6 +639,14 @@ describe('NotificationsSearchService — riservatezza bozze e allegati', () => {
 
   it('getDetail: destinatario di bozza altrui → NotFoundException, niente rendering', async () => {
     recipientRepoMock.findOne.mockResolvedValueOnce(recipientOf('draft'));
+    await expect(service.getDetail('r1', OTHER)).rejects.toThrow(NotFoundException);
+    expect(campaignsServiceMock.renderMessageForRecipient).not.toHaveBeenCalled();
+  });
+
+  it('getDetail: invio di prova (isTest) lanciato, altro user → NotFoundException', async () => {
+    recipientRepoMock.findOne.mockResolvedValueOnce(recipientOf('queued', true));
+    await expect(service.getDetail('r1', OTHER)).rejects.toThrow(NotFoundException);
+    recipientRepoMock.findOne.mockResolvedValueOnce(recipientOf('completed', true));
     await expect(service.getDetail('r1', OTHER)).rejects.toThrow(NotFoundException);
     expect(campaignsServiceMock.renderMessageForRecipient).not.toHaveBeenCalled();
   });
