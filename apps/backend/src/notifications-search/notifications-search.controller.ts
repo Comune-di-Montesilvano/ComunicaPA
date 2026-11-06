@@ -20,20 +20,22 @@ export class NotificationsSearchController {
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
     @Query('page') page = '1',
-    @Query('pageSize') pageSize = '50',
+    @Query('pageSize') pageSize = '20',
     @Query('posteVerification') posteVerification?: string,
+    @Query('createdBy') createdBy?: string,
   ) {
     return this.svc.search({
       query,
       codiceFiscale,
       campaignId,
       channelType,
+      createdBy,
       status,
       dateFrom,
       dateTo,
       posteVerification: POSTE_VERIFICATION_FILTERS.includes(posteVerification as PosteVerificationFilter) ? (posteVerification as PosteVerificationFilter) : undefined,
       page: Math.max(1, parseInt(page, 10) || 1),
-      pageSize: Math.min(200, Math.max(1, parseInt(pageSize, 10) || 50)),
+      pageSize: Math.min(200, Math.max(1, parseInt(pageSize, 10) || 20)),
     }, req.user);
   }
 

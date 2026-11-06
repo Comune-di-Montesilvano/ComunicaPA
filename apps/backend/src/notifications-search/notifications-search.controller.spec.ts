@@ -34,6 +34,17 @@ describe('NotificationsSearchController', () => {
     controller = moduleRef.get(NotificationsSearchController);
   });
 
+  describe('search', () => {
+    it('passa createdBy al servizio e usa pageSize 20 di default', () => {
+      controller.search(REQ, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, 'mrossi');
+
+      expect(svcMock.search).toHaveBeenCalledWith(
+        expect.objectContaining({ createdBy: 'mrossi', page: 1, pageSize: 20 }),
+        REQ.user,
+      );
+    });
+  });
+
   describe('getSendLegalFacts', () => {
     it('delega a svc.getSendLegalFacts e ritorna il risultato', async () => {
       const recipientId = 'rec-1';

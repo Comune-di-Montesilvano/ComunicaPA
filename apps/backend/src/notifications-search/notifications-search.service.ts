@@ -15,6 +15,7 @@ import type { NotificationDetailDto } from './dto/notification-detail.dto.js';
 import { PostalPosteTracking } from '../entities/postal-poste-tracking.entity.js';
 import { posteDeliveredSql, toPosteVerificationDto } from '../channels/postal/poste-tracking/poste-tracking-effective.util.js';
 import { fromUtcWallClock } from '../legal-attention/legal-attention.util.js';
+import { buildSendPerfection } from '../campaigns/send-perfection.util.js';
 
 // Canali digitali: "sent" con almeno un download = "read" (Letto), stato
 // derivato mai scritto su recipient.status. Stesso criterio del dettaglio
@@ -31,6 +32,7 @@ export interface SearchFilters {
   query?: string;
   campaignId?: string;
   channelType?: string;
+  createdBy?: string;
   status?: string;
   dateFrom?: string;
   dateTo?: string;
@@ -96,6 +98,10 @@ export class NotificationsSearchService {
         '(CAST(campaign.id AS text) ILIKE :campaignQ OR campaign.name ILIKE :campaignQ)',
         { campaignQ: `%${campaignText}%` },
       );
+    }
+    const createdByText = filters.createdBy?.trim();
+    if (createdByText) {
+      qb.andWhere('campaign.createdBy = :createdBy', { createdBy: createdByText });
     }
     if (filters.status === 'read') {
       qb.andWhere('recipient.status = :status', { status: 'sent' });
@@ -316,6 +322,11 @@ export class NotificationsSearchService {
             sendStatusUpdatedAt: a.sendStatusUpdatedAt ? a.sendStatusUpdatedAt.toISOString() : null,
             sendStatusHistory: a.sendStatusHistory ?? null,
             sendTimeline: a.sendTimeline ?? null,
+            // Solo tentativi diventati notifica PN (IUN assegnato, non falliti);
+            // REFUSED/CANCELLED li esclude buildSendPerfection.
+            sendPerfection: a.channelType === 'SEND' && !!a.iun && a.status !== 'failed'
+              ? buildSendPerfection(a.sendStatus, a.sendStatusHistory, a.sendTimeline, new Date())
+              : null,
             protocolNumber: protoNum,
             protocolYear: protoYr,
             protocolledAt: protoAt ? protoAt.toISOString() : null,

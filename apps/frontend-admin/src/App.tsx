@@ -1598,7 +1598,9 @@ export function App(): React.JSX.Element {
   const [searchDateFrom, setSearchDateFrom] = useState('');
   const [searchDateTo, setSearchDateTo] = useState('');
   const [searchPage, setSearchPage] = useState(1);
-  const SEARCH_PAGE_SIZE = 50;
+  const SEARCH_PAGE_SIZE = 20;
+  const [searchAuthor, setSearchAuthor] = useState('');
+  const [searchOperators, setSearchOperators] = useState<Array<{ username: string; displayName: string }>>([]);
   const [searchResults, setSearchResults] = useState<Array<{ recipientId: string; campaignId: string; campaignName: string; codiceFiscale: string; fullName: string | null; channelType: string; status: string; createdAt: string; posteVerificationStatus?: string | null }>>([]);
   const [searchTotal, setSearchTotal] = useState(0);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -1855,6 +1857,7 @@ export function App(): React.JSX.Element {
       const params = new URLSearchParams();
       if (searchQuery) params.set('query', searchQuery);
       if (searchCampaignId) params.set('campaignId', searchCampaignId);
+      if (searchAuthor) params.set('createdBy', searchAuthor);
       if (searchChannel) params.set('channelType', searchChannel);
       if (searchStatus) params.set('status', searchStatus);
       if (searchPosteVerification) params.set('posteVerification', searchPosteVerification);
@@ -2234,6 +2237,17 @@ export function App(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, token]);
 
+  // Elenco autori per il filtro "Autore": caricato una volta all'apertura della vista.
+  useEffect(() => {
+    if (view !== 'notifiche-ricerca' || !token) return;
+    let cancelled = false;
+    fetch(`${ADMIN_API_BASE}/operators`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list) => { if (!cancelled) setSearchOperators(Array.isArray(list) ? list : []); })
+      .catch(() => { if (!cancelled) setSearchOperators([]); });
+    return () => { cancelled = true; };
+  }, [view, token]);
+
   useEffect(() => {
     if (view === 'dashboard' && token) {
       fetchEngines();
@@ -2318,10 +2332,12 @@ export function App(): React.JSX.Element {
   // Campaign list filter and pagination state
   const [campaignSearch, setCampaignSearch] = useState('');
   const [campaignTypeFilter, setCampaignTypeFilter] = useState('');
+  const [campaignStatusFilter, setCampaignStatusFilter] = useState('');
+  const [campaignAuthorFilter, setCampaignAuthorFilter] = useState('');
   const [campaignStartDate, setCampaignStartDate] = useState('');
   const [campaignEndDate, setCampaignEndDate] = useState('');
   const [campaignPage, setCampaignPage] = useState(1);
-  const CAMPAIGN_PAGE_SIZE = 10;
+  const CAMPAIGN_PAGE_SIZE = 20;
 
   // Form destinatario per invio singolo (step 2 fuso del wizard, wizSingleMode)
   const [singleCf, setSingleCf] = useState('');
@@ -8954,11 +8970,16 @@ export function App(): React.JSX.Element {
       result = result.filter(c =>
         c.name.toLowerCase().includes(q) ||
         (c.description || '').toLowerCase().includes(q) ||
-        c.channelType.toLowerCase().includes(q) ||
-        (c.groupChannels || []).some(ch => ch.toLowerCase().includes(q)) ||
-        c.status.toLowerCase().includes(q) ||
         c.id.toLowerCase().includes(q)
       );
+    }
+
+    if (campaignStatusFilter) {
+      result = result.filter(c => c.status === campaignStatusFilter);
+    }
+
+    if (campaignAuthorFilter) {
+      result = result.filter(c => c.createdBy === campaignAuthorFilter);
     }
 
     if (campaignStartDate) {
@@ -9827,10 +9848,10 @@ export function App(): React.JSX.Element {
                       </div>
                     </div>
 
-                    {/* Filter Bar: Search, Tipo campagna, Date Range */}
+                    {/* Filter Bar: Search, Stato, Autore, Tipo campagna, Date Range */}
                     <div className="p-3 border-bottom bg-light-subtle">
                       <div className="row g-2 align-items-center">
-                        <div className="col-md-4">
+                        <div className="col-md-3">
                           <div className="input-group input-group-sm">
                             <span className="input-group-text bg-white border-end-0">
                               <Search size={14} className="text-muted" />
@@ -9838,7 +9859,7 @@ export function App(): React.JSX.Element {
                             <input
                               type="text"
                               className="form-control border-start-0 ps-0"
-                              placeholder="Cerca per nome, canale, stato..."
+                              placeholder="Cerca per nome o ID…"
                               value={campaignSearch}
                               onChange={(e) => {
                                 setCampaignSearch(e.target.value);
@@ -9862,6 +9883,42 @@ export function App(): React.JSX.Element {
                         <div className="col-md-3 col-6">
                           <select
                             className="form-select form-select-sm"
+                            value={campaignStatusFilter}
+                            onChange={(e) => {
+                              setCampaignStatusFilter(e.target.value);
+                              setCampaignPage(1);
+                            }}
+                          >
+                            <option value="">Stato: tutti</option>
+                            {Array.from(new Set(campaigns.map((c) => c.status)))
+                              .sort((a, b) => (STATUS_META[a]?.label ?? a).localeCompare(STATUS_META[b]?.label ?? b))
+                              .map((st) => (
+                                <option key={st} value={st}>{STATUS_META[st]?.label ?? st}</option>
+                              ))}
+                          </select>
+                        </div>
+                        <div className="col-md-3 col-6">
+                          <select
+                            className="form-select form-select-sm"
+                            value={campaignAuthorFilter}
+                            onChange={(e) => {
+                              setCampaignAuthorFilter(e.target.value);
+                              setCampaignPage(1);
+                            }}
+                          >
+                            <option value="">Autore: tutti</option>
+                            {Array.from(
+                              new Map(campaigns.map((c) => [c.createdBy, c.createdByDisplayName || c.createdBy] as const)),
+                            )
+                              .sort((a, b) => a[1].localeCompare(b[1]))
+                              .map(([user, label]) => (
+                                <option key={user} value={user}>{label}</option>
+                              ))}
+                          </select>
+                        </div>
+                        <div className="col-md-3 col-6">
+                          <select
+                            className="form-select form-select-sm"
                             value={campaignTypeFilter}
                             onChange={(e) => {
                               setCampaignTypeFilter(e.target.value);
@@ -9876,7 +9933,7 @@ export function App(): React.JSX.Element {
                               ))}
                           </select>
                         </div>
-                        <div className="col-md-2 col-6">
+                        <div className="col-md-3 col-6">
                           <div className="input-group input-group-sm">
                             <span className="input-group-text bg-white small text-muted">Da:</span>
                             <input
@@ -9890,7 +9947,7 @@ export function App(): React.JSX.Element {
                             />
                           </div>
                         </div>
-                        <div className="col-md-2 col-6">
+                        <div className="col-md-3 col-6">
                           <div className="input-group input-group-sm">
                             <span className="input-group-text bg-white small text-muted">A:</span>
                             <input
@@ -9904,13 +9961,15 @@ export function App(): React.JSX.Element {
                             />
                           </div>
                         </div>
-                        {(campaignSearch || campaignTypeFilter || campaignStartDate || campaignEndDate) && (
-                          <div className="col-md-1 text-end">
+                        {(campaignSearch || campaignTypeFilter || campaignStatusFilter || campaignAuthorFilter || campaignStartDate || campaignEndDate) && (
+                          <div className="col-md-3 text-end">
                             <button
                               className="btn btn-sm btn-link text-decoration-none text-muted p-0 small"
                               onClick={() => {
                                 setCampaignSearch('');
                                 setCampaignTypeFilter('');
+                                setCampaignStatusFilter('');
+                                setCampaignAuthorFilter('');
                                 setCampaignStartDate('');
                                 setCampaignEndDate('');
                                 setCampaignPage(1);
@@ -13135,6 +13194,15 @@ export function App(): React.JSX.Element {
                     <input id="ns-campaign" className="form-control form-control-sm" placeholder="ID o nome campagna" value={searchCampaignId} onChange={e => setSearchCampaignId(e.target.value)} />
                   </div>
                   <div style={{ flex: '1 1 150px', minWidth: 0 }}>
+                    <label className="form-label small text-muted mb-1" htmlFor="ns-author">Autore</label>
+                    <select id="ns-author" className="form-select form-select-sm" value={searchAuthor} onChange={e => setSearchAuthor(e.target.value)}>
+                      <option value="">Tutti</option>
+                      {searchOperators.map(o => (
+                        <option key={o.username} value={o.username}>{o.displayName || o.username}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ flex: '1 1 150px', minWidth: 0 }}>
                     <label className="form-label small text-muted mb-1" htmlFor="ns-channel">Canale</label>
                     <select id="ns-channel" className="form-select form-select-sm" value={searchChannel} onChange={e => setSearchChannel(e.target.value)}>
                       <option value="">Tutti</option>
@@ -13178,12 +13246,12 @@ export function App(): React.JSX.Element {
                     <button type="submit" className="btn btn-primary btn-sm d-inline-flex align-items-center text-nowrap px-3" disabled={searchLoading}>
                       {searchLoading ? <Loader2 className="icon-spin me-1" size={14} /> : <Search className="me-1" size={14} />}Cerca
                     </button>
-                    {(searchQuery || searchCampaignId || searchChannel || searchStatus || searchDateFrom || searchDateTo) && (
+                    {(searchQuery || searchCampaignId || searchAuthor || searchChannel || searchStatus || searchDateFrom || searchDateTo) && (
                       <button
                         type="button"
                         className="btn btn-outline-secondary btn-sm d-inline-flex align-items-center text-nowrap"
                         onClick={() => {
-                          setSearchQuery(''); setSearchCampaignId(''); setSearchChannel('');
+                          setSearchQuery(''); setSearchCampaignId(''); setSearchAuthor(''); setSearchChannel('');
                           setSearchStatus(''); setSearchDateFrom(''); setSearchDateTo('');
                         }}
                       >

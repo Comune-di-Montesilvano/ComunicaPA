@@ -11,6 +11,14 @@ import { SendBaseFeeService } from './send-base-fee.service.js';
 import { captureException } from '../../common/sentry.util.js';
 
 const BATCH_SIZE = 200;
+// Backfill una tantum (spec Step 0): i terminali non vengono piu' ripollati, quindi
+// la loro timeline salvata non ha `details`. Questo predicato li ripesca finche'
+// il primo evento non ha `details` (extractSendTimeline lo mette sempre, anche `{}`);
+// dopo il salvataggio si chiude da solo. Timeline vuota/NULL = non legacy: niente loop.
+// Seconda parte: timeline gia' ripollata con `details` ma senza indirizzi (tenuti solo dal
+// task 9): un evento analogico con details e senza physicalAddress va ripollato una volta.
+export const LEGACY_TIMELINE_SQL =
+  "((jsonb_array_length(COALESCE(attempt.send_timeline, '[]'::jsonb)) > 0 AND NOT (attempt.send_timeline -> 0 ? 'details')) OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(attempt.send_timeline, '[]'::jsonb)) e WHERE e->>'category' = 'SEND_ANALOG_DOMICILE' AND e->'details' IS NOT NULL AND NOT (e->'details' ? 'physicalAddress')))";
 const TERMINAL_STATUSES = ['VIEWED', 'EFFECTIVE_DATE', 'UNREACHABLE', 'CANCELLED', 'RETURNED_TO_SENDER', 'REFUSED'];
 
 @Injectable()
@@ -101,10 +109,14 @@ export class SendStatusSyncService {
       // cost_calculated_at >= send_status_updated_at le esclude di nuovo.
       .andWhere(
         '(attempt.send_status IS NULL OR attempt.send_status NOT IN (:...terminal) OR attempt.cost_cents IS NULL'
-          + ' OR attempt.cost_calculated_at IS NULL OR attempt.cost_calculated_at < attempt.send_status_updated_at)',
+          + ' OR attempt.cost_calculated_at IS NULL OR attempt.cost_calculated_at < attempt.send_status_updated_at'
+          + ` OR ${LEGACY_TIMELINE_SQL})`,
         { terminal: TERMINAL_STATUSES },
       )
-      .orderBy('attempt.created_at', 'ASC')
+      // Prima il sync live, poi il backfill legacy: con tante timeline vecchie il
+      // batch non deve riempirsi solo di backfill lasciando ferme le notifiche in corso.
+      .orderBy(`CASE WHEN ${LEGACY_TIMELINE_SQL} THEN 1 ELSE 0 END`, 'ASC')
+      .addOrderBy('attempt.created_at', 'ASC')
       .take(BATCH_SIZE)
       .getMany();
 

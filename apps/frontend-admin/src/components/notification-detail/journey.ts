@@ -21,6 +21,22 @@ export interface JourneyPosteVerification {
   movements: JourneyMovement[];
 }
 
+/** Duplicato di backend `send-perfection.util.ts`. */
+export interface SendPerfectionStep {
+  key: string;
+  label: string;
+  /** YYYY-MM-DD, Europe/Rome; null = data non ancora nota. */
+  date: string | null;
+  state: 'done' | 'ko' | 'expected';
+  offsetDays?: number;
+}
+export interface SendPerfection {
+  steps: SendPerfectionStep[];
+  finalSource: 'pn' | 'pn_scheduled' | 'estimate' | 'none';
+  finalDate: string | null;
+  today: string;
+}
+
 export interface JourneyAttempt {
   attemptNumber: number;
   status: string;
@@ -33,6 +49,7 @@ export interface JourneyAttempt {
   sendStatusUpdatedAt?: string | null;
   sendStatusHistory?: Array<{ status: string; activeFrom: string }> | null;
   sendTimeline?: SendTimelineEvent[] | null;
+  sendPerfection?: SendPerfection | null;
   postalStatus?: string | null;
   postalDeliveryStatus?: string | null;
   postalDeliveryDate?: string | null;
@@ -228,7 +245,7 @@ export function buildJourney(d: JourneyDetail, labels: JourneyLabels): JourneyEv
     }
     const sendTimeline = a.sendTimeline ?? [];
     for (const t of sendTimeline) {
-      const described = describeSendTimelineEvent(t);
+      const described = describeSendTimelineEvent(t, sendTimeline);
       if (!described || !validDate(t.at)) continue;
       // Numero della raccomandata (arriva dagli avanzamenti dello stesso
       // tentativo): è quello da cercare su poste.it o da dare al cittadino.
@@ -240,7 +257,7 @@ export function buildJourney(d: JourneyDetail, labels: JourneyLabels): JourneyEv
         at: t.at,
         source: 'send',
         ...described,
-        ...(letter ? { detail: [`Raccomandata n. ${letter}`, sendCarrierOf(a.posteVerification, letter)].filter(Boolean).join(' · ') } : {}),
+        ...(letter ? { detail: [`Raccomandata n. ${letter}`, sendCarrierOf(a.posteVerification, letter), described.detail].filter(Boolean).join(' · ') } : {}),
         ...(letter && isPosteLetterCode(letter) ? { link: { href: posteTrackingUrl(letter), label: 'Traccia su poste.it' } } : {}),
       });
     }
@@ -345,15 +362,15 @@ export function computeVerdict(d: JourneyDetail, labels: JourneyLabels): Verdict
     const posteOutcome = pnOpen && pv && (pv.status === 'delivered' || pv.status === 'returned') ? pv : null;
     const posteWhen = posteOutcome?.outcomeAt ?? posteOutcome?.deliveredAt ?? null;
     // Irreperibilità totale: PN deposita l'avviso sulla piattaforma e la
-    // notifica si perfeziona 10 giorni dopo, con valore legale, ma senza
+    // notifica si perfeziona con valore legale, ma senza
     // consegna al destinatario: l'operatore deve vederlo.
     const viaUnreachable = last.sendStatus === 'EFFECTIVE_DATE' && (last.sendStatusHistory ?? []).some((h) => h.status === 'UNREACHABLE');
     const note = posteOutcome
       // "returned" scatta al primo movimento con flagRitorno: per SEND il plico
       // torna al recapitista, la restituzione è avviata, non conclusa.
       ? `Poste: ${posteOutcome.status === 'delivered' ? 'consegnata' : 'restituzione al mittente avviata'}${posteWhen ? ` il ${new Date(posteWhen).toLocaleDateString('it-IT')}` : ''}; SEND non ha ancora ricevuto l'esito dal recapitista`
-      : viaUnreachable
-      ? "Destinatario irreperibile: nessuna consegna, la notifica si è perfezionata 10 giorni dopo il deposito dell'avviso su SEND (art. 26, comma 7, D.L. 76/2020)"
+      : viaUnreachable && !last.sendPerfection
+      ? "Destinatario irreperibile: nessuna consegna. Date nella timeline qui sopra (art. 26, comma 7, D.L. 76/2020)."
       : null;
     // Data dello stato secondo PN (storico), non dell'ultimo sync: un
     // ri-sync (backfill) spostava "Perfezionata" alla data del ri-sync.

@@ -107,6 +107,8 @@ Lo ZIP con i PDF e **Crea bozza campagna** sono riservati a chi ha caricato il t
 
 ### Seguire lo stato di una campagna
 
+L'elenco mostra 20 campagne per pagina. La casella di ricerca cerca per nome o ID; per stato, autore, tipo e date usa i filtri accanto.
+
 1. Apri **Lista Campagne** e scegli la campagna.
 2. Il dettaglio mostra lo stato di ogni destinatario (In coda, Inviato, Letto, Fallito…) e si aggiorna da solo mentre l'invio è in corso.
 3. Per ogni destinatario si vede il **canale effettivo**: per il dirottamento su domicilio digitale può essere diverso da quello della campagna.
@@ -115,7 +117,7 @@ Lo ZIP con i PDF e **Crea bozza campagna** sono riservati a chi ha caricato il t
 
 ### Cercare una singola notifica
 
-Apri **Ricerca Notifiche** e cerca per codice fiscale, nome, email, PEC o IUN. Funziona anche a distanza di tempo dall'invio. Il nome della campagna, nei risultati e nel dettaglio della notifica, apre la campagna. I filtri permettono, ad esempio, di vedere solo le notifiche lette o quelle restituite al mittente.
+Apri **Ricerca Notifiche** e cerca per codice fiscale, nome, email, PEC o IUN. Funziona anche a distanza di tempo dall'invio. Il nome della campagna, nei risultati e nel dettaglio della notifica, apre la campagna. I filtri permettono, ad esempio, di vedere solo le notifiche lette o quelle restituite al mittente. Il filtro **Autore** limita la ricerca alle notifiche delle campagne create da un certo operatore. I risultati sono 20 per pagina: scorri le pagine con i pulsanti **Precedente** e **Successiva** sotto l'elenco.
 
 Una notifica ha due date, una per ciascuna parte (scissione degli effetti; per SEND art. 26, comma 9, D.L. 76/2020):
 
@@ -247,7 +249,9 @@ Per contare un termine del destinatario usa sempre la **data per il destinatario
 | PEC o domicilio digitale | il 7° giorno dopo la consegna nella casella (se consegnata dopo le 21, dal giorno successivo) |
 | PEC piena, non valida o non attiva | il 15° giorno dopo il deposito dell'avviso di mancato recapito |
 | Avviso cartaceo (raccomandata) | il 10° giorno dopo il perfezionamento della notifica cartacea: consegna, ritiro o compiuta giacenza |
-| Destinatario irreperibile | 10 giorni dopo il deposito dell'avviso su SEND (comma 7) |
+| Destinatario irreperibile | 10 giorni dopo il deposito dell'avviso su SEND ([art. 26, comma 7](https://www.normattiva.it/uri-res/N2Ls?urn:nir:stato:decreto.legge:2020-07-16;76~art26)); prima se accede a SEND |
+
+Nel dettaglio di una notifica SEND una timeline mostra le tappe fino alla data di notifica per il destinatario: le date passate, quelle previste o stimate e la data di oggi. Vale sempre la data indicata da SEND quando arriva. Passando sopra una data (o toccandola) si apre la spiegazione di quella tappa con il riferimento di legge.
 
 La data esatta la calcola SEND ed è quella riportata nel dettaglio della notifica.
 
@@ -278,7 +282,7 @@ Le date si trovano nel dettaglio della notifica, nell'elenco destinatari della c
 
 Cosa fare dipende dal canale.
 
-**SEND.** Se il destinatario è irreperibile, SEND deposita l'avviso sulla piattaforma e la notifica **si perfeziona da sola 10 giorni dopo** ([art. 26 D.L. 76/2020](https://www.normattiva.it/uri-res/N2Ls?urn:nir:stato:decreto.legge:2020-07-16;76~art26), comma 7). Il dettaglio della notifica lo segnala con «nessuna consegna». La notifica è valida, ma il destinatario può chiedere di essere rimesso in termini se dimostra di non averne avuto conoscenza senza sua colpa. Per atti pesanti (ordinanze, sanzioni rilevanti, iscrizioni a ruolo):
+**SEND.** Se il destinatario è irreperibile, SEND deposita l'avviso sulla piattaforma e la notifica **si perfeziona da sola 10 giorni dopo** ([art. 26 D.L. 76/2020](https://www.normattiva.it/uri-res/N2Ls?urn:nir:stato:decreto.legge:2020-07-16;76~art26), comma 7). Il dettaglio della notifica lo segnala con «nessuna consegna». Nel **Percorso**, ogni spedizione cartacea mostra l'indirizzo a cui è stata inviata, compreso quello del secondo tentativo trovato da SEND. La notifica è valida, ma il destinatario può chiedere di essere rimesso in termini se dimostra di non averne avuto conoscenza senza sua colpa. Per atti pesanti (ordinanze, sanzioni rilevanti, iscrizioni a ruolo):
 
 1. verifica la residenza in **Verifica Anagrafica** (ANPR) e il domicilio digitale (INAD, Registro Imprese);
 2. se trovi un indirizzo nuovo e valido, valuta con il responsabile del procedimento una nuova notifica, anche se la prima è perfezionata;
