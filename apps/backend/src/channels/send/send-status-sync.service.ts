@@ -111,7 +111,10 @@ export class SendStatusSyncService {
           + ` OR ${LEGACY_TIMELINE_SQL})`,
         { terminal: TERMINAL_STATUSES },
       )
-      .orderBy('attempt.created_at', 'ASC')
+      // Prima il sync live, poi il backfill legacy: con tante timeline vecchie il
+      // batch non deve riempirsi solo di backfill lasciando ferme le notifiche in corso.
+      .orderBy(`CASE WHEN ${LEGACY_TIMELINE_SQL} THEN 1 ELSE 0 END`, 'ASC')
+      .addOrderBy('attempt.created_at', 'ASC')
       .take(BATCH_SIZE)
       .getMany();
 

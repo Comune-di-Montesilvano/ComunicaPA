@@ -121,6 +121,45 @@ describe('send-status-history.util', () => {
       expect(json).not.toContain('rossi@pec');
     });
 
+    it('strips address details, delegate info, analog address rows and refusal detail', () => {
+      const data = {
+        timeline: [{
+          category: 'REQUEST_REFUSED',
+          timestamp: '2026-11-02T10:00:00Z',
+          details: {
+            foundAddress: { address: 'VIA X', addressDetails: 'SCALA B INT 4' },
+            addressDetails: 'PIANO 3 SCALA C',
+            delegateInfo: { internalId: 'x-int', operatorUuid: 'y-op', mandateId: 'z-man' },
+            prepareRequest: {
+              fullname: 'ROSSI MARIO',
+              nameRow2: 'PRESSO ACME SRL',
+              addressRow2: 'CORTILE INTERNO',
+              cap: '00199',
+              city: 'CITTAFINTA',
+              city2: 'FRAZIONEFINTA',
+              pr: 'ZZ',
+              country: 'ITALIAFINTA',
+              productType: 'AR',
+            },
+            refusalReasons: [{ errorCode: 'E1', detail: 'RSSMRA80A01H501U non valido' }],
+          },
+        }],
+      };
+
+      const [ev] = extractSendTimeline(data);
+
+      expect(ev.details).toEqual({ prepareRequest: { productType: 'AR' }, refusalReasons: [{ errorCode: 'E1' }] });
+      const json = JSON.stringify(ev);
+      for (const v of ['VIA X', 'SCALA B', 'PIANO 3', 'x-int', 'y-op', 'z-man', 'ROSSI MARIO', 'ACME SRL', 'CORTILE', '00199', 'CITTAFINTA', 'FRAZIONEFINTA', '"ZZ"', 'ITALIAFINTA', 'RSSMRA80A01H501U']) {
+        expect(json).not.toContain(v);
+      }
+    });
+
+    it('keeps detail outside refusalReasons', () => {
+      const data = { timeline: [{ category: 'X', timestamp: '2026-11-02T10:00:00Z', details: { detail: 'ok' } }] };
+      expect(extractSendTimeline(data)[0].details).toEqual({ detail: 'ok' });
+    });
+
     it('keeps event timestamp at while stripping details.at', () => {
       const data = { timeline: [{ category: 'REFINEMENT', timestamp: '2026-11-02T10:00:00Z', details: { at: 'VIA X' } }] };
 

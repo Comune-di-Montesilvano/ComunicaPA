@@ -490,6 +490,31 @@ describe('NotificationsSearchService.getDetail', () => {
     expect(result.attempts[0]!.sendPerfection).toBeNull();
   });
 
+  it.each([
+    ['senza IUN', { iun: null }],
+    ['tentativo fallito', { status: 'failed' }],
+    ['sendStatus REFUSED', { sendStatus: 'REFUSED', sendStatusHistory: [{ status: 'REFUSED', activeFrom: '2026-07-10T11:00:00Z' }] }],
+    ['REFUSED solo nello storico', { sendStatus: null, sendStatusHistory: [{ status: 'REFUSED', activeFrom: '2026-07-10T11:00:00Z' }] }],
+    ['sendStatus CANCELLED', { sendStatus: 'CANCELLED' }],
+  ])('SEND %s: sendPerfection null', async (_label, override) => {
+    recipientRepoMock.findOne.mockResolvedValueOnce({
+      id: 'r1', codiceFiscale: 'RSSMRA80A01H501U', fullName: 'ROSSI MARIO', email: null, pec: null, status: 'sent', extraData: {},
+      campaign: { id: 'c1', name: 'Avviso', channelType: 'SEND', channelConfig: {} },
+    });
+    attemptRepoMock.find.mockResolvedValueOnce([{
+      id: 'a1', attemptNumber: 1, status: 'success', channelType: 'SEND', errorMessage: null,
+      sentAt: new Date('2026-07-10T10:00:00Z'), createdAt: new Date('2026-07-10T09:00:00Z'), responsePayload: null,
+      iun: 'ABCD-EFGH-ILMN-202607-X-1', sendStatus: 'ACCEPTED', sendStatusUpdatedAt: new Date('2026-07-10T10:00:00Z'),
+      sendStatusHistory: [{ status: 'ACCEPTED', activeFrom: '2026-07-10T10:00:00Z' }],
+      sendTimeline: [],
+      ...override,
+    }]);
+    downloadEventRepoMock.find.mockResolvedValueOnce([]);
+    campaignsServiceMock.renderMessageForRecipient.mockResolvedValueOnce({ subject: 'Avviso', bodyHtml: '' });
+    const result = await service.getDetail('r1', ADMIN);
+    expect(result.attempts[0]!.sendPerfection).toBeNull();
+  });
+
   it('POSTAL: esito legale nel dettaglio (compiuta giacenza = consegnato, data GlobalCom)', async () => {
     recipientRepoMock.findOne.mockResolvedValueOnce({
       id: 'r-postal', codiceFiscale: 'RSSMRA80A01H501U', fullName: 'ROSSI MARIO', email: null, pec: null, status: 'sent', extraData: {}, inadCheck: null,

@@ -45,8 +45,10 @@ Oggi `extractSendTimeline` è una whitelist: 11 categorie e 8 campi dei dettagli
 
 - Si tengono tutte le categorie. Ogni evento conserva i campi già normalizzati, così i consumatori esistenti restano invariati, e in più `details`: copia dei dettagli PN depurata.
 - La depurazione è **ricorsiva** e toglie una lista chiusa di chiavi a qualunque profondità:
-  - indirizzi: `physicalAddress`, `digitalAddress`, `newAddress`, `normalizedAddress`, `oldAddress`, `address`, `at`, `municipality`, `municipalityDetails`, `zip`, `province`, `foreignState`;
-  - identità del destinatario: `taxId`, `denomination`, `recipient`, `recipientId`.
+  - indirizzi: `physicalAddress`, `digitalAddress`, `newAddress`, `normalizedAddress`, `oldAddress`, `address`, `at`, `municipality`, `municipalityDetails`, `zip`, `province`, `foreignState`, `foundAddress`, `addressDetails`;
+  - righe dell'indirizzo cartaceo: `fullname`, `nameRow2`, `addressRow2`, `cap`, `city`, `city2`, `pr`, `country`;
+  - identità del destinatario e del delegato: `taxId`, `denomination`, `recipient`, `recipientId`, `delegateInfo`;
+  - testo libero: `detail` dentro ogni elemento di `refusalReasons` (PN può ripetere un codice fiscale); `errorCode` e gli altri campi restano.
 
   Fanno eccezione i campi tecnici già estratti prima della depurazione: oggi da `digitalAddress` si prende solo il `type` (in `channel`).
 - I tipi stanno sia in `SendTimelineEvent`, backend e frontend, sia in `AttemptDetailDto`: `details?: Record<string, unknown>`.
@@ -80,9 +82,9 @@ Prima tappa sempre "**Notificata per l'ente**" = `sendEntityLegalDateOf` (stato 
 | Digitale fallito, mancato recapito depositato | "Avviso di mancato recapito depositato" (`DIGITAL_FAILURE_WORKFLOW`); poi segue il cartaceo se PN lo avvia |
 | Cartaceo consegnato / compiuta giacenza | "Avviso cartaceo consegnato" (o "in giacenza"), da `SEND_ANALOG_FEEDBACK` / `ANALOG_SUCCESS_WORKFLOW` |
 | Irreperibile totale | "Avviso depositato su SEND" (data di `UNREACHABLE` o `COMPLETELY_UNREACHABLE`, rosso), "Avviso perfezionato" (+10) |
-| Aperta dal destinatario | "Visualizzata su SEND" (`VIEWED`); se anteriore diventa la data finale |
+| Aperta dal destinatario | "Visualizzata su SEND" (`VIEWED`); se anteriore diventa la data finale; se successiva alla data finale non si mostra (irrilevante dopo il perfezionamento) |
 
-Il raggruppamento esatto degli stati PN nei percorsi è lasciato al builder. Unico vincolo: ogni notifica SEND non annullata cade in uno dei percorsi, con "in lavorazione" come ripiego.
+Il raggruppamento esatto degli stati PN nei percorsi è lasciato al builder. Unico vincolo: ogni notifica SEND con IUN, non annullata né rifiutata (`CANCELLED`/`REFUSED` → nessuna timeline; tentativo fallito o senza IUN → nessuna timeline), cade in uno dei percorsi, con "in lavorazione" come ripiego.
 
 ## Nota sotto la timeline
 

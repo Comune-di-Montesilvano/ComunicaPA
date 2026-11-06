@@ -24,6 +24,7 @@ function makeQueryBuilder(results: any[]) {
     where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
+    addOrderBy: jest.fn().mockReturnThis(),
     take: jest.fn().mockReturnThis(),
     getMany: jest.fn(async () => results),
   };
@@ -142,8 +143,9 @@ describe('SendStatusSyncService', () => {
       { status: 'DELIVERED', activeFrom: '2026-01-12T09:00:00Z' },
     ]);
     expect(attempt.sendDigitalDomicile).toEqual({ type: 'PEC', address: 'x@pec.it', source: 'PLATFORM' });
+    expect(qb.orderBy).toHaveBeenCalledWith(`CASE WHEN ${LEGACY_TIMELINE_SQL} THEN 1 ELSE 0 END`, 'ASC');
+    expect(qb.addOrderBy).toHaveBeenCalledWith('attempt.created_at', 'ASC');
     expect(mockRepo.save).toHaveBeenCalledWith(attempt);
-    expect(qb.orderBy).toHaveBeenCalledWith('attempt.created_at', 'ASC');
   });
 
   it('updateStatuses: calcola e salva cost_cents (base fee + analogico) da timeline PN', async () => {
@@ -288,6 +290,19 @@ describe('SendStatusSyncService', () => {
 
     const hit = qb.andWhere.mock.calls.some(([sql]: [string]) => /NOT IN/.test(sql) && sql.includes(` OR ${LEGACY_TIMELINE_SQL}`));
     expect(hit).toBe(true);
+  });
+
+  it('updateStatuses: righe del backfill legacy in coda, il sync live non resta affamato', async () => {
+    const qb = makeQueryBuilder([]);
+    mockRepo.createQueryBuilder.mockReturnValue(qb);
+
+    await service.updateStatuses();
+
+    expect(qb.orderBy).toHaveBeenCalledTimes(1);
+    expect(qb.orderBy).toHaveBeenCalledWith(`CASE WHEN ${LEGACY_TIMELINE_SQL} THEN 1 ELSE 0 END`, 'ASC');
+    expect(qb.addOrderBy).toHaveBeenCalledWith('attempt.created_at', 'ASC');
+    expect(qb.orderBy.mock.invocationCallOrder[0]).toBeLessThan(qb.addOrderBy.mock.invocationCallOrder[0]);
+    expect(qb.take).toHaveBeenCalledWith(200);
   });
 
   it('rewrites timeline when only details changed (backfill terminale senza details)', async () => {

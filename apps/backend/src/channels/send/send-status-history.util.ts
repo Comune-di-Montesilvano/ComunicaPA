@@ -127,7 +127,22 @@ export const SEND_TIMELINE_PII_KEYS: readonly string[] = [
   'denomination',
   'recipient',
   'recipientId',
+  'foundAddress',
+  'addressDetails',
+  'delegateInfo',
+  // Righe indirizzo cartaceo (prepare/send analog request).
+  'fullname',
+  'nameRow2',
+  'addressRow2',
+  'cap',
+  'city',
+  'city2',
+  'pr',
+  'country',
 ];
+
+/** Testo libero di PN che può ripetere un codice fiscale: tolto dagli elementi di `refusalReasons`. */
+const REFUSAL_REASON_FREE_TEXT_KEYS: readonly string[] = ['detail'];
 
 /** Copia profonda (array e oggetti semplici) senza le chiavi PII. */
 export function stripSendPii(value: unknown): unknown {
@@ -136,11 +151,21 @@ export function stripSendPii(value: unknown): unknown {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value)) {
       if (SEND_TIMELINE_PII_KEYS.includes(k)) continue;
-      out[k] = stripSendPii(v);
+      out[k] = k === 'refusalReasons' && Array.isArray(v) ? v.map(stripRefusalReason) : stripSendPii(v);
     }
     return out;
   }
   return value;
+}
+
+function stripRefusalReason(reason: unknown): unknown {
+  const stripped = stripSendPii(reason);
+  if (!stripped || typeof stripped !== 'object' || Array.isArray(stripped)) return stripped;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(stripped)) {
+    if (!REFUSAL_REASON_FREE_TEXT_KEYS.includes(k)) out[k] = v;
+  }
+  return out;
 }
 
 /**

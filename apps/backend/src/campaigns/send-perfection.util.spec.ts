@@ -107,6 +107,38 @@ describe('buildSendPerfection', () => {
     expect(keys(p)).toEqual(['entity', 'deposited', 'viewed', 'recipient']);
   });
 
+  it('VIEWED dopo il perfezionamento: tappa esclusa, date in ordine', () => {
+    const h = [
+      ...irrHistory,
+      { status: 'EFFECTIVE_DATE', activeFrom: '2026-11-23T05:00:00Z' },
+      { status: 'VIEWED', activeFrom: '2026-11-30T09:00:00Z' },
+    ];
+    const p = buildSendPerfection('VIEWED', h, [], now);
+    expect(p!.finalSource).toBe('pn');
+    expect(p!.finalDate).toBe('2026-11-23');
+    expect(keys(p)).toEqual(['entity', 'deposited', 'aar_refined', 'recipient']);
+    const ds = dates(p).filter((d): d is string => d !== null);
+    expect([...ds].sort()).toEqual(ds);
+  });
+
+  it('pn_scheduled prima della data calcolata: niente aar_refined', () => {
+    const p = buildSendPerfection('UNREACHABLE', irrHistory, [sched('2026-11-04T10:00:00Z', '2026-11-10T10:00:00Z')], now);
+    expect(p!.finalSource).toBe('pn_scheduled');
+    expect(p!.finalDate).toBe('2026-11-10');
+    expect(keys(p)).toEqual(['entity', 'deposited', 'recipient']);
+  });
+
+  it('SEND_DIGITAL_FEEDBACK senza responseStatus non è consegna', () => {
+    const p = buildSendPerfection('DELIVERING', [ACCEPTED, DELIVERING], [ev('SEND_DIGITAL_FEEDBACK', '2026-11-03T10:00:00Z')], now);
+    expect(keys(p)).toEqual(['entity', 'delivering', 'recipient']);
+    expect(p!.finalSource).toBe('none');
+  });
+
+  it('REFUSED', () => {
+    expect(buildSendPerfection('REFUSED', [{ status: 'REFUSED', activeFrom: '2026-10-15T09:00:00Z' }], [], now)).toBeNull();
+    expect(buildSendPerfection(null, [{ status: 'REFUSED', activeFrom: '2026-10-15T09:00:00Z' }], [], now)).toBeNull();
+  });
+
   it('CANCELLED', () => {
     expect(buildSendPerfection('CANCELLED', [ACCEPTED], [], now)).toBeNull();
     expect(buildSendPerfection(null, [ACCEPTED, { status: 'CANCELLED', activeFrom: '2026-10-20T09:00:00Z' }], [], now)).toBeNull();

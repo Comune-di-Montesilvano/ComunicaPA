@@ -322,7 +322,9 @@ export class NotificationsSearchService {
             sendStatusUpdatedAt: a.sendStatusUpdatedAt ? a.sendStatusUpdatedAt.toISOString() : null,
             sendStatusHistory: a.sendStatusHistory ?? null,
             sendTimeline: a.sendTimeline ?? null,
-            sendPerfection: a.channelType === 'SEND'
+            // Solo tentativi diventati notifica PN (IUN assegnato, non falliti);
+            // REFUSED/CANCELLED li esclude buildSendPerfection.
+            sendPerfection: a.channelType === 'SEND' && !!a.iun && a.status !== 'failed'
               ? buildSendPerfection(a.sendStatus, a.sendStatusHistory, a.sendTimeline, new Date())
               : null,
             protocolNumber: protoNum,

@@ -98,7 +98,9 @@ export function buildSendPerfection(
   now: Date,
 ): SendPerfection | null {
   const hist = (history ?? []).filter((h) => h && typeof h.status === 'string');
-  if (sendStatus === 'CANCELLED' || hist.some((h) => h.status === 'CANCELLED')) return null;
+  // Annullata o rifiutata da PN: nessun perfezionamento da mostrare.
+  const noTimeline = (s: string | null) => s === 'CANCELLED' || s === 'REFUSED';
+  if (noTimeline(sendStatus) || hist.some((h) => noTimeline(h.status))) return null;
   // Solo eventi con timestamp valido, in ordine cronologico.
   const events = (timeline ?? [])
     .filter((e) => e && validDate(e.at))
@@ -122,7 +124,7 @@ export function buildSendPerfection(
   );
   const digitalFailure = first((e) => e.category === 'DIGITAL_FAILURE_WORKFLOW');
   const digitalOk = first(
-    (e) => (e.category === 'SEND_DIGITAL_FEEDBACK' && e.responseStatus !== 'KO') || e.category === 'DIGITAL_SUCCESS_WORKFLOW',
+    (e) => (e.category === 'SEND_DIGITAL_FEEDBACK' && e.responseStatus === 'OK') || e.category === 'DIGITAL_SUCCESS_WORKFLOW',
   );
 
   if (unreachableHist || unreachableEv) {
@@ -150,9 +152,6 @@ export function buildSendPerfection(
     steps.push(mk('delivering', d, d ? 'done' : 'expected'));
   }
 
-  const viewed = histEntry('VIEWED');
-  if (viewed) steps.push(mk('viewed', romeDate(viewed.activeFrom), 'done'));
-
   // Data finale: PN effettiva > PN programmata > stima > nessuna.
   let finalSource: PerfectionFinalSource;
   let finalDate: string | null;
@@ -176,12 +175,18 @@ export function buildSendPerfection(
     finalDate = null;
   }
 
-  if (lawStepIndex >= 0 && finalSource === 'pn') {
+  if (lawStepIndex >= 0 && (finalSource === 'pn' || finalSource === 'pn_scheduled')) {
     const aar = steps[lawStepIndex]!;
-    // Perfezionata prima della data calcolata (es. presa visione): la tappa non ha più senso.
+    // Perfezionata (o programmata) prima della data calcolata (es. presa visione): la tappa non ha più senso.
     if (aar.date && finalDate && aar.date > finalDate) steps.splice(lawStepIndex, 1);
-    else aar.state = 'done';
+    else if (finalSource === 'pn') aar.state = 'done';
   }
+
+  // La presa visione conta solo se non successiva alla data finale: dopo il
+  // perfezionamento è irrilevante per legge e romperebbe l'ordine delle date.
+  const viewed = histEntry('VIEWED');
+  const viewedDate = viewed ? romeDate(viewed.activeFrom) : null;
+  if (viewed && (!viewedDate || !finalDate || viewedDate <= finalDate)) steps.push(mk('viewed', viewedDate, 'done'));
   steps.push(
     mk('recipient', finalDate, finalSource === 'pn' ? 'done' : 'expected', finalSource === 'estimate' ? estimateOffset : undefined),
   );
