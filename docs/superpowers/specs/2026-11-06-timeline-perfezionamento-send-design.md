@@ -55,7 +55,7 @@ Oggi `extractSendTimeline` è una whitelist: 11 categorie e 8 campi dei dettagli
 1. **Data effettiva PN**: `sendLegalDateOf(sendStatusHistory)`, cioè la minima tra `VIEWED` ed `EFFECTIVE_DATE`. È la stessa data della colonna "Notificata per il destinatario": la timeline la mostra come tappa finale confermata.
 2. **Data programmata da PN**: evento di timeline PN `SCHEDULE_REFINEMENT`, che porta la data in cui PN perfezionerà la notifica. Oggi `extractSendTimeline` (`apps/backend/src/channels/send/send-status-history.util.ts`, `SEND_TIMELINE_CATEGORIES`) non lo conserva.
    - Va aggiunto, insieme a `REFINEMENT` e alle categorie utili per le tappe intermedie: `COMPLETELY_UNREACHABLE`, `DIGITAL_SUCCESS_WORKFLOW`, `ANALOG_SUCCESS_WORKFLOW`, `NOTIFICATION_VIEWED`.
-   - Si conserva solo la data di programmazione, mai indirizzi né dati del destinatario. Stesso principio già scritto sopra `SendTimelineEvent`.
+   - Si conservano i dettagli dell'evento tolti i dati identificativi del destinatario (denylist in `send-status-history.util.ts`). Gli indirizzi di spedizione restano: servono per mostrare dove è andato ogni tentativo.
    - **Primo passo dell'implementazione**: verificare su una risposta PN reale il nome del campo dei dettagli di `SCHEDULE_REFINEMENT` (atteso `schedulingDate`) e la presenza delle categorie elencate. Fonte: risposta salvata di un attempt SEND reale, o doc/OpenAPI PN. Se il campo non esiste o ha altro nome, adeguare. Se non è disponibile affatto, si usa solo il punto 3.
    - La timeline si ripopola al poll successivo di `SendStatusSyncService`, che sovrascrive la timeline intera: nessuna migration, la colonna `send_timeline` è già jsonb.
 3. **Stima nostra** (ripiego), dalle regole del comma 9 lett. b, solo se mancano 1 e 2:
@@ -85,8 +85,10 @@ Il raggruppamento esatto degli stati PN nei percorsi è lasciato al builder. Uni
 
 - Data finale effettiva (punto 1): "Notificata per il destinatario il gg/mm/aaaa secondo SEND."
 - Data programmata da PN (punto 2): "Prevista da SEND per il gg/mm/aaaa, prima se il destinatario apre la notifica."
-- Stima nostra (punto 3): "Data stimata (art. 26, comma 9, D.L. 76/2020): si conferma con l'esito di SEND; prima se il destinatario apre la notifica."
+- Stima nostra (punto 3): "Data stimata (art. 26, comma 9 — comma 7 per l'irreperibile, D.L. 76/2020): si conferma con l'esito di SEND; prima se il destinatario apre la notifica."
 - Nessuna data: "La data dipende dall'esito del recapito: la indicherà SEND."
+
+La nota si mostra nel popover della tappa "Notificata per il destinatario", non più sotto la timeline.
 
 La frase attuale "Destinatario irreperibile: … 10 giorni dopo il deposito (art. 26, comma 7)" va tolta o corretta: la timeline ne prende il posto. "Nessuna consegna al destinatario" e il link "Cosa fare" restano.
 
@@ -107,7 +109,7 @@ I titoli esistenti non vanno rinominati (`check-guida.mjs`).
   - apertura anteriore alla data prevista;
   - `CANCELLED` (nessuna timeline).
 - Test con fusi orari UTC ed Europe/Rome, perché la CI gira in UTC (CLAUDE.md).
-- `extractSendTimeline`: le nuove categorie vengono conservate con la data di programmazione e senza campi di indirizzo.
+- `extractSendTimeline`: le nuove categorie vengono conservate con i dettagli PN senza dati identificativi del destinatario (indirizzi di spedizione conservati).
 
 ## Decisioni dopo la revisione (2026-11-06)
 

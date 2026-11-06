@@ -58,7 +58,7 @@ function noteOf(data: SendPerfection): string {
     case 'pn_scheduled':
       return `Prevista da SEND per il ${d}, prima se il destinatario apre la notifica.`;
     case 'estimate':
-      return 'Data stimata (art. 26, comma 9, D.L. 76/2020): si conferma con l\'esito di SEND; prima se il destinatario apre la notifica.';
+      return `Data stimata (art. 26, comma ${data.steps.some((s) => s.key === 'deposited') ? 7 : 9}, D.L. 76/2020): si conferma con l'esito di SEND; prima se il destinatario apre la notifica.`;
     default:
       return 'La data dipende dall\'esito del recapito: la indicherà SEND.';
   }
@@ -145,7 +145,7 @@ export function SendPerfectionTimeline({ data, onOpenGuida }: { data: SendPerfec
           );
         })}
       </ol>
-      <p className="nd-perf-hint">Passa sopra una data per i riferimenti di legge.</p>
+      <p className="nd-perf-hint">Passa sopra o tocca una data per i riferimenti di legge.</p>
     </div>
   );
 }

@@ -164,6 +164,7 @@ function formatPhysicalAddress(v: unknown): string | null {
 function shipmentAddress(e: SendTimelineEvent, timeline: readonly SendTimelineEvent[]): string | null {
   const own = formatPhysicalAddress(e.details?.['physicalAddress']);
   if (own) return own;
+  if (e.category !== 'SEND_ANALOG_DOMICILE') return null;
   for (const x of timeline) {
     if (x.category !== 'PREPARE_ANALOG_DOMICILE' || (x.attempt ?? 0) !== (e.attempt ?? 0)) continue;
     const addr = formatPhysicalAddress(x.details?.['physicalAddress']);
