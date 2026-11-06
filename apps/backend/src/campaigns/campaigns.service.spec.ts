@@ -163,10 +163,30 @@ describe('CampaignsService', () => {
     mockInadService.getBulkState.mockResolvedValue('DISPONIBILE');
   });
 
-  it('findAll returns array', async () => {
-    const result = await service.findAll();
+  function mockFindAllQb() {
+    const qb: any = {};
+    ['orderBy', 'andWhere'].forEach((m) => { qb[m] = jest.fn().mockReturnValue(qb); });
+    qb.getMany = jest.fn().mockResolvedValue([mockCampaign]);
+    mockCampaignRepo.createQueryBuilder.mockReturnValueOnce(qb);
+    return qb;
+  }
+
+  it('findAll (admin) restituisce tutte le campagne, nessun filtro bozze', async () => {
+    const qb = mockFindAllQb();
+    const result = await service.findAll(ADMIN_REQUESTER);
     expect(result).toEqual([mockCampaign]);
-    expect(mockCampaignRepo.find).toHaveBeenCalledWith({ order: { createdAt: 'DESC' } });
+    expect(mockCampaignRepo.createQueryBuilder).toHaveBeenCalledWith('c');
+    expect(qb.orderBy).toHaveBeenCalledWith('c.createdAt', 'DESC');
+    expect(qb.andWhere).not.toHaveBeenCalled();
+  });
+
+  it('findAll (user) filtra in SQL le bozze altrui: non bozza, creatore o firmatario', async () => {
+    const qb = mockFindAllQb();
+    await service.findAll({ username: 'bianchi', role: 'user' });
+    expect(qb.andWhere).toHaveBeenCalledWith(
+      "(c.status <> 'draft' OR c.created_by = :visibleCampaignUser OR c.signer_username = :visibleCampaignUser)",
+      { visibleCampaignUser: 'bianchi' },
+    );
   });
 
   it('findOne returns campaign by id', async () => {

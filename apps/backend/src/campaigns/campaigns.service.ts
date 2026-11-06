@@ -52,6 +52,7 @@ import { PostalPosteTracking } from '../entities/postal-poste-tracking.entity.js
 import { RemoteSignJob, RemoteSignJobStatus } from '../entities/remote-sign-job.entity.js';
 import { postalLegalOutcome, postalLegalOutcomeSql, POSTAL_GLOBALCOM_ERROR_SQL, isPostalLegalOutcome } from './postal-legal-outcome.util.js';
 import { POSTE_DELIVERED_BUCKET, formatLastMovement, isPosteDeliveredOverride, posteDeliveredSql, posteSummaryOf } from '../channels/postal/poste-tracking/poste-tracking-effective.util.js';
+import { visibleCampaignSql } from './campaign-access.util.js';
 
 const INAD_BULK_THRESHOLD = 100;
 // Sentinella filtro "Stato Consegna" per attempt SUCCESS senza send_status/postal_status
@@ -186,8 +187,13 @@ export class CampaignsService {
     private readonly remoteSignJobRepo?: Repository<RemoteSignJob>,
   ) {}
 
-  findAll(): Promise<Campaign[]> {
-    return this.campaignRepo.find({ order: { createdAt: 'DESC' } });
+  // Bozze altrui escluse in SQL (visibleCampaignSql): stesso criterio di
+  // canViewCampaign, che il CampaignAccessInterceptor applica al dettaglio.
+  findAll(requester: CampaignRequester): Promise<Campaign[]> {
+    const qb = this.campaignRepo.createQueryBuilder('c').orderBy('c.createdAt', 'DESC');
+    const visible = visibleCampaignSql('c', requester);
+    if (visible) qb.andWhere(visible.sql, visible.params);
+    return qb.getMany();
   }
 
   async findOne(id: string): Promise<Campaign> {
@@ -1963,7 +1969,7 @@ export class CampaignsService {
     return { sentCount, combinations, postalNoDigitalDownloaded };
   }
 
-  async getRecentActivity(): Promise<Array<{
+  async getRecentActivity(requester: CampaignRequester): Promise<Array<{
     id: string;
     name: string;
     channelType: string;
@@ -1975,7 +1981,7 @@ export class CampaignsService {
   }>> {
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    const rows = await this.campaignRepo
+    const qb = this.campaignRepo
       .createQueryBuilder('c')
       .select('c.id', 'id')
       .addSelect('c.name', 'name')
@@ -2003,7 +2009,12 @@ export class CampaignsService {
             AND (na.send_status_updated_at >= :since OR na.postal_status_updated_at >= :since)
         ))`,
         { activeStatuses: [CampaignStatus.QUEUED, CampaignStatus.RUNNING], since },
-      )
+      );
+    // Le bozze sono già escluse sopra: il filtro di visibilità è difesa in
+    // profondità, nel caso quella condizione cambi.
+    const visible = visibleCampaignSql('c', requester);
+    if (visible) qb.andWhere(visible.sql, visible.params);
+    const rows = await qb
       .orderBy('"lastActivityAt"', 'DESC')
       .limit(15)
       .getRawMany();

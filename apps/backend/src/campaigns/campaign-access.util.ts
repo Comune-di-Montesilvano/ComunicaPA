@@ -23,3 +23,21 @@ export function canViewCampaign(
 ): boolean {
   return campaign.status !== CampaignStatus.DRAFT || canReadCampaignAttachments(campaign, requester);
 }
+
+/**
+ * Gemella SQL di canViewCampaign per filtrare elenchi (findAll,
+ * getRecentActivity, ricerca notifiche). `alias` = alias della tabella
+ * campaigns nella query; usa i nomi colonna, quindi vale sia in un
+ * QueryBuilder TypeORM sia in SQL grezzo con parametri nominati.
+ * Admin → null: nessun filtro da applicare.
+ */
+export function visibleCampaignSql(
+  alias: string,
+  requester: Pick<CampaignRequester, 'username' | 'role'>,
+): { sql: string; params: { visibleCampaignUser: string } } | null {
+  if (requester.role === 'admin') return null;
+  return {
+    sql: `(${alias}.status <> 'draft' OR ${alias}.created_by = :visibleCampaignUser OR ${alias}.signer_username = :visibleCampaignUser)`,
+    params: { visibleCampaignUser: requester.username },
+  };
+}

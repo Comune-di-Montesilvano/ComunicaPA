@@ -65,15 +65,15 @@ export class CampaignsController {
   ) {}
 
   @Get()
-  async findAll(): Promise<CampaignWithOwnerDisplay[]> {
-    const campaigns = await this.campaignsService.findAll();
+  async findAll(@Req() req: Request & { user: JwtOperatorPayload }): Promise<CampaignWithOwnerDisplay[]> {
+    const campaigns = await this.campaignsService.findAll(req.user);
     const displayNames = await this.operatorDirectory.resolveMany(campaigns.map((c) => c.createdBy));
     return campaigns.map((c) => ({ ...c, createdByDisplayName: displayNames[c.createdBy] }));
   }
 
   @Get('recent-activity')
-  getRecentActivity() {
-    return this.campaignsService.getRecentActivity();
+  getRecentActivity(@Req() req: Request & { user: JwtOperatorPayload }) {
+    return this.campaignsService.getRecentActivity(req.user);
   }
 
   @Get(':id')

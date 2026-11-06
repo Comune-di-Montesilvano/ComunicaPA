@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { PostalPosteTracking } from '../entities/postal-poste-tracking.entity.js';
 import { RemoteSignJob } from '../entities/remote-sign-job.entity.js';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -22,6 +23,7 @@ import { CampaignContentCorrectionService } from './campaign-content-correction.
 import { CampaignBulkRetryService } from './campaign-bulk-retry.service.js';
 import { CampaignBulkRetryProcessor } from './campaign-bulk-retry.processor.js';
 import { CAMPAIGN_BULK_RETRY_QUEUE } from './campaign-bulk-retry-job.types.js';
+import { CampaignAccessInterceptor } from './campaign-access.interceptor.js';
 
 @Module({
   imports: [
@@ -41,6 +43,9 @@ import { CAMPAIGN_BULK_RETRY_QUEUE } from './campaign-bulk-retry-job.types.js';
     CampaignContentCorrectionService,
     CampaignBulkRetryService,
     CampaignBulkRetryProcessor,
+    // Bozze altrui → 404 su ogni route admin/campaigns/:id/... (anche fuori
+    // da questo modulo): globale, gira dopo i guard JWT/ruoli.
+    { provide: APP_INTERCEPTOR, useClass: CampaignAccessInterceptor },
   ],
   controllers: [CampaignsController],
   exports: [CampaignsService],
