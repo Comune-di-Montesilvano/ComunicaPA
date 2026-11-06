@@ -26,8 +26,7 @@ function dayNum(ymd: string | null): number | null {
 function todayFraction(data: SendPerfection): number | null {
   const n = data.steps.length;
   const today = dayNum(data.today);
-  // Data per il destinatario già confermata da SEND: percorso concluso, "oggi" non dice nulla.
-  if (n < 2 || today === null || data.finalSource === 'pn') return null;
+  if (n < 2 || today === null) return null;
   const dated = data.steps
     .map((s, i) => ({ i, t: dayNum(s.date) }))
     .filter((x): x is { i: number; t: number } => x.t !== null);
@@ -94,7 +93,10 @@ function explanationOf(step: SendPerfectionStep, data: SendPerfection): string {
 /** Timeline orizzontale delle tappe fino alla notifica per il destinatario. */
 export function SendPerfectionTimeline({ data, onOpenGuida }: { data: SendPerfection; onOpenGuida?: (anchor: string) => void }): React.JSX.Element {
   const n = data.steps.length;
-  const frac = todayFraction(data);
+  // Data per il destinatario già confermata da SEND: percorso concluso, linea piena
+  // e niente "oggi" (non dice nulla); altrimenti la linea si riempie fino a oggi.
+  const done = data.finalSource === 'pn' && n >= 2;
+  const frac = done ? 1 : todayFraction(data);
   const pct = frac === null ? null : `${(frac * 100).toFixed(2)}%`;
   const [openKey, setOpenKey] = React.useState<string | null>(null);
   // Chiude solo se è ancora aperto QUELLO: il timer di A non deve chiudere B appena aperto.
@@ -106,7 +108,7 @@ export function SendPerfectionTimeline({ data, onOpenGuida }: { data: SendPerfec
         {pct !== null && (
           <li className="nd-perf-track" aria-hidden="true">
             <span className="nd-perf-fill" style={{ width: pct }} />
-            <span className="nd-perf-today" style={{ left: pct }}>oggi {fmt(data.today)}</span>
+            {!done && <span className="nd-perf-today" style={{ left: pct }}>oggi {fmt(data.today)}</span>}
           </li>
         )}
         {data.steps.map((s, i) => {
