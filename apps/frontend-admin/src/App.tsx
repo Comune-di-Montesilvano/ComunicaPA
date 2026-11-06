@@ -1598,7 +1598,9 @@ export function App(): React.JSX.Element {
   const [searchDateFrom, setSearchDateFrom] = useState('');
   const [searchDateTo, setSearchDateTo] = useState('');
   const [searchPage, setSearchPage] = useState(1);
-  const SEARCH_PAGE_SIZE = 50;
+  const SEARCH_PAGE_SIZE = 20;
+  const [searchAuthor, setSearchAuthor] = useState('');
+  const [searchOperators, setSearchOperators] = useState<Array<{ username: string; displayName: string }>>([]);
   const [searchResults, setSearchResults] = useState<Array<{ recipientId: string; campaignId: string; campaignName: string; codiceFiscale: string; fullName: string | null; channelType: string; status: string; createdAt: string; posteVerificationStatus?: string | null }>>([]);
   const [searchTotal, setSearchTotal] = useState(0);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -1855,6 +1857,7 @@ export function App(): React.JSX.Element {
       const params = new URLSearchParams();
       if (searchQuery) params.set('query', searchQuery);
       if (searchCampaignId) params.set('campaignId', searchCampaignId);
+      if (searchAuthor) params.set('createdBy', searchAuthor);
       if (searchChannel) params.set('channelType', searchChannel);
       if (searchStatus) params.set('status', searchStatus);
       if (searchPosteVerification) params.set('posteVerification', searchPosteVerification);
@@ -2232,6 +2235,17 @@ export function App(): React.JSX.Element {
       runNotificationSearch(1);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, token]);
+
+  // Elenco autori per il filtro "Autore": caricato una volta all'apertura della vista.
+  useEffect(() => {
+    if (view !== 'notifiche-ricerca' || !token) return;
+    let cancelled = false;
+    fetch(`${ADMIN_API_BASE}/operators`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list) => { if (!cancelled) setSearchOperators(Array.isArray(list) ? list : []); })
+      .catch(() => { if (!cancelled) setSearchOperators([]); });
+    return () => { cancelled = true; };
   }, [view, token]);
 
   useEffect(() => {
@@ -13180,6 +13194,15 @@ export function App(): React.JSX.Element {
                     <input id="ns-campaign" className="form-control form-control-sm" placeholder="ID o nome campagna" value={searchCampaignId} onChange={e => setSearchCampaignId(e.target.value)} />
                   </div>
                   <div style={{ flex: '1 1 150px', minWidth: 0 }}>
+                    <label className="form-label small text-muted mb-1" htmlFor="ns-author">Autore</label>
+                    <select id="ns-author" className="form-select form-select-sm" value={searchAuthor} onChange={e => setSearchAuthor(e.target.value)}>
+                      <option value="">Tutti</option>
+                      {searchOperators.map(o => (
+                        <option key={o.username} value={o.username}>{o.displayName || o.username}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ flex: '1 1 150px', minWidth: 0 }}>
                     <label className="form-label small text-muted mb-1" htmlFor="ns-channel">Canale</label>
                     <select id="ns-channel" className="form-select form-select-sm" value={searchChannel} onChange={e => setSearchChannel(e.target.value)}>
                       <option value="">Tutti</option>
@@ -13223,12 +13246,12 @@ export function App(): React.JSX.Element {
                     <button type="submit" className="btn btn-primary btn-sm d-inline-flex align-items-center text-nowrap px-3" disabled={searchLoading}>
                       {searchLoading ? <Loader2 className="icon-spin me-1" size={14} /> : <Search className="me-1" size={14} />}Cerca
                     </button>
-                    {(searchQuery || searchCampaignId || searchChannel || searchStatus || searchDateFrom || searchDateTo) && (
+                    {(searchQuery || searchCampaignId || searchAuthor || searchChannel || searchStatus || searchDateFrom || searchDateTo) && (
                       <button
                         type="button"
                         className="btn btn-outline-secondary btn-sm d-inline-flex align-items-center text-nowrap"
                         onClick={() => {
-                          setSearchQuery(''); setSearchCampaignId(''); setSearchChannel('');
+                          setSearchQuery(''); setSearchCampaignId(''); setSearchAuthor(''); setSearchChannel('');
                           setSearchStatus(''); setSearchDateFrom(''); setSearchDateTo('');
                         }}
                       >

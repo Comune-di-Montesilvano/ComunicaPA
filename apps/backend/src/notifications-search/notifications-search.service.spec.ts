@@ -68,6 +68,22 @@ describe('NotificationsSearchService.search', () => {
     );
   });
 
+  it('filtro autore: confronta campaign.createdBy col valore trimmato', async () => {
+    qbMock.getManyAndCount.mockResolvedValue([[], 0]);
+    await service.search({ createdBy: ' mrossi ', page: 1, pageSize: 20 }, ADMIN);
+
+    expect(qbMock.andWhere).toHaveBeenCalledWith('campaign.createdBy = :createdBy', { createdBy: 'mrossi' });
+  });
+
+  it('filtro autore: solo spazi o assente non aggiunge condizioni', async () => {
+    qbMock.getManyAndCount.mockResolvedValue([[], 0]);
+    await service.search({ createdBy: '   ', page: 1, pageSize: 20 }, ADMIN);
+    await service.search({ page: 1, pageSize: 20 }, ADMIN);
+
+    const sql = qbMock.andWhere.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
+    expect(sql).not.toContain('createdBy');
+  });
+
   it('filtro campagna: cerca per id (anche parziale) o nome campagna, case-insensitive', async () => {
     qbMock.getManyAndCount.mockResolvedValue([[], 0]);
     await service.search({ campaignId: '  Avviso TARI ', page: 1, pageSize: 20 }, ADMIN);

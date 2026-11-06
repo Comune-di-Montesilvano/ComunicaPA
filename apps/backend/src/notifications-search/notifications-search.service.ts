@@ -32,6 +32,7 @@ export interface SearchFilters {
   query?: string;
   campaignId?: string;
   channelType?: string;
+  createdBy?: string;
   status?: string;
   dateFrom?: string;
   dateTo?: string;
@@ -97,6 +98,10 @@ export class NotificationsSearchService {
         '(CAST(campaign.id AS text) ILIKE :campaignQ OR campaign.name ILIKE :campaignQ)',
         { campaignQ: `%${campaignText}%` },
       );
+    }
+    const createdByText = filters.createdBy?.trim();
+    if (createdByText) {
+      qb.andWhere('campaign.createdBy = :createdBy', { createdBy: createdByText });
     }
     if (filters.status === 'read') {
       qb.andWhere('recipient.status = :status', { status: 'sent' });
