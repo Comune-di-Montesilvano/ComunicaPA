@@ -36,7 +36,7 @@
     "ldapjs": "^3.0.7",
     "multer": "^2.5.0",
     "node-forge": "^1.4.2",
-    "nodemailer": "^10.2.1",
+    "nodemailer": "^10.3.1",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.0",
     "pdf-lib": "^1.17.0",
