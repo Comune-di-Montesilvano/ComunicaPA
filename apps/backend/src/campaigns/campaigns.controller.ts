@@ -157,8 +157,8 @@ export class CampaignsController {
   }
 
   @Post('preview')
-  previewMessage(@Body() dto: PreviewMessageDto) {
-    return this.campaignsService.previewMessage(dto);
+  previewMessage(@Body() dto: PreviewMessageDto, @Req() req: Request & { user: JwtOperatorPayload }) {
+    return this.campaignsService.previewMessage(dto, req.user);
   }
 
   @Post(':id/recipients/upload')
@@ -683,11 +683,12 @@ export class CampaignsController {
 
   @Get('stats/global/never-downloaded.csv')
   async exportNeverDownloadedCsv(
+    @Req() req: Request & { user: JwtOperatorPayload },
     @Query('dateFrom') dateFrom: string | undefined,
     @Query('dateTo') dateTo: string | undefined,
     @Res() res: Response,
   ): Promise<void> {
-    const rows = await this.campaignsService.getNeverDownloadedRecipients(dateFrom, dateTo);
+    const rows = await this.campaignsService.getNeverDownloadedRecipients(req.user, dateFrom, dateTo);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="mai_scaricato.csv"');
     res.send(buildNeverDownloadedCsv(rows));

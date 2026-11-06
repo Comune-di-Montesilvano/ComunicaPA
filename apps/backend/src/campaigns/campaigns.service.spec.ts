@@ -4,6 +4,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { In } from 'typeorm';
+import { visibleCampaignSql } from './campaign-access.util.js';
 import { CampaignsService, isSingleRecipientFlow } from './campaigns.service.js';
 import { Campaign, CampaignStatus } from '../entities/campaign.entity.js';
 import { RemoteSignJob } from '../entities/remote-sign-job.entity.js';
@@ -2652,7 +2653,7 @@ describe('CampaignsService', () => {
       ]);
       mockRecipientRepo.createQueryBuilder = jest.fn().mockReturnValue(qb);
 
-      const result = await service.getNeverDownloadedRecipients('2026-06-01', '2026-07-08');
+      const result = await service.getNeverDownloadedRecipients(ADMIN_REQUESTER, '2026-06-01', '2026-07-08');
 
       expect(result).toEqual([
         {
@@ -2667,6 +2668,23 @@ describe('CampaignsService', () => {
       expect(qb.andWhere).toHaveBeenCalledWith('r.status = :status', { status: RecipientStatus.SENT });
       // Stesso perimetro del contatore neverDownloadedCount: niente campagne di test.
       expect(qb.andWhere).toHaveBeenCalledWith('c.isTest = false');
+      const sqls = qb.andWhere.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
+      expect(sqls).not.toContain('visibleCampaignUser');
+    });
+
+    it('altro user: righe di bozze non visibili escluse con visibleCampaignSql', async () => {
+      const qb: any = {};
+      ['innerJoinAndSelect', 'where', 'andWhere', 'orderBy'].forEach((m) => {
+        qb[m] = jest.fn().mockReturnValue(qb);
+      });
+      qb.getMany = jest.fn().mockResolvedValue([]);
+      mockRecipientRepo.createQueryBuilder = jest.fn().mockReturnValue(qb);
+      const requester = { username: 'luigi', role: 'user' as const };
+
+      await service.getNeverDownloadedRecipients(requester);
+
+      const expected = visibleCampaignSql('c', requester)!;
+      expect(qb.andWhere).toHaveBeenCalledWith(expected.sql, expected.params);
     });
   });
 
@@ -4322,7 +4340,7 @@ describe('CampaignsService.previewMessage', () => {
       body: 'Gentile %%nominativo%%, scarica %%allegato1%%',
       attachments: [{ key: 'file', label: 'Avviso TARI' }],
       recipient: { codiceFiscale: 'RSSMRA80A01H501U', fullName: 'Mario Rossi' },
-    });
+    }, ADMIN_REQUESTER);
 
     expect(result.subject).toBe('Avviso per Mario Rossi');
     expect(result.bodyHtml).toContain('Comune di Montesilvano');
@@ -4342,7 +4360,7 @@ describe('CampaignsService.previewMessage', () => {
       attachments: [{ key: 'file', label: 'Avviso TARI' }],
       recipient: { codiceFiscale: 'RSSMRA80A01H501U' },
       format: 'markdown',
-    });
+    }, ADMIN_REQUESTER);
 
     expect(result.bodyMarkdown).toContain('- **Avviso TARI**');
     expect(result.bodyHtml).toBeUndefined();
@@ -4373,6 +4391,62 @@ describe('CampaignsService.previewMessage', () => {
 
     expect(result.bodyHtml).toContain('/public/download/');
     expect(result.bodyHtml).toContain('&ch=EMAIL');
+  });
+
+  describe('previewMessage con campaignId + CF reale (riservatezza allegati)', () => {
+    const OTHER = { username: 'luigi', role: 'user' as const };
+    const CREATOR = { username: 'mario', role: 'user' as const };
+    const dto = {
+      channelType: 'EMAIL' as const,
+      subject: 'Avviso',
+      body: 'Scarica %%allegato1%%',
+      attachments: [{ key: 'file', label: 'Avviso TARI' }],
+      campaignId: 'camp-1',
+      recipient: { codiceFiscale: 'RSSMRA80A01H501U' },
+    };
+    const realRecipient = {
+      id: 'real-recipient-1',
+      codiceFiscale: 'RSSMRA80A01H501U',
+      campaign: { id: 'camp-1', status: 'completed', createdBy: 'mario', signerUsername: null },
+    };
+
+    it('requester non ammesso → renderMessage con redactDownloadLinks=true, nessun link firmato', async () => {
+      const moduleRef = await buildModule();
+      const service = moduleRef.get(CampaignsService);
+      (recipientRepoMock.findOne as jest.Mock).mockResolvedValueOnce(realRecipient);
+      const spy = jest.spyOn(service as any, 'renderMessage');
+
+      const result = await service.previewMessage(dto, OTHER);
+
+      expect(spy.mock.calls[0]?.at(-1)).toBe(true);
+      expect(result.bodyHtml).toContain('#allegato-riservato');
+      expect(result.bodyHtml).not.toContain('public/download');
+      expect(result.bodyHtml).not.toContain('sig=');
+    });
+
+    it('creatore → link reale del destinatario come oggi', async () => {
+      const moduleRef = await buildModule();
+      const service = moduleRef.get(CampaignsService);
+      (recipientRepoMock.findOne as jest.Mock).mockResolvedValueOnce(realRecipient);
+      const spy = jest.spyOn(service as any, 'renderMessage');
+
+      const result = await service.previewMessage(dto, CREATOR);
+
+      expect(spy.mock.calls[0]?.at(-1)).toBe(false);
+      expect(result.bodyHtml).toContain('/public/download/real-recipient-1/0?exp=');
+    });
+
+    it('senza campaignId → invariato (link su id casuale, nessuna lettura destinatario)', async () => {
+      const moduleRef = await buildModule();
+      const service = moduleRef.get(CampaignsService);
+      (recipientRepoMock.findOne as jest.Mock).mockClear();
+      const { campaignId: _omit, ...noCampaign } = dto;
+
+      const result = await service.previewMessage(noCampaign, OTHER);
+
+      expect(recipientRepoMock.findOne).not.toHaveBeenCalled();
+      expect(result.bodyHtml).toContain('/public/download/');
+    });
   });
 });
 

@@ -218,9 +218,9 @@ describe('CampaignsController', () => {
       mockService.getNeverDownloadedRecipients = jest.fn().mockResolvedValue(rows);
       const res = { setHeader: jest.fn(), send: jest.fn() } as any;
 
-      await controller.exportNeverDownloadedCsv(undefined, undefined, res);
+      await controller.exportNeverDownloadedCsv({ user: { username: 'mario', role: 'user' } } as any, undefined, undefined, res);
 
-      expect(mockService.getNeverDownloadedRecipients).toHaveBeenCalledWith(undefined, undefined);
+      expect(mockService.getNeverDownloadedRecipients).toHaveBeenCalledWith({ username: 'mario', role: 'user' }, undefined, undefined);
       expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/csv; charset=utf-8');
       expect(res.setHeader).toHaveBeenCalledWith('Content-Disposition', 'attachment; filename="mai_scaricato.csv"');
       expect(res.send).toHaveBeenCalledWith(expect.stringContaining('AAA1'));

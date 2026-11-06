@@ -64,4 +64,6 @@ export interface NotificationDetailDto {
   attachments: Array<{ index: number; label: string }>;
   /** null = campagna senza channelConfig.paymentConfig.enabled, o dato non risolvibile per questo destinatario. */
   payment: ResolvedPaymentData | null;
+  /** Regola allegati (creatore, admin, firmatario): false = link oscurati nelle anteprime e download disabilitato. */
+  canReadAttachments: boolean;
 }

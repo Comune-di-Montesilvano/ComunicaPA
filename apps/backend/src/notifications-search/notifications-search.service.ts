@@ -1,10 +1,12 @@
-import { Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Recipient } from '../entities/recipient.entity.js';
 import { NotificationAttempt } from '../entities/notification-attempt.entity.js';
 import { DownloadEvent } from '../entities/download-event.entity.js';
-import { CampaignsService, hasPostalArTracking } from '../campaigns/campaigns.service.js';
+import { CampaignsService, hasPostalArTracking, type CampaignRequester } from '../campaigns/campaigns.service.js';
+import { ATTACHMENT_DENIED_MESSAGE, canReadCampaignAttachments, canViewCampaign, visibleCampaignSql } from '../campaigns/campaign-access.util.js';
+import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
 import { postalLegalOutcome } from '../campaigns/postal-legal-outcome.util.js';
 import { SendLegalFactsService, type SendDocumentItem, type SendLegalFactDownloadResult } from '../channels/send/send-legal-facts.service.js';
 import { AttachmentService, resolveAttachmentsConfig, resolveAttachmentLabel, resolveCustomAttachmentFilename } from '../attachments/attachment.service.js';
@@ -65,12 +67,18 @@ export class NotificationsSearchService {
     // @Optional: spec esistenti senza questo repo → nessuna info verifica Poste.
     @Optional() @InjectRepository(PostalPosteTracking)
     private readonly posteTrackingRepo?: Repository<PostalPosteTracking>,
+    // @Optional: spec esistenti senza audit → diniego senza traccia, mai bloccante.
+    @Optional() private readonly auditLogs?: AuditLogsService,
   ) {}
 
-  async search(filters: SearchFilters): Promise<{ rows: SearchRowDto[]; total: number }> {
+  async search(filters: SearchFilters, requester: CampaignRequester): Promise<{ rows: SearchRowDto[]; total: number }> {
     const qb = this.recipientRepo
       .createQueryBuilder('recipient')
       .leftJoinAndSelect('recipient.campaign', 'campaign');
+
+    // Destinatari di bozze altrui esclusi (stessa regola di CampaignsService.findAll).
+    const visible = visibleCampaignSql('campaign', requester);
+    if (visible) qb.andWhere(visible.sql, visible.params);
 
     const searchText = filters.query || filters.codiceFiscale;
     if (searchText) {
@@ -172,12 +180,14 @@ export class NotificationsSearchService {
     return map;
   }
 
-  async getDetail(recipientId: string): Promise<NotificationDetailDto> {
+  async getDetail(recipientId: string, requester: CampaignRequester): Promise<NotificationDetailDto> {
     const recipient = await this.recipientRepo.findOne({
       where: { id: recipientId },
       relations: { campaign: true },
     });
-    if (!recipient) throw new NotFoundException(`Recipient ${recipientId} not found`);
+    // Bozza altrui: stesso 404 del CampaignAccessInterceptor, l'esistenza non trapela.
+    if (!recipient || !canViewCampaign(recipient.campaign, requester)) throw new NotFoundException(`Recipient ${recipientId} not found`);
+    const canReadAttachments = canReadCampaignAttachments(recipient.campaign, requester);
 
     const attempts = await this.attemptRepo.find({
       where: { recipientId },
@@ -206,9 +216,11 @@ export class NotificationsSearchService {
       order: { downloadedAt: 'ASC' },
     });
 
-    const preview = await this.campaignsService.renderMessageForRecipient(recipientId);
+    // Chi non può leggere gli allegati vede il messaggio con i link oscurati:
+    // i link firmati dell'anteprima scaricano davvero il PDF.
+    const preview = await this.campaignsService.renderMessageForRecipient(recipientId, undefined, true, !canReadAttachments);
     const appIoDelivered = attempts.some((a) => (a.responsePayload?.['appIo'] as { success?: boolean } | undefined)?.success);
-    const appIoPreview = appIoDelivered ? await this.campaignsService.renderAppIoCoDeliveryPreview(recipientId) : null;
+    const appIoPreview = appIoDelivered ? await this.campaignsService.renderAppIoCoDeliveryPreview(recipientId, !canReadAttachments) : null;
 
     // Stessa logica di CitizenService.toCitizenDto: elenco allegati configurati
     // per il canale, con fallback legacy (campagne senza channelConfig.attachments
@@ -334,6 +346,7 @@ export class NotificationsSearchService {
       totalCostCents,
       attachments,
       payment,
+      canReadAttachments,
     };
   }
 
@@ -345,9 +358,19 @@ export class NotificationsSearchService {
    * incremento downloadCount/DownloadEvent: è una consultazione da backoffice,
    * non un download del cittadino.
    */
-  async downloadAttachment(recipientId: string, index: number): Promise<{ buffer: Buffer; filename: string }> {
+  async downloadAttachment(recipientId: string, index: number, requester: CampaignRequester): Promise<{ buffer: Buffer; filename: string }> {
     const recipient = await this.recipientRepo.findOne({ where: { id: recipientId }, relations: { campaign: true } });
-    if (!recipient) throw new NotFoundException(`Recipient ${recipientId} not found`);
+    if (!recipient || !canViewCampaign(recipient.campaign, requester)) throw new NotFoundException(`Recipient ${recipientId} not found`);
+    if (!canReadCampaignAttachments(recipient.campaign, requester)) {
+      await this.auditLogs?.log({
+        action: 'ATTACHMENT_ACCESS_DENIED',
+        operator: requester.username,
+        campaignId: recipient.campaign.id,
+        campaignName: recipient.campaign.name,
+        details: { endpoint: 'notifications-search/attachment', recipientId, attachmentIndex: index },
+      });
+      throw new ForbiddenException(ATTACHMENT_DENIED_MESSAGE);
+    }
 
     const buffer = await this.attachmentService.generatePdfBuffer(recipient, index);
     const filename = resolveCustomAttachmentFilename(recipient, index) || `avviso_${recipientId.slice(0, 8)}_${index + 1}.pdf`;

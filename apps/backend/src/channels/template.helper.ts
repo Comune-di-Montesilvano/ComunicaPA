@@ -74,10 +74,15 @@ export function processTemplate(
   format: 'html' | 'markdown' = 'html',
   sourceChannel = '',
   preview = false,
+  // Anteprime backoffice per chi non può leggere gli allegati: segnaposto
+  // non cliccabile, nessuna firma generata. Mai true negli invii reali né
+  // nel portale cittadino.
+  redactDownloadLinks = false,
 ): string {
   let content = bodyTemplate;
 
   const buildDownloadUrl = (index: number): string => {
+    if (redactDownloadLinks) return '#allegato-riservato';
     const sig = signDownloadLink(recipient.id, index, expiresAtUnix, downloadLinkSecret, sourceChannel, preview);
     const chParam = sourceChannel ? `&ch=${encodeURIComponent(sourceChannel)}` : '';
     const previewParam = preview ? '&preview=1' : '';

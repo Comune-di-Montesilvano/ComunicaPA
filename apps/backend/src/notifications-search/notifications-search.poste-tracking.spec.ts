@@ -11,6 +11,9 @@ import { CampaignsService } from '../campaigns/campaigns.service.js';
 import { SendLegalFactsService } from '../channels/send/send-legal-facts.service.js';
 import { AttachmentService } from '../attachments/attachment.service.js';
 
+const ADMIN = { username: 'admin', role: 'admin' as const };
+const REQ = { user: { sub: 'admin', username: 'admin', role: 'admin', type: 'operator' } } as any;
+
 function recipientRow(id: string) {
   return { id, campaignId: 'c1', codiceFiscale: 'RSSMRA80A01H501U', fullName: 'ROSSI MARIO', status: 'sent', createdAt: new Date('2026-07-01T00:00:00Z'), campaign: { name: 'Avviso', channelType: 'POSTAL' } };
 }
@@ -49,7 +52,7 @@ describe('NotificationsSearchService - verifica Poste', () => {
   });
 
   it('filtro posteVerification=delivered usa il predicato di discrepanza sull\'ultimo attempt', async () => {
-    await service.search({ posteVerification: 'delivered', page: 1, pageSize: 50 });
+    await service.search({ posteVerification: 'delivered', page: 1, pageSize: 50 }, ADMIN);
     const sql = qb.andWhere.mock.calls.map((c: any[]) => String(c[0])).join('\n');
     expect(sql).toContain("ppt.status = 'delivered'");
     expect(sql).toContain("COALESCE(na.postal_status, '') <> 'Consegnato'");
@@ -57,14 +60,14 @@ describe('NotificationsSearchService - verifica Poste', () => {
   });
 
   it('filtro posteVerification=pending filtra per stato riga', async () => {
-    await service.search({ posteVerification: 'pending', page: 1, pageSize: 50 });
+    await service.search({ posteVerification: 'pending', page: 1, pageSize: 50 }, ADMIN);
     const call = qb.andWhere.mock.calls.find((c: any[]) => String(c[0]).includes('postal_poste_tracking ppt2'));
     expect(String(call[0])).toContain('ppt2.status = :pv');
     expect(call[1]).toEqual({ pv: 'pending' });
   });
 
   it('filtro posteVerification=any: qualunque riga, senza vincolo di stato', async () => {
-    await service.search({ posteVerification: 'any', page: 1, pageSize: 50 });
+    await service.search({ posteVerification: 'any', page: 1, pageSize: 50 }, ADMIN);
     const call = qb.andWhere.mock.calls.find((c: any[]) => String(c[0]).includes('postal_poste_tracking ppt2'));
     expect(String(call[0])).not.toContain('ppt2.status');
   });
@@ -77,7 +80,7 @@ describe('NotificationsSearchService - verifica Poste', () => {
       { recipientId: 'r4', status: 'delivered', postalStatus: 'Confermato' },
       { recipientId: 'r3', status: 'pending', postalStatus: 'NonConsegnato' },
     ]);
-    const { rows } = await service.search({ page: 1, pageSize: 50 });
+    const { rows } = await service.search({ page: 1, pageSize: 50 }, ADMIN);
     expect(rows.map((r) => r.posteVerificationStatus)).toEqual(['delivered', null, 'pending', 'delivered']);
     expect(posteRepo.query.mock.calls[0][1]).toEqual([['r1', 'r2', 'r3', 'r4']]);
   });
@@ -89,7 +92,7 @@ describe('NotificationsSearchService - verifica Poste', () => {
       { id: 'a2', attemptNumber: 2, status: 'success', channelType: 'POSTAL', errorMessage: null, sentAt: null, createdAt: new Date('2026-07-02T00:00:00Z'), responsePayload: {}, postalStatus: 'Accettato' },
     ]);
     posteRepo.find.mockResolvedValue([{ attemptId: 'a1', status: 'pending', trackingCode: 'RN000000000IT', checkCount: 2, nextCheckAt: null, lastCheckedAt: null, lastError: null, deliveredAt: null, movements: [] }]);
-    const detail = await service.getDetail('r1');
+    const detail = await service.getDetail('r1', ADMIN);
     expect(detail.attempts[0]).toMatchObject({ posteVerification: { status: 'pending', checkCount: 2, trackingUntil: null } });
     expect(detail.attempts[1]).toMatchObject({ posteVerification: null });
   });
@@ -126,12 +129,12 @@ describe('NotificationsSearchService - stato Letto (canali digitali)', () => {
   it('riga: sent + download su canale digitale → read; POSTAL resta sent', async () => {
     qb.getManyAndCount.mockResolvedValue([[recipient('r1', 'EMAIL', 'sent', 1), recipient('r2', 'PEC'), recipient('r3', 'APP_IO'), recipient('r4', 'POSTAL', 'sent', 3)], 4]);
     downloadRepo.find.mockResolvedValue([{ recipientId: 'r3' }]);
-    const { rows } = await service.search({ page: 1, pageSize: 50 });
+    const { rows } = await service.search({ page: 1, pageSize: 50 }, ADMIN);
     expect(rows.map((r) => r.status)).toEqual(['read', 'sent', 'read', 'sent']);
   });
 
   it('filtro status=read: inviato, canale digitale, con download', async () => {
-    await service.search({ status: 'read', page: 1, pageSize: 50 });
+    await service.search({ status: 'read', page: 1, pageSize: 50 }, ADMIN);
     expect(qb.andWhere).toHaveBeenCalledWith('recipient.status = :status', { status: 'sent' });
     const sql = qb.andWhere.mock.calls.map((c: any[]) => String(c[0])).join('\n');
     expect(sql).toContain("campaign.channelType IN ('EMAIL', 'PEC', 'APP_IO')");
@@ -139,7 +142,7 @@ describe('NotificationsSearchService - stato Letto (canali digitali)', () => {
   });
 
   it('filtro status=sent: esclude i letti dei canali digitali', async () => {
-    await service.search({ status: 'sent', page: 1, pageSize: 50 });
+    await service.search({ status: 'sent', page: 1, pageSize: 50 }, ADMIN);
     const sql = qb.andWhere.mock.calls.map((c: any[]) => String(c[0])).join('\n');
     expect(sql).toContain("NOT (campaign.channelType IN ('EMAIL', 'PEC', 'APP_IO') AND");
   });
@@ -149,9 +152,9 @@ describe('NotificationsSearchController - posteVerification', () => {
   it('passa posteVerification solo se valore ammesso', () => {
     const svc = { search: vi.fn() };
     const ctrl = new NotificationsSearchController(svc as any);
-    ctrl.search(undefined, undefined, undefined, undefined, undefined, undefined, undefined, '1', '50', 'delivered');
-    expect(svc.search).toHaveBeenLastCalledWith(expect.objectContaining({ posteVerification: 'delivered' }));
-    ctrl.search(undefined, undefined, undefined, undefined, undefined, undefined, undefined, '1', '50', 'DROP');
-    expect(svc.search).toHaveBeenLastCalledWith(expect.objectContaining({ posteVerification: undefined }));
+    ctrl.search(REQ, undefined, undefined, undefined, undefined, undefined, undefined, undefined, '1', '50', 'delivered');
+    expect(svc.search).toHaveBeenLastCalledWith(expect.objectContaining({ posteVerification: 'delivered' }), REQ.user);
+    ctrl.search(REQ, undefined, undefined, undefined, undefined, undefined, undefined, undefined, '1', '50', 'DROP');
+    expect(svc.search).toHaveBeenLastCalledWith(expect.objectContaining({ posteVerification: undefined }), REQ.user);
   });
 });

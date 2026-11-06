@@ -52,7 +52,7 @@ import { PostalPosteTracking } from '../entities/postal-poste-tracking.entity.js
 import { RemoteSignJob, RemoteSignJobStatus } from '../entities/remote-sign-job.entity.js';
 import { postalLegalOutcome, postalLegalOutcomeSql, POSTAL_GLOBALCOM_ERROR_SQL, isPostalLegalOutcome } from './postal-legal-outcome.util.js';
 import { POSTE_DELIVERED_BUCKET, formatLastMovement, isPosteDeliveredOverride, posteDeliveredSql, posteSummaryOf } from '../channels/postal/poste-tracking/poste-tracking-effective.util.js';
-import { visibleCampaignSql } from './campaign-access.util.js';
+import { canReadCampaignAttachments, visibleCampaignSql } from './campaign-access.util.js';
 
 const INAD_BULK_THRESHOLD = 100;
 // Sentinella filtro "Stato Consegna" per attempt SUCCESS senza send_status/postal_status
@@ -297,18 +297,25 @@ export class CampaignsService {
    * firmare il link di download nello stesso formato di produzione — il
    * link non risolve realmente perché nessun allegato è associato a
    * quell'id in DB). Usata dal wizard per l'anteprima live.
+   *
+   * Con `campaignId` + CF di un destinatario reale il link firmato sarebbe
+   * funzionante: se `requester` non può leggere gli allegati di quella
+   * campagna i link diventano un segnaposto non cliccabile.
    */
-  async previewMessage(dto: PreviewMessageDto): Promise<PreviewMessageResult> {
+  async previewMessage(dto: PreviewMessageDto, requester: CampaignRequester): Promise<PreviewMessageResult> {
     let previewRecipientId: string = randomUUID();
+    let redactDownloadLinks = false;
     if (dto.campaignId && dto.recipient?.codiceFiscale) {
       const realRecipient = await this.recipientRepo.findOne({
         where: {
           campaignId: dto.campaignId,
           codiceFiscale: dto.recipient.codiceFiscale.toUpperCase().trim(),
         },
+        relations: { campaign: true },
       });
       if (realRecipient) {
         previewRecipientId = realRecipient.id;
+        redactDownloadLinks = !realRecipient.campaign || !canReadCampaignAttachments(realRecipient.campaign, requester);
       }
     }
 
@@ -334,6 +341,7 @@ export class CampaignsService {
       true,
       dto.appIoParallelPrimaryChannel,
       dto.physicalAddressConfig,
+      redactDownloadLinks,
     );
   }
 
@@ -347,8 +355,11 @@ export class CampaignsService {
    * (un click dell'operatore non conta come download), false = link "vero" del
    * portale cittadino (il click del cittadino DEVE continuare a contare — non
    * passare mai true per il rendering mostrato al cittadino stesso).
+   *
+   * `redactDownloadLinks` = anteprima backoffice per un operatore che non può
+   * leggere gli allegati: link sostituiti da un segnaposto, nessuna firma.
    */
-  async renderMessageForRecipient(recipientId: string, linkChannelTag?: string, preview = true): Promise<PreviewMessageResult> {
+  async renderMessageForRecipient(recipientId: string, linkChannelTag?: string, preview = true, redactDownloadLinks = false): Promise<PreviewMessageResult> {
     const recipient = await this.recipientRepo.findOne({ where: { id: recipientId }, relations: { campaign: true } });
     if (!recipient) throw new NotFoundException(`Recipient ${recipientId} not found`);
 
@@ -357,7 +368,7 @@ export class CampaignsService {
     const bodyTemplate = (campaign.channelConfig?.['body'] as string) || '';
     const attachmentLabels = resolveAttachmentsConfig(campaign.channelConfig).map((a) => resolveAttachmentLabel(a, recipient));
 
-    return this.renderMessage(campaign.channelType, subjectTemplate, bodyTemplate, attachmentLabels, recipient, undefined, linkChannelTag, preview);
+    return this.renderMessage(campaign.channelType, subjectTemplate, bodyTemplate, attachmentLabels, recipient, undefined, linkChannelTag, preview, undefined, undefined, redactDownloadLinks);
   }
 
   /**
@@ -367,7 +378,7 @@ export class CampaignsService {
    * cosa è arrivato su App IO quando la co-consegna è andata a buon fine,
    * distinto dal contenuto (lettera POSTAL, PEC, ecc.) del canale primario.
    */
-  async renderAppIoCoDeliveryPreview(recipientId: string): Promise<PreviewMessageResult | null> {
+  async renderAppIoCoDeliveryPreview(recipientId: string, redactDownloadLinks = false): Promise<PreviewMessageResult | null> {
     const recipient = await this.recipientRepo.findOne({ where: { id: recipientId }, relations: { campaign: true } });
     if (!recipient) throw new NotFoundException(`Recipient ${recipientId} not found`);
 
@@ -386,7 +397,7 @@ export class CampaignsService {
     const parallelPrimaryChannel = appIoConfig.mode === 'parallel' ? campaign.channelType : undefined;
     const physicalAddressConfig = campaign.channelConfig?.['physicalAddressConfig'] as Record<string, unknown> | undefined;
 
-    return this.renderMessage('APP_IO', subjectTemplate, bodyTemplate, attachmentLabels, recipient, 'markdown', undefined, true, parallelPrimaryChannel, physicalAddressConfig);
+    return this.renderMessage('APP_IO', subjectTemplate, bodyTemplate, attachmentLabels, recipient, 'markdown', undefined, true, parallelPrimaryChannel, physicalAddressConfig, redactDownloadLinks);
   }
 
   private async renderMessage(
@@ -400,6 +411,7 @@ export class CampaignsService {
     preview = false,
     appIoParallelPrimaryChannel?: NotificationChannel,
     physicalAddressConfig?: Record<string, unknown>,
+    redactDownloadLinks = false,
   ): Promise<PreviewMessageResult> {
     const brandName = await this.settings.get<string>('brand.name');
     const publicApiUrl = await this.settings.get<string>('system.publicUrl');
@@ -410,8 +422,8 @@ export class CampaignsService {
     const resolvedFormat: 'html' | 'markdown' = format ?? (channelType === 'APP_IO' ? 'markdown' : 'html');
     const linkTag = linkChannelTag ?? channelType;
 
-    const subject = processTemplate(subjectTemplate, recipientLike, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, resolvedFormat, linkTag, preview);
-    const body = processTemplate(bodyTemplate, recipientLike, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, resolvedFormat, linkTag, preview);
+    const subject = processTemplate(subjectTemplate, recipientLike, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, resolvedFormat, linkTag, preview, redactDownloadLinks);
+    const body = processTemplate(bodyTemplate, recipientLike, publicApiUrl, downloadLinkSecret, expiresAtUnix, attachmentLabels, resolvedFormat, linkTag, preview, redactDownloadLinks);
 
     const portalUrl = await resolveCitizenPortalUrl(this.settings);
 
@@ -2259,17 +2271,19 @@ export class CampaignsService {
     return ships.length > 0 ? ships.reduce((sum, c) => sum + c, 0) / ships.length : null;
   }
 
-  async getNeverDownloadedRecipients(dateFrom?: string, dateTo?: string): Promise<NeverDownloadedRowDto[]> {
+  async getNeverDownloadedRecipients(requester: CampaignRequester, dateFrom?: string, dateTo?: string): Promise<NeverDownloadedRowDto[]> {
     const range = buildDateRangeWhere('c', dateFrom, dateTo);
-    const rows = await this.recipientRepo
+    const qb = this.recipientRepo
       .createQueryBuilder('r')
       .innerJoinAndSelect('r.campaign', 'c')
       .where(`NOT ${HAS_DOWNLOAD_SQL}`)
       .andWhere('r.status = :status', { status: RecipientStatus.SENT })
       .andWhere(range.sql, range.params)
-      .andWhere('c.isTest = false')
-      .orderBy('r.createdAt', 'DESC')
-      .getMany();
+      .andWhere('c.isTest = false');
+    // Righe di bozze non visibili al richiedente mai nel CSV (stessa regola di findAll).
+    const visible = visibleCampaignSql('c', requester);
+    if (visible) qb.andWhere(visible.sql, visible.params);
+    const rows = await qb.orderBy('r.createdAt', 'DESC').getMany();
 
     return rows.map((r) => ({
       codiceFiscale: r.codiceFiscale,
