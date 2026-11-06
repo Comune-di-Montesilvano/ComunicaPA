@@ -52,7 +52,8 @@ import { PostalPosteTracking } from '../entities/postal-poste-tracking.entity.js
 import { RemoteSignJob, RemoteSignJobStatus } from '../entities/remote-sign-job.entity.js';
 import { postalLegalOutcome, postalLegalOutcomeSql, POSTAL_GLOBALCOM_ERROR_SQL, isPostalLegalOutcome } from './postal-legal-outcome.util.js';
 import { POSTE_DELIVERED_BUCKET, formatLastMovement, isPosteDeliveredOverride, posteDeliveredSql, posteSummaryOf } from '../channels/postal/poste-tracking/poste-tracking-effective.util.js';
-import { canReadCampaignAttachments, canViewCampaign, visibleCampaignSql } from './campaign-access.util.js';
+import { ATTACHMENT_DENIED_MESSAGE, canReadCampaignAttachments, canViewCampaign, logAttachmentDenied, visibleCampaignSql } from './campaign-access.util.js';
+import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
 
 const INAD_BULK_THRESHOLD = 100;
 // Sentinella filtro "Stato Consegna" per attempt SUCCESS senza send_status/postal_status
@@ -185,6 +186,8 @@ export class CampaignsService {
     // vedono "nessuna firma remota in corso".
     @Optional() @InjectRepository(RemoteSignJob)
     private readonly remoteSignJobRepo?: Repository<RemoteSignJob>,
+    // @Optional: audit del diniego allegati; le spec che non lo forniscono lo saltano.
+    @Optional() private readonly auditLogs?: AuditLogsService,
   ) {}
 
   // Bozze altrui escluse in SQL (visibleCampaignSql): stesso criterio di
@@ -3815,9 +3818,14 @@ export class CampaignsService {
   async resolveAttachmentPreviewFilePath(
     campaignId: string,
     filename: string,
+    requester: CampaignRequester,
   ): Promise<{ path: string; contentType: string }> {
-    const exists = await this.campaignRepo.existsBy({ id: campaignId });
-    if (!exists) throw new NotFoundException(`Campaign ${campaignId} not found`);
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign) throw new NotFoundException(`Campaign ${campaignId} not found`);
+    if (!canReadCampaignAttachments(campaign, requester)) {
+      await logAttachmentDenied(this.auditLogs, requester, campaign, 'attachments/preview-file');
+      throw new ForbiddenException(ATTACHMENT_DENIED_MESSAGE);
+    }
 
     const dir = getUploadsDir(campaignId);
     const present = fs.existsSync(dir) ? fs.readdirSync(dir) : [];

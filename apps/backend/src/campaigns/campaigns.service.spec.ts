@@ -1421,6 +1421,7 @@ describe('CampaignsService', () => {
     // sempre `tmpDirRef.dir`, ignorando il campaignId passato — pattern
     // già usato da `finalizeAttachments` più sopra. Non serve quindi (e
     // non avrebbe effetto) impostare `process.env['ATTACHMENTS_PATH']`.
+    const OWNER = { username: 'op1', role: 'user' as const };
     let tmpDir: string;
 
     beforeEach(() => {
@@ -1434,9 +1435,9 @@ describe('CampaignsService', () => {
 
     it('risolve il path se il file esiste nella cartella upload della campagna', async () => {
       fs.writeFileSync(join(tmpDir, 'avviso.pdf'), '%PDF-1.4 test');
-      mockCampaignRepo.existsBy.mockResolvedValue(true);
+      mockCampaignRepo.findOneBy.mockResolvedValue({ ...mockCampaign, id: 'c', createdBy: 'op1', signerUsername: 'dirigente', status: CampaignStatus.QUEUED });
 
-      const result = await service.resolveAttachmentPreviewFilePath('campaign-1', 'avviso.pdf');
+      const result = await service.resolveAttachmentPreviewFilePath('campaign-1', 'avviso.pdf', OWNER);
 
       expect(result.path).toBe(join(tmpDir, 'avviso.pdf'));
       expect(result.contentType).toBe('application/pdf');
@@ -1444,26 +1445,46 @@ describe('CampaignsService', () => {
 
     it('lancia NotFoundException se il filename non è tra i file presenti (whitelist)', async () => {
       fs.writeFileSync(join(tmpDir, 'reale.pdf'), '%PDF-1.4 test');
-      mockCampaignRepo.existsBy.mockResolvedValue(true);
+      mockCampaignRepo.findOneBy.mockResolvedValue({ ...mockCampaign, id: 'c', createdBy: 'op1', signerUsername: 'dirigente', status: CampaignStatus.QUEUED });
 
-      await expect(service.resolveAttachmentPreviewFilePath('campaign-2', '../../../etc/passwd'))
+      await expect(service.resolveAttachmentPreviewFilePath('campaign-2', '../../../etc/passwd', OWNER))
         .rejects.toThrow(NotFoundException);
-      await expect(service.resolveAttachmentPreviewFilePath('campaign-2', 'non-esiste.pdf'))
+      await expect(service.resolveAttachmentPreviewFilePath('campaign-2', 'non-esiste.pdf', OWNER))
         .rejects.toThrow(NotFoundException);
     });
 
     it('lancia NotFoundException se la campagna non esiste', async () => {
-      mockCampaignRepo.existsBy.mockResolvedValue(false);
-      await expect(service.resolveAttachmentPreviewFilePath('inesistente', 'x.pdf'))
+      mockCampaignRepo.findOneBy.mockResolvedValue(null);
+      await expect(service.resolveAttachmentPreviewFilePath('inesistente', 'x.pdf', OWNER))
         .rejects.toThrow(NotFoundException);
     });
 
     it('usa Content-Type octet-stream per estensioni non-pdf', async () => {
       fs.writeFileSync(join(tmpDir, 'dati.zip'), 'PK...');
-      mockCampaignRepo.existsBy.mockResolvedValue(true);
+      mockCampaignRepo.findOneBy.mockResolvedValue({ ...mockCampaign, id: 'c', createdBy: 'op1', signerUsername: 'dirigente', status: CampaignStatus.QUEUED });
 
-      const result = await service.resolveAttachmentPreviewFilePath('campaign-3', 'dati.zip');
+      const result = await service.resolveAttachmentPreviewFilePath('campaign-3', 'dati.zip', OWNER);
       expect(result.contentType).toBe('application/octet-stream');
+    });
+
+    it('creatore, admin e firmatario ottengono il path; altro user → 403 + audit', async () => {
+      fs.writeFileSync(join(tmpDir, 'avviso.pdf'), '%PDF-1.4 test');
+      mockCampaignRepo.findOneBy.mockResolvedValue({ ...mockCampaign, id: 'c1', name: 'Test', createdBy: 'op1', signerUsername: 'dirigente', status: CampaignStatus.QUEUED });
+      const audit = { log: jest.fn() };
+      (service as any).auditLogs = audit;
+      try {
+        for (const r of [OWNER, { username: 'boss', role: 'admin' as const }, { username: 'dirigente', role: 'user' as const }]) {
+          await expect(service.resolveAttachmentPreviewFilePath('c1', 'avviso.pdf', r)).resolves.toMatchObject({ path: join(tmpDir, 'avviso.pdf') });
+        }
+        await expect(service.resolveAttachmentPreviewFilePath('c1', 'avviso.pdf', { username: 'altro', role: 'user' }))
+          .rejects.toThrow(ForbiddenException);
+        expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({
+          action: 'ATTACHMENT_ACCESS_DENIED', operator: 'altro', campaignId: 'c1',
+          details: { endpoint: 'attachments/preview-file' },
+        }));
+      } finally {
+        (service as any).auditLogs = undefined;
+      }
     });
   });
 

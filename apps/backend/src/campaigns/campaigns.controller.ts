@@ -24,6 +24,7 @@ import type { JwtOperatorPayload } from '@comunicapa/shared-types';
 import type { Campaign } from '../entities/campaign.entity.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { CampaignsService } from './campaigns.service.js';
+import { canReadCampaignAttachments } from './campaign-access.util.js';
 import { CampaignContentCorrectionService } from './campaign-content-correction.service.js';
 import { CampaignBulkRetryService } from './campaign-bulk-retry.service.js';
 import type { ChannelOutcome } from './channel-outcome.util.js';
@@ -51,7 +52,12 @@ import {
   safeChunkUploadDir,
 } from './chunked-upload.util.js';
 
-type CampaignWithOwnerDisplay = Campaign & { createdByDisplayName?: string; attachmentExpiresAt?: string | null };
+type CampaignWithOwnerDisplay = Campaign & {
+  createdByDisplayName?: string;
+  attachmentExpiresAt?: string | null;
+  canReadAttachments?: boolean;
+  signerDisplayName?: string | null;
+};
 
 @Controller('admin/campaigns')
 @Roles('user', 'admin')
@@ -77,11 +83,22 @@ export class CampaignsController {
   }
 
   @Get(':id')
-  async findOne(@Param('id', ParseUUIDPipe) id: string): Promise<CampaignWithOwnerDisplay> {
+  async findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request & { user: JwtOperatorPayload },
+  ): Promise<CampaignWithOwnerDisplay> {
     const campaign = await this.campaignsService.findOne(id);
-    const displayNames = await this.operatorDirectory.resolveMany([campaign.createdBy]);
+    const displayNames = await this.operatorDirectory.resolveMany(
+      campaign.signerUsername ? [campaign.createdBy, campaign.signerUsername] : [campaign.createdBy],
+    );
     const { earliestExpiryAt } = await this.campaignsService.getAttachmentRetentionInfo(id);
-    return { ...campaign, createdByDisplayName: displayNames[campaign.createdBy], attachmentExpiresAt: earliestExpiryAt };
+    return {
+      ...campaign,
+      createdByDisplayName: displayNames[campaign.createdBy],
+      signerDisplayName: campaign.signerUsername ? (displayNames[campaign.signerUsername] ?? null) : null,
+      canReadAttachments: canReadCampaignAttachments(campaign, { username: req.user.username, role: req.user.role }),
+      attachmentExpiresAt: earliestExpiryAt,
+    };
   }
 
   @Post()
@@ -623,9 +640,13 @@ export class CampaignsController {
   async previewAttachmentFile(
     @Param('id', ParseUUIDPipe) id: string,
     @Query('filename') filename: string,
+    @Req() req: Request & { user: JwtOperatorPayload },
     @Res() res: Response,
   ): Promise<void> {
-    const { path, contentType } = await this.campaignsService.resolveAttachmentPreviewFilePath(id, filename);
+    const { path, contentType } = await this.campaignsService.resolveAttachmentPreviewFilePath(id, filename, {
+      username: req.user.username,
+      role: req.user.role,
+    });
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', 'inline');
     res.sendFile(path);

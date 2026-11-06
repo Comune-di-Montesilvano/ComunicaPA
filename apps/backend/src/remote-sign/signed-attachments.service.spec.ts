@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { join } from 'path';
 import AdmZip from 'adm-zip';
+import { ForbiddenException } from '@nestjs/common';
 import { SignedAttachmentsService } from './signed-attachments.service.js';
 import { getUnsignedBackupDir, getUploadsDir } from '../attachments/attachment-paths.js';
 
@@ -51,6 +52,20 @@ describe('SignedAttachmentsService', () => {
     const names = new AdmZip(zip as Buffer).getEntries().map((e) => e.entryName).sort();
     expect(names).toEqual(['A.pdf', 'B.pdf']);
     expect(new AdmZip(zip as Buffer).getEntries().every((e) => e.header.method === 0)).toBe(true);
+  });
+
+  it('buildUnsignedZip: requester non autorizzato → 403 propagato, nessun file letto', async () => {
+    const { svc, remoteSign, bulk } = build();
+    remoteSign.assertCanModify.mockRejectedValueOnce(new ForbiddenException('negato'));
+    await expect(svc.buildUnsignedZip(CAMPAIGN, { username: 'pippo', role: 'user' })).rejects.toThrow(ForbiddenException);
+    expect(remoteSign.assertCanModify).toHaveBeenCalledWith(CAMPAIGN, { username: 'pippo', role: 'user' });
+    expect(bulk.getLatestStatus).not.toHaveBeenCalled();
+  });
+
+  it('buildUnsignedZip: il firmatario (user) ottiene lo ZIP', async () => {
+    const { svc } = build();
+    const out = await svc.buildUnsignedZip(CAMPAIGN, { username: 'luigi', role: 'user' });
+    expect(Buffer.isBuffer(out)).toBe(true);
   });
 
   it('buildUnsignedZip non legge mai nomi fuori da uploads anche se listFilesToSign li restituisse', async () => {
