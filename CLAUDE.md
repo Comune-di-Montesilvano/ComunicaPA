@@ -168,6 +168,8 @@ docker compose exec backend node -e "const jwt=require('/app/node_modules/.pnpm/
 
 **Baseline:** 1 fallimento noto pre-esistente (`app.controller.spec.ts` › "senza APP_VERSION → versione da publiccode.yml o dev", asserzione `isLdapMock` `expected true to be false` — artefatto di `LDAP_HOST=mock` in dev), il resto della suite pulito. Il criterio per una modifica resta "failure set identico" al prima — se emerge un nuovo fallimento oltre a questo, è una regressione, non baseline nota.
 
+**Test con date/orari: lanciarli con entrambi i fusi** (`docker compose exec -T -e TZ=UTC backend node_modules/.bin/vitest run <pattern>` e `-e TZ=Europe/Rome`): CI = UTC, container dev = Europe/Rome; un'aspettativa scritta in ora locale passa in dev e rompe la merge queue.
+
 **Fuzzing property-based** (`fast-check`): `apps/backend/src/common/untrusted-input.fuzz.spec.ts` — una nuova funzione che trasforma input non fidato in path/filtri LDAP/celle CSV aggiunge lì la sua proprietà. Per verificare che una proprietà morda: mutare la funzione in una copia (script `.cjs` scritto con Write, mai heredoc: Git Bash collassa `\\`) e controllare il controesempio.
 
 **CI: sulle PR girano solo lint e type-check**; build, test completi, pytest e Trivy immagini girano nella merge queue. Un test rotto emerge quando la PR entra in coda, non al push.
@@ -184,6 +186,8 @@ docker compose exec backend node -e "const jwt=require('/app/node_modules/.pnpm/
 
 **Debug estrazione PDF/CSV reale fornito dall'utente**: `unzip -j <zip> "allegati/<file>.pdf" -d <scratch>` per estrarre un singolo file, `docker cp` dentro il container `pdf-extractor` (o `backend` per rubrica.csv/CSV), poi script Python/Node ad-hoc via `docker exec ... python -c "..."` per dumpare testo pagina/campi prima di scrivere un fix — verificare SEMPRE sul dato reale prima di ipotizzare la struttura da un riassunto o da un solo esempio. Pulire sempre i file temporanei dal container/host a fix completato.
 
+**Confrontare indirizzi/dati reali (PN, ANPR, GlobalCom) senza stamparli**: impronta `sha256(JSON.stringify([address, zip, municipality])).slice(0,8)` in output, poi stessa impronta sul valore da verificare.
+
 **Mai copiare valori reali dumpati (nome/CF/PIVA/PEC/email) in una fixture di test — nemmeno "solo per riprodurre la struttura del bug".**
 Quando si debugga un PDF/CSV reale fornito dall'utente, il testo dumpato va SEMPRE anonimizzato prima di incollarlo in una fixture — mai copiato verbatim. Ogni fixture che riproduce un bug trovato su un documento reale va scritta con dati fittizi (stesso pattern già in uso altrove nel file: `ROSSI MARIO`/`RSSMRA80A01H501U`, `ACME SRL`); il filename del documento (`DOC_NNNNNN_NNNNN.pdf`) non è PII e può restare come riferimento in un commento.
 
@@ -196,7 +200,7 @@ Quando si debugga un PDF/CSV reale fornito dall'utente, il testo dumpato va SEMP
 
 ## Guida operatori
 
-Unica fonte: `apps/frontend-admin/public/guida/guida.md` (Markdown, struttura comune delle guide integrate del Comune: Cos'è, Accesso, Operazioni frequenti, Regole e riferimenti, Problemi frequenti con Causa/Soluzione/Apri un ticket se, Contatti). La vista "Guida" dell'admin la scarica da `/guida/guida.md` e la rende con `MDEditor.Markdown` (HTML grezzo scartato); CruscottoPA la importa dallo stesso file su GitHub. **Ogni modifica visibile all'operatore aggiorna la guida nella stessa PR, con la data in testa.** Ancore = slug dei titoli (`guidaSlug`, `src/guida.ts`): bottone "?" della topbar per vista (`GUIDA_PER_VISTA`) e link contestuali `guidaLink('…')`; rinominare un titolo citato rompe `pnpm test` (`scripts/check-guida.mjs`, controlla anche titoli ripetuti e HTML nella guida). `<!-- DA VERIFICARE -->` = punti ancora da confermare.
+Unica fonte: `apps/frontend-admin/public/guida/guida.md` (Markdown, struttura comune delle guide integrate del Comune: Cos'è, Accesso, Operazioni frequenti, Regole e riferimenti, Problemi frequenti con Causa/Soluzione/Apri un ticket se, Contatti). La vista "Guida" dell'admin la scarica da `/guida/guida.md` e la rende con `MDEditor.Markdown` (HTML grezzo scartato); CruscottoPA la importa dallo stesso file su GitHub. **Ogni modifica visibile all'operatore aggiorna la guida nella stessa PR, con la data in testa.** Ancore = slug dei titoli (`guidaSlug`, `src/guida.ts`): bottone "?" della topbar per vista (`GUIDA_PER_VISTA`) e link contestuali `guidaLink('…')`; rinominare un titolo citato rompe `pnpm test` (`scripts/check-guida.mjs`, controlla anche titoli ripetuti e HTML nella guida). `<!-- DA VERIFICARE -->` = punti ancora da confermare. Riferimenti normativi nella guida = link Normattiva `https://www.normattiva.it/uri-res/N2Ls?urn:nir:<atto>~art<N>` (c.p.a. allegato: `…decreto.legislativo:2010-07-02;104:2~art29`), testo vigente letto prima di citarlo. WebFetch sull'URN dà solo l'indice: `curl -c/-b <jar>` sulla pagina URN, grep del link `caricaArticolo…idArticolo=<N>&` senza `imUpdate`, poi `curl https://www.normattiva.it/atto/<link>`.
 
 ## Documentazione dettagliata
 
