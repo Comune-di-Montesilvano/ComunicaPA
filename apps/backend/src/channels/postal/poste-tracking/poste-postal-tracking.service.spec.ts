@@ -591,10 +591,28 @@ describe('PostePostalTrackingService', () => {
       expect(repo.query.mock.calls[0][0]).toContain("< now() - interval '45 days'");
     });
 
-    it('400 se GlobalCom dà già consegnato e non c\'è riga', async () => {
+    it('GlobalCom già consegnato: controlla lo stesso, riga fuori dalla coda giornaliera', async () => {
       recipientRepo.findOne.mockResolvedValue({ id: 'r1', campaignId: 'c1' });
-      attemptRepo.findOne.mockResolvedValue({ id: 'a1', channelType: 'POSTAL', postalStatus: 'Consegnato', postalAcceptanceId: 'RN000000000IT' });
+      attemptRepo.findOne.mockResolvedValue({ id: 'a1', channelType: 'POSTAL', postalStatus: 'Consegnato', postalAcceptanceId: 'RN000000000IT', sentAt: new Date(), createdAt: new Date() });
+      client.track.mockResolvedValue(DELIVERED);
+      const { result } = await service.checkRecipientNow('c1', 'r1');
+      expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ attemptId: 'a1', nextCheckAt: null }));
+      expect(result).toBe('delivered');
+    });
+
+    it('400 se manca il codice di accettazione Poste', async () => {
+      recipientRepo.findOne.mockResolvedValue({ id: 'r1', campaignId: 'c1' });
+      attemptRepo.findOne.mockResolvedValue({ id: 'a1', channelType: 'POSTAL', postalStatus: 'Consegnato', postalAcceptanceId: null });
       await expect(service.checkRecipientNow('c1', 'r1')).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('SEND già in esito finale: controlla lo stesso, riga fuori dalla coda giornaliera', async () => {
+      recipientRepo.findOne.mockResolvedValue({ id: 'r1', campaignId: 'c1', campaign: { channelType: 'SEND', channelConfig: {} } });
+      attemptRepo.findOne.mockResolvedValue({ id: 'a1', channelType: 'SEND', sendStatus: 'EFFECTIVE_DATE', sentAt: new Date(), createdAt: new Date(), sendTimeline: [{ category: 'SEND_ANALOG_PROGRESS', at: '2026-11-04T12:00:00Z', registeredLetterCode: '698140000002' }] });
+      client.track.mockResolvedValue(DELIVERED);
+      const { result } = await service.checkRecipientNow('c1', 'r1');
+      expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ attemptId: 'a1', trackingCode: '698140000002', nextCheckAt: null }));
+      expect(result).toBe('delivered');
     });
 
     it('409 se disattivato o se Poste sta limitando le richieste', async () => {

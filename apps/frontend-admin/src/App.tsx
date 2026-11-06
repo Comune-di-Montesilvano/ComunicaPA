@@ -13441,9 +13441,9 @@ export function App(): React.JSX.Element {
                                 const pv = lastPostal?.posteVerification;
                                 if (isSend) {
                                   // SEND: solo raccomandate Poste (altri recapitisti non sono su poste.it).
-                                  // Mai controllata e SEND già chiusa: la coda non la verificherà più.
-                                  if (!lastPostal || !(pv || (lastPostal.sendStatus === 'DELIVERING' && latestSendPosteLetter(lastPostal.sendTimeline)))) return null;
-                                } else if (!lastPostal || !isPosteTrackableService(notifDetail.campaign.postalServiceType) || !(pv || (lastPostal.postalStatus !== 'Consegnato' && lastPostal.postalAcceptanceId))) {
+                                  // Anche a esito finale: il tasto "Verifica ora su Poste" resta disponibile.
+                                  if (!lastPostal || !(pv || latestSendPosteLetter(lastPostal.sendTimeline))) return null;
+                                } else if (!lastPostal || !isPosteTrackableService(notifDetail.campaign.postalServiceType) || !(pv || lastPostal.postalAcceptanceId)) {
                                   // Posta semplice: codice mai tracciabile su Poste, nessuna sezione.
                                   return null;
                                 }
@@ -13499,7 +13499,8 @@ export function App(): React.JSX.Element {
                                   const isSend = notifDetail.campaign.channelType === 'SEND';
                                   const lastPostal = [...notifDetail.attempts].filter(a => a.channelType === (isSend ? 'SEND' : 'POSTAL')).sort((a, b) => b.attemptNumber - a.attemptNumber)[0];
                                   if (!lastPostal) return null;
-                                  if (isSend ? !(lastPostal.posteVerification || (lastPostal.sendStatus === 'DELIVERING' && latestSendPosteLetter(lastPostal.sendTimeline))) : !(lastPostal.posteVerification || (lastPostal.postalStatus !== 'Consegnato' && lastPostal.postalAcceptanceId))) return null;
+                                  // Sempre disponibile se c'è un codice tracciabile, anche a esito finale.
+                                  if (isSend ? !(lastPostal.posteVerification || latestSendPosteLetter(lastPostal.sendTimeline)) : !(lastPostal.posteVerification || (isPosteTrackableService(notifDetail.campaign.postalServiceType) && lastPostal.postalAcceptanceId))) return null;
                                   return (
                                     <button type="button" className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center" disabled={posteChecking} onClick={handlePosteCheckRecipient}>
                                       {posteChecking ? <Loader2 className="icon-spin me-1" size={14} /> : <RefreshCw className="me-1" size={14} />}
