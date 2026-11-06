@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { join } from 'path';
 import AdmZip from 'adm-zip';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { EnrichmentJobStatus, TraceFormat } from '../entities/enrichment-job.entity.js';
 import { EnrichmentService } from './enrichment.service.js';
 import { getEnrichmentAttachmentsDir, getEnrichmentDir, getEnrichmentResultCsv } from './enrichment-paths.js';
@@ -15,6 +15,7 @@ describe('EnrichmentService', () => {
   let queue: any;
   let convertCampaignQueue: any;
   let overrideService: any;
+  let audit: any;
   let service: EnrichmentService;
 
   beforeEach(() => {
@@ -36,7 +37,8 @@ describe('EnrichmentService', () => {
       upsert: jest.fn(async () => ({ id: 'o1' })),
       dismiss: jest.fn(async () => ({ id: 'o1', dismissed: true })),
     };
-    service = new EnrichmentService(repo, queue, convertCampaignQueue, overrideService);
+    audit = { log: jest.fn(async () => undefined) };
+    service = new EnrichmentService(repo, queue, convertCampaignQueue, overrideService, audit);
   });
 
   afterEach(() => {
@@ -100,7 +102,7 @@ describe('EnrichmentService', () => {
     fs.writeFileSync(join(getEnrichmentAttachmentsDir('job-uuid-1'), 'PROVV_1.pdf'), '%PDF-fake');
     fs.writeFileSync(join(dir, 'result.csv'), '"a"');
 
-    const buf = await service.buildResultZip('job-uuid-1');
+    const buf = await service.buildResultZip('job-uuid-1', { username: 'op', role: 'admin' });
     expect(buf).not.toBeNull();
     const out = new AdmZip(buf as Buffer);
     expect(out.getEntry('arricchito.csv')).toBeTruthy();
@@ -109,13 +111,13 @@ describe('EnrichmentService', () => {
 
   it('buildResultZip: job non DONE → null (mai eccezione, il chiamante HTTP deve rispondere 200+blocked)', async () => {
     repo.findOneBy.mockResolvedValue({ id: 'job-uuid-1', status: EnrichmentJobStatus.PROCESSING });
-    const buf = await service.buildResultZip('job-uuid-1');
+    const buf = await service.buildResultZip('job-uuid-1', { username: 'op', role: 'admin' });
     expect(buf).toBeNull();
   });
 
   it('buildResultZip: result.csv assente nonostante status DONE (race con retention) → null', async () => {
     repo.findOneBy.mockResolvedValue({ id: 'job-uuid-1', status: EnrichmentJobStatus.DONE });
-    const buf = await service.buildResultZip('job-uuid-1');
+    const buf = await service.buildResultZip('job-uuid-1', { username: 'op', role: 'admin' });
     expect(buf).toBeNull();
   });
 
@@ -125,10 +127,97 @@ describe('EnrichmentService', () => {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(join(dir, 'result.csv'), '"a"');
 
-    const buf = await service.buildResultZip('job-uuid-1');
+    const buf = await service.buildResultZip('job-uuid-1', { username: 'op', role: 'admin' });
     const out = new AdmZip(buf as Buffer);
     expect(out.getEntry('arricchito.csv')).toBeTruthy();
     expect(out.getEntries()).toHaveLength(1);
+  });
+
+  describe('riservatezza allegati (ZIP e conversione)', () => {
+    const owner = { username: 'uploader', role: 'user' as const };
+    const other = { username: 'altro', role: 'user' as const };
+    const admin = { username: 'boss', role: 'admin' as const };
+
+    function setupJob(createdBy: string | null): void {
+      repo.findOneBy.mockResolvedValue({ id: 'job-uuid-1', status: EnrichmentJobStatus.DONE, campaignId: null, campaignConversionStatus: null, createdBy });
+      const dir = join(tmpDir, 'attachments', 'enrichment', 'job-uuid-1');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(join(dir, 'result.csv'), '"codice_fiscale"\n"RSSMRA80A01H501U"');
+    }
+
+    it('buildResultZip: altro utente → 403 + audit senza campagna, con jobId', async () => {
+      setupJob('uploader');
+      await expect(service.buildResultZip('job-uuid-1', other)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(audit.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'ATTACHMENT_ACCESS_DENIED',
+          operator: 'altro',
+          campaignId: null,
+          details: { endpoint: 'enrichment/result.zip', jobId: 'job-uuid-1' },
+        }),
+      );
+    });
+
+    it('buildResultZip: chi ha caricato e admin → buffer', async () => {
+      setupJob('uploader');
+      expect(await service.buildResultZip('job-uuid-1', owner)).not.toBeNull();
+      expect(await service.buildResultZip('job-uuid-1', admin)).not.toBeNull();
+      expect(audit.log).not.toHaveBeenCalled();
+    });
+
+    it('buildResultZip: createdBy null (storico) → solo admin', async () => {
+      setupJob(null);
+      await expect(service.buildResultZip('job-uuid-1', owner)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(await service.buildResultZip('job-uuid-1', admin)).not.toBeNull();
+    });
+
+    it('requestCampaignConversion: altro utente → 403 + audit, nessun accodamento', async () => {
+      setupJob('uploader');
+      await expect(
+        service.requestCampaignConversion('job-uuid-1', { name: 'X', channelType: 'PEC' }, other),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(audit.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          campaignId: null,
+          details: { endpoint: 'enrichment/create-campaign', jobId: 'job-uuid-1' },
+        }),
+      );
+      expect(convertCampaignQueue.add).not.toHaveBeenCalled();
+    });
+
+    it('requestCampaignConversion: admin → createdBy della campagna = chi ha caricato, non l\'admin', async () => {
+      setupJob('uploader');
+      const result = await service.requestCampaignConversion('job-uuid-1', { name: 'X', channelType: 'PEC' }, admin);
+      expect(result.accepted).toBe(true);
+      expect(convertCampaignQueue.add).toHaveBeenCalledWith(
+        'convert-campaign',
+        expect.objectContaining({ createdBy: 'uploader' }),
+        expect.anything(),
+      );
+    });
+
+    it('requestCampaignConversion: creatore → come prima', async () => {
+      setupJob('uploader');
+      await service.requestCampaignConversion('job-uuid-1', { name: 'X', channelType: 'PEC' }, owner);
+      expect(convertCampaignQueue.add).toHaveBeenCalledWith(
+        'convert-campaign',
+        expect.objectContaining({ createdBy: 'uploader' }),
+        expect.anything(),
+      );
+    });
+
+    it('requestCampaignConversion: createdBy vuoto (storico) → creatore negato, admin passa e la campagna eredita l\'admin', async () => {
+      setupJob('');
+      await expect(
+        service.requestCampaignConversion('job-uuid-1', { name: 'X', channelType: 'PEC' }, owner),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      await service.requestCampaignConversion('job-uuid-1', { name: 'X', channelType: 'PEC' }, admin);
+      expect(convertCampaignQueue.add).toHaveBeenCalledWith(
+        'convert-campaign',
+        expect.objectContaining({ createdBy: 'boss' }),
+        expect.anything(),
+      );
+    });
   });
 
   describe('getCorrectedPdfs', () => {
@@ -166,7 +255,7 @@ describe('EnrichmentService', () => {
 
     it('job pronto: marca campaignConversionStatus=pending e accoda il job convert-campaign', async () => {
       setupDoneJob();
-      const result = await service.requestCampaignConversion('job-uuid-1', { name: 'Campagna X', channelType: 'PEC' }, 'op');
+      const result = await service.requestCampaignConversion('job-uuid-1', { name: 'Campagna X', channelType: 'PEC' }, { username: 'op', role: 'admin' });
 
       expect(result.accepted).toBe(true);
       expect(repo.update).toHaveBeenCalledWith('job-uuid-1', {
@@ -183,7 +272,7 @@ describe('EnrichmentService', () => {
 
     it('job non DONE → blocked, nessun accodamento', async () => {
       repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.PROCESSING, campaignId: null, campaignConversionStatus: null });
-      const result = await service.requestCampaignConversion('j1', { name: 'X', channelType: 'PEC' }, 'op');
+      const result = await service.requestCampaignConversion('j1', { name: 'X', channelType: 'PEC' }, { username: 'op', role: 'admin' });
       expect(result.blocked).toBe(true);
       expect(convertCampaignQueue.add).not.toHaveBeenCalled();
     });
@@ -194,7 +283,7 @@ describe('EnrichmentService', () => {
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(join(dir, 'result.csv'), '"codice_fiscale"\n"RSSMRA80A01H501U"');
 
-      const result = await service.requestCampaignConversion('job-uuid-1', { name: 'X', channelType: 'PEC' }, 'op');
+      const result = await service.requestCampaignConversion('job-uuid-1', { name: 'X', channelType: 'PEC' }, { username: 'op', role: 'admin' });
       expect(result.accepted).toBe(true);
       expect(convertCampaignQueue.add).toHaveBeenCalled();
     });
@@ -204,7 +293,7 @@ describe('EnrichmentService', () => {
       const oldBullJob = { getState: jest.fn(async () => 'completed'), remove: jest.fn(async () => undefined) };
       convertCampaignQueue.getJob = jest.fn(async () => oldBullJob);
 
-      const result = await service.requestCampaignConversion('job-uuid-1', { name: 'X', channelType: 'PEC' }, 'op');
+      const result = await service.requestCampaignConversion('job-uuid-1', { name: 'X', channelType: 'PEC' }, { username: 'op', role: 'admin' });
       expect(result.accepted).toBe(true);
       expect(oldBullJob.remove).toHaveBeenCalled();
       expect(convertCampaignQueue.add).toHaveBeenCalled();
@@ -215,7 +304,7 @@ describe('EnrichmentService', () => {
       const activeBullJob = { getState: jest.fn(async () => 'active'), remove: jest.fn(async () => undefined) };
       convertCampaignQueue.getJob = jest.fn(async () => activeBullJob);
 
-      const result = await service.requestCampaignConversion('job-uuid-1', { name: 'X', channelType: 'PEC' }, 'op');
+      const result = await service.requestCampaignConversion('job-uuid-1', { name: 'X', channelType: 'PEC' }, { username: 'op', role: 'admin' });
       expect(result.accepted).toBe(true);
       expect(activeBullJob.remove).not.toHaveBeenCalled();
       expect(convertCampaignQueue.add).toHaveBeenCalled();
@@ -223,7 +312,7 @@ describe('EnrichmentService', () => {
 
     it('conversione già in corso (pending/processing) → blocked, nessun secondo job in coda', async () => {
       repo.findOneBy.mockResolvedValue({ id: 'j1', status: EnrichmentJobStatus.DONE, campaignId: null, campaignConversionStatus: 'processing' });
-      const result = await service.requestCampaignConversion('j1', { name: 'X', channelType: 'PEC' }, 'op');
+      const result = await service.requestCampaignConversion('j1', { name: 'X', channelType: 'PEC' }, { username: 'op', role: 'admin' });
       expect(result.blocked).toBe(true);
       expect(convertCampaignQueue.add).not.toHaveBeenCalled();
     });

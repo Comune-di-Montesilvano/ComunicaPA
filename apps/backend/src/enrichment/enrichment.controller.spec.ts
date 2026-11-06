@@ -92,7 +92,7 @@ describe('EnrichmentController', () => {
   it('downloadZip: risultato non disponibile → 200 + blocked (mai un 404/500 grezzo)', async () => {
     svc.buildResultZip = jest.fn(async () => null);
     const res: any = { status: jest.fn().mockReturnThis(), json: jest.fn(), setHeader: jest.fn(), send: jest.fn() };
-    await controller.downloadZip('j1', res);
+    await controller.downloadZip('j1', res, { user: { username: 'op', role: 'admin' } } as any);
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ blocked: true }));
     expect(res.send).not.toHaveBeenCalled();
@@ -100,7 +100,7 @@ describe('EnrichmentController', () => {
 
   it('downloadZip: risultato disponibile → invia il buffer', async () => {
     const res: any = { status: jest.fn().mockReturnThis(), json: jest.fn(), setHeader: jest.fn(), send: jest.fn() };
-    await controller.downloadZip('j1', res);
+    await controller.downloadZip('j1', res, { user: { username: 'op', role: 'admin' } } as any);
     expect(res.send).toHaveBeenCalledWith(Buffer.from('zip'));
     expect(res.status).not.toHaveBeenCalled();
   });

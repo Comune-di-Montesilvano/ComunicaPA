@@ -49,14 +49,15 @@ export function visibleCampaignSql(
 export async function logAttachmentDenied(
   audit: { log(data: { campaignId?: string | null; campaignName?: string | null; operator: string; action: string; details?: Record<string, unknown> | null }): Promise<unknown> } | undefined,
   requester: Pick<CampaignRequester, 'username'>,
-  campaign: { id: string; name: string },
+  campaign: { id: string | null; name: string | null },
   endpoint: string,
+  extraDetails?: Record<string, unknown>,
 ): Promise<void> {
   await audit?.log({
     action: 'ATTACHMENT_ACCESS_DENIED',
     operator: requester.username,
     campaignId: campaign.id,
     campaignName: campaign.name,
-    details: { endpoint },
+    details: { endpoint, ...extraDetails },
   });
 }

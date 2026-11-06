@@ -13,6 +13,7 @@ import { EnrichmentEventsService } from './enrichment-events.service.js';
 import { EnrichmentResumeService } from './enrichment-resume.service.js';
 import { EnrichmentAddressOverrideService } from './enrichment-address-override.service.js';
 import { ENRICHMENT_QUEUE, CONVERT_CAMPAIGN_QUEUE } from './enrichment-job.types.js';
+import { AuditLogsModule } from '../audit-logs/audit-logs.module.js';
 import { CampaignsModule } from '../campaigns/campaigns.module.js';
 
 @Module({
@@ -20,6 +21,7 @@ import { CampaignsModule } from '../campaigns/campaigns.module.js';
     TypeOrmModule.forFeature([EnrichmentJob, EnrichmentAddressOverride]),
     BullModule.registerQueue({ name: ENRICHMENT_QUEUE }, { name: CONVERT_CAMPAIGN_QUEUE }),
     CampaignsModule,
+    AuditLogsModule,
   ],
   controllers: [EnrichmentController],
   providers: [
