@@ -17,6 +17,7 @@ export function DatePopover({ id, label, text, open, onOpen, onToggle, onClose, 
   const wrapRef = React.useRef<HTMLSpanElement>(null);
   const btnRef = React.useRef<HTMLButtonElement>(null);
   // Dopo Escape non riapre (neanche per il focus riportato sul bottone) finché il puntatore non esce e rientra.
+  const inside = React.useRef(false);
   const dismissed = React.useRef(false);
   const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelClose = (): void => {
@@ -56,17 +57,20 @@ export function DatePopover({ id, label, text, open, onOpen, onToggle, onClose, 
       onPointerEnter={(e) => {
         if (e.pointerType !== 'mouse') return;
         cancelClose();
+        inside.current = true;
         dismissed.current = false;
         onOpen();
       }}
       onPointerLeave={(e) => {
         if (e.pointerType !== 'mouse') return;
         cancelClose();
+        inside.current = false;
         dismissed.current = false;
         timer.current = setTimeout(onClose, 150);
       }}
       onBlur={(e) => {
-        if (!wrapRef.current?.contains(e.relatedTarget as Node | null)) {
+        // Safari/Firefox macOS: blur con relatedTarget null mentre il puntatore è dentro non deve chiudere.
+        if (!inside.current && !wrapRef.current?.contains(e.relatedTarget as Node | null)) {
           dismissed.current = false;
           onClose();
         }

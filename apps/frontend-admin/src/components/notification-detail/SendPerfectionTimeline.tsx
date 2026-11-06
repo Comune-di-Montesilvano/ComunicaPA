@@ -100,7 +100,8 @@ export function SendPerfectionTimeline({ data, onOpenGuida }: { data: SendPerfec
   const frac = todayFraction(data);
   const pct = frac === null ? null : `${(frac * 100).toFixed(2)}%`;
   const [openKey, setOpenKey] = React.useState<string | null>(null);
-  const closePop = React.useCallback(() => setOpenKey(null), []);
+  // Chiude solo se è ancora aperto QUELLO: il timer di A non deve chiudere B appena aperto.
+  const closeKey = React.useCallback((key: string) => setOpenKey((k) => (k === key ? null : k)), []);
   const baseId = React.useId();
   return (
     <div className="nd-perf">
@@ -126,11 +127,11 @@ export function SendPerfectionTimeline({ data, onOpenGuida }: { data: SendPerfec
                     open={open}
                     onOpen={() => setOpenKey(s.key)}
                     onToggle={() => setOpenKey(open ? null : s.key)}
-                    onClose={closePop}
+                    onClose={() => closeKey(s.key)}
                   >
                     {explanationOf(s, data)}
                     {(s.key === 'entity' || isFinal) && onOpenGuida && (
-                      <button type="button" className="btn btn-link btn-sm p-0 ms-1 align-baseline" onClick={() => { closePop(); onOpenGuida(GUIDA_DATE_TERMINI); }}>
+                      <button type="button" className="btn btn-link btn-sm p-0 ms-1 align-baseline" onClick={() => { closeKey(s.key); onOpenGuida(GUIDA_DATE_TERMINI); }}>
                         Come si contano i termini
                       </button>
                     )}
