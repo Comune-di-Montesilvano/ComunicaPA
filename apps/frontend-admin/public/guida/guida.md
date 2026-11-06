@@ -117,7 +117,7 @@ L'elenco mostra 20 campagne per pagina. La casella di ricerca cerca per nome o I
 
 ### Cercare una singola notifica
 
-Apri **Ricerca Notifiche** e cerca per codice fiscale, nome, email, PEC o IUN. Funziona anche a distanza di tempo dall'invio. Il nome della campagna, nei risultati e nel dettaglio della notifica, apre la campagna. I filtri permettono, ad esempio, di vedere solo le notifiche lette o quelle restituite al mittente. Il filtro **Autore** limita la ricerca alle notifiche delle campagne create da un certo operatore. I risultati sono 20 per pagina: scorri le pagine con le frecce sotto l'elenco.
+Apri **Ricerca Notifiche** e cerca per codice fiscale, nome, email, PEC o IUN. Funziona anche a distanza di tempo dall'invio. Il nome della campagna, nei risultati e nel dettaglio della notifica, apre la campagna. I filtri permettono, ad esempio, di vedere solo le notifiche lette o quelle restituite al mittente. Il filtro **Autore** limita la ricerca alle notifiche delle campagne create da un certo operatore. I risultati sono 20 per pagina: scorri le pagine con i pulsanti **Precedente** e **Successiva** sotto l'elenco.
 
 Una notifica ha due date, una per ciascuna parte (scissione degli effetti; per SEND art. 26, comma 9, D.L. 76/2020):
 
