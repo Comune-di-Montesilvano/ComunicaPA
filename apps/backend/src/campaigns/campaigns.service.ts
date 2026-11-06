@@ -54,6 +54,7 @@ import { postalLegalOutcome, postalLegalOutcomeSql, POSTAL_GLOBALCOM_ERROR_SQL, 
 import { POSTE_DELIVERED_BUCKET, formatLastMovement, isPosteDeliveredOverride, posteDeliveredSql, posteSummaryOf } from '../channels/postal/poste-tracking/poste-tracking-effective.util.js';
 import { ATTACHMENT_DENIED_MESSAGE, canReadCampaignAttachments, canViewCampaign, logAttachmentDenied, visibleCampaignSql } from './campaign-access.util.js';
 import { AuditLogsService } from '../audit-logs/audit-logs.service.js';
+import { OperatorDirectoryService } from '../operator-directory/operator-directory.service.js';
 
 const INAD_BULK_THRESHOLD = 100;
 // Sentinella filtro "Stato Consegna" per attempt SUCCESS senza send_status/postal_status
@@ -188,6 +189,8 @@ export class CampaignsService {
     private readonly remoteSignJobRepo?: Repository<RemoteSignJob>,
     // @Optional: audit del diniego allegati; le spec che non lo forniscono lo saltano.
     @Optional() private readonly auditLogs?: AuditLogsService,
+    // @Optional: validazione del firmatario (setSigner); le spec che non lo forniscono non lo usano.
+    @Optional() private readonly operatorDirectory?: OperatorDirectoryService,
   ) {}
 
   // Bozze altrui escluse in SQL (visibleCampaignSql): stesso criterio di
@@ -1483,6 +1486,36 @@ export class CampaignsService {
     );
 
     return { launched: recipients.length };
+  }
+
+  // Firmatario indicato (solo SEND in bozza): dà accesso a bozza, allegati e
+  // invii di prova. Propagato ai figli di test già esistenti, altrimenti il
+  // firmatario nominato dopo un invio di prova non li vedrebbe.
+  async setSigner(
+    id: string,
+    signerUsername: string | null,
+    requester: CampaignRequester,
+  ): Promise<{ previous: string | null; signerUsername: string | null }> {
+    const campaign = await this.campaignRepo.findOneBy({ id });
+    if (!campaign) throw new NotFoundException(`Campaign ${id} not found`);
+    this.assertOwnership(campaign, requester);
+    if (campaign.channelType !== 'SEND' || campaign.status !== CampaignStatus.DRAFT) {
+      throw new BadRequestException('Il firmatario si indica solo per campagne SEND in bozza');
+    }
+    if (this.remoteSignJobRepo && await this.remoteSignJobRepo.exists({
+      where: { campaignId: id, status: In([RemoteSignJobStatus.QUEUED, RemoteSignJobStatus.PROCESSING]) },
+    })) {
+      throw new BadRequestException('Firma remota in corso: attendi la fine prima di cambiare firmatario');
+    }
+    if (signerUsername !== null) {
+      if (!this.operatorDirectory || !(await this.operatorDirectory.exists(signerUsername))) {
+        throw new BadRequestException('Firmatario sconosciuto: scegli un operatore presente in elenco');
+      }
+    }
+    const previous = campaign.signerUsername ?? null;
+    await this.campaignRepo.update({ id }, { signerUsername });
+    await this.campaignRepo.update({ parentCampaignId: id, isTest: true }, { signerUsername });
+    return { previous, signerUsername };
   }
 
   async cancel(campaignId: string, requester: CampaignRequester): Promise<{ cancelled: number; campaignId: string }> {

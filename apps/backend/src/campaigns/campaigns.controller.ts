@@ -34,6 +34,7 @@ import { CreateCampaignDto } from './dto/create-campaign.dto.js';
 import { UpdateCampaignDto } from './dto/update-campaign.dto.js';
 import { PreviewMessageDto } from './dto/preview-message.dto.js';
 import { TestSendDto } from './dto/test-send.dto.js';
+import { SetSignerDto } from './dto/set-signer.dto.js';
 import { LaunchCampaignDto } from './dto/launch-campaign.dto.js';
 import { UpdateRecipientAddressDto } from './dto/update-recipient-address.dto.js';
 import { AttachPostalTrackingIdDto } from './dto/attach-postal-tracking-id.dto.js';
@@ -563,6 +564,24 @@ export class CampaignsController {
       operator: req.user.username,
       action: 'TEST_SEND',
       details: { testCampaignId: result.testCampaignId, codiceFiscale: dto.codiceFiscale },
+    });
+    return result;
+  }
+
+  @Patch(':id/signer')
+  async setSigner(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SetSignerDto,
+    @Req() req: Request & { user: JwtOperatorPayload },
+  ): Promise<{ previous: string | null; signerUsername: string | null }> {
+    const result = await this.campaignsService.setSigner(id, dto.signerUsername ?? null, { username: req.user.username, role: req.user.role });
+    const campaign = await this.campaignsService.findOne(id).catch(() => null);
+    await this.auditLogsService.log({
+      campaignId: id,
+      campaignName: campaign ? campaign.name : null,
+      operator: req.user.username,
+      action: 'CAMPAIGN_SIGNER_SET',
+      details: { previous: result.previous, signerUsername: result.signerUsername },
     });
     return result;
   }

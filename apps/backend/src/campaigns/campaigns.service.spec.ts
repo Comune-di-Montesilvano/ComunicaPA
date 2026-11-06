@@ -16,6 +16,7 @@ import { AppSettingsService } from '../settings/app-settings.service.js';
 import { InadService, InadQuotaExceededError } from '../channels/inad/inad.service.js';
 import { RegistroImpreseService } from '../channels/registro-imprese/registro-imprese.service.js';
 import { RegistroImpreseVerifyQueueService } from '../channels/registro-imprese/registro-imprese-verify-queue.service.js';
+import { OperatorDirectoryService } from '../operator-directory/operator-directory.service.js';
 import { PostalAuthorizedUsersService } from '../postal-authorized-users/postal-authorized-users.service.js';
 import { PostalStatusSyncService } from '../channels/postal/postal-status-sync.service.js';
 import { SignatureVerificationBulkService } from '../signature-verification/signature-verification-bulk.service.js';
@@ -57,6 +58,7 @@ const ADMIN_REQUESTER = { username: 'admin', role: 'admin' as const };
 const mockPostalAuthorizedUsersService = { isAuthorized: vi.fn().mockResolvedValue(true) };
 const mockSignatureVerificationBulkService = { getLatestStatus: vi.fn().mockResolvedValue({ status: 'done', totalRows: 0, validCount: 0, invalidCount: 0, errorMessage: null }) };
 const mockRemoteSignJobRepo = { exists: vi.fn().mockResolvedValue(false) };
+const mockOperatorDirectory = { exists: vi.fn().mockResolvedValue(true) };
 const mockSignatureVerificationService = { verify: vi.fn().mockResolvedValue({ valid: true, reason: null }) };
 
 describe('CampaignsService', () => {
@@ -128,6 +130,7 @@ describe('CampaignsService', () => {
         CampaignsService,
         { provide: SignatureVerificationBulkService, useValue: mockSignatureVerificationBulkService },
         { provide: getRepositoryToken(RemoteSignJob), useValue: mockRemoteSignJobRepo },
+        { provide: OperatorDirectoryService, useValue: mockOperatorDirectory },
         { provide: SignatureVerificationService, useValue: mockSignatureVerificationService },
         { provide: PostalAuthorizedUsersService, useValue: mockPostalAuthorizedUsersService },
         { provide: getRepositoryToken(Campaign), useValue: mockCampaignRepo },
@@ -2812,6 +2815,71 @@ describe('CampaignsService', () => {
       expect(mockCampaignRepo.delete).toHaveBeenCalledWith('parent-2');
 
       rmSpy.mockRestore();
+    });
+  });
+
+  describe('setSigner', () => {
+    const draft = { ...mockCampaign, id: 'c1', status: CampaignStatus.DRAFT, channelType: 'SEND', createdBy: 'op1', signerUsername: 'old.signer' };
+    const OWNER = { username: 'op1', role: 'user' as const };
+
+    beforeEach(() => {
+      mockCampaignRepo.findOneBy.mockResolvedValue(draft);
+      mockRemoteSignJobRepo.exists.mockReset();
+      mockRemoteSignJobRepo.exists.mockResolvedValue(false);
+      mockOperatorDirectory.exists.mockReset();
+      mockOperatorDirectory.exists.mockResolvedValue(true);
+    });
+
+    it('campagna inesistente -> NotFoundException', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce(null);
+      await expect(service.setSigner('x', 'rossi', OWNER)).rejects.toThrow(NotFoundException);
+    });
+
+    it('altro user (non creatore) -> ForbiddenException', async () => {
+      await expect(service.setSigner('c1', 'rossi', { username: 'op2', role: 'user' })).rejects.toThrow(ForbiddenException);
+      expect(mockCampaignRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('canale non SEND -> BadRequestException', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...draft, channelType: 'EMAIL' });
+      await expect(service.setSigner('c1', 'rossi', OWNER)).rejects.toThrow(BadRequestException);
+    });
+
+    it('non DRAFT -> BadRequestException', async () => {
+      mockCampaignRepo.findOneBy.mockResolvedValueOnce({ ...draft, status: CampaignStatus.RUNNING });
+      await expect(service.setSigner('c1', 'rossi', OWNER)).rejects.toThrow(BadRequestException);
+    });
+
+    it('firma remota attiva -> BadRequestException col messaggio dedicato', async () => {
+      mockRemoteSignJobRepo.exists.mockResolvedValueOnce(true);
+      await expect(service.setSigner('c1', 'rossi', OWNER)).rejects.toThrow('Firma remota in corso: attendi la fine prima di cambiare firmatario');
+      expect(mockCampaignRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('username fuori rubrica -> BadRequestException', async () => {
+      mockOperatorDirectory.exists.mockResolvedValueOnce(false);
+      await expect(service.setSigner('c1', 'ghost', OWNER)).rejects.toThrow(BadRequestException);
+      expect(mockCampaignRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('null azzera il firmatario, senza consultare la rubrica', async () => {
+      const res = await service.setSigner('c1', null, OWNER);
+      expect(res).toEqual({ previous: 'old.signer', signerUsername: null });
+      expect(mockOperatorDirectory.exists).not.toHaveBeenCalled();
+      expect(mockCampaignRepo.update).toHaveBeenCalledWith({ id: 'c1' }, { signerUsername: null });
+    });
+
+    it('ok: salva sulla bozza e propaga ai figli di test, restituisce il precedente', async () => {
+      const res = await service.setSigner('c1', 'rossi', OWNER);
+      expect(res).toEqual({ previous: 'old.signer', signerUsername: 'rossi' });
+      expect(mockOperatorDirectory.exists).toHaveBeenCalledWith('rossi');
+      expect(mockCampaignRepo.update).toHaveBeenCalledWith({ id: 'c1' }, { signerUsername: 'rossi' });
+      expect(mockCampaignRepo.update).toHaveBeenCalledWith({ parentCampaignId: 'c1', isTest: true }, { signerUsername: 'rossi' });
+    });
+
+    it('admin può cambiare il firmatario di una bozza altrui', async () => {
+      const res = await service.setSigner('c1', 'rossi', ADMIN_REQUESTER);
+      expect(res.signerUsername).toBe('rossi');
     });
   });
 

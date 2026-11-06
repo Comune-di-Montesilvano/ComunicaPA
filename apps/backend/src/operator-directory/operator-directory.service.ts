@@ -14,6 +14,18 @@ export class OperatorDirectoryService {
     await this.repo.upsert({ username, displayName }, ['username']);
   }
 
+  async listAll(): Promise<Array<{ username: string; displayName: string }>> {
+    const entries = await this.repo.find({
+      select: { username: true, displayName: true },
+      order: { displayName: 'ASC' },
+    });
+    return entries.map((e) => ({ username: e.username, displayName: e.displayName }));
+  }
+
+  exists(username: string): Promise<boolean> {
+    return this.repo.existsBy({ username });
+  }
+
   async resolveMany(usernames: string[]): Promise<Record<string, string>> {
     const unique = [...new Set(usernames)].filter(Boolean);
     if (unique.length === 0) return {};
