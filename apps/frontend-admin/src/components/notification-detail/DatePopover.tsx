@@ -16,6 +16,8 @@ export function DatePopover({ id, label, text, open, onOpen, onToggle, onClose, 
 }): React.JSX.Element {
   const wrapRef = React.useRef<HTMLSpanElement>(null);
   const btnRef = React.useRef<HTMLButtonElement>(null);
+  // Dopo Escape non riapre (neanche per il focus riportato sul bottone) finché il puntatore non esce e rientra.
+  const dismissed = React.useRef(false);
   const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelClose = (): void => {
     if (timer.current) clearTimeout(timer.current);
@@ -32,6 +34,7 @@ export function DatePopover({ id, label, text, open, onOpen, onToggle, onClose, 
       if (e.key === 'Escape') {
         e.stopPropagation();
         e.preventDefault();
+        dismissed.current = true;
         onClose();
         btnRef.current?.focus();
       }
@@ -53,15 +56,20 @@ export function DatePopover({ id, label, text, open, onOpen, onToggle, onClose, 
       onPointerEnter={(e) => {
         if (e.pointerType !== 'mouse') return;
         cancelClose();
+        dismissed.current = false;
         onOpen();
       }}
       onPointerLeave={(e) => {
         if (e.pointerType !== 'mouse') return;
         cancelClose();
+        dismissed.current = false;
         timer.current = setTimeout(onClose, 150);
       }}
       onBlur={(e) => {
-        if (!wrapRef.current?.contains(e.relatedTarget as Node | null)) onClose();
+        if (!wrapRef.current?.contains(e.relatedTarget as Node | null)) {
+          dismissed.current = false;
+          onClose();
+        }
       }}
     >
       <button
@@ -71,12 +79,12 @@ export function DatePopover({ id, label, text, open, onOpen, onToggle, onClose, 
         aria-expanded={open}
         aria-controls={id}
         onFocus={(e) => {
-          if (e.currentTarget.matches(':focus-visible')) onOpen();
+          if (!dismissed.current && e.currentTarget.matches(':focus-visible')) onOpen();
         }}
         onClick={(e) => {
           // Mouse: l'apertura è già avvenuta al passaggio. Tastiera (detail 0) e touch: alterna.
           if (e.detail === 0 || (e.nativeEvent as PointerEvent).pointerType === 'touch') onToggle();
-          else onOpen();
+          else if (!dismissed.current) onOpen();
         }}
       >
         {text}
