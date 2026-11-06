@@ -16,7 +16,7 @@
 ## Global Constraints
 
 - Mai PII reali in codice, test o commit. Fixture: `ROSSI MARIO`, `RSSMRA80A01H501U`, `ACME SRL`, indirizzi finti.
-- Le chiavi PII tolte a qualunque profondità sono: `physicalAddress`, `digitalAddress`, `newAddress`, `normalizedAddress`, `oldAddress`, `address`, `at`, `municipality`, `municipalityDetails`, `zip`, `province`, `foreignState`, `taxId`, `denomination`, `recipient`, `recipientId`, `foundAddress`, `addressDetails`, `delegateInfo`, `fullname`, `nameRow2`, `addressRow2`, `cap`, `city`, `city2`, `pr`, `country`; inoltre `detail` dentro ogni elemento di `refusalReasons`.
+- Le chiavi tolte a qualunque profondità sono: `taxId`, `denomination`, `recipient`, `recipientId`, `delegateInfo`; inoltre `detail` dentro ogni elemento di `refusalReasons`. Gli indirizzi (`physicalAddress`, `digitalAddress`, `foundAddress`, …) si tengono: decisione dell'utente 2026-11-06, l'operatore deve vedere l'indirizzo del secondo tentativo (la costante si chiama `SEND_TIMELINE_STRIPPED_KEYS`).
 - Attenzione a `at`: va tolta **solo dentro `details`**. Il campo `at` dell'evento, cioè il timestamp, resta.
 - Date delle tappe: stringhe `YYYY-MM-DD` nel calendario Europe/Rome. Giorni di calendario, senza slittamento per festivi.
 - Regola delle 21:00: vale solo per la consegna digitale (+7). La soglia è esclusiva: dalle 21:00:01 in poi si conta dal giorno dopo.

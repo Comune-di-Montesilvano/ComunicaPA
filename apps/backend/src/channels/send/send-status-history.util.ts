@@ -85,9 +85,9 @@ export function extractSendAnalogCost(data: unknown): SendAnalogCostInfo {
 }
 
 /**
- * Evento della timeline PN: tutti i fatti PN, chiavi PII rimosse (indirizzi
- * fisici/digitali, dati del destinatario). I campi normalizzati sono estratti
- * prima della rimozione; `details` ha il resto.
+ * Evento della timeline PN: tutti i fatti PN. Indirizzi tenuti (sono i dati del
+ * destinatario che l'ente gia' possiede); dati di identita' rimossi. I campi
+ * normalizzati sono estratti prima della rimozione; `details` ha il resto.
  */
 export interface SendTimelineEvent {
   category: string;
@@ -97,7 +97,7 @@ export interface SendTimelineEvent {
   /** OK/KO di SEND_ANALOG_FEEDBACK / SEND_DIGITAL_FEEDBACK. */
   responseStatus?: string;
   productType?: string;
-  /** Tipo canale del messaggio/domicilio digitale (PEC, EMAIL, SMS, APPIO): mai l'indirizzo. */
+  /** Tipo canale del messaggio/domicilio digitale (PEC, EMAIL, SMS, APPIO). */
   channel?: string;
   deliveryFailureCause?: string;
   /** Numero del tentativo (0 = primo). */
@@ -105,40 +105,21 @@ export interface SendTimelineEvent {
   raddType?: string;
   /** Codice della raccomandata del recapitista: tracciabile su poste.it quando il vettore è Poste. */
   registeredLetterCode?: string;
-  /** Dettagli PN senza chiavi PII (sempre presente, anche vuoto). */
+  /** Dettagli PN senza dati di identita' (sempre presente, anche vuoto). */
   details?: Record<string, unknown>;
 }
 
-/** Chiavi con dati personali, tolte a qualunque profondità dai `details`. */
-export const SEND_TIMELINE_PII_KEYS: readonly string[] = [
-  'physicalAddress',
-  'digitalAddress',
-  'newAddress',
-  'normalizedAddress',
-  'oldAddress',
-  'address',
-  'at',
-  'municipality',
-  'municipalityDetails',
-  'zip',
-  'province',
-  'foreignState',
+/**
+ * Chiavi di identita' tolte a qualunque profondita' dai `details`. Gli indirizzi
+ * restano: sono dati del destinatario che l'ente gia' possiede e l'operatore deve
+ * poterli vedere (es. indirizzo del secondo tentativo).
+ */
+export const SEND_TIMELINE_STRIPPED_KEYS: readonly string[] = [
   'taxId',
   'denomination',
   'recipient',
   'recipientId',
-  'foundAddress',
-  'addressDetails',
   'delegateInfo',
-  // Righe indirizzo cartaceo (prepare/send analog request).
-  'fullname',
-  'nameRow2',
-  'addressRow2',
-  'cap',
-  'city',
-  'city2',
-  'pr',
-  'country',
 ];
 
 /** Testo libero di PN che può ripetere un codice fiscale: tolto dagli elementi di `refusalReasons`. */
@@ -150,7 +131,7 @@ export function stripSendPii(value: unknown): unknown {
   if (value && typeof value === 'object') {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value)) {
-      if (SEND_TIMELINE_PII_KEYS.includes(k)) continue;
+      if (SEND_TIMELINE_STRIPPED_KEYS.includes(k)) continue;
       out[k] = k === 'refusalReasons' && Array.isArray(v) ? v.map(stripRefusalReason) : stripSendPii(v);
     }
     return out;

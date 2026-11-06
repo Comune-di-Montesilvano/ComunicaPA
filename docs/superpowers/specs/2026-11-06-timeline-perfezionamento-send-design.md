@@ -44,16 +44,11 @@ Riferimento visivo approvato dall'utente: opzione **A**, "Quattro tappe con oggi
 Oggi `extractSendTimeline` è una whitelist: 11 categorie e 8 campi dei dettagli. Il resto della risposta PN (`SCHEDULE_REFINEMENT`, `REFINEMENT`, `COMPLETELY_UNREACHABLE`, `schedulingDate`, `attachments`, `legalFactId`, costi…) si perde a ogni poll. Ogni nuova funzione obbliga quindi a tornare a rileggere SEND. Decisione dell'utente (2026-11-06): **si conserva tutto tranne le PII**.
 
 - Si tengono tutte le categorie. Ogni evento conserva i campi già normalizzati, così i consumatori esistenti restano invariati, e in più `details`: copia dei dettagli PN depurata.
-- La depurazione è **ricorsiva** e toglie una lista chiusa di chiavi a qualunque profondità:
-  - indirizzi: `physicalAddress`, `digitalAddress`, `newAddress`, `normalizedAddress`, `oldAddress`, `address`, `at`, `municipality`, `municipalityDetails`, `zip`, `province`, `foreignState`, `foundAddress`, `addressDetails`;
-  - righe dell'indirizzo cartaceo: `fullname`, `nameRow2`, `addressRow2`, `cap`, `city`, `city2`, `pr`, `country`;
-  - identità del destinatario e del delegato: `taxId`, `denomination`, `recipient`, `recipientId`, `delegateInfo`;
-  - testo libero: `detail` dentro ogni elemento di `refusalReasons` (PN può ripetere un codice fiscale); `errorCode` e gli altri campi restano.
-
-  Fanno eccezione i campi tecnici già estratti prima della depurazione: oggi da `digitalAddress` si prende solo il `type` (in `channel`).
+- La depurazione è **ricorsiva** e toglie una lista chiusa di chiavi a qualunque profondità: `taxId`, `denomination`, `recipient`, `recipientId`, `delegateInfo`, più `detail` dentro ogni elemento di `refusalReasons` (PN può ripetere un codice fiscale); `errorCode` e gli altri campi restano.
+- **Gli indirizzi si tengono** (`physicalAddress`, `digitalAddress`, `foundAddress`, righe dell'indirizzo cartaceo ecc.): sono dati del destinatario che l'ente già possiede e il primo è già mostrato in «Recapito». Decisione dell'utente (2026-11-06): l'operatore deve vedere l'indirizzo del secondo tentativo, che SEND può aver trovato diverso.
 - I tipi stanno sia in `SendTimelineEvent`, backend e frontend, sia in `AttemptDetailDto`: `details?: Record<string, unknown>`.
-- **Backfill una tantum**: `SendStatusSyncService.updateStatuses` ripesca anche gli attempt terminali la cui timeline è nel formato vecchio, cioè non vuota e con il primo evento senza `details`. Dopo un poll hanno `details`, quindi escono dal ripescaggio da soli. Nessuna migration.
-- Anche l'UI del percorso resta invariata, perché `describeSendTimelineEvent` restituisce null per le categorie che non conosce.
+- **Backfill una tantum**: `SendStatusSyncService.updateStatuses` ripesca anche gli attempt terminali la cui timeline è nel formato vecchio, cioè non vuota e con il primo evento senza `details`, oppure ha un evento analogico con `details` ma senza `physicalAddress` (timeline ripollate prima che gli indirizzi fossero tenuti). Dopo un poll hanno `details`, quindi escono dal ripescaggio da soli. Nessuna migration.
+- Il percorso mostra «Inviata a: <indirizzo>» sulle spedizioni cartacee (`SEND_ANALOG_DOMICILE`, `SEND_SIMPLE_REGISTERED_LETTER`); le altre categorie restano invariate, perché `describeSendTimelineEvent` restituisce null per quelle che non conosce.
 
 ## Fonte delle date (in ordine di priorità)
 

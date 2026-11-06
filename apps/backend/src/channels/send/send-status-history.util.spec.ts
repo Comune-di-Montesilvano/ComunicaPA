@@ -61,7 +61,7 @@ describe('send-status-history.util', () => {
     });
   });
   describe('extractSendTimeline', () => {
-    it('tiene i normalizzati e i dettagli, senza indirizzi né dati del destinatario', () => {
+    it('tiene i normalizzati e i dettagli, indirizzi compresi', () => {
       const data = {
         timeline: [
           { category: 'REQUEST_ACCEPTED', timestamp: '2026-10-13T09:46:43Z', details: {} },
@@ -78,14 +78,13 @@ describe('send-status-history.util', () => {
 
       expect(result).toEqual([
         { category: 'REQUEST_ACCEPTED', at: '2026-10-13T09:46:43Z', details: {} },
-        { category: 'SEND_ANALOG_DOMICILE', at: '2026-10-13T09:47:30Z', productType: 'AR', attempt: 0, details: { productType: 'AR', analogCost: 494, sentAttemptMade: 0 } },
+        { category: 'SEND_ANALOG_DOMICILE', at: '2026-10-13T09:47:30Z', productType: 'AR', attempt: 0, details: { physicalAddress: { address: 'VIA ROMA 1' }, productType: 'AR', analogCost: 494, sentAttemptMade: 0 } },
         { category: 'SEND_ANALOG_PROGRESS', at: '2026-10-20T07:58:00Z', code: 'RECRN010', registeredLetterCode: '123', details: { deliveryDetailCode: 'RECRN010', registeredLetterCode: '123' } },
-        { category: 'SEND_ANALOG_FEEDBACK', at: '2026-10-23T13:18:08Z', code: 'RECRN003C', responseStatus: 'OK', attempt: 0, details: { responseStatus: 'OK', deliveryDetailCode: 'RECRN003C', sentAttemptMade: 0 } },
-        { category: 'SEND_COURTESY_MESSAGE', at: '2026-10-13T09:47:00Z', channel: 'EMAIL', details: {} },
+        { category: 'SEND_ANALOG_FEEDBACK', at: '2026-10-23T13:18:08Z', code: 'RECRN003C', responseStatus: 'OK', attempt: 0, details: { physicalAddress: { address: 'VIA ROMA 1' }, responseStatus: 'OK', deliveryDetailCode: 'RECRN003C', sentAttemptMade: 0 } },
+        { category: 'SEND_COURTESY_MESSAGE', at: '2026-10-13T09:47:00Z', channel: 'EMAIL', details: { digitalAddress: { type: 'EMAIL', address: 'mario@example.it' } } },
         { category: 'NOTIFICATION_RADD_RETRIEVED', at: '2026-10-26T10:51:36Z', raddType: 'ALT', details: { raddType: 'ALT', raddTransactionId: 'x' } },
         { category: 'REFINEMENT', at: '2026-11-02T13:18:08Z', details: {} },
       ]);
-      expect(JSON.stringify(result)).not.toMatch(/VIA ROMA|mario@example/);
     });
 
     it('keeps categories outside the old whitelist', () => {
@@ -96,16 +95,22 @@ describe('send-status-history.util', () => {
       ]);
     });
 
-    it('strips PII keys at any depth', () => {
+    it('keeps addresses, strips identity keys at any depth', () => {
       const data = {
         timeline: [{
-          category: 'SEND_DIGITAL_DOMICILE',
+          category: 'SEND_ANALOG_DOMICILE',
           timestamp: '2026-11-02T10:00:00Z',
           details: {
-            physicalAddress: { address: 'VIA ROMA 1', zip: '00100' },
-            digitalAddress: { type: 'PEC', address: 'rossi@pec.example' },
-            attachments: [{ documentType: 'AR', physicalAddress: { address: 'X' } }],
-            recipient: { taxId: 'RSSMRA80A01H501U' },
+            physicalAddress: { address: 'VIA ROMA 1', addressDetails: 'SCALA B', zip: '00100', municipality: 'ROMA', province: 'RM', foreignState: 'ITALIA' },
+            foundAddress: { address: 'VIA X', addressDetails: 'INT 4' },
+            attachments: [{ documentType: 'AR', physicalAddress: { address: 'VIA ROMA 2' }, taxId: 'RSSMRA80A01H501U' }],
+            recipient: { taxId: 'RSSMRA80A01H501U', denomination: 'ROSSI MARIO' },
+            recipientId: 'PF-1',
+            taxId: 'RSSMRA80A01H501U',
+            denomination: 'ACME SRL',
+            delegateInfo: { internalId: 'x-int', mandateId: 'z-man' },
+            prepareRequest: { fullname: 'ROSSI MARIO', cap: '00199', city: 'ROMA', productType: 'AR' },
+            refusalReasons: [{ errorCode: 'E1', detail: 'RSSMRA80A01H501U non valido' }],
             analogCost: 900,
           },
         }],
@@ -113,46 +118,16 @@ describe('send-status-history.util', () => {
 
       const [ev] = extractSendTimeline(data);
 
-      expect(ev.details).toEqual({ attachments: [{ documentType: 'AR' }], analogCost: 900 });
-      expect(ev.channel).toBe('PEC');
+      expect(ev.details).toEqual({
+        physicalAddress: { address: 'VIA ROMA 1', addressDetails: 'SCALA B', zip: '00100', municipality: 'ROMA', province: 'RM', foreignState: 'ITALIA' },
+        foundAddress: { address: 'VIA X', addressDetails: 'INT 4' },
+        attachments: [{ documentType: 'AR', physicalAddress: { address: 'VIA ROMA 2' } }],
+        prepareRequest: { fullname: 'ROSSI MARIO', cap: '00199', city: 'ROMA', productType: 'AR' },
+        refusalReasons: [{ errorCode: 'E1' }],
+        analogCost: 900,
+      });
       const json = JSON.stringify(ev);
-      expect(json).not.toContain('RSSMRA80A01H501U');
-      expect(json).not.toContain('VIA ROMA');
-      expect(json).not.toContain('rossi@pec');
-    });
-
-    it('strips address details, delegate info, analog address rows and refusal detail', () => {
-      const data = {
-        timeline: [{
-          category: 'REQUEST_REFUSED',
-          timestamp: '2026-11-02T10:00:00Z',
-          details: {
-            foundAddress: { address: 'VIA X', addressDetails: 'SCALA B INT 4' },
-            addressDetails: 'PIANO 3 SCALA C',
-            delegateInfo: { internalId: 'x-int', operatorUuid: 'y-op', mandateId: 'z-man' },
-            prepareRequest: {
-              fullname: 'ROSSI MARIO',
-              nameRow2: 'PRESSO ACME SRL',
-              addressRow2: 'CORTILE INTERNO',
-              cap: '00199',
-              city: 'CITTAFINTA',
-              city2: 'FRAZIONEFINTA',
-              pr: 'ZZ',
-              country: 'ITALIAFINTA',
-              productType: 'AR',
-            },
-            refusalReasons: [{ errorCode: 'E1', detail: 'RSSMRA80A01H501U non valido' }],
-          },
-        }],
-      };
-
-      const [ev] = extractSendTimeline(data);
-
-      expect(ev.details).toEqual({ prepareRequest: { productType: 'AR' }, refusalReasons: [{ errorCode: 'E1' }] });
-      const json = JSON.stringify(ev);
-      for (const v of ['VIA X', 'SCALA B', 'PIANO 3', 'x-int', 'y-op', 'z-man', 'ROSSI MARIO', 'ACME SRL', 'CORTILE', '00199', 'CITTAFINTA', 'FRAZIONEFINTA', '"ZZ"', 'ITALIAFINTA', 'RSSMRA80A01H501U']) {
-        expect(json).not.toContain(v);
-      }
+      for (const v of ['RSSMRA80A01H501U', 'ACME SRL', 'x-int', 'z-man', 'PF-1']) expect(json).not.toContain(v);
     });
 
     it('keeps detail outside refusalReasons', () => {
@@ -160,13 +135,13 @@ describe('send-status-history.util', () => {
       expect(extractSendTimeline(data)[0].details).toEqual({ detail: 'ok' });
     });
 
-    it('keeps event timestamp at while stripping details.at', () => {
+    it('keeps event timestamp at and details.at', () => {
       const data = { timeline: [{ category: 'REFINEMENT', timestamp: '2026-11-02T10:00:00Z', details: { at: 'VIA X' } }] };
 
       const [ev] = extractSendTimeline(data);
 
       expect(ev.at).toBe('2026-11-02T10:00:00Z');
-      expect(ev.details).toEqual({});
+      expect(ev.details).toEqual({ at: 'VIA X' });
     });
 
     it('timeline assente → array vuoto', () => {
