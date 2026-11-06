@@ -32,20 +32,19 @@ function todayFraction(data: SendPerfection): number | null {
     .filter((x): x is { i: number; t: number } => x.t !== null);
   if (dated.length === 0) return null;
   const first = dated[0]!;
-  const last = dated[dated.length - 1]!;
+  if (today < first.t) return 0;
+  // Ultima tappa già raggiunta (data <= oggi): oggi è lì se coincide,
+  // altrimenti fra lei e la tappa successiva.
+  const reached = dated.filter((x) => x.t <= today);
+  const a = reached[reached.length - 1]!;
   let idx: number;
-  if (today <= first.t) idx = 0;
-  else if (today >= last.t) idx = last.i;
+  if (a.t === today) idx = a.i;
   else {
-    idx = last.i;
-    for (let k = 0; k < dated.length - 1; k++) {
-      const a = dated[k]!;
-      const b = dated[k + 1]!;
-      if (today >= a.t && today <= b.t) {
-        idx = b.t === a.t ? a.i : a.i + ((today - a.t) / (b.t - a.t)) * (b.i - a.i);
-        break;
-      }
-    }
+    const b = dated.find((x) => x.i > a.i && x.t > today);
+    if (b) idx = a.i + ((today - a.t) / (b.t - a.t)) * (b.i - a.i);
+    // Tappa successiva senza data (es. "Notificata per il destinatario" ancora
+    // ignota): a metà strada, mai sopra la data dell'ultima tappa raggiunta.
+    else idx = a.i < n - 1 ? a.i + 0.5 : a.i;
   }
   return idx / (n - 1);
 }
