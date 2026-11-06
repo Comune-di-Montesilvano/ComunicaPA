@@ -178,6 +178,17 @@ function sentTo(e: SendTimelineEvent, timeline: readonly SendTimelineEvent[]): s
   return addr ? `Inviata a: ${addr}` : null;
 }
 
+/** Esito dell'avviso di cortesia su App IO (`ioSendMessageResult` di PN). */
+const IO_RESULTS: Record<string, string> = {
+  SENT_COURTESY: 'messaggio recapitato in App IO',
+  SENT_OPTIN: 'inviata in App IO la richiesta di attivare il servizio',
+  NOT_SENT_OPTIN_ALREADY_SENT: 'non inviato: richiesta di attivazione già inviata',
+  NOT_SENT_APPIO_UNAVAILABLE: 'non inviato: App IO non disponibile',
+  ERROR_USER_STATUS: 'non inviato: errore nel controllo dello stato in App IO',
+  ERROR_COURTESY: 'invio in App IO non riuscito',
+  ERROR_OPTIN: 'richiesta di attivazione in App IO non riuscita',
+};
+
 /** Indirizzo digitale ({type, address}) riportato da PN nei dettagli dell'evento. */
 function digitalAddressOf(e: SendTimelineEvent): { type: string | null; address: string | null } {
   const v = e.details?.['digitalAddress'];
@@ -208,7 +219,12 @@ export function describeSendTimelineEvent(e: SendTimelineEvent, timeline: readon
       const da = digitalAddressOf(e);
       const ch = e.channel ?? da.type;
       // App IO: logo ufficiale al posto del nome; PN riporta solo "ENABLED", nessun recapito.
-      if (ch === 'APPIO') return { title: 'Avviso di cortesia inviato via', detail: null, tone: 'neutral', logo: 'APP_IO' };
+      if (ch === 'APPIO') {
+        const result = str(e.details?.['ioSendMessageResult']);
+        const status = da.address === 'ENABLED' ? 'App IO attiva per il destinatario' : null;
+        const detail = [status, result ? (IO_RESULTS[result] ?? result) : null].filter(Boolean).join(' · ');
+        return { title: 'Avviso di cortesia inviato via', detail: detail ? detail.charAt(0).toUpperCase() + detail.slice(1) : null, tone: 'neutral', logo: 'APP_IO' };
+      }
       return { title: `Avviso di cortesia inviato${ch ? ` via ${CHANNEL_LABELS[ch] ?? ch}` : ''}`, detail: da.address ? `Inviato a: ${da.address}` : null, tone: 'neutral' };
     }
     case 'PREPARE_ANALOG_DOMICILE_FAILURE':
