@@ -14,6 +14,7 @@ import { resolvePaymentData, resolvePhysicalAddress } from '../payment-config.ut
 import { getEffectiveRetentionDays } from '../../campaigns/retention.util.js';
 import { CampaignCompletionService } from '../../campaigns/campaign-completion.service.js';
 import { resolveSubjectTemplate } from '../subject-mapping.util.js';
+import { sendSubjectTooLong } from './send-limits.js';
 import { splitDenominazione, type DenominazioneAbbreviation } from '../postal/denominazione.util.js';
 import { captureException } from '../../common/sentry.util.js';
 import { isPartitaIva } from '../tax-id.util.js';
@@ -128,6 +129,10 @@ export class SendDispatchService {
 
     const vars: Record<string, string> = { fullName: recipient.fullName ?? '', codiceFiscale: recipient.codiceFiscale };
     const subject = interpolate(resolveSubjectTemplate(campaign, recipient), vars);
+    // Controllo prima di caricare gli allegati: PN rifiuterebbe comunque la
+    // richiesta, meglio un motivo leggibile e nessun upload sprecato.
+    const subjectError = sendSubjectTooLong(subject);
+    if (subjectError) throw new Error(subjectError);
     const paProtocolNumber = `${attempt.protocolNumber}/${attempt.protocolYear}`;
 
     const attachmentsConfig = resolveAttachmentsConfig(campaign.channelConfig);

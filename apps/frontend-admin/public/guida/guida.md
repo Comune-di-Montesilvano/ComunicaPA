@@ -1,6 +1,6 @@
 # ComunicaPA – Guida per gli operatori
 
-_Ultimo aggiornamento: 2026-11-05_
+_Ultimo aggiornamento: 2026-11-06_
 
 ## Cos'è e chi lo usa
 
@@ -205,7 +205,7 @@ Se il wizard blocca **Avanti** o rifiuta un campo, quasi sempre è per una di qu
 | Email | Facoltativo | Entrambi obbligatori | Nessuna, parallela o esclusiva | Facoltativo |
 | PEC | Facoltativo | Entrambi obbligatori | Nessuna, parallela o esclusiva | Facoltativo |
 | App IO | Facoltativo | Oggetto 10–120 caratteri, testo 80–10.000 | — | Facoltativo |
-| SEND | Obbligatorio | Solo oggetto | — | Obbligatorio |
+| SEND | Obbligatorio | Solo oggetto, al massimo 134 caratteri | — | Obbligatorio |
 | Posta | Obbligatorio | Solo oggetto: il contenuto è l'allegato | Nessuna, parallela o esclusiva | Facoltativo |
 
 App IO «esclusiva» significa solo App IO, senza il canale principale. Se quel destinatario viene dirottato su PEC per il domicilio digitale, per lui l'App IO diventa automaticamente «parallela».
@@ -327,10 +327,13 @@ Da **Impostazioni** gli amministratori configurano server Email e PEC, App IO, S
 **Causa:** il canale ha regole proprie (vedi «Regole per canale»). Le più frequenti:
 
 - su App IO, oggetto sotto i 10 caratteri o testo sotto gli 80;
+- su SEND, oggetto oltre i 134 caratteri, anche in una sola riga della colonna CSV dell'oggetto;
 - su SEND e Posta, allegato mancante;
 - testo senza `%%elenco_allegati%%` (o senza tutti gli `%%allegatoN%%`) quando la campagna ha allegati.
 
 **Soluzione:** correggi il campo indicato, seguendo la tabella «Regole per canale».
+
+Un oggetto SEND che supera i 134 caratteri solo dopo la sostituzione dei segnaposto fa fallire l'invio con «Oggetto SEND troppo lungo»: accorcia l'oggetto e rimetti in coda la notifica.
 
 **Apri un ticket se:** il contenuto rispetta le regole ma il wizard lo rifiuta.
 

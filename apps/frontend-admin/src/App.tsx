@@ -1083,6 +1083,8 @@ const APP_IO_MARKDOWN_MIN = 80;
 const APP_IO_MARKDOWN_MAX = 10000;
 const APP_IO_SUBJECT_MIN = 10;
 const APP_IO_SUBJECT_MAX = 120;
+// Limite PN su subject (HTTP 400 PN_INVALID_BODY "maximum allowed: 134").
+const SEND_SUBJECT_MAX = 134;
 
 
 // Più warning di arricchimento sulla stessa riga/PDF (es. "Indirizzo non
@@ -2638,6 +2640,13 @@ export function App(): React.JSX.Element {
   const wizAppIoSubjectLen = wizAppIoInvolved ? wizAppIoSubjectText.length : 0;
   const wizAppIoSubjectLenInvalid = wizAppIoInvolved
     && (wizAppIoSubjectLen < APP_IO_SUBJECT_MIN || wizAppIoSubjectLen > APP_IO_SUBJECT_MAX);
+
+  // SEND: oggetto max 134 caratteri, sia il template unico sia la colonna
+  // CSV per destinatario (righe vuote ripiegano sul template).
+  const wizSendSubjectLenInvalid = wizChannel === 'SEND' && wizSubject.length > SEND_SUBJECT_MAX;
+  const wizSendSubjectColumnTooLong = wizChannel === 'SEND' && wizMapping.subject
+    ? wizCsvRows.filter(r => (r[wizMapping.subject] ?? '').trim().length > SEND_SUBJECT_MAX).length
+    : 0;
 
   // Se ci sono allegati configurati, il template deve poterli referenziare
   // (elenco o tutti i link singoli) — altrimenti il destinatario non ha modo
@@ -12095,6 +12104,8 @@ export function App(): React.JSX.Element {
                                 ((wizChannel !== 'SEND' && (wizChannel !== 'POSTAL' || ((settInadCheckEnabled || !!wizPecReserveMailConfigId) && !wizSingleMode))) && isWizBodyEmpty(wizBody)) ||
                                 wizAppIoBodyLenInvalid ||
                                 wizAppIoSubjectLenInvalid ||
+                                wizSendSubjectLenInvalid ||
+                                wizSendSubjectColumnTooLong > 0 ||
                                 wizPrimaryBodyMissingAttachmentPlaceholder ||
                                 wizAppIoBodyMissingAttachmentPlaceholder ||
                                 ((wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && wizAppIoMode !== 'none' && wizAppIoDifferentiate && (!wizAppIoSubjectOverride || !wizAppIoBodyOverride))
@@ -12143,6 +12154,17 @@ export function App(): React.JSX.Element {
                         onFocus={() => setWizLastFocusedField('subject')}
                         required
                       />
+                      {wizChannel === 'SEND' && (
+                        <div className={`form-text small ${wizSendSubjectLenInvalid ? 'text-danger' : 'text-muted'}`}>
+                          {wizSubject.length}/{SEND_SUBJECT_MAX} caratteri: SEND rifiuta oggetti più lunghi. I segnaposto vengono sostituiti all'invio e possono allungarlo.
+                        </div>
+                      )}
+                      {wizSendSubjectColumnTooLong > 0 && (
+                        <div className="alert alert-warning py-2 small mt-2 mb-0">
+                          <AlertTriangle className="me-1" size={16} />
+                          Nella colonna «{wizMapping.subject}» {wizSendSubjectColumnTooLong === 1 ? '1 riga ha' : `${wizSendSubjectColumnTooLong} righe hanno`} un oggetto oltre {SEND_SUBJECT_MAX} caratteri: SEND le rifiuterebbe. Accorcia l'oggetto nel file o scegli un'altra colonna al Passo 3.
+                        </div>
+                      )}
                     </div>
 
                     {wizChannel !== 'SEND' && (wizChannel !== 'POSTAL' || ((settInadCheckEnabled || !!wizPecReserveMailConfigId) && !wizSingleMode)) && (
@@ -12312,6 +12334,8 @@ export function App(): React.JSX.Element {
                                   ((wizChannel !== 'SEND' && (wizChannel !== 'POSTAL' || ((settInadCheckEnabled || !!wizPecReserveMailConfigId) && !wizSingleMode))) && isWizBodyEmpty(wizBody)) ||
                                   wizAppIoBodyLenInvalid ||
                                   wizAppIoSubjectLenInvalid ||
+                                  wizSendSubjectLenInvalid ||
+                                  wizSendSubjectColumnTooLong > 0 ||
                                   wizPrimaryBodyMissingAttachmentPlaceholder ||
                                   wizAppIoBodyMissingAttachmentPlaceholder ||
                                   ((wizChannel === 'EMAIL' || wizChannel === 'PEC' || wizChannel === 'POSTAL') && wizAppIoMode !== 'none' && wizAppIoDifferentiate && (!wizAppIoSubjectOverride || !wizAppIoBodyOverride))

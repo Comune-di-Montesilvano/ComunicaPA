@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { SEND_SUBJECT_MAX } from '../../channels/send/send-limits.js';
 import {
   IsArray,
   IsBoolean,
@@ -284,6 +285,8 @@ export function channelRuleIssues(dto: CreateNotificationDto): ValidationIssue[]
   if (!subject.trim()) add('content.subject', 'subject obbligatorio (non vuoto)');
   else if (ch === 'APP_IO' && (subject.length < APP_IO_LIMITS.subject[0] || subject.length > APP_IO_LIMITS.subject[1])) {
     add('content.subject', `subject deve avere tra ${APP_IO_LIMITS.subject[0]} e ${APP_IO_LIMITS.subject[1]} caratteri per APP_IO`);
+  } else if (ch === 'SEND' && subject.length > SEND_SUBJECT_MAX) {
+    add('content.subject', `subject deve avere al massimo ${SEND_SUBJECT_MAX} caratteri per SEND`);
   }
 
   const body = dto.content.body;
