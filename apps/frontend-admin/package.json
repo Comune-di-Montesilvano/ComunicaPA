@@ -17,7 +17,7 @@
     "@tiptap/starter-kit": "^3.32.1",
     "@tiptap/extension-link": "^3.32.1",
     "@uiw/react-md-editor": "^4.1.6",
-    "lucide-react": "^1.63.0",
+    "lucide-react": "^1.64.0",
     "recharts": "^3.10.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
