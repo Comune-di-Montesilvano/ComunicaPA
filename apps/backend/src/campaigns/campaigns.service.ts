@@ -3490,7 +3490,8 @@ export class CampaignsService {
   /** Righe verifica Poste per attempt id — mappa vuota senza repo o senza id. */
   private async loadPosteTrackingByAttempt(attemptIds: string[]): Promise<Map<string, PostalPosteTracking>> {
     if (!this.posteTrackingRepo || attemptIds.length === 0) return new Map();
-    const rows = (await this.posteTrackingRepo.find({ where: { attemptId: In(attemptIds) } })) ?? [];
+    // Più righe per attempt SEND (una per raccomandata): in mappa resta la più recente.
+    const rows = (await this.posteTrackingRepo.find({ where: { attemptId: In(attemptIds) }, order: { createdAt: 'ASC' } })) ?? [];
     return new Map(rows.map((r) => [r.attemptId, r]));
   }
 

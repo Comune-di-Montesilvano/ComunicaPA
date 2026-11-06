@@ -203,8 +203,9 @@ export class NotificationsSearchService {
     // Anche SEND: le raccomandate del recapitista Poste hanno i movimenti nel percorso.
     const postalAttemptIds = attempts.filter((a) => a.channelType === 'POSTAL' || a.channelType === 'SEND').map((a) => a.id);
     const posteRows = this.posteTrackingRepo && postalAttemptIds.length > 0
-      ? ((await this.posteTrackingRepo.find({ where: { attemptId: In(postalAttemptIds) } })) ?? [])
+      ? ((await this.posteTrackingRepo.find({ where: { attemptId: In(postalAttemptIds) }, order: { createdAt: 'ASC' } })) ?? [])
       : [];
+    // Più righe per attempt SEND (una per raccomandata): in mappa resta la più recente.
     const posteByAttempt = new Map(posteRows.map((p) => [p.attemptId, p]));
     const latestAttempt = attempts.reduce<NotificationAttempt | null>((acc, a) => (!acc || a.attemptNumber > acc.attemptNumber ? a : acc), null);
     const latestPoste = latestAttempt ? posteByAttempt.get(latestAttempt.id) : undefined;
@@ -339,7 +340,10 @@ export class NotificationsSearchService {
             postalAcceptanceId: a.postalAcceptanceId ?? null,
             postalStatusHistory: a.postalStatusHistory ?? null,
             ...(a.channelType === 'POSTAL' || a.channelType === 'SEND'
-              ? { posteVerification: posteByAttempt.has(a.id) ? toPosteVerificationDto(posteByAttempt.get(a.id)!) : null }
+              ? {
+                posteVerification: posteByAttempt.has(a.id) ? toPosteVerificationDto(posteByAttempt.get(a.id)!) : null,
+                posteVerifications: posteRows.filter((p) => p.attemptId === a.id).map(toPosteVerificationDto),
+              }
               : {}),
             costCents: a.costCents ?? null,
             costCalculatedAt: a.costCalculatedAt ? a.costCalculatedAt.toISOString() : null,

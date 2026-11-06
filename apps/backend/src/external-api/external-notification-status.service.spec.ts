@@ -50,6 +50,6 @@ describe('ExternalNotificationStatusService.get', () => {
       ],
     });
     await svc.get(REC_ID, 'client-1');
-    expect(posteRepo.findOne).toHaveBeenCalledWith({ where: { attemptId: 'a2' } });
+    expect(posteRepo.findOne).toHaveBeenCalledWith({ where: { attemptId: 'a2' }, order: { createdAt: 'DESC' } });
   });
 });

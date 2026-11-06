@@ -1,4 +1,4 @@
-import { Column, CreateDateColumn, Entity, Index, JoinColumn, OneToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, CreateDateColumn, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 import { NotificationAttempt } from './notification-attempt.entity.js';
 
 export type PosteTrackingStatus = 'pending' | 'delivered' | 'returned' | 'gave_up';
@@ -15,20 +15,22 @@ export interface PosteTrackingMovement {
 /**
  * Verifica consegna su tracking Poste Italiane per un attempt POSTAL che
  * GlobalCom ha chiuso come `NonConsegnato` (GlobalCom smette di tracciare
- * al primo KO, Poste può consegnare giorni dopo). Una riga per attempt,
+ * al primo KO, Poste può consegnare giorni dopo). Una riga per raccomandata
+ * (attempt + codice: una SEND ne ha una per tentativo di recapito),
  * mai scritti i campi postal_* GlobalCom — vedi
  * docs/superpowers/specs/2026-09-24-postal-verifica-poste-design.md.
  */
 @Entity('postal_poste_tracking')
 @Index('IDX_postal_poste_tracking_status_next', ['status', 'nextCheckAt'])
+@Index('UQ_postal_poste_tracking_attempt_code', ['attemptId', 'trackingCode'], { unique: true })
 export class PostalPosteTracking {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ name: 'attempt_id', type: 'uuid', unique: true })
+  @Column({ name: 'attempt_id', type: 'uuid' })
   attemptId!: string;
 
-  @OneToOne(() => NotificationAttempt, { onDelete: 'CASCADE' })
+  @ManyToOne(() => NotificationAttempt, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'attempt_id' })
   attempt?: NotificationAttempt;
 

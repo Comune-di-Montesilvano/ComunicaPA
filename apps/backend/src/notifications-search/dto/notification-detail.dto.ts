@@ -33,8 +33,10 @@ export interface AttemptDetailDto {
   postalDeliveryDate?: string | null;
   postalAcceptanceId?: string | null;
   postalStatusHistory: Array<{ stato: string; rilevatoIl: string; codiceErrore?: string; descrizione?: string; statoConsegna?: string; codiceConsegna?: number }> | null;
-  /** Solo attempt POSTAL: verifica consegna su tracking Poste, null se nessuna riga. */
+  /** Attempt POSTAL/SEND: verifica consegna su tracking Poste dell'ultima raccomandata, null se nessuna riga. */
   posteVerification?: PosteVerificationDto | null;
+  /** Tutte le raccomandate verificate su Poste dell'attempt (SEND: una per tentativo di recapito), dalla più vecchia. */
+  posteVerifications?: PosteVerificationDto[];
   costCents?: number | null;
   costCalculatedAt?: string | null;
   costBreakdown?: Record<string, unknown> | null;

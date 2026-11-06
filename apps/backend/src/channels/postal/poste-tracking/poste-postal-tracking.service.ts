@@ -242,7 +242,7 @@ export class PostePostalTrackingService {
          AND COALESCE(na.sent_at, na.created_at) > now() - interval '90 days'
          AND NOT EXISTS (SELECT 1 FROM notification_attempts newer WHERE newer.recipient_id = na.recipient_id AND newer.attempt_number > na.attempt_number)
          ${campaignId ? 'AND r.campaign_id = $1' : ''}
-       ON CONFLICT (attempt_id) DO NOTHING
+       ON CONFLICT (attempt_id, tracking_code) DO NOTHING
        RETURNING id`,
       params,
     );
@@ -252,7 +252,8 @@ export class PostePostalTrackingService {
   /**
    * Raccomandate SEND in consegna: codice della raccomandata dalla timeline
    * PN (registeredLetterCode, l'ultimo: un secondo tentativo ha un codice
-   * nuovo e la riga riparte da capo). Solo percorso, mai esito: l'esito
+   * nuovo e una riga sua; quella del tentativo prima esce dalla coda ma
+   * resta, con esito e movimenti). Solo percorso, mai esito: l'esito
    * legale resta quello di PN. Vettori diversi da Poste rispondono
    * "non trovato" e si fermano col cambio stato PN (sotto).
    */
@@ -270,12 +271,16 @@ export class PostePostalTrackingService {
        ) code
        WHERE na.channel_type = 'SEND'
          AND na.send_status = 'DELIVERING'
-       ON CONFLICT (attempt_id) DO UPDATE
-         SET tracking_code = EXCLUDED.tracking_code, status = 'pending', next_check_at = now(), check_count = 0,
-             last_checked_at = NULL, last_error = NULL, poste_stato = NULL, poste_esito_ricerca = NULL,
-             poste_product = NULL, delivered_at = NULL, outcome_at = NULL, movements = NULL, last_response = NULL
-         WHERE postal_poste_tracking.tracking_code <> EXCLUDED.tracking_code
+       ON CONFLICT (attempt_id, tracking_code) DO NOTHING
        RETURNING id`,
+    );
+    // Raccomandata superata da quella del tentativo successivo: fuori dalla
+    // coda giornaliera (resta il tasto "Verifica ora" per controllarla a mano).
+    await this.repo.query(
+      `UPDATE postal_poste_tracking t SET status = CASE WHEN t.status = 'pending' THEN 'gave_up' ELSE t.status END, next_check_at = NULL
+       FROM notification_attempts na
+       WHERE na.id = t.attempt_id AND na.channel_type = 'SEND' AND t.next_check_at IS NOT NULL
+         AND EXISTS (SELECT 1 FROM postal_poste_tracking n WHERE n.attempt_id = t.attempt_id AND n.created_at > t.created_at)`,
     );
     // PN non è più "in consegna" e Poste è già stato interrogato dopo il
     // cambio stato: fine verifica (l'ultimo giro raccoglie i movimenti finali).
@@ -505,12 +510,12 @@ export class PostePostalTrackingService {
     }
   }
 
-  async checkRecipientNow(campaignId: string, recipientId: string): Promise<{ row: PostalPosteTracking; result: CheckResult }> {
+  async checkRecipientNow(campaignId: string, recipientId: string, trackingCode?: string): Promise<{ row: PostalPosteTracking; result: CheckResult }> {
     if (!(await this.isEnabled())) throw new ConflictException(DISABLED_MESSAGE);
     if (this.isBlocked()) throw new ConflictException(`Poste sta limitando le richieste: riprova dopo le ${this.blockedUntil!.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' })}`);
     const recipient = await this.recipientRepo.findOne({ where: { id: recipientId }, relations: { campaign: true } });
     if (!recipient || recipient.campaignId !== campaignId) throw new NotFoundException(`Recipient ${recipientId} non trovato in questa campagna`);
-    if (recipient.campaign?.channelType === 'SEND') return this.checkSendRecipientNow(recipientId);
+    if (recipient.campaign?.channelType === 'SEND') return this.checkSendRecipientNow(recipientId, trackingCode);
     const serviceType = recipient.campaign?.channelConfig?.['postalServiceType'] as string | undefined;
     if (!isPosteTrackableService(serviceType)) {
       throw new BadRequestException(`Verifica su Poste non disponibile per ${serviceType}: la posta semplice non ha un codice tracciabile su Poste`);
@@ -518,7 +523,7 @@ export class PostePostalTrackingService {
     const attempt = await this.attemptRepo.findOne({ where: { recipientId, channelType: 'POSTAL' }, order: { attemptNumber: 'DESC' } });
     if (!attempt) throw new BadRequestException('Nessun tentativo POSTAL per questo destinatario');
 
-    let row = await this.repo.findOneBy({ attemptId: attempt.id });
+    let row = attempt.postalAcceptanceId ? await this.repo.findOneBy({ attemptId: attempt.id, trackingCode: attempt.postalAcceptanceId }) : null;
     if (!row) {
       if (!attempt.postalAcceptanceId) {
         throw new BadRequestException('Verifica Poste non disponibile: nessun codice di accettazione Poste per questa notifica');
@@ -543,20 +548,19 @@ export class PostePostalTrackingService {
    * tentativo (codice più recente della timeline PN). Stesso limite di una
    * chiamata ogni 23 ore di checkOne; codice cambiato = riga da capo.
    */
-  private async checkSendRecipientNow(recipientId: string): Promise<{ row: PostalPosteTracking; result: CheckResult }> {
+  private async checkSendRecipientNow(recipientId: string, requestedCode?: string): Promise<{ row: PostalPosteTracking; result: CheckResult }> {
     const attempt = await this.attemptRepo.findOne({ where: { recipientId, channelType: 'SEND' }, order: { attemptNumber: 'DESC' } });
-    const code = latestPosteLetterCode(attempt?.sendTimeline);
-    if (!attempt || !code) {
+    const latest = latestPosteLetterCode(attempt?.sendTimeline);
+    if (!attempt || !latest) {
       throw new BadRequestException('Verifica su Poste non disponibile: nessuna raccomandata di Poste Italiane per questa notifica SEND (non ancora spedita o recapitista diverso)');
     }
-    let row = await this.repo.findOneBy({ attemptId: attempt.id });
-    if (row && row.trackingCode !== code) {
-      Object.assign(row, {
-        trackingCode: code, status: 'pending', checkCount: 0, nextCheckAt: new Date(), lastCheckedAt: null, lastError: null,
-        posteStato: null, posteEsitoRicerca: null, posteProduct: null, deliveredAt: null, outcomeAt: null, movements: null, lastResponse: null,
-      });
-      row = await this.repo.save(row);
+    // Raccomandata scelta (una per tentativo di recapito), di default l'ultima;
+    // solo codici Poste presenti nella timeline PN di questa notifica.
+    const code = requestedCode ?? latest;
+    if (!(attempt.sendTimeline ?? []).some((e) => e.registeredLetterCode === code && isPosteLetterCode(code))) {
+      throw new BadRequestException(`Raccomandata ${code} non trovata tra quelle di Poste Italiane di questa notifica SEND`);
     }
+    let row = await this.repo.findOneBy({ attemptId: attempt.id, trackingCode: code });
     if (!row) {
       const notifiedAt = attempt.sentAt ?? attempt.createdAt;
       row = await this.repo.save(this.repo.create({
@@ -564,8 +568,9 @@ export class PostePostalTrackingService {
         trackingCode: code,
         status: 'pending',
         checkCount: 0,
-        // SEND non più in consegna: solo controllo a richiesta, mai in coda giornaliera.
-        nextCheckAt: attempt.sendStatus === 'DELIVERING' ? new Date() : null,
+        // Solo l'ultima raccomandata di una SEND in consegna va in coda giornaliera;
+        // le altre (tentativo precedente, notifica chiusa) solo a richiesta.
+        nextCheckAt: attempt.sendStatus === 'DELIVERING' && code === latest ? new Date() : null,
         trackingUntil: notifiedAt ? new Date(notifiedAt.getTime() + POSTE_TRACKING_DAYS * DAY_MS) : null,
       }));
     }

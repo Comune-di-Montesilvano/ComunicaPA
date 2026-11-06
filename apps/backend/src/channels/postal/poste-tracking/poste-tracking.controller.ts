@@ -1,4 +1,4 @@
-import { Controller, Get, HttpCode, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { Roles } from '../../../auth/decorators/roles.decorator.js';
 import { PostePostalTrackingService } from './poste-postal-tracking.service.js';
 import { toPosteVerificationDto } from './poste-tracking-effective.util.js';
@@ -30,8 +30,10 @@ export class PosteTrackingController {
   async checkRecipient(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('recipientId', ParseUUIDPipe) recipientId: string,
+    // SEND: raccomandata da controllare (una per tentativo di recapito); assente = l'ultima.
+    @Query('code') code?: string,
   ) {
-    const { row, result } = await this.svc.checkRecipientNow(id, recipientId);
+    const { row, result } = await this.svc.checkRecipientNow(id, recipientId, code?.trim() || undefined);
     // skipped: controllata con successo nelle ultime 23 ore, Poste non richiamato.
     return { ...toPosteVerificationDto(row), skipped: result === 'skipped' };
   }

@@ -90,9 +90,17 @@ export function NotificationTimeline({ detail, labels }: { detail: JourneyDetail
       <ol className="nd-timeline">
         {events.map((e, i) => {
           const { day, time } = formatWhen(e.at, e.dateOnly);
-          const prevDay = i > 0 ? formatWhen(events[i - 1]!.at, events[i - 1]!.dateOnly).day : null;
+          // Nuovo blocco (tentativo di recapito SEND, esito): separatore e data ripetuta.
+          const newGroup = !!e.groupLabel && e.groupLabel !== events[i - 1]?.groupLabel;
+          const prevDay = i > 0 && !newGroup ? formatWhen(events[i - 1]!.at, events[i - 1]!.dateOnly).day : null;
           return (
-            <li key={`${e.at}-${i}`} className={`nd-event nd-src-${e.source} nd-tone-${e.tone}`}>
+            <React.Fragment key={`${e.at}-${i}`}>
+            {newGroup && (
+              <li className="nd-group">
+                <span className="nd-group-label">{e.groupLabel}</span>
+              </li>
+            )}
+            <li className={`nd-event nd-src-${e.source} nd-tone-${e.tone}`}>
               <div className="nd-when">
                 {day !== prevDay && <span className="nd-day">{day}</span>}
                 {time && <span className="nd-time">{time}</span>}
@@ -115,6 +123,7 @@ export function NotificationTimeline({ detail, labels }: { detail: JourneyDetail
                 )}
               </div>
             </li>
+            </React.Fragment>
           );
         })}
       </ol>

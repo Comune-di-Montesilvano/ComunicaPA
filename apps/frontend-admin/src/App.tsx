@@ -3,7 +3,7 @@ import MDEditor from '@uiw/react-md-editor';
 import { TemplateEditor } from './components/TemplateEditor';
 import { CampaignSummary, type OutcomeSegment, type OutcomeTone, type KeyFigure } from './components/campaign-detail/CampaignSummary';
 import { NotificationVerdict, NotificationTimeline } from './components/notification-detail/NotificationJourney';
-import { latestSendPosteLetter, type JourneyLabels } from './components/notification-detail/journey';
+import { latestSendPosteLetter, posteVerificationsOf, sendAttemptName, sendPosteLetters, type JourneyLabels } from './components/notification-detail/journey';
 import { sendDocumentLabel, type SendDocumentItem } from './components/notification-detail/send-documents';
 import type { SendTimelineEvent } from './components/notification-detail/send-timeline';
 import { SearchableSelect } from './components/SearchableSelect';
@@ -1608,7 +1608,7 @@ export function App(): React.JSX.Element {
   const [notifDetail, setNotifDetail] = useState<{
     recipient: { id: string; codiceFiscale: string; fullName: string | null; email: string | null; pec: string | null; status: string; physicalAddress: { address: string; municipality: string; zip?: string; province?: string; foreignState?: string | null } | null };
     campaign: { id: string; name: string; channelType: string; postalServiceType?: string | null; postalReturnReceipt?: boolean };
-    attempts: Array<{ attemptNumber: number; status: string; channelType: string; errorMessage: string | null; sentAt: string | null; createdAt: string; appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null; messageId?: string | null }; appIoMessageId?: string | null; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; sendStatusHistory?: Array<{ status: string; activeFrom: string }> | null; sendTimeline?: SendTimelineEvent[] | null; postalTrackingId?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; postalStatusHistory?: Array<{ stato: string; rilevatoIl: string; codiceErrore?: string; descrizione?: string; statoConsegna?: string; codiceConsegna?: number }> | null; posteVerification?: { status: 'pending' | 'delivered' | 'returned' | 'gave_up'; trackingCode: string; checkCount: number; trackingUntil?: string | null; summary?: string | null; nextCheckAt: string | null; lastCheckedAt: string | null; lastError: string | null; deliveredAt: string | null; outcomeAt?: string | null; movements: Array<{ at: string; luogo: string; statoLavorazione: string; box: string; flagRitorno: boolean }> } | null; protocolNumber?: number | null; protocolYear?: number | null; protocolledAt?: string | null; costCents?: number | null; costCalculatedAt?: string | null; costBreakdown?: Record<string, unknown> | null }>;
+    attempts: Array<{ attemptNumber: number; status: string; channelType: string; errorMessage: string | null; sentAt: string | null; createdAt: string; appIo: { attempted: false } | { attempted: true; success: boolean; error: string | null; messageId?: string | null }; appIoMessageId?: string | null; iun?: string | null; sendStatus?: string | null; sendStatusUpdatedAt?: string | null; sendStatusHistory?: Array<{ status: string; activeFrom: string }> | null; sendTimeline?: SendTimelineEvent[] | null; postalTrackingId?: string | null; postalStatus?: string | null; postalStatusUpdatedAt?: string | null; postalDeliveryStatus?: string | null; postalDeliveryCode?: number | null; postalDeliveryDate?: string | null; postalAcceptanceId?: string | null; postalStatusHistory?: Array<{ stato: string; rilevatoIl: string; codiceErrore?: string; descrizione?: string; statoConsegna?: string; codiceConsegna?: number }> | null; posteVerification?: { status: 'pending' | 'delivered' | 'returned' | 'gave_up'; trackingCode: string; checkCount: number; trackingUntil?: string | null; summary?: string | null; nextCheckAt: string | null; lastCheckedAt: string | null; lastError: string | null; deliveredAt: string | null; outcomeAt?: string | null; movements: Array<{ at: string; luogo: string; statoLavorazione: string; box: string; flagRitorno: boolean }> } | null; posteVerifications?: Array<{ status: 'pending' | 'delivered' | 'returned' | 'gave_up'; trackingCode: string; checkCount: number; trackingUntil?: string | null; summary?: string | null; nextCheckAt: string | null; lastCheckedAt: string | null; lastError: string | null; deliveredAt: string | null; outcomeAt?: string | null; movements: Array<{ at: string; luogo: string; statoLavorazione: string; box: string; flagRitorno: boolean }> }>; protocolNumber?: number | null; protocolYear?: number | null; protocolledAt?: string | null; costCents?: number | null; costCalculatedAt?: string | null; costBreakdown?: Record<string, unknown> | null }>;
     preview: { subject: string; bodyHtml?: string; bodyMarkdown?: string };
     appIoPreview: { subject: string; bodyHtml?: string; bodyMarkdown?: string } | null;
     downloads: Array<{ channel: string; attachmentIndex: number; downloadedAt: string }>;
@@ -1628,7 +1628,8 @@ export function App(): React.JSX.Element {
   const [addressEditSaving, setAddressEditSaving] = useState(false);
   const [postalStatusRefreshing, setPostalStatusRefreshing] = useState(false);
   const [postalErrorsResetting, setPostalErrorsResetting] = useState(false);
-  const [posteChecking, setPosteChecking] = useState(false);
+  // Raccomandata in verifica dal tasto (codice; 'postal' = l'unica di un invio POSTAL), null = nessuna.
+  const [posteChecking, setPosteChecking] = useState<string | null>(null);
   const [posteRun, setPosteRun] = useState<{ campaignId: string; running: boolean; total: number; done: number; delivered: number; returned: number; errors: number; skipped?: number; remaining?: number; etaSeconds?: number; blockedUntil?: string | null } | null>(null);
   const [trackingIdEditOpenFor, setTrackingIdEditOpenFor] = useState<number | null>(null);
   const [trackingIdEditValue, setTrackingIdEditValue] = useState('');
@@ -2187,11 +2188,12 @@ export function App(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [posteRun?.running, posteRun?.campaignId, selectedCampaignId]);
 
-  const handlePosteCheckRecipient = async () => {
+  // SEND: `code` = raccomandata da controllare (una per tentativo di recapito).
+  const handlePosteCheckRecipient = async (code?: string) => {
     if (!notifDetail) return;
-    setPosteChecking(true);
+    setPosteChecking(code ?? 'postal');
     try {
-      const res = await apiFetch(`/campaigns/${notifDetail.campaign.id}/recipients/${notifDetail.recipient.id}/postal/poste-check`, { method: 'POST' });
+      const res = await apiFetch(`/campaigns/${notifDetail.campaign.id}/recipients/${notifDetail.recipient.id}/postal/poste-check${code ? `?code=${encodeURIComponent(code)}` : ''}`, { method: 'POST' });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         alert(body.message || 'Errore durante la verifica su Poste.');
@@ -2207,7 +2209,7 @@ export function App(): React.JSX.Element {
     } catch (err) {
       if (!(err instanceof ApiAuthError)) alert('Errore durante la verifica su Poste.');
     } finally {
-      setPosteChecking(false);
+      setPosteChecking(null);
     }
   };
 
@@ -13441,9 +13443,46 @@ export function App(): React.JSX.Element {
                                 const lastPostal = [...notifDetail.attempts].filter(a => a.channelType === (isSend ? 'SEND' : 'POSTAL')).sort((a, b) => b.attemptNumber - a.attemptNumber)[0];
                                 const pv = lastPostal?.posteVerification;
                                 if (isSend) {
-                                  // SEND: solo raccomandate Poste (altri recapitisti non sono su poste.it).
-                                  // Anche a esito finale: il tasto "Verifica ora su Poste" resta disponibile.
-                                  if (!lastPostal || !(pv || latestSendPosteLetter(lastPostal.sendTimeline))) return null;
+                                  // SEND: un blocco per raccomandata Poste (una per tentativo di recapito),
+                                  // ognuno col suo tasto, anche a esito finale. Altri recapitisti non sono su poste.it.
+                                  if (!lastPostal) return null;
+                                  const pvs = posteVerificationsOf(lastPostal);
+                                  const letters = sendPosteLetters(lastPostal.sendTimeline);
+                                  for (const v of pvs) if (!letters.some((l) => l.code === v.trackingCode)) letters.push({ code: v.trackingCode, attempt: null });
+                                  if (letters.length === 0) return null;
+                                  const latest = latestSendPosteLetter(lastPostal.sendTimeline);
+                                  return (
+                                    <div>
+                                      <h4>Verifica su Poste</h4>
+                                      {letters.map((l) => {
+                                        const v = pvs.find((x) => x.trackingCode === l.code);
+                                        return (
+                                          <div key={l.code} className="nd-poste-letter">
+                                            <p className="nd-kv">{l.attempt !== null ? `${sendAttemptName(l.attempt, letters.length)} · ` : ''}raccomandata n. {l.code}</p>
+                                            {v ? (
+                                              <>
+                                                <p>
+                                                  {v.status === 'pending' && `In verifica${v.trackingUntil ? ` fino al ${new Date(v.trackingUntil).toLocaleDateString('it-IT')}` : ''}`}
+                                                  {v.status === 'gave_up' && (l.code !== latest ? 'Verifica conclusa: SEND è passata al tentativo successivo' : 'Verifica conclusa: SEND ha chiuso la consegna')}
+                                                  {v.status === 'delivered' && 'Consegnata secondo Poste'}
+                                                  {v.status === 'returned' && 'In restituzione al mittente secondo Poste'}
+                                                </p>
+                                                {v.summary && <p className="text-muted">{v.summary}</p>}
+                                                {v.lastCheckedAt && <p className="text-muted nd-kv">Ultimo controllo {new Date(v.lastCheckedAt).toLocaleString('it-IT')}</p>}
+                                                {v.lastError && <p className="text-danger">Ultimo tentativo non riuscito: {v.lastError}</p>}
+                                              </>
+                                            ) : (
+                                              <p className="text-muted">Non ancora verificata</p>
+                                            )}
+                                            <button type="button" className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center" disabled={posteChecking !== null} onClick={() => handlePosteCheckRecipient(l.code)}>
+                                              {posteChecking === l.code ? <Loader2 className="icon-spin me-1" size={14} /> : <RefreshCw className="me-1" size={14} />}
+                                              Verifica ora su Poste
+                                            </button>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  );
                                 } else if (!lastPostal || !isPosteTrackableService(notifDetail.campaign.postalServiceType) || !(pv || lastPostal.postalAcceptanceId)) {
                                   // Posta semplice: codice mai tracciabile su Poste, nessuna sezione.
                                   return null;
@@ -13456,16 +13495,16 @@ export function App(): React.JSX.Element {
                                         <p className="nd-kv">Codice {pv.trackingCode}</p>
                                         <p>
                                           {pv.status === 'pending' && `In verifica${pv.trackingUntil ? ` fino al ${new Date(pv.trackingUntil).toLocaleDateString('it-IT')}` : ''}`}
-                                          {pv.status === 'gave_up' && (isSend ? 'Verifica conclusa: SEND ha chiuso la consegna' : 'Verifica conclusa: 90 giorni dalla notifica')}
+                                          {pv.status === 'gave_up' && 'Verifica conclusa: 90 giorni dalla notifica'}
                                           {pv.status === 'delivered' && 'Consegnata secondo Poste'}
-                                          {pv.status === 'returned' && (isSend ? 'In restituzione al mittente secondo Poste' : 'Restituita al mittente secondo Poste')}
+                                          {pv.status === 'returned' && 'Restituita al mittente secondo Poste'}
                                         </p>
                                         {pv.summary && <p className="text-muted">{pv.summary}</p>}
                                         {pv.lastCheckedAt && <p className="text-muted nd-kv">Ultimo controllo {new Date(pv.lastCheckedAt).toLocaleString('it-IT')}</p>}
                                         {pv.lastError && <p className="text-danger">Ultimo tentativo non riuscito: {pv.lastError}</p>}
                                       </>
                                     ) : (
-                                      <p className="text-muted">Non ancora verificata{isSend ? ` (raccomandata n. ${latestSendPosteLetter(lastPostal.sendTimeline)})` : ''}</p>
+                                      <p className="text-muted">Non ancora verificata</p>
                                     )}
                                   </div>
                                 );
@@ -13497,13 +13536,14 @@ export function App(): React.JSX.Element {
                             );
                           })()}
                                 {(() => {
-                                  const isSend = notifDetail.campaign.channelType === 'SEND';
-                                  const lastPostal = [...notifDetail.attempts].filter(a => a.channelType === (isSend ? 'SEND' : 'POSTAL')).sort((a, b) => b.attemptNumber - a.attemptNumber)[0];
+                                  // SEND: il tasto sta in ogni blocco raccomandata della sezione Verifica su Poste.
+                                  if (notifDetail.campaign.channelType !== 'POSTAL') return null;
+                                  const lastPostal = [...notifDetail.attempts].filter(a => a.channelType === 'POSTAL').sort((a, b) => b.attemptNumber - a.attemptNumber)[0];
                                   if (!lastPostal) return null;
                                   // Sempre disponibile se c'è un codice tracciabile, anche a esito finale.
-                                  if (isSend ? !(lastPostal.posteVerification || latestSendPosteLetter(lastPostal.sendTimeline)) : !(lastPostal.posteVerification || (isPosteTrackableService(notifDetail.campaign.postalServiceType) && lastPostal.postalAcceptanceId))) return null;
+                                  if (!(lastPostal.posteVerification || (isPosteTrackableService(notifDetail.campaign.postalServiceType) && lastPostal.postalAcceptanceId))) return null;
                                   return (
-                                    <button type="button" className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center" disabled={posteChecking} onClick={handlePosteCheckRecipient}>
+                                    <button type="button" className="btn btn-sm btn-outline-secondary d-inline-flex align-items-center" disabled={posteChecking !== null} onClick={() => handlePosteCheckRecipient()}>
                                       {posteChecking ? <Loader2 className="icon-spin me-1" size={14} /> : <RefreshCw className="me-1" size={14} />}
                                       Verifica ora su Poste
                                     </button>

@@ -96,6 +96,22 @@ describe('NotificationsSearchService - verifica Poste', () => {
     expect(detail.attempts[0]).toMatchObject({ posteVerification: { status: 'pending', checkCount: 2, trackingUntil: null } });
     expect(detail.attempts[1]).toMatchObject({ posteVerification: null });
   });
+
+  it('dettaglio SEND: una verifica per raccomandata, posteVerification = la più recente', async () => {
+    recipientRepo.findOne.mockResolvedValue({ id: 'r1', codiceFiscale: 'RSSMRA80A01H501U', fullName: 'ROSSI MARIO', email: null, pec: null, status: 'sent', extraData: {}, campaign: { id: 'c1', name: 'Avviso', channelType: 'SEND', channelConfig: {} } });
+    attemptRepo.find.mockResolvedValue([
+      { id: 'a1', attemptNumber: 1, status: 'success', channelType: 'SEND', errorMessage: null, sentAt: null, createdAt: new Date('2026-07-01T00:00:00Z'), responsePayload: {}, sendStatus: 'DELIVERING' },
+    ]);
+    const base = { attemptId: 'a1', checkCount: 1, nextCheckAt: null, lastCheckedAt: null, lastError: null, deliveredAt: null, movements: [] };
+    posteRepo.find.mockResolvedValue([
+      { ...base, status: 'returned', trackingCode: '698140000001' },
+      { ...base, status: 'pending', trackingCode: '698140000002' },
+    ]);
+    const detail = await service.getDetail('r1', ADMIN);
+    expect(posteRepo.find).toHaveBeenCalledWith(expect.objectContaining({ order: { createdAt: 'ASC' } }));
+    expect(detail.attempts[0]!.posteVerifications!.map((v) => v.trackingCode)).toEqual(['698140000001', '698140000002']);
+    expect(detail.attempts[0]).toMatchObject({ posteVerification: { trackingCode: '698140000002', status: 'pending' } });
+  });
 });
 
 describe('NotificationsSearchService - stato Letto (canali digitali)', () => {
