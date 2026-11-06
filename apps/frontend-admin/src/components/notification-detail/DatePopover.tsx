@@ -23,6 +23,8 @@ export function DatePopover({ id, label, text, open, onToggle, onClose, children
     };
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') {
+        e.stopPropagation();
+        e.preventDefault();
         onClose();
         btnRef.current?.focus();
       }

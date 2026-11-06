@@ -74,7 +74,7 @@ function explanationOf(step: SendPerfectionStep, data: SendPerfection): string {
     case 'entity':
       return `Notificata per l'ente il ${d}: messa a disposizione su SEND. Impedisce le decadenze e interrompe la prescrizione (art. 26, c. 9 lett. a e c. 10, ${ART26}). I termini del destinatario decorrono dalla data in cui è notificata per lui.`;
     case 'deposited':
-      return `Avviso di avvenuta ricezione depositato su SEND il ${d}: il destinatario è risultato irreperibile.`;
+      return `Avviso di avvenuta ricezione depositato su SEND il ${d}: il destinatario è risultato irreperibile. L'avviso si perfeziona dopo 10 giorni (art. 26, c. 7) e la notifica per il destinatario 10 giorni dopo (art. 26, c. 9 lett. b n. 2, ${ART26}).`;
     case 'aar_refined':
       return `${expected ? 'Si perfezionerà' : "La notifica dell'avviso si è perfezionata"} il ${d}, il decimo giorno dopo il deposito (art. 26, c. 7, ${ART26}).`;
     case 'digital_delivered':
@@ -129,7 +129,7 @@ export function SendPerfectionTimeline({ data, onOpenGuida }: { data: SendPerfec
                   >
                     {explanationOf(s, data)}
                     {(s.key === 'entity' || isFinal) && onOpenGuida && (
-                      <button type="button" className="btn btn-link btn-sm p-0 ms-1 align-baseline" onClick={() => onOpenGuida(GUIDA_DATE_TERMINI)}>
+                      <button type="button" className="btn btn-link btn-sm p-0 ms-1 align-baseline" onClick={() => { closePop(); onOpenGuida(GUIDA_DATE_TERMINI); }}>
                         Come si contano i termini
                       </button>
                     )}
