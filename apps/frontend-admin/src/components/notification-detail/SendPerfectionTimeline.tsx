@@ -26,7 +26,8 @@ function dayNum(ymd: string | null): number | null {
 function todayFraction(data: SendPerfection): number | null {
   const n = data.steps.length;
   const today = dayNum(data.today);
-  if (n < 2 || today === null) return null;
+  // Data per il destinatario già confermata da SEND: percorso concluso, "oggi" non dice nulla.
+  if (n < 2 || today === null || data.finalSource === 'pn') return null;
   const dated = data.steps
     .map((s, i) => ({ i, t: dayNum(s.date) }))
     .filter((x): x is { i: number; t: number } => x.t !== null);
