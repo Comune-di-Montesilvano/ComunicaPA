@@ -55,6 +55,8 @@ export interface JourneyAttempt {
   postalDeliveryDate?: string | null;
   postalStatusHistory?: Array<{ stato: string; rilevatoIl: string; codiceErrore?: string; descrizione?: string; statoConsegna?: string }> | null;
   posteVerification?: JourneyPosteVerification | null;
+  /** Tutte le raccomandate verificate su Poste (SEND: una per tentativo di recapito), dalla più vecchia. */
+  posteVerifications?: JourneyPosteVerification[];
   protocolNumber?: number | null;
   protocolYear?: number | null;
   protocolledAt?: string | null;
@@ -90,6 +92,10 @@ export interface JourneyEvent {
   link?: { href: string; label: string };
   /** Canale (chiave del registro canali) mostrato col logo ufficiale in coda al titolo. */
   logo?: string;
+  /** Blocco del percorso (es. "Secondo tentativo · raccomandata n. …"): la UI mette un separatore quando cambia. */
+  groupLabel?: string;
+  /** Fatto del recapito cartaceo senza tentativo dichiarato da PN: resta nel blocco in corso, mai in "Esito". */
+  inGroup?: boolean;
 }
 
 export interface Verdict {
@@ -183,6 +189,36 @@ export function latestSendPosteLetter(timeline: SendTimelineEvent[] | null | und
   return best?.registeredLetterCode ?? null;
 }
 
+/** Verifiche Poste di un attempt, una per raccomandata (dati vecchi: solo la più recente). */
+export function posteVerificationsOf(a: JourneyAttempt): JourneyPosteVerification[] {
+  return a.posteVerifications ?? (a.posteVerification ? [a.posteVerification] : []);
+}
+
+/** Raccomandate Poste della timeline SEND, una per tentativo di recapito, in ordine di tentativo. */
+export function sendPosteLetters(timeline: SendTimelineEvent[] | null | undefined): Array<{ code: string; attempt: number | null }> {
+  const out: Array<{ code: string; attempt: number | null; at: string }> = [];
+  for (const e of timeline ?? []) {
+    const code = e.registeredLetterCode;
+    if (!code || !isPosteLetterCode(code)) continue;
+    const prev = out.find((x) => x.code === code);
+    if (prev) {
+      if (prev.attempt === null && typeof e.attempt === 'number') prev.attempt = e.attempt;
+      if (e.at < prev.at) prev.at = e.at;
+    } else {
+      out.push({ code, attempt: typeof e.attempt === 'number' ? e.attempt : null, at: e.at });
+    }
+  }
+  return out.sort((x, y) => (x.attempt ?? 99) - (y.attempt ?? 99) || x.at.localeCompare(y.at)).map(({ code, attempt }) => ({ code, attempt }));
+}
+
+const ATTEMPT_NAMES = ['Primo', 'Secondo', 'Terzo'];
+
+/** Nome del tentativo di recapito cartaceo SEND (attempt PN 0, 1, ...). */
+export function sendAttemptName(attempt: number, total: number): string {
+  if (total <= 1) return 'Recapito cartaceo';
+  return `${ATTEMPT_NAMES[attempt] ?? `${attempt + 1}°`} tentativo`;
+}
+
 export function posteTrackingUrl(code: string): string {
   return `https://www.poste.it/cerca/#/risultati-spedizioni/${encodeURIComponent(code)}`;
 }
@@ -219,8 +255,25 @@ export function buildJourney(d: JourneyDetail, labels: JourneyLabels): JourneyEv
         ...(isFinalOutcome ? { dateOnly: true } : {}),
       });
     });
-    const pv = a.posteVerification;
-    if (pv) {
+    // Raccomandate SEND: tentativo di recapito (attempt PN) di ciascun codice, per i blocchi del percorso.
+    const sendTimeline = a.sendTimeline ?? [];
+    const analogAttempts = [...new Set(sendTimeline.filter((t) => t.category.includes('ANALOG') && typeof t.attempt === 'number').map((t) => t.attempt!))].sort((x, y) => x - y);
+    const letterOfAttempt = (n: number): string | undefined => sendTimeline.find((x) => x.attempt === n && x.registeredLetterCode)?.registeredLetterCode;
+    const groupOf = (n: number): string => {
+      const letter = letterOfAttempt(n);
+      return `${sendAttemptName(n, analogAttempts.length)}${letter ? ` · raccomandata n. ${letter}` : ''}`;
+    };
+    const attemptOfLetter = (code: string): number | undefined => sendTimeline.find((x) => x.registeredLetterCode === code && typeof x.attempt === 'number')?.attempt;
+    // PN non mette sempre il tentativo sugli avanzamenti (visto: copia conforme del secondo
+    // tentativo senza sentAttemptMade): si ricava dal codice raccomandata, altrimenti segue il blocco in corso.
+    const analogGroupOf = (t: SendTimelineEvent): Pick<JourneyEvent, 'groupLabel' | 'inGroup'> | null => {
+      // Solo spedizione e avanzamenti del recapito: gli esiti di fine flusso (ANALOG_FAILURE_WORKFLOW...) vanno in "Esito".
+      if (!/^(SEND|PREPARE)_ANALOG/.test(t.category) || analogAttempts.length === 0) return null;
+      const n = typeof t.attempt === 'number' ? t.attempt : t.registeredLetterCode ? attemptOfLetter(t.registeredLetterCode) : undefined;
+      return n !== undefined ? { groupLabel: groupOf(n) } : { inGroup: true };
+    };
+    for (const pv of posteVerificationsOf(a)) {
+      const pvAttempt = a.channelType === 'SEND' ? attemptOfLetter(pv.trackingCode) : undefined;
       const lastMovementIndex = pv.movements.reduce((best, m, i) => (best < 0 || (Number(m.box) || 0) >= (Number(pv.movements[best]!.box) || 0) ? i : best), -1);
       pv.movements.forEach((m, i) => {
         if (!validDate(m.at)) return;
@@ -231,6 +284,7 @@ export function buildJourney(d: JourneyDetail, labels: JourneyLabels): JourneyEv
           title: posteMovementTitle(m, isLast && pv.status === 'delivered'),
           detail: m.luogo || null,
           tone: m.flagRitorno ? 'warn' : isLast && pv.status === 'delivered' ? 'ok' : 'neutral',
+          ...(pvAttempt !== undefined ? { groupLabel: groupOf(pvAttempt) } : {}),
         });
       });
     }
@@ -245,7 +299,6 @@ export function buildJourney(d: JourneyDetail, labels: JourneyLabels): JourneyEv
     } else if (a.sendStatus && validDate(a.sendStatusUpdatedAt ?? a.createdAt)) {
       events.push({ at: (a.sendStatusUpdatedAt ?? a.createdAt)!, source: 'send', title: labels.sendStatus(a.sendStatus), tone: 'neutral' });
     }
-    const sendTimeline = a.sendTimeline ?? [];
     for (const t of sendTimeline) {
       const described = describeSendTimelineEvent(t, sendTimeline);
       if (!described || !validDate(t.at)) continue;
@@ -259,8 +312,9 @@ export function buildJourney(d: JourneyDetail, labels: JourneyLabels): JourneyEv
         at: t.at,
         source: 'send',
         ...described,
-        ...(letter ? { detail: [`Raccomandata n. ${letter}`, sendCarrierOf(a.posteVerification, letter), described.detail].filter(Boolean).join(' · ') } : {}),
+        ...(letter ? { detail: [`Raccomandata n. ${letter}`, sendCarrierOf(posteVerificationsOf(a).find((v) => v.trackingCode === letter), letter), described.detail].filter(Boolean).join(' · ') } : {}),
         ...(letter && isPosteLetterCode(letter) ? { link: { href: posteTrackingUrl(letter), label: 'Traccia su poste.it' } } : {}),
+        ...(analogGroupOf(t) ?? {}),
       });
     }
     if (a.appIo.attempted && a.channelType !== 'APP_IO') {
@@ -279,7 +333,7 @@ export function buildJourney(d: JourneyDetail, labels: JourneyLabels): JourneyEv
   // Lo stesso protocollo è riportato su più tentativi (fallback dal primo
   // protocollato): eventi identici per fonte, titolo e minuto contano una volta.
   const seen = new Set<string>();
-  return events
+  const sorted = events
     .filter((e) => validDate(e.at))
     .filter((e) => {
       const key = `${e.source}|${e.title}|${e.detail ?? ''}|${new Date(e.at).toISOString().slice(0, 16)}`;
@@ -288,6 +342,31 @@ export function buildJourney(d: JourneyDetail, labels: JourneyLabels): JourneyEv
       return true;
     })
     .sort((x, y) => new Date(x.at).getTime() - new Date(y.at).getTime());
+  return groupByAttempt(sorted);
+}
+
+/**
+ * Raccomandate SEND a blocchi: gli eventi di ogni tentativo di recapito stanno
+ * insieme (anche un movimento Poste della prima raccomandata arrivato durante
+ * il secondo tentativo), quelli prima del primo tentativo restano in testa e
+ * quelli dopo l'ultimo evento di un tentativo vanno nel blocco "Esito".
+ * Un evento senza tentativo in mezzo segue il blocco in corso.
+ */
+function groupByAttempt(events: JourneyEvent[]): JourneyEvent[] {
+  const labels = [...new Set(events.map((e) => e.groupLabel).filter((g): g is string => !!g))];
+  if (labels.length === 0) return events;
+  let lastGrouped = -1;
+  events.forEach((e, i) => { if (e.groupLabel || e.inGroup) lastGrouped = i; });
+  const order = (label: string | undefined): number => (label === undefined ? 0 : label === 'Esito' ? labels.length + 1 : labels.indexOf(label) + 1);
+  let current: string | undefined;
+  const placed = events.map((e, i) => {
+    if (e.groupLabel) current = e.groupLabel;
+    const label = e.groupLabel ?? (i > lastGrouped ? 'Esito' : current);
+    const rest = { ...e };
+    delete rest.inGroup;
+    return { e: label ? { ...rest, groupLabel: label } : rest, rank: order(label), i };
+  });
+  return placed.sort((x, y) => x.rank - y.rank || x.i - y.i).map((x) => x.e);
 }
 
 export function computeVerdict(d: JourneyDetail, labels: JourneyLabels): Verdict {

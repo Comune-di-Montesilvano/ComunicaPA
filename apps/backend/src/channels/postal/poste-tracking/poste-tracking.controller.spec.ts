@@ -12,6 +12,8 @@ describe('PosteTrackingController', () => {
     expect(await ctrl.startCampaignRun('c1')).toEqual({ total: 3 });
     expect(ctrl.getCampaignRun('c1')).toMatchObject({ running: true });
     expect(await ctrl.checkRecipient('c1', 'r1')).toMatchObject({ status: 'delivered', deliveredAt: '2026-09-04T08:06:00.000Z', skipped: true });
-    expect(svc.checkRecipientNow).toHaveBeenCalledWith('c1', 'r1');
+    expect(svc.checkRecipientNow).toHaveBeenCalledWith('c1', 'r1', undefined);
+    await ctrl.checkRecipient('c1', 'r1', ' 698140000001 ');
+    expect(svc.checkRecipientNow).toHaveBeenLastCalledWith('c1', 'r1', '698140000001');
   });
 });

@@ -278,7 +278,8 @@ export class LegalAttentionService {
       attemptsBy.set(a.recipientId, list);
     }
     const lastIds = [...attemptsBy.values()].map((list) => list[list.length - 1].id);
-    const poste = lastIds.length ? await this.posteRepo.find({ where: { attemptId: In(lastIds) } }) : [];
+    // Più righe per attempt SEND (una per raccomandata): in mappa resta la più recente.
+    const poste = lastIds.length ? await this.posteRepo.find({ where: { attemptId: In(lastIds) }, order: { createdAt: 'ASC' } }) : [];
     const posteBy = new Map(poste.map((p) => [p.attemptId, p]));
 
     for (const recipient of recipients) {

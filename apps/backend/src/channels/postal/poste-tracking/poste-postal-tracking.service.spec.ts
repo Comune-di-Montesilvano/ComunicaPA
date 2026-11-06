@@ -46,7 +46,7 @@ describe('PostePostalTrackingService', () => {
       find: vi.fn().mockResolvedValue([]),
       save: vi.fn(async (r) => { store.set(r.id, r); return r; }),
       create: vi.fn((r) => ({ ...row({ id: 'new' }), ...r })),
-      findOneBy: vi.fn(async (w: any) => (w.id ? store.get(w.id) : [...store.values()].find((r) => r.attemptId === w.attemptId)) ?? null),
+      findOneBy: vi.fn(async (w: any) => (w.id ? store.get(w.id) : [...store.values()].find((r) => r.attemptId === w.attemptId && (w.trackingCode === undefined || r.trackingCode === w.trackingCode))) ?? null),
       createQueryBuilder: vi.fn(() => dueQb()),
     };
     attemptRepo = { findOne: vi.fn() };
@@ -67,7 +67,7 @@ describe('PostePostalTrackingService', () => {
       const sql = repo.query.mock.calls[0][0] as string;
       expect(sql).toContain("COALESCE(na.sent_at, na.created_at) + interval '90 days'");
       expect(sql).toContain("COALESCE(na.sent_at, na.created_at) > now() - interval '90 days'");
-      expect(sql).toContain('ON CONFLICT (attempt_id) DO NOTHING');
+      expect(sql).toContain('ON CONFLICT (attempt_id, tracking_code) DO NOTHING');
       expect(sql).toContain("na.postal_status = 'NonConsegnato'");
       // Anche invii fermi: GlobalCom non consegnato e senza aggiornamenti da 30 giorni (Impostazioni).
       expect(sql).toContain("COALESCE(na.postal_status, '') <> 'Consegnato'");
@@ -91,20 +91,28 @@ describe('PostePostalTrackingService', () => {
   });
 
   describe('backfillSend (raccomandate SEND)', () => {
-    it('solo SEND in consegna con codice raccomandata dalla timeline PN; codice nuovo (secondo tentativo) = riga da capo', async () => {
-      repo.query.mockResolvedValueOnce([{ id: 'x' }]).mockResolvedValueOnce([]);
+    it('solo SEND in consegna con codice raccomandata dalla timeline PN; codice nuovo (secondo tentativo) = riga nuova, la vecchia resta', async () => {
+      repo.query.mockResolvedValueOnce([{ id: 'x' }]).mockResolvedValue([]);
       expect(await service.backfillSend()).toBe(1);
       const sql = repo.query.mock.calls[0][0] as string;
       expect(sql).toContain("na.channel_type = 'SEND'");
       expect(sql).toContain("na.send_status = 'DELIVERING'");
       expect(sql).toContain("e->>'registeredLetterCode'");
       expect(sql).toContain("ORDER BY e->>'at' DESC");
-      expect(sql).toContain('WHERE postal_poste_tracking.tracking_code <> EXCLUDED.tracking_code');
+      expect(sql).toContain('ON CONFLICT (attempt_id, tracking_code) DO NOTHING');
+      expect(sql).not.toContain('DO UPDATE');
+    });
+
+    it('raccomandata del tentativo precedente fuori dalla coda giornaliera, esito conservato', async () => {
+      await service.backfillSend();
+      const sql = repo.query.mock.calls[1][0] as string;
+      expect(sql).toContain("CASE WHEN t.status = 'pending' THEN 'gave_up' ELSE t.status END, next_check_at = NULL");
+      expect(sql).toContain('n.attempt_id = t.attempt_id AND n.created_at > t.created_at');
     });
 
     it('chiude le righe SEND quando PN non è più in consegna e Poste è già stato interrogato dopo il cambio stato', async () => {
       await service.backfillSend();
-      const sql = repo.query.mock.calls[1][0] as string;
+      const sql = repo.query.mock.calls[2][0] as string;
       expect(sql).toContain("SET status = 'gave_up', next_check_at = NULL");
       expect(sql).toContain("COALESCE(na.send_status, '') <> 'DELIVERING'");
       expect(sql).toContain('t.last_checked_at >= COALESCE(na.send_status_updated_at, na.created_at)');
@@ -526,7 +534,7 @@ describe('PostePostalTrackingService', () => {
     it('backfillSend filtra il formato in SQL e chiude le righe SEND già in coda con codice non Poste', async () => {
       await service.backfillSend();
       expect(repo.query.mock.calls[0][0]).toContain("~ '^[0-9]{12}$'");
-      const sweep = repo.query.mock.calls[2][0] as string;
+      const sweep = repo.query.mock.calls[3][0] as string;
       expect(sweep).toContain("SET status = 'gave_up'");
       expect(sweep).toContain("AND NOT (t.tracking_code ~ '^[0-9]{12}$'");
     });
@@ -547,14 +555,41 @@ describe('PostePostalTrackingService', () => {
       expect(client.track).not.toHaveBeenCalled();
     });
 
-    it('tasto notifica SEND con codice cambiato (secondo tentativo): riga ripartita col codice nuovo', async () => {
+    it('tasto notifica SEND, secondo tentativo: riga nuova per il codice nuovo, la vecchia resta intatta', async () => {
       recipientRepo.findOne.mockResolvedValue({ id: 'r1', campaignId: 'c1', campaign: { channelType: 'SEND', channelConfig: {} } });
-      attemptRepo.findOne.mockResolvedValue({ id: 'a1', channelType: 'SEND', sendTimeline: [{ category: 'SEND_ANALOG_PROGRESS', at: '2026-11-04T12:00:00Z', registeredLetterCode: '698140000002' }], recipient: { campaign: { channelConfig: {} } } });
-      add(row({ id: 't1', attemptId: 'a1', trackingCode: '698140000001', lastCheckedAt: new Date(Date.now() - 2 * 3_600_000), movements: [{ at: 'x', luogo: 'BOLOGNA', statoLavorazione: '', box: '2', flagRitorno: false }] }));
+      attemptRepo.findOne.mockResolvedValue({ id: 'a1', channelType: 'SEND', sendStatus: 'DELIVERING', sentAt: new Date(), createdAt: new Date(), sendTimeline: [
+        { category: 'SEND_ANALOG_PROGRESS', at: '2026-10-01T12:00:00Z', registeredLetterCode: '698140000001' },
+        { category: 'SEND_ANALOG_PROGRESS', at: '2026-11-04T12:00:00Z', registeredLetterCode: '698140000002' },
+      ], recipient: { campaign: { channelConfig: {} } } });
+      const old = row({ id: 't1', attemptId: 'a1', trackingCode: '698140000001', lastCheckedAt: new Date(Date.now() - 2 * 3_600_000), movements: [{ at: 'x', luogo: 'BOLOGNA', statoLavorazione: '', box: '2', flagRitorno: false }] });
+      add(old);
       client.track.mockResolvedValue(NOT_FOUND);
       const { row: r } = await service.checkRecipientNow('c1', 'r1');
       expect(r.trackingCode).toBe('698140000002');
+      expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ trackingCode: '698140000002', nextCheckAt: expect.any(Date) }));
       expect(client.track).toHaveBeenCalledWith('698140000002');
+      expect(old.trackingCode).toBe('698140000001');
+      expect(old.movements).toHaveLength(1);
+    });
+
+    it('tasto notifica SEND su una raccomandata precedente: controlla quella, fuori dalla coda giornaliera', async () => {
+      recipientRepo.findOne.mockResolvedValue({ id: 'r1', campaignId: 'c1', campaign: { channelType: 'SEND', channelConfig: {} } });
+      attemptRepo.findOne.mockResolvedValue({ id: 'a1', channelType: 'SEND', sendStatus: 'DELIVERING', sentAt: new Date(), createdAt: new Date(), sendTimeline: [
+        { category: 'SEND_ANALOG_PROGRESS', at: '2026-10-01T12:00:00Z', registeredLetterCode: '698140000001' },
+        { category: 'SEND_ANALOG_PROGRESS', at: '2026-11-04T12:00:00Z', registeredLetterCode: '698140000002' },
+      ] });
+      client.track.mockResolvedValue(NOT_FOUND);
+      const { row: r } = await service.checkRecipientNow('c1', 'r1', '698140000001');
+      expect(r.trackingCode).toBe('698140000001');
+      expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ trackingCode: '698140000001', nextCheckAt: null }));
+      expect(client.track).toHaveBeenCalledWith('698140000001');
+    });
+
+    it('tasto notifica SEND con codice estraneo alla notifica: 400, nessuna chiamata', async () => {
+      recipientRepo.findOne.mockResolvedValue({ id: 'r1', campaignId: 'c1', campaign: { channelType: 'SEND', channelConfig: {} } });
+      attemptRepo.findOne.mockResolvedValue({ id: 'a1', channelType: 'SEND', sendTimeline: [{ category: 'SEND_ANALOG_PROGRESS', at: '2026-11-04T12:00:00Z', registeredLetterCode: '698140000002' }] });
+      await expect(service.checkRecipientNow('c1', 'r1', '698149999999')).rejects.toThrow(BadRequestException);
+      expect(client.track).not.toHaveBeenCalled();
     });
   });
 
