@@ -258,12 +258,29 @@ export function buildJourney(d: JourneyDetail, labels: JourneyLabels): JourneyEv
     // Raccomandate SEND: tentativo di recapito (attempt PN) di ciascun codice, per i blocchi del percorso.
     const sendTimeline = a.sendTimeline ?? [];
     const analogAttempts = [...new Set(sendTimeline.filter((t) => t.category.includes('ANALOG') && typeof t.attempt === 'number').map((t) => t.attempt!))].sort((x, y) => x - y);
-    const letterOfAttempt = (n: number): string | undefined => sendTimeline.find((x) => x.attempt === n && x.registeredLetterCode)?.registeredLetterCode;
+    const byTime = (x: SendTimelineEvent, y: SendTimelineEvent): number => new Date(x.at).getTime() - new Date(y.at).getTime();
+    // PN mette il numero di raccomandata sugli avanzamenti (spesso senza tentativo) e il
+    // tentativo sulla spedizione: senza un evento che li porti entrambi, la raccomandata
+    // appartiene all'ultima spedizione cartacea precedente al suo primo avanzamento.
+    const attemptOfLetter = (code: string): number | undefined => {
+      const direct = sendTimeline.find((x) => x.registeredLetterCode === code && typeof x.attempt === 'number')?.attempt;
+      if (direct !== undefined) return direct;
+      const first = sendTimeline.filter((x) => x.registeredLetterCode === code).sort(byTime)[0];
+      if (!first) return undefined;
+      const shipment = sendTimeline
+        .filter((x) => /^(SEND|PREPARE)_ANALOG_DOMICILE$/.test(x.category) && typeof x.attempt === 'number' && new Date(x.at).getTime() <= new Date(first.at).getTime())
+        .sort(byTime)
+        .pop();
+      return shipment?.attempt ?? (analogAttempts.length === 1 ? analogAttempts[0] : undefined);
+    };
+    const letterOfAttempt = (n: number): string | undefined => {
+      const codes = [...new Set(sendTimeline.map((x) => x.registeredLetterCode).filter((c): c is string => !!c))];
+      return codes.find((c) => attemptOfLetter(c) === n);
+    };
     const groupOf = (n: number): string => {
       const letter = letterOfAttempt(n);
       return `${sendAttemptName(n, analogAttempts.length)}${letter ? ` · raccomandata n. ${letter}` : ''}`;
     };
-    const attemptOfLetter = (code: string): number | undefined => sendTimeline.find((x) => x.registeredLetterCode === code && typeof x.attempt === 'number')?.attempt;
     // PN non mette sempre il tentativo sugli avanzamenti (visto: copia conforme del secondo
     // tentativo senza sentAttemptMade): si ricava dal codice raccomandata, altrimenti segue il blocco in corso.
     const analogGroupOf = (t: SendTimelineEvent): Pick<JourneyEvent, 'groupLabel' | 'inGroup'> | null => {
@@ -284,7 +301,8 @@ export function buildJourney(d: JourneyDetail, labels: JourneyLabels): JourneyEv
           title: posteMovementTitle(m, isLast && pv.status === 'delivered'),
           detail: m.luogo || null,
           tone: m.flagRitorno ? 'warn' : isLast && pv.status === 'delivered' ? 'ok' : 'neutral',
-          ...(pvAttempt !== undefined ? { groupLabel: groupOf(pvAttempt) } : {}),
+          // Movimento di una raccomandata: mai nel blocco "Esito", al più nel blocco in corso.
+          ...(pvAttempt !== undefined ? { groupLabel: groupOf(pvAttempt) } : a.channelType === 'SEND' && analogAttempts.length > 0 ? { inGroup: true } : {}),
         });
       });
     }
