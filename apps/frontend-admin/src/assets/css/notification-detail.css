@@ -148,3 +148,30 @@
   font-size: inherit;
   text-decoration: underline;
 }
+
+/* ---------- Timeline perfezionamento SEND (nel verdetto) ---------- */
+.nd-perf { margin: 1.5rem 0 0.25rem; max-width: 52rem; }
+.nd-perf-steps { position: relative; display: flex; list-style: none; margin: 1.1rem 0 0; padding: 0; }
+.nd-perf-step { position: relative; z-index: 1; flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 0 0.25rem; font-size: 0.78rem; }
+.nd-perf-date { height: 1.1rem; margin-bottom: 0.3rem; font-weight: 700; color: var(--nd-ink); font-variant-numeric: tabular-nums; }
+.nd-perf-dot { width: 16px; height: 16px; box-sizing: border-box; border-radius: 50%; background: #fff; border: 3px solid var(--nd-rail); }
+.nd-perf-dot.done { background: var(--nd-ok); border-color: var(--nd-ok); }
+.nd-perf-dot.ko { background: var(--nd-ko); border-color: var(--nd-ko); }
+.nd-perf-dot.expected { border-color: var(--nd-ok); }
+.nd-perf-label { margin-top: 0.3rem; color: var(--nd-muted); line-height: 1.25; }
+.nd-perf-goal .nd-perf-date { color: var(--nd-ok); }
+.nd-perf-goal .nd-perf-label strong { color: var(--nd-ink); }
+/* Binario: dal centro della prima al centro dell'ultima tappa. */
+.nd-perf-track { position: absolute; z-index: 0; top: calc(1.4rem + 6.5px); height: 3px; left: calc(50% / var(--nd-perf-n)); right: calc(50% / var(--nd-perf-n)); background: var(--nd-rail); list-style: none; }
+.nd-perf-fill { position: absolute; left: 0; top: 0; height: 100%; background: var(--nd-ok); }
+.nd-perf-today { position: absolute; top: calc(-1.4rem - 6.5px - 1.1rem); transform: translateX(-50%); font-size: 0.68rem; line-height: 1; color: var(--nd-warn); white-space: nowrap; z-index: 0; }
+.nd-perf-today::after { content: ''; position: absolute; left: 50%; top: 1.1rem; width: 2px; height: calc(1.4rem + 6.5px); margin-left: -1px; background: #E0A100; opacity: 0.55; }
+.nd-perf-note { margin: 0.6rem 0 0; font-size: 0.8rem; color: var(--nd-muted); max-width: 70ch; }
+@media (max-width: 575.98px) {
+  .nd-perf-steps { flex-direction: column; gap: 0.75rem; }
+  .nd-perf-track { display: none; }
+  .nd-perf-step { flex-direction: row; align-items: center; justify-content: flex-start; text-align: left; gap: 0.6rem; padding: 0; }
+  .nd-perf-date { order: 2; height: auto; margin: 0; min-width: 2.6rem; }
+  .nd-perf-dot { order: 1; flex: none; }
+  .nd-perf-label { order: 3; margin: 0; }
+}

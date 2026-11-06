@@ -1,7 +1,8 @@
 import React from 'react';
 import { GUIDA_DATE_TERMINI, GUIDA_IRREPERIBILE } from '../../guida';
 import { AlertTriangle, ExternalLink } from 'lucide-react';
-import { buildJourney, computeVerdict, sourceLabel, type JourneyDetail, type JourneyLabels, type JourneySource } from './journey';
+import { SendPerfectionTimeline } from './SendPerfectionTimeline';
+import { buildJourney, computeVerdict, latestAttempt, sourceLabel, type JourneyDetail, type JourneyLabels, type JourneySource } from './journey';
 import '../../assets/css/notification-detail.css';
 
 function formatWhen(iso: string, dateOnly = false): { day: string; time: string } {
@@ -35,6 +36,7 @@ export function NotificationVerdict({ detail, labels, onOpenGuida }: { detail: J
       ? new Date(v.when).toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', year: 'numeric' })
       : new Date(v.when).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
     : null;
+  const perfection = latestAttempt(detail)?.sendPerfection ?? null;
   return (
     <section className={`nd-verdict nd-tone-${v.tone}`} aria-label="Esito della notifica">
       <p className="nd-verdict-headline">{v.headline}</p>
@@ -45,6 +47,7 @@ export function NotificationVerdict({ detail, labels, onOpenGuida }: { detail: J
           {v.source}
         </p>
       )}
+      {perfection && <SendPerfectionTimeline data={perfection} />}
       {v.entityLegalAt && (
         <p className="nd-verdict-legal">
           <strong>Notificata per l'ente il {new Date(v.entityLegalAt).toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', year: 'numeric' })}</strong>

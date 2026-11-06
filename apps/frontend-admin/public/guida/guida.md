@@ -247,7 +247,9 @@ Per contare un termine del destinatario usa sempre la **data per il destinatario
 | PEC o domicilio digitale | il 7° giorno dopo la consegna nella casella (se consegnata dopo le 21, dal giorno successivo) |
 | PEC piena, non valida o non attiva | il 15° giorno dopo il deposito dell'avviso di mancato recapito |
 | Avviso cartaceo (raccomandata) | il 10° giorno dopo il perfezionamento della notifica cartacea: consegna, ritiro o compiuta giacenza |
-| Destinatario irreperibile | 10 giorni dopo il deposito dell'avviso su SEND (comma 7) |
+| Destinatario irreperibile | deposito dell'avviso su SEND, +10 giorni per il perfezionamento dell'avviso ([comma 7](https://www.normattiva.it/uri-res/N2Ls?urn:nir:stato:decreto.legge:2020-07-16;76~art26)), +10 giorni per il destinatario (comma 9, lett. b, n. 2); prima se accede a SEND |
+
+Nel dettaglio di una notifica SEND una timeline mostra le tappe fino alla data di notifica per il destinatario: le date passate, quelle previste o stimate e la data di oggi. Vale sempre la data indicata da SEND quando arriva.
 
 La data esatta la calcola SEND ed è quella riportata nel dettaglio della notifica.
 
